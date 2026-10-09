@@ -30,6 +30,10 @@
 #include <Windows.h>
 #include <atomic>
 #include <cstring>
+#include <cstdio>
+#ifdef D2RVR_NATIVE_OPENXR
+#include "../../steamvr/logging.h"
+#endif
 
 namespace d2rcam::drawdist {
 namespace {
@@ -68,6 +72,10 @@ bool                   g_recalcOk = false;
 // FindRooms call with the tick that made it.
 bool g_inTick   = false;
 bool g_expanded = false;
+#ifdef D2RVR_NATIVE_OPENXR
+thread_local double t_roomFindMs=0,t_roomExpandMs=0;
+double TimeMs(){static const double scale=[](){LARGE_INTEGER f{};QueryPerformanceFrequency(&f);return 1000./f.QuadPart;}();LARGE_INTEGER t{};QueryPerformanceCounter(&t);return t.QuadPart*scale;}
+#endif
 
 // Rooms tiled per tick beyond the game's own two rings. Tiling builds a room's
 // tiles and collision; one per tick spreads a new ring over a few frames.
@@ -202,8 +210,18 @@ void __fastcall HookSimTick(void* layer) {
 	}
 	g_inTick   = true;
 	g_expanded = false;
+#ifdef D2RVR_NATIVE_OPENXR
+    t_roomFindMs=t_roomExpandMs=0;const double start=TimeMs();
+#endif
 	original(layer);
 	g_inTick = false;
+#ifdef D2RVR_NATIVE_OPENXR
+    const double ms=TimeMs()-start;static ULONGLONG lastLog=0;
+    if(ms>50&&GetTickCount64()-lastLog>1000&&g_ctx){
+        lastLog=GetTickCount64();char line[200];
+        std::snprintf(line,sizeof line,"Frame game tick: %.1f ms, room discovery %.1f, VR room expansion %.1f; rings %d, added %d, tiled total %d",ms,t_roomFindMs,t_roomExpandMs,g_radius.load(),g_added.load(),g_loaded.load());framevr::logging::Write(line);
+    }
+#endif
 	const uint64_t until = g_recalcUntil.load(std::memory_order_relaxed);
 	if (until != 0 && GetTickCount64() > until) {
 		g_recalcUntil.store(0, std::memory_order_relaxed);
@@ -216,7 +234,13 @@ void __fastcall HookFindRooms(void* layer, void* room, void* list) {
 	if (original == nullptr) {
 		return;
 	}
+#ifdef D2RVR_NATIVE_OPENXR
+    const double start=TimeMs();
+#endif
 	original(layer, room, list);
+#ifdef D2RVR_NATIVE_OPENXR
+    if(g_inTick)t_roomFindMs+=TimeMs()-start;
+#endif
 	// Only the tick's first pass builds the drawn set; later passes are prefetch
 	// and the debug drawing also calls this function.
 	if (!g_inTick || g_expanded) {
@@ -229,6 +253,9 @@ void __fastcall HookFindRooms(void* layer, void* room, void* list) {
 		return;
 	}
 	const size_t before = ListSize(list);
+#ifdef D2RVR_NATIVE_OPENXR
+    const double expandedAt=TimeMs();
+#endif
 	// Ring 2 through the game's own pass and filter. A third pass would find
 	// nothing: ROOMs do not exist further out (RECON.md section 5).
 	original(layer, room, list);
@@ -236,6 +263,9 @@ void __fastcall HookFindRooms(void* layer, void* room, void* list) {
 		LoadAndAdd(room, list, radius);
 	}
 	g_added.store(static_cast<int>(ListSize(list) - before), std::memory_order_relaxed);
+#ifdef D2RVR_NATIVE_OPENXR
+    t_roomExpandMs+=TimeMs()-expandedAt;
+#endif
 }
 
 bool Check(const Site& s) {

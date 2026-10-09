@@ -58,6 +58,15 @@ inline constexpr Site    GetProjection { 0xED67A0, GetProjectionBytes, sizeof(Ge
 inline constexpr uint8_t ScreenToRayBytes[] { 0x48, 0x8B, 0xC4, 0x48, 0x89, 0x58, 0x08, 0x48, 0x89, 0x70, 0x10, 0x55, 0x57, 0x41, 0x56 };
 inline constexpr Site    ScreenToRay { 0xED62B0, ScreenToRayBytes, sizeof(ScreenToRayBytes) };
 
+// Unit labels obtain their original model/height anchors in UnitToScreen,
+// then call Camera::WorldToScreen twice (head height and ground position).
+// Verified against the running D2RLoader 3.3.93787 image. WorldToScreen can
+// rebuild the projection inline from flat-camera FOV/aspect fields.
+inline constexpr uint8_t WorldToScreenBytes[] {0x48,0x8B,0xC4,0x48,0x89,0x58,0x10,0x57,0x48,0x81,0xEC,0x40,0x01,0x00,0x00};
+inline constexpr Site WorldToScreen {0xED5EB0,WorldToScreenBytes,sizeof(WorldToScreenBytes)};
+inline constexpr uint8_t UnitToScreenBytes[] {0x4C,0x8B,0xDC,0x55,0x56,0x57,0x41,0x57,0x49,0x8D,0x6B,0xA8,0x48,0x81,0xEC,0x38,0x01,0x00,0x00};
+inline constexpr Site UnitToScreen {0x76A7D0,UnitToScreenBytes,sizeof(UnitToScreenBytes)};
+
 // ReleaseCamera(Camera*), hooked 5 bytes in, after its `test rcx,rcx / je`, so the
 // short jump stays where it is. Registers and stack are as at entry there.
 inline constexpr uint8_t ReleaseCameraBytes[] { 0x53, 0x48, 0x83, 0xEC, 0x20, 0x48, 0x8B, 0xD9, 0xC6, 0x81, 0x28, 0x01, 0x00, 0x00, 0x00 };

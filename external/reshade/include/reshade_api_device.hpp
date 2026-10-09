@@ -371,7 +371,17 @@ namespace reshade::api
 		/// <summary>
 		/// Gets the description of the specified resource.
 		/// </summary>
+#if defined(__MINGW32__)
+		// MSVC returns large structs from a member function with this in RCX
+		// and the result pointer in RDX. MinGW puts the result before this.
+		// Keep the virtual slot, and make MSVC's hidden result explicit.
+		virtual void get_resource_desc_msvc(resource_desc *result, resource resource) const = 0;
+		resource_desc get_resource_desc(resource resource) const {
+			resource_desc result; get_resource_desc_msvc(&result, resource); return result;
+		}
+#else
 		virtual resource_desc get_resource_desc(resource resource) const = 0;
+#endif
 
 		/// <summary>
 		/// Creates a new resource view for the specified <paramref name="resource"/>.
@@ -393,11 +403,23 @@ namespace reshade::api
 		/// <remarks>
 		/// Resource views may be created without a resource in D3D12, which is used to initialize a null descriptor (reading zeroes, writes are discarded). This may therefore return zero for such views.
 		/// </remarks>
+#if defined(__MINGW32__)
+		virtual void get_resource_from_view_msvc(resource *result, resource_view view) const = 0;
+		resource get_resource_from_view(resource_view view) const { resource result{}; get_resource_from_view_msvc(&result, view); return result; }
+#else
 		virtual resource get_resource_from_view(resource_view view) const = 0;
+#endif
 		/// <summary>
 		/// Gets the description of the specified resource view.
 		/// </summary>
+#if defined(__MINGW32__)
+		virtual void get_resource_view_desc_msvc(resource_view_desc *result, resource_view view) const = 0;
+		resource_view_desc get_resource_view_desc(resource_view view) const {
+			resource_view_desc result; get_resource_view_desc_msvc(&result, view); return result;
+		}
+#else
 		virtual resource_view_desc get_resource_view_desc(resource_view view) const = 0;
+#endif
 
 		/// <summary>
 		/// Maps the memory of a buffer resource into application address space.
@@ -1331,7 +1353,12 @@ namespace reshade::api
 		/// Gets the back buffer resource at the specified <paramref name="index"/> in this swap chain.
 		/// </summary>
 		/// <param name="index">Index of the back buffer. This has to be between zero and the value returned by <see cref="get_back_buffer_count"/>.</param>
+#if defined(__MINGW32__)
+		virtual void get_back_buffer_msvc(resource *result, uint32_t index) = 0;
+		resource get_back_buffer(uint32_t index) { resource result{}; get_back_buffer_msvc(&result, index); return result; }
+#else
 		virtual resource get_back_buffer(uint32_t index) = 0;
+#endif
 
 		/// <summary>
 		/// Gets the number of back buffer resources in this swap chain.

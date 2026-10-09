@@ -66,9 +66,14 @@ namespace hud { void Register(); void SetHide(int mode); void SetInterfaceScale(
                 bool PictureNow(int i, float box[4], uint64_t* srv); void SetPictureBarMoved(bool moved); void SetPictureBarOffset(float x, float y); void SetPictureMapMoved(bool moved); void SetPictureMapOffset(float x, float y);
                 void SetLabels(bool on); bool LabelsNow(float keepBar[4], float keepMap[4], uint64_t* srv); void SetUiMask(bool on); bool UiMaskNow(); }
 #include "d2rcam.h"
+#ifdef D2RVR_NATIVE_OPENXR
+#include "foveation.h"
+#include "logging.h"
+#endif
 #include "sigscan.h"
 #include "mat4.h"
 namespace gamecmd { void Init(const D2RL::PluginContext* ctx); void Tick(); }   // the game's key commands from BodyWalk (gamecmd.cpp)
+namespace gamestate { bool ToggleMenus(); }
 namespace gamestate { void Init(const D2RL::PluginContext* ctx); void Tick(); uint32_t WeaponClass(); uint32_t WeaponSet(); uint32_t WeaponType(); uint32_t HandsHeld(); uint32_t TwoHanded(); uint32_t WeaponHand(); uint32_t HandsKey(); bool MenuOpen(); int ObjectLight(uint32_t txt, uint32_t mode, float rgb[3]); uint64_t LocalPlayer(); void SetViewMode(uint32_t mode); bool AutoMapOpen(); bool SetAutoMap(bool open); void PollPlate(); bool PlateRect(int32_t out[4]); }
 #include "d2r_vr_state.h"
 
@@ -76,6 +81,10 @@ namespace gamestate { void Init(const D2RL::PluginContext* ctx); void Tick(); ui
 #include "crosshair_cursor.h"
 #include "d2r_vr_shared.h"
 #include "afr_eye_shared.h"
+#ifdef D2RVR_NATIVE_OPENXR
+#include "transport.h"
+#include "memory.h"
+#endif
 #include "dlss_mv.h"
 #include "pad_mirror_shared.h"
 
@@ -104,13 +113,17 @@ bool Matches(uint64_t rva, const uint8_t* sig, size_t n) {
 
 
 void Log(const char* text) {
+#ifdef D2RVR_NATIVE_OPENXR
+    if(g_ctx)framevr::logging::Write(text);
+#else
     if (g_ctx != nullptr) g_ctx->LogInfo(text);
+#endif
 }
 void LogF(const char* fmt, ...);
 // To the game's console as well as the log.
 void Say(const char* text) {
     if (g_ctx == nullptr) return;
-    g_ctx->LogInfo(text);
+    Log(text);
     g_ctx->WriteConsoleMessage(text, ConsoleMessageKind::Output);
 }
 
@@ -736,6 +749,10 @@ float GameInterfaceScale() {
 void StartMatrixWatch();   // [debug] matrix_writer, below PickHeroMatrix
 
 void LoadSettings() {
+#ifdef D2RVR_NATIVE_OPENXR
+    framevr::foveation::Configure(IniB(L"render",L"fixed_foveation",true),IniF(L"render",L"foveation_inner",0.55f));
+    d2rcam::SetStereoLabels(IniB(L"hud",L"stereo_labels",true));
+#endif
     g_set.platform.store(IniF(L"mode", L"platform", 1.0f) != 0.0f ? 1 : 0);
 #if D2RVR_FIRST_PERSON
     g_set.flatView.store(std::clamp((int)IniF(L"mode", L"flat_view", 3.0f), 1, 3));
@@ -1691,7 +1708,11 @@ extern std::atomic<bool> g_inWorld;
 bool TopStereoOn() { return !g_enabled.load() && g_set.topStereo.load() && g_set.afr.load() && g_inWorld.load(); }
 // Only in a game area: the menus have no world camera, so nothing flips the
 // eye there, and a pair announced from the menu was one fresh half and one frozen.
-bool AfrOn() { return g_set.afr.load() && g_inWorld.load() && (g_enabled.load() || TopStereoOn()); }
+bool AfrOn() { return g_set.afr.load() && g_inWorld.load() && (g_enabled.load() || TopStereoOn())
+#ifdef D2RVR_NATIVE_OPENXR
+    && !gamestate::MenuOpen()
+#endif
+    ; }
 // From above and behind: the toolbar moved nearer or farther - only real stereo has a depth to move it in.
 bool BarNearWanted() { return AfrOn() && ClassicNow() && std::abs(BarNearNow()) > 0.01f; }
 // The map on the floor (F3) nearer or farther in stereo ([hud_floor] map_near), as the toolbar.
@@ -2227,6 +2248,9 @@ bool VrViewInner(const d2rcam::WorldView& in, float out[16]) {
     ReleaseSRWLockExclusive(&g_lookLock);
     // The menus (the character screen's 3D scene too: it has a hero point) keep the game's camera.
     if (!g_inWorld.load()) return false;
+#ifdef D2RVR_NATIVE_OPENXR
+    if(gamestate::MenuOpen())return false; // one unchanged game camera behind a flat UI panel
+#endif
     if (TopStereoOn()) return TopStereoView(in, out);
     if (!g_enabled.load() || !in.lookAtValid) return false;
     const float* G = in.gameView;   // row-major, v * M: column i is the game camera's axis i in the world
@@ -2284,13 +2308,40 @@ bool VrViewInner(const d2rcam::WorldView& in, float out[16]) {
     g_viewFwdY.store(fwd.y);
     float view[16];
     d2rcam::m4::LookTo(eye, fwd, up, view);
+#ifdef D2RVR_NATIVE_OPENXR
+    const bool nativeFirst = !ThirdPerson() && !Overhead() && framevr::Active();
+    if (nativeFirst) {
+        const V3 gf = {-G[2], -G[6], -G[10]};
+        const float baseHeading = atan2f(-gf.x, -gf.z) -
+            (g_pairNow.load() ? g_heldYaw.load() : g_mouseYaw.load() + g_turnYaw.load()) * 0.0174532925f;
+        const float recenter = g_recenter.load() * 0.0174532925f;
+        float center[16];
+        framevr::View(center, L, ViewHeight() + JumpLift(), UserEyeHeightM(), baseHeading, recenter, -1);
+        eye = {-center[12]*center[0]-center[13]*center[1]-center[14]*center[2],
+               -center[12]*center[4]-center[13]*center[5]-center[14]*center[6],
+               -center[12]*center[8]-center[13]*center[9]-center[14]*center[10]};
+        hang = eye;
+        framevr::View(view, L, ViewHeight() + JumpLift(), UserEyeHeightM(), baseHeading, recenter, g_eye.load());
+        fwd = {-center[2], -center[6], -center[10]};
+        const float horizontal = std::hypot(fwd.x, fwd.z);
+        if (horizontal > 1e-5f) {
+            ahead = {fwd.x/horizontal,0,fwd.z/horizontal};
+            right = {-ahead.z,0,ahead.x};
+        }
+        up = {center[1],center[5],center[9]};
+    }
+#endif
     const float hangA[3] = {hang.x, hang.y, hang.z};
     for (int i = 0; i < 3; ++i) g_eyeWorld[i].store(hangA[i]);
     for (int i = 0; i < 3; ++i) g_eyeFromLook[i].store(hangA[i] - L[i]);
     g_eyeOk.store(true);
 
     V3 camPos = eye;   // this eye's camera, for the table's bounds
-    if (AfrOn()) {
+    if (AfrOn()
+#ifdef D2RVR_NATIVE_OPENXR
+        && !nativeFirst
+#endif
+        ) {
         // Camera half an eye to the left (eye 0) or right (eye 1): the
         // world then sits that much to the right or left in view space.
         float ipd = g_set.ipd.load(), conv = 0.0f;
@@ -2299,6 +2350,11 @@ bool VrViewInner(const d2rcam::WorldView& in, float out[16]) {
         view[12] += g_eye.load() == 0 ? half : -half;
         camPos = eye + right * (g_eye.load() == 0 ? -half : half);
     }
+#ifdef D2RVR_NATIVE_OPENXR
+    if (nativeFirst) camPos = {-view[12]*view[0]-view[13]*view[1]-view[14]*view[2],
+                              -view[12]*view[4]-view[13]*view[5]-view[14]*view[6],
+                              -view[12]*view[8]-view[13]*view[9]-view[14]*view[10]};
+#endif
     // When this eye's view was built: the head pose it is drawn for is the
     // one of this moment (PredictHead carries it on to now). FlatVR places
     // the screen at the head pose of this stamp and the headset's own
@@ -2358,6 +2414,9 @@ bool VrViewInner(const d2rcam::WorldView& in, float out[16]) {
 // shift so what lies at `convergence` sits on the screen.
 bool VrProjInner(const d2rcam::WorldView& in, float M[16]);
 bool VrProj(const d2rcam::WorldView& in, float M[16]) {
+#ifdef D2RVR_NATIVE_OPENXR
+    if(gamestate::MenuOpen())return false;
+#endif
     const bool ours = VrProjInner(in, M);
     if (ours) {
         memcpy(prevscan::g_lastProj, M, sizeof prevscan::g_lastProj);
@@ -2387,6 +2446,10 @@ bool VrProjInner(const d2rcam::WorldView& in, float M[16]) {
         const float shift = M[0] * 0.5f * ipd / conv;
         M[8] += g_eye.load() == 0 ? shift : -shift;
     }
+#ifdef D2RVR_NATIVE_OPENXR
+    if (!ThirdPerson() && !Overhead()) framevr::Projection(M, nearZ, g_eye.load());
+    g_projSx.store(M[0]); g_projSy.store(M[5]);
+#endif
     AcquireSRWLockExclusive(&g_skyLock);
     SkyView& sv = g_skyView[g_eye.load() & 1];
     sv.proj[0] = M[0]; sv.proj[1] = M[5]; sv.proj[2] = M[8]; sv.proj[3] = M[9]; sv.proj_ok = true;
@@ -3589,6 +3652,15 @@ template <int I> DWORD WINAPI XDetour(DWORD idx, XINPUT_STATE* s) {
     if (t_xDepth == 0 && idx == 0 && s && !FlatKeyMode() && PadFromBodyWalk(s)) { r = ERROR_SUCCESS; mirror = true; }
     if (t_xDepth == 0 && idx == 0 && s) KeysAsStick(s, &r);
     if (r == ERROR_SUCCESS && t_xDepth == 0) {
+#ifdef D2RVR_NATIVE_OPENXR
+        // Panel events can arrive between OpenXR input publication and this
+        // game-thread poll. Keep stale attack/menu actions out of mouse UI.
+        if(gamestate::MenuOpen()) {
+            s->Gamepad={};
+            if(idx==0){g_aHeld.store(false);g_skillHeld.store(false);g_rightX.store(0.f);}
+            return r;
+        }
+#endif
         if (idx == 0) ApplyActions(s);
         {   // which entry polls what, with BodyWalk's pad or without (2026-10-07): at most 30 lines a session
             static std::atomic<int> lines{0};
@@ -4072,7 +4144,11 @@ bool FrameTimeFound() {
 
 // Without the frame time held, the second pass would play the frame's
 // animation and particles a second time: the pair is drawn only with it.
-bool PairWanted() { return g_h.blit && AfrOn() && g_set.pairPerTick.load() && g_inWorld.load() && FrameTimeFound(); }
+bool PairWanted() { return g_h.blit && AfrOn() && g_set.pairPerTick.load() && g_inWorld.load() && FrameTimeFound()
+#ifdef D2RVR_NATIVE_OPENXR
+    && !gamestate::MenuOpen()
+#endif
+    ; }
 
 void SetEye(int eye) {
     g_eye.store(eye);
@@ -4151,10 +4227,22 @@ std::string BusyThreads(double spanUs) {
 }
 }  // namespace pairtime
 
+void Recenter();
 uintptr_t HookDrawGameScreen(int a) {
     static thread_local int depth = 0;
     static bool told = false, toldWhy = false;
+    static double lastEnd = 0.0, sumGap = 0.0, sumPass[2] = {}, sumPresent[2] = {}, sumEff[2] = {}, maxPair = 0.0, sumCpu = 0.0, sumWall = 0.0;
+    static ULONGLONG since = GetTickCount64(), lastHitch = 0;
+    static uint32_t pairs = 0;
+    const double entered=pairtime::UsNow();
     if (depth || !PairWanted()) {
+        if(!depth) {
+            // Menu/loading frames are not consecutive stereo gameplay frames.
+            // Exclude time spent in panels from the next world's hitch sample.
+            lastEnd=sumGap=maxPair=sumCpu=sumWall=0;
+            for(int e=0;e<2;++e)sumPass[e]=sumPresent[e]=sumEff[e]=0;
+            since=GetTickCount64();pairs=0;
+        }
         if (!toldWhy && g_h.blit && AfrOn() && g_set.pairPerTick.load() && !FrameTimeFound()) {
             toldWhy = true;
             Log("vrcam: pair per game frame NOT possible - the frame time was not where expected (another build?); eyes go by turns");
@@ -4164,6 +4252,10 @@ uintptr_t HookDrawGameScreen(int a) {
     ++depth;
     static bool toldTry = false;   // before the first pair: if the game dies on it, the log says where
     if (!toldTry) { toldTry = true; Log("vrcam: pair per game frame - drawing the first pair"); }
+#ifdef D2RVR_NATIVE_OPENXR
+    framevr::BeginPair();
+    if(framevr::TakeWorldRecenter())Recenter();
+#endif
     // One head for the pair: BodyWalk's block may change between the passes.
     static D2RVR_Shared held;
     const D2RVR_Shared* live = g_shared;
@@ -4175,12 +4267,14 @@ uintptr_t HookDrawGameScreen(int a) {
     if (const D2RVR_Shared* hs = g_shared)
         flog::Line("S,%u,%.4f,%.3f,%.3f,%.3f,%.3f,%u", flog::Pass(), flog::Dt(), g_heldYaw.load(), hs->headYawDeg, hs->headPitchDeg, hs->headRollDeg, hs->sampleStamp);
 
-    static double lastEnd = 0.0, sumGap = 0.0, sumPass[2] = {}, sumPresent[2] = {}, sumEff[2] = {}, maxPair = 0.0, sumCpu = 0.0, sumWall = 0.0;
     const double t0 = pairtime::UsNow(), c0 = pairtime::CpuUs();
     pairtime::g_drawThread.store(GetCurrentThreadId());
-    if (lastEnd > 0.0) sumGap += t0 - lastEnd;
+    if (lastEnd > 0.0) sumGap += entered - lastEnd;
     pairtime::g_presentAt.store(0.0); pairtime::g_effSum.store(0.0);
     SetEye(0);
+#ifdef D2RVR_NATIVE_OPENXR
+    framevr::BeginEye(0);
+#endif
     d2rcam::Refresh();
     OrigDrawGameScreen(a);
     const double t1 = pairtime::UsNow();
@@ -4197,6 +4291,9 @@ uintptr_t HookDrawGameScreen(int a) {
     const float rightDt = g_set.rightDtMs.load() * 0.001f;
     *dt = rightDt; *rawDt = rightDt;
     SetEye(1);
+#ifdef D2RVR_NATIVE_OPENXR
+    framevr::BeginEye(1);
+#endif
     d2rcam::Refresh();
     const uintptr_t r = OrigDrawGameScreen(a);
     *dt = keep; *rawDt = keepRaw;
@@ -4204,16 +4301,29 @@ uintptr_t HookDrawGameScreen(int a) {
     sumPass[1] += t2 - t1;
     if (const double pa = pairtime::g_presentAt.load(); pa > t1) sumPresent[1] += t2 - pa;
     sumEff[1] += pairtime::g_effSum.load();
-    if (lastEnd > 0.0) maxPair = std::max(maxPair, t2 - lastEnd);
-    lastEnd = t2;
     sumCpu += pairtime::CpuUs() - c0; sumWall += t2 - t0;
 
+#ifdef D2RVR_NATIVE_OPENXR
+    framevr::EndPair();
+#endif
+    const double ended=pairtime::UsNow();
+    if(lastEnd>0) {
+        const double cycle=ended-lastEnd;
+        maxPair=std::max(maxPair,cycle);
+#ifdef D2RVR_NATIVE_OPENXR
+        if(cycle>80000&&GetTickCount64()-lastHitch>1000) {
+            lastHitch=GetTickCount64();const auto xr=framevr::LastTiming();
+            LogF("Frame hitch: cycle %.1f ms; game gap %.1f; XR begin %.1f (wait %.1f); left %.1f; right %.1f; XR end %.1f (GPU fence %.1f, submit %.1f); pipelines %u max %.1f ms",
+                cycle*.001,(entered-lastEnd)*.001,(t0-entered)*.001,xr.waitFrameMs,
+                (t1-t0)*.001,(t2-t1)*.001,(ended-t2)*.001,xr.waitGpuMs,xr.submitMs,xr.pipelines,xr.maxPipelineMs);
+        }
+#endif
+    }
+    lastEnd=ended;
     g_pairNow.store(false);
     if (live) g_shared = live;
     --depth;
 
-    static ULONGLONG since = GetTickCount64();
-    static uint32_t pairs = 0;
     ++pairs;
     if (!told) { told = true; Log("vrcam: pair per game frame ON - left eye, then right eye with the frame time held"); }
     if (const ULONGLONG now = GetTickCount64(); now - since >= 10000) {
@@ -4507,6 +4617,9 @@ const char* Toggle() {
 }
 
 void Recenter() {
+#if D2RVR_NATIVE_OPENXR
+    framevr::Recenter();
+#endif
     float head = 0.0f;
     if (HeadYaw(&head)) g_recenter.store(head);
     if (const D2RVR_Shared* sh = g_shared; sh && sh->pitchValid && std::isfinite(sh->headPitchDeg)) g_recenterPitch.store(sh->headPitchDeg);
@@ -5283,7 +5396,11 @@ void PushArms() {
     }
     // third person, the game on the floor and F1 in perspective: the whole hero as the game
     // animates him, head included (on the floor he stood headless, 2026-10-05)
-    const bool own = on && !ThirdPerson() && !Overhead();
+    const bool own = on && !ThirdPerson() && !Overhead()
+#ifdef D2RVR_NATIVE_OPENXR
+        && !gamestate::MenuOpen()
+#endif
+        ;
     in.mode = own ? ArmsMode() : 0;
     // From behind the game animates all of him, but he still turns with the
     // camera: else the right stick only swung the camera round a hero who
@@ -5498,7 +5615,11 @@ namespace env {
 std::atomic<uintptr_t> g_slot{0};   // the global's address, 0 = not found yet
 
 bool SafeRead(const void* p, void* out, size_t n) {
+#ifdef D2RVR_NATIVE_OPENXR
+    return framevr::ReadMemory(out,p,n);
+#else
     __try { memcpy(out, p, n); return true; } __except (EXCEPTION_EXECUTE_HANDLER) { return false; }
+#endif
 }
 
 bool PageReadable(uintptr_t a) {
@@ -5633,6 +5754,26 @@ bool Looks(const float* f) {
 constexpr int kDumpFrom = -20, kDumpN = 34;
 int ScanRegion(float* p, size_t n, Patch* out, int cap, int* defs, float (*dump)[kDumpN], float** where, int dumpCap) {
     int got = 0;
+#ifdef D2RVR_NATIVE_OPENXR
+    constexpr size_t chunk=8u<<20; // floats, bounded 32 MB scratch with overlapping definition edges
+    std::vector<float> snapshot(std::min(n,chunk));
+    for(size_t offset=0;offset<n&&got<cap;offset+=chunk-34) {
+        const size_t count=std::min(chunk,n-offset);
+        if(count<=34)break;
+        if(!framevr::ReadMemory(snapshot.data(),p+offset,count*sizeof(float)))continue;
+        const float* q=snapshot.data();
+        for(size_t i=20;i+14<count&&got<cap;++i) {
+            if(!(q[i+4]>=500&&q[i+4]<=5000)||!Looks(q+i))continue;
+            if(*defs<dumpCap){memcpy(dump[*defs],q+i+kDumpFrom,sizeof dump[0]);where[*defs]=p+offset+i;}
+            ++*defs;
+            if(q[i+8]>0) {
+                float now=0;const float zero=0;float* density=p+offset+i+8;
+                if(framevr::ReadMemory(&now,density,sizeof now)&&now==q[i+8]&&framevr::WriteMemory(density,&zero,sizeof zero))
+                    out[got++]={density,now};
+            }
+        }
+    }
+#else
     __try {
         for (size_t i = 20; i + 14 < n && got < cap; ++i) {
             if (!(p[i + 4] >= 500.0f && p[i + 4] <= 5000.0f) || !Looks(p + i)) continue;
@@ -5646,6 +5787,7 @@ int ScanRegion(float* p, size_t n, Patch* out, int cap, int* defs, float (*dump)
     } __except (EXCEPTION_EXECUTE_HANDLER) {
         return -1;
     }
+#endif
     return got;
 }
 
@@ -5694,16 +5836,26 @@ DWORD WINAPI ScanThread(void*) {
 }
 
 bool PutBack(const Patch& p) {
+#ifdef D2RVR_NATIVE_OPENXR
+    float snapshot[kDumpN];
+    if(!framevr::ReadMemory(snapshot,p.density-8+kDumpFrom,sizeof snapshot))return false;
+    return snapshot[8-kDumpFrom]==0&&Looks(snapshot-kDumpFrom)&&framevr::WriteMemory(p.density,&p.was,sizeof p.was);
+#else
     __try {
         if (*p.density == 0.0f && Looks(p.density - 8)) *p.density = p.was;
         return true;
     } __except (EXCEPTION_EXECUTE_HANDLER) {
         return false;
     }
+#endif
 }
 
 bool PokeOne(float* f, float v, float* was) {
+#ifdef D2RVR_NATIVE_OPENXR
+    return framevr::ReadMemory(was,f,sizeof *was)&&framevr::WriteMemory(f,&v,sizeof v);
+#else
     __try { *was = *f; *f = v; return true; } __except (EXCEPTION_EXECUTE_HANDLER) { return false; }
+#endif
 }
 void ApplyPoke() {
     AcquireSRWLockExclusive(&g_lock);
@@ -6631,6 +6783,10 @@ void OnReshadePresent(reshade::api::effect_runtime*) {
     ++n;
     if (since == 0.0) { since = t; pairtime::BusyThreads(0.0); return; }
     if (t - since >= 10e6) {
+#ifdef D2RVR_NATIVE_OPENXR
+        const auto f=framevr::foveation::TakeStats();
+        LogF("Frame foveation: %u reduced-shading draws, %u full-quality draws in sample",f.shadedDraws,f.fullDraws);
+#endif
         if (!pairtime::g_drawThread.load()) pairtime::g_drawThread.store(GetCurrentThreadId());
         LogF("vrcam: %.1f presents/s; the game's busiest threads, %% of a core (present thread %lu): %s",
              n * 1e6 / (t - since), GetCurrentThreadId(), pairtime::BusyThreads(t - since).c_str());
@@ -7021,6 +7177,9 @@ void TryRegister() {
     hud::SetLogger(&Log);
     dlssmv::SetLogger(&Log);
     hud::Register();       // the interface's own layer: [hud] hide
+#ifdef D2RVR_NATIVE_OPENXR
+    framevr::Register(&Log, +[](){return gamestate::MenuOpen()||!g_inWorld.load();}, +[](){return g_inWorld.load();}, &gamestate::ToggleMenus);
+#endif
     g_registered = true;
     Log("vrcam: joined ReShade - the fog and the sky follow d2r_vr.ini [fog] [sky]");
     // Both read ReShade's depth, which Generic Depth provides (FlatVR's addon
@@ -7357,6 +7516,10 @@ D2RL_PLUGIN_EXPORT bool D2RLoaderLoadPlugin(const PluginContext* ctx) noexcept {
     g_ctx = ctx;
     g_base = ctx->exeBase;
     GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT, (LPCWSTR)&UpdateThread, &g_self);
+#ifdef D2RVR_NATIVE_OPENXR
+    if(!framevr::logging::Start(g_self))ctx->LogWarn("Frame buffered logger could not start; routine diagnostics disabled to protect gameplay");
+    else ctx->LogInfo("Frame runtime diagnostics: d2rloader/logs/d2r-vr-frame.log (buffered, no per-message disk flush)");
+#endif
 
     // d2r_vr.ini beside this DLL
     DWORD n = GetModuleFileNameW(g_self, g_iniPath, MAX_PATH);
@@ -7395,8 +7558,14 @@ D2RL_PLUGIN_EXPORT bool D2RLoaderLoadPlugin(const PluginContext* ctx) noexcept {
 D2RL_PLUGIN_EXPORT void D2RLoaderUnloadPlugin() noexcept {
     g_enabled.store(false);
     d2rcam::SetEnabled(false);
+#ifdef D2RVR_NATIVE_OPENXR
+    framevr::Shutdown();
+#endif
     if (fx::g_registered) { reshade::unregister_addon(g_self); fx::g_registered = false; }
     if (g_gameWnd && g_gameWndProc) SetWindowLongPtrW(g_gameWnd, GWLP_WNDPROC, (LONG_PTR)g_gameWndProc);
     if (g_updateThreadId) PostThreadMessageW(g_updateThreadId, WM_QUIT, 0, 0);
+#ifdef D2RVR_NATIVE_OPENXR
+    framevr::logging::Stop();
+#endif
     g_ctx = nullptr;
 }

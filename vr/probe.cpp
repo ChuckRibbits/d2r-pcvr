@@ -32,6 +32,9 @@
 #include <string>
 #include <unordered_set>
 #include <vector>
+#ifdef D2RVR_NATIVE_OPENXR
+#include "memory.h"
+#endif
 
 namespace probe {
 
@@ -39,7 +42,11 @@ namespace {
 
 #pragma optimize("", off)
 bool SafeCopy(void* dst, const void* src, size_t n) noexcept {
+#ifdef D2RVR_NATIVE_OPENXR
+    return framevr::ReadMemory(dst,src,n);
+#else
     __try { memcpy(dst, src, n); return true; } __except (EXCEPTION_EXECUTE_HANDLER) { return false; }
+#endif
 }
 #pragma optimize("", on)
 

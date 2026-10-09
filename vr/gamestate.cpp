@@ -33,6 +33,9 @@
 #include <D2RLPlugin/api.h>
 
 #include "d2r_vr_state.h"
+#ifdef D2RVR_NATIVE_OPENXR
+#include "logging.h"
+#endif
 
 using namespace D2RL;
 
@@ -59,7 +62,13 @@ std::atomic<uint32_t> g_menu{0};
 std::atomic<uint32_t> g_set{0};      // 1 / 2: the active weapon set
 std::atomic<uint32_t> g_view{0};     // vrcam's view: 0 off, 1 first person, 2 third person, 3 F1 in perspective, 4 the game on the floor
 
-void Log(const char* msg) { if (g_ctx) g_ctx->LogInfo(msg); }
+void Log(const char* msg) { if(g_ctx){
+#ifdef D2RVR_NATIVE_OPENXR
+    framevr::logging::Write(msg);
+#else
+    g_ctx->LogInfo(msg);
+#endif
+} }
 
 std::string CodeText(uint32_t code) {
     char c[5] = {(char)(code & 0xFF), (char)((code >> 8) & 0xFF), (char)((code >> 16) & 0xFF), (char)((code >> 24) & 0xFF), 0};
@@ -613,6 +622,26 @@ bool PlateRect(int32_t out[4]) {
 bool SetAutoMap(bool open) {
     if (!g_ctx || !g_threads || !g_threads->runOnUiThread || !g_widgets) return false;
     return g_threads->runOnUiThread(g_ctx, &DispatchAutoMap, open ? (void*)1 : nullptr) == Threads::Result::Success;
+}
+
+void __cdecl DispatchMenuToggle(const PluginContext* ctx,void*) noexcept {
+    if(!g_widgets||!g_widgets->dispatchUiAction)return;
+    // Snapshot first: dispatch invokes OnUiMessage synchronously and modifies
+    // g_panels. Keep HUD, map and other persistent panels alive.
+    std::vector<std::string> menus;
+    for(const auto& name:g_panels)if(IsMenuPanel(name))menus.push_back(name);
+    auto dispatch=[&](const char* command,const char* panel) {
+        Widgets::UiAction action{};action.structSize=sizeof action;
+        action.target="PanelManager";action.command=command;action.text=panel;
+        const auto result=g_widgets->dispatchUiAction(ctx,&action);
+        char line[180];snprintf(line,sizeof line,"gamestate: Left X %s %s (result %u)",command,panel,unsigned(result));Log(line);
+    };
+    if(menus.empty())dispatch("OpenPanel","PlayerInventoryExpansionLayout");
+    else for(const auto& name:menus)dispatch("ClosePanel",name.c_str());
+}
+bool ToggleMenus() {
+    return g_ctx&&g_threads&&g_threads->runOnUiThread&&g_widgets&&g_widgets->dispatchUiAction&&
+        g_threads->runOnUiThread(g_ctx,&DispatchMenuToggle,nullptr)==Threads::Result::Success;
 }
 void SetViewMode(uint32_t mode) { if (g_view.exchange(mode) != mode) Publish(); }
 

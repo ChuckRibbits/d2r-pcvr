@@ -30,6 +30,10 @@
 #include <Windows.h>
 #include <atomic>
 #include <cstring>
+#include <cstdio>
+#ifdef D2RVR_NATIVE_OPENXR
+#include "../../steamvr/logging.h"
+#endif
 #include <intrin.h>
 
 namespace d2rcam {
@@ -45,6 +49,8 @@ using RebuildViewFn   = void(__fastcall*)(void* cam);
 using GetProjectionFn = const float*(__fastcall*)(void* cam);
 using ScreenToRayFn   = void(__fastcall*)(void* cam, const float* px, float* origin, float* dir);
 using ReleaseCameraFn = void(__fastcall*)(void* cam);
+using WorldToScreenFn = bool(__fastcall*)(void* cam,const float* point,float* out);
+using UnitToScreenFn = bool(__fastcall*)(void* context,void* unit,float* out,uint8_t above);
 
 const D2RL::PluginContext* g_ctx  = nullptr;
 uintptr_t                  g_base = 0;
@@ -58,6 +64,12 @@ RebuildViewFn   o_rebuildView   = nullptr;
 GetProjectionFn o_getProjection = nullptr;
 ScreenToRayFn   o_screenToRay   = nullptr;
 ReleaseCameraFn o_releaseCamera = nullptr;
+WorldToScreenFn o_worldToScreen = nullptr;
+UnitToScreenFn o_unitToScreen = nullptr;
+std::atomic<bool> g_stereoLabels{false};
+thread_local uint32_t t_labelProjection=0;
+struct LabelAnchor {LabelAnchor* previous=nullptr;void* cam=nullptr;uint32_t count=0;float first[3]{},last[3]{};};
+thread_local LabelAnchor* t_labelAnchor=nullptr;
 
 std::atomic<bool>   g_cameraHooks { false };
 std::atomic<bool>   g_enabled { false };
@@ -400,6 +412,51 @@ void __fastcall HookReleaseCamera(void* cam) {
 
 // ---- Installation ----------------------------------------------------------
 
+bool __fastcall HookUnitToScreen(void* context,void* unit,float* out,uint8_t above) {
+    LabelAnchor anchor;anchor.previous=t_labelAnchor;t_labelAnchor=&anchor;
+    ++t_labelProjection;
+    const bool shown=Orig(o_unitToScreen)(context,unit,out,above);
+    --t_labelProjection;
+    t_labelAnchor=anchor.previous;
+    const Frame& f=Current();
+    if(shown&&out&&above&&anchor.count>=2&&g_stereoLabels.load()&&anchor.cam==f.cam&&f.ourView&&f.ourProj){
+        // Native code combines projected foot X with projected head Y. Those
+        // two depths do not form one stereo point when the head pitches/rolls.
+        // Combine the original world coordinates first, then project once.
+        const float point[]={anchor.last[0],anchor.first[1],anchor.last[2]};float pixel[2];
+        if(!m4::ProjectToPixels(point,f.view,f.proj,At<float>(f.cam,camf::ViewportW),At<float>(f.cam,camf::ViewportH),pixel))return false;
+        const float deltaX=pixel[0]-out[0],deltaY=pixel[1]-out[1];out[0]=pixel[0];out[1]=pixel[1];
+#ifdef D2RVR_NATIVE_OPENXR
+        static std::atomic<uint32_t> reports{0};
+        if(reports.fetch_add(1)<8){char line[200];std::snprintf(line,sizeof line,"Frame labels: unified head anchor %.2f %.2f %.2f -> %.1f %.1f; hybrid correction %.1f %.1f px",point[0],point[1],point[2],pixel[0],pixel[1],deltaX,deltaY);framevr::logging::Write(line);}
+#endif
+    }
+    return shown;
+}
+
+bool __fastcall HookWorldToScreen(void* cam,const float* point,float* out) {
+    if(t_labelAnchor&&point){auto& a=*t_labelAnchor;a.cam=cam;if(!a.count)std::memcpy(a.first,point,sizeof a.first);std::memcpy(a.last,point,sizeof a.last);++a.count;}
+    const Frame& f=Current();
+    if(!t_labelProjection||!g_stereoLabels.load(std::memory_order_relaxed)||cam!=f.cam||!f.ourView||!f.ourProj||!point||!out)
+        return Orig(o_worldToScreen)(cam,point,out);
+    float exact[2]{};
+    const bool shown=m4::ProjectToPixels(point,f.view,f.proj,At<float>(cam,camf::ViewportW),At<float>(cam,camf::ViewportH),exact);
+    // UnitToScreen does not propagate World's return value, so an anchor
+    // behind the camera needs off-screen coordinates for native label culling.
+    out[0]=shown?exact[0]:-1000000.f;out[1]=shown?exact[1]:-1000000.f;
+    static std::atomic<uint32_t> reports{0};
+    if(shown&&reports.fetch_add(1)<8&&g_ctx){
+        float native[2]{};Orig(o_worldToScreen)(cam,point,native);
+        char line[220];std::snprintf(line,sizeof line,"Frame labels: world %.2f %.2f %.2f -> eye %.1f %.1f (%.0fx%.0f); native difference %.1f %.1f px",point[0],point[1],point[2],out[0],out[1],At<float>(cam,camf::ViewportW),At<float>(cam,camf::ViewportH),out[0]-native[0],out[1]-native[1]);
+#ifdef D2RVR_NATIVE_OPENXR
+        framevr::logging::Write(line);
+#else
+        g_ctx->LogInfo(line);
+#endif
+    }
+    return shown;
+}
+
 bool Check(const Site& s) {
 	return d2rsig::Check(s.rva, s.bytes, s.size);
 }
@@ -453,11 +510,23 @@ bool Install(const D2RL::PluginContext* ctx) {
 	g_base = ctx->exeBase;
 	d2rsig::Resolve(ctx);
 	const bool cameraOk = InstallCamera();
+    if(cameraOk&&g_stereoLabels.load()){
+        const bool was=o_worldToScreen&&o_unitToScreen;
+        const bool ok=Hook(WorldToScreen,&HookWorldToScreen,&o_worldToScreen)&&Hook(UnitToScreen,&HookUnitToScreen,&o_unitToScreen);
+        if(ok&&!was){
+#ifdef D2RVR_NATIVE_OPENXR
+            framevr::logging::Write("Frame labels: native unit anchors use the current stereo eye projection");
+#else
+            ctx->LogInfo("Frame labels: native unit anchors use the current stereo eye projection");
+#endif
+        }
+    }
 	const bool roomsOk  = drawdist::Install(ctx);
 	return cameraOk && roomsOk;
 }
 
 void SetEnabled(bool on) { g_enabled.store(on); }
+void SetStereoLabels(bool on){g_stereoLabels.store(on);}
 bool IsEnabled() { return g_enabled.load(); }
 
 void SetCallbacks(ViewFn view, ProjFn proj) {

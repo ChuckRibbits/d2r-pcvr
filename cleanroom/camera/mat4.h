@@ -40,6 +40,19 @@ inline void Mul(const float a[16], const float b[16], float r[16]) {
 	std::memcpy(r, t, sizeof(t));
 }
 
+// A world anchor projected by the exact eye matrices used for the scene. UI
+// placement must use the full camera viewport, not the scaled scene texture.
+inline bool ProjectToPixels(const float point[3],const float view[16],const float proj[16],float w,float h,float out[2]) {
+    if(!(w>0&&h>0)||!std::isfinite(w)||!std::isfinite(h))return false;
+    float v[4],clip[4];
+    for(int j=0;j<4;++j)v[j]=point[0]*view[j]+point[1]*view[4+j]+point[2]*view[8+j]+view[12+j];
+    for(int j=0;j<4;++j)clip[j]=v[0]*proj[j]+v[1]*proj[4+j]+v[2]*proj[8+j]+v[3]*proj[12+j];
+    if(!(clip[3]>1e-4f)||!std::isfinite(clip[3])||clip[2]<0||clip[2]>clip[3])return false;
+    const float x=(clip[0]/clip[3]+1)*.5f*w,y=(1-clip[1]/clip[3])*.5f*h;
+    if(!std::isfinite(x)||!std::isfinite(y))return false;
+    out[0]=x;out[1]=y;return true;
+}
+
 // General inverse (cofactors); false when singular.
 inline bool Inverse(const float m[16], float out[16]) {
 	float inv[16];

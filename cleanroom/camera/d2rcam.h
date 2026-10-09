@@ -45,6 +45,9 @@ void SetEnabled(bool on);
 bool IsEnabled();
 
 void SetCallbacks(ViewFn view, ProjFn proj);
+// Native stereo labels: project the game's original unit anchors with the
+// current scene matrices, bypassing inline reconstruction of a flat frustum.
+void SetStereoLabels(bool on);
 
 // Called once per game frame, right after the game placed its camera and before
 // the view/projection callbacks, while a game is running (enabled or not).

@@ -32,3 +32,10 @@ __pycache__/
 *_storm.png
 /build_public/
 promo/
+
+/build-frame/
+# Downloaded dependencies and extracted preview payloads stay local.
+/deps/
+/bin/
+/release-manifest.json
+/openxr-probe-result.txt

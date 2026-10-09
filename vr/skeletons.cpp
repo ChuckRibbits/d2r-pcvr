@@ -36,6 +36,10 @@
 
 #include "skeletons.h"
 #include "sigscan.h"
+#ifdef D2RVR_NATIVE_OPENXR
+#include "memory.h"
+#include "hero_selection.h"
+#endif
 
 namespace skel {
 
@@ -43,12 +47,22 @@ namespace {
 
 #pragma optimize("", off)
 bool SafeCopy(void* dst, const void* src, size_t n) noexcept {
+#ifdef D2RVR_NATIVE_OPENXR
+    return framevr::ReadMemory(dst,src,n);
+#else
     __try { memcpy(dst, src, n); return true; } __except (EXCEPTION_EXECUTE_HANDLER) { return false; }
+#endif
 }
 #pragma optimize("", on)
 
 template <class T> bool Get(uintptr_t a, T* v) { return a > 0x10000 && SafeCopy(v, (const void*)a, sizeof(T)); }
-bool SafeWrite(void* dst, const void* src, size_t n) { return (uintptr_t)dst > 0x10000 && SafeCopy(dst, src, n); }
+bool SafeWrite(void* dst, const void* src, size_t n) {
+#ifdef D2RVR_NATIVE_OPENXR
+    return (uintptr_t)dst>0x10000&&framevr::WriteMemory(dst,src,n);
+#else
+    return (uintptr_t)dst>0x10000&&SafeCopy(dst,src,n);
+#endif
+}
 
 std::string Str(uintptr_t p) {
     char buf[96];
@@ -375,6 +389,9 @@ uintptr_t g_cachedSelf = 0;
 uint32_t g_cachedEntity = 0;
 ULONGLONG g_lastStorageLook = 0;
 const char* g_why = "";                     // why the chain does not read (for vrcam's log)
+#ifdef D2RVR_NATIVE_OPENXR
+std::map<uintptr_t,uint32_t> g_candidateEntities;
+#endif
 
 bool IsStorage(uintptr_t st, uintptr_t vtWas) {
     uintptr_t vt = 0;
@@ -398,6 +415,9 @@ bool FindStorages() {
     uintptr_t vx = 0, vs = 0;
     if (!Get(xs, &vx) || !Get(ss, &vs) || !vx || !vs || vx == vs) { g_why = "the registry's storages do not read"; return false; }
     g_xs = xs; g_ss = ss; g_vtX = vx; g_vtS = vs;
+#ifdef D2RVR_NATIVE_OPENXR
+    g_candidateEntities.clear();
+#endif
     return true;
 }
 
@@ -435,6 +455,31 @@ bool EntityOf(uintptr_t self, uint32_t* e) {
         if (comps[i * (kSkeletonCompSize / 8)] == self) { *e = packed[i]; return true; }
     return false;
 }
+#ifdef D2RVR_NATIVE_OPENXR
+bool CandidatePosition(uintptr_t self,float position[3]) {
+    AcquireSRWLockExclusive(&g_lock);
+    struct Unlock {~Unlock(){ReleaseSRWLockExclusive(&g_lock);}} unlock;
+    if(!IsStorage(g_xs,g_vtX)||!IsStorage(g_ss,g_vtS)) {
+        const auto now=GetTickCount64();
+        if(now-g_lastStorageLook<500)return false;
+        g_lastStorageLook=now;if(!FindStorages())return false;
+    }
+    auto it=g_candidateEntities.find(self);uintptr_t held=0;uint32_t entity=0;
+    if(it!=g_candidateEntities.end()&&SkeletonOf(it->second,&held)&&held==self)entity=it->second;
+    else {
+        if(!EntityOf(self,&entity))return false;
+        if(g_candidateEntities.size()>4096)g_candidateEntities.clear();
+        g_candidateEntities[self]=entity;
+    }
+    uint32_t index=0;uintptr_t components=0;
+    if(!Dense(g_xs,entity,&index)||!Get(g_xs+0x38,&components)||!components)return false;
+    const auto at=components+uintptr_t(index)*kTransformSize;
+    uint32_t parentEntity=0xFFFFFFFFu;if(!Get(at+0xC0,&parentEntity))return false;
+    // Child transforms have their composed placement in +0x40.
+    const uintptr_t matrix=at+((parentEntity&0xFFFFF)==0xFFFFF?0:0x40);
+    return SafeCopy(position,reinterpret_cast<const void*>(matrix+12*sizeof(float)),3*sizeof(float));
+}
+#endif
 }  // namespace ecs
 
 bool Learn(uintptr_t self, Hero* h) {
@@ -1731,7 +1776,8 @@ void HoldWeaponItem(uintptr_t self) {
 
 void Arms(uintptr_t self) {
     Input in;
-    AcquireSRWLockShared(&g_inLock); in = g_in; ReleaseSRWLockShared(&g_inLock);
+    float playerPosition[3];
+    AcquireSRWLockShared(&g_inLock); in = g_in;memcpy(playerPosition,g_heroPos,sizeof playerPosition); ReleaseSRWLockShared(&g_inLock);
     // The hero is looked for even while nothing is done to him: his SkeletonInstance is what
     // vrcam's facing is found from (HeroTransform), and that is needed before the body can turn.
     const bool active = !(in.mode == 0 && !in.hideHead && !in.lockUpper && !(in.bodyTurn > 0 && in.haveYaw));
@@ -1754,6 +1800,13 @@ void Arms(uintptr_t self) {
         hero = h;
     }
     if (hero.count <= 0) return;
+#ifdef D2RVR_NATIVE_OPENXR
+    float position[3],head[16];uintptr_t pose=0,matrices=0;
+    if(hero.head<0||size_t(hero.head)>=hero.bind.size()||!ecs::CandidatePosition(self,position)||
+       !Get(self+0x20,&pose)||!Get(pose+4,&matrices)||
+       !SafeCopy(head,reinterpret_cast<const void*>(matrices+uintptr_t(hero.head)*64),sizeof head)||
+       !framevr::LocalStandingBody(position[0],position[2],playerPosition[0],playerPosition[2],head[13],hero.bind[hero.head].m[13]))return;
+#endif
     NoteHero(self);
     if (!active) return;
     // The facing of this very frame, not of the last 10 ms tick - the hero only.
@@ -2037,7 +2090,9 @@ bool HeroTransform(HeroXform* out, const char** why) {
 void SetFresh(FreshFn fn) { g_fresh.store(fn); }
 void SetFreshHands(FreshHandsFn fn) { g_freshHands.store(fn); }
 
-void SetHeroPos(float x, float y, float z) { g_heroPos[0] = x; g_heroPos[1] = y; g_heroPos[2] = z; }
+void SetHeroPos(float x, float y, float z) {
+    AcquireSRWLockExclusive(&g_inLock);g_heroPos[0]=x;g_heroPos[1]=y;g_heroPos[2]=z;ReleaseSRWLockExclusive(&g_inLock);
+}
 
 void** OrigSlot() { return (void**)&g_orig; }
 void* Detour() { return (void*)&Hook; }

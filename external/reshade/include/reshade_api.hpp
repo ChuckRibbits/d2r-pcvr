@@ -58,7 +58,12 @@ namespace reshade::api
 		/// Gets the back buffer resource at the specified <paramref name="index"/> in the swap chain associated with this effect runtime.
 		/// </summary>
 		/// <param name="index">Index of the back buffer. This has to be between zero and the value returned by <see cref="get_back_buffer_count"/>.</param>
+#if defined(__MINGW32__)
+		virtual void get_back_buffer_msvc(resource *result, uint32_t index) = 0;
+		resource get_back_buffer(uint32_t index) { resource result{}; get_back_buffer_msvc(&result, index); return result; }
+#else
 		virtual resource get_back_buffer(uint32_t index) = 0;
+#endif
 
 		/// <summary>
 		/// Gets the number of back buffer resources in the swap chain associated with this effect runtime.
@@ -178,7 +183,12 @@ namespace reshade::api
 		/// <param name="effect_name">File name of the effect file the variable is declared in, or <see langword="nullptr"/> to search in all loaded effects.</param>
 		/// <param name="variable_name">Name of the uniform variable declaration to find.</param>
 		/// <returns>Opaque handle to the uniform variable, or zero in case it was not found.</returns>
+#if defined(__MINGW32__)
+		virtual void find_uniform_variable_msvc(effect_uniform_variable *result, const char *effect_name, const char *variable_name) const = 0;
+		effect_uniform_variable find_uniform_variable(const char *effect_name, const char *variable_name) const { effect_uniform_variable result{}; find_uniform_variable_msvc(&result, effect_name, variable_name); return result; }
+#else
 		virtual effect_uniform_variable find_uniform_variable(const char *effect_name, const char *variable_name) const = 0;
+#endif
 
 		/// <summary>
 		/// Gets information about the data type of a uniform <paramref name="variable"/>.
@@ -422,7 +432,12 @@ namespace reshade::api
 		/// <param name="effect_name">File name of the effect file the variable is declared in, or <see langword="nullptr"/> to search in all loaded effects.</param>
 		/// <param name="variable_name">Name of the texture variable declaration to find.</param>
 		/// <returns>Opaque handle to the texture variable, or zero in case it was not found.</returns>
+#if defined(__MINGW32__)
+		virtual void find_texture_variable_msvc(effect_texture_variable *result, const char *effect_name, const char *variable_name) const = 0;
+		effect_texture_variable find_texture_variable(const char *effect_name, const char *variable_name) const { effect_texture_variable result{}; find_texture_variable_msvc(&result, effect_name, variable_name); return result; }
+#else
 		virtual effect_texture_variable find_texture_variable(const char *effect_name, const char *variable_name) const = 0;
+#endif
 
 		/// <summary>
 		/// Gets the name of a texture <paramref name="variable"/>.
@@ -546,7 +561,12 @@ namespace reshade::api
 		/// <param name="effect_name">File name of the effect file the technique is declared in, or <see langword="nullptr"/> to search in all loaded effects.</param>
 		/// <param name="technique_name">Name of the technique to find.</param>
 		/// <returns>Opaque handle to the technique, or zero in case it was not found.</returns>
+#if defined(__MINGW32__)
+		virtual void find_technique_msvc(effect_technique *result, const char *effect_name, const char *technique_name) = 0;
+		effect_technique find_technique(const char *effect_name, const char *technique_name) { effect_technique result{}; find_technique_msvc(&result, effect_name, technique_name); return result; }
+#else
 		virtual effect_technique find_technique(const char *effect_name, const char *technique_name) = 0;
+#endif
 
 		/// <summary>
 		/// Gets the name of a <paramref name="technique"/>.

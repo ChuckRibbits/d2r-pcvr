@@ -1,5 +1,19 @@
 # D2R VR
 
+This private adaptation adds an experimental **native OpenXR PCVR** transport,
+tested on Linux/Proton/SteamVR streaming to Steam Frame. Start with
+**[INSTALL.md](INSTALL.md)** and the
+**[compiled preview releases](https://github.com/bearstonem/d2r-pcvr/releases)**.
+Quest 3 setup includes WiVRn on Linux and Virtual Desktop on Windows; both need
+headset validation. [HANDOFF.md](HANDOFF.md) records the next agent's starting
+point; [steamvr/TASKS.md](steamvr/TASKS.md) tracks the backlog.
+
+Floating creature labels still double. The buffered logger improved movement
+hitches in headset testing. Fixed foveation is active, with no measured GPU
+speedup established. See [technical setup/status](steamvr/README.md).
+The following upstream Windows/BodyWalk documentation remains for attribution
+and reference; its installer is **not this native OpenXR preview**.
+
 Diablo II: Resurrected in a VR headset: the game's own view from above in true
 3D, a free camera behind the hero, and the game laid on the floor of your room
 (mixed reality), and first person with your body as the hero's: arms on the
