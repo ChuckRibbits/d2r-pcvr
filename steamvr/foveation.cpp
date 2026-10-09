@@ -19,8 +19,9 @@ using namespace reshade::api;
 using Microsoft::WRL::ComPtr;
 void (*logger)(const char*)=nullptr;
 void Say(const char* s){if(logger)logger(s);}
-std::atomic<bool> enabled{true},worldDrawing{false},ready{false};
+std::atomic<bool> enabled{true},worldDrawing{false},ready{false},gazeDriven{false};
 std::atomic<float> inner{.55f},centerX{.5f},centerY{.5f};
+std::atomic<float> gazeInner{.35f};
 std::atomic<int> eye{0};
 std::atomic<uint64_t> maskEpoch{1};
 std::atomic<uint64_t> stateGeneration{1},pipelineGeneration{1};
@@ -41,6 +42,16 @@ std::mutex maskLock;
 // Immutable masks and upload objects live until queue completion at shutdown;
 // no waits, rewrites or allocation occur for an already cached viewport.
 std::vector<Mask> masks;
+struct GazeBank {
+    uint32_t w=0,h=0;float vx=0,vy=0,vw=0,vh=0,radius=0;
+    std::array<ComPtr<ID3D12Resource>,GazeMaskCount> textures;
+    ComPtr<ID3D12Resource> upload;
+    ComPtr<ID3D12CommandAllocator> allocator;
+    ComPtr<ID3D12GraphicsCommandList> commands;
+};
+// Shared between eyes, independent of the actual gaze path. Upload the complete
+// grid once per viewport/radius; never rewrite a resource still in GPU use.
+std::vector<GazeBank> gazeBanks;
 inline constexpr GUID stateId={0x30889b19,0xcdc7,0x4649,{0xb9,0xb3,0x0d,0xc3,0x62,0x69,0xa2,0x47}};
 struct State {
     ComPtr<vrs::CommandList5> native;
@@ -72,7 +83,51 @@ bool Hr(HRESULT hr,const char* what) {
     char line[160];std::snprintf(line,sizeof line,"Frame foveation: %s failed (0x%08lx); using full quality",what,(unsigned long)hr);Say(line);
     ready=false;return false;
 }
+ID3D12Resource* GetGazeMask(const State& state) {
+    const auto& vp=state.vp;const float radius=gazeInner.load()+GazeQuantizationMargin;
+    const int index=GazeCell(centerX.load(),centerY.load());
+    std::lock_guard lock(maskLock);
+    for(auto& b:gazeBanks)if(b.w==state.w&&b.h==state.h&&b.vx==vp.x&&b.vy==vp.y&&b.vw==vp.width&&b.vh==vp.height&&b.radius==radius)return b.textures[index].Get();
+    // Bound resource lifetime without unsafe eviction of GPU-referenced images.
+    if(gazeBanks.size()>=4){static bool warned=false;if(!warned){Say("Frame foveation: gaze viewport cache full; new viewports use full quality until restart");warned=true;}return nullptr;}
+    const auto started=GetTickCount64();
+    GazeBank b;b.w=state.w;b.h=state.h;b.vx=vp.x;b.vy=vp.y;b.vw=vp.width;b.vh=vp.height;b.radius=radius;
+    D3D12_RESOURCE_DESC d{};d.Dimension=D3D12_RESOURCE_DIMENSION_TEXTURE2D;d.Width=(b.w+tile-1)/tile;d.Height=(b.h+tile-1)/tile;
+    d.DepthOrArraySize=d.MipLevels=d.SampleDesc.Count=1;d.Format=DXGI_FORMAT_R8_UINT;
+    D3D12_PLACED_SUBRESOURCE_FOOTPRINT fp{};UINT64 bytes=0;
+    nativeDevice->GetCopyableFootprints(&d,0,1,0,&fp,nullptr,nullptr,&bytes);
+    const UINT64 stride=(bytes+D3D12_TEXTURE_DATA_PLACEMENT_ALIGNMENT-1)&~UINT64(D3D12_TEXTURE_DATA_PLACEMENT_ALIGNMENT-1);
+    D3D12_RESOURCE_DESC u{};u.Dimension=D3D12_RESOURCE_DIMENSION_BUFFER;u.Width=stride*GazeMaskCount;
+    u.Height=u.DepthOrArraySize=u.MipLevels=u.SampleDesc.Count=1;u.Layout=D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
+    D3D12_HEAP_PROPERTIES heap{};heap.Type=D3D12_HEAP_TYPE_UPLOAD;
+    if(!Hr(nativeDevice->CreateCommittedResource(&heap,D3D12_HEAP_FLAG_NONE,&u,D3D12_RESOURCE_STATE_GENERIC_READ,nullptr,IID_PPV_ARGS(&b.upload)),"create gaze bank upload"))return nullptr;
+    if(!Hr(nativeDevice->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT,IID_PPV_ARGS(&b.allocator)),"create gaze bank allocator")||
+       !Hr(nativeDevice->CreateCommandList(0,D3D12_COMMAND_LIST_TYPE_DIRECT,b.allocator.Get(),nullptr,IID_PPV_ARGS(&b.commands)),"create gaze bank list"))return nullptr;
+    uint8_t* data=nullptr;D3D12_RANGE range{};
+    if(!Hr(b.upload->Map(0,&range,reinterpret_cast<void**>(&data)),"map gaze bank"))return nullptr;
+    std::memset(data,0,size_t(u.Width));heap.Type=D3D12_HEAP_TYPE_DEFAULT;
+    for(int i=0;i<GazeMaskCount;++i) {
+        if(!Hr(nativeDevice->CreateCommittedResource(&heap,D3D12_HEAP_FLAG_NONE,&d,D3D12_RESOURCE_STATE_COPY_DEST,nullptr,IID_PPV_ARGS(&b.textures[i])),"create gaze rate image")){
+            b.upload->Unmap(0,nullptr);return nullptr;
+        }
+        auto part=fp;part.Offset+=stride*i;
+        for(uint32_t y=0;y<d.Height;++y)for(uint32_t x=0;x<d.Width;++x)
+            data[part.Offset+y*part.Footprint.RowPitch+x]=FixedRate(x,y,tile,vp.x,vp.y,vp.width,vp.height,
+                GazeGridCoordinate(i%GazeGrid),GazeGridCoordinate(i/GazeGrid),radius);
+        D3D12_TEXTURE_COPY_LOCATION src{},dst{};src.pResource=b.upload.Get();src.Type=D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT;src.PlacedFootprint=part;
+        dst.pResource=b.textures[i].Get();dst.Type=D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX;b.commands->CopyTextureRegion(&dst,0,0,0,&src,nullptr);
+        D3D12_RESOURCE_BARRIER barrier{};barrier.Type=D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+        barrier.Transition={b.textures[i].Get(),D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES,D3D12_RESOURCE_STATE_COPY_DEST,vrs::sourceState};b.commands->ResourceBarrier(1,&barrier);
+    }
+    b.upload->Unmap(0,nullptr);
+    if(!Hr(b.commands->Close(),"close gaze bank list"))return nullptr;
+    ID3D12CommandList* lists[]={b.commands.Get()};nativeQueue->ExecuteCommandLists(1,lists);
+    char line[240];std::snprintf(line,sizeof line,"Frame foveation: gaze bank %dx%d ready for %ux%u viewport %.0fx%.0f, protected radius %.2f plus grid margin %.3f; setup %llu ms (one-time)",
+        GazeGrid,GazeGrid,b.w,b.h,vp.width,vp.height,gazeInner.load(),GazeQuantizationMargin,static_cast<unsigned long long>(GetTickCount64()-started));Say(line);
+    gazeBanks.push_back(std::move(b));return gazeBanks.back().textures[index].Get();
+}
 ID3D12Resource* GetMask(const State& state) {
+    if(gazeDriven.load())return GetGazeMask(state);
     const auto& vp=state.vp;const float radius=inner.load(),cx=centerX.load(),cy=centerY.load();const int e=eye.load();
     std::lock_guard lock(maskLock);
     for(auto& m:masks)if(m.w==state.w&&m.h==state.h&&m.eye==e&&m.vx==vp.x&&m.vy==vp.y&&m.vw==vp.width&&m.vh==vp.height&&m.cx==cx&&m.cy==cy&&m.radius==radius)return m.texture.Get();
@@ -219,16 +274,22 @@ void Register(void (*log)(const char*)) {
     reshade::register_event<reshade::addon_event::destroy_command_list>(&Destroy);
     reshade::register_event<reshade::addon_event::reshade_begin_effects>(&Effects);
 }
-void Configure(bool on,float radius){const bool changed=enabled.exchange(on)!=on;const float value=std::isfinite(radius)?std::clamp(radius,.35f,.85f):.55f;if(inner.exchange(value)!=value||changed)++maskEpoch;}
+void Configure(bool on,float radius,float gazeRadius){
+    const bool changed=enabled.exchange(on)!=on;
+    const float value=std::isfinite(radius)?std::clamp(radius,.35f,.85f):.55f;
+    const float gazeValue=std::isfinite(gazeRadius)?std::clamp(gazeRadius,.30f,.65f):.35f;
+    const bool gazeChanged=gazeInner.exchange(gazeValue)!=gazeValue;
+    if(inner.exchange(value)!=value||changed||gazeChanged)++maskEpoch;
+}
 void Initialize(ID3D12Device* dev,ID3D12CommandQueue* q,uint32_t w,uint32_t h){
     nativeDevice=dev;nativeQueue=q;screenW=w;screenH=h;vrs::Features f{};
     ready=SUCCEEDED(dev->CheckFeatureSupport(D3D12_FEATURE_D3D12_OPTIONS6,&f,sizeof f))&&f.tier>=2&&(f.tile==8||f.tile==16||f.tile==32);
     tile=f.tile;++maskEpoch;char line[160];std::snprintf(line,sizeof line,"Frame foveation: fixed VRS %s; tier %u tile %u; 1x1 center / 2x2 opaque-world periphery",ready?"available":"unavailable",f.tier,tile);Say(line);
     Say("Frame foveation: cached command-list state, deferred rate binding, batched draw statistics");
 }
-void BeginEye(int e,float cx,float cy){eye=e;centerX=cx;centerY=cy;++maskEpoch;worldDrawing=true;}
+void BeginEye(int e,float cx,float cy,bool tracked){eye=e;centerX=cx;centerY=cy;gazeDriven=tracked;++maskEpoch;worldDrawing=true;}
 void EndWorld(){if(worldDrawing.exchange(false))++maskEpoch;}
 void Suspend(command_list* cl){auto& s=*Get(cl);s.targets=false;Apply(cl,s);}
 Stats TakeStats(){return {shadedDraws.exchange(0),fullDraws.exchange(0)};}
-void Shutdown(){ready=false;worldDrawing=false;++maskEpoch;std::lock_guard lock(maskLock);masks.clear();nativeQueue.Reset();nativeDevice.Reset();}
+void Shutdown(){ready=false;worldDrawing=false;++maskEpoch;std::lock_guard lock(maskLock);masks.clear();gazeBanks.clear();nativeQueue.Reset();nativeDevice.Reset();}
 }

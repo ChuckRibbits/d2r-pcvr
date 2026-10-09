@@ -25,6 +25,7 @@
 #include "math.h"
 #include "input.h"
 #include "foveation.h"
+#include "gaze.h"
 #include "d2rcam.h"
 #include "profile.h"
 
@@ -34,7 +35,7 @@ namespace {
 constexpr float kRadToDeg=57.295779513f;
 #define XR_FUNCTIONS(X) \
  X(EnumerateInstanceExtensionProperties) X(CreateInstance) X(DestroyInstance) \
- X(GetSystem) X(GetInstanceProperties) X(GetD3D12GraphicsRequirementsKHR) \
+ X(GetSystem) X(GetSystemProperties) X(GetInstanceProperties) X(GetD3D12GraphicsRequirementsKHR) \
  X(CreateSession) X(DestroySession) X(PollEvent) X(BeginSession) X(EndSession) \
  X(CreateReferenceSpace) X(DestroySpace) X(LocateSpace) X(LocateViews) \
  X(WaitFrame) X(BeginFrame) X(EndFrame) X(EnumerateSwapchainFormats) \
@@ -42,7 +43,7 @@ constexpr float kRadToDeg=57.295779513f;
  X(AcquireSwapchainImage) X(WaitSwapchainImage) X(ReleaseSwapchainImage) \
  X(StringToPath) X(CreateActionSet) X(DestroyActionSet) X(CreateAction) \
  X(CreateActionSpace) X(SuggestInteractionProfileBindings) X(AttachSessionActionSets) \
- X(SyncActions) X(GetActionStateBoolean) X(GetActionStateFloat) X(GetActionStateVector2f)
+ X(SyncActions) X(GetActionStateBoolean) X(GetActionStateFloat) X(GetActionStateVector2f) X(GetActionStatePose)
 #define DECLARE(name) PFN_xr##name p##name=nullptr;
 XR_FUNCTIONS(DECLARE)
 #undef DECLARE
@@ -57,6 +58,12 @@ std::atomic<uint32_t> pipelineCreates{0};
 std::atomic<double> maxPipelineMs{0};
 std::atomic<bool> deferredWait{false};
 std::atomic<bool> symmetricProjection{true};
+std::atomic<bool> eyeTracking{false};
+bool gazeExtension=false,gazeSupported=false,gazeReady=false,gazeValid=false;
+XrAction gazeAction=XR_NULL_HANDLE;
+XrSpace gazeSpace=XR_NULL_HANDLE;
+std::array<gaze::UV,2> gazeCenters{};
+gaze::Stability gazeStability;
 double Milliseconds() {
     static const double scale=[](){LARGE_INTEGER f{};QueryPerformanceFrequency(&f);return 1000.0/double(f.QuadPart);}();
     LARGE_INTEGER t{};QueryPerformanceCounter(&t);return double(t.QuadPart)*scale;
@@ -273,11 +280,12 @@ bool LoadFunctions() {
     if(std::none_of(ext.begin(),ext.end(),[](const auto& e){return !std::strcmp(e.extensionName,XR_KHR_D3D12_ENABLE_EXTENSION_NAME);})) {
         Say("Frame OpenXR: runtime does not expose XR_KHR_D3D12_enable");return false;
     }
-    const char* enabled[]={XR_KHR_D3D12_ENABLE_EXTENSION_NAME};
+    gazeExtension=eyeTracking.load()&&supports(XR_EXT_EYE_GAZE_INTERACTION_EXTENSION_NAME);
+    const char* enabled[]={XR_KHR_D3D12_ENABLE_EXTENSION_NAME,XR_EXT_EYE_GAZE_INTERACTION_EXTENSION_NAME};
     XrInstanceCreateInfo ci{XR_TYPE_INSTANCE_CREATE_INFO};
     std::strcpy(ci.applicationInfo.applicationName,"D2R Steam Frame prototype");
     ci.applicationInfo.applicationVersion=1;ci.applicationInfo.apiVersion=XR_API_VERSION_1_0;
-    ci.enabledExtensionCount=1;ci.enabledExtensionNames=enabled;
+    ci.enabledExtensionCount=gazeExtension?2:1;ci.enabledExtensionNames=enabled;
     if(!Check(pCreateInstance(&ci,&instance),"create instance")) return false;
 #define LOAD(name) if(!Check(getProc(instance,"xr" #name,reinterpret_cast<PFN_xrVoidFunction*>(&p##name)),"load " #name)) return false;
     XR_FUNCTIONS(LOAD)
@@ -285,7 +293,14 @@ bool LoadFunctions() {
     XrInstanceProperties props{XR_TYPE_INSTANCE_PROPERTIES};pGetInstanceProperties(instance,&props);
     char b[192];std::snprintf(b,sizeof b,"Frame OpenXR: runtime %s",props.runtimeName);Say(b);
     XrSystemGetInfo si{XR_TYPE_SYSTEM_GET_INFO};si.formFactor=XR_FORM_FACTOR_HEAD_MOUNTED_DISPLAY;
-    return Check(pGetSystem(instance,&si,&system),"get headset system");
+    if(!Check(pGetSystem(instance,&si,&system),"get headset system"))return false;
+    if(gazeExtension) {
+        XrSystemEyeGazeInteractionPropertiesEXT gazeProps{XR_TYPE_SYSTEM_EYE_GAZE_INTERACTION_PROPERTIES_EXT};
+        XrSystemProperties sp{XR_TYPE_SYSTEM_PROPERTIES};sp.next=&gazeProps;
+        gazeSupported=Check(pGetSystemProperties(instance,system,&sp),"query eye-gaze system")&&gazeProps.supportsEyeGazeInteraction;
+        Say(gazeSupported?"Frame gaze: system supports eye tracking; awaiting tracked samples":"Frame gaze: system has no usable eye tracker; full-quality fallback");
+    } else if(eyeTracking.load())Say("Frame gaze: extension unavailable; full-quality fallback");
+    return true;
 }
 XrPath Path(const char* p) { XrPath out=XR_NULL_PATH;pStringToPath(instance,p,&out);return out; }
 bool MakeAction(XrAction& out,const char* name,XrActionType type) {
@@ -325,6 +340,17 @@ bool SetupActions() {
         suggestion.interactionProfile=Path(profile);suggestion.countSuggestedBindings=uint32_t(bindings.size());suggestion.suggestedBindings=bindings.data();
         Check(pSuggestInteractionProfileBindings(instance,&suggestion),profile);
     }
+    if(gazeSupported) {
+        XrActionCreateInfo gci{XR_TYPE_ACTION_CREATE_INFO};gci.actionType=XR_ACTION_TYPE_POSE_INPUT;
+        std::strcpy(gci.actionName,"foveation_gaze");std::strcpy(gci.localizedActionName,"Foveated rendering gaze");
+        if(Check(pCreateAction(actionSet,&gci,&gazeAction),"create gaze action")) {
+            XrActionSuggestedBinding binding{gazeAction,Path("/user/eyes_ext/input/gaze_ext/pose")};
+            XrInteractionProfileSuggestedBinding suggestion{XR_TYPE_INTERACTION_PROFILE_SUGGESTED_BINDING};
+            suggestion.interactionProfile=Path("/interaction_profiles/ext/eye_gaze_interaction");
+            suggestion.countSuggestedBindings=1;suggestion.suggestedBindings=&binding;
+            gazeReady=Check(pSuggestInteractionProfileBindings(instance,&suggestion),"bind eye gaze");
+        }
+    }
     XrSessionActionSetsAttachInfo ai{XR_TYPE_SESSION_ACTION_SETS_ATTACH_INFO};ai.countActionSets=1;ai.actionSets=&actionSet;
     if(!Check(pAttachSessionActionSets(session,&ai),"attach action set")) return false;
     for(int i=0;i<2;++i) {
@@ -333,6 +359,10 @@ bool SetupActions() {
     }
     XrActionSpaceCreateInfo sci{XR_TYPE_ACTION_SPACE_CREATE_INFO};sci.action=aimPose;sci.subactionPath=hands[0];sci.poseInActionSpace.orientation.w=1;
     if(!Check(pCreateActionSpace(session,&sci,&aimSpace),"create menu aim space"))return false;
+    if(gazeReady) {
+        XrActionSpaceCreateInfo gi{XR_TYPE_ACTION_SPACE_CREATE_INFO};gi.action=gazeAction;gi.poseInActionSpace.orientation.w=1;
+        gazeReady=Check(pCreateActionSpace(session,&gi,&gazeSpace),"create gaze space");
+    }
     return true;
 }
 bool WaitGpu();
@@ -522,12 +552,55 @@ void MenuPointer() {
     }
     triggerWasDown=pressed;cancelWasDown=cancel;
 }
+void SampleGaze() {
+    gazeValid=false;
+    if(!eyeTracking.load()||!render||panelMode){gazeStability.Reset();return;}
+    // These diagnostics report only validity/age categories, never gaze poses,
+    // coordinates, fixation targets or a recorded gaze trajectory.
+    enum {Unavailable,Inactive,Untracked,Untimed,Stale,Outside,Recovering,Usable,Count};
+    int status=Unavailable;
+    if(gazeReady&&gazeSpace) {
+        XrActionStateGetInfo gi{XR_TYPE_ACTION_STATE_GET_INFO};gi.action=gazeAction;
+        XrActionStatePose action{XR_TYPE_ACTION_STATE_POSE};status=Inactive;
+        if(XR_SUCCEEDED(pGetActionStatePose(session,&gi,&action))&&action.isActive) {
+            XrEyeGazeSampleTimeEXT sample{XR_TYPE_EYE_GAZE_SAMPLE_TIME_EXT};
+            XrSpaceLocation loc{XR_TYPE_SPACE_LOCATION};loc.next=&sample;status=Untracked;
+            constexpr auto needed=XR_SPACE_LOCATION_POSITION_VALID_BIT|XR_SPACE_LOCATION_ORIENTATION_VALID_BIT|
+                XR_SPACE_LOCATION_POSITION_TRACKED_BIT|XR_SPACE_LOCATION_ORIENTATION_TRACKED_BIT;
+            if(XR_SUCCEEDED(pLocateSpace(gazeSpace,space,frameState.predictedDisplayTime,&loc))&&(loc.locationFlags&needed)==needed) {
+                status=sample.time?Stale:Untimed;
+                if(gaze::Fresh(frameState.predictedDisplayTime,sample.time)) {
+                    bool projected=true;
+                    for(unsigned i=0;i<2;++i) {
+                        const auto& f=views[i].fov;
+                        projected&=gaze::Project(Q(loc.pose.orientation),Q(views[i].pose.orientation),
+                            {f.angleLeft,f.angleRight,f.angleDown,f.angleUp},gazeCenters[i]);
+                    }
+                    status=projected?Recovering:Outside;
+                    gazeValid=gazeStability.Update(projected,gazeCenters);
+                    if(gazeValid)status=Usable;
+                }
+            }
+        }
+    }
+    if(status!=Recovering&&status!=Usable)gazeStability.Reset();
+    static std::array<uint32_t,Count> counts{};static ULONGLONG reportAt=0;
+    ++counts[status];const auto now=GetTickCount64();
+    if(now>=reportAt) {
+        char line[300];std::snprintf(line,sizeof line,
+            "Frame gaze: samples usable=%u recovery/jump=%u unavailable=%u inactive=%u untracked=%u untimed=%u stale=%u outside=%u; invalid uses full quality",
+            counts[Usable],counts[Recovering],counts[Unavailable],counts[Inactive],counts[Untracked],counts[Untimed],counts[Stale],counts[Outside]);
+        Say(line);counts={};reportAt=now+5000;
+    }
+}
 void Input() {
+    gazeValid=false;
     if(!tracking.data) return;
-    if(!valid||state!=XR_SESSION_STATE_FOCUSED) { ClearInput();return; }
+    if(!valid||state!=XR_SESSION_STATE_FOCUSED) {gazeStability.Reset();ClearInput();return; }
     XrActiveActionSet active{actionSet,XR_NULL_PATH};
     XrActionsSyncInfo si{XR_TYPE_ACTIONS_SYNC_INFO};si.countActiveActionSets=1;si.activeActionSets=&active;
-    if(XR_FAILED(pSyncActions(session,&si))) {ClearInput();return;}
+    if(pSyncActions(session,&si)!=XR_SUCCESS) {gazeStability.Reset();ClearInput();return;}
+    SampleGaze();
     const bool inventoryPressed=inventoryButton.Update(Bool(primary,1));
     const bool menuPressed=menuButton.Update(Bool(menu,1)||Bool(menu,0));
     bool focused=gameWindow&&GetForegroundWindow()==gameWindow;
@@ -797,6 +870,7 @@ void ConfigureDeferredWait(bool on) {
     if(deferredWait.exchange(on)!=on)Say(on?"Frame OpenXR: GPU wait deferred until copy allocator reuse":"Frame OpenXR: conservative GPU wait before image release");
 }
 void ConfigureSymmetricProjection(bool on) {symmetricProjection.store(on);}
+void ConfigureEyeTracking(bool on) {eyeTracking.store(on);}
 void BeginEye(int eye) {
     std::lock_guard lock(mutex);
     d2rcam::SetStereoUiEye(Active()?(eye&1):-1);
@@ -806,7 +880,10 @@ void BeginEye(int eye) {
     StartGpuEye(eye&1);
     const auto& f=views[eye&1].fov;
     const float l=std::tan(f.angleLeft),r=std::tan(f.angleRight),d=std::tan(f.angleDown),u=std::tan(f.angleUp);
-    foveation::BeginEye(eye&1,-l/(r-l),u/(u-d));
+    if(eyeTracking.load()) {
+        if(gazeValid)foveation::BeginEye(eye&1,gazeCenters[eye&1].x,gazeCenters[eye&1].y,true);
+        else foveation::EndWorld();
+    } else foveation::BeginEye(eye&1,-l/(r-l),u/(u-d));
 }
 void ResetHeight() {
     std::lock_guard lock(mutex);
@@ -915,6 +992,8 @@ void Shutdown() {
     if(fence&&!WaitGpu())failed=true;
     if(pointerChain&&pDestroySwapchain)pDestroySwapchain(pointerChain);pointerChain=XR_NULL_HANDLE;
     if(aimSpace&&pDestroySpace)pDestroySpace(aimSpace);aimSpace=XR_NULL_HANDLE;
+    if(gazeSpace&&pDestroySpace)pDestroySpace(gazeSpace);gazeSpace=XR_NULL_HANDLE;
+    gazeAction=XR_NULL_HANDLE;gazeReady=gazeValid=gazeExtension=gazeSupported=false;gazeStability.Reset();
     for(auto& e:eyes){if(e.chain&&pDestroySwapchain)pDestroySwapchain(e.chain);e={};}
     for(auto& s:handSpaces){if(s&&pDestroySpace)pDestroySpace(s);s=XR_NULL_HANDLE;}
     if(headSpace&&pDestroySpace)pDestroySpace(headSpace);if(space&&pDestroySpace)pDestroySpace(space);

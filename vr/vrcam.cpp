@@ -755,9 +755,10 @@ void LoadSettings() {
     framevr::profile::ConfigureGpu(IniB(L"debug",L"profile_gpu",true));
     framevr::ConfigureDeferredWait(IniB(L"render",L"defer_gpu_wait",false));
     framevr::ConfigureSymmetricProjection(IniB(L"render",L"symmetric_projection",true));
+    framevr::ConfigureEyeTracking(IniB(L"render",L"eye_tracked_foveation",false));
 #endif
 #ifdef D2RVR_NATIVE_OPENXR
-    framevr::foveation::Configure(IniB(L"render",L"fixed_foveation",true),IniF(L"render",L"foveation_inner",0.55f));
+    framevr::foveation::Configure(IniB(L"render",L"fixed_foveation",true),IniF(L"render",L"foveation_inner",0.55f),IniF(L"render",L"gaze_foveation_inner",0.35f));
     d2rcam::SetStereoLabels(IniB(L"hud",L"stereo_labels",true));
     d2rcam::SetMonsterDrawOrder(IniB(L"hud",L"monster_draw_order",true));
     // Remote debugging can request the same one-shot capture without stealing

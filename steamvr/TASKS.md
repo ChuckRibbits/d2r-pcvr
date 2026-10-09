@@ -298,6 +298,11 @@ Next investigation order after the camera repair (21:11 measurements):
 - [ ] If gaze is exposed, bind `XR_EXT_eye_gaze_interaction`, query eye-gaze system
   support, and verify tracked samples while worn. Handle calibration, permissions,
   stale/invalid gaze and head movement. Avoid storing raw gaze in routine logs.
+  October 8 23:21 pilot: system support and tracked timestamped samples confirmed
+  in the actual SteamVR/Proton session after the owner approved enabling
+  `driver_vrlink/shareEyeTrackingData`. The setting defaults off; never change it
+  silently on a friend's machine. Binding, validity/freshness/recovery fallback
+  are implemented; calibration/loss/reconnect coverage still needs testing.
 - [ ] Prototype fixed foveation with a D3D12 Tier 2 shading-rate image before
   making its center follow gaze. Hook eligible world rendering passes, reset state
   for UI and incompatible passes, and verify both eye projections. This requires
@@ -310,9 +315,19 @@ Next investigation order after the camera repair (21:11 measurements):
 - [ ] Add gaze-driven full-quality center with a conservative margin for latency,
   coarser peripheral shading, configurable strength and safe tracking-loss fallback.
   Protect UI readability; test particles, transparency, post effects and rapid gaze.
+  Prototype installed: 9x9 immutable mask bank, gaze radius .35 + .177 grid margin,
+  shared between eyes and cached per viewport/radius, one-time 16 ms setup in the
+  owner's 3840x2160 scene. Valid gaze and reduced-shading draws are confirmed;
+  owner confirmed clear/stable eye/head movement and labels. `[render]
+  eye_tracked_foveation=1` opts in before launch;
+  defaults off for distribution. Invalid gaze uses full-quality shading.
 - [ ] Benchmark foveation on/off with identical settings and document GPU and
   end-to-end frame-time changes. CPU work, geometry and full-size eye copies may
   limit gains. Do not infer performance from theoretical shaded pixel counts.
+  First stationary gaze/full/gaze comparison (360 pairs each) averaged
+  22.566 / 23.240 / 22.619 ms per pair, ~2.8% lower with gaze VRS. GPU scene spans
+  were similar and include CPU queue starvation; this is a small preliminary
+  result. Compare fixed versus gaze and test dungeons/heavier scenes next.
 - [ ] Check Frame's foveated streaming settings separately: streaming quality/
   bandwidth optimization and game rendering optimization are distinct stages.
 - [ ] Diagnose the ReShade sky/fog effect that has stayed at one remaining compile;

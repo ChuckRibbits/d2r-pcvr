@@ -4,6 +4,16 @@
 #include <cstdint>
 
 namespace framevr {
+// A bounded immutable bank avoids texture creation/uploads on gaze motion.
+// Quantization error is at most half a cell on each axis. Expand the protected
+// ellipse by that diagonal in its normalized coordinates (UV distance * 2).
+constexpr int GazeGrid=9,GazeMaskCount=GazeGrid*GazeGrid;
+constexpr float GazeQuantizationMargin=1.414213563f/(GazeGrid-1);
+inline int GazeCell(float x,float y) {
+    const auto cell=[](float v){return int(std::round(std::clamp(v,0.f,1.f)*(GazeGrid-1)));};
+    return cell(y)*GazeGrid+cell(x);
+}
+inline float GazeGridCoordinate(int cell){return float(cell)/(GazeGrid-1);}
 // Keep every tile touching the protected ellipse at 1x1. Coordinates include
 // viewport offsets and asymmetric eye frusta; areas outside the viewport stay
 // full quality. The conservative pilot uses only universally supported 2x2.

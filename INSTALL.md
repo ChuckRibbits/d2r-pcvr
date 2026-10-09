@@ -127,9 +127,16 @@ Left X can open inventory without desktop focus, but laser clicks cannot.
 The installer selects 80% scene resolution, medium shadows/AO/atmospherics,
 native height fog, VSync off, DLSS off and non-temporal anti-aliasing. Fixed
 foveation uses a full-quality center and 2x2 peripheral shading on supported
-D3D12 VRS hardware; unsupported devices stay at full quality. It does not use
-eye tracking. To compare, set `[render] fixed_foveation=0` in
+D3D12 VRS hardware; unsupported devices stay at full quality. This default uses
+a fixed center. To compare, set `[render] fixed_foveation=0` in
 `GAME/d2rloader/plugins/d2r_vr.ini`. Settings reload live.
+
+Current source also includes an **experimental Steam Frame eye-tracking mode**,
+disabled by default and absent from the published preview ZIP. See
+[the prototype settings and limitations](steamvr/README.md#eye-tracked-foveation-prototype) below
+the fixed-foveation description. It requires actual OpenXR gaze input from the
+connected headset. Keep it off for Quest 3; changing streaming software cannot
+provide eye-tracking hardware that the headset does not have.
 
 The installer leaves **DLSS off**, the current clarity baseline. Balanced initially
 passed a Steam Frame stability check after two stereo-compatibility fixes, but

@@ -9,6 +9,7 @@ using PanelFn = bool (*)();
 void Register(LogFn log, PanelFn wantsPanel, PanelFn inWorld, PanelFn toggleMenus);
 void ConfigureDeferredWait(bool enabled);
 void ConfigureSymmetricProjection(bool enabled);
+void ConfigureEyeTracking(bool enabled);
 struct FrameTiming {
     double waitFrameMs=0,waitGpuMs=0,submitMs=0,maxPipelineMs=0,locateMs=0,inputMs=0,releaseMs=0;
     double acquireMs[2]{},copySubmitMs[2]{},gpuSceneMs[2]{},gpuEffectsMs[2]{},gpuCopyMs[2]{};

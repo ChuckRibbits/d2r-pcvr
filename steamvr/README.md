@@ -139,7 +139,54 @@ them. `[render] fixed_foveation=0` disables it for comparison; `foveation_inner`
 sets the protected ellipse radius (default 0.55, range 0.35–0.85). Settings reload
 live. Logs report mask creation and reduced-shading draw counts. The user reported
 similar perceived performance in the first walking test; this is not a measured
-GPU speedup. No gaze data is used yet.
+GPU speedup.
+
+### Eye-tracked foveation prototype
+
+An opt-in eye-tracked VRS prototype is available in current source builds:
+set `[render] eye_tracked_foveation=1` **before launching** and leave
+`fixed_foveation=1` (the VRS master switch). This requests
+`XR_EXT_eye_gaze_interaction`, checks `supportsEyeGazeInteraction`, binds its
+pose action and locates it once per stereo pair. A runtime advertising the
+extension alone does not prove that the connected headset supplies gaze.
+The default remains off, including for Quest 3 installations.
+SteamVR's Steam Link settings also have **Share eye tracking data to other apps
+on this PC**. The default is off; the current Frame session reports the gaze
+action inactive with sharing off. This is a general PC-app permission, not one
+limited to D2R. Enable it yourself if desired; the installer does not change it.
+
+The prototype projects the combined gaze direction into each rendered eye's
+frustum; it does not alter eye poses, camera matrices or the centered lighting
+fix. `gaze_foveation_inner=0.35` protects a broad full-quality ellipse, plus a
+0.177 radius margin for selecting the nearest point in a 9x9 mask grid. Each
+viewport/radius builds the complete immutable grid once, shared by both eyes.
+This may cause a setup hitch on first use; subsequent eye movement selects an
+existing image, with no texture allocation, upload or added GPU wait. At most
+four viewport/radius banks are retained; additional configurations use full
+quality until restart. UI/transparency/post-effect exclusions remain unchanged.
+
+Inactive, untracked, untimed, stale (>100 ms relative to predicted display),
+out-of-view or invalid gaze uses **full quality**, as do the first recovery
+pair and large gaze jumps. No stale gaze position is held. Logs record aggregate
+validity counts and bank setup time, not gaze coordinates or gaze trajectories.
+Toggle `eye_tracked_foveation=0` live to compare with fixed foveation; set
+`fixed_foveation=0` to compare with full shading. Enabling eye tracking after a
+launch that did not request it requires a restart. Headset readability and GPU
+benefits require a controlled comparison; this feature does not reduce the
+game's CPU work or stream bandwidth directly.
+
+Owner validation on Steam Frame (October 8): clear and stable with eye/head
+movement and creature labels. A stationary gaze/full/gaze trial (360 pairs each)
+averaged 22.566 / 23.240 / 22.619 ms per stereo cycle, a small ~2.8% preliminary
+reduction versus full shading. GPU scene spans were similar (16.042 / 16.309 /
+16.340 ms, including queue starvation), so no large GPU speedup is established.
+Fixed-versus-gaze and heavier scenes still need comparison.
+
+Host-side geometry/fallback tests:
+`g++ -std=c++20 -O2 -Wall -Wextra -Werror steamvr/gaze_test.cpp -o build-frame/gaze-test-host && build-frame/gaze-test-host`.
+`openxr-probe.exe OUTPUT_PATH --capabilities` queries device eye-tracking support
+without creating a graphics session; run it inside the intended Proton/OpenXR
+environment. The full probe still creates and destroys a diagnostic session.
 
 `[hud] stereo_labels=1` projects the game's native unit label anchors through
 the current eye's exact scene view and projection, including asymmetric FOV and

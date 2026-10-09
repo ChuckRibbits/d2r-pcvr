@@ -190,7 +190,8 @@ def main():
         'hud': {'hide': '0', 'map': '0', 'stereo_labels': '1', 'monster_draw_order': '1'},
         'update': {'check': '0'},
         'render': {'game_height_fog': '1', 'fixed_foveation': '1', 'foveation_inner': '0.55',
-                   'symmetric_projection': '1', 'defer_gpu_wait': '0'},
+                   'symmetric_projection': '1', 'defer_gpu_wait': '0',
+                   'eye_tracked_foveation': '0', 'gaze_foveation_inner': '0.35'},
     }
     for section, values in changes.items():
         if not cfg.has_section(section):

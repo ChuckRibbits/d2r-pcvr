@@ -628,15 +628,77 @@ The prefix's system compiler and stock executable remain unchanged.
 
 ## Foveation status
 
-Fixed foveation is active: Tier 2 VRS, per-eye asymmetric centers, protected 1x1
+This checkpoint adds an opt-in **eye-tracked VRS prototype** after `b96718a`.
+Installed October 8 at **23:18:47**, DLL SHA256
+`981e4a19898316b02a729ebc97cbb3ccec8415ea2b0b12ba5cdf3283e8c19875`.
+Backup: `build-frame/backups/gaze-pilot-20261008-231847/`. D2R was closed before
+replacement; launched normally via `steamvr/run-proton.sh`, offline Nekro.
+This supersedes the installed-build information earlier in this document.
+
+Runtime evidence: 23:19:07 `supportsEyeGazeInteraction` succeeded, but the gaze
+action remained inactive. The vrlink driver defaults
+`shareEyeTrackingData=false`. The owner explicitly approved enabling SteamVR's
+**Share eye tracking data to other apps on this PC** setting, including its
+general PC-app scope. Set through the running `IVRSettings_003` API, read-back
+false -> true, at ~23:21:53. **Do not request this permission again.**
+OSC remains off. No headset restart was needed. The next sample reports
+171 usable gaze pairs, 1 recovery pair, 2 inactive; the complete shared 9x9 bank
+for 3840x2160 took 16 ms to prepare once. Reduced-shading draw counts are nonzero.
+This confirms gaze input/VRS use, not a measured speedup or headset quality pass.
+
+Implementation: `steamvr/gaze.h`, `gaze_test.cpp`, optional extension/system
+query/action/space in transport, bounded immutable gaze banks in foveation.
+`eye_tracked_foveation=1` must be set before launch; `fixed_foveation=1` is still
+the VRS master switch. `gaze_foveation_inner=.35` plus a .177 grid quantization
+margin; no camera or projection changes. Invalid/inactive/untimed/stale gaze
+uses full quality; recovery and large jumps get one full-quality pair. Gaze
+direction is projected separately using each rendered eye's rotation/frustum.
+No measured fixation depth; generous margin covers close-object parallax.
+The last gaze position is never held after tracking loss. Routine logs contain
+validity counts only, not gaze coordinates/trajectories. Bank cache is capped at
+four viewport/radius configurations; overflow safely shades at full quality.
+Default installer remains `eye_tracked_foveation=0`, including Quest 3.
+
+Cross build, host gaze/protected-region and existing camera-math tests, installer
+tests and diff checks passed. The standalone probe now has `OUTPUT --capabilities`
+to query support without a graphics session. The isolated shader-test Wine
+prefix cannot load WineOpenXR (126); **the actual game's Proton session is the
+verified capability/sample source**, not that failed standalone probe attempt.
+The owner then confirmed **"Clear and stable"** while looking with their eyes,
+turning their head and checking creature labels, followed by **"everything seems
+good"**. A stationary gaze/full/gaze comparison captured 360 pairs per mode, all
+with valid GPU timestamps. Gaze sampling stayed active even in full-quality
+mode; only the VRS master switch changed. DLSS stayed off, centered projection
+and the working label fixes remained enabled. One hero position was logged in
+each capture; view/gaze and ambient animation are not perfectly repeatable.
+
+| Mode | Mean pair cycle | p95 cycle | Mean GPU scene span, both eyes |
+| --- | ---: | ---: | ---: |
+| Gaze VRS | 22.566 ms | 26.855 ms | 16.042 ms |
+| Full shading | 23.240 ms | 29.730 ms | 16.309 ms |
+| Gaze VRS repeat | 22.619 ms | 27.026 ms | 16.340 ms |
+
+Mean cycle was ~2.8% lower with gaze VRS, a small preliminary result. GPU scene
+spans include CPU queue starvation and did not show a consistent isolated GPU
+speedup; CPU time stayed around 14 ms/pair. Do not sell this as a large gain or
+as an improvement over fixed foveation, which was not compared here. Artifacts:
+ignored `build-frame/gaze-comparison-20261008/{gaze,full,gaze-repeat}.log` and
+`summary.json`, sequences 901–903 at ~23:24:10–23:24:38.
+The script restored `eye_tracked_foveation=1`, `fixed_foveation=1`,
+`profile_capture=0`, `profile_gpu=0` afterward. Game remains running for the owner.
+Longer/dungeon tests, tracking-loss behavior and fixed-versus-gaze comparison
+remain open; the earlier Frame wake/reconnect crash remains explicitly parked.
+
+Fixed foveation is available: Tier 2 VRS, per-eye optical centers, protected 1x1
 ellipse and 2x2 peripheral **opaque** geometry shading. UI, transparency, effects,
 shadow-only and unsupported passes stay full quality. Immutable masks are
 uploaded once and cached; draw-path lookup uses an epoch to avoid repeated work.
 Observed device: Tier 2, 16-pixel tiles; logs confirm reduced-shading draw counts.
 User first comparison felt “about the same”; **no measured GPU speedup** claimed.
 `[render] fixed_foveation=0` disables; `foveation_inner=0.55` default (0.35–0.85).
-No gaze sampling or gaze-driven VRS implemented. Quest 3 does not require gaze
-for this fixed technique. Frame eye-tracked rendering remains a later task.
+Quest 3 does not require gaze for this fixed technique. The eye-tracking source,
+tests, settings and validation notes are included in this checkpoint. The
+published v0.1.0 preview ZIP still predates these changes.
 
 ## Build and verification
 
@@ -655,8 +717,8 @@ under both MSVC and MinGW code generation, the profile report on recorded frames
 the cross build and shell/diff checks. The rebuilt DLL with defaults matching
 the tested settings has SHA256
 `02ed0a87c998cba34303027488672c417ca15746a22be491e07effe8ae2e34c0`.
-The running game still uses the 23:03 DLL with the same settings explicitly set;
-it was not interrupted just to change defaults.
+That build was not installed just to change defaults. The newer gaze pilot
+installed later is identified in the foveation section above.
 The Windows OpenXR loader is cross-built via `cmake/openxr-loader` with
 `cmake/openxr-loader-toolchain.cmake` and packaged with its license notices.
 Loader build/export/dependency checks do not establish native Windows gameplay.
