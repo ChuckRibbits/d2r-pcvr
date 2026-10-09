@@ -35,6 +35,7 @@
 #include <vector>
 
 #include "skeletons.h"
+#include "../steamvr/profile.h"
 #include "sigscan.h"
 #ifdef D2RVR_NATIVE_OPENXR
 #include "memory.h"
@@ -1905,7 +1906,8 @@ using ComputeFn = void (*)(uintptr_t self, float a, float b, bool c);
 ComputeFn g_orig = nullptr;
 
 void __cdecl Hook(uintptr_t self, float a, float b, bool c) {
-    g_orig(self, a, b, c);
+    { FRAME_PROFILE(SkeletonGame); g_orig(self, a, b, c); }
+    FRAME_PROFILE(SkeletonMod);
     g_calls++;
 #if D2RVR_FIRST_PERSON
     // Off: holding the weapon's own skeleton changed nothing (09:50 log: held every frame, the axe still

@@ -11,9 +11,10 @@ product license by launching the original game through Steam while connected
 to the internet, then exit before installing. No game files or saves are shipped.
 
 **Verified:** Linux + Proton Experimental + SteamVR + Steam Frame, first-person
-gameplay. **Untested:** Quest 3, WiVRn, native Windows and Virtual Desktop. Floating
-creature name/health labels still double; belt/health/mana presentation is
-unfinished. Logging hitches improved in the latest headset test, but remaining
+gameplay. The latest source fixes creature name/health stereo depth and the
+reported square lighting patches. **Untested:** Quest 3, WiVRn, native Windows
+and Virtual Desktop. Belt/health/mana presentation is unfinished. Logging hitches
+improved in headset tests, but remaining
 stalls and graphics issues are open. This is a test build, not a finished mod.
 
 ## Linux + Quest 3 + WiVRn (friend's likely setup)
@@ -35,7 +36,11 @@ stalls and graphics issues are open. This is a test build, not a finished mod.
    ```
 
    The installer downloads checksum-pinned D2RLoader 1.3.1-beta and ReShade
-   6.8.0 with full add-on support from their official sites. It backs up saves,
+   6.8.0 with full add-on support from their official sites. On Linux it also
+   downloads Microsoft's Windows SDK package (about 160 MB) and extracts its
+   shader compiler, installed privately under the mod. This resolves ReShade
+   compilation staying busy with Wine's compiler; the older Winetricks compiler
+   lacks the shader target ReShade needs. It backs up saves,
    replaced files and video settings, and prints the backup location. It keeps
    the original executable and uses no automatically loaded `dxgi.dll`.
 4. Run `chmod +x steamvr/launch.sh steamvr/run-proton.sh`. Set D2R's Steam
@@ -100,6 +105,11 @@ also untested by this project. Steam Frame uses Steam's PCVR connection directly
 
 ## Controls and settings
 
+**Keep the D2R window focused on the PC while playing.** Menu laser clicks and
+dragging require desktop focus, even if the headset still displays the game.
+After using another desktop app, select D2R again before interacting with menus.
+Left X can open inventory without desktop focus, but laser clicks cannot.
+
 | Control | Action |
 |---|---|
 | Left stick | Walk |
@@ -111,7 +121,8 @@ also untested by this project. Steam Frame uses Steam's PCVR connection directly
 | Right B in a menu | Back / Escape |
 | Right A in the world | Native interaction / loot target (hand-ray selection unfinished) |
 | F11 | Full position, height and facing recenter |
-| F4 | First person (use this mode for the preview) |
+| F4 | First person (native VR keeps this mode; legacy view shortcuts are ignored) |
+| F8 | Diagnostic screenshot of both eyes; expect a brief capture pause |
 
 The installer selects 80% scene resolution, medium shadows/AO/atmospherics,
 native height fog, VSync off, DLSS off and non-temporal anti-aliasing. Fixed
@@ -120,8 +131,25 @@ D3D12 VRS hardware; unsupported devices stay at full quality. It does not use
 eye tracking. To compare, set `[render] fixed_foveation=0` in
 `GAME/d2rloader/plugins/d2r_vr.ini`. Settings reload live.
 
+The installer leaves **DLSS off**, the current clarity baseline. Balanced initially
+passed a Steam Frame stability check after two stereo-compatibility fixes, but
+the owner subsequently found DLSS off much clearer. Older preview binaries lack
+those fixes. Performance gains have not been measured in a matched comparison.
+The latest development build separates the correction
+shader from diagnostics, reducing its isolated compilation from roughly 23 seconds
+to 33 ms on the test PC. This startup improvement is not an FPS benchmark.
+
 ## Troubleshooting and removal
 
+- **Square light patches that differ between eyes:** the latest development build
+  enables `[render] symmetric_projection=1` in `d2r_vr.ini` (reloads live).
+  This removed the reported waypoint patches in an initial Steam Frame test,
+  with some image softness. Other scenes/headsets are unverified. Set 0 to
+  restore the original projection; older preview binaries lack this option.
+- **Creature labels at the wrong depth:** the latest build enables
+  `[hud] monster_draw_order=1` to paint health/name boxes using the current eye's
+  updated position. The owner verified this fix on Steam Frame. Older preview
+  binaries lack it; check the release notes when downloading a build.
 - **Different library/prefix or redirected saves:** pass `--game` and `--saves`
   explicitly. Linux defaults to the game's Steam library prefix, Windows to
   `%USERPROFILE%\Saved Games\Diablo II Resurrected`. Battle.net installations
@@ -134,6 +162,9 @@ eye tracking. To compare, set `[render] fixed_foveation=0` in
   `d2r-vr-vrcam.log`, and `GAME/ReShade.log`. Linux Proton logs are in the
   extracted folder's `build-frame/`. Share log excerpts with your agent.
 - **Menus:** click/focus the game window on the PC if pointer input is ignored.
+- **ReShade stays “Compiling”:** reinstall with `--download-deps` using the
+  current installer. Linux needs the pinned SDK compiler in
+  `d2rloader/runtime/d3dcompiler_47.dll`; stock launch and prefix DLLs stay intact.
 - **Remove:** save and exit D2R; run the command below with the backup path
   printed during installation. Use `py -3` instead of `python3` on Windows.
   This restores replaced files and video settings, preserving current character

@@ -48,6 +48,14 @@ void SetCallbacks(ViewFn view, ProjFn proj);
 // Native stereo labels: project the game's original unit anchors with the
 // current scene matrices, bypassing inline reconstruction of a flat frustum.
 void SetStereoLabels(bool on);
+// Trial: paint the monster health panel after current-eye tooltip updates.
+void SetMonsterDrawOrder(bool on);
+// Main rendering thread only; -1 outside paired gameplay.
+void SetStereoUiEye(int eye);
+// Bounded one-pair diagnostic; -1 disables, 0/1 identify the rendered eye.
+void TraceStereoLabels(int eye);
+void ArmLabelCapture();
+bool TakeLabelCapture();
 
 // Called once per game frame, right after the game placed its camera and before
 // the view/projection callbacks, while a game is running (enabled or not).

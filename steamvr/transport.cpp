@@ -25,6 +25,8 @@
 #include "math.h"
 #include "input.h"
 #include "foveation.h"
+#include "d2rcam.h"
+#include "profile.h"
 
 namespace framevr {
 using Microsoft::WRL::ComPtr;
@@ -53,11 +55,16 @@ PanelFn toggleMenus=nullptr;
 FrameTiming timing,lastTiming;
 std::atomic<uint32_t> pipelineCreates{0};
 std::atomic<double> maxPipelineMs{0};
+std::atomic<bool> deferredWait{false};
+std::atomic<bool> symmetricProjection{true};
 double Milliseconds() {
     static const double scale=[](){LARGE_INTEGER f{};QueryPerformanceFrequency(&f);return 1000.0/double(f.QuadPart);}();
     LARGE_INTEGER t{};QueryPerformanceCounter(&t);return double(t.QuadPart)*scale;
 }
 bool worldWasLoaded=false,worldCalibrationPending=false,worldRecenter=false;
+std::atomic<bool> captureRequested{false};
+bool capturePair=false;
+uint32_t captureEyes=0,captureSerial=0;
 std::recursive_mutex mutex;
 XrInstance instance=XR_NULL_HANDLE;
 XrSystemId system=XR_NULL_SYSTEM_ID;
@@ -88,10 +95,22 @@ struct Eye {
     std::vector<XrSwapchainImageD3D12KHR> images;
     uint32_t index=0;
     bool acquired=false, copied=false;
+    uint64_t copyFence=0;
     ComPtr<ID3D12CommandAllocator> allocator;
     ComPtr<ID3D12GraphicsCommandList> commands;
 };
 std::array<Eye,2> eyes;
+// Optional timestamp diagnostics. The ordinary pair fence already guarantees
+// completion; reading these queries never introduces another GPU wait.
+struct GpuProfile {
+    ComPtr<ID3D12QueryHeap> heap;
+    ComPtr<ID3D12Resource> readback;
+    ComPtr<ID3D12CommandAllocator> allocator[2];
+    ComPtr<ID3D12GraphicsCommandList> commands[2];
+    uint64_t frequency=0;
+    unsigned started=0,effects=0,resolved=0,eye=0;
+    bool failed=false;
+} gpuProfile;
 FlatVRAfrEye* afr=nullptr;
 HANDLE afrHandle=nullptr;
 
@@ -154,6 +173,48 @@ bool Check(XrResult r,const char* name) {
 bool Hr(HRESULT r,const char* name) {
     if(SUCCEEDED(r)) return true;
     char b[160];std::snprintf(b,sizeof b,"Frame D3D12: %s failed (0x%08lx)",name,(unsigned long)r);Say(b);return false;
+}
+bool PrepareGpuProfile() {
+    if(gpuProfile.failed)return false;
+    if(gpuProfile.heap)return true;
+    auto& p=gpuProfile;
+    D3D12_QUERY_HEAP_DESC q{};q.Type=D3D12_QUERY_HEAP_TYPE_TIMESTAMP;q.Count=10;
+    D3D12_HEAP_PROPERTIES heap{};heap.Type=D3D12_HEAP_TYPE_READBACK;
+    D3D12_RESOURCE_DESC r{};r.Dimension=D3D12_RESOURCE_DIMENSION_BUFFER;r.Width=10*sizeof(uint64_t);
+    r.Height=r.DepthOrArraySize=r.MipLevels=1;r.SampleDesc.Count=1;r.Layout=D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
+    bool ok=SUCCEEDED(queue->GetTimestampFrequency(&p.frequency))&&p.frequency&&
+        SUCCEEDED(device->CreateCommittedResource(&heap,D3D12_HEAP_FLAG_NONE,&r,D3D12_RESOURCE_STATE_COPY_DEST,nullptr,IID_PPV_ARGS(&p.readback)));
+    for(int e=0;ok&&e<2;++e)ok=SUCCEEDED(device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT,IID_PPV_ARGS(&p.allocator[e])))&&
+        SUCCEEDED(device->CreateCommandList(0,D3D12_COMMAND_LIST_TYPE_DIRECT,p.allocator[e].Get(),nullptr,IID_PPV_ARGS(&p.commands[e])))&&SUCCEEDED(p.commands[e]->Close());
+    if(ok)ok=SUCCEEDED(device->CreateQueryHeap(&q,IID_PPV_ARGS(&p.heap)));
+    if(!ok){p.failed=true;Say("Frame profile: GPU timestamps unavailable; CPU diagnostics remain enabled");}
+    return ok;
+}
+void StartGpuEye(unsigned eye) {
+    auto& p=gpuProfile;p.eye=eye;
+    if(!profile::Active()||!profile::GpuEnabled()||!PrepareGpuProfile())return;
+    if(FAILED(p.allocator[eye]->Reset())||FAILED(p.commands[eye]->Reset(p.allocator[eye].Get(),nullptr))){p.failed=true;return;}
+    p.commands[eye]->EndQuery(p.heap.Get(),D3D12_QUERY_TYPE_TIMESTAMP,eye*5);
+    if(FAILED(p.commands[eye]->Close())){p.failed=true;return;}
+    ID3D12CommandList* lists[]={p.commands[eye].Get()};queue->ExecuteCommandLists(1,lists);p.started|=1u<<eye;
+}
+void ProfileEffects(reshade::api::effect_runtime* rt,reshade::api::command_list* cl,reshade::api::resource_view,reshade::api::resource_view) {
+    auto& p=gpuProfile;
+    if(!profile::Active()||!pairDrawing||!(p.started&(1u<<p.eye))||!gameSwapchain||
+       rt->get_current_back_buffer().handle!=gameSwapchain->get_current_back_buffer().handle)return;
+    reinterpret_cast<ID3D12GraphicsCommandList*>(cl->get_native())->EndQuery(p.heap.Get(),D3D12_QUERY_TYPE_TIMESTAMP,p.eye*5+1);
+    p.effects|=1u<<p.eye;
+}
+void ReadGpuProfile() {
+    auto& p=gpuProfile;if(!profile::Active()||p.resolved!=3||p.failed)return;
+    void* mapped=nullptr;D3D12_RANGE range{0,10*sizeof(uint64_t)};
+    if(FAILED(p.readback->Map(0,&range,&mapped)))return;
+    uint64_t ts[10];std::memcpy(ts,mapped,sizeof ts);D3D12_RANGE noWrites{0,0};p.readback->Unmap(0,&noWrites);
+    bool valid=true;for(unsigned e=0;e<2;++e)for(unsigned i=1;i<5;++i)valid&=ts[e*5+i]>=ts[e*5+i-1];
+    if(!valid)return;
+    const double k=1000.0/p.frequency;
+    for(unsigned e=0;e<2;++e){const auto* t=ts+e*5;timing.gpuSceneMs[e]=(t[1]-t[0])*k;timing.gpuEffectsMs[e]=(t[2]-t[1])*k;timing.gpuCopyMs[e]=(t[4]-t[3])*k;}
+    timing.gpuValid=true;
 }
 void ReleaseUiKey() {
     if(!heldKeyScan)return;
@@ -275,6 +336,7 @@ bool SetupActions() {
     return true;
 }
 bool WaitGpu();
+bool WaitGpuValue(uint64_t value);
 bool SetupPointer(DXGI_FORMAT eyeFormat) {
     // A tiny static atlas is independent of ReShade's effect compiler.
     XrSwapchainCreateInfo ci{XR_TYPE_SWAPCHAIN_CREATE_INFO};ci.createFlags=XR_SWAPCHAIN_CREATE_STATIC_IMAGE_BIT;
@@ -409,10 +471,22 @@ XrVector2f Stick(int hand) {
     XrActionStateGetInfo gi{XR_TYPE_ACTION_STATE_GET_INFO};gi.action=stick;gi.subactionPath=hands[hand];
     XrActionStateVector2f v{XR_TYPE_ACTION_STATE_VECTOR2F};if(XR_FAILED(pGetActionStateVector2f(session,&gi,&v))||!v.isActive)return {};return v.currentState;
 }
+bool FocusGameForUi() {
+    // Called only for an intentional menu action in a focused XR session.
+    // Hovering the laser must not steal focus from another desktop window.
+    if(!gameWindow||!IsWindow(gameWindow))return false;
+    if(GetForegroundWindow()==gameWindow)return true;
+    SetForegroundWindow(gameWindow);
+    const bool focused=GetForegroundWindow()==gameWindow;
+    Say(focused?"Frame OpenXR: menu action restored game window focus":
+        "Frame OpenXR: game window focus unavailable; OS mouse/keyboard injection withheld");
+    return focused;
+}
 void MenuPointer() {
     pointerVisible=pointerHit=false;
     const bool pressed=Float(trigger,0)>.55f,cancel=Bool(secondary,0);
-    const bool focused=gameWindow&&GetForegroundWindow()==gameWindow;
+    bool focused=gameWindow&&GetForegroundWindow()==gameWindow;
+    if(panelMode&&cancel&&!cancelWasDown&&!focused)focused=FocusGameForUi();
     XrSpaceLocation aim{XR_TYPE_SPACE_LOCATION};
     const auto flags=XR_SPACE_LOCATION_POSITION_VALID_BIT|XR_SPACE_LOCATION_ORIENTATION_VALID_BIT;
     if(panelMode&&menuPlaced&&XR_SUCCEEDED(pLocateSpace(aimSpace,space,frameState.predictedDisplayTime,&aim))&&(aim.locationFlags&flags)==flags) {
@@ -424,6 +498,7 @@ void MenuPointer() {
         const auto rot=math::BeamOrientation(direction,V(head.position)-mid);
         beamPose.position={mid.x,mid.y,mid.z};beamPose.orientation={rot.x,rot.y,rot.z,rot.w};pointerVisible=true;
         if(pointerHit) {
+            if(pressed&&!triggerWasDown&&!focused)focused=FocusGameForUi();
             const auto point=hit.point+math::Rotate(Q(menuPose.orientation),{0,0,.006f});
             dotPose=menuPose;dotPose.position={point.x,point.y,point.z};
             RECT client{};
@@ -455,12 +530,15 @@ void Input() {
     if(XR_FAILED(pSyncActions(session,&si))) {ClearInput();return;}
     const bool inventoryPressed=inventoryButton.Update(Bool(primary,1));
     const bool menuPressed=menuButton.Update(Bool(menu,1)||Bool(menu,0));
-    const bool focused=gameWindow&&GetForegroundWindow()==gameWindow;
+    bool focused=gameWindow&&GetForegroundWindow()==gameWindow;
+    if((menuPressed||inventoryPressed)&&!focused)focused=FocusGameForUi();
     if(heldKeyScan&&(!focused||GetTickCount64()>=keyReleaseAt))ReleaseUiKey();
     if(focused&&menuPressed)PulseUiKey(VK_ESCAPE);
-    if(focused&&inventoryPressed&&inWorld&&inWorld()) {
+    if(inventoryPressed&&inWorld&&inWorld()) {
         // Keyboard shortcuts can be gated after switching input layouts or
         // panels. Queue the game's own panel actions on its UI thread instead.
+        // This action targets D2R directly and only requires XR focus (checked
+        // above), so a desktop terminal cannot silently swallow Left X.
         if(toggleMenus&&toggleMenus())Say("Frame OpenXR: Left X menu toggle queued");
         else Say("Frame OpenXR: Left X menu toggle unavailable");
     }
@@ -546,12 +624,31 @@ bool Begin() {
     for(auto& e:eyes)e.copied=false;
     XrViewLocateInfo li{XR_TYPE_VIEW_LOCATE_INFO};li.viewConfigurationType=XR_VIEW_CONFIGURATION_TYPE_PRIMARY_STEREO;li.displayTime=frameState.predictedDisplayTime;li.space=space;
     XrViewState vs{XR_TYPE_VIEW_STATE};uint32_t count=0;
+    const double locateStart=Milliseconds();
     const auto flags=XR_VIEW_STATE_POSITION_VALID_BIT|XR_VIEW_STATE_ORIENTATION_VALID_BIT;
     XrSpaceLocation hs{XR_TYPE_SPACE_LOCATION};
     if(XR_SUCCEEDED(pLocateViews(session,&li,&vs,2,&count,views.data()))&&count==2&&(vs.viewStateFlags&flags)==flags&&
        XR_SUCCEEDED(pLocateSpace(headSpace,space,li.displayTime,&hs))&&
        (hs.locationFlags&(XR_SPACE_LOCATION_POSITION_VALID_BIT|XR_SPACE_LOCATION_ORIENTATION_VALID_BIT))==(XR_SPACE_LOCATION_POSITION_VALID_BIT|XR_SPACE_LOCATION_ORIENTATION_VALID_BIT)) {
         head=hs.pose;valid=true;
+        // Latch once per pair: camera matrices, foveation and xrEndFrame must
+        // all describe the same frustum, including a live settings change.
+        // LocateViews refreshes the original runtime FOVs on every frame.
+        const bool centered=symmetricProjection.load();
+        if(centered) {
+            const auto& l=views[0].fov;const auto& r=views[1].fov;
+            const auto f=math::EnclosingSymmetricFov(
+                {l.angleLeft,l.angleRight,l.angleDown,l.angleUp},
+                {r.angleLeft,r.angleRight,r.angleDown,r.angleUp});
+            for(auto& view:views)view.fov={f.left,f.right,f.up,f.down};
+        }
+        static int lastProjectionMode=-1;
+        if(lastProjectionMode!=int(centered)) {
+            const auto& f=views[0].fov;char b[192];
+            std::snprintf(b,sizeof b,"Frame OpenXR: projection %s; left FOV %.5f %.5f %.5f %.5f",
+                centered?"symmetric lighting trial":"runtime recommended",f.angleLeft,f.angleRight,f.angleUp,f.angleDown);
+            Say(b);lastProjectionMode=int(centered);
+        }
         if(!haveOrigin){origin=V(head.position);haveOrigin=true;}
         if(worldCalibrationPending&&state==XR_SESSION_STATE_FOCUSED) {
             origin=V(head.position);worldCalibrationPending=false;worldRecenter=true;
@@ -563,7 +660,8 @@ bool Begin() {
             menuPose.position={pos.x,pos.y,pos.z};menuPose.orientation={yaw.x,yaw.y,yaw.z,yaw.w};menuPlaced=true;
         }
     }
-    Input();return true;
+    timing.locateMs=Milliseconds()-locateStart;
+    const double inputStart=Milliseconds();Input();timing.inputMs=Milliseconds()-inputStart;return true;
 }
 bool Acquire(Eye& e) {
     if(e.acquired)return true;
@@ -574,8 +672,11 @@ bool Acquire(Eye& e) {
     return Check(pWaitSwapchainImage(e.chain,&wi),"wait eye");
 }
 bool WaitGpu() {
-    if(fence->GetCompletedValue()>=fenceValue)return true;
-    if(!Hr(fence->SetEventOnCompletion(fenceValue,fenceEvent),"fence completion"))return false;
+    return WaitGpuValue(fenceValue);
+}
+bool WaitGpuValue(uint64_t value) {
+    if(!value||!fence||fence->GetCompletedValue()>=value)return true;
+    if(!Hr(fence->SetEventOnCompletion(value,fenceEvent),"fence completion"))return false;
     // Bounded: a device loss must not hang the game's render thread forever.
     const double start=Milliseconds();const auto result=WaitForSingleObject(fenceEvent,5000);
     timing.waitGpuMs+=Milliseconds()-start;
@@ -583,10 +684,17 @@ bool WaitGpu() {
     return true;
 }
 bool Copy(ID3D12Resource* src,Eye& e,reshade::api::command_queue* rq) {
-    // EndPair waits for the previous pair before these allocators are reused.
-    // Separate eye lists let the CPU start the right draw while the left runs.
+    // The runtime orders images on our bound D3D12 queue. Our allocator has a
+    // separate lifetime: never reset it until its own previous copy completed.
+    // Waiting here allows game/CPU work to overlap the preceding GPU frame.
     if(e.copied)return true;
+    const auto eye=unsigned(&e-eyes.data());const double acquireStart=Milliseconds();
     if(!Acquire(e))return false;
+    timing.acquireMs[eye]+=Milliseconds()-acquireStart;
+    if(!WaitGpuValue(e.copyFence))return false;
+    const double copyStart=Milliseconds();
+    const bool gpu=profile::Active()&&(gpuProfile.effects&(1u<<eye))&&!gpuProfile.failed;
+    if(gpu)reinterpret_cast<ID3D12GraphicsCommandList*>(rq->get_immediate_command_list()->get_native())->EndQuery(gpuProfile.heap.Get(),D3D12_QUERY_TYPE_TIMESTAMP,eye*5+2);
     rq->flush_immediate_command_list(); // finish all ReShade writes before using the native queue.
     if(!Hr(e.allocator->Reset(),"reset allocator")||!Hr(e.commands->Reset(e.allocator.Get(),nullptr),"reset copy list"))return false;
     ID3D12Resource* dest=e.images[e.index].texture;
@@ -594,12 +702,20 @@ bool Copy(ID3D12Resource* src,Eye& e,reshade::api::command_queue* rq) {
     for(auto& b:barriers){b.Type=D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;b.Transition.Subresource=D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;}
     barriers[0].Transition.pResource=src;barriers[0].Transition.StateBefore=D3D12_RESOURCE_STATE_PRESENT;barriers[0].Transition.StateAfter=D3D12_RESOURCE_STATE_COPY_SOURCE;
     barriers[1].Transition.pResource=dest;barriers[1].Transition.StateBefore=D3D12_RESOURCE_STATE_RENDER_TARGET;barriers[1].Transition.StateAfter=D3D12_RESOURCE_STATE_COPY_DEST;
+    if(gpu)e.commands->EndQuery(gpuProfile.heap.Get(),D3D12_QUERY_TYPE_TIMESTAMP,eye*5+3);
     e.commands->ResourceBarrier(2,barriers);e.commands->CopyResource(dest,src);
     for(auto& b:barriers)std::swap(b.Transition.StateBefore,b.Transition.StateAfter);
     e.commands->ResourceBarrier(2,barriers);
+    if(gpu){
+        e.commands->EndQuery(gpuProfile.heap.Get(),D3D12_QUERY_TYPE_TIMESTAMP,eye*5+4);
+        e.commands->ResolveQueryData(gpuProfile.heap.Get(),D3D12_QUERY_TYPE_TIMESTAMP,eye*5,5,gpuProfile.readback.Get(),eye*5*sizeof(uint64_t));
+        gpuProfile.resolved|=1u<<eye;
+    }
     if(!Hr(e.commands->Close(),"close copy list"))return false;
     ID3D12CommandList* lists[]={e.commands.Get()};queue->ExecuteCommandLists(1,lists);
     if(!Hr(queue->Signal(fence.Get(),++fenceValue),"signal copy fence"))return false;
+    e.copyFence=fenceValue;
+    timing.copySubmitMs[eye]+=Milliseconds()-copyStart;
     e.copied=true;return true;
 }
 void Capture(reshade::api::command_queue* rq,reshade::api::swapchain* swap) {
@@ -647,8 +763,18 @@ void AfterEffects(reshade::api::effect_runtime* rt) {
     static bool once=false;if(!once){once=true;Say("Frame OpenXR: first effects callback");}
     std::lock_guard lock(mutex);
     gameWindow=static_cast<HWND>(rt->get_hwnd());
-    if(gameSwapchain&&rt->get_current_back_buffer().handle==gameSwapchain->get_current_back_buffer().handle)
+    if(gameSwapchain&&rt->get_current_back_buffer().handle==gameSwapchain->get_current_back_buffer().handle) {
+        if(capturePair&&pairDrawing&&afr&&afr->enabled&&!panelMode) {
+            const unsigned eye=(afr->eye^afr->swap)&1u;
+            if(!(captureEyes&(1u<<eye))) {
+                char name[80];std::snprintf(name,sizeof name,"Frame-pair-%u-%s",captureSerial,eye?"right":"left");
+                rt->save_screenshot(name);captureEyes|=1u<<eye;
+                char line[240];const auto& v=views[eye];
+                std::snprintf(line,sizeof line,"Frame capture: %s; pose %.4f %.4f %.4f; FOV %.5f %.5f %.5f %.5f",name,v.pose.position.x,v.pose.position.y,v.pose.position.z,v.fov.angleLeft,v.fov.angleRight,v.fov.angleUp,v.fov.angleDown);Say(line);
+            }
+        }
         Capture(rt->get_command_queue(),gameSwapchain);
+    }
 }
 void DestroySwap(reshade::api::swapchain* swap,bool) {
     std::lock_guard lock(mutex);if(swap==gameSwapchain){Shutdown();failed=false;}
@@ -659,6 +785,7 @@ void Register(LogFn log,PanelFn panel,PanelFn world,PanelFn toggle) {
     std::lock_guard lock(mutex);logger=log;wantsPanel=panel;inWorld=world;toggleMenus=toggle;if(registered)return;
     reshade::register_event<reshade::addon_event::present>(&Prepare);
     reshade::register_event<reshade::addon_event::reshade_present>(&AfterEffects);
+    reshade::register_event<reshade::addon_event::reshade_begin_effects>(&ProfileEffects);
     reshade::register_event<reshade::addon_event::destroy_swapchain>(&DestroySwap);
     reshade::register_event<reshade::addon_event::create_pipeline>(&PipelineCreating);
     reshade::register_event<reshade::addon_event::init_pipeline>(&PipelineCreated);
@@ -666,9 +793,17 @@ void Register(LogFn log,PanelFn panel,PanelFn world,PanelFn toggle) {
     registered=true;Say("Frame OpenXR: registered D3D12 capture; awaiting game Present");
 }
 bool Active() {std::lock_guard lock(mutex);return frame&&valid&&render&&!failed&&!panelMode;}
+void ConfigureDeferredWait(bool on) {
+    if(deferredWait.exchange(on)!=on)Say(on?"Frame OpenXR: GPU wait deferred until copy allocator reuse":"Frame OpenXR: conservative GPU wait before image release");
+}
+void ConfigureSymmetricProjection(bool on) {symmetricProjection.store(on);}
 void BeginEye(int eye) {
     std::lock_guard lock(mutex);
+    d2rcam::SetStereoUiEye(Active()?(eye&1):-1);
+    d2rcam::TraceStereoLabels(capturePair?eye:-1);
     if(!Active()){foveation::EndWorld();return;}
+    profile::BeginEye(eye&1);
+    StartGpuEye(eye&1);
     const auto& f=views[eye&1].fov;
     const float l=std::tan(f.angleLeft),r=std::tan(f.angleRight),d=std::tan(f.angleDown),u=std::tan(f.angleUp);
     foveation::BeginEye(eye&1,-l/(r-l),u/(u-d));
@@ -689,18 +824,42 @@ void Recenter() {
 bool TakeWorldRecenter() {
     std::lock_guard lock(mutex);const bool take=worldRecenter;worldRecenter=false;return take;
 }
-void BeginPair() {std::lock_guard lock(mutex);if(session&&!failed){if(frame)EndPair();Begin();pairDrawing=true;}}
+void RequestStereoCapture(){captureRequested.store(true);}
+void BeginPair() {
+    std::lock_guard lock(mutex);
+    profile::SkipPair();lastTiming={};
+    if(session&&!failed){
+        if(frame)EndPair();Begin();pairDrawing=true;
+        gpuProfile.started=gpuProfile.effects=gpuProfile.resolved=0;
+        if(Active())profile::BeginPair();
+        if(Active()&&(captureRequested.exchange(false)||d2rcam::TakeLabelCapture())) {
+            capturePair=true;captureEyes=0;++captureSerial;
+            Say("Frame capture: recording one stereo pair (readback pause is diagnostic, exclude from performance comparison)");
+        }
+    }
+}
 void EndPair() {
     foveation::EndWorld();
+    d2rcam::SetStereoUiEye(-1);
     std::lock_guard lock(mutex);pairDrawing=false;if(!frame||!session)return;
-    // Keep the conservative GPU completion guarantee, once for the whole pair.
-    // No XR image is released and no copy allocator is reused before this fence.
-    if(fence&&!WaitGpu()){failed=true;for(auto& e:eyes)e.copied=false;}
+    d2rcam::TraceStereoLabels(-1);
+    if(capturePair){Say(captureEyes==3?"Frame capture: both eye screenshots requested":"Frame capture: incomplete pair; do not use for stereo comparison");capturePair=false;}
+    // All image writes and state restoration have been submitted on the queue
+    // bound to xrCreateSession. OpenXR orders its work after those commands;
+    // it does not require a CPU completion wait before xrReleaseSwapchainImage.
+    // WineOpenXR also drains that queue before its release/layout commands.
+    // Keep the old path for A/B, and for synchronous diagnostic query readback.
+    const bool waitNow=!deferredWait.load()||gpuProfile.started!=0;
+    if(waitNow&&fence&&!WaitGpu()){failed=true;for(auto& e:eyes)e.copied=false;}
+    if(!failed)ReadGpuProfile();
+    gpuProfile.started=gpuProfile.effects=gpuProfile.resolved=0;
+    const double releaseStart=Milliseconds();
     for(auto& e:eyes)if(e.acquired){
         XrSwapchainImageReleaseInfo ri{XR_TYPE_SWAPCHAIN_IMAGE_RELEASE_INFO};
         if(!Check(pReleaseSwapchainImage(e.chain,&ri),"release copied eye")){failed=true;e.copied=false;}
         e.acquired=false;
     }
+    timing.releaseMs=Milliseconds()-releaseStart;
     XrCompositionLayerProjection projection{XR_TYPE_COMPOSITION_LAYER_PROJECTION};
     std::array<XrCompositionLayerProjectionView,2> pv{{{XR_TYPE_COMPOSITION_LAYER_PROJECTION_VIEW},{XR_TYPE_COMPOSITION_LAYER_PROJECTION_VIEW}}};
     XrCompositionLayerQuad quad{XR_TYPE_COMPOSITION_LAYER_QUAD};
@@ -751,6 +910,9 @@ bool Projection(float out[16],float nearWorld,int eye) {
 void Shutdown() {
     std::lock_guard lock(mutex);
     EndPair();ClearInput();
+    // Completion is mandatory before destroying our commands/resources, even
+    // when ordinary frame submission uses queue ordering without a CPU wait.
+    if(fence&&!WaitGpu())failed=true;
     if(pointerChain&&pDestroySwapchain)pDestroySwapchain(pointerChain);pointerChain=XR_NULL_HANDLE;
     if(aimSpace&&pDestroySpace)pDestroySpace(aimSpace);aimSpace=XR_NULL_HANDLE;
     for(auto& e:eyes){if(e.chain&&pDestroySwapchain)pDestroySwapchain(e.chain);e={};}
@@ -763,6 +925,7 @@ void Shutdown() {
     worldWasLoaded=worldCalibrationPending=worldRecenter=false;
     if(fenceEvent)CloseHandle(fenceEvent);fenceEvent=nullptr;
     fence.Reset();queue.Reset();device.Reset();fenceValue=0;
+    gpuProfile={};
     foveation::Shutdown();
     tracking.Close();pad.Close();actions.Close();
     if(afr)UnmapViewOfFile(afr);if(afrHandle)CloseHandle(afrHandle);afr=nullptr;afrHandle=nullptr;gameSwapchain=nullptr;

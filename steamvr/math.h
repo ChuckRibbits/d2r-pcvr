@@ -5,6 +5,14 @@
 namespace framevr::math {
 struct Vec { float x, y, z; };
 struct Quat { float x, y, z, w; };
+struct Fov { float left, right, down, up; };
+// Keep every runtime-recommended ray while removing projection offsets that
+// D2R's native light-bin shader does not account for. Eye poses stay unchanged.
+inline Fov EnclosingSymmetricFov(Fov a,Fov b) {
+    const float h=std::max({std::fabs(a.left),std::fabs(a.right),std::fabs(b.left),std::fabs(b.right)});
+    const float v=std::max({std::fabs(a.down),std::fabs(a.up),std::fabs(b.down),std::fabs(b.up)});
+    return {-h,h,-v,v};
+}
 inline Vec operator+(Vec a, Vec b) { return {a.x+b.x,a.y+b.y,a.z+b.z}; }
 inline Vec operator-(Vec a, Vec b) { return {a.x-b.x,a.y-b.y,a.z-b.z}; }
 inline Vec operator*(Vec a, float b) { return {a.x*b,a.y*b,a.z*b}; }

@@ -38,6 +38,30 @@ int main() {
     Near(r.x-l.x,.064f);
     framevr::HeightResetButton button;
     auto expect=[](bool condition){if(!condition)std::exit(1);};
+    // Actual Frame frusta: native light-bin reconstruction uses the projection
+    // diagonal alone. Centered render frusta must enclose both recommended FOVs
+    // and reconstruct the same physical rays without an off-axis correction.
+    const Fov recommended[2]={{-1.03112f,.88023f,-1.04476f,.86625f},
+                              {-.87830f,1.03239f,-1.03608f,.87384f}};
+    const auto centered=EnclosingSymmetricFov(recommended[0],recommended[1]);
+    Near(centered.left,-1.03239f);Near(centered.right,1.03239f);
+    Near(centered.down,-1.04476f);Near(centered.up,1.04476f);
+    float centeredProj[16];Projection(centered.left,centered.right,centered.down,centered.up,.05f,centeredProj);
+    Near(centeredProj[8],0);Near(centeredProj[9],0);
+    for(const auto fov:recommended) {
+        float nativeProj[16];Projection(fov.left,fov.right,fov.down,fov.up,.05f,nativeProj);
+        for(int y=0;y<=8;++y)for(int x=0;x<=8;++x) {
+            const float nx=x/4.f-1,ny=y/4.f-1;
+            const float rayX=(nx+nativeProj[8])/nativeProj[0],rayY=(ny+nativeProj[9])/nativeProj[5];
+            const float cx=rayX*centeredProj[0],cy=rayY*centeredProj[5];
+            expect(std::fabs(cx)<=1.00001f&&std::fabs(cy)<=1.00001f);
+            Near(cx/centeredProj[0],rayX);Near(cy/centeredProj[5],rayY);
+            // The compositor resamples the centered image using its submitted
+            // FOV; recovered physical rays land at their original panel NDC.
+            Near((cx/centeredProj[0])*nativeProj[0]-nativeProj[8],nx);
+            Near((cy/centeredProj[5])*nativeProj[5]-nativeProj[9],ny);
+        }
+    }
     framevr::MenuTriggerGate trigger;
     expect(trigger.Update(true,false)); // normal world attack
     expect(!trigger.Update(true,true)); // menu consumes the same held press
@@ -89,9 +113,10 @@ int main() {
     // creature anchor, including asymmetric FOV and a rotated world view.
     const auto attitude=Multiply(Yaw(.5f),Multiply({std::sin(.15f),0,0,std::cos(.15f)},{0,0,std::sin(.2f),std::cos(.2f)}));
     const Vec headOrigin{5,2,-7},anchor=headOrigin+Rotate(attitude,{1.2f,.8f,-6.f});
-    for(int e=0;e<2;++e){
+    for(int mode=0;mode<2;++mode)for(int e=0;e<2;++e){
         const Vec pos=headOrigin+Rotate(attitude,{e? .032f:-.032f,0,0});float view[16],proj[16],pixel[2];
         View(pos,attitude,view);Projection(e?-.7f:-.9f,e?.9f:.7f,-.8f,.8f,.05f,proj);
+        if(mode)Projection(centered.left,centered.right,centered.down,centered.up,.05f,proj);
         const float xyz[]={anchor.x,anchor.y,anchor.z};
         expect(d2rcam::m4::ProjectToPixels(xyz,view,proj,1920,1080,pixel));
         const float x=2*pixel[0]/1920-1,y=1-2*pixel[1]/1080;

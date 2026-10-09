@@ -487,7 +487,9 @@ uniform float CeilLightRadius < hidden = true; > = 25.0;   // world units from t
 // 4 tiles: 64, the wrap, is a whole number of them. Without a file (CeilTexOn off) the
 // stone is drawn here. A slot vrcam has no file for keeps one that is there, never sampled.
 #ifndef D2R_CEILING_1
- #define D2R_CEILING_1 "D2R_Sky_ours/D2R_Ceiling_act1_caves_walls.png"
+ // Optional pictures are supplied by the plugin after checking they exist.
+ // Empty slots use procedural stone and must not fail the initial reload.
+ #define D2R_CEILING_1 ""
 #endif
 #ifndef D2R_CEILING_2
  #define D2R_CEILING_2 D2R_CEILING_1

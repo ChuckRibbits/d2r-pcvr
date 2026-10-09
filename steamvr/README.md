@@ -71,16 +71,31 @@ Use the offline character **Nekro** for game testing.
 
 Main menus and in-game panels use a world-anchored display. Aim the right
 controller's cyan laser, use **right trigger** to click or drag, and **right B**
-to back out. Mouse input is sent only while the game window has focus. Gameplay
+to back out. **Keep the D2R window focused on the PC.** Mouse input is sent only
+while that window has focus; after using another desktop app, select D2R again
+before clicking or dragging in menus. Opening inventory with Left X does not
+guarantee desktop focus. Gameplay
 uses separate projection views with the headset's
 actual eye positions and FOV. Controller actions feed the existing game-side
-input bridge. F4 selects first person and F11 recenters the camera. Stay in first
-person while testing: other camera modes have not been adapted to this transport.
+input bridge. Native VR stays in first person and F11 recenters the camera.
+The legacy F1–F3/F12 view shortcuts cannot switch native VR to an incompatible
+camera. Old saved VR modes are repaired to first person on load. Flat monitor
+mode and the separate FlatVR build retain their view selection.
+
+The desktop game window currently presents the alternating eye frames, so it
+can visibly flicker even when the headset stereo is correct. It does not render
+a third scene for the monitor. Desktop presentation still has overhead;
+suppressing it safely is an open performance task. Do not minimize the game as
+a workaround: background/focus handling also affects input and frame pacing.
 
 **Left X** opens inventory through the game's UI service when no menu is open.
 When menu panels are open, Left X closes them, including panels opened with the
 toolbar shortcuts; another press opens inventory again. It preserves the HUD
-and map. The controller menu button and right B in menus send Escape using a
+and map. The native inventory action requires headset focus, so another active
+desktop window does not swallow Left X. Explicit menu actions and laser clicks
+try to bring the game window forward; OS mouse/keyboard injection still requires
+desktop focus. Hovering the laser does not move focus. The controller menu button
+and right B in menus send Escape using a
 scan-code press held across frames. A trigger used on a menu remains consumed
 until released, so closing the panel cannot turn the same press into an attack.
 
@@ -135,8 +150,27 @@ The native placement also mixed projected foot X with projected head Y. The
 updated hook combines the original world coordinates into one head-height anchor
 before projection, so pitched/rolled eyes refer to one 3D point. Both the
 matrix-only prototype and unified-anchor correction still doubled in the user's
-headset tests. This remains unresolved; the hook does not yet establish visually
-correct stereo labels. Stereo math checks include head pitch/roll.
+headset tests. Centered projection subsequently improved apparent convergence;
+the remaining reversed label disparity was fixed by current-eye draw ordering
+below. Disabling the anchor correction alone did not improve depth.
+The owner verified the combined fix on Steam Frame. Stereo math checks include
+head pitch/roll; bosses and wider scene/headset coverage remain untested.
+
+`[hud] monster_draw_order=1` is enabled by default: paint the
+native monster health panel after the current eye's tooltip updates, within the
+same UI pass. Hooks are signature-checked on launch; set 0 live
+to compare native ordering. Names, health data and native styling are retained.
+
+F8 saves one complete gameplay pair through ReShade, with matching
+`Frame-pair-N-left/right` suffixes. This readback briefly stalls: exclude it from
+performance measurements. For remote debugging, increment `[debug] capture_pair`
+in the installed INI, or set/increment `capture_labels` to wait for a visible
+unit label before capturing. Normal play performs no readback or screenshot IO.
+
+The current Proton installer supplies the Microsoft SDK shader compiler privately
+under `d2rloader/runtime`. ReShade had remained compiling throughout tests using
+Wine's compiler; the SDK version completes the effect. Missing optional ceiling
+art uses the procedural fallback. Stock Steam Play does not load this dependency.
 
 ## Build
 
@@ -155,8 +189,11 @@ cmake -S steamvr -B build-frame -G Ninja \
 cmake --build build-frame -j4
 g++ -std=c++20 -Wall -Wextra -Werror steamvr/math_test.cpp -o /tmp/d2r-frame-math-test
 /tmp/d2r-frame-math-test
+g++ -std=c++20 -Wall -Wextra -Werror steamvr/deferred_draw_test.cpp -o /tmp/d2r-frame-ui-test
+/tmp/d2r-frame-ui-test
 python3 steamvr/session_test.py
 python3 steamvr/install_test.py
+python3 steamvr/ngx_abi_test.py --clang "$CLANG_ROOT/clang++"
 ```
 
 To build the additional native Windows OpenXR loader for a preview package:
@@ -197,6 +234,58 @@ separately from the snapshot's `saves/` directory if needed.
 The prioritized feature backlog and headset verification checklist live in
 [TASKS.md](TASKS.md), including UI, combat gestures and eye-tracked foveation.
 
+For a bounded performance capture, change `[debug] profile_capture` to a new
+positive integer in the installed `d2r_vr.ini` while gameplay is running. The
+next 360 valid stereo pairs record per-eye CPU spans, sampled mod callbacks,
+OpenXR wait/locate/input/acquire/copy/fence/release/submit spans, and optional
+D3D12 timestamps. The probes then become idle automatically. Use a stationary
+capture first, then a separate sequence for walking; retain the same scene and
+graphics settings for comparisons. Set the counter to zero after testing so
+the request does not repeat on the next launch.
+
+```sh
+python3 steamvr/profile_report.py "/path/to/game/d2rloader/logs/d2r-vr-frame.log" \
+  --sequence 1 --csv build-frame/profile-stationary.csv
+```
+
+Callback scopes are inclusive, cover only the main stereo drawing thread, and
+high-frequency callbacks are sampled 1/64. GPU scene spans include idle queue
+time while CPU commands are prepared; they are not GPU busy-time measurements.
+Effects span includes the ReShade overlay. GPU query readback uses the
+conservative pair completion fence. Set `[debug] profile_gpu=0` for CPU-only
+captures when comparing deferred GPU waits; GPU profiling intentionally waits
+for its readback and would hide that optimization. Two timestamp submissions
+and scope measurements add diagnostic overhead. Do not compare a profiled
+run against an unprofiled run as if all timing changes were optimizations.
+
+`[render] symmetric_projection=1` is the default lighting compatibility
+setting. D2R's native light-bin shader assumes a centered projection;
+the headset can recommend offset frusta. This mode renders a centered FOV that
+encloses both recommended views and submits that exact FOV to OpenXR, preserving
+the original eye poses and head tracking. It samples the setting once per pair,
+so a live change cannot split the eyes between modes. At the same resolution it
+reduces angular pixel density. The owner reports the waypoint patches appear gone
+on Steam Frame, with a softer image; other scenes/headsets remain unverified.
+Set 0 to restore runtime-recommended projections. See the
+[OpenXR projection-view contract](https://registry.khronos.org/OpenXR/specs/1.0/man/html/XrCompositionLayerProjectionView.html).
+
+`[render] defer_gpu_wait=1` is an experimental live comparison switch. Image
+copies and state restoration are submitted on the D3D12 queue bound to OpenXR;
+completion is checked before each eye's copy allocator is reused and before
+shutdown, instead of blocking the CPU before every image release. Set it to 0
+for the original conservative behavior. See the
+[OpenXR D3D12 queue/state contract](https://registry.khronos.org/OpenXR/specs/1.1/man/html/XR_KHR_D3D12_enable-swapchain-image-state.html)
+and [OpenXR implementer guidance](https://community.khronos.org/t/do-you-have-to-do-cpu-sync-before-xrendframe/110117).
+Proton's `wineopenxr` also drains the bound command queue before enqueueing its
+release layout transitions. The source default remains 0. The owner's repeated
+comparison reduced the XR end stage from about 5.7 to 3.8 ms; part of the removed
+fence wait moved into runtime submission. Total cycle time also trended lower,
+but head direction differed between captures and a competing CPU-heavy test was
+running, so this is not a controlled percentage speedup. The owner reported
+bursty walking with either setting. It is disabled in the installed configuration
+pending further work. See HANDOFF.md for sample details; other headsets/runtimes
+are untested.
+
 - Runtime log: `d2rloader/logs/d2r-vr-frame.log` in the game folder. A bounded
   queue writes batches on a worker without forced disk flushes. The old SDK log,
   `d2r-vr-vrcam.log`, remains for loader/startup messages. Live syscall sampling
@@ -213,8 +302,9 @@ The prioritized feature backlog and headset verification checklist live in
   `D2R_FRAME_WINEDEBUG` to an explicit Wine debug profile for a targeted diagnostic
   launch; normal Steam Play does not receive the VR logging settings.
 - Independent probe result: `build-frame/openxr-probe-result.txt`.
-- Capture waits for both GPU copies before releasing the eye images. This retains
-  the completion guarantee while allowing the CPU to prepare the right eye sooner.
+- By default capture waits for both GPU copies before releasing eye images.
+  The experimental deferred-wait mode above retains completion checks at
+  allocator reuse and teardown instead.
 - Measure the updated performance preset and test the height chord on Frame.
 - Verify laser selection, inventory dragging, menu placement and longer gameplay
   after the checked-read fix on Frame.
@@ -222,8 +312,9 @@ The prioritized feature backlog and headset verification checklist live in
   Steam returning to Play after the game's own Exit command on Frame.
 - Belt, health and mana still use the original screen HUD. A separate native
   toolbar plane is planned; FlatVR's existing shared HUD is not yet consumed.
-- ReShade's sky/fog effect has not finished compiling in the observed Proton
-  sessions; the gameplay camera and transport operate without that effect.
+- ReShade's sky/fog now compiles using the private modern SDK compiler described
+  above. Include its GPU cost when profiling; earlier incomplete-compilation
+  sessions did not render the same effects.
 - Further checks remain for menus, HUD layout, combat and longer play sessions.
 
 Upstream provenance: `natpoh/diablo2-vr-port` at

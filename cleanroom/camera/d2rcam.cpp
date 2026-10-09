@@ -19,10 +19,12 @@
 // covering the area around the hero it was tuned for.
 
 #include "d2rcam.h"
+#include "../../steamvr/profile.h"
 
 #include "../drawdist/drawdist.h"
 #include "game_layout.h"
 #include "mat4.h"
+#include "deferred_draw.h"
 #include "../sigscan/sigscan.h"
 
 #include <D2RLPlugin/api.h>
@@ -33,6 +35,7 @@
 #include <cstdio>
 #ifdef D2RVR_NATIVE_OPENXR
 #include "../../steamvr/logging.h"
+#include "../../steamvr/memory.h"
 #endif
 #include <intrin.h>
 
@@ -68,8 +71,19 @@ WorldToScreenFn o_worldToScreen = nullptr;
 UnitToScreenFn o_unitToScreen = nullptr;
 std::atomic<bool> g_stereoLabels{false};
 thread_local uint32_t t_labelProjection=0;
+std::atomic<int> g_traceLabelEye{-1};
+std::atomic<uint32_t> g_traceLabelCount{0};
+std::atomic<bool> g_waitForLabel{false},g_labelSeen{false};
 struct LabelAnchor {LabelAnchor* previous=nullptr;void* cam=nullptr;uint32_t count=0;float first[3]{},last[3]{};};
 thread_local LabelAnchor* t_labelAnchor=nullptr;
+std::atomic<bool> g_monsterDrawOrder{false};
+#ifdef D2RVR_NATIVE_OPENXR
+using WidgetDrawFn=void(__fastcall*)(void* widget);
+WidgetDrawFn g_drawPanelManager=nullptr,g_drawMonsterHealth=nullptr;
+bool g_monsterDrawHooks=false;
+thread_local int t_stereoUiEye=-1;
+thread_local DeferredDraws* t_deferredHealth=nullptr;
+#endif
 
 std::atomic<bool>   g_cameraHooks { false };
 std::atomic<bool>   g_enabled { false };
@@ -336,9 +350,11 @@ void __fastcall HookCamRenderTick(void* layer, float dt) {
 		HandBackPoseForTick();
 	}
 	if (const CamRenderTickFn original = Orig(o_camRenderTick)) {
+        FRAME_PROFILE(CameraTick);
 		original(layer, dt);
 	}
 	if (ready) {
+        FRAME_PROFILE(CameraSync);
 		SyncFrame();
 	}
 }
@@ -412,6 +428,60 @@ void __fastcall HookReleaseCamera(void* cam) {
 
 // ---- Installation ----------------------------------------------------------
 
+#ifdef D2RVR_NATIVE_OPENXR
+void __fastcall DrawMonsterHealth(void* widget) {
+    if(t_deferredHealth&&t_deferredHealth->Add(reinterpret_cast<uintptr_t>(widget)))return;
+    g_drawMonsterHealth(widget);
+}
+void __fastcall DrawPanelManager(void* widget) {
+    const Frame& f=Current();
+    if(!g_monsterDrawOrder.load(std::memory_order_relaxed)||t_stereoUiEye<0||
+       !f.ourView||!f.ourProj||t_deferredHealth) {
+        g_drawPanelManager(widget);return;
+    }
+    DeferredDraws pending;
+    t_deferredHealth=&pending;
+    g_drawPanelManager(widget);
+    t_deferredHealth=nullptr;
+    // Native root draw is only a child traversal, inside the caller's UI pass.
+    // Tooltips have now updated the same widgets for this eye. Paint each once,
+    // preserving native text, health, visibility and the loader's root wrapper.
+    pending.Flush([](uintptr_t address) {
+        uintptr_t vtable=0;uint8_t visible=0;
+        if(framevr::ReadMemory(&vtable,reinterpret_cast<void*>(address),sizeof vtable)&&
+           vtable==g_base+MonsterHealthVtable&&
+           framevr::ReadMemory(&visible,reinterpret_cast<void*>(address+0x51),sizeof visible)&&visible) {
+            if(g_traceLabelEye.load(std::memory_order_relaxed)>=0) {
+                char line[120];std::snprintf(line,sizeof line,
+                    "Frame label paint: eye %d health panel %p after current-eye tooltip updates",t_stereoUiEye,reinterpret_cast<void*>(address));
+                framevr::logging::Write(line);
+            }
+            g_drawMonsterHealth(reinterpret_cast<void*>(address));
+        }
+    });
+}
+bool InstallMonsterDrawOrder() {
+    if(g_monsterDrawHooks)return true;
+    if(!d2rsig::Check(WidgetDraw.rva,WidgetDraw.bytes,WidgetDraw.size)||
+       !d2rsig::Check(TooltipDraw.rva,TooltipDraw.bytes,TooltipDraw.size)||
+       !d2rsig::Check(PanelDraw.rva,PanelDraw.bytes,PanelDraw.size))return false;
+    const uintptr_t nativeDraw=g_base+WidgetDraw.rva,loaderDraw=g_base+PanelManagerDrawThunk;
+    if(!d2rsig::Check(MonsterHealthDrawSlot,&nativeDraw,sizeof nativeDraw))return false;
+    if(!g_drawPanelManager) {
+        if(!d2rsig::Check(PanelManagerDrawSlot,&loaderDraw,sizeof loaderDraw))return false;
+        g_drawPanelManager=reinterpret_cast<WidgetDrawFn>(loaderDraw);
+        if(!g_ctx->PatchWriteU64(PanelManagerDrawSlot,&loaderDraw,sizeof loaderDraw,reinterpret_cast<uintptr_t>(&DrawPanelManager))) {
+            g_drawPanelManager=nullptr;return false;
+        }
+    }
+    g_drawMonsterHealth=reinterpret_cast<WidgetDrawFn>(nativeDraw);
+    if(!g_ctx->PatchWriteU64(MonsterHealthDrawSlot,&nativeDraw,sizeof nativeDraw,reinterpret_cast<uintptr_t>(&DrawMonsterHealth)))return false;
+    g_monsterDrawHooks=true;
+    framevr::logging::Write("Frame labels: current-eye health-panel draw-order trial installed");
+    return true;
+}
+#endif
+
 bool __fastcall HookUnitToScreen(void* context,void* unit,float* out,uint8_t above) {
     LabelAnchor anchor;anchor.previous=t_labelAnchor;t_labelAnchor=&anchor;
     ++t_labelProjection;
@@ -419,6 +489,13 @@ bool __fastcall HookUnitToScreen(void* context,void* unit,float* out,uint8_t abo
     --t_labelProjection;
     t_labelAnchor=anchor.previous;
     const Frame& f=Current();
+#ifdef D2RVR_NATIVE_OPENXR
+    const int traceEye=g_traceLabelEye.load(std::memory_order_relaxed);
+    if(traceEye>=0&&out&&g_traceLabelCount.fetch_add(1)<32) {
+        char line[600];std::snprintf(line,sizeof line,"Frame label trace: eye %d caller %llx unit %p above %u shown %d anchors %u head %.3f %.3f %.3f base %.3f %.3f %.3f nativeXY %.2f %.2f viewport %.0f %.0f camera %d override %d %d",
+            traceEye,(unsigned long long)(reinterpret_cast<uintptr_t>(_ReturnAddress())-g_base),unit,unsigned(above),shown,anchor.count,anchor.first[0],anchor.first[1],anchor.first[2],anchor.last[0],anchor.last[1],anchor.last[2],out[0],out[1],f.cam?At<float>(f.cam,camf::ViewportW):0,f.cam?At<float>(f.cam,camf::ViewportH):0,anchor.cam==f.cam,f.ourView,f.ourProj);framevr::logging::Write(line);
+    }
+#endif
     if(shown&&out&&above&&anchor.count>=2&&g_stereoLabels.load()&&anchor.cam==f.cam&&f.ourView&&f.ourProj){
         // Native code combines projected foot X with projected head Y. Those
         // two depths do not form one stereo point when the head pitches/rolls.
@@ -430,6 +507,10 @@ bool __fastcall HookUnitToScreen(void* context,void* unit,float* out,uint8_t abo
         static std::atomic<uint32_t> reports{0};
         if(reports.fetch_add(1)<8){char line[200];std::snprintf(line,sizeof line,"Frame labels: unified head anchor %.2f %.2f %.2f -> %.1f %.1f; hybrid correction %.1f %.1f px",point[0],point[1],point[2],pixel[0],pixel[1],deltaX,deltaY);framevr::logging::Write(line);}
 #endif
+    }
+    if(g_waitForLabel.load(std::memory_order_relaxed)&&shown&&above&&out&&f.cam&&f.ourView&&f.ourProj&&
+       out[0]>=0&&out[0]<At<float>(f.cam,camf::ViewportW)&&out[1]>=0&&out[1]<At<float>(f.cam,camf::ViewportH)) {
+        g_waitForLabel=false;g_labelSeen=true;
     }
     return shown;
 }
@@ -510,6 +591,10 @@ bool Install(const D2RL::PluginContext* ctx) {
 	g_base = ctx->exeBase;
 	d2rsig::Resolve(ctx);
 	const bool cameraOk = InstallCamera();
+#ifdef D2RVR_NATIVE_OPENXR
+    if(cameraOk&&g_monsterDrawOrder.load()&&!InstallMonsterDrawOrder())
+        framevr::logging::Write("Frame labels: draw-order signature checks failed; keeping native paint order");
+#endif
     if(cameraOk&&g_stereoLabels.load()){
         const bool was=o_worldToScreen&&o_unitToScreen;
         const bool ok=Hook(WorldToScreen,&HookWorldToScreen,&o_worldToScreen)&&Hook(UnitToScreen,&HookUnitToScreen,&o_unitToScreen);
@@ -527,6 +612,17 @@ bool Install(const D2RL::PluginContext* ctx) {
 
 void SetEnabled(bool on) { g_enabled.store(on); }
 void SetStereoLabels(bool on){g_stereoLabels.store(on);}
+void SetMonsterDrawOrder(bool on){g_monsterDrawOrder.store(on);}
+void SetStereoUiEye(int eye){
+#ifdef D2RVR_NATIVE_OPENXR
+    t_stereoUiEye=eye;
+#else
+    (void)eye;
+#endif
+}
+void TraceStereoLabels(int eye){g_traceLabelCount.store(0);g_traceLabelEye.store(eye);}
+void ArmLabelCapture(){g_labelSeen=false;g_waitForLabel=true;}
+bool TakeLabelCapture(){return g_labelSeen.exchange(false);}
 bool IsEnabled() { return g_enabled.load(); }
 
 void SetCallbacks(ViewFn view, ProjFn proj) {

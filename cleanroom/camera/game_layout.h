@@ -67,6 +67,20 @@ inline constexpr Site WorldToScreen {0xED5EB0,WorldToScreenBytes,sizeof(WorldToS
 inline constexpr uint8_t UnitToScreenBytes[] {0x4C,0x8B,0xDC,0x55,0x56,0x57,0x41,0x57,0x49,0x8D,0x6B,0xA8,0x48,0x81,0xEC,0x38,0x01,0x00,0x00};
 inline constexpr Site UnitToScreen {0x76A7D0,UnitToScreenBytes,sizeof(UnitToScreenBytes)};
 
+// Health UI receives its per-eye anchor during TooltipsPanel draw. The native
+// PanelManager paint delegates to Widget::Draw (child traversal); it does not
+// end the UI render pass. D2RLoader's wrapper must remain in that call chain.
+inline constexpr uint8_t WidgetDrawBytes[] {0x40,0x53,0x56,0x57,0x41,0x57,0x48,0x83,0xEC,0x38};
+inline constexpr Site WidgetDraw {0x855B00,WidgetDrawBytes,sizeof(WidgetDrawBytes)};
+inline constexpr uint8_t TooltipDrawBytes[] {0x4C,0x8B,0xDC,0x55,0x53,0x56,0x57,0x41,0x55,0x49,0x8D,0xAB,0x78,0xFD,0xFF,0xFF};
+inline constexpr Site TooltipDraw {0x880550,TooltipDrawBytes,sizeof(TooltipDrawBytes)};
+inline constexpr uint8_t PanelDrawBytes[] {0x40,0x57,0x48,0x83,0xEC,0x30,0x48,0x8B,0xF9};
+inline constexpr Site PanelDraw {0x89F2E0,PanelDrawBytes,sizeof(PanelDrawBytes)};
+inline constexpr uint64_t MonsterHealthVtable=0x1CDF3B8;
+inline constexpr uint64_t MonsterHealthDrawSlot=MonsterHealthVtable+0x18;
+inline constexpr uint64_t PanelManagerDrawSlot=0x1D79CD0+0x18;
+inline constexpr uint64_t PanelManagerDrawThunk=0x3E2B7F6;
+
 // ReleaseCamera(Camera*), hooked 5 bytes in, after its `test rcx,rcx / je`, so the
 // short jump stays where it is. Registers and stack are as at entry there.
 inline constexpr uint8_t ReleaseCameraBytes[] { 0x53, 0x48, 0x83, 0xEC, 0x20, 0x48, 0x8B, 0xD9, 0xC6, 0x81, 0x28, 0x01, 0x00, 0x00, 0x00 };

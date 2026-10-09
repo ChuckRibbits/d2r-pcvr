@@ -62,6 +62,7 @@
 #include <vector>
 
 #include <reshade.hpp>
+#include "../steamvr/profile.h"
 
 #include "game_hud_shared.h"
 
@@ -431,6 +432,7 @@ void OnScissor(command_list* cl, uint32_t, uint32_t count, const rect* rects) {
 
 // The list leaves the interface for another target: the interface is drawn - empty it.
 void OnBind(command_list* cl, uint32_t count, const resource_view* rtvs, resource_view) {
+    FRAME_PROFILE_SAMPLED(HudBind);
     const uint64_t layer = g_layer.load();
     if (!layer || t_ours) return;
     device* dev = cl->get_device();

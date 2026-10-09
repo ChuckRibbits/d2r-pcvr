@@ -1,5 +1,6 @@
 #include "vrs_compat.h"
 #include "foveation.h"
+#include "profile.h"
 #include "foveation_math.h"
 #include <reshade.hpp>
 #include <wrl/client.h>
@@ -22,6 +23,7 @@ std::atomic<bool> enabled{true},worldDrawing{false},ready{false};
 std::atomic<float> inner{.55f},centerX{.5f},centerY{.5f};
 std::atomic<int> eye{0};
 std::atomic<uint64_t> maskEpoch{1};
+std::atomic<uint64_t> stateGeneration{1},pipelineGeneration{1};
 std::atomic<uint32_t> shadedDraws{0},fullDraws{0};
 ComPtr<ID3D12Device> nativeDevice;
 ComPtr<ID3D12CommandQueue> nativeQueue;
@@ -48,11 +50,21 @@ struct State {
     ID3D12Resource* applied=nullptr;
     ID3D12Resource* cached=nullptr;
     uint64_t epoch=0;
+    uint64_t appliedEpoch=0,pipeline=0,pipelineEpoch=0;
+    bool dirty=true;
 };
+// ReShade's private-data lookup synchronizes internally. A command list records
+// on one thread at a time, so retain its state across consecutive callbacks.
+// Destruction invalidates every thread's cache before a recycled pointer is used.
+struct StateCache {command_list* cl=nullptr;State* state=nullptr;uint64_t generation=0;};
+thread_local StateCache stateCache;
 State* Get(command_list* cl) {
+    const auto generation=stateGeneration.load(std::memory_order_relaxed);
+    if(stateCache.cl==cl&&stateCache.generation==generation)return stateCache.state;
     uint64_t ptr=0;cl->get_private_data(reinterpret_cast<const uint8_t*>(&stateId),&ptr);
     auto* s=reinterpret_cast<State*>(ptr);
     if(!s){s=new State;cl->set_private_data(reinterpret_cast<const uint8_t*>(&stateId),reinterpret_cast<uint64_t>(s));}
+    stateCache={cl,s,generation};
     return s;
 }
 bool Hr(HRESULT hr,const char* what) {
@@ -95,6 +107,7 @@ ID3D12Resource* GetMask(const State& state) {
     masks.push_back(std::move(m));return masks.back().texture.Get();
 }
 void Apply(command_list* cl,State& s) {
+    s.dirty=false;s.appliedEpoch=maskEpoch.load(std::memory_order_relaxed);
     const bool want=ready.load(std::memory_order_relaxed)&&enabled.load(std::memory_order_relaxed)&&worldDrawing.load(std::memory_order_relaxed)&&s.eligible&&s.targets&&
         s.vp.width>=screenW*.45f&&s.vp.height>=screenH*.45f&&s.vp.x>=0&&s.vp.y>=0&&s.vp.x+s.vp.width<=s.w+1&&s.vp.y+s.vp.height<=s.h+1&&
         std::abs(s.vp.width/s.vp.height-float(screenW)/screenH)<.04f;
@@ -126,13 +139,21 @@ void PipelineCreated(device*,pipeline_layout,uint32_t count,const pipeline_subob
         }
     }
     std::unique_lock lock(pipelineLock);pipelines[pipe.handle]={hasPixel&&depth&&writes&&opaque&&single};
+    ++pipelineGeneration;
 }
-void PipelineDestroyed(device*,pipeline p){std::unique_lock lock(pipelineLock);pipelines.erase(p.handle);}
+void PipelineDestroyed(device*,pipeline p){std::unique_lock lock(pipelineLock);pipelines.erase(p.handle);++pipelineGeneration;}
 void BindPipeline(command_list* cl,pipeline_stage stages,pipeline p){
+    FRAME_PROFILE_SAMPLED(FoveationPipeline);
     if(uint32_t(stages&pipeline_stage::all_graphics)==0)return;
-    auto& s=*Get(cl);{std::shared_lock lock(pipelineLock);const auto it=pipelines.find(p.handle);s.eligible=it!=pipelines.end()&&it->second.eligible;}Apply(cl,s);
+    auto& s=*Get(cl);const auto generation=pipelineGeneration.load(std::memory_order_relaxed);
+    if(s.pipeline==p.handle&&s.pipelineEpoch==generation)return;
+    bool eligible=false;
+    {std::shared_lock lock(pipelineLock);const auto it=pipelines.find(p.handle);eligible=it!=pipelines.end()&&it->second.eligible;}
+    if(s.eligible!=eligible){s.eligible=eligible;s.dirty=true;}
+    s.pipeline=p.handle;s.pipelineEpoch=generation;
 }
 void BindTargets(command_list* cl,uint32_t count,const resource_view* rtvs,resource_view dsv){
+    FRAME_PROFILE_SAMPLED(FoveationTargets);
     auto& s=*Get(cl);const auto oldW=s.w,oldH=s.h;s.targets=false;s.w=s.h=0;
     if(ready&&count>0&&count<=8&&rtvs&&rtvs[0].handle&&dsv.handle){
         auto* dev=cl->get_device();const auto color=dev->get_resource_desc(dev->get_resource_from_view(rtvs[0]));
@@ -142,21 +163,43 @@ void BindTargets(command_list* cl,uint32_t count,const resource_view* rtvs,resou
             s.w>=screenW*.45f&&s.h>=screenH*.45f&&std::abs(float(s.w)/s.h-float(screenW)/screenH)<.04f;
     }
     if(s.w!=oldW||s.h!=oldH)s.epoch=0;
-    Apply(cl,s);
+    s.dirty=true;
 }
 bool BeginPass(command_list* cl,uint32_t count,const render_pass_render_target_desc* rts,const render_pass_depth_stencil_desc* ds,render_pass_flags){
     std::array<resource_view,8> rtvs{};for(uint32_t i=0;i<std::min(count,8u);++i)rtvs[i]=rts[i].view;
     BindTargets(cl,std::min(count,8u),rtvs.data(),ds?ds->view:resource_view{});return false;
 }
-bool EndPass(command_list* cl){auto& s=*Get(cl);s.targets=false;Apply(cl,s);return false;}
+bool EndPass(command_list* cl){auto& s=*Get(cl);s.targets=false;s.dirty=true;return false;}
 void Viewports(command_list* cl,uint32_t first,uint32_t count,const viewport* vps){
     auto& s=*Get(cl);const auto old=s.vp;if(first==0&&count==1)s.vp=vps[0];else s.vp={};
-    if(std::memcmp(&old,&s.vp,sizeof old)!=0)s.epoch=0;Apply(cl,s);
+    if(std::memcmp(&old,&s.vp,sizeof old)!=0){s.epoch=0;s.dirty=true;}
 }
-bool Draw(command_list* cl,uint32_t,uint32_t,uint32_t,uint32_t){auto& s=*Get(cl);Apply(cl,s);if(s.hasMask)++shadedDraws;else ++fullDraws;return false;}
+bool Draw(command_list* cl,uint32_t,uint32_t,uint32_t,uint32_t){
+    FRAME_PROFILE_SAMPLED(FoveationDraw);
+    auto& s=*Get(cl);
+    // Bind callbacks only invalidate. Evaluate and set VRS once immediately
+    // before the next draw, not again for every bind and every following draw.
+    if(s.dirty||s.appliedEpoch!=maskEpoch.load(std::memory_order_relaxed))Apply(cl,s);
+    // Diagnostic counts do not need a contended atomic on every game draw.
+    // At most 255 pending draws per recording thread cross a sample boundary.
+    static thread_local uint32_t shaded=0,full=0;
+    if(s.hasMask)++shaded;else ++full;
+    if(shaded+full>=256){shadedDraws.fetch_add(shaded,std::memory_order_relaxed);fullDraws.fetch_add(full,std::memory_order_relaxed);shaded=full=0;}
+    return false;
+}
 bool DrawIndexed(command_list* cl,uint32_t,uint32_t,uint32_t,int32_t,uint32_t){return Draw(cl,0,0,0,0);}
-void Reset(command_list* cl){auto& s=*Get(cl);s.eligible=s.targets=s.hasMask=false;s.w=s.h=0;s.vp={};s.applied=s.cached=nullptr;s.epoch=0;}
-void Destroy(command_list* cl){delete Get(cl);cl->set_private_data(reinterpret_cast<const uint8_t*>(&stateId),0);}
+bool Indirect(command_list* cl,indirect_command type,resource,uint64_t,uint32_t,uint32_t){
+    if(type==indirect_command::draw||type==indirect_command::draw_indexed)return Draw(cl,0,0,0,0);
+    // Unknown indirect signatures/mesh pipelines cannot be classified safely.
+    auto& s=*Get(cl);const bool eligible=s.eligible;s.eligible=false;Apply(cl,s);s.eligible=eligible;s.dirty=true;return false;
+}
+bool Mesh(command_list* cl,uint32_t,uint32_t,uint32_t){return Indirect(cl,indirect_command::dispatch_mesh,{},0,0,0);}
+void Reset(command_list* cl){auto& s=*Get(cl);s.eligible=s.targets=s.hasMask=false;s.w=s.h=0;s.vp={};s.applied=s.cached=nullptr;s.epoch=s.appliedEpoch=s.pipeline=s.pipelineEpoch=0;s.dirty=true;}
+void Destroy(command_list* cl){
+    uint64_t ptr=0;cl->get_private_data(reinterpret_cast<const uint8_t*>(&stateId),&ptr);
+    cl->set_private_data(reinterpret_cast<const uint8_t*>(&stateId),0);
+    ++stateGeneration;delete reinterpret_cast<State*>(ptr);
+}
 void Effects(effect_runtime*,command_list* cl,resource_view,resource_view){Suspend(cl);}
 }
 void Register(void (*log)(const char*)) {
@@ -170,19 +213,22 @@ void Register(void (*log)(const char*)) {
     reshade::register_event<reshade::addon_event::bind_viewports>(&Viewports);
     reshade::register_event<reshade::addon_event::draw>(&Draw);
     reshade::register_event<reshade::addon_event::draw_indexed>(&DrawIndexed);
+    reshade::register_event<reshade::addon_event::draw_or_dispatch_indirect>(&Indirect);
+    reshade::register_event<reshade::addon_event::dispatch_mesh>(&Mesh);
     reshade::register_event<reshade::addon_event::reset_command_list>(&Reset);
     reshade::register_event<reshade::addon_event::destroy_command_list>(&Destroy);
     reshade::register_event<reshade::addon_event::reshade_begin_effects>(&Effects);
 }
-void Configure(bool on,float radius){enabled=on;const float value=std::isfinite(radius)?std::clamp(radius,.35f,.85f):.55f;if(inner.exchange(value)!=value)++maskEpoch;}
+void Configure(bool on,float radius){const bool changed=enabled.exchange(on)!=on;const float value=std::isfinite(radius)?std::clamp(radius,.35f,.85f):.55f;if(inner.exchange(value)!=value||changed)++maskEpoch;}
 void Initialize(ID3D12Device* dev,ID3D12CommandQueue* q,uint32_t w,uint32_t h){
     nativeDevice=dev;nativeQueue=q;screenW=w;screenH=h;vrs::Features f{};
     ready=SUCCEEDED(dev->CheckFeatureSupport(D3D12_FEATURE_D3D12_OPTIONS6,&f,sizeof f))&&f.tier>=2&&(f.tile==8||f.tile==16||f.tile==32);
-    tile=f.tile;char line[160];std::snprintf(line,sizeof line,"Frame foveation: fixed VRS %s; tier %u tile %u; 1x1 center / 2x2 opaque-world periphery",ready?"available":"unavailable",f.tier,tile);Say(line);
+    tile=f.tile;++maskEpoch;char line[160];std::snprintf(line,sizeof line,"Frame foveation: fixed VRS %s; tier %u tile %u; 1x1 center / 2x2 opaque-world periphery",ready?"available":"unavailable",f.tier,tile);Say(line);
+    Say("Frame foveation: cached command-list state, deferred rate binding, batched draw statistics");
 }
 void BeginEye(int e,float cx,float cy){eye=e;centerX=cx;centerY=cy;++maskEpoch;worldDrawing=true;}
-void EndWorld(){worldDrawing=false;}
+void EndWorld(){if(worldDrawing.exchange(false))++maskEpoch;}
 void Suspend(command_list* cl){auto& s=*Get(cl);s.targets=false;Apply(cl,s);}
 Stats TakeStats(){return {shadedDraws.exchange(0),fullDraws.exchange(0)};}
-void Shutdown(){ready=false;worldDrawing=false;std::lock_guard lock(maskLock);masks.clear();nativeQueue.Reset();nativeDevice.Reset();}
+void Shutdown(){ready=false;worldDrawing=false;++maskEpoch;std::lock_guard lock(maskLock);masks.clear();nativeQueue.Reset();nativeDevice.Reset();}
 }

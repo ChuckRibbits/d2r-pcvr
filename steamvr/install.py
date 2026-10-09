@@ -19,6 +19,9 @@ GAME = STEAM / 'steamapps/common/Diablo II Resurrected'
 SAVES = STEAM / 'steamapps/compatdata/2536520/pfx/drive_c/users/steamuser/Saved Games/Diablo II Resurrected'
 LOADER_HASH = '9286c6b5bff7f1043658411dbea305faa9698b6a455e6441668fc6d02c22aad7'
 RESHADE_HASH = 'afe4c8f13048306307983b8b3d41d5bf00a86820440b0e57dea10950e1176445'
+SDK_VERSION = '10.0.26100.9169'
+SDK_HASH = '475269434dcd808a67853773272f972c3229c0e10c3ddc821290e70cc0f6904d'
+COMPILER_HASH = '3bd6d7acfe8a0a84acd166fba1a537ce68bd21c8edce2bd9bb863cfa034136d4'
 
 
 def require_game_closed():
@@ -39,14 +42,14 @@ def require_game_closed():
         raise SystemExit('Save and exit D2R before installing or restoring the mod.')
 
 
-def download_verified(url, path, digest):
+def download_verified(url, path, digest, max_bytes=100 * 1024 * 1024):
     if path.is_file() and hashlib.sha256(path.read_bytes()).hexdigest() == digest:
         return
     path.parent.mkdir(parents=True, exist_ok=True)
     print(f'Downloading {url}')
     request = urllib.request.Request(url, headers={'User-Agent': 'D2R-PCVR-installer/0.1'})
     with urllib.request.urlopen(request, timeout=60) as response:
-        data = response.read(100 * 1024 * 1024 + 1)
+        data = response.read(max_bytes + 1)
     if hashlib.sha256(data).hexdigest() != digest:
         raise SystemExit(f'Checksum mismatch for {url}; no game files changed.')
     path.write_bytes(data)
@@ -115,6 +118,7 @@ def main():
     settings = json.loads((saves / 'Settings.json').read_text(encoding='utf-8-sig'))
     archive = args.deps / 'D2RLoader-1.3.1-beta.zip'
     reshade = args.deps / 'reshade-6.8/ReShade64.dll'
+    compiler = args.deps / 'd3dcompiler47/modern/d3dcompiler_47.dll'
     if args.download_deps:
         download_verified('https://d2rloader.net/downloads/D2RLoader-1.3.1-beta.zip', archive, LOADER_HASH)
         setup = args.deps / 'ReShade_Setup_6.8.0_Addon.exe'
@@ -124,6 +128,20 @@ def main():
         with zipfile.ZipFile(setup) as z:
             reshade.parent.mkdir(parents=True, exist_ok=True)
             reshade.write_bytes(z.read('ReShade64.dll'))
+        if os.name != 'nt':
+            # Wine's compiler stayed busy throughout multi-minute tests of the
+            # effect. Use Microsoft's current SDK redist privately under the
+            # mod; the Windows 8.1 Winetricks version lacks shader model 5.1.
+            sdk = args.deps / f'd3dcompiler47/microsoft.windows.sdk.cpp.{SDK_VERSION}.nupkg'
+            download_verified(f'https://api.nuget.org/v3-flatcontainer/microsoft.windows.sdk.cpp/{SDK_VERSION}/{sdk.name}',
+                              sdk, SDK_HASH, max_bytes=200 * 1024 * 1024)
+            with zipfile.ZipFile(sdk) as z:
+                compiler.parent.mkdir(parents=True, exist_ok=True)
+                compiler.write_bytes(z.read('c/Redist/D3D/x64/d3dcompiler_47.dll'))
+    if os.name != 'nt' and not compiler.is_file():
+        raise SystemExit('Proton needs the SDK shader compiler; run with --download-deps.')
+    if compiler.is_file() and hashlib.sha256(compiler.read_bytes()).hexdigest() != COMPILER_HASH:
+        raise SystemExit('SDK shader compiler checksum mismatch; run with --download-deps.')
     if hashlib.sha256(archive.read_bytes()).hexdigest() != LOADER_HASH:
         raise SystemExit('D2RLoader archive checksum mismatch')
     payload = {}
@@ -136,6 +154,8 @@ def main():
                 payload[rel] = z.read(name)
     payload[Path('ReShade64.dll')] = reshade.read_bytes()
     payload[Path('d2rloader/plugins/d2rl-vrcam.dll')] = args.plugin.read_bytes()
+    if compiler.is_file():
+        payload[Path('d2rloader/runtime/d3dcompiler_47.dll')] = compiler.read_bytes()
     if args.openxr_loader:
         payload[Path('openxr_loader.dll')] = args.openxr_loader.read_bytes()
     snapshot = args.backup_dir / datetime.now().strftime('%Y%m%d-%H%M%S-%f')
@@ -166,10 +186,11 @@ def main():
         'camera': {'fov_from_flatvr': '0', 'neck_model': '0', 'near': '0.2'},
         'stereo': {'afr': '1', 'pair_per_tick': '1', 'true_scale': '0', 'convergence': '0', 'swap': '0'},
         'turn': {'snap': '30'},
-        'mode': {'platform': '1', 'vr_mode': '4'},
-        'hud': {'hide': '0', 'map': '0', 'stereo_labels': '1'},
+        'mode': {'platform': '1', 'vr_mode': '4', 'vr_mode_order': '2'},
+        'hud': {'hide': '0', 'map': '0', 'stereo_labels': '1', 'monster_draw_order': '1'},
         'update': {'check': '0'},
-        'render': {'game_height_fog': '1', 'fixed_foveation': '1', 'foveation_inner': '0.55'},
+        'render': {'game_height_fog': '1', 'fixed_foveation': '1', 'foveation_inner': '0.55',
+                   'symmetric_projection': '1', 'defer_gpu_wait': '0'},
     }
     for section, values in changes.items():
         if not cfg.has_section(section):

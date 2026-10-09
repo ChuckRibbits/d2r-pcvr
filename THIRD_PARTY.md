@@ -28,6 +28,12 @@ and **ReShade 6.8.0 with full add-on support** from [reshade.me](https://reshade
 These binaries are not bundled in the release ZIP. The original dependency
 licenses and terms govern them. Pinned archive checksums are in `steamvr/install.py`.
 
+On Linux the installer also downloads Microsoft's
+[Windows SDK for C++ 10.0.26100.9169](https://www.nuget.org/packages/Microsoft.Windows.SDK.CPP/10.0.26100.9169)
+and extracts `c/Redist/D3D/x64/d3dcompiler_47.dll` for mod-local shader compilation.
+Neither the SDK package nor its compiler is bundled in this repository or release.
+Microsoft's [Windows SDK license](https://aka.ms/WinSDKLicenseURL) applies.
+
 Diablo II: Resurrected, its executable, archives and save data belong to Blizzard
 Entertainment / their owners and are not distributed in this preview. This
 project is not affiliated with or endorsed by Blizzard Entertainment, Valve,

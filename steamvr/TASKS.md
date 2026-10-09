@@ -11,7 +11,18 @@ User verified the changes so far in the 18:20 build, then reported inventory
 closing on laser clicks and no visible belt. Individual regression scenarios
 below remain explicit so they are not lost after that general check.
 
+Current priority: **performance and visual quality**. The owner confirmed the
+creature-label depth fix; broader label regression checks remain below.
+
 ## 1. Stability and calibration — next headset pass
+
+- [x] Restore first-person stereo after the 20:39 saved mode switched to third
+  person. At 21:04, changing only `vr_mode=4` fixed the camera pivot and stereo;
+  owner confirmed both normal, ReShade effects still enabled.
+- [x] Install the native-only first-person guard: repair old saved modes,
+  ignore unsupported F1–F3/F12 camera switches, retain flat-mode selection.
+  Installed after Save & Exit at 21:09; live saved-mode repair and F2 rejection
+  checks passed. Broader gameplay/flat-mode visual regression remains open.
 
 - [ ] Verify the background scan freeze fixes in a longer play session and in
   a dungeon. Checked memory reads fixed the hero-facing scan crash; the latest
@@ -34,12 +45,16 @@ below remain explicit so they are not lost after that general check.
 
 ## 2. Menus and HUD
 
-- [ ] Verify floating creature names/health converge at the creature in both
-  eyes, including close/distant creatures, head movement, bosses and ground items.
-  User reports doubled labels on normal monsters (name and health in one label).
+- [x] Fix ordinary creature name/health stereo depth. Centered projection removed
+  large separation; drawing the health panel after current-eye tooltip updates
+  fixed reversed disparity. Corrected build installed 23:03; owner **“fixed :)”**.
+  Both fixes now default on; DLSS off is retained for clarity. See HANDOFF.md.
+- [ ] Broaden label checks to close/distant creatures, head movement, bosses,
+  rapid target changes, NPCs and ground items. Historical investigation follows.
+  Earlier evidence: user reported doubled labels on normal monsters (name and health in one label).
   The new unit-label projection hook retains native world anchors and uses the
   exact current-eye scene matrices, avoiding inline flat-frustum rebuilding.
-  Stereo anchor/ray convergence checks pass; headset verification pending.
+  Stereo anchor/ray convergence checks pass; they alone did not fix the visuals.
   The first matrix-only prototype still doubled in the user's test (native
   projected positions differed by less than a pixel). The next build combines
   the original foot X/Z and head height in world space before projecting once,
@@ -47,6 +62,14 @@ below remain explicit so they are not lost after that general check.
   anchor with head pitch/roll; the user tested it and **labels still double**.
   Stop treating projection math tests as visual proof. Next inspect single-eye
   label draws, cached UI layout, rectangle placement and eye/frame pairing.
+  The 20:16 paired Fallen Shaman capture shows one box per image at the other
+  eye's position. TooltipsPanel updates the separate MonsterHealthPanel during
+  drawing, after it may have painted already. The 20:33 deferred-paint prototype
+  was withdrawn during camera diagnosis and archived in the stereo-regression
+  backup. The camera failure was subsequently isolated to saved third-person
+  mode; this does not validate the prototype. Instrument actual paint/event
+  ordering and renderer state in first person before retrying. Check target
+  changes, NPCs, bosses and menus as well as convergence.
 
 - [ ] Verify inventory stays open when selecting/dragging items with the laser.
   User found that the first trigger click closed it. Logs show controller-layout
@@ -64,6 +87,15 @@ below remain explicit so they are not lost after that general check.
   -> other shortcut panels -> Left X close -> Left X reopen cycles and item dragging.
   The 18:45 build's live logs confirm inventory reopened after closing inventory
   and character panels; visual confirmation and repeated cycles remain pending.
+  At 21:35 another failure was isolated to desktop focus: a terminal was active,
+  while movement continued through XR. Restoring game focus restored Left X
+  (owner confirmed). Remove that gate from the native D2R UI action; keep OS
+  mouse/key injection gated, request focus only for deliberate menu actions.
+  The fix was installed at 21:40 after Save & Exit. Intentional focus loss now
+  permits native inventory open/close, verified by the owner and logs. Laser
+  input still needs desktop focus: the OS rejected programmatic focus recovery.
+  The owner accepts this requirement and explicitly asked not to pursue it
+  further. Documented in INSTALL/README; keep D2R focused for laser clicks.
 - [ ] Verify NPC conversation panels are stable and identical for both eyes.
   The user reported double vision and choppiness. The latest build disables
   eye alternation and VR camera/projection for panel frames; headset check pending.
@@ -114,6 +146,94 @@ below remain explicit so they are not lost after that general check.
 
 ## 4. Performance and eye-tracked foveation
 
+- [ ] Parked by owner: SteamVR GPU failure after Frame standby/reconnect at
+  22:45 on October 8 (NVIDIA Xid 32 in vrserver, followed by watchdog/compositor
+  failures). Evidence in HANDOFF.md. Owner requested visuals take priority;
+  no crash-specific code/driver changes applied.
+- [ ] Validate DLSS stereo reconstruction before recommending it. Owner enabled
+  Balanced at 21:48 and reported distorted visuals plus a temporary pause. Found
+  and fixed a MinGW/MSVC NGX overload-vtable mismatch: resource/scalar reads and
+  vector replacement were calling incorrect slots. All 17 adapter calls now
+  match compiler-generated MSVC SDK calls; built and installed at 21:55.
+  Live test confirmed valid input reads, then exposed a second blocker: the
+  diagnostic statistics size limit skipped correction at 4K Balanced. Fixed
+  that guard to apply only to statistics; installed and relaunched at 22:04.
+  At 22:05:39 logs confirmed correction submission for both eyes at 2227x1253.
+  Owner confirmed **“looks good”** with Balanced after the second fix. Compare
+  performance with matched scenes before claiming a gain. Preserve
+  installer default DLSS off. Correction compilation was separated from diagnostic
+  reduction at 22:30: isolated compilation dropped from 22.9 s to 33 ms with
+  identical correction instructions and no group-shared allocation. Installed;
+  live 22:31:57 correction compilation/pipeline creation took 67 ms. Measure
+  steady-state results separately from ongoing walking hitches. Following the
+  centered-projection fix, the owner turned DLSS off and reported **much clearer**.
+  Preserve DLSS off locally as well as in installer defaults; sharpness/temporal
+  reconstruction still needs work before recommending DLSS.
+- [ ] Fix distant square lighting/highlight patches differing between eyes on
+  waypoints and clothing. Not visible close up. Still visible with DLSS off,
+  added sky/fog off, and bloom upsampling suppressed; all diagnostics restored.
+  Native light-bin shader ignores off-axis projection terms; a live centered
+  projection fix is installed at 22:42 (`render.symmetric_projection`, now default 1).
+  Owner reports **patches seem gone, image softer** after the waypoint test.
+  Subsequently disabling DLSS made the image **much clearer**.
+  Keep local setting 1; validate clothing/other scenes and improve sharpness
+  within the performance budget before closing. See HANDOFF.md. Preserve
+  view-dependent highlights and right-eye particle timing while investigating.
+- [ ] Investigate residual bursts after repeated background-load interference
+  ended around 21:46. Owner said movement felt much better with a slight burst
+  remaining. D2R CPU-affinity trials 40–43 were confounded by scene/load changes;
+  original affinities restored. Sequence 44 actually captured DLSS startup and
+  must not be presented as an affinity result or matched performance comparison.
+- [x] Identify the current bursty walking regression's CPU contention. A parallel
+  Iron Signal test started at 21:23:45 and used about 18 logical CPUs. The owner
+  authorized a 45-second pause with automatic resume and asked its agent to stop
+  performance work. After it stopped, the owner confirmed **“Smoother, bursts
+  gone.”** Walking sequence 31 averaged 29.4 ms, p95 37.1, maximum 41.8 over 360
+  pairs; this is not a matched-scene percentage benchmark. Original sync remains
+  enabled (`defer_gpu_wait=0`). No process was left paused. Inspect competing
+  workloads before future comparisons; do not pause other projects unasked.
+- [x] Add bounded stage/callback/GPU profiling and capture stationary and moving
+  gameplay. Sequences 1/3 show mean cycles of 27.0/48.5 ms, with 16.3/25.0 ms of
+  drawing-thread CPU per pair. Effects cost about 1.4 ms and copies 0.05 ms per
+  pair; GPU scene spans include CPU starvation. These are different workloads,
+  not a before/after benchmark. Worker threads remain outside callback probes.
+- [ ] Validate deferred GPU completion waits during gameplay, menus and exit.
+  Installed at 21:27; copy allocator reuse and shutdown retain completion checks.
+  Repeated 1/0/1/0 comparison (sequences 20–23) has mean cycles 35.8/39.7 ms and
+  XR end 3.85/5.72 ms. Head directions differed, so do not claim a controlled
+  percentage gain. Some removed fence wait moves into runtime submission.
+  Owner reported bursty walking with this enabled; restoring 0 did not change
+  movement. Leave owner configuration and source default at 0. An unrelated
+  Iron Signal test was subsequently found using about 18 logical CPUs; exclude
+  competing workloads before drawing performance conclusions.
+  Use `profile_gpu=0` for comparisons, as GPU readback deliberately forces a wait.
+- [ ] Attribute engine scene preparation and worker-thread work inside the two
+  eye passes. Sampled main-thread mod callbacks explain only a small fraction;
+  that does not exclude unmeasured mod work. Keep the long pre-render hitch
+  investigation separate from steady-state drawing cost.
+
+Next investigation order after the camera repair (21:11 measurements):
+
+1. Attribute both eye passes' CPU cost before changing visual settings. Recent
+   windows use 21–22 ms of render-thread CPU per pair, with 28–30 ms total eye
+   pass wall time. The RTX 5090 was at 30% utilization in one spot sample (not
+   a benchmark). Time mod callbacks/scans and engine scene preparation separately.
+2. Measure GPU work and OpenXR synchronization, including the now-active
+   ReShade effects, eye acquire/copy/fence/release and compositor submission.
+   Recent hitch records include 10–15 ms around XR end, but these are not
+   representative average costs. Do not remove resource completion guarantees.
+3. Attribute long pre-render stalls separately: at 21:11:30 a 633 ms cycle
+   spent 581 ms before stereo drawing, near native UI/input events, with zero
+   tracked pipeline creations. Loading, UI and mod work need separate timing;
+   neither shader compilation nor asset loading is established by this sample.
+4. Once measured, investigate sharing eye-independent scene preparation or
+   shadow work across the two eye draws. This is substantial engine work;
+   never skip animation/UI updates blindly or reuse eye-dependent culling.
+5. Compare shadows/VFX/atmospherics, eye resolution and foveation at a fixed
+   scene only if GPU timing identifies them as limiting. Preserve a visual
+   baseline and measure both frame-time tails and average pair time.
+
+
 - [ ] Investigate movement micro-freezes/skips, now the next priority after the
   menu reopening fix. Separate game/asset loading, pipeline compilation, mod
   memory scans, rendering and OpenXR/copy waits. New logs break down >80 ms hitches,
@@ -139,6 +259,21 @@ below remain explicit so they are not lost after that general check.
   A subsequent 599-sample trace saw no journal/page waits or blocked log paths.
   Typical 10-second timing windows had longest pairs of 38–60 ms; one 475 ms
   gameplay gap remained. Continue investigating residual hitches separately.
+- [x] Reduce foveation CPU callback overhead. Cache command-list and repeated
+  pipeline state, defer VRS changes until a draw, batch draw counters and handle
+  indirect/mesh draws conservatively. User's 19:49 test: **“Smoother”**. CPU time
+  now measures correctly under Proton; observed render passes are 94–97% CPU
+  busy while GPU utilization has a median around 43%. No precise gain claimed.
+- [x] Resolve ReShade's persistent shader compilation and verify its CPU cost.
+  A worker used one core throughout the prior session. Trial the current SDK
+  shader compiler privately under the mod, retaining stock launch and prefix
+  libraries. The older Winetricks compiler does not support ReShade's SM 5.1.
+  Current SDK compiler completed the full effect in 10.56 seconds, sky now renders,
+  and the sustained compiler worker is gone in the subsequent thread sample.
+  Previously missing effects now run, so this is not an equal-quality FPS test.
+- [ ] Attribute the remaining half-second gameplay stalls. One 504.7 ms cycle
+  had a 474.1 ms pre-render gap, main-thread CPU activity and ~27 MB cached reads,
+  without physical reads. Asset processing is a candidate, not established cause.
 - [ ] Compare the same walking route twice and after another launch without
   clearing caches. Shader compilation is a candidate, not an established cause.
   Latest Proton log confirms an active shader cache with 1,820 existing entries
@@ -200,3 +335,23 @@ Technical references checked for this investigation:
   Legitimate unmodded online license refresh is separate from offline mod testing.
 - [x] Back up replaced files and saves; retain a documented restore path.
 - [x] Preserve upstream MIT attribution and keep the original D2R-3D checkout separate.
+
+## 6. Headset recordings
+
+- [x] Install Framecorder 0.1.1 on Frame and verify a short recording. Dashboard
+  service works; 4-second 1080p/90 fps HEVC headset-view recording was inspected.
+  Game audio is enabled; microphone and instant replay are off for performance
+  testing. Record/Stop are in the Framecorder SteamVR dashboard tab.
+- [ ] Optional direct-panel capture: owner enters Frame administrator password
+  locally for `sudo -v && ~/.local/bin/framecorder-setup --unlock`. Current
+  headset-view recording works without this. Keep passwords out of chat/logs.
+
+## Desktop presentation
+
+- [ ] Investigate an optional disabled desktop mirror and measure its actual
+  overhead. Current monitor flicker comes from alternating left/right eye
+  backbuffers; there is no separate monitor scene render. ReShade addon Present
+  callbacks cannot cancel the OS presentation. Preserve game frame advancement,
+  headset capture, menus and controller focus; minimizing is not a substitute.
+  A stable single-eye mirror is an alternative but adds a GPU copy in the
+  current design. No display-path changes have been installed.

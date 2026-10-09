@@ -22,6 +22,7 @@
 #define NOMINMAX
 #endif
 #include <windows.h>
+#include "../steamvr/profile.h"
 #include <tlhelp32.h>
 #include <intrin.h>
 #include <xinput.h>
@@ -749,9 +750,27 @@ float GameInterfaceScale() {
 void StartMatrixWatch();   // [debug] matrix_writer, below PickHeroMatrix
 
 void LoadSettings() {
+    #ifdef D2RVR_NATIVE_OPENXR
+    framevr::profile::Request(GetPrivateProfileIntW(L"debug",L"profile_capture",0,g_iniPath));
+    framevr::profile::ConfigureGpu(IniB(L"debug",L"profile_gpu",true));
+    framevr::ConfigureDeferredWait(IniB(L"render",L"defer_gpu_wait",false));
+    framevr::ConfigureSymmetricProjection(IniB(L"render",L"symmetric_projection",true));
+#endif
 #ifdef D2RVR_NATIVE_OPENXR
     framevr::foveation::Configure(IniB(L"render",L"fixed_foveation",true),IniF(L"render",L"foveation_inner",0.55f));
     d2rcam::SetStereoLabels(IniB(L"hud",L"stereo_labels",true));
+    d2rcam::SetMonsterDrawOrder(IniB(L"hud",L"monster_draw_order",true));
+    // Remote debugging can request the same one-shot capture without stealing
+    // keyboard focus from SteamVR. Change the positive counter while running.
+    static bool captureInitialized=false;
+    static UINT lastCapture=0;
+    const UINT capture=GetPrivateProfileIntW(L"debug",L"capture_pair",0,g_iniPath);
+    if(captureInitialized&&capture&&capture!=lastCapture)framevr::RequestStereoCapture();
+    lastCapture=capture;captureInitialized=true;
+    static UINT lastLabelCapture=0;
+    const UINT labelCapture=GetPrivateProfileIntW(L"debug",L"capture_labels",0,g_iniPath);
+    if(labelCapture&&labelCapture!=lastLabelCapture)d2rcam::ArmLabelCapture();
+    lastLabelCapture=labelCapture;
 #endif
     g_set.platform.store(IniF(L"mode", L"platform", 1.0f) != 0.0f ? 1 : 0);
 #if D2RVR_FIRST_PERSON
@@ -775,6 +794,16 @@ void LoadSettings() {
             v = v == 3 ? 4 : v == 4 ? 3 : v;
             write = true;
         }
+#ifdef D2RVR_NATIVE_OPENXR
+        // Only first person uses the native OpenXR eye poses. The legacy
+        // FlatVR orbit/table cameras cannot be submitted with those poses:
+        // a saved third-person mode persisted that mismatch across launches.
+        if (v != 4) {
+            Log("Frame OpenXR: restoring first person; other VR cameras require the legacy FlatVR transport");
+            v = 4;
+            write = true;
+        }
+#endif
         if (write) {
             wchar_t b[8]; swprintf_s(b, L"%d", v);
             WritePrivateProfileStringW(L"mode", L"vr_mode", b, g_iniPath);
@@ -2230,6 +2259,7 @@ void Tick() {
 bool VrViewInner(const d2rcam::WorldView& in, float out[16]);
 extern std::atomic<bool> g_inWorld;
 bool VrView(const d2rcam::WorldView& in, float out[16]) {
+    FRAME_PROFILE(View);
     prevscan::Watch();
     const bool ours = VrViewInner(in, out);
     if (ours) {
@@ -2414,6 +2444,7 @@ bool VrViewInner(const d2rcam::WorldView& in, float out[16]) {
 // shift so what lies at `convergence` sits on the screen.
 bool VrProjInner(const d2rcam::WorldView& in, float M[16]);
 bool VrProj(const d2rcam::WorldView& in, float M[16]) {
+    FRAME_PROFILE(Projection);
 #ifdef D2RVR_NATIVE_OPENXR
     if(gamestate::MenuOpen())return false;
 #endif
@@ -4175,6 +4206,15 @@ double UsNow() { return flog::UsNow(); }
 // cycle count (GetThreadTimes moves only at the scheduler's tick: it read 0) at the
 // clock's rate, measured once against QPC over 50 ms - a turbo clock reads it a little off.
 double CpuUs() {
+#ifdef D2RVR_NATIVE_OPENXR
+    // Wine's QueryThreadCycleTime returned zero in every captured session.
+    // GetThreadTimes is coarser per frame but produces meaningful window totals
+    // without the old 50 ms busy-loop calibration on the render thread.
+    FILETIME created{},exited{},kernel{},user{};
+    if(!GetThreadTimes(GetCurrentThread(),&created,&exited,&kernel,&user))return 0;
+    const auto ticks=[](const FILETIME& t){return (uint64_t(t.dwHighDateTime)<<32)|t.dwLowDateTime;};
+    return double(ticks(kernel)+ticks(user))*.1;
+#else
     static const double cyclesPerUs = [] {
         ULONG64 c0 = 0, c1 = 0;
         const double t0 = UsNow();
@@ -4186,6 +4226,7 @@ double CpuUs() {
     ULONG64 c = 0;
     QueryThreadCycleTime(GetCurrentThread(), &c);
     return cyclesPerUs > 0.0 ? (double)c / cyclesPerUs : 0.0;
+#endif
 }
 // The game's busiest threads over the last call's span, % of one core, by their
 // cycle counts (Toolhelp + QueryThreadCycleTime): "game thread 38%, 1234 92% (the
@@ -4197,8 +4238,9 @@ std::string BusyThreads(double spanUs) {
     const double cpu0 = CpuUs(); (void)cpu0;   // calibrates cyclesPerUs on first use
     ULONG64 one = 0; QueryThreadCycleTime(GetCurrentThread(), &one);
     const double perUs = one && CpuUs() > 0.0 ? (double)one / CpuUs() : 0.0;
+    if(perUs<=0.0)return "cycle counters unavailable";
     HANDLE snap = CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0);
-    if (snap == INVALID_HANDLE_VALUE || perUs <= 0.0) return "?";
+    if (snap == INVALID_HANDLE_VALUE) return "?";
     THREADENTRY32 te{sizeof te};
     const DWORD pid = GetCurrentProcessId();
     for (BOOL ok = Thread32First(snap, &te); ok; ok = Thread32Next(snap, &te)) {
@@ -4278,6 +4320,9 @@ uintptr_t HookDrawGameScreen(int a) {
     d2rcam::Refresh();
     OrigDrawGameScreen(a);
     const double t1 = pairtime::UsNow();
+#ifdef D2RVR_NATIVE_OPENXR
+    const double c1 = pairtime::CpuUs();
+#endif
     sumPass[0] += t1 - t0;
     if (const double pa = pairtime::g_presentAt.load(); pa > t0) sumPresent[0] += t1 - pa;
     sumEff[0] += pairtime::g_effSum.load();
@@ -4301,12 +4346,17 @@ uintptr_t HookDrawGameScreen(int a) {
     sumPass[1] += t2 - t1;
     if (const double pa = pairtime::g_presentAt.load(); pa > t1) sumPresent[1] += t2 - pa;
     sumEff[1] += pairtime::g_effSum.load();
-    sumCpu += pairtime::CpuUs() - c0; sumWall += t2 - t0;
+    const double c2 = pairtime::CpuUs();
+    sumCpu += c2 - c0; sumWall += t2 - t0;
 
 #ifdef D2RVR_NATIVE_OPENXR
     framevr::EndPair();
 #endif
     const double ended=pairtime::UsNow();
+#ifdef D2RVR_NATIVE_OPENXR
+    framevr::profile::FinishPair(lastEnd>0?(entered-lastEnd)*.001:0,(t0-entered)*.001,
+        (t1-t0)*.001,(t2-t1)*.001,(ended-t2)*.001,(c1-c0)*.001,(c2-c1)*.001,framevr::LastTiming());
+#endif
     if(lastEnd>0) {
         const double cycle=ended-lastEnd;
         maxPair=std::max(maxPair,cycle);
@@ -4603,6 +4653,12 @@ void FollowMode() {
 void SetView(int v) {
     if (v < 1 || v > ViewCount()) return;
     const bool vr = g_set.platform.load() == 1;
+#ifdef D2RVR_NATIVE_OPENXR
+    if (vr && v != 4) {
+        Log("Frame OpenXR: camera shortcut ignored; native VR stays in first person");
+        return;
+    }
+#endif
     (vr ? g_set.vrView : g_set.flatView).store(v);
     wchar_t b[8];
     swprintf_s(b, L"%d", v);
@@ -4612,6 +4668,9 @@ void SetView(int v) {
 
 // F12 (and the console's "vrcam"): the next view of this platform, round.
 const char* Toggle() {
+#ifdef D2RVR_NATIVE_OPENXR
+    if (g_set.platform.load() == 1) return "Frame OpenXR: native VR stays in first person";
+#endif
     SetView(ViewNow() % ViewCount() + 1);
     return "vrcam: next view (F12)";
 }
@@ -6595,13 +6654,15 @@ bool ApplySkyPictures(reshade::api::effect_runtime* rt) {
             set = true;
         }
     }
-    {   // the cave ceiling's pictures, a slot each; an empty slot keeps one that is there (never sampled)
+    {   // Empty slots use no source image; the existing procedural stone path
+        // handles biomes without an installed texture. Do not request a missing
+        // default file: ReShade treats that as a failed effect reload.
         std::string file[kCeilSlots + 1];
         bool ok[kCeilSlots + 1] = {};
         AcquireSRWLockShared(&g_skyCfgLock);
         for (int k = 1; k <= kCeilSlots; ++k) { file[k] = g_ceilSlot[k]; ok[k] = g_ceilSlotOk[k]; }
         ReleaseSRWLockShared(&g_skyCfgLock);
-        const std::string spare = ok[1] ? file[1] : std::string("D2R_Sky_ours/D2R_Ceiling_act1_caves_walls.png");
+        const std::string spare = ok[1] ? file[1] : std::string();
         for (int k = 1; k <= kCeilSlots; ++k) {
             char name[24];
             snprintf(name, sizeof name, "D2R_CEILING_%d", k);
@@ -6623,6 +6684,7 @@ bool ApplySkyPictures(reshade::api::effect_runtime* rt) {
 // resources it had not created yet, and the game died in D3D12 (null+0x19C).
 // From here it takes effect on the next frame, with everything in place.
 void OnFinishEffects(reshade::api::effect_runtime* rt, reshade::api::command_list*, reshade::api::resource_view, reshade::api::resource_view) {
+    FRAME_PROFILE(EffectsFinish);
     if (const double b = pairtime::g_effBegin.exchange(0.0); b > 0.0) pairtime::g_effSum.store(pairtime::g_effSum.load() + pairtime::UsNow() - b);
     if (ApplySkyPictures(rt)) return;   // the effect reloads with the new pictures
     if (!g_tech[0].handle) g_tech[0] = rt->find_technique("D2R_DepthFog.fx", "D2R_DepthFog");
@@ -6689,6 +6751,7 @@ void Note() {
     ReleaseSRWLockExclusive(&g_lock);
 }
 void OnBind(command_list* cl, uint32_t, const resource_view*, resource_view dsv) {
+    FRAME_PROFILE_SAMPLED(DepthBind);
     if (cl != t_cl) { t_cl = cl; t_vpW = t_vpH = 0.0f; }
     t_dsW = t_dsH = 0;
     if (dsv.handle) {
@@ -6795,6 +6858,7 @@ void OnReshadePresent(reshade::api::effect_runtime*) {
 }
 
 void OnBeginEffects(reshade::api::effect_runtime* rt, reshade::api::command_list*, reshade::api::resource_view, reshade::api::resource_view) {
+    FRAME_PROFILE(EffectsSetup);
     pairtime::g_effBegin.store(pairtime::UsNow());
     {
         float s[2];
@@ -7278,6 +7342,9 @@ DWORD WINAPI UpdateThread(void*) {
     SetWaitableTimer(timer, &due, 1, nullptr, nullptr, FALSE);
     LogF("vrcam: 1 ms update timer (%s)", highRes ? "high resolution" : "plain - may run at the system's timer resolution");
     Key f12{VK_F12}, f11{VK_F11}, f10{VK_F10}, f9{VK_F9};
+#ifdef D2RVR_NATIVE_OPENXR
+    Key f8{VK_F8};
+#endif
     Key fView[5] = {{VK_F1}, {VK_F2}, {VK_F3}, {VK_F4}, {VK_F5}};   // the views, as on the Home page
     ULONGLONG nextState = 0, nextSlow = 0;
     bool toldWorld = false;
@@ -7309,6 +7376,9 @@ DWORD WINAPI UpdateThread(void*) {
         for (int k = 0; k < 5; ++k)
             if (fView[k].Pressed(focus) && k < ViewCount()) SetView(k + 1);
         if (f11.Pressed(focus)) Recenter();
+#ifdef D2RVR_NATIVE_OPENXR
+        if (f8.Pressed(focus)) framevr::RequestStereoCapture();
+#endif
         if (f10.Pressed(focus)) {
             if (GetAsyncKeyState(VK_CONTROL) & 0x8000) {   // Ctrl + F10: one frame of render targets, to find the interface's
                 std::wstring path = g_iniPath;
@@ -7496,6 +7566,17 @@ void LoadReShade() {
     wcscpy_s(path, dir);
     wcscat_s(path, L"ReShade64.dll");
     if (GetFileAttributesW(path) == INVALID_FILE_ATTRIBUTES) { Log("vrcam: no ReShade64.dll beside the game - no fog, sky or FlatVR picture"); return; }
+#ifdef D2RVR_NATIVE_OPENXR
+    // Optional Microsoft SDK compiler, private to the mod. Preload before
+    // ReShade requests D3DCompiler_47 by name; stock Steam Play never loads
+    // this plugin and neither the game directory nor Wine's DLLs are replaced.
+    const std::wstring compiler=std::wstring(dir)+L"d2rloader\\runtime\\d3dcompiler_47.dll";
+    if(GetFileAttributesW(compiler.c_str())!=INVALID_FILE_ATTRIBUTES) {
+        const HMODULE module=LoadLibraryW(compiler.c_str());
+        if(module){wchar_t loaded[MAX_PATH]{};GetModuleFileNameW(module,loaded,MAX_PATH);LogF("Frame effects: preloaded shader compiler %ls",loaded);}
+        else LogF("Frame effects: optional shader compiler load failed (%lu); using system compiler",GetLastError());
+    }
+#endif
     if (LoadLibraryW(path)) Log("vrcam: ReShade loaded from ReShade64.dll");
     else LogF("vrcam: ReShade64.dll did not load (error %lu)", GetLastError());
 }

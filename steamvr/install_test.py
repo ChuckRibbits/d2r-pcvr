@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Installer reversibility and portable launch routing, using temporary fixtures."""
 import contextlib
+import configparser
 import hashlib
 import io
 import json
@@ -36,6 +37,9 @@ class InstallationTests(unittest.TestCase):
                 z.writestr('d2rloader/config/d2rloader.toml', 'fixture config')
             (deps / 'reshade-6.8').mkdir()
             (deps / 'reshade-6.8/ReShade64.dll').write_bytes(b'fixture reshade')
+            compiler = deps / 'd3dcompiler47/modern/d3dcompiler_47.dll'
+            compiler.parent.mkdir(parents=True)
+            compiler.write_bytes(b'fixture compiler')
             plugin = root / 'plugin.dll'
             plugin.write_bytes(b'fixture plugin')
             loader = root / 'openxr_loader.dll'
@@ -43,7 +47,8 @@ class InstallationTests(unittest.TestCase):
             common = ['install.py', '--game', str(game), '--deps', str(deps),
                       '--plugin', str(plugin), '--openxr-loader', str(loader),
                       '--saves', str(saves), '--backup-dir', str(root / 'backups')]
-            with patch.object(install, 'require_game_closed'), contextlib.redirect_stdout(io.StringIO()):
+            with patch.object(install, 'require_game_closed'), contextlib.redirect_stdout(io.StringIO()), \
+                    patch.object(install, 'COMPILER_HASH', hashlib.sha256(compiler.read_bytes()).hexdigest()):
                 with patch.object(sys, 'argv', common), patch.object(install, 'LOADER_HASH', 'incorrect'):
                     with self.assertRaises(SystemExit):
                         install.main()
@@ -54,6 +59,14 @@ class InstallationTests(unittest.TestCase):
                 snapshot = next((root / 'backups').iterdir())
                 self.assertEqual((game / 'D2R.exe').read_bytes(), exe)
                 self.assertFalse((game / 'dxgi.dll').exists())
+                self.assertEqual((game / 'd2rloader/runtime/d3dcompiler_47.dll').read_bytes(), compiler.read_bytes())
+                self.assertFalse((game / 'd3dcompiler_47.dll').exists())
+                cfg=configparser.ConfigParser(allow_no_value=True)
+                cfg.read(game / 'd2rloader/plugins/d2r_vr.ini')
+                self.assertTrue(cfg.getboolean('render','symmetric_projection'))
+                self.assertTrue(cfg.getboolean('hud','monster_draw_order'))
+                self.assertFalse(cfg.getboolean('render','defer_gpu_wait'))
+                self.assertEqual(json.loads((saves / 'Settings.json').read_text())['NVIDIA DLSS'],0)
                 self.assertEqual(json.loads((saves / 'Settings.json').read_text())['Resolution Scale'], 80)
                 (saves / 'Friend.d2s').write_bytes(b'new progress')
                 with patch.object(sys, 'argv', ['install.py', '--game', str(game), '--restore', str(snapshot)]):
@@ -63,6 +76,7 @@ class InstallationTests(unittest.TestCase):
                 self.assertEqual((game / 'D2R.exe').read_bytes(), exe)
                 self.assertFalse((game / 'D2RLoader.exe').exists())
                 self.assertFalse((game / 'openxr_loader.dll').exists())
+                self.assertFalse((game / 'd2rloader/runtime/d3dcompiler_47.dll').exists())
                 self.assertEqual(json.loads((saves / 'Settings.json').read_text())['Resolution Scale'], 100)
 
     def test_archive_paths_reject_windows_and_linux_traversal(self):
