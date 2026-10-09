@@ -1,7 +1,7 @@
 # D2R Steam Frame PCVR tasks
 
-Updated 2026-10-08. Target: first-person D2R on this Linux PC through Proton,
-SteamVR streaming to Steam Frame. Test with offline character **Nekro** only.
+Updated 2026-10-09. Target: first-person D2R on this Linux PC through Proton,
+SteamVR streaming to Steam Frame. Test with offline **Nekro** or the owner's new bow-test Amazon only.
 The DevilutionX standalone/tabletop project remains parked separately.
 
 Unchecked tasks remain open, including implemented changes awaiting headset
@@ -11,8 +11,10 @@ User verified the changes so far in the 18:20 build, then reported inventory
 closing on laser clicks and no visible belt. Individual regression scenarios
 below remain explicit so they are not lost after that general check.
 
-Current priority: **performance and visual quality**. The owner confirmed the
-creature-label depth fix; broader label regression checks remain below.
+Current priority: **motion-controlled VR gameplay**, following the owner-verified
+lighting, label and eye-tracked foveation work. See [GAMEPLAY.md](GAMEPLAY.md)
+for the first installed prototype, exact controls, limitations and test order.
+Broader performance/visual regression checks remain below.
 
 ## 1. Stability and calibration — next headset pass
 
@@ -116,6 +118,86 @@ creature-label depth fix; broader label regression checks remain below.
 
 ## 3. Weapon and spell interaction
 
+- [x] Owner verified right-grip/button attacks, then rejected the interaction:
+  no grip-to-arm step, preselected target or button simulation for physical melee.
+- [x] Implement free-swing swept-capsule contacts with native exact-target basic
+  damage on the authoritative thread, per-stroke deduplication and contact haptics.
+  Category weapon volumes / inferred creature capsules are approximate.
+- [x] Fix captured strong-slash lockout: bounded recovery without a still-hand
+  requirement, rate-aware tracking guards, no derived upper-speed cutoff, and
+  length-preserving arc sweeps and bounded stroke-onset history. Host replay
+  improves 4 to 48 target/stroke contacts. Owner reported improved slashes;
+  remaining fast-motion misses were addressed in revision 4 below.
+- [x] Match melee input/render timestamps and use same-pose world
+  geometry; synthetic delayed-render regression reproduces and fixes lost fast
+  slashes. Revision 4 installed and owner verified **"works great"** on October 9.
+- [x] Verify the free-swing sword baseline in Steam Frame. Final run recorded
+  58 physical contacts / 58 native accepted hits, with no rejections.
+- [ ] Extend headset checks across weapons/creatures, damage/procs and resets;
+  refine dimensions/axes and add attack-speed scaling.
+- [x] Implement the requested removal of random misses for the local player's
+  melee, arrows and magic against creatures: exact hit-roll override plus random
+  block/dodge bypass, with native eligibility/range/collision and damage/costs.
+  `contact_hits=1`, dependent on motion controls; incoming attacks and summons
+  retain native rules. Tests/build pass; three live melee overrides confirmed.
+- [ ] Verify outgoing arrow/spell hit checks for deterministic hits. Preserve
+  critical/damage/progression and resource systems; bow flight tuning is parked.
+- [x] Implement the first right-handed motion-input prototype: deliberate melee
+  swings, bow nock/draw/release, hand palette for eight native skill assignments
+  and weapon swap, belt grab/raise/tip-to-drink, hand aim and gesture haptics.
+  Portable gesture tests and cross-build pass. Bow drawing and free-swing sword
+  combat are verified; palette, potion and spell interactions still need checks.
+- [ ] Complete the remaining headset scenarios in GAMEPLAY.md. The owner has an
+  offline bow-test character. Keep Nekro and both characters' inventory/progress.
+  First bow test: equipped hunter's bow (`hbw`) and arrows (`aqv`) were detected,
+  but owner could not nock/draw/fire. No successful gesture events were logged.
+  Revised build installed 00:01:59 October 9: removed left-grip prerequisite,
+  uses a larger visible string-side grab region, allows squeeze-before-approach,
+  trigger hysteresis, explicit B cancel, automatic bow mode on equip, a visible
+  arrow/V-string guide and grab/draw haptics. Added rate-limited readiness logs
+  to distinguish tracking/input gates from failed gestures. Tests/build passed;
+  Owner subsequently confirmed drawing and shooting work, but the native bow
+  draw and rumble happened only after trigger release. Read-only capture caught
+  that delayed native wind-up. New procedural pose test drives the existing
+  string/limbs/arrow while trigger is held; guarded to the hero's attached bow,
+  fixed string/limb lengths from runtime bind geometry, unknown-rig fallback.
+  Added stronger checked haptics and draw-progress pulses. Geometry/timeline tests
+  and cross-build pass. Owner verified live native pose and haptics work.
+- [ ] **Parked by owner, October 9:** improve bow aim alignment and perceived arrow travel speed. First isolate
+  idle bow-marker frame submission errors (`xrEndFrame -39`, present in prior
+  guide build too). Distinguish attack wind-up, travel velocity, ground-only aim
+  and model-vs-hand-line alignment before changing combat values. Owner clarified
+  sideways shots and requested a visible arrow exactly along both hand anchors.
+  00:34 build implements native 3D nock/arrow posing through the full attachment
+  transform, 400 ms release-direction latch, and omits native idle nock marker.
+  First anchor build failed visually: generic attachment follows inventory slot
+  (right), not the actual left bow. Corrected to explicit L_weapon_attach;
+  built/installed after game closed and owner verified hand following. Idle-marker frame
+  errors stopped in the 00:34 build's live test. Latest corrected build has 734
+  live draw samples: string-to-hand p90 3.26 mm, arrow-to-hand-line p90 0.452 deg;
+  no frame-submit errors. Owner confirmed both-hand following. Remaining issue
+  clarified: flying arrow model angled across its roughly straight flight path,
+  not the bow twisting. Add native projectile orientation correction and 2x
+  travel-speed test. Flight test feedback: somewhat aligned, not much faster.
+  Hooks installed but no creation/velocity counters appeared in the latest
+  session; do not claim verified 2x speed. Leave flight tuning parked for melee.
+- [x] Implement initial generic main-hand melee recognition and aim for every character
+  class: weapon-category sensitivity, translation/rotation strokes, thrusts,
+  net-excursion jitter rejection, ready haptic, 250 ms swing-bearing latch, and
+  native-reach guard for staff/javelin swings. Host tests cover all four gesture
+  profiles, three stroke directions and 36/72/120 Hz input. No class/rig special
+  cases. This grip-armed prototype was superseded by the free-swing contacts above.
+- [ ] Verify generic melee in headset across characters and weapon categories:
+  correct target, damage, reach, timing, held model and menu/swap recovery.
+  Sword contact and native accepted-hit feedback are verified; independent
+  off-hand strikes/shield collisions remain open.
+- [ ] Replace prototype slot text/flat bottle/draw-line guides with actual skill
+  metadata, belt counts and 3D item presentation. Add wrist health/mana feedback.
+- [ ] Add pitch-sensitive spell placement, parries, crossbow loading and throwing.
+  Refine held-bow presentation across rigs and melee collider dimensions.
+  Damage/resources stay native, with the explicitly requested deterministic hit
+  exception above. These remaining interactions need individual validation.
+
 - [ ] Make world interaction obvious and precise: right-hand aim ray, highlight
   and readable name/action for the actual selected target, then **Right A** to
   interact/loot. Current Right A uses the game's native interaction target;
@@ -136,7 +218,7 @@ creature-label depth fix; broader label regression checks remain below.
   tracked weapon presentation does not establish gesture combat support.
 - [ ] Add a controller radial selector for weapons and assigned spells/skills,
   with clear equipped/selected feedback and comfortable casting controls.
-- [ ] Add optional melee swing detection: intentional swing triggers the game's
+- [x] Superseded initial optional gesture-to-button approach: swing triggered the game's
   native attack, with thresholds/debounce and trigger fallback. Respect weapon
   reach, game attack speed, hit rules and cooldowns; no attacks from menu gestures.
 - [ ] Add optional two-hand bow mechanics: nock/draw/release gesture and controller
@@ -370,3 +452,13 @@ Technical references checked for this investigation:
   headset capture, menus and controller focus; minimizing is not a substitute.
   A stable single-eye mirror is an alternative but adds a GPU copy in the
   current design. No display-path changes have been installed.
+
+### Basic-arrow flight test, 2026-10-09
+
+- [x] Locate static flying-arrow model and native half-second release-point blend.
+- [x] Build local-player-only basic-arrow 2x velocity hooks on client and server;
+  no game table/save/asset edits. Native lifetime means possible longer range.
+- [x] Build selective native release-point component removal before handoff.
+- [ ] Verify actual client/server velocity events and direct handoff in game.
+- [ ] Headset check: arrow axis along flight, faster flight, normal enemy hits.
+- [ ] Extend to elemental/skill arrows after basic-arrow test; current scope is id 0.

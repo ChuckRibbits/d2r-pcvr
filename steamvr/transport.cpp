@@ -24,10 +24,16 @@
 #include "transport.h"
 #include "math.h"
 #include "input.h"
+#include "gameplay.h"
+#include "d2r_vr_state.h"
 #include "foveation.h"
 #include "gaze.h"
 #include "d2rcam.h"
 #include "profile.h"
+#include "../vr/skeletons.h"
+
+namespace gamestate {uint32_t WeaponType();uint32_t HandsKey();uint32_t WeaponSet();uint32_t WeaponClass();uint32_t TwoHanded();}
+namespace gamecmd {void RequestPotion(int slot);void CancelPotion();}
 
 namespace framevr {
 using Microsoft::WRL::ComPtr;
@@ -43,7 +49,7 @@ constexpr float kRadToDeg=57.295779513f;
  X(AcquireSwapchainImage) X(WaitSwapchainImage) X(ReleaseSwapchainImage) \
  X(StringToPath) X(CreateActionSet) X(DestroyActionSet) X(CreateAction) \
  X(CreateActionSpace) X(SuggestInteractionProfileBindings) X(AttachSessionActionSets) \
- X(SyncActions) X(GetActionStateBoolean) X(GetActionStateFloat) X(GetActionStateVector2f) X(GetActionStatePose)
+ X(SyncActions) X(GetActionStateBoolean) X(GetActionStateFloat) X(GetActionStateVector2f) X(GetActionStatePose) X(ApplyHapticFeedback)
 #define DECLARE(name) PFN_xr##name p##name=nullptr;
 XR_FUNCTIONS(DECLARE)
 #undef DECLARE
@@ -59,6 +65,18 @@ std::atomic<double> maxPipelineMs{0};
 std::atomic<bool> deferredWait{false};
 std::atomic<bool> symmetricProjection{true};
 std::atomic<bool> eyeTracking{false};
+std::atomic<bool> motionControls{false};
+gameplay::Engine motion;
+gameplay::Input motionInput;
+gameplay::Output motionOutput;
+melee::PoseHistory meleePoses;
+uint64_t meleeEpoch=1;
+std::atomic<ULONGLONG> meleeImpactAt{0};
+XrSwapchain gameplayChain=XR_NULL_HANDLE;
+XrPosef palettePose{};
+constexpr float paletteWidth=.40f,paletteHeight=.30f;
+ULONGLONG motionAt=0;
+bool motionHeadTracked=false;
 bool gazeExtension=false,gazeSupported=false,gazeReady=false,gazeValid=false;
 XrAction gazeAction=XR_NULL_HANDLE;
 XrSpace gazeSpace=XR_NULL_HANDLE;
@@ -138,6 +156,7 @@ Block<D2RVR_Actions> actions;
 XrActionSet actionSet=XR_NULL_HANDLE;
 XrAction gripPose=XR_NULL_HANDLE, stick=XR_NULL_HANDLE, trigger=XR_NULL_HANDLE, squeeze=XR_NULL_HANDLE;
 XrAction aimPose=XR_NULL_HANDLE;
+XrAction haptic=XR_NULL_HANDLE;
 XrAction primary=XR_NULL_HANDLE, secondary=XR_NULL_HANDLE, stickClick=XR_NULL_HANDLE, menu=XR_NULL_HANDLE;
 XrPath hands[2]{}; // right, left, matching the existing wire format.
 XrSpace handSpaces[2]{};
@@ -240,6 +259,9 @@ void PulseUiKey(WORD virtualKey) {
     Say(virtualKey==VK_ESCAPE?"Frame OpenXR: menu Escape scan code down":"Frame OpenXR: inventory I scan code down");
 }
 void ClearInput() {
+    ++meleeEpoch;motion.Cancel();motionOutput={};motionAt=0;gamecmd::CancelPotion();
+    meleePoses.Clear();
+    skel::SetMotionBow(false,false,0);
     ReleaseUiKey();
     if(mouseDown){INPUT up{};up.type=INPUT_MOUSE;up.mi.dwFlags=MOUSEEVENTF_LEFTUP;SendInput(1,&up,sizeof up);mouseDown=false;}
     triggerWasDown=cancelWasDown=pointerVisible=pointerHit=false;
@@ -316,7 +338,7 @@ bool SetupActions() {
     std::strcpy(ci.actionSetName,"d2r");std::strcpy(ci.localizedActionSetName,"Diablo II");
     if(!Check(pCreateActionSet(instance,&ci,&actionSet),"create action set")) return false;
     if(!MakeAction(gripPose,"hands",XR_ACTION_TYPE_POSE_INPUT) || !MakeAction(stick,"sticks",XR_ACTION_TYPE_VECTOR2F_INPUT) ||
-       !MakeAction(aimPose,"menu_aim",XR_ACTION_TYPE_POSE_INPUT) ||
+       !MakeAction(aimPose,"menu_aim",XR_ACTION_TYPE_POSE_INPUT) || !MakeAction(haptic,"feedback",XR_ACTION_TYPE_VIBRATION_OUTPUT) ||
        !MakeAction(trigger,"triggers",XR_ACTION_TYPE_FLOAT_INPUT) || !MakeAction(squeeze,"grips",XR_ACTION_TYPE_FLOAT_INPUT) ||
        !MakeAction(primary,"primary",XR_ACTION_TYPE_BOOLEAN_INPUT) || !MakeAction(secondary,"secondary",XR_ACTION_TYPE_BOOLEAN_INPUT) ||
        !MakeAction(stickClick,"stick_click",XR_ACTION_TYPE_BOOLEAN_INPUT) || !MakeAction(menu,"menu",XR_ACTION_TYPE_BOOLEAN_INPUT)) return false;
@@ -328,6 +350,7 @@ bool SetupActions() {
             auto bind=[&](XrAction a,const char* suffix){bindings.push_back({a,Path((base+suffix).c_str())});};
             bind(gripPose,"grip/pose");bind(stick,"thumbstick");bind(stickClick,"thumbstick/click");bind(trigger,"trigger/value");
             bind(aimPose,"aim/pose");
+            bindings.push_back({haptic,Path((std::string(i==0?"/user/hand/right":"/user/hand/left")+"/output/haptic").c_str())});
             // Motion controllers expose squeeze/click (boolean), so omit our float grip there.
             if(index||touch) bind(squeeze,index?"squeeze/force":"squeeze/value");
             if(index||touch) {
@@ -367,20 +390,20 @@ bool SetupActions() {
 }
 bool WaitGpu();
 bool WaitGpuValue(uint64_t value);
-bool SetupPointer(DXGI_FORMAT eyeFormat) {
+bool UploadAtlas(XrSwapchain& chain,DXGI_FORMAT eyeFormat,int atlasWidth,int atlasHeight,const std::vector<uint8_t>& pixels) {
     // A tiny static atlas is independent of ReShade's effect compiler.
     XrSwapchainCreateInfo ci{XR_TYPE_SWAPCHAIN_CREATE_INFO};ci.createFlags=XR_SWAPCHAIN_CREATE_STATIC_IMAGE_BIT;
     ci.usageFlags=XR_SWAPCHAIN_USAGE_COLOR_ATTACHMENT_BIT|XR_SWAPCHAIN_USAGE_TRANSFER_DST_BIT;
-    ci.format=eyeFormat;ci.width=64;ci.height=96;ci.sampleCount=ci.faceCount=ci.arraySize=ci.mipCount=1;
-    if(!Check(pCreateSwapchain(session,&ci,&pointerChain),"create laser atlas"))return false;
+    ci.format=eyeFormat;ci.width=atlasWidth;ci.height=atlasHeight;ci.sampleCount=ci.faceCount=ci.arraySize=ci.mipCount=1;
+    if(!Check(pCreateSwapchain(session,&ci,&chain),"create static atlas atlas"))return false;
     uint32_t count=0;
-    if(!Check(pEnumerateSwapchainImages(pointerChain,0,&count,nullptr),"count laser images"))return false;
+    if(!Check(pEnumerateSwapchainImages(chain,0,&count,nullptr),"count static atlas images"))return false;
     std::vector<XrSwapchainImageD3D12KHR> images(count,{XR_TYPE_SWAPCHAIN_IMAGE_D3D12_KHR});
-    if(!Check(pEnumerateSwapchainImages(pointerChain,count,&count,reinterpret_cast<XrSwapchainImageBaseHeader*>(images.data())),"get laser images"))return false;
+    if(!Check(pEnumerateSwapchainImages(chain,count,&count,reinterpret_cast<XrSwapchainImageBaseHeader*>(images.data())),"get static atlas images"))return false;
     uint32_t index=0;XrSwapchainImageAcquireInfo ai{XR_TYPE_SWAPCHAIN_IMAGE_ACQUIRE_INFO};
-    if(!Check(pAcquireSwapchainImage(pointerChain,&ai,&index),"acquire laser atlas"))return false;
+    if(!Check(pAcquireSwapchainImage(chain,&ai,&index),"acquire static atlas atlas"))return false;
     XrSwapchainImageWaitInfo wi{XR_TYPE_SWAPCHAIN_IMAGE_WAIT_INFO};wi.timeout=XR_INFINITE_DURATION;
-    if(!Check(pWaitSwapchainImage(pointerChain,&wi),"wait laser atlas"))return false;
+    if(!Check(pWaitSwapchainImage(chain,&wi),"wait static atlas atlas"))return false;
     auto* dest=images[index].texture;const auto desc=dest->GetDesc();
     D3D12_PLACED_SUBRESOURCE_FOOTPRINT footprint{};UINT64 bytes=0;
     device->GetCopyableFootprints(&desc,0,1,0,&footprint,nullptr,nullptr,&bytes);
@@ -388,21 +411,20 @@ bool SetupPointer(DXGI_FORMAT eyeFormat) {
     D3D12_RESOURCE_DESC uploadDesc{};uploadDesc.Dimension=D3D12_RESOURCE_DIMENSION_BUFFER;uploadDesc.Width=bytes;
     uploadDesc.Height=uploadDesc.DepthOrArraySize=uploadDesc.MipLevels=uploadDesc.SampleDesc.Count=1;uploadDesc.Layout=D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
     ComPtr<ID3D12Resource> upload;
-    if(!Hr(device->CreateCommittedResource(&heap,D3D12_HEAP_FLAG_NONE,&uploadDesc,D3D12_RESOURCE_STATE_GENERIC_READ,nullptr,IID_PPV_ARGS(&upload)),"create laser upload"))return false;
+    if(!Hr(device->CreateCommittedResource(&heap,D3D12_HEAP_FLAG_NONE,&uploadDesc,D3D12_RESOURCE_STATE_GENERIC_READ,nullptr,IID_PPV_ARGS(&upload)),"create static atlas upload"))return false;
     uint8_t* data=nullptr;D3D12_RANGE readRange{};
-    if(!Hr(upload->Map(0,&readRange,reinterpret_cast<void**>(&data)),"map laser upload"))return false;
+    if(!Hr(upload->Map(0,&readRange,reinterpret_cast<void**>(&data)),"map static atlas upload"))return false;
     std::memset(data,0,size_t(bytes));
-    for(int y=0;y<96;++y)for(int x=0;x<64;++x) {
+    for(int y=0;y<atlasHeight;++y)for(int x=0;x<atlasWidth;++x) {
         auto* pixel=data+footprint.Offset+y*footprint.Footprint.RowPitch+x*4;
-        pixel[0]=eyeFormat==DXGI_FORMAT_B8G8R8A8_UNORM_SRGB?255:40;pixel[1]=210;
-        pixel[2]=eyeFormat==DXGI_FORMAT_B8G8R8A8_UNORM_SRGB?40:255;
-        const float radius=std::hypot((x-31.5f)/30.f,(y-63.5f)/30.f);
-        pixel[3]=y<32?200:uint8_t(std::clamp((1-radius)*10,0.f,1.f)*255);
+        const auto* rgba=pixels.data()+(y*atlasWidth+x)*4;
+        const bool bgra=eyeFormat==DXGI_FORMAT_B8G8R8A8_UNORM_SRGB;
+        pixel[0]=rgba[bgra?2:0];pixel[1]=rgba[1];pixel[2]=rgba[bgra?0:2];pixel[3]=rgba[3];
     }
     upload->Unmap(0,nullptr);
     ComPtr<ID3D12CommandAllocator> alloc;ComPtr<ID3D12GraphicsCommandList> list;
-    if(!Hr(device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT,IID_PPV_ARGS(&alloc)),"create laser allocator")||
-       !Hr(device->CreateCommandList(0,D3D12_COMMAND_LIST_TYPE_DIRECT,alloc.Get(),nullptr,IID_PPV_ARGS(&list)),"create laser list"))return false;
+    if(!Hr(device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT,IID_PPV_ARGS(&alloc)),"create static atlas allocator")||
+       !Hr(device->CreateCommandList(0,D3D12_COMMAND_LIST_TYPE_DIRECT,alloc.Get(),nullptr,IID_PPV_ARGS(&list)),"create static atlas list"))return false;
     D3D12_RESOURCE_BARRIER barrier{};barrier.Type=D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
     barrier.Transition={dest,D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES,D3D12_RESOURCE_STATE_RENDER_TARGET,D3D12_RESOURCE_STATE_COPY_DEST};
     list->ResourceBarrier(1,&barrier);
@@ -410,11 +432,70 @@ bool SetupPointer(DXGI_FORMAT eyeFormat) {
     D3D12_TEXTURE_COPY_LOCATION dst{};dst.pResource=dest;dst.Type=D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX;
     list->CopyTextureRegion(&dst,0,0,0,&src,nullptr);
     std::swap(barrier.Transition.StateBefore,barrier.Transition.StateAfter);list->ResourceBarrier(1,&barrier);
-    if(!Hr(list->Close(),"close laser list"))return false;
+    if(!Hr(list->Close(),"close static atlas list"))return false;
     ID3D12CommandList* lists[]={list.Get()};queue->ExecuteCommandLists(1,lists);
-    if(!Hr(queue->Signal(fence.Get(),++fenceValue),"signal laser fence")||!WaitGpu())return false;
+    if(!Hr(queue->Signal(fence.Get(),++fenceValue),"signal static atlas fence")||!WaitGpu())return false;
     XrSwapchainImageReleaseInfo ri{XR_TYPE_SWAPCHAIN_IMAGE_RELEASE_INFO};
-    return Check(pReleaseSwapchainImage(pointerChain,&ri),"release laser atlas");
+    return Check(pReleaseSwapchainImage(chain,&ri),"release static atlas atlas");
+}
+bool SetupPointer(DXGI_FORMAT eyeFormat) {
+    std::vector<uint8_t> pixels(64*96*4);
+    for(int y=0;y<96;++y)for(int x=0;x<64;++x) {
+        auto* p=pixels.data()+(y*64+x)*4;p[0]=40;p[1]=210;p[2]=255;
+        const float radius=std::hypot((x-31.5f)/30.f,(y-63.5f)/30.f);
+        p[3]=y<32?200:uint8_t(std::clamp((1-radius)*10,0.f,1.f)*255);
+    }
+    return UploadAtlas(pointerChain,eyeFormat,64,96,pixels);
+}
+// Static text atlas: allocated/uploaded once, never repainted in the frame loop.
+// Native skill icons, names and belt counts require a separate read-only UI adapter.
+bool SetupGameplay(DXGI_FORMAT eyeFormat) {
+    BITMAPINFO info{};info.bmiHeader.biSize=sizeof(BITMAPINFOHEADER);
+    info.bmiHeader.biWidth=1024;info.bmiHeader.biHeight=-1024;info.bmiHeader.biPlanes=1;info.bmiHeader.biBitCount=32;
+    void* bits=nullptr;HDC dc=CreateCompatibleDC(nullptr);
+    HBITMAP bitmap=CreateDIBSection(dc,&info,DIB_RGB_COLORS,&bits,nullptr,0);
+    if(!dc||!bitmap||!bits) {if(bitmap)DeleteObject(bitmap);if(dc)DeleteDC(dc);return false;}
+    auto old=SelectObject(dc,bitmap);std::memset(bits,0,1024*1024*4);
+    auto fill=[&](RECT r,COLORREF color) {HBRUSH brush=CreateSolidBrush(color);FillRect(dc,&r,brush);DeleteObject(brush);};
+    fill({0,0,1024,768},RGB(15,23,30));
+    HFONT font=CreateFontW(33,0,0,0,FW_SEMIBOLD,FALSE,FALSE,FALSE,DEFAULT_CHARSET,OUT_DEFAULT_PRECIS,CLIP_DEFAULT_PRECIS,ANTIALIASED_QUALITY,DEFAULT_PITCH,L"Arial");
+    auto oldFont=SelectObject(dc,font);SetBkMode(dc,TRANSPARENT);SetTextColor(dc,RGB(225,235,240));
+    auto label=[&](const wchar_t* text,RECT rect) {DrawTextW(dc,text,-1,&rect,DT_CENTER|DT_VCENTER|DT_SINGLELINE);};
+    label(L"SKILLS  /  EQUIPMENT  /  BELT",{0,0,1024,96});
+    const wchar_t* names[]={L"B",L"X",L"Y",L"RB",L"LT + B",L"LT + X",L"LT + Y",L"LT + RB",
+        L"Melee / Bow",L"Swap I / II",L"",L"",L"Belt 1",L"Belt 2",L"Belt 3",L"Belt 4"};
+    for(int i=0;i<16;++i) {
+        RECT cell{(i%4)*256+7,96+(i/4)*144+7,(i%4+1)*256-7,96+(i/4+1)*144-7};
+        fill(cell,i>=12?RGB(42,34,25):RGB(27,43,54));label(names[i],cell);
+    }
+    label(L"Trigger: select skill   /   Grip: take belt potion",{0,672,1024,768});
+    // Neutral bottle, labelled by belt column. Colour/type is deliberately not
+    // guessed: the native game decides which item occupies that column.
+    for(int i=0;i<4;++i) {
+        const int x=i*128;
+        fill({x+45,780,x+83,828},RGB(210,200,160));
+        fill({x+22,828,x+106,996},RGB(45,140,170));
+        const wchar_t name[]={wchar_t(L'1'+i),0};label(name,{x+22,840,x+106,980});
+    }
+    // Arrow points along the quad's +Y axis. Two crossed planes give the
+    // nocked arrow volume at negligible cost and no per-frame texture work.
+    fill({540,795,548,1005},RGB(200,160,95));
+    HBRUSH arrowhead=CreateSolidBrush(RGB(235,240,245));auto oldBrush=SelectObject(dc,arrowhead);
+    POINT tip[]={{544,771},{562,803},{526,803}};Polygon(dc,tip,3);
+    POINT feather[]={{540,975},{520,997},{520,1017},{542,1000}};Polygon(dc,feather,4);
+    POINT feather2[]={{548,975},{568,997},{568,1017},{546,1000}};Polygon(dc,feather2,4);
+    SelectObject(dc,oldBrush);DeleteObject(arrowhead);
+    label(L"Trigger: nock",{576,768,1024,853});
+    label(L"Pull back",{576,853,1024,938});
+    label(L"Release to shoot",{576,938,1024,1024});
+    GdiFlush();
+    std::vector<uint8_t> rgba(1024*1024*4);const auto* b=static_cast<const uint8_t*>(bits);
+    for(int i=0;i<1024*1024;++i) {
+        rgba[4*i]=b[4*i+2];rgba[4*i+1]=b[4*i+1];rgba[4*i+2]=b[4*i];
+        rgba[4*i+3]=(b[4*i]||b[4*i+1]||b[4*i+2])?255:0;
+    }
+    SelectObject(dc,oldFont);DeleteObject(font);SelectObject(dc,old);DeleteObject(bitmap);DeleteDC(dc);
+    return UploadAtlas(gameplayChain,eyeFormat,1024,1024,rgba);
 }
 bool Initialize(reshade::api::command_queue* rq,reshade::api::swapchain* swap) {
     if(rq->get_device()->get_api()!=reshade::api::device_api::d3d12) { Say("Frame OpenXR requires D3D12");return false; }
@@ -483,6 +564,7 @@ bool Initialize(reshade::api::command_queue* rq,reshade::api::swapchain* swap) {
     fenceEvent=CreateEventW(nullptr,FALSE,FALSE,nullptr);
     if(!fenceEvent) return false;
     if(!SetupPointer(eyeFormat))return false;
+    if(!SetupGameplay(eyeFormat))Say("Frame gameplay: palette atlas unavailable; motion controls remain disabled");
     if(!tracking.Open(D2RVR_SHARED_NAME)||!pad.Open(BW_PAD_MIRROR_NAME)||!actions.Open(D2RVR_ACTIONS_NAME)) return false;
     tracking.data->version=D2RVR_SHARED_VERSION;pad.data->version=BW_PAD_MIRROR_VERSION;actions.data->version=D2RVR_ACTIONS_VERSION;
     gameSwapchain=swap;
@@ -593,6 +675,78 @@ void SampleGaze() {
         Say(line);counts={};reportAt=now+5000;
     }
 }
+gameplay::Pose MotionPose(XrPosef pose) {return {V(pose.position),Q(pose.orientation)};}
+XrPosef XrPose(gameplay::Pose p) {return {{p.q.x,p.q.y,p.q.z,p.q.w},{p.p.x,p.p.y,p.p.z}};}
+void MotionPointer() {
+    motionInput.hover=-1;
+    if(!motionInput.active||!motionInput.palette||!motionInput.tracked[1]||!motionInput.aimTracked)return;
+    // Attached to the left hand with its orientation; raise the palm to face
+    // the palette toward the eyes. No camera-locked panel following the head.
+    auto pose=motionInput.hand[1];
+    const math::Quat palmTilt{-.70710678f,0,0,.70710678f};
+    pose.q=math::Multiply(pose.q,palmTilt);
+    pose.p=pose.p+math::Rotate(pose.q,{0,.12f,.025f});palettePose=XrPose(pose);
+    const auto ray=motionInput.aim.p,direction=math::Rotate(motionInput.aim.q,{0,0,-1});
+    math::PanelHit hit;
+    pointerHit=math::IntersectPanel(ray,direction,pose.p,pose.q,paletteWidth,paletteHeight,hit);
+    beamLength=pointerHit?hit.distance:.65f;
+    const auto mid=ray+direction*(beamLength*.5f);
+    beamPose=XrPose({mid,math::BeamOrientation(direction,V(head.position)-mid)});pointerVisible=true;
+    if(pointerHit) {
+        motionInput.hover=gameplay::PaletteCell(hit.u,hit.v);
+        dotPose=XrPose({hit.point+math::Rotate(pose.q,{0,0,.003f}),pose.q});
+    }
+}
+void MotionPulse(int hand,float strength,XrDuration duration) {
+    if(!haptic||!pApplyHapticFeedback)return;
+    XrHapticActionInfo ai{XR_TYPE_HAPTIC_ACTION_INFO};ai.action=haptic;ai.subactionPath=hands[hand];
+    XrHapticVibration vibration{XR_TYPE_HAPTIC_VIBRATION};
+    vibration.duration=duration;vibration.frequency=XR_FREQUENCY_UNSPECIFIED;vibration.amplitude=strength;
+    const auto result=pApplyHapticFeedback(session,&ai,reinterpret_cast<XrHapticBaseHeader*>(&vibration));
+    static bool reported[2]{};static ULONGLONG errorAt=0;
+    if(XR_SUCCEEDED(result)&&!reported[hand]) {
+        Say(hand==0?"Frame gameplay: right-hand haptic accepted":"Frame gameplay: left-hand haptic accepted");reported[hand]=true;
+    } else if(XR_FAILED(result)&&GetTickCount64()>=errorAt) {
+        char message[128];std::snprintf(message,sizeof message,"Frame gameplay: haptic failed hand=%d result=%d",hand,int(result));Say(message);
+        errorAt=GetTickCount64()+5000;
+    }
+}
+void MotionFeedback(const gameplay::Output& out) {
+    static double lastPull=0;static float previousDraw=0;
+    const unsigned event=out.feedback;
+    if(event) {
+        MotionPulse(0,event==6?.12f:event==4?.2f:event==2||event==3?.65f:.45f,event==4||event==6?20000000:45000000);
+        if(out.bowReady&&(event==1||event==2||event==5))MotionPulse(1,event==2?.65f:.25f,35000000);
+        lastPull=motionInput.time;previousDraw=out.draw;
+    } else if(out.bowDrawing&&motionInput.time-lastPull>.07&&std::fabs(out.draw-previousDraw)>.018f) {
+        // A light ratchet felt while pulling, rather than only the native
+        // attack rumble after release. No repeated buzz while held still.
+        MotionPulse(0,.22f+.28f*out.draw,25000000);
+        MotionPulse(1,.1f+.15f*out.draw,20000000);
+        lastPull=motionInput.time;previousDraw=out.draw;
+    }
+    if(!out.bowDrawing)previousDraw=0;
+}
+gameplay::Weapon MotionWeapon() {
+    switch(gamestate::WeaponType()) {
+        case D2RVR_TYPE_BOW:return gameplay::Weapon::Bow;
+        case D2RVR_TYPE_CROSSBOW:return gameplay::Weapon::Crossbow;
+        case D2RVR_TYPE_UNARMED:case D2RVR_TYPE_SWORD:case D2RVR_TYPE_AXE:case D2RVR_TYPE_MACE:
+        case D2RVR_TYPE_SCEPTER:case D2RVR_TYPE_WAND:case D2RVR_TYPE_STAFF:case D2RVR_TYPE_POLEARM:
+        case D2RVR_TYPE_SPEAR:case D2RVR_TYPE_DAGGER:case D2RVR_TYPE_CLAW:
+        case D2RVR_TYPE_ORB:case D2RVR_TYPE_JAVELIN:case D2RVR_TYPE_THROWING:return gameplay::Weapon::Melee;
+        case D2RVR_TYPE_UNKNOWN:return gameplay::Weapon::Unknown;
+        default:return gamestate::WeaponClass()==D2RVR_WEAPON_MELEE?gameplay::Weapon::Melee:gameplay::Weapon::Other;
+    }
+}
+gameplay::MeleeStyle MotionMeleeStyle() {
+    switch(gamestate::WeaponType()) {
+        case D2RVR_TYPE_UNARMED:return gameplay::MeleeStyle::Unarmed;
+        case D2RVR_TYPE_DAGGER:case D2RVR_TYPE_CLAW:case D2RVR_TYPE_ORB:return gameplay::MeleeStyle::Short;
+        case D2RVR_TYPE_STAFF:case D2RVR_TYPE_POLEARM:case D2RVR_TYPE_SPEAR:return gameplay::MeleeStyle::Long;
+        default:return (gamestate::TwoHanded()&D2RVR_TWO_HANDS_ON)?gameplay::MeleeStyle::Long:gameplay::MeleeStyle::OneHand;
+    }
+}
 void Input() {
     gazeValid=false;
     if(!tracking.data) return;
@@ -628,11 +782,21 @@ void Input() {
     s.roomMagic=D2RVR_ROOM_MAGIC;s.headRoom[0]=head.position.x;s.headRoom[1]=head.position.y;s.headRoom[2]=head.position.z;s.headYawRoomDeg=s.headYawDeg;
     s.gripMagic=D2RVR_GRIP_MAGIC;s.rightGrip=Float(squeeze,0);s.leftGrip=Float(squeeze,1);s.handsValid=0;
     if(heightResetButton.Update(Bool(stickClick,1),s.leftGrip))ResetHeight();
+    motionInput={};motionInput.time=Milliseconds()/1000.;motionInput.head=MotionPose(head);
+    motionInput.active=motionControls.load()&&gameplayChain&&motionHeadTracked&&!panelMode&&!inventoryPressed&&!menuPressed&&inWorld&&inWorld();
+    motionInput.palette=Bool(secondary,1);motionInput.grip[0]=s.rightGrip;motionInput.grip[1]=s.leftGrip;
+    motionInput.cancel=Bool(secondary,0);
+    motionInput.trigger=Float(trigger,0);motionInput.weapon=MotionWeapon();
+    motionInput.meleeStyle=MotionMeleeStyle();
+    motionInput.equipment=gamestate::HandsKey()^(gamestate::WeaponSet()<<30);
     const auto undo=math::Conjugate(math::Yaw(heading));
     for(int i=0;i<2;++i) {
         XrSpaceLocation loc{XR_TYPE_SPACE_LOCATION};
         const XrSpaceLocationFlags required=XR_SPACE_LOCATION_POSITION_VALID_BIT|XR_SPACE_LOCATION_ORIENTATION_VALID_BIT;
         if(XR_SUCCEEDED(pLocateSpace(handSpaces[i],space,frameState.predictedDisplayTime,&loc))&&(loc.locationFlags&required)==required) {
+            const auto tracked=XR_SPACE_LOCATION_POSITION_TRACKED_BIT|XR_SPACE_LOCATION_ORIENTATION_TRACKED_BIT;
+            motionInput.tracked[i]=(loc.locationFlags&tracked)==tracked;
+            motionInput.hand[i]=MotionPose(loc.pose);
             s.handsValid|=1u<<i;
             const auto p=math::Rotate(undo,V(loc.pose.position)-V(head.position));
             const auto rot=math::Multiply(undo,Q(loc.pose.orientation));
@@ -640,9 +804,48 @@ void Input() {
             float* r=i==0?s.rightRot:s.leftRot;r[0]=rot.x;r[1]=rot.y;r[2]=rot.z;r[3]=rot.w;
         }
     }
+    XrSpaceLocation aimed{XR_TYPE_SPACE_LOCATION};
+    const auto aimFlags=XR_SPACE_LOCATION_POSITION_VALID_BIT|XR_SPACE_LOCATION_ORIENTATION_VALID_BIT|
+                        XR_SPACE_LOCATION_POSITION_TRACKED_BIT|XR_SPACE_LOCATION_ORIENTATION_TRACKED_BIT;
+    if(XR_SUCCEEDED(pLocateSpace(aimSpace,space,frameState.predictedDisplayTime,&aimed))&&(aimed.locationFlags&aimFlags)==aimFlags) {
+        motionInput.aim=MotionPose(aimed.pose);motionInput.aimTracked=true;
+    }
+    MotionPointer();motionOutput=motion.Step(motionInput);motionAt=GetTickCount64();
+    {
+        melee::Sample sample;
+        sample.time=motionInput.time;sample.hand=motionInput.hand[0];sample.epoch=meleeEpoch;
+        sample.equipment=motionInput.equipment;sample.active=motionInput.active&&motionOutput.meleeContact;
+        meleePoses.Push(s.sampleStamp,sample);
+    }
+    skel::SetMotionBow(motionInput.active&&motionOutput.bowReady,motionOutput.bowDrawing,motionOutput.draw,s.rightHand,s.leftHand);
+    MotionFeedback(motionOutput);
+    if(const auto at=meleeImpactAt.exchange(0);at&&motionInput.active&&GetTickCount64()-at<150)
+        MotionPulse(0,.72f,45000000);
+    if(motionOutput.potion>=0)gamecmd::RequestPotion(motionOutput.potion);
+    if(!motionInput.active)gamecmd::CancelPotion();
+    if(motionOutput.feedback) {
+        char message[144];std::snprintf(message,sizeof message,"Frame gameplay: event=%u selection=%d potion request=%d swap=%d bow=%d",
+            motionOutput.feedback,motion.Selection(),motionOutput.potion,motionOutput.swap,motionOutput.bowDrawing);Say(message);
+    }
+    // Rate-limited readiness diagnostics: failed grabs were previously silent.
+    // No room poses are recorded. Log only gates, action counts and grab range.
+    if(motionControls.load()&&inWorld&&inWorld()) {
+        static ULONGLONG reportAt=0;
+        if(GetTickCount64()>=reportAt) {
+            char message[440];std::snprintf(message,sizeof message,
+                "Frame gameplay ready: active=%d head=%d hands=%d%d aim=%d panel=%d atlas=%d selection=%d weapon=%d trigger=%d blocked=%d bow ready=%d reach=%d drawing=%d charged=%d native=%d anchored=%d draw=%.2f melee contact=%d grip=%d",
+                motionInput.active,motionHeadTracked,motionInput.tracked[0],motionInput.tracked[1],motionInput.aimTracked,panelMode,
+                gameplayChain!=XR_NULL_HANDLE,motion.Selection(),int(motionInput.weapon),motionInput.trigger>.55f,motionOutput.block,
+                motionOutput.bowReady,motionOutput.bowInReach,motionOutput.bowDrawing,motionOutput.bowCharged,skel::MotionBowPosed(),skel::MotionBowAnchored(),motionOutput.draw,
+                motionOutput.meleeContact,motionInput.grip[0]>.6f);Say(message);
+            reportAt=GetTickCount64()+5000;
+        }
+    }
     ++s.counter;
     auto& p=*pad.data;p.writer_pid=GetCurrentProcessId();p.buttons=0;
-    if(Bool(primary,0))p.buttons|=XINPUT_GAMEPAD_A;if(Bool(secondary,0))p.buttons|=XINPUT_GAMEPAD_B;
+    // Right A goes only through semantic interact; a raw A bypasses its
+    // no-target guard and accidentally attacks when pointing at empty space.
+    if(Bool(secondary,0))p.buttons|=XINPUT_GAMEPAD_B;
     if(Bool(secondary,1))p.buttons|=XINPUT_GAMEPAD_Y;
     if(heightResetButton.MapPressed())p.buttons|=XINPUT_GAMEPAD_LEFT_THUMB;if(Bool(stickClick,0))p.buttons|=XINPUT_GAMEPAD_RIGHT_THUMB;
     const auto l=Stick(1),r=Stick(0);
@@ -657,6 +860,20 @@ void Input() {
     if(Bool(primary,0))a.held|=D2RVR_ACT_INTERACT;
     if(heightResetButton.MapPressed())a.held|=D2RVR_ACT_MAP;
     if(Bool(stickClick,0))a.held|=D2RVR_ACT_SWAP;
+    if(motionControls.load()&&gameplayChain) {
+        p.buttons=0;p.left_trigger=p.right_trigger=0;
+        a.held&=~D2RVR_ACT_ATTACK;
+        if(motionOutput.attack)a.held|=D2RVR_ACT_ATTACK;
+        if(motionOutput.swap)a.held|=D2RVR_ACT_SWAP;
+        if(motionOutput.skill>=0) {
+            p.buttons|=gameplay::SkillButtons(motionOutput.skill);
+            p.left_trigger=gameplay::SkillModifier(motionOutput.skill)?255:0;
+        }
+        if(motionOutput.block||!motionInput.active||!motionOutput.rayValid) {
+            a.held=motionOutput.swap?D2RVR_ACT_SWAP:0;p.buttons=0;p.left_trigger=0;
+        }
+        if(motionInput.palette) {p.thumb_lx=p.thumb_ly=p.thumb_rx=p.thumb_ry=0;}
+    }
     if(panelMode) {
         // Mouse selection must not also activate a gamepad action or switch the
         // inventory back to its controller layout on every trigger press.
@@ -687,7 +904,7 @@ bool Begin() {
     if(!Check(waited,"wait frame"))return false;
     XrFrameBeginInfo bi{XR_TYPE_FRAME_BEGIN_INFO};
     if(!Check(pBeginFrame(session,&bi),"begin frame"))return false;
-    frame=true;render=frameState.shouldRender;valid=false;
+    frame=true;render=frameState.shouldRender;valid=false;motionHeadTracked=false;
     const bool loaded=inWorld&&inWorld();
     if(loaded&&!worldWasLoaded)worldCalibrationPending=true;
     if(!loaded)worldCalibrationPending=worldRecenter=false;
@@ -704,6 +921,8 @@ bool Begin() {
        XR_SUCCEEDED(pLocateSpace(headSpace,space,li.displayTime,&hs))&&
        (hs.locationFlags&(XR_SPACE_LOCATION_POSITION_VALID_BIT|XR_SPACE_LOCATION_ORIENTATION_VALID_BIT))==(XR_SPACE_LOCATION_POSITION_VALID_BIT|XR_SPACE_LOCATION_ORIENTATION_VALID_BIT)) {
         head=hs.pose;valid=true;
+        const auto trackedHead=XR_SPACE_LOCATION_POSITION_TRACKED_BIT|XR_SPACE_LOCATION_ORIENTATION_TRACKED_BIT;
+        motionHeadTracked=(hs.locationFlags&trackedHead)==trackedHead;
         // Latch once per pair: camera matrices, foveation and xrEndFrame must
         // all describe the same frustum, including a live settings change.
         // LocateViews refreshes the original runtime FOVs on every frame.
@@ -887,12 +1106,16 @@ void BeginEye(int eye) {
 }
 void ResetHeight() {
     std::lock_guard lock(mutex);
+    ++meleeEpoch;motion.Cancel();motionOutput={};gamecmd::CancelPotion();
+    skel::SetMotionBow(false,false,0);
     if(!valid||!haveOrigin)return;
     origin=math::ResetHeight(origin,V(head.position));
     Say("Frame OpenXR: eye height reset to current headset position");
 }
 void Recenter() {
     std::lock_guard lock(mutex);
+    ++meleeEpoch;motion.Cancel();motionOutput={};gamecmd::CancelPotion();
+    skel::SetMotionBow(false,false,0);
     if(!valid)return;
     origin=V(head.position);haveOrigin=true;
     if(panelMode)menuPlaced=false;
@@ -949,10 +1172,68 @@ void EndPair() {
         quad.subImage.swapchain=eyes[0].chain;quad.subImage.imageRect={{0,0},{int32_t(width),int32_t(height)}};layer=reinterpret_cast<const XrCompositionLayerBaseHeader*>(&quad);
     }
     XrFrameEndInfo ei{XR_TYPE_FRAME_END_INFO};ei.displayTime=frameState.predictedDisplayTime;ei.environmentBlendMode=XR_ENVIRONMENT_BLEND_MODE_OPAQUE;
-    std::array<const XrCompositionLayerBaseHeader*,3> layers{};uint32_t count=0;
+    std::array<const XrCompositionLayerBaseHeader*,10> layers{};uint32_t count=0;
     if(layer)layers[count++]=layer;
+    XrCompositionLayerQuad palette{XR_TYPE_COMPOSITION_LAYER_QUAD},bottle{XR_TYPE_COMPOSITION_LAYER_QUAD},chosen{XR_TYPE_COMPOSITION_LAYER_QUAD};
+    std::array<XrCompositionLayerQuad,2> bowString{{{XR_TYPE_COMPOSITION_LAYER_QUAD},{XR_TYPE_COMPOSITION_LAYER_QUAD}}};
+    std::array<XrCompositionLayerQuad,2> arrow{{{XR_TYPE_COMPOSITION_LAYER_QUAD},{XR_TYPE_COMPOSITION_LAYER_QUAD}}};
+    XrCompositionLayerQuad nock{XR_TYPE_COMPOSITION_LAYER_QUAD},bowHint{XR_TYPE_COMPOSITION_LAYER_QUAD};
+    const bool gameplayVisible=layer&&!panelMode&&motionControls.load()&&motionInput.active&&gameplayChain&&motionOutput.rayValid;
+    auto motionQuad=[&](XrCompositionLayerQuad& q,XrPosef pose,float w,float h,XrRect2Di rect,XrSwapchain chain) {
+        if(!gameplay::Valid(MotionPose(pose))||!std::isfinite(w)||!std::isfinite(h)||w<=0||h<=0)return;
+        // Normalize generated billboards before submission; a bad optional
+        // guide must not invalidate the headset's entire projection layer.
+        const auto r=pose.orientation;const float len=std::sqrt(r.x*r.x+r.y*r.y+r.z*r.z+r.w*r.w);
+        pose.orientation={r.x/len,r.y/len,r.z/len,r.w/len};
+        q.layerFlags=XR_COMPOSITION_LAYER_BLEND_TEXTURE_SOURCE_ALPHA_BIT|XR_COMPOSITION_LAYER_UNPREMULTIPLIED_ALPHA_BIT;
+        q.space=space;q.eyeVisibility=XR_EYE_VISIBILITY_BOTH;q.pose=pose;q.size={w,h};
+        q.subImage.swapchain=chain;q.subImage.imageRect=rect;
+        layers[count++]=reinterpret_cast<const XrCompositionLayerBaseHeader*>(&q);
+    };
+    if(gameplayVisible&&motionOutput.palette) {
+        motionQuad(palette,palettePose,paletteWidth,paletteHeight,{{0,0},{1024,768}},gameplayChain);
+        const int cell=motion.Selection()<0?8:motion.Selection();
+        auto selectedPose=MotionPose(palettePose);
+        selectedPose.p=selectedPose.p+math::Rotate(selectedPose.q,{0,-.20f,0});
+        motionQuad(chosen,XrPose(selectedPose),.12f,.06f,{{(cell%4)*256,96+(cell/4)*144},{256,144}},gameplayChain);
+    }
+    if(gameplayVisible&&motionOutput.bottle>=0) {
+        auto pose=motionInput.hand[0];pose.p=pose.p+math::Rotate(pose.q,{0,.055f,0});
+        motionQuad(bottle,XrPose(pose),.065f,.13f,{{motionOutput.bottle*128,768},{128,256}},gameplayChain);
+    }
+    if(gameplayVisible&&motionOutput.bowReady) {
+        const auto bow=motionInput.hand[1];
+        const auto center=motionOutput.bowDrawing?motionInput.hand[0].p:motionOutput.nockPoint;
+        auto up=math::Rotate(bow.q,{0,0,-1});
+        if(std::fabs(math::Dot(up,motionOutput.bowForward))>.8f)up=math::Rotate(bow.q,{0,1,0});
+        up=math::Normalized(up-motionOutput.bowForward*math::Dot(up,motionOutput.bowForward));
+        // Unrecognized rigs retain the draw guides. Once the actual model is
+        // posed, remove these overlapping copies of its string and arrow.
+        const bool nativeBow=skel::MotionBowPosed();
+        for(int i=0;i<2&&!nativeBow;++i) {
+            const auto end=bow.p+up*(i==0?.40f:-.40f),mid=(center+end)*.5f;
+            motionQuad(bowString[i],XrPose({mid,math::BeamOrientation(end-center,V(head.position)-mid)}),
+                .0015f,gameplay::Length(end-center),{{0,0},{64,32}},pointerChain);
+        }
+        if(!nativeBow&&(motionOutput.bowDrawing||motionOutput.bowInReach)) {
+            const auto direction=motionOutput.bowDrawing?motionOutput.rayDirection:motionOutput.bowForward;
+            const auto mid=center+direction*.375f;
+            const auto orient=math::BeamOrientation(direction,V(head.position)-mid);
+            motionQuad(arrow[0],XrPose({mid,orient}),.055f,.75f,{{512,768},{64,256}},gameplayChain);
+            motionQuad(arrow[1],XrPose({mid,math::Multiply(orient,math::Yaw(1.57079633f))}),.055f,.75f,{{512,768},{64,256}},gameplayChain);
+        }
+        // Native bows have a visible string to grab. The extra idle marker
+        // correlated with compositor pose errors; omit it on this path.
+        if(!nativeBow&&!motionOutput.bowDrawing) {
+            const float size=motionOutput.bowInReach?.045f:.025f;
+            motionQuad(nock,XrPose({center,Q(head.orientation)}),size,size,{{0,32},{64,64}},pointerChain);
+        }
+        const int hint=motionOutput.bowDrawing?(motionOutput.bowCharged?2:1):0;
+        motionQuad(bowHint,XrPose({bow.p+math::Vec{0,-.25f,0},Q(head.orientation)}),.24f,.045f,
+            {{576,768+hint*85},{448,85}},gameplayChain);
+    }
     XrCompositionLayerQuad laser{XR_TYPE_COMPOSITION_LAYER_QUAD},dot{XR_TYPE_COMPOSITION_LAYER_QUAD};
-    if(layer&&panelMode&&pointerChain&&pointerVisible) {
+    if(layer&&(panelMode||(gameplayVisible&&motionOutput.palette))&&pointerChain&&pointerVisible) {
         laser.layerFlags=XR_COMPOSITION_LAYER_BLEND_TEXTURE_SOURCE_ALPHA_BIT|XR_COMPOSITION_LAYER_UNPREMULTIPLIED_ALPHA_BIT;
         laser.space=space;laser.eyeVisibility=XR_EYE_VISIBILITY_BOTH;laser.pose=beamPose;laser.size={.003f,beamLength};
         laser.subImage.swapchain=pointerChain;laser.subImage.imageRect={{0,0},{64,32}};
@@ -969,6 +1250,28 @@ void EndPair() {
     lastTiming=timing;frame=false;
 }
 FrameTiming LastTiming() {std::lock_guard lock(mutex);return lastTiming;}
+void ConfigureGameplay(bool enabled) {
+    if(!enabled)skel::SetMotionBow(false,false,0);
+    if(motionControls.exchange(enabled)!=enabled)
+        Say(enabled?"Frame gameplay: motion controls enabled (right-handed prototype)":"Frame gameplay: motion controls disabled; legacy buttons restored");
+}
+bool GameplayRay(float outOrigin[3],float outDirection[3]) {
+    std::lock_guard lock(mutex);
+    if(!motionControls.load()||!motionOutput.rayValid||!motionInput.active||GetTickCount64()-motionAt>150)return false;
+    const auto undo=math::Conjugate(math::Yaw(math::Heading(Q(head.orientation))));
+    const auto o=math::Rotate(undo,motionOutput.rayOrigin-V(head.position));
+    const auto d=math::Rotate(undo,motionOutput.rayDirection);
+    outOrigin[0]=o.x;outOrigin[1]=o.y;outOrigin[2]=o.z;
+    outDirection[0]=d.x;outDirection[1]=d.y;outDirection[2]=d.z;
+    return true;
+}
+bool MeleeSample(uint32_t poseStamp,melee::Sample& sample) {
+    std::lock_guard lock(mutex);
+    if(!motionControls.load()||!motionInput.active||!motionOutput.meleeContact||GetTickCount64()-motionAt>100)return false;
+    if(!meleePoses.Find(poseStamp,Milliseconds()/1000.,sample))return false;
+    return sample.epoch==meleeEpoch&&sample.equipment==motionInput.equipment;
+}
+void MeleeImpact() {meleeImpactAt=GetTickCount64();}
 bool View(float out[16],const float hero[3],float eyeHeight,float userEyeHeight,float bodyHeading,float recenterYaw,int eye) {
     std::lock_guard lock(mutex);if(!Active())return false;
     if(std::fabs(recenterYaw-lastRecenter)>.001f){origin=V(head.position);lastRecenter=recenterYaw;}
@@ -990,6 +1293,7 @@ void Shutdown() {
     // Completion is mandatory before destroying our commands/resources, even
     // when ordinary frame submission uses queue ordering without a CPU wait.
     if(fence&&!WaitGpu())failed=true;
+    if(gameplayChain&&pDestroySwapchain)pDestroySwapchain(gameplayChain);gameplayChain=XR_NULL_HANDLE;
     if(pointerChain&&pDestroySwapchain)pDestroySwapchain(pointerChain);pointerChain=XR_NULL_HANDLE;
     if(aimSpace&&pDestroySpace)pDestroySpace(aimSpace);aimSpace=XR_NULL_HANDLE;
     if(gazeSpace&&pDestroySpace)pDestroySpace(gazeSpace);gazeSpace=XR_NULL_HANDLE;

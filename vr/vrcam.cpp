@@ -84,6 +84,9 @@ namespace gamestate { void Init(const D2RL::PluginContext* ctx); void Tick(); ui
 #include "afr_eye_shared.h"
 #ifdef D2RVR_NATIVE_OPENXR
 #include "transport.h"
+#include "projectiles.h"
+#include "combat.h"
+#include "melee.h"
 #include "memory.h"
 #endif
 #include "dlss_mv.h"
@@ -756,6 +759,9 @@ void LoadSettings() {
     framevr::ConfigureDeferredWait(IniB(L"render",L"defer_gpu_wait",false));
     framevr::ConfigureSymmetricProjection(IniB(L"render",L"symmetric_projection",true));
     framevr::ConfigureEyeTracking(IniB(L"render",L"eye_tracked_foveation",false));
+    framevr::ConfigureGameplay(IniB(L"gameplay",L"motion_controls",false));
+    projectiles::Configure(IniB(L"gameplay",L"motion_controls",false),IniF(L"gameplay",L"arrow_speed",2.f),IniB(L"gameplay",L"arrow_direct_release",true));
+    combat::Configure(IniB(L"gameplay",L"motion_controls",false)&&IniB(L"gameplay",L"contact_hits",true));
 #endif
 #ifdef D2RVR_NATIVE_OPENXR
     framevr::foveation::Configure(IniB(L"render",L"fixed_foveation",true),IniF(L"render",L"foveation_inner",0.55f),IniF(L"render",L"gaze_foveation_inner",0.35f));
@@ -2613,6 +2619,27 @@ bool StaffAim() {
 
 bool ShooterActive();
 bool HandRay(float* o, float* d) {
+#ifdef D2RVR_NATIVE_OPENXR
+    float motionOrigin[3],motionDirection[3];
+    if(g_eyeOk.load()&&framevr::GameplayRay(motionOrigin,motionDirection)) {
+        AcquireSRWLockShared(&g_stickLock);const StickFrame f=g_stickFrame;ReleaseSRWLockShared(&g_stickLock);
+        if(!f.valid)return false;
+        const float scale=std::max(1.0f,ViewHeight())/UserEyeHeightM();
+        for(int i=0;i<3;++i) {
+            o[i]=g_eyeWorld[i].load()+scale*(motionOrigin[0]*f.camR[i]-motionOrigin[2]*f.camF[i]);
+            d[i]=motionDirection[0]*f.camR[i]-motionDirection[2]*f.camF[i];
+        }
+        o[1]+=scale*motionOrigin[1];d[1]+=motionDirection[1];
+        // Native combat is ground-targeted. Keep its existing ray-to-ground
+        // convention; the gesture does not invent free-flying 3D projectiles.
+        const float horizontal=std::hypot(d[0],d[2]);
+        if(horizontal<1e-3f)return false;
+        d[1]=std::min(d[1],-.08f*horizontal);
+        const float length=std::sqrt(d[0]*d[0]+d[1]*d[1]+d[2]*d[2]);
+        for(int i=0;i<3;++i)d[i]/=length;
+        return true;
+    }
+#endif
     // Mouse look and W A S D (flat first person): no hands - the blow or the
     // shot goes where the camera looks, a little down so it meets the ground.
     if (ShooterActive() && g_eyeOk.load()) {
@@ -2998,6 +3025,9 @@ float* HookAttackPoint(void* mgr, float* out, void* unit, uint64_t from, uint64_
 
 uint64_t HookAttackTarget(void* self, void* unit, float* dir, int* outX, int* outY) {
     if (unit) g_heroUnit.store(unit);
+#ifdef D2RVR_NATIVE_OPENXR
+    if(unit&&g_inWorld.load()&&IsHeroUnit(unit))combat::ObserveLocalPlayer(reinterpret_cast<uintptr_t>(unit));
+#endif
     const uintptr_t caller = (uintptr_t)_ReturnAddress() - g_base;
     float use[2];
     float* d = dir;
@@ -4714,6 +4744,7 @@ void OpenShared() {
 // ~16 ms steps, and the turn went on in steps of 0 or 16 ms - an uneven
 // speed that read as judder on stick turns.
 SRWLOCK g_turnLock = SRWLOCK_INIT;
+std::atomic<uint32_t> g_meleeTurnEpoch{0};
 
 void TurnTick() {
     AcquireSRWLockExclusive(&g_turnLock);
@@ -4728,7 +4759,7 @@ void TurnTick() {
     const float dead = 0.25f, a = fabsf(x);
     const float snap = g_set.snapAngle.load();
     if (snap > 0.0f) {
-        if (a > 0.7f && armed) { g_turnYaw.store(WrapDeg(g_turnYaw.load() - (x > 0 ? snap : -snap))); armed = false; g_gen.fetch_add(1); }
+        if (a > 0.7f && armed) { g_turnYaw.store(WrapDeg(g_turnYaw.load() - (x > 0 ? snap : -snap))); armed = false; g_gen.fetch_add(1); g_meleeTurnEpoch.fetch_add(1); }
         if (a < dead) armed = true;
         return;
     }
@@ -5427,6 +5458,10 @@ bool FreshHands(skel::Input* in) {
     const D2RVR_Shared* sh = g_shared;
     if (!sh || sh->version != D2RVR_SHARED_VERSION || !sh->headValid) return false;
     in->handsValid = sh->handsValid;
+    in->poseStamp = sh->sampleStamp;in->havePoseStamp = sh->sampleStampMagic == D2RVR_SAMPLE_STAMP_MAGIC;
+#ifdef D2RVR_NATIVE_OPENXR
+    in->worldEpoch = g_meleeTurnEpoch.load();
+#endif
     memcpy(in->hand[0], sh->rightHand, sizeof in->hand[0]); memcpy(in->hand[1], sh->leftHand, sizeof in->hand[1]);
     memcpy(in->rot[0], sh->rightRot, sizeof in->rot[0]); memcpy(in->rot[1], sh->leftRot, sizeof in->rot[1]);
     in->userHeadM = UserEyeHeightM();   // standing, seated or not (see TrueScale)
@@ -5434,6 +5469,43 @@ bool FreshHands(skel::Input* in) {
     in->grip[1] = sh->gripMagic == D2RVR_GRIP_MAGIC ? sh->leftGrip : -1.0f;
     return true;
 }
+
+#ifdef D2RVR_NATIVE_OPENXR
+void MeleeContactTick() {
+    framevr::melee::Sample sample;
+    skel::MeleeWeaponPose pose;
+    if(!g_enabled.load()||!g_inWorld.load()||ThirdPerson()||Overhead()||!g_eyeOk.load()||
+       gamestate::MenuOpen()||!skel::MeleeWeapon(pose)||pose.worldEpoch!=g_meleeTurnEpoch.load()||
+       !framevr::MeleeSample(pose.poseStamp,sample)) {
+        melee::Cancel();return;
+    }
+    const float upm=std::max(1.f,ViewHeight())/UserEyeHeightM();
+    using framevr::math::Vec;
+    // Conservative category-sized collision capsules on the final posed
+    // attachment (+Y is blade/shaft, -Y is hilt). Mesh-specific bounds remain
+    // a refinement; no class-specific animation or targeting is involved.
+    float length=.65f,radius=.065f;
+    switch(gamestate::WeaponType()) {
+        case D2RVR_TYPE_UNARMED:length=.04f;radius=.08f;break;
+        case D2RVR_TYPE_DAGGER:case D2RVR_TYPE_CLAW:case D2RVR_TYPE_ORB:length=.28f;break;
+        case D2RVR_TYPE_WAND:length=.38f;break;
+        case D2RVR_TYPE_STAFF:length=1.2f;break;
+        case D2RVR_TYPE_SPEAR:case D2RVR_TYPE_POLEARM:length=1.5f;break;
+        default:if(gamestate::TwoHanded()&D2RVR_TWO_HANDS_ON)length=1.1f;break;
+    }
+    // Contact combat must keep working with no controller attack/aim input.
+    // Revalidate the client hero itself, rather than depending on aim-hook
+    // traffic to refresh the local identity while the player stands still.
+    auto* nativeHero=g_heroUnit.load();
+    if(!nativeHero||!IsHeroUnit(nativeHero)){melee::Cancel();return;}
+    combat::ObserveLocalPlayer(reinterpret_cast<uintptr_t>(nativeHero));
+    sample.epoch=(sample.epoch<<32)|pose.worldEpoch;
+    sample.unitsPerMetre=upm;sample.player={pose.player[0]/upm,pose.player[1]/upm,pose.player[2]/upm};
+    sample.blade.base={pose.origin[0]/upm,pose.origin[1]/upm,pose.origin[2]/upm};
+    sample.blade.tip=sample.blade.base+Vec{pose.axis[0],pose.axis[1],pose.axis[2]}*length;
+    sample.blade.radius=radius;melee::Submit(sample);
+}
+#endif
 
 void PushArms() {
     // Only in a game area: on the main menu's character screen the hero stood
@@ -5443,6 +5515,10 @@ void PushArms() {
     skel::Input in;
     if (sh && sh->version == D2RVR_SHARED_VERSION && sh->headValid) {
         in.handsValid = sh->handsValid;
+        in.poseStamp = sh->sampleStamp;in.havePoseStamp = sh->sampleStampMagic == D2RVR_SAMPLE_STAMP_MAGIC;
+#ifdef D2RVR_NATIVE_OPENXR
+        in.worldEpoch = g_meleeTurnEpoch.load();
+#endif
         memcpy(in.hand[0], sh->rightHand, sizeof in.hand[0]); memcpy(in.hand[1], sh->leftHand, sizeof in.hand[1]);
         memcpy(in.rot[0], sh->rightRot, sizeof in.rot[0]); memcpy(in.rot[1], sh->leftRot, sizeof in.rot[1]);
         in.userHeadM = UserEyeHeightM();   // standing, seated or not (see TrueScale)
@@ -7405,6 +7481,9 @@ DWORD WINAPI UpdateThread(void*) {
         MouseTick();
         TurnTick();
         PushArms();
+#ifdef D2RVR_NATIVE_OPENXR
+        MeleeContactTick();
+#endif
 #if D2RVR_FIRST_PERSON
         {   // the toolbar on the hero's own forearm (the game's rig): left forearm = skeleton side 1
             const int a = hud::Anchor(0);
@@ -7513,6 +7592,14 @@ DWORD WINAPI UpdateThread(void*) {
             d2rsig::Resolve(g_ctx);   // what waits for its page to be decrypted
             GameCodeTick(iniChanged);
             if (!AllHooksIn()) InstallHooks();
+#ifdef D2RVR_NATIVE_OPENXR
+            projectiles::Install();
+            projectiles::Report();
+            combat::Install();
+            combat::Report();
+            melee::Install();
+            melee::Report();
+#endif
             ApplyRender();
             HookGameWindow();
             OpenShared();
@@ -7631,6 +7718,9 @@ D2RL_PLUGIN_EXPORT bool D2RLoaderLoadPlugin(const PluginContext* ctx) noexcept {
     OpenAfrBlock();
     gamestate::Init(ctx);
     gamecmd::Init(ctx);
+#ifdef D2RVR_NATIVE_OPENXR
+    melee::Init(ctx);
+#endif
     if (HANDLE h = CreateThread(nullptr, 0, UpdateThread, nullptr, 0, &g_updateThreadId)) CloseHandle(h);
     if (!ctx->RegisterConsoleCommand("vrcam", &CmdVrcam, "vrcam - the camera: off / first person / third person (F12)"))
         ctx->LogError("vrcam: the console command did not register");

@@ -105,6 +105,13 @@ also untested by this project. Steam Frame uses Steam's PCVR connection directly
 
 ## Controls and settings
 
+Current source also includes an opt-in [motion gameplay prototype](steamvr/GAMEPLAY.md):
+melee swings, bow draws, a hand palette and grab-to-mouth belt potions.
+Bow drawing and free-swing melee have been tested on Steam Frame; other
+interactions remain experimental. It is disabled by default and absent from the
+published preview ZIP. Build from source and read the control changes before
+enabling it.
+
 **Keep the D2R window focused on the PC while playing.** Menu laser clicks and
 dragging require desktop focus, even if the headset still displays the game.
 After using another desktop app, select D2R again before interacting with menus.

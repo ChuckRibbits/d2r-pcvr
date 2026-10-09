@@ -18,6 +18,9 @@ struct Input {
     float scale = 1.0f;         // arm reach on top of the hero/user height ratio
     float userHeadM = 1.7f;     // the user's head above the floor
     uint32_t handsValid = 0;    // bit 0 right, bit 1 left
+    uint32_t poseStamp = 0;     // input stamp that produced this pose (native XR)
+    uint32_t worldEpoch = 0;    // snap-turn/recenter generation for that world placement
+    bool havePoseStamp = false;
     float hand[2][3] = {};      // [0] right, [1] left: metres from the head, x right y up z back
     float rot[2][4] = {};       // controller orientation in that frame, x y z w
     float handOffset[3] = {};   // added to both hands, metres in the same frame (x right, y up, z back)
@@ -104,6 +107,13 @@ std::string WeaponEntityDiag();
 #endif
 
 void Set(const Input& in);
+#ifdef D2RVR_NATIVE_OPENXR
+// Copied from the render/input thread; skeleton workers never call OpenXR or
+// take the transport mutex. Invalid/stale input restores native animation.
+void SetMotionBow(bool active, bool drawing, float draw, const float* stringHand=nullptr, const float* bowHand=nullptr);
+bool MotionBowPosed();
+bool MotionBowAnchored();
+#endif
 #if D2RVR_FIRST_PERSON
 // Forget the weapon grip: the next calm pose takes it again (F11).
 void ResetGrip();
@@ -150,7 +160,14 @@ bool GrabLine(float a[3], float b[3]);
 // The bone of the weapon in hand as last posed (a crossbow: GunFrame), for vrcam's debug
 // drawing: its origin from the eye in metres and its three axes, in the head's turn-only
 // frame (x right, y up, z back - as the bridge sends the hands). False when no weapon lately.
-bool GunBone(float origin[3], float axes[3][3]);
+bool GunBone(float origin[3], float axes[3][3], unsigned maxAgeMs = 300);
+#ifdef D2RVR_NATIVE_OPENXR
+struct MeleeWeaponPose {
+    float origin[3]{},axis[3]{},player[3]{}; // game world units; axis is normalized
+    uint32_t poseStamp=0,worldEpoch=0,heroGeneration=0;
+};
+bool MeleeWeapon(MeleeWeaponPose& out);
+#endif
 #endif
 // Where the game's own pose points the hero, in model space (deg, atan2 of each bone's z row):
 // root, anim, pelvis - for the facing diagnostics in vrcam's log.

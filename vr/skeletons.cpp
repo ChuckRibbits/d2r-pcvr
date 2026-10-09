@@ -40,6 +40,7 @@
 #ifdef D2RVR_NATIVE_OPENXR
 #include "memory.h"
 #include "hero_selection.h"
+#include "bow_pose.h"
 #endif
 
 namespace skel {
@@ -301,7 +302,11 @@ uintptr_t g_diagSkel = 0;
 std::atomic<float> g_eyeY{0.0f}, g_lift{0.0f}, g_rawLift{0.0f};
 #if D2RVR_FIRST_PERSON
 std::atomic<int> g_gunAxis{0};   // GunAxis
-struct GunBoneOut { float o[3], ax[3][3]; ULONGLONG at; };
+struct GunBoneOut { float o[3], ax[3][3]; ULONGLONG at; Mat leftToHead; uintptr_t hero;
+#ifdef D2RVR_NATIVE_OPENXR
+    MeleeWeaponPose melee{};bool haveMelee=false;
+#endif
+};
 SRWLOCK g_gunBoneLock = SRWLOCK_INIT;
 GunBoneOut g_gunBone{};
 // [debug] the line the left hand takes the weapon by (staff, spear, sword), the same frame
@@ -1632,7 +1637,34 @@ void PoseBody(uintptr_t self, const Hero& h, const Input& in) {
             const V3 d = back(Norm(V3{w.m[i * 4], w.m[i * 4 + 1], w.m[i * 4 + 2]}));
             g.ax[i][0] = d.x; g.ax[i][1] = d.y; g.ax[i][2] = d.z;
         }
+        // Bow input is explicitly right-handed: bow on L_weapon_attach,
+        // string in the right hand. The generic axesSide follows inventory
+        // slot ownership; that can be RIGHT even when the mesh is on LEFT.
+        // Using the string hand's attachment makes its inverse cancel the
+        // draw motion. Keep a separate, explicitly left-handed transform.
+        if(h.weapon[1]>=0) {
+            const Mat& left=newW[h.weapon[1]];
+            const V3 leftOrigin=back(Scale(Sub(Pos(left),head),1.f/upm));
+            g.leftToHead.m[12]=leftOrigin.x;g.leftToHead.m[13]=leftOrigin.y;g.leftToHead.m[14]=leftOrigin.z;g.leftToHead.m[15]=1;g.hero=self;
+            for(int i=0;i<3;++i) {
+                const V3 row=back(Scale(V3{left.m[i*4],left.m[i*4+1],left.m[i*4+2]},1.f/upm));
+                g.leftToHead.m[i*4]=row.x;g.leftToHead.m[i*4+1]=row.y;g.leftToHead.m[i*4+2]=row.z;
+            }
+        }
         g.at = GetTickCount64();
+#ifdef D2RVR_NATIVE_OPENXR
+        // Keep collision in the world frame of THIS completed pose. Rebuilding
+        // it later from the timer's newer camera yaw/eye displaced fast swings.
+        HeroXform hx;Mat model;
+        if(in.havePoseStamp&&HeroTransform(&hx)&&hx.self==self&&(hx.parent&0xFFFFFu)==0xFFFFFu&&
+           SafeCopy(model.m,reinterpret_cast<const void*>(hx.comp),sizeof model)) {
+            const Mat world=Mul(w,model);
+            const V3 origin=Pos(world),axis=Norm({world.m[4],world.m[5],world.m[6]}),player=Pos(model);
+            g.melee={{origin.x,origin.y,origin.z},{axis.x,axis.y,axis.z},{player.x,player.y,player.z},in.poseStamp,in.worldEpoch,HeroGen()};
+            g.haveMelee=Len({world.m[4],world.m[5],world.m[6]})>.001f&&
+                std::isfinite(origin.x+origin.y+origin.z+axis.x+axis.y+axis.z+player.x+player.y+player.z);
+        }
+#endif
         AcquireSRWLockExclusive(&g_gunBoneLock); g_gunBone = g; ReleaseSRWLockExclusive(&g_gunBoneLock);
     }
 
@@ -1775,6 +1807,104 @@ void HoldWeaponItem(uintptr_t self) {
 }
 #endif
 
+#ifdef D2RVR_NATIVE_OPENXR
+struct MotionBowInput {bool active=false,drawing=false;float draw=0;ULONGLONG at=0;bool anchors=false;bow::Vec stringHand{},bowHand{};};
+SRWLOCK g_bowInputLock=SRWLOCK_INIT,g_bowRigLock=SRWLOCK_INIT;
+MotionBowInput g_motionBow;
+std::atomic<ULONGLONG> g_bowPosedAt{0};
+std::atomic<ULONGLONG> g_bowAnchoredAt{0};
+std::atomic<uint32_t> g_bowHeroGen{0};
+struct MotionBowRig {
+    bow::Rig rig;
+    uintptr_t bones=0;
+    uint32_t entity=0;
+    bool entityKnown=false;
+    ULONGLONG lookupAt=0;
+};
+std::map<std::pair<uintptr_t,uintptr_t>,MotionBowRig> g_bowRigs;
+
+void PoseMotionBow(uintptr_t self) {
+    MotionBowInput input;
+    AcquireSRWLockShared(&g_bowInputLock);input=g_motionBow;ReleaseSRWLockShared(&g_bowInputLock);
+    const auto now=GetTickCount64();
+    if(!input.active||now-input.at>150)return;
+    uintptr_t model=0,skeleton=0,bones=0;int count=0;
+    if(!Get(self+8,&model)||!Get(model+8,&skeleton)||!Get(skeleton+8,&count)||count!=bow::Count||
+       !Get(skeleton+0xC,&bones)||!bones)return;
+    // Cache only tiny compatible rigs. Hero, corpse and other character rigs
+    // fail the count check before a model-name read or ECS lookup.
+    AcquireSRWLockExclusive(&g_bowRigLock);
+    struct Unlock {~Unlock(){ReleaseSRWLockExclusive(&g_bowRigLock);}} unlock;
+    const auto key=std::make_pair(self,skeleton);
+    auto it=g_bowRigs.find(key);
+    if(it==g_bowRigs.end()||it->second.bones!=bones) {
+        MotionBowRig learned;learned.bones=bones;
+        uintptr_t object=0,name=0;Get(self,&object);Get(object+8,&name);
+        const std::string path=Str(name);
+        bool valid=path.find("/items/weapon/bow/")!=std::string::npos&&path.find("dropped")==std::string::npos;
+        bow::Pose bind;
+        for(int i=0;i<bow::Count&&valid;++i) {
+            const auto at=bones+uintptr_t(i)*0xA4;int parent=0;uintptr_t boneName=0;bow::Mat inverse;
+            valid=Get(at,&boneName)&&Str(boneName)==bow::Names[i]&&Get(at+8,&parent)&&parent==bow::Parents[i]&&
+                  SafeCopy(&inverse,reinterpret_cast<const void*>(at+0x50),sizeof inverse)&&bow::Inverse(inverse,bind[i]);
+        }
+        if(valid)learned.rig.Learn(bind);
+        if(g_bowRigs.size()>128)g_bowRigs.clear();
+        it=g_bowRigs.insert_or_assign(key,learned).first;
+    }
+    auto& held=it->second;
+    if(!held.rig.valid)return;
+    HeroXform hero;
+    if(!HeroTransform(&hero))return;
+    bow::Mat itemLocal;
+    {
+        AcquireSRWLockExclusive(&ecs::g_lock);
+        struct EcsUnlock {~EcsUnlock(){ReleaseSRWLockExclusive(&ecs::g_lock);}} ecsUnlock;
+        uintptr_t existing=0;
+        if(!held.entityKnown||!ecs::SkeletonOf(held.entity,&existing)||existing!=self) {
+            held.entityKnown=false;
+            if(held.lookupAt&&now-held.lookupAt<500)return;
+            held.lookupAt=now;
+            if(!ecs::EntityOf(self,&held.entity))return;
+            held.entityKnown=true;
+        }
+        uint32_t index=0,parent=0;uintptr_t components=0;
+        if(!ecs::Dense(ecs::g_xs,held.entity,&index)||!Get(ecs::g_xs+0x38,&components)||!components||
+           !Get(components+uintptr_t(index)*kTransformSize+0xC0,&parent)||parent!=hero.entity)return;
+        if(!SafeCopy(&itemLocal,reinterpret_cast<const void*>(components+uintptr_t(index)*kTransformSize),sizeof itemLocal)||!bow::Affine(itemLocal))return;
+        // Full generational entity equality: an NPC's or dropped bow using
+        // exactly the same asset must never be posed by our controller.
+    }
+    uintptr_t world=0,matrices=0;int worldCount=0;bow::Pose native,posed;
+    if(!Get(self+0x20,&world)||!Get(world,&worldCount)||worldCount!=bow::Count||!Get(world+4,&matrices)||!matrices||
+       !SafeCopy(native.data(),reinterpret_cast<const void*>(matrices),sizeof native))return;
+    bool posedAtHands=false;
+    if(input.drawing&&input.anchors) {
+        GunBoneOut attach;
+        AcquireSRWLockShared(&g_gunBoneLock);attach=g_gunBone;ReleaseSRWLockShared(&g_gunBoneLock);
+        bow::Mat toHead,headToCog;
+        memcpy(&toHead,&attach.leftToHead,sizeof toHead);
+        toHead=bow::Multiply(native[bow::Cog],bow::Multiply(itemLocal,toHead));
+        if(attach.hero==hero.self&&now-attach.at<150&&bow::Inverse(toHead,headToCog)) {
+            bow::Vec offset;
+            AcquireSRWLockShared(&g_inLock);offset={g_in.handOffset[0],g_in.handOffset[1],g_in.handOffset[2]};ReleaseSRWLockShared(&g_inLock);
+            const auto nock=bow::Vector(headToCog,input.stringHand+offset)+bow::Position(headToCog);
+            const auto line=bow::Vector(headToCog,input.bowHand-input.stringHand);
+            posedAtHands=held.rig.DrawAt(native[bow::Cog],nock,line,true,posed);
+        }
+    }
+    if(!posedAtHands&&!held.rig.Draw(native[bow::Cog],input.drawing?input.draw:0,input.drawing,posed))return;
+    // The native root/placement is authoritative; replace only the deforming
+    // bones after cog. Continued override after release prevents a second,
+    // delayed native wind-up. Attack timing and arrow consumption stay native.
+    constexpr size_t first=bow::Cog+1;
+    if(SafeWrite(reinterpret_cast<void*>(matrices+first*sizeof(bow::Mat)),posed.data()+first,(bow::Count-first)*sizeof(bow::Mat))) {
+        g_bowHeroGen.store(HeroGen());g_bowPosedAt.store(now);
+        g_bowAnchoredAt.store(posedAtHands?now:0);
+    }
+}
+#endif
+
 void Arms(uintptr_t self) {
     Input in;
     float playerPosition[3];
@@ -1824,6 +1954,28 @@ void Arms(uintptr_t self) {
 
 }  // namespace
 
+#ifdef D2RVR_NATIVE_OPENXR
+void SetMotionBow(bool active,bool drawing,float draw,const float* stringHand,const float* bowHand) {
+    active=active&&std::isfinite(draw);
+    AcquireSRWLockExclusive(&g_bowInputLock);
+    g_motionBow={active,active&&drawing,std::clamp(draw,0.f,1.f),GetTickCount64()};
+    if(stringHand&&bowHand) {
+        g_motionBow.stringHand={stringHand[0],stringHand[1],stringHand[2]};
+        g_motionBow.bowHand={bowHand[0],bowHand[1],bowHand[2]};g_motionBow.anchors=true;
+    }
+    if(!active)g_bowPosedAt.store(0);
+    ReleaseSRWLockExclusive(&g_bowInputLock);
+}
+bool MotionBowPosed() {
+    const auto at=g_bowPosedAt.load();
+    return at&&GetTickCount64()-at<150&&g_bowHeroGen.load()==HeroGen();
+}
+bool MotionBowAnchored() {
+    const auto at=g_bowAnchoredAt.load();
+    return MotionBowPosed()&&at&&GetTickCount64()-at<150;
+}
+#endif
+
 // From vrcam, every 10 ms.
 int LockState() { return g_lockState.load(); }
 
@@ -1857,12 +2009,19 @@ int GripHand(float scale[2]) {
     if (scale) { scale[0] = g.ok ? g.scale[0] : 0.0f; scale[1] = g.ok ? g.scale[1] : 0.0f; }
     return g.ok ? g.hand : -1;
 }
-bool GunBone(float origin[3], float axes[3][3]) {
+bool GunBone(float origin[3], float axes[3][3], unsigned maxAgeMs) {
     AcquireSRWLockShared(&g_gunBoneLock); const GunBoneOut g = g_gunBone; ReleaseSRWLockShared(&g_gunBoneLock);
-    if (!g.at || GetTickCount64() - g.at > 300) return false;
+    if (!g.at || GetTickCount64() - g.at > maxAgeMs) return false;
     memcpy(origin, g.o, sizeof g.o); memcpy(axes, g.ax, sizeof g.ax);
     return true;
 }
+#ifdef D2RVR_NATIVE_OPENXR
+bool MeleeWeapon(MeleeWeaponPose& out) {
+    AcquireSRWLockShared(&g_gunBoneLock);const auto g=g_gunBone;ReleaseSRWLockShared(&g_gunBoneLock);
+    if(!g.haveMelee||!g.at||GetTickCount64()-g.at>100||g.melee.heroGeneration!=HeroGen())return false;
+    out=g.melee;return true;
+}
+#endif
 
 void ResetGrip() { AcquireSRWLockExclusive(&g_gripLock); g_grip.ok = false; ReleaseSRWLockExclusive(&g_gripLock); }
 #endif
@@ -1919,6 +2078,9 @@ void __cdecl Hook(uintptr_t self, float a, float b, bool c) {
     if (kHoldWeaponSkeleton) HoldWeaponItem(self);
 #endif
     Arms(self);
+#ifdef D2RVR_NATIVE_OPENXR
+    PoseMotionBow(self);
+#endif
     if (GetTickCount64() < g_dumpUntil.load()) {
         AcquireSRWLockExclusive(&g_lock);
         DumpOne(self);

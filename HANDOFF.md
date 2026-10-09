@@ -1,6 +1,6 @@
 # Agent handoff — D2R PCVR
 
-Updated 2026-10-08. Read [INSTALL.md](INSTALL.md) for deployment and
+Updated 2026-10-09. Read [INSTALL.md](INSTALL.md) for deployment and
 [steamvr/TASKS.md](steamvr/TASKS.md) for the complete user-requested backlog.
 
 ## Objective and boundaries
@@ -25,6 +25,384 @@ license refresh; the explicit `--frame-vr` launch chooses D2RLoader. Save and ex
 before replacing DLLs or restoring files. The installer checks for running D2R.
 
 ## Latest user evidence and priorities
+
+**Revision 4 verified in Steam Frame on 2026-10-09.** After the final comparison
+request (fast slashes, backhands and swinging while walking), the owner reported
+**"works great"** and requested commit/push. This validates the tested sword
+setup; it does not establish every weapon/creature combination. No further
+captures or headset runs are requested tonight.
+
+Installed 2026-10-09 02:39:27 with the game closed. DLL SHA256:
+`6b284346ce23a1118db3122eecb5b2fa59351274df7413d5193e968eb48d88c0`.
+The same build is retained at
+`build-frame/ready/free-swing4-20261009-023651/d2rl-vrcam.dll` and
+`build-frame/d2rl-vrcam.dll`; adjacent `build.json` records validation.
+Backup `build-frame/backups/free-swing4-20261009-023927/` contains revision 3
+DLL/INI. Build log: `build-frame/build-contact-melee4.log`. Host melee, gameplay,
+combat and bow tests and the Windows cross-build pass.
+
+Existing runtime logs confirmed combat/contact hooks ready at 02:39:36. Through
+02:47:22 they recorded 58 physical contacts / 58 native accepted hits, 0 rejected,
+0 missing-server failures, 1 pose reset and 482 recovery samples. These are
+diagnostic counters, not a measured percentage of the owner's swings that hit.
+No additional recording was made for this final run.
+
+Code-level defect addressed: `MeleeContactTick` paired the latest XR hand/time
+with a cached older `GunBone`, then reconstructed that older bone using newer
+camera yaw/eye position. The engine could consume the timestamp before the blade
+caught up, or reject contact after the latest hand had stopped. `PoseHistory`
+now retains 16 timestamp-keyed input samples; the completed skeleton pose carries
+its original shared input stamp. Melee gets that exact sample (max 100 ms), with
+current action, equipment and recenter gates still mandatory. World origin/+Y axis
+and player placement come directly from final attachment × the hero's same-pose
+root transform, not from a later camera frame. Hero generation and snap-turn
+world epoch reject obsolete geometry. Bow/debug `GunBone` behavior is unchanged.
+
+Synthetic regression demonstrates the old asynchronous order loses a short fast
+slash, while matching pose timestamps retains the contact after the hand stops.
+History tests cover unknown/expired stamps, menu/trigger cancellation, equipment,
+recenter/tracking changes and zero stamp after wrap. The subsequent owner test
+confirmed the improvement. Generic capsule/weapon-fit limitations remain:
+cross-weapon/boss/slope checks, attack-speed scaling, offhand contacts and parries
+are still open. Bow draw/string posing is verified; flying-arrow orientation and
+speed tuning stay parked. Palette, potion and spell ergonomics still need their
+own validation. The published preview ZIP predates this motion-combat work;
+build from source for these changes.
+
+### Historical motion-combat diagnostics
+
+The entries below preserve earlier investigations and rollback artifacts. Their
+pending-test and installation notes describe those older builds; the verified
+revision 4 status above is current.
+
+**Revision 3 installed 2026-10-09: slashes were failing despite reliable thrusts.**
+The owner reported thrusts work but swings in any direction often miss. A read-only
+40-second live capture (1,698 input samples, `build-frame/melee-motion.jsonl`) and
+host replay reproduced a **35-second lockout**: real slashes reached 53 rad/s,
+tripping the old 35 rad/s guard; the required 80 ms of almost stationary motion
+never occurred during continued fighting. The separate 18 m/s derived blade-speed
+ceiling also rejected the strongest portions of legitimate swings. Only 119
+powered samples / 4 distinct target-stroke contacts survived the old replay.
+The first test session recorded 38 contacts / 38 native acceptances / 0 rejections,
+so the damage dispatch was not the primary cause of this failure.
+
+`steamvr/melee_contact.h` now recovers after 80 ms of coherent fresh samples,
+without requiring stillness. It drops the discontinuity itself; preserves menu,
+session, equipment, snap-turn, stale-input and teleport cancellation; uses
+rate-aware 10 m/s hand / 60 rad/s rotation guards; permits blade travel justified
+by physical hand motion; removes the derived upper-energy cutoff. Minimum energy
+and excursion remain 1.2 m/s and 8 cm. Fast sweep interpolation preserves the
+blade's length along its rotational arc instead of collapsing its tip onto a
+chord. A second lockout came from unbounded jitter/windup accumulation suppressing the
+net-excursion ratio. Stroke onset now uses a bounded 120 ms / 32-sample history;
+jitter still cannot qualify, but cannot poison the next deliberate slash. Final
+replay: 1,413 powered samples / 48 distinct target-stroke contacts (289 intersecting
+samples powered, 28 unpowered; previous build 18 powered / 299 unpowered).
+This is **offline replay evidence, not headset validation of the update**.
+Synthetic committed-source tests cover fast swings in four planes, jump/hitch
+recovery while continuing to move, outer-arc contact, and misses beyond reach.
+Native logs now include pose-reset/recovery counts.
+
+A stereo screenshot with `[debug] bone_axes=1` confirmed +Y follows the visible
+short sword. Read-only hero/weapon matrices likewise agreed with collider origin
+and direction. Model bounds were inspected with an ignored Rusty Demon GR2 reader;
+no game assets, third-party reader or captured player poses added to source.
+Temporary bone axes have been turned off. Bow flight stays parked.
+Cross-build and host melee/gameplay/combat/bow tests pass. Installed with game
+confirmed closed 2026-10-09 02:21:55, DLL SHA256
+`44d7f136ba2eda16b926f1e8a7dcd72778aa8f1a718b780e4a25e0b843597ea5`; backup `build-frame/backups/free-swing3-20261009-022155/`.
+Runtime confirms the contact hooks ready at 02:22:03. Headset comparison requested;
+owner reported much better but fast motion still misses. No commit/push.
+
+
+**Owner feedback on the first free-swing build: "hit or miss at best."**
+Revision 2 installed 2026-10-09 02:03:56, SHA256 `b4542fcba5c87fca39ad44752a31640d5cc6c9be80dcdb9c4c8d6433aa2fd752`; backup `build-frame/backups/free-swing2-20261009-020355/`. It refreshes native local-player
+identity from the revalidated hero each active sample (not only old controller
+aim traffic); rotation-aware reversal permits wrist-led repeated slashes; initial
+acceleration geometry joins the first powered sweep; speed/excursion threshold
+1.2 m/s and 8 cm; +2 cm weapon radius and +5 cm creature radius tolerance.
+Ordinary get-hit/block animations no longer discard physical swings (death/town
+still gated). Added intersection/stale/wall counts and tests for four consecutive
+wrist-only reversals and onset-path inclusion. Owner saved/exited before deployment; revision 2 is launching for comparison.
+
+**Installed 2026-10-09 01:54:19: free-swing contact melee, awaiting headset validation.**
+DLL `f2d056b1a72f7742d4bf51cce5f4aa6163fcc7d8badf4ca4f55819656bed5971`;
+backup `build-frame/backups/free-swing-20261009-015419/` holds deterministic-hit
+baseline DLL/INI. Deployed with game closed and launched via run-proton.sh.
+Host melee/gameplay/bow/combat tests and snapshot signature audit pass; cross-build
+log `build-frame/build-contact-melee.log`. Runtime confirmed all hooks ready at
+01:54:27. At 01:55 the server game/player/session identities matched and strong
+swings queued successfully with no missing-server failures; no geometric contact
+had yet occurred (nearest creature was ~15 game units away). No commit/push yet.
+Owner rejected grip-to-arm + controller targeting. New `vr/melee.{cpp,h}` and
+`steamvr/melee_contact.h` replace melee A pulses with swept weapon capsules and
+exact contacted-target damage through native basic attack. No grip/trigger or
+preselected target. Trigger fallback and bow/spell paths remain separate.
+
+- `42FEB0` native basic-attack Do function owns the damage object and complete
+  combat effects. TLS overrides `48FE20` GetTarget **only** at its two call sites
+  inside that function (`42FFAA`, `43010A`). No path/selection fields are written.
+- `48FE80` server lookup and normal GetTarget calls identify the local authoritative
+  game using native type/id, unit+0xD8 backpointer and opaque SDK session identity.
+  Requests run through `ThreadService::runOnGameThread`; incoming pointer identities
+  are resolved there. Monster hash buckets at game+(0x4C6+i)*8, link unit+0x158.
+- Native `44B720` result flags record success. `348650` melee range only for that
+  scoped contact uses native `3502A0` line collision; physical geometry replaces
+  old grid reach. `48E460` relationship, death/town/get-hit/block modes gate dispatch.
+- Body capsules infer height from native MonStats2 `0975B0` pixHeight +0xD and
+  footprint +8/+9. This is approximate artwork geometry, not mesh collision.
+  Weapon category lengths use posed GunBone +Y; generic but needs physical tests.
+- Physical room-space motion supplies energy; camera motion alone cannot hit.
+  One target per stroke; quiet rearm or deliberate reversal; 150ms queue expiry;
+  session/equip, menus, tracking resets and snap/recenter cancel pending contacts.
+  Haptics mean accepted native hit flags, not proof of damage through immunity.
+- **Native animation cadence is replaced by physical stroke cadence.** IAS scaling,
+  per-model dimensions, offhand collisions and shield/parry behavior remain open.
+- `steamvr/melee_contact_test.cpp` tests sweeps/misses, strength, jitter, frame rates,
+  repeated contacts and cancellation. Gameplay tests assert no melee A pulses.
+
+Live test at 01:57–01:58 recorded 8 geometric contacts, 8 accepted native
+hits, 0 rejections and 4 missing-server failures. Runtime input shows grip=0,
+trigger=0 with melee contact enabled. Player/session and MonStats2 footprint/height
+fields were verified by read-only inspection. Owner collider-fit feedback pending.
+
+Previous installed baseline (retain rollback details):
+
+**Latest installed: deterministic outgoing hit test, 2026-10-09 01:30:35.**
+Owner confirmed both right-grip and right-trigger melee work, then explicitly
+requested removal of dice-roll misses for melee **and arrows/magic**, with strong
+physical swings connecting on contact. Native hit probability is now overridden
+for the local player's hits against creatures; full swept-blade contact is still
+outstanding, and that distinction has been explained in commentary/test question.
+DLL `b6edab6541cbb19784e90c594f54dadd5fcd5d7dcbfefff077558872524d0640`;
+backup `build-frame/backups/contact-hits-20261009-013035/` contains the prior melee
+DLL/INI. Game was closed before deployment. INI adds `[gameplay] contact_hits=1`.
+Disable that setting to restore native miss rolls; motion_controls must be on.
+
+New `vr/combat.{cpp,h}`, `vr/combat_rules.h`, `steamvr/combat_rules_test.cpp`:
+- Native IsHitSuccessful `44BA60` wraps a TLS scope for the identified player.
+  Seed getter `34A1E0` supplies a zero-valued scratch seed only at return address
+  `44BD6D` within that eligible accuracy check; native minimum chance is 5%.
+  The real seed is advanced normally once (low*0x6AC690C5+high) before scratch is
+  supplied, preserving the following attacker damage/proc roll. Rest of the
+  function runs normally, including Prevent Monster Heal on the accepted hit.
+- `44B930` ApplyBlockOrDodge and `44EF70` ApplyDodge return no random block/dodge
+  only for that player attacking a monster. Native collision/range/relation,
+  damage/resistances/immunities, ammo/mana and timings still apply.
+- All four prologues plus exact inline-roll bytes must match; no overrides until
+  all hooks install. Full native owner type/id matching excludes enemies, pets,
+  other players, PvP, scenery. Projectile collision code calls these functions
+  with its native owner; spells without an accuracy roll keep their collision path.
+- **SDK PlayerHandle is opaque, never a pointer** (handles.h explicitly says so).
+  `HookAttackTarget`, after IsHeroUnit validation, publishes native id+freshness
+  and opaque session token to combat. Read-only live inspection confirms id=1,
+  native unit type=0 and matching SDK session. The older parked projectile-speed
+  module incorrectly tries SDK handles as pointers, explaining its absent counts;
+  this was discovered during combat work but NOT changed (arrow tuning parked).
+
+Host rule tests, snapshot signature audit, build (`build-frame/build-contact-hits.log`)
+and diff checks pass. At 01:30:43 runtime confirmed all hooks ready. At 01:32:57,
+01:32:59 and 01:33:03: three sword melee checks, three accepted accuracy rolls,
+three block bypasses, zero failures. Owner visual feedback and live ranged/spell
+checks remain pending. Async question asks whether hits are consistent.
+By 01:36 the session totals were 19 melee checks / 19 accepted rolls / 19 block
+bypasses, zero failures, and no projectile checks yet. Game remains running.
+
+Research files in ignored `build-frame/combat-reference/`: primary D2MOO source
+and license (read for control-flow reference), native disassembly. Temporary
+read-only extraction of monstats2/weapons tables and short-sword asset stays in
+ignored game-assets. No game assets/stock executable/saves/inventory edited.
+Physical contact needs a proper weapon sweep, creature bounds and exact target
+dispatch; do not silently substitute an arbitrary hand-radius check and call it
+mesh collision. All motion/combat work remains uncommitted.
+
+**Current priority: generic melee across characters and melee weapons.** Owner
+tested the flight build below: "somewhat aligned and not that much faster" and
+explicitly parked arrows to work on melee. Latest session (01:03–01:06) has hook
+startup messages but no flight creation/velocity counters. Speed changes remain
+unverified; do not continue arrow tuning unless requested. Game was closed when
+this melee work began.
+
+New shared main-hand melee changes in `steamvr/gameplay.h` / `transport.cpp`:
+weapon-category sensitivity (unarmed/short/one-handed/long), translation and
+rotation recognition, net-excursion guard against rapid jitter, quiet ready
+haptic, one request per stroke, and 250 ms aim latch toward the swept hand's
+ground bearing. Laser direction no longer redirects a motion slash; trigger
+fallback still uses live aim. Tracking orientation jumps require releasing grip.
+New melee equipment resets palette selection to Attack; ordinary tracking/menu
+interruptions preserve deliberate skill selection. Claws/orbs/javelins/throwing
+weapons enter this generic path as well: A must be bound to basic Attack for
+melee. This dispatches the assigned action, not an invented damage call.
+`HookAttackPoint` skips long-range staff/thrown aim extension during motion melee.
+It retains the original game's reach, target selection, timing and damage rules.
+No character or rig is special-cased; no physical blade collision, confirmed-hit
+haptic or independent left-hand attack yet. Owner wants a generic solution,
+not one restricted to Nekro or a particular test weapon.
+
+Strict host gesture tests pass, including all four profiles, slashes/chops/
+thrusts at 36/72/120 Hz, direction latching, menus/equipment cancellation,
+orientation jumps and sign-equivalent quaternions. Bow pose / projectile helper
+regressions and cross-build pass (`build-frame/build-melee-generic.log`).
+Installed and launched 2026-10-09 01:13:53, game confirmed closed first:
+DLL SHA256 `cc4eb561f2275ff1a32f0cefabe8e6980302e9ca9b03283958c843f4aa1d478a`.
+Backup `build-frame/backups/melee-generic-20261009-011353/` holds the prior
+flight-test DLL/INI. INI and saves unchanged. Headset validation pending. Async
+question asks the owner to try slash/chop/thrust with any melee weapon outside
+town, right grip held, basic Attack on A. Check `Frame melee: swing requested`
+and `Frame gameplay ready ... melee ready=... grip=... aiming=...`; these prove
+gesture dispatch, not native damage. All motion changes remain uncommitted.
+Runtime 01:15–01:16: owner switched from hunter's bow to short sword (`ssd`),
+recognized as melee type 4. Ready pulses logged; a motion swing at 01:16:00.898
+was followed by native pad A attack at 01:16:00.916. Trigger fallback attacks
+also reached native hand-aim hooks. This establishes equipped-type detection,
+gesture and native input delivery; target accuracy/damage/comfort await feedback.
+
+**Previous flight test installed/launched 2026-10-09 01:03:05:**
+`d60ed9893e83d68753b34e009bc4feb66f2884f1b1c810cfbba920723c357a21`.
+Backup `build-frame/backups/bow-flight-20261009-010305/` contains the
+owner-verified two-hand bow DLL and INI. User had quit after firing; the timed
+F10 recorder produced an empty file. Do not claim a flight capture succeeded.
+The combat log did capture those shots. Read-only extraction from the owner's
+Steam archives revealed the flying arrow is a **static model with no skeleton**,
+with `TrackReleasePointDefinitionComponent.transitionTime=0.5`. Extracted game
+assets and the temporary D2RExtractor storage reader stay ignored in build-frame.
+
+New `vr/projectiles.cpp` isolates flight from the working held-bow pose:
+- `[gameplay] arrow_speed=2` scales native PATH velocity only within local-player
+  basic-arrow creation on both client RVA `1B7760` and server `5371A0`. The path
+  setter is `342AE0`; type/id, unit↔path backlink and owner checks fail closed.
+  TLS creation scopes restore on exit and mask nested unrelated creation. Speed
+  activates only when all three signatures/hooks match. Native lifetime remains,
+  so range can increase. Elemental/skill arrows and other owners are unchanged.
+- `arrow_direct_release=1` bypasses the half-second HD handoff by removing only
+  that arrow entity's TrackReleasePoint component with native operation `70DC70`
+  before initializer `771A10`. Full entity generation and sparse/packed storage
+  membership validated. Original native arrow path/transform remains. This is a
+  targeted **test**, not proof that every flight orientation issue is solved.
+- Owner lookup `09A7B0`, component storage `6E3CD0`, registry `2677170`; expected
+  bytes checked. No game tables, stock executable, assets, saves or inventory
+  edited. Motion controls must be enabled for either change.
+
+Strict host gesture/pose and new ownership/velocity tests pass. Cross-build
+passes. Flight-test log confirms client/server velocity hooks and release
+handoff hook ready at 01:03:14. Actual arrow events were not logged; owner
+reported only partial improvement and parked this (see current priority above).
+Look for `Frame bow flight: created client/server ... accelerated ... direct
+handoffs ...` if investigation resumes. Both settings are live-reloadable for comparison.
+Uncommitted motion source now includes projectiles.{cpp,h}, projectile_rules.h
+and steamvr/projectile_rules_test.cpp. Do not publish local game assets/dumps.
+
+
+**New priority after the eye-tracking commit:** motion gameplay. Owner requested
+real bows/melee, VR potion handling and weapon/skill selection/casting, with
+6DoF controllers, and selected right-handed controls. The first gesture-driven
+native-combat prototype is implemented, built and installed; see
+[steamvr/GAMEPLAY.md](steamvr/GAMEPLAY.md) for exact behavior, controls and limits.
+This is not completed collision/physics combat. Native skill metadata, accurate
+surface targeting, item meshes, counts/health/mana and physical collisions remain.
+
+Latest installed **left-attachment correction, 2026-10-09**, game confirmed closed:
+DLL SHA256 `00ed67676d2959dbe86ebdd422911687947807499c302b6c4dafeca9ba4e5378`.
+Rollback DLL/INI: `build-frame/backups/bow-left-anchor-20261009-004022/` (this contains the failed two-anchor build).
+Last owner-verified draw build: `build-frame/backups/bow-two-anchors-20261009-003455/d2rl-vrcam.dll`.
+Only the DLL changed. Motion controls remain locally on; retained DLSS off,
+centered projection, working labels and eye-tracked foveation. Installer defaults
+motion controls to **0**. Motion source is uncommitted; published ZIP remains old.
+No save edits or synthetic equipment were made.
+
+Owner acquired/equipped hunter's bow (`hbw`) and arrows (`aqv`) on an offline
+Amazon. Initial left-grip grab failed. The 00:01:59 build removed that prerequisite
+and added trigger hysteresis, pre-squeeze entry, a larger grab region, arrow/
+V-string hints, and diagnostics. Owner confirmed draw and shooting work, but
+actual native bow pull/rumble happened after trigger release. Runtime captured
+13 nocks / 12 ready / 12 release events, and native attack/aim pulses.
+
+Read-only bone captures in ignored `build-frame/bow-poses-motion-20261009.json`
+confirmed the native wind-up began after release. Current build adds
+`vr/bow_pose.h`: string/limb/arrow deformation from runtime bind geometry,
+constant string/limb lengths, draw amount tied to hand separation, snap-back on
+release, hide arrow until nocked. `PoseMotionBow` validates the 13-bone rig's
+names/hierarchy/bind data and **full parent entity == current hero entity**;
+NPC/dropped bows must not be changed. Only the nine deforming matrices after
+cog are written. Valid input is copied through a separate lock; skeleton workers
+never take the transport mutex. Input older than 150 ms fails closed. Unsupported
+rigs keep native animation and quad guides. Successful posing hides duplicate
+quad string/arrow. Native timing/damage/ammo are unchanged; immediate projectile release is not solved.
+
+New haptics check OpenXR return codes, stronger grab/release pulses, both hands,
+and light draw-progress pulses before release. Correct Frame controller bindings
+already include the feedback action. `frame_hmd` has no hand haptics by design;
+do not mistake that headset binding for missing controller bindings.
+
+Validation: strict host gameplay and bow-pose suites pass; cross-build succeeds
+(`build-frame/build-bow-pose.log`). Captured hunter's bow bind geometry passes
+all draw fractions; procedural full draw closely reproduces the observed native
+limb-tip/string positions. Runtime capture and generated validation data stay
+ignored, not bundled game assets. **Owner verified the 00:23 native pose/haptics: “yes it all works.”**
+Then reported arrows flying sideways and slowly, requesting exact two-hand
+anchors: right hand at arrow tail, left at bow, visible arrow along their vector.
+The 00:34 build adds that visual pose: full attachment-to-head transform from
+hero posing, composed with the bow entity's local transform; inverse maps both
+hand anchors into cog space. String follows right hand, arrow rotates along
+right-to-left vector, limb tips preserve string/limb lengths. Unreachable draws
+are constrained. Invalid/stale attachment data falls back to normalized draw.
+`anchored=1` in readiness logs confirms the new path while drawing. Synthetic
+mirrored/scaled attachment and exact world-direction tests pass. Native aim uses
+the same two-hand line and retains it for 400 ms after release (attack pulse
+still 65 ms). Vertical projectile motion and speed remain native/ground-based.
+The 00:34 two-anchor build failed the owner's visual test: draw disappeared and
+arrow pointed right at nock. Root cause found in attachment selection: generic
+`axesSide` follows **inventory slot**, which selected the right wrist, although
+ECS world-matrix comparison confirms the actual bow hangs on L_weapon_attach
+(error ~0.0002 units). Inverting the right-hand attachment cancels right-hand
+pull motion! The latest correction publishes a dedicated `leftToHead` matrix
+from L_weapon_attach and uses that for the two-anchor conversion. Built and
+installed after game closed; the owner subsequently confirmed the held arrow and
+string follow both hands (see measurements below).
+
+Latest 00:40:22 build now has runtime geometric evidence: ignored read-only
+`build-frame/bow-anchor-measure.py` measured 734 live draw samples, comparing
+posed string/arrow bones through the actual item and left attachment transforms
+to the tracked anchors. String-to-hand p50/p90 errors ~0 / 0.00326 m; arrow versus
+hand-line p50/p90 angles 0.0335 / 0.4519 degrees. No `xrEndFrame` errors since this
+restart. Haptic/nock/ready/release events continue. This checks draw geometry,
+not visual comfort, native projectile direction or velocity. Owner confirmed the corrected draw follows both hands. Latest unresolved
+request is specifically **flying arrow model angled across its flight path**
+(not the held bow twisting; explicitly clarified). Flight path is roughly
+straight. Arrow must also travel much faster. Plan a 2x native travel-speed
+test without accelerating game time; velocity has NOT been changed yet.
+Need identify the native flying-arrow asset/transform separately from held bow.
+Game was saved/exited; relaunched current good nock build for inspection. Check `Frame gameplay ready` for `native=1` and draw
+values while holding trigger; haptic acceptance does not prove felt feedback.
+
+During 00:25–00:26 tests `native=1`, changing draw amounts and successful
+both-hand OpenXR haptic submission are confirmed. Repeated `xrEndFrame -39`
+(`XR_ERROR_POSE_INVALID`) correlate with the idle nock marker, clearing during
+physical draw. The same errors existed in the 00:01 guide build. The 00:34 build omits that redundant marker once native bow posing is active
+and normalizes/validates optional guide poses. Logs show zero frame submission
+errors through the subsequent loaded-game bow test (00:36 onward).
+Investigate before treating perceived arrow speed as solely native velocity;
+no game-table speed/balance change has been made. User nevertheless confirms the live draw.
+
+Other motion implementation: `steamvr/gameplay.h` recognizer, `transport.cpp`
+OpenXR grip/aim/haptics, static atlas and stereo palette/bottle/guides, native
+controller skill routing; `vr/gamecmd.cpp` timestamped native belt requests on
+UI thread; `vr/vrcam.cpp::HandRay` uses motion aim. Right A's duplicate raw pad
+mirror was removed so semantic no-target protection applies. Melee, potions,
+skill selection and broader regression scenarios still need individual evidence.
+
+Motion controls retain left stick walk/right snap/Left X inventory. Left Y
+holds palette, right trigger selects eight B/X/Y/RB and LT-variant native skills
+(no rebinding/names yet), attack mode or weapon swap. Grip over belt column
+grabs a neutral numbered bottle guide; hold, raise to mouth, tip and dwell .25s
+to request its normal belt command. Swing detection requires right grip and
+quiet reset. Bow uses right trigger to nock within .28m, then at least .12m additional
+draw, .28m total hand separation and release; no left grip is required. Select Melee/Bow for
+gestures. Both tracked hands required. Physical collision, free 3D projectile
+origins and pitch-sensitive terrain targeting are explicitly not implemented.
+
+Older performance/visual evidence below remains useful but is superseded as
+the immediate work priority by motion gameplay.
 
 Latest performance evidence: after another competing Iron Signal workload was
 stopped around 21:46, the owner reported much better movement with slight residual
