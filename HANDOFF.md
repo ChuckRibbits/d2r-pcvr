@@ -26,6 +26,60 @@ before replacing DLLs or restoring files. The installer checks for running D2R.
 
 ## Latest user evidence and priorities
 
+**Invisible settings menu fixed and headset-verified, 2026-10-09 17:44.** The 17:36 laser
+candidate did not fix the menu; the owner reported **"Still invisible"**. Its
+diagnostics show valid settings/laser poses but rejected frames (-25 invalid
+rectangle and -39 invalid pose). A bounded debugger capture of one open-menu
+frame compared the mod's input layers with Proton's converted layers and
+detached successfully (TracerPid 0). The mod's layers were intact; in the host
+array the settings quad started at `0x1000ff4a8` and the laser at `0x1000ff4d8`,
+only **48 bytes apart**, although quads occupy **112 bytes**. The laser overwrote
+the settings rectangle and pose. Disassembly of the installed WineOpenXR
+`convert_XrCompositionLayerBaseHeader_pointer_array_win64_to_host` confirms it
+chooses one allocation size from `layers[0]->type`, then reuses it for all layers.
+Our first projection layer is 48 bytes. Local evidence (not committed):
+`build-frame/settings-layer-debug/trace.log`, `build-frame/openxr-quad-convert.asm`.
+The old source snapshot under `~/vrdeps/proton-openxr/` predates this converter.
+
+The built correction in `steamvr/composition_layers.h` prepends a zero-alpha
+quad behind the scene for mixed projection/quad frames on WineOpenXR. This
+makes the bridge reserve 112 bytes per layer without patching Proton. Scene,
+menu and pointer ordering is retained; a layer slot is reserved within runtime
+limits. Quad-first flat menus, projection-only frames and native Windows need
+no prefix. The standalone regression reproduces the overlap and validates the
+workaround, ordering and capacity. Windows cross-build passes. Retain the laser
+math fix too, but do not call it the root cause of the invisible settings panel.
+Installed after Save & Exit at **17:43:12**, with INI/settings unchanged.
+Stage/backup `build-frame/{ready,backups}/settings-layers-20261009-174312/`,
+SHA256 `9ee182cb4657427a70c26b358801188e320bd0f0a98648a09a9a3cc0e09990df`.
+Relaunched through Steam; prefix activation logged at 17:43:44.009. The settings
+panel opened at 17:43:51.996; submissions succeeded (`result=0`) with both panel
+and pointer, including tab changes and close. No end-frame errors occurred in
+this launch through the check. Owner confirmed **"Visible and usable"**. This
+verifies panel visibility and laser/tab interaction, not every setting's Apply
+behavior. Record: `build-frame/latest-settings-layers-deployment.json`.
+
+**Invisible VR settings menu investigation, 2026-10-09 17:37.** Owner reports
+Left Grip + Left Y blocks movement until toggled again but shows no panel.
+Historical settings-open intervals (including 17:19:22–26) coincide with
+`xrEndFrame` failing `XR_ERROR_POSE_INVALID (-39)`. The exact offending layer
+has not yet been established. A host repro found the laser basis can lose
+orthogonality when the head/beam vectors are nearly collinear, producing
+quaternion norm-squared 0.62645. `math::BeamOrientation` now rebuilds the
+perpendicular axes and normalizes the result; laser/dot layers also use the
+same guarded quad submission as the other overlays. A deterministic regression
+and camera tests pass; a two-million-case diagnostic scan's maximum norm error
+is now 3.58e-7. Added settings submission and rate-limited invalid-quad diagnostics.
+
+Candidate installed at **17:36:55**, after verifying the game closed normally
+at 17:32:40. Stage/backup `build-frame/{ready,backups}/settings-pose-20261009-173655/`,
+SHA256 `e0b229de7fc672ed5fee9ed2a9265879be7d4098d57ab02a635f8f3abeeebfc4`.
+INI/settings unchanged; cross-build passed and Steam VR launch requested.
+Owner asked to open the settings panel and test tabs. **Visual fix unverified**;
+see `build-frame/latest-settings-pose-deployment.json` for subsequent status.
+Earlier complete source/docs checkpoint was pushed as `a0473eb` to
+`origin/vr/steam-frame-proton`; this investigation follows that checkpoint.
+
 **Tracked body and stable particles candidate, 2026-10-09.** Owner reports
 ground smoke tilting/pivoting with head rotation and the body separating from
 the headset during room movement. `vr/billboards.cpp` redirects signature-checked

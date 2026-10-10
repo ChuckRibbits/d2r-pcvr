@@ -23,6 +23,7 @@
 #include "pad_mirror_shared.h"
 #include "transport.h"
 #include "math.h"
+#include "composition_layers.h"
 #include "input.h"
 #include "gameplay.h"
 #include "interaction_ui.h"
@@ -61,6 +62,7 @@ XR_FUNCTIONS(DECLARE)
 #undef DECLARE
 PFN_xrGetInstanceProcAddr getProc=nullptr;
 HMODULE loader=nullptr;
+bool wineOpenXR=false;
 LogFn logger=nullptr;
 PanelFn wantsPanel=nullptr;
 PanelFn inWorld=nullptr;
@@ -330,6 +332,7 @@ bool LoadFunctions() {
     // Proton's WineOpenXR exports the runtime negotiation entrypoint.
     // Negotiate it directly, or use a standard Windows loader as a fallback.
     loader=LoadLibraryW(L"wineopenxr.dll");
+    wineOpenXR=loader!=nullptr;
     if(!loader) loader=LoadLibraryW(L"openxr_loader.dll");
     if(!loader) { Say("Frame OpenXR: no WineOpenXR/Windows OpenXR loader; use Proton 11 or Experimental");return false; }
     getProc=reinterpret_cast<PFN_xrGetInstanceProcAddr>(GetProcAddress(loader,"xrGetInstanceProcAddr"));
@@ -1423,13 +1426,16 @@ void EndPair() {
         Check(pReleaseSwapchainImage(interactionChain,&release),"release interaction atlas");interactionAtlasPending=false;
     }
     if(layer)layers[count++]=layer;
+    const uint32_t capacity=std::min(uint32_t(layers.size()),layerLimit);
+    const bool padQuads=composition::NeedsQuadPadding(wineOpenXR,layer,pointerChain);
+    const uint32_t contentLimit=padQuads&&capacity>1?capacity-1:capacity;
     XrCompositionLayerQuad palette{XR_TYPE_COMPOSITION_LAYER_QUAD},bottle{XR_TYPE_COMPOSITION_LAYER_QUAD},chosen{XR_TYPE_COMPOSITION_LAYER_QUAD};
     std::array<XrCompositionLayerQuad,2> bowString{{{XR_TYPE_COMPOSITION_LAYER_QUAD},{XR_TYPE_COMPOSITION_LAYER_QUAD}}};
     std::array<XrCompositionLayerQuad,2> arrow{{{XR_TYPE_COMPOSITION_LAYER_QUAD},{XR_TYPE_COMPOSITION_LAYER_QUAD}}};
     XrCompositionLayerQuad nock{XR_TYPE_COMPOSITION_LAYER_QUAD},bowHint{XR_TYPE_COMPOSITION_LAYER_QUAD};
     const bool gameplayVisible=layer&&!panelMode&&motionControls.load()&&motionInput.active&&gameplayChain&&motionOutput.rayValid;
     auto motionQuad=[&](XrCompositionLayerQuad& q,XrPosef pose,float w,float h,XrRect2Di rect,XrSwapchain chain) {
-        if(count>=std::min(uint32_t(layers.size()),layerLimit)||!gameplay::Valid(MotionPose(pose))||!std::isfinite(w)||!std::isfinite(h)||w<=0||h<=0)return;
+        if(count>=contentLimit||!gameplay::Valid(MotionPose(pose))||!std::isfinite(w)||!std::isfinite(h)||w<=0||h<=0)return;
         // Normalize generated billboards before submission; a bad optional
         // guide must not invalidate the headset's entire projection layer.
         const auto r=pose.orientation;const float len=std::sqrt(r.x*r.x+r.y*r.y+r.z*r.z+r.w*r.w);
@@ -1508,17 +1514,35 @@ void EndPair() {
         motionQuad(settingsPanel,settingsPose,settingsWidth,settingsHeight,{{0,0},{settings::Width,settings::Height}},settingsChain);
     XrCompositionLayerQuad laser{XR_TYPE_COMPOSITION_LAYER_QUAD},dot{XR_TYPE_COMPOSITION_LAYER_QUAD};
     if(layer&&(settingsModel.open||panelMode||journalMode||(interactionVisible&&interactionOutput.wheel))&&pointerChain&&pointerVisible) {
-        laser.layerFlags=XR_COMPOSITION_LAYER_BLEND_TEXTURE_SOURCE_ALPHA_BIT|XR_COMPOSITION_LAYER_UNPREMULTIPLIED_ALPHA_BIT;
-        laser.space=space;laser.eyeVisibility=XR_EYE_VISIBILITY_BOTH;laser.pose=beamPose;laser.size={.003f,beamLength};
-        laser.subImage.swapchain=pointerChain;laser.subImage.imageRect={{0,0},{64,32}};
-        if(count<layerLimit)layers[count++]=reinterpret_cast<const XrCompositionLayerBaseHeader*>(&laser);
-        if(pointerHit) {
-            dot=laser;dot.pose=dotPose;dot.size={.018f,.018f};dot.subImage.imageRect={{0,32},{64,64}};
-            if(count<layerLimit)layers[count++]=reinterpret_cast<const XrCompositionLayerBaseHeader*>(&dot);
-        }
+        // The pointer needs the same finite-pose checks and normalization as
+        // every other optional layer: one bad laser must not hide the menu.
+        motionQuad(laser,beamPose,.003f,beamLength,{{0,0},{64,32}},pointerChain);
+        if(pointerHit)motionQuad(dot,dotPose,.018f,.018f,{{0,32},{64,64}},pointerChain);
+    }
+    XrCompositionLayerQuad winePadding{XR_TYPE_COMPOSITION_LAYER_QUAD};
+    if(padQuads&&composition::PrependQuadPadding(layers.data(),count,capacity,winePadding,headSpace,pointerChain)) {
+        static bool reported=false;
+        if(!reported){Say("Frame OpenXR: transparent quad prefix prevents Wine mixed-layer allocation overlap");reported=true;}
     }
     ei.layerCount=count;ei.layers=count?layers.data():nullptr;
-    const double start=Milliseconds();Check(pEndFrame(session,&ei),"end frame");
+    const double start=Milliseconds();const auto submitted=pEndFrame(session,&ei);Check(submitted,"end frame");
+    static uint64_t reportedSettingsRevision=~0ull;
+    if(settingsModel.open&&settingsImageReady&&reportedSettingsRevision!=settingsModel.revision) {
+        char message[160];std::snprintf(message,sizeof message,"Frame VR settings: submit result=%d layers=%u panel=%d pointer=%d",
+            int(submitted),count,settingsPanel.subImage.swapchain!=XR_NULL_HANDLE,laser.subImage.swapchain!=XR_NULL_HANDLE);Say(message);
+        reportedSettingsRevision=settingsModel.revision;
+    }
+    if(submitted==XR_ERROR_POSE_INVALID) {
+        static ULONGLONG reportAt=0;const auto now=GetTickCount64();
+        if(now>=reportAt) {
+            for(uint32_t i=0;i<count;++i)if(layers[i]->type==XR_TYPE_COMPOSITION_LAYER_QUAD) {
+                const auto& q=*reinterpret_cast<const XrCompositionLayerQuad*>(layers[i]);const auto& r=q.pose.orientation;
+                char message[200];std::snprintf(message,sizeof message,"Frame layer diagnostic: quad=%u norm2=%.9g finitePosition=%d size=%.3f,%.3f settings=%d laser=%d",
+                    i,r.x*r.x+r.y*r.y+r.z*r.z+r.w*r.w,gameplay::Finite(V(q.pose.position)),q.size.width,q.size.height,&q==&settingsPanel,&q==&laser);Say(message);
+            }
+            reportAt=now+3000;
+        }
+    }
     timing.submitMs=Milliseconds()-start;
     timing.pipelines=pipelineCreates.exchange(0);timing.maxPipelineMs=maxPipelineMs.exchange(0);
     lastTiming=timing;frame=false;

@@ -21,7 +21,9 @@ The build also adds an **in-headset VR settings panel**.
 Hold **Left Grip and press Left Y**, or select **VR SETTINGS** in the wheel.
 The shortcut also works with motion combat disabled. Use the right laser and
 trigger; **Right B**, the shortcut again, or **Close** dismisses the panel.
-The panel's apply/cancel, pointer and input-ownership checks remain pending.
+The owner verified panel visibility and laser/tab interaction after the
+October 9 Proton layer-conversion fix. Apply/cancel and broader input-ownership
+checks remain pending.
 
 Spell casting remains **equip, point, pull right trigger**. The candidate extends
 hand aiming to spells regardless of the equipped weapon type. Spell gestures are

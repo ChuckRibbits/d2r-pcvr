@@ -63,6 +63,14 @@ Broader performance/visual regression checks remain below.
 - [ ] Headset-verify pointer alignment, readability, main-menu/in-world access,
   apply/cancel/reopen, motion-off access, live foveation switching, height reset
   and no leaked combat/native-menu input. See GAMEPLAY.md for the test sequence.
+- [x] Fix invisible settings panel after Left Grip + Left Y: owner reports
+  movement is blocked without a visible panel. Logs show invalid-pose frame
+  rejection. The 17:36 laser fix alone did not resolve it. A one-frame debugger
+  capture proved Proton's mixed-layer converter overlaps 112-byte quads in
+  48-byte allocations. A transparent quad prefix makes its allocation large
+  enough; regression and cross-build pass. Installed/relaunched at 17:43:12;
+  runtime submission result 0 confirmed; owner verified **"Visible and usable"**
+  after testing the panel/laser/tabs. Broader Apply/cancel checks remain above.
 
 Native DLSS/textures/shadows remain in the game Video menu; resolution remains
 in SteamVR. The new panel is not a binding editor and does not pause simulation.
