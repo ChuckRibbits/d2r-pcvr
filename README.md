@@ -8,9 +8,16 @@ Quest 3 setup includes WiVRn on Linux and Virtual Desktop on Windows; both need
 headset validation. [HANDOFF.md](HANDOFF.md) records the next agent's starting
 point; [steamvr/TASKS.md](steamvr/TASKS.md) tracks the backlog.
 
-Floating creature labels still double. The buffered logger improved movement
-hitches in headset testing. Fixed foveation is active, with no measured GPU
-speedup established. See [technical setup/status](steamvr/README.md).
+**Fresh Windows + Steam Frame setup:** read
+[WINDOWS_HANDOFF.md](WINDOWS_HANDOFF.md) on branch `vr/steam-frame-proton`.
+Release `v0.2.0-windows-handoff` separates the baseline and experimental
+performance builds. Native Windows testing is the next step.
+
+Creature labels, centered lighting, smoke/portal facing and body alignment have
+headset-verified corrections. Motion combat, panels, skill selection and 3D
+potions are implemented. Linux streaming resets and game-update stalls remain
+unresolved, including after rollback/reboot. See
+[performance evidence](steamvr/PERFORMANCE.md) and [technical status](steamvr/README.md).
 The following upstream Windows/BodyWalk documentation remains for attribution
 and reference; its installer is **not this native OpenXR preview**.
 

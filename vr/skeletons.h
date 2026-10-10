@@ -167,6 +167,8 @@ bool GunBone(float origin[3], float axes[3][3], unsigned maxAgeMs = 300);
 struct MeleeWeaponPose {
     float origin[3]{},axis[3]{},player[3]{}; // game world units; axis is normalized
     uint32_t poseStamp=0,worldEpoch=0,heroGeneration=0;
+    uint32_t weaponType=0;
+    float castingAxis[3]{}; // final visible shaft, including staff's chosen axis/sign
 };
 bool MeleeWeapon(MeleeWeaponPose& out);
 #endif

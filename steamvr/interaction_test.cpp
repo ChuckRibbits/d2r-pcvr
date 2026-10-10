@@ -17,6 +17,61 @@ struct Sim {
     Output Step(int count=1){while(count--){in.time+=.02;in.at=1000000+uint64_t(in.time*1000);in.snapshot.at=in.at;out=e.Step(in);}return out;}
 };
 int main(){
+    {
+        Sim s;
+        // Resting hands previously froze the waist, even for a small step or turn.
+        s.in.hand[0].p=s.out.belt[0].p;s.in.hand[1].p=s.out.belt[3].p;
+        s.in.head.p={.04f,1.66f,.02f};s.in.head.q=math::Yaw(.25f);s.Step();
+        auto center=(s.out.belt[0].p+s.out.belt[3].p)*.5f;
+        auto delta=center-s.in.head.p;
+        Check(std::fabs(delta.x+.26f*std::sin(.25f))<1e-5f&&
+            std::fabs(delta.z+.26f*std::cos(.25f))<1e-5f&&std::fabs(delta.y+.57f)<1e-5f,
+            "lowered hands cannot freeze front belt during a small turn, step or crouch");
+        const math::Quat pitch{std::sin(-Pi/6),0,0,std::cos(-Pi/6)};
+        const math::Quat roll{0,0,std::sin(.3f),std::cos(.3f)};
+        s.in.head.p={1.2f,1.55f,.7f};
+        s.in.head.q=math::Multiply(math::Yaw(Pi/2),math::Multiply(pitch,roll));s.Step();
+        for(int i=0;i<4;++i) {
+            const auto p=s.out.belt[i].p,up=math::Rotate(s.out.belt[i].q,{0,1,0});
+            Check(std::fabs(p.x-.94f)<1e-5f&&std::fabs(p.y-.98f)<1e-5f&&
+                std::fabs(p.z-(.7f-(i-1.5f)*.095f))<1e-5f&&up.y>.99999f,
+                "quarter turn follows immediately; downward gaze and roll keep bottles upright at waist");
+        }
+        // Avoid an arbitrary 180-degree flip around a straight-down gaze.
+        for(float tilt:{-Pi/2-.015f,-Pi/2,-Pi/2+.015f}) {
+            s.in.head.q=math::Multiply(math::Yaw(-.8f),{std::sin(tilt/2),0,0,std::cos(tilt/2)});s.Step();
+            Check(std::fabs(math::Heading(s.out.body.q)-Pi/2)<1e-5f,
+                "near-vertical gaze retains last reliable waist heading");
+        }
+        s.in.head.q=math::Yaw(-Pi/2);s.Step();
+        Check(std::fabs(s.out.belt[0].p.x-1.46f)<1e-5f,"belt resumes following when horizontal heading returns");
+        s.in.snapshot.belt[1]=s.in.snapshot.belt[0];s.in.snapshot.belt[1].items[0].handle=99;
+        s.in.hand[0]=s.out.belt[0];s.in.grip[0]=1;s.Step();
+        Check(s.out.bottle==0,"grab uses the moved belt position");
+        s.in.head.p={2,1.4f,1};s.in.head.q=math::Yaw(0);s.in.hand[0].p={2.3f,1.2f,.8f};s.Step();
+        auto scene=framevr::potions::MakeScene(s.in,s.out);
+        Check(s.out.bottle==0&&s.out.bottleItem.handle==42&&scene.count==2&&
+            std::fabs(scene.items[0].pose.p.z-.74f)<1e-5f&&
+            std::fabs(scene.items[1].pose.p.x-2.3f)<1e-5f&&s.out.request.action==Action::None,
+            "belt follows while drinking hand moves independently; grabbed identity and other bottle remain intact");
+        s.in.grip[0]=0;s.Step();scene=framevr::potions::MakeScene(s.in,s.out);
+        Check(s.out.bottle<0&&scene.count==2&&std::fabs(scene.items[0].pose.p.z-.74f)<1e-5f,
+            "unused bottle returns to current waist position, not original grab location");
+        Config seated;seated.seated=true;s.e.Configure(seated);s.Step(3);
+        Check(std::fabs(s.out.belt[0].p.y-1.05f)<1e-5f,"body-following belt retains seated reach height");
+    }
+    {
+        Sim s;s.in.hand[0]=s.out.holster[1];s.in.grip[0]=1;s.Step();
+        const auto yaw=math::Yaw(.8f);const Vec step{.3f,0,.2f};
+        for(auto* p:{&s.in.head,&s.in.hand[0],&s.in.hand[1]}) {
+            p->p=math::Rotate(yaw,p->p)+step;p->q=math::Multiply(yaw,p->q);
+        }
+        Check(s.Step().owner[0]==Owner::Holster&&s.out.request.action==Action::None,
+            "turning and stepping with hand on attached holster cannot swap weapons");
+        s.in.hand[0].p=s.in.hand[0].p+math::Rotate(yaw,{0,0,-.15f});
+        Check(s.Step().request.action==Action::Equip&&s.out.request.index==2,
+            "intentional pull relative to moving body still draws the chosen weapon set");
+    }
     for(int slot=4;slot<8;++slot) {
         Sim s;s.in.snapshot.bindingsEditable=true;s.in.snapshot.bindingBank=0;s.in.snapshot.skillCount=1;
         for(auto& skill:s.in.snapshot.skills)skill.known=true;

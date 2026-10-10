@@ -3,6 +3,8 @@
 #include <wincodec.h>
 #include "interaction_ui.h"
 #include "interaction_icons.h"
+#include "interaction_paint.h"
+#include "latest_worker.h"
 #include <cstdio>
 #include <cstring>
 #include <limits>
@@ -44,6 +46,22 @@ int main(int argc,char** argv) {
     icons::Prefetch(s);
     if(!icons::Wait(10000))return 20;
     const auto pixels=Paint(s,o,2);if(pixels.size()!=1024*1024*4)return 1;
+    if(argc>2&&std::strcmp(argv[2],"--async-check")==0) {
+        framevr::LatestWorker<PaintJob,std::vector<uint8_t>> painter([](const PaintJob& job){return Paint(job.snapshot,job.output,job.selection);});
+        if(!painter.Start())return 30;
+        LARGE_INTEGER frequency{};QueryPerformanceFrequency(&frequency);double paintTotal=0;
+        for(int i=0;i<12;++i) {
+            s.health=100-i*8;s.mana=i*6;o.utility=i%2;o.hover=i%8;o.nearHolster=i%3-1;
+            LARGE_INTEGER start{},end{};QueryPerformanceCounter(&start);const auto expected=Paint(s,o,2);QueryPerformanceCounter(&end);
+            paintTotal+=(end.QuadPart-start.QuadPart)*1000./frequency.QuadPart;
+            auto request=painter.Submit({s,o,2});std::vector<uint8_t> actual;const auto until=GetTickCount64()+3000;
+            while(!painter.Take(request,actual)){if(GetTickCount64()>until)return 31;Sleep(1);}
+            if(actual!=expected)return 32;
+        }
+        painter.Stop();FILE* file=std::fopen(argv[1],"w");if(!file)return 33;
+        std::fprintf(file,"12 native-GDI worker images exactly match synchronous painting. Mean synchronous paint %.3f ms. Shutdown joined before icon cleanup.\n",paintTotal/12);
+        std::fclose(file);return 0;
+    }
     if(editorCheck) {
         s.bindingsEditable=true;s.bindingBank=0;s.skillCount=7;
         std::copy_n(s.skills.begin(),7,s.catalog.begin());

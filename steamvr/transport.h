@@ -17,6 +17,7 @@ void ConfigureInteractions(bool seated,float waistBelowEyes,float beltForward,fl
 // Current motion-combat aim in the existing head-yaw-relative hand frame.
 bool SettingsOpen();
 bool SpellSelected();
+bool DirectedSpellActive(); // fresh native assignment, actually casting (wheel or quick shortcut)
 bool GameplayRay(float origin[3],float direction[3]);
 bool MeleeSample(uint32_t poseStamp,melee::Sample& sample);
 void MeleeImpact(); // thread-safe; haptic delivered by XR input update

@@ -25,10 +25,16 @@ The owner verified panel visibility and laser/tab interaction after the
 October 9 Proton layer-conversion fix. Apply/cancel and broader input-ownership
 checks remain pending.
 
-Spell casting remains **equip, point, pull right trigger**. The candidate extends
-hand aiming to spells regardless of the equipped weapon type. Spell gestures are
-excluded. Immediate hand-origin 3D spell flight/contact is still pending; native
-spell animation, effects, targeting constraints, mana and charges remain active.
+Spell casting remains **equip, point, pull right trigger**. Directional spells
+now use the visible wand, staff, scepter or orb shaft; other equipment uses the
+right-hand aim. Native selected-target snapping and aim assist are suppressed
+only while resolving an owned directional cast, including quick-cast shortcuts.
+Teeth keeps its native fan, centered on the weapon's horizontal direction.
+Ground placements, buffs, summons and corpse-only skills keep native targeting.
+Host tests and native signature/table checks pass; this aim correction still
+needs a headset check with Teeth. Immediate hand-origin **3D** spell flight/contact
+remains pending: missiles still use the native ground plane, animation, effects,
+spread/homing, mana, charges and casting cadence. Spell gestures are excluded.
 
 Revision 4 matches controller input to the rendered weapon's timestamp and uses
 that pose's world placement, fixing missed contacts during fast motion. Its
@@ -103,6 +109,11 @@ placement. Title and character-selection screens keep the existing flat panel.
 | Native Ctrl modifier | Hold left trigger while clicking |
 | Native Shift modifier | Hold right grip while clicking |
 | Back / close | Right B, or the native close button |
+
+For the native quick-drop shortcut, point at an inventory item, hold **Left
+Trigger**, then click **Right Trigger** (Ctrl-click). With inventory alone this
+requests a ground drop; vendor/stash contexts instead sell/transfer. The modifier
+is wired; this particular action still needs headset verification.
 
 D2R handles all moves, equips, purchases, sales, prices and confirmation dialogs.
 The menu button opens the native tabbed container directly; inventory, character,
@@ -235,7 +246,11 @@ adapters remain pending behind the same simple point-and-trigger control.
 
 The belt displays the native next item in each column using its original 3D
 model and mipmapped texture, including all five healing/mana tiers and both
-rejuvenation tiers. Bottles stay upright at the waist and follow the held grip
+rejuvenation tiers. Stock it through the native Inventory panel. Bigger equipped
+belts supply extra rows behind the same four grab positions, up to four items
+per column; the count includes those reserves. The next native item appears
+after consumption. The wheel uses/grabs existing contents rather than assigning
+items. Bottles stay upright at the waist and follow the held grip
 in six degrees of freedom. Reach highlights the nearest occupied slot; a grab
 moves that bottle off the belt into the hand without consuming it. Empty columns
 have no bottle. A refill/reorder cancels an unspent grab. The held model keeps its
@@ -271,9 +286,14 @@ hip_width=0.28
 holsters=1
 ```
 
-Seated mode raises the waist anchors. Small head glances do not rotate the belt;
-anchors freeze during approach/grab. There is no torso tracker or free-form
-anchor editor. The journal uses a UI-only copy rather than capturing the world
+Seated mode raises the waist anchors. The belt and hip holsters follow tracked
+position and horizontal facing every frame, including while hands are lowered
+or holding a bottle. Pitch/roll do not tilt the belt; a nearly vertical gaze
+retains the last reliable heading. A held bottle follows its hand and returns to
+the current waist position when released unused. Holster pulls are measured
+relative to the body so turning/stepping with a hand at the hip does not draw a
+weapon. The body frame uses the headset; there is no independent torso tracker
+or free-form anchor editor. The journal uses a UI-only copy rather than capturing the world
 inside its page. If the UI layer/rectangle/format/copy is unavailable it retains
 the ordinary menu surface. Only the quest page is spatial in this candidate;
 other menus retain their existing panel. Compositor quads have no scenery/hand

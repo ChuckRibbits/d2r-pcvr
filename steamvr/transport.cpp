@@ -28,6 +28,8 @@
 #include "gameplay.h"
 #include "quick_cast.h"
 #include "interaction_ui.h"
+#include "interaction_paint.h"
+#include "latest_worker.h"
 #include "interaction_icons.h"
 #include "potion_models.h"
 #include "vr_settings_ui.h"
@@ -103,6 +105,14 @@ constexpr float settingsWidth=.95f,settingsHeight=settingsWidth*settings::Height
 DXGI_FORMAT atlasFormat=DXGI_FORMAT_R8G8B8A8_UNORM_SRGB;
 uint32_t layerLimit=16;
 uint64_t interactionPaintKey=~0ull;
+uint64_t interactionRequestedKey=~0ull,interactionPaintRequest=0;
+interaction::PaintContext interactionPaintContext{},interactionRequestedContext{};
+bool interactionPaintValid=false;
+LatestWorker<interaction::PaintJob,interaction::PaintedAtlas> interactionPainter([](const interaction::PaintJob& job) {
+    const auto start=hookmetrics::Nanos();
+    auto pixels=interaction::Paint(job.snapshot,job.output,job.selection);
+    return interaction::PaintedAtlas{std::move(pixels),double(hookmetrics::Nanos()-start)/1e6};
+});
 uint64_t interactionPrefetchSession=0;
 uint32_t interactionPrefetchRevision=~0u;
 ULONGLONG interactionPaintAt=0;
@@ -509,11 +519,14 @@ bool UploadAtlas(XrSwapchain& chain,DXGI_FORMAT eyeFormat,int atlasWidth,int atl
     uint8_t* data=nullptr;D3D12_RANGE readRange{};
     if(!Hr(upload->Map(0,&readRange,reinterpret_cast<void**>(&data)),"map static atlas upload"))return false;
     std::memset(data,0,size_t(bytes));
-    for(int y=0;y<atlasHeight;++y)for(int x=0;x<atlasWidth;++x) {
+    const bool bgra=eyeFormat==DXGI_FORMAT_B8G8R8A8_UNORM_SRGB||eyeFormat==DXGI_FORMAT_B8G8R8A8_UNORM;
+    for(int y=0;y<atlasHeight;++y) {
+      if(!bgra) {std::memcpy(data+footprint.Offset+y*footprint.Footprint.RowPitch,pixels.data()+y*atlasWidth*4,atlasWidth*4);continue;}
+      for(int x=0;x<atlasWidth;++x) {
         auto* pixel=data+footprint.Offset+y*footprint.Footprint.RowPitch+x*4;
         const auto* rgba=pixels.data()+(y*atlasWidth+x)*4;
-        const bool bgra=eyeFormat==DXGI_FORMAT_B8G8R8A8_UNORM_SRGB||eyeFormat==DXGI_FORMAT_B8G8R8A8_UNORM;
         pixel[0]=rgba[bgra?2:0];pixel[1]=rgba[1];pixel[2]=rgba[bgra?0:2];pixel[3]=rgba[3];
+      }
     }
     upload->Unmap(0,nullptr);
     ComPtr<ID3D12CommandAllocator> alloc;ComPtr<ID3D12GraphicsCommandList> list;
@@ -550,6 +563,7 @@ bool SetupPointer(DXGI_FORMAT eyeFormat) {
 // Static text atlas: allocated/uploaded once, never repainted in the frame loop.
 // Native skill icons, names and belt counts require a separate read-only UI adapter.
 bool SetupGameplay(DXGI_FORMAT eyeFormat) {
+    if(!interactionPainter.Start())Say("Frame UI: background painter unavailable; interaction artwork cannot refresh");
     BITMAPINFO info{};info.bmiHeader.biSize=sizeof(BITMAPINFOHEADER);
     info.bmiHeader.biWidth=1024;info.bmiHeader.biHeight=-1024;info.bmiHeader.biPlanes=1;info.bmiHeader.biBitCount=32;
     void* bits=nullptr;HDC dc=CreateCompatibleDC(nullptr);
@@ -1027,6 +1041,8 @@ void Input() {
     interactionInput.spell=motion.Selection()>=0;interactionInput.wheel=motionInput.palette;interactionInput.cancel=motionInput.cancel;
     interactionInput.quickCast=motionInput.quickCast;
     interactionInput.reservedLeft=Bool(stickClick,1);interactionInput.trigger=motionInput.trigger;interactionInput.hover=motionInput.hover;
+    if(!interactionPaintValid||interactionPaintContext!=interaction::Context(interactionInput.snapshot,interactionOutput,
+        interaction::Fresh(interactionInput.snapshot,interactionInput.session,interactionInput.at)))interactionInput.hover=-1;
     for(int i=0;i<2;++i){interactionInput.tracked[i]=motionInput.tracked[i];interactionInput.grip[i]=motionInput.grip[i];
         interactionInput.hand[i]={motionInput.hand[i].p,motionInput.hand[i].q};}
     interactionOutput=interactions.Step(interactionInput);
@@ -1060,10 +1076,26 @@ void Input() {
         const auto now=GetTickCount64();
         const bool visible=interactionOutput.wheel||interactionOutput.wrist||interactionOutput.critical||interactionOutput.bottle>=0||
             interactionOutput.nearBelt>=0||interactionOutput.nearHolster>=0||math::Rotate(Q(head.orientation),{0,0,-1}).y<-.60f;
-        if(visible&&key!=interactionPaintKey&&now>=interactionPaintAt&&atlasUploads.size()<3&&!interactionAtlasPending) {
-            auto pixels=interaction::Paint(snapshotFresh?interactionInput.snapshot:interaction::Snapshot{},interactionOutput,motion.Selection());
-            if(!pixels.empty()&&UploadAtlas(interactionChain,atlasFormat,1024,1024,pixels,true))interactionPaintKey=key;
-            interactionPaintAt=now+100;
+        const auto context=interaction::Context(interactionInput.snapshot,interactionOutput,snapshotFresh);
+        if(visible&&(!interactionPaintValid||key!=interactionPaintKey||context!=interactionPaintContext)) {
+            if(now>=interactionPaintAt&&(!interactionPaintRequest||key!=interactionRequestedKey||context!=interactionRequestedContext)) {
+                interactionPaintRequest=interactionPainter.Submit({snapshotFresh?interactionInput.snapshot:interaction::Snapshot{},interactionOutput,motion.Selection()});
+                interactionRequestedKey=key;interactionRequestedContext=context;interactionPaintAt=now+100;
+            }
+            interaction::PaintedAtlas painted;
+            if(key==interactionRequestedKey&&context==interactionRequestedContext&&atlasUploads.size()<3&&!interactionAtlasPending&&
+               interactionPainter.Take(interactionPaintRequest,painted)) {
+                const auto uploadStart=Milliseconds();
+                if(!painted.pixels.empty()&&UploadAtlas(interactionChain,atlasFormat,1024,1024,painted.pixels,true)) {
+                    interactionPaintKey=key;interactionPaintContext=context;interactionPaintValid=true;
+                }
+                interactionPaintRequest=0;
+                const auto uploadMs=Milliseconds()-uploadStart;
+                static ULONGLONG reportAt=0;
+                if((profile::Active()||uploadMs>4)&&now>=reportAt) {
+                    char message[180];std::snprintf(message,sizeof message,"Frame UI refresh: background paint %.2f ms, frame-thread upload %.2f ms",painted.paintMs,uploadMs);Say(message);reportAt=now+1000;
+                }
+            }
         }
     }
     {
@@ -1457,16 +1489,16 @@ bool TakeWorldRecenter() {
 void RequestStereoCapture(){captureRequested.store(true);}
 void BeginPair() {
     std::lock_guard lock(mutex);
-    profile::SkipPair();lastTiming={};
+    lastTiming={};
     if(session&&!failed){
         if(frame)EndPair();Begin();pairDrawing=true;
         gpuProfile.started=gpuProfile.effects=gpuProfile.resolved=0;
-        if(Active())profile::BeginPair();
+        if(Active())profile::BeginPair();else profile::SkipPair();
         if(Active()&&(captureRequested.exchange(false)||d2rcam::TakeLabelCapture())) {
             capturePair=true;captureEyes=0;++captureSerial;
             Say("Frame capture: recording one stereo pair (readback pause is diagnostic, exclude from performance comparison)");
         }
-    }
+    } else profile::SkipPair();
 }
 void EndPair() {
     foveation::EndWorld();
@@ -1537,7 +1569,8 @@ void EndPair() {
         layers[count++]=reinterpret_cast<const XrCompositionLayerBaseHeader*>(&q);
     };
     const bool interactionVisible=layer&&!panelMode&&interactionInput.active&&interactionChain;
-    if(interactionVisible&&interactionOutput.wheel)
+    if(interactionVisible&&interactionOutput.wheel&&interactionPaintValid&&interactionPaintContext==interaction::Context(
+        interactionInput.snapshot,interactionOutput,interaction::Fresh(interactionInput.snapshot,interactionInput.session,interactionInput.at)))
         motionQuad(palette,palettePose,paletteWidth,paletteHeight,{{0,0},{768,768}},interactionChain);
     auto interactionPose=[](interaction::Pose p){return XrPose({p.p,p.q});};
     std::array<XrCompositionLayerQuad,4> beltQuads;
@@ -1680,6 +1713,16 @@ bool SpellSelected() {
     return motionControls.load()&&motionInput.active&&!motionOutput.block&&motionOutput.rayValid&&
         (motion.Selection()>=0||motionOutput.skill>=0)&&GetTickCount64()-motionAt<150;
 }
+bool DirectedSpellActive() {
+    std::lock_guard lock(mutex);
+    const int slot=motionOutput.skill;
+    const auto now=GetTickCount64();
+    if(!motionControls.load()||!motionInput.active||motionOutput.block||!motionOutput.rayValid||
+       now-motionAt>=150||slot<0||slot>=skills::Count||
+       !interaction::Fresh(interactionInput.snapshot,gamestate::LocalPlayer(),now))return false;
+    const auto& skill=interactionInput.snapshot.skills[slot];
+    return skill.known&&skill.available&&skill.id>=0&&skill.directed;
+}
 bool GameplayRay(float outOrigin[3],float outDirection[3]) {
     std::lock_guard lock(mutex);
     if(!motionControls.load()||!motionOutput.rayValid||!motionInput.active||GetTickCount64()-motionAt>150)return false;
@@ -1744,7 +1787,7 @@ bool Projection(float out[16],float nearWorld,int eye) {
 }
 void Shutdown() {
     std::lock_guard lock(mutex);
-    EndPair();ClearInput();interaction::icons::Shutdown();
+    EndPair();ClearInput();interactionPainter.Stop();interaction::icons::Shutdown();
     // Completion is mandatory before destroying our commands/resources, even
     // when ordinary frame submission uses queue ordering without a CPU wait.
     if(fence&&!WaitGpu())failed=true;
@@ -1752,6 +1795,7 @@ void Shutdown() {
     settingsModel.Close();settingsOpen=false;settingsInputGate.Suspend();settingsPaintRevision=~0ull;settingsAtlasPending=settingsImageReady=false;
     if(settingsChain&&pDestroySwapchain)pDestroySwapchain(settingsChain);settingsChain=XR_NULL_HANDLE;
     atlasUploads.clear();interactionPaintKey=~0ull;interactionPrefetchSession=0;interactionPrefetchRevision=~0u;interactions.Reset();interactionstate::Cancel();
+    interactionPaintRequest=0;interactionRequestedKey=~0ull;interactionPaintValid=false;interactionPaintContext={};interactionRequestedContext={};interactionPaintAt=0;
     if(interactionChain&&pDestroySwapchain)pDestroySwapchain(interactionChain);interactionChain=XR_NULL_HANDLE;
     if(gameplayChain&&pDestroySwapchain)pDestroySwapchain(gameplayChain);gameplayChain=XR_NULL_HANDLE;
     if(pointerChain&&pDestroySwapchain)pDestroySwapchain(pointerChain);pointerChain=XR_NULL_HANDLE;

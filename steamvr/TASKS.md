@@ -7,6 +7,82 @@ The DevilutionX standalone/tabletop project remains parked separately.
 Unchecked tasks remain open, including implemented changes awaiting headset
 verification. Build checks and automated tests do not establish visual correctness.
 
+- [ ] **Current priority: fresh Windows + Steam Frame setup.** User is switching
+  OS and requested a complete GitHub handoff. Start at ../WINDOWS_HANDOFF.md,
+  release v0.2.0-windows-handoff baseline package, branch vr/steam-frame-proton.
+  Establish native Windows install/launch/controls and streaming stability first.
+  Baseline rollback and a full Linux reboot both retained the stalls/quality
+  loss. Fresh SteamVR logged 119 reset requests before D2R launched. Manual
+  50 Mbps trial was not evaluated; automatic/200 Mbps was restored. Do not
+  assume the candidate DLL, Windows or a bandwidth limit has fixed this.
+- [ ] Resolve October 10 severe stall/quality regression before more optimization.
+  Owner has gone to bed: no further headset asks or launches tonight. Restored
+  pre-performance DLL `16e24f55…`, wait=0/radius=300, profiling off; no other
+  graphics/network/SteamVR changes. Both CPU candidates remain backed up and
+  uncommitted source is retained. This rollback has not been headset verified.
+- [ ] Diagnose streaming delivery alongside game stalls. Saved Link histories
+  show 147 reset requests in ~4 minutes, reported receive p95 80.81 ms/max
+  734.13 ms, while encoder p95/max were 8.87/12.37 ms. Similar resets predate
+  the CPU candidate. This does not identify Wi-Fi versus driver/client handling
+  or measure actual resolution/bitrate. Use the tested `stream_report.py` on
+  fault-history CSVs; see PERFORMANCE.md and latest-perf-regression.json.
+- [ ] Runtime-check the staged INI reload guard: profiling/unrelated VR options
+  no longer force a half-second model visibility rebuild. Real ring/radius
+  changes and startup retries remain. Cross-build passes; candidate is in
+  latest-perf-offline-stage.json, not installed. Compare after baseline recovery.
+- [ ] Verify asynchronous HUD painting while running and using the wheel:
+  owner reports movement hitches after the first performance pass. Sequences
+  10108–10110 captured 20 input/UI spikes of ~12–13 ms and one 173 ms game
+  update. Real GDI painting costs 10.427 ms in the Proton check. Moved painting
+  to a bounded worker; stale clickable contents are guarded, images match
+  synchronous output, worker lifecycle tests and DLL build pass. Installed
+  `d44762d4…` after Save & Exit and relaunched (subsequently rolled back). Next 1,080 moving pairs had no
+  input spikes over 4 ms (maximum 1.811); worker paint 10.1–10.3 ms, frame upload
+  1.16–1.27 ms. Owner subsequently reported severe stalls/quality degradation;
+  neither that symptom nor wheel/wrist usability is established as fixed.
+- [ ] Isolate large LevelTranslationLayer simulation stalls during traversal:
+  173–753 ms observed, without recorded pipeline creation or time in measured
+  room discovery/extra VR tiling. The asynchronous HUD fix does not address
+  these stalls. Inspect native model/room activation/loading next; shader
+  compilation has not been established as their cause.
+
+- [ ] Finish movement/menu/scenery checks for October 10 CPU performance pass:
+  per-thread hook/memory counters, generation-cached VRS and UI-world pipeline
+  lookups, native callback locks, guarded local memory copies, per-instance
+  portal batch classification, sparse routine GetThreadTimes, idle mouse-query
+  removal, startup-only optional UI-trace callbacks and cheaper launcher polling.
+  Memory fault/handler tests and microbenchmark pass on Proton; worker counter,
+  cache/lock stress, portal batch and launcher identity/cleanup tests pass.
+  Installed; owner confirmed normal image. Seven 360-pair captures saved with
+  GPU profiling off. Code-only A/B did not show an FPS gain (31.38→31.69 ms;
+  slightly different viewpoint). Deferred wait then gave 24.60 ms, radius 210
+  gave 22.70 ms. Later repeats ~22.5 ms changed view, so do not attribute a
+  precise percentage to radius. See PERFORMANCE.md for evidence and limits.
+  Actual video settings remain 100% resolution, shadows/AO 4, DLSS off.
+  Trial wait=1/radius=210 was rolled back; source defaults unchanged.
+- [ ] Once baseline delivery is stable, independently test shadows 4→2, radius
+  210 and deferred waiting while moving, using menus and viewing scenery. Preserve
+  baseline settings (wait=0/radius=300); recheck competing CPU load. Predicted
+  radius-squared model counts remain hypotheses, not established savings.
+- [ ] Transport lifecycle/state lock separation or a dedicated XR thread:
+  current recursive mutex still covers WaitFrame/GPU wait/EndFrame. Nested
+  callers and Shutdown share it, so unlocking one lexical scope is insufficient
+  and blindly releasing it risks session/resource destruction. Audit ownership
+  and test reconnect/shutdown before changing this path.
+- [ ] Headset-verify projectile spell aim with **Teeth**: point the visible wand
+  left/right while looking elsewhere, then cast with a creature selected off
+  that line. Fan should center on the weapon rather than the selected creature.
+  Casting shaft pose, native behavior metadata and scoped target/assist override
+  are implemented for wheel and quick-cast inputs. Host tests, seven native
+  signatures and all 429 local skill-row layouts pass. Also check a summon or
+  corpse skill retains its native selection. Full hand-origin/up-down spell
+  flight remains a separate pending spell-family adapter task.
+- [ ] Headset-verify belt attachment while turning, stepping and crouching:
+  waist equipment now follows tracked position and horizontal facing even with
+  hands lowered or a bottle held. Pitch/roll stay excluded, vertical gaze keeps
+  the last reliable heading, and unused bottles return to the current waist.
+  Holster draws use body-relative hand motion. Host regression coverage passes;
+  see latest belt-follow deployment in HANDOFF.
 - [ ] Headset-verify original 3D potion belt: all 15 native models/textures are
   prepared locally. Right Grip grabs the closest occupied bottle; bringing its
   opening to the mouth while tipped for 0.25 s requests one native use. Release
@@ -568,9 +644,9 @@ Next investigation order after the camera repair (21:11 measurements):
   bounded replacement is worthwhile. Keep scene resolution/other quality fixed.
 - [ ] Measure CPU, GPU scene draws, effects, copies and compositor timing in the
   same camp/dungeon scenes. Current pipeline renders two scenes per game update.
-  Observed pair rates after the current 80% preset were about 31–35 Hz; this is
+  Observed pair rates after the earlier 80% preset were about 31–35 Hz; this is
   not a controlled benchmark or the headset display refresh rate.
-- [ ] Validate the existing 80% scene-resolution/medium AO, atmospherics and
+- [ ] Validate the optional 80% scene-resolution/medium AO, atmospherics and
   shadows preset and per-eye copy command lists with a single pair completion
   wait. Preserve textures; compare frame time and visual quality at fixed settings.
 - [x] Query **actual PC-streaming** OpenXR capabilities through WineOpenXR and

@@ -70,6 +70,19 @@ int main(){
     Instance result;Vec origin;
     Check(Resolve(read,c,0,base,result)&&result.address==instance&&IsPortal(read,result.definition,base)&&Origin(read,result,origin)&&Near(origin,{9370,0,11290}),"segmented portal instance and authored origin");
     Check(IsPortal(read,definition,base,true),"verified definition permits center envelope");
+    {
+        Vec points[4]={{3,4,0},{3,4,0},{3,4,0},{3,4,0}};unsigned classifications=0;
+        auto classify=[&](uint64_t d){++classifications;return d==definition;};
+        Check(CorrectCenters(points,4,c,base,read,classify)&&classifications==1,"constant batch classifies the portal once");
+        constexpr uint64_t other=0xa0000;auto otherHeader=ih;otherHeader[8]=definition+1;m.Put(other,otherHeader);
+        slots[8]=other;m.Put(page,slots);
+        std::array<int32_t,4> mixed{519,520,519,520};Context batch=c;batch.instance=-1;batch.count=4;batch.indices=0xb0000;m.Put(batch.indices,mixed);
+        for(auto& p:points)p={3,4,0};classifications=0;
+        Check(CorrectCenters(points,4,batch,base,read,classify)&&classifications==2,"mixed batch caches by instance rather than applying first lane to all");
+        Check(Near(points[0],{0,4,0})&&Near(points[2],{0,4,0})&&Near(points[1],{3,4,0})&&Near(points[3],{3,4,0}),"non-portal lanes retain native offsets");
+        mixed={-1,131072,999,519};m.Put(batch.indices,mixed);for(auto& p:points)p={3,4,0};
+        Check(CorrectCenters(points,4,batch,base,read,classify)&&Near(points[0],{3,4,0})&&Near(points[1],{3,4,0})&&Near(points[2],{3,4,0})&&Near(points[3],{0,4,0}),"invalid lanes do not contaminate a valid portal lane");
+    }
     std::array<int32_t,2> ids{519,-1};c.instance=-1;c.indices=0x90000;c.count=2;m.Put(c.indices,ids);
     Check(Resolve(read,c,0,base,result)&&!Resolve(read,c,1,base,result)&&!Resolve(read,c,2,base,result),"mixed particle lanes and bounds");
     c.instance=1024;Check(!Resolve(read,c,0,base,result),"missing pool page rejected");

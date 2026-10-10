@@ -1299,6 +1299,7 @@ void PoseBody(uintptr_t self, const Hero& h, const Input& in) {
     // held it goes onto the shaft - in the game's grip round it, slid along it
     // to where the controller is - and eases back off when let go.
     bool leftOnStaff = false;   // its fingers keep the game's grip round the shaft, no fist
+    int castingAxis=2; // wand/scepter/orb +Y; staff uses its actual shaft below
     if (freeStaff) {
         const int wb = h.weapon[staffSide], lk = h.hand[1], rk = h.hand[0];
         Mat staff = newW[wb];
@@ -1313,6 +1314,7 @@ void PoseBody(uintptr_t self, const Hero& h, const Input& in) {
         int ai = av[0] >= av[1] && av[0] >= av[2] ? 0 : av[1] >= av[2] ? 1 : 2;
         float sign = (ai == 0 ? v.x : ai == 1 ? v.y : v.z) < 0.0f ? -1.0f : 1.0f;
         if (in.shaftAxis >= -3 && in.shaftAxis <= 3 && in.shaftAxis != 0) { ai = abs(in.shaftAxis) - 1; sign = in.shaftAxis < 0 ? -1.0f : 1.0f; }
+        castingAxis=-(ai+1)*int(sign); // left-hand side toward the casting tip
         const V3 shaftInStaff = {ai == 0 ? sign : 0.0f, ai == 1 ? sign : 0.0f, ai == 2 ? sign : 0.0f};
         V3 axis = Norm(RotOnly(shaftInStaff, staff));   // from the right hand toward the left one
         V3 origin = Pos(staff);
@@ -1731,6 +1733,10 @@ void PoseBody(uintptr_t self, const Hero& h, const Input& in) {
             const Mat world=Mul(w,model);
             const V3 origin=Pos(world),axis=Norm({world.m[4],world.m[5],world.m[6]}),player=Pos(model);
             g.melee={{origin.x,origin.y,origin.z},{axis.x,axis.y,axis.z},{player.x,player.y,player.z},in.poseStamp,in.worldEpoch,HeroGen()};
+            g.melee.weaponType=in.weaponType;
+            const int row=abs(castingAxis)-1;
+            const V3 casting=Scale(Norm({world.m[row*4],world.m[row*4+1],world.m[row*4+2]}),castingAxis<0?-1.f:1.f);
+            g.melee.castingAxis[0]=casting.x;g.melee.castingAxis[1]=casting.y;g.melee.castingAxis[2]=casting.z;
             g.haveMelee=Len({world.m[4],world.m[5],world.m[6]})>.001f&&
                 std::isfinite(origin.x+origin.y+origin.z+axis.x+axis.y+axis.z+player.x+player.y+player.z);
         }

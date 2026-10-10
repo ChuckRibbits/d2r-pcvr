@@ -1,0 +1,24 @@
+#pragma once
+#include "interaction_ui.h"
+namespace framevr::interaction {
+// Do not display/click obsolete skill contents while a new image is pending.
+// Hover-only changes can retain the previous image; the ray decides the cell.
+struct PaintContext {
+    uint64_t session=0;
+    uint32_t activeSet=0;
+    int editor=0,slot=-1,page=0,count=0,bank=-1;
+    bool utility=false,fresh=false,editable=false,equipmentKnown=false,beltKnown=false;
+    std::array<Skill,8> skills{},options{};
+    std::array<std::array<Item,2>,2> sets{};
+    std::array<Belt,4> belt{};
+    bool operator==(const PaintContext&) const=default;
+};
+inline PaintContext Context(const Snapshot& s,const Output& o,bool fresh) {
+    PaintContext c;c.session=s.session;c.activeSet=s.activeSet;c.editor=o.editor;c.slot=o.editSlot;
+    c.page=o.editPage;c.count=o.editCount;c.bank=s.bindingBank;c.utility=o.utility;c.fresh=fresh;
+    c.editable=s.bindingsEditable;c.equipmentKnown=s.equipmentKnown;c.beltKnown=s.beltKnown;
+    c.skills=s.skills;c.options=o.editOptions;c.sets=s.sets;c.belt=s.belt;return c;
+}
+struct PaintJob {Snapshot snapshot;Output output;int selection=-1;};
+struct PaintedAtlas {std::vector<uint8_t> pixels;double paintMs=0;};
+}

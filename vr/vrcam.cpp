@@ -58,7 +58,7 @@ int FindHeroMatrices(const float hero[3], uintptr_t* out, int max);
 }
 #include "skeletons.h"
 #include "writewatch.h"
-namespace uitrace { void Register(); bool Arm(const std::wstring& path); void SetSkip(uint64_t pipe); void SetSkipShaders(const uint64_t* hashes, int n); }
+namespace uitrace { void Register(bool diagnostic); bool Enabled(); bool Arm(const std::wstring& path); void SetSkip(uint64_t pipe); void SetSkipShaders(const uint64_t* hashes, int n); }
 #include "game_hud_shared.h"
 namespace memdiff { void Step(uintptr_t base, const std::wstring& outPath, void (*log)(const char*)); void Reset(void (*log)(const char*)); }
 namespace hud { void Register(); void SetHide(int mode); void SetInterfaceScale(float s); void SetMenuOpen(bool open); void SetMapMode(int mode); bool LayerFound(); void SetLogger(void (*log)(const char*)); void SetLook(const FlatVRGameHudLook& look); void SetMapCorner(int corner); bool ToggleMapShown();
@@ -84,6 +84,8 @@ namespace gamestate { void Init(const D2RL::PluginContext* ctx); void Tick(); ui
 #include "afr_eye_shared.h"
 #ifdef D2RVR_NATIVE_OPENXR
 #include "transport.h"
+#include "spell_aim.h"
+#include "spell_aim_signatures.h"
 #include "settings_menu.h"
 #include "projectiles.h"
 #include "combat.h"
@@ -764,6 +766,7 @@ void LoadSettings() {
     framevr::profile::Request(GetPrivateProfileIntW(L"debug",L"profile_capture",0,g_iniPath));
     billboards::ConfigurePortalCenters(IniB(L"debug",L"portal_centers",true));
     framevr::profile::ConfigureGpu(IniB(L"debug",L"profile_gpu",true));
+    framevr::profile::ConfigureHooks(IniB(L"debug",L"profile_hooks",true));
     framevr::ConfigureDeferredWait(IniB(L"render",L"defer_gpu_wait",false));
     framevr::ConfigureSymmetricProjection(IniB(L"render",L"symmetric_projection",true));
     framevr::ConfigureEyeTracking(IniB(L"render",L"eye_tracked_foveation",false));
@@ -2631,8 +2634,24 @@ bool StaffAim() {
 }
 
 bool ShooterActive();
+#ifdef D2RVR_NATIVE_OPENXR
+extern std::atomic<uint32_t> g_meleeTurnEpoch;
+#endif
 bool HandRay(float* o, float* d) {
 #ifdef D2RVR_NATIVE_OPENXR
+    // The menu aim pose can differ greatly from the weapon's shaft. Use the
+    // final posed weapon in its captured WORLD frame, not a bone from one
+    // frame combined with a newer headset yaw from another.
+    const auto castingType=gamestate::WeaponType();
+    if(g_eyeOk.load()&&framevr::SpellSelected()&&
+       (castingType==D2RVR_TYPE_WAND||castingType==D2RVR_TYPE_STAFF||castingType==D2RVR_TYPE_SCEPTER||castingType==D2RVR_TYPE_ORB)) {
+        skel::MeleeWeaponPose pose;
+        if(!skel::MeleeWeapon(pose)||pose.weaponType!=castingType||pose.worldEpoch!=g_meleeTurnEpoch.load())return false;
+        const auto axis=framevr::math::Normalized({pose.castingAxis[0],pose.castingAxis[1],pose.castingAxis[2]});
+        if(!std::isfinite(axis.x+axis.y+axis.z)||framevr::math::Dot(axis,axis)<.99f)return false;
+        std::copy_n(pose.origin,3,o);d[0]=axis.x;d[1]=axis.y;d[2]=axis.z;
+        return true;
+    }
     float motionOrigin[3],motionDirection[3];
     if(g_eyeOk.load()&&framevr::GameplayRay(motionOrigin,motionDirection)) {
         AcquireSRWLockShared(&g_stickLock);const StickFrame f=g_stickFrame;ReleaseSRWLockShared(&g_stickLock);
@@ -2895,7 +2914,7 @@ Calib g_cal;
 // The aiming hand's direction on the ground, in world terms: atan2(z, x).
 bool HandWorldTheta(float* theta) {
     float o[3], d[3];
-    if (!HandRay(o, d)) return false;
+    if (!HandRay(o, d) || !std::isfinite(d[0]+d[2]) || std::hypot(d[0],d[2])<.001f) return false;
     *theta = atan2f(d[2], d[0]);
     return true;
 }
@@ -2915,6 +2934,44 @@ bool HandGridDir(float* gx, float* gy) {
 // A skill button is down (A, B, X, Y, RB), no menu: the attack or spell it casts goes along the hand.
 std::atomic<bool> g_skillHeld{false};
 bool AimByVector() { return g_enabled.load() && g_set.bowMode.load() == 4 && (g_aHeld.load() || g_skillHeld.load()); }
+
+#ifdef D2RVR_NATIVE_OPENXR
+using SpellControllerTargetFn=uintptr_t(*)(uintptr_t,int);
+using SpellHoverTargetFn=uintptr_t(*)(int);
+using SpellResolveFn=void(*)(uintptr_t,void*,bool,float*,float*);
+SpellControllerTargetFn OrigSpellControllerTarget=nullptr;
+SpellHoverTargetFn OrigSpellHoverTarget=nullptr;
+SpellResolveFn OrigSpellResolve=nullptr;
+std::atomic<bool> g_spellAimReady{false};
+thread_local framevr::spellaim::Cast g_spellCast;
+bool DirectedSpellAim(float& gx,float& gy) {
+    return g_spellAimReady.load()&&g_enabled.load()&&!gamestate::MenuOpen()&&
+        framevr::DirectedSpellActive()&&HandGridDir(&gx,&gy);
+}
+uintptr_t HookSpellControllerTarget(uintptr_t manager,int id) {
+    if(g_spellCast.directed&&uintptr_t(_ReturnAddress())==d2rsig::Addr(spellaimabi::ControllerCallRva+5))return 0;
+    return OrigSpellControllerTarget(manager,id);
+}
+uintptr_t HookSpellHoverTarget(int player) {
+    if(g_spellCast.directed&&uintptr_t(_ReturnAddress())==d2rsig::Addr(spellaimabi::HoverCallRva+5))return 0;
+    return OrigSpellHoverTarget(player);
+}
+bool IsHeroUnit(const void* unit);
+void HookSpellResolve(uintptr_t manager,void* unit,bool assist,float* x,float* y) {
+    framevr::spellaim::Cast cast;
+    cast.directed=unit&&x&&y&&IsHeroUnit(unit)&&DirectedSpellAim(cast.x,cast.y);
+    framevr::spellaim::Scope scope(g_spellCast,cast);
+    // The last native aim-assist stage can bend a free cast toward a nearby
+    // point even after selected-target lookup. Keep it off for this call only.
+    OrigSpellResolve(manager,unit,cast.directed?false:assist,x,y);
+    if(cast.directed) {
+        static std::atomic<ULONGLONG> reported{0};
+        const auto now=GetTickCount64();auto before=reported.load();
+        if(now-before>2000&&reported.compare_exchange_strong(before,now))
+            LogF("Frame spell aim: native projectile cast follows weapon %.3f %.3f; automatic target selection off",cast.x,cast.y);
+    }
+}
+#endif
 
 // The other half of the controller's aim. With the stick at rest the aim
 // function (0x1446C0) takes the attack's direction from the hero's own facing:
@@ -3009,6 +3066,13 @@ AttackPointFn OrigAttackPoint = nullptr;
 
 float* HookAttackPoint(void* mgr, float* out, void* unit, uint64_t from, uint64_t dir) {
     float* r = OrigAttackPoint(mgr, out, unit, from, dir);
+#ifdef D2RVR_NATIVE_OPENXR
+    if(out&&g_spellCast.directed&&uintptr_t(_ReturnAddress())==d2rsig::Addr(spellaimabi::PointCallRva+5)) {
+        float start[2];std::memcpy(start,&from,sizeof start);
+        framevr::spellaim::Point(start[0],start[1],{g_spellCast.x,0,g_spellCast.y},out[0],out[1]);
+        return r;
+    }
+#endif
     const uint32_t w = gamestate::WeaponClass();
     float gx, gy;
     const uint32_t type = gamestate::WeaponType();
@@ -4103,17 +4167,19 @@ POINT g_dragLast{};
 
 void MouseTick() {
     if (!g_enabled.load() || !GameFocused()) { g_dragging = false; return; }
+    const bool shooter=ShooterActive(),drag=(GetAsyncKeyState(VK_MBUTTON)&0x8000)!=0;
+    if(!shooter&&!drag){g_dragging=false;return;}
     POINT p{};
     if (!GetCursorPos(&p)) return;
     int dx = 0, dy = 0;
     RECT rc{};
-    if (ShooterActive() && g_gameWnd && GetClientRect(g_gameWnd, &rc)) {
+    if (shooter && g_gameWnd && GetClientRect(g_gameWnd, &rc)) {
         POINT mid{rc.right / 2, rc.bottom / 2};
         ClientToScreen(g_gameWnd, &mid);
         dx = p.x - mid.x; dy = p.y - mid.y;
         if (dx || dy) SetCursorPos(mid.x, mid.y);
         g_dragging = false;
-    } else if (GetAsyncKeyState(VK_MBUTTON) & 0x8000) {
+    } else if (drag) {
         if (g_dragging) { dx = p.x - g_dragLast.x; dy = p.y - g_dragLast.y; }
         g_dragging = true;
         g_dragLast = p;
@@ -4336,15 +4402,18 @@ uintptr_t HookDrawGameScreen(int a) {
     static bool told = false, toldWhy = false;
     static double lastEnd = 0.0, sumGap = 0.0, sumPass[2] = {}, sumPresent[2] = {}, sumEff[2] = {}, maxPair = 0.0, sumCpu = 0.0, sumWall = 0.0;
     static ULONGLONG since = GetTickCount64(), lastHitch = 0;
-    static uint32_t pairs = 0;
+    static uint32_t pairs = 0,cpuPairs=0;
     const double entered=pairtime::UsNow();
     if (depth || !PairWanted()) {
         if(!depth) {
+#ifdef D2RVR_NATIVE_OPENXR
+            framevr::profile::SkipPair();
+#endif
             // Menu/loading frames are not consecutive stereo gameplay frames.
             // Exclude time spent in panels from the next world's hitch sample.
             lastEnd=sumGap=maxPair=sumCpu=sumWall=0;
             for(int e=0;e<2;++e)sumPass[e]=sumPresent[e]=sumEff[e]=0;
-            since=GetTickCount64();pairs=0;
+            since=GetTickCount64();pairs=cpuPairs=0;
         }
         if (!toldWhy && g_h.blit && AfrOn() && g_set.pairPerTick.load() && !FrameTimeFound()) {
             toldWhy = true;
@@ -4370,7 +4439,13 @@ uintptr_t HookDrawGameScreen(int a) {
     if (const D2RVR_Shared* hs = g_shared)
         flog::Line("S,%u,%.4f,%.3f,%.3f,%.3f,%.3f,%u", flog::Pass(), flog::Dt(), g_heldYaw.load(), hs->headYawDeg, hs->headPitchDeg, hs->headRollDeg, hs->sampleStamp);
 
-    const double t0 = pairtime::UsNow(), c0 = pairtime::CpuUs();
+    // Wine services GetThreadTimes through wineserver. Keep per-eye CPU times
+    // during the bounded profile, but sample routine reporting once in 32 pairs.
+    bool measureCpu=true;
+#ifdef D2RVR_NATIVE_OPENXR
+    measureCpu=framevr::profile::Active()||(pairs&31u)==0;
+#endif
+    const double t0 = pairtime::UsNow(), c0 = measureCpu?pairtime::CpuUs():0;
     pairtime::g_drawThread.store(GetCurrentThreadId());
     if (lastEnd > 0.0) sumGap += entered - lastEnd;
     pairtime::g_presentAt.store(0.0); pairtime::g_effSum.store(0.0);
@@ -4382,7 +4457,7 @@ uintptr_t HookDrawGameScreen(int a) {
     OrigDrawGameScreen(a);
     const double t1 = pairtime::UsNow();
 #ifdef D2RVR_NATIVE_OPENXR
-    const double c1 = pairtime::CpuUs();
+    const double c1 = measureCpu?pairtime::CpuUs():0;
 #endif
     sumPass[0] += t1 - t0;
     if (const double pa = pairtime::g_presentAt.load(); pa > t0) sumPresent[0] += t1 - pa;
@@ -4407,8 +4482,8 @@ uintptr_t HookDrawGameScreen(int a) {
     sumPass[1] += t2 - t1;
     if (const double pa = pairtime::g_presentAt.load(); pa > t1) sumPresent[1] += t2 - pa;
     sumEff[1] += pairtime::g_effSum.load();
-    const double c2 = pairtime::CpuUs();
-    sumCpu += c2 - c0; sumWall += t2 - t0;
+    const double c2 = measureCpu?pairtime::CpuUs():0;
+    if(measureCpu){sumCpu += c2 - c0; sumWall += t2 - t0;++cpuPairs;}
 
 #ifdef D2RVR_NATIVE_OPENXR
     framevr::EndPair();
@@ -4444,12 +4519,12 @@ uintptr_t HookDrawGameScreen(int a) {
             LogF("vrcam: a pair, ms: game %.2f | left %.2f (effects %.2f, Present %.2f) | right %.2f (effects %.2f, Present %.2f) | longest %.1f",
                  sumGap * k, sumPass[0] * k, sumEff[0] * k, sumPresent[0] * k, sumPass[1] * k, sumEff[1] * k, sumPresent[1] * k,
                  maxPair * 0.001);
-            LogF("vrcam: the two passes busy the game's thread %.0f%% of their time (%.2f ms CPU a pair; the rest waits - GPU, fences, locks)",
-                 sumWall > 0.0 ? 100.0 * sumCpu / sumWall : 0.0, sumCpu * k);
+            LogF("vrcam: the two passes busy the game's thread %.0f%% of their sampled time (%.2f ms CPU a pair over %u sampled pairs; the rest waits - GPU, fences, locks)",
+                 sumWall > 0.0 ? 100.0 * sumCpu / sumWall : 0.0, cpuPairs?sumCpu*.001/cpuPairs:0,cpuPairs);
         }
         sumGap = 0.0; maxPair = 0.0; sumCpu = 0.0; sumWall = 0.0;
         for (int e = 0; e < 2; ++e) sumPass[e] = sumPresent[e] = sumEff[e] = 0.0;
-        since = now; pairs = 0;
+        since = now; pairs = cpuPairs = 0;
     }
     return r;
 }
@@ -4651,6 +4726,22 @@ void InstallHooks() {
         g_h.point = d2rsig::Hook(RVA_ATTACK_POINT, kSigAttackPoint, sizeof kSigAttackPoint, (void*)&HookAttackPoint, (void**)&OrigAttackPoint);
         LogF("vrcam: attack point hook %s", g_h.point ? "in" : "NOT in");
     }
+#ifdef D2RVR_NATIVE_OPENXR
+    static bool spellController=false,spellHover=false,spellResolve=false;
+    if(!g_spellAimReady.load()&&g_h.point&&
+       d2rsig::Check(spellaimabi::ControllerCallRva,spellaimabi::ControllerCallSig,sizeof spellaimabi::ControllerCallSig)&&
+       d2rsig::Check(spellaimabi::HoverCallRva,spellaimabi::HoverCallSig,sizeof spellaimabi::HoverCallSig)&&
+       d2rsig::Check(spellaimabi::PointCallRva,spellaimabi::PointCallSig,sizeof spellaimabi::PointCallSig)&&
+       d2rsig::Check(spellaimabi::AssistRva,spellaimabi::AssistSig,sizeof spellaimabi::AssistSig)) {
+        if(!spellController)spellController=d2rsig::Hook(spellaimabi::ControllerRva,spellaimabi::ControllerSig,sizeof spellaimabi::ControllerSig,
+            reinterpret_cast<void*>(&HookSpellControllerTarget),reinterpret_cast<void**>(&OrigSpellControllerTarget));
+        if(!spellHover)spellHover=d2rsig::Hook(spellaimabi::HoverRva,spellaimabi::HoverSig,sizeof spellaimabi::HoverSig,
+            reinterpret_cast<void*>(&HookSpellHoverTarget),reinterpret_cast<void**>(&OrigSpellHoverTarget));
+        if(!spellResolve)spellResolve=d2rsig::Hook(spellaimabi::ResolveRva,spellaimabi::ResolveSig,sizeof spellaimabi::ResolveSig,
+            reinterpret_cast<void*>(&HookSpellResolve),reinterpret_cast<void**>(&OrigSpellResolve));
+        if(spellController&&spellHover&&spellResolve){g_spellAimReady=true;Log("Frame spell aim: weapon-axis directional casting; native target override scoped to cast resolver");}
+    }
+#endif
     if (!g_h.interact) {
         g_h.interact = d2rsig::Hook(RVA_INTERACT_TARGET, kSigInteractTarget, sizeof kSigInteractTarget, (void*)&HookInteractTarget, (void**)&OrigInteractTarget);
         g_interactHooked.store(g_h.interact);
@@ -4663,7 +4754,12 @@ void InstallHooks() {
     InstallBiomeHook();
 }
 
-bool AllHooksIn() { return g_h.camera && g_h.skeleton && g_h.target && g_h.facing && g_h.point && g_h.blit && g_h.interact; }
+bool AllHooksIn() {
+#ifdef D2RVR_NATIVE_OPENXR
+    if(!g_spellAimReady.load())return false;
+#endif
+    return g_h.camera && g_h.skeleton && g_h.target && g_h.facing && g_h.point && g_h.blit && g_h.interact;
+}
 
 // The game put into the view [mode] names. View 1 is the game's own camera
 // (vrcam off), 2 third person, 3 and 4 first person (FullBody, InsideFree).
@@ -7368,7 +7464,12 @@ void TryRegister() {
     reshade::register_event<reshade::addon_event::reshade_reloaded_effects>(&Forget);
     reshade::register_event<reshade::addon_event::bind_render_targets_and_depth_stencil>(&renderscale::OnBind);
     reshade::register_event<reshade::addon_event::bind_viewports>(&renderscale::OnViewports);
-    uitrace::Register();   // Ctrl + F10: one frame's render targets to d2r_vr_uitrace.txt
+#ifdef D2RVR_NATIVE_OPENXR
+    uitrace::Register(IniB(L"debug",L"uitrace",false));
+    Log(uitrace::Enabled()?"vrcam: UI trace/skip callbacks enabled at startup":"vrcam: UI trace callbacks omitted; set [debug] uitrace=1 and restart for Ctrl+F10 or live shader-skip diagnostics");
+#else
+    uitrace::Register(true);
+#endif
     hud::SetLogger(&Log);
     dlssmv::SetLogger(&Log);
     hud::Register();       // the interface's own layer: [hud] hide
@@ -7489,6 +7590,9 @@ DWORD WINAPI UpdateThread(void*) {
             continue;
         }
         const ULONGLONG nowMs = GetTickCount64();
+#ifdef D2RVR_NATIVE_OPENXR
+        framevr::hookmetrics::Scope inputMeasured(framevr::hookmetrics::InputTick,15);
+#endif
         const bool focus = GameFocused();
         if (f12.Pressed(focus)) Toggle();
         {   // the same from BodyWalk's mapping: the bridge's view actions, at the press
@@ -7512,11 +7616,14 @@ DWORD WINAPI UpdateThread(void*) {
 #endif
         if (f10.Pressed(focus)) {
             if (GetAsyncKeyState(VK_CONTROL) & 0x8000) {   // Ctrl + F10: one frame of render targets, to find the interface's
+                if(!uitrace::Enabled()) {Log("vrcam: Ctrl+F10 requires [debug] uitrace=1 before launch; restart to enable trace callbacks");}
+                else {
                 std::wstring path = g_iniPath;
                 path.resize(path.find_last_of(L'\\') + 1);
                 path += L"d2r_vr_uitrace.txt";
                 Log(uitrace::Arm(path) ? "vrcam: recording one frame of render targets to d2r_vr_uitrace.txt (Ctrl+F10)"
                                        : "vrcam: a frame recording is already under way");
+                }
             } else DumpSkeletons();
         }
         if (f9.Pressed(focus)) {
@@ -7640,13 +7747,19 @@ DWORD WINAPI UpdateThread(void*) {
 #ifdef D2RVR_NATIVE_OPENXR
             const bool menuSaved=vrsettings::Poll(g_iniPath);
 #endif
+            const int previousRings=g_set.rings.load();
+            const float previousModelRadius=g_set.modelRadius.load();
             bool iniChanged = ReloadIfChanged();
 #ifdef D2RVR_NATIVE_OPENXR
             if(menuSaved&&!iniChanged){LoadSettings();iniChanged=true;}
 #endif
             if (iniChanged) {
                 g_gen.fetch_add(1);
-                g_renderDirty.store(true);
+                // SetModelRadius forces visibility re-sorting for 500 ms.
+                // Starting a profile or changing an unrelated VR setting must
+                // not restart that work. Keep a pending initial/retry apply.
+                if(previousRings!=g_set.rings.load()||previousModelRadius!=g_set.modelRadius.load())
+                    g_renderDirty.store(true);
                 g_mouseLookOn.store(MouseLookForView());
             }
             FollowMode();

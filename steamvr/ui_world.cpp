@@ -1,4 +1,7 @@
 #include "ui_world.h"
+#include "native_lock.h"
+#include "generation_cache.h"
+#include "hook_metrics.h"
 #include <windows.h>
 #include <d3dcompiler.h>
 #include <reshade.hpp>
@@ -10,7 +13,8 @@
 namespace framevr::uiworld {
 namespace {
 using namespace reshade::api;
-std::mutex mutex;
+NativeMutex mutex;
+std::atomic<uint64_t> generation{1};
 std::unordered_map<uint64_t,pipeline> copies;
 std::atomic<bool> active{false},ready{false};
 thread_local bool ours=false;
@@ -59,7 +63,7 @@ void Created(device* device,pipeline_layout layout,uint32_t count,const pipeline
         pipeline replacement{};ours=true;
         const bool ok=device->create_pipeline(layout,count,description.data(),&replacement);ours=false;
         if(!ok){if(logger)logger("Frame panels: verified compositor pipeline creation failed; retaining flat menu fallback");return;}
-        {std::lock_guard lock(mutex);copies.emplace(original.handle,replacement);}
+        {std::lock_guard lock(mutex);copies.emplace(original.handle,replacement);++generation;}
         if(!ready.exchange(true)&&logger)logger("Frame panels: verified SDR world-only composite ready for both eyes");
         return;
     }
@@ -68,13 +72,21 @@ void Destroyed(device* device,pipeline original) {
     if(ours)return;
     pipeline replacement{};
     {std::lock_guard lock(mutex);auto it=copies.find(original.handle);if(it==copies.end())return;
-        replacement=it->second;copies.erase(it);ready.store(!copies.empty());}
+        replacement=it->second;copies.erase(it);ready.store(!copies.empty());++generation;}
     ours=true;device->destroy_pipeline(replacement);ours=false;
 }
 void Bind(command_list* commands,pipeline_stage stages,pipeline original) {
+    hookmetrics::Scope measured(hookmetrics::UiWorldBind);
     if(ours||!active.load(std::memory_order_relaxed)||uint32_t(stages&pipeline_stage::all_graphics)==0)return;
     pipeline replacement{};
-    {std::lock_guard lock(mutex);auto it=copies.find(original.handle);if(it==copies.end())return;replacement=it->second;}
+    static thread_local GenerationCache<pipeline> cache;
+    const auto version=generation.load(std::memory_order_acquire);
+    if(!cache.Get(original.handle,version,replacement)) {
+        std::lock_guard lock(mutex);auto it=copies.find(original.handle);
+        if(it!=copies.end())replacement=it->second;
+        cache.Put(original.handle,version,replacement);
+    }
+    if(!replacement.handle)return;
     ours=true;commands->bind_pipeline(stages,replacement);ours=false;
 }
 }

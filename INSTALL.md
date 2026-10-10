@@ -1,9 +1,18 @@
 # Install the D2R PCVR preview
 
-Download and extract **d2r-pcvr-preview.zip** from this private repository's
+For a **fresh Windows + Steam Frame installation**, start with
+**[WINDOWS_HANDOFF.md](WINDOWS_HANDOFF.md)**. It includes the full setup, precise
+build hashes, baseline/candidate distinction and the latest streaming findings.
+Native Windows remains untested; the next session will establish compatibility.
+
+Download **d2r-pcvr-baseline.zip** from **v0.2.0-windows-handoff** in this private repository's
 [Releases](https://github.com/bearstonem/d2r-pcvr/releases). Keep the extracted
 folder: Steam's launch wrapper runs from it. GitHub's automatic source ZIP does
 not contain the compiled plugin. Your GitHub account needs repository access.
+The separately labeled candidate ZIP includes unverified performance changes;
+start with the baseline. Both extract a folder named `d2r-pcvr-preview`, so
+extract them into separate parent directories. The old v0.1 release lacks the
+current gameplay work. For source, choose branch `vr/steam-frame-proton`.
 
 This is an **offline single-player** preview for the **Steam edition of D2R
 3.3.93787**. Use your own purchased game and offline character. Refresh the
@@ -21,9 +30,10 @@ fails, the mod logs the reason and retains flat potion previews.
 **Verified:** Linux + Proton Experimental + SteamVR + Steam Frame, first-person
 gameplay. The latest source fixes creature name/health stereo depth and the
 reported square lighting patches. **Untested:** Quest 3, WiVRn, native Windows
-and Virtual Desktop. Belt/health/mana presentation is unfinished. Logging hitches
-improved in headset tests, but remaining
-stalls and graphics issues are open. This is a test build, not a finished mod.
+and Virtual Desktop. Wrist health/mana, skill editing, physical combat and the
+3D potion belt are implemented, with individual pending checks in TASKS.md.
+Severe Linux streaming resets and separate game-update stalls remain open,
+including after baseline rollback and a PC reboot. This is a test build.
 
 ## Linux + Quest 3 + WiVRn (friend's likely setup)
 
@@ -132,8 +142,9 @@ Fresh installs from current source enable **motion controls and fixed foveation*
 with **eye-tracked foveation off**. The [motion gameplay prototype](steamvr/GAMEPLAY.md)
 includes melee swings, bow draws, a hand palette and grab-to-mouth belt potions.
 Bow drawing and free-swing melee have been tested on Steam Frame; other
-interactions remain experimental. This work is absent from the published preview
-ZIP. Build from source and read the control changes before playing. Set
+interactions remain experimental. These features are included in the v0.2
+handoff packages; the old v0.1 preview lacks them. Read the control changes
+before playing. Set
 `[gameplay] motion_controls=0` to use the legacy button controls.
 
 **Keep the D2R window focused on the PC while playing.** Menu laser clicks and
@@ -163,7 +174,7 @@ a fixed center. To compare, set `[render] fixed_foveation=0` in
 `GAME/d2rloader/plugins/d2r_vr.ini`. Settings reload live.
 
 Current source also includes an **experimental Steam Frame eye-tracking mode**,
-disabled by default and absent from the published preview ZIP. See
+disabled by default and included in the v0.2 handoff packages. See
 [the prototype settings and limitations](steamvr/README.md#eye-tracked-foveation-prototype) below
 the fixed-foveation description. It requires actual OpenXR gaze input from the
 connected headset. Keep it off for Quest 3; changing streaming software cannot

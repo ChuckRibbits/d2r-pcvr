@@ -2,6 +2,8 @@
 #include "foveation.h"
 #include "profile.h"
 #include "foveation_math.h"
+#include "native_lock.h"
+#include "generation_cache.h"
 #include <reshade.hpp>
 #include <wrl/client.h>
 #include <atomic>
@@ -30,7 +32,7 @@ ComPtr<ID3D12Device> nativeDevice;
 ComPtr<ID3D12CommandQueue> nativeQueue;
 uint32_t screenW=0,screenH=0,tile=0;
 struct Pipeline {bool eligible=false;};
-std::shared_mutex pipelineLock;
+NativeMutex pipelineLock;
 std::unordered_map<uint64_t,Pipeline> pipelines;
 struct Mask {
     uint32_t w=0,h=0;int eye=0;float vx=0,vy=0,vw=0,vh=0,cx=0,cy=0,radius=0;
@@ -38,7 +40,7 @@ struct Mask {
     ComPtr<ID3D12CommandAllocator> allocator;
     ComPtr<ID3D12GraphicsCommandList> commands;
 };
-std::mutex maskLock;
+NativeMutex maskLock;
 // Immutable masks and upload objects live until queue completion at shutdown;
 // no waits, rewrites or allocation occur for an already cached viewport.
 std::vector<Mask> masks;
@@ -200,10 +202,15 @@ void PipelineDestroyed(device*,pipeline p){std::unique_lock lock(pipelineLock);p
 void BindPipeline(command_list* cl,pipeline_stage stages,pipeline p){
     FRAME_PROFILE_SAMPLED(FoveationPipeline);
     if(uint32_t(stages&pipeline_stage::all_graphics)==0)return;
-    auto& s=*Get(cl);const auto generation=pipelineGeneration.load(std::memory_order_relaxed);
+    auto& s=*Get(cl);const auto generation=pipelineGeneration.load(std::memory_order_acquire);
     if(s.pipeline==p.handle&&s.pipelineEpoch==generation)return;
     bool eligible=false;
-    {std::shared_lock lock(pipelineLock);const auto it=pipelines.find(p.handle);eligible=it!=pipelines.end()&&it->second.eligible;}
+    static thread_local GenerationCache<bool> cache;
+    if(!cache.Get(p.handle,generation,eligible)) {
+        hookmetrics::Scope measured(hookmetrics::FoveationLookup);
+        std::shared_lock lock(pipelineLock);const auto it=pipelines.find(p.handle);eligible=it!=pipelines.end()&&it->second.eligible;
+        cache.Put(p.handle,generation,eligible);
+    }
     if(s.eligible!=eligible){s.eligible=eligible;s.dirty=true;}
     s.pipeline=p.handle;s.pipelineEpoch=generation;
 }

@@ -60,6 +60,9 @@ bool PortalDefinition(uint64_t definition,bool offsets=false) {
     return offsets?e.offsets:e.portal;
 }
 void CenterPosition(void* output,const void* input,uint32_t mask,const void* worker) {
+#ifdef D2RVR_NATIVE_OPENXR
+    framevr::hookmetrics::Scope measured(framevr::hookmetrics::PortalCenter);
+#endif
     portal::Vec head;
     // 19 is the observed native local-point -> world-point path. Keep all
     // other conversions and non-center particle positions exactly native.
@@ -76,17 +79,15 @@ void CenterPosition(void* output,const void* input,uint32_t mask,const void* wor
        (in.stride&&in.count<out.count)) {
         originalLocalPosition(output,input,mask,worker);return;
     }
-    bool changed=false;
-    for(uint32_t i=0;i<out.count;++i) {
-        if(!ReadAt(points+i,in.data+uint64_t(i)*in.stride,sizeof points[i])) {
-            originalLocalPosition(output,input,mask,worker);return;
-        }
-        portal::Vec corrected;portal::Instance instance{};
-        if(portal::CenterOffset(points[i],corrected)&&
-           portal::Resolve(ReadAt,c,i,gameBase,instance)&&PortalDefinition(instance.definition,true)) {
-            points[i]=corrected;changed=true;
-        }
+    // Read a constant stream once, or one contiguous batch. Mixed instances
+    // still require per-instance classification; never assume the whole batch
+    // belongs to a portal just because one lane does.
+    if(!ReadAt(points,in.data,in.stride?out.count*sizeof points[0]:sizeof points[0])) {
+        originalLocalPosition(output,input,mask,worker);return;
     }
+    if(!in.stride)for(uint32_t i=1;i<out.count;++i)points[i]=points[0];
+    const bool changed=portal::CorrectCenters(points,out.count,c,gameBase,ReadAt,
+        [](uint64_t definition){return PortalDefinition(definition,true);});
     if(!changed){originalLocalPosition(output,input,mask,worker);return;}
     // A private input stream keeps the native transform/interpolation path and
     // never edits shared VM inputs. Resolve separately for mixed-instance lanes.
@@ -96,6 +97,9 @@ void CenterPosition(void* output,const void* input,uint32_t mask,const void* wor
         logger("VR portals: targeted center-offset correction active; native local-to-world transform retained");
 }
 void CorrectScriptView(void* output,const void* input,const void* context,bool direction) {
+#ifdef D2RVR_NATIVE_OPENXR
+    framevr::hookmetrics::Scope measured(framevr::hookmetrics::PortalView);
+#endif
     if(!portalReady.load()||!wanted||!wanted())return;
     portal::Vec head;
     if(!Head(head))return;
@@ -108,11 +112,13 @@ void CorrectScriptView(void* output,const void* input,const void* context,bool d
     if(!ReadAt(&views,c.scene+0x310,sizeof views)||!views.data||!views.count||views.count>8)return;
     // Native callbacks use tightly packed float3 output, including constant
     // inputs (stride zero). Resolve each effect independently in mixed batches.
+    int32_t constantView=-1;
+    if(!in.stride&&!ReadAt(&constantView,in.data,4))return;
     int32_t lastView=-1;bool cameraMatches=false;
     int32_t lastInstance=-1;portal::Instance instance{};portal::Vec value{};bool valid=false;
     for(uint32_t i=0;i<out.count;++i) {
-        int32_t view=-1,id=c.instance;
-        if(!ReadAt(&view,in.data+uint64_t(i)*in.stride,4)||view<0||uint32_t(view)>=views.count)continue;
+        int32_t view=constantView,id=c.instance;
+        if((in.stride&&!ReadAt(&view,in.data+uint64_t(i)*in.stride,4))||view<0||uint32_t(view)>=views.count)continue;
         if(view!=lastView) {
             portal::Vec nativeEye{};lastView=view;cameraMatches=false;
             if(ReadAt(&nativeEye,views.data+uint64_t(view)*0x1f8+0x70,sizeof nativeEye)) {

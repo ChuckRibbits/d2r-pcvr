@@ -15,6 +15,7 @@
 #include "logging.h"
 #include "controller_bindings.h"
 #include "skill_slots.h"
+#include "spell_aim.h"
 #include "panel_input.h"
 namespace nativeui {
 namespace {
@@ -114,6 +115,12 @@ void Capture(framevr::interaction::Snapshot& s) {
         // Presence is availability of the assignment, not a mana/cooldown
         // guarantee. Those gates remain in the native casting path.
         skill.available=node!=0||skillId>=357;
+        // Same checked skill-node -> compiled Skills row used by the catalog.
+        // Offsets independently audited across all 429 local skill records.
+        uintptr_t row=0;int16_t rowId=-1,missile=-1,serverFunction=0;uint32_t flags=0;
+        if(node&&Read(node,row)&&Read(row,rowId)&&rowId==skillId&&
+           Read(row+0x24,flags)&&Read(row+0x4e,serverFunction)&&Read(row+0x66,missile))
+            skill.directed=framevr::spellaim::Directed(flags,missile,serverFunction);
         const auto name=Name(skillId);std::snprintf(skill.name,sizeof skill.name,"%s",name.c_str());
     }
     if(BindingReady()) {
@@ -145,12 +152,13 @@ void Capture(framevr::interaction::Snapshot& s) {
             const int order=std::strcmp(a.name,b.name);return order?order<0:a.owner<b.owner;
         });
     }
-    static uint64_t lastSession=0;static int lastBank=-1;static std::array<int,8> lastIds{};
-    std::array<int,8> ids{};for(int i=0;i<8;++i)ids[i]=s.skills[i].known?s.skills[i].id:-2;
-    if(lastSession!=s.session||lastBank!=bank||lastIds!=ids) {
-        char line[200];std::snprintf(line,sizeof line,"Frame wheel assignments: controller bank=%d skills=%d,%d,%d,%d,%d,%d,%d,%d",
-            bank,ids[0],ids[1],ids[2],ids[3],ids[4],ids[5],ids[6],ids[7]);
-        framevr::logging::Write(line);lastSession=s.session;lastBank=bank;lastIds=ids;
+    static uint64_t lastSession=0;static int lastBank=-1;static std::array<int,8> lastIds{};static unsigned lastDirected=0;
+    unsigned directed=0;std::array<int,8> ids{};
+    for(int i=0;i<8;++i){ids[i]=s.skills[i].known?s.skills[i].id:-2;if(s.skills[i].directed)directed|=1u<<i;}
+    if(lastSession!=s.session||lastBank!=bank||lastIds!=ids||lastDirected!=directed) {
+        char line[200];std::snprintf(line,sizeof line,"Frame wheel assignments: controller bank=%d skills=%d,%d,%d,%d,%d,%d,%d,%d directed=0x%02X",
+            bank,ids[0],ids[1],ids[2],ids[3],ids[4],ids[5],ids[6],ids[7],directed);
+        framevr::logging::Write(line);lastSession=s.session;lastBank=bank;lastIds=ids;lastDirected=directed;
     }
 }
 bool Assign(const framevr::interaction::Request& r,const framevr::interaction::Snapshot& current) {

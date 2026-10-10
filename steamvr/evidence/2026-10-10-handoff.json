@@ -1,0 +1,189 @@
+{
+  "date": "2026-10-10",
+  "platform": "Linux, Proton Experimental, SteamVR 2.18.3, Steam Frame, 90 Hz",
+  "windows_status": "Not tested; fresh installation is next",
+  "baseline_dll_sha256": "16e24f5564a822531682629a5753c0b5ef248ef48dc33f0fbe358e1e30ed15fc",
+  "candidate_dll_sha256": "bc51fd3700b014b7a614e45fb15016529e98527fa8a7c4c8187986e16d0aa4ce",
+  "baseline_settings": {
+    "defer_gpu_wait": 0,
+    "model_radius": 300,
+    "rings": 2,
+    "resolution_scale": 100,
+    "shadows": 4,
+    "ambient_occlusion": 4,
+    "dlss": false,
+    "antialiasing": "FXAA",
+    "dynamic_resolution": false,
+    "eye_images": [
+      3840,
+      2160
+    ],
+    "fixed_foveation": true,
+    "eye_tracked_foveation": true
+  },
+  "captures": [
+    {
+      "label": "baseline",
+      "sequence": 10101,
+      "pairs": 360,
+      "mean_pair_ms": 31.376,
+      "p95_pair_ms": 35.37,
+      "max_pair_ms": 38.13,
+      "mean_eye_passes_ms": 18.026,
+      "gpu_profiling": false,
+      "hook_profiling": false
+    },
+    {
+      "label": "candidate",
+      "sequence": 10102,
+      "pairs": 360,
+      "mean_pair_ms": 31.686,
+      "p95_pair_ms": 34.943,
+      "max_pair_ms": 36.954,
+      "mean_eye_passes_ms": 17.566,
+      "gpu_profiling": false,
+      "hook_profiling": false
+    },
+    {
+      "label": "deferred-wait",
+      "sequence": 10104,
+      "pairs": 360,
+      "mean_pair_ms": 24.6,
+      "p95_pair_ms": 32.107,
+      "max_pair_ms": 34.735,
+      "mean_eye_passes_ms": 17.741,
+      "gpu_profiling": false,
+      "hook_profiling": false
+    },
+    {
+      "label": "radius210",
+      "sequence": 10105,
+      "pairs": 360,
+      "mean_pair_ms": 22.703,
+      "p95_pair_ms": 27.19,
+      "max_pair_ms": 45.927,
+      "mean_eye_passes_ms": 15.334,
+      "gpu_profiling": false,
+      "hook_profiling": false
+    },
+    {
+      "label": "baseline-retest-moving",
+      "sequence": 10201,
+      "pairs": 360,
+      "mean_pair_ms": 23.759,
+      "p95_pair_ms": 31.626,
+      "max_pair_ms": 37.521,
+      "mean_eye_passes_ms": 14.83,
+      "gpu_profiling": false,
+      "hook_profiling": false
+    },
+    {
+      "label": "post-reboot-baseline-moving",
+      "sequence": 10202,
+      "pairs": 360,
+      "mean_pair_ms": 22.932,
+      "p95_pair_ms": 29.57,
+      "max_pair_ms": 35.161,
+      "mean_eye_passes_ms": 15.164,
+      "gpu_profiling": false,
+      "hook_profiling": false
+    }
+  ],
+  "night_stream_history": {
+    "unique_rows": 10711,
+    "first": "2026-10-10T02:20:54.816-07:00",
+    "last": "2026-10-10T02:24:53.801-07:00",
+    "transmitted_rows": 9999,
+    "stages": {
+      "gate_to_app_submit": {
+        "samples": 10711,
+        "median_ms": 17.799,
+        "p95_ms": 23.226,
+        "max_ms": 126.808
+      },
+      "encode": {
+        "samples": 9999,
+        "median_ms": 7.576,
+        "p95_ms": 8.866,
+        "max_ms": 12.371
+      },
+      "send": {
+        "samples": 9999,
+        "median_ms": 0.528,
+        "p95_ms": 0.795,
+        "max_ms": 1.564
+      },
+      "send_to_reported_receive": {
+        "samples": 9982,
+        "median_ms": 7.7725,
+        "p95_ms": 80.81,
+        "max_ms": 734.133
+      },
+      "receive_to_decode": {
+        "samples": 9757,
+        "median_ms": 0.059,
+        "p95_ms": 0.189,
+        "max_ms": 146.378
+      },
+      "decode": {
+        "samples": 9811,
+        "median_ms": 5.56,
+        "p95_ms": 7.129,
+        "max_ms": 26.534
+      }
+    },
+    "receive_delay_over_100ms": 349,
+    "limits": "Fault-triggered histories; not an unbiased session FPS/loss measurement. Receive is driver-aligned, not pure network latency. No bitrate or resolution data.",
+    "reset_requests": 147
+  },
+  "owner_feedback": {
+    "restored_baseline_before_reboot": "Still stalls and loses image quality",
+    "restored_baseline_after_reboot": "Still happening"
+  },
+  "fresh_boot_before_game": {
+    "steamvr_start_local": "2026-10-10T15:40:34-07:00",
+    "d2r_launch_request_local": "2026-10-10T15:41:22-07:00",
+    "stream_reset_requests": 119
+  },
+  "bandwidth_trial": {
+    "before": {
+      "automaticBandwidth": true,
+      "targetBandwidth": 200
+    },
+    "trial": {
+      "automaticBandwidth": false,
+      "targetBandwidth": 50
+    },
+    "result": "Not evaluated; user switched task to Windows migration",
+    "restored": {
+      "automaticBandwidth": true,
+      "targetBandwidth": 200
+    },
+    "restore_readback_success": true
+  },
+  "limits": [
+    "Different scenes/routes/head directions; do not treat all rows as a matched A/B.",
+    "360-pair captures can miss intermittent large stalls outside their windows.",
+    "SteamVR Link histories are fault-triggered and overlapping, not full-session FPS or packet loss.",
+    "Gate-to-submit is not pure game CPU time; reported receive is driver-aligned, not pure radio latency.",
+    "Native simulation ticks of 173\u2013753 ms remain separate unresolved stalls.",
+    "Code-only A/B did not demonstrate a frame-rate improvement.",
+    "Fresh Windows defaults differ: 80% resolution, medium shadows/AO, eye-tracked foveation off.",
+    "Baseline binary predates candidate source; preserve variant identity."
+  ],
+  "checks": {
+    "dll_cross_build": "passed",
+    "python_unittests": 24,
+    "proton_native_test_executables_passed": [
+      "memory",
+      "hook-metrics",
+      "latest-worker",
+      "portal-billboard",
+      "interaction",
+      "spell-aim",
+      "gameplay",
+      "quick-cast"
+    ],
+    "native_windows": "not run"
+  }
+}

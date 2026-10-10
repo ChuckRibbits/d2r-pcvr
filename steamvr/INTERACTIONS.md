@@ -18,7 +18,7 @@ latest deployment and evidence.
 | Wrist | Live native health/mana in generated gothic glass orbs; back-of-left-wrist (-X grip) reveal, upright text, left-only tracking; brief low-health/low-mana cue | Native values, readability, thresholds and corrected watch gesture in headset |
 | Holsters | Configurable hip anchors and seated preset, grip-and-pull requests set I/II, waits for observed set; explicit stow/draw | Initial set inference, identical/empty sets; item labels currently use base codes, no silhouettes; no arbitrary inventory equips |
 | Journal | Quest UI-only copy, stereo scene behind it, left-hand placement, grip/release pinning, original page UV input; falls back to normal panel if capture unavailable | First headset verification of crop, native act tabs, close/reopen and tracking recovery; other pages and decorative geometry remain |
-| Casting | Equip/select, point right hand, press/hold trigger; native repetition/resources/effects; selected spell aim works regardless of held weapon type | **Full 3D spell flight/contact and immediate accepted native spawn are not implemented.** Native animation and ground-plane targeting remain |
+| Casting | Equip/select, point right hand, press/hold trigger; directional casts follow the visible casting shaft (hand aim for other weapons), with native target snapping suppressed only during that cast; native spread/resources/effects | Teeth headset check pending. **Full 3D spell flight/contact and immediate accepted native spawn are not implemented.** Native animation and ground-plane flight remain |
 
 All new surfaces share one change-driven atlas (up to 10 updates/second, only
 while visible) and respect the runtime's composition-layer limit. They do not
@@ -75,11 +75,14 @@ An optional shoulder location can suit a bow or long weapon, but reaching behind
 the headset should not be required. The drawing hand determines the interaction;
 the native equipment determines which hands display the weapon(s).
 
-HMD and controllers do not measure the torso. Maintain an estimated upright
-body frame with calibrated waist height and a heading deadband, so merely
-looking down or glancing sideways does not move holsters away. Freeze a holster
-anchor during approach/grab; refresh after recenter or a tracking discontinuity.
-Allow the player to reposition anchors, and show only the approached holster.
+HMD and controllers do not measure the torso. The owner requested waist equipment
+always stay in front as they turn: use tracked head position and horizontal
+facing for the upright body frame, without a heading deadband or proximity/grab
+freeze. Pitch/roll do not tilt the anchors; retain the last reliable heading at
+a nearly vertical gaze. The grabbed bottle stays hand-attached. Measure holster
+pull relative to the moving body so a turn/step is not itself a weapon draw.
+Refresh after recenter or tracking discontinuity. Waist height/forward reach
+remain configurable; free-form anchor repositioning is not implemented.
 
 Require a fresh grip inside the highlighted volume followed by a small outward
 pull. Brushing past a hip during combat cannot swap equipment. Ask for a desired
@@ -161,8 +164,12 @@ the behavior and appearance of unlike skills. Measure trigger/accepted-cast/
 missile-spawn/first-visible timestamps and resource counts without heavy frame
 captures. Check effect cost and both-eye consistency alongside responsiveness.
 
-The current spell path only emits native controller skill inputs and redirects
-ground-plane aim. That is **not full 6DoF projectile casting**. Extend the bow's
+The current spell path emits native controller skill inputs and redirects
+ground-plane aim from the visible casting weapon, using a fresh assigned-skill
+snapshot to identify directional projectiles. Native selected-target queries
+and final aim assist are suppressed only inside that local cast resolution.
+Teeth's native fan and other spells' native spread/homing remain unchanged.
+That is **not full 6DoF projectile casting**. Extend the bow's
 release ownership, timestamp matching and swept contacts per projectile family;
 do not apply the basic-arrow hook indiscriminately to homing, piercing, bouncing,
 area or multi-projectile spells. Use the same world ray for the visual preview

@@ -302,8 +302,18 @@ python3 steamvr/profile_report.py "/path/to/game/d2rloader/logs/d2r-vr-frame.log
   --sequence 1 --csv build-frame/profile-stationary.csv
 ```
 
-Callback scopes are inclusive, cover only the main stereo drawing thread, and
-high-frequency callbacks are sampled 1/64. GPU scene spans include idle queue
+`Frame scope` records describe the main stereo drawing thread. The current
+development build also emits `Frame hook` records for each recording/input
+thread, including guarded memory copy calls/bytes, portal callbacks, VRS cache
+misses and the input tick. Counters use thread-owned slots, sample hot timings
+1/64 (input 1/16), and become idle automatically. Times are inclusive and worker
+threads overlap: adding them together does not give frame time. The bounded
+registry reports overflow rather than allocating on a callback path.
+Set `[debug] profile_hooks=0` before a new capture for timing comparisons against
+older builds; use `1` for a separate all-thread attribution capture. The setting
+is latched per capture. `--refresh-hz 96` or `108` changes the report's half-rate
+budget; an over-budget pair alone does not prove a compositor frame drop.
+GPU scene spans include idle queue
 time while CPU commands are prepared; they are not GPU busy-time measurements.
 Effects span includes the ReShade overlay. GPU query readback uses the
 conservative pair completion fence. Set `[debug] profile_gpu=0` for CPU-only
@@ -311,6 +321,42 @@ captures when comparing deferred GPU waits; GPU profiling intentionally waits
 for its readback and would hide that optimization. Two timestamp submissions
 and scope measurements add diagnostic overhead. Do not compare a profiled
 run against an unprofiled run as if all timing changes were optimizations.
+
+The October 10 development performance build adds generation-invalidated
+per-thread pipeline lookup caches, Windows SRW locks for VRS/UI callbacks,
+local guarded memory copies, per-instance portal batch classification, sparse
+routine CPU-time sampling, and cursor queries only when mouse look is active.
+The launcher checks known game PIDs every 0.5 s and scans the full process tree
+every 5 s during play; startup/exit still get immediate discovery and identity
+checks. The memory copy uses the same-process `ReadProcessMemory` destination
+buffer instead of `WriteProcessMemory`: [Wine's implementation](https://github.com/ValveSoftware/wine/blob/bleeding-edge/dlls/ntdll/unix/virtual.c)
+has a local guarded copy for this case. It never changes page permissions.
+Proton tests include invalid/freed/read-only/cross-page buffers and confirm
+failures do not enter application exception handlers. The isolated benchmark
+does **not** establish game frame-time savings; controlled headset trials do.
+
+Optional UI-trace draw callbacks are selected once at startup. Set
+`[debug] uitrace=1` and restart before Ctrl+F10 capture or live shader-skip tests.
+A nonempty initial `skip_pipeline`/`skip_shaders` also enables the callbacks.
+No callback lists are toggled during rendering. Ordinary F8 stereo capture is
+unchanged.
+
+Keep code comparisons at identical graphics settings first. The owner's
+October 10 baseline was **100% resolution, shadows 4, AO 4, DLSS off**, with
+`model_radius=300`, fog end 200 and `defer_gpu_wait=0`; earlier 80%/medium notes
+describe an older preset. The radius-210/deferred-wait trial was rolled back
+after severe movement/menu stalls and image degradation. Installed settings are
+again radius 300/wait 0 with profiling off, using the pre-performance DLL.
+Shadow quality 2 remains untested.
+See [PERFORMANCE.md](PERFORMANCE.md) for the 360-pair measurements and scene
+matching limitations and the separate streaming faults found afterward.
+Code-only A/B did not establish an FPS gain; shorter average cycles in the
+deferred-wait trial did not establish smooth headset delivery. Fog distance does
+not by itself prove all culled geometry/shadows are invisible, and model count
+need not follow radius squared in a real scene. Check distant silhouettes and
+lighting. Higher refresh rates, transport lock splitting/dedicated frame calls,
+eye texture shape, and shared inter-eye skeleton/shadow work remain separate
+experiments. They are not included in the small-fix build.
 
 `[render] symmetric_projection=1` is the default lighting compatibility
 setting. D2R's native light-bin shader assumes a centered projection;
@@ -331,14 +377,29 @@ for the original conservative behavior. See the
 [OpenXR D3D12 queue/state contract](https://registry.khronos.org/OpenXR/specs/1.1/man/html/XR_KHR_D3D12_enable-swapchain-image-state.html)
 and [OpenXR implementer guidance](https://community.khronos.org/t/do-you-have-to-do-cpu-sync-before-xrendframe/110117).
 Proton's `wineopenxr` also drains the bound command queue before enqueueing its
-release layout transitions. The source default remains 0. The owner's repeated
-comparison reduced the XR end stage from about 5.7 to 3.8 ms; part of the removed
-fence wait moved into runtime submission. Total cycle time also trended lower,
-but head direction differed between captures and a competing CPU-heavy test was
-running, so this is not a controlled percentage speedup. The owner reported
-bursty walking with either setting. It is disabled in the installed configuration
-pending further work. See HANDOFF.md for sample details; other headsets/runtimes
-are untested.
+release layout transitions. The source default remains 0. The October 10
+re-test reduced mean cycle time from 31.69 to 24.60 ms in nearly the same view;
+the end stage fell from 5.10 to 2.88 ms, with some fence waiting moving into
+runtime submission. Subsequent severe stalls/quality collapse prompted rollback
+to 0 and the pre-performance DLL. Streaming receive delays/reset requests were
+also found, including resets before this trial; the root cause remains open.
+An earlier test was confounded by a competing CPU-heavy project and produced
+bursty walking with either setting. See [PERFORMANCE.md](PERFORMANCE.md) and
+HANDOFF.md for current evidence; other headsets/runtimes are untested.
+
+Saved SteamVR Link fault histories can be analyzed with no headset connection:
+
+```sh
+python3 steamvr/stream_report.py /path/to/vrlink_aftm_*.csv \
+  --driver-log /path/to/driver_vrlink.txt --json /tmp/d2r-stream-report.json
+```
+
+This merges overlapping histories and handles the driver's 32-bit timestamp
+rollover. Missing samples remain unknown. The driver-aligned receive interval
+includes delivery/client handling; it is not pure network latency. These are
+fault-triggered snapshots, not a session FPS or loss-rate benchmark, and contain
+no image-resolution/bitrate measurement. `--since`/`--until` accept ISO timestamps;
+include a UTC offset when analyzing logs away from the capture machine's timezone.
 
 - Runtime log: `d2rloader/logs/d2r-vr-frame.log` in the game folder. A bounded
   queue writes batches on a worker without forced disk flushes. The old SDK log,

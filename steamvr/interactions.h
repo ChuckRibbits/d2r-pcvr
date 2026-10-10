@@ -14,6 +14,14 @@ inline bool Valid(Pose p) {
     const float n=p.q.x*p.q.x+p.q.y*p.q.y+p.q.z*p.q.z+p.q.w*p.q.w;
     return std::isfinite(p.p.x)&&std::isfinite(p.p.y)&&std::isfinite(p.p.z)&&std::isfinite(n)&&n>.9f&&n<1.1f;
 }
+// The avatar already follows the tracked head. Keep waist equipment under the
+// same position/facing, excluding pitch and roll. At a vertical gaze there is
+// no reliable horizontal heading; retain the last one while looking at feet.
+inline Pose UprightBody(Pose head,Quat previousYaw={0,0,0,1}) {
+    const auto forward=math::Rotate(head.q,{0,0,-1});
+    return {head.p,forward.x*forward.x+forward.z*forward.z>.01f?
+        math::Yaw(std::atan2(-forward.x,-forward.z)):previousYaw};
+}
 // OpenXR grip +X points out of the LEFT palm: the back of the wrist is -X.
 // Grip +/-Y is the thumb/knuckle edge, not either face of the wrist.
 // https://registry.khronos.org/OpenXR/specs/1.1/html/xrspec.html#semantic-path-grip-pose
@@ -72,7 +80,7 @@ struct Belt {
 struct Skill {
     int32_t id=-1,level=0,charges=-1;
     int32_t owner=-1;
-    bool known=false,available=false;
+    bool known=false,available=false,directed=false;
     char name[64]{};
     bool operator==(const Skill&) const = default;
 };
@@ -188,7 +196,8 @@ class Engine {
     bool spent=false,consumed=false;
     Owner owner[2]{Owner::Combat,Owner::Combat};
     int bottle=-1,bottleHand=-1,holster=-1,holsterHand=-1;
-    Pose body{},grab{};
+    Pose body{};
+    Vec holsterGrab{};
     Request held{},pending{};
     Result result=Result::None;
     int editor=0,editSlot=-1,editPage=0,editBank=-1,choiceCount=0;
@@ -218,7 +227,7 @@ public:
             if(session!=in.session)stowed=false;
             session=in.session;epoch=in.epoch;lastTime=in.time;
             triggerWas=trigger;gripWas[0]=grips[0];gripWas[1]=grips[1];
-            body=Valid(in.head)?Pose{in.head.p,math::Yaw(math::Heading(in.head.q))}:Pose{};out.block=true;out.stowed=stowed;out.cancelPending=true;return out;
+            body=Valid(in.head)?UprightBody(in.head,body.q):Pose{};out.block=true;out.stowed=stowed;out.cancelPending=true;return out;
         }
         lastTime=in.time;
         const bool triggerEdge=trigger&&!triggerWas;
@@ -248,17 +257,9 @@ public:
             pending={a,++sequence,session,now,index,item,revision};pendingAt=in.time;
             out.request=pending;result=Result::Pending;return true;
         };
-        // An estimated torso, not head-locked widgets. Small head glances do
-        // not turn the belt, and anchors freeze while a hand approaches/grabs.
-        bool nearby=bottle>=0||holster>=0;
-        for(int h=0;h<2;++h)if(std::hypot(in.hand[h].p.x-body.p.x,in.hand[h].p.z-body.p.z)<.55f&&
-            in.hand[h].p.y<body.p.y-.3f)nearby=true;
-        if(!nearby) {
-            const float yaw=math::Heading(body.q),wanted=math::Heading(in.head.q);
-            const float delta=std::remainder(wanted-yaw,2*Pi);
-            body.q=math::Yaw(yaw+(std::fabs(delta)>.65f?std::clamp(delta,float(-dt*2),float(dt*2)):0));
-        }
-        if(bottle<0&&holster<0&&(!nearby||std::hypot(body.p.x-in.head.p.x,body.p.z-in.head.p.z)>.35f))body.p=in.head.p;
+        // Follow even with lowered hands or a held bottle: proximity must not
+        // leave the belt behind as the player turns, steps or crouches.
+        body=UprightBody(in.head,body.q);
         out.body=body;
         const float waist=config.seated?.43f:config.waistBelowEyes;
         for(int i=0;i<4;++i)out.belt[i]={body.p+math::Rotate(body.q,{(i-1.5f)*.095f,-waist+.08f,-config.beltForward}),body.q};
@@ -344,7 +345,9 @@ public:
                 for(int i=0;i<2&&config.holsters;++i)if(distance(in.hand[h].p,out.holster[i].p)<.115f) {
                     out.nearHolster=i;
                     if(edges[h]&&in.snapshot.equipmentKnown) {
-                        holster=i;holsterHand=h;grab=in.hand[h];owner[h]=Owner::Holster;out.feedback=1;out.feedbackHand=h;break;
+                        holster=i;holsterHand=h;
+                        holsterGrab=math::Rotate(math::Conjugate(body.q),in.hand[h].p-body.p);
+                        owner[h]=Owner::Holster;out.feedback=1;out.feedbackHand=h;break;
                     }
                 }
                 if(holster>=0)break;
@@ -353,7 +356,8 @@ public:
         if(holster>=0) {
             out.block=true;out.nearHolster=holster;
             if(!grips[holsterHand]){Drop();rearm=true;}
-            else if(distance(grab.p,in.hand[holsterHand].p)>.12f) {
+            // Moving/turning the body with the gripping hand is not a draw.
+            else if(distance(holsterGrab,math::Rotate(math::Conjugate(body.q),in.hand[holsterHand].p-body.p))>.12f) {
                 request(Action::Equip,holster+1);Drop();rearm=true;
             }
         }

@@ -3,6 +3,11 @@
 Updated 2026-10-10. Read [INSTALL.md](INSTALL.md) for deployment and
 [steamvr/TASKS.md](steamvr/TASKS.md) for the complete user-requested backlog.
 
+**Next session is a clean Windows install. Start with
+[WINDOWS_HANDOFF.md](WINDOWS_HANDOFF.md)** for exact package choice, installation,
+Steam launch commands, controls, baseline settings and the diagnostic sequence.
+Use branch `vr/steam-frame-proton`; default/upstream `main` is not this work.
+
 ## Objective and boundaries
 
 First-person Diablo II: Resurrected PCVR. Original user reference was
@@ -25,6 +30,263 @@ license refresh; the explicit `--frame-vr` launch chooses D2RLoader. Save and ex
 before replacing DLLs or restoring files. The installer checks for running D2R.
 
 ## Latest user evidence and priorities
+
+**Windows migration / commit-and-push handoff, 2026-10-10 afternoon.** User wants
+a fresh Windows installation of Steam/D2R and this mod, continuing Steam Frame
+PCVR. Explicitly requested all current source, findings and documentation
+committed/pushed, with enough instructions for a fresh agent. No more Linux
+headset testing is needed for this handoff. Native Windows is still untested.
+
+After a full system reboot and fresh SteamVR, the unchanged baseline DLL again
+stalled and lost picture quality; user answered **"Still happening"**. The fresh
+driver log recorded **119 reset requests before D2R launched** at 15:41:22.
+Sequence 10202 (360 pairs) averaged 22.932 ms, p95 30.004 ms, max 35.161 ms;
+that short sample does not encompass all stalls. Pre-reboot restored-baseline
+sequence 10201 averaged 23.759 ms, p95 31.631 ms, max 37.521 ms. These moving
+scenes are not exact matches. No DLL/game graphics change occurred between them.
+
+An OpenVR background utility then set SteamVR Link to manual 50 Mbps for an
+isolation test. **No test result was received** before the user chose Windows.
+Restored `automaticBandwidth=true`, `targetBandwidth=200` and verified readback.
+All profiling is off. Do not claim 50 Mbps fixed anything, or carry this
+temporary test into fresh Windows defaults. Local evidence is named in
+`build-frame/latest-post-reboot-baseline.json`; portable aggregate evidence is
+committed as `steamvr/evidence/2026-10-10-handoff.json`. Raw logs, game snapshots,
+assets and saves remain excluded from GitHub.
+
+Private release tag `v0.2.0-windows-handoff` provides two installation packages:
+`d2r-pcvr-baseline.zip` with archived `16e24f55…` DLL and
+`d2r-pcvr-candidate.zip` with current-source `bc51fd37…` DLL. Start Windows with
+the baseline; candidate adds the CPU/HUD changes and INI reload guard and is
+not headset verified as a whole. Both include the native Windows OpenXR loader,
+current installer/launch scripts, controls, handoff and checksum manifests.
+The baseline manifest explicitly distinguishes packaging source from archived
+plugin provenance. The old v0.1 preview predates current gameplay features.
+
+Handoff verification: DLL cross-build, 24 Python tests and eight native test
+executables under Proton passed (memory, hook metrics/cache/locks, worker,
+portal billboards, interactions, spell aim, gameplay, quick-cast). Native
+Windows execution, streaming behavior and all pending user checks remain open.
+
+**Baseline retest, 2026-10-10 15:34; owner rebooting PC.** Owner returned,
+connected Frame and tested the restored `16e24f55…` DLL, wait=0/radius=300.
+He confirms **"Still stalls and loses image quality"**. Streaming reset bursts
+returned, including 71 requests in one observed second. Post-load hitch was
+465.7 ms (443.5 ms game gap); another was 147.1 ms (119 ms XR begin, only
+2.1 ms game gap). XR begin includes input/other work; do not attribute all of
+it to the runtime without the finer profile. Sequence 10201 completed; saved
+`build-frame/perf-baseline-retest-moving.log/.json` (GPU/hooks off; capture now
+off). Full test logs/stream histories are under the directory named in
+`build-frame/latest-baseline-retest.json`. Current sampled PC load was light.
+No DLL, graphics, SteamVR or streaming settings were changed for this retest.
+The owner said **"let me reboot the system"**; stop testing until he returns.
+Next: fresh post-reboot baseline comparison with both game and streaming logs.
+Do not install the staged performance candidate first.
+
+**Regression investigation / baseline restored, 2026-10-10 02:35.** Owner now
+reports severe random stalls in movement/combat/menus, with the picture becoming
+very low quality, stuck frames and catching up. He has gone to bed and explicitly
+requested work **without further headset testing**. Game was already closed;
+do not relaunch or ask for another capture tonight. Earlier average pair timings
+do not establish smoothness or excuse this report.
+
+Restored pre-performance DLL SHA256
+`16e24f5564a822531682629a5753c0b5ef248ef48dc33f0fbe358e1e30ed15fc`, plus
+`defer_gpu_wait=0`, `model_radius=300`, all profiling off. This includes the belt
+follow and spell aim work; those user tests are still pending. Other settings,
+game graphics, assets, saves, SteamVR and network settings were preserved.
+Game remains closed. This is a conservative comparison baseline, **not a verified
+fix**; first-CPU/async-HUD source and DLLs remain intact for later comparisons.
+Launcher polling optimization remains in the wrapper. Full pre-rollback logs,
+DLL, INI, graphics settings and streaming histories are in
+`build-frame/backups/perf-regression-20261010-023124`; current-state record is
+`build-frame/latest-perf-regression.json`. This supersedes the two performance
+deployment records below; neither candidate is currently installed.
+
+The crucial new evidence is SteamVR Link, previously missing from the frame
+profiles. Ten saved fault histories yield 10,711 deduplicated driver rows over
+02:20:54–02:24:53 and **147 stream reset requests**. Driver-aligned
+send-to-reported-receive p95 is 80.81 ms, maximum 734.13 ms; median 7.77 ms.
+Encoding p95 is 8.87 ms, maximum 12.37 ms. For a 674.95 ms receive event, gate to
+app submit was 16.40 ms and encoding 7.49 ms. This strongly implicates delivery/
+receiver behavior in the freezes, beyond game-render cost. It does not prove
+radio interference versus driver/client handling, or measure actual resolution/
+bitrate. Reset requests also occurred at 01:52–01:54 **before** the CPU candidate
+and deferred-wait trial. Game-side stalls remain independently documented.
+Current network inspection found adapter power saving already off; kernel logs
+in the investigated interval show no GPU fault/USB reset. No network changes.
+
+Added read-only `steamvr/stream_report.py`, tested for overlapping histories,
+missing timestamps, 32-bit clock rollover and separate stage accounting.
+Report: `build-frame/perf-stream-report.json`. These histories are fault-triggered,
+not an unbiased session FPS/packet-loss benchmark. See PERFORMANCE.md.
+
+One additional source fix is **built/staged only**: unrelated INI reloads no
+longer mark render distance dirty, avoiding a forced 500 ms model visibility
+re-sort when profiling or changing unrelated VR settings. Actual ring/radius
+changes and pending initialization/retries still apply. Cross-build and 14
+report/launcher tests pass; this small native scheduling change is not runtime
+verified. `build-frame/latest-perf-offline-stage.json` identifies the new DLL;
+`build-frame/d2rl-vrcam.dll` is this staged candidate, **not the installed baseline**.
+Do not blindly install it over the baseline before the next comparison.
+
+Next session: establish baseline delivery stability first, collecting game
+timings and Link histories together. If resets persist, compare a fresh SteamVR/
+Frame streaming connection before adding mod optimizations, then a controlled
+stream-quality/bandwidth test if needed. Change one variable at a time; do not
+raise display refresh while delivery is failing. No new commit/push requested.
+
+**Movement hitches / asynchronous HUD, 2026-10-10 02:20.** Owner reports
+definite hitches while running with wait=1/radius=210. Three additional
+360-pair movement captures, sequences 10108–10110, are saved as
+`build-frame/perf-running-{1,2,3}.log/.json`. They show 20 input/UI spikes above
+4 ms (typically 12–13 ms), plus one 173 ms LevelTranslationLayer simulation
+tick / 198 ms stereo pair. Earlier live movement logs include simulation ticks
+208–753 ms. These large stalls recorded no graphics pipeline creations and
+no measured room discovery/extra VR tiling time. Their remaining game-update
+cost is not yet isolated. Do not claim all movement hitches fixed or identify
+shader compilation as the cause.
+
+Installed SHA256
+`d44762d4cc4a9b2cefad350a6ada3b6779b3c9bf83211be835e7b1430b28442f`
+after Save & Exit; launched through the Steam wrapper. Record
+`build-frame/latest-perf-ui-deployment.json`, ready/backup tag
+`perf-ui-20261010-021749`. Runtime verified; headset wheel/wrist feedback pending.
+CPU/GDI interaction-atlas painting now runs on a bounded worker (one active,
+one replaceable queued job, one result). Inputs are owned snapshots; the
+worker touches no game memory, D3D12 or OpenXR objects. Rendering polls for
+matching results, uploads RGBA rows with memcpy, and retains the previous image
+while painting. Old skill pages/character/slot contents cannot be displayed or
+clicked as new contents; hover/vitals-only changes do not hide the wheel.
+Shutdown joins the painter before stopping the icon worker or destroying XR.
+
+Host/Proton worker tests cover coalescing, stale results, failure, restart,
+shutdown and UI-content guards. Twelve real GDI images with changing vitals,
+wheel pages and hover positions exactly match synchronous results under
+Proton. Synchronous painting measured 10.427 ms on average, consistent with
+the input spikes. Three new moving captures 10111–10113 show **zero input
+stages over 4 ms in 1,080 pairs**, maximum 1.811 ms. Two measured refreshes
+painted for 10.12/10.28 ms on the worker and uploaded for 1.27/1.16 ms on the
+frame thread. Aggregate: `build-frame/perf-ui-comparison.json`; logs are
+`build-frame/perf-running-ui-{1,2,3}.log/.json`. Routes/views differ, so this
+does not establish an overall FPS improvement or eliminate native stalls.
+DLL cross-build and diff checks pass. Profile captures log
+`Frame UI refresh: background paint ... frame-thread upload ...` once/second.
+Subsequent owner feedback reports severe stalls/quality collapse; this candidate
+and wait=1/radius=210 were rolled back as described above. Wheel/wrist checks
+remain pending. The larger game-update stalls remain a separate unresolved task.
+
+**CPU performance pass, 2026-10-10 02:03.** Installed candidate SHA256
+`a3bc1aeacb1859144d160c3169347b4f8c6286234b518b6bc08885c7cfdd414e`
+after the owner Saved & Exited, then launched through `steamvr/run-proton.sh`.
+Record: `build-frame/latest-perf-headless-deployment.json`; ready/backup tag
+`perf-headless-20261010-015506`. This supersedes the spell-aim DLL below and
+includes all pending spell/belt changes. Owner confirmed **"Image normal;
+standing still"**. Startup confirms focused XR, both hands/gaze and gameplay.
+Walking/menus with the final performance settings are awaiting owner feedback.
+
+Implemented optional all-thread counters; generation-cached VRS/UI pipeline
+lookups and SRW callback locks; guarded local memory copies instead of
+wineserver writes; bounded per-instance portal batch classification; sparse
+routine GetThreadTimes; no idle mouse cursor query; startup-only UI tracing;
+and 5-second full process scans with 0.5-second known-game PID checks.
+DLL cross-build, Proton memory/exception tests and benchmark, host/Proton
+counter/cache/SRW tests, portal mixed-batch tests, five session tests and four
+report tests pass. The 64-byte local-copy benchmark was 15.2→0.14 us on one
+thread; this is not a measured frame-time saving.
+
+Seven 360-pair captures are saved as `build-frame/perf-*.log/.json/.csv`,
+with aggregate `build-frame/perf-comparison.json`. GPU profiling was off in all
+runs; all-thread counters were off except sequence 10103. Timing results and
+limitations are in [steamvr/PERFORMANCE.md](steamvr/PERFORMANCE.md). Code-only
+A/B: 31.38→31.69 ms/pair, **no demonstrated frame-rate gain**; viewpoints and
+hero positions differed slightly. In the candidate, deferred waiting reduced
+31.69→24.60 ms/pair at nearly the same view, and radius 210 then gave 22.70 ms.
+Later repetitions held around 22.5 ms but changed head direction, so they do
+not establish a precise radius benefit. Do not compare against the owner's
+earlier 22.7 ms review scene as if it were the same baseline.
+
+Historical trial configuration: `defer_gpu_wait=1`, `model_radius=210`, fog end 200,
+100% resolution, shadows/AO 4, DLSS off, fixed/eye-tracked foveation on.
+`profile_capture=0`, `profile_gpu=0`, `profile_hooks=0`. Graphics JSON was not
+edited. Baseline mod settings were wait 0/radius 300; saved in the backup.
+Source defaults are unchanged. All-thread capture counted ~19.3k pipeline
+binds/pair on 17 threads, only ~277 VRS map lookups/pair, and ~1,368 memory
+reads/pair. Input-tick inclusive sampled wall time was 9.8 ms/pair; this includes
+blocking/work and overlaps drawing. Do not sum worker estimates as frame cost.
+Only two memory writes/pair occurred in this scene; none reached a timing
+sample on their worker, so their time is unknown, not zero.
+
+Next: owner movement/menus/scenery feedback; shadows 4→2 is untested. Transport
+mutex separation/dedicated XR calls, shared inter-eye work and aspect changes
+were intentionally left for separate ownership/lifecycle work. No code was
+committed/pushed for this pass. Keep the source/installed DLL distinction when
+continuing; only the reporting script/docs changed after this DLL was built.
+
+**Casting-weapon projectile aim, 2026-10-10 01:24.** Owner wants projectile
+spells to follow the wand/staff and selected **Teeth** for the first check.
+Installed SHA256
+`16e24f5564a822531682629a5753c0b5ef248ef48dc33f0fbe358e1e30ed15fc` while D2R
+was closed. Record: `build-frame/latest-spell-aim-deployment.json`; ready/backup
+tag `spell-aim-20261010-012445`. Includes the belt-follow changes below.
+Previous DLL was `58ce0b16…`; settings and assets unchanged. Owner replied
+**"I'll test later"**; game left closed. Runtime/headset verification pending.
+
+`skeletons` now publishes the final posed casting shaft in its captured world
+frame (wand/scepter/orb +Y, staff's actual chosen shaft/sign); `HandRay` uses it
+for selected spells instead of the controller menu-pointer direction. It checks
+pose age, hero generation, weapon type and turn epoch; other equipment keeps
+controller aim. Nearly vertical shafts do not invent a horizontal heading.
+`native_ui` reads compiled Skills flags/server missile/function into each native
+slot's `directed` field. Teeth's fan is recognized without a primary missile;
+ground placements, buffs, summons and required corpse/unit targets stay native.
+
+Fresh, active wheel/quick-cast inputs can open a thread-local scope around native
+cast resolver `0x190440`. Only its exact selected-unit call sites return no
+target; its final aim-assist flag is disabled within that call. Its AttackPoint
+call uses one sampled shaft direction at 60 grid cells, reducing quantization.
+Nested calls restore scope. This does **not** add hand-origin/elevated 3D spell
+flight or alter native spread, homing, timing, effects, resource costs or damage.
+The native spell plane limitation was explicitly explained to the owner.
+
+DLL build and spell/interaction/quick-cast/gameplay host tests pass.
+`steamvr/audit_spell_aim.py` verifies all seven guarded native entry/call sites
+against local `build-frame/game-code.bin`, and optional local table inputs verify
+all 429 compiled Skills rows. Local game snapshots/tables remain ignored.
+New files: `steamvr/spell_aim.h`, `spell_aim_test.cpp`, `audit_spell_aim.py`,
+`vr/spell_aim_signatures.h`. No commit/push requested for this change yet.
+Next: launch offline, select Teeth, aim wand left/right with head looking
+elsewhere and an off-axis creature selected; check the fan follows the shaft.
+Also test quick-cast and a summon/corpse skill. Logs: `Frame spell aim:` for
+hook readiness/owned resolution, `Frame wheel assignments: ... directed=0xNN`
+for native slot classification. Preserve the pending full 3D spell adapter work.
+
+**Belt follows body, 2026-10-10 01:05.** Owner requested the belt always stay
+attached in front while moving/turning. Removed the estimated torso's 37-degree
+heading deadband, slow catch-up and hand-proximity/grab freezes. `UprightBody`
+now uses tracked head position and horizontal facing each frame, with no pitch
+or roll; nearly vertical gaze preserves the previous reliable heading. This is
+a headset-derived body frame, not a new skeleton/torso-tracker dependency.
+The shared hip holsters also follow; pull distance is now body-relative so
+turning/stepping with a hand at the hip does not itself swap equipment. Held
+bottles remain hand-attached and return to the current waist if unused.
+
+Host interaction regressions cover lowered hands, small and large turns,
+translation/crouch, downward gaze/roll, vertical-gaze stability, grab/move/return,
+seated reach and holster draw rejection/acceptance. Existing interaction tests
+and DLL cross-build pass. Installed while D2R was closed; SHA256
+`58ce0b166d7c96027aa45fb14eed53518dd146f831e220c60a3b85b4dca32dd7`.
+Record: `build-frame/latest-belt-follow-deployment.json`; ready/backup tag
+`belt-follow-20261010-010546`. Previous DLL was the potion build below. No settings
+or assets changed. **Not relaunched yet; runtime/headset verification pending.**
+Next: load an offline character with belt potions, turn/step/crouch with lowered
+hands, grab/drink, turn while holding, then release an unused bottle.
+
+Owner also asked how to stock larger belts and drop inventory items. Explained
+four grab columns with native reserve rows/counts; Inventory supplies the items.
+Drop mapping is already Left Trigger + right laser/Right Trigger (Ctrl-click).
+Native context decides drop vs vendor sell/stash transfer; no new input change.
+Ground dropping through this controller-layout panel is **not headset-verified**.
 
 **Original 3D potion belt, 2026-10-10 00:39.** Owner requested actual potion
 models on the belt, grabbed/drunk with Right Grip, and is ready for a test.

@@ -8,18 +8,24 @@ import sys
 import time
 
 
+def process_info(entry):
+    try:
+        fields = (entry / 'stat').read_text().rsplit(')', 1)[1].split()
+        argv = (entry / 'cmdline').read_bytes().split(b'\0')
+        name = argv[0].decode(errors='replace').strip().replace('\\', '/').rsplit('/', 1)[-1].lower()
+        return int(fields[1]), fields[19], fields[0], name
+    except (OSError, ValueError, IndexError):
+        return None
+
+
 def processes():
     found = {}
     for entry in Path('/proc').iterdir():
         if not entry.name.isdigit():
             continue
-        try:
-            fields = (entry / 'stat').read_text().rsplit(')', 1)[1].split()
-            argv = (entry / 'cmdline').read_bytes().split(b'\0')
-            name = argv[0].decode(errors='replace').strip().replace('\\', '/').rsplit('/', 1)[-1].lower()
-            found[int(entry.name)] = (int(fields[1]), fields[19], fields[0], name)
-        except (OSError, ValueError, IndexError):
-            continue
+        data = process_info(entry)
+        if data is not None:
+            found[int(entry.name)] = data
     return found
 
 
@@ -69,16 +75,41 @@ def terminate_helpers(process, owned):
     return True
 
 
-def run(command, poll=.5, grace=3):
+def live_games(owned):
+    return {pid: data for pid, data in owned.items()
+            if data[2] != 'Z' and data[3] in ('d2r.exe', 'd2rloader.exe')}
+
+
+def observed_games(games):
+    # Inspect only known game PIDs during steady play. A reused PID, exec to a
+    # helper, or zombie cannot keep this launch alive as if it were the game.
+    current = {}
+    for pid, old in games.items():
+        data = process_info(Path('/proc') / str(pid))
+        if data is not None and data[1] == old[1]:
+            current[pid] = data
+    return live_games(current)
+
+
+def run(command, poll=.5, grace=3, scan_interval=5):
     process = subprocess.Popen(command)
     known = {}
     saw_game = False
     exited_at = None
+    games = {}
+    next_scan = 0
+    owned = {}
     while process.poll() is None:
-        owned = members(processes(), process.pid, known)
-        known.update({pid: data[1] for pid, data in owned.items()})
-        games = [pid for pid, data in owned.items()
-                 if data[2] != 'Z' and data[3] in ('d2r.exe', 'd2rloader.exe')]
+        games = observed_games(games)
+        now = time.monotonic()
+        # Discover startup children promptly, and rescan as soon as the last
+        # known game exits. During play retain orphan/descendant bookkeeping
+        # with a much less frequent full scan. Cleanup always rescans itself.
+        if not games or now >= next_scan:
+            owned = members(processes(), process.pid, known)
+            known.update({pid: data[1] for pid, data in owned.items()})
+            games = live_games(owned)
+            next_scan = now + scan_interval
         if games:
             saw_game = True
             exited_at = None

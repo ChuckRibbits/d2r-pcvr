@@ -65,6 +65,24 @@ template<class Read> bool Resolve(Read read,const Context& c,uint32_t lane,uint6
     if(!read(header,instance,sizeof header)||header[0]!=base+0x1da1118||!header[8]||!header[9])return false;
     out={instance,header[8],header[9]};return true;
 }
+// One bounded per-batch cache, never a single classification for a mixed batch.
+// Only lanes in the verified center shell need instance/asset resolution.
+template<class Read,class Classify> bool CorrectCenters(Vec* points,uint32_t count,const Context& c,uint64_t base,Read read,Classify classify) {
+    struct Entry {int32_t id=-1;bool offsets=false;};Entry cache[8];bool changed=false;
+    for(uint32_t i=0;i<count;++i) {
+        Vec corrected;if(!CenterOffset(points[i],corrected))continue;
+        int32_t id=c.instance;
+        if(id<0&&(i>=c.count||!read(&id,c.indices+4ull*i,4)))continue;
+        if(id<0)continue;
+        auto& entry=cache[uint32_t(id)%8];
+        if(entry.id!=id) {
+            Instance instance{};entry.id=id;
+            entry.offsets=Resolve(read,c,i,base,instance)&&classify(instance.definition);
+        }
+        if(entry.offsets){points[i]=corrected;changed=true;}
+    }
+    return changed;
+}
 template<class Read> bool IsPortal(Read read,uint64_t definition,uint64_t base,bool centerOffsets=false) {
     uint64_t header[10]{},compiled[3]{};
     if(!read(header,definition,sizeof header)||header[0]!=base+0x1da0ff0||!header[9]||
