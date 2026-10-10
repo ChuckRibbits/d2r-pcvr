@@ -7,6 +7,7 @@ RVA 0x1000, as produced by the existing local inspection workflow.
 import argparse
 from pathlib import Path
 import re
+import struct
 
 
 def main():
@@ -18,6 +19,12 @@ def main():
     data = args.snapshot.read_bytes()
     count = 0
     for name, rva in re.findall(r"uint64_t (\w+)Rva=(0x[0-9a-f]+);", header):
+        if name == "ControllerTable":
+            load = int(re.search(r"BindingLayoutRva=(0x[0-9a-f]+)", header)[1], 16) + 13
+            offset = load - args.start_rva
+            if data[offset:offset + 3] != b'\x48\x8d\x05' or load + 7 + struct.unpack_from('<i', data, offset + 3)[0] != int(rva, 16):
+                raise SystemExit("Controller table RIP-relative address mismatch")
+            continue
         values = re.search(r"uint8_t " + name + r"Sig\[\]=\{([^}]+)\}", header)[1]
         expected = bytes(int(value, 16) for value in values.split(","))
         offset = int(rva, 16) - args.start_rva

@@ -38,3 +38,25 @@ Diablo II: Resurrected, its executable, archives and save data belong to Blizzar
 Entertainment / their owners and are not distributed in this preview. This
 project is not affiliated with or endorsed by Blizzard Entertainment, Valve,
 Meta, Virtual Desktop, WiVRn, or the upstream authors.
+
+The read-only Steam static-container/TVFS adapter in `steamvr/steam_assets.py`
+is adapted from [levinium/D2RExtractor](https://github.com/levinium/D2RExtractor)
+(MIT; its Steam reader credits rustydemon). The retained notice is
+[`steamvr/licenses/D2RExtractor-MIT.txt`](steamvr/licenses/D2RExtractor-MIT.txt).
+The local SpA1 v31 RGBA decoder and PNG writer use Python's standard library.
+Extracted spell/item artwork belongs to the game; it is generated only in the
+user's local icon cache, never included in this repository or release ZIP.
+The wheel/wrist framing is separately generated artwork with prompts and
+provenance in [`steamvr/assets/README.md`](steamvr/assets/README.md).
+
+The installation-only BitKnit decoder in `steamvr/vendor/bitknit.py` is vendored
+from [Rasetsuu/blendergranny](https://github.com/Rasetsuu/blendergranny) commit
+`aec91bbd8e244d82277d1f5435dc20feff3086f9`, MIT, copyright 2026 ciupix and
+contributors. Only its imports were adapted to run standalone; the notice is
+[`steamvr/licenses/blendergranny-MIT.txt`](steamvr/licenses/blendergranny-MIT.txt).
+The local bounded Granny mesh adapter exports static potion geometry only.
+The texture header/format mapping was checked against
+[D2R-Reimagined's TextureReader](https://github.com/D2R-Reimagined/reimagined-level-editor/blob/master/src/D2RLevel.Assets/TextureReader.cs).
+Original potion models and textures belong to the game and are extracted into
+the local `d2r_vr_potions` cache; neither that cache nor raw game assets are
+distributed in the repository or release. No Granny runtime is needed.

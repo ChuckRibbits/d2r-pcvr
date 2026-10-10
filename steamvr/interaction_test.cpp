@@ -1,8 +1,11 @@
 #include "interactions.h"
+#include "interaction_icons.h"
+#include "potion_scene.h"
 #include <cstdio>
 #include <cstdlib>
 #include <limits>
 using namespace framevr::interaction;
+namespace math=framevr::math;
 static void Check(bool b,const char* s){if(!b){std::fprintf(stderr,"FAIL: %s\n",s);std::exit(1);}}
 struct Sim {
     Engine e;Input in;Output out;
@@ -14,11 +17,121 @@ struct Sim {
     Output Step(int count=1){while(count--){in.time+=.02;in.at=1000000+uint64_t(in.time*1000);in.snapshot.at=in.at;out=e.Step(in);}return out;}
 };
 int main(){
-    for(int i=0;i<8;++i){float a=i*Pi/4;Check(WheelCell(.5f+std::sin(a)*.28f,.45f-std::cos(a)*.28f)==i,"wedge centers agree");}
-    Check(WheelCell(.5f,.45f)==8&&WheelCell(.5f,.96f)==9,"weapon center and utility tab");
-    Check(WheelCell(.85f,.96f)==10,"dedicated VR settings entry");
+    for(int slot=4;slot<8;++slot) {
+        Sim s;s.in.snapshot.bindingsEditable=true;s.in.snapshot.bindingBank=0;s.in.snapshot.skillCount=1;
+        for(auto& skill:s.in.snapshot.skills)skill.known=true;
+        auto& skill=s.in.snapshot.catalog[0];skill.id=70;skill.available=skill.known=true;
+        auto click=[&](int hit){s.in.trigger=0;s.Step();s.in.hover=hit;s.in.trigger=1;return s.Step();};
+        s.in.wheel=true;click(11);Check(click(slot).editSlot==slot,"alternate wheel slot opens editor");
+        const auto r=click(0).request;
+        Check(r.action==Action::BindSkill&&r.index==slot&&r.skill==70&&CanBind(s.in.snapshot,r,s.in.at),"all LT variant slots use validated native assignment");
+    }
+    {
+        Sim s;s.in.hand[1].p=s.out.belt[0].p;s.in.quickCast=true;s.in.grip[1]=1;
+        Check(s.Step().bottle<0&&s.out.owner[1]!=Owner::Bottle,"alternate shortcut grip cannot grab belt potion");
+    }
+    {
+        Sim s;s.in.snapshot.bindingsEditable=true;s.in.snapshot.bindingBank=0;s.in.snapshot.skillCount=10;
+        for(int i=0;i<8;++i)s.in.snapshot.skills[i].known=true;
+        for(int i=0;i<10;++i){auto& skill=s.in.snapshot.catalog[i];skill.id=36+i;skill.available=skill.known=true;}
+        auto click=[&](int hit){s.in.trigger=0;s.Step();s.in.hover=hit;s.in.trigger=1;return s.Step();};
+        s.in.wheel=true;
+        Check(click(11).editor==1&&s.out.select==-2,"editor does not select a combat slot");
+        Check(click(2).editor==2&&s.out.editSlot==2&&s.out.editCount==8,"unassigned slot opens available skills");
+        Check(click(10).editPage==1&&s.out.editCount==2,"skill pagination bounded by actual skills");
+        Check(WheelCell(.1f,.25f,-1,true)==0&&WheelCell(.8f,.15f,-1,true)==8,"skill rows and clear button hit regions");
+        Check(WheelCell(.5f,.25f,-1,true)==-1,"skill column gap cannot assign");
+        // Choices stay fixed while this page is displayed. Native validation
+        // checks the chosen identity, never a list index that can be reordered.
+        s.in.snapshot.catalog[0].id=200;
+        const auto request=click(0).request;
+        Check(request.action==Action::BindSkill&&request.index==2&&request.skill==44&&request.bank==0&&s.out.select==-2,"binding names exact skill and slot without casting");
+        Check(CanBind(s.in.snapshot,request,s.in.at),"fresh known learned skill can bind");
+        for(int i=0;i<10;++i)Check(s.Step().request.action==Action::None&&s.out.block,"held trigger cannot repeat binding or cast");
+        auto changed=s.in.snapshot;changed.bindingBank=16;
+        Check(!CanBind(changed,request,s.in.at),"weapon-set change refuses stale binding");
+        changed=s.in.snapshot;changed.skills[2].id=70;
+        Check(!CanBind(changed,request,s.in.at),"concurrent slot change is not overwritten");
+        changed=s.in.snapshot;changed.catalog[8].owner=123;
+        Check(!CanBind(changed,request,s.in.at),"different item owner is not the chosen skill");
+        Check(!CanBind(s.in.snapshot,request,s.in.at+651),"stale catalog refuses write");
+        s.in.reply={request.sequence,10,Result::Applied};s.in.snapshot.skills[2]=s.in.snapshot.catalog[8];
+        Check(s.Step().editor==1&&s.out.result==Result::Applied,"native readback returns to slots");
+        click(2);const auto clear=click(8).request;
+        Check(clear.action==Action::BindSkill&&clear.skill==-1&&clear.previousSkill==44&&CanBind(s.in.snapshot,clear,s.in.at),"clear is an explicit validated native request");
+        s.in.cancel=true;Check(s.Step().cancelPending&&!s.out.wheel&&s.out.editor==0,"cancel drops pending edit and requires rearm");
+        s.in.cancel=false;s.in.wheel=false;s.in.trigger=0;s.Step();s.in.wheel=true;click(11);click(1);
+        s.in.tracked[0]=false;
+        Check(s.Step().editor==0&&s.out.cancelPending&&s.out.block,"tracking loss closes editor without binding");
+    }
+    Check(icons::ItemKey({1,1,Code('h','p','1')})=="i20317068","native little-endian item icon code");
+    Check(icons::ItemKey({1,1,Code('h','p','1',0)})=="i20317068","NUL-padded native item code");
+    Check(icons::ItemKey({1,1,Code('h','a','x'),7,0})=="u0","unique item uses its record artwork");
+    Check(icons::ItemKey({1,1,Code('h','a','x'),5,4})=="t4","set item uses its record artwork");
+    Check(icons::ItemKey({}).empty(),"empty slot has no stale icon");
+    {
+        Sim s;s.in.hand[1].p={-.18f,1.35f,-.24f};
+        Check(!s.Step().wrist,"natural grip orientation hides wrist vitals");
+        s.in.hand[1].q={0,0,1,0};
+        Check(!s.Step().wrist,"old upside-down +/-Y assumption is not a watch gesture");
+        s.in.hand[1].q={0,0,.70710678f,.70710678f};
+        Check(!s.Step().wrist,"left palm facing eyes does not reveal back-of-wrist watch");
+        s.in.hand[1].q={0,0,-.70710678f,.70710678f};
+        Check(s.Step().wrist,"OpenXR left grip -X rolled upward reveals watch");
+        const auto panel=WristPanel(s.in.hand[1],s.in.head);
+        const auto normal=math::Rotate(panel.q,{0,0,1});
+        Check(math::Dot(normal,math::Normalized(s.in.head.p-panel.p))>.65f,
+            "revealed panel front faces the eyes, not away from them");
+        Check(math::Dot(panel.p-s.in.hand[1].p,normal)>.05f,
+            "panel offset is on the same wrist face as its front");
+        const auto headUp=math::Rotate(s.in.head.q,{0,1,0});
+        Check(math::Dot(math::Rotate(panel.q,{0,1,0}),headUp)>=-1e-5f,
+            "watch text cannot be upside down relative to the head");
+        s.in.tracked[0]=false;
+        Check(s.Step().wrist&&s.out.block&&s.out.request.action==Action::None,
+            "untracked resting right hand keeps passive watch, blocks combat");
+        s.in.tracked[0]=true;s.Step(2);
+        s.in.tracked[1]=false;Check(!s.Step().wrist,"untracked left wrist hides watch");
+        s.in.tracked[1]=true;s.Step(2);
+        s.in.active=false;Check(!s.Step().wrist,"native menu hides passive watch");
+        s.in.active=true;s.Step(2);
+        const auto yaw=math::Yaw(1.2f);
+        for(auto* p:{&s.in.hand[1],&s.in.head}){p->p=math::Rotate(yaw,p->p);p->q=math::Multiply(yaw,p->q);}
+        Check(s.Step().wrist,"wrist reveal is independent of world heading");
+        s.in.hand[1].p=s.in.head.p+Vec{0,-.8f,0};
+        Check(!s.Step().wrist,"distant hand does not reveal panel");
+        s.in.hand[1].p=s.in.head.p;
+        Check(!s.Step().wrist,"coincident hand and eyes cannot reveal panel");
+        s.in.hand[1].p.x=std::numeric_limits<float>::quiet_NaN();
+        Check(!s.Step().wrist,"lost wrist tracking hides panel");
+    }
+    {
+        // Sweep rotations including head-up parallel to the watch normal.
+        // Every rendered face must stay on -X with a unit, finite quaternion.
+        Pose hand{{-.18f,1.35f,-.24f}},head{{0,1.7f,0}};
+        for(int roll=-180;roll<=180;roll+=5)for(int pitch=-90;pitch<=90;pitch+=5) {
+            hand.q={0,0,std::sin(roll*Pi/360),std::cos(roll*Pi/360)};
+            head.q={std::sin(pitch*Pi/360),0,0,std::cos(pitch*Pi/360)};
+            const auto p=WristPanel(hand,head);const auto q=p.q;
+            Check(Valid(p)&&std::fabs(q.x*q.x+q.y*q.y+q.z*q.z+q.w*q.w-1)<1e-5f,
+                "watch panel stays valid through head/wrist rotations");
+            Check(math::Dot(math::Rotate(q,{0,0,1}),WristNormal(hand))>.99999f,
+                "readability adjustment preserves back-of-wrist face");
+        }
+    }
+    for(int i=0;i<8;++i){float a=i*Pi/4+WheelPhase;Check(WheelCell(.5f+std::sin(a)*.28f,.45f-std::cos(a)*.28f)==i,"wedge centers agree");}
+    Check(WheelCell(.5f,.45f)==8&&WheelCell(.18f,.93f)==9,"weapon center and utility tab");
+    Check(WheelCell(.5f,.93f)==10&&WheelCell(.82f,.93f)==11,"settings and skill editor entries");
     Check(WheelCell(.5f,.57f)==-1,"dead zone cannot select");
+    Check(WheelCell(.34f,.94f)==-1&&WheelCell(.5f,.99f)==-1,"footer gap and outside frame cannot select");
+    for(int i=0;i<8;++i){float a=i*Pi/4+.012f;
+        Check(WheelCell(.5f+std::sin(a)*.28f,.45f-std::cos(a)*.28f,(i+7)%8)==(i+7)%8,"segment boundary has selection hysteresis");}
     Check(PotionType(Code('h','p','2'))==Potion::Health&&PotionType(Code('m','p','4'))==Potion::Mana,"potion categories");
+    {
+        Sim s;s.in.snapshot.belt[1]=s.in.snapshot.belt[0];s.in.snapshot.belt[1].items[0].handle=99;
+        s.in.hand[0].p=s.out.belt[1].p+Vec{-.01f,0,0};s.in.grip[0]=1;
+        Check(s.Step().bottle==1&&s.out.bottleItem.handle==99,"overlapping reach spheres grab the closest visible bottle");
+    }
     {
         Sim s;s.in.wheel=true;s.in.hover=10;s.in.trigger=1;
         Check(s.Step().settings&&s.out.block&&!s.out.wheel&&s.out.request.action==Action::None,"settings takes ownership without a native command");
@@ -43,7 +156,9 @@ int main(){
     {
         Sim s;s.in.hand[0].p=s.out.belt[0].p;s.Step();s.in.grip[0]=1;
         Check(s.Step().bottle==0&&s.out.request.action==Action::None,"physical bottle grab is non-consuming");
-        s.in.hand[0].p={0,1.6f,-.08f};s.in.hand[0].q={0,0,.70710678f,.70710678f};
+        s.in.hand[0].q={0,0,-.70710678f,.70710678f};
+        // Neck touches the mouth with the right hand outside the face.
+        s.in.hand[0].p={-.115f,1.6f,-.08f};
         int requests=0;Request request;
         for(int i=0;i<30;++i){auto o=s.Step();if(o.request.action==Action::Potion){++requests;request=o.request;}Check(o.block,"sip owns combat input");}
         Check(requests==1&&request.item.handle==42,"one drink of exact grabbed item");
@@ -53,6 +168,29 @@ int main(){
         s.in.trigger=1;s.in.grip[0]=0;Check(s.Step().block,"held trigger after bottle drop stays blocked");
         auto snap=s.in.snapshot;snap.belt[0].items[0]={43,2,Code('m','p','1')};snap.belt[0].items[1]={};
         Check(PotionGone(snap,request),"authoritative removal can acknowledge native use");
+    }
+    {
+        Sim s;auto scene=framevr::potions::MakeScene(s.in,s.out);
+        Check(scene.count==1&&scene.items[0].code==Code('h','p','1'),"3D belt shows the next exact native potion, no bottles in empty columns");
+        s.in.hand[0].p=s.out.belt[0].p;s.in.grip[0]=1;s.Step();
+        scene=framevr::potions::MakeScene(s.in,s.out);
+        Check(scene.count==1&&scene.items[0].pose.p.y>s.in.hand[0].p.y,"grab moves one bottle into the right grip, without a duplicate on the belt");
+        Check(!scene.items[0].empty&&s.out.request.action==Action::None,"grabbing does not consume");
+        // Hand at mouth is insufficient if the actual bottle opening misses.
+        s.in.hand[0].p={0,1.6f,-.08f};s.in.hand[0].q={0,0,.70710678f,.70710678f};
+        for(int i=0;i<20;++i)Check(s.Step().request.action==Action::None,"neck, not controller center, must reach the mouth");
+        s.in.hand[0].p={.115f,1.6f,-.08f};s.Step(6);
+        s.in.hand[0].p.z-=.2f;s.Step();s.in.hand[0].p.z+=.2f;
+        for(int i=0;i<10;++i)Check(s.Step().request.action==Action::None,"leaving mouth resets sip dwell");
+        const auto before=s.in.snapshot;
+        Request request;for(int i=0;i<5;++i){s.Step();if(s.out.request.action!=Action::None)request=s.out.request;}
+        Check(request.action==Action::Potion,"sustained bottle-neck contact requests a native drink");
+        s.in.reply={request.sequence,s.in.session,Result::Refused};s.Step();
+        Check(!s.out.bottleEmpty,"refused drink retains full bottle");
+        for(int i=0;i<30;++i)Check(s.Step().request.action==Action::None,"refused drink never auto-retries");
+        s.in.grip[0]=0;s.Step();scene=framevr::potions::MakeScene(s.in,s.out);
+        Check(s.out.bottle<0&&scene.count==1&&s.in.snapshot.belt==before.belt,"release returns unconsumed bottle");
+        s.in.active=false;s.Step();Check(framevr::potions::MakeScene(s.in,s.out).count==0,"menus hide physical bottles");
     }
     {
         Sim s;s.in.hand[0].p=s.out.belt[0].p;s.Step();s.in.grip[0]=1;s.Step();

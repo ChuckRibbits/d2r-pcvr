@@ -22,7 +22,7 @@ framevr::interaction::Request queued,waiting;
 uint64_t issuedAt=0,cancelEpoch=0;
 bool scheduled=false;
 template<class T>const T* Service(const PluginContext* c) {const T* p=nullptr;return c->QueryService(&p)==ServiceQueryResult::Success?p:nullptr;}
-Item Copy(const Items::ItemInfo& i){return {i.handle,i.runtimeId,i.code};}
+Item Copy(const Items::ItemInfo& i){return {i.handle,i.runtimeId,i.code,uint32_t(i.quality),i.qualityRecordId};}
 struct BeltRead {Snapshot* result;bool invalid=false;};
 Inventory::IterationAction __cdecl BeltItem(const PluginContext*,const Items::ItemInfo* i,void* user) noexcept {
     auto& read=*static_cast<BeltRead*>(user);
@@ -65,6 +65,7 @@ void Publish(Snapshot s) {
     s.revision=snapshot.revision;
     bool changed=s.session!=snapshot.session||s.activeSet!=snapshot.activeSet||s.equipmentKnown!=snapshot.equipmentKnown||
                  s.sets!=snapshot.sets||s.beltKnown!=snapshot.beltKnown||s.skills!=snapshot.skills||
+                 s.catalog!=snapshot.catalog||s.skillCount!=snapshot.skillCount||s.bindingBank!=snapshot.bindingBank||s.bindingsEditable!=snapshot.bindingsEditable||
                  s.vitalsKnown!=snapshot.vitalsKnown||int(s.health)!=int(snapshot.health)||int(s.mana)!=int(snapshot.mana)||
                  s.maxHealth!=snapshot.maxHealth||s.maxMana!=snapshot.maxMana;
     for(int i=0;i<4;++i) {
@@ -91,6 +92,15 @@ void __cdecl Apply(const PluginContext*,void*) noexcept {
     Publish(Collect());
     const auto s=Read();const auto now=GetTickCount64();
     bool valid=Fresh(s,r.session,now)&&now>=r.at&&now-r.at<250&&!gamestate::MenuOpen();
+    if(r.action==Action::BindSkill) {
+        {
+            std::lock_guard lock(mutex);
+            const bool accepted=valid&&epoch==cancelEpoch&&nativeui::Assign(r,s);
+            reply={r.sequence,r.session,accepted?Result::Applied:Result::Refused};
+        }
+        Publish(Collect()); // refresh wheel and any duplicates cleared by D2R
+        return;
+    }
     uint32_t command=0;
     switch(r.action) {
         case Action::Potion:{auto current=r;current.at=now;valid=valid&&SameBelt(s,current);command=0x17+r.index;break;}

@@ -10,8 +10,11 @@ from pathlib import Path
 from pathlib import PurePosixPath
 import shutil
 import subprocess
+import tempfile
 import urllib.request
 import zipfile
+from prepare_icons import prepare as prepare_icons
+from prepare_potions import prepare as prepare_potions, CODES as POTION_CODES
 
 ROOT = Path(__file__).resolve().parent.parent
 STEAM = Path.home() / '.local/share/Steam'
@@ -158,6 +161,27 @@ def main():
         payload[Path('d2rloader/runtime/d3dcompiler_47.dll')] = compiler.read_bytes()
     if args.openxr_loader:
         payload[Path('openxr_loader.dll')] = args.openxr_loader.read_bytes()
+    # Native artwork is read locally, never downloaded/bundled with the mod.
+    # Prepare before mutating the install and journal it with all other files.
+    with tempfile.TemporaryDirectory(prefix='d2r-vr-icons-') as temporary:
+        try:
+            result = prepare_icons(game, temporary)
+        except (OSError, ValueError, KeyError, IndexError) as error:
+            print(f'Native icon cache unavailable; wheel labels still work: {error}')
+        else:
+            for name in result['images'] + ['manifest.tsv', 'cache.json']:
+                payload[Path('d2rloader/plugins/d2r_vr_icons') / safe_relative(name)] = (Path(temporary) / name).read_bytes()
+            print(f"Prepared {result['icons']} native icon bindings from your installed game.")
+    with tempfile.TemporaryDirectory(prefix='d2r-vr-potions-') as temporary:
+        try:
+            result = prepare_potions(game, temporary)
+        except (OSError, ValueError, KeyError, IndexError) as error:
+            print(f'Native potion models unavailable; retaining icon fallback: {error}')
+        else:
+            for name in [code + '.pvr' for code in POTION_CODES] + ['cache.json']:
+                payload[Path('d2rloader/plugins/d2r_vr_potions') / safe_relative(name)] = (Path(temporary) / name).read_bytes()
+            print(f"Prepared {result['models']} original 3D potion models from your installed game.")
+    require_game_closed()
     snapshot = args.backup_dir / datetime.now().strftime('%Y%m%d-%H%M%S-%f')
     snapshot.mkdir(parents=True)
     shutil.copytree(saves, snapshot / 'saves')

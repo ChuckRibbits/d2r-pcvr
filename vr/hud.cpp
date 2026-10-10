@@ -68,6 +68,9 @@
 
 #include "journal_ui.h"
 #include "../steamvr/journal.h"
+#ifdef D2RVR_NATIVE_OPENXR
+#include "../steamvr/ui_world.h"
+#endif
 namespace hud {
 namespace {
 
@@ -318,10 +321,10 @@ void ZoomedUv(const rect& r, float ax, float ay, float z, uint32_t w, uint32_t h
 struct Labels { resource tex{}; resource_view srv{}; uint32_t w = 0, h = 0; bool fresh = true;
                 bool on = false; float keep[2][4] = {}; ULONGLONG at = 0; };
 Labels g_lab;
-std::atomic<bool> journalActive{false};
-std::atomic<int> journalEye{0};
-uint64_t journalAt=0;
-int32_t journalCrop[4]{};
+std::atomic<bool> uiActive{false},workspaceActive{false};
+bool uiCaptured=false;
+std::atomic<int> uiEye{0};
+int32_t uiCrop[4]{};
 
 bool CopyLayer(command_list* cl, resource layer, uint32_t w, uint32_t h) {
     device* dev = cl->get_device();
@@ -449,23 +452,30 @@ void OnBind(command_list* cl, uint32_t count, const resource_view* rtvs, resourc
     auto it = g_drawing.find(cl);
     if (it != g_drawing.end() && it->second.layer.handle != now.handle) {
         const resource_view layerRtv = it->second.layer;
-        if(journalActive.load()) {
+        if(uiActive.load()) {
             const auto tex=dev->get_resource_from_view(layerRtv);const auto desc=dev->get_resource_desc(tex);
             int32_t native[4]{};
-            if(gamestate::JournalRect(native)) {
-                const auto region=framevr::journal::Crop({native[0],native[1],native[2],native[3]},desc.texture.width,desc.texture.height,g_uiScale.load());
+            if(workspaceActive.load()||gamestate::JournalRect(native)) {
+                const auto region=workspaceActive.load()?framevr::journal::Rect{0,0,int(desc.texture.width),int(desc.texture.height)}:
+                    framevr::journal::Crop({native[0],native[1],native[2],native[3]},desc.texture.width,desc.texture.height,g_uiScale.load());
                 const rect crop{region.x,region.y,region.x+region.w,region.y+region.h};
                 if(crop.right>crop.left&&crop.bottom>crop.top) {
-                    if(journalEye.load()==0&&CopyLayer(cl,tex,desc.texture.width,desc.texture.height)) {
-                        journalCrop[0]=crop.left;journalCrop[1]=crop.top;journalCrop[2]=crop.right-crop.left;journalCrop[3]=crop.bottom-crop.top;
-                        journalAt=GetTickCount64();
+                    if(uiEye.load()==0&&CopyLayer(cl,tex,desc.texture.width,desc.texture.height)) {
+                        uiCrop[0]=crop.left;uiCrop[1]=crop.top;uiCrop[2]=crop.right-crop.left;uiCrop[3]=crop.bottom-crop.top;
+                        uiCaptured=true;
                     }
-                    g_lab.on=false;g_pic.on[kBar]=g_pic.on[kMap]=false;
-                    ++g_frames;DrainRetired(dev);
-                    cl->clear_render_target_view(layerRtv,kEmpty);
-                    g_drawing.erase(it);
-                    if(now.handle){const auto d=dev->get_resource_desc(dev->get_resource_from_view(now));g_drawing[cl]=Drawing{now,false,d.texture.width,d.texture.height};}
-                    return;
+                    if(uiCaptured) {
+                        g_lab.on=false;g_pic.on[kBar]=g_pic.on[kMap]=false;
+                        ++g_frames;DrainRetired(dev);
+                        // Leave the native UI source intact. The verified
+                        // final compositor samples only the world in BOTH
+                        // eyes while this UI is submitted as one XR layer.
+                        // Avoid clearing a shared/cached source beneath the
+                        // native compositor between its two eye passes.
+                        g_drawing.erase(it);
+                        if(now.handle){const auto d=dev->get_resource_desc(dev->get_resource_from_view(now));g_drawing[cl]=Drawing{now,false,d.texture.width,d.texture.height};}
+                        return;
+                    }
                 }
             }
         }
@@ -503,21 +513,27 @@ void OnReset(command_list* cl) {
 }  // namespace
 
 void Register() {
+#ifdef D2RVR_NATIVE_OPENXR
+    framevr::uiworld::Register(&Log);
+#endif
     reshade::register_event<reshade::addon_event::clear_render_target_view>(&OnClear);
     reshade::register_event<reshade::addon_event::bind_render_targets_and_depth_stencil>(&OnBind);
     reshade::register_event<reshade::addon_event::reset_command_list>(&OnReset);
     reshade::register_event<reshade::addon_event::bind_scissor_rects>(&OnScissor);
 }
 
-void JournalFrame(bool active,int eye){
-    if(active&&!journalActive.exchange(active)){std::lock_guard lock(g_lock);journalAt=0;}
-    else journalActive=active;
-    journalEye=eye;
+void UiFrame(bool active,bool workspace,int eye){
+    std::lock_guard lock(g_lock);
+    if(!active||eye==0)uiCaptured=false;
+    uiActive=active;workspaceActive=workspace;uiEye=eye;
+#ifdef D2RVR_NATIVE_OPENXR
+    framevr::uiworld::SetActive(active);
+#endif
 }
-uint64_t JournalTexture(uint32_t& width,uint32_t& height,int32_t crop[4]) {
+uint64_t UiTexture(uint32_t& width,uint32_t& height,int32_t crop[4]) {
     std::lock_guard<std::mutex> lock(g_lock);
-    if(!journalActive.load()||!g_lab.tex.handle||GetTickCount64()-journalAt>150)return 0;
-    width=g_lab.w;height=g_lab.h;std::copy_n(journalCrop,4,crop);return g_lab.tex.handle;
+    if(!uiActive.load()||!uiCaptured||!g_lab.tex.handle)return 0;
+    width=g_lab.w;height=g_lab.h;std::copy_n(uiCrop,4,crop);return g_lab.tex.handle;
 }
 void SetHide(int mode) { g_hide.store(mode); }
 void SetMenuOpen(bool open) { g_menu.store(open); }

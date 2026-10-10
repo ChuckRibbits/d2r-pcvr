@@ -34,15 +34,15 @@ std::vector<uint8_t> Paint(const Model& m,Hit hover,const char* runtimeStatus){
         text("LEFT HAND",{58,209,520,46},true);text("RIGHT HAND",{676,209,520,46},true);
         struct Help{const char* key;const char* action;};
         const Help left[]={{"Stick","Walk"},{"X","Inventory / close game panels"},{"Y (hold)","Spell and equipment wheel"},{"Grip + Y","Open VR settings"},{"Stick click","Map"},{"Grip + stick click","Reset eye height"},{"Grip near belt / hip","Grab potion / pull weapon set"}};
-        const Help right[]={{"Stick","Turn"},{"Trigger","Use selected skill or button attack"},{"A","Interact / loot"},{"B","Cancel grab or close menu"},{"Stick click","Swap native weapon sets"},{"Grip near belt / hip","Grab potion / pull weapon set"},{"Trigger at bow string","Nock, pull back, release to shoot"}};
+        const Help right[]={{"Stick","Turn / scroll native panels"},{"Trigger","Attack / panel click or drag"},{"A","Interact / panel right-click"},{"B","Cancel grab or close menu"},{"Stick click","Swap native weapon sets"},{"Grip near belt / hip","Grab potion / pull weapon set"},{"Trigger at bow string","Nock, pull back, release to shoot"}};
         for(int i=0;i<7;++i)for(int side=0;side<2;++side){
             const auto& h=(side?right:left)[i];const int x=side?658:40,y=264+i*72;
             fill({x,y,582,66},i%2?RGB(19,31,39):RGB(22,36,44));
             text(h.key,{x+18,y+5,550,31},false,false,RGB(116,220,219));
             text(h.action,{x+18,y+33,550,34});
         }
-        text(m.Get()[Motion]>.5f?"Motion combat: swing melee freely. Select a spell, then point and press trigger.":"Motion combat is off. Enable it on the VR tab to use swings, bow draw and the wheel.",{40,788,1200,42});
-        text("Drink: grip a belt bottle, bring it to your mouth and tip. Release grip to cancel.",{40,832,1200,42},false,false,quiet);
+        text(m.Get()[Motion]>.5f?"Quick cast: hold Left Trigger + a face button; add Left Grip for alternate slots. See wheel labels.":"Motion combat is off. Enable it on the VR tab to use swings, bow draw and the wheel.",{40,788,1200,42});
+        text("Panels: Left Trigger = Ctrl; Right Grip = Shift; Right B = Back. Keep D2R focused.",{40,832,1200,42},false,false,quiet);
     }else{
         text(m.page==Page::VR?"Change values, then Apply. Controls are blocked while this panel is open.":runtimeStatus,{40,197,1200,42},false,false,quiet);
         for(int row=0;row<RowCount(m.page);++row){

@@ -1,5 +1,6 @@
 #pragma once
 #include "math.h"
+#include "potion_pose.h"
 #include <array>
 #include <cstdint>
 #include <cstring>
@@ -13,11 +14,34 @@ inline bool Valid(Pose p) {
     const float n=p.q.x*p.q.x+p.q.y*p.q.y+p.q.z*p.q.z+p.q.w*p.q.w;
     return std::isfinite(p.p.x)&&std::isfinite(p.p.y)&&std::isfinite(p.p.z)&&std::isfinite(n)&&n>.9f&&n<1.1f;
 }
+// OpenXR grip +X points out of the LEFT palm: the back of the wrist is -X.
+// Grip +/-Y is the thumb/knuckle edge, not either face of the wrist.
+// https://registry.khronos.org/OpenXR/specs/1.1/html/xrspec.html#semantic-path-grip-pose
+inline Vec WristNormal(Pose hand) {return math::Normalized(math::Rotate(hand.q,{-1,0,0}));}
+inline Pose WristPanel(Pose hand,Pose head) {
+    const Vec normal=WristNormal(hand);
+    // Keep the panel on the watch face, rotating only within that plane so
+    // the text reads upright instead of sideways when the forearm is crossed.
+    auto right=math::Cross(math::Rotate(head.q,{0,1,0}),normal);
+    if(math::Dot(right,right)<.01f)right=math::Cross(math::Rotate(hand.q,{0,0,-1}),normal);
+    right=math::Normalized(right);
+    return {hand.p+math::Rotate(hand.q,{-.055f,0,.06f}),
+        math::FromAxes(right,math::Cross(normal,right),normal)};
+}
+inline bool WristPresented(Pose hand,Pose head) {
+    if(!Valid(hand)||!Valid(head))return false;
+    const Vec toward=head.p-hand.p;
+    const float distance2=math::Dot(toward,toward);
+    return distance2>.01f&&distance2<.75f*.75f&&
+        math::Dot(WristNormal(hand),math::Normalized(toward))>.55f;
+}
 enum class Owner { Combat, Wheel, Bottle, Holster, Journal, Rearm };
 enum class Potion { Unknown, Health, Mana, Rejuvenation, Antidote, Thawing, Stamina };
 struct Item {
     uint64_t handle=0;
     uint32_t id=0,code=0;
+    uint32_t quality=0;
+    int32_t qualityRecord=-1;
     bool operator==(const Item&) const = default;
 };
 constexpr uint32_t Code(char a,char b=' ',char c=' ',char d=' ') {
@@ -47,6 +71,7 @@ struct Belt {
 };
 struct Skill {
     int32_t id=-1,level=0,charges=-1;
+    int32_t owner=-1;
     bool known=false,available=false;
     char name[64]{};
     bool operator==(const Skill&) const = default;
@@ -58,13 +83,17 @@ struct Snapshot {
     std::array<std::array<Item,2>,2> sets{};
     std::array<Belt,4> belt{};
     std::array<Skill,8> skills{};
+    std::array<Skill,128> catalog{}; // currently owned, active (non-passive) skills
+    uint32_t skillCount=0;
+    int32_t bindingBank=-1;
+    bool bindingsEditable=false;
     float health=0,maxHealth=0,mana=0,maxMana=0;
     bool vitalsKnown=false;
 };
 inline bool Fresh(const Snapshot& s,uint64_t session,uint64_t now) {
     return session&&s.session==session&&now>=s.at&&now-s.at<=650;
 }
-enum class Action { None, Potion, Equip, Quest, Map, Character, Skills };
+enum class Action { None, Potion, Equip, Quest, Map, Character, Skills, BindSkill };
 enum class Result { None, Pending, Applied, Refused, Cancelled };
 struct Request {
     Action action=Action::None;
@@ -72,7 +101,17 @@ struct Request {
     int index=-1;
     Item item{};
     uint32_t revision=0;
+    int skill=-1,skillOwner=-1,bank=-1,previousSkill=-1,previousOwner=-1;
 };
+inline bool CanBind(const Snapshot& s,const Request& r,uint64_t now) {
+    if(!Fresh(s,r.session,now)||!s.bindingsEditable||r.index<0||r.index>=8||
+       s.bindingBank!=r.bank||(r.bank!=0&&r.bank!=16)||s.skills[r.index].id!=r.previousSkill||
+       s.skills[r.index].owner!=r.previousOwner)return false;
+    if(r.skill==-1)return r.skillOwner==-1;
+    for(unsigned i=0;i<s.skillCount&&i<s.catalog.size();++i)
+        if(s.catalog[i].id==r.skill&&s.catalog[i].owner==r.skillOwner&&s.catalog[i].available)return true;
+    return false;
+}
 struct Reply {uint64_t sequence=0,session=0;Result result=Result::None;};
 inline bool SameBelt(const Snapshot& s,const Request& r) {
     if(!Fresh(s,r.session,r.at)||r.index<0||r.index>=4)return false;
@@ -86,21 +125,33 @@ inline bool PotionGone(const Snapshot& s,const Request& r) {
 }
 
 // Wheel coordinates are shared by painter and hit testing. Eight native slots
-// clockwise from twelve o'clock; center is weapon mode; bottom tab is utilities.
+// clockwise from the upper-right segment; center is weapon mode.
 constexpr float Pi=3.14159265358979323846f;
-inline int WheelCell(float u,float v,int previous=-1) {
+constexpr float WheelPhase=Pi/8;
+inline int WheelCell(float u,float v,int previous=-1,bool skillPage=false) {
     if(!std::isfinite(u)||!std::isfinite(v)||u<0||u>1||v<0||v>1)return -1;
-    if(v>.90f&&u>.72f&&u<.98f)return 10;
-    if(v>.90f&&u>.06f&&u<.70f)return 9;
+    if(v>.895f&&v<.965f) {
+        if(u>.03f&&u<.33f)return 9;
+        if(u>.35f&&u<.65f)return 10;
+        if(u>.67f&&u<.97f)return 11;
+    }
+    if(skillPage) {
+        if(u>.74f&&u<.95f&&v>.12f&&v<.19f)return 8; // clear selected slot
+        for(int i=0;i<8;++i) {
+            const float x=.05f+(i%2)*.46f,y=.23f+(i/2)*.145f;
+            if(u>x&&u<x+.44f&&v>y&&v<y+.13f)return i;
+        }
+        return -1;
+    }
     const float x=u-.5f,y=v-.45f,r=std::hypot(x,y);
     if(r<.105f)return 8;
     if(r<.14f||r>.405f)return -1;
     float a=std::atan2(x,-y);if(a<0)a+=2*Pi;
     if(previous>=0&&previous<8) {
-        const float difference=std::remainder(a-previous*Pi/4,2*Pi);
+        const float difference=std::remainder(a-WheelPhase-previous*Pi/4,2*Pi);
         if(std::fabs(difference)<Pi/8+.035f)return previous;
     }
-    return int(std::floor(a/(Pi/4)+.5f))%8;
+    return int(std::floor(a/(Pi/4)))%8;
 }
 struct Config {
     float waistBelowEyes=.65f,beltForward=.26f,hipWidth=.28f;
@@ -109,7 +160,7 @@ struct Config {
 struct Input {
     double time=0;
     uint64_t session=0,epoch=0,at=0; // at shares the native snapshot's monotonic clock
-    bool active=false,tracked[2]{},wheel=false,cancel=false,reservedLeft=false,spell=false;
+    bool active=false,tracked[2]{},wheel=false,cancel=false,reservedLeft=false,spell=false,quickCast=false;
     Pose head{},hand[2]{};
     float trigger=0,grip[2]{};
     int hover=-1;
@@ -123,9 +174,11 @@ struct Output {
     int feedback=0,feedbackHand=0;
     Result result=Result::None;
     Item bottleItem{};
-    bool bottleEmpty=false;
+    bool bottleEmpty=false,beltReady=false;
     Pose body{},belt[4]{},holster[2]{};
     Request request{};
+    int editor=0,editSlot=-1,editPage=0,editPages=1,editCount=0;
+    std::array<Skill,8> editOptions{};
 };
 class Engine {
     Config config{};
@@ -138,14 +191,22 @@ class Engine {
     Pose body{},grab{};
     Request held{},pending{};
     Result result=Result::None;
+    int editor=0,editSlot=-1,editPage=0,editBank=-1,choiceCount=0;
+    Skill previousBinding{};
+    std::array<Skill,128> choices{};
     void Drop() {bottle=bottleHand=holster=holsterHand=-1;drinkStart=0;spent=consumed=false;held={};owner[0]=owner[1]=Owner::Combat;}
 public:
     void Configure(Config c) {config=c;Reset();}
-    void Reset() {primed=false;rearm=true;wheelLatch=true;Drop();pending={};result=Result::None;criticalUntil=criticalAgain=0;}
+    void Reset() {primed=false;rearm=true;wheelLatch=true;Drop();pending={};result=Result::None;criticalUntil=criticalAgain=0;editor=0;editSlot=-1;}
     bool Utility() const {return utility;}
     bool WheelVisible(bool heldButton) const {return heldButton&&!wheelLatch;}
+    bool SkillPage() const {return editor==2;}
     Output Step(const Input& in) {
         Output out;
+        // Passive vitals need the left hand and head only. Combat/interactions
+        // still require both hands; a resting/occluded right hand must not hide
+        // a correctly presented watch or permit an input through the guard.
+        out.wrist=in.active&&in.session&&in.tracked[1]&&std::isfinite(in.time)&&WristPresented(in.hand[1],in.head);
         const bool trigger=in.trigger>(triggerWas?.2f:.55f);
         const bool grips[2]={in.grip[0]>.6f,in.grip[1]>.6f};
         const uint64_t now=in.at;
@@ -163,14 +224,15 @@ public:
         const bool triggerEdge=trigger&&!triggerWas;
         const bool edges[2]={grips[0]&&!gripWas[0],grips[1]&&!gripWas[1]};
         triggerWas=trigger;gripWas[0]=grips[0];gripWas[1]=grips[1];
-        if(!in.wheel)wheelLatch=false;
+        if(!in.wheel){wheelLatch=false;editor=0;editSlot=-1;}
         if(!trigger&&!grips[0]&&!grips[1])rearm=false;
-        if(in.cancel) {Drop();rearm=true;wheelLatch=true;pending={};out.cancelPending=true;}
+        if(in.cancel) {Drop();rearm=true;wheelLatch=true;pending={};out.cancelPending=true;editor=0;editSlot=-1;}
         if(pending.action!=Action::None) {
             if(in.reply.sequence==pending.sequence&&in.reply.session==session&&in.reply.result!=Result::Pending) {
                 result=in.reply.result;resultAt=in.time;out.feedback=result==Result::Applied?2:3;
                 if(result==Result::Applied&&pending.action==Action::Equip)stowed=false;
                 if(result==Result::Applied&&pending.action==Action::Potion&&pending.item==held.item)consumed=true;
+                if(result==Result::Applied&&pending.action==Action::BindSkill&&editor){editor=1;editSlot=-1;}
                 pending={};
             } else if(in.time-pendingAt>1.5) {result=Result::Refused;resultAt=in.time;out.feedback=3;pending={};out.cancelPending=true;}
         }
@@ -200,16 +262,37 @@ public:
         out.body=body;
         const float waist=config.seated?.43f:config.waistBelowEyes;
         for(int i=0;i<4;++i)out.belt[i]={body.p+math::Rotate(body.q,{(i-1.5f)*.095f,-waist+.08f,-config.beltForward}),body.q};
+        out.beltReady=true;
         for(int i=0;i<2;++i)out.holster[i]={body.p+math::Rotate(body.q,{(i==0?1:-1)*config.hipWidth,-waist,-.06f}),body.q};
         auto distance=[](Vec a,Vec b){return std::sqrt(math::Dot(a-b,a-b));};
-        const Vec wristNormal=math::Rotate(in.hand[1].q,{0,1,0});
-        out.wrist=distance(in.hand[1].p,in.head.p)<.65f&&math::Dot(wristNormal,math::Normalized(in.head.p-in.hand[1].p))>.65f;
         const bool wheel=in.wheel&&!wheelLatch&&bottle<0&&holster<0;
         if(wheel) {
             out.wheel=true;out.utility=utility;out.hover=in.hover;out.block=true;
             owner[0]=owner[1]=Owner::Wheel;
-            if(!rearm&&triggerEdge) {
-                if(in.hover==10){out.settings=true;out.wheel=false;wheelLatch=true;rearm=true;}
+            if(editor&&fresh&&in.snapshot.bindingBank!=editBank){editor=1;editSlot=-1;editBank=in.snapshot.bindingBank;rearm=true;}
+            if(!rearm&&triggerEdge&&pending.action==Action::None) {
+                if(editor==2) {
+                    if(in.hover==11){editor=1;editSlot=-1;}
+                    else if(in.hover==9)editPage=std::max(0,editPage-1);
+                    else if(in.hover==10)editPage=std::min(std::max(0,(choiceCount-1)/8),editPage+1);
+                    else if(in.hover==8||(in.hover>=0&&in.hover<8&&editPage*8+in.hover<choiceCount)) {
+                        const auto skill=in.hover==8?Skill{}:choices[editPage*8+in.hover];
+                        if(fresh&&in.snapshot.bindingsEditable&&request(Action::BindSkill,editSlot)) {
+                            pending.skill=skill.id;pending.skillOwner=skill.owner;pending.bank=editBank;
+                            pending.previousSkill=previousBinding.id;pending.previousOwner=previousBinding.owner;
+                            out.request=pending;
+                        } else out.feedback=3;
+                    }
+                    rearm=true;
+                } else if(editor==1) {
+                    if(in.hover==9||in.hover==11){editor=0;editSlot=-1;}
+                    else if(in.hover>=0&&in.hover<8&&fresh&&in.snapshot.bindingsEditable) {
+                        editSlot=in.hover;editPage=0;previousBinding=in.snapshot.skills[editSlot];
+                        choices=in.snapshot.catalog;choiceCount=std::min<int>(in.snapshot.skillCount,choices.size());editor=2;
+                    } else out.feedback=3;
+                    rearm=true;
+                } else if(in.hover==11){editor=1;editBank=in.snapshot.bindingBank;editSlot=-1;utility=false;out.utility=false;rearm=true;}
+                else if(in.hover==10){out.settings=true;out.wheel=false;wheelLatch=true;rearm=true;}
                 else if(in.hover==9){utility=!utility;out.utility=utility;rearm=true;}
                 else if(in.hover==8) {out.select=-1;stowed=false;wheelLatch=true;out.wheel=false;rearm=true;out.feedback=1;}
                 else if(in.hover>=0&&in.hover<8) {
@@ -230,7 +313,7 @@ public:
                     rearm=true;
                 }
             }
-            if(utility&&!rearm&&edges[0]&&in.hover>=4&&in.hover<8) {
+            if(!editor&&utility&&!rearm&&edges[0]&&in.hover>=4&&in.hover<8) {
                 const auto& b=in.snapshot.belt[in.hover-4];
                 if(fresh&&b.known&&b.count&&b.Next().handle) {
                     bottle=in.hover-4;bottleHand=0;held={Action::Potion,0,session,now,bottle,b.Next(),b.revision};
@@ -238,14 +321,22 @@ public:
                 }
             }
         } else if(bottle<0&&holster<0)owner[0]=owner[1]=Owner::Combat;
-        if(!wheel&&!rearm&&bottle<0&&holster<0&&pending.action==Action::None&&fresh) {
+        if(!wheel&&!in.quickCast&&!rearm&&bottle<0&&holster<0&&pending.action==Action::None&&fresh) {
+            float nearestHand=.095f;
             for(int h=0;h<2;++h) {
                 if(h==1&&in.reservedLeft)continue;
-                for(int i=0;i<4;++i)if(distance(in.hand[h].p,out.belt[i].p)<.095f) {
-                    out.nearBelt=i;
+                int nearest=-1;float reach=.095f;
+                for(int i=0;i<4;++i) {
                     const auto& b=in.snapshot.belt[i];
-                    if(edges[h]&&b.known&&b.count&&b.Next().handle) {
-                        bottle=i;bottleHand=h;held={Action::Potion,0,session,now,i,b.Next(),b.revision};
+                    const float d=distance(in.hand[h].p,out.belt[i].p);
+                    if(b.known&&b.count&&b.Next().handle&&d<reach){nearest=i;reach=d;}
+                }
+                if(nearest>=0) {
+                    if(reach<nearestHand){out.nearBelt=nearest;nearestHand=reach;}
+                    const auto& b=in.snapshot.belt[nearest];
+                    if(edges[h]) {
+                        bottle=nearest;bottleHand=h;held={Action::Potion,0,session,now,nearest,b.Next(),b.revision};
+                        out.nearBelt=nearest;
                         owner[h]=Owner::Bottle;out.feedback=1;out.feedbackHand=h;break;
                     }
                 }
@@ -272,14 +363,15 @@ public:
             if(!grips[bottleHand]||(!spent&&(!fresh||!SameBelt(in.snapshot,held)))) {Drop();rearm=true;}
             else {
                 out.bottle=bottle;out.bottleHand=bottleHand;out.bottleItem=held.item;out.bottleEmpty=consumed;owner[bottleHand]=Owner::Bottle;
-                const Vec mouth=in.head.p+math::Rotate(in.head.q,{0,-.1f,-.08f});
-                if(!spent&&distance(in.hand[bottleHand].p,mouth)<.23f&&math::Rotate(in.hand[bottleHand].q,{0,1,0}).y<.25f) {
+                if(!spent&&potions::AtMouth(in.hand[bottleHand].p,in.hand[bottleHand].q,in.head.p,in.head.q)) {
                     if(!drinkStart)drinkStart=in.time;
                     if(in.time-drinkStart>=.25&&request(Action::Potion,bottle,held.item,held.revision))spent=true;
                 } else drinkStart=0;
             }
         }
         out.stowed=stowed;out.result=result;
+        out.editor=editor;out.editSlot=editSlot;out.editPage=editPage;out.editPages=std::max(1,(choiceCount+7)/8);
+        if(editor==2)for(int i=0;i<8&&editPage*8+i<choiceCount;++i){out.editOptions[i]=choices[editPage*8+i];++out.editCount;}
         out.block=out.block||rearm||stowed||pending.action!=Action::None;
         for(int h=0;h<2;++h)out.owner[h]=rearm?Owner::Rearm:owner[h];
         return out;

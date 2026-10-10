@@ -57,28 +57,84 @@ not generate melee velocity. The layout currently assumes a right-handed player.
 
 | Action | Control |
 |---|---|
-| Inventory / close game panels | Left X, unchanged |
+| Open/close tabbed character menu | Left primary face button (Left X / Frame Left A) |
 | VR settings and controls reference | Left Grip + Left Y; also **VR SETTINGS** at the bottom of the wheel |
 | Spell wheel | Hold Left Y; raise/turn left palm toward you; aim right-hand laser at a wedge and click trigger |
+| Assign wheel skills | Hold Left Y → **EDIT SKILLS** → choose a slot → choose a learned skill; **CLEAR SLOT** removes a binding |
 | Select weapon combat | Click **WEAPON** in the wheel center; release selection trigger before attacking |
 | Selected skill / spell | Point right hand and press trigger; hold to use the native repeat/channel behavior |
+| Quick cast without opening wheel | Hold Left Trigger, point right hand and press a face button; add Left Grip for the alternate four slots (mapping below) |
 | Melee swing / thrust | Swing the equipped weapon through a creature; no grip, trigger, or preselected target |
 | Button attack / crossbow | Weapon combat mode, right trigger; native crossbow firing |
 | Nock bow | Bow equipped: bring right hand to string and hold right trigger; no left grip required |
 | Draw and shoot | Pull string hand back at least 12 cm (28 cm total separation), then release trigger |
 | Cancel active grab/draw | Right B; release inputs before starting again |
-| Physical belt potion | Approach a front-belt bottle with either hand; fresh grip grabs it without consuming |
-| Drink | Hold grip, bring bottle near mouth and tip nearly horizontal for 0.25 seconds; release grip to discard the preview |
+| Physical belt potion | Reach to an original 3D bottle on the front belt and hold **Right Grip** to grab; left-hand grip also works |
+| Drink | Keep grip held, bring the bottle's opening to your mouth and tip nearly horizontal for 0.25 seconds; release to return an unused potion |
 | Quick potion | Left Y → **EQUIPMENT / BELT** → trigger a potion wedge; grip on a potion wedge instead grabs it into the right hand |
 | Weapon holsters | Reach either hand to a hip marker, fresh grip then pull out 12 cm; right hip requests set I, left hip set II |
 | Seated weapon selection | Utility wheel → **Weapon I** or **Weapon II** |
 | Stow/draw | Utility wheel → **Stow weapons** / **Draw weapons**; native equipped stats stay unchanged |
-| Wrist health/mana | Turn left palm toward face; brief status cue also appears at low health or low mana in spell mode |
+| Wrist health/mana | Look at the **back of your left wrist, like checking a watch**, within 75 cm of your eyes; red life and blue mana orbs appear there. No button required. Brief status cue also appears at low health or low mana in spell mode |
 | Quest journal | Utility wheel → **Journal**; initially follows left hand. Squeeze then release left grip to pin; grip near it to pick it back up |
 | Journal controls | Right laser + trigger uses native page controls/act tabs; Right B closes it; Left X retains ordinary inventory/menu behavior |
 | Quick native weapon swap | Right stick click, unchanged |
 | Walk / snap turn | Sticks; paused while wheel or journal is open |
 | Height reset / map | Left grip + left stick click / plain left stick click, unchanged |
+
+### Inventory, conversations and trading in VR
+
+Native in-game menus share a room-anchored surface in front of you. The full
+tabbed character menu uses an opaque black background in both eyes, as
+requested after the transparent world backdrop differed between eyes. Other
+panels retain the world backdrop. Inventory/equipment, NPC
+choices and speech, shops, stash, cube, waypoint, skills and character panels
+retain D2R's original artwork, text, prices, grids and tooltips. Inventory and
+shop panes keep their native relative positions; hovering a comparison tooltip
+does not resize or move the surface. The quest log retains its handheld/pinned
+placement. Title and character-selection screens keep the existing flat panel.
+
+| Native panel action | Control |
+|---|---|
+| Open/close the tabbed character menu | Left primary face button |
+| Hover, select, pick up/place, drag | Right laser + right trigger; native click/drag behavior |
+| Context action (native right-click) | Right A while pointing; action depends on the item and panel |
+| Scroll | Right stick up/down while pointing |
+| Native Ctrl modifier | Hold left trigger while clicking |
+| Native Shift modifier | Hold right grip while clicking |
+| Back / close | Right B, or the native close button |
+
+D2R handles all moves, equips, purchases, sales, prices and confirmation dialogs.
+The menu button opens the native tabbed container directly; inventory, character,
+skills and other pages are selected through its tabs. Back is no longer needed
+to reach that container from a detached inventory page. If the game starts in
+keyboard/mouse mode, the same button requests controller mode first and waits
+for the native layout switch before opening the tabs; no thumbstick click is
+required.
+No item or save data is edited by this presentation layer. Keep the game window
+focused. Movement and combat input are suspended while a panel is open; the world
+continues rendering and follows the game's own pause rules. A trigger held on
+entry must be released before clicking. Briefly missing the surface during a
+drag retains the held button; tracking/focus loss releases it. If native UI
+capture or conversion is unavailable, the existing flat menu is retained.
+
+Laser input retains an already active controller layout. Native UI pointer
+events and hover updates temporarily use mouse widget behavior on the dispatch
+thread; rendering and nested panel-open messages keep the actual input mode.
+All laser UI events are consumed, including clicks on empty panel space. A
+separate map-click guard blocks gameplay clicks while menus own input. Queued
+button releases stay protected briefly after a menu closes; ownership expires
+after VR relinquishes the pointer. The adapter requires matching native input
+signatures. Desktop input outside VR retains automatic layout switching.
+Native item operations with this routing still need an in-game check. The SDR
+UI texture is converted from sRGB to linear light with coverage preserved for
+the XR panel. Its original resolution is retained. A verified final composite
+uses only the world image in both eyes while the shared menu layer is visible;
+the native UI texture is not cleared underneath the game's compositor.
+
+The build and GPU conversion/input tests cover this implementation. First
+in-headset checks of menu placement, tooltips and native item operations remain
+pending.
 
 ### In-headset VR settings
 
@@ -118,26 +174,84 @@ including a held trigger across closing or tracking loss. Also check native
 inventory/journal controls after closing. Synthetic previews and automated
 tests do not establish headset readability, laser alignment or stereo behavior.
 
+To assign skills without a gamepad, hold **Left Y**, point at **EDIT SKILLS**
+and click the right trigger. Choose any of the eight wheel slots, then choose
+an available skill from the icon list. **PREVIOUS/NEXT** changes pages;
+**CLEAR SLOT** removes the chosen binding. Keep Y held during editing, release
+the trigger between clicks, then use **DONE** or release Y when finished.
+Right B cancels. Editing blocks movement and combat, and choosing a skill does
+not cast it. Only a confirmed native readback shows **Assigned**.
+
+The catalog contains the character's learned and item-granted active abilities;
+passives and unlearned skills are excluded. The Town Portal scroll/tome sources
+use the game's combined controller shortcut. Edits target the current native
+weapon-set binding bank. D2R applies its normal duplicate-slot rules (assigning
+the same skill can clear its previous slot) and saves bindings normally.
+If equipment, session or the selected slot changes before applying, the edit is
+refused; choose the slot again. Headset assignment/persistence checks remain pending.
+
 The wheel uses the eight existing native controller assignments: **B, X, Y, RB**
-and four **LT +** variants. Assign skills in the native controller UI. Names come
-from the game; unreadable assignments show their native button instead. A known
+and four **LT +** variants. The wheel reads saved controller bindings even after
+mouse/keyboard menu input; assigned icons begin loading before the wheel opens.
+The native binding stays visible above every skill icon, including while editing.
+All four **LT +** slots can be edited with the same slot → skill picker; the skill
+picker title names the chosen native binding. The native controller UI can also
+assign these slots. Names come from the game; unreadable assignments show Unknown. A known
 unassigned slot is disabled. A lit slot indicates a present assignment, not a
-promise that mana, charges or cooldown permit casting. No spell icons or charge
-counts yet. Selecting closes the wheel and latches it until Y is released;
+promise that mana, charges or cooldown permit casting. Native spell icons come
+from the local game cache; charge/cooldown counts remain pending. Slots run
+clockwise from the upper-right segment. Equipment icons follow the live weapon
+sets and next potion in each belt column, including potion tiers. Empty slots
+show no item icon. The generated stone-and-bronze frame supplies background and
+selection highlights; native icons keep their original art. Selecting closes
+the wheel and latches it until Y is released;
 release the selection trigger before casting. **WEAPON** returns from spell mode.
+
+Quick casting uses the **same saved bindings**, while keeping the selected
+right-trigger ability. Point with the right hand, hold **Left Trigger**, then
+press one face button. Hold the button to use the native repeat/channel behavior;
+release it to stop. Add **Left Grip** before pressing for the alternate slot.
+
+| VR face button while Left Trigger is held | Native binding | With Left Grip also held |
+|---|---|---|
+| Right A | B | LT + B |
+| Right B | X | LT + X |
+| Left A on Frame / X on Quest | Y | LT + Y |
+| Left B on Frame / Y on Quest | RB | LT + RB |
+
+The wheel shows these VR shortcuts below the skill names. These chords require
+motion controls and apply during gameplay; menus keep their pointer/modifier
+controls. While quick casting, face buttons do not also open inventory/wheel,
+interact, cancel, or open settings, and Left Grip cannot grab a belt potion or
+holster. Entering the layer cancels a drawn bow without shooting. Release and
+press again after changing the alternate-slot grip, tracking interruption or
+weapon swap. Unassigned/unavailable slots cannot cast; costs and timing remain
+native. Candidate host tests pass; headset quick-cast validation is pending.
 
 Equipping a different melee weapon or bow selects weapon mode. Javelins and
 throwing weapons use free-swing contacts; select the native Throw skill to throw.
 Full 3D spell projectiles, reliable terrain-aware destinations and spell-family
 adapters remain pending behind the same simple point-and-trigger control.
 
-The belt displays the native next item in each column. A grab captures its item
-identity; a refill/reorder cancels an unspent grab. The held preview keeps that
-item's color even after automatic refill. It becomes **Used** only after the
+The belt displays the native next item in each column using its original 3D
+model and mipmapped texture, including all five healing/mana tiers and both
+rejuvenation tiers. Bottles stay upright at the waist and follow the held grip
+in six degrees of freedom. Reach highlights the nearest occupied slot; a grab
+moves that bottle off the belt into the hand without consuming it. Empty columns
+have no bottle. A refill/reorder cancels an unspent grab. The held model keeps its
+captured identity even after automatic refill. It darkens only after the
 native item disappears. A request, grab haptic or mouse click is not proof of
 consumption. A refused attempt never automatically retries. Confirm HP/mana and
 belt changes in the first test. Success feedback is brief and a grab consumes
 at most once. Weapon swaps similarly wait for the observed equipment set.
+
+The 18 cm bottle's opening must be within 10.5 cm of the mouth while tipped for
+0.25 seconds; bringing only the controller center to the face does not count.
+Release grip to return an unused bottle. The installer extracts the models
+locally; if the cache cannot load, labeled flat previews remain available.
+Bottles render as stereo first-person geometry with their own depth buffer;
+world/arm occlusion, transparent liquid simulation and native scene lighting
+are not implemented in this pass. The physical interaction awaits headset testing.
 
 Holsters represent complete native sets I/II, including shields and quivers;
 they do not move arbitrary inventory items. Native set inference still requires
@@ -274,8 +388,8 @@ animation plus the crossed-plane arrow and V-string guides.
 
 The palette, neutral bottle and fallback nock/bow guides are lightweight
 OpenXR quads, stereo-positioned but not depth-tested against the game world.
-The bottle is a flat icon. Actual skill icons/names, belt contents/counts and
-health/mana displays need a read-only game-state adapter.
+The held bottle now uses the original 3D model when the local cache is available. Spell/item icons, belt contents/counts
+and health/mana now use the read-only native snapshot and local icon cache.
 Do not describe this prototype as completed physics combat.
 
 ## Cancellation and performance
@@ -350,8 +464,9 @@ Headset checks, in order:
    release, menus/cancel/tracking loss, walking, weapon swaps and NPC bows.
 8. Check native animations, labels, lighting and frame pacing for regressions.
 
-Next phases: real inventory/skill metadata, waist or wrist belt with counts,
-health/mana glance UI, accurate world target/loot highlights, responsive
+Implemented since this original checklist: native inventory/skill metadata,
+waist potion belt with counts and original models, and wrist health/mana UI.
+Remaining work includes headset validation of drinking, accurate world target/loot highlights, responsive
 point-and-trigger projectile casting/ground reticle, refined weapon/body collider
 dimensions and two-hand grips, bowstring and arrow meshes, crossbow loading,
 physical weapon throwing, haptic success signals,

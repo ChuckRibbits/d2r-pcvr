@@ -26,7 +26,7 @@ struct Input {
     float handOffset[3] = {};   // added to both hands, metres in the same frame (x right, y up, z back)
     bool haveEye = false;       // eyeModel is known: hands hang off the camera, not the hero's head bone
     float eyeModel[3] = {};     // the camera's eye point in the hero's model space
-    bool followTrackedNeck = false; // native 6DoF: pose the body under the tracked eyes
+    bool followTrackedNeck = false; // native 6DoF requested; skeleton hook gates on its current world frame
     float headPitch = 0, headRoll = 0; // radians, same sample as the hands
     bool haveYaw = false;       // yawInModel is known (the hero's model matrix is found)
     float yawInModel = 0.0f;    // where the camera looks, as a yaw in model space (0 = model forward)

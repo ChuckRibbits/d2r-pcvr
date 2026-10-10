@@ -1,17 +1,107 @@
 // Standalone GDI atlas check. Uses synthetic state; never opens game data.
+#include <windows.h>
+#include <wincodec.h>
 #include "interaction_ui.h"
+#include "interaction_icons.h"
 #include <cstdio>
 #include <cstring>
+#include <limits>
+static bool SavePng(const char* path,const std::vector<uint8_t>& rgba,UINT width,UINT height) {
+    wchar_t file[1024]{};MultiByteToWideChar(CP_UTF8,0,path,-1,file,1024);
+    const HRESULT co=CoInitializeEx(nullptr,COINIT_MULTITHREADED);
+    IWICImagingFactory* wic=nullptr;IWICStream* stream=nullptr;
+    IWICBitmapEncoder* encoder=nullptr;IWICBitmapFrameEncode* frame=nullptr;
+    auto bgra=rgba;for(size_t i=0;i<bgra.size();i+=4)std::swap(bgra[i],bgra[i+2]);
+    WICPixelFormatGUID format=GUID_WICPixelFormat32bppBGRA;
+    const bool ok=SUCCEEDED(CoCreateInstance(CLSID_WICImagingFactory,nullptr,CLSCTX_INPROC_SERVER,IID_PPV_ARGS(&wic)))&&
+        SUCCEEDED(wic->CreateStream(&stream))&&SUCCEEDED(stream->InitializeFromFilename(file,GENERIC_WRITE))&&
+        SUCCEEDED(wic->CreateEncoder(GUID_ContainerFormatPng,nullptr,&encoder))&&
+        SUCCEEDED(encoder->Initialize(stream,WICBitmapEncoderNoCache))&&SUCCEEDED(encoder->CreateNewFrame(&frame,nullptr))&&
+        SUCCEEDED(frame->Initialize(nullptr))&&SUCCEEDED(frame->SetSize(width,height))&&
+        SUCCEEDED(frame->SetPixelFormat(&format))&&IsEqualGUID(format,GUID_WICPixelFormat32bppBGRA)&&
+        SUCCEEDED(frame->WritePixels(height,width*4,UINT(bgra.size()),bgra.data()))&&
+        SUCCEEDED(frame->Commit())&&SUCCEEDED(encoder->Commit());
+    for(IUnknown* p:{static_cast<IUnknown*>(frame),static_cast<IUnknown*>(encoder),static_cast<IUnknown*>(stream),static_cast<IUnknown*>(wic)})if(p)p->Release();
+    if(SUCCEEDED(co))CoUninitialize();return ok;
+}
 int main(int argc,char** argv) {
     using namespace framevr::interaction;
+    struct Cleanup {~Cleanup(){icons::Shutdown();}} cleanup;
+    if(argc>3){wchar_t path[32768]{};MultiByteToWideChar(CP_UTF8,0,argv[3],-1,path,32768);icons::Directory(path);}
     Snapshot s;s.session=1;s.equipmentKnown=s.beltKnown=s.vitalsKnown=true;s.activeSet=1;
     s.health=74;s.maxHealth=100;s.mana=39;s.maxMana=80;
     const char* names[]={"Fire Bolt","Raise Skeleton","Corpse Explosion","Teleport","Frozen Armor","Bone Spear","Amplify Damage","Unassigned"};
-    for(int i=0;i<8;++i){s.skills[i].known=true;s.skills[i].available=i!=7;std::snprintf(s.skills[i].name,64,"%s",names[i]);}
+    const int ids[]={36,70,74,54,40,84,66,-1};
+    for(int i=0;i<8;++i){s.skills[i].id=ids[i];s.skills[i].known=true;s.skills[i].available=i!=7;std::snprintf(s.skills[i].name,64,"%s",names[i]);}
     for(int i=0;i<4;++i){auto& b=s.belt[i];b.known=true;b.count=i==3?0:4-i;b.items[0]={uint64_t(i+1),uint32_t(i),i==1?Code('m','p','2'):i==2?Code('r','v','s'):Code('h','p','3')};}
     s.sets[0][0]={1,1,Code('w','n','d')};s.sets[1][0]={2,2,Code('h','b','w')};
-    Output o;o.hover=1;o.wheel=true;o.utility=argc>2;
+    const bool wristCheck=argc>2&&std::strcmp(argv[2],"--wrist-check")==0;
+    const bool wheelCheck=argc>2&&std::strcmp(argv[2],"--wheel-check")==0;
+    const bool editorCheck=argc>2&&std::strcmp(argv[2],"--editor-check")==0;
+    Output o;o.hover=1;o.wheel=true;o.utility=argc>2&&!wristCheck;
+    // Match runtime: queue the snapshot as soon as it is known, before either
+    // wheel page has ever been painted. Opening/toggling must not be necessary.
+    icons::Prefetch(s);
+    if(!icons::Wait(10000))return 20;
     const auto pixels=Paint(s,o,2);if(pixels.size()!=1024*1024*4)return 1;
+    if(editorCheck) {
+        s.bindingsEditable=true;s.bindingBank=0;s.skillCount=7;
+        std::copy_n(s.skills.begin(),7,s.catalog.begin());
+        std::vector<uint8_t> gallery(1536*768*4);
+        for(int page=0;page<2;++page) {
+            o.utility=false;o.editor=page+1;o.editSlot=1;o.editCount=7;
+            o.editOptions=s.skills;o.hover=page?3:1;
+            const auto atlas=Paint(s,o,2);
+            for(int y=0;y<768;++y)std::memcpy(&gallery[(y*1536+page*768)*4],&atlas[y*1024*4],768*4);
+        }
+        if(!SavePng(argv[1],gallery,1536,768))return 25;
+        std::puts("Skill editor preview: slot selection and native skill icon list rendered");return 0;
+    }
+    if(wheelCheck) {
+        if(argc<4||!icons::Get("s36")||!icons::Get(s.belt[0].Next())||!icons::Get(s.sets[0][0]))return 21;
+        std::vector<uint8_t> gallery(1536*768*4);
+        for(int page=0;page<2;++page) {
+            o.utility=page;const auto atlas=Paint(s,o,2);
+            for(int y=0;y<768;++y)std::memcpy(&gallery[(y*1536+page*768)*4],&atlas[y*1024*4],768*4);
+            if(atlas[3]!=0)return 22;
+        }
+        const auto before=Paint(s,o,2);
+        s.belt[0].items[0]=s.belt[1].items[0];const auto after=Paint(s,o,2);
+        // A different actual item must update its wedge, not merely its count.
+        const float a=4*Pi/4+WheelPhase;
+        const int x=int(384+std::sin(a)*218),y=int(345.6f-std::cos(a)*218);
+        int changed=0;
+        for(int dy=-60;dy<30;++dy)for(int dx=-50;dx<50;++dx)
+            if(std::memcmp(&before[((y+dy)*1024+x+dx)*4],&after[((y+dy)*1024+x+dx)*4],4))++changed;
+        if(changed<100)return 23;
+        if(!SavePng(argv[1],gallery,1536,768))return 24;
+        std::puts("Wheel artwork: native skills/items, changing slot contents, transparent frame and both pages passed");return 0;
+    }
+    if(wristCheck) {
+        std::vector<uint8_t> gallery(512*1024*4);
+        const float values[]={100,74,0,std::numeric_limits<float>::quiet_NaN()};
+        for(int row=0;row<4;++row) {
+            s.health=values[row];s.mana=row==1?39:values[row]*.8f;
+            s.vitalsKnown=row!=3;
+            const auto atlas=Paint(s,o,2);if(atlas.size()!=pixels.size())return 10;
+            for(int y=0;y<256;++y)std::memcpy(&gallery[((row*256+y)*512)*4],&atlas[((y+768)*1024+512)*4],512*4);
+            // Vitals updates must leave every other interactive tile unchanged.
+            for(int y=0;y<1024;++y)for(int x=0;x<(y<768?1024:512);++x)
+                if(std::memcmp(&atlas[(y*1024+x)*4],&pixels[(y*1024+x)*4],4))return 11;
+        }
+        auto p=[&](int row,int x,int y){return &gallery[((row*256+y)*512+x)*4];};
+        const auto red=p(0,148,125),blue=p(0,364,125);
+        if(red[0]<red[2]*2||blue[2]<blue[0]*2)return 12; // actual embedded art decoded
+        for(int row=0;row<4;++row)if(p(row,0,0)[3]!=0)return 13;
+        if(p(1,148,90)[0]>=red[0]||p(1,148,155)[0]<p(1,148,155)[2]*2)return 14;
+        if(p(1,364,100)[2]>=blue[2]||p(1,364,155)[2]<p(1,364,155)[0]*2)return 15;
+        if(std::memcmp(p(2,148,125),p(3,148,125),4)||p(2,148,155)[0]>p(2,148,155)[2])return 16;
+        int partial=0;for(size_t i=3;i<512*256*4;i+=4)if(gallery[i]>0&&gallery[i]<255)++partial;
+        if(!partial)return 17;
+        if(!SavePng(argv[1],gallery,512,1024))return 18;
+        std::puts("Wrist artwork: embedded PNG, live levels, unknown/empty state, alpha and atlas isolation passed");
+        return 0;
+    }
     FILE* file=std::fopen(argc>1?argv[1]:"interaction-preview.ppm","wb");if(!file)return 2;
     std::fprintf(file,"P6\n1024 1024\n255\n");
     for(size_t i=0;i<pixels.size();i+=4)if(std::fwrite(pixels.data()+i,1,3,file)!=3){std::fclose(file);return 3;}

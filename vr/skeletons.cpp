@@ -2052,6 +2052,11 @@ void Arms(uintptr_t self) {
     }
     if (in.mode == 2 || in.followTrackedNeck)
         if (const FreshHandsFn f = g_freshHands.load()) if(!f(&in))in.followTrackedNeck=false;
+#ifdef D2RVR_NATIVE_OPENXR
+    // Resolve frame availability here, after refreshing this pose's eye/head
+    // sample. A timer tick between pairs must not disable just one eye's body.
+    in.followTrackedNeck = in.followTrackedNeck && framevr::Active();
+#endif
     PoseBody(self, hero, in);
 }
 

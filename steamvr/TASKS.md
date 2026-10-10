@@ -1,11 +1,64 @@
 # D2R Steam Frame PCVR tasks
 
-Updated 2026-10-09. Target: first-person D2R on this Linux PC through Proton,
+Updated 2026-10-10. Target: first-person D2R on this Linux PC through Proton,
 SteamVR streaming to Steam Frame. Test with offline **Nekro** or the owner's new bow-test Amazon only.
 The DevilutionX standalone/tabletop project remains parked separately.
 
 Unchecked tasks remain open, including implemented changes awaiting headset
 verification. Build checks and automated tests do not establish visual correctness.
+
+- [ ] Headset-verify original 3D potion belt: all 15 native models/textures are
+  prepared locally. Right Grip grabs the closest occupied bottle; bringing its
+  opening to the mouth while tipped for 0.25 s requests one native use. Release
+  returns an unused bottle. No duplicate held/belt model; native confirmation,
+  refusal and mixed-column refill retain the captured identity. Host ownership,
+  nearest-slot/sip tests, all-asset conversion and D3D12 stereo readback pass;
+  synthetic stereo preview inspected. Scene/arm occlusion and transparent liquid
+  remain outside this pass. See latest potion deployment in HANDOFF.
+
+- [ ] Match trade menu backgrounds in both eyes: tabbed-menu opaque backing now
+  extends to Vendor/Trade/Gamble panels. Build, panel routing and GPU color/alpha
+  tests pass; installed/relaunched, awaiting headset verification.
+- [x] Laser-activate the vendor item's Buy popup. Native controller cursor
+  snapping overwrote correct Yes/No hover with the vendor grid underneath.
+  Suppress that snap only during owned laser callbacks, preserving controller
+  layout/navigation and skill assignment. Regression tests, live Yes/No hover
+  and No cancellation pass; installed after Save & Exit. Owner confirmed
+  "it works" in the headset. See `build-frame/latest-buy-popup-deployment.json`.
+- [x] Always show native slot shortcuts beside spell wheel icons. Current slots
+  are B/X/Y/RB and LT variants. Owner approved Left Trigger + face buttons,
+  with Left Grip selecting alternate four. Implemented with separate native/VR
+  labels in wheel/editor and guarded input ownership; all four LT slots have
+  editor regression coverage. Host tests, preview and cross-build pass. Staged
+  in `build-frame/latest-quick-cast-deployment.json`; installed after verifying
+  game closed, relaunched. Owner verified shortcut combinations working.
+  Alternate-slot assignment has automated coverage; a separate headset
+  edit/reload check remains part of broader binding coverage below.
+
+- [x] Owner verified Left A now opens the tabbed menu directly at startup.
+- [x] Headset-check laser binding editor: EDIT SKILLS → slot → learned skill;
+  owner reports "ok it works great."
+- [ ] Broader binding coverage: clear/reassign, both weapon banks, and persistence
+  after Save & Exit/reload.
+- [x] Verify matching black backgrounds for the tabbed menu in both eyes.
+  Owner explicitly chose this over further transparent-backdrop debugging.
+- [ ] Deferred by owner: native tabbed-menu button legends should be usable
+  without VR shortcuts consuming those buttons or closing a nested panel.
+- [x] Correct town portal tilt and displaced center. Stereo screenshots show
+  separate dark center/glowing ring despite the active smoke correction. Native
+  scripted-mesh facing candidate built/installed; targeted to town-portal asset
+  paths, shares center-eye position and keeps the effect upright. Activated, but
+  owner video/new stereo pairs still show separated pieces. Second candidate
+  recenters the captured native center offsets, narrowly scoped to NewStuff's
+  center-position envelope. Owner verified the outside endpoint looks great,
+  but the linked town endpoint still separates. A live trace proved the same
+  asset has a pitched center offset there: full 3D radius 3 around `(0,4,0)`,
+  rather than horizontal radius 3 at Y=4. Third candidate handles the full 3D
+  shell and uses one shared authored center, with asset/transform guards intact.
+  Captured-coordinate/yaw/pitch tests, 12 signatures and cross-build pass.
+  Installed after Save & Exit; owner verified both ends: "ok it all works now."
+  Other cosmetic/portal variants remain untested. Record:
+  `build-frame/latest-portal-return-deployment.json`. See HANDOFF for evidence.
 
 User verified the changes so far in the 18:20 build, then reported inventory
 closing on laser clicks and no visible belt. Individual regression scenarios
@@ -25,6 +78,13 @@ Broader performance/visual regression checks remain below.
   and grounded leg IK on recognized rigs. Body/bow math tests pass. Verify
   leaning, small room steps, crouching, and weapon alignment in the headset.
   Native actor/collision movement remains controlled by the game.
+- [x] Correct left-eye shoulder flashing even while still with hands lowered.
+  Live Nekro trace found neck-follow disabled in 6/50 left-eye poses while the
+  matching right-eye poses stayed aligned. Move transient frame gating from
+  the background input timer to the skeleton hook; candidate built, body and
+  portal math regressions pass. Installed after Save & Exit; post-install trace
+  shows all 160 poses aligned and all 79 complete pairs matching. Owner confirmed
+  "Flashing stopped." See `build-frame/latest-body-pose-deployment.json`.
 - [x] Recover preset-induced blur/ghosting: owner restored FXAA through Video
   options (`Anti Aliasing` 3 → 1) with DLSS off and 100% resolution scale, and
   reported **"Clearer now"** on October 9. Recheck AA after changing presets.
@@ -77,6 +137,28 @@ in SteamVR. The new panel is not a binding editor and does not pause simulation.
 
 ## Next interaction work — owner request, October 9
 
+- [x] Correct wrist-vitals reveal to OpenXR left grip **-X**, the back of the
+  wrist. The owner confirmed a watch-style gesture and reported the initial
+  +/-Y inversion invisible. New pose/heading/distance tests cover the actual
+  anatomical axis, upright text and lost right-hand tracking. Reach is 75 cm;
+  preserve the brief critical-status cue. Owner confirmed visible and upright.
+- [x] Generate gothic life/mana orb artwork from a local native HUD reference;
+  embed it in the DLL, wire live fill levels/numbers and preserve transparency.
+  Full/partial/empty/unavailable-state previews and atlas-isolation checks pass.
+- [x] Verify revised wrist gesture, text direction and orb readability in headset:
+  owner confirmed **"Visible and upright"** after the -X watch-face correction.
+- [x] Add native icons to the wheels based on the actual spell/item in each
+  slot; refresh on assignments, weapon swaps and belt changes. Native cache is
+  prepared locally by the installer, not included with distributed artwork.
+- [x] Generate and embed a matching gothic wheel frame with eight slots, center
+  weapon socket and footer buttons; align ray selection with the painted slots.
+- [x] Headset-check themed wheel: owner reports it works; saved Raise Skeleton
+  assignment initially appeared late (whole slot, not just its image).
+- [x] Read the controller binding table independently of native mouse/keyboard
+  mode; retain native active bank and prefetch assigned icons before opening.
+- [x] Verify saved Raise Skeleton appears on the first wheel opening after load;
+  owner confirmed all fixed with the controller-only reader.
+
 The owner will test the bow-height correction later. Work can proceed without
 another headset capture. See [INTERACTIONS.md](INTERACTIONS.md) for the concrete
 control design, current code capabilities and implementation order.
@@ -91,7 +173,7 @@ or gesture wind-up. Native resource and cast-rate gates still apply.
 - [x] Implement session-tagged equipment/belt/skill/vitals snapshots, per-hand
   ownership, native transaction expiry/confirmation and cancellation/rearm.
 - [x] Implement radial wheel with localized names, selection latch and native
-  button fallback. Original icons, charge/readiness metadata remain pending.
+  button fallback. Native icons added; charge/readiness metadata remain pending.
 - [x] Implement real potion type/count, exact-item grab/drink and quick use,
   authoritative removal acknowledgement, reachable front belt and wrist gauges.
 - [x] Implement configurable native-set I/II holsters, seated positions, explicit
@@ -101,7 +183,7 @@ or gesture wind-up. Native resource and cast-rate gates still apply.
 - [ ] Verify all new interactions in headset; candidate is staged, not installed.
   Check empty/identical weapon sets, belt ordering/refill/refusal, UI crop, native
   tab clicks, stow visibility and tracking/recenter cancellation.
-- [ ] Add original skill icons, item silhouettes/friendly names, detailed bottle
+- [ ] Add item friendly names and affix colors, charge/cooldown badges, detailed bottle
   geometry, optional scene-depth occlusion and additional journal pages.
 - [ ] Implement casting adapters for projectile, channel, ground/summon,
   unit/corpse, self-buff and aura skills behind the same point-and-trigger
@@ -224,7 +306,8 @@ or gesture wind-up. Native resource and cast-rate gates still apply.
   in the latest build and prefers avoiding a constantly floating panel. Prioritize
   an on-demand wrist/waist belt and quick potion controls; compare compact wrist
   health/mana, situational feedback and an optional persistent display. Use original
-  icons and keep potion counts readable. Dedicated VR belt is not implemented.
+  icons and keep potion counts readable. Wrist vitals are user-verified;
+  the 3D potion belt is now installed and awaits the check at the top of this list.
 - [ ] Extract the real UI texture with correct alpha, rather than cropping a
   backbuffer containing scenery. Upstream HUD sharing exists; native OpenXR
   transport does not consume it yet. Keep menus/text at full quality.
@@ -308,7 +391,8 @@ or gesture wind-up. Native resource and cast-rate gates still apply.
   off-hand strikes/shield collisions remain open.
 - [ ] Replace prototype slot text/flat bottle/draw-line guides with actual skill
   metadata and 3D item presentation. Native names/belt counts/wrist vitals are
-  implemented in the staged interaction candidate; headset verification remains.
+  implemented; original 3D potion models are now installed with GPU validation.
+  Headset potion verification remains; this is not general inventory item meshing.
 - [ ] Add pitch-sensitive spell placement, parries, crossbow loading and throwing.
   Refine held-bow presentation across rigs and melee collider dimensions.
   Damage/resources stay native, with the explicitly requested deterministic hit

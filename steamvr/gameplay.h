@@ -1,6 +1,7 @@
 #pragma once
 #include "math.h"
 #include <cstdint>
+#include "skill_slots.h"
 
 // Room-space gesture recognizer. No game memory, damage, inventory edits or
 // synthetic velocity from head/camera turning. Right hand = 0, left = 1.
@@ -40,6 +41,8 @@ struct Input {
     // Pointer cell: 0..7 native controller skills, 8 attack, 9 swap,
     // 10/11 unused, 12..15 belt columns. -1 = no hit.
     int hover=-1;
+    bool quickCast=false;
+    int quickSkill=-1;
 };
 struct Output {
     bool attack=false, block=false, palette=false, bowDrawing=false, rayValid=false;
@@ -64,10 +67,9 @@ inline int PaletteCell(float u,float v) {
 }
 // Values from XInput's public button constants; no Windows dependency in tests.
 inline uint16_t SkillButtons(int slot) {
-    constexpr uint16_t buttons[]={0x2000,0x4000,0x8000,0x0200};
-    return slot>=0&&slot<8?buttons[slot%4]:0;
+    return skills::Buttons(slot);
 }
-inline bool SkillModifier(int slot) { return slot>=4&&slot<8; }
+inline bool SkillModifier(int slot) { return skills::Alternate(slot); }
 
 class Engine {
     bool primed=false, triggerWas=false, gripWas=false, blockedTrigger=true;
@@ -100,7 +102,7 @@ public:
         // Hitches, recenter/pose discontinuities and equipment changes cancel
         // pending actions. Held controls must be released before starting again.
         if(!primed||dt<=0||dt>.10||changed||Length(in.hand[0].p-previousHand)>.35f||Length(in.hand[1].p-previousLeft)>.35f||
-           (in.weapon==Weapon::Melee&&selection<0&&bottle<0&&!in.palette&&RotationDistance(previousRotation,in.hand[0].q)>35*dt)) {
+           (in.weapon==Weapon::Melee&&selection<0&&bottle<0&&!in.palette&&!in.quickCast&&RotationDistance(previousRotation,in.hand[0].q)>35*dt)) {
             Cancel();primed=true;previousTime=in.time;previousHand=in.hand[0].p;previousRotation=in.hand[0].q;previousLeft=in.hand[1].p;
             if(changed&&(in.weapon==Weapon::Bow||in.weapon==Weapon::Melee))selection=-1;
             weapon=in.weapon;equipment=in.equipment;triggerWas=trigger;gripWas=grip;
@@ -142,6 +144,11 @@ public:
             out.block=true;return out;
         }
         if(in.palette) {out.block=true;return out;}
+        if(in.quickCast) {
+            drawing=false;bowWasCharged=false;pulseUntil=shotAimUntil=0;blockedTrigger=true;
+            if(in.quickSkill>=0&&in.quickSkill<skills::Count)out.skill=in.quickSkill;
+            return out; // preserve selected trigger skill; no melee or bow release
+        }
         if(blockedTrigger) {out.block=true;return out;}
 
         if(in.weapon==Weapon::Bow&&selection<0) {

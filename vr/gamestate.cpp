@@ -35,14 +35,17 @@
 #include "d2r_vr_state.h"
 #include "interactionstate.h"
 #include "journal_ui.h"
+#include "../steamvr/native_panels.h"
 #include <mutex>
 #ifdef D2RVR_NATIVE_OPENXR
 #include "logging.h"
+#include "panel_input.h"
 #endif
 
 using namespace D2RL;
 
 namespace gamestate {
+void __cdecl FinishMenuOpen(const PluginContext*,void*) noexcept;
 namespace {
 
 const PluginContext* g_ctx = nullptr;
@@ -63,6 +66,8 @@ std::atomic<bool> g_readQueued{false};
 std::atomic<uint32_t> g_weapon{D2RVR_WEAPON_UNKNOWN};
 std::atomic<uint32_t> g_menu{0};
 std::atomic<bool> g_journalOnly{false};
+std::atomic<bool> g_opaqueMenu{false};
+uint64_t g_menuOpenUntil=0; // UI thread only: wait for native layout transition
 std::mutex journalMutex;
 int32_t journalRect[4]{};
 uint64_t journalAt=0;
@@ -285,6 +290,8 @@ void __cdecl ReadItems(const PluginContext* ctx, void*) noexcept {
     PlayerHandle player = InvalidPlayerHandle;
     const bool havePlayer = g_inventory && g_inventory->getLocalPlayer(ctx, &player) == Inventory::Result::Success && player != InvalidPlayerHandle;
     g_player.store(havePlayer ? player : 0);
+    if(!havePlayer)g_menuOpenUntil=0;
+    else if(g_menuOpenUntil)FinishMenuOpen(ctx,nullptr);
     if (!g_inventory || !g_items || !havePlayer) {
         g_weapon.store(D2RVR_WEAPON_UNKNOWN);
         g_type.store(D2RVR_TYPE_UNKNOWN);
@@ -411,12 +418,7 @@ std::set<std::string> g_panels;   // open panels, UI thread only
 // (HUDPanel, MiniMenuPanel, HireablesPanel, TooltipsPanel, ShowItemsPanel...)
 // stay open all game and are not menus - "Menu" alone matched MiniMenuPanel.
 bool IsMenuPanel(const std::string& n) {
-    if (n.rfind("HUD", 0) == 0 || n.rfind("MiniMenu", 0) == 0) return false;
-    static const char* const kMenu[] = {"Vendor", "PlayerInventory", "Bank", "Stash", "HoradricCube", "CharacterStats",
-                                        "SkillsTree", "SkillSelect", "QuestLog", "Pause", "Waypoint", "Npc", "NPC",
-                                        "Trade", "Gamble", "HirelingInventory", "MercenaryInventory", "Options"};
-    for (const char* k : kMenu) if (n.find(k) != std::string::npos) return true;
-    return false;
+    return framevr::panels::Modal(n);
 }
 
 bool Has(const char* s, const char* part) {
@@ -444,6 +446,8 @@ SharedEvents::UiMessageAction __cdecl OnUiMessage(const PluginContext*, const Sh
         else if (!strcmp(command, "ClosePanel") || !strcmp(command, "UnloadPanel")) g_panels.erase(text);
         else if (!strcmp(command, "UnloadAll") || !strcmp(command, "CloseAll")) g_panels.clear();
         g_autoMap.store(g_panels.count("AutoMap") ? 1 : 0);
+        g_opaqueMenu.store(std::any_of(g_panels.begin(),g_panels.end(),
+            [](const auto& name){return framevr::panels::OpaqueBackground(name);}));
         bool menu = false;
         for (const std::string& n : g_panels) if (IsMenuPanel(n)) { menu = true; break; }
         g_menu.store(menu ? 1 : 0);
@@ -588,6 +592,7 @@ int ObjectLight(uint32_t txt, uint32_t mode, float rgb[3]) {
 }
 
 bool JournalOnly(){return g_journalOnly.load();}
+bool OpaqueMenuOpen(){return g_opaqueMenu.load();}
 void ReadJournalRect() {
     if(!g_journalOnly.load()||!g_widgets)return;
     Widgets::WidgetHandle panel=0;Widgets::Rect r{};
@@ -661,20 +666,31 @@ bool SetAutoMap(bool open) {
     return g_threads->runOnUiThread(g_ctx, &DispatchAutoMap, open ? (void*)1 : nullptr) == Threads::Result::Success;
 }
 
+void __cdecl FinishMenuOpen(const PluginContext* ctx,void*) noexcept {
+    if(!g_menuOpenUntil)return;
+    if(GetTickCount64()>=g_menuOpenUntil){g_menuOpenUntil=0;Log("gamestate: controller layout not ready; tabbed menu opening cancelled");return;}
+#ifdef D2RVR_NATIVE_OPENXR
+    if(!panelinput::ControllerReady())return;
+#endif
+    g_menuOpenUntil=0;
+    Widgets::UiAction action{};action.structSize=sizeof action;
+    action.target="PanelManager";action.text=framevr::panels::TabbedMenu;action.command="OpenPanel";
+    const auto result=g_widgets->dispatchUiAction(ctx,&action);
+    char line[180];snprintf(line,sizeof line,"gamestate: left menu button OpenPanel UISwitcher in controller mode (result %u)",unsigned(result));Log(line);
+}
 void __cdecl DispatchMenuToggle(const PluginContext* ctx,void*) noexcept {
     if(!g_widgets||!g_widgets->dispatchUiAction)return;
-    // Snapshot first: dispatch invokes OnUiMessage synchronously and modifies
-    // g_panels. Keep HUD, map and other persistent panels alive.
-    std::vector<std::string> menus;
-    for(const auto& name:g_panels)if(IsMenuPanel(name))menus.push_back(name);
-    auto dispatch=[&](const char* command,const char* panel) {
-        Widgets::UiAction action{};action.structSize=sizeof action;
-        action.target="PanelManager";action.command=command;action.text=panel;
-        const auto result=g_widgets->dispatchUiAction(ctx,&action);
-        char line[180];snprintf(line,sizeof line,"gamestate: Left X %s %s (result %u)",command,panel,unsigned(result));Log(line);
-    };
-    if(menus.empty())dispatch("OpenPanel","PlayerInventoryExpansionLayout");
-    else for(const auto& name:menus)dispatch("ClosePanel",name.c_str());
+    // UISwitcher owns the selected page, ControllerOverlay, tabs, focus and
+    // close lifecycle. Opening a bare inventory page bypasses that setup and
+    // leaves detached pages/overlays after Back or tab changes.
+    if(g_menuOpenUntil){g_menuOpenUntil=0;return;} // a second press cancels a pending open
+    if(!g_panels.count(framevr::panels::TabbedMenu)){
+        g_menuOpenUntil=GetTickCount64()+2000;FinishMenuOpen(ctx,nullptr);return;
+    }
+    Widgets::UiAction action{};action.structSize=sizeof action;
+    action.target="PanelManager";action.text=framevr::panels::TabbedMenu;action.command="ClosePanel";
+    const auto result=g_widgets->dispatchUiAction(ctx,&action);
+    char line[180];snprintf(line,sizeof line,"gamestate: left menu button %s %s (result %u)",action.command,action.text,unsigned(result));Log(line);
 }
 bool ToggleMenus() {
     return g_ctx&&g_threads&&g_threads->runOnUiThread&&g_widgets&&g_widgets->dispatchUiAction&&

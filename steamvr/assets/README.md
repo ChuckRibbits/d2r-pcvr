@@ -1,0 +1,44 @@
+# Wrist vitals artwork
+
+`wrist-vitals.png` is new artwork generated with the built-in OpenAI image tool
+on 2026-10-09. The style reference was the life/mana HUD in a local D2R gameplay
+capture (`build-frame/dlss-artifacts-20261009-162519/dlss-off.png`). That screenshot
+is development-only and is not distributed. The exact generation prompt is in
+[`wrist-vitals-prompt.txt`](wrist-vitals-prompt.txt).
+
+The source is a 1774 × 887 RGBA PNG with transparent surroundings. It is embedded
+in the plugin and preview executable by `interaction_assets.rc`, then decoded
+once with WIC at 512 × 256. No loose asset installation is required.
+
+Both source orbs are full. `interaction_ui.cpp` darkens the drained portion of
+each glass well from authoritative live life/mana values, retaining its glass
+highlight and leaving the stone figures intact. Runtime text is drawn into the
+empty nameplates. Unknown/stale vitals use empty wells and `-- / --`, never a
+misleading full orb. The final atlas preserves the source alpha.
+
+At the 512 × 256 runtime size the glass centers are `(147.8,125)` and `(364,125)`;
+their radii are approximately `(57.5,56.5)`. If replacing the artwork, update
+these masks and the nameplate rectangles in `interaction_ui.cpp` together.
+
+Run `interaction-preview.exe <output.png> --wrist-check` to render full, partial,
+empty and unavailable states and check fill/alpha/other-atlas-tile isolation.
+The preview uses synthetic values and never opens game data.
+
+## Wheel frame
+
+`wheel-frame.png` is new transparent artwork generated with the built-in OpenAI
+image tool on 2026-10-09, using the generated wrist artwork as its style reference.
+The exact prompt is in `wheel-frame-prompt.txt`. It supplies carved stone,
+aged-bronze dividers, eight empty slots, a center socket and two footer buttons.
+It contains no spell/item art or baked labels. It is embedded with the wrist art.
+
+At 768 square, the interactive center is `(384,345.6)`. Segments start at the
+top divider; their centers run clockwise from 22.5 degrees (upper right).
+`WheelCell` is shared by highlights and ray selection. Fonts, native icons,
+counts and state highlights are composited at runtime; the exterior retains
+source alpha. `interaction-preview.exe <output.png> --wheel-check <cache-dir>`
+renders both pages with synthetic assignments and locally extracted icons.
+
+Native spell/item icons are **not** in this folder or in the release. Run
+`steamvr/prepare_icons.py` against a legitimate local Steam installation to
+create `d2rloader/plugins/d2r_vr_icons`. See INSTALL.md for the command.

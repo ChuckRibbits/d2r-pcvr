@@ -10,6 +10,14 @@ This is an **offline single-player** preview for the **Steam edition of D2R
 product license by launching the original game through Steam while connected
 to the internet, then exit before installing. No game files or saves are shipped.
 
+The installer prepares spell/item icons and all 15 original potion models from
+your local Steam archives. These caches stay under `d2rloader/plugins/` and are
+included in installation backup/restore. For an existing installation, with D2R
+closed, run `python3 steamvr/prepare_potions.py --game "/path/to/Diablo II Resurrected"`
+(Windows: `py -3` instead of `python3`) alongside the updated plugin. No Blender,
+Rust, proprietary model SDK or network asset download is required. If preparation
+fails, the mod logs the reason and retains flat potion previews.
+
 **Verified:** Linux + Proton Experimental + SteamVR + Steam Frame, first-person
 gameplay. The latest source fixes creature name/health stereo depth and the
 reported square lighting patches. **Untested:** Quest 3, WiVRn, native Windows
@@ -188,9 +196,13 @@ to 33 ms on the test PC. This startup improvement is not an FPS benchmark.
   explicitly. Linux defaults to the game's Steam library prefix, Windows to
   `%USERPROFILE%\Saved Games\Diablo II Resurrected`. Battle.net installations
   have not been adapted to these Steam launch wrappers.
-- **30-day license warning:** exit; use normal Steam Play, without `--frame-vr`,
-  to refresh the license online. Then exit and try offline VR. Keep the same
-  game installation and Proton prefix. Do not replace the original executable.
+- **30-day license warning:** exit fully and retry once. A failed Wine service
+  startup has produced this warning even with a valid license; a clean restart
+  recovered without refreshing it. If it persists, use normal Steam Play,
+  without `--frame-vr`, to refresh the license online, then exit and try offline
+  VR. Keep the same installation and Proton prefix. Do not replace the original
+  executable. For diagnosis, save the Proton log before restarting and check
+  for `Couldn't start services.exe` / `Failed to open service manager`.
 - **No VR / flat view:** check the headset is connected and the correct OpenXR
   runtime is active. Read `GAME/d2rloader/logs/d2r-vr-frame.log`, the startup
   `d2r-vr-vrcam.log`, and `GAME/ReShade.log`. Linux Proton logs are in the
@@ -211,3 +223,29 @@ to 33 ms on the test PC. This startup improvement is not an FPS benchmark.
 Own licenses and upstream attribution are retained. Dependencies are downloaded
 from [D2RLoader](https://d2rloader.net/) and [ReShade](https://reshade.me/), rather
 than bundled with the preview. See `THIRD_PARTY.md` and `LICENSE`.
+
+## Native wheel icons
+
+The installer prepares spell and inventory icons from **your own installed
+Steam game**, on Linux or Windows. No additional packages are required beyond
+Python 3.9+. The gothic wheel/wrist frames are embedded in the plugin. Spell
+slots follow native controller assignments; equipment and belt icons follow
+the current items, including potion tiers and recognized unique/set artwork.
+Blank/unreadable slots retain text instead of a guessed icon. Affix color
+transforms and charge/cooldown badges are not implemented.
+
+After a game update, or if icons are missing, close D2R and rebuild the cache:
+
+```bash
+python3 steamvr/prepare_icons.py --game "/path/to/Diablo II Resurrected" --force
+```
+
+On Windows use `py -3` instead of `python3`, with the Windows game path. Run
+this from the extracted release/repository folder. The output is
+`d2rloader/plugins/d2r_vr_icons` under the game directory. Keep it local; do not
+upload it with the mod. The reader supports Steam static-container installs;
+other storage layouts fall back to wheel labels. Reinstalling through the
+installer also regenerates the cache. Cache file reads/decoding run on a worker
+at runtime and do not run on every frame. These installer changes are tested
+with fixtures and the owner's Steam installation; native Windows and Quest
+headset checks remain pending.

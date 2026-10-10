@@ -25,6 +25,12 @@ class InstallationTests(unittest.TestCase):
             exe = '3.3.93787'.encode('utf-16-le')
             (game / 'D2R.exe').write_bytes(exe)
             (game / 'ReShade.ini').write_text('existing config')
+            icon_dir = game / 'd2rloader/plugins/d2r_vr_icons'
+            icon_dir.mkdir(parents=True)
+            (icon_dir / 'manifest.tsv').write_text('old local cache')
+            potion_dir = game / 'd2rloader/plugins/d2r_vr_potions'
+            potion_dir.mkdir()
+            (potion_dir / 'hp1.pvr').write_bytes(b'previous potion')
             saves = install.default_saves(game)
             saves.mkdir(parents=True)
             (saves / 'Settings.json').write_text('{"Resolution Scale": 100}')
@@ -47,8 +53,19 @@ class InstallationTests(unittest.TestCase):
             common = ['install.py', '--game', str(game), '--deps', str(deps),
                       '--plugin', str(plugin), '--openxr-loader', str(loader),
                       '--saves', str(saves), '--backup-dir', str(root / 'backups')]
+            def icons(game, output):
+                out = Path(output)
+                for name in ('fixture.png', 'manifest.tsv', 'cache.json'):
+                    (out / name).write_bytes(b'local generated fixture')
+                return {'images': ['fixture.png'], 'icons': 1}
+            def potions(game, output):
+                for name in [code + '.pvr' for code in install.POTION_CODES] + ['cache.json']:
+                    (Path(output) / name).write_bytes(b'local potion fixture')
+                return {'models': len(install.POTION_CODES)}
             with patch.object(install, 'require_game_closed'), contextlib.redirect_stdout(io.StringIO()), \
-                    patch.object(install, 'COMPILER_HASH', hashlib.sha256(compiler.read_bytes()).hexdigest()):
+                    patch.object(install, 'COMPILER_HASH', hashlib.sha256(compiler.read_bytes()).hexdigest()), \
+                    patch.object(install, 'prepare_icons', side_effect=icons), \
+                    patch.object(install, 'prepare_potions', side_effect=potions):
                 with patch.object(sys, 'argv', common), patch.object(install, 'LOADER_HASH', 'incorrect'):
                     with self.assertRaises(SystemExit):
                         install.main()
@@ -59,6 +76,9 @@ class InstallationTests(unittest.TestCase):
                 snapshot = next((root / 'backups').iterdir())
                 self.assertEqual((game / 'D2R.exe').read_bytes(), exe)
                 self.assertFalse((game / 'dxgi.dll').exists())
+                self.assertEqual((icon_dir / 'fixture.png').read_bytes(), b'local generated fixture')
+                self.assertEqual((potion_dir / 'hp1.pvr').read_bytes(), b'local potion fixture')
+                self.assertTrue((potion_dir / 'rvl.pvr').is_file())
                 self.assertEqual((game / 'd2rloader/runtime/d3dcompiler_47.dll').read_bytes(), compiler.read_bytes())
                 self.assertFalse((game / 'd3dcompiler_47.dll').exists())
                 cfg=configparser.ConfigParser(allow_no_value=True)
@@ -75,6 +95,10 @@ class InstallationTests(unittest.TestCase):
                 self.assertEqual((game / 'ReShade.ini').read_text(), 'existing config')
                 self.assertEqual((game / 'D2R.exe').read_bytes(), exe)
                 self.assertFalse((game / 'D2RLoader.exe').exists())
+                self.assertFalse((icon_dir / 'fixture.png').exists())
+                self.assertEqual((icon_dir / 'manifest.tsv').read_text(), 'old local cache')
+                self.assertEqual((potion_dir / 'hp1.pvr').read_bytes(), b'previous potion')
+                self.assertFalse((potion_dir / 'rvl.pvr').exists())
                 self.assertFalse((game / 'openxr_loader.dll').exists())
                 self.assertFalse((game / 'd2rloader/runtime/d3dcompiler_47.dll').exists())
                 self.assertEqual(json.loads((saves / 'Settings.json').read_text())['Resolution Scale'], 100)

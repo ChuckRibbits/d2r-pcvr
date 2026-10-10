@@ -94,6 +94,9 @@ namespace gamestate { void Init(const D2RL::PluginContext* ctx); void Tick(); ui
 #include "dlss_mv.h"
 #include "dlss_depth.h"
 #include "billboards.h"
+#ifdef D2RVR_NATIVE_OPENXR
+#include "panel_input.h"
+#endif
 #include "pad_mirror_shared.h"
 
 #pragma intrinsic(_ReturnAddress)
@@ -759,6 +762,7 @@ void StartMatrixWatch();   // [debug] matrix_writer, below PickHeroMatrix
 void LoadSettings() {
     #ifdef D2RVR_NATIVE_OPENXR
     framevr::profile::Request(GetPrivateProfileIntW(L"debug",L"profile_capture",0,g_iniPath));
+    billboards::ConfigurePortalCenters(IniB(L"debug",L"portal_centers",true));
     framevr::profile::ConfigureGpu(IniB(L"debug",L"profile_gpu",true));
     framevr::ConfigureDeferredWait(IniB(L"render",L"defer_gpu_wait",false));
     framevr::ConfigureSymmetricProjection(IniB(L"render",L"symmetric_projection",true));
@@ -3614,6 +3618,11 @@ MapClickFn OrigMapClick;
 std::atomic<int> g_mapClick{0};   // 0 not in yet, 1 in, 2 not possible
 
 uint64_t HookMapClick(void* unit, int type, int x, int y, uint64_t flags) {
+#ifdef D2RVR_NATIVE_OPENXR
+    // Mouse menu events must never become world movement, attacks, or loot,
+    // including a delayed release after the native dialog closes itself.
+    if(g_enabled.load()&&g_inWorld.load()&&(gamestate::MenuOpen()||panelinput::BlocksWorld()))return 0;
+#endif
     if (unit && (type == 0 || type == 1 || type == 3 || type == 4) && !(flags & 0xFF) &&
         g_set.flatClickShoot.load() && KeyMoveMode() && ShooterActive()) {
         const int idx = ((ClientIndexFn)d2rsig::Addr(RVA_CLIENT_INDEX))(unit);
@@ -3629,14 +3638,17 @@ uint64_t HookMapClick(void* unit, int type, int x, int y, uint64_t flags) {
     return OrigMapClick(unit, type, x, y, flags);
 }
 
-// Like the keyboard move: flat only, tried twice a second until the pages are
-// decrypted (the first click in a game area), 10 s in a game area without the
-// bytes = another build, and clicks stay the game's own.
+// Also isolates native VR menus from gameplay clicks. Retry while native pages
+// are still encrypted; the flat path retains its existing timeout.
 void InstallMapClickHook() {
     static int misses = 0;
     // Flat with flat_keyboard_move, or VR with vr_keys_walk (F2's mouse look shoots the same way).
     const bool flat = g_set.platform.load() == 0;
-    if (!g_ctx || g_mapClick.load() != 0 || !(flat ? g_set.flatKeyMove.load() : g_set.vrKeyWalk.load())) return;
+    bool wanted=flat ? g_set.flatKeyMove.load() : g_set.vrKeyWalk.load();
+#ifdef D2RVR_NATIVE_OPENXR
+    wanted=true; // Also protects native VR panels when keyboard walking is off.
+#endif
+    if (!g_ctx || g_mapClick.load() != 0 || !wanted) return;
     if (!Matches(RVA_MAP_CLICK, kSigMapClick, sizeof kSigMapClick) || !Matches(RVA_CLIENT_INDEX, kSigClientIndex, sizeof kSigClientIndex) ||
         !Matches(RVA_HOVER_UNIT, kSigHoverUnit, sizeof kSigHoverUnit)) {
         if (flat && g_inWorld.load() && ++misses >= 20) {   // VR: no verdict, the code may run (and decrypt) much later
@@ -3647,8 +3659,13 @@ void InstallMapClickHook() {
     }
     const bool in = d2rsig::Hook(RVA_MAP_CLICK, kSigMapClick, sizeof kSigMapClick, (void*)&HookMapClick, (void**)&OrigMapClick);
     g_mapClick.store(in ? 1 : 2);
+#ifdef D2RVR_NATIVE_OPENXR
+    Log(in ? "vrcam: map click hook installed - native VR menu input cannot reach the world"
+           : "vrcam: map click hook FAILED - extra native VR menu isolation unavailable");
+#else
     Log(in ? "vrcam: flat: click hook in - with no target under the crosshair a click is a shot there, never a walk"
            : "vrcam: flat: click hook FAILED - a click on the ground walks");
+#endif
 }
 
 // Twice a second: says when the game loses or gets back its pads, and when W A
@@ -5541,7 +5558,11 @@ void PushArms() {
     const D2RVR_Shared* sh = g_shared;
     skel::Input in;
 #ifdef D2RVR_NATIVE_OPENXR
-    in.followTrackedNeck=on&&!ThirdPerson()&&!Overhead()&&framevr::Active()&&
+    // Publish the requested mode, not the render transport's transient state.
+    // Active() is false between stereo pairs; sampling it on this timer made
+    // the left-eye body intermittently fall back to its untracked position.
+    // The skeleton hook checks the current world frame when it poses the body.
+    in.followTrackedNeck=on&&!ThirdPerson()&&!Overhead()&&
         sh&&sh->version==D2RVR_SHARED_VERSION&&sh->headValid;
 #endif
     if (sh && sh->version == D2RVR_SHARED_VERSION && sh->headValid) {
@@ -7636,6 +7657,7 @@ DWORD WINAPI UpdateThread(void*) {
             if (!AllHooksIn()) InstallHooks();
 #ifdef D2RVR_NATIVE_OPENXR
             projectiles::Install();
+            panelinput::Install();
             projectiles::Report();
             combat::Install();
             combat::Report();

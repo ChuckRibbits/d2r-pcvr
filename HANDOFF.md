@@ -1,6 +1,6 @@
 # Agent handoff — D2R PCVR
 
-Updated 2026-10-09. Read [INSTALL.md](INSTALL.md) for deployment and
+Updated 2026-10-10. Read [INSTALL.md](INSTALL.md) for deployment and
 [steamvr/TASKS.md](steamvr/TASKS.md) for the complete user-requested backlog.
 
 ## Objective and boundaries
@@ -25,6 +25,378 @@ license refresh; the explicit `--frame-vr` launch chooses D2RLoader. Save and ex
 before replacing DLLs or restoring files. The installer checks for running D2R.
 
 ## Latest user evidence and priorities
+
+**Original 3D potion belt, 2026-10-10 00:39.** Owner requested actual potion
+models on the belt, grabbed/drunk with Right Grip, and is ready for a test.
+Implemented and installed SHA256
+`5f4f3987677ac8f29fb272fb1a918d5d8e5123232e9a9b0b1328cccd9fbe9979`, then
+launched with the offline wrapper. Record:
+`build-frame/latest-potion-models-deployment.json`; backup/ready directories
+use tag `potion-models-20261010-003944`. No settings, original executable or
+character saves changed. **Headset verification pending.** Runtime log at
+00:40:03 confirms all 15 models loaded and the D3D12 XR session ready/focused
+(3840×2160 per eye, PID 117004). Owner was asked to test visibility, grab and sip.
+
+`prepare_potions.py` resolves all 15 potion codes through the game's own HD item
+dictionary and unit definitions. `potion_assets.py` reads bounded Granny 7/LE64
+mesh streams and BC3 mipmaps. MIT standalone BitKnit decoder provenance is in
+THIRD_PARTY. All original models/textures stay in the local `d2r_vr_potions`
+cache; no Blizzard assets are shipped. The installer prepares/backups/restores
+this cache and packaging includes the reader/decoder, never the cache itself.
+
+`potion_models.cpp` loads/uploads once per XR session and draws original textured
+geometry into each eye after its world copy, using that eye's actual pose/FOV.
+There are no added per-frame GPU waits or asset reads. Bottles use their own
+depth buffers; world/arm occlusion, native scene lighting and transparent liquid
+are not implemented. Original albedo plus simple diffuse/specular lighting is
+used. Cache failure retains flat icon previews. All variants normalize to 18 cm
+height about the neck axis; the opening anchor is shared with `potion_pose.h`.
+
+`potion_scene.h` places the next native item in each occupied waist column and
+moves the exact grabbed item to its grip, without duplicating it on the belt.
+Right Grip is the documented control; existing left-hand support remains.
+Nearest occupied slot wins overlapping reach spheres. Opening must reach within
+10.5 cm of the mouth while tipped for .25 s. Release returns an unused bottle;
+native removal acknowledgement darkens it. Exact item/session/revision guards,
+refill cancellation, refusal without retries and one use per grab are retained.
+
+Checks: 15-asset conversion; synthetic parser/range/mip/normalization tests;
+installer rollback including preexisting cache; interaction ownership, closest
+slot, opening-vs-controller contact, interrupted sip, refusal and single use;
+quick-cast/motion/native-panel regression tests; DLL cross-build; D3D12 GPU
+stereo render/readback with correct disparity. Inspected synthetic preview:
+`build-frame/potion-models/preview.png` (not a game/headset screenshot).
+GPU test uses `potion-models-test.exe` in isolated `build-frame/ui-preview-prefix`
+with local Proton native d3d12/d3d12core/dxgi and Microsoft's d3dcompiler_47 DLLs.
+No game memory capture is needed to test this feature. Next: verify reach, grab,
+tip/drink, native belt count and vitals, return/cancel and menu recovery in Frame.
+
+**Buy popup verified, 2026-10-10.** Owner confirmed "it works" after installing
+the laser-focus correction. Native `FocusManager::UpdateFocus` first hit-tested
+Yes/No correctly, then a separate controller cursor-snapping pass replaced the
+hover with the vendor grid underneath. This explains why precise head angles
+occasionally made Yes clickable. `vr/panel_input.cpp` now hooks the separately
+signature-guarded snap getter (RVA `0x14f1d0`, focus call site `0x867bd0`) and
+suppresses snapping only inside owned laser-pointer callbacks. Native controller
+layout, controller navigation and skill-binding contexts keep their behavior;
+no camera or purchase logic changed. `steamvr/panel_input_mode.h` holds the
+policy; `steamvr/native_panels_test.cpp` covers Yes/No, misses, nested callbacks,
+assignment contexts and unowned input.
+
+Native panel regression tests and DLL cross-build pass. Both signatures matched
+the game snapshot and live executable. A bounded live comparison reproduced the
+original vendor-grid overwrite and retained Yes/No with the correction. A native
+No click successfully cancelled the popup; the assistant made no purchase.
+After the owner saved/exited, installed SHA256
+`6cffb3120559942472b80d2af8a525628d5b2e555b42c763fe77da81717be7a6`
+and relaunched through the offline wrapper. Deployment record:
+`build-frame/latest-buy-popup-deployment.json`; previous DLL/config backup:
+`build-frame/backups/buy-popup-focus-20261010-000433`.
+The owner's latest headset confirmation verifies the Buy-popup correction.
+
+**Quick-cast shortcuts verified.** Owner explicitly confirmed the combinations
+work. Wheel/editor show persistent native badges and VR chords. Holding Left
+Trigger maps Right A→native B, Right B→X, Left A/X→Y, Left B/Y→RB;
+adding Left Grip selects the corresponding native LT variants. `skill_slots.h`
+centralizes those mappings; all eight shortcuts and alternate-slot editor paths
+have automated coverage. Input ownership prevents overlapping menu, melee,
+bow-release, belt or holster actions. `SpellSelected()` includes the active
+quick-cast skill even when WEAPON remains selected in the wheel. Broader
+assignment/reload verification remains on the task list. Deployment history:
+`build-frame/latest-quick-cast-deployment.json`.
+
+**Trade background verification remains pending.** Shared opaque UI conversion
+and quad-only composition now cover Vendor/Trade/Gamble as well as the tabbed
+menu. Native panel and D3D12 black-backing/color tests pass; the change is included
+in the installed DLL. The latest Buy-popup confirmation does not separately
+establish that both trade backgrounds are black. Ordinary NPC speech and quest
+panels retain their existing composition.
+
+**Body/shoulder flicker investigation, 2026-10-09 22:59.** Owner reports
+lower-left geometry flashing in the left eye even standing still with hands
+lowered, after tracked-neck alignment centered the body. Bounded read-only
+`PoseBody` trace on Nekro captured 100 poses / 50 stereo pairs. Six left-eye
+poses had `followTrackedNeck=false` while their right-eye partners had it true;
+both eyes had identical center-eye model coordinates and input sample stamps.
+This establishes a mode mismatch, not the initially suspected stale camera
+position: `d2rcam::Refresh()` already rebuilds the camera before each native draw.
+`PushArms` was sampling `framevr::Active()` on its 10 ms timer. Active is false
+between pairs, so a timer publication there disabled body alignment until the
+next tick, sometimes between eyes. The candidate publishes stable neck-follow
+intent and checks current frame availability in the skeleton hook, after the
+fresh eye/head callbacks. Invalid tracking, panel/non-world frames and inactive
+camera modes still gate alignment. No anatomical, arm IK, head hiding, camera
+or near-plane changes. Cross-build and existing body/portal math regressions
+pass. Owner saved/exited; verified no game process, backed up the previous DLL,
+installed SHA256 `bb460986137a88040cc4e720f4871a3a8995dd05bcc9127c8bc81dab7662d54e`
+and relaunched through the normal offline VR wrapper. Deployment record:
+`build-frame/latest-body-pose-deployment.json`. Local trace/scripts:
+`build-frame/body-stability/`. Post-install read-only trace on Nekro captured
+160 poses (80 per eye), all with neck-follow enabled. All 79 complete pairs
+matched in follow mode and center-eye coordinates; two edge poses fell outside
+complete pairs. Debugger detached normally. Runtime mismatch is resolved;
+owner confirmed **"Flashing stopped"** in the hands-lowered/head-turn check.
+This fix is headset-verified on Nekro; broader 6DoF/class coverage remains open.
+
+**Return-portal correction, 2026-10-09 22:45.** Live capture of the separated
+town endpoint proved it uses the **same NewStuff asset**, mask 19 and identity
+orientation/scale (instance 316, translation 8826.0615/.03284/11326.0615).
+Its one-element mesh stream contains `(-2.324593,3.434088,1.808851)`:
+horizontal radius 2.94545 and Y 3.43409 failed the earlier horizontal/height
+check, but its full 3D distance from authored center `(0,4,0)` is 2.99932.
+The two-element stream remains near Y=4/radius=3. Both are the same three-unit
+offset around the authored center, with different pitch. Captures are in
+`build-frame/portal-billboard/return-portal-live.{txt,json}`. The GDB callback
+detached normally on bounded stop; JSON was recovered from printed samples
+because batch-mode exit preceded its posted save callback.
+
+`portal_billboard.h::CenterOffset` now recognizes the full 3D radius-three shell
+(same .025 tolerance), and removes the vertical offset as well as X/Z by using
+the common authored anchor `(0,4,0)`. This generalizes direction/pitch, not the
+asset allowlist: other variants, native transforms and particle positions
+outside the center shell remain untouched. Fresh-head/menu gating is unchanged;
+the earlier possible creation-time explanation was not established by this
+capture. Captured outside/return samples, yaw/pitch sweeps and outside-shell
+rejection tests pass; all 12 native signatures and DLL cross-build pass.
+Stage/verification state: `build-frame/latest-portal-return-deployment.json`.
+After owner confirmed Save & Exit, verified no game process remained, backed up
+the installed DLL and atomically installed the staged binary with matching
+SHA256 `c3d5143337ed8d731341865ce2ca1ba595bed5dd7072dfe2b2f0857219cb7882`.
+Launched through the normal Steam VR wrapper. Owner subsequently confirmed
+**"ok it all works now"** after the requested outside/town endpoint and head
+rotation/tilt check. Mark this town-portal fix headset-verified at both ends;
+other cosmetic/portal asset variants have not been separately verified.
+No native assets, saves, INI or graphics settings changed.
+
+**Portal endpoint comparison, 2026-10-09 22:33.** Owner verified the second
+candidate looks great at the portal created outside town. After walking through,
+the linked town endpoint still has separated components. This is partial
+validation only. The session exited normally at 22:32, so the return endpoint
+has not yet been inspected live. Both existing portal hooks activated at
+22:29:16.802 before that exit. Facing currently covers the town-portal directory;
+center correction only accepts `NewStuff` and the captured radius-3/height-4
+envelope. Do not assume the return endpoint uses a different asset: confirm its
+asset, transform and local points first. All five local town-portal particle
+variants contain the native view/orientation/transform helpers; the unit JSON
+offers NewStuff and Chronicle variants. Neither establishes the live return
+endpoint identity. A bounded read-only GDB capture helper is prepared at
+`build-frame/portal-billboard/capture_portal.py`; attach to the **current** PID,
+source it, then continue. It records effect identity/transforms and input points,
+and detaches after bounded samples/calls/time. It has not yet been run on the
+return endpoint. No new DLL has been installed for this report.
+
+**Town portal facing, 2026-10-09 evening.** Owner verified the skill editor and
+black native-menu backgrounds, then reported town portals tilting with the
+headset and an offset center. Requested stereo screenshots captured at 21:31:16
+show the dark center left of the bright ring, with a horizontal break in the
+effect. Local evidence is under `build-frame/portal-billboard/` (ignored).
+Existing screen-quad smoke hook was active. Native town-portal `.particles`
+assets additionally use mesh effects and script `view.direction_int_SceneCtx`;
+these do not go through the screen-quad alignment hook.
+
+Candidate in `vr/billboards.cpp` intercepts native scripted view direction
+`0xc04bb0` and position `0xc05a60`. It resolves each script lane's effect instance
+through SceneContext +0x28 (constant) or +0x18/+0x20 (indices), the native scene
+pool at +0x230, 512-entry pages, and the instance transform at +0x48. Live
+read-only inspection verified this route using the native bonfire effect and
+transform. Definition +0x40 → compiled effect +0x48 → path string +0x10/+0x20
+identifies town-portal assets only; vtable checks and bounded reads fail closed.
+Other camera-facing effect scripts keep their native results. Both portal script
+queries use the current stereo pair's shared head position, and direction is
+horizontal head-to-effect-origin so the portal remains upright. Native view
+position must match the active VR camera. Original authored animation remains.
+Ten native signatures, host positional/asset/instance tests and cross-build pass.
+Installed with game closed, then launched through Steam; record:
+`build-frame/latest-portal-facing-deployment.json`. Fresh-session logs confirm
+portal correction activated at 21:48:48.644, but the 21:49:52 and 21:57:41 stereo
+pairs still show a displaced center. Owner supplied
+`/home/berkybear/Videos/framecorder/2026-10-09_21-49-20.mp4`; the clip confirms
+separation as the viewpoint changes. Do not mark this fixed.
+
+Bounded read-only worker traces verified the corrected direction reaches native
+`scene.orientation_fu_norm_float3_float3` at `0xbf3c90`, with world-up retained.
+The native local-position helper `0xbfdd60`, mask 19, still receives different
+three-unit offsets at height four for the same portal instance. Captured examples:
+`(2.904415,4.005898,.739582)` and `(.773464,4.005898,-2.897778)`.
+The return trace confirms the helper adds the instance's translation. Native
+portal meshes were decoded locally using the standalone diagnostic reader from
+[rustydemon-gr2](https://github.com/HoldMyBeer-gg/rustydemon/tree/main/rustydemon-gr2):
+their X/Y bounds are centered, approximately ±.623/±1, rather than containing the
+observed lateral displacement. Reader, extracted models and OBJ files stay in
+ignored `build-frame/portal-billboard`; none are shipped.
+
+Second candidate adds a scoped local-position hook. For the observed NewStuff
+asset only, mask 19, positions within .025 of horizontal radius 3 and height 4
+are recentered in X/Z while retaining Y. This is an **experimental envelope
+based on the captured center nodes**, not a general particle-position fix.
+Other positions/variants stay native. It calls the original transform with a
+private copied input stream, including per-lane instance checks for mixed batches.
+`[debug] portal_centers=0` disables this part live for comparison (default 1).
+The facing fix remains enabled. Additional captured-coordinate/envelope tests,
+12 native signatures and cross-build pass. Staged deployment record:
+`build-frame/latest-portal-center-deployment.json`. After the owner saved and
+exited, verified no game process remained, backed up the previous DLL and
+installed the staged binary with a matching checksum; launched through Steam.
+Visual verification is pending; check the record for subsequent status.
+
+The first center-candidate session froze on the title screen after Frame woke
+from standby (last frame-rate sample 22:23:09, XR state 5 at 22:23:12.959).
+Owner reported a crash. PID 29123 was still alive but no longer presenting;
+desktop screenshot confirmed the title screen, with no gameplay/portal-hook
+activation logged. Read-only thread/stack snapshots were retained; ordinary
+GDB unwinding through Wine was incomplete, so these do not establish a cause.
+No crash exception or GPU error appeared in the session logs. The process
+subsequently closed; no force termination or binary rollback was performed.
+Evidence: `build-frame/portal-billboard/hang-20261009-2223/` and adjacent
+`hang-*-backtrace.txt`, `hang-stacks.txt`, `suspected-crash-2226.png`.
+Same binary relaunched for recovery; this is not a confirmed portal regression
+or a diagnosed/fixed standby issue.
+
+**Laser skill editor / tabbed background, 2026-10-09 evening.** Owner verified
+Left A opens UISwitcher directly after the controller-mode startup fix. The
+transparent background still differed between eyes; owner prefers both black.
+Current code submits the tabbed menu's shared opaque quad against black,
+omitting the stereo world layer only while that menu is displayed. Journal and
+NPC surfaces retain their previous composition.
+
+Wheel **EDIT SKILLS → slot → skill** uses the character's active skill list,
+native icons and native setter `0x1185c0` / clear `0x118b40`, with controller
+table selection scoped to the synchronous UI-thread call. Readback confirms
+assignment; no save editing. Learned/item-granted abilities retain owner IDs;
+passives are excluded. Catalog choices freeze per page; apply revalidates
+session, weapon bank, original slot and current availability. The common Town
+Portal alias is 359 (219/220 are scroll/tome, not shapeshifting).
+Input regressions, 24 native signature/address checks, GPU alpha/color and
+opaque-backing tests pass; themed two-page preview is inspected. Native binding
+and black-background headset tests passed: owner reported "ok it works great."
+Full clear/reassign/both-bank/save-reload coverage was not separately reported.
+Build installed with the game
+closed and launched through Steam; the fresh session verified the assignment,
+clear and catalog readers and read Nekro's saved skill 70 in controller bank 0.
+Deployment record is `build-frame/latest-skill-editor-deployment.json`. User deferred
+native gamepad-menu button conflicts until after this work.
+
+**Saved wheel assignment delay, 2026-10-09.** Owner says wheel works, but saved
+Raise Skeleton appeared only after cycling pages. Clarified the entire slot
+was unassigned/button fallback, not merely a missing PNG; no reassignment took
+place. Read-only live inspection confirmed native controller table RVA
+`0x2a48a90` contains skill 70 at slot 2 while all keyboard table slots at
+`0x2a488d0` are -1. The generic Binding/Owner accessors select one of these tables
+using last input mode (`0x77e10`), so mouse/keyboard menu navigation exposes the
+wrong bindings to our VR wheel. Audit: `build-frame/native-controller-bindings-audit.txt`.
+
+`native_ui.cpp` now reads the signature-guarded controller table directly,
+retaining native button mapping, active bank (0/16), owning item, empty slots,
+skill availability and the combined Town Portal shortcut. That reader never writes
+input mode or character data. Added entry/layout guards for bank, owner and
+skill-level access. Change-only `Frame wheel assignments:` diagnostics report
+the bank and eight skill IDs. Snapshot changes also prefetch icons before any
+wheel page is visible; PNG I/O remains on the background worker. Existing
+icon revision repaint handles readiness without changing hover or pages.
+
+The portable regression tests model the owner's saved skill with empty keyboard
+slots, mode changes, second-bank/item-owner preservation and invalid reads.
+The Wine preview now prefetches a snapshot before the first Paint and verifies
+native icons without prior page toggles. Build passes; new first-open headset
+verification passed: owner confirmed **"yep all fixed now thanks"** after testing
+the first opening with the saved assignment. All 16 native UI signatures also
+matched the running build. Installed with D2R closed at **2026-10-09T19:31:56.615980** and
+launched through Steam; INI and native settings hashes unchanged. DLL SHA256
+`3941417560e7a4d349c27d2ae514e05a95cdfe805c713894be5315edef82f461`. Deployment record:
+`build-frame/latest-wheel-bindings-deployment.json` (includes prior DLL backup).
+
+
+**Transient license prompt after wheel install, 2026-10-09 19:20.** Owner saw
+the 30-day warning. Read-only comparison confirmed unchanged stock/loader EXEs,
+INI, prefix and S: launch routing. Failed Proton log shows services.exe creation
+failing (731) and RPC unable to open the service manager. Once the owner exited,
+a clean Steam VR relaunch of the **same installed DLL** started services.exe and
+rpcss.exe normally. Advancing the title screen reached MainMenuPanel and the
+offline character list. No license refresh, registry edits, game rollback or
+authentication bypass was used. This is recovery evidence, not a proven fix for
+the underlying intermittent Wine startup failure. Preserve logs/screenshots in
+`build-frame/license-regression-20261009-192234/`.
+
+
+**Themed native-icon wheels, 2026-10-09.** Owner confirmed the watch is visible
+and upright, then requested actual icons based on each wheel slot plus themed
+framing. `interaction_icons.cpp` asynchronously loads a local, validated PNG
+manifest beside the plugin, with a revision driving repaint when icons become
+ready. Skill IDs map through native SkillDesc/IconCel sheets; items use base
+code plus unique/set record and upgraded tier. Equipment and belt snapshots
+carry these identities; no saves/gameplay tables are changed. Native art is
+read locally by the new standard-library `prepare_icons.py` / `steam_assets.py`
+Steam reader. Installer prepares it before any game mutation and journals the
+cache for restore; release packages include only the scripts and MIT notice.
+New generated `assets/wheel-frame.png` provides stone/bronze framing; labels,
+icons, disabled states and hover highlights are composited. Segment centers
+now begin upper-right (22.5 degrees clockwise from top), matching actual art;
+footer click bounds also match the frame. Original assignment/action ordering
+is unchanged. Empty/missing icons retain labels. Affix dyes, charge/cooldown
+badges and skill reassignment from VR remain unimplemented.
+
+Build, parser/checksum/PNG tests, installer reversibility, ownership/hit-test
+checks and Wine PNG previews pass. The wheel preview checks actual native
+skills/items, a live potion identity change and transparent framing. Wrist
+full/partial/empty/unknown checks still pass. Headset acceptance for these new
+wheel visuals is pending. See `build-frame/wheel-preview.png` and deployment
+record `build-frame/latest-wheel-icons-deployment.json`. Installed at
+**2026-10-09T19:19:51.813310** after confirming D2R closed, preserving INI/native settings.
+DLL SHA256 `fff5d76902885fe484e0074c5f0fa180e93ff236a41de2f5c699206b50e0a78d`.
+Cache: 1580 bindings / 661 unique PNGs, no unsupported sprites.
+Backup/stage: `build-frame/{backups,ready}/wheel-icons-20261009-191951/`.
+
+
+**Wrist correction after owner reported no panel, 2026-10-09.** The 17:55
+candidate below was **not** headset-verified; owner now says it does not appear.
+Owner clarified **back of wrist, like a watch**. The previous +/-Y sign flip
+used the wrong anatomical axis. OpenXR left grip +X points out of the palm,
+so -X points out of the back of the hand. `WristNormal` now uses -X for both
+visibility and the rendered face. `WristPanel(hand,head)` sits 5.5 cm above that
+face and 6 cm toward the wrist, retaining the face normal while turning text
+upright within its plane. Activation is within 75 cm and normal-to-eyes dot
+>0.55. Passive vitals now require only head/left-hand tracking; the right-hand
+tracking guard still blocks all combat/actions. No generated artwork changes.
+New host tests cover thumb-edge vs palm vs dorsal poses, both tracking-loss
+cases, menu suppression and 2,701 wrist/head rotation combinations with valid
+unit quaternions and unchanged dorsal normals. Cross-build passes. Rate-limited
+`Frame wrist:` logs report requested visibility, tracking, pose validity,
+distance/back-facing scalar, atlas, wheel, submitted layer and frame result;
+they do not record full poses. Owner confirmed **"Visible and upright"** after
+this correction. Runtime at 18:57:42.882 reports wrist wanted=1, backFacing=0.995,
+distance=0.413, atlas=1, layer=1, budget=3/16, submit=0; resting poses hide it.
+This verifies reveal and readability, not a numeric comparison with native stats.
+Installed after confirming D2R closed at **18:57:09**, then launched via Steam.
+INI and native settings are unchanged. Stage/backup:
+`build-frame/{ready,backups}/wrist-watch-20261009-185709/`.
+DLL SHA256 `15d62644582d69c33ecb43d0c99d4953386668ff1b7db7c0eecbd77e4741afb9`.
+Deployment record: `build-frame/latest-wrist-watch-deployment.json`.
+
+**Next owner request:** use proper native icons in the wheels, selected from the
+actual spell/item assigned to each slot. Implementation starting; current wheel
+still has names only. Keep original game assets local or load from the installed
+game; do not package extracted Blizzard assets in the repository/release.
+
+**Wrist gesture and gothic vitals artwork, 2026-10-09.** Owner reports the panel
+appears with the wrist resting naturally and disappears when deliberately
+presented. `interaction::WristPanel` now defines the opposite (-Y) controller
+face and offset, and `WristPresented` uses that same face for visibility; the
+transport uses the shared pose. Distance remains 65 cm; the brief critical cue
+is retained. New generated artwork in `steamvr/assets/wrist-vitals.png` uses the
+native red/blue orb and stone-figure HUD as style reference. It is embedded via
+`interaction_assets.rc` in both DLL and preview, decoded/cached once with WIC,
+and shown at 24 × 12 cm. Native vitals drive liquid height and life/mana numbers;
+stale/unknown values show empty glass and `-- / --`. Alpha survives GDI text
+composition. See the asset README and exact prompt for provenance/layout.
+Portable interaction tests cover natural vs rolled wrist, panel face/offset,
+world heading, distance and invalid tracking. The Windows build and Wine preview
+checks pass; full/partial/empty/unknown states have been visually inspected.
+Other atlas tiles are checked unchanged. Headset verification of this change
+is pending; do not infer it from the preceding settings-menu confirmation.
+Installed with D2R closed at **17:55:11**; INI and native settings unchanged.
+Stage/backup: `build-frame/{ready,backups}/wrist-vitals-20261009-175511/`.
+DLL SHA256: `4a9c7d72c712e2cdaa08a1ed1b76220b67ee492e8729974b59a850543b809414`.
+Deployment record: `build-frame/latest-wrist-vitals-deployment.json`.
 
 **Invisible settings menu fixed and headset-verified, 2026-10-09 17:44.** The 17:36 laser
 candidate did not fix the menu; the owner reported **"Still invisible"**. Its

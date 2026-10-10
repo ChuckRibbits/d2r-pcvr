@@ -13,9 +13,9 @@ latest deployment and evidence.
 | Area | Candidate behavior | Remaining validation / work |
 |---|---|---|
 | Ownership and native state | Session-tagged equipment, belt, skill and vitals snapshots; stale request expiry; input rearm after UI/grabs/recenter/tracking loss | Verify native snapshots and outcomes in the headset |
-| Spell wheel | Eight radial slots with localized assignment names; unknown slots visibly fall back to native button names; selection trigger cannot cast | Native icons, charge counts and per-skill readiness indicators; names for newer IDs can fall back to `Skill N` |
-| Potions | Front belt shows next potion type/count, either-hand grab, mouth/tip dwell, quick-use alternative; exact item revalidation and confirmed removal | Mixed/refilled belt and refused consumption in game; visual is a procedural quad, not a detailed bottle model |
-| Wrist | Live native health/mana, brief low-health cue and low-mana cue in spell mode | Native values, readability, thresholds and physical orientation |
+| Spell wheel | Eight themed radial slots with native icons/localized names, persistent native bindings and VR quick-cast labels; all LT variants editable; selection trigger cannot cast | Headset shortcut validation; charge/readiness indicators; names for newer IDs can fall back to `Skill N` |
+| Potions | Original 3D models/textures for all 15 variants; nearest-slot grip grab, bottle-opening/tip dwell, quick-use alternative; exact item revalidation and confirmed removal | GPU stereo/asset and interaction checks pass; headset reach, mixed/refilled belt and refused consumption need verification. Uses its own depth buffer, without scene/arm occlusion |
+| Wrist | Live native health/mana in generated gothic glass orbs; back-of-left-wrist (-X grip) reveal, upright text, left-only tracking; brief low-health/low-mana cue | Native values, readability, thresholds and corrected watch gesture in headset |
 | Holsters | Configurable hip anchors and seated preset, grip-and-pull requests set I/II, waits for observed set; explicit stow/draw | Initial set inference, identical/empty sets; item labels currently use base codes, no silhouettes; no arbitrary inventory equips |
 | Journal | Quest UI-only copy, stereo scene behind it, left-hand placement, grip/release pinning, original page UV input; falls back to normal panel if capture unavailable | First headset verification of crop, native act tabs, close/reopen and tracking recovery; other pages and decorative geometry remain |
 | Casting | Equip/select, point right hand, press/hold trigger; native repetition/resources/effects; selected spell aim works regardless of held weapon type | **Full 3D spell flight/contact and immediate accepted native spawn are not implemented.** Native animation and ground-plane targeting remain |
@@ -32,7 +32,7 @@ establish that the game accepts every native action or that surfaces align in
 Steam Frame; use the candidate test sequence in GAMEPLAY.md.
 
 The remainder of this document is the **target design**. Its future requirements,
-particularly spell-family adapters and original icons, must not be mistaken for
+particularly spell-family adapters and readiness metadata, must not be mistaken for
 features already completed in the candidate.
 
 Owner refinement: **spell gestures are out of scope**. Equip a spell, point the
@@ -52,8 +52,9 @@ An equipped weapon remains held without continuously squeezing grip.
 |---|---|---|
 | Weapons | Reach to a holster, squeeze grip, pull the set into use | Holster highlight, item silhouette/name, then confirmed equipped set |
 | Skills/spells | Hold Left Y for an eight-slot wheel over the left palm; point right hand and click trigger to select | Actual skill name/icon, selected mode and availability |
+| Quick casting | Hold Left Trigger + a face button; add Left Grip for alternate four slots; right hand aims | Same native assignments as the wheel; see GAMEPLAY mapping |
 | Potions | Reach to the front belt, grip a bottle, bring to mouth and tip | Actual potion type/count, then confirmed consumption |
-| Health/mana | Turn left wrist toward the face | Compact gauges; brief low-health/low-mana cues otherwise |
+| Health/mana | Look at the back of the left wrist, like checking a watch | Live life/mana orbs; brief low-health/low-mana cues otherwise |
 | Journal/map | Choose Journal from the wheel's utility tab; hold it in the left hand or pin it nearby | Native quest status/text and tabs, readable at a comfortable size |
 
 Preserve Left X inventory, Left Grip + Left Stick Click height reset, ordinary

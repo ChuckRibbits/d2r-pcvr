@@ -26,6 +26,8 @@ def main():
              'external/reshade/LICENSE.md', 'steamvr/install.py',
              'steamvr/launch.sh', 'steamvr/run-proton.sh', 'steamvr/session.py',
              'steamvr/launch_windows.py', 'steamvr/README.md', 'steamvr/TASKS.md']
+    paths += ['steamvr/prepare_icons.py', 'steamvr/steam_assets.py']
+    paths += ['steamvr/prepare_potions.py', 'steamvr/potion_assets.py', 'steamvr/vendor/bitknit.py']
     files = {path: ROOT / path for path in paths}
     for folder, pattern in [('reshade/sky', '*.png'), ('steamvr/licenses', '*.txt')]:
         for path in sorted((ROOT / folder).glob(pattern)):

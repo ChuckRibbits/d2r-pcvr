@@ -26,6 +26,19 @@ struct Sim {
 };
 int main() {
     {
+        Sim s;s.engine.Select(2);s.Step(2);s.in.quickCast=true;s.in.quickSkill=7;
+        Check(s.Step().skill==7&&!s.out.attack&&!s.out.meleeContact,"quick cast overrides motion combat");
+        Check(s.engine.Selection()==2&&s.Step().skill==7,"quick cast preserves selected trigger ability");
+        s.in.quickSkill=-1;Check(s.Step().skill==-1&&!s.out.meleeContact,"idle modifier does not swing or cast");
+        s.in.trigger=1;s.in.quickCast=false;Check(s.Step().skill==-1,"held right trigger cannot leak out of shortcut layer");
+        s.in.trigger=0;s.Step();s.in.trigger=1;Check(s.Step().skill==2,"normal trigger skill restored after release");
+    }
+    {
+        Sim s;s.Nock();s.Move({0,1.3f,0});s.in.quickCast=true;s.in.quickSkill=4;
+        Check(s.Step().skill==4&&!s.out.bowDrawing&&!s.out.bowRelease,"shortcut cancels held draw without shooting");
+        s.in.quickCast=false;s.in.trigger=0;Check(!s.Step().bowRelease,"ending shortcut cannot release old arrow");
+    }
+    {
         Sim s;s.in.trigger=1;Check(s.Step().attack,"button attack fallback");
         s.in.active=false;Check(!s.Step().attack,"menu cancels attack");s.in.active=true;
         Check(!s.Step(3).attack,"held trigger cannot attack on menu return");
