@@ -26,6 +26,465 @@ before replacing DLLs or restoring files. The installer checks for running D2R.
 
 ## Latest user evidence and priorities
 
+**Tracked body and stable particles candidate, 2026-10-09.** Owner reports
+ground smoke tilting/pivoting with head rotation and the body separating from
+the headset during room movement. `vr/billboards.cpp` redirects signature-checked
+PopcornFX screen-aligned quads through its native view-position alignment, with
+a copied view context containing the same cyclopean position for both eyes.
+Native world-up, particle rotation/animation and other billboard modes remain.
+The hook is limited to first-person gameplay and passes through if the native
+context position does not match the current VR camera. Installation alone does
+not establish activation: look for the **screen-facing quads now face** log.
+
+`vr/skeletons.cpp` now aligns the rendered body to a neck target derived from
+tracked eye position/orientation and the rig's bind-pose eye/neck offset. The
+headset remains the camera authority; native animation does not drive it.
+Recognized leg chains bend to preserve animated floor height during crouches;
+unknown chains retain their original lower-body height. Controller/weapon scale
+uses standing bind height, not crouched eye height. This is visual body alignment,
+not roomscale movement of the game actor/collision. Runtime confirmation is
+**VR body: tracked-neck alignment active**, with class and leg-chain count.
+Body math and existing bow-pose host tests pass; cross-build passes. Both visual
+changes still need headset validation. No performance gain has been established.
+Local native-code evidence stays in ignored `build-frame/particle-facing-20261009/`;
+five billboard signatures match the decrypted snapshot. New source/tests:
+`steamvr/body_tracking.h`, `steamvr/body_tracking_test.cpp`,
+`vr/billboards.{h,cpp}`, `vr/billboard_signatures.h`.
+
+Installed at **17:29:19**, after normal game exit at 17:20:55 and a fresh
+process-closure check. Stage/backup: `build-frame/{ready,backups}/body-billboards-20261009-172919/`.
+DLL SHA256 `134187bfa5b57e0087b8a78d964f76b0aa1e0887a4fd4750108b2c128b7bc6aa`.
+INI and game settings unchanged. Relaunched through the Steam VR wrapper;
+billboard hook installation confirmed at 17:29:27.250. See
+`build-frame/latest-body-billboards-deployment.json` for runtime/headset status.
+**Runtime activation confirmed:** tracked-neck body at 17:30:00.602 (hero
+class 2, both leg chains found), position-facing billboards at 17:30:01.655.
+OpenXR reached focused state 5. Awaiting the owner's smoke rotation/body
+lean/crouch check; activation logs alone do not establish visual correctness.
+
+**Smoke/effects improvement headset-verified, 2026-10-09.** After the 17:13
+shared-range build was installed and confirmed active with DLSS Quality, the
+owner reported: **"yes it looks clearer around smoke and effects now."** Mark
+the smoke/effects improvement verified. This does not establish native-equivalent
+overall clarity, a performance gain, or validation of Balanced and every effect.
+Keep the installed correction and DLSS-off installation default. No additional
+capture or restart is needed solely to reconfirm this reported improvement.
+
+**Shared-range write failure diagnosed, 2026-10-09 17:12.** Both candidates
+installed at 17:03 and 17:07 remained inactive. The earlier projection-cache
+explanation was an unconfirmed hypothesis, not the cause established by testing.
+In PID4033863, a bounded one-frame debugger trace proved the VR/gameplay gates
+were true, projection/range reads succeeded, and `PerspectiveRange` produced
+(1059.8, 1/1059.8, .2, 0). `WriteProcessMemory` returned false, zero bytes copied,
+**ERROR_NOACCESS (998)** writing the mapped NVIDIA Vulkan upload allocation.
+The debugger detached automatically; nothing was patched in the live process.
+Local evidence: `build-frame/shared-range-debug/{trace,write}.log`.
+
+The installed build uses a direct 12-byte CPU store to that live mapped allocation,
+which the signature-checked native frame builder has just allocated/written and
+whose lifetime extends beyond the hook. No generic guarded memory helper was
+relaxed. Reads/VR projection checks remain; the reserved fourth lane is preserved.
+`steamvr/dlss_depth_upload_test.cpp` reproduces the exact WriteProcessMemory
+failure under the same Proton/vkd3d, then verifies the production store through
+D3D12 GPU copy/readback, including reserved-lane preservation. Test and cross-build
+pass. Prior 64 GPU encode/decode/fade cases remain valid (math unchanged).
+Test output: `build-frame/dlss-shared-range-upload-test.log`.
+
+Stage `build-frame/ready/dlss-shared-range-20261009-171203/d2rl-vrcam.dll`, SHA256
+`ae312490c36431c9546039502de0c77cf18d207a157647224f4caee450d06273`.
+**Installed 17:13:04** after the owner saved/exited and process closure was
+verified. Backup: `build-frame/backups/dlss-shared-range-20261009-171304/`.
+INI/Settings.json hashes unchanged (DLSS Quality). Relaunched through Steam;
+PID4037524, OpenXR session5 focused at 17:13:24. **Runtime activation verified**:
+17:13:32.282 active-range log; repeated CPU samples show Frame[53] =
+(1059.80005, .00094357424, .2, 0), actual VR projection and 2560x1440 Quality
+viewport. Latest records: `build-frame/latest-dlss-shared-range-{deployment,runtime}.json`.
+Capture folders `build-frame/dlss-shared-range-verified-20261009-171353/` and
+`...-171424/` contain monitor screenshots and 80 CPU constant samples each, but
+**no new native GPU trace**: Ctrl+F10 did not arm on either attempt. Do not claim
+these contain a validated native depth histogram. No temporary debug settings
+were changed. Owner subsequently confirmed clearer smoke/effects with Quality
+(see above). A fresh native depth capture remains unavailable; it is not required
+to record the owner's visual confirmation.
+
+Previous inactive DLL (17:07:18): SHA256
+`8702f0273baa8ee4f195a83e171de700bcd1dea44bc2fcd9b4292b966094d698`,
+backup `build-frame/backups/dlss-shared-range-20261009-170718/`. INI and native
+Settings.json hashes unchanged; saved DLSS mode2 (Quality). Session5 focused,
+PID4033863, but Frame[53] still native (510,1/510,550,0). Shader-only replacement
+has been removed, so this inactive build has the original clamped depth.
+All five native signature guards match. Uploaded unjittered camera projection
+at renderer+11A08 / offset D0 is valid VR infinite reverse-Z.
+
+**Initial shared-range candidate, 2026-10-09 17:03 (superseded above).** Owner
+now suspects billboarded smoke/other effects undermine the DLSS scene. Read-only
+shader inspection found a concrete contract mismatch in our 16:42 depth fix:
+it renormalized the shared R16 depth producer to .2..1060, but native soft-particle
+shaders still decoded it with Frame CB10[53] = (510, 1/510, 550, 0).
+Particle shader hashes `f03b49085dded655` and `f4843ce390dd3196` sample t38,
+then reconstruct `sample * Frame[53].x + Frame[53].z` before fading against
+particle view-space Z. This verifies a producer/consumer mismatch, **not that
+it explains all remaining DLSS blur**. No live smoke exclusion test was run.
+
+Candidate replaces the shader-only override with a checked native frame-builder
+hook, RVA E3B590, signature checks also at E3B63D/E3BE07/E3BE56. ABI is
+(renderer, frame, camera, float time), verified at both native call sites.
+After the native builder fills a fresh mapped upload allocation, before its
+caller binds/submits passes, update only Frame[53].xyz to the VR interval.
+`vr/dlss_depth_range.h` validates infinite reverse-Z projection, finite reciprocal
+range and preserved far endpoint. Gate requires active VR gameplay and validates
+the actual uploaded camera projection; menus/finite/orthographic projections
+pass through. Camera near/far/type fields stay untouched. All native shaders
+remain intact, with no extra GPU pass/wait. Install retries on the slow tick
+when renderer code is decrypted. Unsupported signatures leave the native pipeline
+unchanged instead of applying a partial producer-only change.
+
+Candidate: `build-frame/ready/dlss-shared-range-20261009-170209/d2rl-vrcam.dll`,
+SHA256 `9e304e3d1093d8003df76d3453007f9d45e26c78452fa24ead49b489fa320492`.
+Pointer: `build-frame/latest-dlss-shared-range-stage.json`. Build passed; four
+signatures match PID4019750; GPU test covers 64 encode/decode/particle-fade cases
+including R16 quantization, plus CPU invalid-input/fallback/idempotence checks.
+Owner saved/exited; verified no D2R process, backed up to
+`build-frame/backups/dlss-shared-range-20261009-170301/`, installed the candidate
+and relaunched via Steam. INI and native Settings.json hashes were unchanged
+(DLSS saved as Balanced/mode3). Deployment record:
+`build-frame/latest-dlss-shared-range-deployment.json` now describes the latest
+17:13 deployment. Runtime activation and smoke improvement were subsequently
+verified as recorded above. Do not declare a full DLSS fix yet.
+
+Verified Quality capture: `build-frame/dlss-quality-verified-20261009-165022/`.
+Both before/after checks confirmed mode2, 2560x1440 active scene and VR projection.
+R16 depth contains 12,317 distinct values, no zero geometry; original depth fix
+is measured working. Owner was told they could turn DLSS off after this capture;
+later Settings.json had mode3, so always check state before further comparisons.
+Fullscreen Camera CB at renderer+11A00 is intentionally unjittered. Geometry
+Camera CB at +11940 is distinct; zero jitter in fullscreen constants does not
+prove missing render jitter. No motion-vector/jitter change was made here.
+Local proprietary shader dumps and game-code snippets stay ignored in build-frame.
+
+**DLSS artifacts corrected; clarity still poor, 2026-10-09.** Owner
+reported washed-out colors/artifacts with Balanced DLSS after changing Video
+settings, and confirmed **"Yes, DLSS off clears them"**. Do not treat the earlier
+October 8 stability report as current validation. FXAA + DLSS off + scale 100
+remains the safe visual baseline. All temporary capture settings were restored.
+
+Captures/code evidence is local and ignored under
+`build-frame/dlss-artifacts-20261009-162519/` (stereo pair, native render targets,
+DLSS-off comparison and isolated sky/fog/MV/foveation trials). The brief isolation
+trials were screenshot comparisons, not owner-confirmed headset A/B results.
+The native R16_UNORM depth target contained only 0 and 1. Its producing pixel
+shader is LinearizeDepthPass, 628 bytes, uitrace hash `4c551117939402ea` in game
+3.3.93787. Read-only native inspection found camera CB3[37] = (.2, 0, 30, 0),
+which correctly describes our perspective depth. Frame CB10[53] =
+(510, 1/510, 550, 0) still normalizes around the distant original camera:
+`saturate((distance - 550) / 510)`. Nearby VR surfaces therefore all become zero.
+This is a verified depth defect, not yet proof it explains every color artifact.
+Do not change Camera's original near/far/type/FOV fields globally based on this.
+
+`vr/dlss_depth.cpp` replaces only that exact pixel shader through ReShade pipeline
+creation. For infinite reverse-Z perspective it starts normalization at the
+actual near plane and retains the native far limit; finite perspective and
+orthographic paths retain native behavior. It uses existing buffers/bindings,
+without a new per-frame pass or waits. Hash/compiler mismatch retains the native
+shader. No original game shader bytecode is distributed. GPU tests execute the
+production HLSL helper: 64 cases passed, including native integer/float projection
+flags, finite/orthographic fallback, sky, and 31 distinct nearby R16 depth values.
+Pixel shader creation and the Windows cross-build also passed.
+
+Installed DLL SHA256:
+`54ecf1d077d713bd475a480215c27cf9b639b10d7cf793520ac8e5fe6d2dcfde`.
+Stage `build-frame/ready/dlss-depth-20261009-164227`; backup
+`build-frame/backups/dlss-depth-20261009-164227`; deployment record
+`build-frame/latest-dlss-depth-deployment.json`. Previous DLL hash
+`a2f3e8e1481ac4cba4e654bbef980cd07d2a7501153e2d30218e7e9194b88cfe`.
+Game was observed closed before replacement. INI and native Settings.json stayed
+unchanged (DLSS off, FXAA, scale100); relaunched through the authorized Steam
+wrapper. Shader match logged at 16:42:40.151; SteamVR/D3D12 session ready at
+16:42:46.553 and title screen captured. **Owner tested Balanced and confirmed
+"Only blur remained"**: the washed-out colors/scattered artifacts were gone,
+but the image looked low-resolution; disabling DLSS restored clarity. Logs show
+2227x1253 scene pixels for 3840x2160 output with Balanced (about 34% of native
+pixel count). Owner also tried Quality and reported **"Still low-resolution even
+when still"**, then switched DLSS off. `build-frame/dlss-quality-current.png` and
+`quality-cb-samples.json` were captured after that switch and are NATIVE references;
+do not infer missing DLSS jitter from those samples. The subsequent verified Quality capture above confirms continuous native depth. Existing motion
+vector correction/history remains unchanged: near correction is disabled, so
+most geometry retains native vectors against the prior render/other eye. That
+is a remaining temporal-reconstruction suspect, not yet isolated as this blur's
+cause. Don't conflate the verified color/artifact improvement with a full DLSS
+motion-vector or clarity fix. Keep DLSS off as the baseline.
+
+**Graphics preset / anti-aliasing regression resolved in headset, 2026-10-09.**
+Owner said the game initially looked and worked well, then became blurry with
+ghosting (especially distant scenery) after trying presets, DLSS and AA, even
+after returning to Very High with DLSS off. Settings.json had `Anti Aliasing=3`,
+`NVIDIA DLSS=0`, `Resolution Scale=100`, dynamic resolution off. The saved good
+configuration used `Anti Aliasing=1` (FXAA). Asked owner to select FXAA in the
+native Video menu; verified the game saved value 1 and owner reported **"Clearer
+now"**. Texture/shadow quality remained 4. Keep FXAA + DLSS off + 100% scale for
+this setup, and recheck AA after selecting a quality preset. No DLL, shader,
+save or direct JSON edits were needed. Pre-test settings and comparison:
+`build-frame/backups/graphics-ghosting-20261009-161707/`. Mode 3's exact menu
+label was not captured; don't confuse the old upstream TAA=2 note with a
+verified current enum mapping. This validates the AA recovery, not every new
+interaction or the intermittent XR submission issue documented below.
+
+**Self-service Steam VR launcher added, 2026-10-09.** Owner asked whether an
+agent must launch the game. Added **Diablo II VR** through Steam's Add Non-Steam
+Game UI, targeting `/home/berkybear/diablo2-vr-port/steamvr/run-proton.sh`, then
+enabled **Include in VR Library** in Properties. Verified persisted shortcut
+`appid=4289304862`, `OpenVR=1`, correct target and empty launch options. Normal
+D2R Play remains stock. Also added `~/.local/share/applications/diablo-ii-vr.desktop`
+and a Desktop copy. This used Steam's UI, not an external write to its running
+shortcuts database. Shortcut selection itself has not been launch-tested; its
+target is the same wrapper already used successfully for game launches. No
+game launch occurred during shortcut setup. INSTALL.md documents this route.
+
+**Settings/interaction candidate installed and launched, 2026-10-09 15:49.**
+Owner connected Frame and requested this test. Installed the staged
+`vr-settings-20261009-133023` DLL (SHA256
+`a2f3e8e1481ac4cba4e654bbef980cd07d2a7501153e2d30218e7e9194b88cfe`)
+with D2R closed, backing up the previous DLL and INI to
+`build-frame/backups/vr-settings-20261009-154928/`. Preserved the live INI exactly,
+including enabled motion controls and eye tracking. Launched through
+`steamvr/run-proton.sh`; logs confirm SteamVR/OpenXR, D3D12 session creation and
+focused XR state 5. Focused the desktop game for native menu input. User-visible
+settings/interaction validation is still pending. Current deployment record:
+`build-frame/latest-vr-settings-deployment.json`. Earlier staging descriptions
+below record the state before this authorized installation.
+Startup follow-up: gameplay entered at 15:50:10; intermittent `xrEndFrame`
+`XR_ERROR_POSE_INVALID (-39)` begins at 15:50:11. SteamVR's XR client says
+`compositor failed EndFrame()`. Head/hand/gaze tracking remains active; bow
+character equipped. Cause is unconfirmed, no corrective setting changes made.
+Asked owner what the headset displays; response pending. New interaction
+compositor layers need investigation if the user reports freezing/distortion.
+
+**Fresh-install defaults updated at the owner's request, 2026-10-09:**
+`steamvr/install.py` now writes `motion_controls=1`, `fixed_foveation=1` and
+`eye_tracked_foveation=0`. Documentation reflects these defaults. This is an
+installer-only change after the settings candidate was staged; no DLL rebuild
+or deployment is needed for it. The owner's installed settings still have
+motion controls and eye tracking enabled. Existing release ZIPs remain older.
+
+**VR settings candidate, 2026-10-09; latest build, not installed or headset-tested.**
+Candidate: `build-frame/ready/vr-settings-20261009-133023/d2rl-vrcam.dll`
+(SHA256 `a2f3e8e1481ac4cba4e654bbef980cd07d2a7501153e2d30218e7e9194b88cfe`).
+Pointer: `build-frame/latest-vr-settings-stage.json`. This includes all of the
+interaction candidate and deferred bow-height correction below. It adds the
+owner-requested controls reference and live VR/video settings panel. Open with
+**Left Grip + Left Y** even with motion combat off, or **VR SETTINGS** in the
+wheel. Right laser/trigger selects; Right B/Close/the chord dismisses. See
+GAMEPLAY.md for settings and the first headset check. The world keeps running
+while gameplay inputs are blocked. No install, game launch, commit or push was
+performed for this candidate; the installed bow-height DLL remains unchanged.
+
+- `steamvr/vr_settings.h`: shared definitions, hit regions, editable draft,
+  Apply/Close state, sequence acknowledgement and held-input/tracking gate.
+- `vr/settings_menu.cpp`: update-thread-only profile reads/writes; only changed
+  keys are merged into a temporary INI and atomically replaced, first-save
+  `.before-vr-menu` backup retained, same-key external changes rejected. Poll
+  checks timestamps and avoids rereading unchanged values. Config is not read
+  or written on the XR/render thread.
+- `steamvr/vr_settings_ui.cpp` and `transport.cpp`: room-anchored compositor
+  quad, local laser input (no native mouse clicks), max 10 Hz changed-only atlas
+  uploads retained through GPU completion, no input against an unpublished or
+  stale page. Open/close cancels combat and pending interactions. Character
+  transitions close the panel. Controls, VR and Video tabs plus height reset.
+- Optional gaze extension/action is bound at XR setup whenever supported, so
+  Off/Fixed/Eye tracked can switch live; samples are read only when enabled.
+  This changes no runtime privacy permission. Base-game DLSS/textures/shadows
+  and SteamVR resolution are deliberately outside this panel.
+- Validation: DLL cross-build; 12 host regression suites; Windows settings
+  model/store plus interaction/journal tests in isolated Proton prefix; three
+  GDI page previews inspected. Real headset laser alignment, stereo, live
+  settings changes and motion-off reopening still need verification. No new
+  game addresses or hooks were introduced by the settings work.
+
+**Interaction implementation candidate, 2026-10-09; not installed or headset-tested.**
+Candidate: `build-frame/ready/interactions-20261009-130513/d2rl-vrcam.dll`
+(SHA256 `c92c59b6cc75dd798e42f14877a696c9e693900a2e2c5bb1a42f2349eb99edf7`).
+Build pointer: `build-frame/latest-interactions-stage.json`; logs, synthetic atlas
+previews, complete source patch and test notes are adjacent to the candidate.
+The owner asked to implement [steamvr/INTERACTIONS.md](steamvr/INTERACTIONS.md),
+with no spell gestures. New controls/test order are in GAMEPLAY.md. The installed
+DLL remains the deferred bow-height correction described next. Do not silently
+replace it or launch D2R while the owner has deferred testing. The separately
+staged candidate also contains that bow correction. No commit/push requested.
+
+Implemented source in this turn:
+
+- `steamvr/interactions.h`: copied snapshots, stable item identity, per-hand
+  input ownership, radial hit testing, native set requests, torso/hip/belt
+  anchors, either-hand grab/drink, quick use, stow, wrist status and brief
+  critical cues. `Input::at` uses GetTickCount64 for native freshness, while
+  `time` uses QPC for motion intervals. Mixing those clocks was caught/fixed.
+  Reset/recenter/tracking/menu/cancel signals discard queued native work.
+- `vr/interactionstate.cpp`: reads SDK equipment/belt on the UI thread,
+  validates captured item plus column revision immediately before a native
+  command, expires requests at 250 ms, observes removal/set changes for success.
+  **A handled native command alone is not consumption/equip confirmation.**
+  Existing weapon-set inference remains a runtime limitation, especially an
+  initially empty/identical set. No save/inventory edits.
+- `vr/native_ui.cpp` / `native_ui_signatures.h`: guarded local client-player,
+  controller assignment, owning-item skill lookup and HP/mana readers. Skill
+  list +0x100 checked before lookup to avoid load/teardown assertion. Names use
+  native localization, with `Skill N` fallback for unsupported keys. Guard
+  failure leaves native button labels/status unavailable; no guessed stats.
+  A present skill is not a mana/cooldown/charge readiness guarantee. There are
+  **no original skill icons, charge counts or complete new-class name metadata**.
+- `steamvr/interaction_ui.cpp`: synthetic GDI radial atlas, potion types/counts,
+  set labels (base item codes), wrist gauges. Held bottle tile keeps captured
+  identity across refill, becomes Used only after confirmation. Dynamic XR
+  atlas only updates on visible changes, at most 10 Hz; uploads survive until
+  their GPU fence. Runtime composition-layer limit respected. Surfaces remain
+  flat compositor quads, without world-depth occlusion or detailed asset meshes.
+- `steamvr/journal.h`, `vr/journal_ui.h`, `vr/hud.cpp`, `transport.cpp`: native
+  quest UI-only capture from the existing R16F HUD layer, shared across eyes;
+  native quest root rectangle converted from HD 2160/SafeScreenPercent layout;
+  stereo retained, native UI drawn once, left-hand follow / grip-release pin /
+  grip-near-cover pickup and ray UV back to native screen coordinates. Ordinary
+  menus stay unchanged. Missing UI layer/rect/format/capture falls back to the
+  normal menu. **Crop/native act-tab clicks/stereo need the first headset test.**
+  Tracking loss pins the last pose and requires a fresh grab. Quest page only.
+- `vr/skeletons.cpp`: presentation-only weapon subtree hiding for stow/bottle/
+  book, accounting for free staffs on an opposite authored attachment.
+- Selected native spell aim now bypasses the old bow/staff-only weapon filter
+  in `HookAttackPoint`. Simple select/point/press works through native input;
+  **full 3D spell flight/contact and immediate accepted native spawn remain
+  unimplemented**. Do not transplant the basic-arrow hook onto arbitrary spells.
+  Native animation, costs, charges, repeat cadence and effects remain active.
+
+Validation: host interaction/journal/gameplay, bow-pose/flight, melee contact,
+projectile/combat rules, camera math, gaze and deferred-draw regressions; Windows
+cross-build; native reader signature audit against local `build-frame/game-code.bin`.
+Synthetic GDI atlas rendered under an isolated Proton prefix and visually checked;
+that is not a game/headset screenshot. Art/data extraction under `build-frame/`
+is local only and must never be included in a release. New host tests and native
+ABI audit scripts are in `steamvr/`; runtime flags/values still need verification.
+
+Next runtime pass: wheel names and selection release gate → utility set swap →
+physical holsters → belt cancel/drink/refill/refusal → wrist values → held/pinned
+quest crop/click/reopen → inventory/labels/melee/bow/recenter regressions. Then
+continue the single-projectile spell adapter, including native one-time cost/
+cast-rate acknowledgment, hand-origin effect ownership and full 3D contact.
+The detailed target design explicitly distinguishes that remaining work.
+
+**Arrow-height correction installed 2026-10-09 12:11:48; headset test deferred by owner.**
+The first physical-arrow test produced arrows originating far above the player.
+Asset/code inspection found `Release` runs for both the unit root and visible
+mesh, and `Visual` could overwrite its entity binding with the root. The mesh
+then adds its authored +5 Y / 1.25 scale to the physical world transform.
+The correction requires a validated TrackReleasePoint component, binds its full
+entity generation once, and ignores later root/helper callbacks. Both initializer
+orders, extra callbacks, entity reuse, and a two-node height reproduction pass
+the host regression; the DLL cross-build and diff check pass. Actual runtime
+binding order and the visual result still need the owner's test.
+
+- Installed/staged DLL: `build-frame/ready/physical-bow-height-20261009-121148/d2rl-vrcam.dll`.
+- SHA256: `ca4eb3ffab5e4e550b59c83767652dea8790f7a9ef4d94d849f20583fcee824d`.
+- Previous DLL/INI backup: `build-frame/backups/physical-bow-height-20261009-121148`.
+- Live INI preserved exactly; the game was closed and has **not been relaunched**.
+- Source remains uncommitted. No new commit/push request for this bow iteration.
+- Prior priority (now implemented in the separately staged candidate above): design weapon holsters, spell wheel/casting, physical potions,
+  wrist status and a journal in space. [steamvr/INTERACTIONS.md](steamvr/INTERACTIONS.md)
+  contains the code-grounded proposal, dependencies and implementation order.
+  Those interactions are **not in the installed bow-height DLL**; do not claim current XY spell aim is
+  full 6DoF casting or that the current whole-scene menu capture is a 3D journal.
+- Owner refinement: **spell gestures are out of scope for now**. Equip a spell,
+  point the right hand and pull trigger; projectile spells fire on press when
+  ready. Prioritize snappy accepted release and impressive, coherent hand-origin
+  flash/trail/light/impact. Keep native mana/charges/cast rate and spell behavior;
+  measure launch delay separately from velocity. Target-family adapters are
+  internal plumbing, not different gestures or release-to-cast controls. This
+  applies to the interaction candidate; the installed arrow-height DLL is unchanged.
+- When the owner returns, check arrows leave the held string at hand height,
+  then flight direction/contact/ammo. The user will test later; no launch or
+  further headset capture is pending during the interaction design work.
+
+### First physical-arrow candidate and observed issue
+
+**Physical basic-arrow build installed 2026-10-09T11:59:14.478362-07:00; height defect reported.**
+User authorized implementing the complete bow responsiveness proposal and preparing
+a build, then confirmed Frame is on and ready. The candidate is now installed
+and the offline VR launch is authorized; no new captures have been requested.
+Source changes are uncommitted on `vr/steam-frame-proton`, based on pushed
+`94a6f89eac083a47e45f3ff30fa04270d40d2b56`.
+
+- Candidate DLL: `build-frame/ready/physical-bow-20261009-115600/d2rl-vrcam.dll`
+- SHA256: `420e6719a6745b08fc80ba2facee9bad91633be7481a3796d313f9e49b54548f`
+- Build record, source patch and test notes are adjacent to that DLL.
+- `build-frame/d2rl-vrcam.dll` now contains the interaction candidate as well
+  as the height correction; the installed DLL remains the height-only build. The retained revision-4 DLL
+  remains `6b284346ce23a1118db3122eecb5b2fa59351274df7413d5193e968eb48d88c0`.
+  Pre-install DLL/INI backup: `build-frame/backups/physical-bow-20261009-115914`.
+- Runtime at 11:59:25 confirmed physical bow, projectile, combat and melee hooks
+  ready. XR reached focused state 5 and loaded-game calibration at 11:59:54;
+  user subsequently reported the above-player arrow origin. Startup evidence is
+  adjacent to the staged DLL.
+- First three observed releases at 12:00:22–33 each created one native missile
+  and one client visual, with 2x native velocity (4608→9216), 27–46 ms queue
+  latency and 35.2–36.6 m/s draw-scaled speed. At least one native body contact
+  was recorded; the reported height defect prevents calling this flight verified.
+  See adjacent `runtime-bow-test.log`.
+  Keep `build-frame/ready/free-swing4-20261009-023651/` for rollback.
+- Build log: `build-frame/build-physical-bow.log`.
+
+Implemented bow path:
+
+1. `gameplay.h` emits a single `bowRelease` event, never an A pulse. Transport
+   freezes the right string-hand position and full right-to-left hand direction,
+   then resolves them once in the same stage/world frame as the view. It carries
+   session, equipment, recenter/turn epoch, sequence and 150 ms expiry.
+2. `vr/bow.cpp` schedules native basic attack `42FEB0` on the authoritative game
+   thread. A narrow TLS scope redirects `4333F0`'s spawn/target arguments; native
+   creation still owns ammo, weapon damage and procs. Only basic missile id 0.
+3. `projectiles.cpp` now checks `combat::LocalPlayerId` plus owner type/id. The
+   previous code wrongly dereferenced the SDK's opaque session handle, explaining
+   why successful hooks could log no accelerated arrows.
+4. `463100` is replaced only for our registered server missiles: straight 3D
+   flight at native 25Hz, continuous tip/body-capsule contacts, supercover native
+   barrier checks, closest-first hits and native `4639A0` damage/pierce. No second
+   ground-grid collision. At full draw/default multiplier 2, nominal speed is
+   40 m/s; native path velocity/Slow Missiles and native lifetime remain inputs.
+5. Client visuals are created on the UI thread using its local owner pointer,
+   not a server pointer. Native client allocation `1B7760`; `1B5380` skips the
+   duplicate client collision/prediction for our arrows, and `1B8500` cleanup is
+   tracked. Periodic game-thread id lookup retires externally removed missiles.
+6. Release hook associates only the validated release mesh's full generational
+   HD entity with its client arrow; root/helper callbacks cannot rebind it.
+   `E3A8C0` supplies a frozen-path world transform, shared by both eyes and with
+   coherent previous matrices. Mesh -Z is the measured basic-arrow long axis;
+   final model/skin alignment still needs runtime confirmation.
+7. Held-bow posing uses a 16-sample stamp history matched to the completed hero
+   attachment, including that pose's hand offset. Verified melee logic is retained;
+   its module only gains validated game-thread server-lookup helpers.
+
+Validation: six host suites (physical flight, gestures, bow rig, projectile rules,
+combat rules, melee contact), cross-build, `git diff --check`, and 20 native
+entry/call-site/layout guards against the owner's ignored local snapshot.
+Reproduce the latter with `python3 steamvr/audit_bow_signatures.py
+build-frame/game-code.bin` (one command). Code snapshot/extracted model and
+reference reverse-engineering files stay ignored and must not be distributed.
+
+**Runtime limits:** body capsules and flat launch-floor collision are approximations;
+barriers extend vertically. The native damage/lifetime proxy retains its launch
+grid position, while custom collision/rendering follows the physical path. Native
+proc-source position and room-transition behavior still need refinement. Room
+queries reacquire the proxy's native room each tick and fail closed for unavailable
+cells. Special basic-arrow conversions are refused before attack; selected skill
+buttons retain the native route. Crossbows/spells are unchanged. A signature failure
+leaves physical shots disabled, with counters in the log; no double-fire fallback.
+
+At the owner's deferred test, use the bow character outside town. Check
+immediate release, faster flight along the shaft, pitch-sensitive misses, creature
+contacts without targeting, one ammo per release, empty quiver, cancellation,
+wall/close-range shots, stereo, repeated draws and a melee regression. Read
+[steamvr/GAMEPLAY.md](steamvr/GAMEPLAY.md) for the exact test sequence. Do not call
+this candidate owner-verified before that test, or replace the verified rollback.
+
+### Previously verified melee baseline
+
+
 **Revision 4 verified in Steam Frame on 2026-10-09.** After the final comparison
 request (fast slashes, backhands and swinging while walking), the owner reported
 **"works great"** and requested commit/push. This validates the tested sword
@@ -35,8 +494,8 @@ captures or headset runs are requested tonight.
 Installed 2026-10-09 02:39:27 with the game closed. DLL SHA256:
 `6b284346ce23a1118db3122eecb5b2fa59351274df7413d5193e968eb48d88c0`.
 The same build is retained at
-`build-frame/ready/free-swing4-20261009-023651/d2rl-vrcam.dll` and
-`build-frame/d2rl-vrcam.dll`; adjacent `build.json` records validation.
+`build-frame/ready/free-swing4-20261009-023651/d2rl-vrcam.dll`;
+adjacent `build.json` records validation.
 Backup `build-frame/backups/free-swing4-20261009-023927/` contains revision 3
 DLL/INI. Build log: `build-frame/build-contact-melee4.log`. Host melee, gameplay,
 combat and bow tests and the Windows cross-build pass.
@@ -306,8 +765,9 @@ DLL SHA256 `00ed67676d2959dbe86ebdd422911687947807499c302b6c4dafeca9ba4e5378`.
 Rollback DLL/INI: `build-frame/backups/bow-left-anchor-20261009-004022/` (this contains the failed two-anchor build).
 Last owner-verified draw build: `build-frame/backups/bow-two-anchors-20261009-003455/d2rl-vrcam.dll`.
 Only the DLL changed. Motion controls remain locally on; retained DLSS off,
-centered projection, working labels and eye-tracked foveation. Installer defaults
-motion controls to **0**. Motion source is uncommitted; published ZIP remains old.
+centered projection, working labels and eye-tracked foveation. At this historical
+checkpoint the installer defaulted motion controls to **0**; the owner later
+requested **1**, now applied. Motion source is uncommitted; published ZIP remains old.
 No save edits or synthetic equipment were made.
 
 Owner acquired/equipped hunter's bow (`hbw`) and arrows (`aqv`) on an offline

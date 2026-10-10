@@ -9,6 +9,8 @@
 #include "sigscan.h"
 #include "memory.h"
 #include "logging.h"
+#include "combat.h"
+#include "bow.h"
 
 namespace gamestate {uint64_t LocalPlayer();}
 
@@ -33,7 +35,7 @@ ClientFn originalClient=nullptr;
 ServerFn originalServer=nullptr;
 VelocityFn originalVelocity=nullptr;
 ReleaseFn originalRelease=nullptr;
-std::atomic<bool> enabled{false},direct{true},speedHooksReady{false};
+std::atomic<bool> enabled{false},direct{true},speedHooksReady{false},allReady{false};
 std::atomic<float> speed{2.f};
 bool clientIn=false,serverIn=false,velocityIn=false,releaseIn=false;
 std::atomic<unsigned> accelerated[2]{},released{},observed[2]{};
@@ -43,9 +45,8 @@ template<class T> bool Read(uintptr_t p,T& value) {
     return p>0x10000&&framevr::ReadMemory(&value,reinterpret_cast<const void*>(p),sizeof value);
 }
 bool IsLocalOwner(uintptr_t owner) {
-    const uintptr_t local=gamestate::LocalPlayer();
-    uint32_t lt=~0u,li=~0u,ot=~0u,oi=~0u;
-    return local&&Read(local,lt)&&Read(local+8,li)&&Read(owner,ot)&&Read(owner+8,oi)&&SamePlayer(lt,li,ot,oi);
+    uint32_t id=~0u,type=~0u,ownerId=~0u;
+    return combat::LocalPlayerId(id)&&Read(owner,type)&&Read(owner+8,ownerId)&&SamePlayer(0,id,type,ownerId);
 }
 bool LocalArrowParams(uintptr_t params) {
     uint32_t missile=~0u;uintptr_t owner=0;
@@ -68,7 +69,11 @@ struct Scope {
     ~Scope(){creation=saved;}
 };
 uintptr_t Client(uintptr_t params,int flags) {Scope scope(params,0);return originalClient(params,flags);}
-uintptr_t Server(uintptr_t game,uintptr_t params) {Scope scope(params,1);return originalServer(game,params);}
+uintptr_t Server(uintptr_t game,uintptr_t params) {
+    Scope scope(params,1);const auto unit=originalServer(game,params);
+    if(unit)bowvr::Created(game,params,unit);
+    return unit;
+}
 void Velocity(uintptr_t path,int native,uintptr_t source,int line) {
     int adjusted=native;
     // Native creation first clears velocity, then sets the final value. Only
@@ -101,12 +106,16 @@ bool HasComponent(uintptr_t storage,uint32_t entity) {
 }
 void Release(uintptr_t assets,uintptr_t definition,uint32_t entity,uintptr_t unit) {
     uint32_t type=~0u,missile=~0u;
-    if(enabled.load()&&direct.load()&&Read(unit,type)&&type==3&&Read(unit+4,missile)&&missile==0) {
+    if(enabled.load()&&Read(unit,type)&&type==3&&Read(unit+4,missile)&&missile==0) {
         const auto owner=reinterpret_cast<uintptr_t(*)(uintptr_t)>(d2rsig::Addr(OwnerRva))(unit);
         const auto registry=d2rsig::Addr(RegistryRva);
-        if(IsLocalOwner(owner)&&EntityAlive(registry,entity)) {
+        if(EntityAlive(registry,entity)) {
             const auto storage=reinterpret_cast<uintptr_t(*)(uintptr_t)>(d2rsig::Addr(ReleaseStorageRva))(registry);
-            if(HasComponent(storage,entity)) {
+            const bool hasReleasePoint=HasComponent(storage,entity);
+            // This callback also visits the unit root. Only the release mesh
+            // may own the physical world transform; the root has no component.
+            const bool physical=bowvr::Visual(entity,unit,hasReleasePoint);
+            if(hasReleasePoint&&(physical||(direct.load()&&IsLocalOwner(owner)))) {
                 // Use the native removal operation, on the same renderer
                 // thread as initialization. The base arrow transform/heading
                 // then follows its path immediately instead of blending from
@@ -120,6 +129,8 @@ void Release(uintptr_t assets,uintptr_t definition,uint32_t entity,uintptr_t uni
     originalRelease(assets,definition,entity,unit);
 }
 }
+bool Ready(){return allReady.load();}
+uintptr_t CreateVisual(uintptr_t params){return originalClient?Client(params,0):0;}
 void Configure(bool motionControls,float multiplier,bool directRelease) {
     enabled=motionControls;speed=std::isfinite(multiplier)?std::clamp(multiplier,1.f,3.f):1.f;direct=directRelease;
 }
@@ -135,6 +146,7 @@ void Install() {
         releaseIn=d2rsig::Hook(ReleaseRva,ReleaseSig,sizeof ReleaseSig,reinterpret_cast<void*>(&Release),reinterpret_cast<void**>(&originalRelease));
         if(releaseIn)framevr::logging::Write("Frame bow flight: native release-point handoff hook ready");
     }
+    allReady=releaseIn&&speedHooksReady.load();
 }
 void Report() {
     const unsigned c=accelerated[0].exchange(0),s=accelerated[1].exchange(0),r=released.exchange(0);

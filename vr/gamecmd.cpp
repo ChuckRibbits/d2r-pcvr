@@ -219,4 +219,12 @@ void RequestPotion(int slot) {
 }
 void CancelPotion() {g_potionRequest.store(0);}
 
+bool ExecuteUiCommand(uint32_t command) { // UI thread only
+    if(command>=kCommands||!Ready())return false;
+    bool handled=false,up=false;
+    if(!Exec(RVA_CMD_PRESS,command,&handled)) {g_ok=0;return false;}
+    if(!Exec(RVA_CMD_RELEASE,command,&up)) {g_ok=0;return false;}
+    return handled;
+}
+
 }  // namespace gamecmd

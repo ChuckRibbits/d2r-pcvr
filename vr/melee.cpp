@@ -163,6 +163,18 @@ void Init(const D2RL::PluginContext* ctx) {
     context=ctx;
     if(ctx->QueryService(&threads)!=D2RL::ServiceQueryResult::Success)threads=nullptr;
 }
+bool LocalServer(uintptr_t& game,uintptr_t& player) {
+    Server local;{std::lock_guard lock(serverMutex);local=server;}
+    uint32_t id=0;
+    if(!ready.load()||!combat::LocalPlayerId(id)||!local.game||local.player!=id||
+       local.session!=gamestate::LocalPlayer())return false;
+    player=originalLookup(local.game,0,id);game=local.game;
+    uint32_t header[3]{};uintptr_t back=0;
+    return player&&Read(player,header)&&header[0]==0&&header[2]==id&&Read(player+0xd8,back)&&back==game;
+}
+uintptr_t ServerUnit(uintptr_t game,int type,uint32_t id) {
+    return ready.load()&&game?originalLookup(game,type,id):0;
+}
 void Install() {
     if(ready.load()||!context||!threads||!threads->runOnGameThread)return;
     if(!d2rsig::Check(AttackRva,AttackSig,sizeof AttackSig)||!d2rsig::Check(RelationRva,RelationSig,sizeof RelationSig)||

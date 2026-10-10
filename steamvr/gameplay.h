@@ -44,7 +44,7 @@ struct Input {
 struct Output {
     bool attack=false, block=false, palette=false, bowDrawing=false, rayValid=false;
     bool bowReady=false, bowInReach=false, bowCharged=false;
-    bool meleeContact=false;
+    bool meleeContact=false,bowRelease=false;
     float meleeSpeed=0;
     int skill=-1, potion=-1, bottle=-1; // potion is a one-shot request, not proof of consumption
     bool swap=false;
@@ -86,6 +86,7 @@ public:
         *this=Engine{};selection=chosen;weapon=heldWeapon;equipment=heldEquipment;
     }
     int Selection() const { return selection; }
+    void Select(int slot) {if(slot>=-1&&slot<8){Cancel();selection=slot;}}
     Output Step(const Input& in) {
         Output out;
         // Analog trigger hysteresis: a small squeeze fluctuation must not let
@@ -165,7 +166,7 @@ public:
             if(drawing&&released) {
                 if(out.bowCharged&&math::Dot(math::Normalized(line),out.bowForward)>.15f) {
                     shotOrigin=in.hand[1].p;shotDirection=math::Normalized(line);
-                    pulseUntil=in.time+.065;out.feedback=2;
+                    pulseUntil=in.time+.065;out.feedback=2;out.bowRelease=true;
                     shotAimUntil=in.time+.4;
                 }
                 drawing=false;
@@ -175,7 +176,9 @@ public:
                 out.rayOrigin=drawing?in.hand[1].p:shotOrigin;
                 out.rayDirection=drawing?(gap>.05f?math::Normalized(line):out.bowForward):shotDirection;
             }
-            out.attack=in.time<pulseUntil;
+            // A release is a single native missile request, never a held pad
+            // button. The game must not replay its animated firing wind-up.
+            out.attack=false;
             return out;
         }
         // Contact melee runs from the equipped weapon's posed transform. It

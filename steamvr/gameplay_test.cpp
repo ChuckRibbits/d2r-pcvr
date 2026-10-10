@@ -48,28 +48,37 @@ int main() {
     }
     {
         Sim s;s.Nock();s.Move({0,1.3f,0},10);s.in.trigger=0;
-        auto shot=s.Step();Check(shot.attack&&shot.feedback==2,"draw release shoots");
+        auto shot=s.Step();Check(shot.bowRelease&&!shot.attack&&shot.feedback==2,"draw release shoots");
         Check(shot.rayDirection.z<-.99f&&std::fabs(shot.rayOrigin.z+.5f)<.001,"arrow aims from string through bow hand");
         s.in.hand[0].p.x+=.1f;shot=s.Step();Check(shot.rayDirection.z<-.99f,"release direction stays latched through input pulse");
-        Check(!s.Step(5).attack,"bow shot pulse expires");
-        Check(!s.Step(20).attack,"bow cannot repeat without renocking");
+        Check(!s.Step(5).bowRelease&&!s.out.attack,"release event cannot become a held attack");
+        Check(!s.Step(20).bowRelease,"bow cannot repeat without renocking");
     }
     {
         Sim s;s.Nock();Check(s.out.bowDrawing&&s.in.grip[1]==0,"equipped bow needs no left grip clutch");
         s.in.trigger=.4f;Check(s.Step().bowDrawing&&!s.out.attack,"trigger noise cannot release grabbed string");
-        s.Move({0,1.3f,0},10);s.in.trigger=.15f;Check(s.Step().attack,"full trigger release shoots after draw");
+        s.Move({0,1.3f,0},10);s.in.trigger=.15f;Check(s.Step().bowRelease&&!s.out.attack,"full trigger release emits one shot without pad attack");
+    }
+    {
+        Sim s;s.Nock();s.Move({.2f,1.1f,0},20);
+        s.in.hand[1].p={-.05f,1.4f,-.5f};s.Step();s.in.trigger=0;
+        const auto expected=math::Normalized(s.in.hand[1].p-s.in.hand[0].p);
+        const auto shot=s.Step();
+        Check(shot.bowRelease&&!shot.attack&&Length(shot.rayDirection-expected)<.0001f,"release captures both anchors with pitch and yaw");
+        s.in.hand[0].p.x+=.08f;s.in.hand[1].p.z+=.08f;
+        Check(!s.Step().bowRelease&&Length(s.out.rayDirection-expected)<.0001f,"hand motion after release cannot steer or refire");
     }
     {
         Sim s;s.in.weapon=Weapon::Bow;s.in.hand[1].p={0,1.3f,-.5f};s.in.hand[0].p={.5f,1.3f,-.3f};s.Step(2);
         s.in.trigger=1;Check(!s.Step().bowDrawing,"trigger outside grab volume waits for approach");
         s.Move({0,1.3f,-.34f});Check(s.out.bowDrawing,"pre-squeezed trigger grabs when brought to string");
-        s.in.cancel=true;Check(!s.Step().attack,"B cancels draw");s.in.cancel=false;
+        s.in.cancel=true;Check(!s.Step().bowRelease&&!s.out.attack,"B cancels draw");s.in.cancel=false;
         Check(!s.Step(3).bowDrawing,"cancelled held trigger cannot renock until released");
     }
     {
         Sim s;s.in.weapon=Weapon::Bow;s.in.hand[1].p={0,1.3f,-.5f};s.in.hand[0].p={0,1.3f,-.12f};s.Step(2);
         s.in.trigger=1;Check(s.Step().bowDrawing,"generous string-side nock region accepts comfortable hand spacing");
-        s.Step(10);s.in.trigger=0;Check(!s.Step().attack,"nocking already apart still requires additional deliberate draw");
+        s.Step(10);s.in.trigger=0;Check(!s.Step().bowRelease&&!s.out.attack,"nocking already apart still requires additional deliberate draw");
     }
     {
         Sim s;s.in.palette=true;s.in.hover=3;s.in.trigger=1;s.Step();s.in.palette=false;s.in.trigger=0;s.Step();
@@ -80,13 +89,13 @@ int main() {
         Check(s.engine.Selection()==2,"tracking or menus preserve an explicitly selected spell on the same bow");
     }
     {
-        Sim s;s.Nock();s.in.trigger=0;Check(!s.Step().attack,"short draw does not shoot");
-        s.Nock();s.Move({0,1.3f,0});s.in.cancel=true;s.in.trigger=0;Check(!s.Step().attack,"explicit bow cancel never shoots");
+        Sim s;s.Nock();s.in.trigger=0;Check(!s.Step().bowRelease&&!s.out.attack,"short draw does not shoot");
+        s.Nock();s.Move({0,1.3f,0});s.in.cancel=true;s.in.trigger=0;Check(!s.Step().bowRelease&&!s.out.attack,"explicit bow cancel never shoots");
     }
     {
-        Sim s;s.Nock();s.Move({0,1.3f,0});s.in.tracked[1]=false;Check(!s.Step().attack,"tracking loss cancels draw");
-        s.in.tracked[1]=true;s.in.trigger=0;Check(!s.Step(4).attack,"tracking restoration never fires old draw");
-        s.Nock();s.Move({0,1.3f,0});++s.in.equipment;s.in.trigger=0;Check(!s.Step().attack,"weapon swap cancels draw");
+        Sim s;s.Nock();s.Move({0,1.3f,0});s.in.tracked[1]=false;Check(!s.Step().bowRelease&&!s.out.attack,"tracking loss cancels draw");
+        s.in.tracked[1]=true;s.in.trigger=0;Check(!s.Step(4).bowRelease,"tracking restoration never fires old draw");
+        s.Nock();s.Move({0,1.3f,0});++s.in.equipment;s.in.trigger=0;Check(!s.Step().bowRelease&&!s.out.attack,"weapon swap cancels draw");
     }
     {
         Sim s;s.in.palette=true;s.in.hover=5;s.in.trigger=1;

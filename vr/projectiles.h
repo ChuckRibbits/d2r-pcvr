@@ -1,4 +1,5 @@
 #pragma once
+#include <cstdint>
 
 namespace projectiles {
 // Optional, signature-checked native motion-bow adjustments. Ordinary attacks
@@ -6,4 +7,6 @@ namespace projectiles {
 void Configure(bool motionControls, float arrowSpeed, bool directRelease);
 void Install();
 void Report();
+bool Ready();
+uintptr_t CreateVisual(uintptr_t params);
 }

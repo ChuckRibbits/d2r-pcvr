@@ -35,15 +35,20 @@
 #include <vector>
 
 #include "skeletons.h"
+#include "../steamvr/body_tracking.h"
 #include "../steamvr/profile.h"
 #include "sigscan.h"
 #ifdef D2RVR_NATIVE_OPENXR
 #include "memory.h"
+#include "logging.h"
 #include "hero_selection.h"
 #include "bow_pose.h"
 #endif
 
 namespace skel {
+std::atomic<unsigned> g_interactionHidden{0};
+void SetInteractionHidden(unsigned mask){g_interactionHidden=mask&3;}
+
 
 namespace {
 
@@ -268,6 +273,8 @@ struct Hero {
     // per class. And the pelvis standing: how far above it the animation lifts
     // the hips is a jump (the barbarian's Leap), the camera goes up with it.
     float eyeY = 0.0f, pelvisY = 0.0f;
+    V3 eyeBind{};
+    int leg[2][3] = {{-1,-1,-1},{-1,-1,-1}}; // hip, knee, ankle
     // The bind pose (model space, from granny_bone::InverseWorld4x4 at +0x50),
     // what the body above the pelvis is held in instead of the animation.
     std::vector<Mat> bind;
@@ -305,6 +312,8 @@ std::atomic<int> g_gunAxis{0};   // GunAxis
 struct GunBoneOut { float o[3], ax[3][3]; ULONGLONG at; Mat leftToHead; uintptr_t hero;
 #ifdef D2RVR_NATIVE_OPENXR
     MeleeWeaponPose melee{};bool haveMelee=false;
+    uint32_t poseStamp=0;bool havePoseStamp=false;
+    bow::Vec handOffset{};
 #endif
 };
 SRWLOCK g_gunBoneLock = SRWLOCK_INIT;
@@ -633,8 +642,31 @@ bool Learn(uintptr_t self, Hero* h) {
         float sum = 0.0f; int k = 0;
         for (int e : h->eyes) if (e >= 0) { sum += h->bind[e].m[13]; ++k; }
         h->eyeY = k ? sum / k : h->bind[h->head].m[13] + 0.25f;
+        h->eyeBind = Pos(h->bind[h->head]); h->eyeBind.y = h->eyeY;
+        if(k) {
+            h->eyeBind = {};
+            for(int e:h->eyes)if(e>=0) {
+                const V3 p=Pos(h->bind[e]);
+                h->eyeBind.x+=p.x/k;h->eyeBind.y+=p.y/k;h->eyeBind.z+=p.z/k;
+            }
+        }
         if (h->pelvis >= 0) h->pelvisY = h->bind[h->pelvis].m[13];
         if (!(h->eyeY > 3.0f && h->eyeY < 12.0f)) h->eyeY = 0.0f;   // not a standing body: no height from it
+        // Resolve by the rig's hierarchy/geometry, not the hero class. Ignore
+        // toe/end/helper bones and require a descending, plausible leg chain.
+        for(int foot=0;foot<count;++foot) {
+            std::string name=names[foot];for(char& c:name)c=(char)tolower((unsigned char)c);
+            if((name.find("foot")==std::string::npos&&name.find("ankle")==std::string::npos)||
+                name.find("end")!=std::string::npos||name.find("toe")!=std::string::npos||h->upper[foot])continue;
+            const int knee=h->parent[foot],hip=knee>=0?h->parent[knee]:-1;
+            if(hip<0||hip==h->pelvis||h->pelvis<0)continue;
+            int ancestor=hip;while(ancestor>=0&&ancestor!=h->pelvis)ancestor=h->parent[ancestor];
+            if(ancestor!=h->pelvis)continue;
+            const V3 a=Pos(h->bind[hip]),b=Pos(h->bind[knee]),c=Pos(h->bind[foot]);
+            if(a.y-b.y<.1f||b.y-c.y<.1f||c.y>h->pelvisY*.5f)continue;
+            const int side=c.x<0?0:1;
+            if(h->leg[side][2]<0){h->leg[side][0]=hip;h->leg[side][1]=knee;h->leg[side][2]=foot;}
+        }
     }
     return true;
 }
@@ -777,7 +809,7 @@ void ApplyWrist(Mat& hand, const Wrist& r) {
 V3 ControllerPoint(const Hero& h, int side, const Input& in, const std::vector<Mat>& newW, float c, float s) {
     const V3 head = in.haveEye ? V3{in.eyeModel[0], in.eyeModel[1], in.eyeModel[2]} : Pos(newW[h.head]);
     // hero units per metre: the eye (or head) height in the model over the user's
-    const float upm = std::clamp(head.y / std::max(0.8f, in.userHeadM), 2.0f, 8.0f) * in.scale;
+    const float upm = framevr::body::UnitsPerMetre(h.eyeY>0?h.eyeY:head.y, in.userHeadM, in.scale);
     const float hv[3] = {in.hand[side][0] + in.handOffset[0], in.hand[side][1] + in.handOffset[1], in.hand[side][2] + in.handOffset[2]};
     return Add(head, Scale(ToModel(hv, c, s), upm));
 }
@@ -945,6 +977,7 @@ void PoseBody(uintptr_t self, const Hero& h, const Input& in) {
     std::vector<Mat> oldW(n);
     if (!SafeCopy(oldW.data(), (const void*)mats, sizeof(Mat) * n)) return;
     std::vector<Mat> newW = oldW;
+    bool trackedNeckApplied = false;
     {   // diagnostics: does the animation itself turn the hero?
         const int ids[3] = {0, h.spine >= 0 ? h.parent[h.spine] - 1 : 2, h.spine >= 0 ? h.parent[h.spine] : 3};
         for (int i = 0; i < 3; ++i)
@@ -1020,6 +1053,41 @@ void PoseBody(uintptr_t self, const Hero& h, const Input& in) {
         for (int i = 0; i < n; ++i) if (in.bodyTurn == 2 || h.upper[i]) newW[i] = Mul(newW[i], T);
     }
 #if D2RVR_FIRST_PERSON
+    if(in.followTrackedNeck&&in.haveEye&&in.haveYaw&&h.bindOk&&h.head>=0&&h.eyeY>0) {
+        const int neck=h.neck>=0?h.neck:h.head;
+        const V3 bindNeck=Pos(h.bind[neck]),current=Pos(newW[neck]);
+        const auto target=framevr::body::NeckTarget(
+            {in.eyeModel[0],in.eyeModel[1],in.eyeModel[2]},
+            {h.eyeBind.x-bindNeck.x,h.eyeBind.y-bindNeck.y,h.eyeBind.z-bindNeck.z},
+            in.yawInModel,in.headPitch,in.headRoll);
+        const V3 shift{target.x-current.x,target.y-current.y,target.z-current.z};
+        if(framevr::body::Finite(target)&&Len(shift)<h.eyeY*3.f) {
+            trackedNeckApplied = true;
+            const auto before=newW;
+            const bool legs=h.leg[0][2]>=0&&h.leg[1][2]>=0;
+            for(int i=0;i<n;++i) {
+                newW[i].m[12]+=shift.x;newW[i].m[14]+=shift.z;
+                // Unknown leg chains keep the feet's authored height while
+                // the upper body still follows the tracked neck.
+                if(legs||h.upper[i]||h.inNeck[i])newW[i].m[13]+=shift.y;
+            }
+            if(legs)for(int side=0;side<2;++side) {
+                const int hip=h.leg[side][0],knee=h.leg[side][1],foot=h.leg[side][2];
+                const V3 a=Pos(before[hip]),b=Pos(before[knee]),z=Pos(before[foot]),now=Pos(newW[hip]);
+                framevr::math::Vec end{z.x+shift.x,z.y,z.z+shift.z},bend;
+                const V3 pole=Sub(b,a);
+                if(framevr::body::Knee({now.x,now.y,now.z},Len(Sub(b,a)),Len(Sub(z,b)),end,{pole.x,pole.y,pole.z},bend)) {
+                    const auto base=newW;
+                    AimChain(h,hip,knee,foot,{bend.x,bend.y,bend.z},{end.x,end.y,end.z},base,newW);
+                    // Keep the animated foot orientation and its children;
+                    // crouching changes the knee, not the floor's normal.
+                    const V3 at=Pos(newW[foot]);
+                    newW[foot]=before[foot];newW[foot].m[12]=at.x;newW[foot].m[13]=at.y;newW[foot].m[14]=at.z;
+                    std::vector<char> moved(n,0);moved[foot]=1;Propagate(h,base,newW,moved,foot);
+                }
+            }
+        }
+    }
     // The animation after the turn: what the arms re-derive their children from.
     const std::vector<Mat> baseW = newW;
 
@@ -1169,7 +1237,7 @@ void PoseBody(uintptr_t self, const Hero& h, const Input& in) {
         const Mat line = Mul(Mul(TurnAbout(gunF, lt[2]), TurnAbout(gunR, lt[0])), TurnAbout(gunU, lt[1]));
         gunStock = Norm(RotOnly(RotOnly(gunF, line), adj));
         const float headY = in.haveEye ? in.eyeModel[1] : Pos(newW[h.head]).y;
-        const float upm = std::clamp(headY / std::max(0.8f, in.userHeadM), 2.0f, 8.0f) * in.scale;   // model units per metre
+        const float upm = framevr::body::UnitsPerMetre(h.eyeY>0?h.eyeY:headY, in.userHeadM, in.scale);   // model units per metre
         // Fast to the controller, nothing from the animation: placed by where the game's
         // own right hand held it, it moved with the pose the grip was taken in (its palms
         // 0.80 apart just after taking it, 1.3 standing, 4.5 in a stride - 2026-10-05).
@@ -1193,7 +1261,7 @@ void PoseBody(uintptr_t self, const Hero& h, const Input& in) {
         const float* a = in.weaponAdj;
         if (a[0] != 0.0f || a[1] != 0.0f || a[2] != 0.0f || a[3] != 0.0f || a[4] != 0.0f || a[5] != 0.0f) {
             const float headY = in.haveEye ? in.eyeModel[1] : Pos(newW[h.head >= 0 ? h.head : 0]).y;
-            const float upm = std::clamp(headY / std::max(0.8f, in.userHeadM), 2.0f, 8.0f) * in.scale;   // model units per metre
+            const float upm = framevr::body::UnitsPerMetre(h.eyeY>0?h.eyeY:headY, in.userHeadM, in.scale);   // model units per metre
             auto turn = [](int axis, float deg) {   // row-vector rotation about one of the bone's own axes
                 Mat r{}; r.m[0] = r.m[5] = r.m[10] = r.m[15] = 1.0f;
                 const float t = deg * 0.0174532925f, c = cosf(t), s = sinf(t);
@@ -1263,7 +1331,7 @@ void PoseBody(uintptr_t self, const Hero& h, const Input& in) {
         // nothing - the left slides 1.5 x 30 cm either way of the right fist.
         if (in.shaftAxis != 0 && !in.leftHilt && !gun) {
             const float headY = in.haveEye ? in.eyeModel[1] : Pos(newW[h.head]).y;
-            gap = 0.3f * std::clamp(headY / std::max(0.8f, in.userHeadM), 2.0f, 8.0f) * in.scale;
+            gap = 0.3f * framevr::body::UnitsPerMetre(h.eyeY>0?h.eyeY:headY, in.userHeadM, in.scale);
         }
         if (lk >= 0 && (gap > 0.05f || in.leftHilt)) {
             // [hands] staff_grab_cm: how near the shaft (within its length) the
@@ -1272,7 +1340,7 @@ void PoseBody(uintptr_t self, const Hero& h, const Input& in) {
             if (in.handsValid & 2u) {
                 const V3 C = ControllerPoint(h, 1, in, newW, c, s);
                 const float headY = in.haveEye ? in.eyeModel[1] : Pos(newW[h.head]).y;
-                const float upm = std::clamp(headY / std::max(0.8f, in.userHeadM), 2.0f, 8.0f) * in.scale;   // model units per metre
+                const float upm = framevr::body::UnitsPerMetre(h.eyeY>0?h.eyeY:headY, in.userHeadM, in.scale);   // model units per metre
                 // a crossbow is taken at its one place only (leftStaffAtM), a sword's hilt
                 // about its one place (leftHilt), a staff anywhere along it
                 const float t = in.leftStaffAtM >= 0.0f ? tR + in.leftStaffAtM * upm
@@ -1323,12 +1391,12 @@ void PoseBody(uintptr_t self, const Hero& h, const Input& in) {
                 // A crossbow: the left hand holds it at one place - under the stock just
                 // behind the bow - it does not slide ("only in one place", 2026-10-05).
                 const float headY = in.haveEye ? in.eyeModel[1] : Pos(newW[h.head]).y;
-                along = in.leftStaffAtM * std::clamp(headY / std::max(0.8f, in.userHeadM), 2.0f, 8.0f) * in.scale;
+                along = in.leftStaffAtM * framevr::body::UnitsPerMetre(h.eyeY>0?h.eyeY:headY, in.userHeadM, in.scale);
             } else if (in.leftHilt) {
                 // A two-handed sword: the left fist next to the right one on the hilt, a little
                 // play either way with the controller, never past it.
                 const float headY = in.haveEye ? in.eyeModel[1] : Pos(newW[h.head]).y;
-                const float upm = std::clamp(headY / std::max(0.8f, in.userHeadM), 2.0f, 8.0f) * in.scale;   // model units per metre
+                const float upm = framevr::body::UnitsPerMetre(h.eyeY>0?h.eyeY:headY, in.userHeadM, in.scale);   // model units per metre
                 along = in.leftHiltAtM * upm;
                 if (in.handsValid & 2u)
                     along = std::clamp(Dot(Sub(ControllerPoint(h, 1, in, newW, c, s), origin), axis) - tR,
@@ -1388,7 +1456,7 @@ void PoseBody(uintptr_t self, const Hero& h, const Input& in) {
             }
             if (const float* o = in.leftStaffOffset; o[0] != 0.0f || o[1] != 0.0f || o[2] != 0.0f) {
                 const float headY = in.haveEye ? in.eyeModel[1] : Pos(newW[h.head]).y;
-                const float upm = std::clamp(headY / std::max(0.8f, in.userHeadM), 2.0f, 8.0f) * in.scale;   // model units per metre
+                const float upm = framevr::body::UnitsPerMetre(h.eyeY>0?h.eyeY:headY, in.userHeadM, in.scale);   // model units per metre
                 for (int r = 0; r < 3; ++r) {
                     const V3 ax = Norm(V3{onStaff.m[r * 4], onStaff.m[r * 4 + 1], onStaff.m[r * 4 + 2]});
                     onStaff.m[12] += ax.x * o[r] * 0.01f * upm; onStaff.m[13] += ax.y * o[r] * 0.01f * upm; onStaff.m[14] += ax.z * o[r] * 0.01f * upm;
@@ -1424,7 +1492,7 @@ void PoseBody(uintptr_t self, const Hero& h, const Input& in) {
             // crossbow's line is vrcam's HandRay.
             if (!gun) {
                 const V3 head = in.haveEye ? V3{in.eyeModel[0], in.eyeModel[1], in.eyeModel[2]} : Pos(newW[h.head]);
-                const float upm = std::clamp(head.y / std::max(0.8f, in.userHeadM), 2.0f, 8.0f) * in.scale;   // model units per metre
+                const float upm = framevr::body::UnitsPerMetre(h.eyeY>0?h.eyeY:head.y, in.userHeadM, in.scale);   // model units per metre
                 float lo = tR - kStaffReach * gap, hi = tR + kStaffReach * gap;
                 if (in.leftHilt) {
                     lo = tR + std::min(-0.25f, in.leftHiltAtM - in.leftHiltSlideM) * upm;
@@ -1457,7 +1525,7 @@ void PoseBody(uintptr_t self, const Hero& h, const Input& in) {
             const float* o = in.staffOffset;
             if (o[0] != 0.0f || o[1] != 0.0f || o[2] != 0.0f) {
                 const float headY = in.haveEye ? in.eyeModel[1] : Pos(newW[h.head >= 0 ? h.head : other]).y;
-                const float upm = std::clamp(headY / std::max(0.8f, in.userHeadM), 2.0f, 8.0f) * in.scale;   // model units per metre
+                const float upm = framevr::body::UnitsPerMetre(h.eyeY>0?h.eyeY:headY, in.userHeadM, in.scale);   // model units per metre
                 const Mat& m = newW[other];
                 for (int r = 0; r < 3; ++r) {
                     const V3 axis = Norm(V3{m.m[r * 4], m.m[r * 4 + 1], m.m[r * 4 + 2]});
@@ -1499,7 +1567,7 @@ void PoseBody(uintptr_t self, const Hero& h, const Input& in) {
     // head point and scale the hands were placed with, undone.
     if (h.head >= 0) {
         const V3 head = in.haveEye ? V3{in.eyeModel[0], in.eyeModel[1], in.eyeModel[2]} : Pos(newW[h.head]);
-        const float upm = std::clamp(head.y / std::max(0.8f, in.userHeadM), 2.0f, 8.0f) * in.scale;
+        const float upm = framevr::body::UnitsPerMetre(h.eyeY>0?h.eyeY:head.y, in.userHeadM, in.scale);
         for (int side = 0; side < 2; ++side) {
             const int l = h.lwr[side], k = h.hand[side];
             if (l < 0 || k < 0 || upm <= 0.0f) continue;
@@ -1541,7 +1609,7 @@ void PoseBody(uintptr_t self, const Hero& h, const Input& in) {
         const int hs = freeStaff ? staffSide : in.weaponSide ? 1 : 0;
         if (h.weapon[hs] >= 0 && h.hand[hs] >= 0 && h.head >= 0) {
             const float headY = in.haveEye ? in.eyeModel[1] : Pos(oldW[h.head]).y;
-            const float cm = 100.0f / (std::clamp(headY / std::max(0.8f, in.userHeadM), 2.0f, 8.0f) * in.scale);
+            const float cm = 100.0f / (framevr::body::UnitsPerMetre(h.eyeY>0?h.eyeY:headY, in.userHeadM, in.scale));
             const Mat now = Mul(oldW[h.weapon[hs]], InvAffine(oldW[h.hand[hs]]));
             const V3 a = Norm(V3{now.m[4], now.m[5], now.m[6]}), b = Norm(V3{grip.attach[hs].m[4], grip.attach[hs].m[5], grip.attach[hs].m[6]});
             g_weaponCalm.store(Len(Sub(Pos(now), Pos(grip.attach[hs]))) * cm < 2.0f && Dot(a, b) > 0.9976f);   // cos 4 deg
@@ -1549,7 +1617,7 @@ void PoseBody(uintptr_t self, const Hero& h, const Input& in) {
     }
     if (in.bothAttach && grip.ok && h.bindOk && h.hand[0] >= 0 && h.hand[1] >= 0 && h.weapon[0] >= 0 && h.weapon[1] >= 0) {
         const float headY = in.haveEye ? in.eyeModel[1] : Pos(oldW[h.head >= 0 ? h.head : 0]).y;
-        const float cm = 100.0f / (std::clamp(headY / std::max(0.8f, in.userHeadM), 2.0f, 8.0f) * in.scale);   // model units -> cm
+        const float cm = 100.0f / (framevr::body::UnitsPerMetre(h.eyeY>0?h.eyeY:headY, in.userHeadM, in.scale));   // model units -> cm
         for (int side = 0; side < 2; ++side) {
             const Mat now = Mul(oldW[h.weapon[side]], InvAffine(oldW[h.hand[side]]));
             const V3 d = Sub(Pos(now), Pos(grip.attach[side]));
@@ -1571,7 +1639,7 @@ void PoseBody(uintptr_t self, const Hero& h, const Input& in) {
         const int hs = freeStaff ? staffSide : in.weaponSide ? 1 : 0, from = h.weapon[hs];
         if (from >= 0) {
             const float headY = in.haveEye ? in.eyeModel[1] : Pos(oldW[h.head >= 0 ? h.head : 0]).y;
-            const float cm = 100.0f / (std::clamp(headY / std::max(0.8f, in.userHeadM), 2.0f, 8.0f) * in.scale);
+            const float cm = 100.0f / (framevr::body::UnitsPerMetre(h.eyeY>0?h.eyeY:headY, in.userHeadM, in.scale));
             const V3 a = Norm(V3{oldW[h.twoHand].m[4], oldW[h.twoHand].m[5], oldW[h.twoHand].m[6]}), b = Norm(V3{oldW[from].m[4], oldW[from].m[5], oldW[from].m[6]});
             g_diag[8].store(Len(Sub(Pos(oldW[h.twoHand]), Pos(oldW[from]))) * cm);
             g_diag[9].store(acosf(std::clamp(Dot(a, b), -1.0f, 1.0f)) * 57.2958f);
@@ -1596,7 +1664,7 @@ void PoseBody(uintptr_t self, const Hero& h, const Input& in) {
             // So the left one goes along the right one's own Y (+-in.carryAxis), 40 cm out.
             {
                 const float headY = in.haveEye ? in.eyeModel[1] : Pos(newW[h.head >= 0 ? h.head : 0]).y;
-                const float upm = std::clamp(headY / std::max(0.8f, in.userHeadM), 2.0f, 8.0f) * in.scale;
+                const float upm = framevr::body::UnitsPerMetre(h.eyeY>0?h.eyeY:headY, in.userHeadM, in.scale);
                 const int ax = std::clamp(abs(in.carryAxis), 1, 3) - 1;
                 const float sg = in.carryAxis < 0 ? -1.0f : 1.0f;
                 const V3 dir = Norm(V3{newW[from].m[ax * 4], newW[from].m[ax * 4 + 1], newW[from].m[ax * 4 + 2]});
@@ -1629,7 +1697,7 @@ void PoseBody(uintptr_t self, const Hero& h, const Input& in) {
         const Mat& w = newW[h.weapon[axesSide]];
         auto back = [&](V3 d) { const V3 m = {d.x * c - d.z * s, d.y, d.x * s + d.z * c}; return V3{-m.x, m.y, -m.z}; };
         const V3 head = in.haveEye ? V3{in.eyeModel[0], in.eyeModel[1], in.eyeModel[2]} : Pos(newW[h.head >= 0 ? h.head : 0]);
-        const float upm = std::clamp(head.y / std::max(0.8f, in.userHeadM), 2.0f, 8.0f) * in.scale;   // model units per metre
+        const float upm = framevr::body::UnitsPerMetre(h.eyeY>0?h.eyeY:head.y, in.userHeadM, in.scale);   // model units per metre
         GunBoneOut g{};
         const V3 o = back(Scale(Sub(Pos(w), head), 1.0f / upm));
         g.o[0] = o.x; g.o[1] = o.y; g.o[2] = o.z;
@@ -1653,6 +1721,8 @@ void PoseBody(uintptr_t self, const Hero& h, const Input& in) {
         }
         g.at = GetTickCount64();
 #ifdef D2RVR_NATIVE_OPENXR
+        g.poseStamp=in.poseStamp;g.havePoseStamp=in.havePoseStamp;
+        g.handOffset={in.handOffset[0],in.handOffset[1],in.handOffset[2]};
         // Keep collision in the world frame of THIS completed pose. Rebuilding
         // it later from the timer's newer camera yaw/eye displaced fast swings.
         HeroXform hx;Mat model;
@@ -1675,6 +1745,22 @@ void PoseBody(uintptr_t self, const Hero& h, const Input& in) {
             if (in.handFree[side] && (in.handsValid & (1u << side)) && in.grip[side] >= 0.0f && !(side == 1 && leftOnStaff))   // on a shaft: the game's grip, not our fist (it wraps better, 2026-10-06)
                 Fist(h, side, in.grip[side], in.fistClose[h.cls >= 0 ? h.cls : 3], in.fistOpen[h.cls >= 0 ? h.cls : 3], oldW, newW);
 
+    // Presentation-only stow/grab. Native equipment and its stats stay intact.
+    // This runs after attachment posing and before the final skin matrices.
+    unsigned hidden=g_interactionHidden.load();
+    // A free staff can use the opposite authored attachment even though the
+    // right controller owns it. Hide its actual attachment while grabbing.
+    if(freeStaff&&(hidden&1u))hidden|=1u<<staffSide;
+    for(int side=0;side<2;++side)if((hidden&(1u<<side))&&h.weapon[side]>=0) {
+        const int bone=h.weapon[side];const V3 p=Pos(newW[bone]);
+        for(int i=0;i<n;++i) {
+            int ancestor=i;int budget=n;
+            while(ancestor>=0&&ancestor!=bone&&budget-->0)ancestor=h.parent[ancestor];
+            if(ancestor!=bone)continue;
+            Mat& w=newW[i];for(int r=0;r<3;++r)for(int c=0;c<3;++c)w.m[r*4+c]*=.0001f;
+            w.m[12]=p.x;w.m[13]=p.y;w.m[14]=p.z;
+        }
+    }
     // First person: the head and the neck shrink into a point at the neck's
     // base, so a camera at the eyes sees out instead of the inside of the skull,
     // and looking down sees the chest, not a neck.
@@ -1693,7 +1779,7 @@ void PoseBody(uintptr_t self, const Hero& h, const Input& in) {
         Grip g; AcquireSRWLockShared(&g_gripLock); g = g_grip; ReleaseSRWLockShared(&g_gripLock);
         if (g.ok) {
             const float headY = in.haveEye ? in.eyeModel[1] : Pos(oldW[h.head]).y;
-            const float cm = 100.0f / (std::clamp(headY / std::max(0.8f, in.userHeadM), 2.0f, 8.0f) * in.scale);
+            const float cm = 100.0f / (framevr::body::UnitsPerMetre(h.eyeY>0?h.eyeY:headY, in.userHeadM, in.scale));
             const Mat now = Mul(newW[h.weapon[0]], InvAffine(newW[h.hand[0]]));
             const V3 a = Norm(V3{now.m[4], now.m[5], now.m[6]}), b = Norm(V3{g.attach[0].m[4], g.attach[0].m[5], g.attach[0].m[6]});
             g_diag[10].store(Len(Sub(Pos(now), Pos(g.attach[0]))) * cm);
@@ -1717,7 +1803,19 @@ void PoseBody(uintptr_t self, const Hero& h, const Input& in) {
         ReleaseSRWLockShared(&g_namesLock);
     }
 #endif
-    SafeWrite((void*)mats, newW.data(), sizeof(Mat) * n);
+    const bool written = SafeWrite((void*)mats, newW.data(), sizeof(Mat) * n);
+#ifdef D2RVR_NATIVE_OPENXR
+    if(written&&trackedNeckApplied) {
+        static std::atomic<unsigned> reported{0};
+        const unsigned bit=1u<<(h.cls>=0&&h.cls<8?h.cls:8);
+        if(!(reported.fetch_or(bit)&bit)) {
+            char message[160];
+            std::snprintf(message,sizeof message,"VR body: tracked-neck alignment active; hero class=%d, grounded leg chains=%d",h.cls,
+                int(h.leg[0][2]>=0)+int(h.leg[1][2]>=0));
+            framevr::logging::Write(message);
+        }
+    }
+#endif
 }
 
 #if D2RVR_FIRST_PERSON
@@ -1808,9 +1906,10 @@ void HoldWeaponItem(uintptr_t self) {
 #endif
 
 #ifdef D2RVR_NATIVE_OPENXR
-struct MotionBowInput {bool active=false,drawing=false;float draw=0;ULONGLONG at=0;bool anchors=false;bow::Vec stringHand{},bowHand{};};
+struct MotionBowInput {bool active=false,drawing=false;float draw=0;ULONGLONG at=0;bool anchors=false;bow::Vec stringHand{},bowHand{};uint32_t stamp=0;};
 SRWLOCK g_bowInputLock=SRWLOCK_INIT,g_bowRigLock=SRWLOCK_INIT;
 MotionBowInput g_motionBow;
+std::array<MotionBowInput,16> g_bowHistory{};size_t g_bowHistoryNext=0;
 std::atomic<ULONGLONG> g_bowPosedAt{0};
 std::atomic<ULONGLONG> g_bowAnchoredAt{0};
 std::atomic<uint32_t> g_bowHeroGen{0};
@@ -1824,10 +1923,15 @@ struct MotionBowRig {
 std::map<std::pair<uintptr_t,uintptr_t>,MotionBowRig> g_bowRigs;
 
 void PoseMotionBow(uintptr_t self) {
-    MotionBowInput input;
-    AcquireSRWLockShared(&g_bowInputLock);input=g_motionBow;ReleaseSRWLockShared(&g_bowInputLock);
+    GunBoneOut attach;
+    AcquireSRWLockShared(&g_gunBoneLock);attach=g_gunBone;ReleaseSRWLockShared(&g_gunBoneLock);
+    MotionBowInput input;bool matched=false;
+    AcquireSRWLockShared(&g_bowInputLock);
+    if(g_motionBow.active&&attach.havePoseStamp)
+        for(const auto& candidate:g_bowHistory)if(candidate.active&&candidate.stamp==attach.poseStamp){input=candidate;matched=true;break;}
+    ReleaseSRWLockShared(&g_bowInputLock);
     const auto now=GetTickCount64();
-    if(!input.active||now-input.at>150)return;
+    if(!matched||now-input.at>100||now-attach.at>100)return;
     uintptr_t model=0,skeleton=0,bones=0;int count=0;
     if(!Get(self+8,&model)||!Get(model+8,&skeleton)||!Get(skeleton+8,&count)||count!=bow::Count||
        !Get(skeleton+0xC,&bones)||!bones)return;
@@ -1880,15 +1984,11 @@ void PoseMotionBow(uintptr_t self) {
        !SafeCopy(native.data(),reinterpret_cast<const void*>(matrices),sizeof native))return;
     bool posedAtHands=false;
     if(input.drawing&&input.anchors) {
-        GunBoneOut attach;
-        AcquireSRWLockShared(&g_gunBoneLock);attach=g_gunBone;ReleaseSRWLockShared(&g_gunBoneLock);
         bow::Mat toHead,headToCog;
         memcpy(&toHead,&attach.leftToHead,sizeof toHead);
         toHead=bow::Multiply(native[bow::Cog],bow::Multiply(itemLocal,toHead));
         if(attach.hero==hero.self&&now-attach.at<150&&bow::Inverse(toHead,headToCog)) {
-            bow::Vec offset;
-            AcquireSRWLockShared(&g_inLock);offset={g_in.handOffset[0],g_in.handOffset[1],g_in.handOffset[2]};ReleaseSRWLockShared(&g_inLock);
-            const auto nock=bow::Vector(headToCog,input.stringHand+offset)+bow::Position(headToCog);
+            const auto nock=bow::Vector(headToCog,input.stringHand+attach.handOffset)+bow::Position(headToCog);
             const auto line=bow::Vector(headToCog,input.bowHand-input.stringHand);
             posedAtHands=held.rig.DrawAt(native[bow::Cog],nock,line,true,posed);
         }
@@ -1896,7 +1996,7 @@ void PoseMotionBow(uintptr_t self) {
     if(!posedAtHands&&!held.rig.Draw(native[bow::Cog],input.drawing?input.draw:0,input.drawing,posed))return;
     // The native root/placement is authoritative; replace only the deforming
     // bones after cog. Continued override after release prevents a second,
-    // delayed native wind-up. Attack timing and arrow consumption stay native.
+    // delayed native wind-up. Basic-arrow release/costs are handled by bowvr.
     constexpr size_t first=bow::Cog+1;
     if(SafeWrite(reinterpret_cast<void*>(matrices+first*sizeof(bow::Mat)),posed.data()+first,(bow::Count-first)*sizeof(bow::Mat))) {
         g_bowHeroGen.store(HeroGen());g_bowPosedAt.store(now);
@@ -1946,24 +2046,29 @@ void Arms(uintptr_t self) {
         if (f(&yaw, eye, &eyeOk)) {
             in.yawInModel = yaw;
             if (eyeOk) { memcpy(in.eyeModel, eye, sizeof eye); in.haveEye = true; }
+            else in.followTrackedNeck=false;
         }
+        else in.followTrackedNeck=false;
     }
-    if (in.mode == 2) if (const FreshHandsFn f = g_freshHands.load()) f(&in);
+    if (in.mode == 2 || in.followTrackedNeck)
+        if (const FreshHandsFn f = g_freshHands.load()) if(!f(&in))in.followTrackedNeck=false;
     PoseBody(self, hero, in);
 }
 
 }  // namespace
 
 #ifdef D2RVR_NATIVE_OPENXR
-void SetMotionBow(bool active,bool drawing,float draw,const float* stringHand,const float* bowHand) {
+void SetMotionBow(bool active,bool drawing,float draw,const float* stringHand,const float* bowHand,uint32_t stamp) {
     active=active&&std::isfinite(draw);
     AcquireSRWLockExclusive(&g_bowInputLock);
     g_motionBow={active,active&&drawing,std::clamp(draw,0.f,1.f),GetTickCount64()};
+    g_motionBow.stamp=stamp;
     if(stringHand&&bowHand) {
         g_motionBow.stringHand={stringHand[0],stringHand[1],stringHand[2]};
         g_motionBow.bowHand={bowHand[0],bowHand[1],bowHand[2]};g_motionBow.anchors=true;
     }
-    if(!active)g_bowPosedAt.store(0);
+    if(!active){g_bowPosedAt.store(0);g_bowHistory={};g_bowHistoryNext=0;}
+    else {g_bowHistory[g_bowHistoryNext]=g_motionBow;g_bowHistoryNext=(g_bowHistoryNext+1)%g_bowHistory.size();}
     ReleaseSRWLockExclusive(&g_bowInputLock);
 }
 bool MotionBowPosed() {

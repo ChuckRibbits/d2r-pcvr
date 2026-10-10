@@ -57,6 +57,14 @@ stalls and graphics issues are open. This is a test build, not a finished mod.
    Choose **Play** with your offline character. Normal Steam Play remains stock;
    the separate command supplies `--frame-vr` to select D2RLoader.
 
+   For a Steam-library launcher, choose **Add a Game → Add a Non-Steam Game →
+   Browse**, select `steamvr/run-proton.sh`, and name the entry **Diablo II VR**.
+   In its Properties, enable **Include in VR Library** if available. Leave
+   compatibility forcing off for this shortcut: it is a Linux script that asks
+   Steam to launch the purchased game using that game's Proton configuration.
+   Connect the headset, then select **Diablo II VR → Play**. The original D2R
+   library entry continues to launch the unmodded game for license refresh.
+
 **For your agent:** WiVRn compatibility has not been established. Confirm the
 active OpenXR runtime and Proton's WineOpenXR bridge. The Windows game needs
 `XR_KHR_D3D12_enable`; the bridge must expose it over WiVRn's Vulkan runtime.
@@ -105,12 +113,20 @@ also untested by this project. Steam Frame uses Steam's PCVR connection directly
 
 ## Controls and settings
 
-Current source also includes an opt-in [motion gameplay prototype](steamvr/GAMEPLAY.md):
-melee swings, bow draws, a hand palette and grab-to-mouth belt potions.
+If the image becomes blurry or ghosted after changing a graphics preset, check
+**Options → Video → Anti-Aliasing** again. **FXAA**, **DLSS off** and **100%
+resolution scale** restored clarity in the owner's October 9 headset test;
+Very High with DLSS off alone did not restore the previous AA setting. Select
+the quality preset first, then set FXAA. The installer already chooses FXAA
+(its default resolution scale remains 80% for performance).
+
+Fresh installs from current source enable **motion controls and fixed foveation**,
+with **eye-tracked foveation off**. The [motion gameplay prototype](steamvr/GAMEPLAY.md)
+includes melee swings, bow draws, a hand palette and grab-to-mouth belt potions.
 Bow drawing and free-swing melee have been tested on Steam Frame; other
-interactions remain experimental. It is disabled by default and absent from the
-published preview ZIP. Build from source and read the control changes before
-enabling it.
+interactions remain experimental. This work is absent from the published preview
+ZIP. Build from source and read the control changes before playing. Set
+`[gameplay] motion_controls=0` to use the legacy button controls.
 
 **Keep the D2R window focused on the PC while playing.** Menu laser clicks and
 dragging require desktop focus, even if the headset still displays the game.
@@ -145,10 +161,14 @@ the fixed-foveation description. It requires actual OpenXR gaze input from the
 connected headset. Keep it off for Quest 3; changing streaming software cannot
 provide eye-tracking hardware that the headset does not have.
 
-The installer leaves **DLSS off**, the current clarity baseline. Balanced initially
-passed a Steam Frame stability check after two stereo-compatibility fixes, but
-the owner subsequently found DLSS off much clearer. Older preview binaries lack
-those fixes. Performance gains have not been measured in a matched comparison.
+The installer leaves **DLSS off**, the current clarity baseline. The October 9
+development fixes corrected washed-out colors/artifacts, then aligned the depth
+range used by native rendering and particle effects. The owner confirmed that
+**DLSS Quality looks clearer around smoke and effects** with the latest fix.
+Earlier Balanced and Quality builds looked soft compared with native/FXAA;
+overall clarity and stereo-motion reconstruction still need comparison with
+the latest build. DLSS is not yet fully validated, and performance gains have
+not been measured in a matched comparison.
 The latest development build separates the correction
 shader from diagnostics, reducing its isolated compilation from roughly 23 seconds
 to 33 ms on the test PC. This startup improvement is not an FPS benchmark.

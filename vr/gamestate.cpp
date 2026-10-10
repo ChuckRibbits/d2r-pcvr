@@ -33,6 +33,9 @@
 #include <D2RLPlugin/api.h>
 
 #include "d2r_vr_state.h"
+#include "interactionstate.h"
+#include "journal_ui.h"
+#include <mutex>
 #ifdef D2RVR_NATIVE_OPENXR
 #include "logging.h"
 #endif
@@ -59,6 +62,10 @@ D2RVR_State* g_state = nullptr;
 std::atomic<bool> g_readQueued{false};
 std::atomic<uint32_t> g_weapon{D2RVR_WEAPON_UNKNOWN};
 std::atomic<uint32_t> g_menu{0};
+std::atomic<bool> g_journalOnly{false};
+std::mutex journalMutex;
+int32_t journalRect[4]{};
+uint64_t journalAt=0;
 std::atomic<uint32_t> g_set{0};      // 1 / 2: the active weapon set
 std::atomic<uint32_t> g_view{0};     // vrcam's view: 0 off, 1 first person, 2 third person, 3 F1 in perspective, 4 the game on the floor
 
@@ -283,6 +290,10 @@ void __cdecl ReadItems(const PluginContext* ctx, void*) noexcept {
         g_type.store(D2RVR_TYPE_UNKNOWN);
         g_held.store(0);
         g_two.store(0);
+        g_set.store(0);
+#ifdef D2RVR_NATIVE_OPENXR
+        interactionstate::Capture();
+#endif
         Publish();
         return;
     }
@@ -308,9 +319,11 @@ void __cdecl ReadItems(const PluginContext* ctx, void*) noexcept {
     }
     static uint32_t lastHands[2] = {}, lastOther[2] = {};
     static bool seen = false;
+    static PlayerHandle lastPlayer=InvalidPlayerHandle;
+    if(lastPlayer!=player){seen=false;g_set.store(0);lastPlayer=player;}
     uint32_t set = g_set.load();
     if (ownLoc[0] == 11 || ownLoc[1] == 12) set = 2;                    // the game's own word for it
-    else if (ownLoc[0] == 4 || ownLoc[1] == 5) {
+    else if (ownLoc[0] == 4 || ownLoc[1] == 5 || (seen&&!id[0]&&!id[1])) {
         // no word: a swap shows as the hands holding what the other set held
         const bool swapped = seen && (id[0] != lastHands[0] || id[1] != lastHands[1]) &&
                              id[0] == lastOther[0] && id[1] == lastOther[1];
@@ -383,6 +396,10 @@ void __cdecl ReadItems(const PluginContext* ctx, void*) noexcept {
         memcpy(g_state->leftCode, code[1].data(), std::min<size_t>(4, code[1].size()));
     }
     Publish();
+#ifdef D2RVR_NATIVE_OPENXR
+    interactionstate::Capture();
+#endif
+    ReadJournalRect();
 }
 
 std::set<std::string> g_panels;   // open panels, UI thread only
@@ -430,6 +447,10 @@ SharedEvents::UiMessageAction __cdecl OnUiMessage(const PluginContext*, const Sh
         bool menu = false;
         for (const std::string& n : g_panels) if (IsMenuPanel(n)) { menu = true; break; }
         g_menu.store(menu ? 1 : 0);
+        int menus=0;bool quest=false;
+        for(const auto& name:g_panels)if(IsMenuPanel(name)){++menus;quest=name.find("QuestLog")!=std::string::npos;}
+        g_journalOnly=menus==1&&quest;
+        if(g_journalOnly.load())ReadJournalRect();
         if (menu != before) {
             std::string list;
             for (const std::string& n : g_panels) list += n + " ";
@@ -511,6 +532,9 @@ template <class S> const S* Query(const PluginContext* ctx) {
 // From D2RLoaderLoadPlugin.
 void Init(const PluginContext* ctx) {
     g_ctx = ctx;
+#ifdef D2RVR_NATIVE_OPENXR
+    interactionstate::Init(ctx);
+#endif
     g_threads = Query<ThreadService>(ctx);
     g_widgets = Query<WidgetService>(ctx);
     Log(g_widgets ? "gamestate: widgets ok - the map can be opened and closed directly" : "gamestate: widgets MISSING - the map cannot be set");
@@ -563,6 +587,19 @@ int ObjectLight(uint32_t txt, uint32_t mode, float rgb[3]) {
     return o.lit[mode];
 }
 
+bool JournalOnly(){return g_journalOnly.load();}
+void ReadJournalRect() {
+    if(!g_journalOnly.load()||!g_widgets)return;
+    Widgets::WidgetHandle panel=0;Widgets::Rect r{};
+    if(g_widgets->findPanel(g_ctx,"QuestLogPanelExpansion",&panel)!=Widgets::Result::Success)
+        if(g_widgets->findPanel(g_ctx,"QuestLogPanelOriginal",&panel)!=Widgets::Result::Success)return;
+    if(g_widgets->getWidgetRect(g_ctx,panel,&r)!=Widgets::Result::Success||r.width<100||r.height<100||r.width>4096||r.height>4096)return;
+    std::lock_guard lock(journalMutex);journalRect[0]=r.x;journalRect[1]=r.y;journalRect[2]=r.width;journalRect[3]=r.height;journalAt=GetTickCount64();
+}
+bool JournalRect(int32_t out[4]) {
+    std::lock_guard lock(journalMutex);if(!g_journalOnly.load()||GetTickCount64()-journalAt>650)return false;
+    std::copy_n(journalRect,4,out);return true;
+}
 bool AutoMapOpen() { return g_autoMap.load() != 0; }
 
 // On the UI thread, as widget calls must be: the same message the game's own

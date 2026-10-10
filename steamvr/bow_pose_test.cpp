@@ -62,10 +62,10 @@ int main() {
     for(int i=0;i<20;++i){in.hand[0].p.z+=.02f;auto o=step();Check(o.bowDrawing&&!o.attack,"pull does not request native attack");Check(rig.Draw(Identity(),o.draw,o.bowDrawing,posed),"gesture drives native pose");}
     Check(Position(posed[8]).z<Position(bind[8]).z-1,"string bends while trigger held");
     auto held=step();Check(held.bowDrawing&&!held.attack,"holding draw stays held");
-    in.trigger=0;auto released=step();Check(released.attack&&!released.bowDrawing,"only release requests native shot");
+    in.trigger=0;auto released=step();Check(released.bowRelease&&!released.attack&&!released.bowDrawing,"only release requests one direct native shot");
     rig.Draw(Identity(),released.bowDrawing?released.draw:0,released.bowDrawing,posed);
     Check(Near(Position(posed[8]),Position(bind[8])),"release resets live pose on same sample");
-    for(int i=0;i<8;++i) {in.aim.q=framevr::math::Yaw(float(i));auto o=step();Check(Near(o.rayDirection,released.rayDirection),"release aim remains latched through native windup");}
-    in.cancel=true;Check(!step().attack,"cancel clears release pulse");
+    for(int i=0;i<8;++i) {in.aim.q=framevr::math::Yaw(float(i));auto o=step();Check(Near(o.rayDirection,released.rayDirection),"release aim stays frozen after hands turn");}
+    in.cancel=true;Check(!step().bowRelease,"cancel never emits another release");
     std::puts("Bow pose: geometry, draw/release timeline, placement, visibility and invalid-input tests passed");
 }

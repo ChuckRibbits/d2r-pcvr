@@ -84,12 +84,16 @@ namespace gamestate { void Init(const D2RL::PluginContext* ctx); void Tick(); ui
 #include "afr_eye_shared.h"
 #ifdef D2RVR_NATIVE_OPENXR
 #include "transport.h"
+#include "settings_menu.h"
 #include "projectiles.h"
 #include "combat.h"
 #include "melee.h"
+#include "bow.h"
 #include "memory.h"
 #endif
 #include "dlss_mv.h"
+#include "dlss_depth.h"
+#include "billboards.h"
 #include "pad_mirror_shared.h"
 
 #pragma intrinsic(_ReturnAddress)
@@ -760,7 +764,10 @@ void LoadSettings() {
     framevr::ConfigureSymmetricProjection(IniB(L"render",L"symmetric_projection",true));
     framevr::ConfigureEyeTracking(IniB(L"render",L"eye_tracked_foveation",false));
     framevr::ConfigureGameplay(IniB(L"gameplay",L"motion_controls",false));
+    framevr::ConfigureInteractions(IniB(L"interactions",L"seated",false),IniF(L"interactions",L"waist_below_eyes",.65f),
+        IniF(L"interactions",L"belt_forward",.26f),IniF(L"interactions",L"hip_width",.28f),IniB(L"interactions",L"holsters",true));
     projectiles::Configure(IniB(L"gameplay",L"motion_controls",false),IniF(L"gameplay",L"arrow_speed",2.f),IniB(L"gameplay",L"arrow_direct_release",true));
+    bowvr::Configure(IniB(L"gameplay",L"motion_controls",false));
     combat::Configure(IniB(L"gameplay",L"motion_controls",false)&&IniB(L"gameplay",L"contact_hits",true));
 #endif
 #ifdef D2RVR_NATIVE_OPENXR
@@ -1746,7 +1753,7 @@ bool TopStereoOn() { return !g_enabled.load() && g_set.topStereo.load() && g_set
 // eye there, and a pair announced from the menu was one fresh half and one frozen.
 bool AfrOn() { return g_set.afr.load() && g_inWorld.load() && (g_enabled.load() || TopStereoOn())
 #ifdef D2RVR_NATIVE_OPENXR
-    && !gamestate::MenuOpen()
+    && (!gamestate::MenuOpen()||framevr::SpatialMenu())
 #endif
     ; }
 // From above and behind: the toolbar moved nearer or farther - only real stereo has a depth to move it in.
@@ -2286,7 +2293,7 @@ bool VrViewInner(const d2rcam::WorldView& in, float out[16]) {
     // The menus (the character screen's 3D scene too: it has a hero point) keep the game's camera.
     if (!g_inWorld.load()) return false;
 #ifdef D2RVR_NATIVE_OPENXR
-    if(gamestate::MenuOpen())return false; // one unchanged game camera behind a flat UI panel
+    if(gamestate::MenuOpen()&&!framevr::SpatialMenu())return false; // ordinary flat UI panel
 #endif
     if (TopStereoOn()) return TopStereoView(in, out);
     if (!g_enabled.load() || !in.lookAtValid) return false;
@@ -2358,6 +2365,8 @@ bool VrViewInner(const d2rcam::WorldView& in, float out[16]) {
                -center[12]*center[4]-center[13]*center[5]-center[14]*center[6],
                -center[12]*center[8]-center[13]*center[9]-center[14]*center[10]};
         hang = eye;
+        const float centerPosition[3]={eye.x,eye.y,eye.z};
+        billboards::SetCenter(centerPosition);
         framevr::View(view, L, ViewHeight() + JumpLift(), UserEyeHeightM(), baseHeading, recenter, g_eye.load());
         fwd = {-center[2], -center[6], -center[10]};
         const float horizontal = std::hypot(fwd.x, fwd.z);
@@ -2453,7 +2462,7 @@ bool VrProjInner(const d2rcam::WorldView& in, float M[16]);
 bool VrProj(const d2rcam::WorldView& in, float M[16]) {
     FRAME_PROFILE(Projection);
 #ifdef D2RVR_NATIVE_OPENXR
-    if(gamestate::MenuOpen())return false;
+    if(gamestate::MenuOpen()&&!framevr::SpatialMenu())return false;
 #endif
     const bool ours = VrProjInner(in, M);
     if (ours) {
@@ -3000,11 +3009,15 @@ float* HookAttackPoint(void* mgr, float* out, void* unit, uint64_t from, uint64_
     float gx, gy;
     const uint32_t type = gamestate::WeaponType();
     const bool thrown = type == D2RVR_TYPE_JAVELIN || type == D2RVR_TYPE_THROWING;
-    if (!out || !AimByVector() || (w != 3 && w != 4 && !thrown && !StaffAim()) || !HandGridDir(&gx, &gy)) return r;
+    bool selectedSpell=false;
+#ifdef D2RVR_NATIVE_OPENXR
+    selectedSpell=framevr::SpellSelected();
+#endif
+    if (!out || !AimByVector() || (!selectedSpell && w != 3 && w != 4 && !thrown && !StaffAim()) || !HandGridDir(&gx, &gy)) return r;
     float f[2]; memcpy(f, &from, sizeof f);
     // A crossbow or a staff aims finer held in both hands: the point farther out.
     float range = g_set.aimRange.load();
-    if (StaffAim()) {
+    if (!selectedSpell && StaffAim()) {
         const bool xbow = type == D2RVR_TYPE_CROSSBOW;
         bool leftOn = true;   // both controllers, the staff between them: always both
 #if D2RVR_FIRST_PERSON
@@ -4208,7 +4221,7 @@ bool FrameTimeFound() {
 // animation and particles a second time: the pair is drawn only with it.
 bool PairWanted() { return g_h.blit && AfrOn() && g_set.pairPerTick.load() && g_inWorld.load() && FrameTimeFound()
 #ifdef D2RVR_NATIVE_OPENXR
-    && !gamestate::MenuOpen()
+    && (!gamestate::MenuOpen()||framevr::SpatialMenu())
 #endif
     ; }
 
@@ -5465,12 +5478,26 @@ bool FreshHands(skel::Input* in) {
     memcpy(in->hand[0], sh->rightHand, sizeof in->hand[0]); memcpy(in->hand[1], sh->leftHand, sizeof in->hand[1]);
     memcpy(in->rot[0], sh->rightRot, sizeof in->rot[0]); memcpy(in->rot[1], sh->leftRot, sizeof in->rot[1]);
     in->userHeadM = UserEyeHeightM();   // standing, seated or not (see TrueScale)
+    in->headPitch = sh->pitchValid ? sh->headPitchDeg * 0.0174532925f : 0;
+    in->headRoll = sh->rollValid ? sh->headRollDeg * 0.0174532925f : 0;
     in->grip[0] = sh->gripMagic == D2RVR_GRIP_MAGIC ? sh->rightGrip : -1.0f;
     in->grip[1] = sh->gripMagic == D2RVR_GRIP_MAGIC ? sh->leftGrip : -1.0f;
     return true;
 }
 
 #ifdef D2RVR_NATIVE_OPENXR
+void BowTick() {
+    framevr::SetBowWorldEpoch(g_meleeTurnEpoch.load());
+    auto gate=framevr::BowGate();
+    gate.active=gate.active&&g_enabled.load()&&g_inWorld.load()&&!ThirdPerson()&&!Overhead()&&g_eyeOk.load()&&!gamestate::MenuOpen();
+    auto* hero=g_heroUnit.load();
+    if(!hero||!IsHeroUnit(hero))hero=g_heroSeen.load();
+    if(!hero||!IsHeroUnit(hero)){hero=nullptr;gate.active=false;}
+    if(hero)combat::ObserveLocalPlayer(reinterpret_cast<uintptr_t>(hero));
+    bowvr::Update(gate,reinterpret_cast<uintptr_t>(hero));
+    framevr::bowflight::Shot shot;
+    if(framevr::TakeBowShot(shot))bowvr::Submit(shot);
+}
 void MeleeContactTick() {
     framevr::melee::Sample sample;
     skel::MeleeWeaponPose pose;
@@ -5513,6 +5540,10 @@ void PushArms() {
     const bool on = g_enabled.load() && g_inWorld.load();
     const D2RVR_Shared* sh = g_shared;
     skel::Input in;
+#ifdef D2RVR_NATIVE_OPENXR
+    in.followTrackedNeck=on&&!ThirdPerson()&&!Overhead()&&framevr::Active()&&
+        sh&&sh->version==D2RVR_SHARED_VERSION&&sh->headValid;
+#endif
     if (sh && sh->version == D2RVR_SHARED_VERSION && sh->headValid) {
         in.handsValid = sh->handsValid;
         in.poseStamp = sh->sampleStamp;in.havePoseStamp = sh->sampleStampMagic == D2RVR_SAMPLE_STAMP_MAGIC;
@@ -5522,6 +5553,8 @@ void PushArms() {
         memcpy(in.hand[0], sh->rightHand, sizeof in.hand[0]); memcpy(in.hand[1], sh->leftHand, sizeof in.hand[1]);
         memcpy(in.rot[0], sh->rightRot, sizeof in.rot[0]); memcpy(in.rot[1], sh->leftRot, sizeof in.rot[1]);
         in.userHeadM = UserEyeHeightM();   // standing, seated or not (see TrueScale)
+        in.headPitch = sh->pitchValid ? sh->headPitchDeg * 0.0174532925f : 0;
+        in.headRoll = sh->rollValid ? sh->headRollDeg * 0.0174532925f : 0;
         in.grip[0] = sh->gripMagic == D2RVR_GRIP_MAGIC ? sh->rightGrip : -1.0f;
         in.grip[1] = sh->gripMagic == D2RVR_GRIP_MAGIC ? sh->leftGrip : -1.0f;
     }
@@ -5534,7 +5567,7 @@ void PushArms() {
     // animates him, head included (on the floor he stood headless, 2026-10-05)
     const bool own = on && !ThirdPerson() && !Overhead()
 #ifdef D2RVR_NATIVE_OPENXR
-        && !gamestate::MenuOpen()
+        && (!gamestate::MenuOpen()||framevr::SpatialMenu())
 #endif
         ;
     in.mode = own ? ArmsMode() : 0;
@@ -7483,6 +7516,7 @@ DWORD WINAPI UpdateThread(void*) {
         PushArms();
 #ifdef D2RVR_NATIVE_OPENXR
         MeleeContactTick();
+        BowTick();
 #endif
 #if D2RVR_FIRST_PERSON
         {   // the toolbar on the hero's own forearm (the game's rig): left forearm = skeleton side 1
@@ -7582,7 +7616,13 @@ DWORD WINAPI UpdateThread(void*) {
             FlatVr3DTick();
             fx::dlsseyes::Install();
             prevscan::Tick();
-            const bool iniChanged = ReloadIfChanged();
+#ifdef D2RVR_NATIVE_OPENXR
+            const bool menuSaved=vrsettings::Poll(g_iniPath);
+#endif
+            bool iniChanged = ReloadIfChanged();
+#ifdef D2RVR_NATIVE_OPENXR
+            if(menuSaved&&!iniChanged){LoadSettings();iniChanged=true;}
+#endif
             if (iniChanged) {
                 g_gen.fetch_add(1);
                 g_renderDirty.store(true);
@@ -7591,6 +7631,8 @@ DWORD WINAPI UpdateThread(void*) {
             FollowMode();
             d2rsig::Resolve(g_ctx);   // what waits for its page to be decrypted
             GameCodeTick(iniChanged);
+            dlssdepth::Install(&Log, +[]() { return g_enabled.load() && g_inWorld.load(); });
+            billboards::Install(&Log, +[]() { return g_enabled.load() && g_inWorld.load() && !ThirdPerson() && !Overhead() && !gamestate::MenuOpen(); });
             if (!AllHooksIn()) InstallHooks();
 #ifdef D2RVR_NATIVE_OPENXR
             projectiles::Install();
@@ -7599,6 +7641,8 @@ DWORD WINAPI UpdateThread(void*) {
             combat::Report();
             melee::Install();
             melee::Report();
+            bowvr::Install();
+            bowvr::Report();
 #endif
             ApplyRender();
             HookGameWindow();
@@ -7695,6 +7739,9 @@ D2RL_PLUGIN_EXPORT bool D2RLoaderLoadPlugin(const PluginContext* ctx) noexcept {
     while (n > 0 && g_iniPath[n - 1] != L'\\') --n;
     g_iniPath[n] = 0;
     wcscat_s(g_iniPath, L"d2r_vr.ini");
+#ifdef D2RVR_NATIVE_OPENXR
+    vrsettings::Poll(g_iniPath);
+#endif
     ReloadIfChanged();
     g_mouseLookOn.store(MouseLookForView());
     LogF("vrcam %s: game build %s (%s), made for D2R 3.3.93787 under D2RLoader 1.3.1", g_info_version,
@@ -7720,6 +7767,7 @@ D2RL_PLUGIN_EXPORT bool D2RLoaderLoadPlugin(const PluginContext* ctx) noexcept {
     gamecmd::Init(ctx);
 #ifdef D2RVR_NATIVE_OPENXR
     melee::Init(ctx);
+    bowvr::Init(ctx);
 #endif
     if (HANDLE h = CreateThread(nullptr, 0, UpdateThread, nullptr, 0, &g_updateThreadId)) CloseHandle(h);
     if (!ctx->RegisterConsoleCommand("vrcam", &CmdVrcam, "vrcam - the camera: off / first person / third person (F12)"))

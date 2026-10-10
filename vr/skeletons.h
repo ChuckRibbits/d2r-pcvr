@@ -26,6 +26,8 @@ struct Input {
     float handOffset[3] = {};   // added to both hands, metres in the same frame (x right, y up, z back)
     bool haveEye = false;       // eyeModel is known: hands hang off the camera, not the hero's head bone
     float eyeModel[3] = {};     // the camera's eye point in the hero's model space
+    bool followTrackedNeck = false; // native 6DoF: pose the body under the tracked eyes
+    float headPitch = 0, headRoll = 0; // radians, same sample as the hands
     bool haveYaw = false;       // yawInModel is known (the hero's model matrix is found)
     float yawInModel = 0.0f;    // where the camera looks, as a yaw in model space (0 = model forward)
     bool followJump = true;     // the held upper body (and HeroEye's lift) goes up with the hips
@@ -110,7 +112,7 @@ void Set(const Input& in);
 #ifdef D2RVR_NATIVE_OPENXR
 // Copied from the render/input thread; skeleton workers never call OpenXR or
 // take the transport mutex. Invalid/stale input restores native animation.
-void SetMotionBow(bool active, bool drawing, float draw, const float* stringHand=nullptr, const float* bowHand=nullptr);
+void SetMotionBow(bool active, bool drawing, float draw, const float* stringHand=nullptr, const float* bowHand=nullptr,uint32_t stamp=0);
 bool MotionBowPosed();
 bool MotionBowAnchored();
 #endif
@@ -192,3 +194,5 @@ void** OrigSlot();
 void* Detour();
 
 }  // namespace skel
+
+namespace skel {void SetInteractionHidden(unsigned handMask);}

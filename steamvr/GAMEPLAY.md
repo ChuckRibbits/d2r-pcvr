@@ -1,19 +1,32 @@
 # Motion gameplay prototype
 
-Right-handed OpenXR controls for offline D2R. Implemented in source and installed
-for the owner's headset tests. The owner verified trigger-only bow draw/release
-and native shooting on 2026-10-09, but reported delayed bow animation. The 00:23:59
-native-string/limb build was then verified by the owner: live draw and haptics
-work. A further two-hand anchor build is installed for testing: the string follows
-the right hand and the visible arrow follows the right-to-left hand vector.
-The first anchor build regressed because it used the inventory-slot wrist;
-a correction now uses the actual left bow attachment and the owner confirmed
-it follows both hands. The flying arrow's orientation across its flight path
-and its slow travel speed remain open. The flight test was only somewhat aligned
-and not noticeably faster; the owner parked it to prioritize generic melee.
-Other gesture
-outcomes still need individual checks.
+Right-handed OpenXR controls for offline D2R. The owner verified the live native
+bow string/draw and two-hand aiming, then verified revision 4 free-swing melee
+on 2026-10-09. A new **physical basic-arrow build is installed for testing**:
+immediate native firing on release, a frozen two-hand 3D trajectory, corrected
+projectile ownership/speed, timestamp-matched held bow poses, and swept contacts.
+The first flight test showed arrows originating above the player. A mesh-only
+transform correction is installed; its code/geometry checks pass, and the owner
+will test its visual result later. See [../HANDOFF.md](../HANDOFF.md) for the
+latest installed build and runtime status.
 The published preview ZIP does not include this work.
+
+The **installed development build** adds a radial spell
+wheel, native-state belt and wrist gauges, weapon-set holsters and a handheld or
+pinned quest page. Detailed headset checks for these interactions remain pending.
+The controls below describe this build. [INTERACTIONS.md](INTERACTIONS.md)
+separates completed code from the full target design.
+
+The build also adds an **in-headset VR settings panel**.
+Hold **Left Grip and press Left Y**, or select **VR SETTINGS** in the wheel.
+The shortcut also works with motion combat disabled. Use the right laser and
+trigger; **Right B**, the shortcut again, or **Close** dismisses the panel.
+The panel's apply/cancel, pointer and input-ownership checks remain pending.
+
+Spell casting remains **equip, point, pull right trigger**. The candidate extends
+hand aiming to spells regardless of the equipped weapon type. Spell gestures are
+excluded. Immediate hand-origin 3D spell flight/contact is still pending; native
+spell animation, effects, targeting constraints, mana and charges remain active.
 
 Revision 4 matches controller input to the rendered weapon's timestamp and uses
 that pose's world placement, fixing missed contacts during fast motion. Its
@@ -21,7 +34,7 @@ synthetic timing regression passes, and the owner reported **"works great"** in
 Steam Frame on 2026-10-09 after the sword comparison. Other weapon categories and
 creature sizes still need checks.
 
-Enable in `GAME/d2rloader/plugins/d2r_vr.ini`:
+Fresh installs enable motion controls in `GAME/d2rloader/plugins/d2r_vr.ini`:
 
 ```ini
 [gameplay]
@@ -29,9 +42,10 @@ motion_controls=1
 ```
 
 Settings reload live. Set to `0` to return to the previous button controls.
-Installer default is `0` while this is experimental. Release triggers/grips
-when changing modes. Keep the game focused as before; menu laser clicks still
-require it. Eye-tracked foveation, centered projection and label fixes are retained.
+The installer also enables fixed foveation and leaves eye tracking off. Release triggers/grips
+when changing modes. Keep the game focused as before; native game menu laser
+clicks still require it. The new mod settings panel handles clicks locally.
+Eye-tracked foveation, centered projection and label fixes are retained.
 
 ## Controls
 
@@ -42,52 +56,140 @@ not generate melee velocity. The layout currently assumes a right-handed player.
 | Action | Control |
 |---|---|
 | Inventory / close game panels | Left X, unchanged |
-| On-demand hand palette | Hold Left Y; raise and turn the left hand to face the palette toward you |
-| Choose a skill or swap weapon sets | Aim right-hand laser at a palette tile; click right trigger |
-| Attack mode | Equipping a melee weapon selects it automatically; **Melee / Bow** in the palette returns from spell mode |
-| Selected skill / spell | Aim right hand and hold right trigger; native skill determines repeats/channeling, target type, costs and cooldowns |
-| Melee swing / thrust | Swing the equipped weapon through a creature; no grip, trigger, laser aim or preselected target. A strong contact resolves a native basic hit |
-| Button attack / crossbow | Attack mode, right trigger; crossbow uses native firing, with no reload gesture yet |
-| Nock bow | Bow equipped: bring right hand to the string (glowing marker on fallback rigs) and hold right trigger; no left grip required. A pre-squeezed trigger can grab as the hand enters the marker's region |
-| Draw and shoot | Pull the string hand back until **Release to shoot** appears, then release right trigger. Minimum 12 cm additional draw and 28 cm total hand separation |
-| Cancel bow | Right B; or release trigger before reaching minimum draw. Release trigger after cancellation before grabbing again |
-| Take belt potion | Hold Left Y, point right laser at Belt 1–4, press and hold right grip |
-| Drink | Keep right grip held, release Left Y, bring bottle to mouth and tip nearly horizontal for 0.25 seconds |
-| Cancel potion | Release right grip before drinking; it requests no consumption |
-| Quick weapon-set swap | Right stick click, unchanged; palette also has **Swap I / II** |
-| Walk / snap turn | Sticks, unchanged; paused while the palette is held open |
+| VR settings and controls reference | Left Grip + Left Y; also **VR SETTINGS** at the bottom of the wheel |
+| Spell wheel | Hold Left Y; raise/turn left palm toward you; aim right-hand laser at a wedge and click trigger |
+| Select weapon combat | Click **WEAPON** in the wheel center; release selection trigger before attacking |
+| Selected skill / spell | Point right hand and press trigger; hold to use the native repeat/channel behavior |
+| Melee swing / thrust | Swing the equipped weapon through a creature; no grip, trigger, or preselected target |
+| Button attack / crossbow | Weapon combat mode, right trigger; native crossbow firing |
+| Nock bow | Bow equipped: bring right hand to string and hold right trigger; no left grip required |
+| Draw and shoot | Pull string hand back at least 12 cm (28 cm total separation), then release trigger |
+| Cancel active grab/draw | Right B; release inputs before starting again |
+| Physical belt potion | Approach a front-belt bottle with either hand; fresh grip grabs it without consuming |
+| Drink | Hold grip, bring bottle near mouth and tip nearly horizontal for 0.25 seconds; release grip to discard the preview |
+| Quick potion | Left Y → **EQUIPMENT / BELT** → trigger a potion wedge; grip on a potion wedge instead grabs it into the right hand |
+| Weapon holsters | Reach either hand to a hip marker, fresh grip then pull out 12 cm; right hip requests set I, left hip set II |
+| Seated weapon selection | Utility wheel → **Weapon I** or **Weapon II** |
+| Stow/draw | Utility wheel → **Stow weapons** / **Draw weapons**; native equipped stats stay unchanged |
+| Wrist health/mana | Turn left palm toward face; brief status cue also appears at low health or low mana in spell mode |
+| Quest journal | Utility wheel → **Journal**; initially follows left hand. Squeeze then release left grip to pin; grip near it to pick it back up |
+| Journal controls | Right laser + trigger uses native page controls/act tabs; Right B closes it; Left X retains ordinary inventory/menu behavior |
+| Quick native weapon swap | Right stick click, unchanged |
+| Walk / snap turn | Sticks; paused while wheel or journal is open |
 | Height reset / map | Left grip + left stick click / plain left stick click, unchanged |
 
-The palette has eight native controller assignments: **B, X, Y, RB** and the
-four **LT +** variants. Assign skills through D2R's normal controller skill UI.
-The palette changes which assignment the right trigger invokes; it does not
-rebind the character or promise a specific skill in an empty slot. The small
-tile below the palette shows the current selection. Bind the game's **A** slot
-to basic attack for button attacks and the bow test. Free-swing melee invokes
-native basic attack directly. This prototype reserves physical Left Y
-for the palette; the game's Y-bound skill remains selectable there. Equipping a
-bow automatically selects attack mode. Choosing a spell from the palette while
-holding the bow still works; select **Melee / Bow** to return to drawing arrows.
-Changing to a different melee weapon also selects attack mode. Javelins and
-throwing weapons use free-swing contacts as melee weapons. To throw through the
-native action, select the assigned Throw skill and use right trigger; physical
-throwing gestures are not implemented.
+### In-headset VR settings
 
-Use the native skill for the intended purpose: directed attacks, buffs and
-summons retain their original behavior. Separate physical throwing, two-hand
-casting, reliable surface placement and self-cast gestures are future work.
+The panel opens in front of the headset and stays in room space. It has three
+tabs and a **Reset eye height** button:
 
-Potions are labelled by **belt column**, not by guessed type. The normal belt
-command selects/consumes the native item and obeys its normal gates. Haptics
-confirm gesture recognition/request submission, **not successful consumption or
-damage**. Verify the actual belt count and health/mana change in the game.
-The bottle guide remains until releasing grip; it cannot drink twice per grab.
+| Tab | Contents |
+|---|---|
+| Controls | Left/right controller reference for movement, menus, melee, bow, spells, potions, holsters and height reset |
+| VR | Motion combat on/off, seated belt position, holsters, smooth/snap turning, smooth turn speed, belt height and forward reach |
+| Video | Foveation Off / Fixed / Eye tracked, runtime capability/gaze status, added sky, fog, dungeon ceilings, terrain and object draw distances |
+
+Click **Apply** to save changed values to `d2rloader/plugins/d2r_vr.ini` and
+reload them live. Closing without Apply discards pending edits. The first Apply
+creates `d2r_vr.ini.before-vr-menu`; later saves retain that original backup.
+Unrelated INI entries are preserved. A conflicting external edit reloads the
+current values instead of overwriting them. Reset eye height is immediate and
+does not require Apply. The controls tab is a reference, not a binding editor.
+
+Movement and combat inputs are blocked while the panel is open; **the world
+continues running**. Release held triggers/grips before resuming gameplay. The
+settings laser never sends a native game click. The panel remains accessible
+when motion combat is off and from the title/character screen while XR is active.
+
+Eye-tracked shading requires runtime support, permission and valid gaze. Missing
+gaze uses full quality; unsupported VRS also renders at full quality. The menu
+does not change runtime privacy permissions. DLSS, textures and shadows stay in
+the game's **Options → Video**; headset render resolution stays in SteamVR.
+There is no in-menu resolution override or control rebinding in this candidate.
+
+First headset check: open/close from the shortcut, then from the wheel; visit all
+three tabs and reset height; cancel an edit and confirm it is discarded; Apply
+a turn-mode change and confirm it persists on reopening; disable motion combat
+and reopen with the shortcut; switch foveation off/fixed/eye tracked and check
+clarity and gaze status. Confirm no menu click attacks, drinks or swaps a weapon,
+including a held trigger across closing or tracking loss. Also check native
+inventory/journal controls after closing. Synthetic previews and automated
+tests do not establish headset readability, laser alignment or stereo behavior.
+
+The wheel uses the eight existing native controller assignments: **B, X, Y, RB**
+and four **LT +** variants. Assign skills in the native controller UI. Names come
+from the game; unreadable assignments show their native button instead. A known
+unassigned slot is disabled. A lit slot indicates a present assignment, not a
+promise that mana, charges or cooldown permit casting. No spell icons or charge
+counts yet. Selecting closes the wheel and latches it until Y is released;
+release the selection trigger before casting. **WEAPON** returns from spell mode.
+
+Equipping a different melee weapon or bow selects weapon mode. Javelins and
+throwing weapons use free-swing contacts; select the native Throw skill to throw.
+Full 3D spell projectiles, reliable terrain-aware destinations and spell-family
+adapters remain pending behind the same simple point-and-trigger control.
+
+The belt displays the native next item in each column. A grab captures its item
+identity; a refill/reorder cancels an unspent grab. The held preview keeps that
+item's color even after automatic refill. It becomes **Used** only after the
+native item disappears. A request, grab haptic or mouse click is not proof of
+consumption. A refused attempt never automatically retries. Confirm HP/mana and
+belt changes in the first test. Success feedback is brief and a grab consumes
+at most once. Weapon swaps similarly wait for the observed equipment set.
+
+Holsters represent complete native sets I/II, including shields and quivers;
+they do not move arbitrary inventory items. Native set inference still requires
+a test with empty/identical sets. Item labels currently show base item codes.
+Hands carrying a bottle/book hide the associated weapon; stow hides both.
+These are presentation changes only. Combat is suspended while an interaction
+owns input, and resumes after release.
+
+Optional live configuration (metres below/forward/from the estimated torso):
+
+```ini
+[interactions]
+seated=0
+waist_below_eyes=0.65
+belt_forward=0.26
+hip_width=0.28
+holsters=1
+```
+
+Seated mode raises the waist anchors. Small head glances do not rotate the belt;
+anchors freeze during approach/grab. There is no torso tracker or free-form
+anchor editor. The journal uses a UI-only copy rather than capturing the world
+inside its page. If the UI layer/rectangle/format/copy is unavailable it retains
+the ordinary menu surface. Only the quest page is spatial in this candidate;
+other menus retain their existing panel. Compositor quads have no scenery/hand
+occlusion and the bottle art is a functional placeholder.
+
+### Interaction candidate test order
+
+1. Confirm the installed bow-height correction separately if desired; the new
+   candidate includes it too. Keep `free-swing4-20261009-023651` as the verified
+   melee rollback. Do not overwrite an active game DLL.
+2. Check wheel names against native assignments, select a skill, and keep the
+   trigger held: selecting must not cast. Release, then point/press to cast.
+3. Use utility set I/II and then grip/pull each hip holster. Confirm the native
+   equipment and set label, including an empty set. Check stow/draw.
+4. Grab/cancel a bottle; then drink with room for healing/mana. Confirm one item
+   consumed, correct next bottle/count after refill, and no accidental attack.
+   Try quick-use and a refused/full-health potion without an automatic retry.
+5. Check wrist values against the native character screen. Test seated reach if
+   needed. Brief warning cues should not become a permanent HUD.
+6. Open Journal, turn your head, use a native act tab, pin/regrab, close/reopen.
+   The world must remain stereo and clicks must land on the visible page.
+   Keep the desktop game focused for injected pointer clicks.
+7. Regression: inventory, creature labels, melee, bow, recenter, tracking loss
+   and return. No held input should cause a delayed drink, swap, cast or hit.
+
 
 ## What is physical and what is still native
 
 Hand/weapon presentation and input gestures use tracked 6DoF poses. The bow
-aim uses the line from the drawing hand through the bow hand, latched across
-the short release pulse.
+aim uses the line from the drawing hand through the bow hand. Release freezes
+its full position and direction in world space; later head/hand motion cannot
+steer an arrow already in flight.
 
 Free-swing melee replaces gesture-to-button attacks. It sweeps a capsule on the
 final posed weapon attachment between frames, tests creature body capsules, and
@@ -118,12 +220,35 @@ dodge misses. Contact haptics acknowledge native accepted hit flags, including
 hits whose damage an immunity may prevent. Physical stroke timing replaces the
 basic attack's animation cadence; attack-speed stat scaling is not yet modeled.
 
-Bow/crossbow/spell actions continue to invoke native controls and keep their
-native costs and timings. There is no draw-strength damage multiplier, custom
-ballistic arrow simulation, or freeform 3D spell collision yet. Existing ranged
-aim hooks resolve direction on D2R's ground grid; pitch-sensitive surface
-targeting needs further work. Physical hand position does not move the game's
-logical projectile spawn away from the hero.
+Physical bow release queues one direct native basic attack on the authoritative
+game thread. The attack creates its normal damage-bearing missile and handles
+ammunition; no simulated A-button press or native animation wind-up is needed.
+A client visual is allocated separately on the UI thread, without running a
+second attack or spending another arrow. Each release carries a session,
+equipment identity, recenter/turn epoch and 150 ms expiry; it cannot be replayed.
+
+Basic arrows follow a straight 3D path from the string hand through the bow hand.
+The complete tip segment is tested every native simulation tick, including the
+initial shaft, so fast arrows cannot tunnel through body capsules. Native grid
+barriers are checked along every crossed cell. The first contact is resolved
+through the native missile hit handler, retaining damage, elemental effects,
+criticals, leech, procs, immunity and pierce. Piercing cannot damage the same
+creature twice. Native lifetime remains in charge; there is no damage multiplier
+for drawing farther. Both eyes share the same flying-arrow transform per pair.
+
+This first physical path supports **ordinary basic arrows**, not elemental,
+explosive, magic or guided missile variants. A bow that converts its basic attack
+to a special missile is currently refused before ammo is spent; use its assigned
+native skill through the palette instead. Crossbows and selected skills/spells
+keep their native controls, costs, timings and ground-based collision.
+
+Collision is approximate: creature capsules use native footprint/artwork height,
+and the floor is the launch floor. Walls extend vertically; arrows cannot fly
+over them. The native damage-owner proxy retains its launch grid location while
+physical flight and rendering move independently. Effects that query the missile's
+native source position, room transitions and uneven terrain need further work;
+do not assume exact spatial behavior for every item proc. These limitations and
+HD-model alignment require headset checks. Arrows are straight, without gravity.
 
 Recognized bow rigs (initially the hunter's bow) use their existing native mesh:
 physical draw amount drives the string, limb bends and nocked arrow continuously.
@@ -136,7 +261,9 @@ position and the arrow points from it toward the bow hand in full 3D. Unreachabl
 hand positions are constrained to protect the rig. Invalid attachment data falls
 back to a normalized draw (45 cm of extra hand separation). More bow variants
 and exact fingertip offsets still need calibration. Projectile
-release timing remains native, so this does not eliminate its attack wind-up.
+release now invokes the native missile immediately through the physical-arrow
+path. Held-bow posing matches the controller sample timestamp to the completed
+attachment pose, avoiding a newer hand position being applied to an older rig.
 
 A pull produces light haptic pulses as draw distance changes, plus nock and
 release pulses. Runtime acceptance is logged; that does not prove the user felt
@@ -222,34 +349,51 @@ Headset checks, in order:
 8. Check native animations, labels, lighting and frame pacing for regressions.
 
 Next phases: real inventory/skill metadata, waist or wrist belt with counts,
-health/mana glance UI, accurate world target/loot highlights, pitch-sensitive
-casting/ground reticle, refined weapon/body collider dimensions and two-hand grips, bowstring
-and arrow meshes, crossbow loading, thrown spells/weapons, haptic success signals,
+health/mana glance UI, accurate world target/loot highlights, responsive
+point-and-trigger projectile casting/ground reticle, refined weapon/body collider
+dimensions and two-hand grips, bowstring and arrow meshes, crossbow loading,
+physical weapon throwing, haptic success signals,
 left-handed and accessible button mappings. Each needs game/headset validation.
 
-## Basic-arrow flight test (2026-10-09)
+## Physical basic-arrow test (2026-10-09)
 
-With motion controls enabled, `[gameplay] arrow_speed=2` scales the native
-creation velocity of the local player's **basic arrows** on both the client
-and offline server. `1` restores native speed; supported range is 1–3. Other
-missile types (including elemental arrows), other owners and game time stay
-native. Damage, ammo use and attack wind-up are unchanged. Lifetime is still
-native, so faster basic arrows may travel farther before expiring.
+With `motion_controls=1`, `arrow_speed=2` scales the native creation velocity;
+the physical path maps a full-draw ordinary arrow to approximately **40 m/s** at
+that setting (20 m/s at 1; supported multiplier range 1–3). Shorter valid draws
+reduce speed by up to 30%. Native velocity changes such as Slow Missiles are
+read on each tick. This mapping intentionally replaces the older slow native
+travel speed; `motion_controls=0` restores legacy controls and flight.
 
-`arrow_direct_release=1` removes the local basic arrow's native HD release-point
-blend. That half-second blend copies the animated release bone into the flying
-model, independently of the tracked bow pose. The test instead lets the flying
-model follow its native path immediately; `0` restores the original handoff.
-This does not yet move the logical arrow spawn to the tracked bow hand.
+The former ownership check treated the SDK's opaque player handle as a native
+unit pointer. It now uses the validated local native player id, including id
+zero, and checks owner type/id. That defect could prevent earlier speed and
+release corrections from activating. Headset speed improvement is not yet
+verified for this revision.
 
-These changes require matching native signatures. Speed adjustment stays off
-until **both** creation hooks and the velocity hook are installed. Logs report
-client/server creations, actual adjusted velocities, and direct handoffs.
-Host ownership/velocity tests, existing gesture/pose tests and the cross-build
-pass. Owner feedback: **somewhat aligned, not that much faster**. Further flight
-tuning is parked at the owner's request. The last session logged successful hook
-installation but no creation/velocity counters, so actual speed adjustment is
-not verified. Keep this separate from the verified held-bow draw implementation.
+Physical arrows always bypass the stock half-second HD release-bone blend.
+`arrow_direct_release` still controls the legacy handoff for other local basic
+arrow creation; it cannot reintroduce a delayed blend into a physical shot.
+All required native signatures and layout call sites must match before the
+physical path activates. Unsupported builds fail closed and log refused/stale
+requests rather than synthesizing a second button attack.
+
+The test build logs release/native/visual counts, refusal/stale counts, body
+contacts, barriers, expiry, last queue latency and physical speed. It does not
+record full hand poses. Host tests cover cancellation/deduplication, high-speed
+and vertical contacts, head/side misses, thin walls/corners, speed, bounded
+prediction, visual axes, live bow poses and melee regressions. They do not prove
+native ammo/HD rendering behavior; verify those in game.
+
+For the next headset pass, use the existing bow character **outside town**:
+
+1. Draw, hold, move both hands, release; confirm immediate flight along the shaft.
+2. Fire level, above and beside a creature, then through it. Look for pitch-sensitive
+   misses and consistent contacts without preselection or an attack-button hold.
+3. Fire beside a wall/corner and at close range; arrows should stop at barriers.
+4. Check one arrow spent per release, no shot on B/menu/tracking cancellation,
+   and normal behavior on an empty quiver. Fired arrows may finish after a menu opens.
+5. Try repeated draws, a weapon swap, leaving/re-entering the game, then a few
+   melee swings. Check stereo, lighting and frame pacing for regressions.
 
 ## Deterministic player hits (2026-10-09)
 

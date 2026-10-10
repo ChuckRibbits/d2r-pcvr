@@ -16,6 +16,113 @@ lighting, label and eye-tracked foveation work. See [GAMEPLAY.md](GAMEPLAY.md)
 for the first installed prototype, exact controls, limitations and test order.
 Broader performance/visual regression checks remain below.
 
+- [ ] Keep ground smoke and other screen-facing particles stable during head
+  yaw/pitch/roll: native view-position billboard prototype built; shares the
+  center eye position across both eyes. Confirm runtime activation and headset
+  appearance, including walking around the effect and checking ordinary flames.
+- [ ] Keep the rendered body beneath the tracked neck during 6DoF movement:
+  prototype built with anatomical neck offset, stable standing controller scale
+  and grounded leg IK on recognized rigs. Body/bow math tests pass. Verify
+  leaning, small room steps, crouching, and weapon alignment in the headset.
+  Native actor/collision movement remains controlled by the game.
+- [x] Recover preset-induced blur/ghosting: owner restored FXAA through Video
+  options (`Anti Aliasing` 3 → 1) with DLSS off and 100% resolution scale, and
+  reported **"Clearer now"** on October 9. Recheck AA after changing presets.
+- [x] Correct DLSS washed-out colors/artifacts with the native depth-pass
+  correction installed October 9 at 16:42. Build and 64 GPU shader cases pass;
+  owner confirmed **"Only blur remained"** in the Balanced comparison.
+- [ ] Improve remaining DLSS clarity: owner reports a low-resolution appearance
+  with Balanced and Quality, even stationary; native/FXAA clear. Verified Quality
+  capture confirms continuous depth. Shared-range correction now improves
+  smoke/effects in Quality; overall clarity versus native remains to be assessed.
+- [x] Headset-verify smoke/effects improvement from shared-depth-range correction:
+  owner confirmed **"yes it looks clearer around smoke and effects now."** Replaces producer-only
+  normalization with coherent frame constants for native depth and particles.
+  17:03/17:07 builds installed hooks but did not activate. Bounded debugger trace
+  proved the mapped upload write failed with ERROR_NOACCESS (998), not a failed
+  projection guard. 17:12 candidate uses the frame-owned mapped pointer directly;
+  a D3D12 GPU readback test reproduces the old failure and verifies the new store.
+  Build/tests pass; installed/relaunched at 17:13 after Save & Exit.
+  Runtime range verified in gameplay at 17:13:32; Quality smoke improvement confirmed.
+  Native GPU capture hotkey did not arm; no new depth histogram yet. See HANDOFF.
+  This addresses a verified depth-contract mismatch; remaining DLSS blur is not
+  yet isolated. Keep DLSS off as the default/clarity baseline.
+
+## In-headset VR settings — owner request, October 9
+
+- [x] Add Controls, VR and Video pages on a room-anchored compositor panel with
+  right-hand laser input, draft Apply/Close, live INI reload and eye-height reset.
+- [x] Expose motion combat, seated belt/holsters/reach, smooth/snap turn settings,
+  fixed/eye-tracked/off foveation, added sky/fog/ceiling and draw distances.
+- [x] Add Left Grip + Left Y shortcut independent of motion combat and a wheel
+  entry; consume menu input and block world actions while the panel owns input.
+- [x] Preserve unrelated INI entries, back up before the first save, reject
+  conflicting same-key edits and display runtime gaze/VRS availability.
+- [x] Cross-build, test draft/ownership and Win32 INI transactions under Proton,
+  and inspect synthetic page previews. Candidate staged separately.
+- [ ] Headset-verify pointer alignment, readability, main-menu/in-world access,
+  apply/cancel/reopen, motion-off access, live foveation switching, height reset
+  and no leaked combat/native-menu input. See GAMEPLAY.md for the test sequence.
+
+Native DLSS/textures/shadows remain in the game Video menu; resolution remains
+in SteamVR. The new panel is not a binding editor and does not pause simulation.
+
+## Next interaction work — owner request, October 9
+
+The owner will test the bow-height correction later. Work can proceed without
+another headset capture. See [INTERACTIONS.md](INTERACTIONS.md) for the concrete
+control design, current code capabilities and implementation order.
+
+Owner scope refinement: **no spell gestures for now**. Equip/select a spell,
+point the right hand and pull the trigger. Ready projectile spells launch on
+press, with snappy response and their full visual effects; no release-to-cast
+or gesture wind-up. Native resource and cast-rate gates still apply.
+
+- [x] Design reachable weapon-set holsters, spell wheel and per-family casting,
+  grab/drink potions, wrist gauges and a handheld/pinned quest journal.
+- [x] Implement session-tagged equipment/belt/skill/vitals snapshots, per-hand
+  ownership, native transaction expiry/confirmation and cancellation/rearm.
+- [x] Implement radial wheel with localized names, selection latch and native
+  button fallback. Original icons, charge/readiness metadata remain pending.
+- [x] Implement real potion type/count, exact-item grab/drink and quick use,
+  authoritative removal acknowledgement, reachable front belt and wrist gauges.
+- [x] Implement configurable native-set I/II holsters, seated positions, explicit
+  stow/draw and set confirmation; no arbitrary inventory equipment moves.
+- [x] Implement quest UI-only extraction, retained stereo scene, held/pinned
+  placement and native page-coordinate pointer mapping with flat-panel fallback.
+- [ ] Verify all new interactions in headset; candidate is staged, not installed.
+  Check empty/identical weapon sets, belt ordering/refill/refusal, UI crop, native
+  tab clicks, stow visibility and tracking/recenter cancellation.
+- [ ] Add original skill icons, item silhouettes/friendly names, detailed bottle
+  geometry, optional scene-depth occlusion and additional journal pages.
+- [ ] Implement casting adapters for projectile, channel, ground/summon,
+  unit/corpse, self-buff and aura skills behind the same point-and-trigger
+  controls. Prioritize a simple projectile: prompt accepted spawn, coherent
+  hand-origin flash/trail/light/impact, correct 3D contacts and stereo timing.
+  Current native XY aim is the fallback; each family's collision, resources and
+  native behavior need separate validation. Measure input-to-visible latency
+  before tuning travel speed; do not apply arrow velocity to all spells.
+
+## Current bow test build
+
+- [x] Replace release-button pulses with one queued native basic attack, retaining
+  native ammo/damage ownership; expire and cancel stale requests.
+- [x] Fix opaque-handle/native-owner confusion that prevented projectile-speed correction.
+- [x] Freeze two-hand 6DoF release; pose the flying arrow on its path, shared between eyes.
+- [x] Match held-bow input timestamps to rendered attachment poses.
+- [x] Sweep the full 3D arrow path against body capsules and native barriers;
+  retain native hit/pierce handling, and clean up removed missiles/visuals.
+- [x] Correct parent/mesh binding after the owner reported arrows originating
+  overhead. Only the release mesh gets the world transform; initializer order,
+  authored child height/scale and recycled entity regressions pass. Installed
+  at 12:11 on October 9; not relaunched because the owner will test later.
+- [ ] Verify the arrow-height correction in the headset before marking physical
+  flight verified; see HANDOFF.md for candidate and rollback hashes.
+- [ ] Headset-verify immediate release, faster aligned flight, one ammo consumed,
+  empty quiver, cancellations, wall/close-range contacts and melee regression.
+- [ ] Refine uneven terrain, missile-proxy source positioning/rooms, special arrow
+  skills and additional bow rigs. This build covers ordinary basic arrows only.
+
 ## 1. Stability and calibration — next headset pass
 
 - [x] Restore first-person stereo after the 20:39 saved mode switched to third
@@ -141,7 +248,7 @@ Broader performance/visual regression checks remain below.
   `contact_hits=1`, dependent on motion controls; incoming attacks and summons
   retain native rules. Tests/build pass; three live melee overrides confirmed.
 - [ ] Verify outgoing arrow/spell hit checks for deterministic hits. Preserve
-  critical/damage/progression and resource systems; bow flight tuning is parked.
+  critical/damage/progression and resource systems; physical bow flight is now prepared for testing.
 - [x] Implement the first right-handed motion-input prototype: deliberate melee
   swings, bow nock/draw/release, hand palette for eight native skill assignments
   and weapon swap, belt grab/raise/tip-to-drink, hand aim and gesture haptics.
@@ -163,7 +270,7 @@ Broader performance/visual regression checks remain below.
   fixed string/limb lengths from runtime bind geometry, unknown-rig fallback.
   Added stronger checked haptics and draw-progress pulses. Geometry/timeline tests
   and cross-build pass. Owner verified live native pose and haptics work.
-- [ ] **Parked by owner, October 9:** improve bow aim alignment and perceived arrow travel speed. First isolate
+- [ ] **Resumed October 9; new build awaiting test:** improve bow aim alignment and perceived arrow travel speed. Earlier investigation:
   idle bow-marker frame submission errors (`xrEndFrame -39`, present in prior
   guide build too). Distinguish attack wind-up, travel velocity, ground-only aim
   and model-vs-hand-line alignment before changing combat values. Owner clarified
@@ -192,7 +299,8 @@ Broader performance/visual regression checks remain below.
   Sword contact and native accepted-hit feedback are verified; independent
   off-hand strikes/shield collisions remain open.
 - [ ] Replace prototype slot text/flat bottle/draw-line guides with actual skill
-  metadata, belt counts and 3D item presentation. Add wrist health/mana feedback.
+  metadata and 3D item presentation. Native names/belt counts/wrist vitals are
+  implemented in the staged interaction candidate; headset verification remains.
 - [ ] Add pitch-sensitive spell placement, parries, crossbow loading and throwing.
   Refine held-bow presentation across rigs and melee collider dimensions.
   Damage/resources stay native, with the explicitly requested deterministic hit
@@ -223,8 +331,9 @@ Broader performance/visual regression checks remain below.
   reach, game attack speed, hit rules and cooldowns; no attacks from menu gestures.
 - [ ] Add optional two-hand bow mechanics: nock/draw/release gesture and controller
   aim trigger the native shot. Preserve ammunition, native damage and attack timing.
-- [ ] Define aimed spell casting, self-cast/buff and summon controls separately;
-  preserve mana costs/cooldowns and an accessible button alternative.
+- [ ] Implement target resolution for aimed spells, self buffs and summons
+  behind the same right-trigger casting control; preserve mana/cast-rate rules.
+  Spell gestures are explicitly out of scope for this phase.
 
 ## 4. Performance and eye-tracked foveation
 

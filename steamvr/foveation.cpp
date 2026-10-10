@@ -291,5 +291,6 @@ void BeginEye(int e,float cx,float cy,bool tracked){eye=e;centerX=cx;centerY=cy;
 void EndWorld(){if(worldDrawing.exchange(false))++maskEpoch;}
 void Suspend(command_list* cl){auto& s=*Get(cl);s.targets=false;Apply(cl,s);}
 Stats TakeStats(){return {shadedDraws.exchange(0),fullDraws.exchange(0)};}
+bool Available(){return ready.load();}
 void Shutdown(){ready=false;worldDrawing=false;++maskEpoch;std::lock_guard lock(maskLock);masks.clear();gazeBanks.clear();nativeQueue.Reset();nativeDevice.Reset();}
 }

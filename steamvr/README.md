@@ -99,10 +99,11 @@ and right B in menus send Escape using a
 scan-code press held across frames. A trigger used on a menu remains consumed
 until released, so closing the panel cannot turn the same press into an attack.
 
-The opt-in [motion gameplay prototype](GAMEPLAY.md) adds right-handed melee
+The [motion gameplay prototype](GAMEPLAY.md) adds right-handed melee
 swings, two-hand bow draws, a left-hand selection palette, aimed native skills
-and grab-to-mouth belt potions. `[gameplay] motion_controls=1` enables it; default
-is 0. See that document for controls, cancellation rules and the distinction
+and grab-to-mouth belt potions. Fresh installs set `[gameplay] motion_controls=1`,
+`[render] fixed_foveation=1` and `eye_tracked_foveation=0`. Set motion controls to
+`0` for legacy button controls. See that document for cancellation rules and the distinction
 between gesture-triggered native attacks and physical collision combat.
 
 Hold **left grip**, then **click the left stick** to reset eye height to the
