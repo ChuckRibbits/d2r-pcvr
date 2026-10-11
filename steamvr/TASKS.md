@@ -1,11 +1,33 @@
 # D2R Steam Frame PCVR tasks
 
 Updated 2026-10-10. Current target: native Windows D2R, SteamVR streaming to
-Steam Frame, offline local characters only. Linux/Proton evidence below is historical.
+Steam Frame, offline local characters only. PR #1 is merged into main; current
+work on `vr/quest-2-3-support` tests Quest compatibility. Linux/Proton evidence
+below is historical.
 The DevilutionX standalone/tabletop project remains parked separately.
 
 Unchecked tasks remain open, including implemented changes awaiting headset
 verification. Build checks and automated tests do not establish visual correctness.
+
+- [x] **Quest 3 + Steam Link/SteamVR gameplay smoke test.** Owner reports
+  "ok it all works" with the unchanged `f559b3e5...` DLL. Probe/session/tracking,
+  calibration save/close, accepted outdoor melee and normal exit are logged.
+  Cave entry and weapon-set switching are not separately logged in this run;
+  overall feedback is not exhaustive feature coverage. See QUEST_TESTING.md.
+- [x] **Quest 3 + Virtual Desktop/VDXR smoke test and color correction.** The
+  Windows wrapper supports explicit `--frame-vr --frame-vdxr` without changing
+  normal Play or the system runtime. All 24 Python tests pass. The connected
+  Quest 3 passes the full VDXR D3D12 graphics probe and reaches tracked gameplay,
+  with owner-confirmed normal colors after the sRGB correction. All 34 native
+  tests and a GPU regression pass; 45 accepted outdoor melee reports, zero
+  position mismatches and normal exit are logged. Cave/set-swap/calibration
+  coverage is not separately established on VDXR.
+- [ ] **Virtual Desktop + SteamVR.** This separate route remains untested.
+- [x] **Remove Journal from the wheel.** Label/icon, hover and dispatch removed;
+  tabbed game-menu access (Frame Left A / Quest Left X) retained. Native tests
+  and generated wheel preview pass; final cleanup has no fresh headset run.
+- [ ] **Physical Quest 2 compatibility.** Requires its own headset test;
+  do not infer it from Quest 3. See [QUEST_TESTING.md](QUEST_TESTING.md).
 
 - [x] **Owner-requested body calibration and shoulder swapping.**
   Implemented first-load upright T-pose capture with both triggers and

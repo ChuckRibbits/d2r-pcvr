@@ -151,6 +151,48 @@ class InstallationTests(unittest.TestCase):
             launch_windows.launch_environment(['--frame-vr',
                 launch_windows.RUNTIME_OPTION + 'missing-runtime.json'])
 
+    def test_explicit_vdxr_overrides_configured_steamvr_without_changing_stock_play(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            steamvr = root / 'Steam VR/steamxr_win64.json'
+            vdxr = root / 'Virtual Desktop/OpenXR/virtualdesktop-openxr.json'
+            for runtime in (steamvr, vdxr):
+                runtime.parent.mkdir(parents=True)
+                runtime.write_text('{}')
+            original = ['C:\\Steam Library\\D2R.exe', '-some-argument', 'a value']
+            options = original + [launch_windows.RUNTIME_OPTION + str(steamvr),
+                                  launch_windows.VDXR_OPTION]
+            self.assertEqual(launch_windows.prepare(options), (original, None))
+            self.assertIsNone(launch_windows.launch_environment(options))
+            with patch.object(launch_windows, 'vdxr_manifest', return_value=vdxr), \
+                    patch.dict(os.environ, {'XR_RUNTIME_JSON': 'other-runtime', 'SteamAppId': '2536520'}), \
+                    patch.object(Path, 'is_file', return_value=True):
+                command, cwd = launch_windows.prepare(options + ['--frame-vr'])
+                self.assertEqual(command, ['C:\\Steam Library\\D2RLoader.exe'] + original[1:])
+                self.assertEqual(cwd, 'C:\\Steam Library')
+                for arguments in (options + ['--frame-vr'], ['--frame-vr', launch_windows.VDXR_OPTION]):
+                    environment = launch_windows.launch_environment(arguments)
+                    self.assertEqual(environment['XR_RUNTIME_JSON'], str(vdxr.resolve()))
+                    self.assertEqual({k.upper(): v for k, v in environment.items()}['STEAMAPPID'], '2536520')
+                self.assertEqual(os.environ['XR_RUNTIME_JSON'], 'other-runtime')
+
+    def test_missing_vdxr_does_not_fall_back_to_the_configured_steamvr(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            steamvr = root / 'steamxr_win64.json'
+            steamvr.write_text('{}')
+            with patch.object(launch_windows, 'vdxr_manifest', return_value=root / 'missing.json'):
+                with self.assertRaisesRegex(SystemExit, 'manifest was not found'):
+                    launch_windows.launch_environment(['--frame-vr', launch_windows.VDXR_OPTION,
+                        launch_windows.RUNTIME_OPTION + str(steamvr)])
+
+    def test_multiple_configured_runtime_manifests_remain_rejected(self):
+        for extra in ([], [launch_windows.VDXR_OPTION]):
+            with self.subTest(extra=extra), self.assertRaisesRegex(SystemExit, 'at most one'):
+                launch_windows.launch_environment(['--frame-vr',
+                    launch_windows.RUNTIME_OPTION + 'first.json',
+                    launch_windows.RUNTIME_OPTION + 'second.json'] + extra)
+
 
 if __name__ == '__main__':
     unittest.main()

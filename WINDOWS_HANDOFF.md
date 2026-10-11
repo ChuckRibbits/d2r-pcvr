@@ -11,6 +11,24 @@ camera clipping correction are owner-confirmed. The owner reports "it all works"
 after the cave melee coordinate fix and offline retest. The original
 Linux evidence remains separate.
 
+**Quest follow-up on `vr/quest-2-3-support`:** PR #1 is merged. Quest 3 with
+Steam Link/SteamVR is owner-confirmed using `f559b3e5...`. Virtual Desktop/VDXR
+reaches tracked gameplay, but its initial run has washed-out colors from
+submitting copied sRGB bytes as linear UNORM. Candidate **`109dfa0e...`** is
+installed at 18:35 PDT and selects sRGB even when UNORM is also supported.
+All **34 native tests** pass, including a GPU regression that reproduces the
+old gamma error; typeless sRGB potion stereo/readback passes. The previous DLL
+is backed up and INI/graphics hashes are preserved. The owner confirms normal
+VDXR colors; outdoor melee contacts and normal exit at 18:46 are logged.
+Release `v0.3.0-windows-quest-preview` adds Journal wheel-entry removal in
+**`e12a5e95...`**, preserving access through the native tabbed menu. All 34 native
+tests and the generated wheel preview pass; that final cleanup has no additional
+headset session. See [INSTALL-WINDOWS.md](INSTALL-WINDOWS.md) for the user guide
+and [steamvr/QUEST_TESTING.md](steamvr/QUEST_TESTING.md) for current
+coverage and local deployment record
+`build-frame/windows/latest-vdxr-color-deployment.json`. Current launcher routing
+passes **24 Python tests** and keeps normal Steam Play stock.
+
 ## Windows setup completed October 10
 
 - Steam game build **3.3.93787** is installed at
@@ -21,7 +39,8 @@ Linux evidence remains separate.
   preserved locally. The native performance candidate **9b3ce9df…** was
   installed with the same settings and a deferred window-focus fix; see below.
   That session logged Akara opening/closing twice and ended with normal Save &
-  Exit. Current installed build is **f559b3e5…**, described below.
+  Exit. The last owner-verified Steam Frame build is **f559b3e5…**, described
+  below; the current Quest color candidate is listed above.
 - Stock D2R and the Steam Frame dashboard were confirmed working by the owner.
   All mod gameplay/testing is **local offline characters only**. Normal Steam
   Play routes to stock D2R; `--frame-vr` explicitly selects the mod.

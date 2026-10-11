@@ -108,9 +108,9 @@ def main():
         return
     exe = game / 'D2R.exe'
     if not exe.is_file() or '3.3.93787'.encode('utf-16-le') not in exe.read_bytes():
-        raise SystemExit('This prototype requires Steam D2R 3.3.93787')
+        raise SystemExit('This release requires Steam D2R 3.3.93787')
     if not args.plugin.is_file():
-        raise SystemExit('Build the plugin first')
+        raise SystemExit(f'Mod DLL not found: {args.plugin}. Extract the complete release ZIP and follow INSTALL-WINDOWS.md.')
     if os.name == 'nt' and not args.openxr_loader:
         raise SystemExit('Native Windows requires --openxr-loader pointing to the release bin/openxr_loader.dll')
     if args.openxr_loader and not args.openxr_loader.is_file():

@@ -6,17 +6,50 @@ Updated 2026-10-10. Read [INSTALL.md](INSTALL.md) for deployment and
 **Native Windows setup is complete. Start with
 [WINDOWS_HANDOFF.md](WINDOWS_HANDOFF.md)** for exact package choice, installation,
 Steam launch commands, controls, baseline settings and the diagnostic sequence.
-Use branch `vr/steam-frame-proton`; default/upstream `main` is not this work.
+PR #1 is merged into `main` at `7b69ce7`. Current work continues on
+`vr/quest-2-3-support`; see [steamvr/QUEST_TESTING.md](steamvr/QUEST_TESTING.md)
+for the Quest 3 Steam Link test and separate Virtual Desktop/Quest 2 coverage.
 
-**Current verified build:** `f559b3e5...`, installed at 17:55 PDT. The owner
+**Release:** `v0.3.0-windows-quest-preview`, on `vr/quest-2-3-support`, packages
+`e12a5e95...` with [INSTALL-WINDOWS.md](INSTALL-WINDOWS.md) and two launch
+shortcuts. The final change removes Journal's wheel label/icon, hover and
+dispatch; native tabbed menu access remains. All 34 native tests, 24 Python
+checks and the generated wheel preview check pass. No new headset session
+was run after this wheel cleanup; earlier runs have exact hashes below.
+The release DLL is installed locally with INI/video hashes preserved and the
+previous DLL backed up. Game remains closed. Deployment record:
+`build-frame/windows/latest-windows-release-deployment.json`.
+
+**Owner-confirmed VDXR color build:** `109dfa0e...`, installed at 18:35 PDT. The first
+Quest 3 VDXR run reached active tracked gameplay, but the owner reported washed-out
+colors. The candidate selects sRGB for copied SDR images even when VDXR also
+offers linear UNORM. All 34 native tests pass, including a GPU color regression
+that fails with the old selector; typeless sRGB potion stereo/readback also
+passes. INI/graphics hashes are preserved and `f559b3e5...` is backed up. The
+owner confirms "Yes — colors look normal" after the correction. The run logs
+45 accepted native melee reports, zero position mismatches and normal unload
+at 18:46:00.553. Game is closed.
+See [QUEST_TESTING.md](steamvr/QUEST_TESTING.md) and local deployment record
+`build-frame/windows/latest-vdxr-color-deployment.json`.
+
+**Owner-verified Steam Frame/Steam Link build:** `f559b3e5...`, installed at 17:55 PDT. The owner
 reports "it all works" after the offline cave retest. Logs confirm accepted
 free-swing melee contacts in `act1_caves` without the old position mismatch,
 followed by return outdoors and normal game exit at 18:02. Current code includes
 T-pose body calibration, dominant-trigger shoulder weapon swapping, native
 Windows setup, dialogue focus and clipping/belt/wrist fixes. All 33 native tests,
 21 Windows Python tests and both 17-call NGX ABI target checks pass. Use SteamVR
-streaming to Steam Frame, local offline characters only. Game is closed; the next
-engineering priority is a controlled native baseline/candidate performance test.
+streaming to Steam Frame, local offline characters only. The owner now also
+confirms Quest 3 + Steam Link/SteamVR works with the same DLL. Calibration,
+outdoor melee and normal exit at 18:16:57 are logged; see
+[QUEST_TESTING.md](steamvr/QUEST_TESTING.md) for coverage limits. Virtual Desktop
+Streamer 1.34.22 is installed and its stuck service repaired. The owner has
+connected Quest 3; the full VDXR graphics probe passes on the RTX 5090 with
+VIEW/LOCAL/STAGE spaces. The first game log confirms VirtualDesktopXR, an active
+outdoor session and head/both-hand tracking; the color regression is described
+above. SteamVR remains closed. `--frame-vr --frame-vdxr` selects VDXR per launch without editing
+the system runtime or normal Steam Play; 24 Python tests pass. A controlled native
+baseline/candidate performance test and physical Quest 2 test remain pending.
 
 ### Earlier Windows debugging record
 

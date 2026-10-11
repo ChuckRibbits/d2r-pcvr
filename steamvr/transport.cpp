@@ -24,6 +24,7 @@
 #include "transport.h"
 #include "frame_math.h"
 #include "composition_layers.h"
+#include "swapchain_format.h"
 #include "input.h"
 #include "window_focus.h"
 #include "gameplay.h"
@@ -661,17 +662,11 @@ bool Initialize(reshade::api::command_queue* rq,reshade::api::swapchain* swap) {
     uint32_t n=0;pEnumerateSwapchainFormats(session,0,&n,nullptr);
     std::vector<int64_t> formats(n);
     if(!Check(pEnumerateSwapchainFormats(session,n,&n,formats.data()),"enumerate formats")) return false;
-    DXGI_FORMAT eyeFormat=format;
-    if(std::find(formats.begin(),formats.end(),int64_t(eyeFormat))==formats.end()) {
-        // CopyResource permits UNORM/SRGB members of the same typeless family.
-        // The game's SDR backbuffer is already display-encoded, so preserve bytes.
-        if(format==DXGI_FORMAT_R8G8B8A8_UNORM)eyeFormat=DXGI_FORMAT_R8G8B8A8_UNORM_SRGB;
-        else if(format==DXGI_FORMAT_B8G8R8A8_UNORM)eyeFormat=DXGI_FORMAT_B8G8R8A8_UNORM_SRGB;
-        if(std::find(formats.begin(),formats.end(),int64_t(eyeFormat))==formats.end()) {
-            std::string message="Frame OpenXR: unsupported game backbuffer format "+std::to_string(int(format))+"; runtime formats:";
-            for(auto f:formats)message+=" "+std::to_string(f);
-            Say(message.c_str());return false;
-        }
+    const DXGI_FORMAT eyeFormat=CopiedSwapchainFormat(format,formats);
+    if(eyeFormat==DXGI_FORMAT_UNKNOWN) {
+        std::string message="Frame OpenXR: no color-correct copy format for game backbuffer "+std::to_string(int(format))+"; runtime formats:";
+        for(auto f:formats)message+=" "+std::to_string(f);
+        Say(message.c_str());return false;
     }
     {char message[128];std::snprintf(message,sizeof message,"Frame OpenXR: game format %d, eye format %d",int(format),int(eyeFormat));Say(message);}
     uiSupported=std::find(formats.begin(),formats.end(),int64_t(DXGI_FORMAT_R16G16B16A16_FLOAT))!=formats.end()&&uiBlit.Initialize(device.Get(),&Say);
@@ -695,7 +690,7 @@ bool Initialize(reshade::api::command_queue* rq,reshade::api::swapchain* swap) {
     if(!tracking.Open(D2RVR_SHARED_NAME)||!pad.Open(BW_PAD_MIRROR_NAME)||!actions.Open(D2RVR_ACTIONS_NAME)) return false;
     tracking.data->version=D2RVR_SHARED_VERSION;pad.data->version=BW_PAD_MIRROR_VERSION;actions.data->version=D2RVR_ACTIONS_VERSION;
     gameSwapchain=swap;
-    char b[128];std::snprintf(b,sizeof b,"Frame OpenXR: D3D12 session ready, eyes %ux%u format %d",width,height,int(format));Say(b);
+    char b[160];std::snprintf(b,sizeof b,"Frame OpenXR: D3D12 session ready, eyes %ux%u format %d (game format %d)",width,height,int(eyeFormat),int(format));Say(b);
     return true;
 }
 bool Bool(XrAction action,int hand) {
@@ -839,7 +834,7 @@ void MotionPointer() {
     const auto mid=ray+direction*(beamLength*.5f);
     beamPose=XrPose({mid,math::BeamOrientation(direction,V(head.position)-mid)});pointerVisible=true;
     if(pointerHit) {
-        motionInput.hover=interaction::WheelCell(hit.u,hit.v,interactionOutput.hover,interactions.SkillPage());
+        motionInput.hover=interaction::WheelCell(hit.u,hit.v,interactionOutput.hover,interactions.SkillPage(),interactions.Utility());
         dotPose=XrPose({hit.point+math::Rotate(pose.q,{0,0,.003f}),pose.q});
     }
 }

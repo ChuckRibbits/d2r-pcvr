@@ -15,6 +15,7 @@ The original user reference, `emmericp/D2R-3D`, is a separate checkout.
 | OpenXR headers and Windows loader | [KhronosGroup/OpenXR-SDK](https://github.com/KhronosGroup/OpenXR-SDK), 1.1.62, `57af7fc61f9f2d492580cb28aab6d0ea59d8d417` | `steamvr/licenses/OpenXR-Apache-2.0.txt`, `OpenXR-MIT.txt` |
 | JsonCpp (compiled into OpenXR loader) | OpenXR SDK's vendored JsonCpp | `steamvr/licenses/JsonCpp.txt`, public domain / MIT |
 | MinGW runtime and GCC runtime libraries | MinGW-w64 / GCC 13, static linkage | `steamvr/licenses/MinGW-copyright.txt`, `GCC-runtime-copyright.txt`, `GPL-3.0.txt`; GCC Runtime Library Exception applies |
+| Native Windows C++/compiler runtime | LLVM-MinGW 20260616, Clang 22.1.8, static libc++/compiler-rt and winpthreads | `steamvr/licenses/LLVM-Apache-2.0-with-exceptions.txt`, `LLVM-MinGW-runtime.txt`, `winpthreads-MIT.txt` |
 
 OpenXR loader copyright holders include The Khronos Group Inc. (2017–2026),
 Valve Corporation (2017–2019) and LunarG, Inc. (2017–2019), with additional
@@ -46,8 +47,8 @@ is adapted from [levinium/D2RExtractor](https://github.com/levinium/D2RExtractor
 The local SpA1 v31 RGBA decoder and PNG writer use Python's standard library.
 Extracted spell/item artwork belongs to the game; it is generated only in the
 user's local icon cache, never included in this repository or release ZIP.
-The wheel/wrist framing is separately generated artwork with prompts and
-provenance in [`steamvr/assets/README.md`](steamvr/assets/README.md).
+The wheel/wrist framing is separately generated artwork. Its attribution is
+recorded in the [asset notices](https://github.com/bearstonem/d2r-pcvr/blob/vr/quest-2-3-support/steamvr/assets/README.md).
 
 The installation-only BitKnit decoder in `steamvr/vendor/bitknit.py` is vendored
 from [Rasetsuu/blendergranny](https://github.com/Rasetsuu/blendergranny) commit
