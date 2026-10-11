@@ -86,7 +86,7 @@ not generate melee velocity. The layout currently assumes a right-handed player.
 | Wrist health/mana | Look at the **back of your left wrist, like checking a watch**, within 75 cm of your eyes; red life and blue mana orbs appear there. No button required. Brief status cue also appears at low health or low mana in spell mode |
 | Quest journal | Open the native tabbed game menu with Left X / Frame Left A, then select Journal. The duplicate wheel entry is removed |
 | Journal controls | Right laser + trigger uses native page controls/act tabs; Right B follows native back; Left X performs native X |
-| Quick native weapon swap | Right stick click, unchanged |
+| Inventory drop / sort | Native X (Quest Left X / Frame Left A) / press and hold right stick click; right-stick click no longer swaps in gameplay |
 | Walk / snap turn | Sticks; paused while wheel or journal is open |
 | Height reset / map | Left grip + left stick click / plain left stick click, unchanged |
 

@@ -143,6 +143,19 @@ int main(){
     Check(navigation.Native(),"native X is available rather than toggling menu closed");
     navigation.Step(false,{},false,0,0,false);
     Check(!navigation.Native(),"focus loss resets navigation ownership");
+    menus::ReleaseGate sortGate;menus::Navigation inventory;
+    sortGate.Step(menus::Mode::Native,9,{});
+    menus::Pad sort;sort.buttons=menus::RightStick;
+    for(int frame=0;frame<180;++frame) {
+        const auto report=inventory.Step(true,sortGate.Step(menus::Mode::Native,9,sort),true,.5f,.5f,false);
+        Check(report.buttons==menus::RightStick,"right-stick hold reaches native sort on every frame, not just a click edge");
+        Check(!menus::WorldButtons(sort),"physical right-stick click cannot request a gameplay weapon swap");
+    }
+    Check(!inventory.Step(true,{},true,.5f,.5f,false).buttons,"releasing right-stick ends native hold-to-sort");
+    menus::Pad drop;drop.buttons=menus::X;
+    for(int frame=0;frame<90;++frame)
+        Check(inventory.Step(true,drop,true,.5f,.5f,false).buttons==menus::X,"X/drop is forwarded for the entire native hold duration");
+    Check(!menus::Busy(sortGate.Step(menus::Mode::World,10,sort)),"closing inventory during a sort hold cannot swap in gameplay");
     // Source pixels, physical panel and mouse mapping agree at multiple aspects.
     for(auto size:{journal::Rect{0,0,3840,2160},journal::Rect{0,0,2560,1440},journal::Rect{0,0,1920,1200}}) {
         for(float u:{.01f,.25f,.5f,.75f,.99f})for(float v:{.01f,.5f,.99f}) {

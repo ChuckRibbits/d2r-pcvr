@@ -39,6 +39,9 @@ promo/
 /deps/
 /bin/
 /release-manifest.json
+/.runtime/
+/setup-backups/
+/setup-result.json
 /openxr-probe-result.txt
 # Native asset caches are generated separately from each user's own installation.
 **/d2r_vr_icons/

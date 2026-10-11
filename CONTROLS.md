@@ -32,7 +32,6 @@ use two tracked VR controllers; an Xbox controller is not required.
 | Bow | Bring the right hand to the bowstring, hold right trigger, draw back, then release |
 | Cancel a grab / bow draw | Right B, then release the inputs |
 | Swap weapon sets I / II | Reach the swap hand over either shoulder and press its trigger; right hand by default, adjustable in VR settings |
-| Quick weapon swap | Right stick click |
 | Seated weapon selection / stow | Wheel → **EQUIPMENT / BELT** → **Weapon I**, **Weapon II** or **Stow/Draw** |
 | Grab a belt potion | Reach to a bottle and hold that hand's grip |
 | Drink | Keep grip held, bring the bottle opening to your mouth and tip it; release an unused bottle to return it |
@@ -105,6 +104,8 @@ not convert it into a context-click.
 | Y | Left Y | Left B |
 | Left stick / right stick | Left stick / right stick | Left stick / right stick |
 | LS / RS click | Left stick click / right stick click | Left stick click / right stick click |
+| Inventory: X / drop selected item | Left X; hold if the native prompt requires it | Left A; hold if the native prompt requires it |
+| Inventory: hold RS / sort | Press and hold right stick click | Press and hold right stick click |
 | LB / RB | Left Grip / Right Grip | Left Grip / Right Grip |
 | LT / RT | Left Trigger / Right Trigger | Left Trigger / Right Trigger |
 | Menu / Start, where available to the game | Controller menu button | Controller menu button |
@@ -113,6 +114,8 @@ Native menu actions use the same buttons in the main menu, tabbed menu, stash,
 inventory and merchant panels. **Left primary opens the tabbed menu during
 gameplay; inside a native menu it performs the displayed X action.**
 **Left Grip + left secondary** stays reserved for VR settings.
+Right-stick click does not swap weapons during gameplay. Use the shoulder
+gesture or **EQUIPMENT / BELT** wheel for weapon configurations.
 
 Quest controllers do not need a separate D-pad or Xbox controller: use sticks
 for native navigation and the laser for the on-screen controls. When using

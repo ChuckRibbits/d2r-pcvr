@@ -18,10 +18,7 @@ You need the **Steam edition of Diablo II: Resurrected 3.3.93787** and a
 
 1. Purchase and install D2R through Steam. Launch it normally once, finish any account
    prompts, create/select an offline character, then fully exit.
-2. Install [Python 3.10 or newer](https://www.python.org/downloads/windows/)
-   with the Windows **py launcher**. Open PowerShell and run
-   `py -3 --version` to check that it is available.
-3. Set up your headset and both controllers, including floor/room setup:
+2. Set up your headset and both controllers, including floor/room setup:
 
    | Headset | Connection |
    | --- | --- |
@@ -31,13 +28,49 @@ You need the **Steam edition of Diablo II: Resurrected 3.3.93787** and a
 
    For Virtual Desktop, use the **Quest app** and install the **Windows
    Streamer** on your PC. Connect until you can see the PC desktop in the headset.
-4. Download **d2r-pcvr-windows.zip** from the
-   [release page](https://github.com/bearstonem/d2r-pcvr/releases/tag/v0.3.1-windows-preview),
+3. Download **d2r-pcvr-windows.zip** from the
+   [release page](https://github.com/bearstonem/d2r-pcvr/releases/tag/v0.3.3-windows-preview),
    under **Assets**. Your GitHub account needs access while this preview is private.
-5. Extract `d2r-pcvr-preview` to a permanent folder, such as
+4. Extract `d2r-pcvr-preview` to a permanent folder, such as
    `C:\Mods\d2r-pcvr-preview`. Keep this folder after installation.
 
 ## Install
+
+Double-click **Install-Windows.cmd** in the extracted folder and follow its prompts
+on the PC desktop. No separate Python install is needed; setup downloads a small,
+verified private runtime from [python.org](https://www.python.org/downloads/release/python-31210/).
+An internet connection is needed for the required components.
+
+1. Choose **Steam Frame**, **Quest 3**, **Quest 2** or another SteamVR headset.
+2. For Quest, choose **Steam Link / SteamVR**, **Virtual Desktop / VDXR**,
+   or **Both**. Steam Frame uses SteamVR.
+3. Confirm the detected Steam, game and SteamVR folders. Choose your Steam account
+   if more than one is present, and confirm the saved-games folder.
+4. For an existing mod installation, choose **Update / repair and keep calibration
+   and video settings**. A full install applies recommended settings and resets calibration.
+   **Only configure Steam shortcuts** skips installing mod files.
+5. Review the choices and continue. When prompted, use **Save & Exit** in D2R and
+   **Steam > Exit** on the desktop. Steam must be fully closed while setup adds
+   shortcuts. This also disconnects headset streaming temporarily.
+6. When setup finishes, open Steam, reconnect your headset and play the matching
+   **Diablo II: Resurrected VR** entry in your library. Select an **offline character**.
+
+Setup configures D2R's launch options and creates the appropriate Steam library
+shortcut automatically, including **Include in VR Library** for SteamVR. Choosing
+**Both** creates two entries. Rerunning setup updates these entries without adding
+duplicates. Steam's original D2R **Play** button still launches the stock desktop game.
+It does not change the system's OpenXR runtime or Windows security settings.
+
+Backups are kept in **setup-backups** inside the extracted mod folder: game files
+and saves under **game**, and Steam configuration under **steam-...**. Keep this
+folder and **setup-result.json** after installation. Steam backups contain account
+configuration; keep them private and do not share them with the mod ZIP.
+
+## Manual installation
+
+Use this section only if you are installing without the setup wizard.
+Install [Python 3.10 or newer](https://www.python.org/downloads/windows/) with
+the Windows **py launcher**, then check `py -3 --version`.
 
 Open PowerShell in the extracted **d2r-pcvr-preview** folder. Find your D2R
 folder through Steam → D2R Properties → Installed Files → Browse.
@@ -63,7 +96,7 @@ If your saves are in a custom location, add
 
 ## Set Steam launch options
 
-Do this once after installation. In Steam, find SteamVR's folder through
+The wizard handles this automatically. For a manual installation, find SteamVR's folder through
 Properties → Installed Files → Browse. Set its path below to the
 `steamxr_win64.json` file inside that folder, then run these lines in the
 same PowerShell window:
@@ -109,7 +142,8 @@ returning to desktop play.
 
 ## Add Steam library shortcuts
 
-After completing **Set Steam launch options** above, you can add separate
+The setup wizard adds these automatically. To add them manually after
+completing **Set Steam launch options** above, you can add separate
 Steam library entries for each VR connection. These also let you launch from
 the headset without opening the mod folder.
 
@@ -177,6 +211,8 @@ complete your headset's floor/room setup and reopen calibration.
 | Menu select / drag | Point the right-hand laser and use right trigger |
 | Laser context / alternate click | Left Grip + Right Trigger |
 | Native menu navigation / back | Sticks and face buttons / Right B |
+| Inventory: drop selected item | Quest Left X / Frame Left A; follow the native hold prompt |
+| Inventory: sort | Press and hold right stick click |
 | VR settings | Left Grip + Frame Left B / Quest Left Y |
 | Spell wheel | Hold Left Y, turn the left palm toward you, then select with right laser + trigger |
 | Assign wheel skills | Spell wheel → **EDIT SKILLS** → slot → learned skill |
@@ -212,6 +248,10 @@ binding also remains available.
 - **An install file is quarantined:** check Windows Security's Protection
   History for the affected file. Installation cannot finish while a required
   component is quarantined.
+- **Setup cannot update Steam:** choose **Steam > Exit**, then retry. Closing
+  Steam's window leaves it running. Setup does not terminate games or Steam for you.
+- **Setup reports an unsupported Steam configuration:** use the manual installation
+  and shortcut directions above. The original Steam configuration is kept.
 - **D2R asks for a license/account check:** fully exit, launch the game with
   Steam's normal Play button while connected to the internet, finish the prompt
   and exit before launching VR again.
@@ -221,7 +261,11 @@ binding also remains available.
 ## Upgrade or remove
 
 **Upgrade while keeping your settings:** fully close D2R, download and extract
-the new release, and keep a copy of the existing
+the new release to a permanent folder, run **Install-Windows.cmd** and choose
+**Update / repair and keep calibration and video settings**. Setup refreshes
+the mod and its launch paths while keeping your calibration and video settings.
+
+For a manual DLL-only upgrade, keep a copy of the existing
 `d2rloader\plugins\d2rl-vrcam.dll` and `d2r_vr.ini` from your game folder.
 Replace only that DLL with the new release's `bin\d2rl-vrcam.dll`.
 Keep your existing INI to retain calibration, and repeat the Steam launch-option
@@ -230,13 +274,22 @@ asks you to update its other components.
 
 **Remove the mod:** fully close D2R. Open PowerShell in the extracted folder,
 set `$Game` to your D2R folder as in the install step, then replace the backup
-path below with the one the installer printed:
+path below with the one the installer printed. Wizard backups are under
+`setup-backups\game`; manual installer backups are under `build-frame\backups`.
+The wizard's private Python can be used without installing Python separately:
 
 ```powershell
-py -3 .\steamvr\install.py --game "$Game" --restore 'C:\Mods\d2r-pcvr-preview\build-frame\backups\YOUR-SNAPSHOT'
+& .\.runtime\python\python.exe .\steamvr\install.py --game "$Game" --restore 'C:\Mods\d2r-pcvr-preview\setup-backups\game\YOUR-SNAPSHOT'
 ```
 
-Then clear D2R's Steam launch options. Your current character progress is kept;
+For a manual installation, use `py -3` in place of the private Python path.
+Then clear D2R's Steam launch options and remove its VR shortcuts. To restore the
+previous Steam configuration instead, fully exit Steam and copy the two VDF files
+from the matching `setup-backups\steam-...` folder back to
+`Steam\userdata\YOUR-LOCAL-ID\config` (the ID is in `setup-result.json`).
+If no `shortcuts.vdf` existed before setup, its backup is absent; remove only the
+new D2R VR entries through Steam instead of replacing unrelated shortcuts.
+Your current character progress is kept;
 the installer restores replaced files and your previous video settings.
 
 See [THIRD_PARTY.md](THIRD_PARTY.md) for licenses and credits.

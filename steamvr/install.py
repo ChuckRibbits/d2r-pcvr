@@ -82,6 +82,7 @@ def main():
     ap.add_argument('--openxr-loader', type=Path, help='Windows x64 openxr_loader.dll; required on native Windows')
     ap.add_argument('--backup-dir', type=Path, default=ROOT / 'build-frame/backups')
     ap.add_argument('--download-deps', action='store_true', help='Fetch pinned D2RLoader and ReShade from their official sites')
+    ap.add_argument('--preserve-settings', action='store_true', help='Keep existing calibration, mod/ReShade configuration and video settings when upgrading')
     ap.add_argument('--restore', type=Path, help='Restore the installation snapshot made by this script')
     args = ap.parse_args()
     game = args.game.resolve()
@@ -229,9 +230,13 @@ def main():
             cfg.set(section, key, value)
     import io
     out = io.StringIO(); cfg.write(out)
-    put(Path('d2rloader/plugins/d2r_vr.ini'), out.getvalue().encode())
-    put(Path('ReShade.ini'), b'[GENERAL]\nEffectSearchPaths=.\\reshade-shaders\\Shaders\nTextureSearchPaths=.\\reshade-shaders\\Textures\nPresetPath=.\\D2R_Frame_ReShade.ini\n[INPUT]\nKeyOverlay=36,0,0,0\n')
-    put(Path('D2R_Frame_ReShade.ini'), b'Techniques=D2R_DepthFog@D2R_DepthFog.fx\n')
+    def put_config(rel, content):
+        if not args.preserve_settings or not (game / rel).is_file():
+            put(rel, content)
+
+    put_config(Path('d2rloader/plugins/d2r_vr.ini'), out.getvalue().encode())
+    put_config(Path('ReShade.ini'), b'[GENERAL]\nEffectSearchPaths=.\\reshade-shaders\\Shaders\nTextureSearchPaths=.\\reshade-shaders\\Textures\nPresetPath=.\\D2R_Frame_ReShade.ini\n[INPUT]\nKeyOverlay=36,0,0,0\n')
+    put_config(Path('D2R_Frame_ReShade.ini'), b'Techniques=D2R_DepthFog@D2R_DepthFog.fx\n')
     put(Path('reshade-shaders/Shaders/D2R_DepthFog.fx'), (ROOT / 'reshade/D2R_DepthFog.fx').read_bytes())
     for texture in (ROOT / 'reshade/sky').glob('*.png'):
         put(Path('D2R_Sky_ours') / texture.name, texture.read_bytes())
@@ -240,8 +245,9 @@ def main():
                      'Dynamic Resolution Scaling': 0, 'Camera Shake': 0,
                      'Resolution Scale': 80, 'Ambient Occlusion Quality': 2,
                      'Atmospherics Quality': 2, 'Shadow Quality': 2})
-    (saves / 'Settings.json').write_text(json.dumps(settings, indent=4))
-    print(f'Installed offline VR prototype. Save and file backup: {snapshot}')
+    if not args.preserve_settings:
+        (saves / 'Settings.json').write_text(json.dumps(settings, indent=4))
+    print(f'Installed offline VR mod. Save and file backup: {snapshot}')
 
 
 if __name__ == '__main__':

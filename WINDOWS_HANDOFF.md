@@ -1,5 +1,24 @@
 # Clean Windows installation and agent handoff — October 10, 2026
 
+**October 11 inventory/setup follow-up, v0.3.3:** Candidate `5727d397...`
+is installed locally with D2R closed, INI/calibration and graphics preserved.
+Backup: `build-frame/backups/windows-native-inventory-20261011-132011/`.
+Native X/drop and held R3/sort forward for their full hold durations. Physical
+R3 no longer requests a gameplay weapon swap; shoulder and wheel swaps remain.
+All 34 native and 34 Python checks pass. The preceding menu/drag/stash build
+was owner-confirmed; the additional inventory follow-up remains pending.
+
+`Install-Windows.cmd` launches a player setup wizard through a verified private
+CPython runtime. It selects headset/connection, discovers Steam libraries,
+chooses the account, installs or repairs with preserved settings, and backs up
+and configures original D2R launch options plus the matching non-Steam shortcuts.
+It requires Steam and D2R closed and never terminates them, changes the global
+OpenXR runtime, or changes security settings. Steam config transaction, race,
+rollback, idempotence, routing and installer upgrades have isolated fixtures;
+do not rerun full setup on the owner's live installation for verification.
+Tracked evidence: `steamvr/evidence/2026-10-11-windows-setup.json`.
+Wizard downloads/backups/results stay out of git and the release allowlist.
+
 **October 11 menu follow-up on `feat/native-vr-menu-controls`:** The Windows
 v0.3.2 candidate adds native menu buttons/sticks alongside laser clicks and
 dragging. Quest A/B/X/Y map directly; Frame left A/B map native X/Y. Grips

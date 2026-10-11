@@ -103,6 +103,19 @@ class InstallationTests(unittest.TestCase):
                 self.assertFalse(cfg.getboolean('render','defer_gpu_wait'))
                 self.assertEqual(json.loads((saves / 'Settings.json').read_text())['NVIDIA DLSS'],0)
                 self.assertEqual(json.loads((saves / 'Settings.json').read_text())['Resolution Scale'], 80)
+                # An upgrade refreshes files without resetting calibration/video.
+                custom_ini = b'[body_calibration]\nheight=1.83\nspan=1.91\n'
+                custom_video = b'{"Resolution Scale": 92, "custom": "preserved"}\r\n'
+                (game / 'd2rloader/plugins/d2r_vr.ini').write_bytes(custom_ini)
+                (saves / 'Settings.json').write_bytes(custom_video)
+                (game / 'ReShade.ini').write_bytes(b'custom reshade settings')
+                plugin.write_bytes(b'updated fixture plugin')
+                with patch.object(sys, 'argv', common + ['--preserve-settings']), patch.object(install, 'LOADER_HASH', digest):
+                    install.main()
+                self.assertEqual((game / 'd2rloader/plugins/d2r_vr.ini').read_bytes(), custom_ini)
+                self.assertEqual((saves / 'Settings.json').read_bytes(), custom_video)
+                self.assertEqual((game / 'ReShade.ini').read_bytes(), b'custom reshade settings')
+                self.assertEqual((game / 'd2rloader/plugins/d2rl-vrcam.dll').read_bytes(), b'updated fixture plugin')
                 (saves / 'Friend.d2s').write_bytes(b'new progress')
                 with patch.object(sys, 'argv', ['install.py', '--game', str(game), '--restore', str(snapshot)]):
                     install.main()

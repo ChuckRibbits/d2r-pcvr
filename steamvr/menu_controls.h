@@ -26,6 +26,7 @@ inline bool Busy(const Pad& p){return p.buttons||p.lt>25||p.rt>25||Tilted(p.lx,p
 inline bool SettingsChord(const Pad& p,bool quickCastConsumed) {
     return !quickCastConsumed&&(p.buttons&(Y|LeftBumper))==(Y|LeftBumper);
 }
+inline uint16_t WorldButtons(const Pad& p){return p.buttons&(B|Y);}
 
 // Each held control must be released before it can act in a new context. A
 // held grip does not prevent a newly pressed face button or the other stick.

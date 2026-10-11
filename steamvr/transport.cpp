@@ -1234,7 +1234,7 @@ void Input() {
     auto& p=*pad.data;p.writer_pid=GetCurrentProcessId();p.buttons=0;
     // Right A goes only through semantic interact; a raw A bypasses its
     // no-target guard and accidentally attacks when pointing at empty space.
-    p.buttons=controls.buttons&(menus::B|menus::Y|menus::RightStick);
+    p.buttons=menus::WorldButtons(controls);
     if(heightResetButton.MapPressed())p.buttons|=XINPUT_GAMEPAD_LEFT_THUMB;
     p.thumb_lx=controls.lx;p.thumb_ly=controls.ly;p.thumb_rx=controls.rx;p.thumb_ry=controls.ry;
     p.left_trigger=controls.lt;
@@ -1245,7 +1245,8 @@ void Input() {
     if(p.right_trigger>128)a.held|=D2RVR_ACT_ATTACK;
     if((controls.buttons&menus::A)&&!quickCast.Suppress(0))a.held|=D2RVR_ACT_INTERACT;
     if(heightResetButton.MapPressed())a.held|=D2RVR_ACT_MAP;
-    if(controls.buttons&menus::RightStick)a.held|=D2RVR_ACT_SWAP;
+    // Physical right-stick click belongs to native menus (hold-to-sort).
+    // Gameplay swaps are requested by the shoulder gesture or wheel only.
     if(motionControls.load()&&gameplayChain) {
         p.buttons=0;p.left_trigger=p.right_trigger=0;
         a.held&=~D2RVR_ACT_ATTACK;
