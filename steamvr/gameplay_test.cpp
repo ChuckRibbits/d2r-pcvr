@@ -76,6 +76,49 @@ int main() {
         Check(!s.Step(20).bowRelease,"bow cannot repeat without renocking");
     }
     {
+        Sim s;s.in.weapon=Weapon::Javelin;s.Step(3);
+        Check(s.out.javelinReady&&s.out.meleeContact,"equipped javelin starts in throw mode with free melee jabs");
+        s.in.trigger=1;Check(!s.Step().attack&&!s.out.meleeContact,"holding trigger arms throw without firing or jabbing");
+        s.Move({.25f,1.55f,-.2f},10);s.Move({.25f,1.55f,-.75f},5);
+        s.in.trigger=.4f;Check(!s.Step().javelinRelease,"trigger noise cannot throw");
+        s.in.trigger=0;Check(s.Step().javelinRelease&&s.out.rayDirection.z<-.99f&&!s.out.attack&&!s.out.meleeContact,
+            "deliberate forward throw releases once along hand motion");
+        Check(!s.Step().javelinRelease&&s.out.meleeContact,"throw release restores free jab without repeating");
+        Check(!s.Step(20).javelinRelease,"idle hand never spends more javelins");
+        s.engine.Select(2);s.Step(3);Check(s.out.meleeContact,"selected skill preserves javelin jabs");
+        s.in.trigger=1;Check(s.Step().skill==2&&!s.out.javelinRelease,"selected skill retains its trigger binding");
+    }
+    for(int kind=0;kind<4;++kind) {
+        Sim s;s.in.weapon=Weapon::Javelin;s.Step(3);s.in.trigger=1;s.Step();
+        if(kind==0)s.Move({.25f,1.25f,-.45f},10); // weak reposition, not a throw
+        if(kind==1){s.Move({.25f,1.25f,-.95f},5);s.Step(8);} // stopped before release
+        if(kind==2){s.in.head.q=math::Yaw(1.2f);s.Step(10);} // no synthetic head velocity
+        if(kind==3){s.in.hand[0].p.z-=.6f;s.Step();s.Step(5);} // tracking jump
+        s.in.trigger=0;Check(!s.Step().javelinRelease&&!s.out.attack,"weak drop, stale motion, head turn and tracking jump cannot throw");
+    }
+    for(const Vec direction:{Vec{0,1,0},Vec{0,-1,0},Vec{.6f,0,.8f}}) {
+        Sim s;s.in.weapon=Weapon::Javelin;s.Step(3);s.in.trigger=1;s.Step();
+        s.Move(s.in.hand[0].p+direction*.6f,6);s.in.trigger=0;
+        Check(s.Step().javelinRelease&&Length(s.out.rayDirection-direction)<.0001f,
+            "vertical and oblique throws follow room-space hand motion rather than controller aim");
+    }
+    for(int cancel=0;cancel<7;++cancel) {
+        Sim s;s.in.weapon=Weapon::Javelin;s.Step(3);s.in.trigger=1;s.Step();s.Move({.25f,1.4f,-.9f},5);
+        if(cancel==0)s.in.active=false; // menu/area/shoulder owner
+        if(cancel==1)s.in.tracked[0]=false;
+        if(cancel==2)s.in.cancel=true;
+        if(cancel==3)++s.in.equipment;
+        if(cancel==4)s.in.palette=true;
+        if(cancel==5)s.in.quickCast=true;
+        if(cancel==6)s.in.time+=.2;
+        Check(!s.Step().javelinRelease,"interrupted throw never spends ammunition");
+        s.in.active=true;s.in.tracked[0]=true;s.in.cancel=s.in.palette=s.in.quickCast=false;
+        Check(!s.Step(3).javelinRelease,"return with held trigger cannot replay cancelled throw");
+        s.in.trigger=0;Check(!s.Step().javelinRelease,"release after cancellation cannot fire old throw");
+        s.Step(2);s.in.trigger=1;s.Step();s.Move({.25f,1.4f,-.3f},6);s.Move({.25f,1.4f,-.9f},6);s.in.trigger=0;
+        Check(s.Step().javelinRelease,"new deliberate throw works after area/input recovery");
+    }
+    {
         Sim s;s.Nock();Check(s.out.bowDrawing&&s.in.grip[1]==0,"equipped bow needs no left grip clutch");
         s.in.trigger=.4f;Check(s.Step().bowDrawing&&!s.out.attack,"trigger noise cannot release grabbed string");
         s.Move({0,1.3f,0},10);s.in.trigger=.15f;Check(s.Step().bowRelease&&!s.out.attack,"full trigger release emits one shot without pad attack");

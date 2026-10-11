@@ -275,8 +275,8 @@ public:
         const int dominant=config.dominant==1?1:0;
         shoulder::Input reach;reach.time=in.time;reach.session=in.session;reach.epoch=in.epoch;reach.dominant=dominant;
         reach.active=in.active;reach.tracked=in.tracked[dominant];reach.head=in.head.p;reach.hand=in.hand[dominant].p;reach.heading=body.q;
-        reach.trigger=dominant==0?in.trigger:in.leftTrigger;
-        reach.allowed=!wheel&&(!in.quickCast||dominant==1)&&!in.cancel&&!rearm&&bottle<0&&holster<0&&pending.action==Action::None&&
+        reach.grip=in.grip[dominant];
+        reach.allowed=!wheel&&!in.quickCast&&!in.cancel&&!rearm&&bottle<0&&holster<0&&pending.action==Action::None&&
             fresh&&in.snapshot.equipmentKnown&&(in.snapshot.activeSet==1||in.snapshot.activeSet==2);
         const auto shoulder=shoulderSwap.Step(reach);out.block=out.block||shoulder.block;
         if(shoulder.swap&&request(Action::Equip,3-int(in.snapshot.activeSet))){

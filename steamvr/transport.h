@@ -24,6 +24,7 @@ bool GameplayRay(float origin[3],float direction[3]);
 bool MeleeSample(uint32_t poseStamp,melee::Sample& sample);
 void MeleeImpact(); // thread-safe; haptic delivered by XR input update
 bool TakeBowShot(bowflight::Shot& shot);
+bool BowPreviewPose(bowflight::Shot& pose,bool& visible);
 bowflight::Gate BowGate();
 void SetBowWorldEpoch(uint32_t epoch);
 uint64_t BowRenderTime(); // one timestamp for both eyes, lock-free

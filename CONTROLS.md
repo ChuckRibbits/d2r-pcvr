@@ -30,8 +30,9 @@ use two tracked VR controllers; an Xbox controller is not required.
 | Free melee swing / thrust | Move your equipped melee weapon through an enemy; also works with a wheel skill selected |
 | Manual attack / selected skill | Right trigger; hold for the skill's native repeat behavior |
 | Bow | Bring the right hand to the bowstring, hold right trigger, draw back, then release |
-| Cancel a grab / bow draw | Right B, then release the inputs |
-| Swap weapon sets I / II | Reach the swap hand over either shoulder and press its trigger; right hand by default, adjustable in VR settings |
+| Javelin throw | Javelin equipped in **WEAPON** mode: hold right trigger, make a throwing motion, then release; direction follows the hand's motion |
+| Cancel a grab / bow draw / javelin throw | Right B, then release the inputs |
+| Swap weapon sets I / II | Reach the swap hand over either shoulder and press its grip; right hand by default, adjustable in VR settings |
 | Seated weapon selection / stow | Wheel → **EQUIPMENT / BELT** → **Weapon I**, **Weapon II** or **Stow/Draw** |
 | Grab a belt potion | Reach to a bottle and hold that hand's grip |
 | Drink | Keep grip held, bring the bottle opening to your mouth and tip it; release an unused bottle to return it |
@@ -47,6 +48,13 @@ use two tracked VR controllers; an Xbox controller is not required.
 Free swings pause during casting, menus and potion handling. Selecting a wheel
 skill changes the right-trigger action; its quick-cast binding stays available.
 The belt shows potions in the game's belt slots even without an equipped belt.
+
+Javelins use the game's normal basic throw, ammunition and damage. A stationary
+trigger release does not throw. Jabs work with the trigger released. If a wheel
+skill is selected, right trigger casts that skill; choose **WEAPON** to return
+to physical throwing, or use the quick-cast shortcuts for skills. Physical
+throwing currently covers basic javelins; skill projectiles retain their normal
+casting controls.
 
 ## Quick-cast shortcuts
 

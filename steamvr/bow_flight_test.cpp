@@ -62,6 +62,60 @@ int main() {
         Check(CapsuleEntry(from,to,{18,.2f,10.25f},{18,1.7f,10.25f},.3f,body)&&stop<body,"wall occludes body behind it");
     }
     {
+        // Paired native/render cave position from the earlier melee capture.
+        // A release is valid here even though the old flat comparison rejects
+        // it by >0.65 m. Teleports still reject the saved release.
+        auto shot=Release();shot.unitsPerMetre=3.8899f;
+        shot.player=Vec{15081.331055f,3.042981f,10365.330078f}*(1/shot.unitsPerMetre);
+        shot.origin=shot.player+Vec{0,1.4f,0};
+        const Vec server{15077.417175f,0,10361.417175f};
+        Check(Length(Vec{server.x/shot.unitsPerMetre-shot.player.x,0,server.z/shot.unitsPerMetre-shot.player.z})>.65f,
+            "negative control reproduces old underground release refusal");
+        Check(framevr::coordinates::MatchesPlayer(server,shot.player,shot.unitsPerMetre),"cave release passes terrain-correct player guard");
+        Check(!framevr::coordinates::MatchesPlayer(server+Vec{shot.unitsPerMetre*2,0,0},shot.player,shot.unitsPerMetre),
+            "release from before a warp cannot spend ammo at new position");
+        // Overworld -> cave -> deeper floor -> overworld -> cave. Each shot
+        // owns its floor; no current-player offset is applied to old arrows.
+        for(Kind kind:{Kind::Arrow,Kind::Javelin})for(float upm:{2.f,3.8899f,8.f})for(float floor:{0.f,3.03f,12.f,-6.f,0.f,3.03f}) {
+            const Vec playerGrid{80.5f,0,120.5f},enemyGrid=playerGrid+Vec{0,0,-3*upm};
+            auto s=Release();s.kind=kind;s.unitsPerMetre=upm;
+            s.player=framevr::coordinates::RenderGround(playerGrid*(1/upm),floor/upm);
+            s.origin=s.player+Vec{0,1.2f,0};
+            Check(Valid(s)&&framevr::coordinates::MatchesPlayer(playerGrid,s.player,upm),"new draw works after each floor transition");
+            const auto ground=RenderGround(s,enemyGrid),from=s.origin,to=Tip(s,5);
+            float contact=0,miss=0;
+            Check(CapsuleEntry(from,to,ground+Vec{0,.2f,0},ground+Vec{0,1.5f,0},.2f,contact),
+                "rendered arrow intersects cave creature at visible position");
+            Check(!CapsuleEntry(from+Vec{1,0,0},to+Vec{1,0,0},ground+Vec{0,.2f,0},ground+Vec{0,1.5f,0},.2f,miss),
+                "sideways cave miss does not become a hit");
+            if(std::fabs(floor)>=3) {
+                const auto oldGround=Vec{enemyGrid.x/upm,s.player.y,enemyGrid.z/upm};
+                Check(!CapsuleEntry(from,to,oldGround+Vec{0,.2f,0},oldGround+Vec{0,1.5f,0},.2f,miss),
+                    "negative control reproduces invisible offset enemy hitbox");
+            }
+            const int wallZ=int((playerGrid.z-4*upm)*.5f);
+            const auto wall=[&](int x,int z){return x!=40||z<=wallZ;};
+            const auto gridFrom=GridPoint(s,from),gridTo=GridPoint(s,to);
+            const auto stop=WallEntry(gridFrom,gridTo,upm,wall);
+            Check(stop>contact&&stop<1,"native cave wall is after visible creature");
+            Check(Near(WallEntry(gridFrom,gridTo,upm,[](int,int){return false;}),1),"clear cave rooms permit full flight");
+            Check(WallEntry(gridFrom,gridTo,upm,[](int,int){return true;})==0,"unloaded cave room remains solid");
+            if(std::fabs(floor)>=3)
+                Check(WallEntry(from,to,upm,wall)==0,"negative control reproduces wrong room query without floor correction");
+            // Client visual allocation and native shot creation must request
+            // the same cells, regardless of airborne height or vertical aim.
+            for(const Vec direction:{Vec{0,0,-1},Vec{0,1,0},Vec{0,-1,0},Vec{.6f,0,.8f}}) {
+                s.direction=direction;
+                for(float distance:{0.f,1.f,5.f}) {
+                    const auto tip=Tip(s,distance),grid=GridPoint(s,tip)*upm;
+                    const auto expected=playerGrid+Vec{(tip.x-s.player.x)*upm,0,(tip.z-s.player.z)*upm};
+                    Check(Length(grid-expected)<.0002f,"spawn and visual cells use launch floor, not arrow height");
+                    Check(Length(GridPoint(s,tip+Vec{0,10,0})-GridPoint(s,tip))<.0002f,"vertical flight cannot drift into neighbouring native cells");
+                }
+            }
+        }
+    }
+    {
         Check(Near(Speed(4608,1),20)&&Near(Speed(9216,1),40),"configured speed maps into physical metres per second");
         Check(Near(Speed(2304,1),10)&&Speed(0,1)==0,"native slow/stop velocity preserved");
         Check(Speed(9216,.3f)<Speed(9216,1)&&Speed(100000,1)==100,"draw scales speed with bounded maximum");
@@ -74,10 +128,41 @@ int main() {
         f.alive=true;f.distance=2;
         for(const Vec d:{Vec{0,0,-1},Vec{1,0,0},Vec{0,1,0},Vec{0,-1,0},Vec{.6f,0,.8f}}) {
             f.shot.direction=d;float m[16]{};ArrowMatrix(f,1000,m);
-            const auto tail=Point(m,{0,0,1}),tip=Point(m,{0,0,-.98391676f});
+            const auto tail=Point(m,{0,0,-.98391676f}),tip=Point(m,{0,0,1});
             Check(Length(tail-f.TailAt(1000)*4)<.0002f,"mesh tail follows frozen physical release");
-            Check(Length((tip-tail)-d*2.8f)<.0002f,"mesh axis agrees with flight direction at every pitch/yaw");
+            Check(Length((tip-tail)-d*(ArrowLength*4))<.0002f,"mesh axis agrees with flight direction at every pitch/yaw");
             for(const float v:m)Check(std::isfinite(v),"vertical aim produces finite visual transform");
+        }
+    }
+    {
+        for(float upm:{2.f,3.8899f,8.f})for(const Vec d:{Vec{0,0,-1},Vec{1,0,0},Vec{0,1,0},Vec{0,-1,0},Vec{.6f,0,.8f}}) {
+            Flight f;f.shot=Release();f.shot.kind=Kind::Javelin;f.shot.unitsPerMetre=upm;f.shot.direction=d;
+            f.shot.origin=f.shot.origin-d*JavelinGrip;
+            float m[16]{};ArrowMatrix(f,1000,m);
+            Check(Valid(f.shot)&&BasicMissile(1)&&!BasicMissile(2),"javelin kind is valid without claiming skill missiles");
+            Check(Length(Point(m,{0,0,-1})-f.shot.origin*upm)<.0002f,"native javelin tail follows captured hand offset");
+            Check(Length(Point(m,{0,0,1})-Tip(f.shot,0)*upm)<.0002f,"native javelin tip and physical contact agree at every pitch/yaw");
+            auto bad=f.shot;bad.kind=Kind(2);Check(!Valid(bad),"unknown projectile cannot reach native firing path");
+        }
+    }
+    {
+        // The nocked mesh must match the tracked guide even when the native
+        // bow's grip/animation rig differs. Releasing starts at that same pose.
+        for(float upm:{2.f,3.8899f,8.f})for(const Vec direction:{Vec{0,0,-1},Vec{1,0,0},Vec{0,1,0},Vec{0,-1,0},Vec{.6f,0,.8f}}) {
+            auto pose=Release();pose.unitsPerMetre=upm;pose.direction=direction;pose.origin={12,2.1f,30};
+            float held[16]{},released[16]{},hidden[16]{};
+            PreviewMatrix(pose,true,held);PreviewMatrix(pose,false,hidden);
+            Flight flight;flight.shot=pose;flight.alive=true;flight.updatedAt=1000;flight.speed=40;
+            ArrowMatrix(flight,1000,released);
+            const auto tail=Point(held,{0,0,-.98391676f}),tip=Point(held,{0,0,1});
+            Check(Length(tail-pose.origin*upm)<.0002f,"native preview tail is at tracked string hand");
+            Check(Length(tip-Tip(pose,0)*upm)<.0002f,"native preview tip matches guide and contact tip");
+            for(int i=0;i<16;++i)Check(Near(held[i],released[i]),"release cannot jump from nocked pose or use bow animation");
+            Check(Length(Point(hidden,{0,0,1})-Point(hidden,{0,0,-.98391676f}))<.01f,"idle preview does not occlude the bow");
+            const auto saved=pose.origin;flight.distance=2;
+            pose.origin={-20,10,-40};pose.direction={0,0,1};
+            ArrowMatrix(flight,1000,released);
+            Check(Length(Point(released,{0,0,-.98391676f})-(saved+direction*2)*upm)<.0002f,"post-release hand motion cannot move native arrow");
         }
     }
     {
@@ -98,9 +183,9 @@ int main() {
             // A root override would place the child above the release; a mesh
             // override must put the actual rendered tail at the shot origin.
             const auto renderTail=[&](const VisualBinding& owner) {
-                const Vec localTail{0,5,1.25f};
+                const Vec localTail{0,5,-.98391676f*1.25f};
                 const Vec inherited=owner.Matches(root)?Point(flight,localTail):localTail;
-                return owner.Matches(mesh)?Point(flight,{0,0,1}):inherited;
+                return owner.Matches(mesh)?Point(flight,{0,0,-.98391676f}):inherited;
             };
             Check(Length(renderTail(binding)-f.shot.origin*4)<.0002f,"child height and scale do not displace released arrow");
             VisualBinding wrong;Check(wrong.Bind(root,true),"negative control can reproduce old parent binding");
@@ -111,5 +196,5 @@ int main() {
             Check(!binding.Bound()&&!binding.Matches(mesh)&&binding.Bind(recycled,true),"new arrow may bind new generation after cleanup");
         }
     }
-    std::puts("Physical bow: release ownership, cancellation, swept contacts, walls, speed, visual-axis and mesh-binding tests passed");
+    std::puts("Physical bow: release ownership, cancellation, cave coordinates, swept contacts, walls, speed, visual-axis and mesh-binding tests passed");
 }

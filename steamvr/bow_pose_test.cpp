@@ -14,6 +14,25 @@ static Pose SyntheticBow() {
     Position(p[11],{0,0,-.48f});Position(p[12],{0,0,-.48f});return p;
 }
 int main() {
+    {
+        // Reduced LOD rig: named arrow and all its skin helpers hide without
+        // touching the grip, limbs or string, regardless of the 13-bone solver.
+        const std::array<std::string_view,10> names={"cog","topBowBend","botBowBend","top_stringHelper","bot_stringHelper",
+            "arrow","arrow_helper","bowString","bowString_upper_helper","bowString_lower_helper"};
+        const std::array<int,10> parents={-1,0,0,1,2,0,5,0,7,7};
+        auto mask=ArrowBones(names,parents);
+        for(size_t i=0;i<names.size();++i)Check(mask[i]==(i==5||i==6),"reduced bow hides only its original arrow skin");
+        const std::array<std::string_view,5> aliases={"cog","arrow2","arrowHelper","featherChild","bowString"};
+        const std::array<int,5> ancestry={-1,0,1,2,0};
+        mask=ArrowBones(aliases,ancestry);
+        Check(!mask[0]&&mask[1]&&mask[2]&&mask[3]&&!mask[4],"alternate arrow bone and descendants recognized");
+        auto invalid=parents;invalid[5]=6;mask=ArrowBones(names,invalid);
+        for(bool hidden:mask)Check(!hidden,"invalid hierarchy cannot hide unrelated geometry");
+        Mat bone=Rotation({0,0,1},{1,0,0});Position(bone,{2,3,4});const auto before=bone;
+        HideArrow(bone);Check(Affine(bone)&&Near(Position(bone),Position(before)),"hiding preserves finite bone position");
+        for(int row=0;row<3;++row)for(int col=0;col<3;++col)
+            Check(std::fabs(bone.m[row*4+col]-before.m[row*4+col]*.001f)<.000001f,"original arrow collapses without moving bow bones");
+    }
     const Pose bind=SyntheticBow();Rig rig;Check(rig.Learn(bind),"synthetic bow accepted");
     Pose posed;
     for(int step=0;step<=100;++step) {

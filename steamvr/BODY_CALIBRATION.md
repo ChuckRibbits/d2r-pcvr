@@ -28,11 +28,12 @@ the settings menu. The record is `[calibration] version=1`, `eye_height_m` and
 save offers another capture. Saved calibration applies on later launches.
 
 To switch between native weapon configurations I and II, reach the dominant
-hand over **either shoulder** and press that hand's trigger once. Release before
+hand over **either shoulder** and press that hand's grip once. Release before
 pressing again. **VR → Dominant hand** selects Right (default) or Left for this
 gesture. Other controller mappings remain as listed on the Controls tab.
-Grip can remain held. The gesture requests the opposite observed native set and
-waits for confirmation; the trigger cannot also attack or repeat while held.
+The gesture requests the opposite observed native set and waits for confirmation;
+the grip cannot repeat while held. Reaching behind the head without pressing
+grip leaves combat available, including the wind-up for a javelin throw.
 Tracking loss, menu/calibration ownership, held bottles, and pending actions
 prevent a new swap. Hip anchors are absent; legacy `holsters`/`hip_width` settings
 do not enable them in the native transport. Belt potion grabs remain available.
@@ -40,5 +41,5 @@ do not enable them in the native transport. Belt potion grabs remain available.
 Native fixtures cover pose/floor/tracking validation, stable sampling, persistence
 acknowledgements and failure/conflict paths, recalibration, arm proportions,
 both hands/shoulders, rotated/seated poses, native set confirmation, grip holds,
-and held-trigger/context guards. Headset validation is recorded in
+and held-grip/context guards. Headset validation is recorded in
 [WINDOWS_HANDOFF.md](../WINDOWS_HANDOFF.md).

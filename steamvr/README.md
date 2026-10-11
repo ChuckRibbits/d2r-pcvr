@@ -37,7 +37,7 @@ FlatVR are not required by this build.
   after the offline retest; logs confirm native cave contacts and normal exit.
 - First-load and settings-menu T-pose calibration save standing eye height and
   controller span, fitting per-rig arm proportions with physical controller
-  scale. Dominant-hand trigger over either shoulder requests the opposite native
+  scale. Dominant-hand grip over either shoulder requests the opposite native
   weapon set; hip anchors are removed. See [BODY_CALIBRATION.md](BODY_CALIBRATION.md).
   Automated checks pass. Calibration save/reopen is explicitly owner-verified;
   the later combined offline retest received an overall "it all works" report.

@@ -20,15 +20,16 @@ int main(){
     for(int dominant=0;dominant<2;++dominant)for(float side:{-.23f,.23f}){
         Sim s;Config c;c.dominant=dominant;s.e.Configure(c);s.Step(4);
         s.in.hand[dominant].p=s.in.head.p+Vec{side,-.2f,.14f};s.Step(10);
-        s.in.grip[dominant]=1; // Swapping needs a trigger press, not a grip release.
-        if(dominant==0)s.in.trigger=1;else{s.in.leftTrigger=1;s.in.quickCast=true;}
+        s.in.trigger=1;
+        Check(s.Step().request.action==Action::None&&!s.out.block,"trigger behind shoulder remains available for javelin wind-up");
+        s.in.trigger=0;s.Step();s.in.grip[dominant]=1;
         const auto r=s.Step().request;
-        Check(r.action==Action::Equip&&r.index==2&&s.out.block,"dominant trigger at either shoulder requests opposite native set and blocks attacks");
+        Check(r.action==Action::Equip&&r.index==2&&s.out.block,"dominant grip at either shoulder requests opposite native set and blocks attacks");
         for(int i=0;i<12;++i)Check(s.Step().request.action==Action::None,"one shoulder press issues exactly one request");
         s.in.reply={r.sequence,s.in.session,Result::Applied};s.in.snapshot.activeSet=2;
         Check(s.Step().result==Result::Applied&&s.out.feedbackHand==dominant,"shoulder swap waits for native equipment confirmation and pulses the dominant hand");
-        s.in.trigger=s.in.leftTrigger=0;s.in.quickCast=false;s.Step(3);
-        if(dominant==0)s.in.trigger=1;else{s.in.leftTrigger=1;s.in.quickCast=true;}
+        s.in.grip[dominant]=0;s.Step(3);
+        s.in.grip[dominant]=1;
         Check(s.Step().request.index==1,"second deliberate shoulder press returns to set I");
     }
     {Sim s;s.in.hand[0]=s.out.holster[1];s.in.grip[0]=1;s.Step();s.in.hand[0].p.z-=.2f;

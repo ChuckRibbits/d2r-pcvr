@@ -1952,6 +1952,7 @@ std::atomic<ULONGLONG> g_bowAnchoredAt{0};
 std::atomic<uint32_t> g_bowHeroGen{0};
 struct MotionBowRig {
     bow::Rig rig;
+    bow::ArrowMask arrows{};
     uintptr_t bones=0;
     uint32_t entity=0;
     bool entityKnown=false;
@@ -1970,9 +1971,9 @@ void PoseMotionBow(uintptr_t self) {
     const auto now=GetTickCount64();
     if(!matched||now-input.at>100||now-attach.at>100)return;
     uintptr_t model=0,skeleton=0,bones=0;int count=0;
-    if(!Get(self+8,&model)||!Get(model+8,&skeleton)||!Get(skeleton+8,&count)||count!=bow::Count||
+    if(!Get(self+8,&model)||!Get(model+8,&skeleton)||!Get(skeleton+8,&count)||count<4||count>int(bow::MaxBones)||
        !Get(skeleton+0xC,&bones)||!bones)return;
-    // Cache only tiny compatible rigs. Hero, corpse and other character rigs
+    // Cache only small item rigs. Hero, corpse and other character rigs
     // fail the count check before a model-name read or ECS lookup.
     AcquireSRWLockExclusive(&g_bowRigLock);
     struct Unlock {~Unlock(){ReleaseSRWLockExclusive(&g_bowRigLock);}} unlock;
@@ -1983,6 +1984,15 @@ void PoseMotionBow(uintptr_t self) {
         uintptr_t object=0,name=0;Get(self,&object);Get(object+8,&name);
         const std::string path=Str(name);
         bool valid=path.find("/items/weapon/bow/")!=std::string::npos&&path.find("dropped")==std::string::npos;
+        std::array<std::string,bow::MaxBones> names;
+        std::array<std::string_view,bow::MaxBones> views;
+        std::array<int,bow::MaxBones> parents{};
+        for(int i=0;i<count&&valid;++i) {
+            uintptr_t boneName=0;const auto at=bones+uintptr_t(i)*0xA4;
+            valid=Get(at,&boneName)&&Get(at+8,&parents[i])&&!(names[i]=Str(boneName)).empty();views[i]=names[i];
+        }
+        if(valid)learned.arrows=bow::ArrowBones({views.data(),size_t(count)},{parents.data(),size_t(count)});
+        valid=valid&&count==bow::Count;
         bow::Pose bind;
         for(int i=0;i<bow::Count&&valid;++i) {
             const auto at=bones+uintptr_t(i)*0xA4;int parent=0;uintptr_t boneName=0;bow::Mat inverse;
@@ -1990,11 +2000,11 @@ void PoseMotionBow(uintptr_t self) {
                   SafeCopy(&inverse,reinterpret_cast<const void*>(at+0x50),sizeof inverse)&&bow::Inverse(inverse,bind[i]);
         }
         if(valid)learned.rig.Learn(bind);
-        if(g_bowRigs.size()>128)g_bowRigs.clear();
+        if(g_bowRigs.size()>4096)g_bowRigs.clear();
         it=g_bowRigs.insert_or_assign(key,learned).first;
     }
     auto& held=it->second;
-    if(!held.rig.valid)return;
+    if(!held.rig.valid&&std::none_of(held.arrows.begin(),held.arrows.end(),[](bool arrow){return arrow;}))return;
     HeroXform hero;
     if(!HeroTransform(&hero))return;
     bow::Mat itemLocal;
@@ -2017,8 +2027,19 @@ void PoseMotionBow(uintptr_t self) {
         // exactly the same asset must never be posed by our controller.
     }
     uintptr_t world=0,matrices=0;int worldCount=0;bow::Pose native,posed;
-    if(!Get(self+0x20,&world)||!Get(world,&worldCount)||worldCount!=bow::Count||!Get(world+4,&matrices)||!matrices||
-       !SafeCopy(native.data(),reinterpret_cast<const void*>(matrices),sizeof native))return;
+    if(!Get(self+0x20,&world)||!Get(world,&worldCount)||worldCount!=count||!Get(world+4,&matrices)||!matrices)return;
+    if(!held.rig.valid) {
+        // Hide only the local bow's built-in arrow. The independent native
+        // projectile mesh (or the tracked guide fallback) supplies its pose.
+        for(int i=0;i<count;++i)if(held.arrows[i]) {
+            bow::Mat bone;
+            if(SafeCopy(&bone,reinterpret_cast<const void*>(matrices+i*sizeof bone),sizeof bone)&&bow::Affine(bone)) {
+                bow::HideArrow(bone);SafeWrite(reinterpret_cast<void*>(matrices+i*sizeof bone),&bone,sizeof bone);
+            }
+        }
+        return;
+    }
+    if(!SafeCopy(native.data(),reinterpret_cast<const void*>(matrices),sizeof native))return;
     bool posedAtHands=false;
     if(input.drawing&&input.anchors) {
         bow::Mat toHead,headToCog;
@@ -2031,6 +2052,7 @@ void PoseMotionBow(uintptr_t self) {
         }
     }
     if(!posedAtHands&&!held.rig.Draw(native[bow::Cog],input.drawing?input.draw:0,input.drawing,posed))return;
+    for(int i=0;i<count;++i)if(held.arrows[i])bow::HideArrow(posed[i]);
     // The native root/placement is authoritative; replace only the deforming
     // bones after cog. Continued override after release prevents a second,
     // delayed native wind-up. Basic-arrow release/costs are handled by bowvr.

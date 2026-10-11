@@ -53,7 +53,7 @@ build; the current configuration uses fixed foveation and disables eye tracking.
    Check floor/height, controller reach, settings laser and A/B/X/Y input, then
    torso/shield visibility, belt grabbing/drinking and wrist HP/mana.
 6. Test movement/turning, manual and free-swing melee outdoors and in the cave,
-   wrist values across that transition, and a dominant-trigger weapon-set swap
+   wrist values across that transition, and a dominant-grip weapon-set swap
    behind either shoulder. Open/close Akara dialogue, then Save & Exit normally.
    Record what was actually tested; no overall report establishes every class,
    weapon combination, hand preference or controller gesture.

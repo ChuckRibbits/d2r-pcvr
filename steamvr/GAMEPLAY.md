@@ -76,11 +76,12 @@ not generate melee velocity. The layout currently assumes a right-handed player.
 | Button attack / crossbow | Weapon combat mode, right trigger; native crossbow firing |
 | Nock bow | Bow equipped: bring right hand to string and hold right trigger; no left grip required |
 | Draw and shoot | Pull string hand back at least 12 cm (28 cm total separation), then release trigger |
+| Throw a javelin | Javelin equipped in WEAPON mode: hold right trigger, make a deliberate throwing motion, release to throw along the hand's motion. Native basic throw consumes ammunition; trigger-free jabs stay available |
 | Cancel active grab/draw | Right B; release inputs before starting again |
 | Physical belt potion | Reach to an original 3D bottle on the front belt and hold **Right Grip** to grab; left-hand grip also works |
 | Drink | Keep grip held, bring the bottle's opening to your mouth and tip nearly horizontal for 0.25 seconds; release to return an unused potion |
 | Quick potion | Left Y → **EQUIPMENT / BELT** → trigger a potion wedge; grip on a potion wedge instead grabs it into the right hand |
-| Swap weapon sets | Reach the swap hand over either shoulder and press its trigger; right hand by default, selectable in VR settings. Hip anchors are removed |
+| Swap weapon sets | Reach the swap hand over either shoulder and press its grip; right hand by default, selectable in VR settings. Hip anchors are removed |
 | Seated weapon selection | Utility wheel → **Weapon I** or **Weapon II** |
 | Stow/draw | Utility wheel → **Stow weapons** / **Draw weapons**; native equipped stats stay unchanged |
 | Wrist health/mana | Look at the **back of your left wrist, like checking a watch**, within 75 cm of your eyes; red life and blue mana orbs appear there. No button required. Brief status cue also appears at low health or low mana in spell mode |

@@ -1,5 +1,73 @@
 # Clean Windows installation and agent handoff — October 10, 2026
 
+**v0.3.4 release preparation:** The owner requests these changes committed and
+pushed directly to `main`, followed by a new release. GitHub reports the
+repository as public; the owner explicitly approved publishing the preview
+publicly. Player guides target `v0.3.4-windows-preview` and include javelin
+controls and grip shoulder swaps. All 34 native and 34 isolated Python release
+checks pass. Package only the allowlisted Windows player files, with no game
+assets, caches, saves, logs or internal handoff documents. The native DLL remains
+the locally installed `5c5121dd…` facing correction; its headset facing check is
+pending. Bow/javelin mechanics were owner-confirmed on the preceding candidate.
+
+**October 11 projectile-facing follow-up, 16:40 PDT:** The owner confirmed the
+bow and javelin mechanics work well, but both native models pointed toward the
+player. Their visible tips are local +Z; the earlier matrix used -Z as forward.
+The shared render transform now maps +Z along the frozen flight direction and
+anchors the negative-Z tails at the existing physical tail positions. Arrow
+preview and flight use the same correction. Aim, damage and collision paths
+are unchanged. All 34 native checks pass with corrected model endpoints.
+
+Installed DLL `5c5121dddad16a8adf3a39e880683fc915d3e93dab82c5eaa2204a6142a28237`,
+with settings/calibration/graphics preserved and saves backed up to
+`build-frame/backups/windows-projectile-facing-20261011-164028/`.
+Manifest: `build-frame/windows/latest-projectile-facing-deployment.json`.
+The facing correction awaits headset confirmation; this supersedes the
+installed hash below. The owner's mechanics report does not explicitly confirm
+every cave, ammo, sound or shoulder-swap check separately.
+
+**October 11 bow/cave and javelin candidate (`fix/bow-cave-transitions`):**
+Installed DLL `1b4f0dca6ea7a7811ff7b0a486e00a16cb8f35911a8b73a322352d938f549b28`
+at 16:36 PDT, from uncommitted changes on `ace4d933`. All 34 native checks pass.
+INI/calibration, graphics and saves are preserved; backup:
+`build-frame/backups/windows-javelin-arrow-20261011-163656/`.
+Deployment manifest: `build-frame/windows/latest-javelin-arrow-deployment.json`.
+
+Bow release, native spawn/visual/wall cells and creature capsules now use the
+launch floor's terrain shear, matching the earlier cave melee correction.
+Native arrow artwork follows the guide's .75 m tail/tip while drawn and in
+flight. Original held-arrow bones are hidden only on owned hero bow rigs;
+the procedural guide remains a fallback until the native preview is rendered.
+The preceding `713f540c` candidate repeatedly discarded the preview before
+asynchronous mesh binding, causing the owner's rapid firing-sound report.
+This candidate adopts the client before binding, keeps its hidden model through
+weapon/menu changes, and suppresses only preview creation's travel sound.
+
+Javelin controls: in WEAPON mode, hold right trigger, make a deliberate throwing
+motion and release. Recent room-space hand velocity sets the full 3D direction;
+stationary/weak releases and interrupted gestures do not throw. Free jabs remain
+available with trigger released, including with a wheel skill selected. Selected
+skills keep their trigger binding; quick-cast remains available in WEAPON mode.
+Native skill 2 / server-do 3 at guarded RVA `0x430610` consumes ammunition and
+creates basic missile 1, which shares the terrain-correct physical flight/contact
+pipeline. Skill javelin missiles are not converted to physical throws.
+Model bounds and missile-table behavior were inspected from the owner's game;
+no extracted game assets are added to the repository or packages.
+
+Shoulder swapping now uses dominant-hand **grip** at either shoulder. Merely
+reaching behind the head does not claim combat, allowing javelin wind-up.
+Game/UI callback tickets recover discarded transition callbacks and reject late
+callbacks rather than consuming a newer release. README, controls, release notes
+and the in-headset help reflect the new mapping. Headset validation remains
+pending for silent/accurate arrows, javelin damage/ammo in/out of caves and grip
+shoulder swapping; do not report those as owner-confirmed yet.
+
+The 16:37 launch confirmed SteamVR/OpenXR and successful guarded physical
+projectile hook installation. At 16:37:54–16:38:00, the live javelin session
+recorded native missiles, bound flight meshes, one creature contact and no
+position-mismatch refusals. This establishes live creation/contact, not yet
+owner confirmation of visuals, ammunition or cave transitions.
+
 **October 11 inventory/setup follow-up, v0.3.3:** Candidate `5727d397...`
 is installed locally with D2R closed, INI/calibration and graphics preserved.
 Backup: `build-frame/backups/windows-native-inventory-20261011-132011/`.

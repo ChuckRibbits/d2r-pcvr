@@ -1,4 +1,4 @@
-# D2R PCVR v0.3.3 — Windows preview
+# D2R PCVR v0.3.4 — Windows preview
 
 Play **Diablo II: Resurrected in VR on Windows** with
 **SteamVR or Virtual Desktop (VDXR)**. This preview is for **local offline
@@ -23,36 +23,32 @@ The game runs on your Windows PC and streams to your headset.
 
 ## What's new
 
-- Double-click **Install-Windows.cmd** for guided installation, headset and
-  connection selection, and automatic Steam library shortcuts. No separate Python install is needed.
-- Update / repair mode keeps your body calibration and video settings.
-- Native inventory **X** drops the selected item; **press and hold right-stick
-  click** sorts it. Follow the game's hold prompts. Right-stick click no longer
-  swaps weapons during gameplay; use the shoulder gesture or equipment wheel.
-- Native menu button and stick navigation alongside laser selection and dragging.
-- Quest and Steam Frame mappings for the game's displayed menu prompts; laser
-  context-clicks use **Left Grip + Right Trigger**.
-- A shared background in both eyes for stash, standalone inventory and other
-  item-management panels.
-- A complete **[controller reference](CONTROLS.md)** in the README and ZIP,
-  covering gameplay, quick-cast shortcuts, laser controls and native menu buttons.
-- Clear purchased-game requirements: this is a mod, and no game assets are included.
-- Free melee swings stay available with a wheel skill selected. Casting,
-  menus and potion handling still pause swing damage.
-- More reliable contact from fast weapon swings, including in caves.
-- Instructions for separate Steam library shortcuts for **SteamVR** and
-  **Virtual Desktop**, so you can launch without opening the mod folder.
+- Physical basic-javelin throwing: equip a javelin in **WEAPON** mode, hold
+  right trigger, make a throwing motion and release. The game handles ammunition
+  and damage; free jabs work with the trigger released.
+- Shoulder weapon swapping now uses **grip**, leaving trigger available for throwing.
+- Terrain-correct bow and javelin contacts across cave transitions.
+- Native arrow artwork aligned to the tracked draw guide and release trajectory,
+  with silent preview creation.
+- Corrected arrow and javelin model facing so their tips point along their flight.
+- Updated controller instructions in the README, ZIP and VR settings.
 
 ## Features
 
-- First-person VR with motion controls, free-swing melee, aimed spells and bows.
+- First-person VR with motion controls, free-swing melee, aimed spells, bows
+  and physical javelin throws.
+- Guided Windows installation, headset/connection selection and automatic
+  Steam library shortcuts. Update / repair keeps calibration and video settings.
 - Body calibration for your height and arm span on first load, or through
   **Left Grip + Frame Left B / Quest Left Y → Calibrate body**.
 - Weapon-set swapping by reaching your right hand over either shoulder and
-  pulling its trigger; the swap hand is adjustable in VR settings.
+  pressing its grip; the swap hand is adjustable in VR settings.
 - Physical belt potions and wrist health/mana indicators.
 - Inventory, skills, conversations and Journal through the tabbed game menu:
   **Frame Left A / Quest Left X**.
+- Native menu buttons and sticks alongside laser selection and inventory dragging.
+  Native **X** drops an item; **press and hold right-stick click** sorts inventory.
+- A complete **[controller reference](CONTROLS.md)** in the README and ZIP.
 
 ## Download, install and play
 

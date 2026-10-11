@@ -1,5 +1,6 @@
 #pragma once
 #include "frame_math.h"
+#include "world_coordinates.h"
 #include <array>
 #include <cstdint>
 #include <limits>
@@ -8,16 +9,31 @@
 // native pointers: server, client and renderer exchange ids plus these values.
 namespace framevr::bowflight {
 using math::Vec;
+inline constexpr float ArrowLength=.75f; // same tail/tip as the tracked draw guide
+inline constexpr float JavelinLength=1.5f,JavelinGrip=.6f;
+enum class Kind : uint32_t { Arrow=0,Javelin=1 };
 inline float Length(Vec v) { return std::sqrt(math::Dot(v,v)); }
 inline bool Finite(Vec v) { return std::isfinite(v.x)&&std::isfinite(v.y)&&std::isfinite(v.z); }
 struct Shot {
+    Kind kind=Kind::Arrow;
     Vec origin{},direction{},player{};
     float unitsPerMetre=0,draw=0;
     uint64_t session=0,epoch=0,sequence=0,at=0;
     uint32_t equipment=0,stamp=0;
 };
+inline float ProjectileLength(const Shot& s) {return s.kind==Kind::Javelin?JavelinLength:ArrowLength;}
+inline bool BasicMissile(uint32_t id){return id<=1;}
+// Flight stays in rendered metres. Native paths/rooms use the unsheared grid.
+// Remove only the launch FLOOR's shear, never the arrow's airborne height or
+// the current player's floor after an area transition.
+inline Vec GridPoint(const Shot& shot,Vec renderMetres) {
+    return coordinates::GridPlane({renderMetres.x,shot.player.y,renderMetres.z});
+}
+inline Vec RenderGround(const Shot& shot,Vec gridWorld) {
+    return coordinates::RenderGround(gridWorld*(1/shot.unitsPerMetre),shot.player.y);
+}
 inline bool Valid(const Shot& s) {
-    return s.session&&s.sequence&&Finite(s.origin)&&Finite(s.direction)&&Finite(s.player)&&
+    return BasicMissile(uint32_t(s.kind))&&s.session&&s.sequence&&Finite(s.origin)&&Finite(s.direction)&&Finite(s.player)&&
         std::isfinite(s.unitsPerMetre)&&s.unitsPerMetre>=1&&s.unitsPerMetre<=12&&
         std::isfinite(s.draw)&&s.draw>=0&&s.draw<=1&&
         std::fabs(Length(s.direction)-1)<.01f&&Length(s.origin-s.player)<3.5f;
@@ -107,7 +123,7 @@ inline float Speed(int nativeVelocity,float draw) {
     if(nativeVelocity<=0||!std::isfinite(draw))return 0;
     return std::clamp(float(nativeVelocity)*(20.f/4608.f)*(.7f+.3f*std::clamp(draw,0.f,1.f)),0.f,100.f);
 }
-inline Vec Tip(const Shot& s,float distance) {return s.origin+s.direction*(.70f+distance);}
+inline Vec Tip(const Shot& s,float distance) {return s.origin+s.direction*(ProjectileLength(s)+distance);}
 struct Flight {
     Shot shot{};
     float distance=0,speed=0;
@@ -138,17 +154,26 @@ public:
     }
     void Clear(){entity=UINT32_MAX;}
 };
-// HD basic-arrow mesh: tail at local +Z=1, tip at -Z=-.98391676.
+// HD projectile models point along local +Z: arrow tail at -.98391676,
+// javelin tail at -1, and both tips at +1 (confirmed in the headset).
 // Its entity's stock 45-degree yaw/release-bone offset is replaced, not added.
 inline void ArrowMatrix(const Flight& f,uint64_t now,float out[16]) {
-    const Vec back=f.shot.direction*(-1);
-    const Vec guide=std::fabs(back.y)<.95f?Vec{0,1,0}:Vec{1,0,0};
-    const Vec right=math::Normalized(math::Cross(guide,back)),up=math::Cross(back,right);
-    const float scale=.70f*f.shot.unitsPerMetre/1.98391676f;
-    const Vec origin=f.TailAt(now)*f.shot.unitsPerMetre-back*scale;
+    const Vec forward=f.shot.direction;
+    const Vec guide=std::fabs(forward.y)<.95f?Vec{0,1,0}:Vec{1,0,0};
+    const Vec right=math::Normalized(math::Cross(guide,forward)),up=math::Cross(forward,right);
+    const float modelTail=f.shot.kind==Kind::Javelin?-1.f:-.98391676f;
+    const float modelLength=1-modelTail;
+    const float scale=ProjectileLength(f.shot)*f.shot.unitsPerMetre/modelLength;
+    const Vec origin=f.TailAt(now)*f.shot.unitsPerMetre-forward*(modelTail*scale);
     out[0]=right.x*scale;out[1]=right.y*scale;out[2]=right.z*scale;out[3]=0;
     out[4]=up.x*scale;out[5]=up.y*scale;out[6]=up.z*scale;out[7]=0;
-    out[8]=back.x*scale;out[9]=back.y*scale;out[10]=back.z*scale;out[11]=0;
+    out[8]=forward.x*scale;out[9]=forward.y*scale;out[10]=forward.z*scale;out[11]=0;
     out[12]=origin.x;out[13]=origin.y;out[14]=origin.z;out[15]=1;
+}
+// A nocked game mesh uses the guide's exact tail, direction and length, without
+// native bow animation or prediction. Hidden preview geometry cannot occlude.
+inline void PreviewMatrix(const Shot& pose,bool visible,float out[16]) {
+    Flight held;held.shot=pose;ArrowMatrix(held,0,out);
+    if(!visible)for(int row=0;row<3;++row)for(int col=0;col<3;++col)out[row*4+col]*=.001f;
 }
 }

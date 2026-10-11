@@ -17,9 +17,9 @@ struct Definition {
     float defaultValue,min,max,step;
 };
 inline constexpr std::array<Definition,Count> Definitions{{
-    {"Motion combat", "Physical melee and bow; spell wheel and belt interactions", L"gameplay",L"motion_controls",0,0,1,1},
+    {"Motion combat", "Physical melee, bow and javelin; spell wheel and belt interactions", L"gameplay",L"motion_controls",0,0,1,1},
     {"Seated belt position", "Raises the belt for seated reach", L"interactions",L"seated",0,0,1,1},
-    {"Dominant hand", "Trigger over either shoulder switches weapon sets", L"interactions",L"dominant_hand",0,0,1,1},
+    {"Dominant hand", "Grip over either shoulder switches weapon sets", L"interactions",L"dominant_hand",0,0,1,1},
     {"Turning", "Zero selects smooth turning; other values are snap angles", L"turn",L"snap",0,0,180,15},
     {"Smooth turn speed", "Degrees per second; used when turning is set to Smooth", L"turn",L"speed",120,10,720,30},
     {"Belt drop below eyes", "Standing mode only; smaller values raise the belt", L"interactions",L"waist_below_eyes",.65f,.30f,.95f,.05f},

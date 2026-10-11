@@ -14,7 +14,7 @@ inline bool Valid(Pose p) {
     const float n=p.q.x*p.q.x+p.q.y*p.q.y+p.q.z*p.q.z+p.q.w*p.q.w;
     return Finite(p.p)&&std::isfinite(n)&&n>.9f&&n<1.1f;
 }
-enum class Weapon { Unknown, Melee, Bow, Crossbow, Other };
+enum class Weapon { Unknown, Melee, Bow, Crossbow, Other, Javelin };
 // Input gating and posed contact recognition must agree: real wrist-led
 // slashes exceed 35 rad/s. A stricter upstream limit continually cancels
 // contact recovery before those otherwise valid swings can reach it.
@@ -51,7 +51,7 @@ struct Input {
 struct Output {
     bool attack=false, block=false, palette=false, bowDrawing=false, rayValid=false;
     bool bowReady=false, bowInReach=false, bowCharged=false;
-    bool meleeContact=false,bowRelease=false;
+    bool meleeContact=false,bowRelease=false,javelinRelease=false,javelinReady=false;
     float meleeSpeed=0;
     int skill=-1, potion=-1, bottle=-1; // potion is a one-shot request, not proof of consumption
     bool swap=false;
@@ -86,6 +86,10 @@ class Engine {
     uint32_t equipment=0;
     Weapon weapon=Weapon::Unknown;
     float nockGap=0;
+    bool throwing=false;
+    Vec throwStart{},throwVelocity{};
+    double throwAt=0,velocityAt=0;
+    float throwTravel=0;
 public:
     void Cancel() {
         const int chosen=selection;const auto heldWeapon=weapon;const auto heldEquipment=equipment;
@@ -106,12 +110,13 @@ public:
         // Hitches, recenter/pose discontinuities and equipment changes cancel
         // pending actions. Held controls must be released before starting again.
         if(!primed||dt<=0||dt>.10||changed||Length(in.hand[0].p-previousHand)>.35f||Length(in.hand[1].p-previousLeft)>.35f||
-           (in.weapon==Weapon::Melee&&bottle<0&&!in.palette&&!in.quickCast&&RotationDistance(previousRotation,in.hand[0].q)>MeleeAngularTrackingLimit*dt)) {
+           ((in.weapon==Weapon::Melee||in.weapon==Weapon::Javelin)&&bottle<0&&!in.palette&&!in.quickCast&&RotationDistance(previousRotation,in.hand[0].q)>MeleeAngularTrackingLimit*dt)) {
             Cancel();primed=true;previousTime=in.time;previousHand=in.hand[0].p;previousRotation=in.hand[0].q;previousLeft=in.hand[1].p;
-            if(changed&&(in.weapon==Weapon::Bow||in.weapon==Weapon::Melee))selection=-1;
+            if(changed&&(in.weapon==Weapon::Bow||in.weapon==Weapon::Melee||in.weapon==Weapon::Javelin))selection=-1;
             weapon=in.weapon;equipment=in.equipment;triggerWas=trigger;gripWas=grip;
             out.block=true;return out;
         }
+        const Vec handDelta=in.hand[0].p-previousHand;
         previousTime=in.time;previousHand=in.hand[0].p;previousRotation=in.hand[0].q;previousLeft=in.hand[1].p;
         const bool triggerEdge=trigger&&!triggerWas, gripEdge=grip&&!gripWas;
         const bool released=!trigger&&triggerWas;
@@ -122,7 +127,7 @@ public:
         out.rayOrigin=in.aim.p;out.rayDirection=math::Rotate(in.aim.q,{0,0,-1});out.rayValid=true;
 
         if(in.palette) {
-            drawing=false;pulseUntil=0;blockedTrigger=true;
+            drawing=throwing=false;pulseUntil=0;blockedTrigger=true;
             if(bottle<0&&triggerEdge) {
                 if(in.hover>=0&&in.hover<8) {selection=in.hover;out.feedback=1;}
                 else if(in.hover==8) {selection=-1;out.feedback=1;}
@@ -133,7 +138,7 @@ public:
             }
         }
         if(bottle>=0) {
-            blockedTrigger=true;drawing=false;pulseUntil=0;
+            blockedTrigger=true;drawing=throwing=false;pulseUntil=0;
             if(!grip) {bottle=-1;bottleSpent=false;drinkStart=0;}
             else {
                 out.bottle=bottle;
@@ -149,11 +154,40 @@ public:
         }
         if(in.palette) {out.block=true;return out;}
         if(in.quickCast) {
-            drawing=false;bowWasCharged=false;pulseUntil=shotAimUntil=0;blockedTrigger=true;
+            drawing=throwing=false;bowWasCharged=false;pulseUntil=shotAimUntil=0;blockedTrigger=true;
             if(in.quickSkill>=0&&in.quickSkill<skills::Count)out.skill=in.quickSkill;
             return out; // preserve selected trigger skill; no melee or bow release
         }
         if(blockedTrigger) {out.block=true;return out;}
+
+        if(in.weapon==Weapon::Javelin&&selection<0) {
+            out.javelinReady=true;
+            if(triggerEdge) {
+                throwing=true;throwAt=in.time;throwStart=in.hand[0].p;
+                throwVelocity={};velocityAt=0;throwTravel=0;out.feedback=1;
+            }
+            if(throwing) {
+                throwTravel=std::max(throwTravel,Length(in.hand[0].p-throwStart));
+                const auto velocity=handDelta*(1/float(dt));
+                // Store recent deliberate room-space motion, including the
+                // release frame. A short grace period tolerates finger timing
+                // without turning a stationary drop into a delayed throw.
+                if(Length(velocity)>=1.4f&&Length(velocity)<=12.f) {
+                    throwVelocity=velocity;velocityAt=in.time;
+                }
+                if(released) {
+                    if(in.time-throwAt>=.08&&in.time-throwAt<=3&&throwTravel>=.18f&&
+                       velocityAt&&in.time-velocityAt<=.08) {
+                        out.javelinRelease=true;out.feedback=2;
+                        out.rayOrigin=in.hand[0].p;out.rayDirection=math::Normalized(throwVelocity);
+                        out.draw=std::clamp(Length(throwVelocity)/5.f,0.f,1.f);
+                    }
+                    throwing=false;
+                }
+            }
+            out.meleeContact=!trigger&&!out.javelinRelease;
+            return out; // only the release spends ammunition; never hold A
+        }
 
         if(in.weapon==Weapon::Bow&&selection<0) {
             const Vec line=in.hand[1].p-in.hand[0].p;
@@ -195,7 +229,7 @@ public:
         // Contact melee runs from the equipped weapon's posed transform. It
         // stays available with a trigger skill selected, but pauses during
         // casting. It never generates an attack pulse or needs a grip clutch.
-        out.meleeContact=in.weapon==Weapon::Melee&&!trigger;
+        out.meleeContact=(in.weapon==Weapon::Melee||in.weapon==Weapon::Javelin)&&!trigger;
         out.attack=trigger&&selection<0; // explicit button fallback only
         if(trigger&&selection>=0)out.skill=selection;
         return out;

@@ -2,6 +2,7 @@
 #include <array>
 #include <cmath>
 #include <string_view>
+#include <span>
 #include "../steamvr/frame_math.h"
 
 // Procedural skin pose, derived from this installed bow's bind pose. No
@@ -13,6 +14,22 @@ using namespace framevr::math;
 struct Mat { float m[16]{}; };
 constexpr int Count=13, Cog=3, String=8, Arrow=11;
 using Pose=std::array<Mat,Count>;
+inline constexpr size_t MaxBones=64;
+using ArrowMask=std::array<bool,MaxBones>;
+// Installed bows have several reduced/LOD skeleton layouts. Arrow-only hiding
+// uses verified names/ancestry, independently of the optional limb solver.
+inline ArrowMask ArrowBones(std::span<const std::string_view> names,std::span<const int> parents) {
+    ArrowMask mask{};
+    if(names.size()!=parents.size()||names.empty()||names.size()>MaxBones)return mask;
+    for(size_t i=0;i<names.size();++i) {
+        if(parents[i]<-1||parents[i]>=int(i))return {};
+        mask[i]=names[i].starts_with("arrow")||names[i]=="alt_arrow"||(parents[i]>=0&&mask[parents[i]]);
+    }
+    return mask;
+}
+inline void HideArrow(Mat& bone) {
+    for(int row=0;row<3;++row)for(int col=0;col<3;++col)bone.m[row*4+col]*=.001f;
+}
 inline constexpr std::array<std::string_view,Count> Names={
     "root","translate","anim","cog","upperBend","lowerBend",
     "lowerString","upperString","bowString","joint2","joint1","arrow","arrow_helper"};

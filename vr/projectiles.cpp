@@ -106,7 +106,7 @@ bool HasComponent(uintptr_t storage,uint32_t entity) {
 }
 void Release(uintptr_t assets,uintptr_t definition,uint32_t entity,uintptr_t unit) {
     uint32_t type=~0u,missile=~0u;
-    if(enabled.load()&&Read(unit,type)&&type==3&&Read(unit+4,missile)&&missile==0) {
+    if(enabled.load()&&Read(unit,type)&&type==3&&Read(unit+4,missile)&&framevr::bowflight::BasicMissile(missile)) {
         const auto owner=reinterpret_cast<uintptr_t(*)(uintptr_t)>(d2rsig::Addr(OwnerRva))(unit);
         const auto registry=d2rsig::Addr(RegistryRva);
         if(EntityAlive(registry,entity)) {
@@ -115,7 +115,7 @@ void Release(uintptr_t assets,uintptr_t definition,uint32_t entity,uintptr_t uni
             // This callback also visits the unit root. Only the release mesh
             // may own the physical world transform; the root has no component.
             const bool physical=bowvr::Visual(entity,unit,hasReleasePoint);
-            if(hasReleasePoint&&(physical||(direct.load()&&IsLocalOwner(owner)))) {
+            if(hasReleasePoint&&(physical||(missile==0&&direct.load()&&IsLocalOwner(owner)))) {
                 // Use the native removal operation, on the same renderer
                 // thread as initialization. The base arrow transform/heading
                 // then follows its path immediately instead of blending from

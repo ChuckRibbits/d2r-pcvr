@@ -1,0 +1,35 @@
+{
+  "release_tag": "v0.3.4-windows-preview",
+  "source_base": "ace4d933b86da8b7c0400662b5e6c6034103c72e",
+  "plugin_sha256": "5c5121dddad16a8adf3a39e880683fc915d3e93dab82c5eaa2204a6142a28237",
+  "native_tests_passed": 34,
+  "python_tests_passed": 34,
+  "coverage": [
+    "Physical javelin trigger-hold, deliberate room-space throwing motion and one-shot release",
+    "Weak or stationary release, stale motion and head-only movement cannot throw",
+    "Tracking, menus, equipment, frame gaps, wheel and quick-cast cancel unfinished throws",
+    "Trigger-free javelin jabs remain available with a skill selected",
+    "Dominant grip at either shoulder swaps native sets; bare reach and trigger leave throwing available",
+    "Arrow and javelin release guards, rendered creature contacts and native wall queries use launch-floor terrain coordinates",
+    "Corrected +Z model tips and negative-Z tails match physical flight at vertical and oblique angles",
+    "Arrow preview and flight share release pose and length; original local bow arrow skin is hidden across reduced LOD rigs",
+    "Guarded native basic throw consumes ammunition and owns damage; preview creation has no server attack or ammunition request",
+    "Discarded callback recovery rejects stale tickets instead of consuming newer releases",
+    "Existing installer, Steam routing, upgrades, asset preparation and report fixtures remain passing"
+  ],
+  "local_deployment": {
+    "installed_at": "2026-10-11T16:40:28-07:00",
+    "previous_sha256": "1b4f0dca6ea7a7811ff7b0a486e00a16cb8f35911a8b73a322352d938f549b28",
+    "backup": "build-frame/backups/windows-projectile-facing-20261011-164028",
+    "ini_calibration_and_graphics_preserved": true,
+    "game_was_closed": true
+  },
+  "live_runtime": "SteamVR/OpenXR loaded the guarded physical projectile hooks; javelins created native missiles and bound visuals and registered creature contacts.",
+  "headset_validation": "Owner confirmed bow and javelin mechanics work well on the preceding 1b4f0dca candidate, then reported reversed models. The 5c5121dd facing correction passes native geometry checks and is installed; its headset visual check remains pending.",
+  "limits": [
+    "Physical javelin throwing covers the native basic javelin missile, not skill-specific javelin flight",
+    "The owner's mechanics report did not separately confirm every cave, ammunition, sound and shoulder check",
+    "Quest 2 remains unconfirmed; earlier Quest 3 SteamVR and VDXR sessions were owner-confirmed",
+    "No new controlled performance comparison"
+  ]
+}

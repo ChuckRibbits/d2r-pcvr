@@ -22,6 +22,7 @@
 #include "d2r_vr_shared.h"
 #include "pad_mirror_shared.h"
 #include "transport.h"
+#include "../vr/bow.h"
 #include "frame_math.h"
 #include "composition_layers.h"
 #include "swapchain_format.h"
@@ -139,7 +140,8 @@ uint64_t meleeEpoch=1;
 uint32_t bowWorldEpoch=0;
 std::atomic<uint64_t> bowRenderTime{0};
 uint64_t bowSequence=0;
-bowflight::Shot bowPending{},bowReadyShot{};
+bowflight::Shot bowPending{},bowReadyShot{},bowPreviewPose{};
+bool bowPreviewVisible=false;
 bool bowNeedsWorld=false,bowHasShot=false;
 std::atomic<ULONGLONG> meleeImpactAt{0};
 XrSwapchain gameplayChain=XR_NULL_HANDLE;
@@ -883,10 +885,11 @@ gameplay::Weapon MotionWeapon() {
     switch(gamestate::WeaponType()) {
         case D2RVR_TYPE_BOW:return gameplay::Weapon::Bow;
         case D2RVR_TYPE_CROSSBOW:return gameplay::Weapon::Crossbow;
+        case D2RVR_TYPE_JAVELIN:return gameplay::Weapon::Javelin;
         case D2RVR_TYPE_UNARMED:case D2RVR_TYPE_SWORD:case D2RVR_TYPE_AXE:case D2RVR_TYPE_MACE:
         case D2RVR_TYPE_SCEPTER:case D2RVR_TYPE_WAND:case D2RVR_TYPE_STAFF:case D2RVR_TYPE_POLEARM:
         case D2RVR_TYPE_SPEAR:case D2RVR_TYPE_DAGGER:case D2RVR_TYPE_CLAW:
-        case D2RVR_TYPE_ORB:case D2RVR_TYPE_JAVELIN:case D2RVR_TYPE_THROWING:return gameplay::Weapon::Melee;
+        case D2RVR_TYPE_ORB:case D2RVR_TYPE_THROWING:return gameplay::Weapon::Melee;
         case D2RVR_TYPE_UNKNOWN:return gameplay::Weapon::Unknown;
         default:return gamestate::WeaponClass()==D2RVR_WEAPON_MELEE?gameplay::Weapon::Melee:gameplay::Weapon::Other;
     }
@@ -1199,9 +1202,13 @@ void Input() {
         meleePoses.Push(s.sampleStamp,sample);
     }
     skel::SetMotionBow(motionInput.active&&motionOutput.bowReady,motionOutput.bowDrawing,motionOutput.draw,s.rightHand,s.leftHand,s.sampleStamp);
-    if(!motionInput.active||!motionOutput.bowReady)bowNeedsWorld=bowHasShot=false;
-    if(motionOutput.bowRelease) {
+    if(!motionInput.active||(!motionOutput.bowReady&&!motionOutput.javelinReady))bowNeedsWorld=bowHasShot=false;
+    if(motionOutput.bowRelease||motionOutput.javelinRelease) {
         bowPending={};bowPending.origin=motionInput.hand[0].p;bowPending.direction=motionOutput.rayDirection;
+        if(motionOutput.javelinRelease) {
+            bowPending.kind=bowflight::Kind::Javelin;
+            bowPending.origin=bowPending.origin-bowPending.direction*bowflight::JavelinGrip;
+        }
         bowPending.draw=motionOutput.draw;bowPending.at=GetTickCount64();bowPending.stamp=s.sampleStamp;
         bowPending.session=gamestate::LocalPlayer();bowPending.equipment=motionInput.equipment;
         bowPending.epoch=(meleeEpoch<<32)|bowWorldEpoch;bowPending.sequence=++bowSequence;
@@ -1710,12 +1717,12 @@ void EndPair() {
             motionQuad(bowString[i],XrPose({mid,math::BeamOrientation(end-center,V(head.position)-mid)}),
                 .0015f,gameplay::Length(end-center),{{0,0},{64,32}},pointerChain);
         }
-        if(!nativeBow&&(motionOutput.bowDrawing||motionOutput.bowInReach)) {
+        if(!bowvr::PreviewReady()&&(motionOutput.bowDrawing||motionOutput.bowInReach)) {
             const auto direction=motionOutput.bowDrawing?motionOutput.rayDirection:motionOutput.bowForward;
-            const auto mid=center+direction*.375f;
+            const auto mid=center+direction*(bowflight::ArrowLength*.5f);
             const auto orient=math::BeamOrientation(direction,V(head.position)-mid);
-            motionQuad(arrow[0],XrPose({mid,orient}),.055f,.75f,{{512,768},{64,256}},gameplayChain);
-            motionQuad(arrow[1],XrPose({mid,math::Multiply(orient,math::Yaw(1.57079633f))}),.055f,.75f,{{512,768},{64,256}},gameplayChain);
+            motionQuad(arrow[0],XrPose({mid,orient}),.055f,bowflight::ArrowLength,{{512,768},{64,256}},gameplayChain);
+            motionQuad(arrow[1],XrPose({mid,math::Multiply(orient,math::Yaw(1.57079633f))}),.055f,bowflight::ArrowLength,{{512,768},{64,256}},gameplayChain);
         }
         // Native bows have a visible string to grab. The extra idle marker
         // correlated with compositor pose errors; omit it on this path.
@@ -1842,12 +1849,12 @@ void SetBowWorldEpoch(uint32_t epoch) {
     std::lock_guard lock(mutex);
     if(bowWorldEpoch==epoch)return;
     bowWorldEpoch=epoch;bowNeedsWorld=bowHasShot=false;
-    if(motionInput.weapon==gameplay::Weapon::Bow){motion.Cancel();motionOutput={};}
+    if(motionInput.weapon==gameplay::Weapon::Bow||motionInput.weapon==gameplay::Weapon::Javelin){motion.Cancel();motionOutput={};}
 }
 uint64_t BowRenderTime(){return bowRenderTime.load();}
 bowflight::Gate BowGate() {
     std::lock_guard lock(mutex);
-    return {motionControls.load()&&motionInput.active&&motionOutput.bowReady,
+    return {motionControls.load()&&motionInput.active&&(motionOutput.bowReady||motionOutput.javelinReady),
         gamestate::LocalPlayer(),(meleeEpoch<<32)|bowWorldEpoch,motionAt,motionInput.equipment};
 }
 bool TakeBowShot(bowflight::Shot& shot) {
@@ -1855,22 +1862,38 @@ bool TakeBowShot(bowflight::Shot& shot) {
     if(!bowHasShot)return false;
     bowHasShot=false;shot=bowReadyShot;return true;
 }
+bool BowPreviewPose(bowflight::Shot& pose,bool& visible) {
+    std::lock_guard lock(mutex);
+    const bowflight::Gate gate{motionControls.load()&&motionInput.active&&motionOutput.bowReady,
+        gamestate::LocalPlayer(),(meleeEpoch<<32)|bowWorldEpoch,motionAt,motionInput.equipment};
+    if(!bowflight::Allowed(bowPreviewPose,gate,GetTickCount64()))return false;
+    pose=bowPreviewPose;visible=bowPreviewVisible;return true;
+}
 bool View(float out[16],const float hero[3],float eyeHeight,float userEyeHeight,float bodyHeading,float recenterYaw,int eye) {
     std::lock_guard lock(mutex);if(!Active())return false;
     if(std::fabs(recenterYaw-lastRecenter)>.001f){origin=V(head.position);lastRecenter=recenterYaw;}
     const float upm=eyeHeight/std::max(userEyeHeight,.5f);
     const auto base=math::Yaw(bodyHeading-recenterYaw);
+    const auto resolveBow=[&](bowflight::Shot shot) {
+        const auto offset=math::Rotate(base,shot.origin-origin);
+        shot.origin={hero[0]/upm+offset.x,(hero[1]+eyeHeight)/upm+offset.y,hero[2]/upm+offset.z};
+        shot.direction=math::Normalized(math::Rotate(base,shot.direction));
+        shot.player={hero[0]/upm,hero[1]/upm,hero[2]/upm};shot.unitsPerMetre=upm;
+        return shot;
+    };
+    bowflight::Shot held;
+    held.origin=motionOutput.bowDrawing?motionInput.hand[0].p:motionOutput.nockPoint;
+    held.direction=motionOutput.bowDrawing?motionOutput.rayDirection:motionOutput.bowForward;
+    held.draw=motionOutput.draw;held.at=motionAt;held.session=gamestate::LocalPlayer();
+    held.epoch=(meleeEpoch<<32)|bowWorldEpoch;held.equipment=motionInput.equipment;held.sequence=1;
+    bowPreviewPose=resolveBow(held);bowPreviewVisible=motionOutput.bowDrawing||motionOutput.bowInReach;
     // Resolve the release once in the SAME stage-to-world frame as this view.
     // Absolute room poses avoid mixing an old weapon bone with a newer head yaw.
     if(bowNeedsWorld) {
         bowNeedsWorld=false;
-        const bowflight::Gate gate{motionControls.load()&&motionInput.active&&motionOutput.bowReady,
+        const bowflight::Gate gate{motionControls.load()&&motionInput.active&&(motionOutput.bowReady||motionOutput.javelinReady),
             gamestate::LocalPlayer(),(meleeEpoch<<32)|bowWorldEpoch,motionAt,motionInput.equipment};
-        auto shot=bowPending;
-        const auto offset=math::Rotate(base,shot.origin-origin)*upm;
-        shot.origin={hero[0]/upm+offset.x/upm,(hero[1]+eyeHeight+offset.y)/upm,hero[2]/upm+offset.z/upm};
-        shot.direction=math::Normalized(math::Rotate(base,shot.direction));
-        shot.player={hero[0]/upm,hero[1]/upm,hero[2]/upm};shot.unitsPerMetre=upm;
+        const auto shot=resolveBow(bowPending);
         if(bowflight::Allowed(shot,gate,GetTickCount64())){bowReadyShot=shot;bowHasShot=true;}
     }
     const auto& pose=eye<0?head:views[eye&1].pose;
