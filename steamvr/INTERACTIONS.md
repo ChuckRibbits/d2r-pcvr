@@ -55,7 +55,7 @@ An equipped weapon remains held without continuously squeezing grip.
 | Quick casting | Hold Left Trigger + a face button; add Left Grip for alternate four slots; right hand aims | Same native assignments as the wheel; see GAMEPLAY mapping |
 | Potions | Reach to the front belt, grip a bottle, bring to mouth and tip | Actual potion type/count, then confirmed consumption |
 | Health/mana | Look at the back of the left wrist, like checking a watch | Live life/mana orbs; brief low-health/low-mana cues otherwise |
-| Journal/map | Choose Journal from the wheel's utility tab; hold it in the left hand or pin it nearby | Native quest status/text and tabs, readable at a comfortable size |
+| Journal/map | Open Journal through the native tabbed game menu (Left X / Frame Left A) | Native quest status/text and tabs, readable at a comfortable size |
 
 Preserve Left X inventory, Left Grip + Left Stick Click height reset, ordinary
 Left Stick Click map, Right Stick Click weapon swap, and Right A interaction.
@@ -101,7 +101,8 @@ stay disabled until the object is released and the input is rearmed.
 Replace the current B/X/Y/RB text grid with a radial wheel for the same eight
 assigned native skills initially. Read actual assignments, names and icons;
 include item-granted skills/charges and refresh on weapon swaps. A center tile
-returns to weapon combat; a utility tab contains equipment, belt and Journal.
+returns to weapon combat; a utility tab contains equipment and belt actions.
+Journal is accessed through the native tabbed game menu rather than the wheel.
 An unassigned/unknown slot must not display an invented spell or availability.
 
 Hold Left Y to show the wheel, aim at a wedge, then click right trigger to

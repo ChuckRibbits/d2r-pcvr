@@ -1,0 +1,61 @@
+{
+  "date": "2026-10-10",
+  "base_commit": "7b69ce7fc3b718529a51081e81b74421e6a3712e",
+  "branch": "vr/quest-2-3-support",
+  "headset": "Quest 3",
+  "transport": "Virtual Desktop",
+  "streamer_version": "1.34.22",
+  "runtime": "VirtualDesktopXR",
+  "platform": "native Windows",
+  "game": "Steam D2R 3.3.93787, local offline character",
+  "probe": {
+    "passed": true,
+    "reported_headset": "Meta Quest 3",
+    "adapter": "NVIDIA GeForce RTX 5090",
+    "reference_spaces": ["VIEW", "LOCAL", "STAGE"],
+    "recommended_eye_size": [3072, 3264],
+    "headset_gaze_supported": false,
+    "max_layers": 16,
+    "supported_swapchain_formats": [28, 29, 10],
+    "actual_resource_formats": [27, 27, 9]
+  },
+  "initial_session": {
+    "plugin_sha256": "f559b3e57d73cb38e9091753782e7702a53b5185db5108b5a8c488011ea1006c",
+    "owner_feedback": "everything looks washed out",
+    "selected_eye_format": 28,
+    "actual_eye_size": [2560, 1440],
+    "head_both_hands_and_aim_tracked": true,
+    "normal_exit_local": "2026-10-10T18:32:44.680-07:00"
+  },
+  "correction": {
+    "plugin_sha256": "109dfa0e3c1d1a97d2b274180f56f8fb25f9680f8853e378ccf6245a85621962",
+    "change": "Copy encoded SDR bytes into an sRGB swapchain even when the runtime also supports linear UNORM",
+    "native_tests_passed": 34,
+    "old_selector_fails_gpu_regression": true,
+    "new_selector_passes_gpu_regression": true,
+    "typeless_srgb_potion_stereo_readback_passed": true,
+    "ini_and_graphics_hashes_preserved": true
+  },
+  "corrected_session": {
+    "started_local": "2026-10-10T18:35:40.7703307-07:00",
+    "runtime_logged": "VirtualDesktopXR",
+    "selected_eye_format": 29,
+    "game_backbuffer_format": 28,
+    "actual_eye_size": [2560, 1440],
+    "steamvr_processes_running": false,
+    "owner_feedback": "Yes — colors look normal",
+    "status": "Owner confirms normal colors; tracked outdoor gameplay and normal exit logged",
+    "melee_accepted_reports": 45,
+    "melee_position_mismatch_reports": 0,
+    "gameplay_biomes_logged": ["act1_outdoors"],
+    "openxr_failure_lines": 0,
+    "normal_exit_local": "2026-10-10T18:46:00.553-07:00"
+  },
+  "limits": [
+    "Owner feedback confirms corrected colors, not exhaustive per-feature/class/weapon coverage.",
+    "This does not establish cave, shoulder swap, calibration or exhaustive feature coverage on VDXR.",
+    "Steam Link and Virtual Desktop runs use different actual eye sizes; no controlled performance comparison was performed.",
+    "Virtual Desktop with SteamVR and physical Quest 2 are untested.",
+    "Earlier sessions are excluded; raw logs, backups and service-repair records remain local."
+  ]
+}

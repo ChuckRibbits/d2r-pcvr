@@ -1,22 +1,26 @@
 # D2R VR
 
-This private adaptation adds an experimental **native OpenXR PCVR** transport,
-tested on Linux/Proton/SteamVR streaming to Steam Frame. Start with
-**[INSTALL.md](INSTALL.md)** and the
-**[compiled preview releases](https://github.com/bearstonem/d2r-pcvr/releases)**.
-Quest 3 setup includes WiVRn on Linux and Virtual Desktop on Windows; both need
-headset validation. [HANDOFF.md](HANDOFF.md) records the next agent's starting
-point; [steamvr/TASKS.md](steamvr/TASKS.md) tracks the backlog.
+This private adaptation adds experimental **native Windows OpenXR PCVR** to
+the Steam edition of D2R 3.3.93787, for **local offline characters only**.
+The owner has tested Steam Frame through SteamVR, Quest 3 through Steam Link,
+and Quest 3 through Virtual Desktop/VDXR, including the corrected color path.
+Physical Quest 2 and Linux/WiVRn remain unverified.
 
-**Fresh Windows + Steam Frame setup:** read
-[WINDOWS_HANDOFF.md](WINDOWS_HANDOFF.md) on branch `vr/steam-frame-proton`.
-Release `v0.2.0-windows-handoff` separates the baseline and experimental
-performance builds. Native Windows testing is the next step.
+Download **d2r-pcvr-windows.zip** from
+[v0.3.0-windows-quest-preview](https://github.com/bearstonem/d2r-pcvr/releases/tag/v0.3.0-windows-quest-preview)
+and follow **[INSTALL-WINDOWS.md](INSTALL-WINDOWS.md)** for installation,
+Steam launch options, calibration and both VR launch commands. Windows needs
+neither BodyWalk nor FlatVR. Normal Steam Play remains stock.
 
-Creature labels, centered lighting, smoke/portal facing and body alignment have
-headset-verified corrections. Motion combat, panels, skill selection and 3D
-potions are implemented. Linux streaming resets and game-update stalls remain
-unresolved, including after rollback/reboot. See
+[HANDOFF.md](HANDOFF.md) records development status;
+[steamvr/TASKS.md](steamvr/TASKS.md) tracks the backlog. See
+[steamvr/QUEST_TESTING.md](steamvr/QUEST_TESTING.md) for the precise headset
+coverage. Earlier Linux streaming resets are recorded separately in
+[INSTALL-LINUX.md](INSTALL-LINUX.md) and [steamvr/PERFORMANCE.md](steamvr/PERFORMANCE.md).
+
+The preview includes body calibration, shoulder weapon swapping, motion melee,
+native panels, spell selection and 3D belt potions. Journal remains available
+through the tabbed game menu; its duplicate wheel entry is removed. See
 [performance evidence](steamvr/PERFORMANCE.md) and [technical status](steamvr/README.md).
 The following upstream Windows/BodyWalk documentation remains for attribution
 and reference; its installer is **not this native OpenXR preview**.

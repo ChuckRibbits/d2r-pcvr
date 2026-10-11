@@ -9,10 +9,12 @@ The first flight test showed arrows originating above the player. A mesh-only
 transform correction is installed; its code/geometry checks pass, and the owner
 will test its visual result later. See [../HANDOFF.md](../HANDOFF.md) for the
 latest installed build and runtime status.
-The published preview ZIP does not include this work.
+The current Windows preview includes these implementations. See
+[INSTALL-WINDOWS.md](../INSTALL-WINDOWS.md) for the release and current
+[Quest verification](QUEST_TESTING.md) for headset coverage.
 
 The **installed development build** adds a radial spell
-wheel, native-state belt and wrist gauges, weapon-set holsters and a handheld or
+wheel, native-state belt and wrist gauges, shoulder weapon swapping and a handheld or
 pinned quest page. Detailed headset checks for these interactions remain pending.
 The controls below describe this build. [INTERACTIONS.md](INTERACTIONS.md)
 separates completed code from the full target design.
@@ -78,11 +80,11 @@ not generate melee velocity. The layout currently assumes a right-handed player.
 | Physical belt potion | Reach to an original 3D bottle on the front belt and hold **Right Grip** to grab; left-hand grip also works |
 | Drink | Keep grip held, bring the bottle's opening to your mouth and tip nearly horizontal for 0.25 seconds; release to return an unused potion |
 | Quick potion | Left Y → **EQUIPMENT / BELT** → trigger a potion wedge; grip on a potion wedge instead grabs it into the right hand |
-| Weapon holsters | Reach either hand to a hip marker, fresh grip then pull out 12 cm; right hip requests set I, left hip set II |
+| Swap weapon sets | Reach the swap hand over either shoulder and press its trigger; right hand by default, selectable in VR settings. Hip anchors are removed |
 | Seated weapon selection | Utility wheel → **Weapon I** or **Weapon II** |
 | Stow/draw | Utility wheel → **Stow weapons** / **Draw weapons**; native equipped stats stay unchanged |
 | Wrist health/mana | Look at the **back of your left wrist, like checking a watch**, within 75 cm of your eyes; red life and blue mana orbs appear there. No button required. Brief status cue also appears at low health or low mana in spell mode |
-| Quest journal | Utility wheel → **Journal**; initially follows left hand. Squeeze then release left grip to pin; grip near it to pick it back up |
+| Quest journal | Open the native tabbed game menu with Left X / Frame Left A, then select Journal. The duplicate wheel entry is removed |
 | Journal controls | Right laser + trigger uses native page controls/act tabs; Right B closes it; Left X retains ordinary inventory/menu behavior |
 | Quick native weapon swap | Right stick click, unchanged |
 | Walk / snap turn | Sticks; paused while wheel or journal is open |

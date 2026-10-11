@@ -1,0 +1,42 @@
+{
+  "release_tag": "v0.3.0-windows-quest-preview",
+  "date": "2026-10-10",
+  "platform": "native Windows x64",
+  "game": "Steam D2R 3.3.93787, local offline characters only",
+  "plugin_sha256": "e12a5e958d31300dbe52bf93a88017844c650b0f532bae08ca6606ca877c1167",
+  "native_tests_passed": 34,
+  "python_tests_passed": 24,
+  "wheel_preview_check_passed": true,
+  "vdxr_shortcut_uri_checked": true,
+  "features": [
+    "Native Windows OpenXR; normal Steam Play routes to stock D2R",
+    "Explicit per-process SteamVR or Virtual Desktop/VDXR launch",
+    "sRGB swapchain selection for display-encoded SDR game images",
+    "T-pose body calibration on first world load and from VR settings",
+    "Swap-hand trigger over either shoulder switches native weapon sets",
+    "Native cave melee coordinate correction; wrist vitals survive transitions",
+    "Journal wheel entry removed; native tabbed game menu access retained"
+  ],
+  "headset_records": [
+    {
+      "route": "Steam Frame / SteamVR",
+      "plugin_sha256": "f559b3e57d73cb38e9091753782e7702a53b5185db5108b5a8c488011ea1006c",
+      "owner_feedback": "it all works",
+      "scope": "Offline cave melee retest, native contacts and normal exit"
+    },
+    {
+      "route": "Quest 3 / Steam Link / SteamVR",
+      "record": "2026-10-10-quest3-steamlink.json"
+    },
+    {
+      "route": "Quest 3 / Virtual Desktop / VDXR",
+      "record": "2026-10-10-quest3-vdxr.json"
+    }
+  ],
+  "limits": [
+    "Headset records apply to their specified predecessor DLL hashes.",
+    "The release adds only Journal wheel removal after the owner-confirmed VDXR color build; native tests and a generated wheel preview pass, but this final DLL has not had another headset session.",
+    "Physical Quest 2, Virtual Desktop with SteamVR and Linux/WiVRn remain untested.",
+    "No controlled Windows performance comparison or exhaustive class/weapon/feature coverage."
+  ]
+}

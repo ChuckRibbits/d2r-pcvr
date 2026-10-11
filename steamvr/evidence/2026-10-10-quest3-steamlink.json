@@ -1,0 +1,42 @@
+{
+  "date": "2026-10-10",
+  "base_commit": "7b69ce7fc3b718529a51081e81b74421e6a3712e",
+  "branch": "vr/quest-2-3-support",
+  "headset": "Quest 3",
+  "transport": "Steam Link",
+  "runtime": "SteamVR/OpenXR",
+  "platform": "native Windows",
+  "game": "Steam D2R 3.3.93787, local offline character",
+  "plugin_sha256": "f559b3e57d73cb38e9091753782e7702a53b5185db5108b5a8c488011ea1006c",
+  "owner_feedback": "ok it all works",
+  "probe": {
+    "passed": true,
+    "adapter": "NVIDIA GeForce RTX 5090",
+    "reference_spaces": ["VIEW", "LOCAL", "STAGE"],
+    "recommended_eye_size": [2064, 2208],
+    "headset_gaze_supported": false,
+    "max_layers": 16,
+    "supported_swapchain_formats": [29, 10],
+    "actual_resource_formats": [27, 9]
+  },
+  "session": {
+    "started_local": "2026-10-10T18:14:05.927-07:00",
+    "actual_eye_size": [3840, 2160],
+    "head_both_hands_and_aim_tracked": true,
+    "openxr_failure_lines": 0,
+    "calibration_saved_and_closed": true,
+    "eye_height_m": 1.70706,
+    "arm_span_m": 1.49549,
+    "melee_accepted_reports": 17,
+    "melee_position_mismatch_reports": 0,
+    "gameplay_biomes_logged": ["act1_outdoors"],
+    "normal_exit_local": "2026-10-10T18:16:57.729-07:00"
+  },
+  "limits": [
+    "Overall owner gameplay confirmation is not exhaustive per-feature/class/weapon coverage.",
+    "Cave entry and weapon-set switching were not separately logged in this Quest session.",
+    "No controlled performance comparison was performed.",
+    "Quest 2 and Virtual Desktop were not tested in this session.",
+    "Earlier Steam Frame log entries are excluded; raw logs and backups remain local."
+  ]
+}

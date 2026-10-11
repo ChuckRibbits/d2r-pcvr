@@ -99,7 +99,7 @@ std::vector<uint8_t> Paint(const Snapshot& s,const Output& o,int selection) {
         for(int y=0;y<768;++y)for(int x=0;x<768;++x) {
             auto* p=&wheelArt[(y*768+x)*4];
             const int cell=cells[y*768+x];
-            if(p[3]&&cell>=0&&(cell==o.hover||(!o.editor&&!o.utility&&cell==selection))) {
+            if(p[3]&&cell>=0&&(!o.utility||cell!=2)&&(cell==o.hover||(!o.editor&&!o.utility&&cell==selection))) {
                 const float amount=cell==o.hover?.26f:.13f;
                 const int gold[]={185,133,55};
                 for(int c=0;c<3;++c)p[c]=uint8_t(p[c]*(1-amount)+gold[c]*amount);
@@ -137,6 +137,7 @@ std::vector<uint8_t> Paint(const Snapshot& s,const Output& o,int selection) {
         } else icon(icons::Get(a.handle?a:b),box);
     };
     for(int i=0;o.editor!=2&&i<8;++i) {
+        if(o.utility&&i==2)continue; // Native tabbed menu retains journal access.
         const float angle=i*Pi/4+WheelPhase;
         const int x=int(384+std::sin(angle)*218),y=int(345.6f-std::cos(angle)*218)-(std::cos(angle)<-.5f?14:0);
         if(wheelArt.empty()) {
@@ -153,10 +154,9 @@ std::vector<uint8_t> Paint(const Snapshot& s,const Output& o,int selection) {
             if(o.editor)std::snprintf(label,sizeof label,"%d. %s",i+1,skill.known?skill.name:"Unknown");
             else std::snprintf(label,sizeof label,"%s",skill.known?skill.name:"Unknown");
         } else if(i<4) {
-            const char* utility[]={"Weapon I","Weapon II","Journal",o.stowed?"Draw weapons":"Stow weapons"};
+            const char* utility[]={"Weapon I","Weapon II","",o.stowed?"Draw weapons":"Stow weapons"};
             std::snprintf(label,sizeof label,"%s",utility[i]);
             if(i<2&&s.equipmentKnown)pair(i,box);
-            else if(i==2)icon(icons::Get("journal"),box);
             else if(i==3&&s.equipmentKnown&&s.activeSet>=1&&s.activeSet<=2)pair(s.activeSet-1,box);
         } else {
             const auto& b=s.belt[i-4];

@@ -9,6 +9,7 @@
 #include <openxr/openxr_platform.h>
 #include <openxr/openxr_loader_negotiation.h>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <vector>
 
@@ -18,6 +19,8 @@ int main(int argc,char** argv) {
     if(!std::freopen(argc>1?argv[1]:"openxr-probe-result.txt","w",stdout))return 1;
     std::setvbuf(stdout,nullptr,_IONBF,0);
     std::puts("Runtime probe started");
+    const char* runtimeManifest=std::getenv("XR_RUNTIME_JSON");
+    std::printf("Runtime manifest override: %s\n",runtimeManifest?runtimeManifest:"none (system default)");
     auto module=LoadLibraryW(L"wineopenxr.dll");
     if(!module) module=LoadLibraryW(L"openxr_loader.dll");
     if(!module) {std::printf("Load OpenXR bridge/loader failed: %lu\n",GetLastError());return 1;}
@@ -60,6 +63,17 @@ int main(int argc,char** argv) {
     XrSystemGetInfo si{XR_TYPE_SYSTEM_GET_INFO};si.formFactor=XR_FORM_FACTOR_HEAD_MOUNTED_DISPLAY;
     XrSystemId id=XR_NULL_SYSTEM_ID;result=system(instance,&si,&id);std::printf("Headset system: %d\n",result);
     if(XR_FAILED(result)){destroy(instance);return 1;}
+    PFN_xrGetSystemProperties getSystemProperties=nullptr;
+    rr.getInstanceProcAddr(instance,"xrGetSystemProperties",reinterpret_cast<PFN_xrVoidFunction*>(&getSystemProperties));
+    if(!getSystemProperties){destroy(instance);return 1;}
+    XrSystemEyeGazeInteractionPropertiesEXT eye{XR_TYPE_SYSTEM_EYE_GAZE_INTERACTION_PROPERTIES_EXT};
+    XrSystemProperties sp{XR_TYPE_SYSTEM_PROPERTIES};sp.next=gaze?&eye:nullptr;
+    result=getSystemProperties(instance,id,&sp);
+    std::printf("Headset properties: %d\n",result);
+    if(XR_FAILED(result)){destroy(instance);return 1;}
+    std::printf("Headset: %s; vendor: %u; max layers: %u\n",sp.systemName,sp.vendorId,sp.graphicsProperties.maxLayerCount);
+    std::printf("Tracking: orientation=%u position=%u\n",sp.trackingProperties.orientationTracking,sp.trackingProperties.positionTracking);
+    if(gaze)std::printf("Eye gaze system query: %d; supportsEyeGazeInteraction: %u\n",result,eye.supportsEyeGazeInteraction);
     PFN_xrEnumerateViewConfigurationViews enumerateViews=nullptr;
     rr.getInstanceProcAddr(instance,"xrEnumerateViewConfigurationViews",reinterpret_cast<PFN_xrVoidFunction*>(&enumerateViews));
     uint32_t viewCount=0;
@@ -67,15 +81,6 @@ int main(int argc,char** argv) {
         std::vector<XrViewConfigurationView> views(viewCount,{XR_TYPE_VIEW_CONFIGURATION_VIEW});
         if(XR_SUCCEEDED(enumerateViews(instance,id,XR_VIEW_CONFIGURATION_TYPE_PRIMARY_STEREO,viewCount,&viewCount,views.data())))
             for(uint32_t i=0;i<viewCount;++i)std::printf("Eye %u recommended image: %u x %u; samples: %u\n",i,views[i].recommendedImageRectWidth,views[i].recommendedImageRectHeight,views[i].recommendedSwapchainSampleCount);
-    }
-    if(gaze) {
-        PFN_xrGetSystemProperties getSystemProperties=nullptr;
-        rr.getInstanceProcAddr(instance,"xrGetSystemProperties",reinterpret_cast<PFN_xrVoidFunction*>(&getSystemProperties));
-        XrSystemEyeGazeInteractionPropertiesEXT eye{XR_TYPE_SYSTEM_EYE_GAZE_INTERACTION_PROPERTIES_EXT};
-        XrSystemProperties sp{XR_TYPE_SYSTEM_PROPERTIES};sp.next=&eye;
-        if(!getSystemProperties){destroy(instance);return 1;}
-        result=getSystemProperties(instance,id,&sp);
-        std::printf("Eye gaze system query: %d; supportsEyeGazeInteraction: %u\n",result,eye.supportsEyeGazeInteraction);
     }
     // Query capabilities without creating a competing graphics session.
     if(argc>2&&std::strcmp(argv[2],"--capabilities")==0){destroy(instance);return XR_FAILED(result)?1:0;}
@@ -112,6 +117,23 @@ int main(int argc,char** argv) {
     std::printf("Create D3D12 OpenXR session: %d\n",result);
     // Do not begin the session or submit a frame: this probe only checks setup.
     if(XR_SUCCEEDED(result)) {
+        PFN_xrEnumerateReferenceSpaces referenceSpaces=nullptr;
+        rr.getInstanceProcAddr(instance,"xrEnumerateReferenceSpaces",reinterpret_cast<PFN_xrVoidFunction*>(&referenceSpaces));
+        uint32_t spaceCount=0;
+        const auto spaceResult=referenceSpaces?referenceSpaces(session,0,&spaceCount,nullptr):XR_ERROR_FUNCTION_UNSUPPORTED;
+        std::printf("Enumerate reference spaces: %d\n",spaceResult);
+        if(XR_SUCCEEDED(spaceResult)) {
+            std::vector<XrReferenceSpaceType> spaces(spaceCount);
+            if(XR_SUCCEEDED(referenceSpaces(session,spaceCount,&spaceCount,spaces.data()))) {
+                bool stage=false;
+                for(const auto type:spaces) {
+                    const char* name=type==XR_REFERENCE_SPACE_TYPE_STAGE?"STAGE":type==XR_REFERENCE_SPACE_TYPE_LOCAL?"LOCAL":type==XR_REFERENCE_SPACE_TYPE_VIEW?"VIEW":"other";
+                    std::printf("Reference space: %s (%d)\n",name,int(type));
+                    stage|=type==XR_REFERENCE_SPACE_TYPE_STAGE;
+                }
+                std::printf("Body calibration stage floor advertised: %d\n",stage);
+            }
+        }
         PFN_xrCreateSwapchain createSwapchain=nullptr;PFN_xrEnumerateSwapchainImages images=nullptr;PFN_xrDestroySwapchain destroySwapchain=nullptr;
         rr.getInstanceProcAddr(instance,"xrCreateSwapchain",reinterpret_cast<PFN_xrVoidFunction*>(&createSwapchain));
         rr.getInstanceProcAddr(instance,"xrEnumerateSwapchainImages",reinterpret_cast<PFN_xrVoidFunction*>(&images));

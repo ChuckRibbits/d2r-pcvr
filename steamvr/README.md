@@ -3,7 +3,12 @@
 For the compiled preview and portable friend setup, start with
 [INSTALL.md](../INSTALL.md). These notes retain the owner machine's build and
 Steam Frame testing details. Native Windows + SteamVR/Steam Frame is now tested
-with offline gameplay; Quest 3/WiVRn paths remain untested.
+with offline gameplay. The owner also confirms Quest 3 with Steam Link/SteamVR
+works; calibration, melee contacts and normal exit are logged. Quest 3 with
+Virtual Desktop/VDXR now has owner-confirmed normal colors and logged outdoor
+melee after the sRGB correction. Physical Quest 2 remains unverified.
+Work continues on `vr/quest-2-3-support`; see
+[QUEST_TESTING.md](QUEST_TESTING.md). WiVRn remains unverified.
 
 This branch adds a native OpenXR transport to the MIT-licensed
 [D2R VR camera mod](https://github.com/natpoh/diablo2-vr-port). It reuses its
@@ -14,7 +19,15 @@ FlatVR are not required by this build.
 
 ## Current verification
 
-- Native Windows build passes 33 C++ tests. Owner reports excellent performance;
+- Quest 3 + Steam Link + SteamVR: owner reports "ok it all works". The unchanged
+  verified DLL passes startup/tracking and logged calibration/outdoor melee/exit.
+  Virtual Desktop/VDXR also reaches tracked gameplay, with owner-confirmed
+  corrected colors, 45 accepted outdoor melee reports and normal exit. The final
+  release removes Journal's duplicate wheel entry; native tabbed access remains.
+  Its generated preview passes; a fresh headset run of that final cleanup and
+  physical Quest 2 verification remain pending.
+
+- Native Windows build passes 34 C++ tests. Owner reports excellent performance;
   a controlled native baseline/candidate timing comparison remains pending.
   Current setup, installed DLL and unresolved visual/transition bugs are in
   [WINDOWS_HANDOFF.md](../WINDOWS_HANDOFF.md).

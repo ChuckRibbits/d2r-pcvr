@@ -7,12 +7,13 @@ import subprocess
 import sys
 
 RUNTIME_OPTION = '--frame-openxr-runtime='
+VDXR_OPTION = '--frame-vdxr'
 
 
 def prepare(arguments):
     vr = '--frame-vr' in arguments
     command = [arg for arg in arguments
-               if arg != '--frame-vr' and not arg.startswith(RUNTIME_OPTION)]
+               if arg not in ('--frame-vr', VDXR_OPTION) and not arg.startswith(RUNTIME_OPTION)]
     cwd = None
     if not command:
         raise SystemExit('Expected the Steam launch command containing D2R.exe')
@@ -32,16 +33,30 @@ def prepare(arguments):
     return command, cwd
 
 
+def vdxr_manifest():
+    return Path(os.environ.get('ProgramFiles', 'C:/Program Files')) / 'Virtual Desktop Streamer/OpenXR/virtualdesktop-openxr.json'
+
+
 def launch_environment(arguments):
     """Allow a per-game runtime choice without changing other PCVR apps."""
+    if '--frame-vr' not in arguments:
+        return None
     runtimes = [arg[len(RUNTIME_OPTION):] for arg in arguments
                 if arg.startswith(RUNTIME_OPTION)]
-    if '--frame-vr' not in arguments or not runtimes:
+    if len(runtimes) > 1:
+        raise SystemExit('Expected at most one --frame-openxr-runtime=PATH manifest')
+    # The explicit launch flag overrides the normal SteamVR launch-option
+    # manifest. Stock Play ignores it, and a missing VDXR install fails closed.
+    if VDXR_OPTION in arguments:
+        runtime = vdxr_manifest()
+    elif runtimes:
+        runtime = Path(runtimes[0])
+    else:
         return None
-    if len(runtimes) != 1 or not Path(runtimes[0]).is_file():
-        raise SystemExit('Expected one existing --frame-openxr-runtime=PATH manifest')
+    if not runtime.is_file():
+        raise SystemExit(f'OpenXR runtime manifest was not found: {runtime}')
     environment = os.environ.copy()
-    environment['XR_RUNTIME_JSON'] = str(Path(runtimes[0]).resolve())
+    environment['XR_RUNTIME_JSON'] = str(runtime.resolve())
     return environment
 
 

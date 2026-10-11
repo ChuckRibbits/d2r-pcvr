@@ -137,7 +137,7 @@ inline bool PotionGone(const Snapshot& s,const Request& r) {
 // clockwise from the upper-right segment; center is weapon mode.
 constexpr float Pi=3.14159265358979323846f;
 constexpr float WheelPhase=Pi/8;
-inline int WheelCell(float u,float v,int previous=-1,bool skillPage=false) {
+inline int WheelCell(float u,float v,int previous=-1,bool skillPage=false,bool utilityPage=false) {
     if(!std::isfinite(u)||!std::isfinite(v)||u<0||u>1||v<0||v>1)return -1;
     if(v>.895f&&v<.965f) {
         if(u>.03f&&u<.33f)return 9;
@@ -158,9 +158,10 @@ inline int WheelCell(float u,float v,int previous=-1,bool skillPage=false) {
     float a=std::atan2(x,-y);if(a<0)a+=2*Pi;
     if(previous>=0&&previous<8) {
         const float difference=std::remainder(a-WheelPhase-previous*Pi/4,2*Pi);
-        if(std::fabs(difference)<Pi/8+.035f)return previous;
+        if(std::fabs(difference)<Pi/8+.035f)return utilityPage&&previous==2?-1:previous;
     }
-    return int(std::floor(a/(Pi/4)))%8;
+    const int cell=int(std::floor(a/(Pi/4)))%8;
+    return utilityPage&&cell==2?-1:cell; // Journal is accessed through the native tabbed menu.
 }
 struct Config {
     float waistBelowEyes=.65f,beltForward=.26f,hipWidth=.28f;
@@ -310,14 +311,13 @@ public:
                 else if(in.hover==10){out.settings=true;out.wheel=false;wheelLatch=true;rearm=true;}
                 else if(in.hover==9){utility=!utility;out.utility=utility;rearm=true;}
                 else if(in.hover==8) {out.select=-1;stowed=false;wheelLatch=true;out.wheel=false;rearm=true;out.feedback=1;}
-                else if(in.hover>=0&&in.hover<8) {
+                else if(in.hover>=0&&in.hover<8&&(!utility||in.hover!=2)) {
                     if(!utility) {
                         const auto& skill=in.snapshot.skills[in.hover];
                         if(!fresh||!skill.known||skill.available) {
                             out.select=in.hover;stowed=false;wheelLatch=true;out.wheel=false;out.feedback=1;
                         } else out.feedback=3;
                     } else if(in.hover<2) {if(fresh&&in.snapshot.equipmentKnown)request(Action::Equip,in.hover+1);else out.feedback=3;}
-                    else if(in.hover==2)request(Action::Quest,0);
                     else if(in.hover==3) {stowed=!stowed;out.feedback=1;}
                     else {
                         const int col=in.hover-4;const auto& b=in.snapshot.belt[col];
