@@ -1,5 +1,36 @@
 # Clean Windows installation and agent handoff — October 10, 2026
 
+**October 11 menu follow-up on `feat/native-vr-menu-controls`:** The Windows
+v0.3.2 candidate adds native menu buttons/sticks alongside laser clicks and
+dragging. Quest A/B/X/Y map directly; Frame left A/B map native X/Y. Grips
+map LB/RB during native navigation. Deliberate re-aim returns to the laser;
+idle tracking cannot steal controller focus. Left Grip + Right Trigger
+retains context-clicks without stealing native A. Per-control release gates
+and reserved mirror context/epoch tags prevent held and stale world/UI input
+crossing transitions. Native menu reports bypass ApplyActions/TurnStick.
+Controller focus is independent of the queued-pointer protection lease.
+
+The stash regression is visible in the 12:36:35 log: BankExpansionLayout
+opens without the shared black-background mode. Bank/stash, standalone
+inventory, cube and mercenary inventory now use the opaque shared UI layer;
+speech/journal remain spatial. All 34 native and 24 Python checks pass.
+Final staged DLL: `18cb931b2532baa73fbdccecd9d22c33bf7a17429809d81c946b92f7cb63f246`.
+Initial candidate `c7efb92b...` was installed at 13:09:46 with settings preserved
+and launched through SteamVR; it reached the frontend and world. A final
+quick-cast/settings-chord ordering correction is staged and must replace it
+only after D2R/D2RLoader is fully closed. Deployment record and backup:
+`build-frame/windows/latest-native-menu-deployment.json`,
+`build-frame/backups/windows-native-menu-20261011-130946/`.
+The owner confirmed native menus, laser dragging, and the matching stash
+background in both eyes on the initial c7efb92b candidate. The final 18cb931b
+change only corrects simultaneous slot-8 quick-cast/settings ordering and
+passes the added integrated check; it has no additional headset session. The user asks
+for all mappings in the GitHub README and release files, plus a prominent
+purchased-game/no-game-assets notice. `CONTROLS.md` is included in packaging
+and its complete reference is embedded in README. Repository stays private.
+Do not distribute locally extracted icon/potion caches. Release evidence:
+`steamvr/evidence/2026-10-11-native-menus.json`.
+
 Start here for the owner's **fresh Windows installation**, using Steam Frame
 over SteamVR PC streaming. This is a native OpenXR mod of the **Steam edition
 of Diablo II: Resurrected 3.3.93787**, for **offline characters only**.

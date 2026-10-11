@@ -1,13 +1,17 @@
 #include "native_panels.h"
 #include "panel_input_mode.h"
+#include "menu_controls.h"
+#include "quick_cast.h"
 #include "journal.h"
 #include <cstdio>
 #include <cstdlib>
 using namespace framevr;
 static void Check(bool ok,const char* message){if(!ok){std::fprintf(stderr,"FAIL: %s\n",message);std::exit(1);}}
 int main(){
-    for(auto name:{"UISwitcher","VendorPanelLayout","VendorPanelOriginalLayout","TradeLayout","GamblePanel"})
-        Check(panels::Modal(name)&&panels::OpaqueBackground(name),"tabbed and trade surfaces use the shared black background");
+    for(auto name:{"UISwitcher","VendorPanelLayout","VendorPanelOriginalLayout","TradeLayout","GamblePanel",
+        "BankExpansionLayout","BankOriginalLayout","StashPanel","PlayerInventoryExpansionLayout",
+        "PlayerInventoryOriginalLayout","HoradricCubeLayout","HirelingInventoryPanel","MercenaryInventoryLayout"})
+        Check(panels::Modal(name)&&panels::OpaqueBackground(name),"management surfaces use the same opaque background in both eyes");
     for(auto name:{"NpcDialogPanel","ScrollSpeechPanel","QuestLogPanelExpansion","GoldTransferPanel","QuantityPanel","HUDPanel","HUDTradeHint","MiniMenuPanel","TooltipsPanel"})
         Check(!panels::OpaqueBackground(name),"dialogue, journal and auxiliary panels do not independently black out the world");
     panels::InputModeLease mode;
@@ -19,6 +23,9 @@ int main(){
     Check(!mode.PreserveController(400,true),"tracking/focus loss expires guard without another frame");
     mode.Refresh(500);mode.Refresh(750);
     Check(mode.PreserveController(1049,true)&&!mode.PreserveController(1050,true),"active pointer renews bounded ownership");
+    Check(panels::FocusUsesPointer(mode.Active(800),true),"laser hover keeps exact widget focus");
+    Check(!panels::FocusUsesPointer(mode.Active(800),false),"native navigation restores cursor snapping despite queued mouse-release lease");
+    Check(mode.Active(800),"switching focus does not cancel protection for queued pointer events");
     Check(panels::MessageHash("InputMessage")==0x4ae067c6248b6042ull&&
           panels::MessageHash("LeftMouseButtonDown")==0xbdf8daff2e44666full,"native pointer message hashes");
     for(auto command:{"MouseMove","MouseScroll","LeftMouseButtonDown","LeftMouseButtonUp","RightMouseButtonDown","RightMouseButtonUp"})
@@ -69,13 +76,73 @@ int main(){
     Check(mouse.Step(true,true,true,false).press[0],"fresh trigger begins item drag");
     Check(!mouse.Step(true,false,true,false).release[0]&&mouse.down[0],"ray miss keeps item held");
     Check(mouse.Step(true,false,false,false).release[0],"physical release ends drag at last valid pixel");
-    Check(mouse.Step(true,true,false,true).press[1],"A is native context click");
+    Check(mouse.Step(true,true,false,true).press[1],"fresh secondary pointer press");
     Check(mouse.Step(false,true,false,true).release[1],"lost focus releases context click");
     Check(!mouse.Step(true,true,false,true).press[1],"focus return requires new context press");
     mouse.Suspend();Check(!mouse.Step(true,true,true,false).press[0],"mode transition consumes held trigger");
+    menus::LaserClick laser;
+    laser.Step(true,false);Check(laser.Left()&&!laser.Right(),"laser trigger selects and drags");
+    laser.Step(true,true);Check(laser.Left()&&!laser.Right(),"grip pressed during drag cannot turn it into a context click");
+    laser.Step(false,true);Check(!laser.Left()&&!laser.Right(),"physical release ends either laser button");
+    laser.Step(true,true);Check(laser.Right()&&!laser.Left(),"left grip plus fresh trigger supplies pointer context action without native A");
+    laser.Step(true,false);Check(laser.Right()&&!laser.Left(),"releasing modifier first cannot start an unintended second click");
     panels::ScrollGate scroll;
     Check(scroll.Step(true,1,0)==1&&scroll.Step(true,1,.2)==0&&scroll.Step(true,1,.4)==1,"scroll delay and repeat");
     Check(scroll.Step(true,-1,.41)==-1&&scroll.Step(false,-1,.6)==0,"scroll direction and focus guard");
+    // World -> stash -> world, with the same A/trigger/stick held across both
+    // boundaries. New controls remain usable without releasing every grip.
+    menus::ReleaseGate input;
+    menus::Pad held;held.buttons=menus::A|menus::RightBumper;held.rt=255;held.lx=20000;
+    input.Step(menus::Mode::World,0,{});
+    Check(input.Step(menus::Mode::World,0,held).rt==255,"fresh world attack available");
+    auto guarded=input.Step(menus::Mode::Native,1,held);
+    Check(!menus::Busy(guarded),"held attack and movement cannot activate newly opened stash");
+    held.buttons|=menus::B;
+    guarded=input.Step(menus::Mode::Native,1,held);
+    Check(guarded.buttons==menus::B,"fresh menu B works while old A/grip remain held");
+    Check(!menus::Busy(input.Step(menus::Mode::World,2,held)),"menu close cannot attack, swap, or walk in world");
+    input.Step(menus::Mode::World,2,{});
+    Check(input.Step(menus::Mode::World,2,held).buttons==held.buttons,"release rearms world controls");
+    Check(!menus::Busy(input.Step(menus::Mode::Blocked,2,held)),"opening VR settings consumes held native controls");
+    input.Suspend();Check(!menus::Busy(input.Step(menus::Mode::Native,2,held)),"focus/tracking recovery requires release");
+    skills::QuickCast quick;
+    menus::Pad shortcut;shortcut.lt=255;shortcut.buttons=menus::Y|menus::LeftBumper;
+    quick.Capture(true,shortcut.lt/255.f,8);
+    Check(!menus::SettingsChord(shortcut,quick.Suppress(3)),"simultaneous LT + grip + Y remains quick-cast slot 8, not VR settings");
+    quick.Capture(false,0,0);quick.Capture(false,0,8);
+    Check(menus::SettingsChord(shortcut,quick.Suppress(3)),"grip + Y opens VR settings when quick cast does not own it");
+    for(auto mode:{menus::Mode::World,menus::Mode::Native,menus::Mode::Blocked}) {
+        const auto tag=uint32_t(mode);
+        Check(menus::Tagged(tag),"tagged report opts into context validation");
+        Check(!menus::Allowed(tag,7,8,true,false)&&!menus::Allowed(tag,7,8,false,false),"open-close-open rejects an older report even when menu state matches");
+        Check(!menus::Allowed(tag,7,7,true,true),"mod-owned settings never receive native menu pad");
+    }
+    Check(menus::Allowed(uint32_t(menus::Mode::Native),7,7,true,false),"current native report reaches menu");
+    Check(!menus::Allowed(uint32_t(menus::Mode::Native),7,7,false,false),"native A cannot leak into world before next XR frame");
+    Check(!menus::Allowed(uint32_t(menus::Mode::World),7,7,true,false),"stale world attack cannot leak into menu");
+    Check(!menus::Tagged(0),"legacy BodyWalk reports retain their format");
+
+    menus::Navigation navigation;
+    menus::Pad ui;
+    Check(!menus::Busy(navigation.Step(true,{},true,.5f,.5f,false))&&!navigation.Native(),"laser starts without native pad events");
+    ui.rt=255;
+    Check(!menus::Busy(navigation.Step(true,ui,true,.5f,.5f,false)),"laser trigger does not also send native RT");
+    ui.buttons=menus::A|menus::RightBumper;ui.lt=255;
+    Check(!menus::Busy(navigation.Step(true,ui,false,0,0,true))&&!navigation.Native(),"drag retains ownership while ray leaves canvas or a face button is touched");
+    auto native=navigation.Step(true,ui,true,.5f,.5f,false);
+    Check(navigation.Native()&&native.buttons==menus::A&&!native.lt&&!native.rt,"native A has one action and existing laser modifiers are consumed");
+    navigation.Step(true,{},true,.5f,.5f,false);
+    Check(navigation.Native(),"idle laser does not steal native focus");
+    ui={};ui.buttons=menus::LeftBumper|menus::RightBumper;ui.lt=128;ui.rt=255;ui.ly=18000;ui.rx=-18000;
+    native=navigation.Step(true,ui,true,.8f,.5f,false);
+    Check(navigation.Native()&&native.buttons==ui.buttons&&native.lt==128&&native.rt==255&&native.ly==18000&&native.rx==-18000,"native bumpers, triggers and both sticks pass while navigating");
+    navigation.Step(true,{},true,.81f,.51f,false);
+    Check(navigation.Native(),"small tracked aim jitter cannot overwrite native focus");
+    Check(!menus::Busy(navigation.Step(true,{},true,.9f,.5f,false))&&!navigation.Native(),"deliberate reaim returns to laser without synthetic native action");
+    navigation.Step(true,menus::Pad{menus::X},true,.9f,.5f,false);
+    Check(navigation.Native(),"native X is available rather than toggling menu closed");
+    navigation.Step(false,{},false,0,0,false);
+    Check(!navigation.Native(),"focus loss resets navigation ownership");
     // Source pixels, physical panel and mouse mapping agree at multiple aspects.
     for(auto size:{journal::Rect{0,0,3840,2160},journal::Rect{0,0,2560,1440},journal::Rect{0,0,1920,1200}}) {
         for(float u:{.01f,.25f,.5f,.75f,.99f})for(float v:{.01f,.5f,.99f}) {

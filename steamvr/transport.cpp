@@ -38,6 +38,7 @@
 #include "../vr/settings_menu.h"
 #include "journal.h"
 #include "native_panels.h"
+#include "menu_controls.h"
 #include "ui_blit.h"
 #include "ui_world.h"
 #include "../vr/interactionstate.h"
@@ -50,7 +51,7 @@
 #include "profile.h"
 #include "../vr/skeletons.h"
 
-namespace gamestate {uint32_t WeaponType();uint32_t HandsKey();uint32_t WeaponSet();uint32_t WeaponClass();uint32_t TwoHanded();uint64_t LocalPlayer();}
+namespace gamestate {uint32_t WeaponType();uint32_t HandsKey();uint32_t WeaponSet();uint32_t WeaponClass();uint32_t TwoHanded();uint64_t LocalPlayer();uint32_t MenuEpoch();}
 namespace gamecmd {void RequestPotion(int slot);void CancelPotion();}
 
 namespace framevr {
@@ -202,6 +203,10 @@ UiBlit uiBlit;
 potions::Models potionModels;
 potions::Scene potionScene;
 panels::MouseGate panelMouse;
+menus::ReleaseGate menuControls;
+menus::Navigation menuNavigation;
+menus::Pad nativeMenuPad;
+menus::LaserClick laserClick;
 panels::ScrollGate panelScroll;
 bool rightMouseDown=false,controlDown=false,shiftDown=false;
 unsigned uiMissingFrames=0;
@@ -361,6 +366,7 @@ void ReleasePanelInput() {
     panelMouse.Suspend();panelScroll={};
 }
 void ClearInput() {
+    menuControls.Suspend();menuNavigation.Reset();nativeMenuPad={};laserClick={};panelinput::UseController();
     quickCast.Suspend();
     bodyCalibration.Suspend();
     settingsInputGate.Suspend();
@@ -379,7 +385,7 @@ void ClearInput() {
     // still be released before it can become a fresh world attack.
     menuTriggerGate.consumed=true;
     if(tracking.data) { tracking.data->headValid=0;tracking.data->handsValid=0;++tracking.data->counter; }
-    if(pad.data) { const auto c=pad.data->counter;*pad.data={};pad.data->version=BW_PAD_MIRROR_VERSION;pad.data->writer_pid=GetCurrentProcessId();pad.data->counter=c+1; }
+    if(pad.data) { const auto c=pad.data->counter;*pad.data={};pad.data->version=BW_PAD_MIRROR_VERSION;pad.data->writer_pid=GetCurrentProcessId();pad.data->reserved[0]=uint32_t(menus::Mode::Blocked);pad.data->reserved[1]=gamestate::MenuEpoch();pad.data->counter=c+1; }
     if(actions.data) { actions.data->held=0;++actions.data->counter; }
 }
 bool LoadFunctions() {
@@ -716,7 +722,8 @@ bool FocusGameForUi() {
     windowFocus.Request(gameWindow);
     return false;
 }
-void MenuPointer() {
+void MenuPointer(const menus::Pad& controls) {
+    nativeMenuPad={};
     pointerVisible=pointerHit=false;
     if(settingsModel.open||bodyCalibration.Active()||calibrationRelease.blocked)return;
     const bool spatialReady=spatialMode&&(journalMode?journalPlacement.Placed():workspacePlaced)&&uiCrop[2]>0;
@@ -724,42 +731,49 @@ void MenuPointer() {
     const auto surfacePose=spatialMode?uiPose:menuPose;
     const float surfaceWidth=spatialMode?uiSize:panelWidth;
     const float surfaceHeight=spatialMode?uiSize*(uiCrop[2]>0?float(uiCrop[3])/uiCrop[2]:1.3f):panelWidth*height/width;
-    const bool pressed=Float(trigger,0)>.55f,right=Bool(primary,0)&&!quickCast.Suppress(0),cancel=Bool(secondary,0)&&!quickCast.Suppress(1);
+    const bool pressed=controls.rt>140;
     bool focused=gameWindow&&GetForegroundWindow()==gameWindow;
-    if(uiActive&&cancel&&!cancelWasDown&&!focused)focused=FocusGameForUi();
+    if(uiActive&&menus::Busy(controls)&&!focused)focused=FocusGameForUi();
     XrSpaceLocation aim{XR_TYPE_SPACE_LOCATION};
     const auto flags=XR_SPACE_LOCATION_POSITION_VALID_BIT|XR_SPACE_LOCATION_ORIENTATION_VALID_BIT|
         XR_SPACE_LOCATION_POSITION_TRACKED_BIT|XR_SPACE_LOCATION_ORIENTATION_TRACKED_BIT;
     const bool aimTracked=uiActive&&XR_SUCCEEDED(pLocateSpace(aimSpace,space,frameState.predictedDisplayTime,&aim))&&(aim.locationFlags&flags)==flags;
-    if(uiActive&&focused&&aimTracked)panelinput::OwnPointer();
+    math::PanelHit hit{};
     if(aimTracked) {
         const auto ray=V(aim.pose.position),direction=math::Rotate(Q(aim.pose.orientation),{0,0,-1});
-        math::PanelHit hit;
         pointerHit=math::IntersectPanel(ray,direction,V(surfacePose.position),Q(surfacePose.orientation),surfaceWidth,surfaceHeight,hit);
         beamLength=pointerHit?hit.distance:panelDistance*1.8f;
         const auto mid=ray+direction*(beamLength*.5f);
         const auto rot=math::BeamOrientation(direction,V(head.position)-mid);
         beamPose.position={mid.x,mid.y,mid.z};beamPose.orientation={rot.x,rot.y,rot.z,rot.w};pointerVisible=true;
         if(pointerHit) {
-            if(((pressed&&!panelMouse.held[0])||(right&&!panelMouse.held[1]))&&!focused)focused=FocusGameForUi();
-            if(focused)panelinput::OwnPointer();
             const auto point=hit.point+math::Rotate(Q(surfacePose.orientation),{0,0,.006f});
             dotPose=surfacePose;dotPose.position={point.x,point.y,point.z};
-            RECT client{};
-            if(focused&&GetClientRect(gameWindow,&client)) {
-                math::Vec native{hit.u,hit.v,0};
-                if(spatialMode&&!journal::Pixel({uiCrop[0],uiCrop[1],uiCrop[2],uiCrop[3]},hit.u,hit.v,uiWidth,uiHeight,native))pointerHit=false;
-                POINT pixel{LONG(native.x*(client.right-1)),LONG(native.y*(client.bottom-1))};
-                if(pointerHit&&ClientToScreen(gameWindow,&pixel))SetCursorPos(pixel.x,pixel.y);
-                else pointerHit=false;
-            }
         }
     }
-    const bool active=uiActive&&focused&&aimTracked;
+    const bool wasNative=menuNavigation.Native();
+    nativeMenuPad=menuNavigation.Step(uiActive&&focused,controls,pointerHit,hit.u,hit.v,mouseDown||rightMouseDown);
+    if(wasNative!=menuNavigation.Native()&&uiActive&&focused)
+        Say(menuNavigation.Native()?"Frame panels: native controller navigation":"Frame panels: laser navigation");
+    const bool laser=!menuNavigation.Native();
+    if(!laser){panelinput::UseController();pointerVisible=pointerHit=false;}
+    const bool active=uiActive&&focused&&aimTracked&&laser;
+    if(active)panelinput::OwnPointer();
+    if(active&&pointerHit) {
+        RECT client{};
+        if(GetClientRect(gameWindow,&client)) {
+            math::Vec native{hit.u,hit.v,0};
+            if(spatialMode&&!journal::Pixel({uiCrop[0],uiCrop[1],uiCrop[2],uiCrop[3]},hit.u,hit.v,uiWidth,uiHeight,native))pointerHit=false;
+            POINT pixel{LONG(native.x*(client.right-1)),LONG(native.y*(client.bottom-1))};
+            if(pointerHit&&ClientToScreen(gameWindow,&pixel))SetCursorPos(pixel.x,pixel.y);
+            else pointerHit=false;
+        }
+    }
     const bool modifiers=active&&(pointerHit||mouseDown||rightMouseDown);
-    PanelModifier(VK_CONTROL,modifiers&&Float(trigger,1)>.55f,controlDown);
-    PanelModifier(VK_SHIFT,modifiers&&Float(squeeze,0)>.6f,shiftDown);
-    const auto edges=panelMouse.Step(active,pointerHit,pressed,right);
+    PanelModifier(VK_CONTROL,modifiers&&controls.lt>140,controlDown);
+    PanelModifier(VK_SHIFT,modifiers&&(controls.buttons&menus::RightBumper),shiftDown);
+    laserClick.Step(pressed,(controls.buttons&menus::LeftBumper)!=0);
+    const auto edges=panelMouse.Step(active,pointerHit,laserClick.Left(),laserClick.Right());
     for(int i=0;i<2;++i) {
         bool& held=i?rightMouseDown:mouseDown;
         if(edges.release[i]&&held) {INPUT up{};up.type=INPUT_MOUSE;up.mi.dwFlags=i?MOUSEEVENTF_RIGHTUP:MOUSEEVENTF_LEFTUP;SendInput(1,&up,sizeof up);held=false;}
@@ -769,10 +783,7 @@ void MenuPointer() {
             if(!held)panelMouse.down[i]=false;
         }
     }
-    const int scroll=panelScroll.Step(active&&pointerHit&&!mouseDown&&!rightMouseDown,Stick(0).y,Milliseconds()/1000.);
-    if(scroll){INPUT wheel{};wheel.type=INPUT_MOUSE;wheel.mi.dwFlags=MOUSEEVENTF_WHEEL;wheel.mi.mouseData=DWORD(scroll*WHEEL_DELTA);SendInput(1,&wheel,sizeof wheel);}
-    if(uiActive&&focused&&cancel&&!cancelWasDown) {ReleasePanelInput();PulseUiKey(VK_ESCAPE);}
-    triggerWasDown=pressed;cancelWasDown=cancel;
+    triggerWasDown=pressed;cancelWasDown=(controls.buttons&menus::B)!=0;
 }
 
 void SampleGaze() {
@@ -1004,24 +1015,44 @@ void Input() {
     XrActiveActionSet active{actionSet,XR_NULL_PATH};
     XrActionsSyncInfo si{XR_TYPE_ACTIONS_SYNC_INFO};si.countActiveActionSets=1;si.activeActionSets=&active;
     if(pSyncActions(session,&si)!=XR_SUCCESS) {gazeStability.Reset();ClearInput();return;}
+    const bool nativeUi=panelMode||spatialMode;
+    const uint32_t inputEpoch=gamestate::MenuEpoch();
+    menus::Pad physical;
+    if(Bool(primary,0))physical.buttons|=menus::A;
+    if(Bool(secondary,0))physical.buttons|=menus::B;
+    if(Bool(primary,1))physical.buttons|=menus::X;
+    if(Bool(secondary,1))physical.buttons|=menus::Y;
+    if(Bool(menu,0)||Bool(menu,1))physical.buttons|=menus::Start;
+    if(Bool(stickClick,1))physical.buttons|=menus::LeftStick;
+    if(Bool(stickClick,0))physical.buttons|=menus::RightStick;
+    if(Float(squeeze,1)>.6f)physical.buttons|=menus::LeftBumper;
+    if(Float(squeeze,0)>.6f)physical.buttons|=menus::RightBumper;
+    physical.lt=uint8_t(std::clamp(Float(trigger,1),0.f,1.f)*255);
+    physical.rt=uint8_t(std::clamp(Float(trigger,0),0.f,1.f)*255);
+    const auto physicalLeft=Stick(1),physicalRight=Stick(0);
+    const auto axis=[](float value){return int16_t(std::clamp(value,-1.f,1.f)*32767.f);};
+    physical.lx=axis(physicalLeft.x);physical.ly=axis(physicalLeft.y);
+    physical.rx=axis(physicalRight.x);physical.ry=axis(physicalRight.y);
+    const bool modUi=settingsModel.open||bodyCalibration.Active()||calibrationRelease.blocked;
+    const auto controls=menuControls.Step(modUi?menus::Mode::Blocked:nativeUi?menus::Mode::Native:menus::Mode::World,inputEpoch,physical);
     SampleGaze();
     atlasUploads.erase(std::remove_if(atlasUploads.begin(),atlasUploads.end(),[](const auto& a){return fence->GetCompletedValue()>=a.fence;}),atlasUploads.end());
     if(!calibrationPrompted&&!settingsModel.open&&!panelMode&&!spatialMode&&inWorld&&inWorld()){
         const auto config=vrsettings::Read();
         if(config.ready&&config.result!=settings::Result::Saving){calibrationPrompted=true;if(!calibration::Stored(config.values))OpenBodyCalibration();}
     }
-    const uint8_t quickFaces=(Bool(primary,0)?1:0)|(Bool(secondary,0)?2:0)|
-        (Bool(primary,1)?4:0)|(Bool(secondary,1)?8:0);
+    const uint8_t quickFaces=((controls.buttons&menus::A)?1:0)|((controls.buttons&menus::B)?2:0)|
+        ((controls.buttons&menus::X)?4:0)|((controls.buttons&menus::Y)?8:0);
     const bool quickAllowed=motionControls.load()&&gameplayChain&&motionHeadTracked&&
         !panelMode&&!spatialMode&&!settingsModel.open&&!bodyCalibration.Active()&&!calibrationRelease.blocked&&!interactionOutput.wheel&&
         interactionOutput.bottle<0&&interactionOutput.owner[0]!=interaction::Owner::Holster&&
         interactionOutput.owner[1]!=interaction::Owner::Holster&&inWorld&&inWorld();
-    quickCast.Capture(quickAllowed,Float(trigger,1),quickFaces);
-    const bool inventoryPressed=inventoryButton.Update(Bool(primary,1))&&!quickCast.Suppress(2);
-    const bool menuPressed=menuButton.Update(Bool(menu,1)||Bool(menu,0));
-    const bool settingsChord=Bool(secondary,1)&&!quickCast.Suppress(3)&&Float(squeeze,1)>.6f;
+    quickCast.Capture(quickAllowed,controls.lt/255.f,quickFaces);
+    const bool inventoryPressed=inventoryButton.Update((controls.buttons&menus::X)!=0)&&!quickCast.Suppress(2);
+    const bool menuPressed=menuButton.Update((controls.buttons&menus::Start)!=0);
+    const bool settingsChord=menus::SettingsChord(physical,quickCast.Suppress(3));
     const auto settingsEdges=settingsInputGate.Step(motionHeadTracked,settingsChord,Float(trigger,0),Bool(secondary,0)&&!quickCast.Suppress(1));
-    bool settingsOwned=settingsModel.open||calibrationRelease.Step(bodyCalibration.Active(),Float(trigger,0),Float(trigger,1),quickFaces||Bool(menu,0)||Bool(menu,1));
+    bool settingsOwned=settingsModel.open||calibrationRelease.Step(bodyCalibration.Active(),Float(trigger,0),Float(trigger,1),physical.buttons&(menus::A|menus::B|menus::X|menus::Y|menus::Start));
     if(settingsModel.open&&settingsSession!=gamestate::LocalPlayer()){CloseSettings();settingsOwned=true;}
     if(settingsEdges.chord&&!bodyCalibration.Active()&&!calibrationRelease.blocked){if(settingsModel.open)CloseSettings();else OpenSettings();settingsOwned=true;}
     else if(settingsModel.open&&(settingsEdges.cancel||menuPressed)){CloseSettings();settingsOwned=true;}
@@ -1029,8 +1060,8 @@ void Input() {
     bool focused=gameWindow&&GetForegroundWindow()==gameWindow;
     if(!settingsOwned&&(menuPressed||inventoryPressed)&&!focused)focused=FocusGameForUi();
     if(heldKeyScan&&(!focused||GetTickCount64()>=keyReleaseAt))ReleaseUiKey();
-    if(!settingsOwned&&focused&&menuPressed)PulseUiKey(VK_ESCAPE);
-    if(!settingsOwned&&inventoryPressed&&inWorld&&inWorld()) {
+    if(!settingsOwned&&!nativeUi&&focused&&menuPressed)PulseUiKey(VK_ESCAPE);
+    if(!settingsOwned&&!nativeUi&&inventoryPressed&&inWorld&&inWorld()) {
         // Keyboard shortcuts can be gated after switching input layouts or
         // panels. Queue the game's own panel actions on its UI thread instead.
         // This action targets D2R directly and only requires XR focus (checked
@@ -1047,8 +1078,8 @@ void Input() {
         journalPlacement.Step({V(left.pose.position),Q(left.pose.orientation)},tracked,Float(squeeze,1)>.6f);
         const auto p=journalPlacement.Get();uiPose=XrPose({p.p,p.q});
     }
-    if(!settingsOwned)MenuPointer();
-    else {pointerVisible=pointerHit=false;triggerWasDown=Float(trigger,0)>.2f;cancelWasDown=Bool(secondary,0);}
+    if(!settingsOwned&&!settingsChord)MenuPointer(controls);
+    else {nativeMenuPad={};menuNavigation.Reset();panelinput::UseController();pointerVisible=pointerHit=false;triggerWasDown=Float(trigger,0)>.2f;cancelWasDown=Bool(secondary,0);}
     SettingsPointer(settingsEdges);
     settingsOwned=settingsOwned||bodyCalibration.Active();
     auto& s=*tracking.data;s.version=D2RVR_SHARED_VERSION;s.headValid=1;
@@ -1062,13 +1093,15 @@ void Input() {
     s.headHeightM=head.position.y;s.sampleStamp=D2RVRStampNow();s.sampleStampMagic=D2RVR_SAMPLE_STAMP_MAGIC;
     s.roomMagic=D2RVR_ROOM_MAGIC;s.headRoom[0]=head.position.x;s.headRoom[1]=head.position.y;s.headRoom[2]=head.position.z;s.headYawRoomDeg=s.headYawDeg;
     s.gripMagic=D2RVR_GRIP_MAGIC;s.rightGrip=Float(squeeze,0);s.leftGrip=Float(squeeze,1);s.handsValid=0;
-    if(heightResetButton.Update(Bool(stickClick,1),s.leftGrip)&&!settingsOwned)ResetHeight();
+    if(heightResetButton.Update((controls.buttons&menus::LeftStick)!=0,s.leftGrip)&&!settingsOwned&&!nativeUi)ResetHeight();
     motionInput={};motionInput.time=Milliseconds()/1000.;motionInput.head=MotionPose(head);
     motionInput.active=motionControls.load()&&gameplayChain&&motionHeadTracked&&!panelMode&&!spatialMode&&!settingsOwned&&!settingsChord&&!inventoryPressed&&!menuPressed&&inWorld&&inWorld();
-    motionInput.palette=Bool(secondary,1)&&!quickCast.Suppress(3);motionInput.grip[0]=s.rightGrip;motionInput.grip[1]=s.leftGrip;
-    motionInput.cancel=Bool(secondary,0)&&!quickCast.Suppress(1);
+    motionInput.palette=(controls.buttons&menus::Y)&&!quickCast.Suppress(3);
+    motionInput.grip[0]=(physical.buttons&menus::RightBumper)&&!(controls.buttons&menus::RightBumper)?0:s.rightGrip;
+    motionInput.grip[1]=(physical.buttons&menus::LeftBumper)&&!(controls.buttons&menus::LeftBumper)?0:s.leftGrip;
+    motionInput.cancel=(controls.buttons&menus::B)&&!quickCast.Suppress(1);
     motionInput.quickCast=quickCast.Layer();
-    motionInput.trigger=Float(trigger,0);motionInput.weapon=MotionWeapon();
+    motionInput.trigger=controls.rt/255.f;motionInput.weapon=MotionWeapon();
     motionInput.meleeStyle=MotionMeleeStyle();
     motionInput.equipment=gamestate::HandsKey()^(gamestate::WeaponSet()<<30);
     const auto undo=math::Conjugate(math::Yaw(heading));
@@ -1100,8 +1133,8 @@ void Input() {
     interactionInput.snapshot=interactionstate::Read();interactionInput.reply=interactionstate::Status();
     interactionInput.spell=motion.Selection()>=0;interactionInput.wheel=motionInput.palette;interactionInput.cancel=motionInput.cancel;
     interactionInput.quickCast=motionInput.quickCast;
-    interactionInput.reservedLeft=Bool(stickClick,1);interactionInput.trigger=motionInput.trigger;interactionInput.hover=motionInput.hover;
-    interactionInput.leftTrigger=Float(trigger,1);
+    interactionInput.reservedLeft=(controls.buttons&menus::LeftStick)!=0;interactionInput.trigger=motionInput.trigger;interactionInput.hover=motionInput.hover;
+    interactionInput.leftTrigger=controls.lt/255.f;
     if(!interactionPaintValid||interactionPaintContext!=interaction::Context(interactionInput.snapshot,interactionOutput,
         interaction::Fresh(interactionInput.snapshot,interactionInput.session,interactionInput.at)))interactionInput.hover=-1;
     for(int i=0;i<2;++i){interactionInput.tracked[i]=motionInput.tracked[i];interactionInput.grip[i]=motionInput.grip[i];
@@ -1120,7 +1153,7 @@ void Input() {
     if(quickFresh)for(int i=0;i<skills::Count;++i)
         if(quickSnapshot.skills[i].known&&quickSnapshot.skills[i].available&&quickSnapshot.skills[i].id>=0)quickAvailable|=1u<<i;
     motionInput.quickSkill=quickCast.Resolve(motionInput.active&&motionInput.tracked[0]&&motionInput.tracked[1]&&motionInput.aimTracked&&quickFresh,
-        s.leftGrip>.6f,quickAvailable,quickSnapshot.session,meleeEpoch,motionInput.equipment,quickSnapshot.bindingBank,motionInput.time);
+        motionInput.grip[1]>.6f,quickAvailable,quickSnapshot.session,meleeEpoch,motionInput.equipment,quickSnapshot.bindingBank,motionInput.time);
     motionOutput=motion.Step(motionInput);motionAt=GetTickCount64();
     if(motionInput.quickCast&&(motionOutput.block||!motionOutput.rayValid))quickCast.Suspend();
     const uint32_t hidden=interactionOutput.stowed?3u:journalMode?2u:interactionOutput.bottleHand>=0?1u<<interactionOutput.bottleHand:0;
@@ -1201,21 +1234,18 @@ void Input() {
     auto& p=*pad.data;p.writer_pid=GetCurrentProcessId();p.buttons=0;
     // Right A goes only through semantic interact; a raw A bypasses its
     // no-target guard and accidentally attacks when pointing at empty space.
-    if(Bool(secondary,0))p.buttons|=XINPUT_GAMEPAD_B;
-    if(Bool(secondary,1))p.buttons|=XINPUT_GAMEPAD_Y;
-    if(heightResetButton.MapPressed())p.buttons|=XINPUT_GAMEPAD_LEFT_THUMB;if(Bool(stickClick,0))p.buttons|=XINPUT_GAMEPAD_RIGHT_THUMB;
-    const auto l=Stick(1),r=Stick(0);
-    auto axis=[](float a){return int16_t(std::clamp(a,-1.f,1.f)*32767.f);};
-    p.thumb_lx=axis(l.x);p.thumb_ly=axis(l.y);p.thumb_rx=axis(r.x);p.thumb_ry=axis(r.y);
-    p.left_trigger=uint8_t(std::clamp(Float(trigger,1),0.f,1.f)*255);
-    const float rightTrigger=Float(trigger,0);
+    p.buttons=controls.buttons&(menus::B|menus::Y|menus::RightStick);
+    if(heightResetButton.MapPressed())p.buttons|=XINPUT_GAMEPAD_LEFT_THUMB;
+    p.thumb_lx=controls.lx;p.thumb_ly=controls.ly;p.thumb_rx=controls.rx;p.thumb_ry=controls.ry;
+    p.left_trigger=controls.lt;
+    const float rightTrigger=controls.rt/255.f;
     const bool attackAllowed=menuTriggerGate.Update(rightTrigger>.1f,panelMode||spatialMode||settingsOwned||settingsChord||inventoryPressed||menuPressed);
     p.right_trigger=attackAllowed?uint8_t(std::clamp(rightTrigger,0.f,1.f)*255):0;
     auto& a=*actions.data;a.held=0;
     if(p.right_trigger>128)a.held|=D2RVR_ACT_ATTACK;
-    if(Bool(primary,0)&&!quickCast.Suppress(0))a.held|=D2RVR_ACT_INTERACT;
+    if((controls.buttons&menus::A)&&!quickCast.Suppress(0))a.held|=D2RVR_ACT_INTERACT;
     if(heightResetButton.MapPressed())a.held|=D2RVR_ACT_MAP;
-    if(Bool(stickClick,0))a.held|=D2RVR_ACT_SWAP;
+    if(controls.buttons&menus::RightStick)a.held|=D2RVR_ACT_SWAP;
     if(motionControls.load()&&gameplayChain) {
         p.buttons=0;p.left_trigger=p.right_trigger=0;
         a.held&=~D2RVR_ACT_ATTACK;
@@ -1231,11 +1261,14 @@ void Input() {
         if(interactionOutput.wheel) {p.thumb_lx=p.thumb_ly=p.thumb_rx=p.thumb_ry=0;}
     }
     if(panelMode||spatialMode||settingsOwned||settingsChord) {
-        // Mouse selection must not also activate a gamepad action or switch the
-        // inventory back to its controller layout on every trigger press.
-        p.buttons=0;p.left_trigger=p.right_trigger=0;
-        p.thumb_lx=p.thumb_ly=p.thumb_rx=p.thumb_ry=0;a.held=0;
+        // Native UI receives a separate report; a laser click has no RT/A
+        // companion, and semantic gameplay actions never enter either menu.
+        const auto ui=(settingsOwned||settingsChord)?menus::Pad{}:nativeMenuPad;
+        p.buttons=ui.buttons;p.left_trigger=ui.lt;p.right_trigger=ui.rt;
+        p.thumb_lx=ui.lx;p.thumb_ly=ui.ly;p.thumb_rx=ui.rx;p.thumb_ry=ui.ry;a.held=0;
     }
+    p.reserved[0]=uint32_t(settingsOwned||settingsChord?menus::Mode::Blocked:nativeUi?menus::Mode::Native:menus::Mode::World);
+    p.reserved[1]=inputEpoch;
     ++p.counter;++a.counter;
 }
 void Events() {

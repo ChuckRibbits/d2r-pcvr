@@ -65,7 +65,7 @@ not generate melee velocity. The layout currently assumes a right-handed player.
 
 | Action | Control |
 |---|---|
-| Open/close tabbed character menu | Left primary face button (Left X / Frame Left A) |
+| Open tabbed character menu | Left primary face button (Left X / Frame Left A); inside menus this is native X |
 | VR settings and controls reference | Left Grip + Left Y; also **VR SETTINGS** at the bottom of the wheel |
 | Spell wheel | Hold Left Y; raise/turn left palm toward you; aim right-hand laser at a wedge and click trigger |
 | Assign wheel skills | Hold Left Y → **EDIT SKILLS** → choose a slot → choose a learned skill; **CLEAR SLOT** removes a binding |
@@ -85,7 +85,7 @@ not generate melee velocity. The layout currently assumes a right-handed player.
 | Stow/draw | Utility wheel → **Stow weapons** / **Draw weapons**; native equipped stats stay unchanged |
 | Wrist health/mana | Look at the **back of your left wrist, like checking a watch**, within 75 cm of your eyes; red life and blue mana orbs appear there. No button required. Brief status cue also appears at low health or low mana in spell mode |
 | Quest journal | Open the native tabbed game menu with Left X / Frame Left A, then select Journal. The duplicate wheel entry is removed |
-| Journal controls | Right laser + trigger uses native page controls/act tabs; Right B closes it; Left X retains ordinary inventory/menu behavior |
+| Journal controls | Right laser + trigger uses native page controls/act tabs; Right B follows native back; Left X performs native X |
 | Quick native weapon swap | Right stick click, unchanged |
 | Walk / snap turn | Sticks; paused while wheel or journal is open |
 | Height reset / map | Left grip + left stick click / plain left stick click, unchanged |
@@ -93,9 +93,9 @@ not generate melee velocity. The layout currently assumes a right-handed player.
 ### Inventory, conversations and trading in VR
 
 Native in-game menus share a room-anchored surface in front of you. The full
-tabbed character menu uses an opaque black background in both eyes, as
-requested after the transparent world backdrop differed between eyes. Other
-panels retain the world backdrop. Inventory/equipment, NPC
+tabbed character menu, stash, inventory, cube and trade surfaces use one opaque
+black background in both eyes. Dialogue and journal panels retain the world
+backdrop. Inventory/equipment, NPC
 choices and speech, shops, stash, cube, waypoint, skills and character panels
 retain D2R's original artwork, text, prices, grids and tooltips. Inventory and
 shop panes keep their native relative positions; hovering a comparison tooltip
@@ -104,13 +104,18 @@ placement. Title and character-selection screens keep the existing flat panel.
 
 | Native panel action | Control |
 |---|---|
-| Open/close the tabbed character menu | Left primary face button |
+| Open the tabbed character menu | Left primary face button during gameplay; native X in menus |
 | Hover, select, pick up/place, drag | Right laser + right trigger; native click/drag behavior |
-| Context action (native right-click) | Right A while pointing; action depends on the item and panel |
-| Scroll | Right stick up/down while pointing |
+| Context action (native right-click) | Left Grip + Right Trigger while pointing; action depends on the item and panel |
+| Native menu navigation | Sticks or face buttons; triggers and grips map LT/RT/LB/RB in native navigation |
 | Native Ctrl modifier | Hold left trigger while clicking |
 | Native Shift modifier | Hold right grip while clicking |
 | Back / close | Right B, or the native close button |
+
+Sticks/face buttons select native menu navigation without an idle laser stealing
+focus. Release native controls and deliberately move the ray across the surface
+to return to laser input. Dragging retains pointer ownership. All player-facing
+Quest and Frame mappings are in [CONTROLS.md](../CONTROLS.md).
 
 For the native quick-drop shortcut, point at an inventory item, hold **Left
 Trigger**, then click **Right Trigger** (Ctrl-click). With inventory alone this

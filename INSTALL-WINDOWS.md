@@ -164,7 +164,7 @@ The first time you enter the world, a calibration prompt appears:
 4. When **Saved** appears, release the triggers to return to the game.
 
 The world stays live during calibration. **Right B** cancels or skips.
-Repeat calibration through **Left Grip + Y → Calibrate body**, especially
+Repeat calibration through **Left Grip + Frame Left B / Quest Left Y → Calibrate body**, especially
 after changing headset or player. If the prompt cannot find the floor,
 complete your headset's floor/room setup and reopen calibration.
 
@@ -175,8 +175,9 @@ complete your headset's floor/room setup and reopen calibration.
 | Walk / snap turn | Left stick / right stick left-right |
 | Game menu: inventory, skills, character and Journal | **Frame Left A / Quest Left X** |
 | Menu select / drag | Point the right-hand laser and use right trigger |
-| Menu scroll / back | Right stick up-down / Right B |
-| VR settings | Left Grip + Y |
+| Laser context / alternate click | Left Grip + Right Trigger |
+| Native menu navigation / back | Sticks and face buttons / Right B |
+| VR settings | Left Grip + Frame Left B / Quest Left Y |
 | Spell wheel | Hold Left Y, turn the left palm toward you, then select with right laser + trigger |
 | Assign wheel skills | Spell wheel → **EDIT SKILLS** → slot → learned skill |
 | Basic attack / bow on right trigger | Select **WEAPON** in the wheel center; release the selection trigger first |
@@ -193,6 +194,11 @@ complete your headset's floor/room setup and reopen calibration.
 | Recenter | PC F11 |
 
 Keep the D2R window focused on the PC so menu clicks work.
+For the full Quest and Steam Frame mappings, including all eight quick-cast
+shortcuts and the game's A/B/X/Y/LB/RB/LT/RT menu prompts, see
+**[Controller reference](CONTROLS.md)**. Use a stick or face button for native
+navigation; release it and deliberately re-aim the laser to resume pointing
+and dragging. Laser dragging works in inventory, stash and merchant panels.
 Free swings pause while casting, using menus or handling a potion. Selecting
 a wheel skill changes the right-trigger action; its displayed quick-cast
 binding also remains available.

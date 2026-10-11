@@ -8,7 +8,7 @@ included. No Blizzard game assets are supplied in the ZIP; the installer reads
 the required assets from your own game and keeps its asset caches local.
 
 1. Download **d2r-pcvr-windows.zip** from the
-   [release page](https://github.com/bearstonem/d2r-pcvr/releases/tag/v0.3.1-windows-preview).
+   [release page](https://github.com/bearstonem/d2r-pcvr/releases/tag/v0.3.2-windows-preview).
 2. Extract the `d2r-pcvr-preview` folder to a permanent location.
 3. Follow **[Install and play on Windows](INSTALL-WINDOWS.md)**.
 
@@ -21,3 +21,6 @@ Steam needs it to launch the mod.
 To launch from your Steam library or headset, follow
 **[Add Steam library shortcuts](INSTALL-WINDOWS.md#add-steam-library-shortcuts)**
 for separate SteamVR and Virtual Desktop entries.
+
+All Quest and Steam Frame controller mappings, menu buttons, laser interactions
+and quick-cast shortcuts are in **[CONTROLS.md](CONTROLS.md)**, included in the ZIP.
