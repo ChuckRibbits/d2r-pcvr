@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <windows.h>
 #include "transport.h"
+#include "hook_metrics.h"
 
 namespace framevr::profile {
 enum Bucket { CameraTick, CameraSync, View, Projection, SkeletonGame, SkeletonMod,
@@ -14,8 +15,9 @@ using Counters=std::array<Counter,Count>;
 extern thread_local Counters* current;
 double Us();
 struct Scope {
+    hookmetrics::Scope allThreads;
     Counter* counter=nullptr;double start=0;
-    explicit Scope(Bucket bucket,unsigned sampleMask=0) {
+    explicit Scope(Bucket bucket,unsigned sampleMask=0):allThreads(static_cast<hookmetrics::Kind>(bucket),sampleMask) {
         if(!current)return;
         auto& c=(*current)[bucket];++c.calls;
         // Keep sampling phase across pairs; do not repeatedly sample only the
@@ -25,8 +27,10 @@ struct Scope {
     }
     ~Scope(){if(counter)counter->us+=Us()-start;}
 };
+static_assert(int(Count)==int(hookmetrics::MemoryRead)); // shared callback prefix
 void Request(uint32_t sequence);
 void ConfigureGpu(bool enabled);
+void ConfigureHooks(bool enabled); // latched at the next requested capture
 bool GpuEnabled();
 void BeginPair();
 void SkipPair();

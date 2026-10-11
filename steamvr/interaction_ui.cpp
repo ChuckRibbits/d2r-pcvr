@@ -1,0 +1,298 @@
+#include <windows.h>
+#include <wincodec.h>
+#include "interaction_ui.h"
+#include "interaction_icons.h"
+#include "skill_slots.h"
+#include <cstdio>
+#include <string>
+namespace framevr::interaction {
+namespace {
+// Decode and downsample once. The small cached RGBA image is shared by every
+// repaint; PNG decoding and COM setup never run at the atlas refresh rate.
+std::vector<uint8_t> DecodeArt(const wchar_t* name,UINT width,UINT height) {
+        std::vector<uint8_t> rgba;
+        HMODULE module=nullptr;
+        GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS|GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+            reinterpret_cast<LPCWSTR>(&DecodeArt),&module);
+        const auto resource=FindResourceW(module,name,MAKEINTRESOURCEW(10));
+        const DWORD bytes=resource?SizeofResource(module,resource):0;
+        auto* data=resource?static_cast<BYTE*>(LockResource(LoadResource(module,resource))):nullptr;
+        if(!bytes||!data)return rgba;
+        const HRESULT co=CoInitializeEx(nullptr,COINIT_MULTITHREADED);
+        IWICImagingFactory* wic=nullptr;IWICStream* stream=nullptr;
+        IWICBitmapDecoder* decoder=nullptr;IWICBitmapFrameDecode* frame=nullptr;
+        IWICBitmapScaler* scaler=nullptr;IWICFormatConverter* converter=nullptr;
+        if(SUCCEEDED(CoCreateInstance(CLSID_WICImagingFactory,nullptr,CLSCTX_INPROC_SERVER,IID_PPV_ARGS(&wic)))&&
+            SUCCEEDED(wic->CreateStream(&stream))&&SUCCEEDED(stream->InitializeFromMemory(data,bytes))&&
+            SUCCEEDED(wic->CreateDecoderFromStream(stream,nullptr,WICDecodeMetadataCacheOnLoad,&decoder))&&
+            SUCCEEDED(decoder->GetFrame(0,&frame))&&SUCCEEDED(wic->CreateBitmapScaler(&scaler))&&
+            SUCCEEDED(scaler->Initialize(frame,width,height,WICBitmapInterpolationModeFant))&&
+            SUCCEEDED(wic->CreateFormatConverter(&converter))&&
+            SUCCEEDED(converter->Initialize(scaler,GUID_WICPixelFormat32bppRGBA,WICBitmapDitherTypeNone,
+                nullptr,0,WICBitmapPaletteTypeCustom))) {
+            rgba.resize(width*height*4);
+            if(FAILED(converter->CopyPixels(nullptr,width*4,DWORD(rgba.size()),rgba.data())))rgba.clear();
+        }
+        for(IUnknown* p:{static_cast<IUnknown*>(converter),static_cast<IUnknown*>(scaler),
+            static_cast<IUnknown*>(frame),static_cast<IUnknown*>(decoder),static_cast<IUnknown*>(stream),static_cast<IUnknown*>(wic)})if(p)p->Release();
+        if(SUCCEEDED(co))CoUninitialize();
+        if(rgba.empty())OutputDebugStringA("Frame VR UI: embedded artwork unavailable; using fallback shapes\n");
+        return rgba;
+}
+const std::vector<uint8_t>& WristArt() {
+    static const auto pixels=DecodeArt(L"D2RVR_WRIST_VITALS",512,256);return pixels;
+}
+const std::vector<uint8_t>& WheelArt() {
+    static const auto pixels=DecodeArt(L"D2RVR_WHEEL_FRAME",768,768);return pixels;
+}
+bool KnownVital(bool known,float value,float maximum) {
+    return known&&std::isfinite(value)&&std::isfinite(maximum)&&maximum>0&&value>=0;
+}
+void DrainOrb(std::vector<uint8_t>& rgba,bool mana,bool known,float value,float maximum) {
+    // Measured glass interiors in the generated sprite, after 512x256 scaling.
+    // Only glass is changed: carved frames/figures retain their original colors.
+    const float cx=mana?364.0f:147.8f,cy=125.0f,rx=57.5f,ry=56.5f;
+    const float fraction=KnownVital(known,value,maximum)?std::clamp(value/maximum,0.f,1.f):0;
+    if(fraction>=1)return;
+    const float level=cy+ry-2*ry*fraction;
+    for(int y=66;y<184;++y)for(int x=int(cx-rx-2);x<int(cx+rx+2);++x) {
+        const float dx=(x+.5f-cx)/rx,dy=(y+.5f-cy)/ry;
+        const float radius=std::sqrt(dx*dx+dy*dy);
+        auto* p=&rgba[(y*512+x)*4];
+        const int dominant=p[mana?2:0],other=std::max(p[1],p[mana?0:2]);
+        // Colored glass near the rim may be slightly irregular. Include that
+        // fringe, while leaving the neutral metal/stone (and any inset hands).
+        const bool glass=radius<.92f||(radius<1.045f&&dominant>other+10);
+        if(!glass||!p[3])continue;
+        if(fraction==0||y+.5f<level) {
+            const float shade=p[0]*.2126f+p[1]*.7152f+p[2]*.0722f;
+            p[0]=uint8_t(7+shade*.21f);p[1]=uint8_t(9+shade*.23f);p[2]=uint8_t(12+shade*.26f);
+        } else if(y+.5f<level+1.0f) {
+            // A one-pixel meniscus makes the live level legible at wrist size.
+            for(int c=0;c<3;++c)p[c]=uint8_t(std::min(255,int(p[c])+((c==(mana?2:0))?45:12)));
+        }
+    }
+}
+}
+std::vector<uint8_t> Paint(const Snapshot& s,const Output& o,int selection) {
+    constexpr int size=1024;
+    BITMAPINFO info{};info.bmiHeader.biSize=sizeof(BITMAPINFOHEADER);
+    info.bmiHeader.biWidth=size;info.bmiHeader.biHeight=-size;info.bmiHeader.biPlanes=1;info.bmiHeader.biBitCount=32;
+    HDC dc=CreateCompatibleDC(nullptr);void* bits=nullptr;
+    HBITMAP bitmap=CreateDIBSection(dc,&info,DIB_RGB_COLORS,&bits,nullptr,0);
+    if(!dc||!bitmap||!bits){if(bitmap)DeleteObject(bitmap);if(dc)DeleteDC(dc);return {};}
+    auto old=SelectObject(dc,bitmap);std::memset(bits,0,size*size*4);
+    HFONT font=CreateFontW(20,0,0,0,FW_SEMIBOLD,FALSE,FALSE,FALSE,DEFAULT_CHARSET,OUT_DEFAULT_PRECIS,CLIP_DEFAULT_PRECIS,ANTIALIASED_QUALITY,DEFAULT_PITCH,L"Georgia");
+    HFONT shortcutFont=CreateFontW(14,0,0,0,FW_SEMIBOLD,FALSE,FALSE,FALSE,DEFAULT_CHARSET,OUT_DEFAULT_PRECIS,CLIP_DEFAULT_PRECIS,ANTIALIASED_QUALITY,DEFAULT_PITCH,L"Georgia");
+    HFONT skillFont=CreateFontW(18,0,0,0,FW_SEMIBOLD,FALSE,FALSE,FALSE,DEFAULT_CHARSET,OUT_DEFAULT_PRECIS,CLIP_DEFAULT_PRECIS,ANTIALIASED_QUALITY,DEFAULT_PITCH,L"Georgia");
+    auto oldFont=SelectObject(dc,font);SetBkMode(dc,TRANSPARENT);SetTextColor(dc,RGB(238,235,220));
+    auto fill=[&](RECT r,COLORREF c){auto b=CreateSolidBrush(c);FillRect(dc,&r,b);DeleteObject(b);};
+    auto text=[&](const char* t,RECT r){wchar_t w[256]{};MultiByteToWideChar(CP_UTF8,0,t,-1,w,256);DrawTextW(dc,w,-1,&r,DT_CENTER|DT_VCENTER|DT_WORDBREAK|DT_NOPREFIX);};
+    auto polygon=[&](POINT* p,int n,COLORREF c){auto b=CreateSolidBrush(c);auto was=SelectObject(dc,b);auto pen=SelectObject(dc,GetStockObject(NULL_PEN));Polygon(dc,p,n);SelectObject(dc,pen);SelectObject(dc,was);DeleteObject(b);};
+    auto wheelArt=WheelArt();
+    if(!wheelArt.empty()) {
+        static const auto cells=[] {
+            std::vector<int8_t> result(768*768);
+            for(int y=0;y<768;++y)for(int x=0;x<768;++x)result[y*768+x]=int8_t(WheelCell((x+.5f)/768,(y+.5f)/768));
+            return result;
+        }();
+        for(int y=0;y<768;++y)for(int x=0;x<768;++x) {
+            auto* p=&wheelArt[(y*768+x)*4];
+            const int cell=cells[y*768+x];
+            if(p[3]&&cell>=0&&(cell==o.hover||(!o.editor&&!o.utility&&cell==selection))) {
+                const float amount=cell==o.hover?.26f:.13f;
+                const int gold[]={185,133,55};
+                for(int c=0;c<3;++c)p[c]=uint8_t(p[c]*(1-amount)+gold[c]*amount);
+            }
+        }
+        GdiFlush();auto* dst=static_cast<uint8_t*>(bits);
+        for(int y=0;y<768;++y)for(int x=0;x<768;++x) {
+            const auto* p=&wheelArt[(y*768+x)*4];auto* d=&dst[(y*size+x)*4];
+            d[0]=p[2];d[1]=p[1];d[2]=p[0];d[3]=p[3];
+        }
+    }
+    auto icon=[&](std::shared_ptr<const icons::Image> image,RECT box,bool available=true) {
+        if(!image)return false;
+        GdiFlush();auto* dst=static_cast<uint8_t*>(bits);
+        const float scale=std::min(float(box.right-box.left)/image->width,float(box.bottom-box.top)/image->height);
+        const int w=std::max(1,int(image->width*scale)),h=std::max(1,int(image->height*scale));
+        const int left=(box.left+box.right-w)/2,top=(box.top+box.bottom-h)/2;
+        for(int y=0;y<h;++y)for(int x=0;x<w;++x) {
+            if(left+x<0||left+x>=size||top+y<0||top+y>=size)continue;
+            const auto* p=&image->rgba[(std::min(image->height-1,unsigned(y/scale))*image->width+std::min(image->width-1,unsigned(x/scale)))*4];
+            auto* d=&dst[((top+y)*size+left+x)*4];const float a=p[3]/255.f;
+            for(int c=0;c<3;++c) {
+                const float value=available?p[2-c]:((p[0]+p[1]+p[2])/3.f)*.45f;
+                d[c]=uint8_t(value*a+d[c]*(1-a));
+            }
+        }
+        return true;
+    };
+    auto pair=[&](int set,RECT box) {
+        const auto& a=s.sets[set][0];const auto& b=s.sets[set][1];
+        if(a.handle&&b.handle) {
+            const LONG mid=(box.left+box.right)/2;
+            icon(icons::Get(a),{box.left,box.top,mid,box.bottom});
+            icon(icons::Get(b),{mid,box.top,box.right,box.bottom});
+        } else icon(icons::Get(a.handle?a:b),box);
+    };
+    for(int i=0;o.editor!=2&&i<8;++i) {
+        const float angle=i*Pi/4+WheelPhase;
+        const int x=int(384+std::sin(angle)*218),y=int(345.6f-std::cos(angle)*218)-(std::cos(angle)<-.5f?14:0);
+        if(wheelArt.empty()) {
+            POINT points[34];int n=0;
+            for(int k=0;k<=16;++k){float a=angle-Pi/8+.012f+(Pi/4-.024f)*k/16;points[n++]={LONG(384+std::sin(a)*308),LONG(345.6f-std::cos(a)*308)};}
+            for(int k=16;k>=0;--k){float a=angle-Pi/8+.012f+(Pi/4-.024f)*k/16;points[n++]={LONG(384+std::sin(a)*110),LONG(345.6f-std::cos(a)*110)};}
+            polygon(points,n,o.hover==i?RGB(100,76,40):RGB(32,29,26));
+        }
+        char label[120]{};RECT box{x-51,y-64,x+51,y+31};
+        if(!o.utility) {
+            box={x-37,y-43,x+37,y+28};
+            const auto& skill=s.skills[i];
+            if(skill.known&&skill.id>=0)icon(icons::Get("s"+std::to_string(skill.id)),box,skill.available);
+            if(o.editor)std::snprintf(label,sizeof label,"%d. %s",i+1,skill.known?skill.name:"Unknown");
+            else std::snprintf(label,sizeof label,"%s",skill.known?skill.name:"Unknown");
+        } else if(i<4) {
+            const char* utility[]={"Weapon I","Weapon II","Journal",o.stowed?"Draw weapons":"Stow weapons"};
+            std::snprintf(label,sizeof label,"%s",utility[i]);
+            if(i<2&&s.equipmentKnown)pair(i,box);
+            else if(i==2)icon(icons::Get("journal"),box);
+            else if(i==3&&s.equipmentKnown&&s.activeSet>=1&&s.activeSet<=2)pair(s.activeSet-1,box);
+        } else {
+            const auto& b=s.belt[i-4];
+            if(b.known&&b.count)icon(icons::Get(b.Next()),box);
+            std::snprintf(label,sizeof label,"%s%s%d",b.known?(b.count?PotionName(PotionType(b.Next().code)):"Empty"):"Unknown",b.known&&b.count?" x":"\nSlot ",b.known&&b.count?b.count:i-3);
+        }
+        SetTextColor(dc,(!o.utility&&s.skills[i].known&&!s.skills[i].available)?RGB(148,137,117):RGB(235,218,181));
+        if(o.utility)text(label,{x-76,y+35,x+76,y+86});
+        if(!o.utility) {
+            auto previous=SelectObject(dc,skillFont);
+            text(label,{x-63,y+29,x+63,y+67});
+            fill({x-43,y-68,x+43,y-46},RGB(100,78,44));
+            fill({x-41,y-66,x+41,y-48},RGB(24,20,16));
+            SetTextColor(dc,RGB(235,205,151));
+            text(skills::NativeLabel(i),{x-41,y-68,x+41,y-46});
+            SelectObject(dc,shortcutFont);
+            SetTextColor(dc,RGB(206,191,159));
+            text(skills::VrLabel(i),{x-62,y+68,x+62,y+99});
+            SelectObject(dc,previous);
+        }
+    }
+    SetTextColor(dc,RGB(235,218,181));
+    if(wheelArt.empty()) {
+        fill({315,278,453,414},RGB(39,35,30));fill({23,688,434,741},RGB(39,35,30));fill({472,688,745,741},RGB(39,35,30));
+    }
+    auto frame=[&](RECT box,bool hot=false) {
+        fill(box,hot?RGB(183,143,73):RGB(104,83,53));
+        RECT inside{box.left+2,box.top+2,box.right-2,box.bottom-2};fill(inside,RGB(18,16,14));
+        inside={box.left+5,box.top+5,box.right-5,box.bottom-5};fill(inside,hot?RGB(65,49,29):RGB(35,29,23));
+    };
+    if(o.editor==2) {
+        frame({20,28,748,681});
+        char title[120];std::snprintf(title,sizeof title,"CHOOSE SKILL  /  %s",skills::NativeLabel(o.editSlot));
+        text(title,{38,47,730,88});
+        text(skills::VrLabel(o.editSlot),{38,96,540,143});
+        frame({568,92,730,146},o.hover==8);text("CLEAR SLOT",{574,98,724,140});
+        for(int i=0;i<8;++i) {
+            const int x=int(768*(.05f+(i%2)*.46f)),y=int(768*(.23f+(i/2)*.145f));
+            frame({x,y,x+337,y+99},o.hover==i&&i<o.editCount);
+            if(i>=o.editCount)continue;
+            const auto& skill=o.editOptions[i];
+            icon(icons::Get("s"+std::to_string(skill.id)),{x+9,y+10,x+88,y+89});
+            text(skill.name,{x+94,y+9,x+329,y+66});
+            char detail[64];if(skill.owner==-1)std::snprintf(detail,sizeof detail,"Level %d",skill.level);
+            else std::snprintf(detail,sizeof detail,"Item-granted skill");
+            SetTextColor(dc,RGB(169,151,118));text(detail,{x+94,y+68,x+329,y+95});SetTextColor(dc,RGB(235,218,181));
+        }
+        if(!o.editCount)text("No active skills available",{56,249,712,430});
+    } else if(o.editor) {
+        text(s.bindingsEditable?"CHOOSE\nA SLOT":"SKILLS\nUNAVAILABLE",{301,301,467,397});
+    } else {
+        if(s.equipmentKnown&&s.activeSet>=1&&s.activeSet<=2)pair(s.activeSet-1,{346,295,422,363});
+        text("WEAPON",{327,368,441,396});
+    }
+    if(o.editor) {
+        char hint[120];std::snprintf(hint,sizeof hint,"Set %s  /  %s",s.activeSet==2?"II":"I",
+            o.result==Result::Pending?"Saving...":o.result==Result::Applied?"Assigned":o.result==Result::Refused?"Changed or unavailable; choose the slot again":"Hold Left Y while editing");
+        fill({29,637,739,680},RGB(22,18,14));text(hint,{35,639,733,678});
+    }
+    const char* footer[3]={o.utility?"SPELLS":"EQUIPMENT","VR SETTINGS","EDIT SKILLS"};
+    if(o.editor==1){footer[0]="BACK";footer[1]="";footer[2]="DONE";}
+    if(o.editor==2){footer[0]="PREVIOUS";footer[1]="NEXT";footer[2]="BACK";}
+    fill({20,686,749,745},RGB(18,16,14));
+    for(int i=0;i<3;++i) {
+        const int x=int(768*(.03f+i*.32f));frame({x,688,x+230,741},o.hover==9+i);
+        text(footer[i],{x+5,693,x+225,736});
+    }
+    const COLORREF colours[]={RGB(90,90,90),RGB(169,37,45),RGB(43,82,193),RGB(131,55,165),RGB(67,151,66),RGB(183,191,205),RGB(218,165,70)};
+    for(int i=0;i<4;++i) {
+        const auto& b=s.belt[i];const int x=i*128;
+        fill({x+42,774,x+86,814},RGB(160,135,83));
+        fill({x+18,814,x+110,940},b.known&&b.count?colours[unsigned(PotionType(b.Next().code))]:RGB(45,47,47));
+        char label[60];std::snprintf(label,sizeof label,"%s\nx%d",b.known?(b.count?PotionName(PotionType(b.Next().code)):"Empty"):"Unknown",b.count);
+        if(b.known&&b.count&&icons::Get(b.Next())) {fill({x+18,774,x+110,940},RGB(28,25,22));icon(icons::Get(b.Next()),{x+20,780,x+108,935});}
+        text(label,{x,943,x+128,1024});
+    }
+    // A grabbed bottle has its own tile. Native refill must not recolor it to
+    // the next belt item; only confirmed consumption makes this preview empty.
+    if(o.bottleItem.handle) {
+        const auto kind=PotionType(o.bottleItem.code);
+        fill({810,520,866,554},RGB(160,135,83));
+        fill({790,554,886,693},o.bottleEmpty?RGB(45,47,47):colours[unsigned(kind)]);
+        text(o.bottleEmpty?"Used":PotionName(kind),{768,703,896,768});
+    }
+    auto wristArt=WristArt();
+    if(!wristArt.empty()) {
+        DrainOrb(wristArt,false,s.vitalsKnown,s.health,s.maxHealth);
+        DrainOrb(wristArt,true,s.vitalsKnown,s.mana,s.maxMana);
+        GdiFlush();auto* dst=static_cast<uint8_t*>(bits);
+        for(int y=0;y<256;++y)for(int x=0;x<512;++x) {
+            const auto* p=&wristArt[(y*512+x)*4];auto* d=&dst[((y+768)*size+x+512)*4];
+            d[0]=p[2];d[1]=p[1];d[2]=p[0];d[3]=p[3];
+        }
+        HFONT gothic=CreateFontW(19,0,0,0,FW_BOLD,FALSE,FALSE,FALSE,DEFAULT_CHARSET,
+            OUT_DEFAULT_PRECIS,CLIP_DEFAULT_PRECIS,ANTIALIASED_QUALITY,DEFAULT_PITCH,L"Georgia");
+        auto previous=SelectObject(dc,gothic);SetTextColor(dc,RGB(235,219,182));
+        auto label=[&](const char* name,float value,float maximum,RECT rect) {
+            char line[80];
+            if(KnownVital(s.vitalsKnown,value,maximum))std::snprintf(line,sizeof line,"%s %.0f / %.0f",name,value,maximum);
+            else std::snprintf(line,sizeof line,"%s -- / --",name);
+            wchar_t w[80]{};MultiByteToWideChar(CP_UTF8,0,line,-1,w,80);
+            DrawTextW(dc,w,-1,&rect,DT_CENTER|DT_VCENTER|DT_SINGLELINE|DT_NOPREFIX);
+        };
+        label("LIFE",s.health,s.maxHealth,{570,954,748,978});
+        label("MANA",s.mana,s.maxMana,{789,954,964,978});
+        SelectObject(dc,previous);DeleteObject(gothic);SetTextColor(dc,RGB(238,235,220));
+    } else {
+      fill({512,776,1024,1024},RGB(20,28,33));
+      if(KnownVital(s.vitalsKnown,s.health,s.maxHealth)&&KnownVital(s.vitalsKnown,s.mana,s.maxMana)){
+        auto gauge=[&](float value,float max,int y,COLORREF c,const char* name){
+            fill({536,y,1000,y+32},RGB(50,50,50));
+            if(max>0)fill({536,y,536+LONG(464*std::clamp(value/max,0.f,1.f)),y+32},c);
+            char label[64];std::snprintf(label,sizeof label,"%s %.0f / %.0f",name,value,max);text(label,{536,y-31,1000,y});};
+        gauge(s.health,s.maxHealth,842,RGB(180,35,42),"Health");gauge(s.mana,s.maxMana,908,RGB(48,83,185),"Mana");
+      } else text("Status unavailable",{530,800,1006,885});
+    }
+    const char* status=o.result==Result::Pending?"Waiting for game...":o.result==Result::Applied?"Confirmed":o.result==Result::Refused?"Action not available":o.stowed?"Weapons stowed":"";
+    text(status,{530,989,1006,1022});
+    GdiFlush();std::vector<uint8_t> rgba(size*size*4);const auto* b=static_cast<const uint8_t*>(bits);
+    for(int i=0;i<size*size;++i){
+        rgba[4*i]=b[4*i+2];rgba[4*i+1]=b[4*i+1];rgba[4*i+2]=b[4*i];
+        rgba[4*i+3]=(b[4*i]||b[4*i+1]||b[4*i+2])?255:0;
+        if(!wheelArt.empty()&&i%size<768&&i/size<768) {
+            const auto* p=&wheelArt[((i/size)*768+i%size)*4];
+            const bool changed=rgba[4*i]!=p[0]||rgba[4*i+1]!=p[1]||rgba[4*i+2]!=p[2];
+            rgba[4*i+3]=changed?255:p[3];
+        }
+        const int x=i%size-512,y=i/size-768;
+        if(!wristArt.empty()&&x>=0&&y>=0) {
+            const auto* p=&wristArt[(y*512+x)*4];
+            // GDI supplies runtime text; the generated silhouette retains real
+            // alpha, rather than turning translucent edge pixels into a box.
+            const bool textPixel=rgba[4*i]!=p[0]||rgba[4*i+1]!=p[1]||rgba[4*i+2]!=p[2];
+            rgba[4*i+3]=textPixel?255:p[3];
+        }
+    }
+    SelectObject(dc,oldFont);DeleteObject(font);DeleteObject(shortcutFont);DeleteObject(skillFont);SelectObject(dc,old);DeleteObject(bitmap);DeleteDC(dc);return rgba;
+}
+}

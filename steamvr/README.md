@@ -2,16 +2,38 @@
 
 For the compiled preview and portable friend setup, start with
 [INSTALL.md](../INSTALL.md). These notes retain the owner machine's build and
-Steam Frame testing details. Quest 3/WiVRn/Windows paths remain untested.
+Steam Frame testing details. Native Windows + SteamVR/Steam Frame is now tested
+with offline gameplay; Quest 3/WiVRn paths remain untested.
 
 This branch adds a native OpenXR transport to the MIT-licensed
 [D2R VR camera mod](https://github.com/natpoh/diablo2-vr-port). It reuses its
 first-person camera, body, controller aim, and two scene draws per game update.
-The new transport submits those separate eye images to SteamVR through Proton's
-WineOpenXR D3D12 bridge. BodyWalk and FlatVR are not required by this build.
+The transport submits those separate eye images to SteamVR through native
+Windows OpenXR, or Proton's WineOpenXR D3D12 bridge on Linux. BodyWalk and
+FlatVR are not required by this build.
 
 ## Current verification
 
+- Native Windows build passes 33 C++ tests. Owner reports excellent performance;
+  a controlled native baseline/candidate timing comparison remains pending.
+  Current setup, installed DLL and unresolved visual/transition bugs are in
+  [WINDOWS_HANDOFF.md](../WINDOWS_HANDOFF.md).
+- Cave melee candidate corrects terrain elevation shear between native grid and
+  rendered VR coordinates for the player guard and enemy contact volumes. Captured
+  cave regressions and teleport/miss checks pass. The owner reports "it all works"
+  after the offline retest; logs confirm native cave contacts and normal exit.
+- First-load and settings-menu T-pose calibration save standing eye height and
+  controller span, fitting per-rig arm proportions with physical controller
+  scale. Dominant-hand trigger over either shoulder requests the opposite native
+  weapon set; hip anchors are removed. See [BODY_CALIBRATION.md](BODY_CALIBRATION.md).
+  Automated checks pass. Calibration save/reopen is explicitly owner-verified;
+  the later combined offline retest received an overall "it all works" report.
+- SteamVR native D3D12 swapchain images are typeless. Potion models and native
+  UI conversion use explicit typed views matching the selected swapchain format;
+  typed/typeless GPU readback and potion stereo tests pass, including sRGB.
+- Installer camera settings are verified with the Win32 profile API. A malformed
+  duplicate camera section previously selected a large default near plane;
+  correcting it restored torso, arms and close shield rendering in the headset.
 - Cross-compiles with Clang 21 and MinGW headers/static libraries.
 - Camera math checks cover asymmetric eye FOV, physical eye separation, view
   orientation, and the game's reverse-Z projection.
@@ -98,6 +120,13 @@ desktop focus. Hovering the laser does not move focus. The controller menu butto
 and right B in menus send Escape using a
 scan-code press held across frames. A trigger used on a menu remains consumed
 until released, so closing the panel cannot turn the same press into an attack.
+
+The [motion gameplay prototype](GAMEPLAY.md) adds right-handed melee
+swings, two-hand bow draws, a left-hand selection palette, aimed native skills
+and grab-to-mouth belt potions. Fresh installs set `[gameplay] motion_controls=1`,
+`[render] fixed_foveation=1` and `eye_tracked_foveation=0`. Set motion controls to
+`0` for legacy button controls. See that document for cancellation rules and the distinction
+between gesture-triggered native attacks and physical collision combat.
 
 Hold **left grip**, then **click the left stick** to reset eye height to the
 current headset position. Use it after sitting down or standing up. It preserves
@@ -221,6 +250,51 @@ art uses the procedural fallback. Stock Steam Play does not load this dependency
 
 ## Build
 
+### Native Windows build
+
+From the checkout in PowerShell:
+
+```powershell
+.\steamvr\setup_windows_tools.ps1
+.\steamvr\build_windows.ps1 -Test
+.\deps\python\python.exe -m unittest install_test prepare_icons_test prepare_potions_test profile_report_test stream_report_test
+.\deps\python\python.exe steamvr/ngx_abi_test.py --clang .\deps\llvm-mingw-20260616-ucrt-x86_64\bin\clang++.exe
+```
+
+The setup downloads pinned official portable tools into ignored `deps/` and
+checks both SDK commit IDs. Python uses an explicit isolated import path for
+this checkout and needs no pip packages. No system PATH or Visual Studio
+changes are required. Clang may need execution permission outside an agent's
+restricted sandbox. The LLVM-MinGW compiler produces native Windows binaries;
+Proton/Wine are not involved in the build or execution.
+
+Outputs are in `build-frame/windows-native/`. The DLL statically links its C++
+runtime. Its patched ReShade interfaces and NGX adapter retain their GNU-target
+ABI handling. Native CTest enables assertions in Release and runs 33 fixtures;
+the Windows Python suite excludes the Linux `/proc` process monitor tests.
+`frame_math.h` avoids shadowing the C library's `math.h` in libc++.
+
+This build **does not install or replace any game DLL**. For first headset
+tests use the archived baseline described in
+[WINDOWS_HANDOFF.md](../WINDOWS_HANDOFF.md). Swap only the plugin after Save &
+Exit when making a controlled comparison. The native source build differs from
+the archived release candidate in compiler/runtime, even with equivalent source.
+
+The Windows Steam wrapper accepts `--frame-openxr-runtime=PATH` before
+`%command%`. With `--frame-vr` it supplies that manifest as `XR_RUNTIME_JSON`
+to D2RLoader; normal Play removes the wrapper option and preserves the original
+Steam command/environment. This can select `SteamVR/steamxr_win64.json` for
+Frame without changing another app's global OpenXR runtime.
+
+Native Windows menu focus requests are posted to the owning window's message
+queue. Activating the game synchronously inside its render callback re-entered
+the native focus handler and hung the first Akara dialogue in the baseline.
+The regression test verifies activation occurs after a simulated engine lock is
+released; expiry/cancellation prevent stale requests. Headset reproduction is
+still needed to validate the fix in D2R.
+
+### Linux cross-build
+
 The local dependency checkouts and extracted toolchain are under `~/vrdeps`.
 The Android NDK provides Clang's Windows SEH support; it does not make this an
 Android or standalone Frame build.
@@ -295,8 +369,18 @@ python3 steamvr/profile_report.py "/path/to/game/d2rloader/logs/d2r-vr-frame.log
   --sequence 1 --csv build-frame/profile-stationary.csv
 ```
 
-Callback scopes are inclusive, cover only the main stereo drawing thread, and
-high-frequency callbacks are sampled 1/64. GPU scene spans include idle queue
+`Frame scope` records describe the main stereo drawing thread. The current
+development build also emits `Frame hook` records for each recording/input
+thread, including guarded memory copy calls/bytes, portal callbacks, VRS cache
+misses and the input tick. Counters use thread-owned slots, sample hot timings
+1/64 (input 1/16), and become idle automatically. Times are inclusive and worker
+threads overlap: adding them together does not give frame time. The bounded
+registry reports overflow rather than allocating on a callback path.
+Set `[debug] profile_hooks=0` before a new capture for timing comparisons against
+older builds; use `1` for a separate all-thread attribution capture. The setting
+is latched per capture. `--refresh-hz 96` or `108` changes the report's half-rate
+budget; an over-budget pair alone does not prove a compositor frame drop.
+GPU scene spans include idle queue
 time while CPU commands are prepared; they are not GPU busy-time measurements.
 Effects span includes the ReShade overlay. GPU query readback uses the
 conservative pair completion fence. Set `[debug] profile_gpu=0` for CPU-only
@@ -304,6 +388,42 @@ captures when comparing deferred GPU waits; GPU profiling intentionally waits
 for its readback and would hide that optimization. Two timestamp submissions
 and scope measurements add diagnostic overhead. Do not compare a profiled
 run against an unprofiled run as if all timing changes were optimizations.
+
+The October 10 development performance build adds generation-invalidated
+per-thread pipeline lookup caches, Windows SRW locks for VRS/UI callbacks,
+local guarded memory copies, per-instance portal batch classification, sparse
+routine CPU-time sampling, and cursor queries only when mouse look is active.
+The launcher checks known game PIDs every 0.5 s and scans the full process tree
+every 5 s during play; startup/exit still get immediate discovery and identity
+checks. The memory copy uses the same-process `ReadProcessMemory` destination
+buffer instead of `WriteProcessMemory`: [Wine's implementation](https://github.com/ValveSoftware/wine/blob/bleeding-edge/dlls/ntdll/unix/virtual.c)
+has a local guarded copy for this case. It never changes page permissions.
+Proton tests include invalid/freed/read-only/cross-page buffers and confirm
+failures do not enter application exception handlers. The isolated benchmark
+does **not** establish game frame-time savings; controlled headset trials do.
+
+Optional UI-trace draw callbacks are selected once at startup. Set
+`[debug] uitrace=1` and restart before Ctrl+F10 capture or live shader-skip tests.
+A nonempty initial `skip_pipeline`/`skip_shaders` also enables the callbacks.
+No callback lists are toggled during rendering. Ordinary F8 stereo capture is
+unchanged.
+
+Keep code comparisons at identical graphics settings first. The owner's
+October 10 baseline was **100% resolution, shadows 4, AO 4, DLSS off**, with
+`model_radius=300`, fog end 200 and `defer_gpu_wait=0`; earlier 80%/medium notes
+describe an older preset. The radius-210/deferred-wait trial was rolled back
+after severe movement/menu stalls and image degradation. Installed settings are
+again radius 300/wait 0 with profiling off, using the pre-performance DLL.
+Shadow quality 2 remains untested.
+See [PERFORMANCE.md](PERFORMANCE.md) for the 360-pair measurements and scene
+matching limitations and the separate streaming faults found afterward.
+Code-only A/B did not establish an FPS gain; shorter average cycles in the
+deferred-wait trial did not establish smooth headset delivery. Fog distance does
+not by itself prove all culled geometry/shadows are invisible, and model count
+need not follow radius squared in a real scene. Check distant silhouettes and
+lighting. Higher refresh rates, transport lock splitting/dedicated frame calls,
+eye texture shape, and shared inter-eye skeleton/shadow work remain separate
+experiments. They are not included in the small-fix build.
 
 `[render] symmetric_projection=1` is the default lighting compatibility
 setting. D2R's native light-bin shader assumes a centered projection;
@@ -324,14 +444,29 @@ for the original conservative behavior. See the
 [OpenXR D3D12 queue/state contract](https://registry.khronos.org/OpenXR/specs/1.1/man/html/XR_KHR_D3D12_enable-swapchain-image-state.html)
 and [OpenXR implementer guidance](https://community.khronos.org/t/do-you-have-to-do-cpu-sync-before-xrendframe/110117).
 Proton's `wineopenxr` also drains the bound command queue before enqueueing its
-release layout transitions. The source default remains 0. The owner's repeated
-comparison reduced the XR end stage from about 5.7 to 3.8 ms; part of the removed
-fence wait moved into runtime submission. Total cycle time also trended lower,
-but head direction differed between captures and a competing CPU-heavy test was
-running, so this is not a controlled percentage speedup. The owner reported
-bursty walking with either setting. It is disabled in the installed configuration
-pending further work. See HANDOFF.md for sample details; other headsets/runtimes
-are untested.
+release layout transitions. The source default remains 0. The October 10
+re-test reduced mean cycle time from 31.69 to 24.60 ms in nearly the same view;
+the end stage fell from 5.10 to 2.88 ms, with some fence waiting moving into
+runtime submission. Subsequent severe stalls/quality collapse prompted rollback
+to 0 and the pre-performance DLL. Streaming receive delays/reset requests were
+also found, including resets before this trial; the root cause remains open.
+An earlier test was confounded by a competing CPU-heavy project and produced
+bursty walking with either setting. See [PERFORMANCE.md](PERFORMANCE.md) and
+HANDOFF.md for current evidence; other headsets/runtimes are untested.
+
+Saved SteamVR Link fault histories can be analyzed with no headset connection:
+
+```sh
+python3 steamvr/stream_report.py /path/to/vrlink_aftm_*.csv \
+  --driver-log /path/to/driver_vrlink.txt --json /tmp/d2r-stream-report.json
+```
+
+This merges overlapping histories and handles the driver's 32-bit timestamp
+rollover. Missing samples remain unknown. The driver-aligned receive interval
+includes delivery/client handling; it is not pure network latency. These are
+fault-triggered snapshots, not a session FPS or loss-rate benchmark, and contain
+no image-resolution/bitrate measurement. `--since`/`--until` accept ISO timestamps;
+include a UTC offset when analyzing logs away from the capture machine's timezone.
 
 - Runtime log: `d2rloader/logs/d2r-vr-frame.log` in the game folder. A bounded
   queue writes batches on a worker without forced disk flushes. The old SDK log,

@@ -36,6 +36,7 @@
 #include "sigscan.h"
 
 using namespace D2RL;
+namespace gamestate {bool MenuOpen();}
 
 namespace gamecmd {
 namespace {
@@ -57,6 +58,7 @@ std::atomic<bool> g_queued{false};
 // The bits Apply() has pressed (UI thread writes, the timer reads), as D2RVR_Commands::held.
 std::atomic<uint64_t> g_applied[2] = {0, 0};
 std::atomic<int> g_ok{-1};            // -1 not found yet, 1 found, 0 faulted (switched off for the session)
+std::atomic<uint64_t> g_potionRequest{0}; // timestamp in ms << 8 | belt command
 
 // A binding per command, as the dispatcher hands one over: the game's own
 // where this build is the one the table address is from, else ours with no
@@ -174,10 +176,18 @@ void __cdecl Apply(const PluginContext*, void*) noexcept {
     g_queued.store(false);   // first: a change from now on queues another run
     uint64_t want[2];
     CommandsHeld(want);
-    if (Same(want)) return;
+    const uint64_t request=g_potionRequest.exchange(0);
+    if (Same(want)&&!request) return;
     const uint64_t had[2] = {g_applied[0].load(), g_applied[1].load()};
     auto store = [&] { g_applied[0].store(want[0]); g_applied[1].store(want[1]); };
     if (!Ready()) { store(); return; }
+    // Motion drinking requests the same belt command as a normal key. No item
+    // edits, no delayed consumption after a menu/loading pause or lost focus.
+    if(request&&!gamestate::MenuOpen()&&GetTickCount64()-(request>>8)<200) {
+        const auto cmd=uint32_t(request&255);
+        Press(cmd,true);
+        if(g_ok.load()==1)Press(cmd,false);
+    }
     // Releases first: a switch from one command to another lets go before it presses.
     for (uint32_t n = 0; n < kCommands && g_ok.load() == 1; ++n)
         if (Bit(had, n) && !Bit(want, n)) Press(n, false);
@@ -200,8 +210,21 @@ void Tick() {
     if (!g_ctx || !g_threads || !g_threads->runOnUiThread || g_ok.load() == 0) return;
     uint64_t held[2];
     CommandsHeld(held);
-    if (Same(held) || g_queued.exchange(true)) return;
+    if ((Same(held)&&!g_potionRequest.load()) || g_queued.exchange(true)) return;
     if (g_threads->runOnUiThread(g_ctx, &Apply, nullptr) != Threads::Result::Success) g_queued.store(false);
+}
+
+void RequestPotion(int slot) {
+    if(slot>=0&&slot<4)g_potionRequest.store((GetTickCount64()<<8)|uint64_t(0x17+slot));
+}
+void CancelPotion() {g_potionRequest.store(0);}
+
+bool ExecuteUiCommand(uint32_t command) { // UI thread only
+    if(command>=kCommands||!Ready())return false;
+    bool handled=false,up=false;
+    if(!Exec(RVA_CMD_PRESS,command,&handled)) {g_ok=0;return false;}
+    if(!Exec(RVA_CMD_RELEASE,command,&up)) {g_ok=0;return false;}
+    return handled;
 }
 
 }  // namespace gamecmd

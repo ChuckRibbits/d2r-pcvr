@@ -11,6 +11,7 @@ void BeginEye(int eye,float centerX,float centerY,bool gazeDriven=false);
 void EndWorld();
 void Suspend(reshade::api::command_list*);
 void Shutdown();
+bool Available();
 struct Stats {uint32_t shadedDraws=0,fullDraws=0;};
 Stats TakeStats();
 }

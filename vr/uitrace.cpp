@@ -417,7 +417,14 @@ void OnPresent(command_queue* queue, swapchain* sc, const rect*, const rect*, ui
 
 }  // namespace
 
-void Register() {
+static bool callbacks=false;
+void Register(bool diagnostic) {
+    // Chosen once with the addon's initial registrations. Never mutate ReShade
+    // callback lists in response to a live INI edit while workers record draws.
+    bool skip=g_skipPipe.load()!=0;
+    for(const auto& hash:g_skipHash)skip|=hash.load()!=0;
+    if(!diagnostic&&!skip)return;
+    callbacks=true;
     reshade::register_event<reshade::addon_event::begin_render_pass>(&OnBeginRenderPass);
     reshade::register_event<reshade::addon_event::end_render_pass>(&OnEndRenderPass);
     reshade::register_event<reshade::addon_event::bind_render_targets_and_depth_stencil>(&OnBindRenderTargets);
@@ -440,6 +447,7 @@ void Register() {
 
 // Records the next whole frame into path.
 bool Arm(const std::wstring& path) {
+    if(!callbacks)return false;
     int idle = 0;
     if (!g_state.compare_exchange_strong(idle, 1)) return false;
     std::lock_guard<std::mutex> g(g_lock);
@@ -448,6 +456,7 @@ bool Arm(const std::wstring& path) {
 }
 
 bool Busy() { return g_state.load() != 0; }
+bool Enabled() {return callbacks;}
 
 // [debug] skip_pipeline: 0 = off
 void SetSkip(uint64_t pipe) { g_skipPipe.store(pipe); }

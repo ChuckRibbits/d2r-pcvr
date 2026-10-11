@@ -10,8 +10,11 @@ from pathlib import Path
 from pathlib import PurePosixPath
 import shutil
 import subprocess
+import tempfile
 import urllib.request
 import zipfile
+from prepare_icons import prepare as prepare_icons
+from prepare_potions import prepare as prepare_potions, CODES as POTION_CODES
 
 ROOT = Path(__file__).resolve().parent.parent
 STEAM = Path.home() / '.local/share/Steam'
@@ -158,6 +161,27 @@ def main():
         payload[Path('d2rloader/runtime/d3dcompiler_47.dll')] = compiler.read_bytes()
     if args.openxr_loader:
         payload[Path('openxr_loader.dll')] = args.openxr_loader.read_bytes()
+    # Native artwork is read locally, never downloaded/bundled with the mod.
+    # Prepare before mutating the install and journal it with all other files.
+    with tempfile.TemporaryDirectory(prefix='d2r-vr-icons-') as temporary:
+        try:
+            result = prepare_icons(game, temporary)
+        except (OSError, ValueError, KeyError, IndexError) as error:
+            print(f'Native icon cache unavailable; wheel labels still work: {error}')
+        else:
+            for name in result['images'] + ['manifest.tsv', 'cache.json']:
+                payload[Path('d2rloader/plugins/d2r_vr_icons') / safe_relative(name)] = (Path(temporary) / name).read_bytes()
+            print(f"Prepared {result['icons']} native icon bindings from your installed game.")
+    with tempfile.TemporaryDirectory(prefix='d2r-vr-potions-') as temporary:
+        try:
+            result = prepare_potions(game, temporary)
+        except (OSError, ValueError, KeyError, IndexError) as error:
+            print(f'Native potion models unavailable; retaining icon fallback: {error}')
+        else:
+            for name in [code + '.pvr' for code in POTION_CODES] + ['cache.json']:
+                payload[Path('d2rloader/plugins/d2r_vr_potions') / safe_relative(name)] = (Path(temporary) / name).read_bytes()
+            print(f"Prepared {result['models']} original 3D potion models from your installed game.")
+    require_game_closed()
     snapshot = args.backup_dir / datetime.now().strftime('%Y%m%d-%H%M%S-%f')
     snapshot.mkdir(parents=True)
     shutil.copytree(saves, snapshot / 'saves')
@@ -180,8 +204,12 @@ def main():
     for rel, content in payload.items():
         put(rel, content)
     cfg = configparser.ConfigParser(interpolation=None, strict=False, allow_no_value=True)
-    # Public default INI has explanatory text outside any section. Start at [camera].
-    cfg.read_string('[camera]' + (ROOT / 'd2r_vr.ini').read_text(encoding='utf-8').split('[camera]', 1)[1])
+    # The introductory comment also mentions [camera]. Splitting that comment
+    # produced a malformed first camera section which Win32 profile reads used
+    # instead of the real one, silently restoring the large default near plane.
+    lines = (ROOT / 'd2r_vr.ini').read_text(encoding='utf-8').splitlines()
+    start = next(i for i, line in enumerate(lines) if line.strip() == '[camera]')
+    cfg.read_string('\n'.join(lines[start:]))
     changes = {
         'camera': {'fov_from_flatvr': '0', 'neck_model': '0', 'near': '0.2'},
         'stereo': {'afr': '1', 'pair_per_tick': '1', 'true_scale': '0', 'convergence': '0', 'swap': '0'},
@@ -189,6 +217,7 @@ def main():
         'mode': {'platform': '1', 'vr_mode': '4', 'vr_mode_order': '2'},
         'hud': {'hide': '0', 'map': '0', 'stereo_labels': '1', 'monster_draw_order': '1'},
         'update': {'check': '0'},
+        'gameplay': {'motion_controls': '1', 'arrow_speed': '2', 'arrow_direct_release': '1', 'contact_hits': '1'},
         'render': {'game_height_fog': '1', 'fixed_foveation': '1', 'foveation_inner': '0.55',
                    'symmetric_projection': '1', 'defer_gpu_wait': '0',
                    'eye_tracked_foveation': '0', 'gaze_foveation_inner': '0.35'},

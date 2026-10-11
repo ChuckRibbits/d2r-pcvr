@@ -9,13 +9,16 @@ DWORD WINAPI Produce(void* id){
     return 0;
 }
 int main(){
+    // CMake places this executable in its own logging-fixture/plugins folder.
+    // Reset only that fixture's output so repeated runs check a fresh session.
+    wchar_t path[MAX_PATH];GetModuleFileNameW(nullptr,path,MAX_PATH);std::wstring p(path);
+    p.resize(p.find_last_of(L"\\/"));p.resize(p.find_last_of(L"\\/")+1);p+=L"logs\\d2r-vr-frame.log";
+    if(!DeleteFileW(p.c_str())&&GetLastError()!=ERROR_FILE_NOT_FOUND)return 6;
     if(!framevr::logging::Start(nullptr))return 1;
     HANDLE threads[]={CreateThread(nullptr,0,Produce,(void*)1,0,nullptr),CreateThread(nullptr,0,Produce,(void*)2,0,nullptr)};
     if(!threads[0]||!threads[1])return 2;
     WaitForMultipleObjects(2,threads,TRUE,INFINITE);for(auto t:threads)CloseHandle(t);
     framevr::logging::Stop();framevr::logging::Write("after-stop-must-not-appear");
-    wchar_t path[MAX_PATH];GetModuleFileNameW(nullptr,path,MAX_PATH);std::wstring p(path);
-    p.resize(p.find_last_of(L"\\/"));p.resize(p.find_last_of(L"\\/")+1);p+=L"logs\\d2r-vr-frame.log";
     FILE* file=_wfopen(p.c_str(),L"rb");if(!file)return 3;
     std::string text;char buf[4096];size_t n;while((n=fread(buf,1,sizeof buf,file)))text.append(buf,n);fclose(file);
     if(text.find("after-stop-must-not-appear")!=text.npos)return 4;

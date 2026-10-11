@@ -1,21 +1,39 @@
 # Install the D2R PCVR preview
 
-Download and extract **d2r-pcvr-preview.zip** from this private repository's
+For a **fresh Windows + Steam Frame installation**, start with
+**[WINDOWS_HANDOFF.md](WINDOWS_HANDOFF.md)**. It includes the full setup, precise
+build hashes, baseline/candidate distinction and the latest streaming findings.
+Native Windows remains untested; the next session will establish compatibility.
+
+Download **d2r-pcvr-baseline.zip** from **v0.2.0-windows-handoff** in this private repository's
 [Releases](https://github.com/bearstonem/d2r-pcvr/releases). Keep the extracted
 folder: Steam's launch wrapper runs from it. GitHub's automatic source ZIP does
 not contain the compiled plugin. Your GitHub account needs repository access.
+The separately labeled candidate ZIP includes unverified performance changes;
+start with the baseline. Both extract a folder named `d2r-pcvr-preview`, so
+extract them into separate parent directories. The old v0.1 release lacks the
+current gameplay work. For source, choose branch `vr/steam-frame-proton`.
 
 This is an **offline single-player** preview for the **Steam edition of D2R
 3.3.93787**. Use your own purchased game and offline character. Refresh the
 product license by launching the original game through Steam while connected
 to the internet, then exit before installing. No game files or saves are shipped.
 
+The installer prepares spell/item icons and all 15 original potion models from
+your local Steam archives. These caches stay under `d2rloader/plugins/` and are
+included in installation backup/restore. For an existing installation, with D2R
+closed, run `python3 steamvr/prepare_potions.py --game "/path/to/Diablo II Resurrected"`
+(Windows: `py -3` instead of `python3`) alongside the updated plugin. No Blender,
+Rust, proprietary model SDK or network asset download is required. If preparation
+fails, the mod logs the reason and retains flat potion previews.
+
 **Verified:** Linux + Proton Experimental + SteamVR + Steam Frame, first-person
 gameplay. The latest source fixes creature name/health stereo depth and the
 reported square lighting patches. **Untested:** Quest 3, WiVRn, native Windows
-and Virtual Desktop. Belt/health/mana presentation is unfinished. Logging hitches
-improved in headset tests, but remaining
-stalls and graphics issues are open. This is a test build, not a finished mod.
+and Virtual Desktop. Wrist health/mana, skill editing, physical combat and the
+3D potion belt are implemented, with individual pending checks in TASKS.md.
+Severe Linux streaming resets and separate game-update stalls remain open,
+including after baseline rollback and a PC reboot. This is a test build.
 
 ## Linux + Quest 3 + WiVRn (friend's likely setup)
 
@@ -56,6 +74,14 @@ stalls and graphics issues are open. This is a test build, not a finished mod.
 5. With WiVRn connected, run `./steamvr/run-proton.sh` from the extracted folder.
    Choose **Play** with your offline character. Normal Steam Play remains stock;
    the separate command supplies `--frame-vr` to select D2RLoader.
+
+   For a Steam-library launcher, choose **Add a Game → Add a Non-Steam Game →
+   Browse**, select `steamvr/run-proton.sh`, and name the entry **Diablo II VR**.
+   In its Properties, enable **Include in VR Library** if available. Leave
+   compatibility forcing off for this shortcut: it is a Linux script that asks
+   Steam to launch the purchased game using that game's Proton configuration.
+   Connect the headset, then select **Diablo II VR → Play**. The original D2R
+   library entry continues to launch the unmodded game for license refresh.
 
 **For your agent:** WiVRn compatibility has not been established. Confirm the
 active OpenXR runtime and Proton's WineOpenXR bridge. The Windows game needs
@@ -105,6 +131,22 @@ also untested by this project. Steam Frame uses Steam's PCVR connection directly
 
 ## Controls and settings
 
+If the image becomes blurry or ghosted after changing a graphics preset, check
+**Options → Video → Anti-Aliasing** again. **FXAA**, **DLSS off** and **100%
+resolution scale** restored clarity in the owner's October 9 headset test;
+Very High with DLSS off alone did not restore the previous AA setting. Select
+the quality preset first, then set FXAA. The installer already chooses FXAA
+(its default resolution scale remains 80% for performance).
+
+Fresh installs from current source enable **motion controls and fixed foveation**,
+with **eye-tracked foveation off**. The [motion gameplay prototype](steamvr/GAMEPLAY.md)
+includes melee swings, bow draws, a hand palette and grab-to-mouth belt potions.
+Bow drawing and free-swing melee have been tested on Steam Frame; other
+interactions remain experimental. These features are included in the v0.2
+handoff packages; the old v0.1 preview lacks them. Read the control changes
+before playing. Set
+`[gameplay] motion_controls=0` to use the legacy button controls.
+
 **Keep the D2R window focused on the PC while playing.** Menu laser clicks and
 dragging require desktop focus, even if the headset still displays the game.
 After using another desktop app, select D2R again before interacting with menus.
@@ -132,16 +174,20 @@ a fixed center. To compare, set `[render] fixed_foveation=0` in
 `GAME/d2rloader/plugins/d2r_vr.ini`. Settings reload live.
 
 Current source also includes an **experimental Steam Frame eye-tracking mode**,
-disabled by default and absent from the published preview ZIP. See
+disabled by default and included in the v0.2 handoff packages. See
 [the prototype settings and limitations](steamvr/README.md#eye-tracked-foveation-prototype) below
 the fixed-foveation description. It requires actual OpenXR gaze input from the
 connected headset. Keep it off for Quest 3; changing streaming software cannot
 provide eye-tracking hardware that the headset does not have.
 
-The installer leaves **DLSS off**, the current clarity baseline. Balanced initially
-passed a Steam Frame stability check after two stereo-compatibility fixes, but
-the owner subsequently found DLSS off much clearer. Older preview binaries lack
-those fixes. Performance gains have not been measured in a matched comparison.
+The installer leaves **DLSS off**, the current clarity baseline. The October 9
+development fixes corrected washed-out colors/artifacts, then aligned the depth
+range used by native rendering and particle effects. The owner confirmed that
+**DLSS Quality looks clearer around smoke and effects** with the latest fix.
+Earlier Balanced and Quality builds looked soft compared with native/FXAA;
+overall clarity and stereo-motion reconstruction still need comparison with
+the latest build. DLSS is not yet fully validated, and performance gains have
+not been measured in a matched comparison.
 The latest development build separates the correction
 shader from diagnostics, reducing its isolated compilation from roughly 23 seconds
 to 33 ms on the test PC. This startup improvement is not an FPS benchmark.
@@ -161,9 +207,13 @@ to 33 ms on the test PC. This startup improvement is not an FPS benchmark.
   explicitly. Linux defaults to the game's Steam library prefix, Windows to
   `%USERPROFILE%\Saved Games\Diablo II Resurrected`. Battle.net installations
   have not been adapted to these Steam launch wrappers.
-- **30-day license warning:** exit; use normal Steam Play, without `--frame-vr`,
-  to refresh the license online. Then exit and try offline VR. Keep the same
-  game installation and Proton prefix. Do not replace the original executable.
+- **30-day license warning:** exit fully and retry once. A failed Wine service
+  startup has produced this warning even with a valid license; a clean restart
+  recovered without refreshing it. If it persists, use normal Steam Play,
+  without `--frame-vr`, to refresh the license online, then exit and try offline
+  VR. Keep the same installation and Proton prefix. Do not replace the original
+  executable. For diagnosis, save the Proton log before restarting and check
+  for `Couldn't start services.exe` / `Failed to open service manager`.
 - **No VR / flat view:** check the headset is connected and the correct OpenXR
   runtime is active. Read `GAME/d2rloader/logs/d2r-vr-frame.log`, the startup
   `d2r-vr-vrcam.log`, and `GAME/ReShade.log`. Linux Proton logs are in the
@@ -184,3 +234,29 @@ to 33 ms on the test PC. This startup improvement is not an FPS benchmark.
 Own licenses and upstream attribution are retained. Dependencies are downloaded
 from [D2RLoader](https://d2rloader.net/) and [ReShade](https://reshade.me/), rather
 than bundled with the preview. See `THIRD_PARTY.md` and `LICENSE`.
+
+## Native wheel icons
+
+The installer prepares spell and inventory icons from **your own installed
+Steam game**, on Linux or Windows. No additional packages are required beyond
+Python 3.9+. The gothic wheel/wrist frames are embedded in the plugin. Spell
+slots follow native controller assignments; equipment and belt icons follow
+the current items, including potion tiers and recognized unique/set artwork.
+Blank/unreadable slots retain text instead of a guessed icon. Affix color
+transforms and charge/cooldown badges are not implemented.
+
+After a game update, or if icons are missing, close D2R and rebuild the cache:
+
+```bash
+python3 steamvr/prepare_icons.py --game "/path/to/Diablo II Resurrected" --force
+```
+
+On Windows use `py -3` instead of `python3`, with the Windows game path. Run
+this from the extracted release/repository folder. The output is
+`d2rloader/plugins/d2r_vr_icons` under the game directory. Keep it local; do not
+upload it with the mod. The reader supports Steam static-container installs;
+other storage layouts fall back to wheel labels. Reinstalling through the
+installer also regenerates the cache. Cache file reads/decoding run on a worker
+at runtime and do not run on every frame. These installer changes are tested
+with fixtures and the owner's Steam installation; native Windows and Quest
+headset checks remain pending.

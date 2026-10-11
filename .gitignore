@@ -26,6 +26,7 @@ __pycache__/
 # taken from its menus (kept on this machine, never published - 2026-10-05)
 *.texture
 *.model
+*.pvr
 *.dds
 *_game.png
 *_menu.png
@@ -39,3 +40,7 @@ promo/
 /bin/
 /release-manifest.json
 /openxr-probe-result.txt
+# Native asset caches are generated separately from each user's own installation.
+**/d2r_vr_icons/
+**/d2r_vr_potions/
+/vkd3d-proton.cache*

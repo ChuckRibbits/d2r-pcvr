@@ -55,9 +55,16 @@ inline Quat FromAxes(Vec r,Vec u,Vec b) {
 }
 inline Quat BeamOrientation(Vec direction,Vec towardHead) {
     const auto u=Normalized(direction);
+    if(Dot(u,u)<.5f)return {0,0,0,1};
     auto b=Normalized(towardHead-u*Dot(towardHead,u));
-    if(Dot(b,b)<.5f)b=Normalized(Cross(u,std::fabs(u.x)<.8f?Vec{1,0,0}:Vec{0,0,1}));
-    return FromAxes(Normalized(Cross(u,b)),u,b);
+    // A nearly collinear head/beam vector loses perpendicular precision in
+    // the subtraction above. Rebuild both axes before making a quaternion.
+    auto r=Normalized(Cross(u,b));
+    if(Dot(r,r)<.5f)r=Normalized(Cross(u,std::fabs(u.x)<.8f?Vec{1,0,0}:Vec{0,0,1}));
+    b=Normalized(Cross(r,u));
+    const auto q=FromAxes(r,u,b);
+    const float length=std::sqrt(q.x*q.x+q.y*q.y+q.z*q.z+q.w*q.w);
+    return {q.x/length,q.y/length,q.z/length,q.w/length};
 }
 inline void View(Vec eye, Quat q, float* m) {
     const auto r=Rotate(q,{1,0,0}), u=Rotate(q,{0,1,0}), b=Rotate(q,{0,0,1});

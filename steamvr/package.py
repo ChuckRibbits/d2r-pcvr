@@ -16,16 +16,25 @@ def main():
     parser.add_argument('--build', type=Path, default=ROOT / 'build-frame')
     parser.add_argument('--openxr-loader', type=Path, required=True)
     parser.add_argument('--output', type=Path, default=ROOT / 'build-frame/releases/d2r-pcvr-preview.zip')
+    parser.add_argument('--variant', choices=['current-source', 'linux-baseline'], default='current-source')
+    parser.add_argument('--plugin-source-note', help='Required provenance for an archived baseline DLL')
     args = parser.parse_args()
+    if args.variant == 'linux-baseline' and not args.plugin_source_note:
+        parser.error('--variant linux-baseline requires --plugin-source-note')
     if subprocess.check_output(['git', 'status', '--porcelain'], cwd=ROOT).strip():
         raise SystemExit('Commit source before packaging a release')
     commit = subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip()
     # Explicit allowlist. Never glob an install, backup, build or diagnostic tree.
-    paths = ['INSTALL.md', 'HANDOFF.md', 'THIRD_PARTY.md', 'LICENSE', 'd2r_vr.ini',
+    paths = ['INSTALL.md', 'HANDOFF.md', 'WINDOWS_HANDOFF.md', 'THIRD_PARTY.md', 'LICENSE', 'd2r_vr.ini',
              'reshade/D2R_DepthFog.fx', 'third_party/minhook/LICENSE.txt',
              'external/reshade/LICENSE.md', 'steamvr/install.py',
              'steamvr/launch.sh', 'steamvr/run-proton.sh', 'steamvr/session.py',
-             'steamvr/launch_windows.py', 'steamvr/README.md', 'steamvr/TASKS.md']
+             'steamvr/launch_windows.py', 'steamvr/README.md', 'steamvr/TASKS.md',
+             'steamvr/GAMEPLAY.md', 'steamvr/INTERACTIONS.md', 'steamvr/PERFORMANCE.md',
+             'steamvr/profile_report.py', 'steamvr/stream_report.py',
+             'steamvr/evidence/2026-10-10-handoff.json']
+    paths += ['steamvr/prepare_icons.py', 'steamvr/steam_assets.py']
+    paths += ['steamvr/prepare_potions.py', 'steamvr/potion_assets.py', 'steamvr/vendor/bitknit.py']
     files = {path: ROOT / path for path in paths}
     for folder, pattern in [('reshade/sky', '*.png'), ('steamvr/licenses', '*.txt')]:
         for path in sorted((ROOT / folder).glob(pattern)):
@@ -35,9 +44,14 @@ def main():
     files['bin/openxr_loader.dll'] = args.openxr_loader
     manifest = {'source_commit': commit, 'game_version': '3.3.93787',
                 'created_utc': datetime.now(timezone.utc).isoformat(),
-                'verified': 'Linux/Proton Experimental/SteamVR/Steam Frame',
+                'variant': args.variant,
+                'plugin_source_commit': commit if args.variant == 'current-source' else None,
+                'plugin_source_note': args.plugin_source_note or 'Built from the current source; headset verification pending.',
+                'verified': 'Cross-build and automated checks; Linux baseline has prior headset testing. Native Windows is untested.',
                 'untested': ['Quest 3', 'WiVRn', 'native Windows', 'Virtual Desktop'],
-                'known_issues': ['doubled creature labels', 'residual hitches', 'unfinished belt/HUD'],
+                'known_issues': ['Linux SteamVR-to-Frame stream resets and long receive delays, also before D2R starts',
+                                 'native game-update stalls', 'pending belt-follow and projectile-spell headset tests',
+                                 'performance candidate requires renewed headset validation'],
                 'sha256': {name: hashlib.sha256(path.read_bytes()).hexdigest() for name, path in files.items()}}
     args.output.parent.mkdir(parents=True, exist_ok=True)
     with zipfile.ZipFile(args.output, 'w', zipfile.ZIP_DEFLATED) as z:

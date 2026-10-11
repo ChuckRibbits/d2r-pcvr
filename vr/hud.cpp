@@ -63,9 +63,15 @@
 
 #include <reshade.hpp>
 #include "../steamvr/profile.h"
+#include "../steamvr/native_lock.h"
 
 #include "game_hud_shared.h"
 
+#include "journal_ui.h"
+#include "../steamvr/journal.h"
+#ifdef D2RVR_NATIVE_OPENXR
+#include "../steamvr/ui_world.h"
+#endif
 namespace hud {
 namespace {
 
@@ -118,7 +124,7 @@ std::atomic<bool> g_mapShown{true};
 // with the map off in the game there is nothing to show, and an empty orb is
 // not shown. Under g_lock; cleared by every Publish.
 bool g_mapDrawn = false;
-std::mutex g_lock;
+framevr::NativeMutex g_lock;
 // Lists that have the interface bound now: the view they draw it through, and
 // whether the map's draws are being sent to our own target right now.
 struct Drawing { resource_view layer{}; bool inMap = false; uint32_t w = 0, h = 0; };
@@ -316,6 +322,10 @@ void ZoomedUv(const rect& r, float ax, float ay, float z, uint32_t w, uint32_t h
 struct Labels { resource tex{}; resource_view srv{}; uint32_t w = 0, h = 0; bool fresh = true;
                 bool on = false; float keep[2][4] = {}; ULONGLONG at = 0; };
 Labels g_lab;
+std::atomic<bool> uiActive{false},workspaceActive{false};
+bool uiCaptured=false;
+std::atomic<int> uiEye{0};
+int32_t uiCrop[4]{};
 
 bool CopyLayer(command_list* cl, resource layer, uint32_t w, uint32_t h) {
     device* dev = cl->get_device();
@@ -403,7 +413,7 @@ bool OnClear(command_list* cl, resource_view rtv, const float c[4], uint32_t, co
     g_frameMap.store(MapNow());
     if (g_frameMap.load() == 1) {   // the frame's interface starts: so does the map's
         const resource_desc d = dev->get_resource_desc(dev->get_resource_from_view(rtv));
-        std::lock_guard<std::mutex> g(g_lock);
+        std::lock_guard g(g_lock);
         if (EnsureMapTarget(dev, d.texture.width, d.texture.height)) cl->clear_render_target_view(g_mapRtv, kEmpty);
     }
     return false;
@@ -413,7 +423,7 @@ bool OnClear(command_list* cl, resource_view rtv, const float c[4], uint32_t, co
 void OnScissor(command_list* cl, uint32_t, uint32_t count, const rect* rects) {
     const bool redirect = g_frameMap.load() == 1;   // else only seen: the labels keep the map flat
     if (count == 0 || (!redirect && !g_labels.load())) return;
-    std::lock_guard<std::mutex> g(g_lock);
+    std::lock_guard g(g_lock);
     auto it = g_drawing.find(cl);
     if (it == g_drawing.end()) return;
     Drawing& d = it->second;
@@ -439,10 +449,37 @@ void OnBind(command_list* cl, uint32_t count, const resource_view* rtvs, resourc
     resource_view now{};
     for (uint32_t i = 0; i < count; ++i)
         if (rtvs[i].handle && dev->get_resource_from_view(rtvs[i]).handle == layer) now = rtvs[i];
-    std::lock_guard<std::mutex> g(g_lock);
+    std::lock_guard g(g_lock);
     auto it = g_drawing.find(cl);
     if (it != g_drawing.end() && it->second.layer.handle != now.handle) {
         const resource_view layerRtv = it->second.layer;
+        if(uiActive.load()) {
+            const auto tex=dev->get_resource_from_view(layerRtv);const auto desc=dev->get_resource_desc(tex);
+            int32_t native[4]{};
+            if(workspaceActive.load()||gamestate::JournalRect(native)) {
+                const auto region=workspaceActive.load()?framevr::journal::Rect{0,0,int(desc.texture.width),int(desc.texture.height)}:
+                    framevr::journal::Crop({native[0],native[1],native[2],native[3]},desc.texture.width,desc.texture.height,g_uiScale.load());
+                const rect crop{region.x,region.y,region.x+region.w,region.y+region.h};
+                if(crop.right>crop.left&&crop.bottom>crop.top) {
+                    if(uiEye.load()==0&&CopyLayer(cl,tex,desc.texture.width,desc.texture.height)) {
+                        uiCrop[0]=crop.left;uiCrop[1]=crop.top;uiCrop[2]=crop.right-crop.left;uiCrop[3]=crop.bottom-crop.top;
+                        uiCaptured=true;
+                    }
+                    if(uiCaptured) {
+                        g_lab.on=false;g_pic.on[kBar]=g_pic.on[kMap]=false;
+                        ++g_frames;DrainRetired(dev);
+                        // Leave the native UI source intact. The verified
+                        // final compositor samples only the world in BOTH
+                        // eyes while this UI is submitted as one XR layer.
+                        // Avoid clearing a shared/cached source beneath the
+                        // native compositor between its two eye passes.
+                        g_drawing.erase(it);
+                        if(now.handle){const auto d=dev->get_resource_desc(dev->get_resource_from_view(now));g_drawing[cl]=Drawing{now,false,d.texture.width,d.texture.height};}
+                        return;
+                    }
+                }
+            }
+        }
         const int hideNow = HideNow();
         {
             const resource_desc d = dev->get_resource_desc(dev->get_resource_from_view(layerRtv));
@@ -470,19 +507,35 @@ void OnBind(command_list* cl, uint32_t count, const resource_view* rtvs, resourc
 }
 
 void OnReset(command_list* cl) {
-    std::lock_guard<std::mutex> g(g_lock);
+    std::lock_guard g(g_lock);
     g_drawing.erase(cl);
 }
 
 }  // namespace
 
 void Register() {
+#ifdef D2RVR_NATIVE_OPENXR
+    framevr::uiworld::Register(&Log);
+#endif
     reshade::register_event<reshade::addon_event::clear_render_target_view>(&OnClear);
     reshade::register_event<reshade::addon_event::bind_render_targets_and_depth_stencil>(&OnBind);
     reshade::register_event<reshade::addon_event::reset_command_list>(&OnReset);
     reshade::register_event<reshade::addon_event::bind_scissor_rects>(&OnScissor);
 }
 
+void UiFrame(bool active,bool workspace,int eye){
+    std::lock_guard lock(g_lock);
+    if(!active||eye==0)uiCaptured=false;
+    uiActive=active;workspaceActive=workspace;uiEye=eye;
+#ifdef D2RVR_NATIVE_OPENXR
+    framevr::uiworld::SetActive(active);
+#endif
+}
+uint64_t UiTexture(uint32_t& width,uint32_t& height,int32_t crop[4]) {
+    std::lock_guard lock(g_lock);
+    if(!uiActive.load()||!uiCaptured||!g_lab.tex.handle)return 0;
+    width=g_lab.w;height=g_lab.h;std::copy_n(uiCrop,4,crop);return g_lab.tex.handle;
+}
 void SetHide(int mode) { g_hide.store(mode); }
 void SetMenuOpen(bool open) { g_menu.store(open); }
 void SetMapMode(int mode) { g_mapMode.store(mode); }
@@ -508,12 +561,12 @@ void SetLabels(bool on) { g_labels.store(on); }
 // The interface copied as the fog's mask (left in the picture) while the labels are not out.
 void SetUiMask(bool on) { g_uiMask.store(on); }
 bool UiMaskNow() {
-    std::lock_guard<std::mutex> g(g_lock);
+    std::lock_guard g(g_lock);
     return g_lab.on && !g_labels.load() && g_uiMask.load() && g_lab.srv.handle && GetTickCount64() - g_lab.at < 250;
 }
 // For D2R_DepthFog.fx: the interface left over this frame, and the boxes (uv) it keeps flat - the toolbar, the map.
 bool LabelsNow(float keepBar[4], float keepMap[4], uint64_t* srv) {
-    std::lock_guard<std::mutex> g(g_lock);
+    std::lock_guard g(g_lock);
     *srv = g_lab.srv.handle;
     for (int k = 0; k < 4; ++k) { keepBar[k] = g_lab.keep[0][k]; keepMap[k] = g_lab.keep[1][k]; }
     return g_lab.on && g_labels.load() && *srv && GetTickCount64() - g_lab.at < 250;
@@ -525,7 +578,7 @@ void SetPictureReady(bool ready) { g_picReady.store(ready); }
 // (uv l, t, r, b) and from which view. Off once no interface came for a while.
 bool PictureNow(int i, float box[4], uint64_t* srv) {
     if (i < 0 || i >= kShares) return false;
-    std::lock_guard<std::mutex> g(g_lock);
+    std::lock_guard g(g_lock);
     *srv = g_share[i].srv.handle;
     const bool on = g_pic.on[i] && g_classic.load() && GetTickCount64() - g_pic.at < 250;
     for (int k = 0; k < 4; ++k) box[k] = g_pic.box[i][k];
@@ -534,14 +587,14 @@ bool PictureNow(int i, float box[4], uint64_t* srv) {
 bool ToggleMapShown() { const bool now = !g_mapShown.load(); g_mapShown.store(now); return now; }
 // The Windows pointer in the headset (FlatVRGameHudLook::pointer): 1 whenever shown, 2 never.
 void SetPointer(uint32_t mode) {
-    std::lock_guard<std::mutex> g(g_lock);
+    std::lock_guard g(g_lock);
     g_look.pointer = mode;
     if (g_block) g_block->look.pointer = mode;
 }
 
 // The pointer's depth in FlatVR's stereo pair (FlatVRGameHud::pointer_depth): per eye base + tilt * v of an eye's width.
 void SetPointerDepth(float base, float tilt, float curve, float topScale) {
-    std::lock_guard<std::mutex> g(g_lock);
+    std::lock_guard g(g_lock);
     if (g_block) {
         g_block->pointer_depth.base = base; g_block->pointer_depth.tilt = tilt; g_block->pointer_depth.curve = curve;
         g_block->pointer_depth.top_scale = topScale;
@@ -550,13 +603,13 @@ void SetPointerDepth(float base, float tilt, float curve, float topScale) {
 
 // Where FlatVR is told to hang panel 0 (toolbar) / 1 (map): FlatVRGameHudLook's anchors.
 int Anchor(int panel) {
-    std::lock_guard<std::mutex> g(g_lock);
+    std::lock_guard g(g_lock);
     return (int)(panel == 0 ? g_look.bar_anchor : g_look.map_anchor);
 }
 
 void SetForearm(int panel, bool valid, const float elbow[3], const float wrist[3], const float across[3]) {
     if (panel < 0 || panel >= kShares) return;
-    std::lock_guard<std::mutex> g(g_lock);
+    std::lock_guard g(g_lock);
     FlatVRGameHudPose& p = g_pose[panel];
     p.valid = valid ? 1u : 0u;
     if (!valid) return;
@@ -564,7 +617,7 @@ void SetForearm(int panel, bool valid, const float elbow[3], const float wrist[3
 }
 
 void SetLook(const FlatVRGameHudLook& look) {
-    std::lock_guard<std::mutex> g(g_lock);
+    std::lock_guard g(g_lock);
     // the pointer mode is the view's (SetPointer), not the settings': a settings reload put 0 there
     // until the next tick and the pointer blinked between FlatVR's rule and "never" (2026-10-06)
     const uint32_t pointer = g_look.pointer;

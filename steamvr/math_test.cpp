@@ -1,4 +1,4 @@
-#include "math.h"
+#include "frame_math.h"
 #include "input.h"
 #include "hero_selection.h"
 #include "foveation_math.h"
@@ -96,6 +96,17 @@ int main() {
     const auto beamUp=Rotate(beam,{0,1,0}),beamNormal=Rotate(beam,{0,0,1});
     Near(Dot(beamUp,beamDir),1);Near(Dot(beamNormal,beamDir),0);
     expect(Dot(beamNormal,towardHead)>0);
+    // A controller aimed almost along the head-to-controller line used to
+    // generate a non-unit laser pose, invalidating the entire OpenXR frame.
+    const Vec nearParallelDirection={-.11118374f,.191314846f,-.975211143f};
+    const auto nearParallel=BeamOrientation(nearParallelDirection,{-.212656036f,.365919948f,-1.8652482f});
+    Near(nearParallel.x*nearParallel.x+nearParallel.y*nearParallel.y+nearParallel.z*nearParallel.z+nearParallel.w*nearParallel.w,1);
+    Near(Dot(Rotate(nearParallel,{0,1,0}),Normalized(nearParallelDirection)),1);
+    for(Vec direction:{Vec{0,1,0},Vec{0,0,-1},Vec{1,0,0}}) {
+        const auto parallel=BeamOrientation(direction,direction*2);
+        Near(parallel.x*parallel.x+parallel.y*parallel.y+parallel.z*parallel.z+parallel.w*parallel.w,1);
+        Near(Dot(Rotate(parallel,{0,1,0}),direction),1);
+    }
     expect(framevr::LocalStandingBody(100,200,100,200,6,6));
     expect(framevr::LocalStandingBody(101,201,100,200,3,6)); // crouching, sub-tile camera offset
     expect(!framevr::LocalStandingBody(100,200,100,200,.5f,6)); // corpse at respawn

@@ -39,6 +39,9 @@
 #endif
 #include <intrin.h>
 
+#ifdef D2RVR_NATIVE_OPENXR
+namespace framevr {bool SpatialMenu();}
+#endif
 namespace d2rcam {
 namespace {
 
@@ -434,6 +437,7 @@ void __fastcall DrawMonsterHealth(void* widget) {
     g_drawMonsterHealth(widget);
 }
 void __fastcall DrawPanelManager(void* widget) {
+    if(t_stereoUiEye==1&&framevr::SpatialMenu())return; // one native UI update for the shared journal texture
     const Frame& f=Current();
     if(!g_monsterDrawOrder.load(std::memory_order_relaxed)||t_stereoUiEye<0||
        !f.ourView||!f.ourProj||t_deferredHealth) {
