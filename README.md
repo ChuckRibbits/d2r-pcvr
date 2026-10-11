@@ -4,13 +4,24 @@ Play **Diablo II: Resurrected in VR on Windows**, with support for
 **SteamVR and Virtual Desktop (VDXR)**. Use motion controls to swing your
 weapon, aim spells, drink belt potions and explore Sanctuary in first person.
 
+**This is a mod for the original game, not a standalone game. You must purchase
+and install your own legitimate copy of Diablo II: Resurrected.** This Windows
+preview requires the Steam edition. The mod adds VR support and motion
+interactions on top of your existing game installation.
+
+**No Blizzard game assets are included in this repository or the release ZIP.**
+The download contains the mod and licensed third-party components, not the
+game, its executable, models, textures or audio. During installation, required
+item/skill icons and potion models are read from your own installed game into
+local caches. Keep those caches local; do not include them when sharing the mod.
+
 **[Download the Windows preview](https://github.com/bearstonem/d2r-pcvr/releases/tag/v0.3.0-windows-quest-preview)**
 and follow **[Install and play](INSTALL-WINDOWS.md)**.
 Download **d2r-pcvr-windows.zip** from the release's Assets section.
 
 ## What you need
 
-- A Windows PC with the **Steam edition of D2R 3.3.93787**.
+- A Windows PC with your **purchased Steam copy of D2R 3.3.93787** installed.
 - A VR headset and two tracked controllers.
 - **SteamVR**, or **Virtual Desktop for Quest with its Windows Streamer**.
 - **Python 3.10 or newer** to run the included installer and launcher.

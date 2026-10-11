@@ -2,6 +2,11 @@
 
 This Windows preview supports **SteamVR and Virtual Desktop (VDXR)**.
 
+**This is a VR mod for a separately purchased game. You must own and install
+a legitimate Steam copy of Diablo II: Resurrected.** The original game is not
+included. No Blizzard game assets are supplied in the ZIP; the installer reads
+the required assets from your own game and keeps its asset caches local.
+
 1. Download **d2r-pcvr-windows.zip** from the
    [release page](https://github.com/bearstonem/d2r-pcvr/releases/tag/v0.3.0-windows-quest-preview).
 2. Extract the `d2r-pcvr-preview` folder to a permanent location.

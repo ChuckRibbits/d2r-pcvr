@@ -1,12 +1,22 @@
 # Install and play D2R PCVR on Windows
 
 This preview supports **SteamVR and Virtual Desktop (VDXR)** on Windows.
+
+**D2R PCVR is a mod installed on top of the original game. You must purchase
+and install your own legitimate Steam copy of Diablo II: Resurrected. The
+game is not included, and this mod cannot run without it.**
+
+**The release ZIP includes no Blizzard game assets.** It contains the VR mod
+and licensed third-party components. The installer reads the required
+item/skill icons and potion models from your own installed game and keeps
+them in local caches. Do not redistribute those caches or your game files.
+
 You need the **Steam edition of Diablo II: Resurrected 3.3.93787** and a
 **local offline character**. The game runs on your PC and streams to the headset.
 
 ## Before you start
 
-1. Install D2R through Steam. Launch it normally once, finish any account
+1. Purchase and install D2R through Steam. Launch it normally once, finish any account
    prompts, create/select an offline character, then fully exit.
 2. Install [Python 3.10 or newer](https://www.python.org/downloads/windows/)
    with the Windows **py launcher**. Open PowerShell and run
