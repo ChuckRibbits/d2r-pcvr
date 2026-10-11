@@ -191,6 +191,10 @@ Steam library using the [shortcut instructions](INSTALL-WINDOWS.md#add-steam-lib
 
 See [Install and play](INSTALL-WINDOWS.md) for setup, controls and removal.
 
+For the complete additions overview, download the
+[PDF](docs/D2R-PCVR-Additions.pdf) or
+[editable Word document](docs/D2R-PCVR-Additions.docx).
+
 Based on [BodyWalkVR's D2R VR](https://github.com/natpoh/diablo2-vr-port).
 Licenses and credits are in [THIRD_PARTY.md](THIRD_PARTY.md) and [LICENSE](LICENSE).
 This project is not affiliated with or endorsed by Blizzard Entertainment.
