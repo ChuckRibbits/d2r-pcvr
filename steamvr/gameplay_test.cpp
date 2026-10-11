@@ -55,7 +55,15 @@ int main() {
     }
     {
         Sim s;s.in.palette=true;s.in.hover=2;s.in.trigger=1;s.Step();s.in.palette=false;s.in.trigger=0;s.Step();
-        Check(!s.Step().meleeContact,"selected spell suppresses incidental melee");
+        Check(s.Step().meleeContact&&s.engine.Selection()==2,"selected spell leaves free melee available after selection trigger release");
+        s.in.trigger=1;Check(s.Step().skill==2&&!s.out.meleeContact&&!s.out.attack,"casting selected skill pauses free melee without a duplicate attack");
+        s.in.trigger=0;Check(s.Step().meleeContact&&s.engine.Selection()==2,"releasing cast restores free melee and keeps the selected skill");
+        s.in.active=false;s.Step();s.in.active=true;s.Step(3);
+        Check(s.out.meleeContact&&s.engine.Selection()==2,"area load keeps both free melee and selected trigger skill");
+        s.in.palette=true;s.in.hover=8;s.in.trigger=1;s.Step();s.in.palette=false;s.in.trigger=0;s.Step();
+        Check(s.engine.Selection()==-1&&s.Step().meleeContact,"Weapon clears trigger skill while keeping free melee");
+        s.in.trigger=1;Check(s.Step().attack&&!s.out.meleeContact,"Weapon restores explicit basic attack fallback");s.in.trigger=0;s.Step();
+        s.engine.Select(2);
         ++s.in.equipment;s.Step();Check(s.engine.Selection()==-1,"equipping melee restores attack mode");
         Check(s.Step(3).meleeContact,"new weapon needs no grip release/activation");
     }

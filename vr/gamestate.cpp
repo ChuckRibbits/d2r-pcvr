@@ -67,6 +67,7 @@ std::mutex g_readMutex;
 framevr::CallbackTicket g_readTicket;
 std::atomic<uint32_t> g_weapon{D2RVR_WEAPON_UNKNOWN};
 std::atomic<uint32_t> g_menu{0};
+std::atomic<uint32_t> g_menuEpoch{0};
 std::atomic<bool> g_journalOnly{false};
 std::atomic<bool> g_opaqueMenu{false};
 uint64_t g_menuOpenUntil=0; // UI thread only: wait for native layout transition
@@ -453,6 +454,7 @@ SharedEvents::UiMessageAction __cdecl OnUiMessage(const PluginContext*, const Sh
             [](const auto& name){return framevr::panels::OpaqueBackground(name);}));
         bool menu = false;
         for (const std::string& n : g_panels) if (IsMenuPanel(n)) { menu = true; break; }
+        if(menu!=before)++g_menuEpoch;
         g_menu.store(menu ? 1 : 0);
         int menus=0;bool quest=false;
         for(const auto& name:g_panels)if(IsMenuPanel(name)){++menus;quest=name.find("QuestLog")!=std::string::npos;}
@@ -593,6 +595,7 @@ uint32_t TwoHanded() { return g_two.load(); }
 uint32_t WeaponHand() { return g_from.load(); }
 uint32_t HandsKey() { return g_handsKey.load(); }
 bool MenuOpen() { return g_menu.load() != 0; }
+uint32_t MenuEpoch() { return g_menuEpoch.load(); }
 uint64_t LocalPlayer() { return g_player.load(); }
 // An object's light in a mode: its radius (Objects.txt Lit, 0 = none) and colour 0..1.
 int ObjectLight(uint32_t txt, uint32_t mode, float rgb[3]) {

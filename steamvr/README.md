@@ -105,8 +105,11 @@ For VR it also imports the host OpenXR runtime into the Steam Linux Runtime.
 Use the offline character **Nekro** for game testing.
 
 Main menus and in-game panels use a world-anchored display. Aim the right
-controller's cyan laser, use **right trigger** to click or drag, and **right B**
-to back out. **Keep the D2R window focused on the PC.** Mouse input is sent only
+controller's cyan laser and use **right trigger** to click or drag. **Left Grip
++ Right Trigger** sends a context click. Sticks or face buttons select native
+controller navigation; after releasing them, deliberately re-aim the laser to
+return to pointer control. **Right B** follows the native back action.
+**Keep the D2R window focused on the PC.** Mouse input is sent only
 while that window has focus; after using another desktop app, select D2R again
 before clicking or dragging in menus. Opening inventory with Left X does not
 guarantee desktop focus. Gameplay
@@ -124,15 +127,17 @@ suppressing it safely is an open performance task. Do not minimize the game as
 a workaround: background/focus handling also affects input and frame pacing.
 
 **Left X** opens inventory through the game's UI service when no menu is open.
-When menu panels are open, Left X closes them, including panels opened with the
-toolbar shortcuts; another press opens inventory again. It preserves the HUD
-and map. The native inventory action requires headset focus, so another active
+When native menu panels are open, Left X performs the native X action. It
+preserves the HUD and map. The native inventory action requires headset focus, so another active
 desktop window does not swallow Left X. Explicit menu actions and laser clicks
 try to bring the game window forward; OS mouse/keyboard injection still requires
-desktop focus. Hovering the laser does not move focus. The controller menu button
-and right B in menus send Escape using a
-scan-code press held across frames. A trigger used on a menu remains consumed
-until released, so closing the panel cannot turn the same press into an attack.
+desktop focus. Hovering the laser does not steal desktop focus or an active
+native controller selection. The controller menu button pulses Escape during
+gameplay and forwards native Start in menus. Menu reports carry a context tag
+and UI epoch in BodyWalk's reserved fields; stale world/menu reports are
+rejected before semantic actions or camera-relative movement can run. Held
+controls must return to neutral across transitions. Full player mappings are
+in [CONTROLS.md](../CONTROLS.md).
 
 The [motion gameplay prototype](GAMEPLAY.md) adds right-handed melee
 swings, two-hand bow draws, a left-hand selection palette, aimed native skills

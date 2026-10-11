@@ -75,6 +75,7 @@ namespace hud { void Register(); void SetHide(int mode); void SetInterfaceScale(
 #include "mat4.h"
 namespace gamecmd { void Init(const D2RL::PluginContext* ctx); void Tick(); }   // the game's key commands from BodyWalk (gamecmd.cpp)
 namespace gamestate { bool ToggleMenus(); }
+namespace gamestate { uint32_t MenuEpoch(); }
 namespace gamestate { void Init(const D2RL::PluginContext* ctx); void Tick(); uint32_t WeaponClass(); uint32_t WeaponSet(); uint32_t WeaponType(); uint32_t HandsHeld(); uint32_t TwoHanded(); uint32_t WeaponHand(); uint32_t HandsKey(); bool MenuOpen(); int ObjectLight(uint32_t txt, uint32_t mode, float rgb[3]); uint64_t LocalPlayer(); void SetViewMode(uint32_t mode); bool AutoMapOpen(); bool SetAutoMap(bool open); void PollPlate(); bool PlateRect(int32_t out[4]); }
 #include "d2r_vr_state.h"
 
@@ -84,6 +85,7 @@ namespace gamestate { void Init(const D2RL::PluginContext* ctx); void Tick(); ui
 #include "afr_eye_shared.h"
 #ifdef D2RVR_NATIVE_OPENXR
 #include "transport.h"
+#include "menu_controls.h"
 #include "spell_aim.h"
 #include "spell_aim_signatures.h"
 #include "settings_menu.h"
@@ -3282,9 +3284,10 @@ bool PadMirrorRead(BWPadMirror* out) {
     return true;
 }
 
-bool PadFromBodyWalk(XINPUT_STATE* s) {
+bool PadFromBodyWalk(XINPUT_STATE* s, BWPadMirror* report=nullptr) {
     BWPadMirror m;
     if (!PadMirrorRead(&m)) return false;
+    if(report)*report=m;
     s->dwPacketNumber = m.counter;
     s->Gamepad.wButtons = m.buttons;
     s->Gamepad.bLeftTrigger = m.left_trigger;
@@ -3813,15 +3816,21 @@ template <int I> DWORD WINAPI XDetour(DWORD idx, XINPUT_STATE* s) {
     // Flat with a real pad let through (flat_no_pad=0): that pad only, its stick
     // turned by the camera below; BodyWalk's stick walks through the keyboard move.
     bool mirror = false;
-    if (t_xDepth == 0 && idx == 0 && s && !FlatKeyMode() && PadFromBodyWalk(s)) { r = ERROR_SUCCESS; mirror = true; }
+    BWPadMirror report{};
+    if (t_xDepth == 0 && idx == 0 && s && !FlatKeyMode() && PadFromBodyWalk(s,&report)) { r = ERROR_SUCCESS; mirror = true; }
     if (t_xDepth == 0 && idx == 0 && s) KeysAsStick(s, &r);
     if (r == ERROR_SUCCESS && t_xDepth == 0) {
 #ifdef D2RVR_NATIVE_OPENXR
-        // Panel events can arrive between OpenXR input publication and this
-        // game-thread poll. Keep stale attack/menu actions out of mouse UI.
-        if(gamestate::MenuOpen()) {
-            s->Gamepad={};
+        const bool nativeUi=gamestate::MenuOpen()||!g_inWorld.load();
+        const bool tagged=mirror&&report.writer_pid==GetCurrentProcessId()&&framevr::menus::Tagged(report.reserved[0]);
+        // A panel can open/close between XR publication and this poll. Require
+        // the same context AND UI epoch before accepting either kind of pad.
+        const bool allowed=!tagged||framevr::menus::Allowed(report.reserved[0],report.reserved[1],gamestate::MenuEpoch(),nativeUi,framevr::SettingsOpen());
+        if(!allowed||nativeUi||framevr::SettingsOpen()) {
+            if(!allowed||framevr::SettingsOpen())s->Gamepad={};
             if(idx==0){g_aHeld.store(false);g_skillHeld.store(false);g_rightX.store(0.f);}
+            // Native menu buttons/sticks bypass gameplay action translation
+            // and camera-relative movement. Laser reports are already empty.
             return r;
         }
 #endif

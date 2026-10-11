@@ -1,0 +1,30 @@
+{
+  "release_tag": "v0.3.2-windows-preview",
+  "date": "2026-10-11",
+  "platform": "native Windows x64, Steam D2R 3.3.93787, offline characters",
+  "plugin_sha256": "18cb931b2532baa73fbdccecd9d22c33bf7a17429809d81c946b92f7cb63f246",
+  "native_tests_passed": 34,
+  "python_tests_passed": 24,
+  "automated_coverage": [
+    "Stash/BankExpansionLayout, standalone inventory, cube, mercenary and trade roots use the opaque shared UI policy; auxiliary dialogue/journal roots do not",
+    "Native menu focus survives idle pointer jitter and queued pointer-release protection; deliberate re-aim returns to the laser",
+    "Drag ownership survives a ray miss and grip changes; context-click remains available without native A duplication",
+    "Per-control release gates cover world/menu/settings transitions, movement, attack, grips and focus loss",
+    "Context and epoch validation reject old world/menu reports, including open-close-open between XR publications",
+    "Native menu triggers, bumpers and both sticks forward without semantic gameplay translation",
+    "Simultaneous LT + Left Grip + left secondary remains quick-cast slot 8 rather than opening VR settings",
+    "Existing typed/typeless UI alpha, opaque-background and sRGB GPU checks remain passing"
+  ],
+  "distribution": {
+    "complete_player_controller_reference": "CONTROLS.md and embedded README tables",
+    "game_required": "A separately purchased, legitimate Steam copy of Diablo II: Resurrected",
+    "game_assets": "Not distributed; icons and potion models are cached locally from the user's installation",
+    "repository_visibility": "private"
+  },
+  "headset_validation": "Owner confirmed native menus, laser dragging, and the matching stash background in both eyes on c7efb92b562c00b58e94104508694599530916f08659fc21dcbaba378dcdab1b through SteamVR. Final 18cb931b changes only simultaneous slot-8 quick-cast/settings ordering and passes the added integrated check; it is staged until normal exit.",
+  "limits": [
+    "Basic native navigation, laser dragging, and stash stereo are owner-confirmed; exhaustive item operations and every native prompt remain unverified",
+    "Quest 3 SteamVR/VDXR were owner-confirmed on preceding builds; no new VDXR or physical Quest 2 check",
+    "No controlled performance comparison; existing cave melee fix and native signature guards retained"
+  ]
+}

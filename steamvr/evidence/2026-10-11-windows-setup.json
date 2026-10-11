@@ -1,0 +1,31 @@
+{
+  "release_tag": "v0.3.3-windows-preview",
+  "source_base": "7767d60ba0d15b258c2b560b6d68493c3bc1d720",
+  "plugin_sha256": "5727d39771b35e34c0c9c21e844836fcc6432ab66e79521f7cc5f21dcc544834",
+  "native_tests_passed": 34,
+  "python_tests_passed": 34,
+  "local_deployment": {
+    "installed_at": "2026-10-11T13:20:11-07:00",
+    "previous_sha256": "c7efb92b562c00b58e94104508694599530916f08659fc21dcbaba378dcdab1b",
+    "backup": "build-frame/backups/windows-native-inventory-20261011-132011",
+    "ini_calibration_and_graphics_preserved": true,
+    "game_was_closed": true
+  },
+  "coverage": [
+    "Native inventory X and R3 holds forward on every sampled frame; physical R3 cannot swap weapons in world input",
+    "Previous menu/stash and quick-cast/settings ordering fixtures remain passing",
+    "Wizard routes Steam Frame to SteamVR and Quest to selected SteamVR/VDXR shortcuts, with VDXR OpenVR disabled",
+    "Separate Steam game libraries, new/existing app options, BOM and exact unrelated text preservation",
+    "Binary shortcuts round-trip exactly, preserve unrelated entries and update idempotently",
+    "Two-file Steam configuration transaction backs up originals and rolls back a partial failure",
+    "Steam reopening or external configuration edits prevent commit",
+    "Upgrade preserves calibration, video and ReShade configuration; restore keeps character progress",
+    "Release manifest rejects missing, changed and escaping files"
+  ],
+  "headset_validation": "Owner confirmed native menus, dragging and stash stereo on preceding c7efb92b build. Inventory X/drop and R3 hold follow-up is installed but has no additional headset confirmation yet.",
+  "limits": [
+    "Interactive wizard runs against isolated fixtures; live Steam profiles are not rewritten during verification",
+    "Quest 2 remains unconfirmed; preceding Quest 3 SteamVR and VDXR sessions were owner-confirmed",
+    "No new controlled performance comparison"
+  ]
+}

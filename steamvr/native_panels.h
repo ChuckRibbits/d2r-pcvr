@@ -8,7 +8,10 @@ inline constexpr char TabbedMenu[]="UISwitcher";
 // VendorPanelLayout also hosts NPC gambling; keep speech/quest panels spatial.
 inline bool OpaqueBackground(std::string_view name) {
     return name==TabbedMenu||name.starts_with("Vendor")||
-        name.starts_with("Trade")||name.starts_with("Gamble");
+        name.starts_with("Trade")||name.starts_with("Gamble")||
+        name.starts_with("Bank")||name.starts_with("Stash")||
+        name.starts_with("PlayerInventory")||name.starts_with("HoradricCube")||
+        name.starts_with("HirelingInventory")||name.starts_with("MercenaryInventory");
 }
 // Persistent HUD roots are not modal. Speech can outlive NpcDialogPanel.
 inline bool Modal(std::string_view name) {

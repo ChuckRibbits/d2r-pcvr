@@ -106,6 +106,40 @@ int main(){
         Check(strong>=12,"strong lateral, vertical and diagonal rotations remain damaging");
         Check(strokes>=4,"continuous strong swings rearm without a stationary pause");
     }
+    // Exercise the input gate as well as contact recognition. A stale angular
+    // limit in the input gate used to cancel every strong slash before the
+    // contact engine could finish its recovery, including after area loads.
+    for(double dt:{1./36,1./44,1./72,1./90,1./120}) {
+        gameplay::Engine input;Engine contact;gameplay::Input in;Sample sample;Sweep sweep;
+        in.active=in.tracked[0]=in.tracked[1]=in.aimTracked=true;
+        in.weapon=gameplay::Weapon::Melee;in.equipment=1;
+        in.head.p={0,1.65f,0};in.hand[0].p={0,1,-.5f};in.hand[1].p={-.25f,1,-.5f};in.aim=in.hand[0];
+        sample.epoch=1;sample.equipment=1;sample.unitsPerMetre=4;
+        auto step=[&] {
+            in.time+=dt;const auto out=input.Step(in);
+            sample.time=in.time;sample.active=out.meleeContact;sample.hand=in.hand[0];
+            sample.blade={in.hand[0].p,in.hand[0].p+math::Rotate(in.hand[0].q,{0,0,-.7f}),.04f};
+            if(!out.meleeContact){contact.Reset();return false;}
+            return contact.Step(sample,sweep);
+        };
+        for(int area=0;area<3;++area) {
+            input.Select(area?2:-1);
+            // Loading screens interrupt the old stroke; fresh motion must
+            // recover on both sides of repeated outdoor/dungeon transitions.
+            in.active=false;Check(!step(),"area load cancels old contact");in.active=true;
+            for(int i=0;i<20;++i)step();
+            int powered=0;float angle=0,direction=1;
+            for(int i=0;i<80;++i) {
+                angle+=direction*50*float(dt);if(std::fabs(angle)>=1.4f)direction=-direction;
+                in.hand[0].q=math::Yaw(angle);powered+=step();
+            }
+            Check(powered>16,"strong swings survive input and contact gates after area loads at every headset rate");
+            Check(input.Selection()==(area?2:-1),"free swings preserve the selected trigger skill across area loads");
+            // A real tracking jump must still drop this frame's geometry.
+            in.hand[0].q=math::Multiply(math::Yaw(65*float(dt)),in.hand[0].q);
+            Check(!step(),"angular tracking jump cannot damage through the full pipeline");
+        }
+    }
     {
         Sim s;for(int i=0;i<8;++i)s.Move({.04f,0,0});
         s.sample.time+=.25;Check(!s.Move({.04f,0,0}),"hitch itself never damages");

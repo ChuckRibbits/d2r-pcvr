@@ -23,6 +23,7 @@ Focus originalFocus=nullptr;
 Activity originalPointer[6]{};
 bool pointerIn[6]{},activityIn=false,requestIn=false,controllerIn=false,dispatchIn=false,focusIn=false,cursorSnapIn=false;
 std::atomic<bool> ready{false},reported{false};
+std::atomic<bool> pointerFocus{false};
 thread_local bool pointerContext=false;
 thread_local bool bindingContext=false;
 
@@ -76,7 +77,7 @@ void OnDispatch(const void* message) {
     originalDispatch(message);
 }
 void OnFocus(void* self,bool sound) {
-    framevr::panels::PointerScope scope(pointerContext,Owns());
+    framevr::panels::PointerScope scope(pointerContext,framevr::panels::FocusUsesPointer(Owns(),pointerFocus.load()));
     originalFocus(self,sound);
 }
 
@@ -96,7 +97,8 @@ bool OnRequest(int method) {
     return originalRequest(method);
 }
 }
-void OwnPointer(){lease.Refresh(GetTickCount64());}
+void OwnPointer(){pointerFocus=true;lease.Refresh(GetTickCount64());}
+void UseController(){pointerFocus=false;}
 bool BlocksWorld(){return Owns();}
 bool ControllerAction(void (*action)(void*),void* data){
     if(!ready.load(std::memory_order_acquire)||!action)return false;

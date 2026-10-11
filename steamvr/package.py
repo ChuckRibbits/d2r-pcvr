@@ -31,8 +31,10 @@ def main():
         ['git', 'rev-parse', '--verify', (args.plugin_source_commit or commit) + '^{commit}'],
         cwd=ROOT, text=True).strip() if args.variant == 'current-source' else None
     # Explicit allowlist. Never glob an install, backup, build or diagnostic tree.
-    paths = ['INSTALL.md', 'INSTALL-WINDOWS.md', 'README.md', 'RELEASE_NOTES.md',
+    paths = ['INSTALL.md', 'INSTALL-WINDOWS.md', 'README.md', 'CONTROLS.md', 'RELEASE_NOTES.md',
              'Launch-VR-SteamVR.cmd', 'Launch-VR-VDXR.cmd',
+             'Install-Windows.cmd', 'steamvr/setup_windows.ps1',
+             'steamvr/setup_windows.py', 'steamvr/steam_config.py',
              'THIRD_PARTY.md', 'LICENSE', 'd2r_vr.ini',
              'reshade/D2R_DepthFog.fx', 'third_party/minhook/LICENSE.txt',
              'external/reshade/LICENSE.md', 'steamvr/install.py',

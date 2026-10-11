@@ -65,14 +65,14 @@ not generate melee velocity. The layout currently assumes a right-handed player.
 
 | Action | Control |
 |---|---|
-| Open/close tabbed character menu | Left primary face button (Left X / Frame Left A) |
+| Open tabbed character menu | Left primary face button (Left X / Frame Left A); inside menus this is native X |
 | VR settings and controls reference | Left Grip + Left Y; also **VR SETTINGS** at the bottom of the wheel |
 | Spell wheel | Hold Left Y; raise/turn left palm toward you; aim right-hand laser at a wedge and click trigger |
 | Assign wheel skills | Hold Left Y → **EDIT SKILLS** → choose a slot → choose a learned skill; **CLEAR SLOT** removes a binding |
-| Select weapon combat | Click **WEAPON** in the wheel center; release selection trigger before attacking |
+| Basic attack / bow on right trigger | Click **WEAPON** in the wheel center; release the selection trigger first |
 | Selected skill / spell | Point right hand and press trigger; hold to use the native repeat/channel behavior |
 | Quick cast without opening wheel | Hold Left Trigger, point right hand and press a face button; add Left Grip for the alternate four slots (mapping below) |
-| Melee swing / thrust | Swing the equipped weapon through a creature; no grip, trigger, or preselected target |
+| Melee swing / thrust | Swing the equipped melee weapon through a creature, including with a skill selected; no grip, trigger, or preselected target |
 | Button attack / crossbow | Weapon combat mode, right trigger; native crossbow firing |
 | Nock bow | Bow equipped: bring right hand to string and hold right trigger; no left grip required |
 | Draw and shoot | Pull string hand back at least 12 cm (28 cm total separation), then release trigger |
@@ -85,17 +85,17 @@ not generate melee velocity. The layout currently assumes a right-handed player.
 | Stow/draw | Utility wheel → **Stow weapons** / **Draw weapons**; native equipped stats stay unchanged |
 | Wrist health/mana | Look at the **back of your left wrist, like checking a watch**, within 75 cm of your eyes; red life and blue mana orbs appear there. No button required. Brief status cue also appears at low health or low mana in spell mode |
 | Quest journal | Open the native tabbed game menu with Left X / Frame Left A, then select Journal. The duplicate wheel entry is removed |
-| Journal controls | Right laser + trigger uses native page controls/act tabs; Right B closes it; Left X retains ordinary inventory/menu behavior |
-| Quick native weapon swap | Right stick click, unchanged |
+| Journal controls | Right laser + trigger uses native page controls/act tabs; Right B follows native back; Left X performs native X |
+| Inventory drop / sort | Native X (Quest Left X / Frame Left A) / press and hold right stick click; right-stick click no longer swaps in gameplay |
 | Walk / snap turn | Sticks; paused while wheel or journal is open |
 | Height reset / map | Left grip + left stick click / plain left stick click, unchanged |
 
 ### Inventory, conversations and trading in VR
 
 Native in-game menus share a room-anchored surface in front of you. The full
-tabbed character menu uses an opaque black background in both eyes, as
-requested after the transparent world backdrop differed between eyes. Other
-panels retain the world backdrop. Inventory/equipment, NPC
+tabbed character menu, stash, inventory, cube and trade surfaces use one opaque
+black background in both eyes. Dialogue and journal panels retain the world
+backdrop. Inventory/equipment, NPC
 choices and speech, shops, stash, cube, waypoint, skills and character panels
 retain D2R's original artwork, text, prices, grids and tooltips. Inventory and
 shop panes keep their native relative positions; hovering a comparison tooltip
@@ -104,13 +104,18 @@ placement. Title and character-selection screens keep the existing flat panel.
 
 | Native panel action | Control |
 |---|---|
-| Open/close the tabbed character menu | Left primary face button |
+| Open the tabbed character menu | Left primary face button during gameplay; native X in menus |
 | Hover, select, pick up/place, drag | Right laser + right trigger; native click/drag behavior |
-| Context action (native right-click) | Right A while pointing; action depends on the item and panel |
-| Scroll | Right stick up/down while pointing |
+| Context action (native right-click) | Left Grip + Right Trigger while pointing; action depends on the item and panel |
+| Native menu navigation | Sticks or face buttons; triggers and grips map LT/RT/LB/RB in native navigation |
 | Native Ctrl modifier | Hold left trigger while clicking |
 | Native Shift modifier | Hold right grip while clicking |
 | Back / close | Right B, or the native close button |
+
+Sticks/face buttons select native menu navigation without an idle laser stealing
+focus. Release native controls and deliberately move the ray across the surface
+to return to laser input. Dragging retains pointer ownership. All player-facing
+Quest and Frame mappings are in [CONTROLS.md](../CONTROLS.md).
 
 For the native quick-drop shortcut, point at an inventory item, hold **Left
 Trigger**, then click **Right Trigger** (Ctrl-click). With inventory alone this
@@ -218,7 +223,9 @@ sets and next potion in each belt column, including potion tiers. Empty slots
 show no item icon. The generated stone-and-bronze frame supplies background and
 selection highlights; native icons keep their original art. Selecting closes
 the wheel and latches it until Y is released;
-release the selection trigger before casting. **WEAPON** returns from spell mode.
+release the selection trigger before casting. **WEAPON** restores the basic
+right-trigger attack or physical bow controls. Free melee swings remain
+available with a skill selected, pausing during casting, menus or potion handling.
 
 Quick casting uses the **same saved bindings**, while keeping the selected
 right-trigger ability. Point with the right hand, hold **Left Trigger**, then
@@ -422,7 +429,10 @@ into a world attack. Tracking must be valid and tracked for both controllers;
 after interruptions release the controls before retrying. Frame gaps over
 100 ms cancel rather than infer a high-speed gesture from stale poses.
 
-Melee automatically becomes available with a melee weapon. After a tracking
+Melee automatically becomes available with a melee weapon, even with a wheel
+skill selected. Input gating and posed contact recognition share the same
+angular tracking limit, so valid fast swings can reach contact recognition.
+After a tracking
 discontinuity it needs 80 ms of fresh coherent samples, without a stationary
 pose or grip press/release. A
 stroke requires minimum physical speed and net excursion. Its initial acceleration

@@ -1,0 +1,34 @@
+{
+  "release_tag": "v0.3.1-windows-preview",
+  "date": "2026-10-11",
+  "platform": "native Windows x64",
+  "game": "Steam D2R 3.3.93787, local offline characters only",
+  "plugin_sha256": "d68f861e0004e391171fcee209057c9dbf3fa282345118181cb90900d5f980a3",
+  "native_tests_passed": 34,
+  "python_tests_passed": 24,
+  "regression_reproduced_before_fix": true,
+  "features": [
+    "Free melee remains available with a wheel skill selected; casting, menus and potion handling still suppress contacts",
+    "Input and posed contact engines share the existing 60 rad/s angular tracking limit",
+    "Integrated strong-swing checks cover area interruptions, selected skills and genuine tracking jumps at 36/44/72/90/120 Hz",
+    "Player installation guide includes separate SteamVR and Virtual Desktop non-Steam library entries using direct -applaunch routing"
+  ],
+  "headset_records": [
+    {
+      "route": "SteamVR/OpenXR",
+      "session_started_local": "2026-10-11 12:30:57 PDT",
+      "cave_entered_local": "2026-10-11 12:38:59 PDT",
+      "accepted_outdoor_contacts": 36,
+      "accepted_cave_contacts": 72,
+      "cave_position_mismatches": 0,
+      "scope": "Observed physical melee contacts in the installed release DLL; selected-skill runtime confirmation remains pending",
+      "local_evidence": "build-frame/windows/melee-recovery-session-summary.json"
+    }
+  ],
+  "limits": [
+    "Selected-skill coexistence and repeated area interruptions pass integrated automated fixtures, but this session did not log a selected skill or a second cave entry.",
+    "D2RCore unloaded after the exit request; native stats/object-pool assertions were logged during teardown. Do not claim an assertion-free exit.",
+    "Quest 3 Steam Link/SteamVR and Virtual Desktop/VDXR were owner-confirmed on predecessor builds; this DLL has no additional VDXR session.",
+    "Physical Quest 2 remains unverified; no controlled Windows performance comparison."
+  ]
+}

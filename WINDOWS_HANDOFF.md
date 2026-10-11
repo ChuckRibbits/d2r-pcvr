@@ -1,5 +1,55 @@
 # Clean Windows installation and agent handoff — October 10, 2026
 
+**October 11 inventory/setup follow-up, v0.3.3:** Candidate `5727d397...`
+is installed locally with D2R closed, INI/calibration and graphics preserved.
+Backup: `build-frame/backups/windows-native-inventory-20261011-132011/`.
+Native X/drop and held R3/sort forward for their full hold durations. Physical
+R3 no longer requests a gameplay weapon swap; shoulder and wheel swaps remain.
+All 34 native and 34 Python checks pass. The preceding menu/drag/stash build
+was owner-confirmed; the additional inventory follow-up remains pending.
+
+`Install-Windows.cmd` launches a player setup wizard through a verified private
+CPython runtime. It selects headset/connection, discovers Steam libraries,
+chooses the account, installs or repairs with preserved settings, and backs up
+and configures original D2R launch options plus the matching non-Steam shortcuts.
+It requires Steam and D2R closed and never terminates them, changes the global
+OpenXR runtime, or changes security settings. Steam config transaction, race,
+rollback, idempotence, routing and installer upgrades have isolated fixtures;
+do not rerun full setup on the owner's live installation for verification.
+Tracked evidence: `steamvr/evidence/2026-10-11-windows-setup.json`.
+Wizard downloads/backups/results stay out of git and the release allowlist.
+
+**October 11 menu follow-up on `feat/native-vr-menu-controls`:** The Windows
+v0.3.2 candidate adds native menu buttons/sticks alongside laser clicks and
+dragging. Quest A/B/X/Y map directly; Frame left A/B map native X/Y. Grips
+map LB/RB during native navigation. Deliberate re-aim returns to the laser;
+idle tracking cannot steal controller focus. Left Grip + Right Trigger
+retains context-clicks without stealing native A. Per-control release gates
+and reserved mirror context/epoch tags prevent held and stale world/UI input
+crossing transitions. Native menu reports bypass ApplyActions/TurnStick.
+Controller focus is independent of the queued-pointer protection lease.
+
+The stash regression is visible in the 12:36:35 log: BankExpansionLayout
+opens without the shared black-background mode. Bank/stash, standalone
+inventory, cube and mercenary inventory now use the opaque shared UI layer;
+speech/journal remain spatial. All 34 native and 24 Python checks pass.
+Final staged DLL: `18cb931b2532baa73fbdccecd9d22c33bf7a17429809d81c946b92f7cb63f246`.
+Initial candidate `c7efb92b...` was installed at 13:09:46 with settings preserved
+and launched through SteamVR; it reached the frontend and world. A final
+quick-cast/settings-chord ordering correction is staged and must replace it
+only after D2R/D2RLoader is fully closed. Deployment record and backup:
+`build-frame/windows/latest-native-menu-deployment.json`,
+`build-frame/backups/windows-native-menu-20261011-130946/`.
+The owner confirmed native menus, laser dragging, and the matching stash
+background in both eyes on the initial c7efb92b candidate. The final 18cb931b
+change only corrects simultaneous slot-8 quick-cast/settings ordering and
+passes the added integrated check; it has no additional headset session. The user asks
+for all mappings in the GitHub README and release files, plus a prominent
+purchased-game/no-game-assets notice. `CONTROLS.md` is included in packaging
+and its complete reference is embedded in README. Repository stays private.
+Do not distribute locally extracted icon/potion caches. Release evidence:
+`steamvr/evidence/2026-10-11-native-menus.json`.
+
 Start here for the owner's **fresh Windows installation**, using Steam Frame
 over SteamVR PC streaming. This is a native OpenXR mod of the **Steam edition
 of Diablo II: Resurrected 3.3.93787**, for **offline characters only**.
@@ -10,6 +60,38 @@ and transition bugs is installed; belt rendering, cave wrist values and the
 camera clipping correction are owner-confirmed. The owner reports "it all works"
 after the cave melee coordinate fix and offline retest. The original
 Linux evidence remains separate.
+
+**October 11 cave follow-up on `fix/cave-melee-recovery`:** PR #2 is merged;
+local main was rebuilt and installed as `95806d91...`. The 12:16 SteamVR
+shortcut session entered `act1_caves` at 12:20:36 with wheel selection 1,
+which disabled contact melee. After returning to Weapon mode and reentering
+at 12:21:26, logs show repeated recovery with no sweep requests. This differs
+from the earlier grid-shear rejection. Session logs are preserved locally at
+`build-frame/windows/cave-melee-regression-20261011-122704/`.
+
+The input engine still had a 35 rad/s cutoff, while posed contact recognition
+already accepted up to 60 rad/s. An integrated synthetic regression reproduced
+fast swings being cancelled upstream; both now share the 60 rad/s limit.
+At the owner's request, free melee also remains available with a wheel skill
+selected. Casting, menus and potion handling still pause contacts; trigger and
+quick-cast bindings remain. Checks cover repeated area loads, selected skills,
+36/44/72/90/120 Hz sampling and actual tracking-jump rejection. All 34 native
+tests pass. Candidate `d68f861e...` was installed at 12:30 PDT with INI,
+calibration and graphics unchanged. The previous DLL and saves are backed up at
+`build-frame/backups/windows-melee-recovery-20261011-123042/`; deployment record:
+`build-frame/windows/latest-melee-recovery-deployment.json`. SteamVR relaunch
+at 12:30:57 reached outdoor gameplay and entered the cave at 12:38:59. Logs
+confirm 36 accepted outdoor and 72 accepted cave melee contacts with no
+position mismatches. Owner feedback and selected-skill/repeated-transition
+confirmation remain pending. The session returned to the frontend at 12:45:34,
+then requested exit; D2RCore unloaded at 12:45:40. Shutdown emitted native
+pool assertions, so do not describe teardown as assertion-free. D2R is closed.
+Retest evidence:
+`build-frame/windows/melee-recovery-session-summary.json` and matching session
+log. The original cave coordinate and native wall/warp checks remain intact.
+The v0.3.1 Windows preview includes these changes and player-facing Steam
+library shortcut directions. Release evidence:
+`steamvr/evidence/2026-10-11-windows-release.json`.
 
 **Quest follow-up on `vr/quest-2-3-support`:** PR #1 is merged. Quest 3 with
 Steam Link/SteamVR is owner-confirmed using `f559b3e5...`. Virtual Desktop/VDXR

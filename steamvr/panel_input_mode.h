@@ -40,6 +40,9 @@ constexpr bool PointerMessage(uint64_t target,uint64_t command) {
 constexpr bool CursorSnapAllowed(bool pointer,bool binding) {
     return !pointer||binding;
 }
+constexpr bool FocusUsesPointer(bool leaseActive,bool laserSelected) {
+    return leaseActive&&laserSelected;
+}
 // Thread-local in the adapter. Rendering, gameplay, and nested panel-open
 // messages still see the real input mode; only pointer dispatch uses mouse
 // widget behavior. No native mode byte is modified.
