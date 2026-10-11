@@ -40,6 +40,13 @@ and **ReShade 6.8.0 with full add-on support** from [reshade.me](https://reshade
 These binaries are not bundled in the release ZIP. The original dependency
 licenses and terms govern them. Pinned archive checksums are in `steamvr/install.py`.
 
+The Windows setup wizard downloads the official **CPython 3.12.10 x64 embeddable
+package** from [python.org](https://www.python.org/downloads/release/python-31210/)
+into the extracted mod folder. It checks the archive's SHA-256 and the interpreter's
+Python Software Foundation signature. Python is not bundled in the release ZIP;
+its license is retained in the downloaded package. This private runtime does not
+replace the user's system Python. Its checksum is in `steamvr/setup_windows.ps1`.
+
 On Linux the installer also downloads Microsoft's
 [Windows SDK for C++ 10.0.26100.9169](https://www.nuget.org/packages/Microsoft.Windows.SDK.CPP/10.0.26100.9169)
 and extracts `c/Redist/D3D/x64/d3dcompiler_47.dll` for mod-local shader compilation.

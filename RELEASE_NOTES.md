@@ -1,4 +1,4 @@
-# D2R PCVR v0.3.2 — Windows preview
+# D2R PCVR v0.3.3 — Windows preview
 
 Play **Diablo II: Resurrected in VR on Windows** with
 **SteamVR or Virtual Desktop (VDXR)**. This preview is for **local offline
@@ -23,6 +23,12 @@ The game runs on your Windows PC and streams to your headset.
 
 ## What's new
 
+- Double-click **Install-Windows.cmd** for guided installation, headset and
+  connection selection, and automatic Steam library shortcuts. No separate Python install is needed.
+- Update / repair mode keeps your body calibration and video settings.
+- Native inventory **X** drops the selected item; **press and hold right-stick
+  click** sorts it. Follow the game's hold prompts. Right-stick click no longer
+  swaps weapons during gameplay; use the shoulder gesture or equipment wheel.
 - Native menu button and stick navigation alongside laser selection and dragging.
 - Quest and Steam Frame mappings for the game's displayed menu prompts; laser
   context-clicks use **Left Grip + Right Trigger**.
@@ -52,15 +58,17 @@ The game runs on your Windows PC and streams to your headset.
 
 1. Download **d2r-pcvr-windows.zip** under **Assets** below.
 2. Extract `d2r-pcvr-preview` to a permanent folder.
-3. Open **INSTALL-WINDOWS.md** in that folder and follow the setup steps.
-   You will need **Python 3.10 or newer**; the installer is included.
+3. Double-click **Install-Windows.cmd** and follow the setup wizard. It creates
+   the Steam shortcuts for your chosen headset and connection.
+   See **INSTALL-WINDOWS.md** for help or manual setup.
 4. Connect your headset, then double-click the matching launcher:
    - **Launch-VR-SteamVR.cmd** for SteamVR / Steam Link.
    - **Launch-VR-VDXR.cmd** for Virtual Desktop, with SteamVR closed.
 5. Accept Steam's launch prompt if shown and select an **offline character**.
 
-To launch from Steam or the headset, follow **Add Steam library shortcuts**
-in **INSTALL-WINDOWS.md**. Use its separate entries for SteamVR and Virtual
+To launch from Steam or the headset, use the shortcuts created by setup.
+Manual directions are under **Add Steam library shortcuts** in **INSTALL-WINDOWS.md**.
+Use the matching entry for SteamVR or Virtual
 Desktop; keep SteamVR closed when using Virtual Desktop/VDXR.
 
 **Upgrading from an earlier preview?** Follow **Upgrade while keeping your settings** in
