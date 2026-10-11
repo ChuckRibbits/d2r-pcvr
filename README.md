@@ -1,190 +1,50 @@
-# D2R VR
+# D2R PCVR
 
-This private adaptation adds experimental **native Windows OpenXR PCVR** to
-the Steam edition of D2R 3.3.93787, for **local offline characters only**.
-The owner has tested Steam Frame through SteamVR, Quest 3 through Steam Link,
-and Quest 3 through Virtual Desktop/VDXR, including the corrected color path.
-Physical Quest 2 and Linux/WiVRn remain unverified.
+Play **Diablo II: Resurrected in VR on Windows**, with support for
+**SteamVR and Virtual Desktop (VDXR)**. Use motion controls to swing your
+weapon, aim spells, drink belt potions and explore Sanctuary in first person.
 
-Download **d2r-pcvr-windows.zip** from
-[v0.3.0-windows-quest-preview](https://github.com/bearstonem/d2r-pcvr/releases/tag/v0.3.0-windows-quest-preview)
-and follow **[INSTALL-WINDOWS.md](INSTALL-WINDOWS.md)** for installation,
-Steam launch options, calibration and both VR launch commands. Windows needs
-neither BodyWalk nor FlatVR. Normal Steam Play remains stock.
+**[Download the Windows preview](https://github.com/bearstonem/d2r-pcvr/releases/tag/v0.3.0-windows-quest-preview)**
+and follow **[Install and play](INSTALL-WINDOWS.md)**.
+Download **d2r-pcvr-windows.zip** from the release's Assets section.
 
-[HANDOFF.md](HANDOFF.md) records development status;
-[steamvr/TASKS.md](steamvr/TASKS.md) tracks the backlog. See
-[steamvr/QUEST_TESTING.md](steamvr/QUEST_TESTING.md) for the precise headset
-coverage. Earlier Linux streaming resets are recorded separately in
-[INSTALL-LINUX.md](INSTALL-LINUX.md) and [steamvr/PERFORMANCE.md](steamvr/PERFORMANCE.md).
+## What you need
 
-The preview includes body calibration, shoulder weapon swapping, motion melee,
-native panels, spell selection and 3D belt potions. Journal remains available
-through the tabbed game menu; its duplicate wheel entry is removed. See
-[performance evidence](steamvr/PERFORMANCE.md) and [technical status](steamvr/README.md).
-The following upstream Windows/BodyWalk documentation remains for attribution
-and reference; its installer is **not this native OpenXR preview**.
+- A Windows PC with the **Steam edition of D2R 3.3.93787**.
+- A VR headset and two tracked controllers.
+- **SteamVR**, or **Virtual Desktop for Quest with its Windows Streamer**.
+- **Python 3.10 or newer** to run the included installer and launcher.
+- A **local offline character**. This preview is for offline single-player.
 
-Diablo II: Resurrected in a VR headset: the game's own view from above in true
-3D, a free camera behind the hero, and the game laid on the floor of your room
-(mixed reality), and first person with your body as the hero's: arms on the
-controllers, the weapon in your hands - with a painted sky, depth fog and the
-game's day and night.
+## Headset connections
 
-**[Download D2R VR](https://bodywalkvr.com/api/download/latest?product=d2r_vr)** -
-the ready installer, always the latest version. It sets up everything,
-including a free BodyWalk Lite if you don't have BodyWalk.
+| Headset | Connection |
+| --- | --- |
+| Steam Frame | SteamVR streaming |
+| Quest 3 | Steam Link with SteamVR, or Virtual Desktop with VDXR |
+| Quest 2 | The same Quest connection options; compatibility is not yet confirmed |
 
-**[Open the mod's page on BodyWalkVR](https://bodywalkvr.com/mods/d2r-vr)** - the
-four views in video, the controls and the setup.
+This is a PCVR mod: the game runs on your Windows PC and streams to the headset.
 
-**What's new in 0.141:** the sky fixed in several areas (Tristram, Kurast,
-Travincal, the River of Flame, the Chaos Sanctuary, Nihlathak's Temple); the
-barbarian's left hand fixed - his second weapon sits properly and strikes;
-daggers can be thrown; ready for game updates - the mod finds the game code it
-needs by itself, with a Status tab and a Scan button in D2R VR Settings. All
-versions: [CHANGELOG.md](CHANGELOG.md).
+## In the game
 
-**Discussion, bugs and ideas:** our Discord, channel
-[#diablo-2-vr](https://discord.com/channels/1481909961897279562/1556377249484251298)
-under *Game Mods* - not on the server yet? [Join it here](https://discord.gg/kVYjEdJx3e).
-Tell us what works, what doesn't and what you would like to see.
+- First-person VR with your character's body, hands and equipment.
+- Free-swing melee, aimed spells and bow controls.
+- Belt potions you can grab and drink, plus wrist health and mana indicators.
+- Body calibration for your height and arm span, available on first load
+  and through **Left Grip + Y → Calibrate body**.
+- Weapon-set swapping: reach your right hand over either shoulder and press
+  its trigger. You can change the swap hand in VR settings.
+- Inventory, skills, conversations and Journal through the game menu:
+  **Frame Left A / Quest Left X**.
 
-> Offline single-player only. Injecting code into the game online can get the
-> account banned. This project is not made, endorsed or supported by Blizzard
-> Entertainment.
+After setup, connect your headset and double-click **Launch-VR-SteamVR.cmd**
+or **Launch-VR-VDXR.cmd**. Select an offline character when the game opens.
+For ordinary desktop play, use Steam's normal **Play** button. Fully exit
+the VR session before switching to desktop play or another headset connection.
 
-It is a [D2RLoader](https://d2rloader.net) plugin (`d2rl-vrcam.dll`), a ReShade
-effect (`D2R_DepthFog.fx`) and, for the headset, a BodyWalk plugin
-(`d2r_bridge.dll`) that hands the head to the game; FlatVR (in BodyWalk) shows the
-picture in the headset. Without a headset it plays flat on a monitor with mouse
-and keyboard (F1 the game's camera, F2 third person, F3 first person).
+See [Install and play](INSTALL-WINDOWS.md) for setup, controls and removal.
 
-## Views (F1 - F4 in the game, F12 goes round)
-
-- **F1 From above** - the game's own camera; *Real geometry* draws it through our
-  camera in true perspective and stereo.
-- **F2 Third person** - a free camera behind the hero, turned with the head.
-- **F3 The game on your floor** - look down at it and walk round it.
-- **F4 First person** - the hero's arms follow the controllers and hold the
-  weapon; the hero turns with you.
-
-## The game's video settings
-
-In Diablo II: Resurrected, Options > Video:
-
-| Setting | Set to |
-|---|---|
-| **Vertical Sync** | **Off - important**: the mod draws the two eyes in turn, and VSync halves the frames each eye gets |
-| **NVIDIA DLSS** | **Off - required**: DLSS builds each frame from the ones before it, and the mod's frames alternate between the eyes |
-| Framerate Cap | 180 (90 for each eye) |
-| **Anti-Aliasing** | FXAA or MSAA - **not TAA**: it builds each frame from the ones before it, like DLSS |
-| Ambient Occlusion Quality | Medium |
-
-![Options > Video](screenshots/game_video_settings.jpg)
-
-![Vertical Sync off, Framerate Cap 180](screenshots/game_video_vsync.jpg)
-
-### A square screen
-
-For a square picture in the headset, either:
-
-- **Windowed mode:** set the game to *Windowed* in Options > Video and drag
-  the window's edges until it is square; or
-- **FlatVR's virtual monitor:** in BodyWalk's FlatVR tab create a virtual
-  monitor with a square resolution, move the game onto it, then switch the
-  game to full screen there.
-
-### The screen's size in the headset
-
-How big the screen is, how far away and how curved: in BodyWalk, on the
-**FlatVR** tab - or right in the headset, in FlatVR's overlay (**F10** by
-default).
-
-### The game in your room (F3, on the floor)
-
-In D2R VR Settings > Camera > *F3 The game on your floor*, pick a **Background
-round the game** colour (pure black or green). In Virtual Desktop turn on
-passthrough with that colour as its colour key: the background is cut out and
-the game stands in your real room.
-
-## Controls in F1 - F3
-
-From above, from behind and on the floor the game is played as with a gamepad:
-BodyWalk turns the VR controllers into an Xbox pad.
-
-| On the pad | On the VR controllers |
-|---|---|
-| Left stick (walk) | Left stick |
-| D-pad up / down / left / right | Hold the left grip + left stick up / down / left / right |
-| Map | Click the left stick |
-| Menu | Hold the left stick down |
-| Reset the centre ("ahead" is where I look) | Hold the right stick down |
-
-Everything else is where the game's own gamepad layout puts it.
-
-## Controls in F4 (first person)
-
-> **Preview.** F4 is an early look, not a finished way to play the game: the
-> weapons are not calibrated yet, so how a weapon sits in the hands and where
-> it aims may be off for many of them. Weapon Adjust in D2R VR Settings lets you
-> fix one by hand meanwhile.
-
-| Action | How |
-|---|---|
-| Potions | On your belt: reach for them - set up in BodyWalk's Mapping as gestures |
-| Bow, crossbow, fireballs and other spells | Right trigger - the shot goes where your hand points |
-| Sword, axe and other melee | Swing it: a Strike Zone in BodyWalk's Mapping |
-| Inventory | Hold the left stick down |
-| Map | Click the left stick |
-| Swap weapon sets | Click the right stick |
-| Reset the centre | Hold the right stick down |
-
-## Requirements
-
-- Diablo II: Resurrected 3.3.93787 under D2RLoader 1.3.1 (other builds need
-  their addresses checked; the plugin says so in its log)
-- ReShade with add-on support, its Generic Depth add-on on
-- For the headset: BodyWalk (Steam) with FlatVR and the D2R Bridge plugin
-
-## Settings
-
-`D2R_VR_Settings.exe`, next to `D2R.exe`. Changes apply at once while the game runs.
-Every tab, with a picture and what it is for: [SETTINGS.md](SETTINGS.md).
-
-![D2R VR Settings](screenshots/settings_00_home.png)
-
-## Building
-
-Visual Studio 2022+ with CMake:
-
-    cmake -S . -B build -A x64
-    cmake --build build --config Release
-
-D2RLoader's plugin SDK is fetched from GitHub. The headers of BodyWalk, FlatVR
-and ReShade the build needs are in `external/`. `installer/` builds the setup
-(Inno Setup 6).
-
-## Thanks
-
-The idea of a free 3D camera in D2R came from
-[emmericp/D2R-3D](https://github.com/emmericp/D2R-3D). D2R VR has its own
-camera and contains none of its code.
-
-## Licences
-
-D2R VR is MIT (`LICENSE`): use it, change it, build your own and share it -
-keep the copyright notice. The licence does not cover the name "D2R VR" as a
-mark, nor BodyWalk / FlatVR, which are separate products.
-
-Third-party: MinHook (BSD 2-clause, `third_party/minhook`), the ReShade SDK
-headers (BSD 3-clause, `external/reshade`), the D2RLoader plugin SDK (MIT).
-Diablo II: Resurrected is Blizzard Entertainment's; this project is not affiliated
-with or endorsed by Blizzard and ships none of the game's files.
-
-## Say thanks
-
-D2R VR is free and stays free - no paywalls, no exclusive builds. If you like
-the project and want to thank the author, you can support it on
-**[Patreon](https://www.patreon.com/c/d2vr)**: it pays for development time and
-VR hardware for testing.
+Based on [BodyWalkVR's D2R VR](https://github.com/natpoh/diablo2-vr-port).
+Licenses and credits are in [THIRD_PARTY.md](THIRD_PARTY.md) and [LICENSE](LICENSE).
+This project is not affiliated with or endorsed by Blizzard Entertainment.

@@ -47,8 +47,8 @@ is adapted from [levinium/D2RExtractor](https://github.com/levinium/D2RExtractor
 The local SpA1 v31 RGBA decoder and PNG writer use Python's standard library.
 Extracted spell/item artwork belongs to the game; it is generated only in the
 user's local icon cache, never included in this repository or release ZIP.
-The wheel/wrist framing is separately generated artwork with prompts and
-provenance in [`steamvr/assets/README.md`](steamvr/assets/README.md).
+The wheel/wrist framing is separately generated artwork. Its attribution is
+recorded in the [asset notices](https://github.com/bearstonem/d2r-pcvr/blob/vr/quest-2-3-support/steamvr/assets/README.md).
 
 The installation-only BitKnit decoder in `steamvr/vendor/bitknit.py` is vendored
 from [Rasetsuu/blendergranny](https://github.com/Rasetsuu/blendergranny) commit
