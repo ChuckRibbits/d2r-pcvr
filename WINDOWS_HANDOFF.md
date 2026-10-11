@@ -11,6 +11,38 @@ camera clipping correction are owner-confirmed. The owner reports "it all works"
 after the cave melee coordinate fix and offline retest. The original
 Linux evidence remains separate.
 
+**October 11 cave follow-up on `fix/cave-melee-recovery`:** PR #2 is merged;
+local main was rebuilt and installed as `95806d91...`. The 12:16 SteamVR
+shortcut session entered `act1_caves` at 12:20:36 with wheel selection 1,
+which disabled contact melee. After returning to Weapon mode and reentering
+at 12:21:26, logs show repeated recovery with no sweep requests. This differs
+from the earlier grid-shear rejection. Session logs are preserved locally at
+`build-frame/windows/cave-melee-regression-20261011-122704/`.
+
+The input engine still had a 35 rad/s cutoff, while posed contact recognition
+already accepted up to 60 rad/s. An integrated synthetic regression reproduced
+fast swings being cancelled upstream; both now share the 60 rad/s limit.
+At the owner's request, free melee also remains available with a wheel skill
+selected. Casting, menus and potion handling still pause contacts; trigger and
+quick-cast bindings remain. Checks cover repeated area loads, selected skills,
+36/44/72/90/120 Hz sampling and actual tracking-jump rejection. All 34 native
+tests pass. Candidate `d68f861e...` was installed at 12:30 PDT with INI,
+calibration and graphics unchanged. The previous DLL and saves are backed up at
+`build-frame/backups/windows-melee-recovery-20261011-123042/`; deployment record:
+`build-frame/windows/latest-melee-recovery-deployment.json`. SteamVR relaunch
+at 12:30:57 reached outdoor gameplay and entered the cave at 12:38:59. Logs
+confirm 36 accepted outdoor and 72 accepted cave melee contacts with no
+position mismatches. Owner feedback and selected-skill/repeated-transition
+confirmation remain pending. The session returned to the frontend at 12:45:34,
+then requested exit; D2RCore unloaded at 12:45:40. Shutdown emitted native
+pool assertions, so do not describe teardown as assertion-free. D2R is closed.
+Retest evidence:
+`build-frame/windows/melee-recovery-session-summary.json` and matching session
+log. The original cave coordinate and native wall/warp checks remain intact.
+The v0.3.1 Windows preview includes these changes and player-facing Steam
+library shortcut directions. Release evidence:
+`steamvr/evidence/2026-10-11-windows-release.json`.
+
 **Quest follow-up on `vr/quest-2-3-support`:** PR #1 is merged. Quest 3 with
 Steam Link/SteamVR is owner-confirmed using `f559b3e5...`. Virtual Desktop/VDXR
 reaches tracked gameplay, but its initial run has washed-out colors from

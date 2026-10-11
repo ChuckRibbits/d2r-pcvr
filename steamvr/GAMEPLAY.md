@@ -69,10 +69,10 @@ not generate melee velocity. The layout currently assumes a right-handed player.
 | VR settings and controls reference | Left Grip + Left Y; also **VR SETTINGS** at the bottom of the wheel |
 | Spell wheel | Hold Left Y; raise/turn left palm toward you; aim right-hand laser at a wedge and click trigger |
 | Assign wheel skills | Hold Left Y → **EDIT SKILLS** → choose a slot → choose a learned skill; **CLEAR SLOT** removes a binding |
-| Select weapon combat | Click **WEAPON** in the wheel center; release selection trigger before attacking |
+| Basic attack / bow on right trigger | Click **WEAPON** in the wheel center; release the selection trigger first |
 | Selected skill / spell | Point right hand and press trigger; hold to use the native repeat/channel behavior |
 | Quick cast without opening wheel | Hold Left Trigger, point right hand and press a face button; add Left Grip for the alternate four slots (mapping below) |
-| Melee swing / thrust | Swing the equipped weapon through a creature; no grip, trigger, or preselected target |
+| Melee swing / thrust | Swing the equipped melee weapon through a creature, including with a skill selected; no grip, trigger, or preselected target |
 | Button attack / crossbow | Weapon combat mode, right trigger; native crossbow firing |
 | Nock bow | Bow equipped: bring right hand to string and hold right trigger; no left grip required |
 | Draw and shoot | Pull string hand back at least 12 cm (28 cm total separation), then release trigger |
@@ -218,7 +218,9 @@ sets and next potion in each belt column, including potion tiers. Empty slots
 show no item icon. The generated stone-and-bronze frame supplies background and
 selection highlights; native icons keep their original art. Selecting closes
 the wheel and latches it until Y is released;
-release the selection trigger before casting. **WEAPON** returns from spell mode.
+release the selection trigger before casting. **WEAPON** restores the basic
+right-trigger attack or physical bow controls. Free melee swings remain
+available with a skill selected, pausing during casting, menus or potion handling.
 
 Quick casting uses the **same saved bindings**, while keeping the selected
 right-trigger ability. Point with the right hand, hold **Left Trigger**, then
@@ -422,7 +424,10 @@ into a world attack. Tracking must be valid and tracked for both controllers;
 after interruptions release the controls before retrying. Frame gaps over
 100 ms cancel rather than infer a high-speed gesture from stale poses.
 
-Melee automatically becomes available with a melee weapon. After a tracking
+Melee automatically becomes available with a melee weapon, even with a wheel
+skill selected. Input gating and posed contact recognition share the same
+angular tracking limit, so valid fast swings can reach contact recognition.
+After a tracking
 discontinuity it needs 80 ms of fresh coherent samples, without a stationary
 pose or grip press/release. A
 stroke requires minimum physical speed and net excursion. Its initial acceleration

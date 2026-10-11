@@ -1,4 +1,4 @@
-# D2R PCVR v0.3.0 — Windows preview
+# D2R PCVR v0.3.1 — Windows preview
 
 Play **Diablo II: Resurrected in VR on Windows** with
 **SteamVR or Virtual Desktop (VDXR)**. This preview is for **local offline
@@ -11,6 +11,14 @@ single-player** and requires the **Steam edition of D2R 3.3.93787**.
 - **Quest 2:** the same Quest connection options; compatibility is not yet confirmed.
 
 The game runs on your Windows PC and streams to your headset.
+
+## What's new
+
+- Free melee swings stay available with a wheel skill selected. Casting,
+  menus and potion handling still pause swing damage.
+- More reliable contact from fast weapon swings, including in caves.
+- Instructions for separate Steam library shortcuts for **SteamVR** and
+  **Virtual Desktop**, so you can launch without opening the mod folder.
 
 ## Features
 
@@ -33,6 +41,13 @@ The game runs on your Windows PC and streams to your headset.
    - **Launch-VR-SteamVR.cmd** for SteamVR / Steam Link.
    - **Launch-VR-VDXR.cmd** for Virtual Desktop, with SteamVR closed.
 5. Accept Steam's launch prompt if shown and select an **offline character**.
+
+To launch from Steam or the headset, follow **Add Steam library shortcuts**
+in **INSTALL-WINDOWS.md**. Use its separate entries for SteamVR and Virtual
+Desktop; keep SteamVR closed when using Virtual Desktop/VDXR.
+
+**Upgrading from v0.3.0?** Follow **Upgrade while keeping your settings** in
+**INSTALL-WINDOWS.md** to retain body calibration and video settings.
 
 Keep the extracted folder after installation. For ordinary desktop play,
 fully exit VR and use Steam's normal **Play** button. Use the unmodded game

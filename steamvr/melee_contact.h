@@ -125,7 +125,7 @@ public:
         const float handTravel=Length(in.hand.p-previous.hand.p),playerTravel=Length(in.player-previous.player);
         const float bladeTravel=std::max(Length(in.blade.base-previous.blade.base),Length(in.blade.tip-previous.blade.tip));
         if(!primed||dt<=0||dt>.1||in.epoch!=previous.epoch||in.equipment!=previous.equipment||
-           handTravel>std::max(.12f,10.f*float(dt))||angle>60*dt||playerTravel>.5f||
+           handTravel>std::max(.12f,10.f*float(dt))||angle>gameplay::MeleeAngularTrackingLimit*dt||playerTravel>.5f||
            std::fabs(in.unitsPerMetre-previous.unitsPerMetre)>.05f||
            bladeTravel>std::max(1.2f,handTravel+angle*lever+playerTravel+.1f)) {
             if(primed)++diagnostics.discontinuities;

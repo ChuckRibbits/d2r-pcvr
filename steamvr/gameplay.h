@@ -15,6 +15,10 @@ inline bool Valid(Pose p) {
     return Finite(p.p)&&std::isfinite(n)&&n>.9f&&n<1.1f;
 }
 enum class Weapon { Unknown, Melee, Bow, Crossbow, Other };
+// Input gating and posed contact recognition must agree: real wrist-led
+// slashes exceed 35 rad/s. A stricter upstream limit continually cancels
+// contact recovery before those otherwise valid swings can reach it.
+inline constexpr float MeleeAngularTrackingLimit=60.f;
 // Gesture sensitivity, not hitbox dimensions or native weapon reach. Selected
 // by equipped weapon category, never by character class or animation rig.
 enum class MeleeStyle { Unarmed, Short, OneHand, Long };
@@ -102,7 +106,7 @@ public:
         // Hitches, recenter/pose discontinuities and equipment changes cancel
         // pending actions. Held controls must be released before starting again.
         if(!primed||dt<=0||dt>.10||changed||Length(in.hand[0].p-previousHand)>.35f||Length(in.hand[1].p-previousLeft)>.35f||
-           (in.weapon==Weapon::Melee&&selection<0&&bottle<0&&!in.palette&&!in.quickCast&&RotationDistance(previousRotation,in.hand[0].q)>35*dt)) {
+           (in.weapon==Weapon::Melee&&bottle<0&&!in.palette&&!in.quickCast&&RotationDistance(previousRotation,in.hand[0].q)>MeleeAngularTrackingLimit*dt)) {
             Cancel();primed=true;previousTime=in.time;previousHand=in.hand[0].p;previousRotation=in.hand[0].q;previousLeft=in.hand[1].p;
             if(changed&&(in.weapon==Weapon::Bow||in.weapon==Weapon::Melee))selection=-1;
             weapon=in.weapon;equipment=in.equipment;triggerWas=trigger;gripWas=grip;
@@ -189,8 +193,9 @@ public:
             return out;
         }
         // Contact melee runs from the equipped weapon's posed transform. It
-        // never generates a controller attack pulse or needs a grip clutch.
-        out.meleeContact=in.weapon==Weapon::Melee&&selection<0&&!trigger;
+        // stays available with a trigger skill selected, but pauses during
+        // casting. It never generates an attack pulse or needs a grip clutch.
+        out.meleeContact=in.weapon==Weapon::Melee&&!trigger;
         out.attack=trigger&&selection<0; // explicit button fallback only
         if(trigger&&selection>=0)out.skill=selection;
         return out;

@@ -4,7 +4,7 @@ Play **Diablo II: Resurrected in VR on Windows**, with support for
 **SteamVR and Virtual Desktop (VDXR)**. Use motion controls to swing your
 weapon, aim spells, drink belt potions and explore Sanctuary in first person.
 
-**[Download the Windows preview](https://github.com/bearstonem/d2r-pcvr/releases/tag/v0.3.0-windows-quest-preview)**
+**[Download the Windows preview](https://github.com/bearstonem/d2r-pcvr/releases/tag/v0.3.1-windows-preview)**
 and follow **[Install and play](INSTALL-WINDOWS.md)**.
 Download **d2r-pcvr-windows.zip** from the release's Assets section.
 
@@ -29,7 +29,7 @@ This is a PCVR mod: the game runs on your Windows PC and streams to the headset.
 ## In the game
 
 - First-person VR with your character's body, hands and equipment.
-- Free-swing melee, aimed spells and bow controls.
+- Free-swing melee, including with a wheel skill selected, aimed spells and bow controls.
 - Belt potions you can grab and drink, plus wrist health and mana indicators.
 - Body calibration for your height and arm span, available on first load
   and through **Left Grip + Y → Calibrate body**.
@@ -42,6 +42,8 @@ After setup, connect your headset and double-click **Launch-VR-SteamVR.cmd**
 or **Launch-VR-VDXR.cmd**. Select an offline character when the game opens.
 For ordinary desktop play, use Steam's normal **Play** button. Fully exit
 the VR session before switching to desktop play or another headset connection.
+You can also add separate **SteamVR** and **Virtual Desktop** entries to your
+Steam library using the [shortcut instructions](INSTALL-WINDOWS.md#add-steam-library-shortcuts).
 
 See [Install and play](INSTALL-WINDOWS.md) for setup, controls and removal.
 
