@@ -204,8 +204,12 @@ def main():
     for rel, content in payload.items():
         put(rel, content)
     cfg = configparser.ConfigParser(interpolation=None, strict=False, allow_no_value=True)
-    # Public default INI has explanatory text outside any section. Start at [camera].
-    cfg.read_string('[camera]' + (ROOT / 'd2r_vr.ini').read_text(encoding='utf-8').split('[camera]', 1)[1])
+    # The introductory comment also mentions [camera]. Splitting that comment
+    # produced a malformed first camera section which Win32 profile reads used
+    # instead of the real one, silently restoring the large default near plane.
+    lines = (ROOT / 'd2r_vr.ini').read_text(encoding='utf-8').splitlines()
+    start = next(i for i, line in enumerate(lines) if line.strip() == '[camera]')
+    cfg.read_string('\n'.join(lines[start:]))
     changes = {
         'camera': {'fov_from_flatvr': '0', 'neck_model': '0', 'near': '0.2'},
         'stereo': {'afr': '1', 'pair_per_tick': '1', 'true_scale': '0', 'convergence': '0', 'swap': '0'},

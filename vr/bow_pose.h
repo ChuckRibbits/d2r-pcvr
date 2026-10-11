@@ -2,7 +2,7 @@
 #include <array>
 #include <cmath>
 #include <string_view>
-#include "../steamvr/math.h"
+#include "../steamvr/frame_math.h"
 
 // Procedural skin pose, derived from this installed bow's bind pose. No
 // captured game animation or model data is bundled. Only the verified rig is

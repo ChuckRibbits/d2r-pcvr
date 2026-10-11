@@ -1,5 +1,5 @@
 #pragma once
-#include "math.h"
+#include "frame_math.h"
 namespace framevr::potions {
 // Original models are normalized once by prepare_potions.py: 18 cm tall,
 // centered on the neck axis, +Y points out of the bottle's opening.

@@ -1,23 +1,28 @@
-// Asset-backed D3D12 test in an isolated Proton prefix. No game or saves touched.
+// Asset-backed D3D12 readback test. No game or saves touched.
 #include "potion_models.h"
 #include <wrl/client.h>
 #include <fstream>
 #include <cstdio>
 #include <vector>
 #include <stdexcept>
+#include <cstring>
 using Microsoft::WRL::ComPtr;
 using namespace framevr;
 static void Check(HRESULT h,const char* s){if(FAILED(h)){std::fprintf(stderr,"%s %08lx\n",s,(unsigned long)h);throw std::runtime_error(s);}}
 int main(int argc,char** argv){try {
     if(argc<3)return 2;
+    bool typeless=false,srgb=false;
+    for(int i=3;i<argc;++i){typeless|=!std::strcmp(argv[i],"--typeless");srgb|=!std::strcmp(argv[i],"--srgb");}
+    const auto format=srgb?DXGI_FORMAT_R8G8B8A8_UNORM_SRGB:DXGI_FORMAT_R8G8B8A8_UNORM;
     constexpr unsigned W=960,H=720;
     ComPtr<ID3D12Device> device;Check(D3D12CreateDevice(nullptr,D3D_FEATURE_LEVEL_11_0,IID_PPV_ARGS(&device)),"device");
     ComPtr<ID3D12CommandQueue> queue;D3D12_COMMAND_QUEUE_DESC q{};Check(device->CreateCommandQueue(&q,IID_PPV_ARGS(&queue)),"queue");
-    potions::Models models;if(!models.Initialize(device.Get(),queue.Get(),DXGI_FORMAT_R8G8B8A8_UNORM,W,H,+[](const char* s){std::puts(s);},argv[1]))return 1;
+    potions::Models models;if(!models.Initialize(device.Get(),queue.Get(),format,W,H,+[](const char* s){std::puts(s);},argv[1]))return 1;
     ComPtr<ID3D12CommandAllocator> allocator;ComPtr<ID3D12GraphicsCommandList> list;
     Check(device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT,IID_PPV_ARGS(&allocator)),"allocator");
     Check(device->CreateCommandList(0,D3D12_COMMAND_LIST_TYPE_DIRECT,allocator.Get(),nullptr,IID_PPV_ARGS(&list)),"list");
     D3D12_RESOURCE_DESC tex{};tex.Dimension=D3D12_RESOURCE_DIMENSION_TEXTURE2D;tex.Width=W;tex.Height=H;tex.DepthOrArraySize=tex.MipLevels=1;tex.Format=DXGI_FORMAT_R8G8B8A8_UNORM;tex.SampleDesc.Count=1;tex.Flags=D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET;
+    tex.Format=typeless?DXGI_FORMAT_R8G8B8A8_TYPELESS:format;
     D3D12_HEAP_PROPERTIES heap{};heap.Type=D3D12_HEAP_TYPE_DEFAULT;
     ComPtr<ID3D12Resource> targets[2],readback[2];
     D3D12_PLACED_SUBRESOURCE_FOOTPRINT footprint{};UINT64 bytes=0;device->GetCopyableFootprints(&tex,0,1,0,&footprint,nullptr,nullptr,&bytes);
@@ -26,7 +31,9 @@ int main(int argc,char** argv){try {
     const char* codes[]={"hp1","hp2","hp3","hp4","hp5","mp1","mp2","mp3","mp4","mp5","rvs","rvl","yps","wms","vps"};
     for(unsigned eye=0;eye<2;++eye) {
         heap.Type=D3D12_HEAP_TYPE_DEFAULT;Check(device->CreateCommittedResource(&heap,D3D12_HEAP_FLAG_NONE,&tex,D3D12_RESOURCE_STATE_RENDER_TARGET,nullptr,IID_PPV_ARGS(&targets[eye])),"target");
-        auto handle=rtv->GetCPUDescriptorHandleForHeapStart();handle.ptr+=eye*stride;device->CreateRenderTargetView(targets[eye].Get(),nullptr,handle);
+        auto handle=rtv->GetCPUDescriptorHandleForHeapStart();handle.ptr+=eye*stride;
+        D3D12_RENDER_TARGET_VIEW_DESC viewDesc{};viewDesc.Format=format;viewDesc.ViewDimension=D3D12_RTV_DIMENSION_TEXTURE2D;
+        device->CreateRenderTargetView(targets[eye].Get(),&viewDesc,handle);
         float background[]={.018f,.022f,.027f,1};list->ClearRenderTargetView(handle,background,0,nullptr);
         const interaction::Pose view{{eye==0?-.032f:.032f,0,0},{0,0,0,1}};
         for(unsigned row=0;row<3;++row) {
@@ -49,10 +56,11 @@ int main(int argc,char** argv){try {
     std::vector<uint8_t> rgb(2*W*H*3);double sx[2]{},count[2]{};
     for(unsigned eye=0;eye<2;++eye) {
         void* data=nullptr;D3D12_RANGE range{0,size_t(bytes)};Check(readback[eye]->Map(0,&range,&data),"map");
+        const auto* background=static_cast<uint8_t*>(data);
         for(unsigned y=0;y<H;++y)for(unsigned x=0;x<W;++x) {
             auto* p=static_cast<uint8_t*>(data)+y*footprint.Footprint.RowPitch+x*4;
             for(int c=0;c<3;++c)rgb[((y*2*W)+eye*W+x)*3+c]=p[c];
-            if(p[0]>20||p[1]>20||p[2]>20){++count[eye];sx[eye]+=x;}
+            if(int(p[0])>background[0]+15||int(p[1])>background[1]+15||int(p[2])>background[2]+15){++count[eye];sx[eye]+=x;}
         }
         D3D12_RANGE none{0,0};readback[eye]->Unmap(0,&none);
         if(count[eye]<10000)throw std::runtime_error("missing potion pixels");

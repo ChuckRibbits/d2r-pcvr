@@ -1,6 +1,6 @@
 #pragma once
 #include <string_view>
-#include "math.h"
+#include "frame_math.h"
 
 namespace framevr::panels {
 inline constexpr char TabbedMenu[]="UISwitcher";

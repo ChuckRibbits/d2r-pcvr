@@ -5,6 +5,7 @@ import configparser
 import hashlib
 import io
 import json
+import os
 from pathlib import Path
 import sys
 import tempfile
@@ -31,7 +32,9 @@ class InstallationTests(unittest.TestCase):
             potion_dir = game / 'd2rloader/plugins/d2r_vr_potions'
             potion_dir.mkdir()
             (potion_dir / 'hp1.pvr').write_bytes(b'previous potion')
-            saves = install.default_saves(game)
+            # On Windows default_saves points at the user's REAL Saved Games.
+            # Fixtures must never install into or restore that directory.
+            saves = root / 'saves'
             saves.mkdir(parents=True)
             (saves / 'Settings.json').write_text('{"Resolution Scale": 100}')
             (saves / 'Friend.d2s').write_bytes(b'original progress')
@@ -83,6 +86,18 @@ class InstallationTests(unittest.TestCase):
                 self.assertFalse((game / 'd3dcompiler_47.dll').exists())
                 cfg=configparser.ConfigParser(allow_no_value=True)
                 cfg.read(game / 'd2rloader/plugins/d2r_vr.ini')
+                # Python merges duplicate sections differently from Win32.
+                # Check the actual API used by the mod, including the near plane.
+                if os.name == 'nt':
+                    import ctypes
+                    read_profile = ctypes.WinDLL('kernel32').GetPrivateProfileStringW
+                    read_profile.argtypes = [ctypes.c_wchar_p, ctypes.c_wchar_p, ctypes.c_wchar_p,
+                                             ctypes.c_wchar_p, ctypes.c_uint, ctypes.c_wchar_p]
+                    for key, expected in [('near', '0.2'), ('fov', '64'), ('height', '6.3')]:
+                        value = ctypes.create_unicode_buffer(64)
+                        read_profile('camera', key, 'missing', value, len(value),
+                                     str(game / 'd2rloader/plugins/d2r_vr.ini'))
+                        self.assertEqual(value.value, expected)
                 self.assertTrue(cfg.getboolean('render','symmetric_projection'))
                 self.assertTrue(cfg.getboolean('hud','monster_draw_order'))
                 self.assertFalse(cfg.getboolean('render','defer_gpu_wait'))
@@ -115,6 +130,26 @@ class InstallationTests(unittest.TestCase):
             command, cwd = launch_windows.prepare(original + ['--frame-vr'])
         self.assertEqual(command, ['C:\\Steam Library\\D2RLoader.exe', '-some-argument', 'a value'])
         self.assertEqual(cwd, 'C:\\Steam Library')
+
+    def test_windows_runtime_override_only_applies_to_explicit_vr(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            runtime = Path(temporary) / 'steamxr_win64.json'
+            runtime.write_text('{}')
+            options = [str(runtime.parent / 'D2R.exe'),
+                       launch_windows.RUNTIME_OPTION + str(runtime)]
+            self.assertEqual(launch_windows.prepare(options), ([options[0]], None))
+            self.assertIsNone(launch_windows.launch_environment(options))
+            with patch.dict(os.environ, {'XR_RUNTIME_JSON': 'other-runtime', 'SteamAppId': '2536520'}):
+                environment = launch_windows.launch_environment(options + ['--frame-vr'])
+                self.assertEqual(environment['XR_RUNTIME_JSON'], str(runtime.resolve()))
+                # Windows normalizes environment variable names to uppercase.
+                self.assertEqual({k.upper(): v for k, v in environment.items()}['STEAMAPPID'], '2536520')
+                self.assertEqual(os.environ['XR_RUNTIME_JSON'], 'other-runtime')
+
+    def test_windows_missing_runtime_override_is_rejected_before_launch(self):
+        with self.assertRaises(SystemExit):
+            launch_windows.launch_environment(['--frame-vr',
+                launch_windows.RUNTIME_OPTION + 'missing-runtime.json'])
 
 
 if __name__ == '__main__':

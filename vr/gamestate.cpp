@@ -36,6 +36,7 @@
 #include "interactionstate.h"
 #include "journal_ui.h"
 #include "../steamvr/native_panels.h"
+#include "../steamvr/callback_ticket.h"
 #include <mutex>
 #ifdef D2RVR_NATIVE_OPENXR
 #include "logging.h"
@@ -62,7 +63,8 @@ SharedEvents::ListenerHandle g_uiListener = 0;
 
 HANDLE g_map = nullptr;
 D2RVR_State* g_state = nullptr;
-std::atomic<bool> g_readQueued{false};
+std::mutex g_readMutex;
+framevr::CallbackTicket g_readTicket;
 std::atomic<uint32_t> g_weapon{D2RVR_WEAPON_UNKNOWN};
 std::atomic<uint32_t> g_menu{0};
 std::atomic<bool> g_journalOnly{false};
@@ -285,8 +287,8 @@ void CalibrateObjectLights();   // the Objects table's light fields, below
 extern int g_objLitOffset;
 
 // On the UI thread: the two hands of the active set.
-void __cdecl ReadItems(const PluginContext* ctx, void*) noexcept {
-    g_readQueued.store(false);
+void __cdecl ReadItems(const PluginContext* ctx, void* token) noexcept {
+    {std::lock_guard lock(g_readMutex);if(!g_readTicket.Claim(reinterpret_cast<uintptr_t>(token)))return;}
     PlayerHandle player = InvalidPlayerHandle;
     const bool havePlayer = g_inventory && g_inventory->getLocalPlayer(ctx, &player) == Inventory::Result::Success && player != InvalidPlayerHandle;
     g_player.store(havePlayer ? player : 0);
@@ -333,7 +335,8 @@ void __cdecl ReadItems(const PluginContext* ctx, void*) noexcept {
     else if (ownLoc[0] == 4 || ownLoc[1] == 5 || (seen&&!id[0]&&!id[1])) {
         // no word: a swap shows as the hands holding what the other set held
         const bool swapped = seen && (id[0] != lastHands[0] || id[1] != lastHands[1]) &&
-                             id[0] == lastOther[0] && id[1] == lastOther[1];
+                             id[0] == lastOther[0] && id[1] == lastOther[1] &&
+                             id[2] == lastHands[0] && id[3] == lastHands[1];
         if (set == 0) set = 1;
         else if (swapped) set = set == 1 ? 2 : 1;
     }
@@ -570,8 +573,16 @@ void Init(const PluginContext* ctx) {
 
 // vrcam's timer, every 200 ms: queue a read of the hands on the UI thread.
 void Tick() {
-    if (!g_threads || !g_ctx || g_readQueued.exchange(true)) return;
-    if (g_threads->runOnUiThread(g_ctx, &ReadItems, nullptr) != Threads::Result::Success) g_readQueued.store(false);
+    if (!g_threads || !g_ctx) return;
+    uintptr_t token=0;bool recovered=false;
+    {std::lock_guard lock(g_readMutex);
+     if(g_readTicket.Expired(GetTickCount64(),1000)){g_readTicket.Cancel();recovered=true;}
+     token=g_readTicket.Start(GetTickCount64());}
+    if(recovered)Log("gamestate: recovering an abandoned UI read callback");
+    if(!token)return;
+    if(g_threads->runOnUiThread(g_ctx,&ReadItems,reinterpret_cast<void*>(token))!=Threads::Result::Success) {
+        std::lock_guard lock(g_readMutex);g_readTicket.Claim(token);
+    }
 }
 
 uint32_t WeaponClass() { return g_weapon.load(); }

@@ -380,6 +380,7 @@ struct Settings {
     std::atomic<bool>  trueScale{true};     // eyes and zero-parallax plane from the FlatVR screen and the user's height: the world 1:1
     std::atomic<float> eyeMm{63.0f};        // the user's own eye distance, millimetres
     std::atomic<float> eyeHeightM{1.64f};   // the user's eyes above the floor STANDING: metres -> world units, seated or not
+    std::atomic<float> calibratedEyeM{0},calibratedArmSpanM{0};
     std::atomic<bool>  dlssPerEye{true};   // [render] dlss_per_eye: real stereo with DLSS - a DLSS instance of its own for each eye
     std::atomic<bool>  pairPerTick{false};  // AFR: both eyes drawn from one game frame (the frame drawn twice), not by turns
     std::atomic<float> rightDtMs{0.01f};    // [stereo] right_dt_ms: the frame time the right pass of a pair gets (0 = none)
@@ -772,7 +773,7 @@ void LoadSettings() {
     framevr::ConfigureEyeTracking(IniB(L"render",L"eye_tracked_foveation",false));
     framevr::ConfigureGameplay(IniB(L"gameplay",L"motion_controls",false));
     framevr::ConfigureInteractions(IniB(L"interactions",L"seated",false),IniF(L"interactions",L"waist_below_eyes",.65f),
-        IniF(L"interactions",L"belt_forward",.26f),IniF(L"interactions",L"hip_width",.28f),IniB(L"interactions",L"holsters",true));
+        IniF(L"interactions",L"belt_forward",.26f),IniF(L"interactions",L"dominant_hand",0)==1?1:0);
     projectiles::Configure(IniB(L"gameplay",L"motion_controls",false),IniF(L"gameplay",L"arrow_speed",2.f),IniB(L"gameplay",L"arrow_direct_release",true));
     bowvr::Configure(IniB(L"gameplay",L"motion_controls",false));
     combat::Configure(IniB(L"gameplay",L"motion_controls",false)&&IniB(L"gameplay",L"contact_hits",true));
@@ -974,6 +975,10 @@ void LoadSettings() {
     g_set.eyeMm.store(std::clamp(IniF(L"stereo", L"eye_mm", 63.0f), 45.0f, 80.0f));
     // From the user's height: the eyes of an adult sit at ~0.936 of it.
     g_set.eyeHeightM.store(0.936f * std::clamp(IniF(L"stereo", L"user_height_m", 1.75f), 1.1f, 2.3f));
+    const float bodyEye=IniF(L"calibration",L"eye_height_m",0),bodySpan=IniF(L"calibration",L"arm_span_m",0);
+    const bool bodyCalibrated=IniF(L"calibration",L"version",0)==1&&std::isfinite(bodyEye)&&std::isfinite(bodySpan)&&
+        bodyEye>=.8f&&bodyEye<=2.3f&&bodySpan>=.85f&&bodySpan<=2.6f&&bodySpan/bodyEye>=.65f&&bodySpan/bodyEye<=1.45f;
+    g_set.calibratedEyeM.store(bodyCalibrated?bodyEye:0);g_set.calibratedArmSpanM.store(bodyCalibrated?bodySpan:0);
     g_set.topStereo.store(IniB(L"stereo", L"top_down", false) && g_set.platform.load() == 1);
     g_set.topAngle.store(std::clamp(IniF(L"stereo", L"top_angle", 3.0f), 0.0f, 20.0f));
     g_set.convergence.store(std::clamp(IniF(L"stereo", L"convergence", 15.0f), 0.0f, 1000.0f));
@@ -1622,6 +1627,9 @@ bool LiveScreen(float* w, float* h, float* d) {
 // user_height_m; an adult's eyes sit at ~0.936 of the height. Seated or not:
 // it is the scale, not where the head is now.
 float UserEyeHeightM() {
+#ifdef D2RVR_NATIVE_OPENXR
+    if(const float calibrated=g_set.calibratedEyeM.load();calibrated>0)return calibrated;
+#endif
     const D2RVR_Shared* sh = g_shared;
     if (sh && sh->version == D2RVR_SHARED_VERSION && sh->userHeightMm >= 1100 && sh->userHeightMm <= 2500)
         return 0.936f * sh->userHeightMm * 0.001f;
@@ -4093,6 +4101,9 @@ void HookCursor() {
 // and panels on them) - but not while the chat line is open: then they are
 // letters, and every other key goes to the game anyway.
 LRESULT CALLBACK GameWndProc(HWND h, UINT msg, WPARAM w, LPARAM l) {
+#ifdef D2RVR_NATIVE_OPENXR
+    if(framevr::HandleWindowFocusMessage(h,msg,w,l))return 0;
+#endif
     // F1..F3 (F4 in VR) pick the view: the game, which has skills on them, never sees them.
     if ((msg == WM_KEYDOWN || msg == WM_KEYUP) && w >= VK_F1 && (int)w < VK_F1 + ViewCount()) return 0;
     // Enter opening the chat line: its letters may come before the game has
@@ -5591,6 +5602,10 @@ bool FreshHands(skel::Input* in) {
     memcpy(in->hand[0], sh->rightHand, sizeof in->hand[0]); memcpy(in->hand[1], sh->leftHand, sizeof in->hand[1]);
     memcpy(in->rot[0], sh->rightRot, sizeof in->rot[0]); memcpy(in->rot[1], sh->leftRot, sizeof in->rot[1]);
     in->userHeadM = UserEyeHeightM();   // standing, seated or not (see TrueScale)
+#ifdef D2RVR_NATIVE_OPENXR
+    in->armSpanM=g_set.calibratedArmSpanM.load();
+    if(in->armSpanM>0)in->scale=1; // calibrated hands move at physical 1:1 scale
+#endif
     in->headPitch = sh->pitchValid ? sh->headPitchDeg * 0.0174532925f : 0;
     in->headRoll = sh->rollValid ? sh->headRollDeg * 0.0174532925f : 0;
     in->grip[0] = sh->gripMagic == D2RVR_GRIP_MAGIC ? sh->rightGrip : -1.0f;
@@ -5603,9 +5618,9 @@ void BowTick() {
     framevr::SetBowWorldEpoch(g_meleeTurnEpoch.load());
     auto gate=framevr::BowGate();
     gate.active=gate.active&&g_enabled.load()&&g_inWorld.load()&&!ThirdPerson()&&!Overhead()&&g_eyeOk.load()&&!gamestate::MenuOpen();
-    auto* hero=g_heroUnit.load();
-    if(!hero||!IsHeroUnit(hero))hero=g_heroSeen.load();
-    if(!hero||!IsHeroUnit(hero)){hero=nullptr;gate.active=false;}
+    uintptr_t localHero=0;
+    auto* hero=combat::LocalPlayerUnit(localHero)?reinterpret_cast<void*>(localHero):nullptr;
+    if(!hero)gate.active=false;
     if(hero)combat::ObserveLocalPlayer(reinterpret_cast<uintptr_t>(hero));
     bowvr::Update(gate,reinterpret_cast<uintptr_t>(hero));
     framevr::bowflight::Shot shot;
@@ -5633,12 +5648,11 @@ void MeleeContactTick() {
         case D2RVR_TYPE_SPEAR:case D2RVR_TYPE_POLEARM:length=1.5f;break;
         default:if(gamestate::TwoHanded()&D2RVR_TWO_HANDS_ON)length=1.1f;break;
     }
-    // Contact combat must keep working with no controller attack/aim input.
-    // Revalidate the client hero itself, rather than depending on aim-hook
-    // traffic to refresh the local identity while the player stands still.
-    auto* nativeHero=g_heroUnit.load();
-    if(!nativeHero||!IsHeroUnit(nativeHero)){melee::Cancel();return;}
-    combat::ObserveLocalPlayer(reinterpret_cast<uintptr_t>(nativeHero));
+    // The checked UI-thread accessor refreshes the native local unit across
+    // warps. Do not gate swings on aim-hook traffic or camera proximity.
+    uintptr_t nativeHero=0;
+    if(!combat::LocalPlayerUnit(nativeHero)){melee::Cancel();return;}
+    combat::ObserveLocalPlayer(nativeHero);
     sample.epoch=(sample.epoch<<32)|pose.worldEpoch;
     sample.unitsPerMetre=upm;sample.player={pose.player[0]/upm,pose.player[1]/upm,pose.player[2]/upm};
     sample.blade.base={pose.origin[0]/upm,pose.origin[1]/upm,pose.origin[2]/upm};
@@ -5654,6 +5668,7 @@ void PushArms() {
     const D2RVR_Shared* sh = g_shared;
     skel::Input in;
 #ifdef D2RVR_NATIVE_OPENXR
+    in.armSpanM=g_set.calibratedArmSpanM.load();
     // Publish the requested mode, not the render transport's transient state.
     // Active() is false between stereo pairs; sampling it on this timer made
     // the left-eye body intermittently fall back to its untracked position.
@@ -5846,6 +5861,9 @@ void PushArms() {
                    : "vrcam: the bind pose did not read as a pose - [body] lock stays off");
     }
     in.scale = g_set.armScale.load();
+#ifdef D2RVR_NATIVE_OPENXR
+    if(in.armSpanM>0)in.scale=1;
+#endif
     in.wrist = g_set.wrist.load();
     in.wristDeg[0] = g_set.wristPitch.load(); in.wristDeg[1] = g_set.wristYaw.load(); in.wristDeg[2] = g_set.wristRoll.load();
     float yaw = 0.0f;

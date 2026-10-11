@@ -1088,7 +1088,27 @@ void PoseBody(uintptr_t self, const Hero& h, const Input& in) {
             }
         }
     }
-    // The animation after the turn: what the arms re-derive their children from.
+    if(in.mode==2&&in.armSpanM>0&&h.bindOk&&h.upr[0]>=0&&h.upr[1]>=0){
+        const float shoulderWidth=Len(Sub(Pos(h.bind[h.upr[0]]),Pos(h.bind[h.upr[1]])));
+        for(int side=0;side<2;++side){
+            const int u=h.upr[side],l=h.lwr[side],k=h.hand[side];
+            if(u<0||l<0||k<0)continue;
+            const float length=Len(Sub(Pos(h.bind[l]),Pos(h.bind[u])))+Len(Sub(Pos(h.bind[k]),Pos(h.bind[l])));
+            const float palm=h.mid[side]>=0?.5f*Len(Sub(Pos(h.bind[h.mid[side]]),Pos(h.bind[k]))):0;
+            const float scale=framevr::body::ArmScale(h.eyeY,in.userHeadM,in.armSpanM,shoulderWidth,length,palm);
+            const auto before=newW;const V3 shoulder=Pos(newW[u]);
+            std::vector<char> subtree(n,0);subtree[u]=1;
+            for(int i=u;i<n;++i){
+                if(i!=u&&h.parent[i]>=0)subtree[i]=subtree[h.parent[i]];
+                if(subtree[i])framevr::body::ScaleArmBone(newW[i].m,{shoulder.x,shoulder.y,shoulder.z},scale);
+            }
+            // Preserve palm, fingers and equipment size. Arm skin stretches
+            // with the upper/lower bones; only the wrist's position changes.
+            for(int row=0;row<3;++row)for(int col=0;col<3;++col)newW[k].m[row*4+col]=before[k].m[row*4+col];
+            std::vector<char> handTree(n,0);handTree[k]=1;Propagate(h,before,newW,handTree,k);
+        }
+    }
+    // The animation after the turn and proportion fit: the IK's local offsets.
     const std::vector<Mat> baseW = newW;
 
     // Model space: y up, faces +z, its left is +x. The two arms' subtrees are
@@ -1811,6 +1831,17 @@ void PoseBody(uintptr_t self, const Hero& h, const Input& in) {
 #endif
     const bool written = SafeWrite((void*)mats, newW.data(), sizeof(Mat) * n);
 #ifdef D2RVR_NATIVE_OPENXR
+    if(written&&in.followTrackedNeck&&h.spine>=0&&h.head>=0) {
+        static std::atomic<uint64_t> nextReport{0};auto before=nextReport.load();const auto now=GetTickCount64();
+        if(now>=before&&nextReport.compare_exchange_strong(before,now+5000)) {
+            const auto eye=V3{in.eyeModel[0],in.eyeModel[1],in.eyeModel[2]},chest=Pos(newW[h.spine]);
+            char message[340];std::snprintf(message,sizeof message,
+                "VR body pose: class=%d bones=%d head=%d neck=%d spine=%d hidden=%u aligned=%d eye=%.2f,%.2f,%.2f chest=%.2f,%.2f,%.2f standing=%.2f",
+                h.cls,n,h.head,h.neck,h.spine,unsigned(std::count(h.inNeck.begin(),h.inNeck.end(),char(1))),trackedNeckApplied,
+                eye.x,eye.y,eye.z,chest.x,chest.y,chest.z,h.eyeY);
+            framevr::logging::Write(message);
+        }
+    }
     if(written&&trackedNeckApplied) {
         static std::atomic<unsigned> reported{0};
         const unsigned bit=1u<<(h.cls>=0&&h.cls<8?h.cls:8);

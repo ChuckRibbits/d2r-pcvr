@@ -22,6 +22,15 @@ int main(){
     }
     const float scale=body::UnitsPerMetre(6.8f,1.7f,1.f);
     Check(std::fabs(scale-4.f)<1e-5f,"standing scale");
+    // Known proportions: 0.4m shoulders, two 0.55m arms and 0.05m palms
+    // produce a 1.6m grip span at 4 model units/metre.
+    Check(std::fabs(body::ArmScale(6.8f,1.7f,1.6f,1.6f,2.2f,.2f)-1)<1e-5f,"authored reach retained when it matches");
+    Check(std::fabs(body::ArmScale(6.8f,1.7f,1.82f,1.6f,2.2f,.2f)-1.2f)<1e-5f,"arm bones grow to measured span");
+    Check(body::UnitsPerMetre(6.8f,1.7f,1)==scale,"arm fitting does not change controller scale");
+    Check(body::ArmScale(6.8f,1.7f,NAN,1.6f,2.2f,.2f)==1,"invalid measurements preserve authored bones");
+    float bone[16]={1,0,0,0,0,1,0,0,0,0,1,0,3,6,2,1};
+    body::ScaleArmBone(bone,{1,6,2},1.2f);
+    Check(std::fabs(bone[12]-3.4f)<1e-5f&&bone[13]==6&&bone[14]==2&&std::fabs(bone[0]-1.2f)<1e-5f,"skin and bone length scale about the shoulder");
     // A crouch bends the knee at the original floor, preserving both lengths.
     for(float hipY:{1.f,2.f,3.f,3.9f}) {
         math::Vec hip{1,hipY,2},foot{1,0,2},knee;

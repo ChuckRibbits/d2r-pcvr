@@ -1,4 +1,4 @@
-#include "math.h"
+#include "frame_math.h"
 #include "input.h"
 #include "hero_selection.h"
 #include "foveation_math.h"

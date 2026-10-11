@@ -4,6 +4,7 @@
 #include <intrin.h>
 #include <atomic>
 #include <cstdio>
+#include <mutex>
 #include "combat.h"
 #include "combat_rules.h"
 #include "sigscan.h"
@@ -34,6 +35,8 @@ std::atomic<bool> enabled{false},ready{false};
 bool hitIn=false,seedIn=false,blockIn=false,dodgeIn=false,rollChecked=false;
 // One atomic value keeps freshness and id coherent, including native id zero.
 std::atomic<uint64_t> localIdentity{0},localSession{0};
+std::mutex localPlayerMutex;
+struct UiPlayer {uintptr_t unit=0;uint64_t session=0,at=0;uint32_t id=0;} uiPlayer;
 std::atomic<unsigned> meleeChecks{0},missileChecks{0},rolls{0},blocks{0},dodges{0},failed{0};
 template<class T> bool Read(uintptr_t p,T& out) {
     return p>0x10000&&framevr::ReadMemory(&out,reinterpret_cast<const void*>(p),sizeof out);
@@ -90,6 +93,19 @@ void ObserveLocalPlayer(uintptr_t unit) {
     if(!Read(unit,header)||header[0]!=0||header[2]==UINT32_MAX)return;
     localSession=gamestate::LocalPlayer();
     localIdentity=(uint64_t(GetTickCount())<<32)|header[2];
+}
+bool ObserveUiPlayer(uintptr_t unit,uint64_t session) {
+    uint32_t header[3]{};
+    if(!session||session!=gamestate::LocalPlayer()||!Read(unit,header)||header[0]!=0||header[2]==UINT32_MAX)return false;
+    {std::lock_guard lock(localPlayerMutex);uiPlayer={unit,session,GetTickCount64(),header[2]};}
+    ObserveLocalPlayer(unit);return true;
+}
+bool LocalPlayerUnit(uintptr_t& unit) {
+    UiPlayer player;{std::lock_guard lock(localPlayerMutex);player=uiPlayer;}
+    uint32_t header[3]{};
+    if(!player.unit||!player.session||player.session!=gamestate::LocalPlayer()||GetTickCount64()-player.at>650||
+       !Read(player.unit,header)||header[0]!=0||header[2]!=player.id)return false;
+    unit=player.unit;return true;
 }
 bool LocalPlayerId(uint32_t& id) {
     const auto identity=localIdentity.load();const auto session=localSession.load();

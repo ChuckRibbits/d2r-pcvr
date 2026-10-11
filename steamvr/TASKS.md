@@ -1,11 +1,68 @@
 # D2R Steam Frame PCVR tasks
 
-Updated 2026-10-10. Target: first-person D2R on this Linux PC through Proton,
-SteamVR streaming to Steam Frame. Test with offline **Nekro** or the owner's new bow-test Amazon only.
+Updated 2026-10-10. Current target: native Windows D2R, SteamVR streaming to
+Steam Frame, offline local characters only. Linux/Proton evidence below is historical.
 The DevilutionX standalone/tabletop project remains parked separately.
 
 Unchecked tasks remain open, including implemented changes awaiting headset
 verification. Build checks and automated tests do not establish visual correctness.
+
+- [x] **Owner-requested body calibration and shoulder swapping.**
+  Implemented first-load upright T-pose capture with both triggers and
+  Left Grip + Y → Calibrate body for repeats. Eye height/span persist atomically;
+  height sets world scale and arm bones fit reach while controller motion stays
+  physical 1:1. Dominant trigger over either shoulder switches native sets I/II,
+  confirmed through the equipment snapshot. Hip anchors are removed. Right/Left
+  swap hand is selectable in VR settings. Installed `e27084ed…` at 17:39 PDT,
+  with 32 native + five installer tests passing. Live menu calibration saved
+  eye height 1.65854 m / controller span 1.50859 m at 17:41 PDT; the INI and
+  return to gameplay are verified. Body-fit and shoulder-swap owner questions
+  are pending. See BODY_CALIBRATION.md and WINDOWS_HANDOFF.md.
+  Owner confirms saving/closing and the VR settings calibration entry work as
+  intended, with a misleading initial floor message.
+  Short resting arm span was wrongly classified as a floor failure; corrected
+  `a1e2006a…` installed at 17:43 after normal exit, preserving saved calibration.
+  All 32 native tests pass; corrected feedback awaits a headset retest.
+  The combined `f559b3e5...` build subsequently completed the offline retest;
+  owner reports "it all works". Automated hand/shoulder and calibration coverage
+  remains separate from that overall headset confirmation.
+
+- [x] **Native Windows visual/transition fixes.**
+  Owner reports the performance candidate runs superbly. Hands/weapons and feet
+  appear, but torso and belt potions do not. A dungeon transition loses wrist
+  HP/mana data and free-swing damage; trigger attacks still work. Follow-up DLL
+  `996cc430…` is installed with typed views for SteamVR typeless textures,
+  recoverable callback tickets, and low-rate wrist/melee/body diagnostics.
+  Owner confirms belt models now render; torso and cave swings still fail.
+  Cave snapshots remain fresh but native identity expires. Next build `5847a204…`
+  refreshes identity from the checked UI-thread local-player accessor; 30 native
+  tests pass. Installed at 17:14 PDT after normal Save & Exit; graphics unchanged,
+  belt_forward=0.06 for the owner's closer placement preference. Cave retest
+  confirms wrist values now survive the cave transition. Swings still fail:
+  callbacks run but the player-position check rejects cave requests. Preserve
+  that guard while resolving renderer/native coordinate conversion.
+  At 17:52 the owner reproduced this in a new cave run. Paired read-only
+  positions show X/Z elevation shear of sqrt(3/2) times terrain height. Candidate
+  `f559b3e5...` corrects the saved-pose comparison and enemy capsule placement;
+  the 0.65 m warp limit remains. All 33 native tests pass, including captured
+  cave cases, contact/miss geometry and real warp rejection. Installed at 17:55
+  after normal exit with backups and preserved INI/graphics. SteamVR offline
+  retest completed: repeated native contacts in `act1_caves` have
+  `position_mismatch=0`, followed by return outdoors and normal exit at 18:02.
+  Owner reports "it all works" after the cave fix.
+  Normal-posture captures reproduced torso/shield clipping. Installer parsing
+  emitted a malformed first camera section, so Win32 ignored near=0.2 and used
+  1.5. Correcting the installed INI live fixed torso/arms/shield clipping (owner
+  confirmed). Installer and Win32 profile regression test fixed; five tests pass.
+  SteamVR/Steam Frame, local offline only.
+- [ ] **Performance measurement still pending.**
+  Native baseline startup worked and felt good, but Akara dialogue froze desktop
+  and headset. Dump preserved; candidate `9b3ce9df…` now includes queued window
+  activation, CPU caches, background HUD painting and the INI reload guard.
+  Akara opened/closed twice in the candidate log, followed by normal exit.
+  Collect controlled Windows
+  baseline/candidate timings at identical settings. No measured Windows speedup yet.
+- [ ] HoverUnit signature-check failures remain unresolved. Keep guards enabled.
 
 - [ ] **Current priority: fresh Windows + Steam Frame setup.** User is switching
   OS and requested a complete GitHub handoff. Start at ../WINDOWS_HANDOFF.md,

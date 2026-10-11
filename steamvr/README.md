@@ -2,16 +2,38 @@
 
 For the compiled preview and portable friend setup, start with
 [INSTALL.md](../INSTALL.md). These notes retain the owner machine's build and
-Steam Frame testing details. Quest 3/WiVRn/Windows paths remain untested.
+Steam Frame testing details. Native Windows + SteamVR/Steam Frame is now tested
+with offline gameplay; Quest 3/WiVRn paths remain untested.
 
 This branch adds a native OpenXR transport to the MIT-licensed
 [D2R VR camera mod](https://github.com/natpoh/diablo2-vr-port). It reuses its
 first-person camera, body, controller aim, and two scene draws per game update.
-The new transport submits those separate eye images to SteamVR through Proton's
-WineOpenXR D3D12 bridge. BodyWalk and FlatVR are not required by this build.
+The transport submits those separate eye images to SteamVR through native
+Windows OpenXR, or Proton's WineOpenXR D3D12 bridge on Linux. BodyWalk and
+FlatVR are not required by this build.
 
 ## Current verification
 
+- Native Windows build passes 33 C++ tests. Owner reports excellent performance;
+  a controlled native baseline/candidate timing comparison remains pending.
+  Current setup, installed DLL and unresolved visual/transition bugs are in
+  [WINDOWS_HANDOFF.md](../WINDOWS_HANDOFF.md).
+- Cave melee candidate corrects terrain elevation shear between native grid and
+  rendered VR coordinates for the player guard and enemy contact volumes. Captured
+  cave regressions and teleport/miss checks pass. The owner reports "it all works"
+  after the offline retest; logs confirm native cave contacts and normal exit.
+- First-load and settings-menu T-pose calibration save standing eye height and
+  controller span, fitting per-rig arm proportions with physical controller
+  scale. Dominant-hand trigger over either shoulder requests the opposite native
+  weapon set; hip anchors are removed. See [BODY_CALIBRATION.md](BODY_CALIBRATION.md).
+  Automated checks pass. Calibration save/reopen is explicitly owner-verified;
+  the later combined offline retest received an overall "it all works" report.
+- SteamVR native D3D12 swapchain images are typeless. Potion models and native
+  UI conversion use explicit typed views matching the selected swapchain format;
+  typed/typeless GPU readback and potion stereo tests pass, including sRGB.
+- Installer camera settings are verified with the Win32 profile API. A malformed
+  duplicate camera section previously selected a large default near plane;
+  correcting it restored torso, arms and close shield rendering in the headset.
 - Cross-compiles with Clang 21 and MinGW headers/static libraries.
 - Camera math checks cover asymmetric eye FOV, physical eye separation, view
   orientation, and the game's reverse-Z projection.
@@ -227,6 +249,51 @@ Wine's compiler; the SDK version completes the effect. Missing optional ceiling
 art uses the procedural fallback. Stock Steam Play does not load this dependency.
 
 ## Build
+
+### Native Windows build
+
+From the checkout in PowerShell:
+
+```powershell
+.\steamvr\setup_windows_tools.ps1
+.\steamvr\build_windows.ps1 -Test
+.\deps\python\python.exe -m unittest install_test prepare_icons_test prepare_potions_test profile_report_test stream_report_test
+.\deps\python\python.exe steamvr/ngx_abi_test.py --clang .\deps\llvm-mingw-20260616-ucrt-x86_64\bin\clang++.exe
+```
+
+The setup downloads pinned official portable tools into ignored `deps/` and
+checks both SDK commit IDs. Python uses an explicit isolated import path for
+this checkout and needs no pip packages. No system PATH or Visual Studio
+changes are required. Clang may need execution permission outside an agent's
+restricted sandbox. The LLVM-MinGW compiler produces native Windows binaries;
+Proton/Wine are not involved in the build or execution.
+
+Outputs are in `build-frame/windows-native/`. The DLL statically links its C++
+runtime. Its patched ReShade interfaces and NGX adapter retain their GNU-target
+ABI handling. Native CTest enables assertions in Release and runs 33 fixtures;
+the Windows Python suite excludes the Linux `/proc` process monitor tests.
+`frame_math.h` avoids shadowing the C library's `math.h` in libc++.
+
+This build **does not install or replace any game DLL**. For first headset
+tests use the archived baseline described in
+[WINDOWS_HANDOFF.md](../WINDOWS_HANDOFF.md). Swap only the plugin after Save &
+Exit when making a controlled comparison. The native source build differs from
+the archived release candidate in compiler/runtime, even with equivalent source.
+
+The Windows Steam wrapper accepts `--frame-openxr-runtime=PATH` before
+`%command%`. With `--frame-vr` it supplies that manifest as `XR_RUNTIME_JSON`
+to D2RLoader; normal Play removes the wrapper option and preserves the original
+Steam command/environment. This can select `SteamVR/steamxr_win64.json` for
+Frame without changing another app's global OpenXR runtime.
+
+Native Windows menu focus requests are posted to the owning window's message
+queue. Activating the game synchronously inside its render callback re-entered
+the native focus handler and hung the first Akara dialogue in the baseline.
+The regression test verifies activation occurs after a simulated engine lock is
+released; expiry/cancellation prevent stale requests. Headset reproduction is
+still needed to validate the fix in D2R.
+
+### Linux cross-build
 
 The local dependency checkouts and extracted toolchain are under `~/vrdeps`.
 The Android NDK provides Clang's Windows SEH support; it does not make this an

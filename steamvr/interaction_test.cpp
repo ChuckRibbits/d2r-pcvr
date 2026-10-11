@@ -17,6 +17,22 @@ struct Sim {
     Output Step(int count=1){while(count--){in.time+=.02;in.at=1000000+uint64_t(in.time*1000);in.snapshot.at=in.at;out=e.Step(in);}return out;}
 };
 int main(){
+    for(int dominant=0;dominant<2;++dominant)for(float side:{-.23f,.23f}){
+        Sim s;Config c;c.dominant=dominant;s.e.Configure(c);s.Step(4);
+        s.in.hand[dominant].p=s.in.head.p+Vec{side,-.2f,.14f};s.Step(10);
+        s.in.grip[dominant]=1; // Swapping needs a trigger press, not a grip release.
+        if(dominant==0)s.in.trigger=1;else{s.in.leftTrigger=1;s.in.quickCast=true;}
+        const auto r=s.Step().request;
+        Check(r.action==Action::Equip&&r.index==2&&s.out.block,"dominant trigger at either shoulder requests opposite native set and blocks attacks");
+        for(int i=0;i<12;++i)Check(s.Step().request.action==Action::None,"one shoulder press issues exactly one request");
+        s.in.reply={r.sequence,s.in.session,Result::Applied};s.in.snapshot.activeSet=2;
+        Check(s.Step().result==Result::Applied&&s.out.feedbackHand==dominant,"shoulder swap waits for native equipment confirmation and pulses the dominant hand");
+        s.in.trigger=s.in.leftTrigger=0;s.in.quickCast=false;s.Step(3);
+        if(dominant==0)s.in.trigger=1;else{s.in.leftTrigger=1;s.in.quickCast=true;}
+        Check(s.Step().request.index==1,"second deliberate shoulder press returns to set I");
+    }
+    {Sim s;s.in.hand[0]=s.out.holster[1];s.in.grip[0]=1;s.Step();s.in.hand[0].p.z-=.2f;
+     Check(s.Step().request.action==Action::None,"hip pulls are disabled in the default controls");}
     {
         Sim s;
         // Resting hands previously froze the waist, even for a small step or turn.
@@ -61,7 +77,7 @@ int main(){
         Check(std::fabs(s.out.belt[0].p.y-1.05f)<1e-5f,"body-following belt retains seated reach height");
     }
     {
-        Sim s;s.in.hand[0]=s.out.holster[1];s.in.grip[0]=1;s.Step();
+        Sim s;Config legacy;legacy.holsters=true;s.e.Configure(legacy);s.Step(3);s.in.hand[0]=s.out.holster[1];s.in.grip[0]=1;s.Step();
         const auto yaw=math::Yaw(.8f);const Vec step{.3f,0,.2f};
         for(auto* p:{&s.in.head,&s.in.hand[0],&s.in.hand[1]}) {
             p->p=math::Rotate(yaw,p->p)+step;p->q=math::Multiply(yaw,p->q);
@@ -253,7 +269,7 @@ int main(){
         for(int i=0;i<30;++i)Check(s.Step().request.action==Action::None&&s.out.bottle<0,"refill/reorder cancels captured bottle");
     }
     {
-        Sim s;s.in.hand[0].p=s.out.holster[1].p;s.Step();s.in.grip[0]=1;
+        Sim s;Config legacy;legacy.holsters=true;s.e.Configure(legacy);s.Step(3);s.in.hand[0].p=s.out.holster[1].p;s.Step();s.in.grip[0]=1;
         Check(s.Step().block&&s.out.request.action==Action::None,"holster requires deliberate pull");
         s.in.hand[0].p.z-=.15f;
         Check(s.Step().request.action==Action::Equip&&s.out.request.index==2,"holster pulls exact set");

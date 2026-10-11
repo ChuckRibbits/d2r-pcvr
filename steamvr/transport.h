@@ -4,16 +4,18 @@
 #include "bow_flight.h"
 
 // Called by the existing game-side stereo draw hook and ReShade integration.
-// The OpenXR session uses the game's D3D12 device/queue through Proton.
+// The OpenXR session uses the game's D3D12 device/queue.
 namespace framevr {
 using LogFn = void (*)(const char*);
 using PanelFn = bool (*)();
 void Register(LogFn log, PanelFn wantsPanel, PanelFn inWorld, PanelFn toggleMenus);
+// Called by the owning window's WndProc, without the transport/render lock.
+bool HandleWindowFocusMessage(void* window,uint32_t message,uint64_t token,int64_t deadline);
 void ConfigureDeferredWait(bool enabled);
 void ConfigureSymmetricProjection(bool enabled);
 void ConfigureEyeTracking(bool enabled);
 void ConfigureGameplay(bool enabled);
-void ConfigureInteractions(bool seated,float waistBelowEyes,float beltForward,float hipWidth,bool holsters);
+void ConfigureInteractions(bool seated,float waistBelowEyes,float beltForward,int dominantHand);
 // Current motion-combat aim in the existing head-yaw-relative hand frame.
 bool SettingsOpen();
 bool SpellSelected();

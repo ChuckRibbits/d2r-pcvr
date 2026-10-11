@@ -1,5 +1,6 @@
 #pragma once
-#include "math.h"
+#include "shoulder_swap.h"
+#include "frame_math.h"
 #include "potion_pose.h"
 #include <array>
 #include <cstdint>
@@ -163,14 +164,15 @@ inline int WheelCell(float u,float v,int previous=-1,bool skillPage=false) {
 }
 struct Config {
     float waistBelowEyes=.65f,beltForward=.26f,hipWidth=.28f;
-    bool seated=false,holsters=true;
+    bool seated=false,holsters=false;
+    int dominant=0;
 };
 struct Input {
     double time=0;
     uint64_t session=0,epoch=0,at=0; // at shares the native snapshot's monotonic clock
     bool active=false,tracked[2]{},wheel=false,cancel=false,reservedLeft=false,spell=false,quickCast=false;
     Pose head{},hand[2]{};
-    float trigger=0,grip[2]{};
+    float trigger=0,leftTrigger=0,grip[2]{};
     int hover=-1;
     Snapshot snapshot{};
     Reply reply{};
@@ -195,18 +197,19 @@ class Engine {
     bool primed=false,triggerWas=false,gripWas[2]{},wheelLatch=false,utility=false,rearm=true,stowed=false;
     bool spent=false,consumed=false;
     Owner owner[2]{Owner::Combat,Owner::Combat};
-    int bottle=-1,bottleHand=-1,holster=-1,holsterHand=-1;
+    int bottle=-1,bottleHand=-1,holster=-1,holsterHand=-1,pendingHand=0;
     Pose body{};
     Vec holsterGrab{};
     Request held{},pending{};
     Result result=Result::None;
     int editor=0,editSlot=-1,editPage=0,editBank=-1,choiceCount=0;
     Skill previousBinding{};
+    shoulder::Gesture shoulderSwap;
     std::array<Skill,128> choices{};
     void Drop() {bottle=bottleHand=holster=holsterHand=-1;drinkStart=0;spent=consumed=false;held={};owner[0]=owner[1]=Owner::Combat;}
 public:
     void Configure(Config c) {config=c;Reset();}
-    void Reset() {primed=false;rearm=true;wheelLatch=true;Drop();pending={};result=Result::None;criticalUntil=criticalAgain=0;editor=0;editSlot=-1;}
+    void Reset() {primed=false;rearm=true;wheelLatch=true;Drop();pending={};result=Result::None;criticalUntil=criticalAgain=0;editor=0;editSlot=-1;shoulderSwap.Reset();}
     bool Utility() const {return utility;}
     bool WheelVisible(bool heldButton) const {return heldButton&&!wheelLatch;}
     bool SkillPage() const {return editor==2;}
@@ -239,6 +242,7 @@ public:
         if(pending.action!=Action::None) {
             if(in.reply.sequence==pending.sequence&&in.reply.session==session&&in.reply.result!=Result::Pending) {
                 result=in.reply.result;resultAt=in.time;out.feedback=result==Result::Applied?2:3;
+                out.feedbackHand=pendingHand;
                 if(result==Result::Applied&&pending.action==Action::Equip)stowed=false;
                 if(result==Result::Applied&&pending.action==Action::Potion&&pending.item==held.item)consumed=true;
                 if(result==Result::Applied&&pending.action==Action::BindSkill&&editor){editor=1;editSlot=-1;}
@@ -254,7 +258,7 @@ public:
         out.critical=low&&in.time<criticalUntil;
         auto request=[&](Action a,int index,Item item={},uint32_t revision=0) {
             if(pending.action!=Action::None)return false;
-            pending={a,++sequence,session,now,index,item,revision};pendingAt=in.time;
+            pending={a,++sequence,session,now,index,item,revision};pendingAt=in.time;pendingHand=0;
             out.request=pending;result=Result::Pending;return true;
         };
         // Follow even with lowered hands or a held bottle: proximity must not
@@ -267,6 +271,16 @@ public:
         for(int i=0;i<2;++i)out.holster[i]={body.p+math::Rotate(body.q,{(i==0?1:-1)*config.hipWidth,-waist,-.06f}),body.q};
         auto distance=[](Vec a,Vec b){return std::sqrt(math::Dot(a-b,a-b));};
         const bool wheel=in.wheel&&!wheelLatch&&bottle<0&&holster<0;
+        const int dominant=config.dominant==1?1:0;
+        shoulder::Input reach;reach.time=in.time;reach.session=in.session;reach.epoch=in.epoch;reach.dominant=dominant;
+        reach.active=in.active;reach.tracked=in.tracked[dominant];reach.head=in.head.p;reach.hand=in.hand[dominant].p;reach.heading=body.q;
+        reach.trigger=dominant==0?in.trigger:in.leftTrigger;
+        reach.allowed=!wheel&&(!in.quickCast||dominant==1)&&!in.cancel&&!rearm&&bottle<0&&holster<0&&pending.action==Action::None&&
+            fresh&&in.snapshot.equipmentKnown&&(in.snapshot.activeSet==1||in.snapshot.activeSet==2);
+        const auto shoulder=shoulderSwap.Step(reach);out.block=out.block||shoulder.block;
+        if(shoulder.swap&&request(Action::Equip,3-int(in.snapshot.activeSet))){
+            pendingHand=dominant;out.feedback=1;out.feedbackHand=dominant;
+        }
         if(wheel) {
             out.wheel=true;out.utility=utility;out.hover=in.hover;out.block=true;
             owner[0]=owner[1]=Owner::Wheel;

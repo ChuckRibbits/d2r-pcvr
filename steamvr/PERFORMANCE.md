@@ -1,5 +1,73 @@
 # October 10 CPU performance comparison
 
+## Native Windows continuation, October 10 afternoon
+
+Native SteamVR streaming to Steam Frame now launches the mod and an offline
+character successfully. The owner reports the native performance candidate runs
+"superbly". This is subjective feedback; no bounded native baseline/candidate
+comparison has completed. Windows uses 80% resolution scale and shadows/AO/atmospherics 2,
+fixed foveation on, gaze off, wait 0 and radius 300. Actual game eye images are
+3840×2160; the standalone probe's 2160×2160 recommendation is a separate value.
+The scene/settings differ from Linux; no cross-OS performance gain is inferred.
+
+Build `e27084ed…`, installed at 17:39 PDT, adds the owner's requested body
+calibration and shoulder swap controls (32 native tests pass). The settings-menu
+calibration saved eye height 1.65854 m and controller span 1.50859 m live.
+That changes world scale and arm proportions: any later baseline/candidate
+comparison must hold this calibration and the corrected camera INI constant.
+Do not include calibration/INI writes or coordinate probes in timed captures.
+The new shoulder gesture uses the existing confirmed native equipment request;
+hip overlay anchors are removed. Cave swing mismatch diagnostics are expanded,
+but collision/warp guards are retained and the cave issue remains open.
+
+The 17:52 cave reproduction supplied paired native/render positions confirming
+terrain elevation shear on X/Z. Candidate `f559b3e5...` corrects melee's player
+comparison and enemy capsules without changing the 0.65 m warp limit. All 33
+native tests pass; installed at 17:55 after normal exit. The owner reports "it all
+works" after the offline retest. Logs confirm accepted cave melee contacts with
+no position mismatches, return outdoors, and normal exit at 18:02. This validates
+the gameplay correction, not a performance improvement.
+The bounded read-only coordinate capture is diagnostic evidence, not a timed run.
+
+Before a bounded baseline capture began, Akara dialogue froze desktop and
+headset. Dump analysis points to synchronous `SetForegroundWindow` inside the
+mod's render/input callback, re-entering a game focus path waiting on an SRW
+lock. The performance candidate now defers activation through the window queue.
+25 native C++ tests pass, including the focus regression. Candidate SHA256:
+`9b3ce9df5ba307222c5d1d04848ed74ab2aeec83a6f1e4325155268a55f075f7`.
+Its log records Akara dialogue opening/closing twice, followed by gameplay and
+normal Save & Exit. Original baseline and saves remain backed up.
+
+The owner now requests fixes for missing torso/belt potions and loss of wrist
+vitals/free-swing damage after a dungeon transition. A follow-up DLL
+`996cc430ca276d65a1aaa877de960b2c95a8dd4ea2c5ae2d1062cdabcfbe134d`
+is installed, preserving the performance changes and current graphics/INI.
+SteamVR's native probe confirms requested formats 29/10 use resource formats
+27/9 (typeless). Potion and UI conversion GPU tests failed with typeless
+textures before the fix and pass with explicit typed views afterward. All 29
+native tests pass, plus potion stereo/readback tests including SteamVR's sRGB
+format. Callback tickets recover discarded game/UI work without executing late
+callbacks against newer requests. Headset validation and torso diagnosis remain
+pending; the callback cause of the reported transition issue is not yet proven.
+Diagnostic stereo captures must be excluded from performance measurements.
+Owner testing confirms belt models render with `996cc430…`; torso and cave
+swings still fail. Cave diagnostics show fresh UI snapshots but expired native
+local-player identity, ruling out a stalled UI queue for that wrist failure.
+Next candidate `5847a204…` is installed with UI-thread identity refresh, closer
+belt configuration support and stable empty-set detection; 30 native tests pass.
+Normal game closure and backups preceded installation at 17:14 PDT. Graphics
+are unchanged; belt_forward is now 0.06 m at the owner's request. Headset cave
+validation confirms wrist HP/mana survives the cave transition. Cave swings
+still fail: callbacks run, but the server/render player-position guard rejects
+the requests. Normal-posture captures confirmed torso/shield clipping. The
+installer had emitted a malformed first camera section, so Win32 ignored the
+intended near=0.2 and used the default 1.5. Correcting the installed INI live
+fixed torso/arms/shield clipping (owner-confirmed); installer parsing and its
+Win32 API regression test now pass. The actual camera settings changed to the
+intended values at 17:24:50 PDT. Future controlled comparisons must use the same
+corrected configuration for both DLLs. No performance measurement is inferred.
+See the current [Windows handoff](../WINDOWS_HANDOFF.md) for local evidence.
+
 ## Afternoon retest and Windows handoff
 
 The owner returned and tested the restored baseline: **"Still stalls and loses

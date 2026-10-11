@@ -1,5 +1,5 @@
 #pragma once
-#include "math.h"
+#include "frame_math.h"
 
 namespace framevr::body {
 using math::Vec;
@@ -15,6 +15,21 @@ inline Vec NeckTarget(Vec eye, Vec neckToEye, float yaw, float pitch, float roll
 }
 inline float UnitsPerMetre(float standingEye, float userHeight, float reach) {
     return std::clamp(standingEye/std::max(.8f,userHeight),2.f,8.f)*reach;
+}
+// Fit shoulder-to-wrist length to measured grip span at the height's world
+// scale. Hands and equipment keep their authored size; targets stay 1:1.
+inline float ArmScale(float modelEye,float userEye,float span,float shoulderWidth,float armLength,float palm) {
+    if(!std::isfinite(modelEye+userEye+span+shoulderWidth+armLength+palm)||
+       modelEye<=0||userEye<.8f||span<.85f||span>2.6f||shoulderWidth<0||armLength<.01f||palm<0)return 1;
+    return std::clamp(((span*UnitsPerMetre(modelEye,userEye,1)-shoulderWidth)*.5f-palm)/armLength,.65f,1.6f);
+}
+// Row-vector affine matrix: resize an arm around its shoulder. The caller
+// restores the hand subtree from its original local transforms afterwards.
+inline void ScaleArmBone(float* m,Vec shoulder,float scale) {
+    for(int row=0;row<3;++row)for(int col=0;col<3;++col)m[row*4+col]*=scale;
+    m[12]=shoulder.x+(m[12]-shoulder.x)*scale;
+    m[13]=shoulder.y+(m[13]-shoulder.y)*scale;
+    m[14]=shoulder.z+(m[14]-shoulder.z)*scale;
 }
 // A two-segment leg, using the animated knee direction as its pole. Preserve
 // segment lengths; clamp unreachable targets rather than stretching the skin.

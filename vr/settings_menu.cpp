@@ -4,6 +4,7 @@
 #include <cwchar>
 #include <cstdlib>
 #include "settings_menu.h"
+#include "../steamvr/body_calibration.h"
 namespace vrsettings {
 namespace {
 using namespace framevr::settings;
@@ -18,8 +19,11 @@ float Value(const wchar_t* path,const wchar_t* section,const wchar_t* key,float 
     return end==text||!std::isfinite(value)?fallback:value;
 }
 Values Load(const wchar_t* path){
-    Values v{};
-    for(int i=0;i<Count;++i){const auto& d=Definitions[i];v[i]=Normalize(Key(i),Value(path,d.section,d.key,d.defaultValue));}
+    Values v{},raw{};
+    for(int i=0;i<Count;++i){const auto& d=Definitions[i];raw[i]=Value(path,d.section,d.key,d.defaultValue);v[i]=Normalize(Key(i),raw[i]);}
+    // A malformed/future record must prompt again, not silently become valid
+    // through the slider clamps. Camera and settings agree on raw validity.
+    if(raw[BodyCalibration]!=1||!framevr::calibration::Valid({raw[EyeHeight],raw[ArmSpan]}))v[BodyCalibration]=0;
     if(v[Foveation]>0)v[Foveation]=Value(path,L"render",L"eye_tracked_foveation",0)!=0?2.f:1.f;
     return v;
 }
@@ -65,6 +69,7 @@ bool Submit(const framevr::settings::Request& r){
     using namespace framevr::settings;
     if(!r.sequence||!r.changed||(r.changed>>Count)||r.changed!=Changed(r.base,r.values))return false;
     for(int i=0;i<Count;++i)if(!std::isfinite(r.base[i])||!std::isfinite(r.values[i])||Normalize(Key(i),r.values[i])!=r.values[i])return false;
+    if(r.values[BodyCalibration]==1&&!framevr::calibration::Stored(r.values))return false;
     std::lock_guard lock(mutex);if(busy)return false;
     queued=r;busy=true;published.sequence=r.sequence;published.result=Result::Saving;++published.revision;return true;
 }

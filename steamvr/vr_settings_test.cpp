@@ -10,6 +10,8 @@ int main(){
     Model m;m.Open(s);
     Check(m.open&&m.ready&&!m.Dirty()&&m.page==Page::Controls,"open actual configuration");
     Check(HitTest(Page::VR,-.01f,.5f).kind==Kind::None&&HitTest(Page::VR,NAN,.5f).kind==Kind::None,"invalid laser coordinates ignored");
+    Check(At(Page::VR,Calibrate).kind==Kind::Calibrate&&At(Page::VR,Recenter).kind==Kind::Recenter,"separate calibration and recenter buttons");
+    Check(Normalize(BeltForward,.06f)==.06f,"settings preserve the closer belt placement");
     for(int p=0;p<3;++p){
         auto hit=At(Page(p),Tabs[p]);Check(hit.kind==Kind::Tab&&hit.index==p,"tab rectangle matches input");
         for(int row=0;row<RowCount(Page(p));++row){

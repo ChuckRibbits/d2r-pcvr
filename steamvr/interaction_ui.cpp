@@ -241,11 +241,6 @@ std::vector<uint8_t> Paint(const Snapshot& s,const Output& o,int selection) {
         fill({790,554,886,693},o.bottleEmpty?RGB(45,47,47):colours[unsigned(kind)]);
         text(o.bottleEmpty?"Used":PotionName(kind),{768,703,896,768});
     }
-    for(int i=0;i<2;++i){const int y=i*256;fill({774,y+8,1018,y+248},o.nearHolster==i?RGB(74,83,60):RGB(35,30,25));
-        char label[120];const auto& a=s.sets[i][0];const auto& b=s.sets[i][1];
-        char ca[5]{},cb[5]{};std::memcpy(ca,&a.code,4);std::memcpy(cb,&b.code,4);
-        std::snprintf(label,sizeof label,"SET %s%s\n%s / %s\nGrip + pull",i==0?"I":"II",s.activeSet==uint32_t(i+1)?" (active)":"",a.handle?ca:"empty",b.handle?cb:"empty");
-        pair(i,{800,y+45,992,y+163});text(label,{774,y+163,1018,y+243});}
     auto wristArt=WristArt();
     if(!wristArt.empty()) {
         DrainOrb(wristArt,false,s.vitalsKnown,s.health,s.maxHealth);

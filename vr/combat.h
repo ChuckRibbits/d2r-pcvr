@@ -5,8 +5,10 @@ namespace combat {
 void Configure(bool enabled);
 void Install();
 void Report();
-// Only the native local unit identified by the controller aim hook. SDK player
-// handles are opaque capabilities, NEVER native pointers.
+// The UI-thread local-player accessor is authoritative across area changes;
+// controller aim can also refresh identity. SDK handles are never pointers.
 void ObserveLocalPlayer(uintptr_t unit);
+bool ObserveUiPlayer(uintptr_t unit,uint64_t session);
+bool LocalPlayerUnit(uintptr_t& unit);
 bool LocalPlayerId(uint32_t& id);
 }

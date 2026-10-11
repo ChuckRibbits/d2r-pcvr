@@ -1,4 +1,5 @@
 #include "ui_blit.h"
+#include "dxgi_views.h"
 #include <d3dcompiler.h>
 #include <cstring>
 #include <climits>
@@ -67,12 +68,14 @@ float4 PS(float4 position:SV_Position):SV_Target {
 bool UiBlit::Render(ID3D12Device* device,ID3D12GraphicsCommandList* list,ID3D12Resource* source,ID3D12Resource* target,bool blackBackground) {
     if(!pipeline||!source||!target)return false;
     const auto s=source->GetDesc(),t=target->GetDesc();
-    if(s.Format!=DXGI_FORMAT_R16G16B16A16_FLOAT||s.Width!=t.Width||s.Height!=t.Height||s.Format!=t.Format||
+    if(!RenderTargetCompatible(s.Format,DXGI_FORMAT_R16G16B16A16_FLOAT)||s.Width!=t.Width||s.Height!=t.Height||
+       !RenderTargetCompatible(t.Format,DXGI_FORMAT_R16G16B16A16_FLOAT)||
        s.SampleDesc.Count!=1||t.SampleDesc.Count!=1)return false;
-    D3D12_SHADER_RESOURCE_VIEW_DESC srv{};srv.Format=s.Format;srv.ViewDimension=D3D12_SRV_DIMENSION_TEXTURE2D;
+    D3D12_SHADER_RESOURCE_VIEW_DESC srv{};srv.Format=DXGI_FORMAT_R16G16B16A16_FLOAT;srv.ViewDimension=D3D12_SRV_DIMENSION_TEXTURE2D;
     srv.Shader4ComponentMapping=D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;srv.Texture2D.MipLevels=1;
     device->CreateShaderResourceView(source,&srv,sourceHeap->GetCPUDescriptorHandleForHeapStart());
-    device->CreateRenderTargetView(target,nullptr,targetHeap->GetCPUDescriptorHandleForHeapStart());
+    D3D12_RENDER_TARGET_VIEW_DESC rtvDesc{};rtvDesc.Format=DXGI_FORMAT_R16G16B16A16_FLOAT;rtvDesc.ViewDimension=D3D12_RTV_DIMENSION_TEXTURE2D;
+    device->CreateRenderTargetView(target,&rtvDesc,targetHeap->GetCPUDescriptorHandleForHeapStart());
     auto rtv=targetHeap->GetCPUDescriptorHandleForHeapStart();list->OMSetRenderTargets(1,&rtv,FALSE,nullptr);
     const D3D12_VIEWPORT vp{0,0,float(t.Width),float(t.Height),0,1};const D3D12_RECT rect{0,0,LONG(t.Width),LONG(t.Height)};
     list->RSSetViewports(1,&vp);list->RSSetScissorRects(1,&rect);

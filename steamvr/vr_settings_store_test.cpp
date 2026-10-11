@@ -1,6 +1,7 @@
 // Isolated Win32 profile-file tests; never opens the installed game configuration.
 #include <windows.h>
 #include "../vr/settings_menu.h"
+#include "body_calibration.h"
 #include <cstdio>
 #include <cstdlib>
 #include <string>
@@ -36,6 +37,18 @@ int main(){
     Check(!vrsettings::Submit(request),"out of range request rejected before disk write");
     request.values[DrawDistance]=3;request.changed=1u<<Motion;Check(!vrsettings::Submit(request),"mismatched key mask rejected");
     request.changed=1u<<DrawDistance;request.base[Sky]=NAN;Check(!vrsettings::Submit(request),"nonfinite request baseline rejected");
+    Check(WritePrivateProfileStringW(L"interactions",L"belt_forward",L"0.06",name),"save closer belt preference");
+    vrsettings::Poll(name);before=vrsettings::Read();
+    Check(before.values[BeltForward]==.06f&&!framevr::calibration::Stored(before.values),"uncalibrated profile keeps belt preference");
+    request=framevr::calibration::SaveRequest(before,{1.72f,1.63f});
+    Check(vrsettings::Submit(request)&&vrsettings::Poll(name),"body measurement transaction succeeds");
+    saved=vrsettings::Read();
+    Check(framevr::calibration::Stored(saved.values)&&std::fabs(saved.values[EyeHeight]-1.72f)<1e-5f&&std::fabs(saved.values[ArmSpan]-1.63f)<1e-5f,"eye height, arm span and version round trip together");
+    Check(Int(path,L"calibration",L"version")==1&&Int(path,L"custom",L"keep")==12345&&saved.values[BeltForward]==.06f,"calibration preserves unrelated settings");
+    Check(WritePrivateProfileStringW(L"calibration",L"version",L"99",name),"simulate future calibration version");
+    vrsettings::Poll(name);Check(!framevr::calibration::Stored(vrsettings::Read().values),"unknown record version requests calibration");
+    Check(WritePrivateProfileStringW(L"calibration",L"version",L"1",name)&&WritePrivateProfileStringW(L"calibration",L"eye_height_m",L"3.4",name),"simulate corrupt height");
+    vrsettings::Poll(name);Check(!framevr::calibration::Stored(vrsettings::Read().values),"invalid raw height cannot become calibrated through clamps");
     model.Open(vrsettings::Read());model.Click({Kind::Change,Motion,-1});request=model.Click({Kind::Apply});
     Check(DeleteFileW(name)&&vrsettings::Submit(request)&&!vrsettings::Poll(name),"missing file fails safely");
     Check(!vrsettings::Read().ready&&vrsettings::Read().result==Result::Failed,"failure status published");

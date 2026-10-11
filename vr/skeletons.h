@@ -17,6 +17,7 @@ struct Input {
     float wristDeg[3] = {};     // pitch, yaw, roll on top, in the controller's own axes (mirrored for the left)
     float scale = 1.0f;         // arm reach on top of the hero/user height ratio
     float userHeadM = 1.7f;     // the user's head above the floor
+    float armSpanM = 0;        // calibrated grip-to-grip T-pose span; zero keeps authored proportions
     uint32_t handsValid = 0;    // bit 0 right, bit 1 left
     uint32_t poseStamp = 0;     // input stamp that produced this pose (native XR)
     uint32_t worldEpoch = 0;    // snap-turn/recenter generation for that world placement

@@ -1,5 +1,5 @@
 #pragma once
-#include "math.h"
+#include "frame_math.h"
 #include <cstdint>
 #include "skill_slots.h"
 

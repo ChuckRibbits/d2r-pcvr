@@ -6,7 +6,7 @@
 static std::atomic<unsigned> exceptions{0};
 static LONG CALLBACK Observe(EXCEPTION_POINTERS*){++exceptions;return EXCEPTION_CONTINUE_SEARCH;}
 
-int main() {
+int main(int argc,char** argv) {
     auto observer=AddVectoredExceptionHandler(1,Observe);if(!observer)return 12;
     SYSTEM_INFO info{};GetSystemInfo(&info);
     const size_t page=info.dwPageSize;
@@ -33,9 +33,8 @@ int main() {
     if(framevr::WriteMemory(nullptr,out,sizeof out))return 18;
     if(exceptions.load()!=0)return 19; // errors stay inside the OS, not D2R's crash handler
     RemoveVectoredExceptionHandler(observer);
-    // Write a result because this Proton launch does not forward Windows stdout.
-    const char* path="Z:\\home\\berkybear\\diablo2-vr-port\\build-frame\\memory-test-result.txt";
-    FILE* f=std::fopen(path,"w");if(!f)return 8;
+    // A caller may request a result file when stdout is not forwarded.
+    FILE* f=argc>1?std::fopen(argv[1],"w"):stdout;if(!f)return 8;
     std::fputs("Checked local copies succeed; inaccessible, freed, null, read-only and boundary-crossing buffers fail without entering application exception handlers.\n",f);
-    std::fclose(f);return 0;
+    if(f!=stdout)std::fclose(f);return 0;
 }

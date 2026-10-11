@@ -3,10 +3,70 @@
 Updated 2026-10-10. Read [INSTALL.md](INSTALL.md) for deployment and
 [steamvr/TASKS.md](steamvr/TASKS.md) for the complete user-requested backlog.
 
-**Next session is a clean Windows install. Start with
+**Native Windows setup is complete. Start with
 [WINDOWS_HANDOFF.md](WINDOWS_HANDOFF.md)** for exact package choice, installation,
 Steam launch commands, controls, baseline settings and the diagnostic sequence.
 Use branch `vr/steam-frame-proton`; default/upstream `main` is not this work.
+
+**Current verified build:** `f559b3e5...`, installed at 17:55 PDT. The owner
+reports "it all works" after the offline cave retest. Logs confirm accepted
+free-swing melee contacts in `act1_caves` without the old position mismatch,
+followed by return outdoors and normal game exit at 18:02. Current code includes
+T-pose body calibration, dominant-trigger shoulder weapon swapping, native
+Windows setup, dialogue focus and clipping/belt/wrist fixes. All 33 native tests,
+21 Windows Python tests and both 17-call NGX ABI target checks pass. Use SteamVR
+streaming to Steam Frame, local offline characters only. Game is closed; the next
+engineering priority is a controlled native baseline/candidate performance test.
+
+### Earlier Windows debugging record
+
+**Windows setup is now installed locally.** The owner's stock Steam D2R and
+Frame dashboard work. Owner verified offline VR gameplay with the baseline,
+reporting good subjective performance and a missing torso/belt.
+Akara dialogue then froze both desktop and headset. A saved dump points to
+synchronous window activation re-entering native game locks. Native performance
+candidate `9b3ce9df…` included deferred window activation; its session logged
+Akara opening/closing twice and normal Save & Exit. Owner reports performance
+is superb, and now requests rendering/dungeon-transition fixes. Follow-up DLL
+`996cc430…` fixed belt rendering in the headset, but cave diagnostics showed
+fresh UI snapshots with expired native local identity. Current DLL `5847a204…`
+refreshes identity from the checked UI-thread local-player accessor and keeps
+server position/target/wall checks. Graphics are preserved; belt_forward is
+0.06 m for closer placement. Owner confirms cave wrist values now work, but
+cave swings still fail: callbacks run and reject a player-position mismatch.
+Normal-posture captures plus the owner's clipping-volume observation exposed a
+malformed first camera section from the installer. Win32 ignored the real near
+setting and used 1.5 world units. Correcting the installed INI live restored 0.2;
+the owner confirms torso, arms and shield clipping are fixed. Installer parsing
+and a Win32 profile API regression test are fixed too (five installer tests pass).
+The SteamVR probe recommends 2160×2160, but actual game eyes are 3840×2160.
+User additionally requested first-load/body-menu T-pose calibration and dominant
+trigger swapping over either shoulder in place of hip anchors. Build `e27084ed…`
+was installed at 17:39 PDT with these features; headset validation is pending.
+The owner confirms calibration saves/closes and the VR settings entry works.
+Initial resting arms caused a
+misleading floor/setup message; corrected DLL `a1e2006a…` was installed at 17:43
+after normal exit with 32 native tests passing. Current measurements are
+eye height 1.64763 m / grip span 1.50561 m. The next SteamVR run started at 17:49.
+Calibration persists stage eye height and grip span and fits per-rig arms while
+keeping controllers at physical scale. See steamvr/BODY_CALIBRATION.md. Cave
+swings reproduced in the cave. Paired native/render samples show terrain-height
+shear on both horizontal axes (sqrt(3/2) times height). Candidate `f559b3e5...`
+removes that shear for the unchanged 0.65 m warp check and adds it to enemy contact
+capsules. All 33 native tests pass, including the actual captured rejections,
+contacts/misses and teleport rejection. Installed at 17:55 after normal exit;
+previous DLL/INI/logs/saves backed up and current INI/graphics preserved. SteamVR
+offline retest completed; owner reports "it all works", with native cave contacts
+and normal exit verified in logs. Latest installed deployment:
+`build-frame/windows/latest-cave-coordinates-deployment.json`.
+Portable Windows development tools build the candidate natively; 33 C++ tests,
+21 Windows Python tests and 17-call NGX ABI checks pass. See the current setup
+section in WINDOWS_HANDOFF.md for backups, exact Steam launch routing and the
+explicitly authorized loader-file Defender exclusions. Historical statements
+below that Windows was untested describe the earlier Linux handoff. Native
+baseline/candidate performance measurements remain pending. Latest deployment:
+`build-frame/windows/latest-identity-deployment.json`; dump/backtraces:
+`build-frame/windows/akara-freeze-20261010-164318/`.
 
 ## Objective and boundaries
 
@@ -1600,7 +1660,7 @@ a friend the downloadable binary contains the lighting/label corrections.
 
 | Area | Files |
 |---|---|
-| Native OpenXR, eye copies, controllers, recenter, menu laser | `steamvr/transport.cpp`, `math.h`, `input.h` |
+| Native OpenXR, eye copies, controllers, recenter, menu laser | `steamvr/transport.cpp`, `frame_math.h`, `input.h` |
 | Fixed foveation / D3D12 Tier 2 VRS | `steamvr/foveation.cpp`, `foveation_math.h`, `vrs_compat.h` |
 | Buffered runtime logger | `steamvr/logging.cpp`, `logging.h`, `logging_test.cpp` |
 | First-person camera, per-eye label hooks | `cleanroom/camera/d2rcam.cpp`, `mat4.h`, `game_layout.h` |

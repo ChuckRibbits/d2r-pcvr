@@ -75,17 +75,38 @@ std::string Name(int id) {
 }
 void Init(const D2RL::PluginContext* c){context=c;c->QueryService(&strings);}
 void Capture(framevr::interaction::Snapshot& s) {
+    int reason=1;uintptr_t player=0;uint32_t id=0,clientId=0;
+    struct Trace {
+        framevr::interaction::Snapshot& s;int& reason;uintptr_t& player;uint32_t& id;uint32_t& clientId;
+        ~Trace() {
+            if(!s.session)return;
+            static uint64_t next=0;static int last=-1;const auto now=GetTickCount64();
+            if(reason==last&&now<next)return;last=reason;next=now+5000;
+            char line[240];std::snprintf(line,sizeof line,"Frame vitals read: reason=%d session=%llu client=%p client_id=%u observed_id=%u hp=%.1f/%.1f mana=%.1f/%.1f",reason,
+                (unsigned long long)s.session,reinterpret_cast<void*>(player),clientId,id,s.health,s.maxHealth,s.mana,s.maxMana);
+            framevr::logging::Write(line);
+        }
+    } trace{s,reason,player,id,clientId};
     if(!s.session||!Ready())return;
+    reason=2;
     const int index=reinterpret_cast<int(*)()>(d2rsig::Addr(abi::LocalIndexRva))();
     if(index<0||index>=8)return;
-    const auto player=reinterpret_cast<uintptr_t(*)(int)>(d2rsig::Addr(abi::ClientPlayerRva))(index);
-    uint32_t h[3]{},id=0;
-    if(!Read(player,h)||h[0]!=0||!combat::LocalPlayerId(id)||id!=h[2])return;
+    player=reinterpret_cast<uintptr_t(*)(int)>(d2rsig::Addr(abi::ClientPlayerRva))(index);
+    uint32_t h[3]{};reason=3;
+    if(!Read(player,h)||h[0]!=0)return;
+    clientId=h[2];reason=4;
+    // This signature-checked accessor resolves the local UI player, after the
+    // SDK has confirmed the current session. Aim/camera proximity is not an
+    // identity source: it can stop matching during a level warp.
+    if(!combat::ObserveUiPlayer(player,s.session))return;
+    if(!combat::LocalPlayerId(id))return;
+    reason=5;if(id!=h[2])return;
     auto stat=reinterpret_cast<int(*)(uintptr_t,int,int)>(d2rsig::Addr(abi::StatRva));
     s.health=stat(player,6,0)/256.f;s.maxHealth=stat(player,7,0)/256.f;
     s.mana=stat(player,8,0)/256.f;s.maxMana=stat(player,9,0)/256.f;
     s.vitalsKnown=s.health>=0&&s.maxHealth>0&&s.health<=s.maxHealth*2&&s.maxHealth<1000000&&
         s.mana>=0&&s.maxMana>=0&&s.mana<=std::max(1.f,s.maxMana)*2&&s.maxMana<1000000;
+    reason=s.vitalsKnown?0:6;
     // Lookup asserts on a missing skill list during load/teardown. The
     // signature-checked accessor's +0x100 layout is guarded separately.
     uintptr_t skillList=0;

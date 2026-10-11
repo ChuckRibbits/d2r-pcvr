@@ -12,7 +12,7 @@
 #include <cstring>
 #include <vector>
 
-// Diagnose Proton's runtime without loading, patching or authenticating D2R.
+// Diagnose the active runtime without loading, patching or authenticating D2R.
 int main(int argc,char** argv) {
     // Optional output path makes this useful on a friend's machine as well.
     if(!std::freopen(argc>1?argv[1]:"openxr-probe-result.txt","w",stdout))return 1;
@@ -60,6 +60,14 @@ int main(int argc,char** argv) {
     XrSystemGetInfo si{XR_TYPE_SYSTEM_GET_INFO};si.formFactor=XR_FORM_FACTOR_HEAD_MOUNTED_DISPLAY;
     XrSystemId id=XR_NULL_SYSTEM_ID;result=system(instance,&si,&id);std::printf("Headset system: %d\n",result);
     if(XR_FAILED(result)){destroy(instance);return 1;}
+    PFN_xrEnumerateViewConfigurationViews enumerateViews=nullptr;
+    rr.getInstanceProcAddr(instance,"xrEnumerateViewConfigurationViews",reinterpret_cast<PFN_xrVoidFunction*>(&enumerateViews));
+    uint32_t viewCount=0;
+    if(enumerateViews&&XR_SUCCEEDED(enumerateViews(instance,id,XR_VIEW_CONFIGURATION_TYPE_PRIMARY_STEREO,0,&viewCount,nullptr))) {
+        std::vector<XrViewConfigurationView> views(viewCount,{XR_TYPE_VIEW_CONFIGURATION_VIEW});
+        if(XR_SUCCEEDED(enumerateViews(instance,id,XR_VIEW_CONFIGURATION_TYPE_PRIMARY_STEREO,viewCount,&viewCount,views.data())))
+            for(uint32_t i=0;i<viewCount;++i)std::printf("Eye %u recommended image: %u x %u; samples: %u\n",i,views[i].recommendedImageRectWidth,views[i].recommendedImageRectHeight,views[i].recommendedSwapchainSampleCount);
+    }
     if(gaze) {
         PFN_xrGetSystemProperties getSystemProperties=nullptr;
         rr.getInstanceProcAddr(instance,"xrGetSystemProperties",reinterpret_cast<PFN_xrVoidFunction*>(&getSystemProperties));
@@ -89,6 +97,10 @@ int main(int argc,char** argv) {
     if(!createFactory||!createDevice){std::puts("Cannot load DXGI/D3D12");destroy(instance);return 1;}
     HRESULT hr=createFactory(IID_PPV_ARGS(&factory));
     if(SUCCEEDED(hr))hr=factory->EnumAdapterByLuid(gr.adapterLuid,IID_PPV_ARGS(&adapter));
+    if(SUCCEEDED(hr)) {
+        DXGI_ADAPTER_DESC desc{};
+        if(SUCCEEDED(adapter->GetDesc(&desc)))std::printf("OpenXR graphics adapter: %ls\n",desc.Description);
+    }
     if(SUCCEEDED(hr))hr=createDevice(adapter.Get(),gr.minFeatureLevel,IID_PPV_ARGS(&device));
     D3D12_COMMAND_QUEUE_DESC qd{};qd.Type=D3D12_COMMAND_LIST_TYPE_DIRECT;
     if(SUCCEEDED(hr))hr=device->CreateCommandQueue(&qd,IID_PPV_ARGS(&queue));
@@ -97,8 +109,27 @@ int main(int argc,char** argv) {
     XrGraphicsBindingD3D12KHR gb{XR_TYPE_GRAPHICS_BINDING_D3D12_KHR};gb.device=device.Get();gb.queue=queue.Get();
     XrSessionCreateInfo sci{XR_TYPE_SESSION_CREATE_INFO};sci.next=&gb;sci.systemId=id;
     XrSession session=XR_NULL_HANDLE;result=createSession(instance,&sci,&session);
-    std::printf("Create Proton D3D12 OpenXR session: %d\n",result);
+    std::printf("Create D3D12 OpenXR session: %d\n",result);
     // Do not begin the session or submit a frame: this probe only checks setup.
-    if(XR_SUCCEEDED(result))destroySession(session);
+    if(XR_SUCCEEDED(result)) {
+        PFN_xrCreateSwapchain createSwapchain=nullptr;PFN_xrEnumerateSwapchainImages images=nullptr;PFN_xrDestroySwapchain destroySwapchain=nullptr;
+        rr.getInstanceProcAddr(instance,"xrCreateSwapchain",reinterpret_cast<PFN_xrVoidFunction*>(&createSwapchain));
+        rr.getInstanceProcAddr(instance,"xrEnumerateSwapchainImages",reinterpret_cast<PFN_xrVoidFunction*>(&images));
+        rr.getInstanceProcAddr(instance,"xrDestroySwapchain",reinterpret_cast<PFN_xrVoidFunction*>(&destroySwapchain));
+        for(auto format:{DXGI_FORMAT_R8G8B8A8_UNORM,DXGI_FORMAT_R8G8B8A8_UNORM_SRGB,DXGI_FORMAT_R16G16B16A16_FLOAT}) {
+            XrSwapchainCreateInfo info{XR_TYPE_SWAPCHAIN_CREATE_INFO};info.usageFlags=XR_SWAPCHAIN_USAGE_COLOR_ATTACHMENT_BIT|XR_SWAPCHAIN_USAGE_SAMPLED_BIT;
+            info.format=format;info.sampleCount=info.faceCount=info.arraySize=info.mipCount=1;info.width=info.height=64;
+            XrSwapchain chain=XR_NULL_HANDLE;auto created=createSwapchain(session,&info,&chain);
+            std::printf("Swapchain requested format %d: %d\n",int(format),created);
+            if(XR_SUCCEEDED(created)) {
+                uint32_t n=0;auto enumerated=images(chain,0,&n,nullptr);
+                std::vector<XrSwapchainImageD3D12KHR> textures(n,{XR_TYPE_SWAPCHAIN_IMAGE_D3D12_KHR});
+                if(XR_SUCCEEDED(enumerated)&&n&&XR_SUCCEEDED(images(chain,n,&n,reinterpret_cast<XrSwapchainImageBaseHeader*>(textures.data()))))
+                    std::printf("Swapchain requested format %d: actual D3D12 resource format %d (%u images)\n",int(format),int(textures[0].texture->GetDesc().Format),n);
+                destroySwapchain(chain);
+            }
+        }
+        destroySession(session);
+    }
     destroy(instance);return XR_FAILED(result)?1:0;
 }

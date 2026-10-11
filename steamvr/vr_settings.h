@@ -6,8 +6,9 @@
 
 namespace framevr::settings {
 enum class Page { Controls, VR, Video };
-enum Key { Motion, Seated, Holsters, Snap, TurnSpeed, Waist, BeltForward,
-           Foveation, Sky, Fog, Ceiling, DrawDistance, ObjectDistance, Count };
+enum Key { Motion, Seated, Dominant, Snap, TurnSpeed, Waist, BeltForward,
+           Foveation, Sky, Fog, Ceiling, DrawDistance, ObjectDistance,
+           EyeHeight, ArmSpan, BodyCalibration, Count };
 struct Definition {
     const char* label;
     const char* detail;
@@ -17,18 +18,21 @@ struct Definition {
 };
 inline constexpr std::array<Definition,Count> Definitions{{
     {"Motion combat", "Physical melee and bow; spell wheel and belt interactions", L"gameplay",L"motion_controls",0,0,1,1},
-    {"Seated belt position", "Raises the belt and holsters for seated reach", L"interactions",L"seated",0,0,1,1},
-    {"Weapon holsters", "Grip and pull at either hip to request weapon set I or II", L"interactions",L"holsters",1,0,1,1},
+    {"Seated belt position", "Raises the belt for seated reach", L"interactions",L"seated",0,0,1,1},
+    {"Dominant hand", "Trigger over either shoulder switches weapon sets", L"interactions",L"dominant_hand",0,0,1,1},
     {"Turning", "Zero selects smooth turning; other values are snap angles", L"turn",L"snap",0,0,180,15},
     {"Smooth turn speed", "Degrees per second; used when turning is set to Smooth", L"turn",L"speed",120,10,720,30},
     {"Belt drop below eyes", "Standing mode only; smaller values raise the belt", L"interactions",L"waist_below_eyes",.65f,.30f,.95f,.05f},
-    {"Belt forward reach", "Distance forward from the estimated torso", L"interactions",L"belt_forward",.26f,.15f,.5f,.025f},
+    {"Belt forward reach", "Distance forward from the estimated torso", L"interactions",L"belt_forward",.26f,.03f,.5f,.025f},
     {"Foveated rendering", "Reduce peripheral shading; missing gaze uses full quality", L"render",L"fixed_foveation",1,0,2,1},
     {"Added sky", "The mod's outdoor sky effect", L"sky",L"enabled",0,0,1,1},
     {"Added fog", "The mod's distance fog effect", L"fog",L"enabled",0,0,1,1},
     {"Dungeon ceiling", "The mod's overhead dungeon surfaces", L"ceiling",L"enabled",0,0,1,1},
     {"Terrain draw distance", "Higher values show more map tiles and cost more to render", L"render",L"rings",4,1,8,1},
     {"Object draw distance", "Higher values retain more distant scenery", L"render",L"model_radius",1000,10,10000,250},
+    {"Standing eye height", "Measured from the SteamVR floor", L"calibration",L"eye_height_m",1.64f,.8f,2.3f,.01f},
+    {"Controller span", "Measured between grips in a T-pose", L"calibration",L"arm_span_m",1.6f,.85f,2.6f,.01f},
+    {"Body calibration", "Saved body calibration version", L"calibration",L"version",0,0,1,1},
 }};
 using Values=std::array<float,Count>;
 inline Values Defaults(){Values v{};for(int i=0;i<Count;++i)v[i]=Definitions[i].defaultValue;return v;}
@@ -49,14 +53,14 @@ struct Rect {
 };
 constexpr int Width=1280,Height=1024;
 constexpr Rect Tabs[3]={{40,114,386,60},{447,114,386,60},{854,114,386,60}};
-constexpr Rect Apply{965,918,275,68},Close{650,918,275,68},Recenter{40,918,365,68};
+constexpr Rect Apply{965,918,275,68},Close{650,918,275,68},Recenter{40,918,270,68},Calibrate{330,918,300,68};
 constexpr int RowY=246,RowStep=82;
 inline Rect Decrease(int row){return {865,RowY+row*RowStep,64,52};}
 inline Rect Increase(int row){return {1176,RowY+row*RowStep,64,52};}
 inline Rect ValueBox(int row){return {942,RowY+row*RowStep,221,52};}
 inline int RowCount(Page page){return page==Page::VR?7:page==Page::Video?6:0;}
 inline Key RowKey(Page page,int row){return Key((page==Page::Video?7:0)+row);}
-enum class Kind { None, Tab, Change, Apply, Close, Recenter };
+enum class Kind { None, Tab, Change, Apply, Close, Recenter, Calibrate };
 struct Hit {Kind kind=Kind::None;int index=-1,delta=0;};
 inline Hit HitTest(Page page,float u,float v){
     if(!std::isfinite(u)||!std::isfinite(v)||u<0||u>=1||v<0||v>=1)return {};
@@ -65,6 +69,7 @@ inline Hit HitTest(Page page,float u,float v){
     if(Apply.Contains(x,y))return {Kind::Apply};
     if(Close.Contains(x,y))return {Kind::Close};
     if(Recenter.Contains(x,y))return {Kind::Recenter};
+    if(Calibrate.Contains(x,y))return {Kind::Calibrate};
     for(int r=0;r<RowCount(page);++r){
         const auto key=RowKey(page,r);
         if(Decrease(r).Contains(x,y))return {Kind::Change,key,-1};

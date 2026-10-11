@@ -1,4 +1,5 @@
 #include "potion_models.h"
+#include "dxgi_views.h"
 #include <windows.h>
 #include <d3dcompiler.h>
 #include <wrl/client.h>
@@ -178,9 +179,11 @@ float4 PS(Out v):SV_Target {
 }
 bool Models::Render(ID3D12GraphicsCommandList* list,ID3D12Resource* target,unsigned eye,interaction::Pose view,math::Fov f,const Scene& scene) {
     if(!impl||eye>1||!scene.count||scene.count>scene.items.size()||!interaction::Valid(view))return false;
-    auto& p=*impl;const auto desc=target->GetDesc();if(desc.Width!=p.width||desc.Height!=p.height||desc.Format!=p.format)return false;
+    auto& p=*impl;const auto desc=target->GetDesc();
+    if(desc.Width!=p.width||desc.Height!=p.height||desc.SampleDesc.Count!=1||!RenderTargetCompatible(desc.Format,p.format))return false;
     auto rtv=p.rtv->GetCPUDescriptorHandleForHeapStart();rtv.ptr+=eye*p.rtvStride;
-    p.device->CreateRenderTargetView(target,nullptr,rtv);auto dsv=p.dsv->GetCPUDescriptorHandleForHeapStart();dsv.ptr+=eye*p.dsvStride;
+    D3D12_RENDER_TARGET_VIEW_DESC viewDesc{};viewDesc.Format=p.format;viewDesc.ViewDimension=D3D12_RTV_DIMENSION_TEXTURE2D;
+    p.device->CreateRenderTargetView(target,&viewDesc,rtv);auto dsv=p.dsv->GetCPUDescriptorHandleForHeapStart();dsv.ptr+=eye*p.dsvStride;
     list->ClearDepthStencilView(dsv,D3D12_CLEAR_FLAG_DEPTH,0,0,0,nullptr);list->OMSetRenderTargets(1,&rtv,FALSE,&dsv);
     const D3D12_VIEWPORT vp{0,0,float(p.width),float(p.height),0,1};const D3D12_RECT rect{0,0,LONG(p.width),LONG(p.height)};
     list->RSSetViewports(1,&vp);list->RSSetScissorRects(1,&rect);list->SetGraphicsRootSignature(p.root.Get());list->SetPipelineState(p.pipeline.Get());

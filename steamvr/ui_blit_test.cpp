@@ -8,8 +8,9 @@
 using Microsoft::WRL::ComPtr;
 static void Check(HRESULT hr,const char* what){if(FAILED(hr)){std::fprintf(stderr,"%s: %08lx\n",what,(unsigned long)hr);throw std::runtime_error(what);}}
 static float Half(uint16_t x){const int e=(x>>10)&31,m=x&1023;return (x&0x8000?-1.f:1.f)*std::ldexp(e?1.f+m/1024.f:m/1024.f,e?e-15:-14);}
-int main(int argc,char**){try {
-    const bool blackBackground=argc>1;
+int main(int argc,char** argv){try {
+    bool blackBackground=false,typeless=false;
+    for(int i=1;i<argc;++i) {if(!std::strcmp(argv[i],"--typeless"))typeless=true;else blackBackground=true;}
     ComPtr<ID3D12Device> device;Check(D3D12CreateDevice(nullptr,D3D_FEATURE_LEVEL_11_0,IID_PPV_ARGS(&device)),"device");
     framevr::UiBlit blit;if(!blit.Initialize(device.Get(),+[](const char* s){std::puts(s);}))return 1;
     D3D12_RESOURCE_DESC tex{};tex.Dimension=D3D12_RESOURCE_DIMENSION_TEXTURE2D;tex.Width=4;tex.Height=2;
@@ -18,6 +19,7 @@ int main(int argc,char**){try {
     ComPtr<ID3D12Resource> source,target,upload,readback;
     Check(device->CreateCommittedResource(&hp,D3D12_HEAP_FLAG_NONE,&tex,D3D12_RESOURCE_STATE_COPY_DEST,nullptr,IID_PPV_ARGS(&source)),"source");
     tex.Flags=D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET;
+    if(typeless)tex.Format=DXGI_FORMAT_R16G16B16A16_TYPELESS;
     Check(device->CreateCommittedResource(&hp,D3D12_HEAP_FLAG_NONE,&tex,D3D12_RESOURCE_STATE_RENDER_TARGET,nullptr,IID_PPV_ARGS(&target)),"target");
     D3D12_PLACED_SUBRESOURCE_FOOTPRINT footprint{};UINT64 bytes=0;device->GetCopyableFootprints(&tex,0,1,0,&footprint,nullptr,nullptr,&bytes);
     D3D12_RESOURCE_DESC buffer{};buffer.Dimension=D3D12_RESOURCE_DIMENSION_BUFFER;buffer.Width=bytes;buffer.Height=buffer.DepthOrArraySize=buffer.MipLevels=1;buffer.SampleDesc.Count=1;buffer.Layout=D3D12_TEXTURE_LAYOUT_ROW_MAJOR;

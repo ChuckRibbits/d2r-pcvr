@@ -13,6 +13,8 @@
 #include "memory.h"
 #include "logging.h"
 #include "../steamvr/transport.h"
+#include "../steamvr/callback_ticket.h"
+#include "../steamvr/world_coordinates.h"
 namespace gamestate {uint64_t LocalPlayer();bool MenuOpen();uint32_t HandsKey();uint32_t WeaponSet();}
 namespace melee {
 namespace {
@@ -42,10 +44,11 @@ std::mutex serverMutex;Server server;
 struct Contact {uintptr_t game=0,attacker=0,defender=0;bool accepted=false;};
 thread_local Contact contact;
 std::atomic<unsigned> samples{0},contacts{0},accepted{0},rejected{0},noServer{0},intersections{0},stale{0},walls{0};
+std::atomic<unsigned> applied{0},recovered{0},playerMissing{0},positionMismatch{0},nearby{0},bodyMissing{0};
 std::mutex queueMutex;Engine engine;HitSet hits;
 struct Request {Sweep sweep;Sample sample;uint64_t session=0,at=0;};
 std::array<Request,24> requests;size_t count=0;
-Sample current;uint64_t inputSession=0;bool queued=false;
+Sample current;uint64_t inputSession=0;framevr::CallbackTicket callback;
 template<class T> bool Read(uintptr_t p,T& out) {
     return p>0x10000&&framevr::ReadMemory(&out,reinterpret_cast<const void*>(p),sizeof out);
 }
@@ -105,19 +108,22 @@ bool BodyFor(uintptr_t unit,uint32_t classId,float upm,float floor,Body& body) {
     const float radius=std::max(.12f,float(std::max(fields[8],fields[9]))*.7f/upm);
     const float height=std::clamp((fields[13]?fields[13]:72)*.10f/upm,.4f,4.f);
     body.radius=std::min(radius,height*.45f)+.05f;
-    body.bottom={p.x/upm,floor+body.radius,p.z/upm};body.top=body.bottom;
+    body.bottom=framevr::coordinates::RenderGround(p*(1/upm),floor)+Vec{0,body.radius,0};body.top=body.bottom;
     body.top.y=floor+height-body.radius;return true;
 }
-void __cdecl Apply(const D2RL::PluginContext*,void*) noexcept {
+void __cdecl Apply(const D2RL::PluginContext*,void* token) noexcept {
     std::array<Request,24> batch;size_t n=0;
-    {std::lock_guard lock(queueMutex);n=count;std::copy_n(requests.begin(),n,batch.begin());count=0;queued=false;}
+    {std::lock_guard lock(queueMutex);
+     if(!callback.Claim(reinterpret_cast<uintptr_t>(token)))return;
+     n=count;std::copy_n(requests.begin(),n,batch.begin());count=0;}
     if(!n||!ready.load())return;
+    ++applied;
     Server local;{std::lock_guard lock(serverMutex);local=server;}
     uint32_t id=0;
     if(!combat::LocalPlayerId(id)||!local.game||local.session!=batch[0].session||local.player!=id) {++noServer;return;}
     const auto player=originalLookup(local.game,0,id);
     uint32_t playerMode=0;Vec playerPos{};
-    if(!player||!Read(player+0xc,playerMode)||playerMode==0||playerMode==17||playerMode==5||playerMode==6||!Position(player,playerPos))return;
+    if(!player||!Read(player+0xc,playerMode)||playerMode==0||playerMode==17||playerMode==5||playerMode==6||!Position(player,playerPos)){++playerMissing;return;}
     // A bounded server-side hash walk, only during energetic swings. Native
     // units stay on the owning thread; no raw target pointer crosses threads.
     uintptr_t buckets[128]{};
@@ -130,14 +136,28 @@ void __cdecl Apply(const D2RL::PluginContext*,void*) noexcept {
             if(header[0]==1&&header[3]!=0&&header[3]!=12) {
                 Vec pos{};
                 if(Position(unit,pos)&&Length(Vec{pos.x-playerPos.x,0,pos.z-playerPos.z})<24) {
+                    ++nearby;
                     for(size_t j=0;j<n;++j) {
                         const auto& r=batch[j];Body body{};
                         if(!Allowed(r)){++stale;continue;}
-                        // The client/server player positions may differ a little,
-                        // but never accept a saved sweep after a teleport/warp.
-                        if(Length(Vec{playerPos.x/r.sample.unitsPerMetre-r.sample.player.x,0,
-                                      playerPos.z/r.sample.unitsPerMetre-r.sample.player.z})>.65f)continue;
-                        if(!BodyFor(unit,header[1],r.sample.unitsPerMetre,r.sample.player.y,body)||!Touches(r.sweep.before,r.sweep.after,body))continue;
+                        // Native paths are flat grid coordinates; the rendered
+                        // pose includes terrain-height shear on X/Z. Compare in
+                        // the saved pose's grid plane, retaining the warp guard.
+                        if(!framevr::coordinates::MatchesPlayer(playerPos,r.sample.player,r.sample.unitsPerMetre)){
+                            ++positionMismatch;
+                            static ULONGLONG reportAt=0;const auto now=GetTickCount64();
+                            if(now>=reportAt){
+                                const auto grid=framevr::coordinates::GridPlane(r.sample.player)*r.sample.unitsPerMetre;
+                                char line[360];snprintf(line,sizeof line,
+                                    "Frame melee coordinates: server_grid=%.3f,%.3f render_player=%.3f,%.3f,%.3f render_grid=%.3f,%.3f units_per_m=%.4f (world units; warp guard retained)",
+                                    playerPos.x,playerPos.z,r.sample.player.x*r.sample.unitsPerMetre,
+                                    r.sample.player.y*r.sample.unitsPerMetre,r.sample.player.z*r.sample.unitsPerMetre,grid.x,grid.z,r.sample.unitsPerMetre);
+                                framevr::logging::Write(line);reportAt=now+3000;
+                            }
+                            continue;
+                        }
+                        if(!BodyFor(unit,header[1],r.sample.unitsPerMetre,r.sample.player.y,body)){++bodyMissing;continue;}
+                        if(!Touches(r.sweep.before,r.sweep.after,body))continue;
                         ++intersections;
                         if(!reinterpret_cast<int(*)(uintptr_t,uintptr_t,uintptr_t)>(d2rsig::Addr(RelationRva))(local.game,player,unit))continue;
                         if(reinterpret_cast<int(*)(uintptr_t,uintptr_t,int)>(d2rsig::Addr(LineRva))(player,unit,0x804)!=0){++walls;continue;}
@@ -190,33 +210,36 @@ void Install() {
         framevr::logging::Write("Frame melee: free-swing contact hooks ready; swept capsules -> exact native target; no grip/button/auto-aim");
 }
 void Cancel() {
-    std::lock_guard lock(queueMutex);current.active=false;count=0;engine.Reset();
+    std::lock_guard lock(queueMutex);current.active=false;count=0;engine.Reset();callback.Cancel();
 }
 void Submit(const Sample& sample) {
-    bool schedule=false;
+    uintptr_t token=0;
     {
         std::lock_guard lock(queueMutex);
         current=sample;
         const auto session=gamestate::LocalPlayer();
-        if(session!=inputSession){inputSession=session;engine.Reset();count=0;queued=false;}
+        if(session!=inputSession){inputSession=session;engine.Reset();count=0;callback.Cancel();}
+        if(callback.Expired(GetTickCount64(),500)){callback.Cancel();count=0;engine.Reset();++recovered;}
         Sweep sweep;
         if(!session||!ready.load()||!sample.active){current.active=false;engine.Reset();count=0;return;}
         if(engine.Step(sample,sweep)) {
             if(count==requests.size()){count=0;engine.Reset();return;} // never replay a backlog
             requests[count++]={sweep,sample,session,GetTickCount64()};++samples;
         }
-        if(count&&!queued){queued=true;schedule=true;}
+        if(count)token=callback.Start(GetTickCount64());
     }
-    if(schedule&&threads->runOnGameThread(context,&Apply,nullptr)!=D2RL::Threads::Result::Success) {
-        std::lock_guard lock(queueMutex);queued=false;count=0;
+    if(token&&threads->runOnGameThread(context,&Apply,reinterpret_cast<void*>(token))!=D2RL::Threads::Result::Success) {
+        std::lock_guard lock(queueMutex);if(callback.Claim(token))count=0;
     }
 }
 void Report() {
     const auto s=samples.exchange(0),c=contacts.exchange(0),a=accepted.exchange(0),r=rejected.exchange(0),g=noServer.exchange(0);
     const auto i=intersections.exchange(0),x=stale.exchange(0),w=walls.exchange(0);
-    Diagnostics d;{std::lock_guard lock(queueMutex);d=engine.TakeDiagnostics();}
-    if(!s&&!c&&!g&&!d.discontinuities&&!d.recovering)return;
-    char line[320];snprintf(line,sizeof line,"Frame melee: sweep samples=%u physical contacts=%u native accepted=%u rejected=%u missing server=%u intersections=%u stale=%u walls=%u pose resets=%u recovering=%u",s,c,a,r,g,i,x,w,d.discontinuities,d.recovering);
+    const auto callbacks=applied.exchange(0),retries=recovered.exchange(0),missing=playerMissing.exchange(0);
+    const auto mismatch=positionMismatch.exchange(0),monsters=nearby.exchange(0),bodies=bodyMissing.exchange(0);
+    Diagnostics d;uint64_t age=0;{std::lock_guard lock(queueMutex);d=engine.TakeDiagnostics();age=callback.Age(GetTickCount64());}
+    if(!s&&!c&&!g&&!d.discontinuities&&!d.recovering&&!retries)return;
+    char line[560];snprintf(line,sizeof line,"Frame melee: sweep samples=%u physical contacts=%u native accepted=%u rejected=%u missing server=%u intersections=%u stale=%u walls=%u pose resets=%u recovering=%u callbacks=%u abandoned=%u pending_ms=%llu missing_player=%u position_mismatch=%u nearby=%u missing_body=%u",s,c,a,r,g,i,x,w,d.discontinuities,d.recovering,callbacks,retries,(unsigned long long)age,missing,mismatch,monsters,bodies);
     framevr::logging::Write(line);
 }
 }
