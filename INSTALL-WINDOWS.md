@@ -32,7 +32,7 @@ You need the **Steam edition of Diablo II: Resurrected 3.3.93787** and a
    For Virtual Desktop, use the **Quest app** and install the **Windows
    Streamer** on your PC. Connect until you can see the PC desktop in the headset.
 4. Download **d2r-pcvr-windows.zip** from the
-   [release page](https://github.com/bearstonem/d2r-pcvr/releases/tag/v0.3.0-windows-quest-preview),
+   [release page](https://github.com/bearstonem/d2r-pcvr/releases/tag/v0.3.1-windows-preview),
    under **Assets**. Your GitHub account needs access while this preview is private.
 5. Extract `d2r-pcvr-preview` to a permanent folder, such as
    `C:\Mods\d2r-pcvr-preview`. Keep this folder after installation.
@@ -107,6 +107,53 @@ for offline play only; use the unmodded game for multiplayer. Always use
 **Save & Exit** and fully close D2R before switching headset connections or
 returning to desktop play.
 
+## Add Steam library shortcuts
+
+After completing **Set Steam launch options** above, you can add separate
+Steam library entries for each VR connection. These also let you launch from
+the headset without opening the mod folder.
+
+1. In desktop Steam, choose **Games → Add a Non-Steam Game to My Library**,
+   click **Browse**, and select `steam.exe` from your Steam installation.
+   Its default location is `C:\Program Files (x86)\Steam\steam.exe`; use
+   your actual Steam folder, which may differ from your D2R library folder.
+2. Click **Add Selected Programs**, then right-click the new library entry
+   and open **Properties**.
+3. Set **Target** and **Start In** to your Steam paths, keeping the quotes:
+
+   | Field | Example |
+   | --- | --- |
+   | Target | `"C:\Program Files (x86)\Steam\steam.exe"` |
+   | Start In | `"C:\Program Files (x86)\Steam"` |
+
+4. Choose the matching name and paste its **Launch Options**:
+
+   | Library name | Launch Options |
+   | --- | --- |
+   | Diablo II: Resurrected VR - SteamVR | `-applaunch 2536520 --frame-vr` |
+   | Diablo II: Resurrected VR - Virtual Desktop | `-applaunch 2536520 --frame-vr --frame-vdxr` |
+
+   These are the shortcut's launch options. Leave the original D2R game's
+   Python/wrapper launch options configured as described above.
+5. For the **SteamVR** entry, enable **Include in VR Library**. For the
+   **Virtual Desktop** entry, leave it disabled so Steam does not start SteamVR.
+6. To add the other connection, repeat these steps with a second entry.
+   If Steam will not add `steam.exe` twice, add another program as a
+   placeholder, then replace its **Target**, **Start In**, name and launch
+   options with the values above before using it.
+
+Connect your headset, then select the matching library entry and press
+**Play**. On Steam Frame or Quest Steam Link, use the **SteamVR** entry in
+the headset's Steam library. For Virtual Desktop, connect through its Quest
+app, close SteamVR, and start the **Virtual Desktop** entry from the streamed
+PC desktop. Select an **offline character** in the game.
+
+The original D2R library entry's **Play** button still opens the unmodded game.
+If a shortcut remains on **Launching**, fully close D2R and check that its
+launch options use the `-applaunch` command above.
+Steam's [non-Steam shortcut guide](https://help.steampowered.com/en/faqs/view/4B8B-9697-2338-40EC)
+also explains how to add a library entry.
+
 ## Calibrate your body
 
 The first time you enter the world, a calibration prompt appears:
@@ -117,7 +164,7 @@ The first time you enter the world, a calibration prompt appears:
 4. When **Saved** appears, release the triggers to return to the game.
 
 The world stays live during calibration. **Right B** cancels or skips.
-Repeat calibration through **Left Grip + Y → Calibrate body**, especially
+Repeat calibration through **Left Grip + Frame Left B / Quest Left Y → Calibrate body**, especially
 after changing headset or player. If the prompt cannot find the floor,
 complete your headset's floor/room setup and reopen calibration.
 
@@ -128,12 +175,13 @@ complete your headset's floor/room setup and reopen calibration.
 | Walk / snap turn | Left stick / right stick left-right |
 | Game menu: inventory, skills, character and Journal | **Frame Left A / Quest Left X** |
 | Menu select / drag | Point the right-hand laser and use right trigger |
-| Menu scroll / back | Right stick up-down / Right B |
-| VR settings | Left Grip + Y |
+| Laser context / alternate click | Left Grip + Right Trigger |
+| Native menu navigation / back | Sticks and face buttons / Right B |
+| VR settings | Left Grip + Frame Left B / Quest Left Y |
 | Spell wheel | Hold Left Y, turn the left palm toward you, then select with right laser + trigger |
 | Assign wheel skills | Spell wheel → **EDIT SKILLS** → slot → learned skill |
-| Weapon combat mode | Select **WEAPON** in the wheel center; release the trigger before attacking |
-| Melee | Swing your equipped weapon through an enemy |
+| Basic attack / bow on right trigger | Select **WEAPON** in the wheel center; release the selection trigger first |
+| Melee | Swing your equipped melee weapon through an enemy, even with a skill selected |
 | Manual attack / selected spell | Right trigger |
 | Bow | Bring the right hand to the bowstring, hold right trigger, draw back, then release |
 | Swap weapon sets I/II | Reach your right hand over either shoulder and press right trigger; change the swap hand in VR settings |
@@ -146,6 +194,14 @@ complete your headset's floor/room setup and reopen calibration.
 | Recenter | PC F11 |
 
 Keep the D2R window focused on the PC so menu clicks work.
+For the full Quest and Steam Frame mappings, including all eight quick-cast
+shortcuts and the game's A/B/X/Y/LB/RB/LT/RT menu prompts, see
+**[Controller reference](CONTROLS.md)**. Use a stick or face button for native
+navigation; release it and deliberately re-aim the laser to resume pointing
+and dragging. Laser dragging works in inventory, stash and merchant panels.
+Free swings pause while casting, using menus or handling a potion. Selecting
+a wheel skill changes the right-trigger action; its displayed quick-cast
+binding also remains available.
 
 ## If something goes wrong
 
