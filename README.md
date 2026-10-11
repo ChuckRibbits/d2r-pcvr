@@ -4,6 +4,15 @@ Play **Diablo II: Resurrected in VR on Windows**, with support for
 **SteamVR and Virtual Desktop (VDXR)**. Use motion controls to swing your
 weapon, aim spells, drink belt potions and explore Sanctuary in first person.
 
+[![Watch the D2R PCVR introduction on YouTube](https://github.com/bearstonem/d2r-pcvr/blob/main/docs/media/d2r-pcvr-introduction.jpg?raw=true)](https://www.youtube.com/watch?v=RpqVcaseReI)
+
+**[Watch the introduction on YouTube](https://www.youtube.com/watch?v=RpqVcaseReI)** (10:27):
+physical bow and melee combat, over-the-shoulder weapon swaps, raising
+skeletons, aimed spells, belt potions and VR menus, recorded in the headset.
+
+D2R PCVR builds on **[D2R VR by BodyWalkVR](https://github.com/natpoh/diablo2-vr-port)**,
+the original VR mod for Diablo II: Resurrected. See [Credits](#credits).
+
 **This is a mod for the original game, not a standalone game. You must purchase
 and install your own legitimate copy of Diablo II: Resurrected.** This Windows
 preview requires the Steam edition. The mod adds VR support and motion
@@ -195,6 +204,20 @@ For the complete additions overview, download the
 [PDF](https://github.com/bearstonem/d2r-pcvr/blob/main/docs/D2R-PCVR-Additions.pdf) or
 [editable Word document](https://github.com/bearstonem/d2r-pcvr/blob/main/docs/D2R-PCVR-Additions.docx).
 
-Based on [BodyWalkVR's D2R VR](https://github.com/natpoh/diablo2-vr-port).
-Licenses and credits are in [THIRD_PARTY.md](THIRD_PARTY.md) and [LICENSE](LICENSE).
+## Credits
+
+D2R PCVR is built on **[D2R VR](https://github.com/natpoh/diablo2-vr-port) by
+[BodyWalkVR](https://bodywalkvr.com/mods/d2r-vr)**, the original VR mod for
+Diablo II: Resurrected. Its D2RLoader plugin, first-person view, painted skies
+and depth fog are the foundation this project started from, used under its
+[MIT license](LICENSE). Thank you to BodyWalkVR for releasing it as open source.
+Their original documentation is kept in [UPSTREAM.md](UPSTREAM.md). For their
+own release, which runs through BodyWalk and FlatVR, visit the
+[D2R VR page on BodyWalkVR](https://bodywalkvr.com/mods/d2r-vr).
+
+D2R PCVR adds native OpenXR support for SteamVR and Virtual Desktop (VDXR),
+motion combat, the physical bow and potions, VR menus, foveated rendering and
+the guided Windows installer. Licenses for all third-party components are in
+[THIRD_PARTY.md](THIRD_PARTY.md).
+
 This project is not affiliated with or endorsed by Blizzard Entertainment.
