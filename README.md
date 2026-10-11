@@ -219,7 +219,7 @@ D2R PCVR is built on **[D2R VR](https://github.com/natpoh/diablo2-vr-port) by
 Diablo II: Resurrected. Its D2RLoader plugin, first-person view, painted skies
 and depth fog are the foundation this project started from, used under its
 [MIT license](LICENSE). Thank you to BodyWalkVR for releasing it as open source.
-Their original documentation is kept in [UPSTREAM.md](UPSTREAM.md). For their
+Their original documentation is kept in [UPSTREAM.md](https://github.com/bearstonem/d2r-pcvr/blob/main/UPSTREAM.md). For their
 own release, which runs through BodyWalk and FlatVR, visit the
 [D2R VR page on BodyWalkVR](https://bodywalkvr.com/mods/d2r-vr).
 
