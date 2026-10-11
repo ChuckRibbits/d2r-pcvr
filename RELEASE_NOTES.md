@@ -4,6 +4,15 @@ Play **Diablo II: Resurrected in VR on Windows** with
 **SteamVR or Virtual Desktop (VDXR)**. This preview is for **local offline
 single-player** and requires the **Steam edition of D2R 3.3.93787**.
 
+**This download is a mod, not the original game. You must purchase and install
+your own legitimate Steam copy of Diablo II: Resurrected.** D2R PCVR adds VR
+support and motion interactions to that existing game installation.
+
+**No Blizzard game assets are included in the ZIP.** It contains mod files
+and licensed third-party components. Required item/skill icons and potion
+models are read from your own installed game into local caches during setup;
+do not redistribute those caches or your game files.
+
 ## Headset connections
 
 - **Steam Frame:** SteamVR streaming.

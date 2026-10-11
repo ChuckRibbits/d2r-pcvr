@@ -1,5 +1,16 @@
 # Provenance and third-party notices
 
+D2R PCVR is an independently developed mod that adds VR support and motion
+interactions on top of the original Diablo II: Resurrected. It is not a
+standalone game. You must purchase and install your own legitimate copy of
+the game; this Windows preview requires the Steam edition.
+
+No Blizzard game executables, models, textures, audio or other game assets
+are distributed in this repository or release ZIP. Required native artwork
+and potion models are read from the user's own installation into local
+caches, which must not be redistributed. The mod includes licensed
+open-source components and retains their notices below.
+
 This adaptation starts from [natpoh/diablo2-vr-port](https://github.com/natpoh/diablo2-vr-port)
 at `10cfb0a2a9080184101794d3ac8c238c35717967`, under the retained [MIT license](LICENSE),
 copyright 2026 BodyWalkVR. Existing source, original generated sky art, and
