@@ -20,9 +20,21 @@ Receipt: `build-frame/windows/latest-motion-weapon-skills-deployment.json`.
 Backup: `build-frame/backups/windows-smite-hook-fix-20261012-003340-750/`.
 The earlier original-candidate backup remains available at
 `build-frame/backups/windows-motion-weapon-skills-20261012-000028-750/`.
-Physical Smite damage and Amazon arrow skills still need offline headset tests;
-keep the PR draft. See [steamvr/GAMEPLAY.md](steamvr/GAMEPLAY.md) for the checklist
-and the native ground-plane limitation of specialized arrows.
+The owner subsequently verified physical Paladin shield bash working on Steam
+Frame / SteamVR streaming with Steam 3.3.93787. The 14:26-14:29 PDT session logged
+15 contact cast requests, 14 native completions and zero reported native refusals.
+Keep the PR draft for Amazon arrow skills, shield fit across models, detailed
+resource/cadence comparisons and cancellation checks. See
+[steamvr/GAMEPLAY.md](steamvr/GAMEPLAY.md) for the checklist and the native
+ground-plane limitation of specialized arrows.
+
+The owner's Steam Frame shortcut attempts at 14:24 and 14:25 crashed with
+`0xc0000005` before D2RCore or the VR plugin loaded. A direct launch with Steam
+game IDs and the explicit SteamVR runtime succeeded at 14:26 and was used for the
+verified shield test. Early overlay injection is a suspect, not an established
+cause; the working process also loads the overlay later. Shortcut repair remains
+pending. At shutdown the loader logged vanilla object-pool assertions; these have
+not been investigated, so this later combat session is not a clean-exit validation.
 
 **v0.3.7 Windows preview:** packages the merged Battle.net support and guided
 Windows uninstaller from PR #6, with the player guides and download links
