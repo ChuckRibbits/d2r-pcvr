@@ -5674,11 +5674,18 @@ void MeleeContactTick() {
 }
 void ShieldContactTick() {
     framevr::melee::Sample sample;skel::MeleeWeaponPose pose;
-    if(!g_enabled.load()||!g_inWorld.load()||ThirdPerson()||Overhead()||!g_eyeOk.load()||gamestate::MenuOpen()||
-       !gamestate::LeftShield()||!melee::ShieldReady()||!skel::ShieldWeapon(pose)||
-       pose.worldEpoch!=g_meleeTurnEpoch.load()||!framevr::ShieldSample(pose.poseStamp,sample)) {
+    if(!g_enabled.load()||!g_inWorld.load()||ThirdPerson()||Overhead()||!g_eyeOk.load()||gamestate::MenuOpen()||!gamestate::LeftShield()) {
         melee::CancelShield();return;
     }
+    const bool hook=melee::ShieldReady(),posed=skel::ShieldWeapon(pose);
+    const bool epoch=posed&&pose.worldEpoch==g_meleeTurnEpoch.load();
+    const bool input=epoch&&framevr::ShieldSample(pose.poseStamp,sample);
+    static ULONGLONG reportAt=0;const auto now=GetTickCount64();
+    if(now>=reportAt) {
+        char line[180];snprintf(line,sizeof line,"Frame shield ready: hook=%d posed=%d epoch=%d input=%d contact=%d",hook,posed,epoch,input,input&&sample.active);
+        framevr::logging::Write(line);reportAt=now+5000;
+    }
+    if(!hook||!input){melee::CancelShield();return;}
     const float upm=std::max(1.f,ViewHeight())/UserEyeHeightM();
     sample.epoch=(sample.epoch<<32)|pose.worldEpoch;sample.unitsPerMetre=upm;
     sample.player={pose.player[0]/upm,pose.player[1]/upm,pose.player[2]/upm};

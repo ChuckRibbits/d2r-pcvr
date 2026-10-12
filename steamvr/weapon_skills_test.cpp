@@ -86,6 +86,16 @@ int main() {
         bindWrist.m[0]=0;assert(!skel::shield::Follow(bindWrist,bindShield,tracked,result));
     }
     {
+        using ::melee::native::FunctionRange;using ::melee::native::FindFunction;
+        const std::array<FunctionRange,3> ranges={FunctionRange{0x100,0x140,0x800},FunctionRange{0x200,0x280,0x810},FunctionRange{0x300,0x380,0x820}};
+        assert(FindFunction(ranges,0x200,0x1000)==ranges[1]);
+        assert(!FindFunction(ranges,0x210,0x1000).begin); // containing range cannot replace an exact entry
+        assert(!FindFunction(ranges,0x200,0x250).begin);
+        auto broken=ranges;broken[1].unwind=0x1000;assert(!FindFunction(broken,0x200,0x1000).begin);
+        broken=ranges;broken[1].end=broken[1].begin+8;assert(!FindFunction(broken,0x200,0x1000).begin);
+        broken=ranges;broken[2]={0x200,0x290,0x810};assert(!FindFunction(broken,0x200,0x1000).begin);
+    }
+    {
         std::array<uintptr_t,151> table{};table[1]=0x1000;table[3]=0x2000;table[150]=0x3000;
         assert(::melee::native::SmiteEntry(table,0x1000,0x2000)==0x3000);
         table[3]=0x4000;assert(!::melee::native::SmiteEntry(table,0x1000,0x2000));

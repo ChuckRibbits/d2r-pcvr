@@ -250,6 +250,7 @@ std::vector<uint8_t> Paint(const Snapshot& s,const Output& o,int selection) {
     text(cue.name,{774,104,1018,144});
     SelectObject(dc,shortcutFont);text(cue.hint,{774,146,1018,188});SelectObject(dc,priorCue);
     if(cue.temporary){SetTextColor(dc,RGB(232,196,119));text("QUICK CAST",{866,8,1018,55});}
+    if(cue.motionUnavailable){SetTextColor(dc,RGB(232,196,119));text("TRIGGER ONLY",{866,8,1018,55});}
     SetTextColor(dc,RGB(238,235,220));
     const COLORREF colours[]={RGB(90,90,90),RGB(169,37,45),RGB(43,82,193),RGB(131,55,165),RGB(67,151,66),RGB(183,191,205),RGB(218,165,70)};
     for(int i=0;i<4;++i) {

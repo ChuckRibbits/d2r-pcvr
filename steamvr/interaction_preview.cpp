@@ -82,8 +82,13 @@ int main(int argc,char** argv) {
         for(int y=0;y<96;++y)for(int x=866;x<1024;++x)
             if(std::memcmp(&quick[(y*1024+x)*4],&persistent[(y*1024+x)*4],4))++quickPixels;
         if(quickPixels<100)return 44;
+        o.cue.motionUnavailable=true;const auto fallback=Paint(s,o,-1);o.cue.motionUnavailable=false;
+        int fallbackPixels=0;
+        for(int y=8;y<55;++y)for(int x=866;x<1018;++x)
+            if(std::memcmp(&fallback[(y*1024+x)*4],&persistent[(y*1024+x)*4],4))++fallbackPixels;
+        if(fallbackPixels<100)return 45;
         if(!SavePng(argv[1],gallery,1024,768))return 42;
-        std::puts("Weapon skill preview: persistent active selection differs from hover; four weapon cues rendered");return 0;
+        std::puts("Weapon skill preview: persistent selection differs from hover; quick-cast and trigger-only badges rendered");return 0;
     }
     if(argc>2&&std::strcmp(argv[2],"--async-check")==0) {
         framevr::LatestWorker<PaintJob,std::vector<uint8_t>> painter([](const PaintJob& job){return Paint(job.snapshot,job.output,job.selection);});

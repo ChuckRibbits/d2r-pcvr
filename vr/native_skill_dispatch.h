@@ -6,6 +6,24 @@
 #include "../third_party/minhook/src/hde/hde64.h"
 
 namespace melee::native {
+struct FunctionRange {
+    uint32_t begin=0,end=0,unwind=0;
+    bool operator==(const FunctionRange&) const=default;
+};
+static_assert(sizeof(FunctionRange)==12);
+// D2RLoader's registered OS unwind view can differ from the game PE directory.
+// Accept only an exact entry point in that bounded directory, not an enclosing
+// function returned from another registered table or a guessed code length.
+inline FunctionRange FindFunction(std::span<const FunctionRange> functions,uint32_t entry,uint32_t imageSize) {
+    FunctionRange found;
+    for(const auto& f:functions) {
+        if(f.begin!=entry)continue;
+        if(!f.begin||f.end<=f.begin||f.end>imageSize||f.end-f.begin<16||f.end-f.begin>65536||
+           !f.unwind||(f.unwind&~3u)>=imageSize||(found.begin&&found!=f))return {};
+        found=f;
+    }
+    return found;
+}
 // The native server-do table has the same four-argument ABI as the audited
 // basic attack and throw. Identify it by both entries; never guess a Smite RVA.
 inline uintptr_t SmiteEntry(std::span<const uintptr_t> table,uintptr_t attack,uintptr_t throwing) {

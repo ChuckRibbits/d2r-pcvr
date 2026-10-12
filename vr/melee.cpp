@@ -48,6 +48,7 @@ struct Contact {uintptr_t game=0,attacker=0,defender=0;bool accepted=false,smite
 thread_local Contact contact;
 std::atomic<unsigned> samples{0},contacts{0},accepted{0},rejected{0},noServer{0},intersections{0},stale{0},walls{0};
 std::atomic<unsigned> applied{0},recovered{0},playerMissing{0},positionMismatch{0},nearby{0},bodyMissing{0};
+std::atomic<unsigned> shieldSweeps{0},shieldRequests{0},shieldAccepted{0},shieldRejected{0};
 std::mutex queueMutex;std::array<Engine,2> engines;HitSet hits,shieldHits;
 struct Request {Sweep sweep;Sample sample;uint64_t session=0,at=0;};
 std::array<Request,24> requests;size_t count=0;
@@ -111,17 +112,18 @@ int Smite(uintptr_t game,uintptr_t player,int skill,int level) {
        header[0]!=0||header[2]!=id||!Read(player+0xd8,back)||back!=game)return originalSmite(game,player,skill,level);
     const int physical=framevr::TakeShieldTarget(target);
     if(physical==0)return originalSmite(game,player,skill,level);
-    if(physical<0){framevr::FinishShieldSkill(false);return 0;}
+    if(physical<0){++shieldRejected;framevr::FinishShieldSkill(false);return 0;}
     const auto defender=originalLookup(game,1,target);uint32_t mode=0;
     if(!defender||!Read(defender+0xc,mode)||mode==0||mode==12||
        !reinterpret_cast<int(*)(uintptr_t,uintptr_t,uintptr_t)>(d2rsig::Addr(RelationRva))(game,player,defender)||
        reinterpret_cast<int(*)(uintptr_t,uintptr_t,int)>(d2rsig::Addr(LineRva))(player,defender,0x804)!=0) {
-        framevr::FinishShieldSkill(false);return 0;
+        ++shieldRejected;framevr::FinishShieldSkill(false);return 0;
     }
     // Scope the exact physical target to THIS native Smite invocation. Its
     // original range, damage, stun, knockback and proc logic all still run.
     const auto saved=contact;contact={game,player,defender,false,true};
     const int result=originalSmite(game,player,skill,level);contact=saved;
+    if(result)++shieldAccepted;else ++shieldRejected;
     framevr::FinishShieldSkill(result!=0);return result;
 }
 
@@ -129,17 +131,23 @@ void InstallSmite() {
     static uint64_t retryAt=0;
     if(smiteReady.load()||GetTickCount64()<retryAt)return;
     retryAt=GetTickCount64()+5000;
+    const auto unavailable=[](const char* reason,uintptr_t detail=0) {
+        static const char* previous=nullptr;
+        if(previous==reason)return;
+        previous=reason;char line[240];snprintf(line,sizeof line,"Frame shield: contact casting unavailable (%s; detail=0x%llx); native trigger fallback retained",reason,(unsigned long long)detail);
+        framevr::logging::Write(line);
+    };
     using namespace bowvr::native;
-    if(!d2rsig::Check(ThrowRva,ThrowSig,sizeof ThrowSig))return;
-    const auto base=reinterpret_cast<uintptr_t>(GetModuleHandleW(nullptr));
+    if(!d2rsig::Check(ThrowRva,ThrowSig,sizeof ThrowSig)){unavailable("throw signature");return;}
+    const auto base=context->exeBase;
     IMAGE_DOS_HEADER dos{};IMAGE_NT_HEADERS64 pe{};
     if(!Read(base,dos)||dos.e_magic!=IMAGE_DOS_SIGNATURE||dos.e_lfanew<0||dos.e_lfanew>0x100000||
        !Read(base+dos.e_lfanew,pe)||pe.Signature!=IMAGE_NT_SIGNATURE||pe.OptionalHeader.Magic!=IMAGE_NT_OPTIONAL_HDR64_MAGIC||
-       pe.FileHeader.NumberOfSections>32)return;
+       pe.FileHeader.NumberOfSections>32){unavailable("game image headers");return;}
     const auto sections=base+dos.e_lfanew+offsetof(IMAGE_NT_HEADERS64,OptionalHeader)+pe.FileHeader.SizeOfOptionalHeader;
     uintptr_t candidate=0;
     for(unsigned i=0;i<pe.FileHeader.NumberOfSections;++i) {
-        IMAGE_SECTION_HEADER section{};if(!Read(sections+i*sizeof section,section))return;
+        IMAGE_SECTION_HEADER section{};if(!Read(sections+i*sizeof section,section)){unavailable("section headers");return;}
         if(std::memcmp(section.Name,".rdata",6)&&std::memcmp(section.Name,".data",5))continue;
         const auto size=section.Misc.VirtualSize;
         if(size<151*sizeof(uintptr_t)||size>64*1024*1024||section.VirtualAddress>pe.OptionalHeader.SizeOfImage||
@@ -149,20 +157,28 @@ void InstallSmite() {
         for(size_t at=0;at+151<=entries.size();++at) {
             const auto found=native::SmiteEntry(std::span(entries).subspan(at,151),d2rsig::Addr(AttackRva),d2rsig::Addr(ThrowRva));
             if(!found)continue;
-            if(candidate&&candidate!=found)return; // ambiguous table: keep native button fallback
+            if(candidate&&candidate!=found){unavailable("ambiguous dispatch table");return;}
             candidate=found;
         }
     }
-    if(candidate<=base||candidate-base>=pe.OptionalHeader.SizeOfImage)return;
-    DWORD64 image=0;const auto function=RtlLookupFunctionEntry(candidate,&image,nullptr);
-    if(!function||image!=base||base+function->BeginAddress!=candidate||function->EndAddress<=function->BeginAddress||
-       function->EndAddress-function->BeginAddress>65536)return;
-    std::vector<uint8_t> code(function->EndAddress-function->BeginAddress);
-    if(code.size()<16||!framevr::ReadMemory(code.data(),reinterpret_cast<const void*>(candidate),code.size())||
-       !native::CallsTarget(code,candidate,d2rsig::Addr(TargetRva)))return;
-    if(d2rsig::Hook(candidate-base,code.data(),16,reinterpret_cast<void*>(&Smite),reinterpret_cast<void**>(&originalSmite))) {
-        smiteReady=true;framevr::logging::Write("Frame shield: native Smite identified by audited attack/throw dispatch table, unwind range and target call; contact casting ready");
+    if(candidate<=base||candidate-base>=pe.OptionalHeader.SizeOfImage){unavailable("dispatch table not found");return;}
+    const auto& exception=pe.OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_EXCEPTION];
+    if(!exception.VirtualAddress||!exception.Size||exception.Size>32*1024*1024||exception.Size%sizeof(native::FunctionRange)||
+       exception.VirtualAddress>=pe.OptionalHeader.SizeOfImage||exception.Size>pe.OptionalHeader.SizeOfImage-exception.VirtualAddress) {
+        unavailable("game function directory bounds");return;
     }
+    std::vector<native::FunctionRange> functions(exception.Size/sizeof(native::FunctionRange));
+    if(!framevr::ReadMemory(functions.data(),reinterpret_cast<const void*>(base+exception.VirtualAddress),exception.Size)) {
+        unavailable("game function directory unreadable");return;
+    }
+    const auto function=native::FindFunction(functions,uint32_t(candidate-base),pe.OptionalHeader.SizeOfImage);
+    if(!function.begin){unavailable("game function entry",candidate-base);return;}
+    std::vector<uint8_t> code(function.end-function.begin);
+    if(code.size()<16||!framevr::ReadMemory(code.data(),reinterpret_cast<const void*>(candidate),code.size())||
+       !native::CallsTarget(code,candidate,d2rsig::Addr(TargetRva))){unavailable("decoded target call",candidate-base);return;}
+    if(d2rsig::Hook(candidate-base,code.data(),16,reinterpret_cast<void*>(&Smite),reinterpret_cast<void**>(&originalSmite))) {
+        smiteReady=true;framevr::logging::Write("Frame shield: native Smite identified by audited attack/throw dispatch table, game function directory and target call; contact casting ready");
+    } else unavailable("native hook installation",candidate-base);
 }
 // Body volumes are deliberately approximate: native ground footprint, with
 // height inferred from MonStats2's legacy artwork height. Units are world
@@ -231,7 +247,7 @@ void __cdecl Apply(const D2RL::PluginContext*,void* token) noexcept {
                         if(r.sample.shield) {
                             if(!smiteReady.load()||shieldHits.Contains(r.session,r.sweep.stroke,UINT32_MAX))continue;
                             if(framevr::RequestShieldSkill(r.sample,header[2],pos*.5f)) {
-                                shieldHits.Insert(r.session,r.sweep.stroke,UINT32_MAX);++contacts;
+                                shieldHits.Insert(r.session,r.sweep.stroke,UINT32_MAX);++contacts;++shieldRequests;
                             }
                             break;
                         }
@@ -303,6 +319,7 @@ void Submit(const Sample& sample) {
         if(engine.Step(sample,sweep)) {
             if(count==requests.size()){count=0;engine.Reset();return;} // never replay a backlog
             requests[count++]={sweep,sample,session,GetTickCount64()};++samples;
+            if(sample.shield)++shieldSweeps;
         }
         if(count)token=callback.Start(GetTickCount64());
     }
@@ -311,6 +328,11 @@ void Submit(const Sample& sample) {
     }
 }
 void Report() {
+    const auto ss=shieldSweeps.exchange(0),sr=shieldRequests.exchange(0),sa=shieldAccepted.exchange(0),sf=shieldRejected.exchange(0);
+    if(ss||sr||sa||sf) {
+        char line[180];snprintf(line,sizeof line,"Frame shield: energetic sweeps=%u cast requests=%u native completed=%u refused=%u",ss,sr,sa,sf);
+        framevr::logging::Write(line);
+    }
     const auto s=samples.exchange(0),c=contacts.exchange(0),a=accepted.exchange(0),r=rejected.exchange(0),g=noServer.exchange(0);
     const auto i=intersections.exchange(0),x=stale.exchange(0),w=walls.exchange(0);
     const auto callbacks=applied.exchange(0),retries=recovered.exchange(0),missing=playerMissing.exchange(0);

@@ -1232,6 +1232,8 @@ void Input() {
         std::snprintf(cue.name,sizeof cue.name,"%s",skill.known?skill.name:"Unknown skill");
         std::snprintf(cue.hint,sizeof cue.hint,"%s",cue.available?(cue.temporary?"Point & trigger":
             weaponskills::Hint(skill.id,skill.motion&&motionInput.weapon==gameplay::Weapon::Bow,skill.motion&&motionInput.shieldEquipped)):"Assignment unavailable");
+        cue.motionUnavailable=!cue.temporary&&cue.available&&skill.id==weaponskills::Smite&&gamestate::LeftShield()&&!::melee::ShieldReady();
+        if(cue.motionUnavailable)std::snprintf(cue.hint,sizeof cue.hint,"Shield bash unavailable; use trigger");
     } else if(cue.slot<0) {
         cue.known=cue.available=true;
         std::snprintf(cue.name,sizeof cue.name,"%s",motionInput.weapon==gameplay::Weapon::Bow?"Basic Arrow":"Basic Attack");
@@ -1245,7 +1247,7 @@ void Input() {
     if(shieldFeedbackAt&&motionAt-shieldFeedbackAt<1200&&cue.id==weaponskills::Smite&&shieldRefused)
         std::snprintf(cue.hint,sizeof cue.hint,"Action refused");
     if(cue!=previousCue){cueChangedAt=motionAt;previousCue=cue;}
-    cue.expanded=motionAt-cueChangedAt<1800||cue.busy||!cue.available;
+    cue.expanded=motionAt-cueChangedAt<1800||cue.busy||!cue.available||cue.motionUnavailable;
     interactionOutput.cue=cue;
     panelinput::WorldInput(motionInput.active&&motionInput.tracked[0]&&motionInput.tracked[1]&&motionInput.aimTracked);
     if(motionInput.quickCast&&(motionOutput.block||!motionOutput.rayValid))quickCast.Suspend();
@@ -1323,12 +1325,13 @@ void Input() {
     if(motionControls.load()&&inWorld&&inWorld()) {
         static ULONGLONG reportAt=0;
         if(GetTickCount64()>=reportAt) {
-            char message[440];std::snprintf(message,sizeof message,
-                "Frame gameplay ready: active=%d head=%d hands=%d%d aim=%d panel=%d atlas=%d selection=%d weapon=%d trigger=%d blocked=%d bow ready=%d reach=%d drawing=%d charged=%d native=%d anchored=%d draw=%.2f melee contact=%d grip=%d",
+            char message[600];std::snprintf(message,sizeof message,
+                "Frame gameplay ready: active=%d head=%d hands=%d%d aim=%d panel=%d atlas=%d selection=%d weapon=%d trigger=%d blocked=%d bow ready=%d reach=%d drawing=%d charged=%d native=%d anchored=%d draw=%.2f melee contact=%d grip=%d skill=%d motion=%d shield equipped=%d hook=%d contact=%d",
                 motionInput.active,motionHeadTracked,motionInput.tracked[0],motionInput.tracked[1],motionInput.aimTracked,panelMode,
                 gameplayChain!=XR_NULL_HANDLE,motion.Selection(),int(motionInput.weapon),motionInput.trigger>.55f,motionOutput.block,
                 motionOutput.bowReady,motionOutput.bowInReach,motionOutput.bowDrawing,motionOutput.bowCharged,skel::MotionBowPosed(),skel::MotionBowAnchored(),motionOutput.draw,
-                motionOutput.meleeContact,motionInput.grip[0]>.6f);Say(message);
+                motionOutput.meleeContact,motionInput.grip[0]>.6f,motionInput.selectedSkill,motionInput.selectedAvailable,
+                gamestate::LeftShield(),::melee::ShieldReady(),motionOutput.shieldContact);Say(message);
             reportAt=GetTickCount64()+5000;
         }
     }

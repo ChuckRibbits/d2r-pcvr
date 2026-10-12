@@ -105,7 +105,7 @@ struct Snapshot {
 };
 struct SkillCue {
     int slot=-1,id=-1,owner=-1;
-    bool known=false,available=false,temporary=false,expanded=false,busy=false;
+    bool known=false,available=false,temporary=false,expanded=false,busy=false,motionUnavailable=false;
     char name[64]{},hint[64]{};
     bool operator==(const SkillCue&) const=default;
 };
