@@ -8,17 +8,19 @@ included. No Blizzard game assets are supplied in the ZIP; the installer reads
 the required assets from your own game and keeps its asset caches local.
 
 1. Download **d2r-pcvr-windows.zip** from the
-   [release page](https://github.com/bearstonem/d2r-pcvr/releases/tag/v0.3.6-windows-preview).
+   [release page](https://github.com/bearstonem/d2r-pcvr/releases/tag/v0.3.7-windows-preview).
 2. Extract the `d2r-pcvr-preview` folder to a permanent location.
-3. Double-click **Install-Windows.cmd** and follow the setup wizard. Packages
-   with Battle.net support first ask **Steam** or **Battle.net**. Choose your
+3. Double-click **Install-Windows.cmd** and follow the setup wizard. First
+   choose **Steam** or **Battle.net**. Choose your
    headset, SteamVR or Virtual Desktop, then confirm the selected game's folder
    and the Steam account for your shortcuts.
    See **[Install and play on Windows](INSTALL-WINDOWS.md)** for help.
 
-The published **v0.3.6 ZIP supports the Steam edition of D2R 3.3.93787 only**.
-Experimental Battle.net-capable packages also accept your **Battle.net copy
-of D2R 3.3.93847**; see [Battle.net installation](INSTALL-WINDOWS.md#battlenet-preview-packages).
+This **v0.3.7 preview** accepts your **Steam copy of D2R 3.3.93787** or
+**Battle.net copy of D2R 3.3.93847** (experimental); see
+[Battle.net installation](INSTALL-WINDOWS.md#battlenet-preview-packages).
+Battle.net has been confirmed with SteamVR; Battle.net with Virtual Desktop / VDXR
+has not yet been confirmed.
 You also need the Steam desktop client, internet access during setup,
 a connected headset and a **local offline character**. Battle.net players
 do not need to purchase a second copy through Steam.
@@ -45,5 +47,5 @@ video settings by default; you can choose to restore the pre-install settings.
 Keep **setup-backups**, including backups in older extracted release folders,
 until removal is complete. See [removal and recovery](INSTALL-WINDOWS.md#upgrade-or-remove).
 
-The uninstaller is included in newer packages; the published
-v0.3.6 ZIP still uses the manual removal instructions.
+Older packages without **Uninstall-Windows.cmd** can use the manual removal
+instructions in the Windows guide.

@@ -1,5 +1,15 @@
 # Clean Windows installation and agent handoff — October 10, 2026
 
+**v0.3.7 Windows preview:** packages the merged Battle.net support and guided
+Windows uninstaller from PR #6, with the player guides and download links
+updated for `v0.3.7-windows-preview`. The native DLL remains the owner-verified
+v0.3.6 build; packaging records original source commit
+`8e40cc7c2ce2f7663019819b4a9345d110bd6008`. Include the pinned installer-only
+`build-frame/casclib-installer/CascLib.dll` so the standard setup offers both
+editions. Battle.net SteamVR is owner-confirmed; Battle.net VDXR and live
+uninstall remain unverified. The merged branch passed 52 Windows/Python and
+37 native checks, and the review ZIP passed both setup/removal integrity checks.
+
 **October 11 Battle.net branch:** `feat/battlenet-support`, based on main
 `8e40cc7c2ce2f7663019819b4a9345d110bd6008`. The owner's Battle.net installation
 is build 3.3.93847; Steam remains 3.3.93787. Added a store/build gate,

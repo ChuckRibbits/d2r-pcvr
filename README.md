@@ -14,15 +14,16 @@ D2R PCVR builds on **[D2R VR by BodyWalkVR](https://github.com/natpoh/diablo2-vr
 the original VR mod for Diablo II: Resurrected. See [Credits](#credits).
 
 **This is a mod for the original game, not a standalone game. You must purchase
-and install your own legitimate copy of Diablo II: Resurrected.** The published
-v0.3.6 Windows preview requires the Steam edition. The mod adds VR support and motion
-interactions on top of your existing game installation.
+and install your own legitimate copy of Diablo II: Resurrected.** The mod adds
+VR support and motion interactions on top of your existing game installation.
 
-Experimental **Battle.net 3.3.93847** packages include a separate asset reader.
+The **v0.3.7 Windows preview** supports **Steam 3.3.93787** and experimental
+**Battle.net 3.3.93847** installations.
 Run **Install-Windows.cmd** and choose **Steam** or **Battle.net** before choosing
 your headset and connection. See
 [Battle.net preview installation](INSTALL-WINDOWS.md#battlenet-preview-packages).
-The published v0.3.6 ZIP supports the Steam edition only.
+Battle.net has been confirmed with SteamVR; Battle.net with Virtual Desktop / VDXR
+has not yet been confirmed.
 
 **No Blizzard game assets are included in this repository or the release ZIP.**
 The download contains the mod and licensed third-party components, not the
@@ -30,23 +31,23 @@ game, its executable, models, textures or audio. During installation, required
 item/skill icons and potion models are read from your own installed game into
 local caches. Keep those caches local; do not include them when sharing the mod.
 
-**[Download the Windows preview](https://github.com/bearstonem/d2r-pcvr/releases/tag/v0.3.6-windows-preview)**
+**[Download the Windows preview](https://github.com/bearstonem/d2r-pcvr/releases/tag/v0.3.7-windows-preview)**
 and follow **[Install and play](INSTALL-WINDOWS.md)**.
 Download **d2r-pcvr-windows.zip** from the release's Assets section.
 Extract it to a permanent folder, then double-click **Install-Windows.cmd**.
 The setup wizard installs the mod, lets you choose your headset and connection,
-and adds the matching Steam library shortcuts. Packages with Battle.net support
-also ask which game edition to use and detect its installation folder.
+and adds the matching Steam library shortcuts. It asks which game edition to
+use and detects its installation folder.
 No separate Python install is needed.
-Battle.net-capable packages also include **Uninstall-Windows.cmd**. It keeps
+The ZIP also includes **Uninstall-Windows.cmd**. It keeps
 your current characters and shared stash, restores files from the installation
-backups and removes the selected edition's VR shortcuts. For the published
-v0.3.6 ZIP, use the [manual removal instructions](INSTALL-WINDOWS.md#upgrade-or-remove).
+backups and removes the selected edition's VR shortcuts. Keep the installation
+backups, including those in older release folders, until removal is complete.
 
 ## What you need
 
 - A Windows PC with your **purchased Steam copy of D2R 3.3.93787**, or
-  **Battle.net copy of D2R 3.3.93847** with a Battle.net-capable preview package.
+  **Battle.net copy of D2R 3.3.93847** (experimental support).
 - The Steam desktop client, including for Battle.net VR library shortcuts.
 - A VR headset and two tracked controllers.
 - **SteamVR**, or **Virtual Desktop for Quest with its Windows Streamer**.

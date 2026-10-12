@@ -1,11 +1,12 @@
-# D2R PCVR v0.3.6 — Windows preview
+# D2R PCVR v0.3.7 — Windows preview
 
 Play **Diablo II: Resurrected in VR on Windows** with
 **SteamVR or Virtual Desktop (VDXR)**. This preview is for **local offline
-single-player** and requires the **Steam edition of D2R 3.3.93787**.
+single-player** and accepts your **Steam copy of D2R 3.3.93787** or
+**Battle.net copy of D2R 3.3.93847** (experimental).
 
 **This download is a mod, not the original game. You must purchase and install
-your own legitimate Steam copy of Diablo II: Resurrected.** D2R PCVR adds VR
+your own legitimate copy of Diablo II: Resurrected.** D2R PCVR adds VR
 support and motion interactions to that existing game installation.
 
 **No Blizzard game assets are included in the ZIP.** It contains mod files
@@ -21,15 +22,28 @@ do not redistribute those caches or your game files.
 
 The game runs on your Windows PC and streams to your headset.
 
+Battle.net has been confirmed with SteamVR. Battle.net with Virtual Desktop /
+VDXR is available but has not yet been confirmed. The Steam desktop client
+is required for library shortcuts, including with the Battle.net edition.
+**Battle.net owners do not need to purchase a second copy through Steam.**
+
 ## What's new
 
-- **Wrist experience bar:** see your character's level and progress toward the
-  next level beneath the health/mana orbs.
-- **Square wrist map:** raise your left wrist to see the game's explored map
-  and markers above the orbs. The larger map is easier to read, with a sharp
-  image and dark background.
-- The wrist opens the automap when needed and restores its previous visibility
-  when you lower your hand. Left stick click still toggles the normal map.
+- **Battle.net support:** install the mod on your purchased Battle.net copy,
+  with separate SteamVR and Virtual Desktop library entries that can coexist
+  with the Steam edition's shortcuts.
+- **One guided installer:** **Install-Windows.cmd** asks which game edition
+  to use, confirms the game folder, then guides you through headset and
+  connection selection and adds the matching Steam library shortcuts.
+- **Guided removal:** run **Uninstall-Windows.cmd** to restore backed-up files
+  and remove the selected edition's VR shortcuts. Your current characters
+  and shared stash are kept. Keep current video settings or choose to restore
+  the pre-install settings.
+- **Repair and upgrade:** rerun setup and choose **Update / repair and keep
+  calibration and video settings**. Backups are tracked across upgrades;
+  retain backups in older extracted release folders until removal is complete.
+- **Updated instructions in the ZIP:** both editions, installation, Steam
+  shortcuts, controller mappings, upgrades and removal.
 
 Use the game's **left or right corner minimap** layout for wrist-map display.
 Full-screen automap is available through the game's normal map controls.
@@ -46,9 +60,10 @@ Full-screen automap is available through the game's normal map controls.
   **Left Grip + Frame Left B / Quest Left Y → Calibrate body**.
 - Weapon-set swapping by reaching your right hand over either shoulder and
   pressing its grip; the swap hand is adjustable in VR settings.
-- Physical belt potions and wrist health, mana, level and experience indicators.
-- Restored item pickup, chests, shrines and cave-entrance interactions from
-  the previous preview.
+- Physical belt potions and wrist health, mana, level and experience indicators,
+  plus a square automap showing explored areas and native markers.
+- Item pickup, chests, shrines and cave-entrance interactions through the
+  right A button.
 - Inventory, skills, conversations and Journal through the tabbed game menu:
   **Frame Left A / Quest Left X**.
 - Native menu buttons and sticks alongside laser selection and inventory dragging.
@@ -57,17 +72,23 @@ Full-screen automap is available through the game's normal map controls.
 
 ## Download, install and play
 
+First launch your purchased game normally through its store, finish the account
+prompts, load an offline character, then use **Save & Exit** and fully close D2R.
+
 1. Download **d2r-pcvr-windows.zip** under **Assets** below.
 2. Extract `d2r-pcvr-preview` to a permanent folder.
 3. Double-click **Install-Windows.cmd** and follow the setup wizard. It creates
-   the Steam shortcuts for your chosen headset and connection.
+   the Steam shortcuts for your chosen game edition, headset and connection.
    See **INSTALL-WINDOWS.md** for help or manual setup.
-4. Connect your headset, then double-click the matching launcher:
-   - **Launch-VR-SteamVR.cmd** for SteamVR / Steam Link.
-   - **Launch-VR-VDXR.cmd** for Virtual Desktop, with SteamVR closed.
+4. Open Steam, connect your headset and use the matching **SteamVR** or
+   **Virtual Desktop** library entry. Battle.net entries include **(Battle.net)**.
+   Keep SteamVR closed for Virtual Desktop / VDXR.
 5. Accept Steam's launch prompt if shown and select an **offline character**.
 
 To launch from Steam or the headset, use the shortcuts created by setup.
+The included **Launch-VR-*.cmd** files are for the **Steam edition**;
+Battle.net players should use the **(Battle.net)** library entries. These
+launch the mod directly, so the Battle.net app may not show it as in progress.
 Manual directions are under **Add Steam library shortcuts** in **INSTALL-WINDOWS.md**.
 Use the matching entry for SteamVR or Virtual
 Desktop; keep SteamVR closed when using Virtual Desktop/VDXR.
@@ -76,5 +97,10 @@ Desktop; keep SteamVR closed when using Virtual Desktop/VDXR.
 **INSTALL-WINDOWS.md** to retain body calibration and video settings.
 
 Keep the extracted folder after installation. For ordinary desktop play,
-fully exit VR and use Steam's normal **Play** button. Use the unmodded game
-for multiplayer.
+fully exit VR and use the original Steam or Battle.net **Play** button.
+Use the unmodded game for multiplayer. Keep **setup-backups**, including
+backups in older extracted release folders, until removal is complete.
+
+Read **INSTALL-WINDOWS.md** and **CONTROLS.md** inside the ZIP, or open the
+[installation guide](https://github.com/bearstonem/d2r-pcvr/blob/v0.3.7-windows-preview/INSTALL-WINDOWS.md)
+and [controller reference](https://github.com/bearstonem/d2r-pcvr/blob/v0.3.7-windows-preview/CONTROLS.md).

@@ -52,5 +52,5 @@
   "setup_wizard": "Install-Windows.cmd automatically offers Steam/Battle.net when the verified package includes CascLib. Fixtures cover Battle.net VDXR routing, Steam selection in both package variants, and rejection of the Battle.net entry point in a Steam-only package. Player installation guides match this flow.",
   "removal_wizard": "Uninstall-Windows.cmd restores tracked file baselines across upgrades and release folders, preserves current characters/stash, and removes only matching edition/game shortcuts. Current video settings are kept by default. Fixtures cover both stores, cancellation, missing/moved backups, original game/path protections, race checks, rollback and repeat removal. No live installation was uninstalled.",
   "actual_test_launch": "D2RLoader.exe started directly from the Battle.net installation, with SteamVR selected per process. Neither Steam app 2536520 nor the Battle.net app's Play button initiated this run.",
-  "release": "No release published for this branch"
+  "release": "v0.3.7-windows-preview"
 }

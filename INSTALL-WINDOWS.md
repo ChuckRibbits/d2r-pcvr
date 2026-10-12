@@ -11,15 +11,15 @@ and licensed third-party components. The installer reads the required
 item/skill icons and potion models from your own installed game and keeps
 them in local caches. Do not redistribute those caches or your game files.
 
-The published v0.3.6 release requires the **Steam edition of Diablo II:
-Resurrected 3.3.93787** and a **local offline character**. For experimental
-Battle.net packages, see [Battle.net preview packages](#battlenet-preview-packages).
+The **v0.3.7 preview** accepts your **Steam copy of Diablo II: Resurrected
+3.3.93787** or **Battle.net copy of D2R 3.3.93847** (experimental).
+Use a **local offline character**. For Battle.net, see
+[Battle.net preview packages](#battlenet-preview-packages).
 The game runs on your PC and streams to the headset.
 
 ## Before you start
 
-1. Purchase and install D2R through Steam, or through Battle.net with a
-   [Battle.net-capable package](#battlenet-preview-packages). Launch it normally
+1. Purchase and install D2R through Steam or Battle.net. Launch it normally
    through that store once, finish any account prompts, create/select an offline
    character, then fully exit. Install the Steam desktop client and sign in once,
    including for a Battle.net installation; setup uses it for VR library shortcuts.
@@ -34,7 +34,7 @@ The game runs on your PC and streams to the headset.
    For Virtual Desktop, use the **Quest app** and install the **Windows
    Streamer** on your PC. Connect until you can see the PC desktop in the headset.
 3. Download **d2r-pcvr-windows.zip** from the
-   [release page](https://github.com/bearstonem/d2r-pcvr/releases/tag/v0.3.6-windows-preview),
+   [release page](https://github.com/bearstonem/d2r-pcvr/releases/tag/v0.3.7-windows-preview),
    under **Assets**.
 4. Extract `d2r-pcvr-preview` to a permanent folder, such as
    `C:\Mods\d2r-pcvr-preview`. Keep this folder after installation.
@@ -46,9 +46,9 @@ on the PC desktop. No separate Python install is needed; setup downloads a small
 verified private runtime from [python.org](https://www.python.org/downloads/release/python-31210/).
 An internet connection is needed for the required components.
 
-1. If your package includes Battle.net support, choose **Steam** or **Battle.net**.
-   This selects which installed copy to modify when you have both. Steam-only
-   packages identify themselves and continue with the Steam edition.
+1. Choose **Steam** or **Battle.net**. This selects which installed copy to
+   modify when you have both. Older Steam-only packages skip this choice;
+   use the v0.3.7 ZIP for Battle.net.
 2. Choose **Steam Frame**, **Quest 3**, **Quest 2** or another SteamVR headset.
 3. For Quest, choose **Steam Link / SteamVR**, **Virtual Desktop / VDXR**,
    or **Both**. Steam Frame uses SteamVR.
@@ -80,8 +80,8 @@ configuration; keep them private and do not share them with the mod ZIP.
 
 ## Battle.net preview packages
 
-The published v0.3.6 ZIP supports Steam only. Experimental Battle.net packages
-include **bin/CascLib.dll** and offer both editions in **Install-Windows.cmd**. They require
+The v0.3.7 ZIP includes **bin/CascLib.dll** and offers both editions in
+**Install-Windows.cmd**. For Battle.net, it requires
 your **purchased Battle.net copy of D2R 3.3.93847** on Windows. Use a local
 offline character. SteamVR and Virtual Desktop (VDXR) launch options are
 available. Battle.net has been tried with SteamVR; Battle.net with VDXR has not
@@ -364,8 +364,8 @@ stops and lets you locate it or cancel.
 
 Keep all referenced installation backups while using the mod, even after
 upgrading to a new extracted folder. Rerunning the installer keeps the backup
-history. The uninstaller is included in newer packages; the published v0.3.6
-ZIP uses the manual instructions below.
+history. The v0.3.7 ZIP includes the uninstaller. Older packages without it
+can use the manual instructions below.
 
 **Manual restore / removal:** fully close D2R. Open PowerShell in the extracted folder,
 set `$Game` to your D2R folder as in the install step, then replace the backup
