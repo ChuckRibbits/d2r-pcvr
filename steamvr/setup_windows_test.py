@@ -3,8 +3,12 @@ import contextlib
 import io
 import hashlib
 import json
+import os
 from pathlib import Path
+import subprocess
+import sys
 import tempfile
+import textwrap
 import unittest
 from unittest.mock import patch
 
@@ -205,6 +209,72 @@ class SteamSetupTests(unittest.TestCase):
                     self.assertNotIn('--experimental-battlenet', run.call_args.args[0])
                     self.assertIn('--frame-openxr-runtime=', result['launch_options'])
                 popen.assert_not_called()
+
+
+class InstallerOutputTests(unittest.TestCase):
+    @unittest.skipUnless(os.name == 'nt', 'Windows hidden-process pipe inheritance')
+    def test_hidden_child_failure_reaches_wizard_output_and_persistent_log(self):
+        with tempfile.TemporaryDirectory(prefix='setup with spaces ') as directory:
+            root = Path(directory)
+            parent = textwrap.dedent('''
+                import sys
+                from pathlib import Path
+                sys.path.insert(0, sys.argv[1])
+                import setup_windows
+                try:
+                    setup_windows.run_installer([sys.executable, '-c', sys.argv[3], sys.argv[2]],
+                                                Path(sys.argv[2]), hide_console=True)
+                except ValueError as error:
+                    print(error, file=sys.stderr, flush=True)
+                    raise SystemExit(1)
+            ''')
+            child = textwrap.dedent('''
+                import sys
+                from pathlib import Path
+                marker = Path(sys.argv[1]) / 'attempts.txt'
+                with marker.open('a') as output:
+                    output.write('one attempt\\n')
+                print('Preparing installation...', flush=True)
+                print('PermissionError: fixture locked file \\u65e5\\u672c', file=sys.stderr, flush=True)
+                raise SystemExit(1)
+            ''')
+            completed = subprocess.run([sys.executable, '-X', 'utf8', '-u', '-c', parent,
+                str(Path(setup.__file__).parent), str(root), child], capture_output=True,
+                text=True, encoding='utf-8', timeout=15, creationflags=0x08000000)
+            self.assertEqual(completed.returncode, 1)
+            self.assertIn('Preparing installation...', completed.stdout)
+            self.assertIn('PermissionError: fixture locked file \u65e5\u672c', completed.stdout)
+            self.assertIn('PermissionError: fixture locked file \u65e5\u672c', completed.stderr)
+            self.assertIn(str(root / 'setup-install.log'), completed.stderr)
+            self.assertNotIn('returned non-zero exit status', completed.stderr)
+            self.assertEqual((root / 'attempts.txt').read_text(), 'one attempt\n')
+            log = (root / 'setup-install.log').read_text(encoding='utf-8')
+            self.assertIn('PermissionError: fixture locked file \u65e5\u672c', log)
+            self.assertIn('Installer exit code: 1 (0x00000001)', log)
+
+    def test_hidden_success_relays_both_streams_and_preserves_parent_environment(self):
+        with tempfile.TemporaryDirectory() as directory, \
+                patch.dict(os.environ, {'PYTHONIOENCODING': 'ascii', 'D2R_SETUP_FIXTURE': 'retained'}), \
+                contextlib.redirect_stdout(io.StringIO()) as output:
+            root = Path(directory)
+            before = dict(os.environ)
+            child = ('import os,sys; print("Ready \\u65e5\\u672c"); '
+                     'print(os.environ["D2R_SETUP_FIXTURE"]); '
+                     'print("Warning from stderr", file=sys.stderr)')
+            setup.run_installer([sys.executable, '-c', child], root, hide_console=True)
+            self.assertEqual(dict(os.environ), before)
+            log = (root / 'setup-install.log').read_text(encoding='utf-8')
+            for message in ('Ready \u65e5\u672c', 'retained', 'Warning from stderr'):
+                self.assertIn(message, output.getvalue())
+                self.assertIn(message, log)
+            self.assertIn('Installer exit code: 0 (0x00000000)', log)
+
+    def test_child_exit_without_output_still_reports_code_and_log(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            with self.assertRaisesRegex(ValueError, 'exit code 7.*no diagnostic output.*setup-install.log'):
+                setup.run_installer([sys.executable, '-c', 'raise SystemExit(7)'], root, hide_console=True)
+            self.assertIn('Installer exit code: 7', (root / 'setup-install.log').read_text())
 
 
 if __name__ == '__main__':

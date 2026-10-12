@@ -179,6 +179,38 @@ def preflight_steam(profile, steam, game, options, connections, **routing):
     return old_options
 
 
+def run_installer(command, root, hide_console=False):
+    if not hide_console:
+        return subprocess.run(command, check=True)
+    # CREATE_NO_WINDOW drops implicit standard handles, including the pipes
+    # inherited from Inno Setup. Connect the child explicitly and relay its
+    # output so the wizard receives progress and the actual failure reason.
+    log = root / 'setup-install.log'
+    environment = os.environ.copy()
+    environment['PYTHONIOENCODING'] = 'utf-8'
+    last_line = ''
+    with log.open('w', encoding='utf-8') as output:
+        with subprocess.Popen([command[0], '-u', *command[1:]],
+                stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                text=True, encoding='utf-8', errors='replace', env=environment,
+                creationflags=0x08000000 if os.name == 'nt' else 0) as process:
+            for line in process.stdout:
+                output.write(line)
+                output.flush()
+                if sys.stdout is not None:
+                    try:
+                        print(line, end='', flush=True)
+                    except UnicodeEncodeError:
+                        print(line.encode('ascii', errors='backslashreplace').decode('ascii'), end='', flush=True)
+                if line.strip():
+                    last_line = line.strip()
+            result = process.wait()
+        output.write(f'Installer exit code: {result} (0x{result & 0xffffffff:08x})\n')
+    if result:
+        detail = last_line[-800:] or 'The installer produced no diagnostic output.'
+        raise ValueError(f'Mod installation failed (exit code {result}): {detail} Full output: {log}')
+
+
 def apply_setup(manifest, store, version, headset, connections, steam, game, profile,
                 saves, runtime, mode, root=None, on_steam_configured=None, hide_console=False):
     """Shared console/graphical execution; callers collect and confirm choices first."""
@@ -198,7 +230,7 @@ def apply_setup(manifest, store, version, headset, connections, steam, game, pro
             command += ['--experimental-battlenet', '--casclib', str(root / 'bin/CascLib.dll')]
         if mode == 0:
             command.append('--preserve-settings')
-        subprocess.run(command, check=True, creationflags=0x08000000 if hide_console and os.name == 'nt' else 0)
+        run_installer(command, root, hide_console=hide_console)
     require_closed()
     backup = steam_config.configure(profile, steam, game, options, connections,
                                    root / 'setup-backups', require_closed, **routing)

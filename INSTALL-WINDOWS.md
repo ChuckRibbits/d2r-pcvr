@@ -67,6 +67,12 @@ uses **SteamVR**. Quest offers **Steam Link / SteamVR**, **Virtual Desktop / VDX
 or **Both**, which creates two shortcuts. Virtual Desktop needs its Quest app
 and Windows Streamer; keep SteamVR closed when launching with VDXR.
 
+If setup fails, keep `setup-backups`. The helper folder contains
+`setup-last.log` with the wizard output and `setup-install.log` with the mod
+installer's full output. Share the error at the end of those logs when reporting
+a problem; review them for personal paths before posting. Older installers may
+only report an exit code in `setup-last.log` and do not create `setup-install.log`.
+
 You can rerun the EXE safely. It updates matching shortcuts without duplicates.
 When upgrading a recorded ZIP installation, it copies and verifies its referenced
 game backups into the permanent helper folder before updating the mod. Do not
