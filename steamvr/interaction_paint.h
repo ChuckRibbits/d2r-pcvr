@@ -11,13 +11,14 @@ struct PaintContext {
     std::array<Skill,8> skills{},options{};
     std::array<std::array<Item,2>,2> sets{};
     std::array<Belt,4> belt{};
+    SkillCue cue{};
     bool operator==(const PaintContext&) const=default;
 };
 inline PaintContext Context(const Snapshot& s,const Output& o,bool fresh) {
     PaintContext c;c.session=s.session;c.activeSet=s.activeSet;c.editor=o.editor;c.slot=o.editSlot;
     c.page=o.editPage;c.count=o.editCount;c.bank=s.bindingBank;c.utility=o.utility;c.fresh=fresh;
     c.editable=s.bindingsEditable;c.equipmentKnown=s.equipmentKnown;c.beltKnown=s.beltKnown;
-    c.skills=s.skills;c.options=o.editOptions;c.sets=s.sets;c.belt=s.belt;return c;
+    c.skills=s.skills;c.options=o.editOptions;c.sets=s.sets;c.belt=s.belt;c.cue=o.cue;return c;
 }
 struct PaintJob {Snapshot snapshot;Output output;int selection=-1;};
 struct PaintedAtlas {std::vector<uint8_t> pixels;double paintMs=0;};

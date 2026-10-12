@@ -74,7 +74,7 @@ std::vector<uint8_t> Paint(const Model& m,Hit hover,const char* runtimeStatus,co
             text(h.key,{x+18,y+5,550,31},false,false,RGB(116,220,219));
             text(h.action,{x+18,y+33,550,34});
         }
-        text(m.Get()[Motion]>.5f?"Quick cast: hold Left Trigger + a face button; add Left Grip for alternate slots. See wheel labels.":"Motion combat is off. Enable it on the VR tab for swings, bow draw, javelin throws and the wheel.",{40,788,1200,42});
+        text(m.Get()[Motion]>.5f?"Arrow skills: draw/release. Smite: left shield swing/thrust. Quick cast: Left Trigger + face; Left Grip for alternates.":"Motion combat is off. Enable it on the VR tab for swings, bow draw, javelin throws and the wheel.",{40,788,1200,42});
         text("Panels: Left Trigger = Ctrl; Right Grip = Shift; Right B = Back. Keep D2R focused.",{40,832,1200,42},false,false,quiet);
     }else{
         text(m.page==Page::VR?"Change values, then Apply. Controls are blocked while this panel is open.":runtimeStatus,{40,197,1200,42},false,false,quiet);

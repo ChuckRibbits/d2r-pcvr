@@ -7,6 +7,9 @@
 #include <mutex>
 #include <array>
 #include <cstdio>
+#include <vector>
+#include "native_skill_dispatch.h"
+#include "bow_signatures.h"
 #include "melee.h"
 #include "combat.h"
 #include "sigscan.h"
@@ -41,14 +44,16 @@ const D2RL::PluginContext* context=nullptr;const D2RL::ThreadService* threads=nu
 std::atomic<bool> ready{false};bool targetIn=false,lookupIn=false,rangeIn=false,flagsIn=false;
 struct Server {uintptr_t game=0;uint64_t session=0;uint32_t player=0;};
 std::mutex serverMutex;Server server;
-struct Contact {uintptr_t game=0,attacker=0,defender=0;bool accepted=false;};
+struct Contact {uintptr_t game=0,attacker=0,defender=0;bool accepted=false,smite=false;};
 thread_local Contact contact;
 std::atomic<unsigned> samples{0},contacts{0},accepted{0},rejected{0},noServer{0},intersections{0},stale{0},walls{0};
 std::atomic<unsigned> applied{0},recovered{0},playerMissing{0},positionMismatch{0},nearby{0},bodyMissing{0};
-std::mutex queueMutex;Engine engine;HitSet hits;
+std::mutex queueMutex;std::array<Engine,2> engines;HitSet hits,shieldHits;
 struct Request {Sweep sweep;Sample sample;uint64_t session=0,at=0;};
 std::array<Request,24> requests;size_t count=0;
-Sample current;uint64_t inputSession=0;framevr::CallbackTicket callback;
+std::array<Sample,2> current;uint64_t inputSession=0;framevr::CallbackTicket callback;
+using SmiteFn=int(*)(uintptr_t,uintptr_t,int,int);
+SmiteFn originalSmite=nullptr;std::atomic<bool> smiteReady{false};
 template<class T> bool Read(uintptr_t p,T& out) {
     return p>0x10000&&framevr::ReadMemory(&out,reinterpret_cast<const void*>(p),sizeof out);
 }
@@ -66,7 +71,7 @@ uintptr_t Lookup(uintptr_t game,int type,uint32_t id) {
 uintptr_t Target(uintptr_t game,uintptr_t unit) {
     const auto caller=reinterpret_cast<uintptr_t>(_ReturnAddress());
     if(contact.game==game&&contact.attacker==unit&&
-       (caller==d2rsig::Addr(0x42ffaa)||caller==d2rsig::Addr(0x43010a)))return contact.defender;
+       (contact.smite||caller==d2rsig::Addr(0x42ffaa)||caller==d2rsig::Addr(0x43010a)))return contact.defender;
     const auto result=originalTarget(game,unit);
     ObserveServer(game,unit);if(result)ObserveServer(game,result);
     return result;
@@ -74,7 +79,7 @@ uintptr_t Target(uintptr_t game,uintptr_t unit) {
 int Range(uintptr_t attacker,uintptr_t defender,int range,void* out) {
     // Only a geometrically confirmed VR contact replaces legacy grid reach.
     // Native line collision remains mandatory, preventing hits through walls.
-    if(contact.attacker==attacker&&contact.defender==defender) {
+    if(!contact.smite&&contact.attacker==attacker&&contact.defender==defender) {
         if(out) {const int zero=0;framevr::WriteMemory(out,&zero,sizeof zero);}
         return reinterpret_cast<int(*)(uintptr_t,uintptr_t,int)>(d2rsig::Addr(LineRva))(attacker,defender,0x804)==0;
     }
@@ -93,9 +98,71 @@ bool Position(uintptr_t unit,Vec& out) {
 }
 bool Allowed(const Request& r) {
     std::lock_guard lock(queueMutex);
-    return current.active&&r.session==inputSession&&r.sample.epoch==current.epoch&&r.sample.equipment==current.equipment&&
+    const auto& now=current[r.sample.shield?1:0];
+    return now.active&&r.session==inputSession&&r.sample.epoch==now.epoch&&r.sample.equipment==now.equipment&&
+        r.sample.skillSlot==now.skillSlot&&r.sample.skillOwner==now.skillOwner&&r.sample.skillContext==now.skillContext&&
         GetTickCount64()-r.at<=150&&r.session==gamestate::LocalPlayer()&&!gamestate::MenuOpen()&&
         r.sample.equipment==(gamestate::HandsKey()^(gamestate::WeaponSet()<<30));
+}
+
+int Smite(uintptr_t game,uintptr_t player,int skill,int level) {
+    uint32_t target=0,id=0,header[3]{};uintptr_t back=0;
+    if(skill!=framevr::weaponskills::Smite||!combat::LocalPlayerId(id)||!Read(player,header)||
+       header[0]!=0||header[2]!=id||!Read(player+0xd8,back)||back!=game)return originalSmite(game,player,skill,level);
+    const int physical=framevr::TakeShieldTarget(target);
+    if(physical==0)return originalSmite(game,player,skill,level);
+    if(physical<0){framevr::FinishShieldSkill(false);return 0;}
+    const auto defender=originalLookup(game,1,target);uint32_t mode=0;
+    if(!defender||!Read(defender+0xc,mode)||mode==0||mode==12||
+       !reinterpret_cast<int(*)(uintptr_t,uintptr_t,uintptr_t)>(d2rsig::Addr(RelationRva))(game,player,defender)||
+       reinterpret_cast<int(*)(uintptr_t,uintptr_t,int)>(d2rsig::Addr(LineRva))(player,defender,0x804)!=0) {
+        framevr::FinishShieldSkill(false);return 0;
+    }
+    // Scope the exact physical target to THIS native Smite invocation. Its
+    // original range, damage, stun, knockback and proc logic all still run.
+    const auto saved=contact;contact={game,player,defender,false,true};
+    const int result=originalSmite(game,player,skill,level);contact=saved;
+    framevr::FinishShieldSkill(result!=0);return result;
+}
+
+void InstallSmite() {
+    static uint64_t retryAt=0;
+    if(smiteReady.load()||GetTickCount64()<retryAt)return;
+    retryAt=GetTickCount64()+5000;
+    using namespace bowvr::native;
+    if(!d2rsig::Check(ThrowRva,ThrowSig,sizeof ThrowSig))return;
+    const auto base=reinterpret_cast<uintptr_t>(GetModuleHandleW(nullptr));
+    IMAGE_DOS_HEADER dos{};IMAGE_NT_HEADERS64 pe{};
+    if(!Read(base,dos)||dos.e_magic!=IMAGE_DOS_SIGNATURE||dos.e_lfanew<0||dos.e_lfanew>0x100000||
+       !Read(base+dos.e_lfanew,pe)||pe.Signature!=IMAGE_NT_SIGNATURE||pe.OptionalHeader.Magic!=IMAGE_NT_OPTIONAL_HDR64_MAGIC||
+       pe.FileHeader.NumberOfSections>32)return;
+    const auto sections=base+dos.e_lfanew+offsetof(IMAGE_NT_HEADERS64,OptionalHeader)+pe.FileHeader.SizeOfOptionalHeader;
+    uintptr_t candidate=0;
+    for(unsigned i=0;i<pe.FileHeader.NumberOfSections;++i) {
+        IMAGE_SECTION_HEADER section{};if(!Read(sections+i*sizeof section,section))return;
+        if(std::memcmp(section.Name,".rdata",6)&&std::memcmp(section.Name,".data",5))continue;
+        const auto size=section.Misc.VirtualSize;
+        if(size<151*sizeof(uintptr_t)||size>64*1024*1024||section.VirtualAddress>pe.OptionalHeader.SizeOfImage||
+           size>pe.OptionalHeader.SizeOfImage-section.VirtualAddress)continue;
+        std::vector<uintptr_t> entries(size/sizeof(uintptr_t));
+        if(!framevr::ReadMemory(entries.data(),reinterpret_cast<const void*>(base+section.VirtualAddress),entries.size()*sizeof(uintptr_t)))continue;
+        for(size_t at=0;at+151<=entries.size();++at) {
+            const auto found=native::SmiteEntry(std::span(entries).subspan(at,151),d2rsig::Addr(AttackRva),d2rsig::Addr(ThrowRva));
+            if(!found)continue;
+            if(candidate&&candidate!=found)return; // ambiguous table: keep native button fallback
+            candidate=found;
+        }
+    }
+    if(candidate<=base||candidate-base>=pe.OptionalHeader.SizeOfImage)return;
+    DWORD64 image=0;const auto function=RtlLookupFunctionEntry(candidate,&image,nullptr);
+    if(!function||image!=base||base+function->BeginAddress!=candidate||function->EndAddress<=function->BeginAddress||
+       function->EndAddress-function->BeginAddress>65536)return;
+    std::vector<uint8_t> code(function->EndAddress-function->BeginAddress);
+    if(code.size()<16||!framevr::ReadMemory(code.data(),reinterpret_cast<const void*>(candidate),code.size())||
+       !native::CallsTarget(code,candidate,d2rsig::Addr(TargetRva)))return;
+    if(d2rsig::Hook(candidate-base,code.data(),16,reinterpret_cast<void*>(&Smite),reinterpret_cast<void**>(&originalSmite))) {
+        smiteReady=true;framevr::logging::Write("Frame shield: native Smite identified by audited attack/throw dispatch table, unwind range and target call; contact casting ready");
+    }
 }
 // Body volumes are deliberately approximate: native ground footprint, with
 // height inferred from MonStats2's legacy artwork height. Units are world
@@ -161,6 +228,13 @@ void __cdecl Apply(const D2RL::PluginContext*,void* token) noexcept {
                         ++intersections;
                         if(!reinterpret_cast<int(*)(uintptr_t,uintptr_t,uintptr_t)>(d2rsig::Addr(RelationRva))(local.game,player,unit))continue;
                         if(reinterpret_cast<int(*)(uintptr_t,uintptr_t,int)>(d2rsig::Addr(LineRva))(player,unit,0x804)!=0){++walls;continue;}
+                        if(r.sample.shield) {
+                            if(!smiteReady.load()||shieldHits.Contains(r.session,r.sweep.stroke,UINT32_MAX))continue;
+                            if(framevr::RequestShieldSkill(r.sample,header[2],pos*.5f)) {
+                                shieldHits.Insert(r.session,r.sweep.stroke,UINT32_MAX);++contacts;
+                            }
+                            break;
+                        }
                         if(!hits.Insert(r.session,r.sweep.stroke,header[2]))continue;
                         ++contacts;
                         const auto saved=contact;contact={local.game,player,unit,false};
@@ -196,7 +270,8 @@ uintptr_t ServerUnit(uintptr_t game,int type,uint32_t id) {
     return ready.load()&&game?originalLookup(game,type,id):0;
 }
 void Install() {
-    if(ready.load()||!context||!threads||!threads->runOnGameThread)return;
+    if(ready.load()){InstallSmite();return;}
+    if(!context||!threads||!threads->runOnGameThread)return;
     if(!d2rsig::Check(AttackRva,AttackSig,sizeof AttackSig)||!d2rsig::Check(RelationRva,RelationSig,sizeof RelationSig)||
        !d2rsig::Check(LineRva,LineSig,sizeof LineSig)||!d2rsig::Check(StatsRva,StatsSig,sizeof StatsSig)||
        !d2rsig::Check(0x4925fe,HashSig,sizeof HashSig)||!d2rsig::Check(0x43007f,AttackCallsSig,sizeof AttackCallsSig))return;
@@ -210,18 +285,21 @@ void Install() {
         framevr::logging::Write("Frame melee: free-swing contact hooks ready; swept capsules -> exact native target; no grip/button/auto-aim");
 }
 void Cancel() {
-    std::lock_guard lock(queueMutex);current.active=false;count=0;engine.Reset();callback.Cancel();
+    std::lock_guard lock(queueMutex);for(auto& s:current)s.active=false;count=0;for(auto& e:engines)e.Reset();callback.Cancel();
 }
+void CancelShield() {std::lock_guard lock(queueMutex);current[1].active=false;engines[1].Reset();}
+void CancelWeapon() {std::lock_guard lock(queueMutex);current[0].active=false;engines[0].Reset();}
+bool ShieldReady(){return smiteReady.load();}
 void Submit(const Sample& sample) {
     uintptr_t token=0;
     {
         std::lock_guard lock(queueMutex);
-        current=sample;
+        current[sample.shield?1:0]=sample;auto& engine=engines[sample.shield?1:0];
         const auto session=gamestate::LocalPlayer();
-        if(session!=inputSession){inputSession=session;engine.Reset();count=0;callback.Cancel();}
-        if(callback.Expired(GetTickCount64(),500)){callback.Cancel();count=0;engine.Reset();++recovered;}
+        if(session!=inputSession){inputSession=session;for(auto& e:engines)e.Reset();count=0;callback.Cancel();}
+        if(callback.Expired(GetTickCount64(),500)){callback.Cancel();count=0;for(auto& e:engines)e.Reset();++recovered;}
         Sweep sweep;
-        if(!session||!ready.load()||!sample.active){current.active=false;engine.Reset();count=0;return;}
+        if(!session||!ready.load()||!sample.active){current[sample.shield?1:0].active=false;engine.Reset();return;}
         if(engine.Step(sample,sweep)) {
             if(count==requests.size()){count=0;engine.Reset();return;} // never replay a backlog
             requests[count++]={sweep,sample,session,GetTickCount64()};++samples;
@@ -237,7 +315,7 @@ void Report() {
     const auto i=intersections.exchange(0),x=stale.exchange(0),w=walls.exchange(0);
     const auto callbacks=applied.exchange(0),retries=recovered.exchange(0),missing=playerMissing.exchange(0);
     const auto mismatch=positionMismatch.exchange(0),monsters=nearby.exchange(0),bodies=bodyMissing.exchange(0);
-    Diagnostics d;uint64_t age=0;{std::lock_guard lock(queueMutex);d=engine.TakeDiagnostics();age=callback.Age(GetTickCount64());}
+    Diagnostics d;uint64_t age=0;{std::lock_guard lock(queueMutex);for(auto& e:engines){const auto one=e.TakeDiagnostics();d.discontinuities+=one.discontinuities;d.recovering+=one.recovering;}age=callback.Age(GetTickCount64());}
     if(!s&&!c&&!g&&!d.discontinuities&&!d.recovering&&!retries)return;
     char line[560];snprintf(line,sizeof line,"Frame melee: sweep samples=%u physical contacts=%u native accepted=%u rejected=%u missing server=%u intersections=%u stale=%u walls=%u pose resets=%u recovering=%u callbacks=%u abandoned=%u pending_ms=%llu missing_player=%u position_mismatch=%u nearby=%u missing_body=%u",s,c,a,r,g,i,x,w,d.discontinuities,d.recovering,callbacks,retries,(unsigned long long)age,missing,mismatch,monsters,bodies);
     framevr::logging::Write(line);

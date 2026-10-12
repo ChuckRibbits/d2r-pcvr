@@ -23,6 +23,7 @@
 #include "pad_mirror_shared.h"
 #include "transport.h"
 #include "../vr/bow.h"
+#include "../vr/melee.h"
 #include "frame_math.h"
 #include "composition_layers.h"
 #include "swapchain_format.h"
@@ -55,6 +56,7 @@
 namespace gamestate {uint32_t WeaponType();uint32_t HandsKey();uint32_t WeaponSet();uint32_t WeaponClass();uint32_t TwoHanded();uint64_t LocalPlayer();uint32_t MenuEpoch();}
 namespace gamecmd {void RequestPotion(int slot);void CancelPotion();}
 namespace gamestate {void WristMap(bool wanted);}
+namespace gamestate {bool LeftShield();}
 
 namespace framevr {
 using Microsoft::WRL::ComPtr;
@@ -137,6 +139,17 @@ struct AtlasUpload {
 std::vector<AtlasUpload> atlasUploads;
 
 melee::PoseHistory meleePoses;
+melee::PoseHistory shieldPoses;
+struct ShieldCast {
+    weaponskills::ContactContext context{};uint64_t at=0;uint32_t target=0;
+    math::Vec gridTarget{};
+    bool issued=false,taken=false,cancelled=false;
+};
+ShieldCast shieldCast;
+weaponskills::Pulse shieldPulse;
+uint64_t shieldFeedbackAt=0,cueChangedAt=0,volleyRequestedAt=0;
+bool shieldRefused=false;
+interaction::SkillCue previousCue{};
 uint64_t meleeEpoch=1;
 uint32_t bowWorldEpoch=0;
 std::atomic<uint64_t> bowRenderTime{0};
@@ -144,7 +157,7 @@ uint64_t bowSequence=0;
 bowflight::Shot bowPending{},bowReadyShot{},bowPreviewPose{};
 bool bowPreviewVisible=false;
 bool bowNeedsWorld=false,bowHasShot=false;
-std::atomic<ULONGLONG> meleeImpactAt{0};
+std::atomic<ULONGLONG> meleeImpactAt{0},shieldImpactAt{0};
 XrSwapchain gameplayChain=XR_NULL_HANDLE;
 XrPosef palettePose{};
 constexpr float paletteWidth=.45f,paletteHeight=.45f;
@@ -372,6 +385,19 @@ void ReleasePanelInput() {
     PanelModifier(VK_CONTROL,false,controlDown);PanelModifier(VK_SHIFT,false,shiftDown);
     panelMouse.Suspend();panelScroll={};
 }
+weaponskills::ContactContext ShieldContext(const melee::Sample& sample,uint64_t session) {
+    return {session,sample.epoch,sample.skillContext,sample.equipment,sample.skillSlot,sample.skillOwner};
+}
+weaponskills::ContactContext LiveShieldContext() {
+    return {gamestate::LocalPlayer(),(meleeEpoch<<32)|bowWorldEpoch,motionInput.skillContext,
+        motionInput.equipment,motion.Selection(),motionInput.selectedOwner};
+}
+void CancelShieldCast() {
+    shieldPoses.Clear();shieldPulse.Cancel();
+    // A native cast may already be in its wind-up. Preserve its cancellation
+    // during its bounded native wind-up instead of falling back to a target.
+    if(shieldCast.issued)shieldCast.cancelled=true;else shieldCast={};
+}
 void ClearInput() {
     panelinput::WorldInput(false);
     gamestate::WristMap(false);
@@ -383,7 +409,7 @@ void ClearInput() {
     interactions.Reset();interactionOutput={};interactionstate::Cancel();skel::SetInteractionHidden(0);
     potionScene={};
     journalPlacement.LoseTracking();
-    meleePoses.Clear();
+    meleePoses.Clear();CancelShieldCast();
     bowNeedsWorld=bowHasShot=false;
     skel::SetMotionBow(false,false,0);
     ReleaseUiKey();
@@ -914,7 +940,7 @@ void ResetSettingsInput() {
     panelinput::WorldInput(false);
     gamestate::WristMap(false);
     motion.Cancel();motionOutput={};interactions.Reset();interactionstate::Cancel();
-    meleePoses.Clear();++meleeEpoch;bowNeedsWorld=bowHasShot=false;
+    meleePoses.Clear();CancelShieldCast();++meleeEpoch;bowNeedsWorld=bowHasShot=false;
     skel::SetMotionBow(false,false,0);gamecmd::CancelPotion();menuTriggerGate.consumed=true;
     settingsInputGate.Consume();ReleaseUiKey();
     ReleasePanelInput();
@@ -1169,7 +1195,58 @@ void Input() {
         if(quickSnapshot.skills[i].known&&quickSnapshot.skills[i].available&&quickSnapshot.skills[i].id>=0)quickAvailable|=1u<<i;
     motionInput.quickSkill=quickCast.Resolve(motionInput.active&&motionInput.tracked[0]&&motionInput.tracked[1]&&motionInput.aimTracked&&quickFresh,
         motionInput.grip[1]>.6f,quickAvailable,quickSnapshot.session,meleeEpoch,motionInput.equipment,quickSnapshot.bindingBank,motionInput.time);
+    const int selected=motion.Selection();
+    if(quickFresh&&selected>=0&&selected<skills::Count) {
+        const auto& skill=quickSnapshot.skills[selected];
+        motionInput.selectedSkill=skill.id;motionInput.selectedOwner=skill.owner;
+        motionInput.selectedAvailable=skill.known&&skill.available&&skill.motion;
+    }
+    motionInput.skillContext=interactionInput.session^(uint64_t(quickSnapshot.bindingBank+1)<<48)^(meleeEpoch<<16);
+    motionInput.shieldEquipped=gamestate::LeftShield()&&::melee::ShieldReady();
     motionOutput=motion.Step(motionInput);motionAt=GetTickCount64();
+    const bool shieldValid=motionInput.active&&!motionOutput.block&&!motionInput.quickCast&&
+        motionInput.shieldEquipped&&motionInput.selectedAvailable&&motionInput.selectedSkill==weaponskills::Smite&&
+        weaponskills::Current(shieldCast.context,LiveShieldContext(),shieldCast.at,motionAt);
+    if(!shieldValid){
+        if(shieldCast.issued&&motionAt>=shieldCast.at&&motionAt-shieldCast.at<=1500)shieldCast.cancelled=true;
+        else shieldCast={};
+        shieldPulse.Cancel();
+    }
+    else if(!shieldCast.issued) {
+        if(motionAt-shieldCast.at<=150&&shieldPulse.Start(selected,weaponskills::Smite,motionInput.selectedOwner,motionInput.skillContext,motionInput.time))shieldCast.issued=true;
+        else {shieldCast={};shieldPulse.Cancel();}
+    }
+    if(shieldCast.issued&&!shieldCast.cancelled) {
+        motionOutput.skill=shieldPulse.Get(selected,weaponskills::Smite,motionInput.selectedOwner,motionInput.skillContext,motionInput.time);
+        motionOutput.meleeContact=false;
+        // Keep observing the left stroke during native wind-up. Resetting it
+        // here would allow the same continuous swing to become another bash.
+    }
+    if(motionOutput.nativeBowRelease&&motionInput.selectedSkill==weaponskills::Strafe)volleyRequestedAt=motionAt;
+    interaction::SkillCue cue;
+    cue.slot=motionInput.quickSkill>=0?motionInput.quickSkill:motion.Selection();
+    cue.temporary=motionInput.quickSkill>=0;
+    if(cue.slot>=0&&cue.slot<skills::Count&&quickFresh) {
+        const auto& skill=quickSnapshot.skills[cue.slot];cue.id=skill.id;cue.owner=skill.owner;
+        cue.known=skill.known;cue.available=skill.known&&skill.available&&skill.id>=0;
+        std::snprintf(cue.name,sizeof cue.name,"%s",skill.known?skill.name:"Unknown skill");
+        std::snprintf(cue.hint,sizeof cue.hint,"%s",cue.available?(cue.temporary?"Point & trigger":
+            weaponskills::Hint(skill.id,skill.motion&&motionInput.weapon==gameplay::Weapon::Bow,skill.motion&&motionInput.shieldEquipped)):"Assignment unavailable");
+    } else if(cue.slot<0) {
+        cue.known=cue.available=true;
+        std::snprintf(cue.name,sizeof cue.name,"%s",motionInput.weapon==gameplay::Weapon::Bow?"Basic Arrow":"Basic Attack");
+        std::snprintf(cue.hint,sizeof cue.hint,"%s",motionInput.weapon==gameplay::Weapon::Bow?"Draw & release":motionInput.weapon==gameplay::Weapon::Javelin?"Swing / throw":"Swing / trigger");
+    } else {
+        std::snprintf(cue.name,sizeof cue.name,"Skill unavailable");std::snprintf(cue.hint,sizeof cue.hint,"Refresh assignments");
+    }
+    cue.busy=(shieldCast.issued&&!shieldCast.cancelled)||(cue.id==weaponskills::Strafe&&quickFresh&&quickSnapshot.actionKnown&&quickSnapshot.actionMode==16&&
+        volleyRequestedAt&&motionAt>=volleyRequestedAt&&motionAt-volleyRequestedAt<10000);
+    if(cue.busy)std::snprintf(cue.hint,sizeof cue.hint,"%s",cue.id==weaponskills::Strafe?"Volley active":"Shield bash active");
+    if(shieldFeedbackAt&&motionAt-shieldFeedbackAt<1200&&cue.id==weaponskills::Smite&&shieldRefused)
+        std::snprintf(cue.hint,sizeof cue.hint,"Action refused");
+    if(cue!=previousCue){cueChangedAt=motionAt;previousCue=cue;}
+    cue.expanded=motionAt-cueChangedAt<1800||cue.busy||!cue.available;
+    interactionOutput.cue=cue;
     panelinput::WorldInput(motionInput.active&&motionInput.tracked[0]&&motionInput.tracked[1]&&motionInput.aimTracked);
     if(motionInput.quickCast&&(motionOutput.block||!motionOutput.rayValid))quickCast.Suspend();
     const uint32_t hidden=interactionOutput.stowed?3u:journalMode?2u:interactionOutput.bottleHand>=0?1u<<interactionOutput.bottleHand:0;
@@ -1184,7 +1261,7 @@ void Input() {
         const uint64_t key=(interaction::icons::Revision()*0x9e3779b97f4a7c15ull)^(uint64_t(interactionOutput.editor)<<60)^(uint64_t(interactionOutput.editSlot+1)<<56)^(uint64_t(interactionOutput.editPage)<<48)^(uint64_t(interactionInput.snapshot.revision)<<32)^(uint64_t(interactionOutput.utility)<<24)^(
             uint64_t(interactionOutput.hover+1)<<16)^(uint64_t(motion.Selection()+1)<<8)^(uint64_t(interactionOutput.result)<<4)^uint64_t(interactionOutput.stowed)^(uint64_t(interactionOutput.nearHolster+1)<<26)^(uint64_t(interactionOutput.bottle+1)<<28)^(uint64_t(interactionOutput.bottleEmpty)<<2)^(uint64_t(snapshotFresh)<<3);
         const auto now=GetTickCount64();
-        const bool visible=interactionOutput.wheel||interactionOutput.wrist||interactionOutput.critical||interactionOutput.bottle>=0||
+        const bool visible=motionInput.active||interactionOutput.wheel||interactionOutput.wrist||interactionOutput.critical||interactionOutput.bottle>=0||
             interactionOutput.nearBelt>=0||interactionOutput.nearHolster>=0||math::Rotate(Q(head.orientation),{0,0,-1}).y<-.60f;
         const auto context=interaction::Context(interactionInput.snapshot,interactionOutput,snapshotFresh);
         if(visible&&(!interactionPaintValid||key!=interactionPaintKey||context!=interactionPaintContext)) {
@@ -1213,6 +1290,9 @@ void Input() {
         sample.time=motionInput.time;sample.hand=motionInput.hand[0];sample.epoch=meleeEpoch;
         sample.equipment=motionInput.equipment;sample.active=motionInput.active&&motionOutput.meleeContact;
         meleePoses.Push(s.sampleStamp,sample);
+        sample.hand=motionInput.hand[1];sample.shield=true;sample.active=motionInput.active&&motionOutput.shieldContact;
+        sample.skillSlot=motion.Selection();sample.skillOwner=motionInput.selectedOwner;sample.skillContext=motionInput.skillContext;
+        shieldPoses.Push(s.sampleStamp,sample);
     }
     skel::SetMotionBow(motionInput.active&&motionOutput.bowReady,motionOutput.bowDrawing,motionOutput.draw,s.rightHand,s.leftHand,s.sampleStamp);
     if(!motionInput.active||(!motionOutput.bowReady&&!motionOutput.javelinReady))bowNeedsWorld=bowHasShot=false;
@@ -1230,6 +1310,8 @@ void Input() {
     MotionFeedback(motionOutput);
     if(const auto at=meleeImpactAt.exchange(0);at&&motionInput.active&&GetTickCount64()-at<150)
         MotionPulse(0,.72f,45000000);
+    if(const auto at=shieldImpactAt.exchange(0);at&&motionInput.active&&GetTickCount64()-at<150)
+        MotionPulse(1,.72f,45000000);
     if(motionOutput.potion>=0)gamecmd::RequestPotion(motionOutput.potion);
     if(!motionInput.active)gamecmd::CancelPotion();
     if(motionOutput.feedback) {
@@ -1618,6 +1700,7 @@ void BeginEye(int eye) {
 void ResetHeight() {
     std::lock_guard lock(mutex);
     ++meleeEpoch;motion.Cancel();motionOutput={};gamecmd::CancelPotion();
+    meleePoses.Clear();CancelShieldCast();
     bowNeedsWorld=bowHasShot=false;
     skel::SetMotionBow(false,false,0);
     if(!valid||!haveOrigin)return;
@@ -1627,6 +1710,7 @@ void ResetHeight() {
 void Recenter() {
     std::lock_guard lock(mutex);
     ++meleeEpoch;motion.Cancel();motionOutput={};gamecmd::CancelPotion();
+    meleePoses.Clear();CancelShieldCast();
     bowNeedsWorld=bowHasShot=false;
     skel::SetMotionBow(false,false,0);
     if(!valid)return;
@@ -1708,7 +1792,7 @@ void EndPair() {
     XrCompositionLayerQuad palette{XR_TYPE_COMPOSITION_LAYER_QUAD},bottle{XR_TYPE_COMPOSITION_LAYER_QUAD},chosen{XR_TYPE_COMPOSITION_LAYER_QUAD};
     std::array<XrCompositionLayerQuad,2> bowString{{{XR_TYPE_COMPOSITION_LAYER_QUAD},{XR_TYPE_COMPOSITION_LAYER_QUAD}}};
     std::array<XrCompositionLayerQuad,2> arrow{{{XR_TYPE_COMPOSITION_LAYER_QUAD},{XR_TYPE_COMPOSITION_LAYER_QUAD}}};
-    XrCompositionLayerQuad nock{XR_TYPE_COMPOSITION_LAYER_QUAD},bowHint{XR_TYPE_COMPOSITION_LAYER_QUAD};
+    XrCompositionLayerQuad nock{XR_TYPE_COMPOSITION_LAYER_QUAD},bowHint{XR_TYPE_COMPOSITION_LAYER_QUAD},activeSkill{XR_TYPE_COMPOSITION_LAYER_QUAD};
     const bool gameplayVisible=layer&&!panelMode&&motionControls.load()&&motionInput.active&&gameplayChain&&motionOutput.rayValid;
     auto motionQuad=[&](XrCompositionLayerQuad& q,XrPosef pose,float w,float h,XrRect2Di rect,XrSwapchain chain) {
         if(count>=contentLimit||!gameplay::Valid(MotionPose(pose))||!std::isfinite(w)||!std::isfinite(h)||w<=0||h<=0)return;
@@ -1754,6 +1838,16 @@ void EndPair() {
                 motionQuad(wristMap,XrPose(pose),.24f,.24f,{{0,0},{int32_t(mapSide),int32_t(mapSide)}},mapEye.chain);
             }
         }
+    }
+    if(gameplayVisible&&!interactionOutput.wheel&&!interactionOutput.stowed&&interactionOutput.bottle<0&&
+       interactionPaintValid&&interactionPaintContext.cue==interactionOutput.cue&&interactionChain) {
+        const auto& cue=interactionOutput.cue;
+        const int side=motionInput.weapon==gameplay::Weapon::Bow||cue.id==weaponskills::Smite?1:0;
+        const auto hand=motionInput.hand[side];
+        const auto at=hand.p+math::Rotate(hand.q,{0,-.10f,.08f});
+        const auto pose=XrPose({at,Q(head.orientation)});
+        if(cue.expanded)motionQuad(activeSkill,pose,.24f,.18f,{{768,0},{256,192}},interactionChain);
+        else motionQuad(activeSkill,pose,.075f,.075f,{{768,0},{96,96}},interactionChain);
     }
     if(gameplayVisible&&motionOutput.bowReady) {
         const auto bow=motionInput.hand[1];
@@ -1858,7 +1952,7 @@ void ConfigureGameplay(bool enabled) {
     std::lock_guard lock(mutex);
     if(!enabled)gamestate::WristMap(false);
     if(!enabled)panelinput::WorldInput(false);
-    if(!enabled){skel::SetMotionBow(false,false,0);skel::SetInteractionHidden(0);interactions.Reset();interactionstate::Cancel();}
+    if(!enabled){skel::SetMotionBow(false,false,0);skel::SetInteractionHidden(0);interactions.Reset();interactionstate::Cancel();CancelShieldCast();}
     if(motionControls.exchange(enabled)!=enabled)
         Say(enabled?"Frame gameplay: motion controls enabled (right-handed prototype)":"Frame gameplay: motion controls disabled; legacy buttons restored");
 }
@@ -1884,7 +1978,9 @@ bool DirectedSpellActive() {
        now-motionAt>=150||slot<0||slot>=skills::Count||
        !interaction::Fresh(interactionInput.snapshot,gamestate::LocalPlayer(),now))return false;
     const auto& skill=interactionInput.snapshot.skills[slot];
-    return skill.known&&skill.available&&skill.id>=0&&skill.directed;
+    if(motionOutput.bowReady&&skill.id==weaponskills::Strafe)return false;
+    return skill.known&&skill.available&&skill.id>=0&&(skill.directed||
+        (motionOutput.bowReady&&weaponskills::Bow(skill.id)&&skill.id!=weaponskills::Strafe));
 }
 bool GameplayRay(float outOrigin[3],float outDirection[3]) {
     std::lock_guard lock(mutex);
@@ -1902,11 +1998,44 @@ bool MeleeSample(uint32_t poseStamp,melee::Sample& sample) {
     if(!meleePoses.Find(poseStamp,Milliseconds()/1000.,sample))return false;
     return sample.epoch==meleeEpoch&&sample.equipment==motionInput.equipment;
 }
+bool ShieldSample(uint32_t poseStamp,melee::Sample& sample) {
+    std::lock_guard lock(mutex);
+    if(!motionControls.load()||!motionInput.active||!motionOutput.shieldContact||GetTickCount64()-motionAt>100)return false;
+    return shieldPoses.Find(poseStamp,Milliseconds()/1000.,sample)&&sample.epoch==meleeEpoch&&sample.equipment==motionInput.equipment;
+}
+bool RequestShieldSkill(const melee::Sample& sample,uint32_t target,math::Vec gridTarget) {
+    std::lock_guard lock(mutex);
+    const auto context=ShieldContext(sample,gamestate::LocalPlayer());const auto now=GetTickCount64();
+    if(!motionControls.load()||!motionInput.active||!motionOutput.shieldContact||shieldCast.context.session||
+       !weaponskills::Current(context,LiveShieldContext(),motionAt,now,100)||!gameplay::Finite(gridTarget))return false;
+    shieldCast={context,now,target,gridTarget,false,false,false};return true;
+}
+int TakeShieldTarget(uint32_t& target) {
+    std::lock_guard lock(mutex);
+    if(!shieldCast.issued||shieldCast.taken)return 0;
+    if(shieldCast.cancelled||!motionControls.load()||!motionInput.active||motionInput.quickCast||
+       GetTickCount64()-motionAt>150||!weaponskills::Current(shieldCast.context,LiveShieldContext(),shieldCast.at,GetTickCount64())||!motionInput.selectedAvailable||
+       motionInput.selectedSkill!=weaponskills::Smite||!motionInput.shieldEquipped||motionOutput.block)return -1;
+    target=shieldCast.target;shieldCast.taken=true;return 1;
+}
+bool ShieldAim(float& x,float& y) {
+    std::lock_guard lock(mutex);
+    if(!shieldCast.issued||shieldCast.cancelled||shieldCast.taken||!motionInput.active||motionOutput.block||motionInput.quickCast||
+       motionOutput.skill!=shieldCast.context.slot||motionInput.selectedSkill!=weaponskills::Smite||
+       !motionInput.selectedAvailable||!motionInput.shieldEquipped||GetTickCount64()-motionAt>150||
+       !weaponskills::Current(shieldCast.context,LiveShieldContext(),shieldCast.at,GetTickCount64()))return false;
+    x=shieldCast.gridTarget.x;y=shieldCast.gridTarget.z;return std::isfinite(x+y);
+}
+void FinishShieldSkill(bool accepted) {
+    std::lock_guard lock(mutex);shieldCast={};shieldPulse.Cancel();
+    shieldFeedbackAt=GetTickCount64();shieldRefused=!accepted;
+    if(accepted)shieldImpactAt=shieldFeedbackAt;
+}
 void MeleeImpact() {meleeImpactAt=GetTickCount64();}
 void SetBowWorldEpoch(uint32_t epoch) {
     std::lock_guard lock(mutex);
     if(bowWorldEpoch==epoch)return;
-    bowWorldEpoch=epoch;bowNeedsWorld=bowHasShot=false;
+    bowWorldEpoch=epoch;bowNeedsWorld=bowHasShot=false;CancelShieldCast();
     if(motionInput.weapon==gameplay::Weapon::Bow||motionInput.weapon==gameplay::Weapon::Javelin){motion.Cancel();motionOutput={};}
 }
 uint64_t BowRenderTime(){return bowRenderTime.load();}

@@ -55,6 +55,9 @@ struct Sample {
     Pose hand{}; // absolute tracking-space pose; camera movement cannot power a hit
     Blade blade{}; // world metres (game coordinates divided by unitsPerMetre)
     Vec player{};float unitsPerMetre=1;
+    bool shield=false;
+    int skillSlot=-1,skillOwner=-1;
+    uint64_t skillContext=0;
 };
 // The renderer may finish posing an older input after a newer XR sample has
 // arrived. Match the blade to the hand that actually posed it, never to the
@@ -76,6 +79,7 @@ public:
             const auto& e=entries[(next+entries.size()-1-age)%entries.size()];
             if(e.stamp!=stamp)continue;
             if(!e.sample.active||e.sample.epoch!=current.epoch||e.sample.equipment!=current.equipment||
+               e.sample.shield!=current.shield||e.sample.skillSlot!=current.skillSlot||e.sample.skillOwner!=current.skillOwner||e.sample.skillContext!=current.skillContext||
                now<e.sample.time||now-e.sample.time>.1)return false;
             out=e.sample;return true;
         }
@@ -125,6 +129,7 @@ public:
         const float handTravel=Length(in.hand.p-previous.hand.p),playerTravel=Length(in.player-previous.player);
         const float bladeTravel=std::max(Length(in.blade.base-previous.blade.base),Length(in.blade.tip-previous.blade.tip));
         if(!primed||dt<=0||dt>.1||in.epoch!=previous.epoch||in.equipment!=previous.equipment||
+           in.shield!=previous.shield||in.skillSlot!=previous.skillSlot||in.skillOwner!=previous.skillOwner||in.skillContext!=previous.skillContext||
            handTravel>std::max(.12f,10.f*float(dt))||angle>gameplay::MeleeAngularTrackingLimit*dt||playerTravel>.5f||
            std::fabs(in.unitsPerMetre-previous.unitsPerMetre)>.05f||
            bladeTravel>std::max(1.2f,handTravel+angle*lever+playerTravel+.1f)) {
@@ -178,9 +183,14 @@ class HitSet {
     struct Entry {uint64_t stroke=0;uint32_t id=0;};
     std::array<Entry,64> entries{};unsigned next=0;
 public:
+    bool Contains(uint64_t session,uint64_t stroke,uint32_t id) const {
+        if(epoch!=session)return false;
+        for(const auto& e:entries)if(e.stroke==stroke&&e.id==id)return true;
+        return false;
+    }
     bool Insert(uint64_t session,uint64_t stroke,uint32_t id) {
         if(epoch!=session){entries={};next=0;epoch=session;}
-        for(const auto& e:entries)if(e.stroke==stroke&&e.id==id)return false;
+        if(Contains(session,stroke,id))return false;
         entries[next++%entries.size()]={stroke,id};return true;
     }
 };

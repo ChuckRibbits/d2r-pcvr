@@ -153,6 +153,14 @@ std::vector<uint8_t> Paint(const Snapshot& s,const Output& o,int selection) {
             if(skill.known&&skill.id>=0)icon(icons::Get("s"+std::to_string(skill.id)),box,skill.available);
             if(o.editor)std::snprintf(label,sizeof label,"%d. %s",i+1,skill.known?skill.name:"Unknown");
             else std::snprintf(label,sizeof label,"%s",skill.known?skill.name:"Unknown");
+            if(!o.editor&&i==selection) {
+                const auto pen=CreatePen(PS_SOLID,3,RGB(230,190,96));
+                const auto oldPen=SelectObject(dc,pen),oldBrush=SelectObject(dc,GetStockObject(HOLLOW_BRUSH));
+                RoundRect(dc,box.left-5,box.top-5,box.right+5,box.bottom+5,10,10);
+                SelectObject(dc,oldBrush);SelectObject(dc,oldPen);DeleteObject(pen);
+                fill({x-34,y+12,x+34,y+28},RGB(100,74,29));
+                const auto prior=SelectObject(dc,shortcutFont);text("ACTIVE",{x-34,y+12,x+34,y+28});SelectObject(dc,prior);
+            }
         } else if(i<4) {
             const char* utility[]={"Weapon I","Weapon II","",o.stowed?"Draw weapons":"Stow weapons"};
             std::snprintf(label,sizeof label,"%s",utility[i]);
@@ -209,7 +217,8 @@ std::vector<uint8_t> Paint(const Snapshot& s,const Output& o,int selection) {
         text(s.bindingsEditable?"CHOOSE\nA SLOT":"SKILLS\nUNAVAILABLE",{301,301,467,397});
     } else {
         if(s.equipmentKnown&&s.activeSet>=1&&s.activeSet<=2)pair(s.activeSet-1,{346,295,422,363});
-        text("WEAPON",{327,368,441,396});
+        text("BASIC ATTACK",{301,368,467,398});
+        if(selection<0){const auto prior=SelectObject(dc,shortcutFont);text("ACTIVE",{327,399,441,417});SelectObject(dc,prior);}
     }
     if(o.editor) {
         char hint[120];std::snprintf(hint,sizeof hint,"Set %s  /  %s",s.activeSet==2?"II":"I",
@@ -224,6 +233,24 @@ std::vector<uint8_t> Paint(const Snapshot& s,const Output& o,int selection) {
         const int x=int(768*(.03f+i*.32f));frame({x,688,x+230,741},o.hover==9+i);
         text(footer[i],{x+5,693,x+225,736});
     }
+    if(!o.editor&&!o.utility) {
+        char active[100];std::snprintf(active,sizeof active,"ACTIVE: %s",o.cue.known?o.cue.name:"Unknown skill");
+        const auto prior=SelectObject(dc,skillFont);SetTextColor(dc,RGB(232,196,119));
+        text(active,{150,648,618,681});SelectObject(dc,prior);
+    }
+    // Reserved atlas space: a compact weapon icon and an optional two-line
+    // explanation. The native icon comes from the same cache as its wheel slot.
+    const auto& cue=o.cue;
+    fill({768,0,864,96},RGB(115,89,43));fill({772,4,860,92},RGB(25,21,17));
+    const bool haveIcon=cue.id>=0&&icon(icons::Get("s"+std::to_string(cue.id)),{778,10,854,86},cue.available);
+    if(!haveIcon)text(cue.id<0&&cue.known?"BASIC":"?",{776,8,856,88});
+    fill({768,100,1024,192},RGB(25,21,17));
+    SetTextColor(dc,cue.available?RGB(235,218,181):RGB(166,153,128));
+    const auto priorCue=SelectObject(dc,skillFont);
+    text(cue.name,{774,104,1018,144});
+    SelectObject(dc,shortcutFont);text(cue.hint,{774,146,1018,188});SelectObject(dc,priorCue);
+    if(cue.temporary){SetTextColor(dc,RGB(232,196,119));text("QUICK CAST",{866,8,1018,55});}
+    SetTextColor(dc,RGB(238,235,220));
     const COLORREF colours[]={RGB(90,90,90),RGB(169,37,45),RGB(43,82,193),RGB(131,55,165),RGB(67,151,66),RGB(183,191,205),RGB(218,165,70)};
     for(int i=0;i<4;++i) {
         const auto& b=s.belt[i];const int x=i*128;

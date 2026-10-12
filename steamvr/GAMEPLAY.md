@@ -19,6 +19,11 @@ pinned quest page. Detailed headset checks for these interactions remain pending
 The controls below describe this build. [INTERACTIONS.md](INTERACTIONS.md)
 separates completed code from the full target design.
 
+The **2026-10-11 source candidate** adds motion input for selected Amazon bow
+skills, an active-skill indicator, independent left-wrist shield attachment and
+contact-triggered native Smite. It is staged for review, not installed or
+headset-verified. See the weapon-skill section below for scope and test scenarios.
+
 The build also adds an **in-headset VR settings panel**.
 Hold **Left Grip and press Left Y**, or select **VR SETTINGS** in the wheel.
 The shortcut also works with motion combat disabled. Use the right laser and
@@ -69,8 +74,10 @@ not generate melee velocity. The layout currently assumes a right-handed player.
 | VR settings and controls reference | Left Grip + Left Y; also **VR SETTINGS** at the bottom of the wheel |
 | Spell wheel | Hold Left Y; raise/turn left palm toward you; aim right-hand laser at a wedge and click trigger |
 | Assign wheel skills | Hold Left Y → **EDIT SKILLS** → choose a slot → choose a learned skill; **CLEAR SLOT** removes a binding |
-| Basic attack / bow on right trigger | Click **WEAPON** in the wheel center; release the selection trigger first |
-| Selected skill / spell | Point right hand and press trigger; hold to use the native repeat/channel behavior |
+| Basic attack / bow on right trigger | Click **BASIC ATTACK** in the wheel center; release the selection trigger first |
+| Selected skill / spell | Point right hand and press trigger; supported bow skills also use draw/release as described below |
+| Selected Amazon arrow skill | Draw and release once for the native skill; Multiple Shot emits its fan, Strafe requests its native volley |
+| Selected Smite with a shield | Swing or thrust the left shield through an enemy; keep right trigger released |
 | Quick cast without opening wheel | Hold Left Trigger, point right hand and press a face button; add Left Grip for the alternate four slots (mapping below) |
 | Melee swing / thrust | Swing the equipped melee weapon through a creature, including with a skill selected; no grip, trigger, or preselected target |
 | Button attack / crossbow | Weapon combat mode, right trigger; native crossbow firing |
@@ -224,7 +231,7 @@ sets and next potion in each belt column, including potion tiers. Empty slots
 show no item icon. The generated stone-and-bronze frame supplies background and
 selection highlights; native icons keep their original art. Selecting closes
 the wheel and latches it until Y is released;
-release the selection trigger before casting. **WEAPON** restores the basic
+release the selection trigger before casting. **BASIC ATTACK** restores the basic
 right-trigger attack or physical bow controls. Free melee swings remain
 available with a skill selected, pausing during casting, menus or potion handling.
 
@@ -330,6 +337,69 @@ occlusion and the bottle art is a functional placeholder.
    and return. No held input should cause a delayed drink, swap, cast or hit.
 
 
+## Motion weapon skills and shield attachment (2026-10-11 candidate)
+
+Select a supported skill on the wheel, release the selection trigger, then use
+the weapon's familiar motion. The gold **ACTIVE** border/badge identifies the
+persistent selection independently of the hovered wedge. With the wheel closed,
+a small native skill icon follows the weapon hand. Its name and action hint
+appear briefly on change, or while busy/unavailable. Quick casting temporarily
+shows its own icon and **QUICK CAST** cue, then restores the persistent choice.
+These indicators show assignments and observed actions, not invented mana or
+cooldown readiness.
+
+For bows, supported skills are **Magic Arrow, Fire Arrow, Cold Arrow, Multiple
+Shot, Exploding Arrow, Ice Arrow, Guided Arrow, Strafe, Immolation Arrow and
+Freezing Arrow**. One deliberate draw/release sends one short native skill-button
+press. Multiple Shot keeps the game's fan, Strafe keeps its automatic targeting,
+volley count and sequence, and elemental/Guided arrows keep native effects and
+homing. Drawing farther does not multiply damage or arrow count. A fresh trigger
+press away from the string keeps point-and-trigger casting; moving into the
+string while that press is held cannot also nock an arrow. Quick casting remains
+point-and-trigger. Unknown skills and crossbows retain their native fallback.
+
+Selected bow skills retain **native animation, ground-plane flight and collision**.
+The ordinary basic-arrow 3D path described below does not yet handle these special
+missiles. Draw/release is implemented as their input adapter, not a new 3D volley
+simulation. Native mana, ammunition, charges and attack cadence remain in charge;
+a rejected input cannot also fire a basic arrow. Strafe's busy cue follows an
+observed native sequence after a physical release; it does not estimate readiness.
+
+The equipped left shield now follows its authored bind-pose relationship to the
+tracked wrist, including wrist rotation, instead of an attack/walk animation's
+attachment or the main weapon's adjustment. With **Smite** selected, an energetic
+left-arm swing or thrust that intersects an eligible creature requests one native
+Smite against that creature. A stationary shield cannot bash; one continuous
+stroke requests at most one bash, and a deliberate reversal/settle rearms it.
+Native reach, walls, resources, animation/cadence, damage, stun and knockback
+remain authoritative. Left-hand haptics acknowledge native acceptance, not proof
+of positive damage. Physical blocking/parrying is still pending.
+
+Contact casting activates only when the native Smite implementation is identified
+from the audited attack/throw dispatch table, a valid function range and a decoded
+call to the native target accessor. Otherwise the cue says **Point & trigger** and
+the native trigger fallback remains available. Tracking loss, menus, recentering,
+equipment/assignment changes and quick casting cancel physical preparation and
+invalidate its target. Shield collision uses an approximate capsule around the
+attachment; shield sizes, axes and the live Smite hook still need verification.
+
+Windows build, gesture/contact/pose regressions and the synthetic UI preview pass.
+No headset or live game testing has been performed for this candidate. Verify with
+offline characters outside town:
+
+1. Amazon: compare Multiple Shot's arrow count/ammo/mana and Strafe's volley/cadence
+   with native trigger casts; test elemental and Guided effects, repeated draws,
+   short/cancelled draws, empty quiver and insufficient mana.
+2. Paladin: confirm shield fit while translating/rotating the wrist, then test
+   Smite swings, thrusts, backhands, stationary overlap, misses and walls. Compare
+   costs, damage, stun and knockback with trigger Smite; check one bash per stroke.
+3. Change assignments and weapon sets, open menus/settings, recenter and interrupt
+   tracking during preparation and native wind-up. Check for delayed/duplicate
+   actions, stuck skill buttons and correct recovery.
+4. Check ACTIVE versus hover, closed-wheel icon/readability and temporary quick-cast
+   restoration. Recheck ordinary 3D arrows, free sword swings, inventory and frame
+   pacing. Repeat shield-fit checks with several shield shapes.
+
 ## What is physical and what is still native
 
 Hand/weapon presentation and input gestures use tracked 6DoF poses. The bow
@@ -355,8 +425,9 @@ Collision volumes are currently **approximations**, not skinned mesh hitboxes:
 weapon category determines length/radius on the final attachment; native monster
 footprint and legacy artwork height determine its body capsule. Generic class
 support is implemented, but specific weapon axes, small creatures, bosses and
-sloped ground need headset checks. Main-hand attacks only; independent off-hand
-strikes, physical shield blocks and parries remain future work.
+sloped ground need headset checks. Basic contacts use the main hand; the candidate
+adds selected Smite shield contacts. Other off-hand strikes, physical shield blocks
+and parries remain future work.
 
 Only a confirmed physical contact overrides legacy melee grid reach. Native
 line-of-sight, hostile relationship, creature life state, damage, elemental
@@ -366,7 +437,7 @@ dodge misses. Contact haptics acknowledge native accepted hit flags, including
 hits whose damage an immunity may prevent. Physical stroke timing replaces the
 basic attack's animation cadence; attack-speed stat scaling is not yet modeled.
 
-Physical bow release queues one direct native basic attack on the authoritative
+Physical **basic-arrow** release queues one direct native basic attack on the authoritative
 game thread. The attack creates its normal damage-bearing missile and handles
 ammunition; no simulated A-button press or native animation wind-up is needed.
 A client visual is allocated separately on the UI thread, without running a
@@ -385,8 +456,9 @@ for drawing farther. Both eyes share the same flying-arrow transform per pair.
 This first physical path supports **ordinary basic arrows**, not elemental,
 explosive, magic or guided missile variants. A bow that converts its basic attack
 to a special missile is currently refused before ammo is spent; use its assigned
-native skill through the palette instead. Crossbows and selected skills/spells
-keep their native controls, costs, timings and ground-based collision.
+native skill through the palette instead. Selected arrow skills gain the candidate
+draw/release adapter above; their flight remains native. Crossbows and other
+skills/spells keep native controls, costs, timings and ground-based collision.
 
 Collision is approximate: creature capsules use native footprint/artwork height,
 and the floor is the launch floor. Walls extend vertically; arrows cannot fly

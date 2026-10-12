@@ -43,6 +43,7 @@
 #include "logging.h"
 #include "hero_selection.h"
 #include "bow_pose.h"
+#include "shield_pose.h"
 #endif
 
 namespace skel {
@@ -318,6 +319,9 @@ struct GunBoneOut { float o[3], ax[3][3]; ULONGLONG at; Mat leftToHead; uintptr_
 };
 SRWLOCK g_gunBoneLock = SRWLOCK_INIT;
 GunBoneOut g_gunBone{};
+#ifdef D2RVR_NATIVE_OPENXR
+MeleeWeaponPose g_shieldPose{};ULONGLONG g_shieldAt=0;
+#endif
 // [debug] the line the left hand takes the weapon by (staff, spear, sword), the same frame
 struct GrabLineOut { float a[3], b[3]; ULONGLONG at; };
 GrabLineOut g_grabLine{};
@@ -1293,6 +1297,7 @@ void PoseBody(uintptr_t self, const Hero& h, const Input& in) {
             for (int side = 0; side < 2; ++side) {
                 const int wb = h.weapon[side], holder = freeStaff && side == staffSide ? 0 : side;
                 if (wb < 0 || !(in.handsValid & (1u << holder))) continue;
+                if(side==1&&in.leftShield)continue;
                 if (gun && side == staffSide) continue;   // the crossbow's [weapon_crossbow] is the controller's (above)
                 V3 shift{0, 0, 0};
                 for (int r = 0; r < 3; ++r) {
@@ -1585,6 +1590,26 @@ void PoseBody(uintptr_t self, const Hero& h, const Input& in) {
         }
     }
 
+#ifdef D2RVR_NATIVE_OPENXR
+    // A shield has its own left-wrist attachment. Taking it from a random
+    // combat animation or applying the sword/bow adjustment makes it orbit
+    // the forearm. The bind relationship follows the final tracked wrist.
+    bool shieldFollowed=false;
+    if(in.mode==2&&in.leftShield&&(in.handsValid&2u)&&h.bindOk&&h.weapon[1]>=0&&h.hand[1]>=0) {
+        const int wb=h.weapon[1],hand=h.hand[1];
+        bow::Mat wristBind,shieldBind,wristNow,result;
+        memcpy(&wristBind,&h.bind[hand],sizeof wristBind);
+        memcpy(&shieldBind,&h.bind[wb],sizeof shieldBind);
+        memcpy(&wristNow,&newW[hand],sizeof wristNow);
+        const Mat animated=Mul(oldW[wb],InvAffine(oldW[hand]));
+        if(Len({animated.m[0],animated.m[1],animated.m[2]})>=.3f&&
+           shield::Follow(wristBind,shieldBind,wristNow,result)) {
+            const auto before=newW;memcpy(&newW[wb],&result,sizeof result);
+            std::vector<char> moved(n,0);moved[wb]=1;Propagate(h,before,newW,moved,wb);
+            shieldFollowed=true;
+        }
+    }
+#endif
     // The forearms as they will be drawn, for FlatVR (g_forearm): the same
     // head point and scale the hands were placed with, undone.
     if (h.head >= 0) {
@@ -1764,6 +1789,23 @@ void PoseBody(uintptr_t self, const Hero& h, const Input& in) {
         AcquireSRWLockExclusive(&g_gunBoneLock); g_gunBone = g; ReleaseSRWLockExclusive(&g_gunBoneLock);
     }
 
+#ifdef D2RVR_NATIVE_OPENXR
+    {
+        MeleeWeaponPose shieldPose{};ULONGLONG at=0;HeroXform hx;Mat model;
+        if(shieldFollowed&&in.havePoseStamp&&h.weapon[1]>=0&&
+           HeroTransform(&hx)&&hx.self==self&&(hx.parent&0xFFFFFu)==0xFFFFFu&&
+           SafeCopy(model.m,reinterpret_cast<const void*>(hx.comp),sizeof model)) {
+            const Mat world=Mul(newW[h.weapon[1]],model);
+            const V3 origin=Pos(world),axis=Norm({world.m[4],world.m[5],world.m[6]}),player=Pos(model);
+            if(Len({world.m[4],world.m[5],world.m[6]})>.3f&&
+               std::isfinite(origin.x+origin.y+origin.z+axis.x+axis.y+axis.z+player.x+player.y+player.z)) {
+                shieldPose={{origin.x,origin.y,origin.z},{axis.x,axis.y,axis.z},{player.x,player.y,player.z},in.poseStamp,in.worldEpoch,HeroGen()};
+                at=GetTickCount64();
+            }
+        }
+        AcquireSRWLockExclusive(&g_gunBoneLock);g_shieldPose=shieldPose;g_shieldAt=at;ReleaseSRWLockExclusive(&g_gunBoneLock);
+    }
+#endif
     // [hands] fist: free hands close and open with the controllers' grips.
     if (h.cls >= 0) g_heroClass.store(h.cls);
     if (in.fist && in.mode == 2)
@@ -2189,6 +2231,11 @@ bool MeleeWeapon(MeleeWeaponPose& out) {
     AcquireSRWLockShared(&g_gunBoneLock);const auto g=g_gunBone;ReleaseSRWLockShared(&g_gunBoneLock);
     if(!g.haveMelee||!g.at||GetTickCount64()-g.at>100||g.melee.heroGeneration!=HeroGen())return false;
     out=g.melee;return true;
+}
+bool ShieldWeapon(MeleeWeaponPose& out) {
+    AcquireSRWLockShared(&g_gunBoneLock);const auto pose=g_shieldPose;const auto at=g_shieldAt;ReleaseSRWLockShared(&g_gunBoneLock);
+    if(!at||GetTickCount64()-at>100||pose.heroGeneration!=HeroGen())return false;
+    out=pose;return true;
 }
 #endif
 

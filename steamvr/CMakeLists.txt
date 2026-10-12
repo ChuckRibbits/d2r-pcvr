@@ -47,6 +47,8 @@ target_link_libraries(dlss-depth-test PRIVATE d3d11 framevr-runtime)
 add_executable(dlss-depth-upload-test dlss_depth_upload_test.cpp)
 target_link_libraries(dlss-depth-upload-test PRIVATE d3d12 dxgi framevr-runtime)
 add_executable(gameplay-test gameplay_test.cpp)
+add_executable(weapon-skills-test weapon_skills_test.cpp)
+target_link_libraries(weapon-skills-test PRIVATE minhook)
 add_executable(quick-cast-test quick_cast_test.cpp)
 add_executable(spell-aim-test spell_aim_test.cpp)
 add_executable(bow-pose-test bow_pose_test.cpp)
@@ -107,7 +109,7 @@ target_link_libraries(local-player-test PRIVATE framevr-runtime)
 target_link_libraries(window-focus-test PRIVATE user32)
 enable_testing()
 foreach(test_target IN ITEMS memory-test hook-metrics-test latest-worker-test
-    gameplay-test quick-cast-test spell-aim-test bow-pose-test body-tracking-test body-calibration-test shoulder-swap-test
+    gameplay-test weapon-skills-test quick-cast-test spell-aim-test bow-pose-test body-tracking-test body-calibration-test shoulder-swap-test
     portal-billboard-test composition-layers-test projectile-rules-test
     combat-rules-test logging-test melee-contact-test world-coordinates-test bow-flight-test
     interaction-test wrist-hud-test controller-bindings-test journal-test native-panels-test
@@ -129,3 +131,4 @@ add_test(NAME ui-blit-portrait-map COMMAND ui-blit-test --square-map --portrait)
 set_tests_properties(ui-blit-typed ui-blit-typeless ui-blit-typeless-black PROPERTIES TIMEOUT 15)
 add_test(NAME swapchain-color-test COMMAND swapchain-color-test)
 set_tests_properties(swapchain-color-test PROPERTIES TIMEOUT 40)
+add_test(NAME interaction-weapon-skills-test COMMAND interaction-preview "${CMAKE_CURRENT_BINARY_DIR}/weapon-skills-preview.png" --weapon-skills-check)

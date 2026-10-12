@@ -41,12 +41,50 @@ int main(int argc,char** argv) {
     const bool wristCheck=argc>2&&std::strcmp(argv[2],"--wrist-check")==0;
     const bool wheelCheck=argc>2&&std::strcmp(argv[2],"--wheel-check")==0;
     const bool editorCheck=argc>2&&std::strcmp(argv[2],"--editor-check")==0;
+    const bool weaponSkillsCheck=argc>2&&std::strcmp(argv[2],"--weapon-skills-check")==0;
     Output o;o.hover=1;o.wheel=true;o.utility=argc>2&&!wristCheck;
     // Match runtime: queue the snapshot as soon as it is known, before either
     // wheel page has ever been painted. Opening/toggling must not be necessary.
     icons::Prefetch(s);
     if(!icons::Wait(10000))return 20;
     const auto pixels=Paint(s,o,2);if(pixels.size()!=1024*1024*4)return 1;
+    if(weaponSkillsCheck) {
+        std::vector<uint8_t> gallery(1024*768*4);
+        const int selectedIds[]={12,26,97,-1};
+        const char* selectedNames[]={"Multiple Shot","Strafe","Smite","Basic Arrow"};
+        const char* hints[]={"Draw & release","Volley active","Shield swing / thrust","Draw & release"};
+        o.utility=false;o.hover=1;
+        for(int row=0;row<4;++row) {
+            auto& cue=o.cue;cue={};cue.id=selectedIds[row];cue.slot=row==3?-1:2;cue.known=cue.available=cue.expanded=true;
+            cue.busy=row==1;
+            std::snprintf(cue.name,sizeof cue.name,"%s",selectedNames[row]);std::snprintf(cue.hint,sizeof cue.hint,"%s",hints[row]);
+            if(row!=3){s.skills[2].id=cue.id;std::snprintf(s.skills[2].name,64,"%s",cue.name);}
+            icons::Prefetch(s);if(!icons::Wait(10000))return 40;
+            const auto atlas=Paint(s,o,cue.slot);
+            for(int y=0;y<192;++y)std::memcpy(&gallery[((row*192+y)*1024+768)*4],&atlas[(y*1024+768)*4],256*4);
+            if(row==0)for(int y=0;y<768;++y)std::memcpy(&gallery[y*1024*4],&atlas[y*1024*4],768*4);
+            // Hovering another slot must not erase the active marker/icon.
+            const auto before=atlas;o.hover=4;const auto after=Paint(s,o,cue.slot);o.hover=1;
+            if(row!=3) {
+                const float a=2*Pi/4+WheelPhase;const int x=int(384+std::sin(a)*218),y=int(345.6f-std::cos(a)*218);
+                int gold=0;
+                for(int dy=-48;dy<33;++dy)for(int dx=-42;dx<43;++dx)
+                {
+                    const auto* pixel=&before[((y+dy)*1024+x+dx)*4];
+                    if(std::memcmp(pixel,&after[((y+dy)*1024+x+dx)*4],4))return 41;
+                    if(pixel[0]==230&&pixel[1]==190&&pixel[2]==96&&pixel[3])++gold;
+                }
+                if(gold<100)return 43;
+            }
+        }
+        o.cue.temporary=true;const auto quick=Paint(s,o,-1);o.cue.temporary=false;
+        const auto persistent=Paint(s,o,-1);int quickPixels=0;
+        for(int y=0;y<96;++y)for(int x=866;x<1024;++x)
+            if(std::memcmp(&quick[(y*1024+x)*4],&persistent[(y*1024+x)*4],4))++quickPixels;
+        if(quickPixels<100)return 44;
+        if(!SavePng(argv[1],gallery,1024,768))return 42;
+        std::puts("Weapon skill preview: persistent active selection differs from hover; four weapon cues rendered");return 0;
+    }
     if(argc>2&&std::strcmp(argv[2],"--async-check")==0) {
         framevr::LatestWorker<PaintJob,std::vector<uint8_t>> painter([](const PaintJob& job){return Paint(job.snapshot,job.output,job.selection);});
         if(!painter.Start())return 30;

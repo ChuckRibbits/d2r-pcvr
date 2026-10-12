@@ -82,7 +82,7 @@ struct Belt {
 struct Skill {
     int32_t id=-1,level=0,charges=-1;
     int32_t owner=-1;
-    bool known=false,available=false,directed=false;
+    bool known=false,available=false,directed=false,motion=false;
     char name[64]{};
     bool operator==(const Skill&) const = default;
 };
@@ -100,6 +100,14 @@ struct Snapshot {
     float health=0,maxHealth=0,mana=0,maxMana=0;
     bool vitalsKnown=false;
     wrist::Experience experience;
+    bool actionKnown=false;
+    uint32_t actionMode=0;
+};
+struct SkillCue {
+    int slot=-1,id=-1,owner=-1;
+    bool known=false,available=false,temporary=false,expanded=false,busy=false;
+    char name[64]{},hint[64]{};
+    bool operator==(const SkillCue&) const=default;
 };
 inline bool Fresh(const Snapshot& s,uint64_t session,uint64_t now) {
     return session&&s.session==session&&now>=s.at&&now-s.at<=650;
@@ -181,6 +189,7 @@ struct Input {
     Reply reply{};
 };
 struct Output {
+    SkillCue cue{};
     Owner owner[2]{Owner::Combat,Owner::Combat};
     bool block=false,wheel=false,utility=false,stowed=false,wrist=false,cancelPending=false,critical=false,settings=false;
     int select=-2,bottle=-1,bottleHand=-1,nearBelt=-1,nearHolster=-1,hover=-1;
