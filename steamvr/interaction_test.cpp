@@ -1,5 +1,6 @@
 #include "interactions.h"
 #include "interaction_icons.h"
+#include "interaction_paint.h"
 #include "potion_scene.h"
 #include <cstdio>
 #include <cstdlib>
@@ -111,8 +112,8 @@ int main(){
         Check(click(11).editor==1&&s.out.select==-2,"editor does not select a combat slot");
         Check(click(2).editor==2&&s.out.editSlot==2&&s.out.editCount==8,"unassigned slot opens available skills");
         Check(click(10).editPage==1&&s.out.editCount==2,"skill pagination bounded by actual skills");
-        Check(WheelCell(.1f,.25f,-1,true)==0&&WheelCell(.8f,.15f,-1,true)==8,"skill rows and clear button hit regions");
-        Check(WheelCell(.5f,.25f,-1,true)==-1,"skill column gap cannot assign");
+        Check(WheelCell(.1f,.25f,-1,MenuPage::EditSkills)==0&&WheelCell(.8f,.15f,-1,MenuPage::EditSkills)==8,"skill rows and clear button hit regions");
+        Check(WheelCell(.5f,.25f,-1,MenuPage::EditSkills)==-1,"skill column gap cannot assign");
         // Choices stay fixed while this page is displayed. Native validation
         // checks the chosen identity, never a list index that can be reordered.
         s.in.snapshot.catalog[0].id=200;
@@ -193,9 +194,53 @@ int main(){
     }
     for(int i=0;i<8;++i){float a=i*Pi/4+WheelPhase;Check(WheelCell(.5f+std::sin(a)*.28f,.45f-std::cos(a)*.28f)==i,"wedge centers agree");}
     Check(WheelCell(.5f,.45f)==8&&WheelCell(.18f,.93f)==9,"weapon center and utility tab");
-    Check(WheelCell(.5f,.93f)==10&&WheelCell(.82f,.93f)==11,"settings and skill editor entries");
+    Check(WheelCell(.38f,.93f)==12&&WheelCell(.62f,.93f)==10&&WheelCell(.86f,.93f)==11,"map, settings and skill editor tabs");
     Check(WheelCell(.5f,.57f)==-1,"dead zone cannot select");
-    Check(WheelCell(.34f,.94f)==-1&&WheelCell(.5f,.99f)==-1,"footer gap and outside frame cannot select");
+    Check(WheelCell(.26f,.94f)==-1&&WheelCell(.5f,.99f)==-1,"footer gap and outside frame cannot select");
+    for(auto page:{MenuPage::EditSlots,MenuPage::EditSkills})
+        Check(WheelCell(.18f,.93f,-1,page)==9&&WheelCell(.5f,.93f,-1,page)==10&&WheelCell(.82f,.93f,-1,page)==11,
+            "editor keeps three original footer controls");
+    for(int i=0;i<8;++i) {
+        const float a=i*Pi/4+WheelPhase;
+        Check(WheelCell(.5f+std::sin(a)*.28f,.45f-std::cos(a)*.28f,i,MenuPage::Map)==-1,
+            "map cannot hit hidden spell wedges even with previous hover");
+    }
+    Check(WheelCell(.5f,.45f,-1,MenuPage::Map)==-1&&WheelCell(.38f,.93f,-1,MenuPage::Map)==12,
+        "map body is passive while footer remains interactive");
+    {
+        Sim s;auto click=[&](int hit){s.in.trigger=0;s.Step();s.in.hover=hit;s.in.trigger=1;return s.Step();};
+        s.in.hand[1].p={-.18f,1.35f,-.24f};s.in.hand[1].q={0,0,-.70710678f,.70710678f};
+        s.Step();Check(s.out.wrist&&!MapWanted(s.in,s.out,s.in.at),"watch vitals no longer request minimap");
+        s.in.wheel=true;click(12);
+        Check(s.out.wheel&&s.out.map&&!s.out.utility&&s.out.block&&s.out.select==-2&&s.out.request.action==Action::None&&
+            MapWanted(s.in,s.out,s.in.at)&&s.e.Page()==MenuPage::Map,"map tab opens without changing selected spell or requesting a native action");
+        const auto mapContext=Context(s.in.snapshot,s.out,true);auto spells=s.out;spells.map=false;
+        Check(mapContext!=Context(s.in.snapshot,spells,true),"map page invalidates a previously painted spell page");
+        Check(!MapWanted(s.in,s.out,s.in.at+651),"stale character snapshot cannot display map");
+        for(int i=0;i<8;++i)Check(s.Step().map&&s.out.select==-2&&s.out.request.action==Action::None,"held map selection cannot cast");
+        for(int cell:{0,4,8})Check(click(cell).map&&s.out.wheel&&s.out.select==-2&&s.out.request.action==Action::None,
+            "even stale body hits cannot select a spell, potion or basic attack on map");
+        Check(!click(9).map&&!s.out.utility&&s.out.wheel&&s.out.select==-2&&s.e.Page()==MenuPage::Spells,
+            "SPELLS returns from map without toggling equipment or selecting a spell");
+        click(9);Check(s.out.utility,"equipment page still opens");click(12);Check(s.out.map&&!s.out.utility,"map can open from equipment page");
+        Check(click(11).editor==1&&!s.out.map&&s.out.wheel,"map can open original skill editor");
+        click(11);click(12);Check(click(10).settings&&!s.out.wheel&&!MapWanted(s.in,s.out,s.in.at),"settings closes map demand");
+    }
+    for(int interruption=0;interruption<6;++interruption) {
+        Sim s;s.in.wheel=true;s.in.hover=12;s.in.trigger=1;Check(s.Step().map,"map opened before interruption");
+        switch(interruption) {
+            case 0:s.in.wheel=false;break;
+            case 1:s.in.cancel=true;break;
+            case 2:s.in.tracked[0]=false;break;
+            case 3:s.in.active=false;break;
+            case 4:++s.in.session;break;
+            case 5:++s.in.epoch;break;
+        }
+        s.Step();Check(!s.out.map&&!MapWanted(s.in,s.out,s.in.at)&&s.out.block&&s.out.select==-2&&s.out.request.action==Action::None,
+            "closing, cancellation, tracking loss, native menu, session change and recenter cancel map and block held trigger");
+        s.in.wheel=false;s.in.cancel=false;s.in.active=true;s.in.tracked[0]=true;s.in.trigger=0;s.Step(3);
+        s.in.wheel=true;s.Step();Check(s.out.wheel&&!s.out.map&&s.e.Page()==MenuPage::Spells,"reopening after interruption starts on spells");
+    }
     for(int i=0;i<8;++i){float a=i*Pi/4+.012f;
         Check(WheelCell(.5f+std::sin(a)*.28f,.45f-std::cos(a)*.28f,(i+7)%8)==(i+7)%8,"segment boundary has selection hysteresis");}
     Check(PotionType(Code('h','p','2'))==Potion::Health&&PotionType(Code('m','p','4'))==Potion::Mana,"potion categories");

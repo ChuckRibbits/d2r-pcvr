@@ -136,7 +136,7 @@ std::vector<uint8_t> Paint(const Snapshot& s,const Output& o,int selection) {
             icon(icons::Get(b),{mid,box.top,box.right,box.bottom});
         } else icon(icons::Get(a.handle?a:b),box);
     };
-    for(int i=0;o.editor!=2&&i<8;++i) {
+    for(int i=0;!o.map&&o.editor!=2&&i<8;++i) {
         if(o.utility&&i==2)continue; // Native tabbed menu retains journal access.
         const float angle=i*Pi/4+WheelPhase;
         const int x=int(384+std::sin(angle)*218),y=int(345.6f-std::cos(angle)*218)-(std::cos(angle)<-.5f?14:0);
@@ -195,7 +195,14 @@ std::vector<uint8_t> Paint(const Snapshot& s,const Output& o,int selection) {
         RECT inside{box.left+2,box.top+2,box.right-2,box.bottom-2};fill(inside,RGB(18,16,14));
         inside={box.left+5,box.top+5,box.right-5,box.bottom-5};fill(inside,hot?RGB(65,49,29):RGB(35,29,23));
     };
-    if(o.editor==2) {
+    if(o.map) {
+        frame({20,18,748,680});
+        text("MAP",{38,27,730,78});
+        const RECT content{LONG(MapContent.left*768),LONG(MapContent.top*768),LONG(MapContent.right*768),LONG(MapContent.bottom*768)};
+        frame({content.left-4,content.top-4,content.right+4,content.bottom+4});
+        text("Waiting for map...",content);
+        SelectObject(dc,shortcutFont);text("Use a corner minimap layout in game options",{38,650,730,677});SelectObject(dc,font);
+    } else if(o.editor==2) {
         frame({20,28,748,681});
         char title[120];std::snprintf(title,sizeof title,"CHOOSE SKILL  /  %s",skills::NativeLabel(o.editSlot));
         text(title,{38,47,730,88});
@@ -225,15 +232,18 @@ std::vector<uint8_t> Paint(const Snapshot& s,const Output& o,int selection) {
             o.result==Result::Pending?"Saving...":o.result==Result::Applied?"Assigned":o.result==Result::Refused?"Changed or unavailable; choose the slot again":"Hold Left Y while editing");
         fill({29,637,739,680},RGB(22,18,14));text(hint,{35,639,733,678});
     }
-    const char* footer[3]={o.utility?"SPELLS":"EQUIPMENT","VR SETTINGS","EDIT SKILLS"};
+    const char* footer[4]={(o.utility||o.map)?"SPELLS":"EQUIPMENT","MAP","VR SETTINGS","EDIT SKILLS"};
     if(o.editor==1){footer[0]="BACK";footer[1]="";footer[2]="DONE";}
     if(o.editor==2){footer[0]="PREVIOUS";footer[1]="NEXT";footer[2]="BACK";}
     fill({20,686,749,745},RGB(18,16,14));
-    for(int i=0;i<3;++i) {
-        const int x=int(768*(.03f+i*.32f));frame({x,688,x+230,741},o.hover==9+i);
-        text(footer[i],{x+5,693,x+225,736});
+    const auto page=Page(o);
+    for(int i=0;i<FooterCount(page);++i) {
+        const auto bounds=FooterBounds(i,page);const int cell=FooterCell(i,page);
+        const RECT box{LONG(bounds.left*768),LONG(bounds.top*768),LONG(bounds.right*768),LONG(bounds.bottom*768)};
+        frame(box,o.hover==cell||(o.map&&cell==12));
+        text(footer[i],{box.left+5,box.top+5,box.right-5,box.bottom-5});
     }
-    if(!o.editor&&!o.utility) {
+    if(!o.editor&&!o.utility&&!o.map) {
         char active[100];std::snprintf(active,sizeof active,"ACTIVE: %s",o.cue.known?o.cue.name:"Unknown skill");
         const auto prior=SelectObject(dc,skillFont);SetTextColor(dc,RGB(232,196,119));
         text(active,{150,648,618,681});SelectObject(dc,prior);
@@ -241,6 +251,7 @@ std::vector<uint8_t> Paint(const Snapshot& s,const Output& o,int selection) {
     // Reserved atlas space: a compact weapon icon and an optional two-line
     // explanation. The native icon comes from the same cache as its wheel slot.
     const auto& cue=o.cue;
+    SetTextColor(dc,RGB(238,235,220));
     fill({768,0,864,96},RGB(115,89,43));fill({772,4,860,92},RGB(25,21,17));
     const bool haveIcon=cue.id>=0&&icon(icons::Get("s"+std::to_string(cue.id)),{778,10,854,86},cue.available);
     if(!haveIcon)text(cue.id<0&&cue.known?"BASIC":"?",{776,8,856,88});

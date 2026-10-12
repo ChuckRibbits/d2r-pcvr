@@ -99,11 +99,17 @@ not generate melee velocity. The layout currently assumes a right-handed player.
 | Seated weapon selection | Utility wheel → **Weapon I** or **Weapon II** |
 | Stow/draw | Utility wheel → **Stow weapons** / **Draw weapons**; native equipped stats stay unchanged |
 | Wrist health/mana | Look at the **back of your left wrist, like checking a watch**, within 75 cm of your eyes; red life and blue mana orbs appear there. No button required. Brief status cue also appears at low health or low mana in spell mode |
+| Explored minimap | Hold Left Y ? **MAP** in the bottom tabs; point right laser + trigger. **SPELLS** returns to skills; releasing Left Y closes the menu |
 | Quest journal | Open the native tabbed game menu with Left X / Frame Left A, then select Journal. The duplicate wheel entry is removed |
 | Journal controls | Right laser + trigger uses native page controls/act tabs; Right B follows native back; Left X performs native X |
 | Inventory drop / sort | Native X (Quest Left X / Frame Left A) / press and hold right stick click; right-stick click no longer swaps in gameplay |
 | Walk / snap turn | Sticks; paused while wheel or journal is open |
 | Height reset / map | Left grip + left stick click / plain left stick click, unchanged |
+
+The Map tab preserves your selected spell and uses the native explored areas
+and markers. Choose the left or right corner minimap layout in game options;
+full-screen automap capture is unsupported. Closing the tab restores the map's
+prior visibility. The wrist retains health, mana, level and XP progress.
 
 ### Inventory, conversations and trading in VR
 

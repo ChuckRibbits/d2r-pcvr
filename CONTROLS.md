@@ -37,19 +37,22 @@ use two tracked VR controllers; an Xbox controller is not required.
 | Grab a belt potion | Reach to a bottle and hold that hand's grip |
 | Drink | Keep grip held, bring the bottle opening to your mouth and tip it; release an unused bottle to return it |
 | Quick potion | Wheel → **EQUIPMENT / BELT** → select a potion with right trigger |
-| Wrist health / mana / XP / map | Look at the back of your left wrist, like checking a watch |
-| Map | Left stick click |
+| Wrist health / mana / XP | Look at the back of your left wrist, like checking a watch |
+| Minimap tab | Spell wheel ? **MAP** at the bottom; right laser + trigger |
+| Map toggle | Left stick click |
 | Reset height | Left Grip + left stick click, during gameplay |
 | VR settings | Left Grip + left secondary; also **VR SETTINGS** in the wheel |
 | Calibrate height / arm span | VR settings → **Calibrate body**; stand straight in a T-pose, release both triggers, then hold both together until **Saved** |
 | Recenter | PC F11 |
 | Save stereo images | PC F8 |
 
-The wrist XP bar shows your level and progress toward the next level. Use the
-game's left or right corner minimap layout for the square wrist map. It opens
-automatically while you check your wrist, then restores the map's previous
-visibility when you lower your hand. Left stick click still toggles the normal
-map; the wrist map uses the same explored areas and markers.
+The wrist shows health, mana, level and XP progress. The minimap is in the
+spell wheel's bottom **MAP** tab. Keep holding left secondary while viewing it;
+choose **SPELLS** to return to your skills or release the button to close the
+menu. Switching tabs preserves the selected skill. Use the game's left or right
+corner minimap layout. The tab uses the same explored areas and markers and
+restores the automap's previous visibility after closing. Left stick click
+still toggles the normal map.
 
 Free swings pause during casting, menus and potion handling. Selecting a wheel
 skill changes the right-trigger action; its quick-cast binding stays available.

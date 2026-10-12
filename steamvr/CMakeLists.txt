@@ -132,3 +132,4 @@ set_tests_properties(ui-blit-typed ui-blit-typeless ui-blit-typeless-black PROPE
 add_test(NAME swapchain-color-test COMMAND swapchain-color-test)
 set_tests_properties(swapchain-color-test PROPERTIES TIMEOUT 40)
 add_test(NAME interaction-weapon-skills-test COMMAND interaction-preview "${CMAKE_CURRENT_BINARY_DIR}/weapon-skills-preview.png" --weapon-skills-check)
+add_test(NAME interaction-map-tab-test COMMAND interaction-preview "${CMAKE_CURRENT_BINARY_DIR}/map-tab-preview.png" --map-check)

@@ -42,12 +42,35 @@ int main(int argc,char** argv) {
     const bool wheelCheck=argc>2&&std::strcmp(argv[2],"--wheel-check")==0;
     const bool editorCheck=argc>2&&std::strcmp(argv[2],"--editor-check")==0;
     const bool weaponSkillsCheck=argc>2&&std::strcmp(argv[2],"--weapon-skills-check")==0;
+    const bool mapCheck=argc>2&&std::strcmp(argv[2],"--map-check")==0;
     Output o;o.hover=1;o.wheel=true;o.utility=argc>2&&!wristCheck;
     // Match runtime: queue the snapshot as soon as it is known, before either
     // wheel page has ever been painted. Opening/toggling must not be necessary.
     icons::Prefetch(s);
     if(!icons::Wait(10000))return 20;
     const auto pixels=Paint(s,o,2);if(pixels.size()!=1024*1024*4)return 1;
+    if(mapCheck) {
+        o.utility=false;o.hover=-1;const auto spells=Paint(s,o,2);
+        o.map=true;const auto map=Paint(s,o,2);
+        // Moving the map must leave wrist vitals, belt, bottle and weapon cues unchanged.
+        for(int y=0;y<1024;++y)for(int x=0;x<1024;++x)if(x>=768||y>=768)
+            if(std::memcmp(&spells[(y*1024+x)*4],&map[(y*1024+x)*4],4))return 50;
+        int changed=0;
+        for(int y=92;y<645;++y)for(int x=107;x<660;++x)
+            if(std::memcmp(&spells[(y*1024+x)*4],&map[(y*1024+x)*4],4))++changed;
+        if(changed<100000)return 51;
+        o.hover=4;const auto hovered=Paint(s,o,2);
+        const auto tab=FooterBounds(1,MenuPage::Map);
+        for(int y=int(tab.top*768);y<int(tab.bottom*768);++y)for(int x=int(tab.left*768);x<int(tab.right*768);++x)
+            if(std::memcmp(&map[(y*1024+x)*4],&hovered[(y*1024+x)*4],4))return 52;
+        std::vector<uint8_t> gallery(1536*768*4);
+        for(int y=0;y<768;++y) {
+            std::memcpy(&gallery[y*1536*4],&spells[y*1024*4],768*4);
+            std::memcpy(&gallery[(y*1536+768)*4],&map[y*1024*4],768*4);
+        }
+        if(!SavePng(argv[1],gallery,1536,768))return 53;
+        std::puts("Map tab preview: map body replaces spells, active tab persists, other atlas tiles unchanged");return 0;
+    }
     if(weaponSkillsCheck) {
         std::vector<uint8_t> gallery(1024*768*4);
         const int selectedIds[]={12,26,97,-1};

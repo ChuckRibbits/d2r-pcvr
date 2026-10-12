@@ -57,8 +57,8 @@ const ThreadService* g_threads = nullptr;
 // set by sending those messages ourselves (SetAutoMap) - no key, no button.
 const WidgetService* g_widgets = nullptr;
 std::atomic<int> g_autoMap{0};
-std::atomic<uint64_t> g_wristMapAt{0};
-framevr::wrist::MapLease g_wristMapLease;
+std::atomic<uint64_t> g_menuMapAt{0};
+framevr::wrist::MapLease g_menuMapLease;
 const InventoryService* g_inventory = nullptr;
 const ItemService* g_items = nullptr;
 const SharedEventService* g_events = nullptr;
@@ -312,12 +312,12 @@ void __cdecl ReadItems(const PluginContext* ctx, void* token) noexcept {
     g_player.store(havePlayer ? player : 0);
 #ifdef D2RVR_NATIVE_OPENXR
     panelinput::MaintainWorldController(havePlayer,g_menu.load()!=0);
-    const auto now=GetTickCount64(),mapAt=g_wristMapAt.load();
+    const auto now=GetTickCount64(),mapAt=g_menuMapAt.load();
     const bool mapWanted=mapAt&&now>=mapAt&&now-mapAt<400;
-    const int mapAction=g_wristMapLease.Step(havePlayer?player:0,now,mapWanted,g_menu.load()!=0,g_autoMap.load()!=0);
+    const int mapAction=g_menuMapLease.Step(havePlayer?player:0,now,mapWanted,g_menu.load()!=0,g_autoMap.load()!=0);
     // Keep native widget calls on this UI callback, never on the XR thread.
     if(mapAction>=0)DispatchAutoMap(ctx,mapAction?(void*)1:nullptr);
-    hud::WristMapCapture(g_wristMapLease.Active(now,g_menu.load()!=0));
+    hud::MenuMapCapture(g_menuMapLease.Active(now,g_menu.load()!=0));
 #endif
     if(!havePlayer)g_menuOpenUntil=0;
     else if(g_menuOpenUntil)FinishMenuOpen(ctx,nullptr);
@@ -627,7 +627,7 @@ bool MenuOpen() { return g_menu.load() != 0; }
 uint32_t MenuEpoch() { return g_menuEpoch.load(); }
 uint64_t LocalPlayer() { return g_player.load(); }
 uint32_t DataBank() {return uint32_t(g_bank);} // UI-thread-only table bank
-void WristMap(bool wanted) {g_wristMapAt.store(wanted?GetTickCount64():0);}
+void MenuMap(bool wanted) {g_menuMapAt.store(wanted?GetTickCount64():0);}
 // An object's light in a mode: its radius (Objects.txt Lit, 0 = none) and colour 0..1.
 int ObjectLight(uint32_t txt, uint32_t mode, float rgb[3]) {
     if (txt >= g_objCount.load() || mode > 7) return 0;
