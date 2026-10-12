@@ -1,5 +1,25 @@
 # Clean Windows installation and agent handoff — October 10, 2026
 
+**October 12 Steam Frame shortcut startup fix:** Draft
+[PR #13](https://github.com/bearstonem/d2r-pcvr/pull/13), launcher fix `acc4974`,
+also applied to this motion-skill branch. The owner's 15:00 PDT SteamVR shortcut
+launch crashed before D2RCore/plugins with `0xc0000374`; a controlled repeat
+also failed before plugin startup. The shortcut inherited `SteamOverlayGameId`
+and injected Steam's renderer during loader bootstrap despite overlay UI being
+disabled. Explicit VR launches now omit only that routing variable, retaining
+Steam's app/game ownership IDs, runtime choice and other settings. Desktop
+launches keep their original environment; Battle.net still drops Steam IDs.
+
+The same Steam library shortcut then launched successfully at 15:03:32 PDT.
+D2R startup completed at 15:03:41 and the VR plugin/OpenXR started at 15:03:44.
+The game was left open in its frontend for owner testing; the agent entered no
+character. The successful process still loads the overlay renderer later, so
+the internal crash mechanism remains unproven. Fresh owner-triggered Frame
+launch and repeat reliability remain pending. Ten installer/launcher and eight
+Battle.net tests pass. No DLL rebuild, Steam restart or shortcut rewrite was
+needed; installed map-candidate DLLs retain the hash below. The active shortcut
+already points at this repository's updated `steamvr/launch_windows.py`.
+
 **October 12 spell-menu minimap candidate:** The minimap has moved from the
 wrist to a larger **MAP** page, selected from the spell menu's bottom tabs.
 Hold left secondary, point with the right laser and click **MAP**; **SPELLS**
@@ -24,7 +44,8 @@ DLLs/settings and shared saves backed up. Receipt:
 `build-frame/windows/latest-spell-menu-map-deployment.json`.
 Backup: `build-frame/backups/windows-spell-menu-map-20261012-145848-385/`.
 The earlier owner-confirmed shield-bash test remains recorded below; it was
-performed before this map change. Steam Frame shortcut repair remains pending.
+performed before this map change. The shortcut startup fix above awaits owner
+repeat-launch confirmation.
 
 **Earlier October 12 motion-skill candidate / Smite activation fix:** Draft
 [PR #10](https://github.com/bearstonem/d2r-pcvr/pull/10), branch
