@@ -116,7 +116,8 @@ def saved_games():
 
 
 def require_closed():
-    rows = csv.reader(subprocess.check_output(['tasklist', '/FO', 'CSV', '/NH'], text=True).splitlines())
+    rows = csv.reader(subprocess.check_output(['tasklist', '/FO', 'CSV', '/NH'], text=True,
+        creationflags=0x08000000 if os.name == 'nt' else 0).splitlines())
     if any(row and row[0].lower() in ('steam.exe', 'd2r.exe', 'd2rloader.exe') for row in rows):
         raise ValueError('Save & Exit D2R, then choose Steam > Exit on the PC. Do not just close its window.')
 
@@ -162,6 +163,61 @@ def launch_options(python, wrapper, runtime):
     if any('"' in part or '\n' in part or '\r' in part or '%' in part for part in parts):
         raise ValueError('Move the extracted mod to a folder without quotes, percent signs or line breaks.')
     return ' '.join('"' + part + '"' for part in parts) + ' %command%'
+
+
+def preflight_steam(profile, steam, game, options, connections, **routing):
+    """Validate proposed edits without writing, using the current profile bytes."""
+    old_options = None
+    if options is not None:
+        source = (profile / 'config/localconfig.vdf').read_text(encoding='utf-8')
+        old_options = steam_config.text_value(steam_config.parse_text(source.lstrip('\ufeff')),
+            'UserLocalConfigStore', 'Software', 'Valve', 'Steam', 'apps', steam_config.APP_ID, 'LaunchOptions')
+        steam_config.set_launch_options(source, options)
+    shortcuts = profile / 'config/shortcuts.vdf'
+    steam_config.update_shortcuts(shortcuts.read_bytes() if shortcuts.exists() else None,
+                                  steam, game, connections, **routing)
+    return old_options
+
+
+def apply_setup(manifest, store, version, headset, connections, steam, game, profile,
+                saves, runtime, mode, root=None, on_steam_configured=None, hide_console=False):
+    """Shared console/graphical execution; callers collect and confirm choices first."""
+    root = Path(root) if root is not None else ROOT
+    require_closed()
+    routing = {} if store == 'steam' else {'store': store, 'python': Path(sys.executable).resolve(),
+        'wrapper': root / 'steamvr/launch_windows.py', 'runtime': runtime}
+    options = launch_options(Path(sys.executable).resolve(), root / 'steamvr/launch_windows.py', runtime) if store == 'steam' else None
+    # Steam may have flushed new bytes while closing after the preview.
+    old_options = preflight_steam(profile, steam, game, options, connections, **routing)
+    if mode != 2:
+        command = [sys.executable, str(root / 'steamvr/install.py'), '--game', str(game),
+                   '--saves', str(saves), '--plugin', str(root / 'bin/d2rl-vrcam.dll'),
+                   '--openxr-loader', str(root / 'bin/openxr_loader.dll'), '--deps', str(root / 'deps'),
+                   '--backup-dir', str(root / 'setup-backups/game'), '--download-deps', '--store', store]
+        if store == 'battlenet':
+            command += ['--experimental-battlenet', '--casclib', str(root / 'bin/CascLib.dll')]
+        if mode == 0:
+            command.append('--preserve-settings')
+        subprocess.run(command, check=True, creationflags=0x08000000 if hide_console and os.name == 'nt' else 0)
+    require_closed()
+    backup = steam_config.configure(profile, steam, game, options, connections,
+                                   root / 'setup-backups', require_closed, **routing)
+    if on_steam_configured is not None:
+        on_steam_configured()
+    record = install.read_record(game)
+    record.update({'game': str(game), 'store': store, 'saves': str(saves)})
+    state = record.setdefault('steam_profiles', {}).setdefault(str(profile.resolve()), {})
+    if store == 'steam' and 'previous_launch_options' not in state:
+        state['previous_launch_options'] = '' if steam_config.is_vr_launch_options(old_options) else (old_options or '')
+    state.update({'steam': str(steam), 'installed_launch_options': options})
+    require_closed()
+    install.write_record(game, record)
+    result = {'release': manifest.get('release_tag'), 'store': store, 'game_version': version,
+              'experimental': store == 'battlenet', 'headset': headset, 'connections': connections,
+              'game': str(game), 'steam_profile': profile.name, 'steam_backup': str(backup),
+              'game_backups': str(root / 'setup-backups/game'), 'launch_options': options}
+    (root / 'setup-result.json').write_text(json.dumps(result, indent=2) + '\n', encoding='utf-8')
+    return result
 
 
 def main():
@@ -226,15 +282,7 @@ def main():
     routing = {} if store == 'steam' else {'store': store, 'python': Path(sys.executable).resolve(),
                                           'wrapper': ROOT / 'steamvr/launch_windows.py', 'runtime': runtime}
     options = launch_options(Path(sys.executable).resolve(), ROOT / 'steamvr/launch_windows.py', runtime) if store == 'steam' else None
-    # Validate Steam edits before installation or downloads.
-    local = profile / 'config/localconfig.vdf'
-    old_options = None
-    if store == 'steam':
-        original_text = local.read_text(encoding='utf-8')
-        old_options = steam_config.text_value(steam_config.parse_text(original_text.lstrip('\ufeff')), 'UserLocalConfigStore', 'Software', 'Valve', 'Steam', 'apps', steam_config.APP_ID, 'LaunchOptions')
-        steam_config.set_launch_options(original_text, options)
-    shortcut_file = profile / 'config/shortcuts.vdf'
-    steam_config.update_shortcuts(shortcut_file.read_bytes() if shortcut_file.exists() else None, steam, game, connections, **routing)
+    old_options = preflight_steam(profile, steam, game, options, connections, **routing)
     print('\nReady to set up:')
     print(f'  Edition: {"Steam" if store == "steam" else "Battle.net (experimental)"}, D2R {version}')
     print(f'  Headset: {headset}\n  Game: {game}\n  Steam account: {accounts[selected][1]} (local ID {profile.name})')
@@ -250,32 +298,7 @@ def main():
         print('Setup cancelled. No game or Steam configuration was changed.')
         return
     wait_for_closed()
-    if mode != 2:
-        command = [sys.executable, str(ROOT / 'steamvr/install.py'), '--game', str(game),
-                   '--saves', str(saves), '--plugin', str(ROOT / 'bin/d2rl-vrcam.dll'),
-                   '--openxr-loader', str(ROOT / 'bin/openxr_loader.dll'), '--deps', str(ROOT / 'deps'),
-                   '--backup-dir', str(ROOT / 'setup-backups/game'), '--download-deps', '--store', store]
-        if store == 'battlenet':
-            command += ['--experimental-battlenet', '--casclib', str(ROOT / 'bin/CascLib.dll')]
-        if mode == 0:
-            command.append('--preserve-settings')
-        subprocess.run(command, check=True)
-    wait_for_closed()
-    backup = steam_config.configure(profile, steam, game, options, connections, ROOT / 'setup-backups', require_closed, **routing)
-    record = install.read_record(game)
-    record.update({'game': str(game), 'store': store, 'saves': str(saves)})
-    state = record.setdefault('steam_profiles', {}).setdefault(str(profile.resolve()), {})
-    if store == 'steam' and 'previous_launch_options' not in state:
-        # Old packages did not record the baseline; never restore another VR wrapper.
-        state['previous_launch_options'] = '' if steam_config.is_vr_launch_options(old_options) else (old_options or '')
-    state.update({'steam': str(steam), 'installed_launch_options': options})
-    require_closed()
-    install.write_record(game, record)
-    result = {'release': manifest.get('release_tag'), 'store': store, 'game_version': version,
-              'experimental': store == 'battlenet', 'headset': headset, 'connections': connections,
-              'game': str(game), 'steam_profile': profile.name, 'steam_backup': str(backup),
-              'game_backups': str(ROOT / 'setup-backups/game'), 'launch_options': options}
-    (ROOT / 'setup-result.json').write_text(json.dumps(result, indent=2) + '\n', encoding='utf-8')
+    apply_setup(manifest, store, version, headset, connections, steam, game, profile, saves, runtime, mode)
     print('\nSetup complete. Steam library shortcuts have been created.')
     print(f'Backups: {ROOT / "setup-backups"}')
     print('Start Steam, connect your headset and play the matching VR shortcut using an OFFLINE character.')

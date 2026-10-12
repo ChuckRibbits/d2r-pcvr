@@ -17,24 +17,30 @@ the original VR mod for Diablo II: Resurrected. See [Credits](#credits).
 and install your own legitimate copy of Diablo II: Resurrected.** The mod adds
 VR support and motion interactions on top of your existing game installation.
 
-The **v0.3.7 Windows preview** supports **Steam 3.3.93787** and experimental
+The Windows preview supports **Steam 3.3.93787** and experimental
 **Battle.net 3.3.93847** installations.
-Run **Install-Windows.cmd** and choose **Steam** or **Battle.net** before choosing
+Run Setup (or **Install-Windows.cmd** in the ZIP) and choose **Steam** or **Battle.net** before choosing
 your headset and connection. See
 [Battle.net preview installation](INSTALL-WINDOWS.md#battlenet-preview-packages).
 Battle.net has been confirmed with SteamVR; Battle.net with Virtual Desktop / VDXR
 has not yet been confirmed.
 
-**No Blizzard game assets are included in this repository or the release ZIP.**
+**No Blizzard game assets are included in this repository, installer or release ZIP.**
 The download contains the mod and licensed third-party components, not the
 game, its executable, models, textures or audio. During installation, required
 item/skill icons and potion models are read from your own installed game into
 local caches. Keep those caches local; do not include them when sharing the mod.
 
-**[Download the Windows preview](https://github.com/bearstonem/d2r-pcvr/releases/tag/v0.3.7-windows-preview)**
+**[Download the Windows preview](https://github.com/bearstonem/d2r-pcvr/releases)**
 and follow **[Install and play](INSTALL-WINDOWS.md)**.
-Download **d2r-pcvr-windows.zip** from the release's Assets section.
-Extract it to a permanent folder, then double-click **Install-Windows.cmd**.
+If the release offers **D2R-PCVR-Setup-VERSION.exe**, download and run it for
+graphical setup. It keeps its helpers in
+`%LOCALAPPDATA%\Programs\D2R PCVR`, includes a private Python runtime and
+adds removal under **Windows Settings → Apps → Installed apps → D2R PCVR**.
+Rerun Setup to update or repair while keeping calibration and video settings.
+
+For the portable option (including v0.3.7), download **d2r-pcvr-windows.zip**,
+extract it to a permanent folder, then double-click **Install-Windows.cmd**.
 The setup wizard installs the mod, lets you choose your headset and connection,
 and adds the matching Steam library shortcuts. It asks which game edition to
 use and detects its installation folder.
@@ -240,7 +246,7 @@ For the complete additions overview, download the
 
 To contribute, **fork this repository, create a branch in your fork, and open a
 pull request against `main`**. Maintainers also use branches and pull requests;
-direct pushes to `main` are blocked. Read [CONTRIBUTING.md](CONTRIBUTING.md) for
+direct pushes to `main` are blocked. Read [CONTRIBUTING.md](https://github.com/bearstonem/d2r-pcvr/blob/main/CONTRIBUTING.md) for
 the workflow, review requirements, build checks and rules on game assets.
 Use the [issue forms](https://github.com/bearstonem/d2r-pcvr/issues/new/choose)
 to report bugs or propose larger changes.

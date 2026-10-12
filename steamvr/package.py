@@ -43,6 +43,8 @@ def main():
              'steamvr/launch_windows.py']
     if args.platform == 'linux-proton':
         paths += ['INSTALL-LINUX.md', 'steamvr/launch.sh', 'steamvr/run-proton.sh', 'steamvr/session.py']
+    else:
+        paths += ['steamvr/setup_native.py']
     paths += ['steamvr/prepare_icons.py', 'steamvr/steam_assets.py', 'steamvr/game_assets.py',
               'steamvr/game_install.py', 'steamvr/casc_assets.py']
     paths += ['steamvr/prepare_potions.py', 'steamvr/potion_assets.py', 'steamvr/vendor/bitknit.py']

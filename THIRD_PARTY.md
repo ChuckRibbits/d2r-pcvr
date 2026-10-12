@@ -3,10 +3,11 @@
 D2R PCVR is an independently developed mod that adds VR support and motion
 interactions on top of the original Diablo II: Resurrected. It is not a
 standalone game. You must purchase and install your own legitimate copy of
-the game; this Windows preview requires the Steam edition.
+the game; this Windows preview supports the Steam edition and experimental
+Battle.net installations on the documented game builds.
 
 No Blizzard game executables, models, textures, audio or other game assets
-are distributed in this repository or release ZIP. Required native artwork
+are distributed in this repository, graphical installer or release ZIP. Required native artwork
 and potion models are read from the user's own installation into local
 caches, which must not be redistributed. The mod includes licensed
 open-source components and retains their notices below.
@@ -40,12 +41,20 @@ and **ReShade 6.8.0 with full add-on support** from [reshade.me](https://reshade
 These binaries are not bundled in the release ZIP. The original dependency
 licenses and terms govern them. Pinned archive checksums are in `steamvr/install.py`.
 
-The Windows setup wizard downloads the official **CPython 3.12.10 x64 embeddable
+The portable ZIP setup downloads the official **CPython 3.12.10 x64 embeddable
 package** from [python.org](https://www.python.org/downloads/release/python-31210/)
 into the extracted mod folder. It checks the archive's SHA-256 and the interpreter's
 Python Software Foundation signature. Python is not bundled in the release ZIP;
-its license is retained in the downloaded package. This private runtime does not
-replace the user's system Python. Its checksum is in `steamvr/setup_windows.ps1`.
+its license is retained in the downloaded package. The graphical Setup EXE
+bundles that same verified runtime and its license in `.runtime/python/LICENSE.txt`.
+This private runtime does not replace the user's system Python. Its checksum is
+in `steamvr/setup_windows.ps1` and `installer/stage_native_installer.py`.
+
+The graphical installer is built with [Inno Setup](https://jrsoftware.org/),
+Copyright (C) 1997–2026 Jordan Russell; portions Copyright (C) 2000–2026 Martijn
+Laan. Its unmodified installer engine retains its copyright and About-box notices.
+The build uses Inno Setup 7.1.0; its license is retained in
+[`steamvr/licenses/Inno-Setup.txt`](steamvr/licenses/Inno-Setup.txt).
 
 On Linux the installer also downloads Microsoft's
 [Windows SDK for C++ 10.0.26100.9169](https://www.nuget.org/packages/Microsoft.Windows.SDK.CPP/10.0.26100.9169)
