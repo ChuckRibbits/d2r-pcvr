@@ -29,7 +29,7 @@ You need the **Steam edition of Diablo II: Resurrected 3.3.93787** and a
    For Virtual Desktop, use the **Quest app** and install the **Windows
    Streamer** on your PC. Connect until you can see the PC desktop in the headset.
 3. Download **d2r-pcvr-windows.zip** from the
-   [release page](https://github.com/bearstonem/d2r-pcvr/releases/tag/v0.3.4-windows-preview),
+   [release page](https://github.com/bearstonem/d2r-pcvr/releases/tag/v0.3.5-windows-preview),
    under **Assets**.
 4. Extract `d2r-pcvr-preview` to a permanent folder, such as
    `C:\Mods\d2r-pcvr-preview`. Keep this folder after installation.

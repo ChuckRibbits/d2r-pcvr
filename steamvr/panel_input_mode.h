@@ -12,12 +12,27 @@ class InputModeLease {
     std::atomic<uint64_t> until{0};
 public:
     void Refresh(uint64_t now) { until.store(now+300,std::memory_order_release); }
+    void Clear() { until.store(0,std::memory_order_release); }
     bool Active(uint64_t now) const {
         const auto end=until.load(std::memory_order_acquire);
         return end&&now<end;
     }
     bool PreserveController(uint64_t now,bool controller) const {
         return controller&&Active(now);
+    }
+};
+
+// Physical bows/javelins and direct walking do not send native pad buttons.
+// Starting through the laser can therefore leave the game in KB/M mode, where
+// controller interaction targets are not updated. Request the native layout
+// on the UI thread while tracked VR gameplay owns input. This lease is separate
+// from pointer ownership: it must never block walking or route world input to UI.
+class WorldInputMode {
+    InputModeLease lease;
+public:
+    void Update(uint64_t now,bool active) { if(active)lease.Refresh(now);else lease.Clear(); }
+    bool NeedsController(uint64_t now,bool player,bool menu,bool controller) const {
+        return player&&!menu&&!controller&&lease.Active(now);
     }
 };
 

@@ -26,6 +26,25 @@ int main(){
     Check(panels::FocusUsesPointer(mode.Active(800),true),"laser hover keeps exact widget focus");
     Check(!panels::FocusUsesPointer(mode.Active(800),false),"native navigation restores cursor snapping despite queued mouse-release lease");
     Check(mode.Active(800),"switching focus does not cancel protection for queued pointer events");
+    // Reproduce a laser-started Amazon session: physical bow/javelin releases
+    // and walking send no native A, so KB/M remains active and target lookup
+    // never gives the semantic interact guard a usable item/entrance target.
+    panels::WorldInputMode world;
+    panels::InputModeLease pointerLease;
+    Check(!world.NeedsController(100,true,false,false),"desktop session never requests a world layout change");
+    for(uint64_t now=100;now<1000;now+=20) {
+        world.Update(now,true);
+        Check(world.NeedsController(now,true,false,false),"tracked physical combat can recover controller targeting without pressing attack");
+        Check(!world.NeedsController(now,true,false,true),"committed controller layout needs no further transition");
+        Check(!pointerLease.Active(now),"world ownership never blocks walking or claims UI pointer dispatch");
+    }
+    Check(!world.NeedsController(1000,false,false,false),"character loading and teardown cannot request a native world transition");
+    Check(!world.NeedsController(1000,true,true,false),"open native menus retain their input ownership");
+    Check(world.NeedsController(1279,true,false,false)&&!world.NeedsController(1280,true,false,false),"missing XR samples expire world ownership without another input frame");
+    world.Update(1300,true);world.Update(1301,false);
+    Check(!world.NeedsController(1301,true,false,false),"tracking loss, settings and inactive gameplay release ownership immediately");
+    world.Update(1400,true);
+    Check(world.NeedsController(1400,true,false,false),"returning to tracked world gameplay recovers targeting after menus or transitions");
     Check(panels::MessageHash("InputMessage")==0x4ae067c6248b6042ull&&
           panels::MessageHash("LeftMouseButtonDown")==0xbdf8daff2e44666full,"native pointer message hashes");
     for(auto command:{"MouseMove","MouseScroll","LeftMouseButtonDown","LeftMouseButtonUp","RightMouseButtonDown","RightMouseButtonUp"})

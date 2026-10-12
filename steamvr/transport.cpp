@@ -368,6 +368,7 @@ void ReleasePanelInput() {
     panelMouse.Suspend();panelScroll={};
 }
 void ClearInput() {
+    panelinput::WorldInput(false);
     menuControls.Suspend();menuNavigation.Reset();nativeMenuPad={};laserClick={};panelinput::UseController();
     quickCast.Suspend();
     bodyCalibration.Suspend();
@@ -903,6 +904,7 @@ gameplay::MeleeStyle MotionMeleeStyle() {
     }
 }
 void ResetSettingsInput() {
+    panelinput::WorldInput(false);
     motion.Cancel();motionOutput={};interactions.Reset();interactionstate::Cancel();
     meleePoses.Clear();++meleeEpoch;bowNeedsWorld=bowHasShot=false;
     skel::SetMotionBow(false,false,0);gamecmd::CancelPotion();menuTriggerGate.consumed=true;
@@ -1158,6 +1160,7 @@ void Input() {
     motionInput.quickSkill=quickCast.Resolve(motionInput.active&&motionInput.tracked[0]&&motionInput.tracked[1]&&motionInput.aimTracked&&quickFresh,
         motionInput.grip[1]>.6f,quickAvailable,quickSnapshot.session,meleeEpoch,motionInput.equipment,quickSnapshot.bindingBank,motionInput.time);
     motionOutput=motion.Step(motionInput);motionAt=GetTickCount64();
+    panelinput::WorldInput(motionInput.active&&motionInput.tracked[0]&&motionInput.tracked[1]&&motionInput.aimTracked);
     if(motionInput.quickCast&&(motionOutput.block||!motionOutput.rayValid))quickCast.Suspend();
     const uint32_t hidden=interactionOutput.stowed?3u:journalMode?2u:interactionOutput.bottleHand>=0?1u<<interactionOutput.bottleHand:0;
     skel::SetInteractionHidden(hidden);
@@ -1800,6 +1803,7 @@ void EndPair() {
 FrameTiming LastTiming() {std::lock_guard lock(mutex);return lastTiming;}
 void ConfigureGameplay(bool enabled) {
     std::lock_guard lock(mutex);
+    if(!enabled)panelinput::WorldInput(false);
     if(!enabled){skel::SetMotionBow(false,false,0);skel::SetInteractionHidden(0);interactions.Reset();interactionstate::Cancel();}
     if(motionControls.exchange(enabled)!=enabled)
         Say(enabled?"Frame gameplay: motion controls enabled (right-handed prototype)":"Frame gameplay: motion controls disabled; legacy buttons restored");

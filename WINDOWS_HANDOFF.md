@@ -1,5 +1,44 @@
 # Clean Windows installation and agent handoff — October 10, 2026
 
+**v0.3.5 Windows preview packaging:** The owner confirmed all requested world
+interactions work with the installed `570c2956...` candidate, then requested
+commit/push directly to `main` and a new release. Player guides now target
+`v0.3.5-windows-preview`, supporting Windows SteamVR and Virtual Desktop/VDXR.
+The public preview publication authorization from v0.3.4 remains in effect.
+All 34 native and 34 isolated Python installer/packaging checks pass.
+Package the confirmed installed DLL; preserve the existing player-only
+allowlist, purchase requirement, controller reference and offline-only scope.
+
+**October 11 world-interaction follow-up:** The owner reports right A no
+longer picks up items or uses shrines/cave entrances on the Amazon. Dropped
+items never had an A prompt; missing shrine/entrance prompts are part of this
+report. Logs show the semantic A press arriving but rejected for no target.
+Read-only inspection of a running offline Amazon confirms native KB/M mode,
+an empty keyboard skill table, and intact controller bindings. Direct walking
+and physical bow/javelin releases do not send native pad buttons, so laser-led
+startup can leave controller targeting inactive indefinitely.
+
+Installed candidate `570c2956bb933f9c84ce37598fe23bd42f85867450f163c2a178312557169560`
+uses the existing signature-checked native controller-layout request on the UI
+thread while fresh tracked motion gameplay owns input. A separate 300 ms lease
+expires without XR updates and clears for inactive gameplay; it never owns
+pointer dispatch or blocks walking. Menus and missing players do not request a
+world layout transition. Existing target-only A safety and physical projectile
+paths are unchanged. All 34 native checks pass, including recovery without an
+attack, menu/teardown gates, tracking expiry, and independent pointer ownership.
+Build log: `build-frame/windows/world-interact-build-test.log`. The owner
+confirmed opening/closing the tabbed menu restored interaction on the previous
+build, corroborated by the native controller-mode flag becoming active and
+targeted A appearing in the log. Installed at 16:58 PDT with settings/calibration
+and graphics preserved; saves and prior DLL backed up to
+`build-frame/backups/windows-world-interact-20261011-165817/`. Deployment record:
+`build-frame/windows/latest-world-interact-deployment.json`. A fresh SteamVR
+launch was sent. Its log records automatic controller-layout recovery at
+16:59:05 and a targeted A interaction at 16:59:40, without opening UISwitcher.
+Physical bow releases and native monster contacts also continue in this run.
+The owner then confirmed everything works in response to the fresh-launch
+pickup/chest/shrine/entrance check and requested publishing these changes.
+
 **v0.3.4 release preparation:** The owner requests these changes committed and
 pushed directly to `main`, followed by a new release. GitHub reports the
 repository as public; the owner explicitly approved publishing the preview

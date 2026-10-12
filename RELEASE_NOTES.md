@@ -1,4 +1,4 @@
-# D2R PCVR v0.3.4 — Windows preview
+# D2R PCVR v0.3.5 — Windows preview
 
 Play **Diablo II: Resurrected in VR on Windows** with
 **SteamVR or Virtual Desktop (VDXR)**. This preview is for **local offline
@@ -23,15 +23,11 @@ The game runs on your Windows PC and streams to your headset.
 
 ## What's new
 
-- Physical basic-javelin throwing: equip a javelin in **WEAPON** mode, hold
-  right trigger, make a throwing motion and release. The game handles ammunition
-  and damage; free jabs work with the trigger released.
-- Shoulder weapon swapping now uses **grip**, leaving trigger available for throwing.
-- Terrain-correct bow and javelin contacts across cave transitions.
-- Native arrow artwork aligned to the tracked draw guide and release trajectory,
-  with silent preview creation.
-- Corrected arrow and javelin model facing so their tips point along their flight.
-- Updated controller instructions in the README, ZIP and VR settings.
+- Restored **right A** for picking up items, opening chests, activating shrines
+  and entering caves after loading a character.
+- Shrine and entrance interaction prompts become available automatically during
+  VR gameplay, including with bows and javelins equipped.
+- You no longer need to open and close the tabbed menu to enable interactions.
 
 ## Features
 

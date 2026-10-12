@@ -24,7 +24,7 @@ game, its executable, models, textures or audio. During installation, required
 item/skill icons and potion models are read from your own installed game into
 local caches. Keep those caches local; do not include them when sharing the mod.
 
-**[Download the Windows preview](https://github.com/bearstonem/d2r-pcvr/releases/tag/v0.3.4-windows-preview)**
+**[Download the Windows preview](https://github.com/bearstonem/d2r-pcvr/releases/tag/v0.3.5-windows-preview)**
 and follow **[Install and play](INSTALL-WINDOWS.md)**.
 Download **d2r-pcvr-windows.zip** from the release's Assets section.
 Extract it to a permanent folder, then double-click **Install-Windows.cmd**.

@@ -293,6 +293,9 @@ void __cdecl ReadItems(const PluginContext* ctx, void* token) noexcept {
     PlayerHandle player = InvalidPlayerHandle;
     const bool havePlayer = g_inventory && g_inventory->getLocalPlayer(ctx, &player) == Inventory::Result::Success && player != InvalidPlayerHandle;
     g_player.store(havePlayer ? player : 0);
+#ifdef D2RVR_NATIVE_OPENXR
+    panelinput::MaintainWorldController(havePlayer,g_menu.load()!=0);
+#endif
     if(!havePlayer)g_menuOpenUntil=0;
     else if(g_menuOpenUntil)FinishMenuOpen(ctx,nullptr);
     if (!g_inventory || !g_items || !havePlayer) {

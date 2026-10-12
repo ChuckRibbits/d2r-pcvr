@@ -9,6 +9,7 @@
 namespace panelinput {
 namespace {
 framevr::panels::InputModeLease lease;
+framevr::panels::WorldInputMode worldInput;
 using Activity=bool(*)(void*);
 using Request=bool(*)(int);
 using Controller=bool(*)();
@@ -99,6 +100,19 @@ bool OnRequest(int method) {
 }
 void OwnPointer(){pointerFocus=true;lease.Refresh(GetTickCount64());}
 void UseController(){pointerFocus=false;}
+void WorldInput(bool active){worldInput.Update(GetTickCount64(),active);}
+void MaintainWorldController(bool player,bool menu){
+    if(!ready.load(std::memory_order_acquire))return;
+    if(worldInput.NeedsController(GetTickCount64(),player,menu,isController())) {
+        // Use the same verified native transition as the tabbed menu. A fake
+        // A press would attack when no target exists and cannot solve the
+        // circular dependency between acquiring a target and accepting A.
+        static uint64_t reportAt=0;
+        const auto now=GetTickCount64();
+        if(now>=reportAt){framevr::logging::Write("Frame input: restoring native controller layout for VR world interactions");reportAt=now+2000;}
+        originalRequest(1);
+    }
+}
 bool BlocksWorld(){return Owns();}
 bool ControllerAction(void (*action)(void*),void* data){
     if(!ready.load(std::memory_order_acquire)||!action)return false;

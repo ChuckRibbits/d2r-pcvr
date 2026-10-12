@@ -1,0 +1,33 @@
+{
+  "release_tag": "v0.3.5-windows-preview",
+  "source_base": "3b914a32fc360ef211823ad9aeb84c1b487222a3",
+  "plugin_sha256": "570c2956bb933f9c84ce37598fe23bd42f85867450f163c2a178312557169560",
+  "native_tests_passed": 34,
+  "python_tests_passed": 34,
+  "cause": "Laser-led startup can leave the game in KB/M mode. Physical bows/javelins and direct walking do not send native pad buttons to activate controller targeting, so target-only semantic A is rejected indefinitely.",
+  "observations": [
+    "Semantic A presses arrived but were rejected for no interaction target",
+    "Read-only inspection found native controller mode inactive, empty keyboard bindings and intact controller bindings on the offline Amazon",
+    "Owner confirmed opening and closing the tabbed menu restores interactions in the preceding build",
+    "Fresh candidate launch requests native controller layout at 16:59:05 PDT before opening UISwitcher",
+    "Targeted A interactions appear at 16:59:40, 17:00:04, 17:00:16 and 17:00:27 PDT without opening UISwitcher",
+    "Physical bow releases and native monster contacts continue in the same run"
+  ],
+  "coverage": [
+    "Recover controller targeting without sending an attack or changing saved bindings",
+    "Only fresh tracked motion gameplay can request a world layout transition",
+    "Missing player and open menu gates",
+    "Ownership expires after 300 ms without XR samples and clears immediately when inactive",
+    "World ownership cannot claim pointer dispatch or block walking",
+    "Returning from menus, tracking loss and level transitions permits recovery"
+  ],
+  "local_deployment": {
+    "installed_at": "2026-10-11T16:58:17-07:00",
+    "previous_sha256": "5c5121dddad16a8adf3a39e880683fc915d3e93dab82c5eaa2204a6142a28237",
+    "backup": "build-frame/backups/windows-world-interact-20261011-165817",
+    "ini_calibration_and_graphics_preserved": true,
+    "game_was_closed": true
+  },
+  "headset_validation": "Owner confirmed everything works after being asked to verify pickups, chests, shrines and cave entrances on the offline Amazon without opening the tabbed menu first.",
+  "scope": "Windows SteamVR headset session; no new VDXR or Quest 2 headset check for this correction. Existing Windows VDXR support is retained."
+}
