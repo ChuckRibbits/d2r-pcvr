@@ -74,18 +74,24 @@ def launch_environment(arguments):
     # The explicit launch flag overrides the normal SteamVR launch-option
     # manifest. Stock Play ignores it, and a missing VDXR install fails closed.
     environment = os.environ.copy()
+    # Inherited overlay routing can crash D2RLoader's image bootstrap before
+    # D2RCore/plugins load, even with Steam's overlay UI off. Drop that VR-only
+    # hint; retain the app/game IDs used by native Steam ownership checks.
+    for key in list(environment):
+        if key.lower() == 'steamoverlaygameid':
+            del environment[key]
     if battlenet_game(arguments) is not None:
         # Non-Steam shortcuts inherit Steam IDs too. They must not select Steam
         # ownership/authentication for a legitimately owned Battle.net copy.
         for key in list(environment):
-            if key.lower() in ('steamappid', 'steamgameid', 'steamoverlaygameid'):
+            if key.lower() in ('steamappid', 'steamgameid'):
                 del environment[key]
     if VDXR_OPTION in arguments:
         runtime = vdxr_manifest()
     elif runtimes:
         runtime = Path(runtimes[0])
     else:
-        return environment if battlenet_game(arguments) is not None else None
+        return environment
     if not runtime.is_file():
         raise SystemExit(f'OpenXR runtime manifest was not found: {runtime}')
     environment['XR_RUNTIME_JSON'] = str(runtime.resolve())
