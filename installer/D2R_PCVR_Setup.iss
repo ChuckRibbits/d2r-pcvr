@@ -121,7 +121,7 @@ var
 begin
   Arguments := '--probe ' + Q(ProbeFile);
   if Steam <> '' then begin
-    Arguments := Arguments + ' --steam ' + Q(Steam) + ' --managed-root ' + Q(ExpandConstant('{app}'));
+    Arguments := Arguments + ' --steam ' + Q(Steam) + ' --managed-root ' + Q(WizardDirValue);
     if PathsPage.Values[1] <> '' then Arguments := Arguments + ' --game ' + Q(PathsPage.Values[1]);
   end;
   Result := RunBackend(PayloadRoot, Arguments);
@@ -210,6 +210,7 @@ var
   Edition, Key: String;
 begin
   Result := True;
+  if ExpandConstant('{param:CONFIG|}') <> '' then Exit;
   if CurPageID = EditionPage.ID then begin
     Edition := 'steam';
     Key := 'steam_game';
@@ -284,7 +285,7 @@ begin
     'Saved Games: ' + PathsPage.Values[2] + NewLine +
     'Steam: ' + PathsPage.Values[0] + NewLine +
     'Steam account: ' + AccountPage.CheckListBox.Items[AccountPage.SelectedValueIndex] + NewLine +
-    'Helpers and backups: ' + ExpandConstant('{app}') + NewLine + NewLine +
+    'Helpers and backups: ' + WizardDirValue + NewLine + NewLine +
     'Save and exit D2R, then fully exit Steam before installing. Use an offline character in VR.';
 end;
 
