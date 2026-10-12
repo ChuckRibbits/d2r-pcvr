@@ -67,6 +67,7 @@ run the relevant Python fixture tests, for example:
 ```powershell
 .\deps\python\python.exe -m unittest discover -s steamvr -p setup_windows_test.py
 .\deps\python\python.exe -m unittest discover -s steamvr -p install_test.py
+.\deps\python\python.exe -m unittest discover -s steamvr -p launch_windows_test.py
 .\deps\python\python.exe -m unittest discover -s steamvr -p battlenet_test.py
 .\deps\python\python.exe -m unittest discover -s steamvr -p uninstall_windows_test.py
 ```
