@@ -1,0 +1,67 @@
+name: Bug report
+description: Report a problem with D2R PCVR installation or offline VR gameplay.
+title: "[Bug]: "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Check existing issues first. Please confirm you are using **D2R PCVR**
+        from bearstonem/d2r-pcvr, and report the exact version below.
+        Do not attach game assets, saves, memory dumps, credentials or account details.
+  - type: input
+    id: versions
+    attributes:
+      label: Mod version and game build
+      placeholder: "Example: D2R PCVR v0.3.7; D2R 3.3.93787"
+    validations:
+      required: true
+  - type: dropdown
+    id: edition
+    attributes:
+      label: Game edition
+      options:
+        - Steam
+        - Battle.net
+    validations:
+      required: true
+  - type: input
+    id: headset
+    attributes:
+      label: Headset and connection/runtime
+      placeholder: "Example: Steam Frame with SteamVR; Quest 3 with Virtual Desktop/VDXR"
+    validations:
+      required: true
+  - type: input
+    id: system
+    attributes:
+      label: Windows version and GPU
+      placeholder: "Include the GPU driver version if the issue involves rendering."
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      description: Include character class, equipped weapons/selected skills, area and transitions if relevant.
+      placeholder: |
+        1. Load an offline character...
+        2. ...
+    validations:
+      required: true
+  - type: textarea
+    id: behavior
+    attributes:
+      label: Expected and actual behavior
+      description: For visual problems, say whether they affect one eye, both eyes, the desktop or menus only.
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Logs, screenshots or recording
+      description: Share relevant excerpts or a short recording. Remove private information first; do not attach memory dumps or game files.
+  - type: checkboxes
+    id: offline
+    attributes:
+      label: Offline testing
+      options:
+        - label: I reproduced this with an offline local character, or it is an installation/startup issue before entering a game.
+          required: true

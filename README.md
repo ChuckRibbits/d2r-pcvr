@@ -236,6 +236,15 @@ For the complete additions overview, download the
 [PDF](https://github.com/bearstonem/d2r-pcvr/blob/main/docs/D2R-PCVR-Additions.pdf) or
 [editable Word document](https://github.com/bearstonem/d2r-pcvr/blob/main/docs/D2R-PCVR-Additions.docx).
 
+## Contributing
+
+To contribute, **fork this repository, create a branch in your fork, and open a
+pull request against `main`**. Maintainers also use branches and pull requests;
+direct pushes to `main` are blocked. Read [CONTRIBUTING.md](CONTRIBUTING.md) for
+the workflow, review requirements, build checks and rules on game assets.
+Use the [issue forms](https://github.com/bearstonem/d2r-pcvr/issues/new/choose)
+to report bugs or propose larger changes.
+
 ## Credits
 
 D2R PCVR is built on **[D2R VR](https://github.com/natpoh/diablo2-vr-port) by
