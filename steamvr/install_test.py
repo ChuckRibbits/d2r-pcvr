@@ -184,6 +184,34 @@ class InstallationTests(unittest.TestCase):
             launch_windows.launch_environment(['--frame-vr',
                 launch_windows.RUNTIME_OPTION + 'missing-runtime.json'])
 
+    def test_windows_vr_skips_early_overlay_routing_but_preserves_steam_ownership(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            runtime = Path(temporary) / 'steamxr_win64.json'
+            runtime.write_text('{}')
+            inherited = {'SteamAppId': '2536520', 'SteamGameId': '2536520',
+                         'STEAMOVERLAYGAMEID': '2536520', 'STEAMNOOVERLAYUI': '1',
+                         'XR_RUNTIME_JSON': 'previous-runtime', 'D2R_FIXTURE': 'keep'}
+            with patch.dict(os.environ, inherited, clear=True), \
+                    patch.object(launch_windows, 'vdxr_manifest', return_value=runtime):
+                before = dict(os.environ)
+                modes = [[], [launch_windows.RUNTIME_OPTION + str(runtime)],
+                         [launch_windows.VDXR_OPTION]]
+                for mode in modes:
+                    with self.subTest(mode=mode):
+                        environment = {k.lower(): v for k, v in
+                                       launch_windows.launch_environment(['--frame-vr'] + mode).items()}
+                        self.assertNotIn('steamoverlaygameid', environment)
+                        self.assertEqual(environment['steamappid'], '2536520')
+                        self.assertEqual(environment['steamgameid'], '2536520')
+                        self.assertEqual(environment['steamnooverlayui'], '1')
+                        self.assertEqual(environment['d2r_fixture'], 'keep')
+                        self.assertEqual(environment['xr_runtime_json'],
+                                         str(runtime.resolve()) if mode else 'previous-runtime')
+                        self.assertEqual(dict(os.environ), before)
+                self.assertIsNone(launch_windows.launch_environment(
+                    ['D2R.exe', launch_windows.RUNTIME_OPTION + str(runtime)]))
+                self.assertEqual(dict(os.environ), before)
+
     def test_explicit_vdxr_overrides_configured_steamvr_without_changing_stock_play(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
