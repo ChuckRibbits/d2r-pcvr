@@ -1,6 +1,32 @@
 # Clean Windows installation and agent handoff — October 10, 2026
 
-**October 12 motion-skill candidate / Smite activation fix:** Draft
+**October 12 spell-menu minimap candidate:** The minimap has moved from the
+wrist to a larger **MAP** page, selected from the spell menu's bottom tabs.
+Hold left secondary, point with the right laser and click **MAP**; **SPELLS**
+returns to skills without changing the selected skill. Releasing the menu
+button closes it. Wrist health, mana, level and XP remain. The tab still uses
+the native corner minimap and restores automap visibility through the existing
+ownership lease. Hidden spell wedges/basic attack cannot be clicked behind it.
+
+Source commit `8de8f59`, on the same draft
+[PR #10](https://github.com/bearstonem/d2r-pcvr/pull/10). All **40 native checks
+pass**, including map page/cancellation/paint-context guards and the new atlas
+preview. Native-art Map/wheel/editor previews were inspected; wrist isolation
+and asynchronous painting checks also passed. This map candidate has not yet
+been run in game or verified in a headset; verify both-eye map placement,
+selected-skill preservation, return/close, automap restoration and cancellation.
+
+Installed at 14:58 PDT in both Steam 3.3.93787 and experimental Battle.net
+3.3.93847, superseding the Smite-fix DLL described below. Both hashes match
+`b9953905488ce1f69be3d7763aae50dbb887db717ec918bf054f155ac70d1168`.
+Settings, saves and original executables were verified unchanged, with previous
+DLLs/settings and shared saves backed up. Receipt:
+`build-frame/windows/latest-spell-menu-map-deployment.json`.
+Backup: `build-frame/backups/windows-spell-menu-map-20261012-145848-385/`.
+The earlier owner-confirmed shield-bash test remains recorded below; it was
+performed before this map change. Steam Frame shortcut repair remains pending.
+
+**Earlier October 12 motion-skill candidate / Smite activation fix:** Draft
 [PR #10](https://github.com/bearstonem/d2r-pcvr/pull/10), branch
 `feat/motion-weapon-skills`. The owner confirmed the wheel ACTIVE marker and
 Smite icon, but shield swings/thrusts did not register while button casts worked.
@@ -9,9 +35,9 @@ discovery now uses an exact bounded entry in the game PE exception directory,
 retaining the audited dispatch-table and decoded target-call checks. Failed
 activation shows **TRIGGER ONLY**, with separate shield readiness/outcome logs.
 
-All 39 native checks pass. The corrected DLL (SHA-256
+At that stage all 39 native checks passed. The corrected DLL (SHA-256
 `35d938542fe95c71046b68348fe51c8f48bab3666acf63b91940a6edff666881`)
-is installed in both existing Steam 3.3.93787 and experimental Battle.net
+was installed in both existing Steam 3.3.93787 and experimental Battle.net
 3.3.93847 VR copies. Live main-menu checks logged `contact casting ready` at
 00:32:34 and 00:34:10 PDT respectively; no character was entered, and both games
 closed normally. Previous DLLs and shared saves are backed up; calibration,
