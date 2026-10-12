@@ -85,6 +85,8 @@ std::atomic<float> g_uiScale{1.0f};
 std::atomic<bool> g_menu{false};   // the main menu, or a panel (inventory, trade...) open: nothing is hidden then   // the game's interface size, 0.5..1
 std::atomic<uint64_t> g_layer{0};   // the interface's resource, learnt from its clear
 std::atomic<int> g_mapMode{0};     // [hud] map: 0 in the picture, 1 in its own texture
+std::atomic<bool> g_wristMap{false};
+bool mapCaptured=false;
 std::atomic<int> g_mapCorner{0};   // [hud] map_corner: 0 either top corner, 1 the left one, 2 the right one
 std::atomic<bool> g_classic{false};   // the view is from above or behind and the pieces stay in the picture
 std::atomic<float> g_barZoom{1.0f}, g_mapZoom{1.0f};   // [hud] bar_zoom, map_zoom: their size in the picture then
@@ -99,7 +101,7 @@ bool MapOffset() { return std::abs(g_mapOffX.load()) > 0.0005f || std::abs(g_map
 bool MapZoomed() { return std::abs(g_mapZoom.load() - 1.0f) > 0.005f || g_mapMoved.load() || MapOffset(); }
 // What is taken out of the picture now: for FlatVR in first person, to be drawn back at another size otherwise.
 int HideNow() { return g_classic.load() ? (g_picReady.load() && BarZoomed() ? 1 : 0) : g_hide.load(); }
-int MapNow() { return g_classic.load() ? (g_picReady.load() && MapZoomed() ? 1 : 0) : g_mapMode.load(); }
+int MapNow() { return g_wristMap.load()?1:g_classic.load() ? (g_picReady.load() && MapZoomed() ? 1 : 0) : g_mapMode.load(); }
 // MapNow at this frame's layer clear: the map goes to our target, or not, for the whole frame.
 std::atomic<int> g_frameMap{0};
 // From above in stereo: what is left of the interface (labels over monsters,
@@ -379,6 +381,7 @@ void Publish(command_list* cl, resource layer, uint32_t w, uint32_t h, int hide)
         mapBox = Clamped((float)box.left, (float)box.top, (float)box.right, (float)box.bottom, w, h);
         map = CopyOut(cl, g_mapTex, mapBox, kMap);
     }
+    mapCaptured=map&&g_wristMap.load()&&!menu;
     // From above and behind: back into the picture, grown from the toolbar's
     // bottom middle and from the map's own corner (left or right, by its middle).
     g_pic.on[kBar] = classic && bar && g_share[kBar].srv.handle;
@@ -535,6 +538,14 @@ uint64_t UiTexture(uint32_t& width,uint32_t& height,int32_t crop[4]) {
     std::lock_guard lock(g_lock);
     if(!uiActive.load()||!uiCaptured||!g_lab.tex.handle)return 0;
     width=g_lab.w;height=g_lab.h;std::copy_n(uiCrop,4,crop);return g_lab.tex.handle;
+}
+void WristMapCapture(bool active) {g_wristMap.store(active);}
+void MapFrame() {std::lock_guard lock(g_lock);mapCaptured=false;}
+uint64_t MapTexture(uint32_t& width,uint32_t& height) {
+    std::lock_guard lock(g_lock);
+    const auto& s=g_share[kMap];
+    if(!g_wristMap.load()||g_menu.load()||!mapCaptured||!s.tex.handle)return 0;
+    width=s.w;height=s.h;return s.tex.handle;
 }
 void SetHide(int mode) { g_hide.store(mode); }
 void SetMenuOpen(bool open) { g_menu.store(open); }

@@ -11,6 +11,6 @@ class UiBlit {
     Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> sourceHeap,targetHeap;
 public:
     bool Initialize(ID3D12Device* device,void (*log)(const char*));
-    bool Render(ID3D12Device*,ID3D12GraphicsCommandList*,ID3D12Resource* source,ID3D12Resource* target,bool blackBackground=false);
+    bool Render(ID3D12Device*,ID3D12GraphicsCommandList*,ID3D12Resource* source,ID3D12Resource* target,bool blackBackground=false,bool squareMap=false);
 };
 }

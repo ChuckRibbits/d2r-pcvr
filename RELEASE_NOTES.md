@@ -1,4 +1,4 @@
-# D2R PCVR v0.3.5 — Windows preview
+# D2R PCVR v0.3.6 — Windows preview
 
 Play **Diablo II: Resurrected in VR on Windows** with
 **SteamVR or Virtual Desktop (VDXR)**. This preview is for **local offline
@@ -23,11 +23,18 @@ The game runs on your Windows PC and streams to your headset.
 
 ## What's new
 
-- Restored **right A** for picking up items, opening chests, activating shrines
-  and entering caves after loading a character.
-- Shrine and entrance interaction prompts become available automatically during
-  VR gameplay, including with bows and javelins equipped.
-- You no longer need to open and close the tabbed menu to enable interactions.
+- **Wrist experience bar:** see your character's level and progress toward the
+  next level beneath the health/mana orbs.
+- **Square wrist map:** raise your left wrist to see the game's explored map
+  and markers above the orbs. The larger map is easier to read, with a sharp
+  image and dark background.
+- The wrist opens the automap when needed and restores its previous visibility
+  when you lower your hand. Left stick click still toggles the normal map.
+
+Use the game's **left or right corner minimap** layout for wrist-map display.
+Full-screen automap is available through the game's normal map controls.
+
+**[Watch the wrist XP and map demo (12 seconds)](https://github.com/bearstonem/d2r-pcvr/releases/download/v0.3.6-windows-preview/d2r-pcvr-wrist-hud-demo.mp4).**
 
 ## Features
 
@@ -39,7 +46,9 @@ The game runs on your Windows PC and streams to your headset.
   **Left Grip + Frame Left B / Quest Left Y → Calibrate body**.
 - Weapon-set swapping by reaching your right hand over either shoulder and
   pressing its grip; the swap hand is adjustable in VR settings.
-- Physical belt potions and wrist health/mana indicators.
+- Physical belt potions and wrist health, mana, level and experience indicators.
+- Restored item pickup, chests, shrines and cave-entrance interactions from
+  the previous preview.
 - Inventory, skills, conversations and Journal through the tabbed game menu:
   **Frame Left A / Quest Left X**.
 - Native menu buttons and sticks alongside laser selection and inventory dragging.

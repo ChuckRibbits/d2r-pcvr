@@ -274,7 +274,24 @@ std::vector<uint8_t> Paint(const Snapshot& s,const Output& o,int selection) {
       } else text("Status unavailable",{530,800,1006,885});
     }
     const char* status=o.result==Result::Pending?"Waiting for game...":o.result==Result::Applied?"Confirmed":o.result==Result::Refused?"Action not available":o.stowed?"Weapons stowed":"";
-    text(status,{530,989,1006,1022});
+    if(*status)text(status,{530,768,1006,798});
+    // Keep XP beneath the orb labels, sharing their wrist atlas and repaint
+    // cadence. It never needs a separate XR layer or a per-frame CPU upload.
+    fill({554,982,982,1022},RGB(99,77,45));
+    fill({556,984,980,1020},RGB(19,17,14));
+    fill({564,1007,972,1015},RGB(56,48,35));
+    const auto& xp=s.experience;
+    if(xp.Valid())fill({564,1007,564+LONG(408*xp.Progress()),1015},RGB(212,175,93));
+    for(int i=1;i<10;++i)fill({564+i*408/10,1007,565+i*408/10,1015},RGB(99,77,45));
+    HFONT xpFont=CreateFontW(17,0,0,0,FW_BOLD,FALSE,FALSE,FALSE,DEFAULT_CHARSET,
+        OUT_DEFAULT_PRECIS,CLIP_DEFAULT_PRECIS,ANTIALIASED_QUALITY,DEFAULT_PITCH,L"Georgia");
+    const auto prior=SelectObject(dc,xpFont);SetTextColor(dc,RGB(235,219,182));
+    char xpLabel[80];
+    if(xp.Maximum())std::snprintf(xpLabel,sizeof xpLabel,"LEVEL %u  /  MAX LEVEL",xp.level);
+    else if(xp.Valid())std::snprintf(xpLabel,sizeof xpLabel,"LEVEL %u  /  XP %.1f%%",xp.level,xp.Progress()*100);
+    else std::snprintf(xpLabel,sizeof xpLabel,"XP --");
+    RECT xpRect{564,985,972,1006};DrawTextA(dc,xpLabel,-1,&xpRect,DT_CENTER|DT_VCENTER|DT_SINGLELINE|DT_NOPREFIX);
+    SelectObject(dc,prior);DeleteObject(xpFont);
     GdiFlush();std::vector<uint8_t> rgba(size*size*4);const auto* b=static_cast<const uint8_t*>(bits);
     for(int i=0;i<size*size;++i){
         rgba[4*i]=b[4*i+2];rgba[4*i+1]=b[4*i+1];rgba[4*i+2]=b[4*i];

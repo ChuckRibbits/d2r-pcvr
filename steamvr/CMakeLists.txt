@@ -74,6 +74,7 @@ add_executable(world-coordinates-test world_coordinates_test.cpp)
 add_executable(bow-flight-test bow_flight_test.cpp)
 
 add_executable(interaction-test interaction_test.cpp)
+add_executable(wrist-hud-test wrist_hud_test.cpp)
 add_executable(controller-bindings-test controller_bindings_test.cpp)
 target_link_libraries(interaction-test PRIVATE framevr-runtime)
 
@@ -109,7 +110,7 @@ foreach(test_target IN ITEMS memory-test hook-metrics-test latest-worker-test
     gameplay-test quick-cast-test spell-aim-test bow-pose-test body-tracking-test body-calibration-test shoulder-swap-test
     portal-billboard-test composition-layers-test projectile-rules-test
     combat-rules-test logging-test melee-contact-test world-coordinates-test bow-flight-test
-    interaction-test controller-bindings-test journal-test native-panels-test
+    interaction-test wrist-hud-test controller-bindings-test journal-test native-panels-test
     vr-settings-test vr-settings-store-test math-test deferred-draw-test gaze-test window-focus-test callback-ticket-test local-player-test)
   # These fixtures use assert for their checks, including in Release builds.
   if(MSVC)
@@ -123,6 +124,8 @@ set_tests_properties(window-focus-test PROPERTIES TIMEOUT 10)
 add_test(NAME ui-blit-typed COMMAND ui-blit-test)
 add_test(NAME ui-blit-typeless COMMAND ui-blit-test --typeless)
 add_test(NAME ui-blit-typeless-black COMMAND ui-blit-test black --typeless)
+add_test(NAME ui-blit-square-map COMMAND ui-blit-test --square-map --typeless)
+add_test(NAME ui-blit-portrait-map COMMAND ui-blit-test --square-map --portrait)
 set_tests_properties(ui-blit-typed ui-blit-typeless ui-blit-typeless-black PROPERTIES TIMEOUT 15)
 add_test(NAME swapchain-color-test COMMAND swapchain-color-test)
 set_tests_properties(swapchain-color-test PROPERTIES TIMEOUT 40)

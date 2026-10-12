@@ -37,13 +37,19 @@ use two tracked VR controllers; an Xbox controller is not required.
 | Grab a belt potion | Reach to a bottle and hold that hand's grip |
 | Drink | Keep grip held, bring the bottle opening to your mouth and tip it; release an unused bottle to return it |
 | Quick potion | Wheel → **EQUIPMENT / BELT** → select a potion with right trigger |
-| Wrist health / mana | Look at the back of your left wrist, like checking a watch |
+| Wrist health / mana / XP / map | Look at the back of your left wrist, like checking a watch |
 | Map | Left stick click |
 | Reset height | Left Grip + left stick click, during gameplay |
 | VR settings | Left Grip + left secondary; also **VR SETTINGS** in the wheel |
 | Calibrate height / arm span | VR settings → **Calibrate body**; stand straight in a T-pose, release both triggers, then hold both together until **Saved** |
 | Recenter | PC F11 |
 | Save stereo images | PC F8 |
+
+The wrist XP bar shows your level and progress toward the next level. Use the
+game's left or right corner minimap layout for the square wrist map. It opens
+automatically while you check your wrist, then restores the map's previous
+visibility when you lower your hand. Left stick click still toggles the normal
+map; the wrist map uses the same explored areas and markers.
 
 Free swings pause during casting, menus and potion handling. Selecting a wheel
 skill changes the right-trigger action; its quick-cast binding stays available.

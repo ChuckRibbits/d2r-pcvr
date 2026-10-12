@@ -32,6 +32,7 @@ int main(int argc,char** argv) {
     if(argc>3){wchar_t path[32768]{};MultiByteToWideChar(CP_UTF8,0,argv[3],-1,path,32768);icons::Directory(path);}
     Snapshot s;s.session=1;s.equipmentKnown=s.beltKnown=s.vitalsKnown=true;s.activeSet=1;
     s.health=74;s.maxHealth=100;s.mana=39;s.maxMana=80;
+    s.experience={7,99,15450,14175,22680,true};
     const char* names[]={"Fire Bolt","Raise Skeleton","Corpse Explosion","Teleport","Frozen Armor","Bone Spear","Amplify Damage","Unassigned"};
     const int ids[]={36,70,74,54,40,84,66,-1};
     for(int i=0;i<8;++i){s.skills[i].id=ids[i];s.skills[i].known=true;s.skills[i].available=i!=7;std::snprintf(s.skills[i].name,64,"%s",names[i]);}
@@ -101,6 +102,9 @@ int main(int argc,char** argv) {
         for(int row=0;row<4;++row) {
             s.health=values[row];s.mana=row==1?39:values[row]*.8f;
             s.vitalsKnown=row!=3;
+            s.experience=row==0?framevr::wrist::Experience{1,99,0,0,500,true}:
+                row==1?framevr::wrist::Experience{2,99,1142,500,1500,true}:
+                row==2?framevr::wrist::Experience{99,99,3520485254u,3520485254u,3837739017u,true}:framevr::wrist::Experience{};
             const auto atlas=Paint(s,o,2);if(atlas.size()!=pixels.size())return 10;
             for(int y=0;y<256;++y)std::memcpy(&gallery[((row*256+y)*512)*4],&atlas[((y+768)*1024+512)*4],512*4);
             // Vitals updates must leave every other interactive tile unchanged.

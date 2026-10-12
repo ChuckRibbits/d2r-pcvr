@@ -2,6 +2,7 @@
 #include "shoulder_swap.h"
 #include "frame_math.h"
 #include "potion_pose.h"
+#include "wrist_hud.h"
 #include <array>
 #include <cstdint>
 #include <cstring>
@@ -98,6 +99,7 @@ struct Snapshot {
     bool bindingsEditable=false;
     float health=0,maxHealth=0,mana=0,maxMana=0;
     bool vitalsKnown=false;
+    wrist::Experience experience;
 };
 inline bool Fresh(const Snapshot& s,uint64_t session,uint64_t now) {
     return session&&s.session==session&&now>=s.at&&now-s.at<=650;

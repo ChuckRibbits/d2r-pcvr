@@ -1,0 +1,37 @@
+{
+  "date": "2026-10-11",
+  "feature": "Wrist level/experience bar and square native automap",
+  "source_base": "de1d2772070a8146a928ba27f830bf98cd6fbc62",
+  "installed_sha256": "2b114b4e89b1743a7b51406dbe3b3d04cdccde2d672bc94001cc354709aa2a50",
+  "experience": {
+    "source": "Signature-checked local UI player stat accessor plus SDK Experience table in the UI-thread snapshot",
+    "stat_ids": {"level": 12, "experience": 13},
+    "table_layout": "One unsigned XP threshold per class, followed by ExpRatio; MaxLvl row at index 0; character-level start at row[level]",
+    "local_asset_verification": "Installed game 3.3.93787 Experience.bin: 101 rows, 36 bytes per row, eight class columns; ItemStatCost confirms IDs 12/13",
+    "display": "Level, percentage toward next level and segmented progress bar beneath the life/mana labels; explicit unavailable and maximum-level states",
+    "refresh": "Existing snapshot revision and throttled background atlas painting"
+  },
+  "map": {
+    "source": "Existing native HUD corner-map isolation and GPU texture copy; no world exploration reconstruction or CPU pixel readback",
+    "required_layout": "Native left or right corner minimap; full-screen automap capture unsupported",
+    "image": "512x512 OpenXR float swapchain, aspect-preserving fit, bilinear filtering, SDR color conversion, opaque dark backing and border",
+    "placement": "24 cm square, doubled from 12 cm at the owner's request; center 19 cm above the wrist life/mana/XP panel, retaining a 1 cm gap; same image submitted to both eyes",
+    "lifetime": "New native capture required each XR pair; no reuse of the previous area's image",
+    "visibility": "Raised tracked left wrist with fresh session snapshot, no wheel or native menu",
+    "native_panel": "UI-thread lease temporarily opens AutoMap and restores an initially closed map; preserves initially open maps, releases for menus/session changes/expired XR updates"
+  },
+  "validation": {
+    "native_checks_passed": 37,
+    "fixtures_added": ["wrist-hud-test", "ui-blit-square-map", "ui-blit-portrait-map"],
+    "wrist_artwork_preview": "Passed and visually inspected at build-frame/windows/wrist-hud-preview.png",
+    "build_receipt": "build-frame/windows/wrist-hud-large-build-test.log",
+    "deployment_receipt": "build-frame/windows/latest-wrist-hud-deployment.json",
+    "backup": "build-frame/backups/windows-wrist-hud-large-20261011-195521/",
+    "settings_preserved": true,
+    "steamvr_startup": "D3D12 OpenXR session ready; SteamVR launch reached the native main menu",
+    "runtime_observed": "First build at 19:53:37: level 5, XP 8778, thresholds 7875/14175, 14.3%; fresh session 1 snapshot, wrist presented, map_copied=1 and map_layer=1; native map open/close commands succeed",
+    "headset_gameplay": "Owner marked the enlarged wrist HUD build verified and requested main commit/push plus a new release; supplied a 12-second feature video",
+    "installer_checks_passed": 34,
+    "feature_video": "https://github.com/bearstonem/d2r-pcvr/releases/download/v0.3.6-windows-preview/d2r-pcvr-wrist-hud-demo.mp4"
+  }
+}

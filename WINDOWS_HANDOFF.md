@@ -1,5 +1,44 @@
 # Clean Windows installation and agent handoff — October 10, 2026
 
+**October 11 wrist HUD addition:** Built and installed candidate
+`2b114b4e89b1743a7b51406dbe3b3d04cdccde2d672bc94001cc354709aa2a50`.
+The wrist atlas now includes level and XP progress below the life/mana orbs.
+Unsigned cumulative XP and class-specific level thresholds come from the
+verified local-player stat accessor and the SDK's live Experience table, read
+on the UI thread. Missing, inconsistent or stale state displays unavailable.
+A separate 512×512 GPU conversion fits the entire native corner minimap in a
+square above the orbs, with linear filtering, correct SDR color and an opaque
+dark backing. One OpenXR quad supplies the same map to both eyes.
+The owner requested twice the size: the square is now 24 cm per side, with
+its bottom edge still 1 cm above the wrist orbs (center offset 19 cm upward).
+
+Looking at the wrist renews a short lease. The UI callback temporarily opens
+AutoMap when necessary and restores a map it opened after the wrist lowers,
+menus open, tracking stops or the session ends. An already-open map remains
+open. Map redirection and GPU conversion are demand-driven; XP shares the
+existing background atlas painter. Each XR pair requires a new native map
+capture, so an old area's last texture is not reused. Native map capture
+requires the game's left or right corner minimap layout (this PC uses mode 2).
+Full-screen automap capture is not supported. Player guides explain this.
+
+All 37 native checks pass, including unsigned XP / level-up / max-level /
+unknown-state cases, map ownership/restoration/session resets, and real D3D12
+square/portrait map conversion. The wrist artwork preview also passes and was
+visually inspected. Build receipt: `build-frame/windows/wrist-hud-large-build-test.log`.
+Deployment receipt: `build-frame/windows/latest-wrist-hud-deployment.json`.
+Prior DLL, INI and saves: `build-frame/backups/windows-wrist-hud-large-20261011-195521/`.
+INI, calibration and graphics settings were preserved. SteamVR launch was
+requested. The first wrist build's live logs confirm level 5, XP 8778,
+thresholds 7875–14175 (14.3%), and successful map copy/layer submission while
+the wrist is raised. Headset confirmation of the larger map and cave
+transitions was pending at deployment. The owner subsequently marked this
+build verified and requested commit/push directly to main and a new release.
+Player guides now target v0.3.6-windows-preview. The supplied 12-second
+Framecorder gameplay video is linked from the README and release notes and
+will be attached separately from the mod ZIP in H.264/AAC format. All 37
+native and 34 isolated Python installer checks pass; package the same verified
+DLL and preserve the player-only package allowlist and offline-only scope.
+
 **v0.3.5 Windows preview packaging:** The owner confirmed all requested world
 interactions work with the installed `570c2956...` candidate, then requested
 commit/push directly to `main` and a new release. Player guides now target

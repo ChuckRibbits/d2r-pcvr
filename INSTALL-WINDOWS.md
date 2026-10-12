@@ -29,7 +29,7 @@ You need the **Steam edition of Diablo II: Resurrected 3.3.93787** and a
    For Virtual Desktop, use the **Quest app** and install the **Windows
    Streamer** on your PC. Connect until you can see the PC desktop in the headset.
 3. Download **d2r-pcvr-windows.zip** from the
-   [release page](https://github.com/bearstonem/d2r-pcvr/releases/tag/v0.3.5-windows-preview),
+   [release page](https://github.com/bearstonem/d2r-pcvr/releases/tag/v0.3.6-windows-preview),
    under **Assets**.
 4. Extract `d2r-pcvr-preview` to a permanent folder, such as
    `C:\Mods\d2r-pcvr-preview`. Keep this folder after installation.
@@ -225,11 +225,15 @@ complete your headset's floor/room setup and reopen calibration.
 | Grab a belt potion | Reach to a bottle and hold grip with either hand |
 | Drink | Keep grip held, bring the bottle opening to your mouth and tip it; release an unused bottle to return it |
 | Quick potion | Wheel → **EQUIPMENT / BELT** → select a potion with right trigger |
-| Wrist health / mana | Look at the back of your left wrist, like checking a watch |
+| Wrist health / mana / XP / map | Look at the back of your left wrist, like checking a watch |
 | Map / height reset | Left stick click / Left Grip + left stick click |
 | Recenter | PC F11 |
 
 Keep the D2R window focused on the PC so menu clicks work.
+Choose the game's left or right corner minimap layout for the square wrist
+map. Check your left wrist to see the map, health, mana, level and XP progress.
+The wrist temporarily opens the automap when needed and restores its previous
+visibility afterward. Left stick click still toggles the normal map.
 For the full Quest and Steam Frame mappings, including all eight quick-cast
 shortcuts and the game's A/B/X/Y/LB/RB/LT/RT menu prompts, see
 **[Controller reference](CONTROLS.md)**. Use a stick or face button for native

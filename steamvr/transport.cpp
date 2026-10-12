@@ -54,6 +54,7 @@
 
 namespace gamestate {uint32_t WeaponType();uint32_t HandsKey();uint32_t WeaponSet();uint32_t WeaponClass();uint32_t TwoHanded();uint64_t LocalPlayer();uint32_t MenuEpoch();}
 namespace gamecmd {void RequestPotion(int slot);void CancelPotion();}
+namespace gamestate {void WristMap(bool wanted);}
 
 namespace framevr {
 using Microsoft::WRL::ComPtr;
@@ -199,9 +200,13 @@ struct Eye {
 };
 std::array<Eye,2> eyes;
 Eye uiEye;
+Eye mapEye;
+bool mapSupported=false;
+constexpr uint32_t mapSide=512;
 std::atomic<bool> uiSupported{false};
 bool journalMode=false,spatialMode=false,workspacePlaced=false,opaqueMenuMode=false;
 UiBlit uiBlit;
+UiBlit mapBlit; // Own descriptors: menu and wrist copies may share a frame.
 potions::Models potionModels;
 potions::Scene potionScene;
 panels::MouseGate panelMouse;
@@ -369,6 +374,7 @@ void ReleasePanelInput() {
 }
 void ClearInput() {
     panelinput::WorldInput(false);
+    gamestate::WristMap(false);
     menuControls.Suspend();menuNavigation.Reset();nativeMenuPad={};laserClick={};panelinput::UseController();
     quickCast.Suspend();
     bodyCalibration.Suspend();
@@ -679,6 +685,7 @@ bool Initialize(reshade::api::command_queue* rq,reshade::api::swapchain* swap) {
     }
     {char message[128];std::snprintf(message,sizeof message,"Frame OpenXR: game format %d, eye format %d",int(format),int(eyeFormat));Say(message);}
     uiSupported=std::find(formats.begin(),formats.end(),int64_t(DXGI_FORMAT_R16G16B16A16_FLOAT))!=formats.end()&&uiBlit.Initialize(device.Get(),&Say);
+    mapSupported=std::find(formats.begin(),formats.end(),int64_t(DXGI_FORMAT_R16G16B16A16_FLOAT))!=formats.end()&&mapBlit.Initialize(device.Get(),&Say);
     for(auto& e:eyes) {
         XrSwapchainCreateInfo c{XR_TYPE_SWAPCHAIN_CREATE_INFO};c.usageFlags=XR_SWAPCHAIN_USAGE_COLOR_ATTACHMENT_BIT|XR_SWAPCHAIN_USAGE_TRANSFER_DST_BIT;
         c.format=eyeFormat;c.width=width;c.height=height;c.sampleCount=1;c.faceCount=1;c.arraySize=1;c.mipCount=1;
@@ -905,6 +912,7 @@ gameplay::MeleeStyle MotionMeleeStyle() {
 }
 void ResetSettingsInput() {
     panelinput::WorldInput(false);
+    gamestate::WristMap(false);
     motion.Cancel();motionOutput={};interactions.Reset();interactionstate::Cancel();
     meleePoses.Clear();++meleeEpoch;bowNeedsWorld=bowHasShot=false;
     skel::SetMotionBow(false,false,0);gamecmd::CancelPotion();menuTriggerGate.consumed=true;
@@ -1146,6 +1154,8 @@ void Input() {
         interactionInput.hand[i]={motionInput.hand[i].p,motionInput.hand[i].q};}
     interactionOutput=interactions.Step(interactionInput);
     if(interactionOutput.settings){OpenSettings();settingsOwned=true;interactionInput.active=motionInput.active=false;}
+    gamestate::WristMap(mapSupported&&interactionInput.active&&interactionOutput.wrist&&!interactionOutput.wheel&&
+        interaction::Fresh(interactionInput.snapshot,interactionInput.session,interactionInput.at));
     if(interactionOutput.select>=-1)motion.Select(interactionOutput.select);
     if(interactionOutput.cancelPending)interactionstate::Cancel();
     if(interactionOutput.request.action!=interaction::Action::None)interactionstate::Request(interactionOutput.request);
@@ -1322,6 +1332,7 @@ bool Begin() {
     const bool opaque=spatial&&gamestate::OpaqueMenuOpen();
     if(opaque!=opaqueMenuMode)Say(opaque?"Frame panels: shared black menu background":"Frame panels: spatial background restored");
     spatialMode=spatial;journalMode=book;opaqueMenuMode=opaque;uiEye.copied=false;
+    mapEye.copied=false;hud::MapFrame();
     hud::UiFrame(spatialMode,!journalMode,0);
     const bool panel=wantsPanel&&wantsPanel()&&!spatialMode;
     if(panel!=panelMode){ReleasePanelInput();panelMouse.Suspend();panelMode=panel;menuPlaced=false;Say(panel?"Frame OpenXR: flat menu panel active":"Frame OpenXR: stereo gameplay active");}
@@ -1435,6 +1446,36 @@ bool Copy(ID3D12Resource* src,Eye& e,reshade::api::command_queue* rq) {
     timing.copySubmitMs[eye]+=Milliseconds()-copyStart;
     e.copied=true;return true;
 }
+bool CopyMap(reshade::api::command_queue* rq) {
+    if(!mapSupported||mapEye.copied||!interactionInput.active||!interactionOutput.wrist||interactionOutput.wheel||
+       !interaction::Fresh(interactionInput.snapshot,interactionInput.session,GetTickCount64()))return true;
+    uint32_t w=0,h=0;
+    auto* src=reinterpret_cast<ID3D12Resource*>(hud::MapTexture(w,h));
+    if(!src||!w||!h)return true; // No current map; never display the last area's texture.
+    auto& e=mapEye;
+    if(!e.chain) {
+        XrSwapchainCreateInfo c{XR_TYPE_SWAPCHAIN_CREATE_INFO};c.usageFlags=XR_SWAPCHAIN_USAGE_COLOR_ATTACHMENT_BIT;
+        c.format=DXGI_FORMAT_R16G16B16A16_FLOAT;c.width=c.height=mapSide;c.sampleCount=c.faceCount=c.arraySize=c.mipCount=1;
+        if(XR_FAILED(pCreateSwapchain(session,&c,&e.chain)))return false;
+        uint32_t n=0;
+        if(XR_FAILED(pEnumerateSwapchainImages(e.chain,0,&n,nullptr))||!n)return false;
+        e.images.resize(n,{XR_TYPE_SWAPCHAIN_IMAGE_D3D12_KHR});
+        if(XR_FAILED(pEnumerateSwapchainImages(e.chain,n,&n,reinterpret_cast<XrSwapchainImageBaseHeader*>(e.images.data()))))return false;
+        if(FAILED(device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT,IID_PPV_ARGS(&e.allocator)))||
+           FAILED(device->CreateCommandList(0,D3D12_COMMAND_LIST_TYPE_DIRECT,e.allocator.Get(),nullptr,IID_PPV_ARGS(&e.commands)))||FAILED(e.commands->Close()))return false;
+        Say("Frame wrist map: 512x512 GPU surface ready; native explored map shared by both eyes");
+    }
+    if(!Acquire(e)||!WaitGpuValue(e.copyFence))return false;
+    rq->flush_immediate_command_list();
+    if(FAILED(e.allocator->Reset())||FAILED(e.commands->Reset(e.allocator.Get(),nullptr)))return false;
+    if(!mapBlit.Render(device.Get(),e.commands.Get(),src,e.images[e.index].texture,true,true)) {
+        e.commands->Close();return false;
+    }
+    if(FAILED(e.commands->Close()))return false;
+    ID3D12CommandList* lists[]={e.commands.Get()};queue->ExecuteCommandLists(1,lists);
+    if(FAILED(queue->Signal(fence.Get(),++fenceValue)))return false;
+    e.copyFence=fenceValue;e.copied=true;return true;
+}
 bool CopyUi(reshade::api::command_queue* rq) {
     if(!spatialMode||uiEye.copied)return true;
     uint32_t w=0,h=0;int32_t crop[4]{};
@@ -1490,6 +1531,7 @@ void Capture(reshade::api::command_queue* rq,reshade::api::swapchain* swap) {
     const bool stereo=afr&&afr->version==FLATVR_AFR_EYE_VERSION&&afr->enabled&&(!(wantsPanel&&wantsPanel())||SpatialMenu());
     if(!Begin()||!render||!valid) {if(!stereo)EndPair();return;}
     const uint32_t eye=stereo?((afr->eye^afr->swap)&1u):0u;
+    if(eye==0&&!CopyMap(rq)) {mapSupported=false;mapEye.copied=false;Say("Frame wrist map: copy unavailable; optional map suspended");}
     if((eye==0&&!CopyUi(rq))||!Copy(src,eyes[eye],rq)){failed=true;EndPair();ClearInput();return;}
     if(!stereo) {
         if(!menuPlaced) {
@@ -1632,6 +1674,8 @@ void EndPair() {
     }
     if(uiEye.acquired){XrSwapchainImageReleaseInfo release{XR_TYPE_SWAPCHAIN_IMAGE_RELEASE_INFO};
         Check(pReleaseSwapchainImage(uiEye.chain,&release),"release journal");uiEye.acquired=false;}
+    if(mapEye.acquired){XrSwapchainImageReleaseInfo release{XR_TYPE_SWAPCHAIN_IMAGE_RELEASE_INFO};
+        if(!Check(pReleaseSwapchainImage(mapEye.chain,&release),"release wrist map"))mapEye.copied=false;mapEye.acquired=false;}
     timing.releaseMs=Milliseconds()-releaseStart;
     XrCompositionLayerProjection projection{XR_TYPE_COMPOSITION_LAYER_PROJECTION};
     std::array<XrCompositionLayerProjectionView,2> pv{{{XR_TYPE_COMPOSITION_LAYER_PROJECTION_VIEW},{XR_TYPE_COMPOSITION_LAYER_PROJECTION_VIEW}}};
@@ -1684,6 +1728,7 @@ void EndPair() {
     auto interactionPose=[](interaction::Pose p){return XrPose({p.p,p.q});};
     std::array<XrCompositionLayerQuad,4> beltQuads;
     XrCompositionLayerQuad wrist{XR_TYPE_COMPOSITION_LAYER_QUAD};
+    XrCompositionLayerQuad wristMap{XR_TYPE_COMPOSITION_LAYER_QUAD};
     if(interactionVisible) {
         if(!potionModels.Ready()&&interactionOutput.bottle>=0&&interactionOutput.bottleHand>=0) {
             auto pose=motionInput.hand[interactionOutput.bottleHand];pose.p=pose.p+math::Rotate(pose.q,{0,.055f,0});
@@ -1704,6 +1749,10 @@ void EndPair() {
             auto pose=motionInput.hand[1];pose.p=panel.p;pose.q=panel.q;
             if(interactionOutput.critical&&!interactionOutput.wrist){pose.p=V(head.position)+math::Rotate(Q(head.orientation),{-.20f,-.22f,-.55f});pose.q=Q(head.orientation);}
             motionQuad(wrist,XrPose(pose),.24f,.12f,{{512,768},{512,256}},interactionChain);
+            if(interactionOutput.wrist&&mapEye.copied&&interaction::Fresh(interactionInput.snapshot,interactionInput.session,GetTickCount64())) {
+                pose.p=pose.p+math::Rotate(pose.q,{0,.19f,.001f});
+                motionQuad(wristMap,XrPose(pose),.24f,.24f,{{0,0},{int32_t(mapSide),int32_t(mapSide)}},mapEye.chain);
+            }
         }
     }
     if(gameplayVisible&&motionOutput.bowReady) {
@@ -1777,6 +1826,10 @@ void EndPair() {
                 (unsigned long long)interactionInput.session,(unsigned long long)snapshot.session,snapshot.vitalsKnown,
                 snapshot.health,snapshot.maxHealth,snapshot.mana,snapshot.maxMana,snapshot.beltKnown,potionScene.count);
             Say(message);reportAt=now+5000;
+            const auto& xp=snapshot.experience;
+            std::snprintf(message,sizeof message,"Frame wrist HUD: xp_known=%d level=%u xp=%u start=%u next=%u percent=%.1f map_copied=%d map_layer=%d",
+                xp.Valid(),xp.level,xp.current,xp.start,xp.next,xp.Progress()*100,mapEye.copied,wristMap.subImage.swapchain!=XR_NULL_HANDLE);
+            Say(message);
         }
     }
     static uint64_t reportedSettingsRevision=~0ull;
@@ -1803,6 +1856,7 @@ void EndPair() {
 FrameTiming LastTiming() {std::lock_guard lock(mutex);return lastTiming;}
 void ConfigureGameplay(bool enabled) {
     std::lock_guard lock(mutex);
+    if(!enabled)gamestate::WristMap(false);
     if(!enabled)panelinput::WorldInput(false);
     if(!enabled){skel::SetMotionBow(false,false,0);skel::SetInteractionHidden(0);interactions.Reset();interactionstate::Cancel();}
     if(motionControls.exchange(enabled)!=enabled)
@@ -1918,6 +1972,7 @@ void Shutdown() {
     // when ordinary frame submission uses queue ordering without a CPU wait.
     if(fence&&!WaitGpu())failed=true;
     if(uiEye.chain&&pDestroySwapchain)pDestroySwapchain(uiEye.chain);uiEye={};journalMode=spatialMode=workspacePlaced=false;hud::UiFrame(false,false,0);uiSupported=false;uiBlit={};potionModels.Reset();potionScene={};
+    if(mapEye.chain&&pDestroySwapchain)pDestroySwapchain(mapEye.chain);mapEye={};mapSupported=false;mapBlit={};gamestate::WristMap(false);hud::WristMapCapture(false);
     settingsModel.Close();settingsOpen=false;settingsInputGate.Suspend();settingsPaintRevision=~0ull;settingsAtlasPending=settingsImageReady=false;
     bodyCalibration.Cancel();calibrationRelease={};calibrationPrompted=floorSpace=false;calibrationSession=0;calibrationPaintKey=-1;
     if(settingsChain&&pDestroySwapchain)pDestroySwapchain(settingsChain);settingsChain=XR_NULL_HANDLE;

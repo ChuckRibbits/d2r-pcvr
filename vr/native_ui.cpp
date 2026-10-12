@@ -17,10 +17,12 @@
 #include "skill_slots.h"
 #include "spell_aim.h"
 #include "panel_input.h"
+namespace gamestate {uint32_t DataBank();}
 namespace nativeui {
 namespace {
 const D2RL::PluginContext* context=nullptr;
 const D2RL::LocalizationService* strings=nullptr;
+const D2RL::DataTableService* tables=nullptr;
 std::map<int,std::string> names;
 bool ready=false;
 bool bindingReady=false;
@@ -73,7 +75,7 @@ std::string Name(int id) {
     std::snprintf(text,sizeof text,"Skill %d",id);return text;
 }
 }
-void Init(const D2RL::PluginContext* c){context=c;c->QueryService(&strings);}
+void Init(const D2RL::PluginContext* c){context=c;c->QueryService(&strings);c->QueryService(&tables);}
 void Capture(framevr::interaction::Snapshot& s) {
     int reason=1;uintptr_t player=0;uint32_t id=0,clientId=0;
     struct Trace {
@@ -107,6 +109,23 @@ void Capture(framevr::interaction::Snapshot& s) {
     s.vitalsKnown=s.health>=0&&s.maxHealth>0&&s.health<=s.maxHealth*2&&s.maxHealth<1000000&&
         s.mana>=0&&s.maxMana>=0&&s.mana<=std::max(1.f,s.maxMana)*2&&s.maxMana<1000000;
     reason=s.vitalsKnown?0:6;
+    // ItemStatCost IDs verified against this game's own table: level=12,
+    // experience=13. Experience rows contain one unsigned threshold per class
+    // followed by ExpRatio; row 0 is MaxLvl, row 1 starts character level 1.
+    // Query fresh game-owned rows on the UI thread; never retain native rows.
+    D2RL::DataTables::TableView xp{};xp.structSize=sizeof xp;
+    if(tables&&tables->getTable(context,D2RL::DataTables::Bank(gamestate::DataBank()),
+        D2RL::DataTables::TableId::Experience,&xp)==D2RL::DataTables::Result::Success&&xp.rows&&
+        (xp.rowSize==32||xp.rowSize==36)&&h[1]<xp.rowSize/4-1&&xp.rowCount>=3&&xp.rowCount<=512) {
+        auto& e=s.experience;e.level=uint32_t(stat(player,12,0));e.current=uint32_t(stat(player,13,0));
+        const auto base=reinterpret_cast<uintptr_t>(xp.rows)+h[1]*sizeof(uint32_t);
+        uint32_t zero=1,first=0;
+        if(Read(base,e.maximumLevel)&&e.maximumLevel>=1&&e.maximumLevel<256&&xp.rowCount>e.maximumLevel+1&&
+           e.level>=1&&e.level<=e.maximumLevel&&Read(base+xp.rowSize,zero)&&zero==0&&
+           Read(base+2*xp.rowSize,first)&&first>0&&Read(base+e.level*xp.rowSize,e.start)&&
+           Read(base+(e.level+1)*xp.rowSize,e.next))e.known=true;
+        e.known=e.Valid();
+    }
     // Lookup asserts on a missing skill list during load/teardown. The
     // signature-checked accessor's +0x100 layout is guarded separately.
     uintptr_t skillList=0;

@@ -8,7 +8,7 @@ included. No Blizzard game assets are supplied in the ZIP; the installer reads
 the required assets from your own game and keeps its asset caches local.
 
 1. Download **d2r-pcvr-windows.zip** from the
-   [release page](https://github.com/bearstonem/d2r-pcvr/releases/tag/v0.3.5-windows-preview).
+   [release page](https://github.com/bearstonem/d2r-pcvr/releases/tag/v0.3.6-windows-preview).
 2. Extract the `d2r-pcvr-preview` folder to a permanent location.
 3. Double-click **Install-Windows.cmd** and follow the setup wizard. Choose your
    headset, SteamVR or Virtual Desktop, and the Steam account for your shortcuts.
