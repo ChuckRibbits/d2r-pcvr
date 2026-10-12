@@ -1,5 +1,29 @@
 # Clean Windows installation and agent handoff — October 10, 2026
 
+**October 12 motion-skill candidate / Smite activation fix:** Draft
+[PR #10](https://github.com/bearstonem/d2r-pcvr/pull/10), branch
+`feat/motion-weapon-skills`. The owner confirmed the wheel ACTIVE marker and
+Smite icon, but shield swings/thrusts did not register while button casts worked.
+The motion hook was disabled by failed OS unwind lookup validation. Native Smite
+discovery now uses an exact bounded entry in the game PE exception directory,
+retaining the audited dispatch-table and decoded target-call checks. Failed
+activation shows **TRIGGER ONLY**, with separate shield readiness/outcome logs.
+
+All 39 native checks pass. The corrected DLL (SHA-256
+`35d938542fe95c71046b68348fe51c8f48bab3666acf63b91940a6edff666881`)
+is installed in both existing Steam 3.3.93787 and experimental Battle.net
+3.3.93847 VR copies. Live main-menu checks logged `contact casting ready` at
+00:32:34 and 00:34:10 PDT respectively; no character was entered, and both games
+closed normally. Previous DLLs and shared saves are backed up; calibration,
+settings, saves and game executables were verified unchanged during deployment.
+Receipt: `build-frame/windows/latest-motion-weapon-skills-deployment.json`.
+Backup: `build-frame/backups/windows-smite-hook-fix-20261012-003340-750/`.
+The earlier original-candidate backup remains available at
+`build-frame/backups/windows-motion-weapon-skills-20261012-000028-750/`.
+Physical Smite damage and Amazon arrow skills still need offline headset tests;
+keep the PR draft. See [steamvr/GAMEPLAY.md](steamvr/GAMEPLAY.md) for the checklist
+and the native ground-plane limitation of specialized arrows.
+
 **v0.3.7 Windows preview:** packages the merged Battle.net support and guided
 Windows uninstaller from PR #6, with the player guides and download links
 updated for `v0.3.7-windows-preview`. The native DLL remains the owner-verified

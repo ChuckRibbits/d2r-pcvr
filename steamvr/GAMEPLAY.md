@@ -26,8 +26,8 @@ in both existing Steam/Battle.net VR copies on 2026-10-12, with DLL hashes check
 and calibration/settings/saves preserved. The owner's first headset test confirmed
 the ACTIVE marker and Smite icon, but physical Smite did not register while button
 casts worked. The motion hook had failed activation. A function-directory fix now
-activates it in a live Steam main-menu check; combat retesting remains pending. See
-the weapon-skill section below for scope and test scenarios.
+activates it in live Steam/Battle.net main-menu checks; combat retesting remains
+pending. See the weapon-skill section below for scope and test scenarios.
 
 The build also adds an **in-headset VR settings panel**.
 Hold **Left Grip and press Left Y**, or select **VR SETTINGS** in the wheel.
@@ -387,17 +387,18 @@ loader's OS unwind lookup did not validate that entry in the first installed bui
 silently disabling physical Smite. Discovery now reads the game directory directly.
 If activation fails, an expanded **TRIGGER ONLY** cue explains that shield bashing
 is unavailable; the native trigger fallback remains available. Tracking loss,
-menus, recentering, equipment/assignment changes and quick casting cancel physical preparation and
-invalidate its target. Shield collision uses an approximate capsule around the
-attachment; shield sizes, axes and native Smite acceptance on contact still need
+menus, recentering, equipment/assignment changes and quick casting cancel physical
+preparation and invalidate its target. Shield collision uses an approximate capsule
+around the attachment; shield sizes, axes and native Smite acceptance on contact still need
 headset verification. Logs separately report hook/pose/input readiness, energetic
 shield sweeps, cast requests and native completion/refusal.
 
 Windows build, gesture/contact/pose regressions and the UI preview pass (39 checks).
 The owner confirmed ACTIVE/Smite cues and reported failed physical Smite in the
-first build. The corrected hook activates in a live Steam 3.3.93787 main-menu run;
-no character was entered for that activation check. Headset combat has not been
-retested after the fix. Verify with offline characters outside town:
+first build. The corrected hook activates in live Steam 3.3.93787 and experimental
+Battle.net 3.3.93847 main-menu runs; no character was entered for those checks.
+Headset combat has not been retested after the fix. Verify with offline characters
+outside town:
 
 1. Amazon: compare Multiple Shot's arrow count/ammo/mana and Strafe's volley/cadence
    with native trigger casts; test elemental and Guided effects, repeated draws,
