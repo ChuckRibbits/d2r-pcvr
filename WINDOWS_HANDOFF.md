@@ -1,24 +1,35 @@
 # Clean Windows installation and agent handoff — October 10, 2026
 
-**October 12 Steam Frame shortcut startup fix:** Draft
-[PR #13](https://github.com/bearstonem/d2r-pcvr/pull/13), launcher fix `acc4974`,
-also applied to this motion-skill branch. The owner's 15:00 PDT SteamVR shortcut
-launch crashed before D2RCore/plugins with `0xc0000374`; a controlled repeat
-also failed before plugin startup. The shortcut inherited `SteamOverlayGameId`
-and injected Steam's renderer during loader bootstrap despite overlay UI being
-disabled. Explicit VR launches now omit only that routing variable, retaining
-Steam's app/game ownership IDs, runtime choice and other settings. Desktop
-launches keep their original environment; Battle.net still drops Steam IDs.
+**October 12 Steam Frame shortcut startup candidate:** Draft
+[PR #13](https://github.com/bearstonem/d2r-pcvr/pull/13), also applied to this
+motion-skill branch. Removing `SteamOverlayGameId` alone was insufficient:
+after one successful launch, the owner's 15:11:03 and 15:11:34 PDT attempts
+crashed with `0xc0000005` before D2RCore/plugins. A direct library shortcut also
+failed. Steam injected its renderer during loader bootstrap despite overlay UI
+being disabled; the internal crash mechanism remains unproven.
 
-The same Steam library shortcut then launched successfully at 15:03:32 PDT.
-D2R startup completed at 15:03:41 and the VR plugin/OpenXR started at 15:03:44.
-The game was left open in its frontend for owner testing; the agent entered no
-character. The successful process still loads the overlay renderer later, so
-the internal crash mechanism remains unproven. Fresh owner-triggered Frame
-launch and repeat reliability remain pending. Ten installer/launcher and eight
-Battle.net tests pass. No DLL rebuild, Steam restart or shortcut rewrite was
-needed; installed map-candidate DLLs retain the hash below. The active shortcut
-already points at this repository's updated `steamvr/launch_windows.py`.
+Explicit Windows Steam VR launches now ask Windows Explorer's desktop to start
+a helper outside Steam's injected launcher chain. The helper starts exactly one
+loader, selects the owned Steam game's app ID and preserves the requested
+OpenXR runtime. The original launcher waits for the helper and returns the
+loader's exit code; there is no automatic retry or process termination. Failures
+and exit codes are recorded in `d2rloader/logs/pcvr-launch.log`. Stock desktop
+and Battle.net launches retain their direct routes. Windows Explorer is required.
+
+Four consecutive frontend/OpenXR launches succeeded at 15:17:52, 15:19:21,
+15:20:51 and 15:21:52 PDT. The first used the temporary direct shortcut target;
+the last three used the restored original SteamVR shortcut. The first three
+closed normally with exit code zero; the fourth was left responsive in the
+frontend for owner testing. The agent entered no character. All 29 launcher,
+installer and Battle.net tests pass, including helper completion/crash detection,
+single-launch behavior, quoting and stock/Battle.net routing. A fresh launch
+from inside Frame by the owner remains unverified. Successful processes still
+load the overlay renderer later; this does not globally disable Steam's overlay.
+
+The original shortcut routing was restored and other shortcut entries were
+verified unchanged. No DLL rebuild or Steam restart was needed; installed map
+DLLs retain the hash below. The active shortcut already points at this
+repository's updated `steamvr/launch_windows.py`.
 
 **October 12 spell-menu minimap candidate:** The minimap has moved from the
 wrist to a larger **MAP** page, selected from the spell menu's bottom tabs.
