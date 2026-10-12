@@ -6,12 +6,12 @@ This preview supports **SteamVR and Virtual Desktop (VDXR)** on Windows.
 and install your own legitimate copy of Diablo II: Resurrected. The
 game is not included, and this mod cannot run without it.**
 
-**The release ZIP includes no Blizzard game assets.** It contains the VR mod
+**The installer and release ZIP include no Blizzard game assets.** They contain the VR mod
 and licensed third-party components. The installer reads the required
 item/skill icons and potion models from your own installed game and keeps
 them in local caches. Do not redistribute those caches or your game files.
 
-The **v0.3.7 preview** accepts your **Steam copy of Diablo II: Resurrected
+This preview accepts your **Steam copy of Diablo II: Resurrected
 3.3.93787** or **Battle.net copy of D2R 3.3.93847** (experimental).
 Use a **local offline character**. For Battle.net, see
 [Battle.net preview packages](#battlenet-preview-packages).
@@ -33,13 +33,51 @@ The game runs on your PC and streams to the headset.
 
    For Virtual Desktop, use the **Quest app** and install the **Windows
    Streamer** on your PC. Connect until you can see the PC desktop in the headset.
-3. Download **d2r-pcvr-windows.zip** from the
-   [release page](https://github.com/bearstonem/d2r-pcvr/releases/tag/v0.3.7-windows-preview),
-   under **Assets**.
-4. Extract `d2r-pcvr-preview` to a permanent folder, such as
+3. Open the [release page](https://github.com/bearstonem/d2r-pcvr/releases).
+   Under **Assets**, choose **D2R-PCVR-Setup-VERSION.exe** if offered, or the
+   portable **d2r-pcvr-windows.zip**. Older releases, including v0.3.7, offer the ZIP only.
+4. For the ZIP, extract `d2r-pcvr-preview` to a permanent folder, such as
    `C:\Mods\d2r-pcvr-preview`. Keep this folder after installation.
 
 ## Install
+
+### Graphical Setup EXE
+
+Double-click **D2R-PCVR-Setup-VERSION.exe** on the PC desktop. The wizard
+asks which purchased game copy, headset and connection to use. Confirm the
+detected Steam, game, Saved Games and SteamVR folders; use **Browse** to correct
+them. Select a Steam account if more than one is present.
+
+On a first install, choose **Full install with recommended settings**. For an
+existing mod, choose **Update / repair and keep calibration and video settings**.
+Choose **Only configure Steam shortcuts** to repair library entries without
+replacing the installed mod. Review the choices, fully exit D2R and use
+**Steam > Exit**, then click **Install**. Setup lets you retry if Steam is still open.
+Exiting Steam temporarily disconnects headset streaming.
+
+The EXE includes its own verified Python runtime; no separate Python install
+is needed. Internet access is still required to download D2RLoader and ReShade.
+It installs helper files, instructions, logs and **setup-backups** in
+`%LOCALAPPDATA%\Programs\D2R PCVR`. Keep this folder: Steam's VR shortcuts
+use it. Installation help and controller mappings are also in the Start menu.
+
+After setup, reopen Steam, reconnect the headset and use the matching **Diablo
+II: Resurrected VR** library entry with an **offline character**. Steam Frame
+uses **SteamVR**. Quest offers **Steam Link / SteamVR**, **Virtual Desktop / VDXR**
+or **Both**, which creates two shortcuts. Virtual Desktop needs its Quest app
+and Windows Streamer; keep SteamVR closed when launching with VDXR.
+
+You can rerun the EXE safely. It updates matching shortcuts without duplicates.
+When upgrading a recorded ZIP installation, it copies and verifies its referenced
+game backups into the permanent helper folder before updating the mod. Do not
+delete the old extracted folder until Setup succeeds. If an original backup is
+missing or an older mod has no installation record, Setup stops; keep the old
+folder and use its guided removal before installing afresh.
+
+Setup does not change Windows security settings or the system OpenXR runtime.
+Normal Steam / Battle.net **Play** launches the stock desktop game.
+
+### Portable ZIP setup
 
 Double-click **Install-Windows.cmd** in the extracted folder and follow its prompts
 on the PC desktop. No separate Python install is needed; setup downloads a small,
@@ -321,6 +359,23 @@ binding also remains available.
   straight with your arms out, and check the headset's floor setup.
 
 ## Upgrade or remove
+
+**Installed with the EXE:** close D2R and fully exit Steam, then run the newer
+Setup EXE and choose **Update / repair and keep calibration and video settings**.
+You can also rerun the same version to repair it or change headset connections.
+To add the other game edition, rerun Setup and select that copy.
+
+To remove an EXE installation, open **Windows Settings → Apps → Installed apps →
+D2R PCVR → Uninstall**, or the D2R PCVR Start menu uninstaller. This removes the
+mod from **every Steam and Battle.net copy managed by that EXE**, restores its
+tracked original files and removes matching VR shortcuts. Your current characters,
+shared stash and video settings are kept. Backups and logs remain in the helper
+folder; delete them yourself only after removal succeeds. If Steam is running or
+required backups are missing, removal stops and keeps the helpers for recovery.
+Use this Windows uninstaller for EXE installations; the ZIP's uninstaller handles
+one edition at a time and does not unregister the EXE's helper installation.
+
+**Installed with the portable ZIP:** follow the directions below.
 
 **Upgrade while keeping your settings:** fully close D2R, download and extract
 the new release to a permanent folder, run **Install-Windows.cmd**, select the

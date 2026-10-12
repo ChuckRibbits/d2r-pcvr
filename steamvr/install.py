@@ -63,7 +63,7 @@ def require_game_closed():
     if os.name == 'nt':
         import csv
         rows = csv.reader(subprocess.check_output(
-            ['tasklist', '/FO', 'CSV', '/NH'], text=True).splitlines())
+            ['tasklist', '/FO', 'CSV', '/NH'], text=True, creationflags=0x08000000).splitlines())
         names = [row[0].lower() for row in rows if row]
     else:
         names = []

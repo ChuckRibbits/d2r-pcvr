@@ -1,4 +1,4 @@
-# D2R PCVR v0.3.7 — Windows preview
+# D2R PCVR v0.3.8 — Windows preview
 
 Play **Diablo II: Resurrected in VR on Windows** with
 **SteamVR or Virtual Desktop (VDXR)**. This preview is for **local offline
@@ -9,7 +9,7 @@ single-player** and accepts your **Steam copy of D2R 3.3.93787** or
 your own legitimate copy of Diablo II: Resurrected.** D2R PCVR adds VR
 support and motion interactions to that existing game installation.
 
-**No Blizzard game assets are included in the ZIP.** It contains mod files
+**No Blizzard game assets are included in the installer or ZIP.** They contain mod files
 and licensed third-party components. Required item/skill icons and potion
 models are read from your own installed game into local caches during setup;
 do not redistribute those caches or your game files.
@@ -29,21 +29,21 @@ is required for library shortcuts, including with the Battle.net edition.
 
 ## What's new
 
-- **Battle.net support:** install the mod on your purchased Battle.net copy,
-  with separate SteamVR and Virtual Desktop library entries that can coexist
-  with the Steam edition's shortcuts.
-- **One guided installer:** **Install-Windows.cmd** asks which game edition
-  to use, confirms the game folder, then guides you through headset and
-  connection selection and adds the matching Steam library shortcuts.
-- **Guided removal:** run **Uninstall-Windows.cmd** to restore backed-up files
-  and remove the selected edition's VR shortcuts. Your current characters
-  and shared stash are kept. Keep current video settings or choose to restore
-  the pre-install settings.
-- **Repair and upgrade:** rerun setup and choose **Update / repair and keep
-  calibration and video settings**. Backups are tracked across upgrades;
-  retain backups in older extracted release folders until removal is complete.
-- **Updated instructions in the ZIP:** both editions, installation, Steam
-  shortcuts, controller mappings, upgrades and removal.
+- **Graphical Windows installer:** run **D2R-PCVR-Setup-0.3.8.exe**, select
+  Steam or Battle.net, then your headset and SteamVR / Virtual Desktop connection.
+  Confirm the detected folders and let Setup add the matching Steam shortcuts.
+- **Private runtime included:** no separate Python installation or Python download
+  is needed for the EXE. Setup still downloads the required loader and ReShade.
+- **Permanent helper folder:** helpers, instructions and verified backups live in
+  `%LOCALAPPDATA%\Programs\D2R PCVR`.
+- **Update / repair:** rerun Setup to keep calibration and video settings. Recorded
+  ZIP installations can upgrade; their referenced backups are copied and checked
+  before updating. Keep the old folder until Setup succeeds.
+- **Windows removal:** uninstall through Windows Settings → Apps or the Start menu.
+  This removes all game copies managed by the EXE while keeping character progress,
+  shared stash, current video settings and backups.
+- **Portable option retained:** **d2r-pcvr-windows.zip** still includes the CMD
+  installer, uninstaller, full controller mappings and player instructions.
 
 Use the game's **left or right corner minimap** layout for wrist-map display.
 Full-screen automap is available through the game's normal map controls.
@@ -75,6 +75,12 @@ Full-screen automap is available through the game's normal map controls.
 First launch your purchased game normally through its store, finish the account
 prompts, load an offline character, then use **Save & Exit** and fully close D2R.
 
+For graphical setup, download **D2R-PCVR-Setup-0.3.8.exe**, run it and follow the
+wizard. Fully exit Steam when asked. Reopen Steam, connect your headset and use
+the matching VR shortcut with an offline character.
+
+For portable setup:
+
 1. Download **d2r-pcvr-windows.zip** under **Assets** below.
 2. Extract `d2r-pcvr-preview` to a permanent folder.
 3. Double-click **Install-Windows.cmd** and follow the setup wizard. It creates
@@ -96,11 +102,11 @@ Desktop; keep SteamVR closed when using Virtual Desktop/VDXR.
 **Upgrading from an earlier preview?** Follow **Upgrade while keeping your settings** in
 **INSTALL-WINDOWS.md** to retain body calibration and video settings.
 
-Keep the extracted folder after installation. For ordinary desktop play,
+Keep the installed helper folder or extracted ZIP folder after installation. For ordinary desktop play,
 fully exit VR and use the original Steam or Battle.net **Play** button.
 Use the unmodded game for multiplayer. Keep **setup-backups**, including
 backups in older extracted release folders, until removal is complete.
 
-Read **INSTALL-WINDOWS.md** and **CONTROLS.md** inside the ZIP, or open the
-[installation guide](https://github.com/bearstonem/d2r-pcvr/blob/v0.3.7-windows-preview/INSTALL-WINDOWS.md)
-and [controller reference](https://github.com/bearstonem/d2r-pcvr/blob/v0.3.7-windows-preview/CONTROLS.md).
+Read **INSTALL-WINDOWS.md** and **CONTROLS.md** in the helper folder or ZIP, or open the
+[installation guide](https://github.com/bearstonem/d2r-pcvr/blob/v0.3.8-windows-preview/INSTALL-WINDOWS.md)
+and [controller reference](https://github.com/bearstonem/d2r-pcvr/blob/v0.3.8-windows-preview/CONTROLS.md).
