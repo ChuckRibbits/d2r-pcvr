@@ -65,6 +65,16 @@ is adapted from [levinium/D2RExtractor](https://github.com/levinium/D2RExtractor
 The local SpA1 v31 RGBA decoder and PNG writer use Python's standard library.
 Extracted spell/item artwork belongs to the game; it is generated only in the
 user's local icon cache, never included in this repository or release ZIP.
+
+The experimental Battle.net asset reader uses
+[CascLib 3.0](https://github.com/ladislav-zezula/CascLib/tree/4971d363e665551ac4142f541e5f2d71f1cda653),
+MIT, copyright 2014 Ladislav Zezula. The pinned source revision is
+`4971d363e665551ac4142f541e5f2d71f1cda653`; `steamvr/build_casclib.ps1` builds a
+Unicode x64 DLL with the repository's native Windows toolchain. Its license is
+[`steamvr/licenses/CascLib-MIT.txt`](steamvr/licenses/CascLib-MIT.txt).
+The DLL is used only during installation to read the owner's local archives;
+online storage and downloads are not enabled. Packages made with `--casclib`
+include the library and its license, with Battle.net marked experimental.
 The wheel/wrist framing is separately generated artwork. Its attribution is
 recorded in the [asset notices](https://github.com/bearstonem/d2r-pcvr/blob/vr/quest-2-3-support/steamvr/assets/README.md).
 

@@ -11,6 +11,7 @@ import sys
 
 import install
 import steam_config
+from game_install import validate_game, battlenet_location, STEAM_VERSION, BATTLENET_VERSION
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -139,7 +140,9 @@ def verify_release(root):
         raise ValueError('This setup needs the native Windows release ZIP.')
     hashes = manifest['sha256']
     required = {'bin/d2rl-vrcam.dll', 'bin/openxr_loader.dll', 'steamvr/install.py',
-                'steamvr/setup_windows.py', 'steamvr/steam_config.py', 'steamvr/launch_windows.py'}
+                'steamvr/setup_windows.py', 'steamvr/steam_config.py', 'steamvr/launch_windows.py',
+                'steamvr/game_install.py', 'steamvr/game_assets.py', 'steamvr/casc_assets.py',
+                'Uninstall-Windows.cmd', 'steamvr/uninstall_windows.py'}
     if not required.issubset(hashes):
         raise ValueError('Incomplete Windows setup package')
     for name, digest in hashes.items():
@@ -164,6 +167,7 @@ def launch_options(python, wrapper, runtime):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--check', action='store_true', help='Check extracted release files without installing')
+    parser.add_argument('--experimental-battlenet', action='store_true', help='Legacy preview entry point; Battle.net is offered automatically when included in the ZIP')
     args = parser.parse_args()
     manifest = verify_release(ROOT)
     if args.check:
@@ -171,11 +175,21 @@ def main():
         return
     if os.name != 'nt':
         raise ValueError('Run Install-Windows.cmd on your Windows PC.')
+    battlenet_available = 'bin/CascLib.dll' in manifest.get('sha256', {})
+    if args.experimental_battlenet and not battlenet_available:
+        raise ValueError('This ZIP does not include the experimental Battle.net asset reader. Use a Battle.net-capable package.')
     print('\nD2R PCVR - Windows setup')
-    print('This mod requires your separately purchased, legitimate Steam copy of D2R 3.3.93787.')
+    print('This mod requires your separately purchased, legitimate copy of Diablo II: Resurrected.')
     print('No game assets are supplied. Use a local OFFLINE character while playing this preview.')
     print('Launch stock D2R once and finish its account prompts before continuing.')
     print('Keep this extracted mod folder in a permanent location; Steam will use it to launch.')
+    store = 'steam'
+    if battlenet_available:
+        store = ['steam', 'battlenet'][choose('Which game installation?', [f'Steam ({STEAM_VERSION})', f'Battle.net ({BATTLENET_VERSION}, experimental)'])]
+        if store == 'battlenet':
+            print('Battle.net compatibility is under validation. Use a local OFFLINE character.')
+    else:
+        print(f'This package supports the Steam edition ({STEAM_VERSION}) only.')
     headset = ['Steam Frame', 'Quest 3', 'Quest 2', 'Other SteamVR headset'][choose('Which headset will you use?', ['Steam Frame', 'Quest 3', 'Quest 2', 'Other SteamVR headset'])]
     connections = ['steamvr']
     if headset in ('Quest 2', 'Quest 3'):
@@ -185,9 +199,10 @@ def main():
         connections = [['steamvr'], ['vdxr'], ['steamvr', 'vdxr']][connection]
     steam = folder('Steam installation folder', steam_location(), 'steam.exe')
     roots = libraries(steam)
-    game = folder('D2R game folder (Steam > Properties > Installed Files > Browse)', app_folder(roots, steam_config.APP_ID), 'D2R.exe')
-    if '3.3.93787'.encode('utf-16-le') not in (game / 'D2R.exe').read_bytes():
-        raise ValueError('This release requires Steam D2R 3.3.93787. Your game version does not match.')
+    default_game = app_folder(roots, steam_config.APP_ID) if store == 'steam' else battlenet_location()
+    game = folder('D2R game folder (' + ('Steam > Properties > Installed Files > Browse' if store == 'steam'
+                  else 'Battle.net > D2R > Show in Explorer') + ')', default_game, 'D2R.exe')
+    _, version = validate_game(game, store, experimental_battlenet=store == 'battlenet')
     runtime = None
     if 'steamvr' in connections:
         runtime_folder = folder('SteamVR installation folder', app_folder(roots, '250820'), 'steamxr_win64.json')
@@ -199,7 +214,7 @@ def main():
         print('Use Virtual Desktop on Quest with its Windows Streamer. Keep SteamVR closed for VDXR.')
     accounts = profiles(steam)
     if not accounts:
-        raise ValueError('No Steam profile found. Sign into desktop Steam, launch stock D2R once, and rerun setup.')
+        raise ValueError('No Steam profile found. Sign into desktop Steam once, then rerun setup.')
     selected = choose('Add shortcuts for which Steam account?', [f'{name} (local ID {profile.name})' for profile, name in accounts]) if len(accounts) > 1 else 0
     profile = accounts[selected][0]
     saves = folder('D2R saved games folder', saved_games(), 'Settings.json')
@@ -208,18 +223,24 @@ def main():
     mode = choose('How should setup install the mod?', ['Update / repair and keep calibration and video settings', 'Full install with recommended settings (resets calibration)', 'Only configure Steam shortcuts (keep installed mod)']) if existing else 1
     if mode == 2 and not all((game / name).is_file() for name in ('D2RLoader.exe', 'ReShade64.dll', 'openxr_loader.dll', 'd2rloader/plugins/d2r_vr.ini')):
         raise ValueError('The existing mod installation is incomplete. Rerun setup and choose Update / repair.')
-    options = launch_options(Path(sys.executable).resolve(), ROOT / 'steamvr/launch_windows.py', runtime)
-    # Validate both Steam edits before installation or downloads.
+    routing = {} if store == 'steam' else {'store': store, 'python': Path(sys.executable).resolve(),
+                                          'wrapper': ROOT / 'steamvr/launch_windows.py', 'runtime': runtime}
+    options = launch_options(Path(sys.executable).resolve(), ROOT / 'steamvr/launch_windows.py', runtime) if store == 'steam' else None
+    # Validate Steam edits before installation or downloads.
     local = profile / 'config/localconfig.vdf'
-    original_text = local.read_text(encoding='utf-8')
-    old_options = steam_config.text_value(steam_config.parse_text(original_text.lstrip('\ufeff')), 'UserLocalConfigStore', 'Software', 'Valve', 'Steam', 'apps', steam_config.APP_ID, 'LaunchOptions')
-    steam_config.set_launch_options(original_text, options)
+    old_options = None
+    if store == 'steam':
+        original_text = local.read_text(encoding='utf-8')
+        old_options = steam_config.text_value(steam_config.parse_text(original_text.lstrip('\ufeff')), 'UserLocalConfigStore', 'Software', 'Valve', 'Steam', 'apps', steam_config.APP_ID, 'LaunchOptions')
+        steam_config.set_launch_options(original_text, options)
     shortcut_file = profile / 'config/shortcuts.vdf'
-    steam_config.update_shortcuts(shortcut_file.read_bytes() if shortcut_file.exists() else None, steam, game, connections)
+    steam_config.update_shortcuts(shortcut_file.read_bytes() if shortcut_file.exists() else None, steam, game, connections, **routing)
     print('\nReady to set up:')
+    print(f'  Edition: {"Steam" if store == "steam" else "Battle.net (experimental)"}, D2R {version}')
     print(f'  Headset: {headset}\n  Game: {game}\n  Steam account: {accounts[selected][1]} (local ID {profile.name})')
-    print('  Shortcuts: ' + ', '.join(steam_config.SHORTCUTS[connection][0] for connection in connections))
-    print('  Original D2R Play: stock desktop game. VR shortcuts: local offline play.')
+    specs = steam_config.shortcut_specs(steam, game, **routing)
+    print('  Shortcuts: ' + ', '.join(specs[connection][0] for connection in connections))
+    print('  Original launcher Play: stock desktop game. VR shortcuts: local offline play.')
     print('  Game files, saves and Steam configuration are backed up before replacement.')
     if old_options and old_options != options:
         print('  Existing D2R launch options will be replaced; a backup will retain them.')
@@ -233,21 +254,34 @@ def main():
         command = [sys.executable, str(ROOT / 'steamvr/install.py'), '--game', str(game),
                    '--saves', str(saves), '--plugin', str(ROOT / 'bin/d2rl-vrcam.dll'),
                    '--openxr-loader', str(ROOT / 'bin/openxr_loader.dll'), '--deps', str(ROOT / 'deps'),
-                   '--backup-dir', str(ROOT / 'setup-backups/game'), '--download-deps']
+                   '--backup-dir', str(ROOT / 'setup-backups/game'), '--download-deps', '--store', store]
+        if store == 'battlenet':
+            command += ['--experimental-battlenet', '--casclib', str(ROOT / 'bin/CascLib.dll')]
         if mode == 0:
             command.append('--preserve-settings')
         subprocess.run(command, check=True)
     wait_for_closed()
-    backup = steam_config.configure(profile, steam, game, options, connections, ROOT / 'setup-backups', require_closed)
-    result = {'release': manifest.get('release_tag'), 'headset': headset, 'connections': connections,
+    backup = steam_config.configure(profile, steam, game, options, connections, ROOT / 'setup-backups', require_closed, **routing)
+    record = install.read_record(game)
+    record.update({'game': str(game), 'store': store, 'saves': str(saves)})
+    state = record.setdefault('steam_profiles', {}).setdefault(str(profile.resolve()), {})
+    if store == 'steam' and 'previous_launch_options' not in state:
+        # Old packages did not record the baseline; never restore another VR wrapper.
+        state['previous_launch_options'] = '' if steam_config.is_vr_launch_options(old_options) else (old_options or '')
+    state.update({'steam': str(steam), 'installed_launch_options': options})
+    require_closed()
+    install.write_record(game, record)
+    result = {'release': manifest.get('release_tag'), 'store': store, 'game_version': version,
+              'experimental': store == 'battlenet', 'headset': headset, 'connections': connections,
               'game': str(game), 'steam_profile': profile.name, 'steam_backup': str(backup),
               'game_backups': str(ROOT / 'setup-backups/game'), 'launch_options': options}
     (ROOT / 'setup-result.json').write_text(json.dumps(result, indent=2) + '\n', encoding='utf-8')
     print('\nSetup complete. Steam library shortcuts have been created.')
     print(f'Backups: {ROOT / "setup-backups"}')
     print('Start Steam, connect your headset and play the matching VR shortcut using an OFFLINE character.')
-    print('Normal Steam Play stays stock. For multiplayer, fully exit VR and use normal Play.')
+    print('Normal launcher Play stays stock. For multiplayer, fully exit VR and use normal Play.')
     print('First VR load asks for body calibration. Controls: CONTROLS.md. Help: INSTALL-WINDOWS.md.')
+    print('To remove this mod later, run Uninstall-Windows.cmd. Keep setup-backups and the extracted folder.')
     if choose('Open Steam now?', ['Open Steam', 'Later']) == 0:
         subprocess.Popen([str(steam / 'steam.exe')], cwd=steam)
 

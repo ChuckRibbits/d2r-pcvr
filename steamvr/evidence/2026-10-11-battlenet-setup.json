@@ -1,0 +1,56 @@
+{
+  "branch": "feat/battlenet-support",
+  "source_base": "8e40cc7c2ce2f7663019819b4a9345d110bd6008",
+  "store": "battlenet",
+  "game_version": "3.3.93847",
+  "status": "experimental",
+  "play_mode": "local offline single-player",
+  "runtime_observed": "SteamVR/OpenXR",
+  "native_plugin_sha256": "2b114b4e89b1743a7b51406dbe3b3d04cdccde2d672bc94001cc354709aa2a50",
+  "native_plugin_source": "Owner-verified v0.3.6 binary; native source unchanged on this branch",
+  "casclib": {
+    "version": "3.0",
+    "source_commit": "4971d363e665551ac4142f541e5f2d71f1cda653",
+    "unicode": true,
+    "architecture": "x64",
+    "dll_sha256": "84071741080677871c628cece45d54195dde2889b06c24d1c151a3aa00679a3e",
+    "usage": "Installation-only local archive reads; online storage is disabled"
+  },
+  "asset_preparation": {
+    "icon_bindings": 1580,
+    "missing_icons": 0,
+    "potion_models": 15,
+    "generated_assets_distributed": false
+  },
+  "automated_checks": {
+    "windows_python_passed": 52,
+    "native_passed": 37,
+    "powershell_syntax": "passed",
+    "git_diff_check": "passed",
+    "excluded": "Linux-only /proc session tests are inapplicable on Windows"
+  },
+  "runtime_observations": {
+    "core_addresses_resolved": 59,
+    "core_addresses_relocated": 0,
+    "melee_hooks": "ready",
+    "physical_projectile_hooks": "ready",
+    "d3d12_openxr_session": "ready",
+    "owner_confirmed": ["VR works", "offline character loaded", "cave transitions", "world A interaction", "inventory dragging", "wrist health/mana/XP/map", "weapon mechanics"],
+    "owner_confirmation": "User reported everything worked after the requested SteamVR gameplay checks.",
+    "pending_owner_checks": [],
+    "battle_net_vdxr": "not yet tested",
+    "existing_steam_safety_check_messages": ["F1900", "B6C32", "B6C92"]
+  },
+  "local_artifacts": {
+    "deployment": "build-frame/battlenet/deployment.json",
+    "backup": "build-frame/backups/battlenet/20261011-202118-912173",
+    "live_audit": "build-frame/battlenet/loader-hook-audit.json"
+  },
+  "preserved_at_deployment": ["both original D2R.exe files", "Steam mod DLL", "Steam mod INI", "shared video settings"],
+  "calibration": "Copied from the owner's existing Steam VR INI into the new Battle.net mod installation",
+  "steam_configuration": "Not modified during this local deployment; new shortcut routing is covered by isolated fixtures",
+  "setup_wizard": "Install-Windows.cmd automatically offers Steam/Battle.net when the verified package includes CascLib. Fixtures cover Battle.net VDXR routing, Steam selection in both package variants, and rejection of the Battle.net entry point in a Steam-only package. Player installation guides match this flow.",
+  "removal_wizard": "Uninstall-Windows.cmd restores tracked file baselines across upgrades and release folders, preserves current characters/stash, and removes only matching edition/game shortcuts. Current video settings are kept by default. Fixtures cover both stores, cancellation, missing/moved backups, original game/path protections, race checks, rollback and repeat removal. No live installation was uninstalled.",
+  "actual_test_launch": "D2RLoader.exe started directly from the Battle.net installation, with SteamVR selected per process. Neither Steam app 2536520 nor the Battle.net app's Play button initiated this run.",
+  "release": "No release published for this branch"
+}

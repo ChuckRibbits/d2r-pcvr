@@ -1,5 +1,63 @@
 # Clean Windows installation and agent handoff — October 10, 2026
 
+**October 11 Battle.net branch:** `feat/battlenet-support`, based on main
+`8e40cc7c2ce2f7663019819b4a9345d110bd6008`. The owner's Battle.net installation
+is build 3.3.93847; Steam remains 3.3.93787. Added a store/build gate,
+read-only local CASC backend, optional pinned Unicode x64 CascLib 3.0 build,
+automatic Steam/Battle.net selection in the standard Windows setup wizard when
+the verified package includes CascLib, and distinct SteamVR/VDXR library shortcuts.
+The separate preview entry point remains an alias; Steam-only packages keep
+their existing flow. Player instructions cover both editions, and explicitly
+limit the old `.cmd` launchers and manual Steam launch options to the Steam edition.
+Added `Uninstall-Windows.cmd`, using the same private Python bootstrap and a
+guided backup-based removal. A game-local `d2rloader/pcvr-install.json` tracks
+snapshots across updates and extracted release folders, plus each Steam
+profile's prior launch options. The receipt is journaled before installation
+writes so interrupted installs remain discoverable. Removal validates all
+paths, blocks missing original backups, stages edits, backs up current files,
+checks for concurrent changes and rolls back failures. It preserves current
+characters/stash and other mods, removes only matching edition/game shortcuts,
+and offers optional video-settings restoration (keep current by default).
+Only temporary fixtures have been uninstalled; the owner's live installations
+remain installed. The package allowlist includes the uninstaller and docs.
+Battle.net launches remove inherited Steam game IDs from the child environment
+and leave the Steam edition's launch options untouched. No flag is passed to
+Blizzard's original executable or to D2RLoader. Unknown builds remain rejected.
+
+Actual Battle.net archive preparation produced 1,580 icon bindings with zero
+missing assets and all 15 potion models. All 52 applicable Windows/Python
+fixtures and 37 native checks pass. The Linux-only `/proc` session tests cannot
+run on Windows and are excluded from the applicable suite. Game assets, caches,
+process diagnostics and downloaded/build dependencies remain ignored locally.
+
+Installed an offline Battle.net candidate using the same owner-verified native
+DLL as v0.3.6 (SHA-256 `2b114b4e89b1743a7b51406dbe3b3d04cdccde2d672bc94001cc354709aa2a50`).
+The installer backed up the game files and shared saves, preserved video
+settings, and copied the existing Steam VR calibration for this local test.
+Hashes confirmed both original game executables and the Steam mod DLL/INI
+unchanged at installation. Receipt: `build-frame/battlenet/deployment.json`.
+Backup: `build-frame/backups/battlenet/20261011-202118-912173/`.
+
+The owner completed the stock Battle.net first launch. Direct SteamVR testing
+then reached character selection and an active world camera. The running
+loader resolves all 59 core game addresses at their existing locations; melee
+and physical projectile hooks report ready, and SteamVR creates a D3D12 session.
+No native remapping has been necessary for this first run. Startup safety-check
+messages at F1900/B6C32/B6C92 also occur in the existing Steam logs; they are not
+new Battle.net failures. The read-only live audit saves only signature-site
+statuses, no code. Stock retail code is not the loader image and its preliminary
+audit must not be used to remap loader hooks. The owner confirms VR works,
+an offline character loads, and everything worked after the requested cave,
+world A interaction, inventory dragging, wrist HUD and weapon checks.
+Battle.net VDXR remains pending. This test started D2RLoader directly from
+the Battle.net folder using SteamVR, not through either launcher's Play button.
+The owner observed that the Battle.net app did not show the game as in progress;
+the recorded process path and loaded build 93847 independently establish which
+installation was used. Evidence:
+`steamvr/evidence/2026-10-11-battlenet-setup.json`.
+Keep Battle.net explicitly experimental; do not publish a supported-build claim
+or replace the working Steam installation based solely on startup logs.
+
 **October 11 wrist HUD addition:** Built and installed candidate
 `2b114b4e89b1743a7b51406dbe3b3d04cdccde2d672bc94001cc354709aa2a50`.
 The wrist atlas now includes level and XP progress below the life/mana orbs.

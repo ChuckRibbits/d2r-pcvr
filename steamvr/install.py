@@ -15,6 +15,7 @@ import urllib.request
 import zipfile
 from prepare_icons import prepare as prepare_icons
 from prepare_potions import prepare as prepare_potions, CODES as POTION_CODES
+from game_install import validate_game
 
 ROOT = Path(__file__).resolve().parent.parent
 STEAM = Path.home() / '.local/share/Steam'
@@ -25,6 +26,37 @@ RESHADE_HASH = 'afe4c8f13048306307983b8b3d41d5bf00a86820440b0e57dea10950e1176445
 SDK_VERSION = '10.0.26100.9169'
 SDK_HASH = '475269434dcd808a67853773272f972c3229c0e10c3ddc821290e70cc0f6904d'
 COMPILER_HASH = '3bd6d7acfe8a0a84acd166fba1a537ce68bd21c8edce2bd9bb863cfa034136d4'
+RECORD = Path('d2rloader/pcvr-install.json')
+
+
+def read_record(game):
+    source = game / RECORD
+    if not source.resolve().is_relative_to(game.resolve()):
+        raise ValueError('Mod installation record points outside the game folder.')
+    if not source.is_file():
+        return {}
+    record = json.loads(source.read_text(encoding='utf-8'))
+    if Path(record['game']).resolve() != game.resolve():
+        raise ValueError('Mod installation record belongs to a different game folder.')
+    if (not isinstance(record.get('snapshots', []), list)
+            or any(not isinstance(name, str) or not name for name in record.get('snapshots', []))
+            or not isinstance(record.get('steam_profiles', {}), dict)
+            or any(not isinstance(state, dict) for state in record.get('steam_profiles', {}).values())):
+        raise ValueError('Invalid mod installation record.')
+    return record
+
+
+def write_record(game, record):
+    target = game / RECORD
+    if not target.resolve().is_relative_to(game.resolve()):
+        raise ValueError('Mod installation record points outside the game folder.')
+    target.parent.mkdir(parents=True, exist_ok=True)
+    temporary = target.with_suffix('.tmp')
+    try:
+        temporary.write_text(json.dumps(record, indent=2) + '\n', encoding='utf-8')
+        os.replace(temporary, target)
+    finally:
+        temporary.unlink(missing_ok=True)
 
 
 def require_game_closed():
@@ -82,6 +114,9 @@ def main():
     ap.add_argument('--openxr-loader', type=Path, help='Windows x64 openxr_loader.dll; required on native Windows')
     ap.add_argument('--backup-dir', type=Path, default=ROOT / 'build-frame/backups')
     ap.add_argument('--download-deps', action='store_true', help='Fetch pinned D2RLoader and ReShade from their official sites')
+    ap.add_argument('--store', choices=['auto', 'steam', 'battlenet'], default='auto')
+    ap.add_argument('--experimental-battlenet', action='store_true', help='Enable Battle.net 3.3.93847 for local offline compatibility testing')
+    ap.add_argument('--casclib', type=Path, default=ROOT / 'bin/CascLib.dll', help='Pinned Unicode x64 CascLib 3.0 for Battle.net asset reading')
     ap.add_argument('--preserve-settings', action='store_true', help='Keep existing calibration, mod/ReShade configuration and video settings when upgrading')
     ap.add_argument('--restore', type=Path, help='Restore the installation snapshot made by this script')
     args = ap.parse_args()
@@ -107,9 +142,16 @@ def main():
         shutil.copy2(snapshot / 'saves/Settings.json', saves / 'Settings.json')
         print('Mod files and video settings restored. Character progress was kept.')
         return
-    exe = game / 'D2R.exe'
-    if not exe.is_file() or '3.3.93787'.encode('utf-16-le') not in exe.read_bytes():
-        raise SystemExit('This release requires Steam D2R 3.3.93787')
+    try:
+        store, version = validate_game(game, args.store, args.experimental_battlenet)
+    except ValueError as error:
+        raise SystemExit(str(error)) from error
+    if store == 'battlenet':
+        if os.name != 'nt':
+            raise SystemExit('Experimental Battle.net support currently requires native Windows.')
+        if not args.casclib.is_file():
+            raise SystemExit('Battle.net installation requires the packaged Unicode x64 CascLib.dll.')
+        print('Experimental Battle.net build: use a local OFFLINE character for compatibility testing.')
     if not args.plugin.is_file():
         raise SystemExit(f'Mod DLL not found: {args.plugin}. Extract the complete release ZIP and follow INSTALL-WINDOWS.md.')
     if os.name == 'nt' and not args.openxr_loader:
@@ -118,6 +160,7 @@ def main():
         raise SystemExit('OpenXR loader DLL was not found')
     if not (saves / 'Settings.json').is_file():
         raise SystemExit(f'Launch stock D2R once first, or pass --saves; Settings.json not found in {saves}')
+    record = read_record(game)
     # Read and validate all inputs before changing any game files.
     settings = json.loads((saves / 'Settings.json').read_text(encoding='utf-8-sig'))
     archive = args.deps / 'D2RLoader-1.3.1-beta.zip'
@@ -166,7 +209,7 @@ def main():
     # Prepare before mutating the install and journal it with all other files.
     with tempfile.TemporaryDirectory(prefix='d2r-vr-icons-') as temporary:
         try:
-            result = prepare_icons(game, temporary)
+            result = prepare_icons(game, temporary, casclib=args.casclib)
         except (OSError, ValueError, KeyError, IndexError) as error:
             print(f'Native icon cache unavailable; wheel labels still work: {error}')
         else:
@@ -175,7 +218,7 @@ def main():
             print(f"Prepared {result['icons']} native icon bindings from your installed game.")
     with tempfile.TemporaryDirectory(prefix='d2r-vr-potions-') as temporary:
         try:
-            result = prepare_potions(game, temporary)
+            result = prepare_potions(game, temporary, casclib=args.casclib)
         except (OSError, ValueError, KeyError, IndexError) as error:
             print(f'Native potion models unavailable; retaining icon fallback: {error}')
         else:
@@ -187,7 +230,9 @@ def main():
     snapshot.mkdir(parents=True)
     shutil.copytree(saves, snapshot / 'saves')
     installed = []
-    manifest = {'game': str(game), 'saves': str(saves), 'installed': installed}
+    manifest = {'game': str(game), 'store': store, 'game_version': version,
+                'previous_mod': (game / 'd2rloader/plugins/d2rl-vrcam.dll').is_file(),
+                'saves': str(saves), 'installed': installed}
     (snapshot / 'manifest.json').write_text(json.dumps(manifest, indent=2))
 
     def put(rel, content):
@@ -202,6 +247,10 @@ def main():
         (snapshot / 'manifest.json').write_text(json.dumps(manifest, indent=2))
         dest.write_bytes(content)
 
+    record.update({'game': str(game), 'store': store, 'saves': str(saves),
+                   'snapshots': record.get('snapshots', []) + [str(snapshot.resolve())]})
+    # Track the chain before other writes, including interrupted installs.
+    put(RECORD, (json.dumps(record, indent=2) + '\n').encode('utf-8'))
     for rel, content in payload.items():
         put(rel, content)
     cfg = configparser.ConfigParser(interpolation=None, strict=False, allow_no_value=True)

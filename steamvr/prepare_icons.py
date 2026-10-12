@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
-"""Build the mod's local native-icon cache from this user's installed Steam game.
+"""Build the mod's local native-icon cache from this user's installed game.
 
-Standard-library only, Windows/Linux. Never distribute the resulting cache.
+Standard-library Python, Windows/Linux; Battle.net also needs CascLib on Windows.
+Never distribute the resulting cache.
 The generated wheel/wrist frames are separate assets embedded in the plugin.
 """
 import argparse
@@ -14,7 +15,7 @@ import re
 import struct
 import zlib
 from pathlib import Path
-from steam_assets import SteamAssets
+from game_assets import open_assets, build_hash
 
 VERSION = 2
 
@@ -57,22 +58,22 @@ def item_key(code):
     return 'i' + format(int.from_bytes(code.encode('ascii').ljust(4, b' '), 'little'), '08x')
 
 
-def prepare(game, destination=None, force=False):
+def prepare(game, destination=None, force=False, casclib=None):
     game = Path(game)
     destination = Path(destination) if destination else game / 'd2rloader/plugins/d2r_vr_icons'
     metadata = destination / 'cache.json'
-    build = next((game / d / '.build.config' for d in ('data', 'Data') if (game / d / '.build.config').is_file()), None)
-    if not force and build and metadata.is_file():
+    build = build_hash(game)
+    if not force and metadata.is_file():
         try:
             old = json.loads(metadata.read_text())
-            if (old['version'] == VERSION and old['build'] == hashlib.sha256(build.read_bytes()).hexdigest()
+            if (old['version'] == VERSION and old['build'] == build
                     and (destination / 'manifest.tsv').is_file()
                     and all((destination / name).is_file() for name in old['images'])):
                 return old
         except (ValueError, KeyError, OSError):
             pass
     destination.mkdir(parents=True, exist_ok=True)
-    with SteamAssets(game) as assets:
+    with open_assets(game, casclib) as assets:
         def table(name):
             return list(csv.DictReader(io.StringIO(assets.read(f'data/global/excel/{name}.txt').decode('utf-8-sig')), delimiter='\t'))
 
@@ -189,6 +190,7 @@ if __name__ == '__main__':
     ap.add_argument('--game', required=True, type=Path)
     ap.add_argument('--output', type=Path)
     ap.add_argument('--force', action='store_true')
+    ap.add_argument('--casclib', type=Path, help='Packaged Unicode x64 CascLib 3.0 (Battle.net only)')
     args = ap.parse_args()
-    result = prepare(args.game, args.output, args.force)
+    result = prepare(args.game, args.output, args.force, args.casclib)
     print(f"Native icon cache: {result['icons']} bindings, {len(result['images'])} images, {len(result['missing'])} unsupported assets")
