@@ -17,7 +17,7 @@ struct Experience {
 };
 
 // The render thread renews a short lease; UI-thread code opens/closes only
-// the native map it owns. Hysteresis avoids map flicker as the wrist rotates.
+// the native map it owns. Hysteresis bridges brief render/UI callback gaps.
 class MapLease {
     uint64_t session=0,lastWanted=0;
     bool owned=false,wanted=false;

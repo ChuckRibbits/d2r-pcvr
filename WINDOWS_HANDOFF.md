@@ -1,5 +1,99 @@
 # Clean Windows installation and agent handoff — October 10, 2026
 
+**October 12 Steam Frame shortcut startup candidate:** Draft
+[PR #13](https://github.com/bearstonem/d2r-pcvr/pull/13), also applied to this
+motion-skill branch. Removing `SteamOverlayGameId` alone was insufficient:
+after one successful launch, the owner's 15:11:03 and 15:11:34 PDT attempts
+crashed with `0xc0000005` before D2RCore/plugins. A direct library shortcut also
+failed. Steam injected its renderer during loader bootstrap despite overlay UI
+being disabled; the internal crash mechanism remains unproven.
+
+Explicit Windows Steam VR launches now ask Windows Explorer's desktop to start
+a helper outside Steam's injected launcher chain. The helper starts exactly one
+loader, selects the owned Steam game's app ID and preserves the requested
+OpenXR runtime. The original launcher waits for the helper and returns the
+loader's exit code; there is no automatic retry or process termination. Failures
+and exit codes are recorded in `d2rloader/logs/pcvr-launch.log`. Stock desktop
+and Battle.net launches retain their direct routes. Windows Explorer is required.
+
+Four consecutive frontend/OpenXR launches succeeded at 15:17:52, 15:19:21,
+15:20:51 and 15:21:52 PDT. The first used the temporary direct shortcut target;
+the last three used the restored original SteamVR shortcut. The first three
+closed normally with exit code zero; the fourth was left responsive in the
+frontend for owner testing. The agent entered no character. All 29 launcher,
+installer and Battle.net tests pass, including helper completion/crash detection,
+single-launch behavior, quoting and stock/Battle.net routing. A fresh launch
+from inside Frame by the owner remains unverified. Successful processes still
+load the overlay renderer later; this does not globally disable Steam's overlay.
+
+The original shortcut routing was restored and other shortcut entries were
+verified unchanged. No DLL rebuild or Steam restart was needed; installed map
+DLLs retain the hash below. The active shortcut already points at this
+repository's updated `steamvr/launch_windows.py`.
+
+**October 12 spell-menu minimap candidate:** The minimap has moved from the
+wrist to a larger **MAP** page, selected from the spell menu's bottom tabs.
+Hold left secondary, point with the right laser and click **MAP**; **SPELLS**
+returns to skills without changing the selected skill. Releasing the menu
+button closes it. Wrist health, mana, level and XP remain. The tab still uses
+the native corner minimap and restores automap visibility through the existing
+ownership lease. Hidden spell wedges/basic attack cannot be clicked behind it.
+
+Source commit `8de8f59`, on the same draft
+[PR #10](https://github.com/bearstonem/d2r-pcvr/pull/10). All **40 native checks
+pass**, including map page/cancellation/paint-context guards and the new atlas
+preview. Native-art Map/wheel/editor previews were inspected; wrist isolation
+and asynchronous painting checks also passed. This map candidate has not yet
+been run in game or verified in a headset; verify both-eye map placement,
+selected-skill preservation, return/close, automap restoration and cancellation.
+
+Installed at 14:58 PDT in both Steam 3.3.93787 and experimental Battle.net
+3.3.93847, superseding the Smite-fix DLL described below. Both hashes match
+`b9953905488ce1f69be3d7763aae50dbb887db717ec918bf054f155ac70d1168`.
+Settings, saves and original executables were verified unchanged, with previous
+DLLs/settings and shared saves backed up. Receipt:
+`build-frame/windows/latest-spell-menu-map-deployment.json`.
+Backup: `build-frame/backups/windows-spell-menu-map-20261012-145848-385/`.
+The earlier owner-confirmed shield-bash test remains recorded below; it was
+performed before this map change. The shortcut startup fix above awaits owner
+repeat-launch confirmation.
+
+**Earlier October 12 motion-skill candidate / Smite activation fix:** Draft
+[PR #10](https://github.com/bearstonem/d2r-pcvr/pull/10), branch
+`feat/motion-weapon-skills`. The owner confirmed the wheel ACTIVE marker and
+Smite icon, but shield swings/thrusts did not register while button casts worked.
+The motion hook was disabled by failed OS unwind lookup validation. Native Smite
+discovery now uses an exact bounded entry in the game PE exception directory,
+retaining the audited dispatch-table and decoded target-call checks. Failed
+activation shows **TRIGGER ONLY**, with separate shield readiness/outcome logs.
+
+At that stage all 39 native checks passed. The corrected DLL (SHA-256
+`35d938542fe95c71046b68348fe51c8f48bab3666acf63b91940a6edff666881`)
+was installed in both existing Steam 3.3.93787 and experimental Battle.net
+3.3.93847 VR copies. Live main-menu checks logged `contact casting ready` at
+00:32:34 and 00:34:10 PDT respectively; no character was entered, and both games
+closed normally. Previous DLLs and shared saves are backed up; calibration,
+settings, saves and game executables were verified unchanged during deployment.
+Receipt: `build-frame/windows/latest-motion-weapon-skills-deployment.json`.
+Backup: `build-frame/backups/windows-smite-hook-fix-20261012-003340-750/`.
+The earlier original-candidate backup remains available at
+`build-frame/backups/windows-motion-weapon-skills-20261012-000028-750/`.
+The owner subsequently verified physical Paladin shield bash working on Steam
+Frame / SteamVR streaming with Steam 3.3.93787. The 14:26-14:29 PDT session logged
+15 contact cast requests, 14 native completions and zero reported native refusals.
+Keep the PR draft for Amazon arrow skills, shield fit across models, detailed
+resource/cadence comparisons and cancellation checks. See
+[steamvr/GAMEPLAY.md](steamvr/GAMEPLAY.md) for the checklist and the native
+ground-plane limitation of specialized arrows.
+
+The owner's Steam Frame shortcut attempts at 14:24 and 14:25 crashed with
+`0xc0000005` before D2RCore or the VR plugin loaded. A direct launch with Steam
+game IDs and the explicit SteamVR runtime succeeded at 14:26 and was used for the
+verified shield test. Early overlay injection is a suspect, not an established
+cause; the working process also loads the overlay later. Shortcut repair remains
+pending. At shutdown the loader logged vanilla object-pool assertions; these have
+not been investigated, so this later combat session is not a clean-exit validation.
+
 **v0.3.7 Windows preview:** packages the merged Battle.net support and guided
 Windows uninstaller from PR #6, with the player guides and download links
 updated for `v0.3.7-windows-preview`. The native DLL remains the owner-verified

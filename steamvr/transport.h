@@ -22,6 +22,11 @@ bool SpellSelected();
 bool DirectedSpellActive(); // fresh native assignment, actually casting (wheel or quick shortcut)
 bool GameplayRay(float origin[3],float direction[3]);
 bool MeleeSample(uint32_t poseStamp,melee::Sample& sample);
+bool ShieldSample(uint32_t poseStamp,melee::Sample& sample);
+bool RequestShieldSkill(const melee::Sample& sample,uint32_t target,math::Vec gridTarget);
+int TakeShieldTarget(uint32_t& target); // 1 physical target, -1 cancelled cast, 0 native fallback
+bool ShieldAim(float& x,float& y);
+void FinishShieldSkill(bool accepted);
 void MeleeImpact(); // thread-safe; haptic delivered by XR input update
 bool TakeBowShot(bowflight::Shot& shot);
 bool BowPreviewPose(bowflight::Shot& pose,bool& visible);

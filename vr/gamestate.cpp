@@ -57,8 +57,8 @@ const ThreadService* g_threads = nullptr;
 // set by sending those messages ourselves (SetAutoMap) - no key, no button.
 const WidgetService* g_widgets = nullptr;
 std::atomic<int> g_autoMap{0};
-std::atomic<uint64_t> g_wristMapAt{0};
-framevr::wrist::MapLease g_wristMapLease;
+std::atomic<uint64_t> g_menuMapAt{0};
+framevr::wrist::MapLease g_menuMapLease;
 const InventoryService* g_inventory = nullptr;
 const ItemService* g_items = nullptr;
 const SharedEventService* g_events = nullptr;
@@ -124,6 +124,8 @@ std::vector<std::pair<uint32_t, uint32_t>> g_typeIndex;   // ItemTypes row index
 int g_twoOffset = -2;                        // -2 not tried yet, -1 failed
 std::atomic<uint32_t> g_two{0};
 std::atomic<uint32_t> g_from{0};
+std::atomic<bool> g_leftShield{false};
+std::vector<uint32_t> g_shieldTypes;
 std::atomic<uint32_t> g_handsKey{0};          // what is in the two hands, as one number (HandsKey)             // the hand slot the weapon kind came from: 0 right, 1 left              // D2RVR_TWO_HANDED* bits of what is held
 
 constexpr uint32_t Four(const char* s) { return DataTables::MakeFourCC(s[0], s[1], s[2], s[3]); }
@@ -173,6 +175,10 @@ void CalibrateTypes() {
         {"jave", D2RVR_TYPE_JAVELIN}, {"ajav", D2RVR_TYPE_JAVELIN},
         {"h2h ", D2RVR_TYPE_CLAW}, {"h2h2", D2RVR_TYPE_CLAW}, {"orb ", D2RVR_TYPE_ORB}};
     std::string found;
+    for(const char* code:{"shie","ashd","head"}) {
+        uint32_t index=0;
+        if(TypeRow(Four(code),&index))g_shieldTypes.push_back(index);
+    }
     for (const auto& k : kKinds) {
         uint32_t idx;
         if (TypeRow(Four(k.code), &idx)) g_typeIndex.push_back({idx, k.type});
@@ -274,6 +280,14 @@ uint32_t KindOf(const std::string& code) {
     return 0;
 }
 
+bool IsShield(const std::string& code) {
+    if(code.size()!=4||g_typeOffset<0)return false;
+    uint32_t size=0;const auto* row=ItemRow(Four(code.c_str()),&size);uint16_t type=0;
+    if(!row||uint32_t(g_typeOffset)+sizeof type>size)return false;
+    memcpy(&type,row+g_typeOffset,sizeof type);
+    return std::find(g_shieldTypes.begin(),g_shieldTypes.end(),type)!=g_shieldTypes.end();
+}
+
 void Publish() {
     if (!g_state) return;
     g_state->weaponClass = g_weapon.load();
@@ -298,12 +312,12 @@ void __cdecl ReadItems(const PluginContext* ctx, void* token) noexcept {
     g_player.store(havePlayer ? player : 0);
 #ifdef D2RVR_NATIVE_OPENXR
     panelinput::MaintainWorldController(havePlayer,g_menu.load()!=0);
-    const auto now=GetTickCount64(),mapAt=g_wristMapAt.load();
+    const auto now=GetTickCount64(),mapAt=g_menuMapAt.load();
     const bool mapWanted=mapAt&&now>=mapAt&&now-mapAt<400;
-    const int mapAction=g_wristMapLease.Step(havePlayer?player:0,now,mapWanted,g_menu.load()!=0,g_autoMap.load()!=0);
+    const int mapAction=g_menuMapLease.Step(havePlayer?player:0,now,mapWanted,g_menu.load()!=0,g_autoMap.load()!=0);
     // Keep native widget calls on this UI callback, never on the XR thread.
     if(mapAction>=0)DispatchAutoMap(ctx,mapAction?(void*)1:nullptr);
-    hud::WristMapCapture(g_wristMapLease.Active(now,g_menu.load()!=0));
+    hud::MenuMapCapture(g_menuMapLease.Active(now,g_menu.load()!=0));
 #endif
     if(!havePlayer)g_menuOpenUntil=0;
     else if(g_menuOpenUntil)FinishMenuOpen(ctx,nullptr);
@@ -311,6 +325,7 @@ void __cdecl ReadItems(const PluginContext* ctx, void* token) noexcept {
         g_weapon.store(D2RVR_WEAPON_UNKNOWN);
         g_type.store(D2RVR_TYPE_UNKNOWN);
         g_held.store(0);
+        g_leftShield=false;
         g_two.store(0);
         g_set.store(0);
 #ifdef D2RVR_NATIVE_OPENXR
@@ -374,6 +389,7 @@ void __cdecl ReadItems(const PluginContext* ctx, void* token) noexcept {
     // sits in the left with the quiver in the right); a hand holding no weapon
     // kind we know (a shield) is skipped. Unknown kinds fall back to the class.
     if (g_typeOffset == -2) CalibrateTypes();
+    g_leftShield=IsShield(code[1]);
     if (g_objLitOffset == -2) CalibrateObjectLights();
     if (g_twoOffset == -2 && g_typeOffset >= 0) CalibrateTwoHanded();
     uint32_t kind = KindOf(code[0]);
@@ -603,6 +619,7 @@ uint32_t WeaponClass() { return g_weapon.load(); }
 uint32_t WeaponSet() { return g_set.load(); }
 uint32_t WeaponType() { return g_type.load(); }
 uint32_t HandsHeld() { return g_held.load(); }
+bool LeftShield() {return g_leftShield.load();}
 uint32_t TwoHanded() { return g_two.load(); }
 uint32_t WeaponHand() { return g_from.load(); }
 uint32_t HandsKey() { return g_handsKey.load(); }
@@ -610,7 +627,7 @@ bool MenuOpen() { return g_menu.load() != 0; }
 uint32_t MenuEpoch() { return g_menuEpoch.load(); }
 uint64_t LocalPlayer() { return g_player.load(); }
 uint32_t DataBank() {return uint32_t(g_bank);} // UI-thread-only table bank
-void WristMap(bool wanted) {g_wristMapAt.store(wanted?GetTickCount64():0);}
+void MenuMap(bool wanted) {g_menuMapAt.store(wanted?GetTickCount64():0);}
 // An object's light in a mode: its radius (Objects.txt Lit, 0 = none) and colour 0..1.
 int ObjectLight(uint32_t txt, uint32_t mode, float rgb[3]) {
     if (txt >= g_objCount.load() || mode > 7) return 0;

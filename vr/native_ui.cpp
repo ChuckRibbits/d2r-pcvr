@@ -16,6 +16,7 @@
 #include "controller_bindings.h"
 #include "skill_slots.h"
 #include "spell_aim.h"
+#include "weapon_skills.h"
 #include "panel_input.h"
 namespace gamestate {uint32_t DataBank();}
 namespace nativeui {
@@ -94,8 +95,9 @@ void Capture(framevr::interaction::Snapshot& s) {
     const int index=reinterpret_cast<int(*)()>(d2rsig::Addr(abi::LocalIndexRva))();
     if(index<0||index>=8)return;
     player=reinterpret_cast<uintptr_t(*)(int)>(d2rsig::Addr(abi::ClientPlayerRva))(index);
-    uint32_t h[3]{};reason=3;
+    uint32_t h[4]{};reason=3;
     if(!Read(player,h)||h[0]!=0)return;
+    s.actionKnown=true;s.actionMode=h[3];
     clientId=h[2];reason=4;
     // This signature-checked accessor resolves the local UI player, after the
     // SDK has confirmed the current session. Aim/camera proximity is not an
@@ -159,8 +161,10 @@ void Capture(framevr::interaction::Snapshot& s) {
         // Offsets independently audited across all 429 local skill records.
         uintptr_t row=0;int16_t rowId=-1,missile=-1,serverFunction=0;uint32_t flags=0;
         if(node&&Read(node,row)&&Read(row,rowId)&&rowId==skillId&&
-           Read(row+0x24,flags)&&Read(row+0x4e,serverFunction)&&Read(row+0x66,missile))
+           Read(row+0x24,flags)&&Read(row+0x4e,serverFunction)&&Read(row+0x66,missile)) {
             skill.directed=framevr::spellaim::Directed(flags,missile,serverFunction);
+            skill.motion=framevr::weaponskills::Bow(skillId)||(skillId==framevr::weaponskills::Smite&&serverFunction==150);
+        }
         const auto name=Name(skillId);std::snprintf(skill.name,sizeof skill.name,"%s",name.c_str());
     }
     if(BindingReady()) {

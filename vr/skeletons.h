@@ -88,6 +88,7 @@ struct Input {
     bool holdGrip = false;      // mode 2: the weapon keeps one grip, not the animation's (vrcam: every weapon, 2026-10-05)
     bool attacking = false;     // a skill button is down: no grip is taken from the animation then
     float weaponAdj[6] = {};
+    bool leftShield=false;
     char shrinkBone[48] = {};   // [debug] shrink_bone: the hero's bone of this name drawn shrunk to a point - what hangs on it vanishes    // mode 2: the weapon in the hand moved x y z (cm) and turned pitch yaw roll (deg), its own axes
 #endif
 };
@@ -172,6 +173,7 @@ struct MeleeWeaponPose {
     float castingAxis[3]{}; // final visible shaft, including staff's chosen axis/sign
 };
 bool MeleeWeapon(MeleeWeaponPose& out);
+bool ShieldWeapon(MeleeWeaponPose& out);
 #endif
 #endif
 // Where the game's own pose points the hero, in model space (deg, atan2 of each bone's z row):

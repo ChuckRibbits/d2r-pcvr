@@ -3,7 +3,7 @@
 #include <cstdint>
 
 namespace framevr::spellaim {
-struct Cast {bool directed=false;float x=0,y=0;};
+struct Cast {bool directed=false;float x=0,y=0;bool contactPoint=false;};
 struct Scope {
     Cast& current;Cast previous;
     Scope(Cast& current,Cast next):current(current),previous(current){current=next;}

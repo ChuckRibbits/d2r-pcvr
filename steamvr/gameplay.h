@@ -2,6 +2,7 @@
 #include "frame_math.h"
 #include <cstdint>
 #include "skill_slots.h"
+#include "weapon_skills.h"
 
 // Room-space gesture recognizer. No game memory, damage, inventory edits or
 // synthetic velocity from head/camera turning. Right hand = 0, left = 1.
@@ -47,11 +48,15 @@ struct Input {
     int hover=-1;
     bool quickCast=false;
     int quickSkill=-1;
+    int selectedSkill=-1,selectedOwner=-1;
+    uint64_t skillContext=0;
+    bool selectedAvailable=false,shieldEquipped=false;
 };
 struct Output {
     bool attack=false, block=false, palette=false, bowDrawing=false, rayValid=false;
     bool bowReady=false, bowInReach=false, bowCharged=false;
     bool meleeContact=false,bowRelease=false,javelinRelease=false,javelinReady=false;
+    bool nativeBowRelease=false,shieldContact=false;
     float meleeSpeed=0;
     int skill=-1, potion=-1, bottle=-1; // potion is a one-shot request, not proof of consumption
     bool swap=false;
@@ -90,6 +95,10 @@ class Engine {
     Vec throwStart{},throwVelocity{};
     double throwAt=0,velocityAt=0;
     float throwTravel=0;
+    int drawSkill=-1,drawOwner=-1;
+    uint64_t drawContext=0;
+    bool nativeBowTrigger=false;
+    weaponskills::Pulse skillPulse;
 public:
     void Cancel() {
         const int chosen=selection;const auto heldWeapon=weapon;const auto heldEquipment=equipment;
@@ -127,7 +136,7 @@ public:
         out.rayOrigin=in.aim.p;out.rayDirection=math::Rotate(in.aim.q,{0,0,-1});out.rayValid=true;
 
         if(in.palette) {
-            drawing=throwing=false;pulseUntil=0;blockedTrigger=true;
+            drawing=throwing=nativeBowTrigger=false;skillPulse.Cancel();pulseUntil=0;blockedTrigger=true;
             if(bottle<0&&triggerEdge) {
                 if(in.hover>=0&&in.hover<8) {selection=in.hover;out.feedback=1;}
                 else if(in.hover==8) {selection=-1;out.feedback=1;}
@@ -138,7 +147,7 @@ public:
             }
         }
         if(bottle>=0) {
-            blockedTrigger=true;drawing=throwing=false;pulseUntil=0;
+            blockedTrigger=true;drawing=throwing=nativeBowTrigger=false;skillPulse.Cancel();pulseUntil=0;
             if(!grip) {bottle=-1;bottleSpent=false;drinkStart=0;}
             else {
                 out.bottle=bottle;
@@ -154,11 +163,16 @@ public:
         }
         if(in.palette) {out.block=true;return out;}
         if(in.quickCast) {
-            drawing=throwing=false;bowWasCharged=false;pulseUntil=shotAimUntil=0;blockedTrigger=true;
+            drawing=throwing=nativeBowTrigger=false;skillPulse.Cancel();bowWasCharged=false;pulseUntil=shotAimUntil=0;blockedTrigger=true;
             if(in.quickSkill>=0&&in.quickSkill<skills::Count)out.skill=in.quickSkill;
             return out; // preserve selected trigger skill; no melee or bow release
         }
         if(blockedTrigger) {out.block=true;return out;}
+
+        const bool skillBow=selection>=0&&in.selectedAvailable&&weaponskills::Bow(in.selectedSkill);
+        if((drawing||nativeBowTrigger)&&((selection>=0&&!in.selectedAvailable)||drawSkill!=in.selectedSkill||drawOwner!=in.selectedOwner||drawContext!=in.skillContext)) {
+            drawing=nativeBowTrigger=false;skillPulse.Cancel();blockedTrigger=true;out.block=true;return out;
+        }
 
         if(in.weapon==Weapon::Javelin&&selection<0) {
             out.javelinReady=true;
@@ -189,7 +203,7 @@ public:
             return out; // only the release spends ammunition; never hold A
         }
 
-        if(in.weapon==Weapon::Bow&&selection<0) {
+        if(in.weapon==Weapon::Bow&&(selection<0||skillBow)) {
             const Vec line=in.hand[1].p-in.hand[0].p;
             const float gap=Length(line);
             out.bowReady=true;out.bowForward=BowForward(in.hand[1]);
@@ -201,8 +215,19 @@ public:
             // The equipped bow already belongs to the left hand. No extra
             // grip clutch: trigger grabs its visible string target, including
             // when squeezed just before entering the generous grab region.
+            // Away from the string, a fresh press retains the native comfort
+            // fallback. Once that press casts, moving into the string cannot
+            // also nock an arrow until the trigger has been released.
+            if(skillBow&&triggerEdge&&!out.bowInReach) {
+                nativeBowTrigger=true;drawSkill=in.selectedSkill;drawOwner=in.selectedOwner;drawContext=in.skillContext;
+            }
+            if(nativeBowTrigger) {
+                if(trigger) {out.skill=selection;out.rayOrigin=in.aim.p;out.rayDirection=math::Rotate(in.aim.q,{0,0,-1});return out;}
+                nativeBowTrigger=false;
+            }
             if(trigger&&!drawing&&out.bowInReach&&in.time>=pulseUntil) {
                 drawing=true;drawStart=in.time;nockGap=gap;out.feedback=1;
+                drawSkill=in.selectedSkill;drawOwner=in.selectedOwner;drawContext=in.skillContext;
             }
             if(drawing&&gap>1.10f) {drawing=false;blockedTrigger=true;out.block=true;return out;}
             out.bowCharged=drawing&&gap>=.28f&&gap-nockGap>=.12f&&in.time-drawStart>=.12;
@@ -211,7 +236,10 @@ public:
             if(drawing&&released) {
                 if(out.bowCharged&&math::Dot(math::Normalized(line),out.bowForward)>.15f) {
                     shotOrigin=in.hand[1].p;shotDirection=math::Normalized(line);
-                    pulseUntil=in.time+.065;out.feedback=2;out.bowRelease=true;
+                    pulseUntil=in.time+.065;out.feedback=2;
+                    if(skillBow) {
+                        out.nativeBowRelease=skillPulse.Start(selection,in.selectedSkill,in.selectedOwner,in.skillContext,in.time);
+                    } else out.bowRelease=true;
                     shotAimUntil=in.time+.4;
                 }
                 drawing=false;
@@ -221,15 +249,18 @@ public:
                 out.rayOrigin=drawing?in.hand[1].p:shotOrigin;
                 out.rayDirection=drawing?(gap>.05f?math::Normalized(line):out.bowForward):shotDirection;
             }
-            // A release is a single native missile request, never a held pad
-            // button. The game must not replay its animated firing wind-up.
+            // Basic arrows use the direct native missile path. Selected arrow
+            // skills use one brief native button press, retaining their volley,
+            // effects, resource checks and native animation/cadence.
             out.attack=false;
+            if(skillBow)out.skill=skillPulse.Get(selection,in.selectedSkill,in.selectedOwner,in.skillContext,in.time);
             return out;
         }
         // Contact melee runs from the equipped weapon's posed transform. It
         // stays available with a trigger skill selected, but pauses during
         // casting. It never generates an attack pulse or needs a grip clutch.
         out.meleeContact=(in.weapon==Weapon::Melee||in.weapon==Weapon::Javelin)&&!trigger;
+        out.shieldContact=in.shieldEquipped&&selection>=0&&in.selectedAvailable&&in.selectedSkill==weaponskills::Smite&&!trigger;
         out.attack=trigger&&selection<0; // explicit button fallback only
         if(trigger&&selection>=0)out.skill=selection;
         return out;

@@ -19,6 +19,8 @@ latest deployment and evidence.
 | Holsters | Configurable hip anchors and seated preset, grip-and-pull requests set I/II, waits for observed set; explicit stow/draw | Initial set inference, identical/empty sets; item labels currently use base codes, no silhouettes; no arbitrary inventory equips |
 | Journal | Quest UI-only copy, stereo scene behind it, left-hand placement, grip/release pinning, original page UV input; falls back to normal panel if capture unavailable | First headset verification of crop, native act tabs, close/reopen and tracking recovery; other pages and decorative geometry remain |
 | Casting | Equip/select, point right hand, press/hold trigger; directional casts follow the visible casting shaft (hand aim for other weapons), with native target snapping suppressed only during that cast; native spread/resources/effects | Teeth headset check pending. **Full 3D spell flight/contact and immediate accepted native spawn are not implemented.** Native animation and ground-plane flight remain |
+| Motion weapon skills (2026-10-11 source candidate) | Selected Amazon arrow skills use one draw/release per native cast/volley; Smite uses energetic left-shield contact when its native hook is identified; shield attachment follows the tracked wrist independently of the main weapon | Windows build and automated checks pass; installed for offline testing in both existing Steam/Battle.net VR copies on 2026-10-12. Headset validation pending. Special arrows retain native animation/ground-plane collision. Live Smite discovery, shield fit, resources/cadence and cancellation during wind-up need offline verification |
+| Active-skill cues (2026-10-11 source candidate) | Persistent gold ACTIVE marker distinct from hover; closed-wheel weapon icon with brief name/action hint; temporary quick-cast cue restores the persistent choice | Synthetic preview checked; headset readability/placement and native Strafe busy state need verification; no inferred mana/cooldown readiness |
 
 All new surfaces share one change-driven atlas (up to 10 updates/second, only
 while visible) and respect the runtime's composition-layer limit. They do not
@@ -52,6 +54,7 @@ An equipped weapon remains held without continuously squeezing grip.
 |---|---|---|
 | Weapons | Reach to a holster, squeeze grip, pull the set into use | Holster highlight, item silhouette/name, then confirmed equipped set |
 | Skills/spells | Hold Left Y for an eight-slot wheel over the left palm; point right hand and click trigger to select | Actual skill name/icon, selected mode and availability |
+| Minimap | Hold Left Y and select **MAP** in the bottom tabs; **SPELLS** returns to skills | Larger native explored minimap; selected skill stays active; wrist retains vitals/XP |
 | Quick casting | Hold Left Trigger + a face button; add Left Grip for alternate four slots; right hand aims | Same native assignments as the wheel; see GAMEPLAY mapping |
 | Potions | Reach to the front belt, grip a bottle, bring to mouth and tip | Actual potion type/count, then confirmed consumption |
 | Health/mana | Look at the back of the left wrist, like checking a watch | Live life/mana orbs; brief low-health/low-mana cues otherwise |

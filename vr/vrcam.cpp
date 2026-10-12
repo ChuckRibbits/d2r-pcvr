@@ -77,6 +77,7 @@ namespace gamecmd { void Init(const D2RL::PluginContext* ctx); void Tick(); }   
 namespace gamestate { bool ToggleMenus(); }
 namespace gamestate { uint32_t MenuEpoch(); }
 namespace gamestate { void Init(const D2RL::PluginContext* ctx); void Tick(); uint32_t WeaponClass(); uint32_t WeaponSet(); uint32_t WeaponType(); uint32_t HandsHeld(); uint32_t TwoHanded(); uint32_t WeaponHand(); uint32_t HandsKey(); bool MenuOpen(); int ObjectLight(uint32_t txt, uint32_t mode, float rgb[3]); uint64_t LocalPlayer(); void SetViewMode(uint32_t mode); bool AutoMapOpen(); bool SetAutoMap(bool open); void PollPlate(); bool PlateRect(int32_t out[4]); }
+namespace gamestate {bool LeftShield();}
 #include "d2r_vr_state.h"
 
 #include "MinHook.h"
@@ -2970,6 +2971,8 @@ bool IsHeroUnit(const void* unit);
 void HookSpellResolve(uintptr_t manager,void* unit,bool assist,float* x,float* y) {
     framevr::spellaim::Cast cast;
     cast.directed=unit&&x&&y&&IsHeroUnit(unit)&&DirectedSpellAim(cast.x,cast.y);
+    if(unit&&x&&y&&IsHeroUnit(unit)&&g_spellAimReady.load()&&g_enabled.load()&&!gamestate::MenuOpen()&&
+       framevr::ShieldAim(cast.x,cast.y))cast.directed=cast.contactPoint=true;
     framevr::spellaim::Scope scope(g_spellCast,cast);
     // The last native aim-assist stage can bend a free cast toward a nearby
     // point even after selected-target lookup. Keep it off for this call only.
@@ -3079,7 +3082,8 @@ float* HookAttackPoint(void* mgr, float* out, void* unit, uint64_t from, uint64_
 #ifdef D2RVR_NATIVE_OPENXR
     if(out&&g_spellCast.directed&&uintptr_t(_ReturnAddress())==d2rsig::Addr(spellaimabi::PointCallRva+5)) {
         float start[2];std::memcpy(start,&from,sizeof start);
-        framevr::spellaim::Point(start[0],start[1],{g_spellCast.x,0,g_spellCast.y},out[0],out[1]);
+        if(g_spellCast.contactPoint){out[0]=g_spellCast.x;out[1]=g_spellCast.y;}
+        else framevr::spellaim::Point(start[0],start[1],{g_spellCast.x,0,g_spellCast.y},out[0],out[1]);
         return r;
     }
 #endif
@@ -5641,7 +5645,7 @@ void MeleeContactTick() {
     if(!g_enabled.load()||!g_inWorld.load()||ThirdPerson()||Overhead()||!g_eyeOk.load()||
        gamestate::MenuOpen()||!skel::MeleeWeapon(pose)||pose.worldEpoch!=g_meleeTurnEpoch.load()||
        !framevr::MeleeSample(pose.poseStamp,sample)) {
-        melee::Cancel();return;
+        melee::CancelWeapon();return;
     }
     const float upm=std::max(1.f,ViewHeight())/UserEyeHeightM();
     using framevr::math::Vec;
@@ -5660,13 +5664,37 @@ void MeleeContactTick() {
     // The checked UI-thread accessor refreshes the native local unit across
     // warps. Do not gate swings on aim-hook traffic or camera proximity.
     uintptr_t nativeHero=0;
-    if(!combat::LocalPlayerUnit(nativeHero)){melee::Cancel();return;}
+    if(!combat::LocalPlayerUnit(nativeHero)){melee::CancelWeapon();return;}
     combat::ObserveLocalPlayer(nativeHero);
     sample.epoch=(sample.epoch<<32)|pose.worldEpoch;
     sample.unitsPerMetre=upm;sample.player={pose.player[0]/upm,pose.player[1]/upm,pose.player[2]/upm};
     sample.blade.base={pose.origin[0]/upm,pose.origin[1]/upm,pose.origin[2]/upm};
     sample.blade.tip=sample.blade.base+Vec{pose.axis[0],pose.axis[1],pose.axis[2]}*length;
     sample.blade.radius=radius;melee::Submit(sample);
+}
+void ShieldContactTick() {
+    framevr::melee::Sample sample;skel::MeleeWeaponPose pose;
+    if(!g_enabled.load()||!g_inWorld.load()||ThirdPerson()||Overhead()||!g_eyeOk.load()||gamestate::MenuOpen()||!gamestate::LeftShield()) {
+        melee::CancelShield();return;
+    }
+    const bool hook=melee::ShieldReady(),posed=skel::ShieldWeapon(pose);
+    const bool epoch=posed&&pose.worldEpoch==g_meleeTurnEpoch.load();
+    const bool input=epoch&&framevr::ShieldSample(pose.poseStamp,sample);
+    static ULONGLONG reportAt=0;const auto now=GetTickCount64();
+    if(now>=reportAt) {
+        char line[180];snprintf(line,sizeof line,"Frame shield ready: hook=%d posed=%d epoch=%d input=%d contact=%d",hook,posed,epoch,input,input&&sample.active);
+        framevr::logging::Write(line);reportAt=now+5000;
+    }
+    if(!hook||!input){melee::CancelShield();return;}
+    const float upm=std::max(1.f,ViewHeight())/UserEyeHeightM();
+    sample.epoch=(sample.epoch<<32)|pose.worldEpoch;sample.unitsPerMetre=upm;
+    sample.player={pose.player[0]/upm,pose.player[1]/upm,pose.player[2]/upm};
+    const framevr::math::Vec center{pose.origin[0]/upm,pose.origin[1]/upm,pose.origin[2]/upm};
+    const framevr::math::Vec axis{pose.axis[0],pose.axis[1],pose.axis[2]};
+    // Conservative shield-sized capsule around the visible attachment. Native
+    // Smite still checks reach and walls; a resting shield cannot power a hit.
+    sample.blade={center-axis*.20f,center+axis*.20f,.15f};
+    melee::Submit(sample);
 }
 #endif
 
@@ -5798,6 +5826,9 @@ void PushArms() {
         }
     }
     in.weaponType = (int)gamestate::WeaponType();
+#ifdef D2RVR_NATIVE_OPENXR
+    in.leftShield=on&&gamestate::LeftShield();
+#endif
     in.weaponSide = (int)gamestate::WeaponHand();
     // The grip is taken again for any change of what the two hands hold, not only of the kind: a barbarian's
     // axe and shield, then the shield for a dagger - still "Axe", the dagger hung where the shield's stance had
@@ -7671,6 +7702,7 @@ DWORD WINAPI UpdateThread(void*) {
         PushArms();
 #ifdef D2RVR_NATIVE_OPENXR
         MeleeContactTick();
+        ShieldContactTick();
         BowTick();
 #endif
 #if D2RVR_FIRST_PERSON
