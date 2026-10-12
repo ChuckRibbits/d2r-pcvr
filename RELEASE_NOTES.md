@@ -36,9 +36,10 @@ is required for library shortcuts, including with the Battle.net edition.
   is needed for the EXE. Setup still downloads the required loader and ReShade.
 - **Permanent helper folder:** helpers, instructions and verified backups live in
   `%LOCALAPPDATA%\Programs\D2R PCVR`.
-- **Update / repair:** rerun Setup to keep calibration and video settings. Recorded
-  ZIP installations can upgrade; their referenced backups are copied and checked
-  before updating. Keep the old folder until Setup succeeds.
+- **Update / repair:** rerun Setup to keep calibration and video settings. ZIP
+  installations can upgrade; original backups are copied and checked before
+  updating. Setup asks for the backup folder if an older installation has an
+  incomplete record. Keep the old folder until Setup succeeds.
 - **Windows removal:** uninstall through Windows Settings → Apps or the Start menu.
   This removes all game copies managed by the EXE while keeping character progress,
   shared stash, current video settings and backups.

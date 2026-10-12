@@ -24,7 +24,7 @@ class NativeSetupTests(unittest.TestCase):
         return path
 
     def fixture(self, root, store='steam'):
-        app, game, client, saves = [root / name for name in ('helper', store, 'Steam', 'Saved Games')]
+        app, game, client, saves = [root / name for name in ('helper', 'Game-' + store, 'Steam', 'Saved Games')]
         app.mkdir(exist_ok=True)
         self.put(client / 'steam.exe')
         self.put(client / 'steamapps/common/SteamVR/steamxr_win64.json', b'{}')
@@ -241,7 +241,9 @@ class NativeSetupTests(unittest.TestCase):
                 self.assertEqual(kwargs['mode'], 0)
                 self.assertTrue(kwargs['hide_console'])
                 self.put(game / uninstall.PLUGIN, b'new plugin')
-                install.write_record(game, {'game': str(game), 'snapshots': []})
+                if not install.read_record(game).get('snapshots'):
+                    snapshot = self.snapshot(app / 'setup-backups/game/20260101', game, saves)
+                    install.write_record(game, {'game': str(game), 'snapshots': [str(snapshot)]})
                 kwargs['on_steam_configured']()
                 return {'fixture': True}
             with patch.object(setup, 'require_closed'), patch.object(native, 'validate_choices', return_value=selection), \
@@ -253,6 +255,57 @@ class NativeSetupTests(unittest.TestCase):
             entries = native.managed_state(app)['installations']
             self.assertEqual(len(entries), 1)
             self.assertEqual(entries[0]['status'], 'installed')
+
+    def test_shared_execution_configures_real_fixture_steam_and_removes_cleanly(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            app, game, client, saves, profile, values = self.fixture(root)
+            runtime_python = app / '.runtime/python/python.exe'
+            def install_files(command, **kwargs):
+                self.assertIn('--download-deps', command)
+                self.assertIn(str(game), command)
+                snapshot = self.snapshot(app / 'setup-backups/game/20260101', game, saves)
+                self.put(game / uninstall.PLUGIN, b'new plugin')
+                install.write_record(game, {'game': str(game), 'snapshots': [str(snapshot)]})
+            with patch.object(setup, 'require_closed'), patch.object(setup, 'verify_release', return_value={'sha256': {}}), \
+                    patch.object(setup.sys, 'executable', str(runtime_python)), \
+                    patch.object(setup.subprocess, 'run', side_effect=install_files), \
+                    contextlib.redirect_stdout(io.StringIO()):
+                result = native.install_selected(values, app)
+                self.assertIn(str(runtime_python), result['launch_options'])
+                record = install.read_record(game)
+                self.assertEqual(record['steam_profiles'][str(profile.resolve())]['previous_launch_options'], '-original-option')
+                entries = steam.decode_binary((profile / 'config/shortcuts.vdf').read_bytes())['shortcuts']
+                self.assertEqual(len(entries), 1)
+                self.assertEqual(entries['0']['OpenVR'], 1)
+                native.remove_managed(app)
+            self.assertEqual((profile / 'config/localconfig.vdf').read_text(), LOCAL)
+            self.assertEqual(steam.decode_binary((profile / 'config/shortcuts.vdf').read_bytes())['shortcuts'], {})
+            self.assertFalse((game / uninstall.PLUGIN).exists())
+            self.assertEqual((saves / 'Character.d2s').read_bytes(), b'current character')
+
+    def test_imports_original_legacy_backup_with_or_without_newer_receipt(self):
+        for receipt in (False, True):
+            with self.subTest(receipt=receipt), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                app, game, client, saves, profile, values = self.fixture(root)
+                folder = root / 'old-zip/backups'
+                original = self.snapshot(folder / '20260101', game, saves)
+                self.put(game / uninstall.PLUGIN, b'legacy mod')
+                if receipt:
+                    upgrade = self.snapshot(folder / '20260102', game, saves, {str(uninstall.PLUGIN): b'legacy mod'})
+                    manifest = json.loads((upgrade / 'manifest.json').read_text())
+                    manifest['previous_mod'] = True
+                    (upgrade / 'manifest.json').write_text(json.dumps(manifest))
+                    install.write_record(game, {'game': str(game), 'snapshots': [str(upgrade)]})
+                values['backups'] = str(folder)
+                with patch.object(setup, 'verify_release', return_value={'sha256': {}}), patch.object(setup, 'require_closed'):
+                    native.validate_choices(values, app)
+                    native.adopt_backups(game, app, folder if not receipt else None)
+                chain = uninstall.snapshots(game, install.read_record(game), [app / 'setup-backups/game'])
+                self.assertEqual(len(chain), 2 if receipt else 1)
+                self.assertTrue(all(path.is_relative_to(app) for path, _ in chain))
+                self.assertEqual(uninstall.restore_plan(game, chain)[game / uninstall.PLUGIN], None)
 
 
 if __name__ == '__main__':

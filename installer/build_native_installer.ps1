@@ -31,6 +31,8 @@ if (!$ISCCPath) {
 if (!(Test-Path -LiteralPath $ISCCPath)) {
     throw 'Install Inno Setup 7.1 or later and pass -ISCCPath to its ISCC.exe. See installer/README.md.'
 }
+$compilerVersion = & $ISCCPath --version
+if ($LASTEXITCODE -ne 0) { throw 'Could not determine the Inno Setup compiler version' }
 $staged = & $python (Join-Path $PSScriptRoot 'stage_native_installer.py') --package $package --python-archive $PythonArchive --staging-parent (Join-Path $repoRoot 'build-frame/installer-staging')
 if ($LASTEXITCODE -ne 0) { throw 'Native installer payload validation failed' }
 $stage = $staged | ConvertFrom-Json
@@ -53,7 +55,7 @@ $report = [ordered]@{
     source_commit = $stage.source_commit
     plugin_source_commit = $stage.plugin_source_commit
     plugin_sha256 = $stage.plugin_sha256
-    compiler = (Get-Item -LiteralPath $ISCCPath).VersionInfo.FileVersion
+    compiler = ($compilerVersion | Out-String).Trim()
     private_python = '3.12.10 (official x64 embeddable package; SHA-256 and publisher checked)'
     signed = $false
 }

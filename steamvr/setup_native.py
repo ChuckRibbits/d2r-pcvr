@@ -50,7 +50,7 @@ def read_choices(path):
     return dict(parser['setup'])
 
 
-def write_probe(path, root, steam=None):
+def write_probe(path, root, steam=None, game=None, managed_root=None):
     steam = steam or setup.steam_location()
     libraries = setup.libraries(steam) if steam else []
     accounts = setup.profiles(steam) if steam else []
@@ -61,7 +61,13 @@ def write_probe(path, root, steam=None):
         'steamvr': str(setup.app_folder(libraries, '250820') or ''), 'saves': str(setup.saved_games()),
         'battlenet_available': str(int('bin/CascLib.dll' in manifest['sha256'])),
         'profiles': str(len(accounts)),
+        'backup_required': '0', 'backup_message': '',
     }
+    if game is not None:
+        try:
+            check_backups(game.resolve(), Path(managed_root or root))
+        except (OSError, ValueError, KeyError) as error:
+            values.update(backup_required='1', backup_message=str(error))
     for index, (profile, name) in enumerate(accounts):
         values[f'profile_{index}'] = profile.name
         values[f'profile_name_{index}'] = name
@@ -126,28 +132,33 @@ def validate_choices(values, root, managed_root=None):
     routing = {} if store == 'steam' else {'store': store, 'python': target / '.runtime/python/python.exe',
                                           'wrapper': target / 'steamvr/launch_windows.py', 'runtime': runtime}
     setup.preflight_steam(profile, steam, game, options, connections, **routing)
-    check_backups(game, target)
+    legacy = Path(values['backups']).expanduser().resolve() if values.get('backups') else None
+    check_backups(game, target, legacy)
     managed_state(target)
     return dict(manifest=manifest, store=store, version=version, headset=headset, connections=connections,
                 steam=steam, game=game, profile=profile, saves=saves, runtime=runtime, mode=mode)
 
 
-def check_backups(game, root):
+def check_backups(game, root, legacy=None):
     """Fail before helper files are copied if an existing install cannot be removed."""
     record = install.read_record(game)
     if record.get('snapshots') or (game / uninstall.PLUGIN).is_file():
-        chain = uninstall.snapshots(game, record, [root / 'setup-backups/game'])
+        roots = [root / 'setup-backups/game'] + [Path(name).parent for name in record.get('snapshots', [])]
+        if legacy is not None:
+            roots.append(legacy)
+        chain = uninstall.snapshots(game, record, roots)
         uninstall.restore_plan(game, chain)
-    return record
+        return chain
+    return []
 
 
-def adopt_backups(game, root):
+def adopt_backups(game, root, legacy=None):
     """Move a ZIP installation's backup dependency into the managed folder."""
     record = install.read_record(game)
     copied = []
     destination_root = (root / 'setup-backups/game').resolve()
-    for name in record.get('snapshots', []):
-        source = Path(name).resolve()
+    for original, _ in check_backups(game, root, legacy):
+        source = original.resolve()
         if not (source / 'manifest.json').is_file():
             raise ValueError(f'An existing installation backup is missing: {source}. Restore it before upgrading.')
         manifest = json.loads((source / 'manifest.json').read_text(encoding='utf-8'))
@@ -174,8 +185,9 @@ def adopt_backups(game, root):
         if contents(destination) != contents(source):
             raise ValueError('A copied backup conflicts with the managed backup. Keep both and contact the maintainer.')
         copied.append(str(destination))
-    if copied and copied != record['snapshots']:
+    if copied and copied != record.get('snapshots', []):
         setup.require_closed()
+        record['game'] = str(game)
         record['snapshots'] = copied
         install.write_record(game, record)
 
@@ -196,7 +208,7 @@ def install_selected(values, root):
     state = managed_state(root)
     before_state = json.loads(json.dumps(state))
     print('Preserving existing installation backups...', flush=True)
-    adopt_backups(game, root)
+    adopt_backups(game, root, Path(values['backups']).expanduser().resolve() if values.get('backups') else None)
     existing = [entry for entry in state['installations'] if Path(entry['game']).resolve() != game]
     entry = {'game': str(game), 'store': selection['store'], 'steam': str(selection['steam']),
              'saves': str(selection['saves']), 'status': 'installing', 'receipt': install.read_record(game)}
@@ -294,6 +306,7 @@ def main():
     action.add_argument('--check', action='store_true')
     parser.add_argument('--managed-root', type=Path)
     parser.add_argument('--steam', type=Path, help='Steam folder selected in the graphical wizard (discovery only)')
+    parser.add_argument('--game', type=Path, help='Selected game for read-only backup discovery')
     args = parser.parse_args()
     setup.verify_release(ROOT)
     if args.check:
@@ -302,7 +315,7 @@ def main():
     if os.name != 'nt':
         raise ValueError('This installer requires Windows.')
     if args.probe:
-        write_probe(args.probe, ROOT, args.steam)
+        write_probe(args.probe, ROOT, args.steam, args.game, args.managed_root)
     elif args.validate:
         validate_choices(read_choices(args.validate), ROOT, args.managed_root)
         setup.require_closed()

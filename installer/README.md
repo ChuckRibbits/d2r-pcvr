@@ -89,11 +89,14 @@ saves=C:\Users\PLAYER\Saved Games\Diablo II Resurrected
 steamvr=C:\Program Files (x86)\Steam\steamapps\common\SteamVR
 profile=LOCAL_NUMERIC_STEAM_ID
 mode=repair
+backups=
 ```
 
 Choices accept UTF-8 (with or without BOM) and UTF-16. `store` is `steam` or
 `battlenet`; `mode` is `full`, `repair` or `shortcuts`. Use real detected paths
-and the local Steam profile directory ID. Do not share player/account config.
+and the local Steam profile directory ID. `backups` is optional: set it to the
+original snapshot folder or its parent when upgrading an older mod without a
+complete receipt. Do not share player/account config.
 
 ## Recovery and removal
 

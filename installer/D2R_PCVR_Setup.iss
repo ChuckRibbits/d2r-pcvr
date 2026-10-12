@@ -51,7 +51,7 @@ Filename: "{code:SteamExecutable}"; Description: "Open Steam to use your new VR 
 [Code]
 var
   EditionPage, HeadsetPage, ConnectionPage, AccountPage, ModePage: TInputOptionWizardPage;
-  PathsPage, RuntimePage: TInputDirWizardPage;
+  PathsPage, RuntimePage, BackupPage: TInputDirWizardPage;
   ProfileIDs: TStringList;
   PayloadRoot, ProbeFile, ChoicesFile, LastOutput, PreviousEdition: String;
   SetupFailed, BackendBusy: Boolean;
@@ -120,7 +120,10 @@ var
   Arguments: String;
 begin
   Arguments := '--probe ' + Q(ProbeFile);
-  if Steam <> '' then Arguments := Arguments + ' --steam ' + Q(Steam);
+  if Steam <> '' then begin
+    Arguments := Arguments + ' --steam ' + Q(Steam) + ' --managed-root ' + Q(ExpandConstant('{app}'));
+    if PathsPage.Values[1] <> '' then Arguments := Arguments + ' --game ' + Q(PathsPage.Values[1]);
+  end;
   Result := RunBackend(PayloadRoot, Arguments);
   if Result then LoadProfiles;
 end;
@@ -174,6 +177,10 @@ begin
   ModePage.Add('Full install with recommended settings (resets calibration)');
   ModePage.Add('Only configure Steam shortcuts (keep the installed mod)');
   ModePage.SelectedValueIndex := 1;
+  BackupPage := CreateInputDirPage(ModePage.ID, 'Locate an older installation backup',
+    'Keep the original files available for removal',
+    'This older mod installation needs its original pre-mod backup. Browse to its snapshot folder or the folder containing snapshots (usually setup-backups\game or build-frame\backups in the old mod folder). Setup will copy and verify these backups. If you cannot find them, cancel and keep the current installation.', False, '');
+  BackupPage.Add('Original installation backup folder:');
   if not RefreshProbe('') then RaiseException(LastOutput);
   if GetIniInt('detected', 'battlenet_available', 0, 0, 1, ProbeFile) = 1 then
     EditionPage.Add('Battle.net (experimental)');
@@ -194,7 +201,8 @@ function ShouldSkipPage(PageID: Integer): Boolean;
 begin
   Result := ((PageID = ConnectionPage.ID) and (HeadsetPage.SelectedValueIndex in [0, 3])) or
             ((PageID = RuntimePage.ID) and not UsesSteamVR) or
-            ((PageID = AccountPage.ID) and (ProfileIDs.Count = 1));
+            ((PageID = AccountPage.ID) and (ProfileIDs.Count = 1)) or
+            ((PageID = BackupPage.ID) and (GetIniInt('detected', 'backup_required', 0, 0, 1, ProbeFile) = 0));
 end;
 
 function NextButtonClick(CurPageID: Integer): Boolean;
@@ -230,6 +238,12 @@ begin
   if (CurPageID = ModePage.ID) and (ModePage.SelectedValueIndex = 1) and
       FileExists(PathsPage.Values[1] + '\d2rloader\plugins\d2rl-vrcam.dll') then
     Result := MsgBox('Full install resets body calibration and applies recommended video settings. Continue?', mbConfirmation, MB_YESNO or MB_DEFBUTTON2) = IDYES;
+  if CurPageID = BackupPage.ID then begin
+    if not DirExists(BackupPage.Values[0]) then begin
+      MsgBox('Select the existing original installation backup folder, or cancel to keep the current mod.', mbError, MB_OK);
+      Result := False;
+    end;
+  end;
 end;
 
 procedure WriteChoices;
@@ -246,7 +260,7 @@ begin
     'headset=' + Headsets[HeadsetPage.SelectedValueIndex], 'connections=' + Connection,
     'steam=' + PathsPage.Values[0], 'game=' + PathsPage.Values[1], 'saves=' + PathsPage.Values[2],
     'steamvr=' + RuntimePage.Values[0], 'profile=' + ProfileIDs[AccountPage.SelectedValueIndex],
-    'mode=' + Modes[ModePage.SelectedValueIndex]];
+    'mode=' + Modes[ModePage.SelectedValueIndex], 'backups=' + BackupPage.Values[0]];
   if not SaveStringsToUTF8File(ChoicesFile, Lines, False) then RaiseException('Could not save the setup choices.');
 end;
 

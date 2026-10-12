@@ -70,9 +70,12 @@ and Windows Streamer; keep SteamVR closed when launching with VDXR.
 You can rerun the EXE safely. It updates matching shortcuts without duplicates.
 When upgrading a recorded ZIP installation, it copies and verifies its referenced
 game backups into the permanent helper folder before updating the mod. Do not
-delete the old extracted folder until Setup succeeds. If an original backup is
-missing or an older mod has no installation record, Setup stops; keep the old
-folder and use its guided removal before installing afresh.
+delete the old extracted folder until Setup succeeds. If an older mod has an
+incomplete installation record, the wizard asks you to locate its original
+backup folder. Choose the snapshot folder or the folder containing snapshots
+inside the old mod folder (`setup-backups\game` or `build-frame\backups`).
+Setup also checks alongside recorded backups for older snapshots. If the
+original backup is unavailable, cancel and keep the current installation.
 
 Setup does not change Windows security settings or the system OpenXR runtime.
 Normal Steam / Battle.net **Play** launches the stock desktop game.
