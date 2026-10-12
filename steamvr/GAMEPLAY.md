@@ -21,8 +21,10 @@ separates completed code from the full target design.
 
 The **2026-10-11 source candidate** adds motion input for selected Amazon bow
 skills, an active-skill indicator, independent left-wrist shield attachment and
-contact-triggered native Smite. It is staged for review, not installed or
-headset-verified. See the weapon-skill section below for scope and test scenarios.
+contact-triggered native Smite. It was installed for the owner's offline testing
+in both existing Steam/Battle.net VR copies on 2026-10-12, with DLL hashes checked
+and calibration/settings/saves preserved. Headset validation is pending. See the
+weapon-skill section below for scope and test scenarios.
 
 The build also adds an **in-headset VR settings panel**.
 Hold **Left Grip and press Left Y**, or select **VR SETTINGS** in the wheel.
