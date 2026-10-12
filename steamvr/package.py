@@ -15,6 +15,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--build', type=Path, default=ROOT / 'build-frame')
     parser.add_argument('--openxr-loader', type=Path, required=True)
+    parser.add_argument('--casclib', type=Path, help='Include pinned Unicode x64 CascLib 3.0 for experimental Battle.net testing')
     parser.add_argument('--output', type=Path, default=ROOT / 'build-frame/releases/d2r-pcvr-preview.zip')
     parser.add_argument('--variant', choices=['current-source', 'linux-baseline'], default='current-source')
     parser.add_argument('--plugin-source-note', help='Required provenance for an archived baseline DLL')
@@ -33,7 +34,8 @@ def main():
     # Explicit allowlist. Never glob an install, backup, build or diagnostic tree.
     paths = ['INSTALL.md', 'INSTALL-WINDOWS.md', 'README.md', 'CONTROLS.md', 'RELEASE_NOTES.md',
              'Launch-VR-SteamVR.cmd', 'Launch-VR-VDXR.cmd',
-             'Install-Windows.cmd', 'steamvr/setup_windows.ps1',
+             'Install-Windows.cmd', 'Uninstall-Windows.cmd', 'steamvr/setup_windows.ps1',
+             'steamvr/uninstall_windows.py',
              'steamvr/setup_windows.py', 'steamvr/steam_config.py',
              'THIRD_PARTY.md', 'LICENSE', 'd2r_vr.ini',
              'reshade/D2R_DepthFog.fx', 'third_party/minhook/LICENSE.txt',
@@ -41,7 +43,8 @@ def main():
              'steamvr/launch_windows.py']
     if args.platform == 'linux-proton':
         paths += ['INSTALL-LINUX.md', 'steamvr/launch.sh', 'steamvr/run-proton.sh', 'steamvr/session.py']
-    paths += ['steamvr/prepare_icons.py', 'steamvr/steam_assets.py']
+    paths += ['steamvr/prepare_icons.py', 'steamvr/steam_assets.py', 'steamvr/game_assets.py',
+              'steamvr/game_install.py', 'steamvr/casc_assets.py']
     paths += ['steamvr/prepare_potions.py', 'steamvr/potion_assets.py', 'steamvr/vendor/bitknit.py']
     files = {path: ROOT / path for path in paths}
     for folder, pattern in [('reshade/sky', '*.png'), ('steamvr/licenses', '*.txt')]:
@@ -51,11 +54,18 @@ def main():
     if args.platform == 'linux-proton':
         files['bin/openxr-probe.exe'] = args.build / 'openxr-probe.exe'
     files['bin/openxr_loader.dll'] = args.openxr_loader
+    if args.casclib:
+        if args.platform != 'native-windows':
+            raise SystemExit('Experimental Battle.net packaging currently requires native Windows')
+        files['bin/CascLib.dll'] = args.casclib
+        files['Install-BattleNet-Preview.cmd'] = ROOT / 'Install-BattleNet-Preview.cmd'
     hashes = {name: hashlib.sha256(path.read_bytes()).hexdigest() for name, path in files.items()}
     manifest = {'source_commit': commit, 'game_version': '3.3.93787',
                 'created_utc': datetime.now(timezone.utc).isoformat(),
                 'release_tag': args.release_tag,
                 'platform': args.platform,
+                'storefronts': {'steam': {'version': '3.3.93787', 'status': 'verified'},
+                               **({'battlenet': {'version': '3.3.93847', 'status': 'experimental'}} if args.casclib else {})},
                 'installation_guide': 'INSTALL-WINDOWS.md' if args.platform == 'native-windows' else 'INSTALL-LINUX.md',
                 'variant': args.variant,
                 'plugin_source_commit': plugin_commit,

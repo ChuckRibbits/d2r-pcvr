@@ -3,27 +3,47 @@
 This Windows preview supports **SteamVR and Virtual Desktop (VDXR)**.
 
 **This is a VR mod for a separately purchased game. You must own and install
-a legitimate Steam copy of Diablo II: Resurrected.** The original game is not
+a legitimate copy of Diablo II: Resurrected.** The original game is not
 included. No Blizzard game assets are supplied in the ZIP; the installer reads
 the required assets from your own game and keeps its asset caches local.
 
 1. Download **d2r-pcvr-windows.zip** from the
    [release page](https://github.com/bearstonem/d2r-pcvr/releases/tag/v0.3.6-windows-preview).
 2. Extract the `d2r-pcvr-preview` folder to a permanent location.
-3. Double-click **Install-Windows.cmd** and follow the setup wizard. Choose your
-   headset, SteamVR or Virtual Desktop, and the Steam account for your shortcuts.
+3. Double-click **Install-Windows.cmd** and follow the setup wizard. Packages
+   with Battle.net support first ask **Steam** or **Battle.net**. Choose your
+   headset, SteamVR or Virtual Desktop, then confirm the selected game's folder
+   and the Steam account for your shortcuts.
    See **[Install and play on Windows](INSTALL-WINDOWS.md)** for help.
 
-You need the **Steam edition of D2R 3.3.93787**, internet access during setup,
-a connected headset and a **local offline character**.
+The published **v0.3.6 ZIP supports the Steam edition of D2R 3.3.93787 only**.
+Experimental Battle.net-capable packages also accept your **Battle.net copy
+of D2R 3.3.93847**; see [Battle.net installation](INSTALL-WINDOWS.md#battlenet-preview-packages).
+You also need the Steam desktop client, internet access during setup,
+a connected headset and a **local offline character**. Battle.net players
+do not need to purchase a second copy through Steam.
 
-After setup, use **Launch-VR-SteamVR.cmd** for SteamVR or
-**Launch-VR-VDXR.cmd** for Virtual Desktop. Keep the extracted folder;
-Steam needs it to launch the mod.
-The wizard creates the matching Steam library entries automatically.
-To add them manually, follow
+After setup, use the matching **SteamVR** or **Virtual Desktop** entry created
+in your Steam library. Battle.net entries include **(Battle.net)** in the name.
+Keep SteamVR closed for Virtual Desktop / VDXR. Keep the extracted folder;
+Steam needs it to launch the mod. The included **Launch-VR-*.cmd** files are
+for the Steam edition only.
+To add Steam-edition shortcuts manually, follow
 **[Add Steam library shortcuts](INSTALL-WINDOWS.md#add-steam-library-shortcuts)**
 for separate SteamVR and Virtual Desktop entries.
 
 All Quest and Steam Frame controller mappings, menu buttons, laser interactions
 and quick-cast shortcuts are in **[CONTROLS.md](CONTROLS.md)**, included in the ZIP.
+
+## Remove the mod
+
+Run **Uninstall-Windows.cmd**, select **Steam** or **Battle.net**, confirm the
+game folder and follow the prompts. Fully exit D2R and Steam when asked.
+Current characters and shared stash are kept. The wizard restores the original
+backed-up files and removes that edition's VR library entries. It keeps current
+video settings by default; you can choose to restore the pre-install settings.
+Keep **setup-backups**, including backups in older extracted release folders,
+until removal is complete. See [removal and recovery](INSTALL-WINDOWS.md#upgrade-or-remove).
+
+The uninstaller is included in newer packages; the published
+v0.3.6 ZIP still uses the manual removal instructions.

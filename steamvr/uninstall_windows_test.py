@@ -1,0 +1,238 @@
+"""Removal fixtures use temporary games, saves and Steam profiles only."""
+import contextlib
+import io
+import json
+import os
+from pathlib import Path
+import sys
+import tempfile
+import unittest
+from unittest.mock import patch
+
+import install
+import steam_config as steam
+import setup_windows as setup
+import uninstall_windows as uninstall
+
+
+LOCAL = ('"UserLocalConfigStore" { "Software" { "Valve" { "Steam" { "apps" { '
+         '"2536520" { "LaunchOptions" "PLACEHOLDER" "Other" "kept" } '
+         '"123" { "LaunchOptions" "other game" } } } } } }')
+
+
+class UninstallTests(unittest.TestCase):
+    def write(self, path, content):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(content)
+        return path
+
+    def snapshot(self, root, game, files, previous, saves, initial=False):
+        root.mkdir(parents=True)
+        manifest = {'game': str(game), 'saves': str(saves), 'installed': files,
+                    'previous_mod': not initial}
+        (root / 'manifest.json').write_text(json.dumps(manifest))
+        for name, payload in previous.items():
+            self.write(root / 'previous' / name, payload)
+        self.write(root / 'saves/Settings.json', b'{"video": "original"}')
+        return root
+
+    def test_upgrades_across_release_folders_restore_originals_and_keep_progress(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            game, saves = root / 'game', root / 'saves'
+            stock = self.write(game / 'D2R.exe', b'original game, updated since install')
+            character = self.write(saves / 'Friend.d2s', b'latest progress')
+            stash = self.write(saves / 'SharedStashSoftCoreV2.d2i', b'latest stash')
+            video = self.write(saves / 'Settings.json', b'{"video": "current"}')
+            first = self.snapshot(root / 'release-one/20260101', game,
+                                  [str(uninstall.PLUGIN), 'ReShade.ini', str(install.RECORD)],
+                                  {'ReShade.ini': b'original other mod configuration'}, saves, True)
+            second = self.snapshot(root / 'release-two/20260201', game,
+                                   [str(uninstall.PLUGIN), 'ReShade.ini', 'openxr_loader.dll', str(install.RECORD)],
+                                   {str(uninstall.PLUGIN): b'old mod', 'ReShade.ini': b'old VR config',
+                                    str(install.RECORD): b'old receipt'}, saves)
+            record = {'game': str(game), 'snapshots': [str(first), str(second)]}
+            for name in [str(uninstall.PLUGIN), 'ReShade.ini', 'openxr_loader.dll']:
+                self.write(game / name, b'current mod')
+            install.write_record(game, record)
+            extra = self.write(game / 'd2rloader/plugins/another-mod.dll', b'keep this other mod')
+            chain = uninstall.snapshots(game, record, [])
+            plan = uninstall.restore_plan(game, chain)
+            backup = uninstall.apply_updates(plan, root / 'backups', lambda: None)
+            self.assertTrue((backup / 'manifest.json').is_file())
+            self.assertEqual((game / 'ReShade.ini').read_bytes(), b'original other mod configuration')
+            for path in (game / uninstall.PLUGIN, game / install.RECORD, game / 'openxr_loader.dll'):
+                self.assertFalse(path.exists())
+            self.assertEqual(stock.read_bytes(), b'original game, updated since install')
+            self.assertEqual(character.read_bytes(), b'latest progress')
+            self.assertEqual(stash.read_bytes(), b'latest stash')
+            self.assertEqual(video.read_bytes(), b'{"video": "current"}')
+            self.assertEqual(extra.read_bytes(), b'keep this other mod')
+            self.assertIsNone(uninstall.apply_updates(plan, root / 'backups', lambda: None))
+            plan = uninstall.restore_plan(game, chain, restore_video=True)
+            self.assertEqual(plan[video], b'{"video": "original"}')
+            self.assertNotIn(character, plan)
+            self.assertNotIn(stash, plan)
+
+    def test_missing_original_backup_blocks_removal_and_can_be_relocated(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            game = root / 'game'
+            current = self.write(game / uninstall.PLUGIN, b'current')
+            first = self.snapshot(root / 'moved/20260101', game, [str(uninstall.PLUGIN)], {}, root / 'saves', True)
+            record = {'snapshots': [str(root / 'old-location/20260101')]}
+            with self.assertRaisesRegex(ValueError, 'missing'):
+                uninstall.snapshots(game, record, [])
+            self.assertEqual(current.read_bytes(), b'current')
+            chain = uninstall.snapshots(game, record, [first.parent])
+            self.assertEqual(chain[0][0], first)
+            latest = self.snapshot(root / '20260201', game, [str(uninstall.PLUGIN)],
+                                   {str(uninstall.PLUGIN): b'previous VR mod'}, root / 'saves')
+            with self.assertRaisesRegex(ValueError, 'pre-mod backup'):
+                uninstall.snapshots(game, {'snapshots': [str(latest)]}, [])
+
+    def test_legacy_backups_ignore_other_game_and_select_latest_fresh_install(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            game, saves = root / 'game', root / 'saves'
+            old = self.snapshot(root / 'backups/20260101', game, [str(uninstall.PLUGIN)], {}, saves, True)
+            self.snapshot(root / 'backups/20260201', root / 'other game', [str(uninstall.PLUGIN)], {}, saves, True)
+            fresh = self.snapshot(root / 'backups/20260301', game, [str(uninstall.PLUGIN)], {}, saves, True)
+            self.assertEqual([p for p, _ in uninstall.snapshots(game, {}, [old.parent])], [fresh])
+
+    def test_restore_rejects_original_game_paths_traversal_and_directory_targets(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            game = root / 'game'
+            original = self.write(game / 'D2R.exe', b'original')
+            for name in ('D2R.exe', '../outside.txt', 'C:\\outside.txt', 'Settings.json'):
+                with self.subTest(name=name), self.assertRaises((ValueError, SystemExit)):
+                    uninstall.restore_plan(game, [(root / 'snapshot', {'installed': [name]})])
+            (game / 'openxr_loader.dll').mkdir()
+            with self.assertRaisesRegex(ValueError, 'not a file'):
+                uninstall.restore_plan(game, [(root / 'snapshot', {'installed': ['openxr_loader.dll']})])
+            self.assertEqual(original.read_bytes(), b'original')
+
+    def test_steam_cleanup_keeps_other_edition_and_unrelated_configuration(self):
+        for store in ('steam', 'battlenet'):
+            with self.subTest(store=store), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                game, other = root / 'game', root / 'other game'
+                profile = root / 'userdata/123'
+                wrapper = '"C:\\Mods\\python.exe" "C:\\Mods\\steamvr\\launch_windows.py" %command%'
+                local = self.write(profile / 'config/localconfig.vdf', LOCAL.replace('"PLACEHOLDER"', steam.quote(wrapper)).encode())
+                data = steam.update_shortcuts(None, root, game, ['steamvr', 'vdxr'])
+                data = steam.update_shortcuts(data, root, other, ['steamvr', 'vdxr'], store='battlenet',
+                                             python=root / 'python.exe', wrapper=root / 'steamvr/launch_windows.py', runtime=root / 'runtime.json')
+                # A same-name entry for another game folder must remain.
+                entries = steam.decode_binary(data)
+                entries['shortcuts']['4'] = {'appname': 'Other Game', 'Exe': '"other.exe"'}
+                collision = dict(entries['shortcuts']['0' if store == 'steam' else '2'])
+                collision['icon'] = str(root / 'different installation/D2R.exe')
+                entries['shortcuts']['5'] = collision
+                self.write(profile / 'config/shortcuts.vdf', steam.encode_binary(entries))
+                target = game if store == 'steam' else other
+                state = {'previous_launch_options': '-my-old-option', 'installed_launch_options': wrapper}
+                updates = steam.uninstall_updates(profile, target, store, state)
+                remaining = steam.decode_binary(updates[profile / 'config/shortcuts.vdf'])['shortcuts']
+                self.assertEqual(list(remaining), ['0', '1', '2', '3'])
+                self.assertIn(entries['shortcuts']['4'], remaining.values())
+                self.assertIn(collision, remaining.values())
+                preserved = ('2', '3') if store == 'steam' else ('0', '1')
+                for key in preserved:
+                    self.assertIn(entries['shortcuts'][key], remaining.values())
+                if store == 'battlenet':
+                    self.assertNotIn(local, updates)
+                else:
+                    self.assertEqual(updates[local].decode(), LOCAL.replace('PLACEHOLDER', '-my-old-option'))
+                    local.write_bytes(LOCAL.replace('PLACEHOLDER', '-new-user-option').encode())
+                    self.assertNotIn(local, steam.uninstall_updates(profile, game, store, state))
+                    local.write_bytes(LOCAL.replace('"PLACEHOLDER"', steam.quote(wrapper + ' --added-later')).encode())
+                    self.assertNotIn(local, steam.uninstall_updates(profile, game, store, state))
+
+    def test_partial_failure_rolls_back_removed_files_and_config(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            removed = self.write(root / 'plugin.dll', b'installed mod')
+            config = self.write(root / 'localconfig.vdf', b'current config')
+            with patch.object(uninstall.os, 'replace', side_effect=PermissionError('blocked')):
+                with self.assertRaises(PermissionError):
+                    uninstall.apply_updates({removed: None, config: b'restored'}, root / 'backups', lambda: None)
+            self.assertEqual(removed.read_bytes(), b'installed mod')
+            self.assertEqual(config.read_bytes(), b'current config')
+            self.assertFalse(list(root.glob('d2r-uninstall-*')))
+
+    def test_external_change_or_running_game_prevents_commit(self):
+        for race in ('file', 'game'):
+            with self.subTest(race=race), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                target = self.write(root / 'plugin.dll', b'current')
+                calls = 0
+                def check():
+                    nonlocal calls
+                    calls += 1
+                    if calls == 2:
+                        if race == 'game':
+                            raise ValueError('game running')
+                        target.write_bytes(b'changed externally')
+                with self.assertRaises(ValueError):
+                    uninstall.apply_updates({target: None}, root / 'backups', check)
+                self.assertEqual(target.read_bytes(), b'changed externally' if race == 'file' else b'current')
+
+    @unittest.skipUnless(os.name == 'nt', 'Windows removal wizard')
+    def test_wizard_uses_steam_final_flush_and_keeps_unrelated_changes(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            game = root / 'game'
+            self.write(game / 'D2R.exe', b'original')
+            self.write(game / 'Data/.build.config', b'fixture')
+            profile = root / 'steam/userdata/123'
+            wrapper = '"C:\\Mods\\python.exe" "C:\\Mods\\steamvr\\launch_windows.py" %command%'
+            original = LOCAL.replace('"PLACEHOLDER"', steam.quote(wrapper))
+            local = self.write(profile / 'config/localconfig.vdf', original.encode())
+            flushed = original + '\n// unrelated Steam changes written on exit\n'
+            with patch.object(uninstall, 'ROOT', root), patch.object(setup, 'verify_release', return_value={}), \
+                    patch.object(setup, 'steam_location', return_value=root / 'steam'), \
+                    patch.object(setup, 'folder', side_effect=[root / 'steam', game]), \
+                    patch.object(setup, 'profiles', return_value=[(profile, 'Player')]), \
+                    patch.object(setup, 'wait_for_closed', side_effect=lambda: local.write_text(flushed, encoding='utf-8')), \
+                    patch.object(setup, 'require_closed'), patch.object(sys, 'argv', ['uninstall_windows.py']), \
+                    patch('builtins.input', side_effect=['1', '2']), contextlib.redirect_stdout(io.StringIO()):
+                uninstall.main()
+            self.assertEqual(local.read_text(encoding='utf-8'),
+                             LOCAL.replace('PLACEHOLDER', '') + '\n// unrelated Steam changes written on exit\n')
+
+    @unittest.skipUnless(os.name == 'nt', 'Windows removal wizard')
+    def test_wizard_cancel_changes_nothing_and_both_editions_remove_safely(self):
+        for store, cancel in (('steam', True), ('steam', False), ('battlenet', False)):
+            with self.subTest(store=store, cancel=cancel), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                game, saves = root / 'game', root / 'saves'
+                stock = self.write(game / 'D2R.exe', b'newer game build is allowed during removal')
+                self.write(game / ('Data/.build.config' if store == 'steam' else '.build.info'), b'fixture')
+                plugin = self.write(game / uninstall.PLUGIN, b'mod')
+                character = self.write(saves / 'Friend.d2s', b'current progress')
+                snapshot = self.snapshot(root / 'setup-backups/game/20260101', game,
+                                         [str(uninstall.PLUGIN), str(install.RECORD)], {}, saves, True)
+                install.write_record(game, {'game': str(game), 'snapshots': [str(snapshot)]})
+                answers = ['1' if store == 'steam' else '2', '1', '1' if cancel else '2']
+                with patch.object(uninstall, 'ROOT', root), patch.object(setup, 'verify_release', return_value={}), \
+                        patch.object(setup, 'steam_location', return_value=root / 'steam'), \
+                        patch.object(setup, 'battlenet_location', return_value=game), \
+                        patch.object(setup, 'folder', side_effect=[root / 'steam', game]), \
+                        patch.object(setup, 'profiles', return_value=[]), \
+                        patch.object(setup, 'wait_for_closed') as wait, patch.object(setup, 'require_closed'), \
+                        patch.object(sys, 'argv', ['uninstall_windows.py']), \
+                        patch('builtins.input', side_effect=answers), contextlib.redirect_stdout(io.StringIO()):
+                    uninstall.main()
+                self.assertEqual(plugin.exists(), cancel)
+                self.assertEqual((game / install.RECORD).exists(), cancel)
+                self.assertEqual(character.read_bytes(), b'current progress')
+                self.assertEqual(stock.read_bytes(), b'newer game build is allowed during removal')
+                if cancel:
+                    wait.assert_not_called()
+                    self.assertFalse(list((root / 'setup-backups').glob('uninstall-*')))
+
+
+if __name__ == '__main__':
+    unittest.main()

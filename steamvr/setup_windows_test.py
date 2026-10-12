@@ -20,7 +20,9 @@ class SteamSetupTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
             names = ('bin/d2rl-vrcam.dll', 'bin/openxr_loader.dll', 'steamvr/install.py',
-                     'steamvr/setup_windows.py', 'steamvr/steam_config.py', 'steamvr/launch_windows.py')
+                     'steamvr/setup_windows.py', 'steamvr/steam_config.py', 'steamvr/launch_windows.py',
+                     'steamvr/game_install.py', 'steamvr/game_assets.py', 'steamvr/casc_assets.py',
+                     'Uninstall-Windows.cmd', 'steamvr/uninstall_windows.py')
             hashes = {}
             for name in names:
                 path = root / name
@@ -153,8 +155,8 @@ class SteamSetupTests(unittest.TestCase):
             self.assertIsNone(setup.app_folder(roots, '2536520'))
 
     def test_wizard_quest_vdxr_shortcuts_only_and_frame_install_routing(self):
-        for quest in (True, False):
-            with self.subTest(quest=quest), tempfile.TemporaryDirectory() as temp:
+        for quest, battlenet_in_package in ((True, False), (False, False), (True, True), (False, True)):
+            with self.subTest(quest=quest, battlenet_in_package=battlenet_in_package), tempfile.TemporaryDirectory() as temp:
                 root = Path(temp)
                 steam = root / 'steam'
                 game = root / 'game'
@@ -164,6 +166,8 @@ class SteamSetupTests(unittest.TestCase):
                 saves.mkdir()
                 profile, _ = self.fixture(steam)
                 (game / 'D2R.exe').write_bytes('3.3.93787'.encode('utf-16-le'))
+                (game / 'Data').mkdir()
+                (game / 'Data/.build.config').write_text('fixture')
                 for name in ('D2RLoader.exe', 'ReShade64.dll', 'openxr_loader.dll', 'd2rloader/plugins/d2rl-vrcam.dll', 'd2rloader/plugins/d2r_vr.ini'):
                     file = game / name
                     file.parent.mkdir(parents=True, exist_ok=True)
@@ -171,16 +175,25 @@ class SteamSetupTests(unittest.TestCase):
                 # Quest: headset 2, VD 2, shortcut-only 3, continue 1, open later 2.
                 # Frame: headset 1, preserve upgrade 1, continue 1, open later 2.
                 answers = ['2', '2', '3', '1', '2'] if quest else ['1', '1', '1', '2']
+                if battlenet_in_package:
+                    answers.insert(0, '1')  # Select Steam in a package that offers both editions.
+                manifest = {'release_tag': 'fixture', 'sha256': {'bin/CascLib.dll': 'fixture'} if battlenet_in_package else {}}
                 folders = [steam, game, saves] if quest else [steam, game, root, saves]
-                with patch.object(setup, 'ROOT', root), patch.object(setup, 'verify_release', return_value={'release_tag': 'fixture'}), \
+                with patch.object(setup, 'ROOT', root), patch.object(setup, 'verify_release', return_value=manifest), \
                         patch.object(setup, 'folder', side_effect=folders), patch.object(setup, 'steam_location', return_value=steam), \
                         patch.object(setup, 'saved_games', return_value=saves), patch.object(setup, 'wait_for_closed'), \
                         patch.object(setup, 'require_closed'), patch.object(setup.subprocess, 'run') as run, \
                         patch.object(setup.subprocess, 'Popen') as popen, patch('builtins.input', side_effect=answers), \
                         patch('launch_windows.vdxr_manifest', return_value=game / 'openxr_loader.dll'), \
-                        patch.object(setup.sys, 'argv', ['setup_windows.py']), contextlib.redirect_stdout(io.StringIO()):
+                        patch.object(setup.sys, 'argv', ['setup_windows.py']), contextlib.redirect_stdout(io.StringIO()) as output:
                     setup.main()
                 result = json.loads((root / 'setup-result.json').read_text())
+                self.assertEqual(result['store'], 'steam')
+                self.assertFalse(result['experimental'])
+                state = setup.install.read_record(game)['steam_profiles'][str(profile.resolve())]
+                self.assertEqual(state['previous_launch_options'], 'old option')
+                self.assertEqual(state['installed_launch_options'], result['launch_options'])
+                self.assertEqual('Which game installation?' in output.getvalue(), battlenet_in_package)
                 self.assertEqual(result['connections'], ['vdxr'] if quest else ['steamvr'])
                 entries = config.decode_binary((profile / 'config/shortcuts.vdf').read_bytes())['shortcuts']
                 self.assertEqual(entries['0']['OpenVR'], 0 if quest else 1)
@@ -189,6 +202,7 @@ class SteamSetupTests(unittest.TestCase):
                     self.assertNotIn('--frame-openxr-runtime=', result['launch_options'])
                 else:
                     self.assertIn('--preserve-settings', run.call_args.args[0])
+                    self.assertNotIn('--experimental-battlenet', run.call_args.args[0])
                     self.assertIn('--frame-openxr-runtime=', result['launch_options'])
                 popen.assert_not_called()
 

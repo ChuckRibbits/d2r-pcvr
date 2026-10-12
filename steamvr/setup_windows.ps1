@@ -1,4 +1,4 @@
-param([switch]$CheckOnly)
+param([switch]$CheckOnly, [switch]$ExperimentalBattleNet, [switch]$Uninstall)
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
 try {
@@ -26,11 +26,11 @@ try {
     }
     # Keep this interpreter private to the extracted release, including imports.
     Set-Content -LiteralPath (Join-Path $pythonDirectory 'python312._pth') -Encoding ASCII -Value @('python312.zip', '.', '../../steamvr', '../..')
-    if ($CheckOnly) {
-        & $pythonExecutable (Join-Path $PSScriptRoot 'setup_windows.py') --check
-    } else {
-        & $pythonExecutable (Join-Path $PSScriptRoot 'setup_windows.py')
-    }
+    $setupArguments = @()
+    if ($CheckOnly) { $setupArguments += '--check' }
+    if ($ExperimentalBattleNet) { $setupArguments += '--experimental-battlenet' }
+    $setupScript = if ($Uninstall) { 'uninstall_windows.py' } else { 'setup_windows.py' }
+    & $pythonExecutable (Join-Path $PSScriptRoot $setupScript) @setupArguments
     exit $LASTEXITCODE
 } catch {
     Write-Host "Setup could not finish: $($_.Exception.Message)" -ForegroundColor Red

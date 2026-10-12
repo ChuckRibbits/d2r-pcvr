@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Cache original 3D potion meshes and textures from the installed Steam game.
+"""Cache original 3D potion meshes and textures from the installed game.
 
-Standard-library only; works on Linux and Windows. Cache contains Blizzard
+Standard-library Python; Battle.net also needs CascLib on Windows. Cache contains Blizzard
 assets and stays in the user's installation, never in the mod's release.
 """
 import argparse
@@ -10,7 +10,7 @@ import json
 import os
 import struct
 from pathlib import Path
-from steam_assets import SteamAssets
+from game_assets import open_assets
 from potion_assets import Granny, texture
 
 VERSION = 1
@@ -43,12 +43,12 @@ def encode(meshes, tex):
     return bytes(result)
 
 
-def prepare(game, destination=None, force=False):
+def prepare(game, destination=None, force=False, casclib=None):
     game=Path(game)
     destination=Path(destination) if destination else game/'d2rloader/plugins/d2r_vr_potions'
     destination.mkdir(parents=True,exist_ok=True)
     metadata=destination/'cache.json'
-    with SteamAssets(game) as assets:
+    with open_assets(game, casclib) as assets:
         if not force and metadata.is_file():
             try:
                 previous=json.loads(metadata.read_text())
@@ -80,6 +80,7 @@ if __name__=='__main__':
     parser.add_argument('--game',required=True,type=Path)
     parser.add_argument('--output',type=Path)
     parser.add_argument('--force',action='store_true')
+    parser.add_argument('--casclib',type=Path,help='Packaged Unicode x64 CascLib 3.0 (Battle.net only)')
     args=parser.parse_args()
-    result=prepare(args.game,args.output,args.force)
+    result=prepare(args.game,args.output,args.force,args.casclib)
     print(f"Native potion cache: {result['models']} original 3D models with mipmapped textures")

@@ -7,6 +7,7 @@ from pathlib import Path
 import re
 import shutil
 import struct
+import subprocess
 import tempfile
 import zlib
 
@@ -178,7 +179,30 @@ def encode_binary(tree):
     return bytes(result)
 
 
-def update_shortcuts(original, steam, game, connections):
+def shortcut_specs(steam, game, store='steam', python=None, wrapper=None, runtime=None):
+    if store == 'steam':
+        return {connection: (name, options, openvr, steam / 'steam.exe', steam)
+                for connection, (name, options, openvr) in SHORTCUTS.items()}
+    if store != 'battlenet' or python is None or wrapper is None:
+        raise ValueError('Battle.net shortcuts require the Python interpreter and launch wrapper')
+    common = [str(wrapper), '--battlenet-game=' + str(game),
+              '--experimental-battlenet', '--frame-vr']
+    result = {}
+    for connection, suffix in [('steamvr', 'SteamVR'), ('vdxr', 'Virtual Desktop')]:
+        if connection == 'steamvr' and runtime is None:
+            continue
+        arguments = common + (['--frame-openxr-runtime=' + str(runtime)]
+                              if connection == 'steamvr' else ['--frame-vdxr'])
+        name = 'Diablo II: Resurrected VR (Battle.net) - ' + suffix
+        result[connection] = (name, subprocess.list2cmdline(arguments),
+                              int(connection == 'steamvr'), python, wrapper.parent)
+    return result
+
+
+def update_shortcuts(original, steam, game, connections, **routing):
+    specs = shortcut_specs(steam, game, **routing)
+    if not set(connections).issubset(specs):
+        raise ValueError('Battle.net SteamVR shortcuts require an explicit SteamVR runtime manifest')
     root = decode_binary(original) if original is not None else {'shortcuts': {}}
     if original is not None and encode_binary(root) != original:
         raise ValueError('Steam shortcuts do not round-trip exactly; use the manual directions.')
@@ -187,24 +211,24 @@ def update_shortcuts(original, steam, game, connections):
         raise ValueError('Unexpected Steam shortcut structure')
     previous = copy.deepcopy(entries)
     for connection in connections:
-        name, options, openvr = SHORTCUTS[connection]
+        name, options, openvr, executable, directory = specs[connection]
         matches = [key for key, item in entries.items() if item.get('appname', item.get('AppName')) == name]
         if len(matches) > 1:
             raise ValueError(f'Remove duplicate library entries named {name} in Steam, then run setup again.')
         key = matches[0] if matches else str(max(map(int, entries), default=-1) + 1)
         item = entries.setdefault(key, {})
-        exe = '"' + str(steam / 'steam.exe') + '"'
+        exe = '"' + str(executable) + '"'
         item.pop('AppName', None)
         item.update({
             'appid': zlib.crc32((exe + name).encode('utf-8')) | 0x80000000,
-            'appname': name, 'Exe': exe, 'StartDir': '"' + str(steam) + '"',
+            'appname': name, 'Exe': exe, 'StartDir': '"' + str(directory) + '"',
             'icon': str(game / 'D2R.exe'), 'ShortcutPath': '', 'LaunchOptions': options,
             'IsHidden': 0, 'AllowDesktopConfig': 0, 'AllowOverlay': 0,
             'OpenVR': openvr, 'Devkit': 0, 'DevkitGameID': '', 'DevkitOverrideAppID': 0, 'FlatpakAppID': '',
         })
         item.setdefault('LastPlayTime', 0)
         item.setdefault('tags', {'0': 'D2R PCVR'})
-    targets = {SHORTCUTS[connection][0] for connection in connections}
+    targets = {specs[connection][0] for connection in connections}
     for key, value in previous.items():
         if value.get('appname', value.get('AppName')) not in targets and entries[key] != value:
             raise ValueError('An unrelated Steam shortcut changed')
@@ -214,15 +238,70 @@ def update_shortcuts(original, steam, game, connections):
     return result
 
 
-def configure(profile, steam, game, options, connections, backups, require_closed):
-    """Stage both edits and roll back a partial write; never edit a live Steam client."""
+def is_vr_launch_options(options):
+    return isinstance(options, str) and '%command%' in options and bool(
+        re.search(r'steamvr[\\/]launch_windows\.py(?:"|\s)', options, re.IGNORECASE))
+
+
+def uninstall_updates(profile, game, store, state=None):
+    """Remove this edition's entries without replacing a whole Steam profile."""
+    state = state or {}
+    config = profile / 'config'
+    updates = {}
+    shortcuts = config / 'shortcuts.vdf'
+    if shortcuts.is_file():
+        original = shortcuts.read_bytes()
+        root = decode_binary(original)
+        if encode_binary(root) != original or not isinstance(root.get('shortcuts'), dict):
+            raise ValueError('Steam shortcuts cannot be safely edited. No files were removed.')
+        names = {name for name, _, _ in SHORTCUTS.values()} if store == 'steam' else {
+            'Diablo II: Resurrected VR (Battle.net) - SteamVR',
+            'Diablo II: Resurrected VR (Battle.net) - Virtual Desktop'}
+        removed = False
+        for key, entry in list(root['shortcuts'].items()):
+            if not isinstance(entry, dict):
+                raise ValueError('Invalid Steam shortcut entry.')
+            options = entry.get('LaunchOptions', '')
+            marker = '-applaunch ' + APP_ID if store == 'steam' else '--battlenet-game='
+            icon = entry.get('icon', '')
+            if (entry.get('appname', entry.get('AppName')) in names and isinstance(options, str)
+                    and marker in options and '--frame-vr' in options and isinstance(icon, str)
+                    and Path(icon).resolve() == (game / 'D2R.exe').resolve()):
+                del root['shortcuts'][key]
+                removed = True
+        if removed:
+            root['shortcuts'] = {str(index): entry for index, entry in enumerate(root['shortcuts'].values())}
+        payload = encode_binary(root)
+        if payload != original:
+            updates[shortcuts] = payload
+    if store == 'steam':
+        local = config / 'localconfig.vdf'
+        if local.is_file():
+            original = local.read_bytes()
+            source = original.decode('utf-8')
+            options = text_value(parse_text(source.lstrip('\ufeff')), 'UserLocalConfigStore',
+                                 'Software', 'Valve', 'Steam', 'apps', APP_ID, 'LaunchOptions')
+            expected = state.get('installed_launch_options')
+            if is_vr_launch_options(options) and (expected is None or options == expected):
+                previous = state.get('previous_launch_options', '')
+                if not isinstance(previous, str) or is_vr_launch_options(previous):
+                    previous = ''
+                updates[local] = set_launch_options(source, previous).encode('utf-8')
+    return updates
+
+
+def configure(profile, steam, game, options, connections, backups, require_closed, **routing):
+    """Stage Steam edits and roll back a partial write; never edit a live Steam client."""
     config = profile / 'config'
     local = config / 'localconfig.vdf'
     shortcuts = config / 'shortcuts.vdf'
     require_closed()
-    originals = {local: local.read_bytes(), shortcuts: shortcuts.read_bytes() if shortcuts.exists() else None}
-    updates = {local: set_launch_options(originals[local].decode('utf-8'), options).encode('utf-8'),
-               shortcuts: update_shortcuts(originals[shortcuts], steam, game, connections)}
+    # Battle.net shortcuts never modify the Steam game's launch options.
+    originals = {shortcuts: shortcuts.read_bytes() if shortcuts.exists() else None}
+    updates = {shortcuts: update_shortcuts(originals[shortcuts], steam, game, connections, **routing)}
+    if options is not None:
+        originals = {local: local.read_bytes(), **originals}
+        updates = {local: set_launch_options(originals[local].decode('utf-8'), options).encode('utf-8'), **updates}
     backup = backups / ('steam-' + datetime.now().strftime('%Y%m%d-%H%M%S-%f'))
     backup.mkdir(parents=True)
     for path, original in originals.items():

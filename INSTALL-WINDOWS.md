@@ -3,7 +3,7 @@
 This preview supports **SteamVR and Virtual Desktop (VDXR)** on Windows.
 
 **D2R PCVR is a mod installed on top of the original game. You must purchase
-and install your own legitimate Steam copy of Diablo II: Resurrected. The
+and install your own legitimate copy of Diablo II: Resurrected. The
 game is not included, and this mod cannot run without it.**
 
 **The release ZIP includes no Blizzard game assets.** It contains the VR mod
@@ -11,13 +11,18 @@ and licensed third-party components. The installer reads the required
 item/skill icons and potion models from your own installed game and keeps
 them in local caches. Do not redistribute those caches or your game files.
 
-You need the **Steam edition of Diablo II: Resurrected 3.3.93787** and a
-**local offline character**. The game runs on your PC and streams to the headset.
+The published v0.3.6 release requires the **Steam edition of Diablo II:
+Resurrected 3.3.93787** and a **local offline character**. For experimental
+Battle.net packages, see [Battle.net preview packages](#battlenet-preview-packages).
+The game runs on your PC and streams to the headset.
 
 ## Before you start
 
-1. Purchase and install D2R through Steam. Launch it normally once, finish any account
-   prompts, create/select an offline character, then fully exit.
+1. Purchase and install D2R through Steam, or through Battle.net with a
+   [Battle.net-capable package](#battlenet-preview-packages). Launch it normally
+   through that store once, finish any account prompts, create/select an offline
+   character, then fully exit. Install the Steam desktop client and sign in once,
+   including for a Battle.net installation; setup uses it for VR library shortcuts.
 2. Set up your headset and both controllers, including floor/room setup:
 
    | Headset | Connection |
@@ -41,24 +46,31 @@ on the PC desktop. No separate Python install is needed; setup downloads a small
 verified private runtime from [python.org](https://www.python.org/downloads/release/python-31210/).
 An internet connection is needed for the required components.
 
-1. Choose **Steam Frame**, **Quest 3**, **Quest 2** or another SteamVR headset.
-2. For Quest, choose **Steam Link / SteamVR**, **Virtual Desktop / VDXR**,
+1. If your package includes Battle.net support, choose **Steam** or **Battle.net**.
+   This selects which installed copy to modify when you have both. Steam-only
+   packages identify themselves and continue with the Steam edition.
+2. Choose **Steam Frame**, **Quest 3**, **Quest 2** or another SteamVR headset.
+3. For Quest, choose **Steam Link / SteamVR**, **Virtual Desktop / VDXR**,
    or **Both**. Steam Frame uses SteamVR.
-3. Confirm the detected Steam, game and SteamVR folders. Choose your Steam account
-   if more than one is present, and confirm the saved-games folder.
-4. For an existing mod installation, choose **Update / repair and keep calibration
+4. Confirm the detected Steam and game folders, plus SteamVR if selected. Setup
+   looks up the selected edition's game folder; you can enter its path if needed.
+   It checks the game edition and supported version before installation. Choose
+   your Steam account if more than one is present, and confirm the saved-games folder.
+5. For an existing mod installation, choose **Update / repair and keep calibration
    and video settings**. A full install applies recommended settings and resets calibration.
    **Only configure Steam shortcuts** skips installing mod files.
-5. Review the choices and continue. When prompted, use **Save & Exit** in D2R and
+6. Review the choices and continue. When prompted, use **Save & Exit** in D2R and
    **Steam > Exit** on the desktop. Steam must be fully closed while setup adds
    shortcuts. This also disconnects headset streaming temporarily.
-6. When setup finishes, open Steam, reconnect your headset and play the matching
+7. When setup finishes, open Steam, reconnect your headset and play the matching
    **Diablo II: Resurrected VR** entry in your library. Select an **offline character**.
 
-Setup configures D2R's launch options and creates the appropriate Steam library
-shortcut automatically, including **Include in VR Library** for SteamVR. Choosing
+Setup creates the appropriate Steam library shortcut automatically, including
+**Include in VR Library** for SteamVR. For the Steam edition it also configures
+D2R's Steam launch options; for Battle.net it creates shortcuts that launch
+the mod from the selected Battle.net folder. Choosing
 **Both** creates two entries. Rerunning setup updates these entries without adding
-duplicates. Steam's original D2R **Play** button still launches the stock desktop game.
+duplicates. The original Steam or Battle.net **Play** button still launches the stock desktop game.
 It does not change the system's OpenXR runtime or Windows security settings.
 
 Backups are kept in **setup-backups** inside the extracted mod folder: game files
@@ -66,9 +78,45 @@ and saves under **game**, and Steam configuration under **steam-...**. Keep this
 folder and **setup-result.json** after installation. Steam backups contain account
 configuration; keep them private and do not share them with the mod ZIP.
 
-## Manual installation
+## Battle.net preview packages
 
-Use this section only if you are installing without the setup wizard.
+The published v0.3.6 ZIP supports Steam only. Experimental Battle.net packages
+include **bin/CascLib.dll** and offer both editions in **Install-Windows.cmd**. They require
+your **purchased Battle.net copy of D2R 3.3.93847** on Windows. Use a local
+offline character. SteamVR and Virtual Desktop (VDXR) launch options are
+available. Battle.net has been tried with SteamVR; Battle.net with VDXR has not
+yet been confirmed. Battle.net support is still experimental.
+
+1. Launch your Battle.net game normally once, complete its account prompts,
+   load an offline character, then use Save & Exit and fully close the game.
+2. Run **Install-Windows.cmd** and select **Battle.net**. Choose your
+   headset and connection, then confirm the game and saved-games folders.
+3. Follow the remaining setup prompts above, including fully exiting Steam
+   while its library shortcuts are created.
+4. Reopen Steam and use **Diablo II: Resurrected VR (Battle.net) - SteamVR**
+   or **Diablo II: Resurrected VR (Battle.net) - Virtual Desktop**.
+
+These entries can coexist with the Steam edition's VR shortcuts. They launch
+the loader in the selected Battle.net game folder and select the OpenXR runtime
+for that process. They do not change the Steam edition's launch options or
+Battle.net's normal Play button. Steam is used for library shortcuts and, when
+selected, SteamVR; a second game purchase through Steam is not required.
+These are non-Steam library entries. They start the mod loader directly, so the
+Battle.net app may not show the game as in progress. Its normal **Play** button
+continues to launch the unmodded game.
+
+If included, **Install-BattleNet-Preview.cmd** opens the same setup wizard;
+it is not required. If setup offers only Steam, download a package that
+explicitly includes Battle.net support before installing on that edition.
+
+Required icons and potion models are read from your own Battle.net archives
+and kept locally. No Blizzard game files or generated asset caches are included
+in the mod package. The existing [controller mappings](CONTROLS.md) also apply.
+
+## Manual installation (Steam edition)
+
+Use this section only for the Steam edition if you are installing without the
+setup wizard. Battle.net players should use **Install-Windows.cmd** as described above.
 Install [Python 3.10 or newer](https://www.python.org/downloads/windows/) with
 the Windows **py launcher**, then check `py -3 --version`.
 
@@ -94,7 +142,7 @@ below if you want to keep your settings.
 If your saves are in a custom location, add
 `--saves 'D:\Your\Saved Games\Diablo II Resurrected'` to the install command.
 
-## Set Steam launch options
+## Set Steam launch options (Steam edition)
 
 The wizard handles this automatically. For a manual installation, find SteamVR's folder through
 Properties → Installed Files → Browse. Set its path below to the
@@ -126,6 +174,9 @@ $Wrapper = (Resolve-Path .\steamvr\launch_windows.py).Path
 
 Connect your headset first, then open the extracted mod folder:
 
+The following `.cmd` launchers are for the **Steam edition**. For Battle.net,
+use the **(Battle.net)** library entries created by the wizard.
+
 | Connection | Double-click |
 | --- | --- |
 | Steam Frame with SteamVR | **Launch-VR-SteamVR.cmd** |
@@ -135,14 +186,19 @@ Connect your headset first, then open the extracted mod folder:
 Accept Steam's extra launch-arguments prompt if shown, then select your
 **offline character**.
 
-Steam's normal **Play** button opens the unmodded desktop game. This mod is
+Your store launcher's normal **Play** button opens the unmodded desktop game. This mod is
 for offline play only; use the unmodded game for multiplayer. Always use
 **Save & Exit** and fully close D2R before switching headset connections or
 returning to desktop play.
 
 ## Add Steam library shortcuts
 
-The setup wizard adds these automatically. To add them manually after
+The setup wizard adds shortcuts for your selected edition automatically.
+The manual directions below are for the **Steam edition**. Battle.net players
+can rerun **Install-Windows.cmd**, select **Battle.net**, and choose
+**Only configure Steam shortcuts** to recreate their entries.
+
+To add Steam-edition shortcuts manually after
 completing **Set Steam launch options** above, you can add separate
 Steam library entries for each VR connection. These also let you launch from
 the headset without opening the mod folder.
@@ -220,7 +276,8 @@ complete your headset's floor/room setup and reopen calibration.
 | Melee | Swing your equipped melee weapon through an enemy, even with a skill selected |
 | Manual attack / selected spell | Right trigger |
 | Bow | Bring the right hand to the bowstring, hold right trigger, draw back, then release |
-| Swap weapon sets I/II | Reach your right hand over either shoulder and press right trigger; change the swap hand in VR settings |
+| Javelin | In **WEAPON** mode, hold right trigger, make a throwing motion, then release |
+| Swap weapon sets I/II | Reach your right hand over either shoulder and press grip; change the swap hand in VR settings |
 | Seated weapon swap / stow | Wheel → **EQUIPMENT / BELT** → **Weapon I**, **Weapon II** or **Stow/Draw** |
 | Grab a belt potion | Reach to a bottle and hold grip with either hand |
 | Drink | Keep grip held, bring the bottle opening to your mouth and tip it; release an unused bottle to return it |
@@ -245,8 +302,8 @@ binding also remains available.
 
 ## If something goes wrong
 
-- **Game opens flat:** use the matching **Launch-VR-*.cmd** file, check the
-  Steam launch options and connect your headset before launching.
+- **Game opens flat:** use the matching VR library shortcut and connect your
+  headset before launching. For the Steam edition, check the Steam launch options.
 - **Virtual Desktop cannot launch VR:** install its Windows Streamer in the
   default location, connect the headset and close SteamVR before trying again.
 - **An install file is quarantined:** check Windows Security's Protection
@@ -254,10 +311,11 @@ binding also remains available.
   component is quarantined.
 - **Setup cannot update Steam:** choose **Steam > Exit**, then retry. Closing
   Steam's window leaves it running. Setup does not terminate games or Steam for you.
-- **Setup reports an unsupported Steam configuration:** use the manual installation
-  and shortcut directions above. The original Steam configuration is kept.
+- **Setup reports an unsupported Steam configuration:** the original configuration
+  is kept. Steam-edition players can use the manual installation and shortcut
+  directions above; those commands do not apply to Battle.net.
 - **D2R asks for a license/account check:** fully exit, launch the game with
-  Steam's normal Play button while connected to the internet, finish the prompt
+  your store launcher's normal Play button while connected to the internet, finish the prompt
   and exit before launching VR again.
 - **Body height or reach feels wrong:** repeat body calibration while standing
   straight with your arms out, and check the headset's floor setup.
@@ -265,35 +323,79 @@ binding also remains available.
 ## Upgrade or remove
 
 **Upgrade while keeping your settings:** fully close D2R, download and extract
-the new release to a permanent folder, run **Install-Windows.cmd** and choose
+the new release to a permanent folder, run **Install-Windows.cmd**, select the
+same game edition if prompted, and choose
 **Update / repair and keep calibration and video settings**. Setup refreshes
 the mod and its launch paths while keeping your calibration and video settings.
 
 For a manual DLL-only upgrade, keep a copy of the existing
 `d2rloader\plugins\d2rl-vrcam.dll` and `d2r_vr.ini` from your game folder.
 Replace only that DLL with the new release's `bin\d2rl-vrcam.dll`.
-Keep your existing INI to retain calibration, and repeat the Steam launch-option
-step using the new extracted folder. Run the full installer if the new release
+Keep your existing INI to retain calibration. For the Steam edition, repeat
+the Steam launch-option step using the new extracted folder. For Battle.net,
+rerun the wizard and choose **Only configure Steam shortcuts** to update its paths.
+Run the full installer if the new release
 asks you to update its other components.
 
-**Remove the mod:** fully close D2R. Open PowerShell in the extracted folder,
+**Guided removal:** double-click **Uninstall-Windows.cmd** in the extracted folder.
+
+1. Select **Steam** or **Battle.net** and confirm the game folder.
+2. Setup follows the installation backups, including upgrades from older
+   extracted release folders. If a backup was moved or an older installation
+   has no record, choose the folder containing its original backup when prompted.
+3. Keep current video settings, or choose to restore the pre-install settings.
+   Both game editions share video settings, so keeping them is the default.
+4. Review removal, then choose **Remove the VR mod**. Use **Save & Exit** in D2R
+   and **Steam > Exit** when prompted.
+
+The wizard restores replaced files and removes files introduced by the mod,
+including files added by upgrades. It removes matching VR library entries
+from local Steam accounts while keeping other games and the other edition's
+shortcuts. For Steam, it restores the recorded prior launch options if the VR
+wrapper is still active; any launch options you changed afterward are kept.
+Battle.net removal does not edit the Steam edition's launch options.
+
+**Your current characters and shared stash are never restored from an old
+backup or deleted.** The original game installation is kept. Files changed
+during removal are backed up under **setup-backups/uninstall-...**. The extracted
+mod folder, installation backups and diagnostic logs remain until you remove
+them yourself. If the original pre-mod backup is unavailable, guided removal
+stops and lets you locate it or cancel.
+
+Keep all referenced installation backups while using the mod, even after
+upgrading to a new extracted folder. Rerunning the installer keeps the backup
+history. The uninstaller is included in newer packages; the published v0.3.6
+ZIP uses the manual instructions below.
+
+**Manual restore / removal:** fully close D2R. Open PowerShell in the extracted folder,
 set `$Game` to your D2R folder as in the install step, then replace the backup
 path below with the one the installer printed. Wizard backups are under
 `setup-backups\game`; manual installer backups are under `build-frame\backups`.
 The wizard's private Python can be used without installing Python separately:
+
+Select the original pre-mod snapshot for removal. A later upgrade snapshot
+restores the previous mod build. Use guided removal to include files added by
+subsequent upgrades automatically.
 
 ```powershell
 & .\.runtime\python\python.exe .\steamvr\install.py --game "$Game" --restore 'C:\Mods\d2r-pcvr-preview\setup-backups\game\YOUR-SNAPSHOT'
 ```
 
 For a manual installation, use `py -3` in place of the private Python path.
-Then clear D2R's Steam launch options and remove its VR shortcuts. To restore the
-previous Steam configuration instead, fully exit Steam and copy the two VDF files
-from the matching `setup-backups\steam-...` folder back to
+Then remove that edition's VR shortcuts. For the Steam edition, also clear
+D2R's Steam launch options; Battle.net setup does not change those options. To restore the
+previous Steam configuration instead, fully exit Steam and copy the VDF files
+present in the matching `setup-backups\steam-...` folder back to
 `Steam\userdata\YOUR-LOCAL-ID\config` (the ID is in `setup-result.json`).
+Battle.net setup backs up only `shortcuts.vdf` because it does not edit
+`localconfig.vdf`; leave files that are not in the backup untouched.
 If no `shortcuts.vdf` existed before setup, its backup is absent; remove only the
 new D2R VR entries through Steam instead of replacing unrelated shortcuts.
 Your current character progress is kept;
-the installer restores replaced files and your previous video settings.
+the manual restore restores replaced files and your previous video settings.
+
+If guided removal reports a write failure, keep its **uninstall-...** backup.
+It attempts to roll back changes immediately. Its `manifest.json` lists each
+changed path and the corresponding previous file under `files` for recovery.
 
 See [THIRD_PARTY.md](THIRD_PARTY.md) for licenses and credits.
