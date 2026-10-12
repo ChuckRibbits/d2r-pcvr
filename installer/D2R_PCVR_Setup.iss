@@ -199,6 +199,10 @@ end;
 
 function ShouldSkipPage(PageID: Integer): Boolean;
 begin
+  if ExpandConstant('{param:CONFIG|}') <> '' then begin
+    Result := (PageID >= EditionPage.ID) and (PageID <= BackupPage.ID);
+    Exit;
+  end;
   Result := ((PageID = ConnectionPage.ID) and (HeadsetPage.SelectedValueIndex in [0, 3])) or
             ((PageID = RuntimePage.ID) and not UsesSteamVR) or
             ((PageID = AccountPage.ID) and (ProfileIDs.Count = 1)) or
@@ -333,7 +337,7 @@ end;
 
 function SetupSucceeded: Boolean;
 begin
-  Result := not SetupFailed;
+  Result := not SetupFailed and (ExpandConstant('{param:CONFIG|}') = '');
 end;
 
 function SteamExecutable(Param: String): String;
@@ -343,7 +347,7 @@ end;
 
 procedure RegisterPreviousData(PreviousDataKey: Integer);
 begin
-  if not SetupFailed then begin
+  if not SetupFailed and (ExpandConstant('{param:CONFIG|}') = '') then begin
     SetPreviousData(PreviousDataKey, 'Headset', IntToStr(HeadsetPage.SelectedValueIndex));
     SetPreviousData(PreviousDataKey, 'Connection', IntToStr(ConnectionPage.SelectedValueIndex));
   end;

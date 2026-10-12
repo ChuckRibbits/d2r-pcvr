@@ -58,6 +58,19 @@ The graphical backend tests use temporary fixture folders, never the player's
 Steam profile or game. They cover both editions, connection choices, repeated
 repair, missing backups, Unicode INI paths, rollback, and multi-copy removal.
 
+Run the compiled installer lifecycle check separately:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File installer/smoke_native_installer.ps1
+```
+
+This compiles the same wizard with a distinct fixture app ID and a stub backend.
+It installs only into a fresh `build-frame/installer-qa-...` folder, checks the
+Windows Apps entry, forces a removal failure to verify helper retention, then
+removes the fixture successfully. It never calls the real installation backend
+or changes a game/Steam profile. Keep its logs with the validation record;
+it verifies Inno's lifecycle, not a real game install or headset launch.
+
 Check the payload actually embedded in the compiled EXE without installing:
 
 ```powershell
