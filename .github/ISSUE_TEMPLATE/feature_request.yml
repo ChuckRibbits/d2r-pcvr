@@ -1,0 +1,27 @@
+name: Feature request
+description: Suggest an improvement to D2R PCVR.
+title: "[Feature]: "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Search existing issues before submitting. For larger contributions,
+        discuss the proposal here before starting implementation.
+  - type: textarea
+    id: problem
+    attributes:
+      label: What player problem would this solve?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behavior
+      description: Describe the interaction or result you want, including controller/headset considerations if relevant.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives and additional context
+      description: Mention current workarounds or related features. Do not attach game assets or private player data.
