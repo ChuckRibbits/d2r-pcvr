@@ -1,6 +1,26 @@
 # Clean Windows installation and agent handoff — October 10, 2026
 
-**October 12 Steam Frame shortcut startup candidate:** Draft
+**v0.3.9 Windows preview release preparation:** PRs #10, #13 and #15 are merged.
+The release adds physical Smite/Amazon arrow input, active-skill cues, the
+spell-menu Map tab, desktop-mediated Steam VR startup and full graphical
+installer error output. Issue #11 remains open: its underlying install failure
+is unknown until the reporter shares the newly exposed diagnostic.
+
+A fresh native build from merged source
+`f35bfa1ef4b8766510b494660e19b03bfc242207` passes all **40 CTest checks**;
+DLL SHA-256 is
+`e6c4e7f918244a2c26a79b77dc1b6ca425896b883a01918eb21d4443f056c4f2`.
+All **69 Python checks** pass, including graphical setup, installer staging,
+rollback, repair/removal and launcher lifecycle. The compiled Inno lifecycle
+fixture passes Windows Apps registration, blocked-removal helper retention and
+successful removal using a stub backend. No live game installation was changed
+for release preparation; the installed map DLL described below is retained.
+The newly rebuilt release DLL has not had a headset session. Historical owner
+Smite confirmation and the remaining Map/Amazon/Frame checks are recorded below
+and in RELEASE_NOTES.md. Evidence:
+`steamvr/evidence/2026-10-12-windows-release.json`.
+
+**October 12 Steam Frame shortcut startup candidate:** Merged
 [PR #13](https://github.com/bearstonem/d2r-pcvr/pull/13), also applied to this
 motion-skill branch. Removing `SteamOverlayGameId` alone was insufficient:
 after one successful launch, the owner's 15:11:03 and 15:11:34 PDT attempts
