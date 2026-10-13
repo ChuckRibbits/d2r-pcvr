@@ -77,17 +77,47 @@ def require_game_closed():
         raise SystemExit('Save and exit D2R before installing or restoring the mod.')
 
 
+def dependency_io_error(path, action, error):
+    return SystemExit(
+        f'Could not {action} required dependency "{path}": {error}. '
+        'The file may be missing, blocked/quarantined by security software, or inaccessible. '
+        'Check file permissions and your security software\'s history. On Windows, check '
+        'Windows Security > Virus & threat protection > Protection history; '
+        'include any detection name and affected file path in your bug report. '
+        'No game files changed.')
+
+
+def read_dependency(path, missing_ok=False):
+    try:
+        return path.read_bytes()
+    except FileNotFoundError as error:
+        if missing_ok:
+            return None
+        raise dependency_io_error(path, 'read', error) from error
+    except OSError as error:
+        raise dependency_io_error(path, 'read', error) from error
+
+
 def download_verified(url, path, digest, max_bytes=100 * 1024 * 1024):
-    if path.is_file() and hashlib.sha256(path.read_bytes()).hexdigest() == digest:
+    cached = read_dependency(path, missing_ok=True)
+    if cached is not None and hashlib.sha256(cached).hexdigest() == digest:
+        print(f'Using verified cached dependency: {path.name}')
         return
-    path.parent.mkdir(parents=True, exist_ok=True)
     print(f'Downloading {url}')
     request = urllib.request.Request(url, headers={'User-Agent': 'D2R-PCVR-installer/0.1'})
     with urllib.request.urlopen(request, timeout=60) as response:
         data = response.read(max_bytes + 1)
     if hashlib.sha256(data).hexdigest() != digest:
         raise SystemExit(f'Checksum mismatch for {url}; no game files changed.')
-    path.write_bytes(data)
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(data)
+    except OSError as error:
+        raise dependency_io_error(path, 'save', error) from error
+    # Security software can remove/block a downloaded file even after writing
+    # succeeds. Verify disk access before fetching further dependencies.
+    if hashlib.sha256(read_dependency(path)).hexdigest() != digest:
+        raise SystemExit(f'Checksum mismatch for saved dependency {path}; no game files changed.')
 
 
 def safe_relative(name):
@@ -187,19 +217,22 @@ def main():
                 compiler.write_bytes(z.read('c/Redist/D3D/x64/d3dcompiler_47.dll'))
     if os.name != 'nt' and not compiler.is_file():
         raise SystemExit('Proton needs the SDK shader compiler; run with --download-deps.')
-    if compiler.is_file() and hashlib.sha256(compiler.read_bytes()).hexdigest() != COMPILER_HASH:
+    if compiler.is_file() and hashlib.sha256(read_dependency(compiler)).hexdigest() != COMPILER_HASH:
         raise SystemExit('SDK shader compiler checksum mismatch; run with --download-deps.')
-    if hashlib.sha256(archive.read_bytes()).hexdigest() != LOADER_HASH:
+    if hashlib.sha256(read_dependency(archive)).hexdigest() != LOADER_HASH:
         raise SystemExit('D2RLoader archive checksum mismatch')
     payload = {}
-    with zipfile.ZipFile(archive) as z:
-        for name in z.namelist():
-            if not name.endswith('/'):
-                rel = safe_relative(name)
-                if rel.parts[0].lower() not in ('mods', 'd2rloader', 'd2rloader.exe', 'd2rcore.dll', 'd2rloader.mpq'):
-                    raise SystemExit(f'Unexpected file in loader archive: {name}')
-                payload[rel] = z.read(name)
-    payload[Path('ReShade64.dll')] = reshade.read_bytes()
+    try:
+        with zipfile.ZipFile(archive) as z:
+            for name in z.namelist():
+                if not name.endswith('/'):
+                    rel = safe_relative(name)
+                    if rel.parts[0].lower() not in ('mods', 'd2rloader', 'd2rloader.exe', 'd2rcore.dll', 'd2rloader.mpq'):
+                        raise SystemExit(f'Unexpected file in loader archive: {name}')
+                    payload[rel] = z.read(name)
+    except OSError as error:
+        raise dependency_io_error(archive, 'read', error) from error
+    payload[Path('ReShade64.dll')] = read_dependency(reshade)
     payload[Path('d2rloader/plugins/d2rl-vrcam.dll')] = args.plugin.read_bytes()
     if compiler.is_file():
         payload[Path('d2rloader/runtime/d3dcompiler_47.dll')] = compiler.read_bytes()

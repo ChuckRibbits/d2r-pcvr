@@ -87,6 +87,19 @@ class InstallationTests(unittest.TestCase):
                         install.main()
                 self.assertFalse((root / 'backups').exists())
                 digest = hashlib.sha256(archive.read_bytes()).hexdigest()
+                read_bytes = Path.read_bytes
+                def blocked_archive(path):
+                    if path == archive:
+                        raise OSError(22, 'Invalid argument', str(path))
+                    return read_bytes(path)
+                with patch.object(sys, 'argv', common), patch.object(install, 'LOADER_HASH', digest), \
+                        patch.object(Path, 'read_bytes', blocked_archive):
+                    with self.assertRaisesRegex(SystemExit, 'Protection history'):
+                        install.main()
+                self.assertFalse((root / 'backups').exists())
+                self.assertFalse((game / 'D2RLoader.exe').exists())
+                self.assertEqual((saves / 'Settings.json').read_text(), '{"Resolution Scale": 100}')
+                self.assertEqual((saves / 'Friend.d2s').read_bytes(), b'original progress')
                 with patch.object(sys, 'argv', common), patch.object(install, 'LOADER_HASH', digest):
                     install.main()
                 snapshot = next((root / 'backups').iterdir())
@@ -253,6 +266,106 @@ class InstallationTests(unittest.TestCase):
                 launch_windows.launch_environment(['--frame-vr',
                     launch_windows.RUNTIME_OPTION + 'first.json',
                     launch_windows.RUNTIME_OPTION + 'second.json'] + extra)
+
+
+class DependencyDownloadTests(unittest.TestCase):
+    payload = b'fixture dependency; no executable code'
+    digest = hashlib.sha256(payload).hexdigest()
+    url = 'https://example.invalid/fixture.zip'
+
+    def test_verified_manual_cache_is_reused_without_network_or_replacement(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            target = Path(temporary) / 'fixture.zip'
+            target.write_bytes(self.payload)
+            with patch.object(install.urllib.request, 'urlopen') as download, \
+                    patch.object(Path, 'write_bytes') as write, \
+                    contextlib.redirect_stdout(io.StringIO()) as output:
+                install.download_verified(self.url, target, self.digest)
+            download.assert_not_called()
+            write.assert_not_called()
+            self.assertIn('Using verified cached dependency', output.getvalue())
+            self.assertEqual(target.read_bytes(), self.payload)
+
+    def test_bad_download_keeps_existing_cache_and_enforces_checksum(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            target = Path(temporary) / 'fixture.zip'
+            target.write_bytes(b'old, unverified cache')
+            with patch.object(install.urllib.request, 'urlopen', return_value=io.BytesIO(b'wrong content')), \
+                    contextlib.redirect_stdout(io.StringIO()):
+                with self.assertRaisesRegex(SystemExit, 'Checksum mismatch'):
+                    install.download_verified(self.url, target, self.digest)
+            self.assertEqual(target.read_bytes(), b'old, unverified cache')
+
+    def test_valid_download_replaces_invalid_cache(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            target = Path(temporary) / 'fixture.zip'
+            target.write_bytes(b'invalid cache')
+            with patch.object(install.urllib.request, 'urlopen', return_value=io.BytesIO(self.payload)), \
+                    contextlib.redirect_stdout(io.StringIO()):
+                install.download_verified(self.url, target, self.digest)
+            self.assertEqual(target.read_bytes(), self.payload)
+
+    def test_unreadable_cache_reports_path_and_os_error_without_redownloading(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            target = Path(temporary) / 'fixture.zip'
+            target.write_bytes(self.payload)
+            with patch.object(Path, 'read_bytes', side_effect=OSError(22, 'Invalid argument')), \
+                    patch.object(install.urllib.request, 'urlopen') as download:
+                with self.assertRaises(SystemExit) as caught:
+                    install.download_verified(self.url, target, self.digest)
+            message = str(caught.exception)
+            self.assertIn(str(target), message)
+            self.assertIn('[Errno 22]', message)
+            self.assertIn('Protection history', message)
+            download.assert_not_called()
+            self.assertEqual(target.read_bytes(), self.payload)
+
+    def test_file_blocked_after_download_is_reported_immediately(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            target = Path(temporary) / 'fixture.zip'
+            with patch.object(Path, 'read_bytes', side_effect=[FileNotFoundError(), OSError(22, 'Invalid argument')]), \
+                    patch.object(install.urllib.request, 'urlopen', return_value=io.BytesIO(self.payload)), \
+                    contextlib.redirect_stdout(io.StringIO()):
+                with self.assertRaisesRegex(SystemExit, 'Protection history'):
+                    install.download_verified(self.url, target, self.digest)
+            self.assertEqual(target.read_bytes(), self.payload)
+
+    def test_file_removed_after_download_reports_missing_dependency(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            target = Path(temporary) / 'fixture.zip'
+            write_bytes = Path.write_bytes
+            def removed_write(path, data):
+                size = write_bytes(path, data)
+                path.unlink()
+                return size
+            with patch.object(Path, 'write_bytes', removed_write), \
+                    patch.object(install.urllib.request, 'urlopen', return_value=io.BytesIO(self.payload)), \
+                    contextlib.redirect_stdout(io.StringIO()):
+                with self.assertRaisesRegex(SystemExit, 'missing, blocked/quarantined'):
+                    install.download_verified(self.url, target, self.digest)
+            self.assertFalse(target.exists())
+
+    def test_blocked_write_is_explained(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            target = Path(temporary) / 'fixture.zip'
+            with patch.object(Path, 'write_bytes', side_effect=PermissionError(13, 'Permission denied')), \
+                    patch.object(install.urllib.request, 'urlopen', return_value=io.BytesIO(self.payload)), \
+                    contextlib.redirect_stdout(io.StringIO()):
+                with self.assertRaisesRegex(SystemExit, 'Could not save required dependency'):
+                    install.download_verified(self.url, target, self.digest)
+            self.assertFalse(target.exists())
+
+    def test_changed_file_after_save_fails_checksum(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            target = Path(temporary) / 'fixture.zip'
+            write_bytes = Path.write_bytes
+            def changed_write(path, data):
+                return write_bytes(path, b'changed content')
+            with patch.object(Path, 'write_bytes', changed_write), \
+                    patch.object(install.urllib.request, 'urlopen', return_value=io.BytesIO(self.payload)), \
+                    contextlib.redirect_stdout(io.StringIO()):
+                with self.assertRaisesRegex(SystemExit, 'Checksum mismatch for saved dependency'):
+                    install.download_verified(self.url, target, self.digest)
 
 
 if __name__ == '__main__':
