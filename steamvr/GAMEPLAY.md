@@ -281,7 +281,9 @@ belts supply extra rows behind the same four grab positions, up to four items
 per column; the count includes those reserves. The next native item appears
 after consumption. The wheel uses/grabs existing contents rather than assigning
 items. Bottles stay upright at the waist and follow the held grip
-in six degrees of freedom. Reach highlights the nearest occupied slot; a grab
+in six degrees of freedom. A 90-degree local pitch correction keeps grabbed
+bottles upright in either hand; drinking checks use the same corrected opening.
+Reach highlights the nearest occupied slot; a grab
 moves that bottle off the belt into the hand without consuming it. Empty columns
 have no bottle. A refill/reorder cancels an unspent grab. The held model keeps its
 captured identity even after automatic refill. It darkens only after the
