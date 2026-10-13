@@ -106,10 +106,16 @@ not generate melee velocity. The layout currently assumes a right-handed player.
 | Walk / snap turn | Sticks; paused while wheel or journal is open |
 | Height reset / map | Left grip + left stick click / plain left stick click, unchanged |
 
+The minimap also appears above the health/mana indicators when you look at the
+back of your left wrist. **VR Settings > VR > Wrist minimap** is **On** by
+default; turn it **Off** and click **Apply** to hide only the wrist copy.
+The wheel's **MAP** tab remains available either way.
+
 The Map tab preserves your selected spell and uses the native explored areas
 and markers. Choose the left or right corner minimap layout in game options;
-full-screen automap capture is unsupported. Closing the tab restores the map's
-prior visibility. The wrist retains health, mana, level and XP progress.
+full-screen automap capture is unsupported. When neither the wrist nor the Map
+tab needs it, the native map returns to its prior visibility. The wrist retains
+health, mana, level and XP progress with the wrist minimap turned off.
 
 ### Inventory, conversations and trading in VR
 
@@ -183,7 +189,7 @@ tabs and a **Reset eye height** button:
 | Tab | Contents |
 |---|---|
 | Controls | Left/right controller reference for movement, menus, melee, bow, spells, potions, holsters and height reset |
-| VR | Motion combat on/off, seated belt position, holsters, smooth/snap turning, smooth turn speed, belt height and forward reach |
+| VR | Motion combat on/off, seated belt position, dominant hand, smooth/snap turning, smooth turn speed, belt height and forward reach, wrist minimap on/off (default On) |
 | Video | Foveation Off / Fixed / Eye tracked, runtime capability/gaze status, added sky, fog, dungeon ceilings, terrain and object draw distances |
 
 Click **Apply** to save changed values to `d2rloader/plugins/d2r_vr.ini` and
@@ -310,6 +316,7 @@ Optional live configuration (metres below/forward/from the estimated torso):
 ```ini
 [interactions]
 seated=0
+wrist_map=1
 waist_below_eyes=0.65
 belt_forward=0.26
 hip_width=0.28
