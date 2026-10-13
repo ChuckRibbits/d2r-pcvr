@@ -14,14 +14,15 @@ struct PaintContext {
     std::array<std::array<Item,2>,2> sets{};
     std::array<Belt,4> belt{};
     SkillCue cue{},leftCue{};
+    controllers::Labels labels{};
     bool operator==(const PaintContext&) const=default;
 };
-inline PaintContext Context(const Snapshot& s,const Output& o,bool fresh) {
-    PaintContext c;c.hand=o.wheelHand;c.session=s.session;c.activeSet=s.activeSet;c.editor=o.editor;c.slot=o.editSlot;
+inline PaintContext Context(const Snapshot& s,const Output& o,bool fresh,const controllers::Labels& labels={}) {
+    PaintContext c;c.labels=labels;c.hand=o.wheelHand;c.session=s.session;c.activeSet=s.activeSet;c.editor=o.editor;c.slot=o.editSlot;
     c.page=o.editPage;c.count=o.editCount;c.bank=s.bindingBank;c.utility=o.utility;c.map=o.map;c.fresh=fresh;
     c.editable=s.bindingsEditable;c.equipmentKnown=s.equipmentKnown;c.beltKnown=s.beltKnown;
     c.skills=s.skills;c.options=o.editOptions;c.sets=s.sets;c.belt=s.belt;c.cue=o.cue;c.leftCue=o.leftCue;return c;
 }
-struct PaintJob {Snapshot snapshot;Output output;int selection=-1;};
+struct PaintJob {Snapshot snapshot;Output output;int selection=-1;controllers::Labels labels{};};
 struct PaintedAtlas {std::vector<uint8_t> pixels;double paintMs=0;};
 }

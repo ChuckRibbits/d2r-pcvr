@@ -119,7 +119,7 @@ void DrainOrb(std::vector<uint8_t>& rgba,bool mana,bool known,float value,float 
     }
 }
 }
-std::vector<uint8_t> Paint(const Snapshot& s,const Output& o,int selection) {
+std::vector<uint8_t> Paint(const Snapshot& s,const Output& o,int selection,const controllers::Labels& labels) {
     constexpr int size=1024;
     BITMAPINFO info{};info.bmiHeader.biSize=sizeof(BITMAPINFOHEADER);
     info.bmiHeader.biWidth=size;info.bmiHeader.biHeight=-size;info.bmiHeader.biPlanes=1;info.bmiHeader.biBitCount=32;
@@ -231,13 +231,13 @@ std::vector<uint8_t> Paint(const Snapshot& s,const Output& o,int selection) {
         if(!o.utility) {
             auto previous=SelectObject(dc,skillFont);
             text(label,{x-63,y+29,x+63,y+67});
-            fill({x-43,y-68,x+43,y-46},RGB(100,78,44));
-            fill({x-41,y-66,x+41,y-48},RGB(24,20,16));
+            fill({x-77,y-79,x+77,y-46},RGB(100,78,44));
+            fill({x-75,y-77,x+75,y-48},RGB(24,20,16));
             SetTextColor(dc,RGB(235,205,151));
-            text(handWheel?(i==0?"TRIGGER":i==1?(o.wheelHand?"A / X":"A"):i==2?(o.wheelHand?"B / Y":"B"):"GRIP +") :skills::NativeLabel(i),{x-41,y-68,x+41,y-46});
             SelectObject(dc,shortcutFont);
+            text(handWheel?labels.Button(o.wheelHand,i).c_str():skills::NativeLabel(i),{x-73,y-77,x+73,y-48});
             SetTextColor(dc,RGB(206,191,159));
-            text(skills::VrLabel(slot),{x-85,y+68,x+85,y+105});
+            text(labels.Slot(slot).c_str(),{x-85,y+68,x+85,y+105});
             SelectObject(dc,previous);
         }
     }
@@ -259,9 +259,9 @@ std::vector<uint8_t> Paint(const Snapshot& s,const Output& o,int selection) {
         SelectObject(dc,shortcutFont);text("Use a corner minimap layout in game options",{38,650,730,677});SelectObject(dc,font);
     } else if(o.editor==2) {
         frame({20,28,748,681});
-        char title[120];std::snprintf(title,sizeof title,"CHOOSE SKILL  /  %s",handWheel?skills::VrLabel(o.editSlot):skills::NativeLabel(o.editSlot));
+        char title[120];std::snprintf(title,sizeof title,"CHOOSE SKILL  /  %s",handWheel?labels.Slot(o.editSlot).c_str():skills::NativeLabel(o.editSlot));
         text(title,{38,47,730,88});
-        text(skills::VrLabel(o.editSlot),{38,96,540,143});
+        text(labels.Slot(o.editSlot).c_str(),{38,96,540,143});
         frame({568,92,730,146},o.hover==8);text("CLEAR SLOT",{574,98,724,140});
         for(int i=0;i<8;++i) {
             const int x=int(768*(.05f+(i%2)*.46f)),y=int(768*(.23f+(i/2)*.145f));

@@ -71,7 +71,7 @@ constexpr float kRadToDeg=57.295779513f;
  X(WaitFrame) X(BeginFrame) X(EndFrame) X(EnumerateSwapchainFormats) \
  X(CreateSwapchain) X(DestroySwapchain) X(EnumerateSwapchainImages) \
  X(AcquireSwapchainImage) X(WaitSwapchainImage) X(ReleaseSwapchainImage) \
- X(StringToPath) X(CreateActionSet) X(DestroyActionSet) X(CreateAction) \
+ X(StringToPath) X(PathToString) X(GetCurrentInteractionProfile) X(CreateActionSet) X(DestroyActionSet) X(CreateAction) \
  X(CreateActionSpace) X(SuggestInteractionProfileBindings) X(AttachSessionActionSets) \
  X(SyncActions) X(GetActionStateBoolean) X(GetActionStateFloat) X(GetActionStateVector2f) X(GetActionStatePose) X(ApplyHapticFeedback)
 #define DECLARE(name) PFN_xr##name p##name=nullptr;
@@ -97,6 +97,8 @@ skills::HandOutput handOutput;
 gameplay::Pose handAim[2]{};
 bool handAimTracked[2]{};
 int castHand=0;
+controllers::Labels detectedControllers{},controllerLabels{};
+bool controllerProfilesDirty=true,frameControllerExtension=false;
 interaction::Skill shieldSkill;
 constexpr int shieldSlot=skills::TriggerSlot(1);
 gameplay::Input motionInput;
@@ -133,7 +135,7 @@ interaction::PaintContext interactionPaintContext{},interactionRequestedContext{
 bool interactionPaintValid=false;
 LatestWorker<interaction::PaintJob,interaction::PaintedAtlas> interactionPainter([](const interaction::PaintJob& job) {
     const auto start=hookmetrics::Nanos();
-    auto pixels=interaction::Paint(job.snapshot,job.output,job.selection);
+    auto pixels=interaction::Paint(job.snapshot,job.output,job.selection,job.labels);
     return interaction::PaintedAtlas{std::move(pixels),double(hookmetrics::Nanos()-start)/1e6};
 });
 uint64_t interactionPrefetchSession=0;
@@ -467,11 +469,14 @@ bool LoadFunctions() {
     // Bind the optional capability at session creation so the in-headset
     // toggle can enable it later. Samples are read only while eyeTracking is on.
     gazeExtension=supports(XR_EXT_EYE_GAZE_INTERACTION_EXTENSION_NAME);
-    const char* enabled[]={XR_KHR_D3D12_ENABLE_EXTENSION_NAME,XR_EXT_EYE_GAZE_INTERACTION_EXTENSION_NAME};
+    frameControllerExtension=supports(controllers::FrameExtension);
+    std::vector<const char*> enabled{XR_KHR_D3D12_ENABLE_EXTENSION_NAME};
+    if(gazeExtension)enabled.push_back(XR_EXT_EYE_GAZE_INTERACTION_EXTENSION_NAME);
+    if(frameControllerExtension)enabled.push_back(controllers::FrameExtension);
     XrInstanceCreateInfo ci{XR_TYPE_INSTANCE_CREATE_INFO};
     std::strcpy(ci.applicationInfo.applicationName,"D2R Steam Frame prototype");
     ci.applicationInfo.applicationVersion=1;ci.applicationInfo.apiVersion=XR_API_VERSION_1_0;
-    ci.enabledExtensionCount=gazeExtension?2:1;ci.enabledExtensionNames=enabled;
+    ci.enabledExtensionCount=uint32_t(enabled.size());ci.enabledExtensionNames=enabled.data();
     if(!Check(pCreateInstance(&ci,&instance),"create instance")) return false;
 #define LOAD(name) if(!Check(getProc(instance,"xr" #name,reinterpret_cast<PFN_xrVoidFunction*>(&p##name)),"load " #name)) return false;
     XR_FUNCTIONS(LOAD)
@@ -508,8 +513,11 @@ bool SetupActions() {
        !MakeAction(trigger,"triggers",XR_ACTION_TYPE_FLOAT_INPUT) || !MakeAction(squeeze,"grips",XR_ACTION_TYPE_FLOAT_INPUT) ||
        !MakeAction(primary,"primary",XR_ACTION_TYPE_BOOLEAN_INPUT) || !MakeAction(secondary,"secondary",XR_ACTION_TYPE_BOOLEAN_INPUT) ||
        !MakeAction(stickClick,"stick_click",XR_ACTION_TYPE_BOOLEAN_INPUT) || !MakeAction(menu,"menu",XR_ACTION_TYPE_BOOLEAN_INPUT)) return false;
-    for(const auto* profile:{"/interaction_profiles/valve/index_controller","/interaction_profiles/oculus/touch_controller","/interaction_profiles/microsoft/motion_controller"}) {
+    for(const auto* profile:{"/interaction_profiles/valve/index_controller","/interaction_profiles/oculus/touch_controller","/interaction_profiles/microsoft/motion_controller",controllers::FrameProfile}) {
+        const bool frameController=std::string_view(profile)==controllers::FrameProfile;
+        if(frameController&&!frameControllerExtension)continue;
         const bool index=std::strstr(profile,"index"), touch=std::strstr(profile,"touch");
+        const auto layout=controllers::Detect(profile);
         std::vector<XrActionSuggestedBinding> bindings;
         for(int i=0;i<2;++i) {
             const std::string base=i==0?"/user/hand/right/input/":"/user/hand/left/input/";
@@ -518,12 +526,13 @@ bool SetupActions() {
             bind(aimPose,"aim/pose");
             bindings.push_back({haptic,Path((std::string(i==0?"/user/hand/right":"/user/hand/left")+"/output/haptic").c_str())});
             // Motion controllers expose squeeze/click (boolean), so omit our float grip there.
-            if(index||touch) bind(squeeze,index?"squeeze/force":"squeeze/value");
-            if(index||touch) {
-                bind(primary,touch&&i==1?"x/click":"a/click");
-                bind(secondary,touch&&i==1?"y/click":"b/click");
+            if(index||touch||frameController) bind(squeeze,index?"squeeze/force":"squeeze/value");
+            if(index||touch||frameController) {
+                bind(primary,controllers::FacePath(layout,i,false));
+                bind(secondary,controllers::FacePath(layout,i,true));
             }
-            if((touch&&i==1)||(!index&&!touch)) bind(menu,"menu/click");
+            if(frameController)bind(menu,i==1?"view/click":"menu/click");
+            else if((touch&&i==1)||(!index&&!touch)) bind(menu,"menu/click");
         }
         XrInteractionProfileSuggestedBinding suggestion{XR_TYPE_INTERACTION_PROFILE_SUGGESTED_BINDING};
         suggestion.interactionProfile=Path(profile);suggestion.countSuggestedBindings=uint32_t(bindings.size());suggestion.suggestedBindings=bindings.data();
@@ -749,6 +758,24 @@ bool Initialize(reshade::api::command_queue* rq,reshade::api::swapchain* swap) {
     gameSwapchain=swap;
     char b[160];std::snprintf(b,sizeof b,"Frame OpenXR: D3D12 session ready, eyes %ux%u format %d (game format %d)",width,height,int(eyeFormat),int(format));Say(b);
     return true;
+}
+void UpdateControllerLabels() {
+    if(controllerProfilesDirty){
+        bool retry=false;
+        controllers::Labels detected;
+        for(int hand=0;hand<2;++hand){
+            XrInteractionProfileState current{XR_TYPE_INTERACTION_PROFILE_STATE};
+            char path[XR_MAX_PATH_LENGTH]{};uint32_t size=0;
+            if(XR_FAILED(pGetCurrentInteractionProfile(session,hands[hand],&current))){retry=true;continue;}
+            if(current.interactionProfile!=XR_NULL_PATH){
+                if(XR_FAILED(pPathToString(instance,current.interactionProfile,sizeof path,&size,path))){retry=true;continue;}
+                detected.hands[hand]=controllers::Detect(path);
+            }
+        }
+        if(detectedControllers!=detected){detectedControllers=detected;++settingsModel.revision;}
+        controllerProfilesDirty=retry;
+    }
+    controllerLabels=controllers::Resolve(controllers::Choice(int(vrsettings::Read().values[settings::ControllerLabels])),detectedControllers);
 }
 bool Bool(XrAction action,int hand) {
     XrActionStateGetInfo gi{XR_TYPE_ACTION_STATE_GET_INFO};gi.action=action;gi.subactionPath=hands[hand];
@@ -1032,7 +1059,7 @@ void SettingsPointer(const settings::InputGate::Edges& edges) {
         pointerHit=math::IntersectPanel(ray,direction,V(settingsPose.position),Q(settingsPose.orientation),settingsWidth,settingsHeight,hit);
         beamLength=pointerHit?hit.distance:1.5f;const auto mid=ray+direction*(beamLength*.5f);
         beamPose=XrPose({mid,math::BeamOrientation(direction,V(head.position)-mid)});pointerVisible=true;
-        if(pointerHit){settingsHover=settings::HitTest(settingsModel.page,hit.u,hit.v);dotPose=settingsPose;
+        if(pointerHit){settingsHover=settings::HitTest(settingsModel.page,hit.u,hit.v,settingsModel.controllerMenu);dotPose=settingsPose;
             const auto p=hit.point+math::Rotate(Q(settingsPose.orientation),{0,0,.004f});dotPose.position={p.x,p.y,p.z};}
     }
     if(edges.click&&pointerHit&&settingsImageReady&&settingsPaintRevision==settingsModel.revision){
@@ -1056,7 +1083,7 @@ void SettingsPointer(const settings::InputGate::Edges& edges) {
     const auto now=GetTickCount64();
     if(now>=settingsPaintAt&&!settingsAtlasPending&&atlasUploads.size()<3&&
        (settingsPaintRevision!=settingsModel.revision||settingsPaintHover!=hover||settingsPaintStatus!=status)){
-        auto pixels=settings::Paint(settingsModel,settingsHover,descriptions[status]);
+        auto pixels=settings::Paint(settingsModel,settingsHover,descriptions[status],nullptr,detectedControllers);
         if(!pixels.empty()&&UploadAtlas(settingsChain,atlasFormat,settings::Width,settings::Height,pixels,true,&settingsAtlasPending)){
             settingsPaintRevision=settingsModel.revision;settingsPaintHover=hover;settingsPaintStatus=status;
         }
@@ -1070,6 +1097,7 @@ void Input() {
     XrActiveActionSet active{actionSet,XR_NULL_PATH};
     XrActionsSyncInfo si{XR_TYPE_ACTIONS_SYNC_INFO};si.countActiveActionSets=1;si.activeActionSets=&active;
     if(pSyncActions(session,&si)!=XR_SUCCESS) {gazeStability.Reset();ClearInput();return;}
+    UpdateControllerLabels();
     const bool nativeUi=panelMode||spatialMode;
     const uint32_t inputEpoch=gamestate::MenuEpoch();
     menus::Pad physical;
@@ -1104,7 +1132,9 @@ void Input() {
     bool settingsOwned=settingsModel.open||calibrationRelease.Step(bodyCalibration.Active(),Float(trigger,0),Float(trigger,1),physical.buttons&(menus::A|menus::B|menus::X|menus::Y|menus::Start));
     if(settingsModel.open&&settingsSession!=gamestate::LocalPlayer()){CloseSettings();settingsOwned=true;}
     if(settingsEdges.chord&&!bodyCalibration.Active()&&!calibrationRelease.blocked){if(settingsModel.open)CloseSettings();else OpenSettings();settingsOwned=true;}
-    else if(settingsModel.open&&(settingsEdges.cancel||menuPressed)){CloseSettings();settingsOwned=true;}
+    else if(settingsModel.open&&(settingsEdges.cancel||menuPressed)){
+        if(!settingsModel.DismissControllerMenu())CloseSettings();settingsOwned=true;
+    }
     settingsOwned=settingsOwned||settingsModel.open;
     bool focused=gameWindow&&GetForegroundWindow()==gameWindow;
     if(!settingsOwned&&(menuPressed||inventoryPressed)&&!focused)focused=FocusGameForUi();
@@ -1208,7 +1238,7 @@ void Input() {
     interactionInput.wristCompass=vrsettings::Read().values[settings::WristCompass]>.5f;
     interactionInput.leftTrigger=controls.lt/255.f;
     if(!interactionPaintValid||interactionPaintContext!=interaction::Context(interactionInput.snapshot,interactionOutput,
-        interaction::Fresh(interactionInput.snapshot,interactionInput.session,interactionInput.at)))interactionInput.hover=-1;
+        interaction::Fresh(interactionInput.snapshot,interactionInput.session,interactionInput.at),controllerLabels))interactionInput.hover=-1;
     for(int i=0;i<2;++i){interactionInput.tracked[i]=motionInput.tracked[i];interactionInput.grip[i]=motionInput.grip[i];
         interactionInput.hand[i]={motionInput.hand[i].p,motionInput.hand[i].q};}
     interactionOutput=interactions.Step(interactionInput);
@@ -1319,10 +1349,10 @@ void Input() {
         const auto now=GetTickCount64();
         const bool visible=motionInput.active||interactionOutput.wheel||interactionOutput.wrist||interactionOutput.critical||interactionOutput.bottle>=0||
             interactionOutput.nearBelt>=0||interactionOutput.nearHolster>=0||math::Rotate(Q(head.orientation),{0,0,-1}).y<-.60f;
-        const auto context=interaction::Context(interactionInput.snapshot,interactionOutput,snapshotFresh);
+        const auto context=interaction::Context(interactionInput.snapshot,interactionOutput,snapshotFresh,controllerLabels);
         if(visible&&(!interactionPaintValid||key!=interactionPaintKey||context!=interactionPaintContext)) {
             if(now>=interactionPaintAt&&(!interactionPaintRequest||key!=interactionRequestedKey||context!=interactionRequestedContext)) {
-                interactionPaintRequest=interactionPainter.Submit({snapshotFresh?interactionInput.snapshot:interaction::Snapshot{},interactionOutput,motion.Selection()});
+                interactionPaintRequest=interactionPainter.Submit({snapshotFresh?interactionInput.snapshot:interaction::Snapshot{},interactionOutput,motion.Selection(),controllerLabels});
                 interactionRequestedKey=key;interactionRequestedContext=context;interactionPaintAt=now+100;
             }
             interaction::PaintedAtlas painted;
@@ -1435,6 +1465,7 @@ void Input() {
 void Events() {
     XrEventDataBuffer event{XR_TYPE_EVENT_DATA_BUFFER};
     while(pPollEvent(instance,&event)==XR_SUCCESS) {
+        if(event.type==XR_TYPE_EVENT_DATA_INTERACTION_PROFILE_CHANGED)controllerProfilesDirty=true;
         if(event.type==XR_TYPE_EVENT_DATA_SESSION_STATE_CHANGED) {
             const auto& s=*reinterpret_cast<XrEventDataSessionStateChanged*>(&event);state=s.state;
             char b[96];std::snprintf(b,sizeof b,"Frame OpenXR: session state %d",int(state));Say(b);
@@ -1865,7 +1896,7 @@ void EndPair() {
     };
     const bool interactionVisible=layer&&!panelMode&&interactionInput.active&&interactionChain;
     if(interactionVisible&&interactionOutput.wheel&&interactionPaintValid&&interactionPaintContext==interaction::Context(
-        interactionInput.snapshot,interactionOutput,interaction::Fresh(interactionInput.snapshot,interactionInput.session,interactionInput.at)))
+        interactionInput.snapshot,interactionOutput,interaction::Fresh(interactionInput.snapshot,interactionInput.session,interactionInput.at),controllerLabels))
         motionQuad(palette,palettePose,paletteWidth,paletteHeight,{{0,0},{768,768}},interactionChain);
     XrCompositionLayerQuad menuMap{XR_TYPE_COMPOSITION_LAYER_QUAD};
     if(palette.subImage.swapchain&&mapEye.copied&&interaction::MenuMapWanted(interactionInput,interactionOutput,GetTickCount64())) {
@@ -2222,6 +2253,7 @@ void Shutdown() {
     if(leftAimSpace&&pDestroySpace)pDestroySpace(leftAimSpace);leftAimSpace=XR_NULL_HANDLE;
     if(gazeSpace&&pDestroySpace)pDestroySpace(gazeSpace);gazeSpace=XR_NULL_HANDLE;
     gazeAction=XR_NULL_HANDLE;gazeReady=gazeValid=gazeExtension=gazeSupported=false;gazeStability.Reset();
+    detectedControllers={};controllerLabels={};controllerProfilesDirty=true;frameControllerExtension=false;
     for(auto& e:eyes){if(e.chain&&pDestroySwapchain)pDestroySwapchain(e.chain);e={};}
     for(auto& s:handSpaces){if(s&&pDestroySpace)pDestroySpace(s);s=XR_NULL_HANDLE;}
     if(headSpace&&pDestroySpace)pDestroySpace(headSpace);if(space&&pDestroySpace)pDestroySpace(space);
