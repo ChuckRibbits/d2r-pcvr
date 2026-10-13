@@ -1,5 +1,25 @@
 # Clean Windows installation and agent handoff — October 10, 2026
 
+**v0.3.10 performance phase 1:** PR #22 removes periodic render-thread CPU
+thread scans, reduces HUD callback contention and caches immutable resource
+descriptions with lifetime invalidation. Fresh/full installs now set Resolution
+Scale to **100%**; update / repair preserves existing video and calibration.
+The native build/check command passes **43 CTests**, and the setup, native setup,
+install, removal, Battle.net, launcher, profile-report and staging suites pass
+**84 Python checks**. The compiled Inno lifecycle fixture passes with a stub
+backend. Native DLL provenance is `918bd5ef5895f258d23acd789f0eafae44278e1c`,
+SHA-256 `48300b4d1ba5e43c56cd7204d5f653014012685790b0e6071f20862dc2ceb366`;
+subsequent release changes do not alter native code. See
+`steamvr/evidence/2026-10-13-performance-phase1-release.json` and RELEASE_NOTES.md.
+
+The owner tested this DLL with an offline Paladin, Steam 3.3.93787, Ryzen 9
+5950X / RTX 5090, SteamVR OpenXR / Steam Link / Steam Frame at 90 Hz. Three
+captures no longer show the recurring diagnostic scan in long eye draws.
+A separate optional GPU-overlap trial had normal stereo, tracking and controls;
+this is enabled only in the local Steam INI. The shipped default is still 0.
+No universal FPS gain, RTX 5080 fix or 90 Hz target is established. Long-session,
+area-transition and broader UI/headset checks remain. Replay is future work.
+
 **v0.3.9 Windows preview release preparation:** PRs #10, #13 and #15 are merged.
 The release adds physical Smite/Amazon arrow input, active-skill cues, the
 spell-menu Map tab, desktop-mediated Steam VR startup and full graphical

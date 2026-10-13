@@ -4,6 +4,7 @@
 #include "foveation_math.h"
 #include "native_lock.h"
 #include "generation_cache.h"
+#include "resource_descriptions.h"
 #include <reshade.hpp>
 #include <wrl/client.h>
 #include <atomic>
@@ -218,8 +219,8 @@ void BindTargets(command_list* cl,uint32_t count,const resource_view* rtvs,resou
     FRAME_PROFILE_SAMPLED(FoveationTargets);
     auto& s=*Get(cl);const auto oldW=s.w,oldH=s.h;s.targets=false;s.w=s.h=0;
     if(ready&&count>0&&count<=8&&rtvs&&rtvs[0].handle&&dsv.handle){
-        auto* dev=cl->get_device();const auto color=dev->get_resource_desc(dev->get_resource_from_view(rtvs[0]));
-        const auto depth=dev->get_resource_desc(dev->get_resource_from_view(dsv));
+        auto* dev=cl->get_device();const auto color=resources::Describe(dev,resources::Resolve(dev,rtvs[0]));
+        const auto depth=resources::Describe(dev,resources::Resolve(dev,dsv));
         s.w=color.texture.width;s.h=color.texture.height;
         s.targets=color.type==resource_type::texture_2d&&color.texture.samples==1&&depth.texture.width==s.w&&depth.texture.height==s.h&&
             s.w>=screenW*.45f&&s.h>=screenH*.45f&&std::abs(float(s.w)/s.h-float(screenW)/screenH)<.04f;

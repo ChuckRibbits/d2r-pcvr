@@ -45,7 +45,7 @@ class InstallationTests(unittest.TestCase):
             # Fixtures must never install into or restore that directory.
             saves = root / 'saves'
             saves.mkdir(parents=True)
-            (saves / 'Settings.json').write_text('{"Resolution Scale": 100}')
+            (saves / 'Settings.json').write_text('{"Resolution Scale": 80}')
             (saves / 'Friend.d2s').write_bytes(b'original progress')
             deps = root / 'deps'
             deps.mkdir()
@@ -98,7 +98,7 @@ class InstallationTests(unittest.TestCase):
                         install.main()
                 self.assertFalse((root / 'backups').exists())
                 self.assertFalse((game / 'D2RLoader.exe').exists())
-                self.assertEqual((saves / 'Settings.json').read_text(), '{"Resolution Scale": 100}')
+                self.assertEqual((saves / 'Settings.json').read_text(), '{"Resolution Scale": 80}')
                 self.assertEqual((saves / 'Friend.d2s').read_bytes(), b'original progress')
                 with patch.object(sys, 'argv', common), patch.object(install, 'LOADER_HASH', digest):
                     install.main()
@@ -131,7 +131,7 @@ class InstallationTests(unittest.TestCase):
                 self.assertTrue(cfg.getboolean('hud','monster_draw_order'))
                 self.assertFalse(cfg.getboolean('render','defer_gpu_wait'))
                 self.assertEqual(json.loads((saves / 'Settings.json').read_text())['NVIDIA DLSS'],0)
-                self.assertEqual(json.loads((saves / 'Settings.json').read_text())['Resolution Scale'], 80)
+                self.assertEqual(json.loads((saves / 'Settings.json').read_text())['Resolution Scale'], 100)
                 # An upgrade refreshes files without resetting calibration/video.
                 custom_ini = b'[body_calibration]\nheight=1.83\nspan=1.91\n'
                 custom_video = b'{"Resolution Scale": 92, "custom": "preserved"}\r\n'
@@ -162,7 +162,7 @@ class InstallationTests(unittest.TestCase):
                 self.assertFalse((potion_dir / 'rvl.pvr').exists())
                 self.assertFalse((game / 'openxr_loader.dll').exists())
                 self.assertFalse((game / 'd2rloader/runtime/d3dcompiler_47.dll').exists())
-                self.assertEqual(json.loads((saves / 'Settings.json').read_text())['Resolution Scale'], 100)
+                self.assertEqual(json.loads((saves / 'Settings.json').read_text())['Resolution Scale'], 80)
 
     def test_archive_paths_reject_windows_and_linux_traversal(self):
         for path in ('../D2R.exe', '/tmp/file', 'C:\\file', 'd2rloader\\..\\D2R.exe'):

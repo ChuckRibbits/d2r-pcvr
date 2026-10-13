@@ -325,7 +325,7 @@ def main():
         put(Path('reshade-shaders/Textures/D2R_Sky_ours') / texture.name, texture.read_bytes())
     settings.update({'VSync': 0, 'NVIDIA DLSS': 0, 'Anti Aliasing': 1, 'Framerate Cap': 0,
                      'Dynamic Resolution Scaling': 0, 'Camera Shake': 0,
-                     'Resolution Scale': 80, 'Ambient Occlusion Quality': 2,
+                     'Resolution Scale': 100, 'Ambient Occlusion Quality': 2,
                      'Atmospherics Quality': 2, 'Shadow Quality': 2})
     if not args.preserve_settings:
         (saves / 'Settings.json').write_text(json.dumps(settings, indent=4))

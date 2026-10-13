@@ -7,6 +7,10 @@ static void Check(bool b,const char* label){if(!b){std::fprintf(stderr,"FAIL: %s
 static Hit At(Page p,Rect r){return HitTest(p,(r.x+r.w*.5f)/Width,(r.y+r.h*.5f)/Height);}
 int main(){
     Snapshot s;s.ready=true;
+    Check(s.values[DrawDistance]==2&&s.values[ObjectDistance]==300,"distance fallbacks match release configuration");
+    {Model distance;distance.Open(s);
+        for(int i=0;i<3;++i)distance.Click({Kind::Change,ObjectDistance,-1});
+        Check(distance.Get()[ObjectDistance]==150,"object distance can reach native 150 without jumping from 300 to 50");}
     Model m;m.Open(s);
     Check(m.open&&m.ready&&!m.Dirty()&&m.page==Page::Controls,"open actual configuration");
     Check(HitTest(Page::VR,-.01f,.5f).kind==Kind::None&&HitTest(Page::VR,NAN,.5f).kind==Kind::None,"invalid laser coordinates ignored");

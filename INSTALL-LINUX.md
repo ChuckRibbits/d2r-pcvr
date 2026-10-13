@@ -91,8 +91,8 @@ If the image becomes blurry or ghosted after changing a graphics preset, check
 **Options → Video → Anti-Aliasing** again. **FXAA**, **DLSS off** and **100%
 resolution scale** restored clarity in the owner's October 9 headset test;
 Very High with DLSS off alone did not restore the previous AA setting. Select
-the quality preset first, then set FXAA. The installer already chooses FXAA
-(its default resolution scale remains 80% for performance).
+the quality preset first, then set FXAA. The current-source installer chooses
+FXAA and 100% resolution scale; older packages used 80%.
 
 Fresh installs from current source enable **motion controls and fixed foveation**,
 with **eye-tracked foveation off**. The [motion gameplay prototype](steamvr/GAMEPLAY.md)
@@ -124,7 +124,7 @@ Left X can open inventory without desktop focus, but laser clicks cannot.
 | F4 | First person (native VR keeps this mode; legacy view shortcuts are ignored) |
 | F8 | Diagnostic screenshot of both eyes; expect a brief capture pause |
 
-The installer selects 80% scene resolution, medium shadows/AO/atmospherics,
+The current-source installer selects 100% scene resolution, medium shadows/AO/atmospherics,
 native height fog, VSync off, DLSS off and non-temporal anti-aliasing. Fixed
 foveation uses a full-quality center and 2x2 peripheral shading on supported
 D3D12 VRS hardware; unsupported devices stay at full quality. This default uses

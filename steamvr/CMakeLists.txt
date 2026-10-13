@@ -40,8 +40,15 @@ add_executable(memory-benchmark memory_benchmark.cpp)
 target_link_libraries(memory-benchmark PRIVATE framevr-runtime)
 add_executable(hook-metrics-test hook_metrics_test.cpp)
 target_link_libraries(hook-metrics-test PRIVATE framevr-runtime)
+add_executable(active-keys-test active_keys_test.cpp)
+target_link_libraries(active-keys-test PRIVATE framevr-runtime)
+add_executable(resource-descriptions-test resource_descriptions_test.cpp)
+target_include_directories(resource-descriptions-test PRIVATE ${ROOT}/external/reshade/include)
+target_link_libraries(resource-descriptions-test PRIVATE d3d12 framevr-runtime)
 add_executable(latest-worker-test latest_worker_test.cpp)
 target_link_libraries(latest-worker-test PRIVATE framevr-runtime)
+add_executable(thread-stats-test thread_stats_test.cpp)
+target_link_libraries(thread-stats-test PRIVATE framevr-runtime)
 add_executable(dlss-depth-test dlss_depth_test.cpp)
 target_link_libraries(dlss-depth-test PRIVATE d3d11 framevr-runtime)
 add_executable(dlss-depth-upload-test dlss_depth_upload_test.cpp)
@@ -108,7 +115,7 @@ target_include_directories(local-player-test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}
 target_link_libraries(local-player-test PRIVATE framevr-runtime)
 target_link_libraries(window-focus-test PRIVATE user32)
 enable_testing()
-foreach(test_target IN ITEMS memory-test hook-metrics-test latest-worker-test
+foreach(test_target IN ITEMS memory-test hook-metrics-test active-keys-test resource-descriptions-test latest-worker-test thread-stats-test
     gameplay-test weapon-skills-test quick-cast-test spell-aim-test bow-pose-test body-tracking-test body-calibration-test shoulder-swap-test
     portal-billboard-test composition-layers-test projectile-rules-test
     combat-rules-test logging-test melee-contact-test world-coordinates-test bow-flight-test

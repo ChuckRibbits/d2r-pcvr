@@ -1,4 +1,4 @@
-# D2R PCVR v0.3.9 — Windows preview
+# D2R PCVR v0.3.10 — Windows preview
 
 Play **Diablo II: Resurrected in VR on Windows** with
 **SteamVR or Virtual Desktop (VDXR)**. This preview is for **local offline
@@ -27,33 +27,26 @@ VDXR is available but has not yet been confirmed. The Steam desktop client
 is required for library shortcuts, including with the Battle.net edition.
 **Battle.net owners do not need to purchase a second copy through Steam.**
 
-## What's new
+## What's new: performance update phase 1
 
-- **Installer error details:** the graphical wizard now shows the mod installer's
-  progress and actual error, and saves full output to `setup-install.log` beside
-  `setup-last.log` in `%LOCALAPPDATA%\Programs\D2R PCVR`. This fixes missing
-  diagnostics in [issue #11](https://github.com/bearstonem/d2r-pcvr/issues/11);
-  the reporter's underlying installation failure still needs their detailed log.
-- **Steam VR shortcut startup:** Steam-edition VR launches now use a Windows
-  desktop handoff to avoid the launcher chain associated with early loader
-  crashes. The existing SteamVR and Virtual Desktop shortcuts still work;
-  the selected runtime and game-session lifetime are preserved.
-- **Physical Paladin Smite:** select Smite, then swing or thrust the left shield
-  through an enemy with right trigger released. The shield follows the left wrist
-  independently of the main weapon. Native Smite costs, reach and timing apply.
-- **Amazon bow skills:** draw and release once to request the selected arrow skill.
-  Multiple Shot retains its fan and Strafe its native volley; other supported
-  arrows retain native effects, costs and cadence. Specialized arrows still use
-  native animation and ground-plane flight/collision.
-- **Active skill cues:** the wheel marks the selected skill with a gold ACTIVE
-  badge, and the weapon/shield shows a skill cue. Unavailable motion activation
-  shows TRIGGER ONLY so the button fallback is clear.
-- **Map in the spell menu:** hold left secondary, point with the right laser and
-  select **MAP** in the bottom tabs. **SPELLS** returns to skills without changing
-  the selected skill; releasing left secondary closes the menu. Wrist health,
-  mana, level and XP remain.
+- **Remove a periodic VR stall:** CPU diagnostics now run on a background
+  worker. The system thread scan previously blocked rendering for about 53 ms
+  every ten seconds on the test PC.
+- **Reduce render callback contention:** world draws avoid unnecessary HUD
+  locking, and immutable resource descriptions are cached with lifetime guards.
+- **100% resolution by default:** fresh and full installations now set the game's
+  Resolution Scale to 100%, keeping FXAA, DLSS off and medium shadows/AO/atmospherics.
+  Update / repair preserves your existing video settings. If an older installation
+  uses 80%, change **Options > Video > Resolution Scale** to **100%** in the game.
+- **Consistent draw-distance defaults:** missing INI values use the shipped
+  two terrain rings and object radius 300. Explicit choices are retained;
+  the object-distance control now changes in steps of 50.
+- **Clearer performance diagnostics:** logs separate XR waiting/submission from
+  eye draws, and profiling reports use the full stereo-pair refresh deadline.
+- **Installer file-access errors:** setup identifies the dependency it could not
+  read and points to Windows Security Protection History when relevant.
 
-Run **D2R-PCVR-Setup-0.3.9.exe** for graphical setup, or use the portable ZIP.
+Run **D2R-PCVR-Setup-0.3.10.exe** for graphical setup, or use the portable ZIP.
 The EXE includes a private Python runtime and creates the matching shortcuts.
 Choose **Update / repair and keep calibration and video settings** when upgrading;
 keep existing setup backups. Normal desktop Play and Windows removal are retained.
@@ -63,23 +56,33 @@ Full-screen automap is available through the game's normal map controls.
 
 ## Validation and remaining checks
 
-The native Windows build passes **40 CTest checks**, and **69 Python checks**
-cover setup, repair/removal, rollback, Battle.net, launcher lifecycle and installer
-payload staging. The owner previously confirmed physical Paladin shield bash on
-Steam Frame / SteamVR with Steam 3.3.93787. Four controlled desktop-handoff
-launches reached the frontend and initialized OpenXR; the first three closed
-normally, and the fourth was left open for testing.
+The native Windows build passes **43 CTest checks**, and **84 Python checks**
+cover setup, repair/removal, rollback, Battle.net, launcher lifecycle, installer
+payload staging and profiling reports. Installer fixtures verify that a full
+install changes 80% to 100%, repair preserves custom settings, and rollback
+retains character progress for both Steam and Battle.net.
 
-The compiled Inno Setup lifecycle fixture also passes installation, Windows Apps
+Phase 1 was tested with an offline Paladin on Steam D2R 3.3.93787, Ryzen 9 5950X /
+RTX 5090, SteamVR OpenXR and Steam Link to Steam Frame at 90 Hz. Background
+scans of 58-63 ms no longer produced the recurring long eye-draw stall in three
+360-pair captures. A separate one-minute walking/turning trial with the existing
+optional GPU-overlap setting had normal stereo, tracking and controls according
+to the owner. That option remains off in the shipped defaults.
+
+This phase improves stalls and callback overhead. It still runs two engine draw
+passes per stereo pair; a larger rendering change remains future work. These
+captures do not establish a universal FPS gain or resolve the RTX 5080 report in
+[issue #20](https://github.com/bearstonem/d2r-pcvr/issues/20).
+
+The compiled Inno Setup lifecycle fixture passes installation, Windows Apps
 registration, helper retention after a blocked removal, and successful removal.
-This fixture uses a stub backend and does not modify a real game installation.
+It uses a stub backend and does not modify a real game installation.
 
-A fresh owner-triggered launch from inside Frame, Map-tab placement in both eyes,
-Amazon arrow skills, shield fit across models and cancellation during native
-wind-up still need headset checks. The new installer diagnostics have been tested
-with real hidden Windows subprocesses and disposable installation fixtures;
-the reporter's PC has not been retested. Quest 2 and Battle.net VDXR remain
-unconfirmed.
+Longer sessions, area transitions, both-eye Map/label/spatial-menu regressions,
+Amazon arrow skills and a fresh owner-triggered Frame shortcut launch still need
+headset checks. This phase has no Battle.net gameplay or RTX 5080 validation.
+Quest 2 and Battle.net VDXR remain unconfirmed. Issue #11 still needs the
+reporter's detailed installation log.
 
 ## Features
 
@@ -106,7 +109,7 @@ unconfirmed.
 First launch your purchased game normally through its store, finish the account
 prompts, load an offline character, then use **Save & Exit** and fully close D2R.
 
-For graphical setup, download **D2R-PCVR-Setup-0.3.9.exe**, run it and follow the
+For graphical setup, download **D2R-PCVR-Setup-0.3.10.exe**, run it and follow the
 wizard. Fully exit Steam when asked. Reopen Steam, connect your headset and use
 the matching VR shortcut with an offline character.
 
@@ -139,5 +142,5 @@ Use the unmodded game for multiplayer. Keep **setup-backups**, including
 backups in older extracted release folders, until removal is complete.
 
 Read **INSTALL-WINDOWS.md** and **CONTROLS.md** in the helper folder or ZIP, or open the
-[installation guide](https://github.com/bearstonem/d2r-pcvr/blob/v0.3.9-windows-preview/INSTALL-WINDOWS.md)
-and [controller reference](https://github.com/bearstonem/d2r-pcvr/blob/v0.3.9-windows-preview/CONTROLS.md).
+[installation guide](https://github.com/bearstonem/d2r-pcvr/blob/v0.3.10-windows-preview/INSTALL-WINDOWS.md)
+and [controller reference](https://github.com/bearstonem/d2r-pcvr/blob/v0.3.10-windows-preview/CONTROLS.md).

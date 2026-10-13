@@ -1396,6 +1396,7 @@ bool Begin() {
     timing={};const double waitStart=Milliseconds();
     const auto waited=pWaitFrame(session,&wi,&frameState);timing.waitFrameMs=Milliseconds()-waitStart;
     if(!Check(waited,"wait frame"))return false;
+    timing.displayPeriodMs=double(frameState.predictedDisplayPeriod)*1e-6;
     XrFrameBeginInfo bi{XR_TYPE_FRAME_BEGIN_INFO};
     if(!Check(pBeginFrame(session,&bi),"begin frame"))return false;
     frame=true;render=frameState.shouldRender;valid=false;motionHeadTracked=false;

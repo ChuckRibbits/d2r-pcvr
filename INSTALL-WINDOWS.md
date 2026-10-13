@@ -193,7 +193,7 @@ from your installed game, and backs up your saves and replaced files.
 The download does not include D2R itself or other players' saves.
 
 The installer applies recommended video settings, including FXAA, DLSS off,
-80% resolution scale and medium shadows. Running the full installer again
+100% resolution scale and medium shadows. Running the full installer again
 resets the mod's settings, including body calibration; use the upgrade steps
 below if you want to keep your settings.
 
@@ -387,6 +387,10 @@ binding also remains available.
 Setup EXE and choose **Update / repair and keep calibration and video settings**.
 You can also rerun the same version to repair it or change headset connections.
 To add the other game edition, rerun Setup and select that copy.
+
+Fresh and full installs use **100% resolution scale** starting with v0.3.10.
+Update / repair preserves your existing scale; if an older install still uses
+80%, set **Options > Video > Resolution Scale** to **100%** in the game.
 
 To remove an EXE installation, open **Windows Settings → Apps → Installed apps →
 D2R PCVR → Uninstall**, or the D2R PCVR Start menu uninstaller. This removes the

@@ -1,4 +1,206 @@
-# October 10 CPU performance comparison
+# VR performance investigations
+
+## Issue 20 investigation, October 12
+
+[#20](https://github.com/bearstonem/d2r-pcvr/issues/20) reports roughly 60 FPS
+and less than 50% GPU utilization on an RTX 5080, compared with 90 FPS and
+better clarity in another mod. The CPU, headset/runtime, refresh rate, exact
+mod versions, frame metric and comparable settings are still unknown. No
+reporter capture has arrived. This candidate addresses costs found in our
+code; it does **not** establish that the RTX 5080 report is fixed.
+
+The saved October 10 native Windows log contains a ten-second window with
+left/right draw means of 6.77/6.12 ms, including Present means of 0.50/0.38 ms.
+The two draws alone exceed the 11.11 ms full-90-Hz budget. A separate 109.5 ms
+hitch spent 89.1 ms in XR begin, showing why a long frame cannot always be
+attributed to drawing. These are local historical captures, not the reporter's
+hardware, matched A/B measurements, or evidence of a specific FPS cap.
+
+Current upstream at
+[`4b6284c0766c089139693a504333b9a19201cdd2`](https://github.com/natpoh/diablo2-vr-port/tree/4b6284c0766c089139693a504333b9a19201cdd2)
+has a significant architectural difference: its
+[`replay_right=1` default](https://github.com/natpoh/diablo2-vr-port/blob/4b6284c0766c089139693a504333b9a19201cdd2/d2r_vr.ini#L91)
+records the engine's CPU draw once, then replays GPU commands with right-eye
+camera constants. Our build still invokes the engine draw twice. If the
+reporter's comparison version uses this path, it is a plausible larger source
+of the difference. Its identity/version must be confirmed.
+
+A replay port needs per-eye view/projection/history buffers, direct/compute/copy
+queue ordering and resource lifetimes, correct right-eye depth for effects,
+and one desktop Present per pair. Our native OpenXR capture, VRS masks,
+physical controls and spatial UI also need integration. The upstream path has
+fallbacks and recent area-transition/depth fixes; copying it wholesale would
+not validate those behaviors here. No replay code is included in this candidate.
+
+Implemented changes:
+
+- HUD bind/scissor/reset callbacks reject command lists outside the UI pass
+  before taking the shared HUD mutex. A bounded atomic membership filter allows
+  false positives only; collisions still consult the locked authoritative map.
+  UI-list reset/destruction removes membership. UI capture, hiding and map
+  redirection retain their existing critical sections.
+- Per-thread resource-description caches avoid repeated native metadata calls
+  in VRS, depth and HUD bindings. Resource creation/destruction and device
+  destruction invalidate them. RTV/DSV-to-resource resolution is deliberately
+  uncached: D3D12 descriptor copies can replace those mappings without an
+  `init_resource_view` event. A HUD exit reuses its resolved metadata locally.
+- Missing `[render] rings` and `model_radius` keys use the shipped defaults
+  (2/300), rather than 4/1000. Camera and settings UI share those defaults;
+  explicit INI values are preserved. Object-distance adjustments use steps of
+  50 instead of jumping directly from 300 to 50.
+- Routine ten-second logs add `Frame pacing`: predicted runtime application rate,
+  XR begin/wait, end/submit and total GPU fence averages alongside the existing draw
+  timings. Bounded hook captures include resource lookups and HUD lock waits.
+- The report defaults to `1000 / refresh_hz`, one complete stereo pair per
+  refresh. `--pair-refreshes 2` retains an explicit half-rate comparison. Older
+  CSV/log formats still parse. Historical late-pair counts below used the old
+  half-rate budget and must not be read as full-refresh success rates.
+
+Validation on Windows, Ryzen 9 5950X (local machine, not the reporter's CPU):
+
+- `powershell -NoProfile -ExecutionPolicy Bypass -File steamvr/build_windows.ps1 -Test`:
+  native DLL builds, **42/42 CTest cases pass**. New cases cover description
+  lifetime/device invalidation, descriptor rebinding, worker isolation,
+  membership collisions, removal/reuse and concurrent membership. Existing
+  settings fixtures cover partial INIs and retention of explicit distances.
+- `.\deps\python\python.exe -m unittest discover -s steamvr -p profile_report_test.py -v`:
+  **7 tests pass**, including a synthetic 13 ms pair that misses full 90 Hz but
+  passes an explicitly requested half-rate comparison.
+- `resource-descriptions-test.exe --benchmark`: native D3D12 metadata query
+  versus cache hit, 30.10 versus 2.58 ns/query with one thread. Absolute cost
+  is small and cannot explain the reported FPS gap by itself.
+- `active-keys-test.exe --benchmark`: isolated empty HUD registry, 5.70 versus
+  0.71 aggregate wall ns/query with one thread; 38.91 versus 0.20 with eight
+  workers. These are synthetic contention measurements, not game frame-time
+  savings. Real UI work can still wait on the HUD lock.
+- Candidate runtime commit `f014e6d` was installed into the local Steam and
+  Battle.net copies after backing up the previous DLLs, settings and saves.
+  Installation preserved their settings and player data. The Steam edition
+  (game 3.3.93787) was launched and measured in offline Paladin gameplay on a
+  Ryzen 9 5950X / RTX 5090, using SteamVR OpenXR and Steam Link to Steam Frame
+  at 90 Hz. Battle.net gameplay and the reporter's RTX 5080 remain untested.
+
+Local headset measurements, October 12 evening:
+
+| Capture | Scene scale / terrain rings | Mean pair ms | Throughput FPS | Pair p95 ms | Left + right draw ms |
+| --- | --- | ---: | ---: | ---: | ---: |
+| Moving, sequence 10121839 | 133% / 4 | 25.887 | 38.6 | 32.665 | 16.395 |
+| Standing, sequence 10121844 | 100% / 2 | 24.779 | 40.4 | 32.451 | 15.898 |
+
+Each capture contains 360 stereo pairs, with `profile_gpu=0` and
+`profile_hooks=0`. GPU timestamp queries and all-thread hook attribution were
+disabled; main-eye scopes remained active. Routine ten-second windows ranged
+from 41.8-44.1 FPS early in gameplay and 33.2-39.0 FPS during movement. GPU
+utilization spot samples were 29-39% on the RTX 5090, including 34% after the
+second capture. These are application stereo-pair rates, not headset delivery
+or compositor reprojection measurements.
+
+The user changed both scene scale and terrain distance before the planned
+terrain-only comparison could start. Position/view and motion also differ
+between the captures; this table does **not** isolate either setting's effect
+or establish a gain from the candidate DLL. There is no matched previous-DLL
+capture. The bounded captures cannot establish the reporter's bottleneck.
+
+Eye images remain 3840 x 2160. Both runs used fixed foveation and symmetric
+projection, object radius 300, and `defer_gpu_wait=0`; shadows, AO and
+atmospherics were 2, with DLSS and dynamic resolution disabled. In the second
+capture, average XR begin/end were 2.708/4.721 ms, with 3.216 ms of GPU fence
+waiting included in XR end. Coarse per-thread CPU totals averaged 14.714 ms
+across the two eye draws, consistent with CPU draw work and synchronization
+limiting throughput rather than sustained GPU saturation. They are not
+exclusive high-resolution CPU profiles. Periodic roughly 80-90 ms hitches
+included an eye draw around 62 ms without pipeline creation; their cause is
+unresolved. Neither capture reaches the full 90 Hz budget of 11.111 ms.
+
+Temporary profiling keys were removed after each capture, with the INI verified
+byte-identical to its pre-capture contents. The user's final 100% scale and
+two-ring setting were retained. Raw logs, CSVs, DLLs and backups remain local
+under ignored `build-frame/` paths; only aggregate results are recorded here.
+Deferred GPU waiting, scene resolution and projection source defaults were
+not changed by this candidate.
+
+Remaining validation needs the same offline character/scene, runtime and
+settings before/after a DLL swap, with routine logs plus separate 360-pair
+stationary and walking captures (`profile_gpu=0`, `profile_hooks=0`). An
+attribution capture can then enable hooks. Test the map tab, labels and spatial
+NPC/inventory menus as well; those UI regressions have not been checked here.
+Record actual eye dimensions, scene scale, symmetric projection and VRS when
+comparing clarity. Fresh/full installs use 100% scene scale from v0.3.10;
+the previous 80% default rendered only 64% as many pixels. Update / repair
+preserves existing video settings. Lower resolution does not remove CPU draw/submission work.
+Keep #20 open until the reporter's bottleneck and improvement are measured.
+
+### Follow-up: periodic diagnostic stalls
+
+The ten-second hitches in the `f014e6d` session line up with
+`OnReshadePresent` calling `BusyThreads` synchronously. Its Toolhelp snapshot
+enumerates system threads before querying this process's threads. The native
+standalone scanner benchmark measured 52.078-53.467 ms (median 52.850 ms),
+consistent with the roughly 54 ms added to an otherwise 8 ms eye draw.
+
+Native builds now start a bounded diagnostics worker during plugin load.
+Present submits a value-only request and polls for the completed report;
+snapshot creation, thread queries, allocation and sorting run on the worker.
+Addon callbacks are unregistered before the worker is joined at unload. The
+worker reads OS thread counters only and never follows game pointers or uses
+XR/render resources. Percentages use elapsed thread CPU time, retaining thread
+creation identities to reject recycled IDs, instead of a cycle/CPU-time ratio
+dependent on clock speed. Worker startup failure disables the scan.
+
+`steamvr/build_windows.ps1 -Test` passes **43/43** native checks. The new fixture
+covers CPU percentages, reused IDs, absent/invalid counters, restart and
+render-side polling while the scanner is deliberately blocked. In its native
+benchmark the background scan took 53.182 ms while request submission took
+0.300 microseconds.
+
+Runtime commit `918bd5e` was installed and tested with the same local Windows
+5950X / RTX 5090 / Steam Frame setup, Steam game 3.3.93787 and offline Paladin.
+Three 360-pair captures with hooks/GPU queries disabled contained diagnostics
+scans of 57.63, 62.61 and 60.14 ms on the worker. Their maximum complete pair
+times were 34.944, 28.648 and 34.026 ms respectively: the scan no longer
+appears as a roughly 62 ms eye draw. The session's remaining logged >80 ms
+hitch at entry spent 417 ms in the game gap while loading. No average FPS gain
+from the diagnostics change is established by a matched previous-DLL run.
+
+A separate native Windows trial changed only the existing GPU wait option,
+keeping 100% scale, two rings, radius 300, fixed foveation and symmetric
+projection. Each row is 360 pairs with hooks and GPU timestamps disabled:
+
+| Sequence | `defer_gpu_wait` | Mean pair ms | Application FPS | Pair p95 ms | Eye draws ms | GPU fence ms |
+| --- | --- | ---: | ---: | ---: | ---: | ---: |
+| 1791856478 | 0 | 25.302 | 39.5 | 32.594 | 15.750 | 3.337 |
+| 1791856539 | 1 | 22.378 | 44.7 | 25.436 | 15.930 | 0.000 |
+| 1791856550 | 0, restored | 24.005 | 41.7 | 31.543 | 16.018 | 3.219 |
+
+The character stayed at one position, but head yaw changed within and between
+rows (124-153, 111-124 and 124-131 degrees). These are not exact view matches.
+Eye draw times remain similar; with overlap enabled XR end fell to 1.234 ms,
+while XR begin rose to 3.936 ms. This supports a local pacing benefit, not
+eliminated rendering work or a universal percentage gain. Copy allocator
+reuse and shutdown still wait for GPU completion. The INI was restored
+byte-for-byte after this trial; source defaults remain conservative because
+earlier Linux deferred-wait testing did not establish stable streaming.
+
+A subsequent one-minute walking/turning trial held 44.7-45.0 FPS in complete
+ten-second windows with GPU overlap enabled. These moving views are not
+matched before/after benchmarks. The owner confirmed the image, tracking and
+controls looked normal. After the automatic rollback, `defer_gpu_wait=1` was
+enabled as a local preference on this PC; 100% scale, two rings and fixed
+foveation were retained. The shipped default remains 0. Longer sessions,
+area transitions and the broader UI regression checks remain outstanding.
+
+Attribution sequence 1791856607 (`profile_hooks=1`, GPU queries off) covered
+18 threads. Approximately 22,565 pipeline binds/pair reached callbacks;
+sampled VRS pipeline/draw and UI world-bind costs on the main draw thread were
+0.130/0.131/0.120 ms per pair, while its two eye draws totalled 16.359 ms.
+Skeleton game/mod estimates peaked at 0.088/0.034 ms per worker per pair.
+These inclusive concurrent estimates cannot be added into a frame cost.
+The input-tick estimate includes transport-lock waiting and is not exclusive
+CPU work. Sparse resource/HUD-lock timing rounded to zero and must not be
+treated as proof of zero cost. The capture's 36.2 FPS includes attribution
+overhead and changing head direction; it is not a comparable throughput run.
+Profiling keys were restored byte-for-byte afterward. The larger
+two-engine-draw cost remains the primary architectural follow-up.
 
 ## Native Windows continuation, October 10 afternoon
 

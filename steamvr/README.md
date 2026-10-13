@@ -164,14 +164,19 @@ finish, then closes helpers belonging to that launch if they are still keeping
 Steam's session open. It does not terminate a running game. Normal Steam Play
 still runs without this wrapper's VR session monitor.
 
-The performance preset renders the scene at 80% resolution scale (64% of the
-original pixels) and uses medium shadows, ambient occlusion, and atmospherics.
+The installer renders the scene at 100% resolution scale and uses medium
+shadows, ambient occlusion, and atmospherics. Update / repair preserves existing
+video settings; older installs may still need their scene scale changed to 100%.
 Textures stay at their original quality. Both eyes have their own copy command
 list, with one GPU completion wait after the pair instead of between the draws.
 Native height fog is retained, avoiding the mod's repeated full-memory scans
 after area changes. This is a performance baseline and can change atmosphere.
 Hitches over 80 ms log game gap, XR begin/wait, both eye draws, XR end/GPU fence
 and pipeline creation timing; menu intervals are excluded from gameplay samples.
+The routine ten-second `Frame pacing` line also reports the runtime's predicted
+application rate and mean XR begin/wait, end/submit and total GPU fence times. Read it
+alongside `a pair, ms` and `pairs/s` to distinguish drawing from synchronization.
+The predicted application rate can differ from the panel refresh under throttling.
 Pipeline creation timing is a clue to compilation costs, not a complete shader
 profiler: work deferred until a draw or performed outside ReShade callbacks may
 not appear in those creation measurements.
@@ -396,8 +401,10 @@ threads overlap: adding them together does not give frame time. The bounded
 registry reports overflow rather than allocating on a callback path.
 Set `[debug] profile_hooks=0` before a new capture for timing comparisons against
 older builds; use `1` for a separate all-thread attribution capture. The setting
-is latched per capture. `--refresh-hz 96` or `108` changes the report's half-rate
-budget; an over-budget pair alone does not prove a compositor frame drop.
+is latched per capture. The report defaults to a **full-refresh** budget:
+11.111 ms for one stereo pair at 90 Hz. Use `--refresh-hz 96` or `108` for the
+actual headset rate; `--pair-refreshes 2` explicitly selects a half-rate
+comparison. An over-budget pair alone does not prove a compositor frame drop.
 GPU scene spans include idle queue
 time while CPU commands are prepared; they are not GPU busy-time measurements.
 Effects span includes the ReShade overlay. GPU query readback uses the
@@ -419,6 +426,18 @@ has a local guarded copy for this case. It never changes page permissions.
 Proton tests include invalid/freed/read-only/cross-page buffers and confirm
 failures do not enter application exception handlers. The isolated benchmark
 does **not** establish game frame-time savings; controlled headset trials do.
+
+The October 12 candidate also skips the HUD mutex for command lists outside
+the UI pass and caches immutable resource descriptions per recording thread.
+Resource creation/destruction invalidates that cache; RTV/DSV descriptors are
+still resolved on every bind because descriptor copies can change their target.
+Detailed captures add `hud-scissor`, `hud-lock`, `resource-desc` (cache misses)
+and `resource-view` buckets. The lock bucket measures acquisition wait, not
+exclusive CPU work. Missing draw-distance keys now use the shipped two rings
+and object radius 300; explicit settings remain in effect. The object-distance
+control uses steps of 50 so reductions from 300 are practical.
+See [the #20 investigation](PERFORMANCE.md#issue-20-investigation-october-12)
+for validation and the remaining stereo architecture question.
 
 Optional UI-trace draw callbacks are selected once at startup. Set
 `[debug] uitrace=1` and restart before Ctrl+F10 capture or live shader-skip tests.
