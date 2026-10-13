@@ -58,6 +58,7 @@ add_executable(weapon-skills-test weapon_skills_test.cpp)
 target_link_libraries(weapon-skills-test PRIVATE minhook)
 add_executable(quick-cast-test quick_cast_test.cpp)
 add_executable(hand-controls-test hand_controls_test.cpp)
+add_executable(skill-pad-test skill_pad_test.cpp)
 add_executable(spell-aim-test spell_aim_test.cpp)
 add_executable(bow-pose-test bow_pose_test.cpp)
 add_executable(body-tracking-test body_tracking_test.cpp)
@@ -118,7 +119,7 @@ target_link_libraries(local-player-test PRIVATE framevr-runtime)
 target_link_libraries(window-focus-test PRIVATE user32)
 enable_testing()
 foreach(test_target IN ITEMS memory-test hook-metrics-test active-keys-test resource-descriptions-test latest-worker-test thread-stats-test
-    gameplay-test weapon-skills-test quick-cast-test hand-controls-test spell-aim-test bow-pose-test body-tracking-test body-calibration-test shoulder-swap-test
+    gameplay-test weapon-skills-test quick-cast-test hand-controls-test skill-pad-test spell-aim-test bow-pose-test body-tracking-test body-calibration-test shoulder-swap-test
     portal-billboard-test composition-layers-test projectile-rules-test
     combat-rules-test logging-test melee-contact-test world-coordinates-test bow-flight-test
     interaction-test wrist-hud-test controller-bindings-test journal-test native-panels-test

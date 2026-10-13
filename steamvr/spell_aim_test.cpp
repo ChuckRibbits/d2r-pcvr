@@ -44,6 +44,10 @@ int main() {
             Check(spellaim::Resolve(cast,playerX,playerY,x,y),"moving cast overrides every native resolver result");
             const auto actual=math::Normalized(math::Vec{x-playerX,0,y-playerY});
             Check(actual.x*cast.x+actual.z*cast.y>.99999f,"projectile aim is independent of forward, backward or sideways travel");
+            int cx=int(playerX-3*cast.x),cy=int(playerY-3*cast.y);
+            Check(spellaim::ControllerPoint(playerX,playerY,{cast.x,0,cast.y},cx,cy),"controller quick cast also replaces backward walking destination");
+            const auto controller=math::Normalized(math::Vec{cx-playerX,0,cy-playerY});
+            Check(controller.x*cast.x+controller.z*cast.y>.9995f,"controller quick-cast integer target retains hand direction");
             Check(std::fabs(std::hypot(x-playerX,y-playerY)-60)<.001f,"cast target follows current player position at full aiming precision");
         }
     }
@@ -55,5 +59,8 @@ int main() {
     Check(!spellaim::Resolve({true,1,0},NAN,1300,x,y)&&x==5&&y==7,"invalid player position preserves native result");
     Check(!spellaim::Point(0,0,{0,1,0},x,y)&&x==5&&y==7,"vertical aim cannot invent a horizontal direction");
     Check(!spellaim::Point(0,0,{NAN,0,1},x,y),"invalid direction is refused");
+    int cx=12,cy=34;
+    Check(!spellaim::ControllerPoint(NAN,0,{1,0,0},cx,cy)&&cx==12&&cy==34,"invalid controller position cannot change output");
+    Check(!spellaim::ControllerPoint(65530,100,{1,0,0},cx,cy),"out-of-world controller target is refused before integer conversion");
     std::puts("Spell aiming: native behavior, scoped targeting, movement-independent cast resolution and cell precision passed");
 }
