@@ -10,6 +10,13 @@ selection validation, ZIP backup migration, per-copy receipts and managed
 removal. The EXE includes an isolated CPython runtime; it does not require or
 modify system Python. Loader/ReShade downloads retain the existing pinned hashes.
 
+The D2RLoader 1.3.1 URL was repacked upstream on October 13, 2026. Native setup
+accepts the two explicitly reviewed archive hashes in `steamvr/install.py`;
+every contained file is byte-identical. Existing verified caches remain usable.
+Unknown hashes still stop setup before game writes, with expected/received
+values in the error. Do not fetch a new trusted digest automatically or bypass
+verification. See the [archive and v0.3.10 release audit](../steamvr/evidence/2026-10-13-loader-archive-repack.json).
+
 ## Build
 
 Use a clean committed topic branch. Build the native plugin as described in

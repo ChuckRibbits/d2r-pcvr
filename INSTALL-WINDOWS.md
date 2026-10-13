@@ -73,6 +73,14 @@ installer's full output. Share the error at the end of those logs when reporting
 a problem; review them for personal paths before posting. Older installers may
 only report an exit code in `setup-last.log` and do not create `setup-install.log`.
 
+If setup reports **Checksum mismatch**, the downloaded bytes do not match a
+version approved by that installer. An upstream download can be replaced while
+keeping the same filename; a damaged download can also cause this error. Get the
+latest D2R PCVR installer and retry. If it persists, report the dependency URL
+and the expected/received SHA-256 values from the log. Keep antivirus protection
+enabled; disabling it does not resolve a changed upstream checksum. Setup stops
+before changing game files when a dependency fails this check.
+
 If a log says a required download cannot be read, or a browser reports a virus,
 check **Windows Security > Virus & threat protection >
 [Protection history](https://support.microsoft.com/en-us/windows/security/windows-security/protection-history-in-the-windows-security-app)**

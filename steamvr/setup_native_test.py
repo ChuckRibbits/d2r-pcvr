@@ -333,6 +333,33 @@ class NativeSetupTests(unittest.TestCase):
             self.assertFalse((profile / 'config/shortcuts.vdf').exists())
             self.assertEqual(native.managed_state(app)['installations'], [])
 
+    def test_checksum_hashes_reach_wizard_and_log_without_game_changes(self):
+        with tempfile.TemporaryDirectory() as directory:
+            app, game, client, saves, profile, values = self.fixture(Path(directory))
+            before = {path: path.read_bytes() for folder in (game, saves, profile)
+                      for path in folder.rglob('*') if path.is_file()}
+            selection = dict(manifest={}, store='steam', version='3.3.93787', headset='Quest 3',
+                connections=['steamvr'], steam=client, game=game, profile=profile, saves=saves,
+                runtime=client / 'steamapps/common/SteamVR/steamxr_win64.json', mode=1)
+            received = '0' * 64
+            message = str(install.dependency_checksum_error(
+                'https://d2rloader.net/downloads/D2RLoader-1.3.1-beta.zip',
+                install.LOADER_HASHES, received))
+            self.put(app / 'steamvr/install.py', ('raise SystemExit(' + repr(message) + ')').encode('utf-8'))
+            with patch.object(setup, 'require_closed'), \
+                    patch.object(native, 'validate_choices', return_value=selection), \
+                    contextlib.redirect_stdout(io.StringIO()):
+                with self.assertRaises(ValueError) as caught:
+                    native.install_selected(values, app)
+            self.assertIn(message, str(caught.exception))
+            log = (app / 'setup-install.log').read_text(encoding='utf-8')
+            self.assertIn(message, log)
+            self.assertIn('Installer exit code: 1', log)
+            after = {path: path.read_bytes() for folder in (game, saves, profile)
+                     for path in folder.rglob('*') if path.is_file()}
+            self.assertEqual(after, before)
+            self.assertEqual(native.managed_state(app)['installations'], [])
+
     def test_imports_original_legacy_backup_with_or_without_newer_receipt(self):
         for receipt in (False, True):
             with self.subTest(receipt=receipt), tempfile.TemporaryDirectory() as directory:
