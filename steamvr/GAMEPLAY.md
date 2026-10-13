@@ -103,9 +103,12 @@ only the current local directional cast's target, without changing native
 action flags, costs or cadence. Resolver, final-command and missile-creation
 diagnostics distinguish the requested aim from what native creation receives.
 The owner confirmed separate trigger spells now work, but reported fire-spell
-direction sticking between quarter turns in the preceding test build. The
-final-command correction is a candidate fix and still needs headset validation;
-smooth resolver vectors alone do not establish correct projectile flight.
+direction sticking between quarter turns even after the final-command correction.
+Missile logs and native validation identified the cause: the previous 60-cell
+aim point exceeded the server's 50-cell limit on each axis except near diagonals.
+The aim point now sits 40 cells away, leaving movement margin and preserving all
+headings. This changes the heading reference, not native projectile lifetime or
+travel range. The corrected range still needs headset validation.
 While a trigger skill or quick-cast shortcut is held, locomotion stays on the
 native controller stick instead of the legacy direct-walk reinjection path.
 Legacy aim modes cannot replace that stick or hold stand-still Shift during a

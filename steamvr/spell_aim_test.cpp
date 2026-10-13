@@ -28,7 +28,7 @@ int main() {
             float x=0,y=0;
             Check(spellaim::Point(1200,1300,direction,x,y),"finite directional spell yields native aim point");
             const auto rounded=math::Normalized(math::Vec{float(int(x)-1200),0,float(int(y)-1300)});
-            Check(rounded.x*std::cos(angle)+rounded.z*std::sin(angle)>.9995f,"all horizontal aim angles remain accurate after native cell quantization");
+            Check(rounded.x*std::cos(angle)+rounded.z*std::sin(angle)>.999f,"all horizontal aim angles stay within 2.6 degrees after native cell quantization");
         }
     }
     float x=5,y=7;
@@ -47,8 +47,8 @@ int main() {
             int cx=int(playerX-3*cast.x),cy=int(playerY-3*cast.y);
             Check(spellaim::ControllerPoint(playerX,playerY,{cast.x,0,cast.y},cx,cy),"controller quick cast also replaces backward walking destination");
             const auto controller=math::Normalized(math::Vec{cx-playerX,0,cy-playerY});
-            Check(controller.x*cast.x+controller.z*cast.y>.9995f,"controller quick-cast integer target retains hand direction");
-            Check(std::fabs(std::hypot(x-playerX,y-playerY)-60)<.001f,"cast target follows current player position at full aiming precision");
+            Check(controller.x*cast.x+controller.z*cast.y>.999f,"controller quick-cast integer target retains hand direction");
+            Check(std::fabs(std::hypot(x-playerX,y-playerY)-40)<.001f,"cast point stays inside native command range");
         }
     }
     x=5;y=7;
@@ -74,7 +74,7 @@ int main() {
             Check(spellaim::ApplyCommand({123,cx,cy},command),"final local command removes reacquired native target");
             Check(command.target==0&&command.flags==flags&&command.padding==0x1234&&command.actor==123,"only target fields change; native press/repeat and actor survive");
             const auto actual=math::Normalized(math::Vec{command.x-4730.25f,0,command.y-4621.75f});
-            Check(actual.x*std::cos(angle)+actual.z*std::sin(angle)>.9995f,"final command retains every intermediate heading across all four quadrants");
+            Check(actual.x*std::cos(angle)+actual.z*std::sin(angle)>.999f,"final command retains every intermediate heading across all four quadrants");
         }
     }
     spellaim::NativeCommand untouched{6,0,123,456,11,22};
@@ -82,6 +82,24 @@ int main() {
                        spellaim::CommandAim{123,0,200},spellaim::CommandAim{123,100,65535}}) {
         Check(!spellaim::ApplyCommand(aim,untouched),"unowned, other actor and invalid command aim are refused");
         Check(untouched.target==456&&untouched.x==11&&untouched.y==22,"refused command keeps native targeting intact");
+    }
+    // Independently model the audited native command gate, not just the ray
+    // formula. The previous 60-cell point passed only around the diagonals.
+    const auto accepted=[](int px,int py,int tx,int ty) {
+        return std::abs(tx-px)<=50&&std::abs(ty-py)<=50;
+    };
+    Check(!accepted(4734,4649,4794,4649)&&accepted(4734,4649,4776,4691),
+          "old 60-cell aim reproduces cardinal rejection and diagonal acceptance");
+    Check(!accepted(4734,4649,4790,4627)&&accepted(4734,4649,4769,4698),
+          "observed stale versus server-created fireballs match native range gate");
+    for(int degree=0;degree<360;++degree)for(float fraction:{0.f,.25f,.75f,.99f}) {
+        const float angle=degree*3.14159265f/180;
+        const float px=4734+fraction,py=4649+fraction;
+        float tx=0,ty=0;
+        Check(spellaim::Point(px,py,{std::cos(angle),0,std::sin(angle)},tx,ty),"valid hand aim produces a bounded target");
+        for(int moveX:{-8,0,8})for(int moveY:{-8,0,8})
+            Check(accepted(int(px)+moveX,int(py)+moveY,int(tx),int(ty)),
+                  "all headings pass native validation with client/server movement margin");
     }
     std::puts("Spell aiming: native behavior, scoped targeting, movement-independent cast resolution and cell precision passed");
 }

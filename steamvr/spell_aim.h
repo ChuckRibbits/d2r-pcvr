@@ -34,12 +34,16 @@ inline bool Horizontal(math::Vec direction,float& x,float& y) {
     if(!std::isfinite(direction.x+direction.y+direction.z)||n<.001f)return false;
     x=direction.x/n;y=direction.z/n;return true;
 }
-// Use a sufficiently distant native point to avoid coarse integer-cell aim,
-// without changing missile count, velocity, lifetime or homing/spread behavior.
+// Native skill-command validation rejects abs(target-player)>50 on EITHER
+// grid axis (3.3.93787: 0x4fe076 -> 0x4fe1f0). A 60-cell ray only passes near
+// diagonals, leaving stale client aim between accepted casts. Stay inside that
+// square with margin for movement between client resolution and server use.
+// This point encodes heading; it does not change native missile lifetime/range.
+inline constexpr float AimDistance=40.f;
 inline bool Point(float x,float y,math::Vec direction,float& targetX,float& targetY) {
     float dx=0,dy=0;
     if(!std::isfinite(x+y)||!Horizontal(direction,dx,dy))return false;
-    targetX=x+dx*60;targetY=y+dy*60;return true;
+    targetX=x+dx*AimDistance;targetY=y+dy*AimDistance;return true;
 }
 // The controller quick-cast path takes integer grid cells. Refuse malformed
 // positions before conversion, rather than returning an unrelated old target.
