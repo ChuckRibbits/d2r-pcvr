@@ -1,4 +1,90 @@
-# October 10 CPU performance comparison
+# VR performance investigations
+
+## Issue 20 investigation, October 12
+
+[#20](https://github.com/bearstonem/d2r-pcvr/issues/20) reports roughly 60 FPS
+and less than 50% GPU utilization on an RTX 5080, compared with 90 FPS and
+better clarity in another mod. The CPU, headset/runtime, refresh rate, exact
+mod versions, frame metric and comparable settings are still unknown. No
+reporter capture has arrived. This candidate addresses costs found in our
+code; it does **not** establish that the RTX 5080 report is fixed.
+
+The saved October 10 native Windows log contains a ten-second window with
+left/right draw means of 6.77/6.12 ms, including Present means of 0.50/0.38 ms.
+The two draws alone exceed the 11.11 ms full-90-Hz budget. A separate 109.5 ms
+hitch spent 89.1 ms in XR begin, showing why a long frame cannot always be
+attributed to drawing. These are local historical captures, not the reporter's
+hardware, matched A/B measurements, or evidence of a specific FPS cap.
+
+Current upstream at
+[`4b6284c0766c089139693a504333b9a19201cdd2`](https://github.com/natpoh/diablo2-vr-port/tree/4b6284c0766c089139693a504333b9a19201cdd2)
+has a significant architectural difference: its
+[`replay_right=1` default](https://github.com/natpoh/diablo2-vr-port/blob/4b6284c0766c089139693a504333b9a19201cdd2/d2r_vr.ini#L91)
+records the engine's CPU draw once, then replays GPU commands with right-eye
+camera constants. Our build still invokes the engine draw twice. If the
+reporter's comparison version uses this path, it is a plausible larger source
+of the difference. Its identity/version must be confirmed.
+
+A replay port needs per-eye view/projection/history buffers, direct/compute/copy
+queue ordering and resource lifetimes, correct right-eye depth for effects,
+and one desktop Present per pair. Our native OpenXR capture, VRS masks,
+physical controls and spatial UI also need integration. The upstream path has
+fallbacks and recent area-transition/depth fixes; copying it wholesale would
+not validate those behaviors here. No replay code is included in this candidate.
+
+Implemented changes:
+
+- HUD bind/scissor/reset callbacks reject command lists outside the UI pass
+  before taking the shared HUD mutex. A bounded atomic membership filter allows
+  false positives only; collisions still consult the locked authoritative map.
+  UI-list reset/destruction removes membership. UI capture, hiding and map
+  redirection retain their existing critical sections.
+- Per-thread resource-description caches avoid repeated native metadata calls
+  in VRS, depth and HUD bindings. Resource creation/destruction and device
+  destruction invalidate them. RTV/DSV-to-resource resolution is deliberately
+  uncached: D3D12 descriptor copies can replace those mappings without an
+  `init_resource_view` event. A HUD exit reuses its resolved metadata locally.
+- Missing `[render] rings` and `model_radius` keys use the shipped defaults
+  (2/300), rather than 4/1000. Camera and settings UI share those defaults;
+  explicit INI values are preserved. Object-distance adjustments use steps of
+  50 instead of jumping directly from 300 to 50.
+- Routine ten-second logs add `Frame pacing`: predicted runtime application rate,
+  XR begin/wait, end/submit and total GPU fence averages alongside the existing draw
+  timings. Bounded hook captures include resource lookups and HUD lock waits.
+- The report defaults to `1000 / refresh_hz`, one complete stereo pair per
+  refresh. `--pair-refreshes 2` retains an explicit half-rate comparison. Older
+  CSV/log formats still parse. Historical late-pair counts below used the old
+  half-rate budget and must not be read as full-refresh success rates.
+
+Validation on Windows, Ryzen 9 5950X (local machine, not the reporter's CPU):
+
+- `powershell -NoProfile -ExecutionPolicy Bypass -File steamvr/build_windows.ps1 -Test`:
+  native DLL builds, **42/42 CTest cases pass**. New cases cover description
+  lifetime/device invalidation, descriptor rebinding, worker isolation,
+  membership collisions, removal/reuse and concurrent membership. Existing
+  settings fixtures cover partial INIs and retention of explicit distances.
+- `.\deps\python\python.exe -m unittest discover -s steamvr -p profile_report_test.py -v`:
+  **7 tests pass**, including a synthetic 13 ms pair that misses full 90 Hz but
+  passes an explicitly requested half-rate comparison.
+- `resource-descriptions-test.exe --benchmark`: native D3D12 metadata query
+  versus cache hit, 30.10 versus 2.58 ns/query with one thread. Absolute cost
+  is small and cannot explain the reported FPS gap by itself.
+- `active-keys-test.exe --benchmark`: isolated empty HUD registry, 5.70 versus
+  0.71 aggregate wall ns/query with one thread; 38.91 versus 0.20 with eight
+  workers. These are synthetic contention measurements, not game frame-time
+  savings. Real UI work can still wait on the HUD lock.
+- No game install/launch, headset comparison or RTX 5080 test was performed.
+  The DLL is staged in `build-frame/windows-native/` only. Deferred GPU waiting,
+  scene resolution and projection defaults were not changed by this candidate.
+
+Next validation uses the same offline character/scene, runtime and settings
+before/after, with routine logs plus separate 360-pair stationary and walking
+captures (`profile_gpu=0`, `profile_hooks=0`). An attribution capture can then
+enable hooks. Test the map tab, labels and spatial NPC/inventory menus as well.
+Record actual eye dimensions, scene scale, symmetric projection and VRS when
+comparing clarity; the installer's 80% scene scale renders only 64% of the
+pixels at 100%. Lower resolution does not remove CPU draw/submission work.
+Keep #20 open until the reporter's bottleneck and improvement are measured.
 
 ## Native Windows continuation, October 10 afternoon
 

@@ -35,6 +35,7 @@ void SetBowWorldEpoch(uint32_t epoch);
 uint64_t BowRenderTime(); // one timestamp for both eyes, lock-free
 struct FrameTiming {
     double waitFrameMs=0,waitGpuMs=0,submitMs=0,maxPipelineMs=0,locateMs=0,inputMs=0,releaseMs=0;
+    double displayPeriodMs=0; // Runtime-predicted application period; may differ from panel refresh.
     double acquireMs[2]{},copySubmitMs[2]{},gpuSceneMs[2]{},gpuEffectsMs[2]{},gpuCopyMs[2]{};
     uint32_t pipelines=0;bool gpuValid=false;
 };

@@ -8,6 +8,7 @@ hook records additionally cover workers/input and overlap in wall time.
 """
 import argparse
 import csv
+import math
 from pathlib import Path
 import statistics
 
@@ -57,7 +58,9 @@ def main():
     ap.add_argument('log', type=Path)
     ap.add_argument('--sequence', type=int)
     ap.add_argument('--csv', type=Path)
-    ap.add_argument('--refresh-hz', type=float, default=90, help='panel refresh, for a two-refresh pair budget')
+    ap.add_argument('--refresh-hz', type=float, default=90, help='panel refresh; default target is one stereo pair per refresh')
+    ap.add_argument('--pair-refreshes', type=int, choices=(1, 2), default=1,
+                    help='display intervals per stereo pair (1: full rate, 2: explicit half-rate comparison)')
     args = ap.parse_args()
     text = args.log.read_text(errors='replace')
     frames, scopes = records(text)
@@ -68,11 +71,12 @@ def main():
     if not rows:
         raise SystemExit(f'No frames for sequence {seq}')
     print(f'Sequence {seq}: {len(rows)} pairs; {sum(r["gpu_valid"] != 0 for r in rows)} valid GPU samples')
-    if args.refresh_hz <= 0:
-        raise SystemExit('Refresh rate must be positive')
-    budget = 2000 / args.refresh_hz
+    if not math.isfinite(args.refresh_hz) or args.refresh_hz <= 0:
+        raise SystemExit('Refresh rate must be finite and positive')
+    budget = 1000 * args.pair_refreshes / args.refresh_hz
     late = late_pairs(rows, budget)
-    print(f'Pairs over {budget:.3f} ms ({args.refresh_hz:g} Hz, half rate): {late}/{len(rows)} ({100*late/len(rows):.1f}%). This alone does not measure compositor drops.')
+    rate = 'full rate' if args.pair_refreshes == 1 else 'half rate'
+    print(f'Pairs over {budget:.3f} ms ({args.refresh_hz:g} Hz, {rate}): {late}/{len(rows)} ({100*late/len(rows):.1f}%). This alone does not measure compositor drops.')
     print(f'{"stage":24s} {"mean":>9s} {"median":>9s} {"p95":>9s} {"max":>9s}')
     for key in ['cycle'] + COLUMNS[2:-1]:
         values = [(sum(r[k] for k in ('gap', 'begin', 'left', 'right', 'end')) if key == 'cycle' else r[key])

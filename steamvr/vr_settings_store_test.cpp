@@ -14,7 +14,12 @@ int main(){
     Check(WritePrivateProfileStringW(L"custom",L"keep",L"12345",name),"write unrelated key");
     Check(WritePrivateProfileStringW(L"render",L"rings",L"6",name),"write existing setting");
     vrsettings::Poll(name);auto before=vrsettings::Read();
-    Check(before.ready&&before.values[DrawDistance]==6&&before.values[Foveation]==1,"load existing values and defaults");
+    Check(before.ready&&before.values[DrawDistance]==6&&before.values[Foveation]==1&&before.values[ObjectDistance]==300,"explicit distance retained; missing object distance uses shipped default");
+    Check(WritePrivateProfileStringW(L"render",L"rings",nullptr,name),"remove terrain distance in isolated legacy profile");
+    vrsettings::Poll(name);before=vrsettings::Read();
+    Check(before.values[DrawDistance]==2&&before.values[ObjectDistance]==300,"missing draw distances do not silently select 4 rings and radius 1000");
+    Check(WritePrivateProfileStringW(L"render",L"rings",L"6",name),"restore explicit terrain distance");
+    vrsettings::Poll(name);before=vrsettings::Read();
     Model model;model.Open(before);model.Click({Kind::Change,Foveation,1});model.Click({Kind::Change,Motion,1});
     auto request=model.Click({Kind::Apply});
     Check(vrsettings::Submit(request)&&!vrsettings::Submit(request),"one queued transaction at a time");

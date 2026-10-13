@@ -64,6 +64,8 @@
 #include <reshade.hpp>
 #include "../steamvr/profile.h"
 #include "../steamvr/native_lock.h"
+#include "../steamvr/resource_descriptions.h"
+#include "../steamvr/active_keys.h"
 
 #include "game_hud_shared.h"
 
@@ -131,6 +133,25 @@ framevr::NativeMutex g_lock;
 // whether the map's draws are being sent to our own target right now.
 struct Drawing { resource_view layer{}; bool inMap = false; uint32_t w = 0, h = 0; };
 std::unordered_map<command_list*, Drawing> g_drawing;
+framevr::ActiveKeys g_drawingKeys;
+// The command-list API serializes recording on any one list. Unrelated world
+// lists can reject a negative membership query without joining the HUD mutex.
+// A collision still takes the mutex and verifies the authoritative map.
+uint64_t ListKey(command_list* cl) {return reinterpret_cast<uintptr_t>(cl);}
+void Track(command_list* cl,const Drawing& drawing) { // g_lock held
+    auto [it,inserted]=g_drawing.insert_or_assign(cl,drawing);
+    if(inserted)g_drawingKeys.Add(ListKey(cl));
+}
+void Untrack(decltype(g_drawing)::iterator it) { // g_lock held
+    const auto key=ListKey(it->first);g_drawing.erase(it);g_drawingKeys.Remove(key);
+}
+struct DrawingLock {
+    std::unique_lock<framevr::NativeMutex> lock{g_lock,std::defer_lock};
+    DrawingLock() {
+        framevr::hookmetrics::Scope measured(framevr::hookmetrics::HudLock);
+        lock.lock();
+    }
+};
 
 // The map's own target: as big as the layer, same format, cleared like it.
 resource g_mapTex{};
@@ -415,7 +436,7 @@ bool OnClear(command_list* cl, resource_view rtv, const float c[4], uint32_t, co
     if (!IsLayerClear(dev, rtv, c)) return false;
     g_frameMap.store(MapNow());
     if (g_frameMap.load() == 1) {   // the frame's interface starts: so does the map's
-        const resource_desc d = dev->get_resource_desc(dev->get_resource_from_view(rtv));
+        const resource_desc d = framevr::resources::Describe(dev,framevr::resources::Resolve(dev,rtv));
         std::lock_guard g(g_lock);
         if (EnsureMapTarget(dev, d.texture.width, d.texture.height)) cl->clear_render_target_view(g_mapRtv, kEmpty);
     }
@@ -424,9 +445,10 @@ bool OnClear(command_list* cl, resource_view rtv, const float c[4], uint32_t, co
 
 // On the interface's list: the map's scissor sends the draws to our target, any other back to the layer.
 void OnScissor(command_list* cl, uint32_t, uint32_t count, const rect* rects) {
+    framevr::hookmetrics::Scope measured(framevr::hookmetrics::HudScissor);
     const bool redirect = g_frameMap.load() == 1;   // else only seen: the labels keep the map flat
-    if (count == 0 || (!redirect && !g_labels.load())) return;
-    std::lock_guard g(g_lock);
+    if (count == 0 || (!redirect && !g_labels.load()) || !g_drawingKeys.MaybeContains(ListKey(cl))) return;
+    DrawingLock g;
     auto it = g_drawing.find(cl);
     if (it == g_drawing.end()) return;
     Drawing& d = it->second;
@@ -451,13 +473,16 @@ void OnBind(command_list* cl, uint32_t count, const resource_view* rtvs, resourc
     device* dev = cl->get_device();
     resource_view now{};
     for (uint32_t i = 0; i < count; ++i)
-        if (rtvs[i].handle && dev->get_resource_from_view(rtvs[i]).handle == layer) now = rtvs[i];
-    std::lock_guard g(g_lock);
+        if (rtvs[i].handle && framevr::resources::Resolve(dev,rtvs[i]).handle == layer) now = rtvs[i];
+    if(!now.handle&&!g_drawingKeys.MaybeContains(ListKey(cl)))return;
+    DrawingLock g;
     auto it = g_drawing.find(cl);
     if (it != g_drawing.end() && it->second.layer.handle != now.handle) {
         const resource_view layerRtv = it->second.layer;
+        const auto layerResource=framevr::resources::Resolve(dev,layerRtv);
+        const auto layerDescription=framevr::resources::Describe(dev,layerResource);
         if(uiActive.load()) {
-            const auto tex=dev->get_resource_from_view(layerRtv);const auto desc=dev->get_resource_desc(tex);
+            const auto tex=layerResource;const auto desc=layerDescription;
             int32_t native[4]{};
             if(workspaceActive.load()||gamestate::JournalRect(native)) {
                 const auto region=workspaceActive.load()?framevr::journal::Rect{0,0,int(desc.texture.width),int(desc.texture.height)}:
@@ -476,8 +501,8 @@ void OnBind(command_list* cl, uint32_t count, const resource_view* rtvs, resourc
                         // eyes while this UI is submitted as one XR layer.
                         // Avoid clearing a shared/cached source beneath the
                         // native compositor between its two eye passes.
-                        g_drawing.erase(it);
-                        if(now.handle){const auto d=dev->get_resource_desc(dev->get_resource_from_view(now));g_drawing[cl]=Drawing{now,false,d.texture.width,d.texture.height};}
+                        Untrack(it);
+                        if(now.handle){const auto d=framevr::resources::Describe(dev,framevr::resources::Resolve(dev,now));Track(cl,Drawing{now,false,d.texture.width,d.texture.height});}
                         return;
                     }
                 }
@@ -485,33 +510,34 @@ void OnBind(command_list* cl, uint32_t count, const resource_view* rtvs, resourc
         }
         const int hideNow = HideNow();
         {
-            const resource_desc d = dev->get_resource_desc(dev->get_resource_from_view(layerRtv));
-            Publish(cl, dev->get_resource_from_view(layerRtv), d.texture.width, d.texture.height, hideNow);
+            const auto& d = layerDescription;
+            Publish(cl, layerResource, d.texture.width, d.texture.height, hideNow);
         }
         if (const int hide = g_menu.load() ? 0 : hideNow; hide == 2) {
             cl->clear_render_target_view(layerRtv, kEmpty);
         } else if (hide == 1 && (!g_classic.load() || g_pic.on[kBar])) {   // drawn back from a copy: only if there is one
-            const resource_desc d = dev->get_resource_desc(dev->get_resource_from_view(layerRtv));
+            const auto& d = layerDescription;
             const rect bar = ToolbarRect(d.texture.width, d.texture.height);   // the map stays (MapRect: kept for FlatVR)
             cl->clear_render_target_view(layerRtv, kEmpty, 1, &bar);
         }
         // From above: the rest of it out whole, for the effect to lay on the tilted plane.
         const bool labels = g_labels.load() && g_picReady.load() && !g_menu.load();
         const bool mask = !labels && g_uiMask.load() && g_picReady.load() && !g_menu.load();   // copied, left in
-        g_lab.on = (labels || mask) && CopyLayer(cl, dev->get_resource_from_view(layerRtv), it->second.w, it->second.h);
+        g_lab.on = (labels || mask) && CopyLayer(cl, layerResource, it->second.w, it->second.h);
         if (g_lab.on && labels) cl->clear_render_target_view(layerRtv, kEmpty);
         g_lab.at = GetTickCount64();
-        g_drawing.erase(it);
+        Untrack(it);
     }
     if (now.handle) {
-        const resource_desc d = dev->get_resource_desc(dev->get_resource_from_view(now));
-        g_drawing[cl] = Drawing{now, false, d.texture.width, d.texture.height};
+        const resource_desc d = framevr::resources::Describe(dev,framevr::resources::Resolve(dev,now));
+        Track(cl,Drawing{now, false, d.texture.width, d.texture.height});
     }
 }
 
 void OnReset(command_list* cl) {
-    std::lock_guard g(g_lock);
-    g_drawing.erase(cl);
+    if(!g_drawingKeys.MaybeContains(ListKey(cl)))return;
+    DrawingLock g;
+    if(auto it=g_drawing.find(cl);it!=g_drawing.end())Untrack(it);
 }
 
 }  // namespace
@@ -523,6 +549,7 @@ void Register() {
     reshade::register_event<reshade::addon_event::clear_render_target_view>(&OnClear);
     reshade::register_event<reshade::addon_event::bind_render_targets_and_depth_stencil>(&OnBind);
     reshade::register_event<reshade::addon_event::reset_command_list>(&OnReset);
+    reshade::register_event<reshade::addon_event::destroy_command_list>(&OnReset);
     reshade::register_event<reshade::addon_event::bind_scissor_rects>(&OnScissor);
 }
 

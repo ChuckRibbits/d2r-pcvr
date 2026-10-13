@@ -18,10 +18,10 @@ namespace framevr::hookmetrics {
 enum Kind { CameraTick, CameraSync, View, Projection, SkeletonGame, SkeletonMod,
     FoveationPipeline, FoveationTargets, FoveationDraw, HudBind, DepthBind,
     EffectsSetup, EffectsFinish, MemoryRead, MemoryWrite, PortalView, PortalCenter,
-    UiWorldBind, TraceDraw, InputTick, FoveationLookup, Count };
+    UiWorldBind, TraceDraw, InputTick, FoveationLookup, ResourceDescription, ResourceViewResolve, HudScissor, HudLock, Count };
 inline constexpr const char* Names[Count]={"camera-game","camera-sync","view","projection","skeleton-game","skeleton-mod",
     "vrs-pipeline","vrs-targets","vrs-draw","hud-bind","depth-bind","fx-setup","fx-finish",
-    "memory-read","memory-write","portal-view","portal-center","ui-world-bind","trace-draw","input-tick","vrs-lookup"};
+    "memory-read","memory-write","portal-view","portal-center","ui-world-bind","trace-draw","input-tick","vrs-lookup","resource-desc","resource-view","hud-scissor","hud-lock"};
 inline constexpr unsigned MaxThreads=128;
 struct Counter {uint64_t calls=0,samples=0,nanos=0,bytes=0;};
 struct AtomicCounter {std::atomic<uint64_t> calls{0},samples{0},nanos{0},bytes{0};};

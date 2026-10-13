@@ -23,6 +23,8 @@
 #endif
 #include <windows.h>
 #include "../steamvr/profile.h"
+#include "../steamvr/resource_descriptions.h"
+#include "../steamvr/vr_settings.h"
 #include <tlhelp32.h>
 #include <intrin.h>
 #include <xinput.h>
@@ -162,8 +164,8 @@ struct Settings {
     std::atomic<bool>  followJump{true};    // the camera goes up when the animation lifts the hero (Leap)
     std::atomic<float> jumpFrom{0.3f};      // hip rise (model units) still taken for the stride's bob
     std::atomic<float> pitch{-60.0f};       // camera pitch relative to the game's own (deg); -60 = level, more negative = higher
-    std::atomic<int>   rings{4};            // [render] rings: room rings drawn around the hero (cleanroom/drawdist)
-    std::atomic<float> modelRadius{1000.0f}; // [render] model_radius: houses, props, units drawn out to this (game: 150)
+    std::atomic<int>   rings{int(framevr::settings::Definitions[framevr::settings::DrawDistance].defaultValue)};
+    std::atomic<float> modelRadius{framevr::settings::Definitions[framevr::settings::ObjectDistance].defaultValue};
     std::atomic<int>   hudMap{0};           // [hud] map: 0 in the picture, 1 out of it, into its own texture
     // Per view since the Home page (2026-10-05): [hud_top], [hud_third], [hud_floor], [hud_inside]
     // - the Interface tab of each view - falling back to [hud] where unset.
@@ -848,8 +850,8 @@ void LoadSettings() {
     g_set.followJump.store(IniB(L"camera", L"follow_jump", true));
     g_set.jumpFrom.store(std::clamp(IniF(L"camera", L"jump_from", 0.3f), 0.0f, 3.0f));
     g_set.pitch.store(std::clamp(IniF(L"camera", L"pitch", -60.0f), -150.0f, 60.0f));
-    g_set.rings.store(std::clamp((int)IniF(L"render", L"rings", 4.0f), 1, 8));
-    g_set.modelRadius.store(std::clamp(IniF(L"render", L"model_radius", 1000.0f), 10.0f, 10000.0f));
+    g_set.rings.store(std::clamp((int)IniF(L"render", L"rings", framevr::settings::Definitions[framevr::settings::DrawDistance].defaultValue), 1, 8));
+    g_set.modelRadius.store(std::clamp(IniF(L"render", L"model_radius", framevr::settings::Definitions[framevr::settings::ObjectDistance].defaultValue), 10.0f, 10000.0f));
     g_set.mouseLook.store(IniB(L"input", L"mouse_look", false));
     g_set.hudHide.store(std::clamp((int)IniF(L"hud", L"hide", 0.0f), 0, 2));
     hud::SetHide(g_set.hudHide.load());
@@ -4425,6 +4427,10 @@ uintptr_t HookDrawGameScreen(int a) {
     static thread_local int depth = 0;
     static bool told = false, toldWhy = false;
     static double lastEnd = 0.0, sumGap = 0.0, sumPass[2] = {}, sumPresent[2] = {}, sumEff[2] = {}, maxPair = 0.0, sumCpu = 0.0, sumWall = 0.0;
+#ifdef D2RVR_NATIVE_OPENXR
+    static double sumBegin=0,sumEnd=0,sumWait=0,sumFence=0,sumSubmit=0,sumPeriod=0;
+    static uint32_t periodPairs=0;
+#endif
     static ULONGLONG since = GetTickCount64(), lastHitch = 0;
     static uint32_t pairs = 0,cpuPairs=0;
     const double entered=pairtime::UsNow();
@@ -4432,6 +4438,8 @@ uintptr_t HookDrawGameScreen(int a) {
         if(!depth) {
 #ifdef D2RVR_NATIVE_OPENXR
             framevr::profile::SkipPair();
+            sumBegin=sumEnd=sumWait=sumFence=sumSubmit=sumPeriod=0;
+            periodPairs=0;
 #endif
             // Menu/loading frames are not consecutive stereo gameplay frames.
             // Exclude time spent in panels from the next world's hitch sample.
@@ -4514,15 +4522,19 @@ uintptr_t HookDrawGameScreen(int a) {
 #endif
     const double ended=pairtime::UsNow();
 #ifdef D2RVR_NATIVE_OPENXR
+    const auto xr=framevr::LastTiming();
+    sumBegin+=t0-entered;sumEnd+=ended-t2;
+    sumWait+=xr.waitFrameMs;sumFence+=xr.waitGpuMs;sumSubmit+=xr.submitMs;
+    if(xr.displayPeriodMs>0){sumPeriod+=xr.displayPeriodMs;++periodPairs;}
     framevr::profile::FinishPair(lastEnd>0?(entered-lastEnd)*.001:0,(t0-entered)*.001,
-        (t1-t0)*.001,(t2-t1)*.001,(ended-t2)*.001,(c1-c0)*.001,(c2-c1)*.001,framevr::LastTiming());
+        (t1-t0)*.001,(t2-t1)*.001,(ended-t2)*.001,(c1-c0)*.001,(c2-c1)*.001,xr);
 #endif
     if(lastEnd>0) {
         const double cycle=ended-lastEnd;
         maxPair=std::max(maxPair,cycle);
 #ifdef D2RVR_NATIVE_OPENXR
         if(cycle>80000&&GetTickCount64()-lastHitch>1000) {
-            lastHitch=GetTickCount64();const auto xr=framevr::LastTiming();
+            lastHitch=GetTickCount64();
             LogF("Frame hitch: cycle %.1f ms; game gap %.1f; XR begin %.1f (wait %.1f); left %.1f; right %.1f; XR end %.1f (GPU fence %.1f, submit %.1f); pipelines %u max %.1f ms",
                 cycle*.001,(entered-lastEnd)*.001,(t0-entered)*.001,xr.waitFrameMs,
                 (t1-t0)*.001,(t2-t1)*.001,(ended-t2)*.001,xr.waitGpuMs,xr.submitMs,xr.pipelines,xr.maxPipelineMs);
@@ -4543,10 +4555,18 @@ uintptr_t HookDrawGameScreen(int a) {
             LogF("vrcam: a pair, ms: game %.2f | left %.2f (effects %.2f, Present %.2f) | right %.2f (effects %.2f, Present %.2f) | longest %.1f",
                  sumGap * k, sumPass[0] * k, sumEff[0] * k, sumPresent[0] * k, sumPass[1] * k, sumEff[1] * k, sumPresent[1] * k,
                  maxPair * 0.001);
+#ifdef D2RVR_NATIVE_OPENXR
+            LogF("Frame pacing: runtime predicted %.1f Hz | XR begin %.2f ms (wait %.2f) | XR end %.2f ms (submit %.2f) | GPU fence %.2f ms (pair total)",
+                sumPeriod>0?1000.0*periodPairs/sumPeriod:0,sumBegin*k,sumWait/pairs,sumEnd*k,sumSubmit/pairs,sumFence/pairs);
+#endif
             LogF("vrcam: the two passes busy the game's thread %.0f%% of their sampled time (%.2f ms CPU a pair over %u sampled pairs; the rest waits - GPU, fences, locks)",
                  sumWall > 0.0 ? 100.0 * sumCpu / sumWall : 0.0, cpuPairs?sumCpu*.001/cpuPairs:0,cpuPairs);
         }
         sumGap = 0.0; maxPair = 0.0; sumCpu = 0.0; sumWall = 0.0;
+#ifdef D2RVR_NATIVE_OPENXR
+        sumBegin=sumEnd=sumWait=sumFence=sumSubmit=sumPeriod=0;
+        periodPairs=0;
+#endif
         for (int e = 0; e < 2; ++e) sumPass[e] = sumPresent[e] = sumEff[e] = 0.0;
         since = now; pairs = cpuPairs = 0;
     }
@@ -7041,7 +7061,7 @@ void OnBind(command_list* cl, uint32_t, const resource_view*, resource_view dsv)
     t_dsW = t_dsH = 0;
     if (dsv.handle) {
         device* dev = cl->get_device();
-        const resource_desc d = dev->get_resource_desc(dev->get_resource_from_view(dsv));
+        const resource_desc d = framevr::resources::Describe(dev,framevr::resources::Resolve(dev,dsv));
         t_dsW = d.texture.width; t_dsH = d.texture.height;
     }
     Note();
@@ -7516,6 +7536,7 @@ void OnBeginEffects(reshade::api::effect_runtime* rt, reshade::api::command_list
 void TryRegister() {
     if (g_registered || !g_self) return;
     if (!reshade::register_addon(g_self)) return;
+    framevr::resources::Register();
     reshade::register_event<reshade::addon_event::reshade_begin_effects>(&OnBeginEffects);
     reshade::register_event<reshade::addon_event::reshade_finish_effects>(&OnFinishEffects);
     reshade::register_event<reshade::addon_event::reshade_present>(&OnReshadePresent);
