@@ -13,7 +13,7 @@ The left trigger assignment now owns supported bow gestures and physical Smite.
 Right trigger still grabs the bow string; away from the string it uses its own
 assignment. The Weapon skill gestures VR setting disables those skill gestures
 without removing button casts. Unsupported melee skills remain button-only.
-Each hand has its own aim pose and skill indicator. Left casts cannot inherit
+Each hand has its own aim pose and optional skill indicator (off by default). Left casts cannot inherit
 an equipped right-hand wand/staff shaft. Simultaneous input is serialized with
 release gating, not delayed until another cast finishes.
 
@@ -389,8 +389,10 @@ occlusion and the bottle art is a functional placeholder.
 
 Select a supported skill on the wheel, release the selection trigger, then use
 the weapon's familiar motion. The gold **ACTIVE** border/badge identifies the
-persistent selection independently of the hovered wedge. With the wheel closed,
-a small native skill icon follows the weapon hand. Its name and action hint
+persistent selection independently of the hovered wedge. Weapon-side indicators
+are off by default; enable **VR Settings > Controls > Weapon skill indicators**
+and Apply to restore them. When enabled with the wheel closed, a small native
+skill icon follows the weapon hand. Its name and action hint
 appear briefly on change, or while busy/unavailable. Quick casting temporarily
 shows its own icon and **QUICK CAST** cue, then restores the persistent choice.
 These indicators show assignments and observed actions, not invented mana or

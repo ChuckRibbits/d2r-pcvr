@@ -26,6 +26,14 @@ int main(){
     Check(vrsettings::Read().result==Result::Saving&&vrsettings::Poll(name),"write transaction succeeds");
     auto saved=vrsettings::Read();Check(saved.result==Result::Saved&&saved.values[Foveation]==2&&saved.values[Motion]==1,"saved values round trip");
     Check(saved.values[SkillGestures]==1,"skill gestures default on for existing profiles");
+    Check(saved.values[WeaponSkillIndicators]==0,"existing profiles hide weapon skill indicators by default");
+    model.Open(saved);model.Click({Kind::Change,WeaponSkillIndicators,1});request=model.Click({Kind::Apply});
+    Check(vrsettings::Submit(request)&&vrsettings::Poll(name),"weapon indicator opt-in saves");
+    saved=vrsettings::Read();
+    Check(saved.values[WeaponSkillIndicators]==1&&Int(path,L"interactions",L"weapon_skill_indicators")==1,"weapon indicator opt-in survives reload");
+    model.Open(saved);model.Click({Kind::Change,WeaponSkillIndicators,1});request=model.Click({Kind::Apply});
+    Check(vrsettings::Submit(request)&&vrsettings::Poll(name),"weapon indicators can be hidden again");
+    saved=vrsettings::Read();Check(saved.values[WeaponSkillIndicators]==0&&saved.values[SkillGestures]==1,"hiding indicators preserves weapon skill gestures");
     Check(saved.values[ControllerLabels]==0,"existing INI defaults to automatic labels");
     model.Open(saved);model.Click({Kind::Tab,int(Page::VR)});model.Click({Kind::ControllerMenu});
     model.Click({Kind::ControllerChoice,int(framevr::controllers::Choice::Index)});request=model.Click({Kind::Apply});

@@ -78,9 +78,11 @@ std::vector<uint8_t> Paint(const Model& m,Hit hover,const char* runtimeStatus,co
             text(h.key,{x+18,y+5,550,31},false,false,RGB(116,220,219));
             text(h.action,{x+18,y+33,550,34});
         }
-        text(m.Get()[Motion]>.5f?"Left trigger skill powers supported bow/shield gestures. Each wheel edits five bindings using the opposite laser.":"Motion combat is off. Enable it on the VR tab for swings, bow draw, javelin throws and the wheel.",{40,788,1200,42});
+        text(Definitions[WeaponSkillIndicators].label,{40,783,875,32});
+        text(Definitions[WeaponSkillIndicators].detail,{40,815,875,29},false,false,quiet);
+        button(WeaponIndicatorsBox,m.Get()[WeaponSkillIndicators]>.5f?"On":"Off",{Kind::Change,WeaponSkillIndicators,1},false,m.ready&&!m.Busy());
         const auto panelHelp="Panels: Left Trigger = Ctrl; Right Grip = Shift; Right "+labels.Button(0,2)+" = Back.";
-        text(panelHelp.c_str(),{40,832,1200,42},false,false,quiet);
+        text(panelHelp.c_str(),{40,845,1200,29},false,false,quiet);
     }else{
         if(m.page==Page::VR){
             char status[128];std::snprintf(status,sizeof status,"Headset / controllers   L: %s / R: %s",

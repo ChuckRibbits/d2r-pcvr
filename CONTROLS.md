@@ -113,6 +113,13 @@ does not directly edit saves or invent extra game-owned skill records.
 
 ## Weapon skill gestures
 
+Active skill icons and name panels beside the weapons are **off by default**.
+Review assignments by opening either hand's wheel. To restore the weapon
+indicators, open **VR Settings > Controls > Weapon skill indicators**, turn it
+**On**, and press **Apply**. This changes both hands' visual indicators only;
+assigned spells and weapon skill gestures keep working. The saved preference
+is `[interactions] weapon_skill_indicators=0` (hidden) or `1` (shown).
+
 The trigger skill is the persistent gesture skill for its hand. Small hand-side
 icons show the assignments. Left-trigger Smite supports physical shield swings
 and thrusts when a shield and its native hook are available. Supported arrow
