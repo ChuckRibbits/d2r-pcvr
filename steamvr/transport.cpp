@@ -1871,7 +1871,8 @@ void EndPair() {
     XrCompositionLayerQuad wrist{XR_TYPE_COMPOSITION_LAYER_QUAD};
     if(interactionVisible) {
         if(!potionModels.Ready()&&interactionOutput.bottle>=0&&interactionOutput.bottleHand>=0) {
-            auto pose=motionInput.hand[interactionOutput.bottleHand];pose.p=pose.p+math::Rotate(pose.q,{0,.055f,0});
+            auto pose=motionInput.hand[interactionOutput.bottleHand];pose.q=potions::HeldRotation(pose.q);
+            pose.p=pose.p+math::Rotate(pose.q,{0,.055f,0});
             motionQuad(bottle,XrPose(pose),.075f,.15f,{{768,512},{128,256}},interactionChain);
         }
         const bool lookingDown=math::Rotate(Q(head.orientation),{0,0,-1}).y<-.60f;
