@@ -1,5 +1,13 @@
 # Clean Windows installation and agent handoff — October 10, 2026
 
+**v0.3.12 backup discovery:** PR #30 finds verified original backups in known
+helper/source locations and existing VR launch routing, prefills the wizard,
+validates on Next and preserves the selected Steam account. Per-game receipts
+continue to remember adopted backups; switching games clears the old hint.
+76 Python checks and eight isolated compiled-wizard checks passed, plus a
+read-only existing-install probe. No new real-game install or headset test.
+Reuse the phase 1 binaries below with their original source provenance.
+
 **v0.3.11 installer correction:** PR #28 accepts both reviewed official
 D2RLoader 1.3.1 archives after upstream repackaged the ZIP under the same URL.
 All four payload files are byte-identical; unknown hashes remain blocked.

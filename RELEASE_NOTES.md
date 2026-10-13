@@ -1,4 +1,4 @@
-# D2R PCVR v0.3.11 — Windows preview
+# D2R PCVR v0.3.12 — Windows preview
 
 Play **Diablo II: Resurrected in VR on Windows** with
 **SteamVR or Virtual Desktop (VDXR)**. This preview is for **local offline
@@ -27,7 +27,28 @@ VDXR is available but has not yet been confirmed. The Steam desktop client
 is required for library shortcuts, including with the Battle.net edition.
 **Battle.net owners do not need to purchase a second copy through Steam.**
 
-## What's new: installer checksum fix
+## What's new: easier installation backup recovery
+
+- **Find older backups automatically:** setup checks known backup locations and
+  the old helper folder referenced by your VR launch settings. A single verified
+  match for the selected game is filled in on the backup page.
+- **Remember verified backups:** successful upgrades copy and verify backups in
+  the permanent helper folder and record their locations for future setup runs.
+  Valid existing records continue without showing the backup-selection page.
+- **Check before proceeding:** clicking Next validates the selected backup.
+  Switching game copies clears the previous suggestion, while your selected
+  Steam account stays selected during validation.
+- **Clearer folder guidance:** EXE backups normally live in
+  `%LOCALAPPDATA%\Programs\D2R PCVR\setup-backups\game`. ZIP users should look
+  inside the original extracted folder under `setup-backups\game`; manual
+  installs normally use `build-frame\backups`. A development checkout under
+  your Windows user folder is not required.
+
+Only locate a backup if setup asks. If the original backup was deleted or was
+never created by a compatible installer, automatic discovery cannot recreate
+it; keep the existing installation and report the previous installation method.
+
+## Included: installer checksum fix
 
 - **Fix fresh installation failures:** D2RLoader repackaged its 1.3.1 ZIP under
   the same filename. Its contents are unchanged, but older PCVR installers reject
@@ -36,7 +57,7 @@ is required for library shortcuts, including with the Battle.net edition.
   change. Errors include expected and received SHA-256 values for troubleshooting.
   Existing verified dependency caches remain usable.
 - **Retry with this installer:** if v0.3.10 stopped with a D2RLoader checksum
-  mismatch, download **D2R-PCVR-Setup-0.3.11.exe** and run setup again. Keep
+  mismatch, download **D2R-PCVR-Setup-0.3.12.exe** and run setup again. Keep
   existing helper folders and backups. Disabling antivirus does not resolve
   the changed upstream checksum; keep protection enabled.
 
@@ -62,7 +83,7 @@ resolution default. The experimental phase 2 renderer is not included.
 - **Installer file-access errors:** setup identifies the dependency it could not
   read and points to Windows Security Protection History when relevant.
 
-Run **D2R-PCVR-Setup-0.3.11.exe** for graphical setup, or use the portable ZIP.
+Run **D2R-PCVR-Setup-0.3.12.exe** for graphical setup, or use the portable ZIP.
 The EXE includes a private Python runtime and creates the matching shortcuts.
 Choose **Update / repair and keep calibration and video settings** when upgrading;
 keep existing setup backups. Normal desktop Play and Windows removal are retained.
@@ -72,13 +93,18 @@ Full-screen automap is available through the game's normal map controls.
 
 ## Validation and remaining checks
 
-The checksum correction passes **63 installer checks**, including both reviewed
-archive variants, unknown-download rejection, exact verification after saving,
-and error propagation to the graphical setup without changing game/save/Steam
-files. A fresh official loader download passes verification, and both approved
-caches work without another download. All four loader payload files match the
-previous archive byte for byte. No new real-game installation or headset session
-was performed for this installer-only correction.
+The installer suites pass **76 Python checks**, covering automatic discovery,
+complete upgrade chains, corrupt/missing backups, separate game copies, saved
+backup records, both approved dependency archives and unknown-download rejection.
+The compiled wizard also passed eight isolated UI checks with a stub backend,
+including prefill, invalid-folder rejection, game switching and Steam-account
+preservation. A read-only probe found an existing installation's recorded backups
+without prompting. No new real-game installation or headset session was performed
+for this installer update.
+
+The previous checksum release verified a fresh official loader download and
+reuse of both approved caches. All four loader payload files matched the
+previous archive byte for byte; this release retains that correction.
 
 The unchanged phase 1 renderer previously passed **43 CTest checks**. Its
 v0.3.10 release also passed **84 Python checks** covering setup, repair/removal,
@@ -134,7 +160,7 @@ reporter's detailed installation log.
 First launch your purchased game normally through its store, finish the account
 prompts, load an offline character, then use **Save & Exit** and fully close D2R.
 
-For graphical setup, download **D2R-PCVR-Setup-0.3.11.exe**, run it and follow the
+For graphical setup, download **D2R-PCVR-Setup-0.3.12.exe**, run it and follow the
 wizard. Fully exit Steam when asked. Reopen Steam, connect your headset and use
 the matching VR shortcut with an offline character.
 
@@ -167,5 +193,5 @@ Use the unmodded game for multiplayer. Keep **setup-backups**, including
 backups in older extracted release folders, until removal is complete.
 
 Read **INSTALL-WINDOWS.md** and **CONTROLS.md** in the helper folder or ZIP, or open the
-[installation guide](https://github.com/bearstonem/d2r-pcvr/blob/v0.3.11-windows-preview/INSTALL-WINDOWS.md)
-and [controller reference](https://github.com/bearstonem/d2r-pcvr/blob/v0.3.11-windows-preview/CONTROLS.md).
+[installation guide](https://github.com/bearstonem/d2r-pcvr/blob/v0.3.12-windows-preview/INSTALL-WINDOWS.md)
+and [controller reference](https://github.com/bearstonem/d2r-pcvr/blob/v0.3.12-windows-preview/CONTROLS.md).
