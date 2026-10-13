@@ -32,6 +32,7 @@
 #include "gameplay.h"
 #include "quick_cast.h"
 #include "interaction_ui.h"
+#include "wrist_compass.h"
 #include "interaction_paint.h"
 #include "latest_worker.h"
 #include "interaction_icons.h"
@@ -98,6 +99,9 @@ interaction::Engine interactions;
 interaction::Input interactionInput;
 interaction::Output interactionOutput;
 XrSwapchain interactionChain=XR_NULL_HANDLE;
+XrSwapchain compassChain=XR_NULL_HANDLE;
+compass::Heading wristHeading;
+bool compassFrame=false,compassAtlasReady=false;
 XrSwapchain settingsChain=XR_NULL_HANDLE;
 settings::Model settingsModel;
 calibration::Flow bodyCalibration;
@@ -399,6 +403,7 @@ void CancelShieldCast() {
     if(shieldCast.issued)shieldCast.cancelled=true;else shieldCast={};
 }
 void ClearInput() {
+    wristHeading.Reset();compassFrame=false;
     panelinput::WorldInput(false);
     gamestate::MenuMap(false);
     menuControls.Suspend();menuNavigation.Reset();nativeMenuPad={};laserClick={};panelinput::UseController();
@@ -615,6 +620,9 @@ bool SetupPointer(DXGI_FORMAT eyeFormat) {
 // Native skill icons, names and belt counts require a separate read-only UI adapter.
 bool SetupGameplay(DXGI_FORMAT eyeFormat) {
     if(!interactionPainter.Start())Say("Frame UI: background painter unavailable; interaction artwork cannot refresh");
+    const auto compassPixels=compass::Paint();
+    compassAtlasReady=!compassPixels.empty()&&UploadAtlas(compassChain,eyeFormat,compass::Width,compass::Height,compassPixels);
+    if(!compassAtlasReady)Say("Frame wrist compass: static atlas unavailable");
     BITMAPINFO info{};info.bmiHeader.biSize=sizeof(BITMAPINFOHEADER);
     info.bmiHeader.biWidth=1024;info.bmiHeader.biHeight=-1024;info.bmiHeader.biPlanes=1;info.bmiHeader.biBitCount=32;
     void* bits=nullptr;HDC dc=CreateCompatibleDC(nullptr);
@@ -1173,6 +1181,7 @@ void Input() {
     interactionInput.spell=motion.Selection()>=0;interactionInput.wheel=motionInput.palette;interactionInput.cancel=motionInput.cancel;
     interactionInput.quickCast=motionInput.quickCast;
     interactionInput.wristMap=vrsettings::Read().values[settings::WristMap]>.5f;
+    interactionInput.wristCompass=vrsettings::Read().values[settings::WristCompass]>.5f;
     interactionInput.reservedLeft=(controls.buttons&menus::LeftStick)!=0;interactionInput.trigger=motionInput.trigger;interactionInput.hover=motionInput.hover;
     interactionInput.leftTrigger=controls.lt/255.f;
     if(!interactionPaintValid||interactionPaintContext!=interaction::Context(interactionInput.snapshot,interactionOutput,
@@ -1400,7 +1409,7 @@ bool Begin() {
     timing.displayPeriodMs=double(frameState.predictedDisplayPeriod)*1e-6;
     XrFrameBeginInfo bi{XR_TYPE_FRAME_BEGIN_INFO};
     if(!Check(pBeginFrame(session,&bi),"begin frame"))return false;
-    frame=true;render=frameState.shouldRender;valid=false;motionHeadTracked=false;
+    frame=true;render=frameState.shouldRender;valid=false;motionHeadTracked=false;compassFrame=false;
     bowRenderTime=GetTickCount64();
     const bool loaded=inWorld&&inWorld();
     if(loaded&&!worldWasLoaded)worldCalibrationPending=true;
@@ -1824,6 +1833,7 @@ void EndPair() {
     auto interactionPose=[](interaction::Pose p){return XrPose({p.p,p.q});};
     std::array<XrCompositionLayerQuad,4> beltQuads;
     XrCompositionLayerQuad wrist{XR_TYPE_COMPOSITION_LAYER_QUAD},wristMap{XR_TYPE_COMPOSITION_LAYER_QUAD};
+    XrCompositionLayerQuad wristCompass{XR_TYPE_COMPOSITION_LAYER_QUAD},compassMarker{XR_TYPE_COMPOSITION_LAYER_QUAD};
     if(interactionVisible) {
         if(!potionModels.Ready()&&interactionOutput.bottle>=0&&interactionOutput.bottleHand>=0) {
             auto pose=motionInput.hand[interactionOutput.bottleHand];pose.p=pose.p+math::Rotate(pose.q,{0,.055f,0});
@@ -1847,6 +1857,17 @@ void EndPair() {
             if(wrist.subImage.swapchain&&mapEye.copied&&interaction::WristMapWanted(interactionInput,interactionOutput,GetTickCount64()))
                 motionQuad(wristMap,interactionPose(interaction::WristMapPanel(interactionInput.hand[1],interactionInput.head)),
                     interaction::WristMapSize,interaction::WristMapSize,{{0,0},{int32_t(mapSide),int32_t(mapSide)}},mapEye.chain);
+            if(compassAtlasReady&&compassFrame&&count+2<=contentLimit&&
+               interaction::WristCompassWanted(interactionInput,interactionOutput,GetTickCount64())) {
+                auto compassPose=interaction::WristCompassPanel(interactionInput.hand[1],interactionInput.head,interactionInput.wristMap);
+                motionQuad(wristCompass,interactionPose(compassPose),interaction::WristCompassWidth,interaction::WristCompassHeight,
+                    {{compass::Crop(wristHeading.bearing),0},{compass::Window,compass::StripHeight}},compassChain);
+                constexpr float markerWidth=interaction::WristCompassWidth*compass::MarkerWidth/compass::Window;
+                constexpr float markerHeight=interaction::WristCompassHeight*compass::MarkerHeight/compass::StripHeight;
+                compassPose.p=compassPose.p+math::Rotate(compassPose.q,{0,(interaction::WristCompassHeight-markerHeight)*.5f,.001f});
+                motionQuad(compassMarker,interactionPose(compassPose),markerWidth,markerHeight,
+                    {{0,compass::StripHeight},{compass::MarkerWidth,compass::MarkerHeight}},compassChain);
+            }
         }
     }
     if(gameplayVisible&&!interactionOutput.wheel&&!interactionOutput.stowed&&interactionOutput.bottle<0&&
@@ -2075,11 +2096,13 @@ bool BowPreviewPose(bowflight::Shot& pose,bool& visible) {
     if(!bowflight::Allowed(bowPreviewPose,gate,GetTickCount64()))return false;
     pose=bowPreviewPose;visible=bowPreviewVisible;return true;
 }
-bool View(float out[16],const float hero[3],float eyeHeight,float userEyeHeight,float bodyHeading,float recenterYaw,int eye) {
+bool View(float out[16],const float hero[3],float eyeHeight,float userEyeHeight,float bodyHeading,float recenterYaw,int eye,float mapNorth) {
     std::lock_guard lock(mutex);if(!Active())return false;
     if(std::fabs(recenterYaw-lastRecenter)>.001f){origin=V(head.position);lastRecenter=recenterYaw;}
     const float upm=eyeHeight/std::max(userEyeHeight,.5f);
     const auto base=math::Yaw(bodyHeading-recenterYaw);
+    if(eye<0)compassFrame=wristHeading.Update(gamestate::LocalPlayer(),motionHeadTracked,
+        Q(head.orientation),bodyHeading-recenterYaw,mapNorth);
     const auto resolveBow=[&](bowflight::Shot shot) {
         const auto offset=math::Rotate(base,shot.origin-origin);
         shot.origin={hero[0]/upm+offset.x,(hero[1]+eyeHeight)/upm+offset.y,hero[2]/upm+offset.z};
@@ -2127,6 +2150,7 @@ void Shutdown() {
     atlasUploads.clear();interactionPaintKey=~0ull;interactionPrefetchSession=0;interactionPrefetchRevision=~0u;interactions.Reset();interactionstate::Cancel();
     interactionPaintRequest=0;interactionRequestedKey=~0ull;interactionPaintValid=false;interactionPaintContext={};interactionRequestedContext={};interactionPaintAt=0;
     if(interactionChain&&pDestroySwapchain)pDestroySwapchain(interactionChain);interactionChain=XR_NULL_HANDLE;
+    if(compassChain&&pDestroySwapchain)pDestroySwapchain(compassChain);compassChain=XR_NULL_HANDLE;wristHeading.Reset();compassFrame=compassAtlasReady=false;
     if(gameplayChain&&pDestroySwapchain)pDestroySwapchain(gameplayChain);gameplayChain=XR_NULL_HANDLE;
     if(pointerChain&&pDestroySwapchain)pDestroySwapchain(pointerChain);pointerChain=XR_NULL_HANDLE;
     if(aimSpace&&pDestroySpace)pDestroySpace(aimSpace);aimSpace=XR_NULL_HANDLE;

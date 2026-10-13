@@ -111,6 +111,16 @@ back of your left wrist. **VR Settings > VR > Wrist minimap** is **On** by
 default; turn it **Off** and click **Apply** to hide only the wrist copy.
 The wheel's **MAP** tab remains available either way.
 
+A slim bronze **wrist compass** sits above the left wrist minimap. Its fixed
+center marker shows your facing direction; **N** is the top of the native map,
+with **E/S/W** and diagonal bearings around it. Physical turns, stick turns and
+recenter use the same orientation as the stereo camera. Looking straight down
+retains the last reliable horizontal head direction so the bearings do not flip.
+The strip appears with the watch gesture and hides while a wheel or menu is open.
+**VR Settings > VR > Wrist compass** defaults to **On** and can be disabled
+independently. With the wrist minimap off, it moves directly above the vitals.
+The compass shows direction only; it does not add destination or quest markers.
+
 The Map tab preserves your selected spell and uses the native explored areas
 and markers. Choose the left or right corner minimap layout in game options;
 full-screen automap capture is unsupported. When neither the wrist nor the Map
