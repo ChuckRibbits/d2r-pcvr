@@ -4,10 +4,10 @@
 
 namespace framevr::panels {
 inline constexpr char TabbedMenu[]="UISwitcher";
-// These full management canvases share one opaque image against black in XR.
+// These management and waypoint canvases share one opaque image against black in XR.
 // VendorPanelLayout also hosts NPC gambling; keep speech/quest panels spatial.
 inline bool OpaqueBackground(std::string_view name) {
-    return name==TabbedMenu||name.starts_with("Vendor")||
+    return name==TabbedMenu||name.starts_with("Waypoint")||name.starts_with("Vendor")||
         name.starts_with("Trade")||name.starts_with("Gamble")||
         name.starts_with("Bank")||name.starts_with("Stash")||
         name.starts_with("PlayerInventory")||name.starts_with("HoradricCube")||

@@ -1784,7 +1784,7 @@ void EndPair() {
         XrSwapchainImageReleaseInfo release{XR_TYPE_SWAPCHAIN_IMAGE_RELEASE_INFO};
         Check(pReleaseSwapchainImage(interactionChain,&release),"release interaction atlas");interactionAtlasPending=false;
     }
-    // Tabbed and trade menus use the same black background in both eyes.
+    // Tabbed, trade and waypoint menus use the same black background in both eyes.
     // Submit just their shared opaque quad: no different cached world per eye.
     const bool blackMenu=opaqueMenuMode&&workspacePlaced&&uiEye.copied&&uiCrop[2]>0&&!settingsModel.open&&!bodyCalibration.Active();
     if(layer&&!blackMenu)layers[count++]=layer;

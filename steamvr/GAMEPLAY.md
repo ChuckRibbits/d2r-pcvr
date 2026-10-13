@@ -114,7 +114,7 @@ prior visibility. The wrist retains health, mana, level and XP progress.
 ### Inventory, conversations and trading in VR
 
 Native in-game menus share a room-anchored surface in front of you. The full
-tabbed character menu, stash, inventory, cube and trade surfaces use one opaque
+tabbed character menu, stash, inventory, cube, trade and waypoint surfaces use one opaque
 black background in both eyes. Dialogue and journal panels retain the world
 backdrop. Inventory/equipment, NPC
 choices and speech, shops, stash, cube, waypoint, skills and character panels
