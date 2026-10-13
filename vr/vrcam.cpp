@@ -2977,6 +2977,26 @@ SpellHoverTargetFn OrigSpellHoverTarget=nullptr;
 SpellResolveFn OrigSpellResolve=nullptr;
 std::atomic<bool> g_spellAimReady{false};
 thread_local framevr::spellaim::Cast g_spellCast;
+using SpellCommandFn=int(*)(framevr::spellaim::NativeCommand*);
+SpellCommandFn OrigSpellCommand=nullptr;
+thread_local framevr::spellaim::CommandAim g_spellCommand;
+std::atomic<bool> g_spellCommandReady{false};
+int HookSpellCommand(framevr::spellaim::NativeCommand* command) {
+    // Only the current local VR MapClick owns this stack command. An unrelated
+    // validation on this thread must not inherit target suppression.
+    const auto oldTarget=command->target;
+    const int oldX=command->x,oldY=command->y;
+    const bool changed=framevr::spellaim::ApplyCommand(g_spellCommand,*command);
+    const int result=OrigSpellCommand(command);
+    if(changed) {
+        static std::atomic<ULONGLONG> reported{0};
+        const auto now=GetTickCount64();auto before=reported.load();
+        if(now-before>1000&&reported.compare_exchange_strong(before,now))
+            LogF("Frame spell command: target %s, point %d,%d -> %d,%d, flags %x, native check %d",
+                oldTarget?"selected":"none",oldX,oldY,command->x,command->y,command->flags,result);
+    }
+    return result;
+}
 bool DirectedSpellAim(float& gx,float& gy) {
     float origin[3],direction[3];
     // Native OpenXR poses already use world X/Z == grid X/Y. The legacy
@@ -3023,7 +3043,7 @@ void HookSpellResolve(uintptr_t manager,void* unit,bool assist,float* x,float* y
         static std::atomic<ULONGLONG> reported{0};
         const auto now=GetTickCount64();auto before=reported.load();
         if(now-before>2000&&reported.compare_exchange_strong(before,now))
-            LogF("Frame spell aim: native projectile cast follows weapon %.3f %.3f; automatic target selection off",cast.x,cast.y);
+            LogF("Frame spell aim: resolver direction %.3f %.3f, point %.2f %.2f",cast.x,cast.y,*x,*y);
     }
 }
 #endif
@@ -3764,6 +3784,20 @@ uint64_t HookMapClick(void* unit, int type, int x, int y, uint64_t flags) {
     // Mouse menu events must never become world movement, attacks, or loot,
     // including a delayed release after the native dialog closes itself.
     if(g_enabled.load()&&g_inWorld.load()&&(gamestate::MenuOpen()||panelinput::BlocksWorld()))return 0;
+    struct CommandScope {
+        framevr::spellaim::CommandAim previous=g_spellCommand;
+        CommandScope(){g_spellCommand={};}
+        ~CommandScope(){g_spellCommand=previous;}
+    } scope;
+    const auto caller=uintptr_t(_ReturnAddress());
+    float px=0,py=0,dx=0,dy=0;int tx=0,ty=0;
+    if(g_spellCommandReady.load()&&framevr::spellaim::ControllerCast(type)&&
+       (caller==d2rsig::Addr(spellaimabi::CastClickRva+5)||caller==d2rsig::Addr(spellaimabi::RepeatClickRva+5))&&
+       SpellPlayerPosition(unit,px,py)&&DirectedSpellAim(dx,dy)&&
+       framevr::spellaim::ControllerPoint(px,py,{dx,0,dy},tx,ty)) {
+        g_spellCommand={reinterpret_cast<uintptr_t>(unit),tx,ty};
+        x=tx;y=ty;
+    }
 #endif
     if (unit && (type == 0 || type == 1 || type == 3 || type == 4) && !(flags & 0xFF) &&
         g_set.flatClickShoot.load() && KeyMoveMode() && ShooterActive()) {
@@ -4856,6 +4890,15 @@ void InstallHooks() {
     }
 #ifdef D2RVR_NATIVE_OPENXR
     static bool spellController=false,spellHover=false,spellResolve=false;
+    if(!g_spellCommandReady.load()&&
+       d2rsig::Check(spellaimabi::CastClickRva,spellaimabi::CastClickSig,sizeof spellaimabi::CastClickSig)&&
+       d2rsig::Check(spellaimabi::RepeatClickRva,spellaimabi::RepeatClickSig,sizeof spellaimabi::RepeatClickSig)) {
+        if(d2rsig::Hook(spellaimabi::CommandRva,spellaimabi::CommandSig,sizeof spellaimabi::CommandSig,
+            reinterpret_cast<void*>(&HookSpellCommand),reinterpret_cast<void**>(&OrigSpellCommand))) {
+            g_spellCommandReady=true;
+            Log("Frame spell aim: final controller command target override ready");
+        }
+    }
     if(!g_spellAimReady.load()&&g_h.point&&
        d2rsig::Check(spellaimabi::ControllerCallRva,spellaimabi::ControllerCallSig,sizeof spellaimabi::ControllerCallSig)&&
        d2rsig::Check(spellaimabi::HoverCallRva,spellaimabi::HoverCallSig,sizeof spellaimabi::HoverCallSig)&&
@@ -4884,7 +4927,7 @@ void InstallHooks() {
 
 bool AllHooksIn() {
 #ifdef D2RVR_NATIVE_OPENXR
-    if(!g_spellAimReady.load())return false;
+    if(!g_spellAimReady.load()||!g_spellCommandReady.load())return false;
 #endif
     return g_h.camera && g_h.skeleton && g_h.target && g_h.facing && g_h.point && g_h.blit && g_h.interact;
 }

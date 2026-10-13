@@ -62,5 +62,26 @@ int main() {
     int cx=12,cy=34;
     Check(!spellaim::ControllerPoint(NAN,0,{1,0,0},cx,cy)&&cx==12&&cy==34,"invalid controller position cannot change output");
     Check(!spellaim::ControllerPoint(65530,100,{1,0,0},cx,cy),"out-of-world controller target is refused before integer conversion");
+    for(int type=0;type<18;++type)
+        Check(spellaim::ControllerCast(type)==(type==7||type==8||type==9||type==10),"only native controller skill press/repeat owns a command");
+    for(int degree=0;degree<360;++degree) {
+        const float angle=degree*3.14159265f/180;
+        Check(spellaim::ControllerPoint(4730.25f,4621.75f,{std::cos(angle),0,std::sin(angle)},cx,cy),"rotating hand yields a command target");
+        // Native MapClick has reacquired a selected unit and its old point,
+        // after our resolver returned. Cover left/right press and repeat flags.
+        for(uint32_t flags:{5u,9u,6u,10u}) {
+            spellaim::NativeCommand command{flags,0x1234,123,456,4730,4681};
+            Check(spellaim::ApplyCommand({123,cx,cy},command),"final local command removes reacquired native target");
+            Check(command.target==0&&command.flags==flags&&command.padding==0x1234&&command.actor==123,"only target fields change; native press/repeat and actor survive");
+            const auto actual=math::Normalized(math::Vec{command.x-4730.25f,0,command.y-4621.75f});
+            Check(actual.x*std::cos(angle)+actual.z*std::sin(angle)>.9995f,"final command retains every intermediate heading across all four quadrants");
+        }
+    }
+    spellaim::NativeCommand untouched{6,0,123,456,11,22};
+    for(const auto aim:{spellaim::CommandAim{},spellaim::CommandAim{124,100,200},
+                       spellaim::CommandAim{123,0,200},spellaim::CommandAim{123,100,65535}}) {
+        Check(!spellaim::ApplyCommand(aim,untouched),"unowned, other actor and invalid command aim are refused");
+        Check(untouched.target==456&&untouched.x==11&&untouched.y==22,"refused command keeps native targeting intact");
+    }
     std::puts("Spell aiming: native behavior, scoped targeting, movement-independent cast resolution and cell precision passed");
 }

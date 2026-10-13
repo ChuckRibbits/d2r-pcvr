@@ -68,9 +68,26 @@ struct Scope {
     }
     ~Scope(){creation=saved;}
 };
-uintptr_t Client(uintptr_t params,int flags) {Scope scope(params,0);return originalClient(params,flags);}
+// Read-only diagnostics at actual native missile creation, separate from the
+// earlier aim resolver. Do not claim a correct flight from the input ray alone.
+void ReportSpell(uintptr_t params,int side,uintptr_t created) {
+    uintptr_t owner=0;uint32_t missile=0,flags=0;int points[4]{};
+    if(!enabled.load()||!Read(params+0x20,missile)||missile==0||
+       !Read(params+8,owner)||!IsLocalOwner(owner))return;
+    static std::atomic<ULONGLONG> reported[2]{};
+    const auto now=GetTickCount64();auto before=reported[side].load();
+    if(now-before<1000||!reported[side].compare_exchange_strong(before,now))return;
+    if(!Read(params,flags)||!Read(params+0x24,points))return;
+    char line[240];snprintf(line,sizeof line,"Frame spell missile: %s id %u, flags %x, origin %d,%d target %d,%d, created %s",
+        side?"server":"client",missile,flags,points[0],points[1],points[2],points[3],created?"yes":"no");
+    framevr::logging::Write(line);
+}
+uintptr_t Client(uintptr_t params,int flags) {
+    Scope scope(params,0);const auto unit=originalClient(params,flags);ReportSpell(params,0,unit);return unit;
+}
 uintptr_t Server(uintptr_t game,uintptr_t params) {
     Scope scope(params,1);const auto unit=originalServer(game,params);
+    ReportSpell(params,1,unit);
     if(unit)bowvr::Created(game,params,unit);
     return unit;
 }

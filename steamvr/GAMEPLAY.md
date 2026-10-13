@@ -97,10 +97,19 @@ Projectile targets follow the sampled aim even while walking backward or
 strafing. They use the current native player position and world-space weapon
 direction, without the legacy walking calibration; the final target is corrected
 even when the native movement path skips the usual attack-point helper.
+The controller's press/repeat command is corrected again after its second
+selected-unit lookup, before native command validation. This override changes
+only the current local directional cast's target, without changing native
+action flags, costs or cadence. Resolver, final-command and missile-creation
+diagnostics distinguish the requested aim from what native creation receives.
+The owner confirmed separate trigger spells now work, but reported fire-spell
+direction sticking between quarter turns in the preceding test build. The
+final-command correction is a candidate fix and still needs headset validation;
+smooth resolver vectors alone do not establish correct projectile flight.
 While a trigger skill or quick-cast shortcut is held, locomotion stays on the
 native controller stick instead of the legacy direct-walk reinjection path.
 Legacy aim modes cannot replace that stick or hold stand-still Shift during a
-VR skill cast. Native cast-animation pauses still require in-game verification;
+VR skill cast. The owner reports that casting still stops character movement;
 this input fix does not remove the game's animation/state restrictions.
 Teeth keeps its native fan, centered on the weapon's horizontal direction.
 Ground placements, buffs, summons and corpse-only skills keep native targeting.
