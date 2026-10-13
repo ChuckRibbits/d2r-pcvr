@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 import shutil
 import tempfile
+import textwrap
 import unittest
 from unittest.mock import patch
 
@@ -261,7 +262,7 @@ class NativeSetupTests(unittest.TestCase):
             root = Path(directory)
             app, game, client, saves, profile, values = self.fixture(root)
             runtime_python = app / '.runtime/python/python.exe'
-            def install_files(command, **kwargs):
+            def install_files(command, helper_root, **kwargs):
                 self.assertIn('--download-deps', command)
                 self.assertIn(str(game), command)
                 snapshot = self.snapshot(app / 'setup-backups/game/20260101', game, saves)
@@ -269,7 +270,7 @@ class NativeSetupTests(unittest.TestCase):
                 install.write_record(game, {'game': str(game), 'snapshots': [str(snapshot)]})
             with patch.object(setup, 'require_closed'), patch.object(setup, 'verify_release', return_value={'sha256': {}}), \
                     patch.object(setup.sys, 'executable', str(runtime_python)), \
-                    patch.object(setup.subprocess, 'run', side_effect=install_files), \
+                    patch.object(setup, 'run_installer', side_effect=install_files), \
                     contextlib.redirect_stdout(io.StringIO()):
                 result = native.install_selected(values, app)
                 self.assertIn(str(runtime_python), result['launch_options'])
@@ -283,6 +284,54 @@ class NativeSetupTests(unittest.TestCase):
             self.assertEqual(steam.decode_binary((profile / 'config/shortcuts.vdf').read_bytes())['shortcuts'], {})
             self.assertFalse((game / uninstall.PLUGIN).exists())
             self.assertEqual((saves / 'Character.d2s').read_bytes(), b'current character')
+
+    def test_hidden_battlenet_child_error_survives_rollback_with_saves_and_config_kept(self):
+        with tempfile.TemporaryDirectory() as directory:
+            app, game, client, saves, profile, values = self.fixture(Path(directory), 'battlenet')
+            original_settings = (saves / 'Settings.json').read_bytes()
+            original_config = (profile / 'config/localconfig.vdf').read_bytes()
+            selection = dict(manifest={}, store='battlenet', version='3.3.93847', headset='Quest 3',
+                connections=['steamvr'], steam=client, game=game, profile=profile, saves=saves,
+                runtime=client / 'steamapps/common/SteamVR/steamxr_win64.json', mode=1)
+            # This real child changes only the temporary fixture. It journals
+            # its partial write just as install.py does, then reports a failure.
+            child = textwrap.dedent('''
+                import argparse, json, shutil, sys
+                from pathlib import Path
+                parser = argparse.ArgumentParser()
+                for name in ('game', 'saves', 'backup-dir'):
+                    parser.add_argument('--' + name, type=Path)
+                args, _ = parser.parse_known_args()
+                snapshot = args.backup_dir / 'fixture-failed-attempt'
+                (snapshot / 'saves').mkdir(parents=True)
+                shutil.copy2(args.saves / 'Settings.json', snapshot / 'saves/Settings.json')
+                plugin = Path('d2rloader/plugins/d2rl-vrcam.dll')
+                (snapshot / 'manifest.json').write_text(json.dumps(dict(game=str(args.game),
+                    saves=str(args.saves), installed=[str(plugin)], previous_mod=False)))
+                (args.game / plugin).parent.mkdir(parents=True, exist_ok=True)
+                (args.game / plugin).write_bytes(b'partial fixture install')
+                (args.saves / 'Settings.json').write_text('{"changed": true}')
+                print('Preparing fixture Battle.net installation...', flush=True)
+                raise SystemExit('PermissionError: fixture blocked mod file')
+            ''')
+            self.put(app / 'steamvr/install.py', child.encode('utf-8'))
+            with patch.object(setup, 'require_closed'), \
+                    patch.object(native, 'validate_choices', return_value=selection), \
+                    contextlib.redirect_stdout(io.StringIO()) as output:
+                with self.assertRaisesRegex(ValueError, 'PermissionError: fixture blocked mod file'):
+                    native.install_selected(values, app)
+            self.assertIn('PermissionError: fixture blocked mod file', output.getvalue())
+            self.assertIn('Changes from this attempt were restored.', output.getvalue())
+            log = (app / 'setup-install.log').read_text(encoding='utf-8')
+            self.assertIn('PermissionError: fixture blocked mod file', log)
+            self.assertIn('Installer exit code: 1', log)
+            self.assertFalse((game / uninstall.PLUGIN).exists())
+            self.assertFalse((game / install.RECORD).exists())
+            self.assertEqual((saves / 'Settings.json').read_bytes(), original_settings)
+            self.assertEqual((saves / 'Character.d2s').read_bytes(), b'current character')
+            self.assertEqual((profile / 'config/localconfig.vdf').read_bytes(), original_config)
+            self.assertFalse((profile / 'config/shortcuts.vdf').exists())
+            self.assertEqual(native.managed_state(app)['installations'], [])
 
     def test_imports_original_legacy_backup_with_or_without_newer_receipt(self):
         for receipt in (False, True):
