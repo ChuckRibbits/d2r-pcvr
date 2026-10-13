@@ -20,6 +20,11 @@ int main(){
         compass.Click(At(Page::VR,ValueBox(row)));const auto request=compass.Click({Kind::Apply});
         Check(request.changed==(1u<<WristCompass)&&request.values[WristCompass]==0&&request.values[WristMap]==1,
             "compass can be disabled independently of wrist map");}
+    Check(s.values[WeaponSkillIndicators]==0,"weapon skill indicators default off");
+    {Model indicators;indicators.Open(s);const auto hit=At(Page::Controls,WeaponIndicatorsBox);
+        Check(hit.kind==Kind::Change&&hit.index==WeaponSkillIndicators,"controls tab exposes weapon indicator toggle");
+        indicators.Click(hit);auto request=indicators.Click({Kind::Apply});
+        Check(request.changed==(1u<<WeaponSkillIndicators)&&request.values[WeaponSkillIndicators]==1,"indicator opt-in saves only its preference");}
     Check(s.values[ControllerLabels]==0&&Normalize(ControllerLabels,99)==0&&Normalize(ControllerLabels,1.5f)==0,"unknown controller preferences use automatic");
     {Model chooser;chooser.Open(s);chooser.Click({Kind::Tab,int(Page::VR)});
         auto hit=[&](Rect r){return HitTest(chooser.page,(r.x+r.w*.5f)/Width,(r.y+r.h*.5f)/Height,chooser.controllerMenu);};

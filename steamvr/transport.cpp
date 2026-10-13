@@ -1948,7 +1948,8 @@ void EndPair() {
             }
         }
     }
-    if(gameplayVisible&&!interactionOutput.wheel&&!interactionOutput.stowed&&interactionOutput.bottle<0&&
+    const bool weaponSkillIndicators=vrsettings::Read().values[settings::WeaponSkillIndicators]>.5f;
+    if(weaponSkillIndicators&&gameplayVisible&&!interactionOutput.wheel&&!interactionOutput.stowed&&interactionOutput.bottle<0&&
        interactionPaintValid&&interactionPaintContext.cue==interactionOutput.cue&&interactionChain) {
         const auto& cue=interactionOutput.cue;
         const int side=0;
@@ -1958,7 +1959,7 @@ void EndPair() {
         if(cue.expanded)motionQuad(activeSkill,pose,.24f,.18f,{{768,0},{256,192}},interactionChain);
         else motionQuad(activeSkill,pose,.075f,.075f,{{768,0},{96,96}},interactionChain);
     }
-    if(gameplayVisible&&!interactionOutput.wheel&&!interactionOutput.stowed&&interactionOutput.bottle<0&&
+    if(weaponSkillIndicators&&gameplayVisible&&!interactionOutput.wheel&&!interactionOutput.stowed&&interactionOutput.bottle<0&&
        interactionPaintValid&&interactionPaintContext.leftCue==interactionOutput.leftCue&&interactionChain) {
         const auto& cue=interactionOutput.leftCue;
         if(cue.known&&cue.id>=0){
