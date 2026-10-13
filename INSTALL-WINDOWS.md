@@ -73,6 +73,17 @@ installer's full output. Share the error at the end of those logs when reporting
 a problem; review them for personal paths before posting. Older installers may
 only report an exit code in `setup-last.log` and do not create `setup-install.log`.
 
+If a log says a required download cannot be read, or a browser reports a virus,
+check **Windows Security > Virus & threat protection >
+[Protection history](https://support.microsoft.com/en-us/windows/security/windows-security/protection-history-in-the-windows-security-app)**
+(or your other antivirus application's history). Include the detection name,
+affected file path and time with the error report, after removing personal details.
+A readable dependency ZIP with the pinned SHA-256 is reused on retry; setup does
+not deliberately delete it. A file disappearing or becoming unreadable needs
+its security/file-access event checked. A checksum match establishes the expected
+version, not that an antivirus detection is a false positive. Keep protection enabled
+while the detection is investigated.
+
 You can rerun the EXE safely. It updates matching shortcuts without duplicates.
 When upgrading a recorded ZIP installation, it copies and verifies its referenced
 game backups into the permanent helper folder before updating the mod. Do not
