@@ -129,6 +129,31 @@ comparing clarity; the installer's 80% scene scale renders only 64% of the
 pixels at 100%. Lower resolution does not remove CPU draw/submission work.
 Keep #20 open until the reporter's bottleneck and improvement are measured.
 
+### Follow-up: periodic diagnostic stalls
+
+The ten-second hitches in the `f014e6d` session line up with
+`OnReshadePresent` calling `BusyThreads` synchronously. Its Toolhelp snapshot
+enumerates system threads before querying this process's threads. The native
+standalone scanner benchmark measured 52.078-53.467 ms (median 52.850 ms),
+consistent with the roughly 54 ms added to an otherwise 8 ms eye draw.
+
+Native builds now start a bounded diagnostics worker during plugin load.
+Present submits a value-only request and polls for the completed report;
+snapshot creation, thread queries, allocation and sorting run on the worker.
+Addon callbacks are unregistered before the worker is joined at unload. The
+worker reads OS thread counters only and never follows game pointers or uses
+XR/render resources. Percentages use elapsed thread CPU time, retaining thread
+creation identities to reject recycled IDs, instead of a cycle/CPU-time ratio
+dependent on clock speed. Worker startup failure disables the scan.
+
+`steamvr/build_windows.ps1 -Test` passes **43/43** native checks. The new fixture
+covers CPU percentages, reused IDs, absent/invalid counters, restart and
+render-side polling while the scanner is deliberately blocked. In its native
+benchmark the background scan took 53.182 ms while request submission took
+0.300 microseconds. This establishes removal of synchronous scan work from
+Present, not the resulting headset hitch reduction or an average FPS gain;
+those require a new gameplay capture. The larger two-engine-draw cost remains.
+
 ## Native Windows continuation, October 10 afternoon
 
 Native SteamVR streaming to Steam Frame now launches the mod and an offline

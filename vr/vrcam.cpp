@@ -72,6 +72,7 @@ namespace hud { void Register(); void SetHide(int mode); void SetInterfaceScale(
 #ifdef D2RVR_NATIVE_OPENXR
 #include "foveation.h"
 #include "logging.h"
+#include "thread_stats.h"
 #endif
 #include "sigscan.h"
 #include "mat4.h"
@@ -4384,6 +4385,9 @@ double CpuUs() {
 // The game's busiest threads over the last call's span, % of one core, by their
 // cycle counts (Toolhelp + QueryThreadCycleTime): "game thread 38%, 1234 92% (the
 // render thread?)". Called with the pairs/s line; the pass's own thread is marked.
+#ifdef D2RVR_NATIVE_OPENXR
+framevr::threadstats::Sampler threadStats;
+#else
 std::string BusyThreads(double spanUs) {
     static std::unordered_map<DWORD, ULONG64> last;
     std::unordered_map<DWORD, ULONG64> now;
@@ -4420,6 +4424,7 @@ std::string BusyThreads(double spanUs) {
     }
     return out;
 }
+#endif
 }  // namespace pairtime
 
 void Recenter();
@@ -7149,15 +7154,34 @@ void OnReshadePresent(reshade::api::effect_runtime*) {
     static double since = 0.0;
     static uint32_t n = 0;
     ++n;
-    if (since == 0.0) { since = t; pairtime::BusyThreads(0.0); return; }
+#ifdef D2RVR_NATIVE_OPENXR
+    static uint64_t request=0;
+    framevr::threadstats::Report report;
+    if(pairtime::threadStats.Take(request,report))
+        LogF("Frame CPU threads: %s; scan %.2f ms on diagnostics worker (percent of one core)",report.text.c_str(),report.scanMs);
+#endif
+    if (since == 0.0) {
+        since=t;
+#ifdef D2RVR_NATIVE_OPENXR
+        request=pairtime::threadStats.Submit(GetCurrentThreadId());
+#else
+        pairtime::BusyThreads(0.0);
+#endif
+        return;
+    }
     if (t - since >= 10e6) {
 #ifdef D2RVR_NATIVE_OPENXR
         const auto f=framevr::foveation::TakeStats();
         LogF("Frame foveation: %u reduced-shading draws, %u full-quality draws in sample",f.shadedDraws,f.fullDraws);
 #endif
         if (!pairtime::g_drawThread.load()) pairtime::g_drawThread.store(GetCurrentThreadId());
+#ifdef D2RVR_NATIVE_OPENXR
+        LogF("vrcam: %.1f presents/s; thread utilization sampled asynchronously",n*1e6/(t-since));
+        request=pairtime::threadStats.Submit(pairtime::g_drawThread.load());
+#else
         LogF("vrcam: %.1f presents/s; the game's busiest threads, %% of a core (present thread %lu): %s",
              n * 1e6 / (t - since), GetCurrentThreadId(), pairtime::BusyThreads(t - since).c_str());
+#endif
         since = t; n = 0;
     }
 }
@@ -7947,6 +7971,7 @@ D2RL_PLUGIN_EXPORT bool D2RLoaderLoadPlugin(const PluginContext* ctx) noexcept {
 #ifdef D2RVR_NATIVE_OPENXR
     if(!framevr::logging::Start(g_self))ctx->LogWarn("Frame buffered logger could not start; routine diagnostics disabled to protect gameplay");
     else ctx->LogInfo("Frame runtime diagnostics: d2rloader/logs/d2r-vr-frame.log (buffered, no per-message disk flush)");
+    if(!pairtime::threadStats.Start())ctx->LogWarn("Frame CPU diagnostics worker could not start; thread scans disabled");
 #endif
 
     // d2r_vr.ini beside this DLL
@@ -7997,6 +8022,9 @@ D2RL_PLUGIN_EXPORT void D2RLoaderUnloadPlugin() noexcept {
     framevr::Shutdown();
 #endif
     if (fx::g_registered) { reshade::unregister_addon(g_self); fx::g_registered = false; }
+#ifdef D2RVR_NATIVE_OPENXR
+    pairtime::threadStats.Stop();
+#endif
     if (g_gameWnd && g_gameWndProc) SetWindowLongPtrW(g_gameWnd, GWLP_WNDPROC, (LONG_PTR)g_gameWndProc);
     if (g_updateThreadId) PostThreadMessageW(g_updateThreadId, WM_QUIT, 0, 0);
 #ifdef D2RVR_NATIVE_OPENXR
