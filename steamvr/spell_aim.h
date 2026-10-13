@@ -1,6 +1,7 @@
 #pragma once
 #include "frame_math.h"
 #include <cstdint>
+#include <cstddef>
 
 namespace framevr::spellaim {
 struct Cast {bool directed=false;float x=0,y=0;bool contactPoint=false;};
@@ -46,6 +47,23 @@ inline bool ControllerPoint(float x,float y,math::Vec direction,int& targetX,int
     float tx=0,ty=0;
     if(!Point(x,y,direction,tx,ty)||tx<1||ty<1||tx>65534||ty>65534)return false;
     targetX=int(tx);targetY=int(ty);return true;
+}
+// Prefix of the private stack command assembled by native MapClick. The
+// resolver's point is not authoritative: MapClick selects a unit again and
+// may replace that point before checking/dispatching the skill command.
+struct NativeCommand {
+    uint32_t flags,padding;
+    uintptr_t actor,target;
+    int x,y;
+};
+static_assert(offsetof(NativeCommand,actor)==0x08&&offsetof(NativeCommand,target)==0x10&&
+              offsetof(NativeCommand,x)==0x18&&sizeof(NativeCommand)==0x20);
+struct CommandAim {uintptr_t actor=0;int x=0,y=0;};
+inline bool ControllerCast(int type) {return type>=7&&type<=10;}
+inline bool ApplyCommand(const CommandAim& aim,NativeCommand& command) {
+    if(!aim.actor||command.actor!=aim.actor||aim.x<1||aim.y<1||aim.x>65534||aim.y>65534)return false;
+    command.target=0;command.x=aim.x;command.y=aim.y;
+    return true;
 }
 // Apply after native resolution, including paths that use movement/facing
 // without calling AttackPoint. Non-directional skills retain native targets.
