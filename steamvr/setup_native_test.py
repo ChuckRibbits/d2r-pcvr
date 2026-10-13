@@ -1,9 +1,11 @@
 """Graphical setup fixtures; never touch a real game, Steam profile or registry."""
 import contextlib
+import configparser
 import io
 import json
 from pathlib import Path
 import shutil
+import sys
 import tempfile
 import textwrap
 import unittest
@@ -50,6 +52,275 @@ class NativeSetupTests(unittest.TestCase):
         for name, data in previous.items():
             self.put(root / 'previous' / name, data)
         return root
+
+    def steam_game(self, game, client):
+        target = client / 'steamapps/common/Diablo II Resurrected'
+        game.rename(target)
+        self.put(client / 'steamapps/appmanifest_2536520.acf',
+                 b'"AppState" { "installdir" "Diablo II Resurrected" }')
+        return target
+
+    def steam_wrapper(self, profile, helper):
+        self.put(helper / 'steamvr/launch_windows.py', b'fixture only; never executed')
+        source = profile / 'config/localconfig.vdf'
+        options = setup.launch_options(helper / 'python/python.exe', helper / 'steamvr/launch_windows.py', None)
+        source.write_text(steam.set_launch_options(source.read_text(), options), encoding='utf-8')
+
+    def probe(self, root, app, game, client, saves, **kwargs):
+        output = root / 'probe.ini'
+        before = {path: path.read_bytes() for path in root.rglob('*')
+                  if path.is_file() and path != output}
+        with patch.object(setup, 'verify_release', return_value={'sha256': {}}), \
+                patch.object(setup, 'saved_games', return_value=saves), \
+                patch.object(setup, 'battlenet_location', return_value=None):
+            native.write_probe(output, app, client, game, **kwargs)
+        after = {path: path.read_bytes() for path in root.rglob('*')
+                 if path.is_file() and path != output}
+        self.assertEqual(after, before, 'Backup discovery must write only its output INI')
+        parser = configparser.ConfigParser(interpolation=None)
+        parser.read(output, encoding='utf-16')
+        return parser['detected']
+
+    def test_probe_clean_game_always_outputs_empty_backup_folder(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            app, game, client, saves, profile, values = self.fixture(root)
+            result = self.probe(root, app, game, client, saves)
+            self.assertEqual(result['backup_required'], '0')
+            self.assertEqual(result['backup_folder'], '')
+
+    def test_probe_finds_complete_legacy_chain_from_steam_wrapper_with_unicode_and_spaces(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            app, game, client, saves, profile, values = self.fixture(root)
+            game = self.steam_game(game, client)
+            helper = root / 'old extracted 日本語 with spaces'
+            folder = helper / 'build-frame/backups'
+            original = self.snapshot(folder / '20260101', game, saves)
+            upgrade = self.snapshot(folder / '20260102', game, saves,
+                                    {str(uninstall.PLUGIN): b'previous mod'})
+            manifest = json.loads((upgrade / 'manifest.json').read_text())
+            manifest.update(previous_mod=True, installed=manifest['installed'] + ['ReShade.ini'])
+            (upgrade / 'manifest.json').write_text(json.dumps(manifest))
+            self.put(game / uninstall.PLUGIN, b'legacy mod')
+            self.steam_wrapper(profile, helper)
+            result = self.probe(root, app, game, client, saves)
+            self.assertEqual(result['backup_required'], '1')
+            self.assertEqual(result['backup_folder'], str(folder.resolve()))
+            chain = native.check_backups(game, app, Path(result['backup_folder']))
+            self.assertEqual([path for path, _ in chain], [original, upgrade])
+            self.assertIn(game / 'ReShade.ini', uninstall.restore_plan(game, chain))
+            self.assertFalse((game / install.RECORD).exists())
+
+    def test_probe_finds_source_preview_and_managed_development_backup_roots(self):
+        for location in ('source-preview', 'managed-development'):
+            with self.subTest(location=location), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                app, game, client, saves, profile, values = self.fixture(root)
+                source = root / 'downloaded installer'
+                folder = (source / 'd2r-pcvr-preview/setup-backups/game' if location == 'source-preview'
+                          else app / 'build-frame/backups')
+                self.snapshot(folder / '20260101', game, saves)
+                self.put(game / uninstall.PLUGIN, b'legacy mod')
+                result = self.probe(root, app, game, client, saves, source_root=source)
+                self.assertEqual(result['backup_required'], '1')
+                self.assertEqual(result['backup_folder'], str(folder.resolve()))
+
+    def test_explicit_snapshot_hint_includes_later_upgrades_and_beats_other_candidates(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            app, game, client, saves, profile, values = self.fixture(root)
+            folder = root / 'chosen backup'
+            original = self.snapshot(folder / '20260101', game, saves)
+            upgrade = self.snapshot(folder / '20260102', game, saves,
+                                    {str(uninstall.PLUGIN): b'previous mod'})
+            manifest = json.loads((upgrade / 'manifest.json').read_text())
+            manifest['previous_mod'] = True
+            (upgrade / 'manifest.json').write_text(json.dumps(manifest))
+            source = root / 'other helper'
+            self.snapshot(source / 'setup-backups/game/20260103', game, saves)
+            self.put(game / uninstall.PLUGIN, b'legacy mod')
+            result = self.probe(root, app, game, client, saves, source_root=source, backup_hint=original)
+            self.assertEqual(result['backup_folder'], str(folder.resolve()))
+            self.assertEqual(len(native.check_backups(game, app, Path(result['backup_folder']))), 2)
+
+    def test_invalid_explicit_hints_do_not_silently_switch_to_a_valid_source_backup(self):
+        malformed = [[], {}, {'game': None, 'installed': []}, {'game': 'SELECTED'},
+                     {'game': 'SELECTED', 'installed': None},
+                     {'game': 'SELECTED', 'installed': [], 'previous_mod': False},
+                     {'game': 'SELECTED', 'installed': [str(install.RECORD)], 'previous_mod': False},
+                     {'game': 'SELECTED', 'installed': ['../D2R.exe'], 'previous_mod': False}]
+        cases = [('stale', None), ('wrong-game', None), ('corrupt-json', None)]
+        cases += [('malformed-' + str(index), value) for index, value in enumerate(malformed)]
+        for label, value in cases:
+            with self.subTest(case=label), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                app, game, client, saves, profile, values = self.fixture(root)
+                source = root / 'valid fallback'
+                self.snapshot(source / 'setup-backups/game/20260101', game, saves)
+                self.put(game / uninstall.PLUGIN, b'legacy mod')
+                hint = root / 'bad candidate'
+                if label == 'wrong-game':
+                    self.snapshot(hint / '20260101', root / 'another game', saves)
+                elif label == 'corrupt-json':
+                    self.put(hint / '20260101/manifest.json', b'{bad JSON')
+                elif value is not None:
+                    if isinstance(value, dict) and value.get('game') == 'SELECTED':
+                        value = {**value, 'game': str(game)}
+                    self.put(hint / '20260101/manifest.json', json.dumps(value).encode())
+                result = self.probe(root, app, game, client, saves, source_root=source, backup_hint=hint)
+                self.assertEqual(result['backup_required'], '1')
+                self.assertEqual(result['backup_folder'], '')
+                self.assertTrue(result['backup_message'])
+
+    def test_probe_ignores_corrupt_candidates_and_rejects_distinct_valid_chains(self):
+        for corrupt in (True, False):
+            with self.subTest(corrupt=corrupt), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                app, game, client, saves, profile, values = self.fixture(root)
+                game = self.steam_game(game, client)
+                source, old_helper = root / 'source', root / 'old helper'
+                folder = source / 'setup-backups/game'
+                self.snapshot(folder / '20260101', game, saves)
+                candidate = old_helper / 'build-frame/backups/20260101'
+                if corrupt:
+                    self.put(candidate / 'manifest.json', b'[]')
+                else:
+                    self.snapshot(candidate, game, saves)
+                self.put(game / uninstall.PLUGIN, b'legacy mod')
+                self.steam_wrapper(profile, old_helper)
+                result = self.probe(root, app, game, client, saves, source_root=source)
+                self.assertEqual(result['backup_required'], '1')
+                if corrupt:
+                    self.assertEqual(result['backup_folder'], str(folder.resolve()))
+                else:
+                    self.assertEqual(result['backup_folder'], '')
+                    self.assertIn('More than one', result['backup_message'])
+
+    def test_probe_deduplicates_same_chain_discovered_by_source_and_launch_routing(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            app, game, client, saves, profile, values = self.fixture(root)
+            game = self.steam_game(game, client)
+            helper = root / 'old helper'
+            folder = helper / 'setup-backups/game'
+            self.snapshot(folder / '20260101', game, saves)
+            self.put(game / uninstall.PLUGIN, b'legacy mod')
+            self.steam_wrapper(profile, helper)
+            result = self.probe(root, app, game, client, saves, source_root=helper)
+            self.assertEqual(result['backup_folder'], str(folder.resolve()))
+
+    def test_probe_recovers_original_without_losing_a_recorded_upgrade_in_another_folder(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            app, game, client, saves, profile, values = self.fixture(root)
+            game = self.steam_game(game, client)
+            helper = root / 'original helper'
+            folder = helper / 'build-frame/backups'
+            original = self.snapshot(folder / '20260101', game, saves)
+            upgrade = self.snapshot(root / 'later helper/backups/20260102', game, saves,
+                                    {str(uninstall.PLUGIN): b'previous mod'})
+            manifest = json.loads((upgrade / 'manifest.json').read_text())
+            manifest.update(previous_mod=True, installed=manifest['installed'] + ['ReShade.ini'])
+            (upgrade / 'manifest.json').write_text(json.dumps(manifest))
+            self.put(game / uninstall.PLUGIN, b'current mod')
+            install.write_record(game, {'game': str(game), 'snapshots': [str(upgrade)]})
+            self.steam_wrapper(profile, helper)
+            result = self.probe(root, app, game, client, saves)
+            self.assertEqual(result['backup_required'], '1')
+            self.assertEqual(result['backup_folder'], str(folder.resolve()))
+            chain = native.check_backups(game, app, Path(result['backup_folder']))
+            self.assertEqual([path for path, _ in chain], [original, upgrade])
+            self.assertIn(game / 'ReShade.ini', uninstall.restore_plan(game, chain))
+
+    def test_steam_wrapper_for_another_game_copy_is_not_used(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            app, game, client, saves, profile, values = self.fixture(root)
+            self.steam_game(game, client)
+            other = root / 'another Steam copy'
+            self.put(other / uninstall.PLUGIN, b'legacy mod')
+            helper = root / 'other helper'
+            self.snapshot(helper / 'setup-backups/game/20260101', other, saves)
+            self.steam_wrapper(profile, helper)
+            result = self.probe(root, app, other, client, saves)
+            self.assertEqual(result['backup_required'], '1')
+            self.assertEqual(result['backup_folder'], '')
+
+    def test_battlenet_shortcut_discovery_requires_matching_icon_game_and_wrapper(self):
+        for mismatch in ('none', 'icon', 'game', 'wrapper', 'truncated'):
+            with self.subTest(mismatch=mismatch), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                app, game, client, saves, profile, values = self.fixture(root, 'battlenet')
+                helper = root / 'old Battle.net 日本語 helper'
+                folder = helper / 'setup-backups/game'
+                self.snapshot(folder / '20260101', game, saves)
+                self.put(game / uninstall.PLUGIN, b'legacy mod')
+                shortcut = steam.update_shortcuts(None, client, game, ['steamvr'], store='battlenet',
+                    python=helper / 'python/python.exe', wrapper=helper / 'steamvr/launch_windows.py',
+                    runtime=client / 'steamapps/common/SteamVR/steamxr_win64.json')
+                entries = steam.decode_binary(shortcut)
+                item = entries['shortcuts']['0']
+                if mismatch == 'icon':
+                    item['icon'] = str(root / 'other game/D2R.exe')
+                elif mismatch == 'game':
+                    item['LaunchOptions'] = item['LaunchOptions'].replace(str(game), str(root / 'other game'))
+                elif mismatch == 'wrapper':
+                    item['LaunchOptions'] = item['LaunchOptions'].replace('steamvr', 'unrelated')
+                self.put(profile / 'config/shortcuts.vdf',
+                         b'\x00shortcuts\x00\x02bad\x00' if mismatch == 'truncated' else steam.encode_binary(entries))
+                result = self.probe(root, app, game, client, saves)
+                self.assertEqual(result['backup_required'], '1')
+                self.assertEqual(result['backup_folder'], str(folder.resolve()) if mismatch == 'none' else '')
+
+    def test_adopted_backups_are_automatically_remembered_by_receipt_in_new_helper(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            app, game, client, saves, profile, values = self.fixture(root)
+            source = root / 'old helper'
+            folder = source / 'build-frame/backups'
+            self.snapshot(folder / '20260101', game, saves)
+            self.put(game / uninstall.PLUGIN, b'legacy mod')
+            result = self.probe(root, app, game, client, saves, source_root=source)
+            with patch.object(setup, 'require_closed'):
+                native.adopt_backups(game, app, Path(result['backup_folder']))
+            destination = app / 'setup-backups/game'
+            new_helper = root / 'new installer helper'
+            new_helper.mkdir()
+            result = self.probe(root, new_helper, game, client, saves,
+                                backup_hint=root / 'stale hint', source_root=source)
+            self.assertEqual(result['backup_required'], '0')
+            self.assertEqual(result['backup_folder'], str(destination.resolve()))
+            self.assertEqual(len(install.read_record(game)['snapshots']), 1)
+            self.assertEqual((saves / 'Character.d2s').read_bytes(), b'current character')
+
+    def test_managed_receipts_keep_two_game_copies_and_same_named_snapshots_separate(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            app, game, client, saves, profile, values = self.fixture(root)
+            other = root / 'another game copy'
+            for index, target in enumerate((game, other)):
+                self.put(target / uninstall.PLUGIN, b'legacy mod')
+                folder = root / ('legacy-' + str(index))
+                self.snapshot(folder / '20260101', target, saves)
+                with patch.object(setup, 'require_closed'):
+                    native.adopt_backups(target, app, folder)
+            first = install.read_record(game)['snapshots']
+            second = install.read_record(other)['snapshots']
+            self.assertNotEqual(first, second)
+            for target, expected in ((game, first), (other, second)):
+                result = self.probe(root, app, target, client, saves)
+                self.assertEqual(result['backup_required'], '0')
+                chain = native.check_backups(target, app)
+                self.assertEqual([str(path) for path, _ in chain], expected)
+                self.assertEqual(Path(chain[0][1]['game']), target)
+
+    def test_probe_only_arguments_are_rejected_for_install_actions(self):
+        with patch.object(sys, 'argv', ['setup_native.py', '--install', 'fixture.ini', '--backup-hint', 'backup']), \
+                contextlib.redirect_stderr(io.StringIO()), patch.object(setup, 'verify_release') as verify:
+            with self.assertRaises(SystemExit):
+                native.main()
+        verify.assert_not_called()
 
     def test_selection_validates_both_editions_profiles_and_headset_connections(self):
         for store in ('steam', 'battlenet'):

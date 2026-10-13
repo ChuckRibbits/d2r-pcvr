@@ -7,6 +7,7 @@ import io
 import json
 import os
 from pathlib import Path
+import shlex
 import shutil
 import sys
 
@@ -20,6 +21,8 @@ ROOT = Path(__file__).resolve().parent.parent
 STATE = 'managed-installations.json'
 HEADSETS = ('Steam Frame', 'Quest 3', 'Quest 2', 'Other SteamVR headset')
 MODES = {'repair': 0, 'full': 1, 'shortcuts': 2}
+BACKUP_ERRORS = (OSError, ValueError, KeyError, TypeError, AttributeError)
+PROBE_BACKUP_ERRORS = BACKUP_ERRORS + (SystemExit,)
 
 
 def atomic_json(path, value):
@@ -50,24 +53,155 @@ def read_choices(path):
     return dict(parser['setup'])
 
 
-def write_probe(path, root, steam=None, game=None, managed_root=None):
+def command_arguments(command):
+    """Read the narrow Windows command format emitted by our launch helpers."""
+    if not isinstance(command, str) or any(char in command for char in '\r\n'):
+        return []
+    try:
+        parts = shlex.split(command, posix=False)
+    except ValueError:
+        return []
+    result = [part[1:-1] if part.startswith('"') and part.endswith('"') else part
+              for part in parts]
+    return [] if any('"' in part for part in result) else result
+
+
+def wrapper_root(argument):
+    wrapper = Path(argument)
+    if (wrapper.is_absolute() and wrapper.name.lower() == 'launch_windows.py'
+            and wrapper.parent.name.lower() == 'steamvr'):
+        return wrapper.parent.parent.resolve()
+    return None
+
+
+def launch_helper_roots(game, accounts, steam_game):
+    """Read existing D2R launch routing; never run a discovered command."""
+    roots = set()
+    for profile, _ in accounts:
+        if steam_game is not None and game == steam_game.resolve():
+            try:
+                source = (profile / 'config/localconfig.vdf').read_text(encoding='utf-8-sig')
+                options = steam_config.text_value(steam_config.parse_text(source),
+                    'UserLocalConfigStore', 'Software', 'Valve', 'Steam', 'apps',
+                    steam_config.APP_ID, 'LaunchOptions')
+                parts = command_arguments(options)
+                if len(parts) >= 3 and '%command%' in parts:
+                    helper = wrapper_root(parts[1])
+                    if helper is not None:
+                        roots.add(helper)
+            except BACKUP_ERRORS:
+                pass
+        try:
+            source = profile / 'config/shortcuts.vdf'
+            if not source.is_file():
+                continue
+            entries = steam_config.decode_binary(source.read_bytes()).get('shortcuts', {})
+            if not isinstance(entries, dict):
+                continue
+            for entry in entries.values():
+                if not isinstance(entry, dict) or not isinstance(entry.get('icon'), str):
+                    continue
+                if Path(entry['icon']).resolve() != (game / 'D2R.exe').resolve():
+                    continue
+                parts = command_arguments(entry.get('LaunchOptions'))
+                games = [part.split('=', 1)[1] for part in parts
+                         if part.startswith('--battlenet-game=')]
+                if (not parts or len(games) != 1 or '--frame-vr' not in parts
+                        or Path(games[0]).resolve() != game):
+                    continue
+                helper = wrapper_root(parts[0])
+                if helper is not None:
+                    roots.add(helper)
+        except BACKUP_ERRORS:
+            pass
+    return sorted(roots)
+
+
+def probe_backup_chain(game, root, folder=None):
+    chain = check_backups(game, root, folder)
+    for _, manifest in chain:
+        installed = manifest.get('installed')
+        if (not isinstance(installed, list) or not installed
+                or any(not isinstance(name, str) or not name for name in installed)):
+            raise ValueError('An installation backup has an invalid or incomplete installed-file list.')
+    if chain:
+        baseline = {str(install.safe_relative(name)).lower() for name in chain[0][1]['installed']}
+        if str(uninstall.PLUGIN).lower() not in baseline:
+            raise ValueError('The original installation backup does not track the VR plugin. '
+                             'Select a complete installation backup.')
+    return chain
+
+
+def checked_backup_folder(game, root, folder):
+    folder = Path(folder).expanduser().resolve()
+    snapshot = folder if (folder / 'manifest.json').is_file() else None
+    # Include later upgrades beside an explicitly selected original snapshot.
+    if snapshot is not None:
+        folder = folder.parent
+    chain = probe_backup_chain(game, root, folder)
+    if snapshot is not None and snapshot not in [path for path, _ in chain]:
+        raise ValueError('The selected snapshot is not part of the current installation backup chain. '
+                         'Select its installation backup folder.')
+    return folder, chain
+
+
+def probe_backups(game, root, accounts, steam_game, source_root=None, backup_hint=None):
+    try:
+        chain = probe_backup_chain(game, root)
+    except PROBE_BACKUP_ERRORS as error:
+        message = str(error)
+    else:
+        parents = {path.parent for path, _ in chain}
+        return '0', '', str(next(iter(parents))) if len(parents) == 1 else ''
+    if backup_hint is not None:
+        try:
+            folder, _ = checked_backup_folder(game, root, backup_hint)
+        except PROBE_BACKUP_ERRORS as error:
+            return '1', str(error), ''
+        return '1', '', str(folder)
+    helpers = [root]
+    if source_root is not None:
+        helpers.append(Path(source_root))
+    helpers.extend(launch_helper_roots(game, accounts, steam_game))
+    candidates = set()
+    for helper in helpers:
+        for base in (helper, helper / 'd2r-pcvr-preview'):
+            candidates.update((base, base / 'setup-backups/game', base / 'build-frame/backups'))
+    matches = {}
+    for candidate in sorted(candidates):
+        try:
+            folder, chain = checked_backup_folder(game, root, candidate)
+        except PROBE_BACKUP_ERRORS:
+            continue
+        signature = tuple(path for path, _ in chain)
+        if signature:
+            matches.setdefault(signature, folder)
+    if len(matches) == 1:
+        return '1', '', str(next(iter(matches.values())))
+    if matches:
+        message = ('More than one valid installation backup was found for this game. '
+                   'Select the backup folder for the installation you want to keep.')
+    return '1', message, ''
+
+
+def write_probe(path, root, steam=None, game=None, managed_root=None, source_root=None, backup_hint=None):
     steam = steam or setup.steam_location()
     libraries = setup.libraries(steam) if steam else []
     accounts = setup.profiles(steam) if steam else []
     manifest = setup.verify_release(root)
+    steam_game = setup.app_folder(libraries, steam_config.APP_ID)
     values = {
-        'steam': str(steam or ''), 'steam_game': str(setup.app_folder(libraries, steam_config.APP_ID) or ''),
+        'steam': str(steam or ''), 'steam_game': str(steam_game or ''),
         'battlenet_game': str(setup.battlenet_location() or ''),
         'steamvr': str(setup.app_folder(libraries, '250820') or ''), 'saves': str(setup.saved_games()),
         'battlenet_available': str(int('bin/CascLib.dll' in manifest['sha256'])),
         'profiles': str(len(accounts)),
-        'backup_required': '0', 'backup_message': '',
+        'backup_required': '0', 'backup_message': '', 'backup_folder': '',
     }
     if game is not None:
-        try:
-            check_backups(game.resolve(), Path(managed_root or root))
-        except (OSError, ValueError, KeyError) as error:
-            values.update(backup_required='1', backup_message=str(error))
+        required, message, folder = probe_backups(game.resolve(), Path(managed_root or root),
+            accounts, steam_game, source_root, backup_hint)
+        values.update(backup_required=required, backup_message=message, backup_folder=folder)
     for index, (profile, name) in enumerate(accounts):
         values[f'profile_{index}'] = profile.name
         values[f'profile_name_{index}'] = name
@@ -307,7 +441,11 @@ def main():
     parser.add_argument('--managed-root', type=Path)
     parser.add_argument('--steam', type=Path, help='Steam folder selected in the graphical wizard (discovery only)')
     parser.add_argument('--game', type=Path, help='Selected game for read-only backup discovery')
+    parser.add_argument('--source-root', type=Path, help='Installer source folder (probe only)')
+    parser.add_argument('--backup-hint', type=Path, help='Backup folder selected in the wizard (probe only)')
     args = parser.parse_args()
+    if not args.probe and (args.source_root is not None or args.backup_hint is not None):
+        parser.error('--source-root and --backup-hint require --probe')
     setup.verify_release(ROOT)
     if args.check:
         print('Graphical installer payload verified. No game files were changed.')
@@ -315,7 +453,8 @@ def main():
     if os.name != 'nt':
         raise ValueError('This installer requires Windows.')
     if args.probe:
-        write_probe(args.probe, ROOT, args.steam, args.game, args.managed_root)
+        write_probe(args.probe, ROOT, args.steam, args.game, args.managed_root,
+                    args.source_root, args.backup_hint)
     elif args.validate:
         validate_choices(read_choices(args.validate), ROOT, args.managed_root)
         setup.require_closed()

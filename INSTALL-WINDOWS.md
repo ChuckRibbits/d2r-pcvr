@@ -96,11 +96,16 @@ You can rerun the EXE safely. It updates matching shortcuts without duplicates.
 When upgrading a recorded ZIP installation, it copies and verifies its referenced
 game backups into the permanent helper folder before updating the mod. Do not
 delete the old extracted folder until Setup succeeds. If an older mod has an
-incomplete installation record, the wizard asks you to locate its original
-backup folder. Choose the snapshot folder or the folder containing snapshots
-inside the old mod folder (`setup-backups\game` or `build-frame\backups`).
-Setup also checks alongside recorded backups for older snapshots. If the
-original backup is unavailable, cancel and keep the current installation.
+incomplete installation record, setup checks known backup locations and the
+old helper folder referenced by your VR shortcut. When it finds one verified
+location for this game, it fills in the backup page automatically. Otherwise,
+choose the snapshot folder or the folder containing snapshots inside the old
+mod folder (`setup-backups\game` or `build-frame\backups`). Setup validates it
+when you click **Next**. After copying the backups into the permanent helper
+folder, it records their locations in this game's `d2rloader/pcvr-install.json`;
+future setup runs can find them without asking again. Changing the selected
+game clears the previous game's suggested folder. If the original backup is
+unavailable, cancel and keep the current installation.
 
 Setup does not change Windows security settings or the system OpenXR runtime.
 Normal Steam / Battle.net **Play** launches the stock desktop game.

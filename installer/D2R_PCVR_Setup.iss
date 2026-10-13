@@ -53,7 +53,7 @@ var
   EditionPage, HeadsetPage, ConnectionPage, AccountPage, ModePage: TInputOptionWizardPage;
   PathsPage, RuntimePage, BackupPage: TInputDirWizardPage;
   ProfileIDs: TStringList;
-  PayloadRoot, ProbeFile, ChoicesFile, LastOutput, PreviousEdition: String;
+  PayloadRoot, ProbeFile, ChoicesFile, LastOutput, PreviousEdition, BackupGame: String;
   SetupFailed, BackendBusy: Boolean;
 
 function Q(const Value: String): String;
@@ -100,32 +100,49 @@ end;
 
 procedure LoadProfiles;
 var
-  I, Count: Integer;
-  ID, Name: String;
+  I, Count, SelectedIndex: Integer;
+  ID, Name, SelectedProfile: String;
 begin
+  SelectedProfile := '';
+  if (AccountPage.SelectedValueIndex >= 0) and (AccountPage.SelectedValueIndex < ProfileIDs.Count) then
+    SelectedProfile := ProfileIDs[AccountPage.SelectedValueIndex];
+  SelectedIndex := 0;
   ProfileIDs.Clear;
   AccountPage.CheckListBox.Items.Clear;
   Count := GetIniInt('detected', 'profiles', 0, 0, 1000, ProbeFile);
   for I := 0 to Count - 1 do begin
     ID := GetIniString('detected', 'profile_' + IntToStr(I), '', ProbeFile);
+    if ID = SelectedProfile then SelectedIndex := I;
     Name := GetIniString('detected', 'profile_name_' + IntToStr(I), 'Steam account', ProbeFile);
     ProfileIDs.Add(ID);
     AccountPage.Add(Name + ' (local ID ' + ID + ')');
   end;
-  if Count > 0 then AccountPage.SelectedValueIndex := 0;
+  if Count > 0 then AccountPage.SelectedValueIndex := SelectedIndex;
 end;
 
 function RefreshProbe(const Steam: String): Boolean;
 var
-  Arguments: String;
+  Arguments, FoundBackup: String;
 begin
-  Arguments := '--probe ' + Q(ProbeFile);
+  Arguments := '--probe ' + Q(ProbeFile) + ' --source-root ' + Q(ExpandConstant('{src}'));
   if Steam <> '' then begin
     Arguments := Arguments + ' --steam ' + Q(Steam) + ' --managed-root ' + Q(WizardDirValue);
-    if PathsPage.Values[1] <> '' then Arguments := Arguments + ' --game ' + Q(PathsPage.Values[1]);
+    if CompareText(BackupGame, PathsPage.Values[1]) <> 0 then begin
+      BackupPage.Values[0] := '';
+      BackupGame := PathsPage.Values[1];
+    end;
+    if PathsPage.Values[1] <> '' then begin
+      Arguments := Arguments + ' --game ' + Q(PathsPage.Values[1]);
+      if BackupPage.Values[0] <> '' then Arguments := Arguments + ' --backup-hint ' + Q(BackupPage.Values[0]);
+    end;
   end;
   Result := RunBackend(PayloadRoot, Arguments);
-  if Result then LoadProfiles;
+  if Result then begin
+    LoadProfiles;
+    FoundBackup := GetIniString('detected', 'backup_folder', '', ProbeFile);
+    if (FoundBackup <> '') or (GetIniInt('detected', 'backup_required', 0, 0, 1, ProbeFile) = 0) then
+      BackupPage.Values[0] := FoundBackup;
+  end;
 end;
 
 procedure InitializeWizard;
@@ -179,7 +196,7 @@ begin
   ModePage.SelectedValueIndex := 1;
   BackupPage := CreateInputDirPage(ModePage.ID, 'Locate an older installation backup',
     'Keep the original files available for removal',
-    'This older mod installation needs its original pre-mod backup. Browse to its snapshot folder or the folder containing snapshots (usually setup-backups\game or build-frame\backups in the old mod folder). Setup will copy and verify these backups. If you cannot find them, cancel and keep the current installation.', False, '');
+    'Setup fills in a verified backup when it can find one. Otherwise select the original snapshot or its backup folder (usually setup-backups\game or build-frame\backups in the old mod folder). Setup will copy it into the helper folder and remember it for this game. If it is unavailable, cancel and keep the current installation.', False, '');
   BackupPage.Add('Original installation backup folder:');
   if not RefreshProbe('') then RaiseException(LastOutput);
   if GetIniInt('detected', 'battlenet_available', 0, 0, 1, ProbeFile) = 1 then
@@ -247,6 +264,14 @@ begin
     if not DirExists(BackupPage.Values[0]) then begin
       MsgBox('Select the existing original installation backup folder, or cancel to keep the current mod.', mbError, MB_OK);
       Result := False;
+    end else begin
+      Result := RefreshProbe(PathsPage.Values[0]);
+      if not Result then MsgBox(LastOutput, mbError, MB_OK)
+      else if (GetIniInt('detected', 'backup_required', 0, 0, 1, ProbeFile) = 1) and
+          (GetIniString('detected', 'backup_folder', '', ProbeFile) = '') then begin
+        MsgBox(GetIniString('detected', 'backup_message', 'The selected folder does not contain the original backup for this game.', ProbeFile), mbError, MB_OK);
+        Result := False;
+      end;
     end;
   end;
 end;
@@ -289,7 +314,9 @@ begin
     'Saved Games: ' + PathsPage.Values[2] + NewLine +
     'Steam: ' + PathsPage.Values[0] + NewLine +
     'Steam account: ' + AccountPage.CheckListBox.Items[AccountPage.SelectedValueIndex] + NewLine +
-    'Helpers and backups: ' + WizardDirValue + NewLine + NewLine +
+    'Helpers and backups: ' + WizardDirValue + NewLine;
+  if BackupPage.Values[0] <> '' then Result := Result + 'Original backup location: ' + BackupPage.Values[0] + NewLine;
+  Result := Result + NewLine +
     'Save and exit D2R, then fully exit Steam before installing. Use an offline character in VR.';
 end;
 
