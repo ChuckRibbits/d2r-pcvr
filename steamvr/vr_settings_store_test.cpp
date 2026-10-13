@@ -26,6 +26,12 @@ int main(){
     Check(vrsettings::Read().result==Result::Saving&&vrsettings::Poll(name),"write transaction succeeds");
     auto saved=vrsettings::Read();Check(saved.result==Result::Saved&&saved.values[Foveation]==2&&saved.values[Motion]==1,"saved values round trip");
     Check(saved.values[SkillGestures]==1,"skill gestures default on for existing profiles");
+    Check(saved.values[ControllerLabels]==0,"existing INI defaults to automatic labels");
+    model.Open(saved);model.Click({Kind::Tab,int(Page::VR)});model.Click({Kind::ControllerMenu});
+    model.Click({Kind::ControllerChoice,int(framevr::controllers::Choice::Index)});request=model.Click({Kind::Apply});
+    Check(vrsettings::Submit(request)&&vrsettings::Poll(name),"controller override saves through INI transaction");
+    saved=vrsettings::Read();
+    Check(saved.values[ControllerLabels]==2&&Int(path,L"interactions",L"controller_labels")==2,"controller selection survives reload");
     Check(Int(path,L"render",L"fixed_foveation")==1&&Int(path,L"render",L"eye_tracked_foveation")==1,"eye-tracked mode writes both keys");
     Check(Int(path,L"custom",L"keep")==12345&&Int(path,L"render",L"rings")==6,"Apply preserves unrelated keys");
     Check(Int(backup,L"custom",L"keep")==12345&&Int(backup,L"gameplay",L"motion_controls")==-999,"first Apply preserves original config backup");

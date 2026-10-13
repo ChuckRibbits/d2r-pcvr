@@ -11,11 +11,6 @@ constexpr const char* NativeLabel(int slot) {
     constexpr const char* labels[]={"B","X","Y","RB","LT + B","LT + X","LT + Y","LT + RB","A","LT + A"};
     return slot>=0&&slot<Count?labels[slot]:"Unknown";
 }
-constexpr const char* VrLabel(int slot) {
-    constexpr const char* labels[]={"Right Trigger","Right B","Right Grip + A","Right Grip + B",
-        "Left Trigger","Left A / X","Left B / Y","Left Grip + A / X","Right A","Left Grip + B / Y"};
-    return slot>=0&&slot<Count?labels[slot]:"";
-}
 constexpr int HandSlot(int hand,int button) {
     constexpr int slots[2][5]={{0,8,1,2,3},{4,5,6,7,9}};
     return hand>=0&&hand<2&&button>=0&&button<5?slots[hand][button]:-1;

@@ -43,7 +43,10 @@ int main(int argc,char** argv) {
     const bool editorCheck=argc>2&&std::strcmp(argv[2],"--editor-check")==0;
     const bool weaponSkillsCheck=argc>2&&std::strcmp(argv[2],"--weapon-skills-check")==0;
     const bool mapCheck=argc>2&&std::strcmp(argv[2],"--map-check")==0;
-    const bool handsCheck=argc>2&&std::strcmp(argv[2],"--hands-check")==0;
+    const bool questHands=argc>2&&std::strcmp(argv[2],"--quest-hands")==0;
+    const bool indexHands=argc>2&&std::strcmp(argv[2],"--index-hands")==0;
+    const bool frameHands=argc>2&&std::strcmp(argv[2],"--frame-hands")==0;
+    const bool handsCheck=questHands||indexHands||frameHands||(argc>2&&std::strcmp(argv[2],"--hands-check")==0);
     if(handsCheck){
         std::vector<uint8_t> gallery(1536*768*4);
         s.bindingsEditable=true;s.bindingBank=0;
@@ -51,7 +54,9 @@ int main(int argc,char** argv) {
         s.skills[9].known=true;std::snprintf(s.skills[9].name,64,"Unassigned");
         for(int hand=0;hand<2;++hand){
             Output o;o.wheel=true;o.wheelHand=hand;o.hover=3;
-            const auto atlas=Paint(s,o,framevr::skills::TriggerSlot(hand));if(atlas.size()!=1024*1024*4)return 60;
+            const auto choice=questHands?framevr::controllers::Choice::Quest:indexHands?framevr::controllers::Choice::Index:
+                frameHands?framevr::controllers::Choice::Frame:framevr::controllers::Choice::Generic;
+            const auto atlas=Paint(s,o,framevr::skills::TriggerSlot(hand),framevr::controllers::Resolve(choice,framevr::controllers::Labels{}));if(atlas.size()!=1024*1024*4)return 60;
             for(int y=0;y<768;++y)std::memcpy(&gallery[(y*1536+hand*768)*4],&atlas[y*1024*4],768*4);
         }
         if(!SavePng(argv[1],gallery,1536,768))return 61;

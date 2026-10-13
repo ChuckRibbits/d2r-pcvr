@@ -101,6 +101,7 @@ target_include_directories(interaction-preview PRIVATE ${CMAKE_CURRENT_SOURCE_DI
 target_link_libraries(interaction-preview PRIVATE user32 gdi32 framevr-runtime)
 
 add_executable(vr-settings-test vr_settings_test.cpp)
+add_executable(controller-labels-test controller_labels_test.cpp)
 add_executable(vr-settings-store-test vr_settings_store_test.cpp ${ROOT}/vr/settings_menu.cpp)
 target_link_libraries(vr-settings-store-test PRIVATE framevr-runtime)
 add_executable(vr-settings-preview vr_settings_preview.cpp vr_settings_ui.cpp)
@@ -121,7 +122,7 @@ foreach(test_target IN ITEMS memory-test hook-metrics-test active-keys-test reso
     portal-billboard-test composition-layers-test projectile-rules-test
     combat-rules-test logging-test melee-contact-test world-coordinates-test bow-flight-test
     interaction-test wrist-hud-test controller-bindings-test journal-test native-panels-test
-    vr-settings-test vr-settings-store-test math-test deferred-draw-test gaze-test window-focus-test callback-ticket-test local-player-test)
+    vr-settings-test vr-settings-store-test controller-labels-test math-test deferred-draw-test gaze-test window-focus-test callback-ticket-test local-player-test)
   # These fixtures use assert for their checks, including in Release builds.
   if(MSVC)
     target_compile_options(${test_target} PRIVATE /UNDEBUG)

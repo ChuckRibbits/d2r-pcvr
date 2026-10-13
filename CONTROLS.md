@@ -5,16 +5,40 @@ use two tracked VR controllers; an Xbox controller is not required.
 
 ## Button names
 
-| Hand / button | Quest 2 / 3 label | Steam Frame label |
-| --- | --- | --- |
-| Right primary / secondary | A / B | A / B |
-| Left primary / secondary | X / Y | A / B |
-| Trigger | Index trigger | Index trigger |
-| Grip | Grip button | Grip input |
-| Stick click | Press the thumbstick | Press the thumbstick |
+| Hand / button | Quest / Touch | Valve Index | Steam Frame |
+| --- | --- | --- | --- |
+| Right primary / secondary | A / B | A / B | A / B |
+| Left primary / secondary | X / Y | A / B | D-pad Down / Up |
+| Trigger | Index trigger | Index trigger | Index trigger |
+| Grip | Grip button | Squeeze | Grip input |
+| Stick click | Press the thumbstick | Press the thumbstick | Press the thumbstick |
 
-**Left primary** below means **Quest Left X / Frame Left A**.
-**Left secondary** means **Quest Left Y / Frame Left B**.
+**Left primary** below means **Quest X / Index A / Frame D-pad Down**.
+**Left secondary** means **Quest Y / Index B / Frame D-pad Up**.
+
+Wheel button badges, grip combinations, skill-picker headings and the Controls
+help use the active controller layout. Open either wheel > **VR SETTINGS** >
+**VR**, then use the **Headset / controllers** dropdown to choose **Automatic**
+(default), **Quest / Touch**, **Valve Index**, **Steam Frame**, or **Generic**.
+Select **Apply** to save; closing without Apply discards the choice.
+
+Automatic reads each hand's active OpenXR interaction profile and refreshes
+when controllers change. This also supports mixed controller layouts. Unknown
+profiles display Primary / Secondary rather than guessed button letters. The
+legacy WMR profile displays Unbound for face slots, which it does not bind.
+The override changes labels only; it preserves skill assignments and controls.
+Custom SteamVR remappings may need the Generic labels.
+
+Steam Frame uses its native profile when the runtime advertises it. With an
+older runtime's Touch compatibility binding, Automatic can report Touch;
+select Steam Frame manually to show its D-pad labels. The compatibility binding
+also aliases the upper face/D-pad buttons to the secondary action; the wheel
+shows B and D-pad Up as the representative controls. See
+[Valve's Frame input documentation](https://partner.steamgames.com/doc/steamhardware/steamframe/input)
+and the [OpenXR controller profiles](https://registry.khronos.org/OpenXR/specs/1.1/html/xrspec.html#interaction-profiles).
+
+The saved override is `[interactions] controller_labels`: 0 Automatic, 1 Quest /
+Touch, 2 Index, 3 Frame, 4 Generic. Missing or invalid values use Automatic.
 
 ## Gameplay
 
