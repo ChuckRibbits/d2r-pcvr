@@ -2959,8 +2959,13 @@ SpellResolveFn OrigSpellResolve=nullptr;
 std::atomic<bool> g_spellAimReady{false};
 thread_local framevr::spellaim::Cast g_spellCast;
 bool DirectedSpellAim(float& gx,float& gy) {
+    float origin[3],direction[3];
+    // Native OpenXR poses already use world X/Z == grid X/Y. The legacy
+    // walk-learned calibration can confuse a cast vector with the opposite
+    // travel direction while backpedaling; it must not rotate spell aim.
     return g_spellAimReady.load()&&g_enabled.load()&&!gamestate::MenuOpen()&&
-        framevr::DirectedSpellActive()&&HandGridDir(&gx,&gy);
+        framevr::DirectedSpellActive()&&HandRay(origin,direction)&&
+        framevr::spellaim::Horizontal({direction[0],direction[1],direction[2]},gx,gy);
 }
 uintptr_t HookSpellControllerTarget(uintptr_t manager,int id) {
     if(g_spellCast.directed&&uintptr_t(_ReturnAddress())==d2rsig::Addr(spellaimabi::ControllerCallRva+5))return 0;
@@ -2971,15 +2976,30 @@ uintptr_t HookSpellHoverTarget(int player) {
     return OrigSpellHoverTarget(player);
 }
 bool IsHeroUnit(const void* unit);
+bool SpellPlayerPosition(const void* unit,float& x,float& y) {
+    // Identify the local player by native ID, not distance from the rendered
+    // camera: movement can put that rendered position a frame behind logic.
+    uint32_t id=0,header[3]{},position[2]{};uintptr_t path=0;
+    if(!unit||!combat::LocalPlayerId(id)||!framevr::ReadMemory(header,unit,sizeof header)||header[0]!=0||header[2]!=id||
+       !framevr::ReadMemory(&path,static_cast<const uint8_t*>(unit)+0x38,sizeof path)||path<0x10000||
+       !framevr::ReadMemory(position,reinterpret_cast<const void*>(path),sizeof position))return false;
+    // Dynamic paths store unsigned 16.16 coordinates, in native grid cells.
+    x=position[0]/65536.f;y=position[1]/65536.f;return true;
+}
 void HookSpellResolve(uintptr_t manager,void* unit,bool assist,float* x,float* y) {
     framevr::spellaim::Cast cast;
-    cast.directed=unit&&x&&y&&IsHeroUnit(unit)&&DirectedSpellAim(cast.x,cast.y);
-    if(unit&&x&&y&&IsHeroUnit(unit)&&g_spellAimReady.load()&&g_enabled.load()&&!gamestate::MenuOpen()&&
+    float playerX=0,playerY=0;
+    const bool local=x&&y&&SpellPlayerPosition(unit,playerX,playerY);
+    cast.directed=local&&DirectedSpellAim(cast.x,cast.y);
+    if(local&&g_spellAimReady.load()&&g_enabled.load()&&!gamestate::MenuOpen()&&
        framevr::ShieldAim(cast.x,cast.y))cast.directed=cast.contactPoint=true;
     framevr::spellaim::Scope scope(g_spellCast,cast);
     // The last native aim-assist stage can bend a free cast toward a nearby
     // point even after selected-target lookup. Keep it off for this call only.
     OrigSpellResolve(manager,unit,cast.directed?false:assist,x,y);
+    // Every native branch ends here. In particular, a moving controller may
+    // supply its own target without reaching our AttackPoint hook below.
+    if(cast.directed)framevr::spellaim::Resolve(cast,playerX,playerY,*x,*y);
     if(cast.directed) {
         static std::atomic<ULONGLONG> reported{0};
         const auto now=GetTickCount64();auto before=reported.load();

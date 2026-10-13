@@ -40,4 +40,14 @@ inline bool Point(float x,float y,math::Vec direction,float& targetX,float& targ
     if(!std::isfinite(x+y)||!Horizontal(direction,dx,dy))return false;
     targetX=x+dx*60;targetY=y+dy*60;return true;
 }
+// Apply after native resolution, including paths that use movement/facing
+// without calling AttackPoint. Non-directional skills retain native targets.
+inline bool Resolve(const Cast& cast,float playerX,float playerY,float& targetX,float& targetY) {
+    if(!cast.directed)return false;
+    if(cast.contactPoint) {
+        if(!std::isfinite(cast.x)||!std::isfinite(cast.y))return false;
+        targetX=cast.x;targetY=cast.y;return true;
+    }
+    return Point(playerX,playerY,{cast.x,0,cast.y},targetX,targetY);
+}
 }

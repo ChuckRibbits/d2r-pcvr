@@ -43,6 +43,10 @@ Spell casting remains **equip, point, pull right trigger**. Directional spells
 now use the visible wand, staff, scepter or orb shaft; other equipment uses the
 right-hand aim. Native selected-target snapping and aim assist are suppressed
 only while resolving an owned directional cast, including quick-cast shortcuts.
+Projectile targets follow the sampled aim even while walking backward or
+strafing. They use the current native player position and world-space weapon
+direction, without the legacy walking calibration; the final target is corrected
+even when the native movement path skips the usual attack-point helper.
 Teeth keeps its native fan, centered on the weapon's horizontal direction.
 Ground placements, buffs, summons and corpse-only skills keep native targeting.
 Host tests and native signature/table checks pass; this aim correction still
