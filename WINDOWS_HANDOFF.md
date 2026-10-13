@@ -1,5 +1,13 @@
 # Clean Windows installation and agent handoff — October 10, 2026
 
+**v0.3.11 installer correction:** PR #28 accepts both reviewed official
+D2RLoader 1.3.1 archives after upstream repackaged the ZIP under the same URL.
+All four payload files are byte-identical; unknown hashes remain blocked.
+The fix passes 63 installer checks plus a fresh official dependency download.
+Reuse the published phase 1 binaries with the provenance below; phase 2 remains
+shelved and is excluded. No new game/headset compatibility test is claimed.
+See `steamvr/evidence/2026-10-13-loader-archive-repack.json` for the audit.
+
 **v0.3.10 performance phase 1:** PR #22 removes periodic render-thread CPU
 thread scans, reduces HUD callback contention and caches immutable resource
 descriptions with lifetime invalidation. Fresh/full installs now set Resolution

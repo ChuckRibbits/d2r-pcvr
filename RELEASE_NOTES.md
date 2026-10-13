@@ -1,4 +1,4 @@
-# D2R PCVR v0.3.10 — Windows preview
+# D2R PCVR v0.3.11 — Windows preview
 
 Play **Diablo II: Resurrected in VR on Windows** with
 **SteamVR or Virtual Desktop (VDXR)**. This preview is for **local offline
@@ -27,7 +27,23 @@ VDXR is available but has not yet been confirmed. The Steam desktop client
 is required for library shortcuts, including with the Battle.net edition.
 **Battle.net owners do not need to purchase a second copy through Steam.**
 
-## What's new: performance update phase 1
+## What's new: installer checksum fix
+
+- **Fix fresh installation failures:** D2RLoader repackaged its 1.3.1 ZIP under
+  the same filename. Its contents are unchanged, but older PCVR installers reject
+  the new archive checksum. Setup now accepts both reviewed official archives.
+- **Keep verification enabled:** unknown downloads still stop before game files
+  change. Errors include expected and received SHA-256 values for troubleshooting.
+  Existing verified dependency caches remain usable.
+- **Retry with this installer:** if v0.3.10 stopped with a D2RLoader checksum
+  mismatch, download **D2R-PCVR-Setup-0.3.11.exe** and run setup again. Keep
+  existing helper folders and backups. Disabling antivirus does not resolve
+  the changed upstream checksum; keep protection enabled.
+
+This update retains the released phase 1 renderer and 100% fresh-install
+resolution default. The experimental phase 2 renderer is not included.
+
+## Included: performance update phase 1
 
 - **Remove a periodic VR stall:** CPU diagnostics now run on a background
   worker. The system thread scan previously blocked rendering for about 53 ms
@@ -46,7 +62,7 @@ is required for library shortcuts, including with the Battle.net edition.
 - **Installer file-access errors:** setup identifies the dependency it could not
   read and points to Windows Security Protection History when relevant.
 
-Run **D2R-PCVR-Setup-0.3.10.exe** for graphical setup, or use the portable ZIP.
+Run **D2R-PCVR-Setup-0.3.11.exe** for graphical setup, or use the portable ZIP.
 The EXE includes a private Python runtime and creates the matching shortcuts.
 Choose **Update / repair and keep calibration and video settings** when upgrading;
 keep existing setup backups. Normal desktop Play and Windows removal are retained.
@@ -56,11 +72,20 @@ Full-screen automap is available through the game's normal map controls.
 
 ## Validation and remaining checks
 
-The native Windows build passes **43 CTest checks**, and **84 Python checks**
-cover setup, repair/removal, rollback, Battle.net, launcher lifecycle, installer
-payload staging and profiling reports. Installer fixtures verify that a full
-install changes 80% to 100%, repair preserves custom settings, and rollback
-retains character progress for both Steam and Battle.net.
+The checksum correction passes **63 installer checks**, including both reviewed
+archive variants, unknown-download rejection, exact verification after saving,
+and error propagation to the graphical setup without changing game/save/Steam
+files. A fresh official loader download passes verification, and both approved
+caches work without another download. All four loader payload files match the
+previous archive byte for byte. No new real-game installation or headset session
+was performed for this installer-only correction.
+
+The unchanged phase 1 renderer previously passed **43 CTest checks**. Its
+v0.3.10 release also passed **84 Python checks** covering setup, repair/removal,
+rollback, Battle.net, launcher lifecycle, payload staging and profiling reports.
+Installer fixtures verify that a full install changes 80% to 100%, repair
+preserves custom settings, and rollback retains character progress for both
+Steam and Battle.net.
 
 Phase 1 was tested with an offline Paladin on Steam D2R 3.3.93787, Ryzen 9 5950X /
 RTX 5090, SteamVR OpenXR and Steam Link to Steam Frame at 90 Hz. Background
@@ -109,7 +134,7 @@ reporter's detailed installation log.
 First launch your purchased game normally through its store, finish the account
 prompts, load an offline character, then use **Save & Exit** and fully close D2R.
 
-For graphical setup, download **D2R-PCVR-Setup-0.3.10.exe**, run it and follow the
+For graphical setup, download **D2R-PCVR-Setup-0.3.11.exe**, run it and follow the
 wizard. Fully exit Steam when asked. Reopen Steam, connect your headset and use
 the matching VR shortcut with an offline character.
 
@@ -142,5 +167,5 @@ Use the unmodded game for multiplayer. Keep **setup-backups**, including
 backups in older extracted release folders, until removal is complete.
 
 Read **INSTALL-WINDOWS.md** and **CONTROLS.md** in the helper folder or ZIP, or open the
-[installation guide](https://github.com/bearstonem/d2r-pcvr/blob/v0.3.10-windows-preview/INSTALL-WINDOWS.md)
-and [controller reference](https://github.com/bearstonem/d2r-pcvr/blob/v0.3.10-windows-preview/CONTROLS.md).
+[installation guide](https://github.com/bearstonem/d2r-pcvr/blob/v0.3.11-windows-preview/INSTALL-WINDOWS.md)
+and [controller reference](https://github.com/bearstonem/d2r-pcvr/blob/v0.3.11-windows-preview/CONTROLS.md).
