@@ -32,6 +32,8 @@ bool ShieldAim(float& x,float& y);
 void FinishShieldSkill(bool accepted);
 void MeleeImpact(); // thread-safe; haptic delivered by XR input update
 bool TakeBowShot(bowflight::Shot& shot);
+bool TakeSpellShot(int hand,bowflight::Shot& shot);
+bool SpellHeld(const bowflight::Shot& shot);
 bool BowPreviewPose(bowflight::Shot& pose,bool& visible);
 bowflight::Gate BowGate();
 void SetBowWorldEpoch(uint32_t epoch);

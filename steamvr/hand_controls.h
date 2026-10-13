@@ -9,19 +9,23 @@ struct HandInput {
     bool active=false,occupied=false,click[2]{},face[2][2]{};
     float trigger[2]{},grip[2]{};
     uint64_t context=0,layout=0;
+    unsigned independentSlots=0; // only bindings supported by the physical spell adapter
     double time=0;
 };
-struct HandOutput {int wheel=-1,slot=-1,hand=0;bool interact=false;};
+struct HandOutput {int wheel=-1,slot=-1,hand=0;bool interact=false;int spells[2]{-1,-1};uint64_t activation[2]{};};
 class HandControls {
     bool clickWas[2]{},held[2][3]{},blocked[2][3]{{true,true,true},{true,true,true}};
     bool primed=false;
     int wheel=-1,cast=-1,castHand=0,castButton=-1;
     bool castGrip=false;
+    int spell[2]{-1,-1},spellButton[2]{-1,-1};
+    bool spellGrip[2]{};
+    uint64_t activation[2]{};
     uint64_t context=0,layout=0;
     double at=0;
 public:
-    void Suspend(){primed=false;wheel=cast=-1;for(auto& h:blocked)for(auto& b:h)b=true;}
-    void Close(){wheel=-1;cast=-1;for(auto& h:blocked)for(auto& b:h)b=true;}
+    void Suspend(){primed=false;Close();}
+    void Close(){wheel=cast=spell[0]=spell[1]=-1;for(auto& h:blocked)for(auto& b:h)b=true;}
     int Wheel()const{return wheel;}
     HandOutput Step(const HandInput& in) {
         HandOutput out;
@@ -46,7 +50,7 @@ public:
             clickWas[h]=in.click[h];
         }
         if(!valid||in.occupied||wheel>=0||toggled||reassigned) {
-            cast=-1;for(auto& h:blocked)for(auto& b:h)b=true;
+            cast=spell[0]=spell[1]=-1;for(auto& h:blocked)for(auto& b:h)b=true;
             out.wheel=wheel;return out;
         }
         if(cast>=0&&(!held[castHand][castButton]||
@@ -54,12 +58,26 @@ public:
             if(held[castHand][castButton])blocked[castHand][castButton]=true;
             cast=-1;
         }
-        // First active press owns the action until release. Simultaneous fresh
-        // presses prefer the right hand, and never fire later as a surprise.
+        for(int h=0;h<2;++h)if(spell[h]>=0&&(!held[h][spellButton[h]]||
+            !(in.independentSlots&(1u<<spell[h]))||
+            (spellButton[h]>0&&(in.grip[h]>.6f)!=spellGrip[h]))) {
+            if(held[h][spellButton[h]])blocked[h][spellButton[h]]=true;
+            spell[h]=-1;
+        }
+        // Physical spells have independent hand ownership. Native animated
+        // actions still have one owner; losing presses require release.
         for(int h=0;h<2;++h)for(int b=0;b<3;++b)if(edge[h][b]) {
-            if(cast<0){castHand=h;castButton=b;castGrip=in.grip[h]>.6f;cast=HandSlot(h,b+(b&&castGrip?2:0));}
+            const bool grip=in.grip[h]>.6f;
+            const int slot=HandSlot(h,b+(b&&grip?2:0));
+            if(cast<0&&spell[h]<0&&(in.independentSlots&(1u<<slot))) {
+                spell[h]=slot;spellButton[h]=b;spellGrip[h]=grip;
+                ++activation[h];
+            }
+            else if(cast<0&&spell[0]<0&&spell[1]<0){castHand=h;castButton=b;castGrip=grip;cast=slot;}
             else blocked[h][b]=true;
         }
+        out.spells[0]=spell[0];out.spells[1]=spell[1];
+        for(int h=0;h<2;++h)if(spell[h]>=0)out.activation[h]=activation[h];
         out.slot=cast;out.hand=castHand;return out;
     }
 };

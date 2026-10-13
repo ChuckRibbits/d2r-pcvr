@@ -123,7 +123,8 @@ bool HasComponent(uintptr_t storage,uint32_t entity) {
 }
 void Release(uintptr_t assets,uintptr_t definition,uint32_t entity,uintptr_t unit) {
     uint32_t type=~0u,missile=~0u;
-    if(enabled.load()&&Read(unit,type)&&type==3&&Read(unit+4,missile)&&framevr::bowflight::BasicMissile(missile)) {
+    if(enabled.load()&&Read(unit,type)&&type==3&&Read(unit+4,missile)&&
+       (framevr::bowflight::BasicMissile(missile)||bowvr::OwnsVisual(unit))) {
         const auto owner=reinterpret_cast<uintptr_t(*)(uintptr_t)>(d2rsig::Addr(OwnerRva))(unit);
         const auto registry=d2rsig::Addr(RegistryRva);
         if(EntityAlive(registry,entity)) {

@@ -83,7 +83,7 @@ struct Belt {
 struct Skill {
     int32_t id=-1,level=0,charges=-1;
     int32_t owner=-1;
-    bool known=false,available=false,directed=false,motion=false;
+    bool known=false,available=false,directed=false,motion=false,physical=false;
     char name[64]{};
     bool operator==(const Skill&) const = default;
 };

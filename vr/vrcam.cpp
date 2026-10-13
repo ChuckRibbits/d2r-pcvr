@@ -5784,6 +5784,22 @@ void BowTick() {
     bowvr::Update(gate,reinterpret_cast<uintptr_t>(hero));
     framevr::bowflight::Shot shot;
     if(framevr::TakeBowShot(shot))bowvr::Submit(shot);
+    for(int hand=0;hand<2;++hand)if(framevr::TakeSpellShot(hand,shot)) {
+        // The right casting weapon's visible shaft is the aiming reference.
+        // Free-hand casting uses its own complete tracked aim pose instead.
+        skel::MeleeWeaponPose pose;
+        const auto type=gamestate::WeaponType();
+        if(hand==0&&(type==D2RVR_TYPE_STAFF||type==D2RVR_TYPE_WAND||type==D2RVR_TYPE_SCEPTER||type==D2RVR_TYPE_ORB)&&
+           skel::MeleeWeapon(pose)&&pose.worldEpoch==g_meleeTurnEpoch.load()) {
+            using framevr::math::Vec;
+            const Vec p={pose.origin[0]/shot.unitsPerMetre,pose.origin[1]/shot.unitsPerMetre,pose.origin[2]/shot.unitsPerMetre};
+            const auto d=framevr::math::Normalized(Vec{pose.castingAxis[0],pose.castingAxis[1],pose.castingAxis[2]});
+            if(framevr::bowflight::Length(p-shot.origin)<.8f&&framevr::bowflight::Length(d)>.99f) {
+                shot.origin=p+d*.12f;shot.direction=d;
+            }
+        }
+        bowvr::Submit(shot);
+    }
 }
 void MeleeContactTick() {
     framevr::melee::Sample sample;
