@@ -21,7 +21,13 @@ ROOT = Path(__file__).resolve().parent.parent
 STEAM = Path.home() / '.local/share/Steam'
 GAME = STEAM / 'steamapps/common/Diablo II Resurrected'
 SAVES = STEAM / 'steamapps/compatdata/2536520/pfx/drive_c/users/steamuser/Saved Games/Diablo II Resurrected'
-LOADER_HASH = '9286c6b5bff7f1043658411dbea305faa9698b6a455e6441668fc6d02c22aad7'
+# Explicitly reviewed 1.3.1 archives from https://d2rloader.net/download.html.
+# Upstream replaced the same URL; retain the historical pin for existing caches.
+# Never accept a new digest automatically from the network.
+LOADER_HASHES = (
+    'f7bf0287398890b09bcc68b576327e727304bd88f7be80160f9676e8bd6871e2',
+    '9286c6b5bff7f1043658411dbea305faa9698b6a455e6441668fc6d02c22aad7',
+)
 RESHADE_HASH = 'afe4c8f13048306307983b8b3d41d5bf00a86820440b0e57dea10950e1176445'
 SDK_VERSION = '10.0.26100.9169'
 SDK_HASH = '475269434dcd808a67853773272f972c3229c0e10c3ddc821290e70cc0f6904d'
@@ -98,17 +104,28 @@ def read_dependency(path, missing_ok=False):
         raise dependency_io_error(path, 'read', error) from error
 
 
+def dependency_checksum_error(source, expected, actual):
+    # Keep this on one line: the graphical setup surfaces the last child line.
+    return SystemExit(
+        f'Checksum mismatch for {source}. Expected SHA-256: {", ".join(expected)}; '
+        f'received: {actual}. The download may have changed upstream or been corrupted. '
+        'Use the latest D2R PCVR installer; if it still fails, report these hashes. '
+        'No game files changed.')
+
+
 def download_verified(url, path, digest, max_bytes=100 * 1024 * 1024):
+    expected = (digest,) if isinstance(digest, str) else tuple(digest)
     cached = read_dependency(path, missing_ok=True)
-    if cached is not None and hashlib.sha256(cached).hexdigest() == digest:
+    if cached is not None and hashlib.sha256(cached).hexdigest() in expected:
         print(f'Using verified cached dependency: {path.name}')
         return
     print(f'Downloading {url}')
     request = urllib.request.Request(url, headers={'User-Agent': 'D2R-PCVR-installer/0.1'})
     with urllib.request.urlopen(request, timeout=60) as response:
         data = response.read(max_bytes + 1)
-    if hashlib.sha256(data).hexdigest() != digest:
-        raise SystemExit(f'Checksum mismatch for {url}; no game files changed.')
+    received = hashlib.sha256(data).hexdigest()
+    if received not in expected:
+        raise dependency_checksum_error(url, expected, received)
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(data)
@@ -116,8 +133,9 @@ def download_verified(url, path, digest, max_bytes=100 * 1024 * 1024):
         raise dependency_io_error(path, 'save', error) from error
     # Security software can remove/block a downloaded file even after writing
     # succeeds. Verify disk access before fetching further dependencies.
-    if hashlib.sha256(read_dependency(path)).hexdigest() != digest:
-        raise SystemExit(f'Checksum mismatch for saved dependency {path}; no game files changed.')
+    saved = hashlib.sha256(read_dependency(path)).hexdigest()
+    if saved != received:
+        raise dependency_checksum_error(f'saved dependency {path}', (received,), saved)
 
 
 def safe_relative(name):
@@ -197,7 +215,7 @@ def main():
     reshade = args.deps / 'reshade-6.8/ReShade64.dll'
     compiler = args.deps / 'd3dcompiler47/modern/d3dcompiler_47.dll'
     if args.download_deps:
-        download_verified('https://d2rloader.net/downloads/D2RLoader-1.3.1-beta.zip', archive, LOADER_HASH)
+        download_verified('https://d2rloader.net/downloads/D2RLoader-1.3.1-beta.zip', archive, LOADER_HASHES)
         setup = args.deps / 'ReShade_Setup_6.8.0_Addon.exe'
         download_verified('https://reshade.me/downloads/ReShade_Setup_6.8.0_Addon.exe', setup, RESHADE_HASH)
         # Official setup executable contains an appended ZIP. Extract the DLL
@@ -219,8 +237,9 @@ def main():
         raise SystemExit('Proton needs the SDK shader compiler; run with --download-deps.')
     if compiler.is_file() and hashlib.sha256(read_dependency(compiler)).hexdigest() != COMPILER_HASH:
         raise SystemExit('SDK shader compiler checksum mismatch; run with --download-deps.')
-    if hashlib.sha256(read_dependency(archive)).hexdigest() != LOADER_HASH:
-        raise SystemExit('D2RLoader archive checksum mismatch')
+    loader_digest = hashlib.sha256(read_dependency(archive)).hexdigest()
+    if loader_digest not in LOADER_HASHES:
+        raise dependency_checksum_error(f'D2RLoader archive {archive}', LOADER_HASHES, loader_digest)
     payload = {}
     try:
         with zipfile.ZipFile(archive) as z:

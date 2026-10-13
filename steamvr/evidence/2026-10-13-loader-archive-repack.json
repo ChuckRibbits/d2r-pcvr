@@ -1,0 +1,78 @@
+{
+  "issue": "https://github.com/bearstonem/d2r-pcvr/issues/26",
+  "observed_date_utc": "2026-10-13",
+  "official_checksum_page": "https://d2rloader.net/download.html",
+  "download_url": "https://d2rloader.net/downloads/D2RLoader-1.3.1-beta.zip",
+  "finding": "The current official ZIP repack contains byte-identical payloads to the previously pinned official archive; archive compression, ordering and metadata changed.",
+  "archives": {
+    "historical": {
+      "sha256": "9286c6b5bff7f1043658411dbea305faa9698b6a455e6441668fc6d02c22aad7",
+      "bytes": 47652455,
+      "file_compression": "DEFLATE",
+      "official_page_lists_hash": true
+    },
+    "current": {
+      "sha256": "f7bf0287398890b09bcc68b576327e727304bd88f7be80160f9676e8bd6871e2",
+      "bytes": 53679176,
+      "file_compression": "STORE",
+      "official_page_lists_hash": true,
+      "http_last_modified": "Tue, 13 Oct 2026 08:04:20 GMT"
+    }
+  },
+  "identical_payloads": [
+    {
+      "name": "D2RCore.dll",
+      "bytes": 18938712,
+      "sha256": "2a868d013d2e0830bd2d9e04b918b19e46a73cf726c833e70d089b948fdeb5a2"
+    },
+    {
+      "name": "D2RLoader.exe",
+      "bytes": 23331160,
+      "sha256": "93021dad48533bcfca8a95c69a0cc00cdb9008a3ce6ceba1d04c7aca71985a10"
+    },
+    {
+      "name": "d2rloader.mpq",
+      "bytes": 11398483,
+      "sha256": "1f02aa4e3179cb8a8417125160aa3ef18003ea81ee1a4f54e0a76fd3f22d933b"
+    },
+    {
+      "name": "d2rloader/config/d2rloader.toml",
+      "bytes": 9235,
+      "sha256": "86be762edb678386ef109589df85cb234cf13d992c548607a44f072d77655e42"
+    }
+  ],
+  "signature_observation": {
+    "binary_and_certificate_bytes_identical": true,
+    "signer_thumbprint": "8001082E968FADAA58BF2F73EFA1810A11D0C28F",
+    "windows_status_for_both_archives": "UnknownError: certificate chain terminates in an untrusted root",
+    "trust_store_modified": false,
+    "interpretation": "No code or signing change. Identity comparison and official published hashes do not establish trusted-root signature validation or an antivirus false positive."
+  },
+  "published_release_audit": {
+    "tag": "v0.3.10-windows-preview",
+    "published_utc": "2026-10-13T02:13:10Z",
+    "source_commit": "94b1c6206cd7d97e27f571496ff9e97021898833",
+    "installer_sha256": "84119d4bc229c1a7ae96ae246ec888883b5d4bfb22b85987b18afcdd9efbfd0a",
+    "portable_zip_sha256": "9d2f692f5e2a41f5f7d54c545e73d656214a82e9a08dd301ffd94c3f7fd01f6c",
+    "downloaded_zip_manifest_files_verified": 73,
+    "local_installer_matches_published_digest_and_build_receipt": true,
+    "both_setup_paths_use_historical_pin_only": true,
+    "loader_archive_bundled": false,
+    "verified_historical_cache_avoids_network": true
+  },
+  "fix_validation": {
+    "fixture_checks_passed": 63,
+    "fixture_suites": {
+      "steamvr/install_test.py": 22,
+      "steamvr/setup_native_test.py": 15,
+      "steamvr/setup_windows_test.py": 13,
+      "steamvr/uninstall_windows_test.py": 9,
+      "installer/stage_native_installer_test.py": 4
+    },
+    "fresh_official_download_passed_updated_verifier": true,
+    "current_and_historical_cache_reused_without_network": true,
+    "archive_executables_run": false,
+    "real_game_or_player_files_modified": false
+  },
+  "scope": "Dependency verification and packaging investigation only. No new game runtime or headset compatibility test; loader payloads are unchanged."
+}

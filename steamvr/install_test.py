@@ -53,6 +53,16 @@ class InstallationTests(unittest.TestCase):
             with zipfile.ZipFile(archive, 'w') as z:
                 z.writestr('D2RLoader.exe', b'fixture loader')
                 z.writestr('d2rloader/config/d2rloader.toml', 'fixture config')
+                z.comment = b'current loader archive fixture'
+            current_archive = archive.read_bytes()
+            historical_archive = io.BytesIO(current_archive)
+            with zipfile.ZipFile(historical_archive, 'a') as z:
+                z.comment = b'historical loader archive fixture'
+            historical_archive = historical_archive.getvalue()
+            # Distinct ZIP packaging with the same harmless install payload.
+            # Both pins must pass final preflight, independently of downloading.
+            loader_hashes = tuple(hashlib.sha256(data).hexdigest()
+                                  for data in (current_archive, historical_archive))
             (deps / 'reshade-6.8').mkdir()
             (deps / 'reshade-6.8/ReShade64.dll').write_bytes(b'fixture reshade')
             compiler = deps / 'd3dcompiler47/modern/d3dcompiler_47.dll'
@@ -82,17 +92,23 @@ class InstallationTests(unittest.TestCase):
                     patch.object(install, 'COMPILER_HASH', hashlib.sha256(compiler.read_bytes()).hexdigest()), \
                     patch.object(install, 'prepare_icons', side_effect=icons), \
                     patch.object(install, 'prepare_potions', side_effect=potions):
-                with patch.object(sys, 'argv', common), patch.object(install, 'LOADER_HASH', 'incorrect'):
-                    with self.assertRaises(SystemExit):
+                unapproved_hashes = ('0' * 64, '1' * 64)
+                with patch.object(sys, 'argv', common), patch.object(install, 'LOADER_HASHES', unapproved_hashes):
+                    with self.assertRaises(SystemExit) as caught:
                         install.main()
+                message = str(caught.exception)
+                self.assertIn(str(archive), message)
+                for digest in (*unapproved_hashes, loader_hashes[0]):
+                    self.assertIn(digest, message)
+                self.assertIn('No game files changed', message)
+                self.assertNotIn('\n', message)
                 self.assertFalse((root / 'backups').exists())
-                digest = hashlib.sha256(archive.read_bytes()).hexdigest()
                 read_bytes = Path.read_bytes
                 def blocked_archive(path):
                     if path == archive:
                         raise OSError(22, 'Invalid argument', str(path))
                     return read_bytes(path)
-                with patch.object(sys, 'argv', common), patch.object(install, 'LOADER_HASH', digest), \
+                with patch.object(sys, 'argv', common), patch.object(install, 'LOADER_HASHES', loader_hashes), \
                         patch.object(Path, 'read_bytes', blocked_archive):
                     with self.assertRaisesRegex(SystemExit, 'Protection history'):
                         install.main()
@@ -100,7 +116,7 @@ class InstallationTests(unittest.TestCase):
                 self.assertFalse((game / 'D2RLoader.exe').exists())
                 self.assertEqual((saves / 'Settings.json').read_text(), '{"Resolution Scale": 80}')
                 self.assertEqual((saves / 'Friend.d2s').read_bytes(), b'original progress')
-                with patch.object(sys, 'argv', common), patch.object(install, 'LOADER_HASH', digest):
+                with patch.object(sys, 'argv', common), patch.object(install, 'LOADER_HASHES', loader_hashes):
                     install.main()
                 snapshot = next((root / 'backups').iterdir())
                 record = install.read_record(game)
@@ -139,7 +155,9 @@ class InstallationTests(unittest.TestCase):
                 (saves / 'Settings.json').write_bytes(custom_video)
                 (game / 'ReShade.ini').write_bytes(b'custom reshade settings')
                 plugin.write_bytes(b'updated fixture plugin')
-                with patch.object(sys, 'argv', common + ['--preserve-settings']), patch.object(install, 'LOADER_HASH', digest):
+                archive.write_bytes(historical_archive)
+                with patch.object(sys, 'argv', common + ['--preserve-settings']), \
+                        patch.object(install, 'LOADER_HASHES', loader_hashes):
                     install.main()
                 self.assertEqual((game / 'd2rloader/plugins/d2r_vr.ini').read_bytes(), custom_ini)
                 self.assertEqual((saves / 'Settings.json').read_bytes(), custom_video)
@@ -271,6 +289,9 @@ class InstallationTests(unittest.TestCase):
 class DependencyDownloadTests(unittest.TestCase):
     payload = b'fixture dependency; no executable code'
     digest = hashlib.sha256(payload).hexdigest()
+    historical_payload = b'historical fixture dependency; no executable code'
+    historical_digest = hashlib.sha256(historical_payload).hexdigest()
+    approved_digests = (digest, historical_digest)
     url = 'https://example.invalid/fixture.zip'
 
     def test_verified_manual_cache_is_reused_without_network_or_replacement(self):
@@ -285,6 +306,48 @@ class DependencyDownloadTests(unittest.TestCase):
             write.assert_not_called()
             self.assertIn('Using verified cached dependency', output.getvalue())
             self.assertEqual(target.read_bytes(), self.payload)
+
+    def test_current_download_accepts_explicit_reviewed_hash_set(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            target = Path(temporary) / 'fixture.zip'
+            with patch.object(install.urllib.request, 'urlopen', return_value=io.BytesIO(self.payload)) as download, \
+                    contextlib.redirect_stdout(io.StringIO()):
+                install.download_verified(self.url, target, self.approved_digests)
+            download.assert_called_once()
+            self.assertEqual(target.read_bytes(), self.payload)
+
+    def test_historical_cache_is_reused_from_reviewed_hash_set(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            target = Path(temporary) / 'fixture.zip'
+            target.write_bytes(self.historical_payload)
+            with patch.object(install.urllib.request, 'urlopen') as download, \
+                    patch.object(Path, 'write_bytes') as write, \
+                    contextlib.redirect_stdout(io.StringIO()) as output:
+                install.download_verified(self.url, target, self.approved_digests)
+            download.assert_not_called()
+            write.assert_not_called()
+            self.assertIn('Using verified cached dependency', output.getvalue())
+            self.assertEqual(target.read_bytes(), self.historical_payload)
+
+    def test_unlisted_download_reports_hashes_and_preserves_existing_cache(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            target = Path(temporary) / 'fixture.zip'
+            original = b'old, unverified cache'
+            unlisted = b'unreviewed replacement at the same URL'
+            actual = hashlib.sha256(unlisted).hexdigest()
+            target.write_bytes(original)
+            with patch.object(install.urllib.request, 'urlopen', return_value=io.BytesIO(unlisted)), \
+                    contextlib.redirect_stdout(io.StringIO()):
+                with self.assertRaises(SystemExit) as caught:
+                    install.download_verified(self.url, target, self.approved_digests)
+            message = str(caught.exception)
+            self.assertIn('Checksum mismatch', message)
+            self.assertIn(self.url, message)
+            for digest in (*self.approved_digests, actual):
+                self.assertIn(digest, message)
+            self.assertIn('No game files changed', message)
+            self.assertNotIn('\n', message)
+            self.assertEqual(target.read_bytes(), original)
 
     def test_bad_download_keeps_existing_cache_and_enforces_checksum(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -366,6 +429,25 @@ class DependencyDownloadTests(unittest.TestCase):
                     contextlib.redirect_stdout(io.StringIO()):
                 with self.assertRaisesRegex(SystemExit, 'Checksum mismatch for saved dependency'):
                     install.download_verified(self.url, target, self.digest)
+
+    def test_saved_file_must_match_download_even_when_replaced_by_other_approved_payload(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            target = Path(temporary) / 'fixture.zip'
+            write_bytes = Path.write_bytes
+            def swapped_write(path, data):
+                self.assertEqual(data, self.payload)
+                return write_bytes(path, self.historical_payload)
+            with patch.object(Path, 'write_bytes', swapped_write), \
+                    patch.object(install.urllib.request, 'urlopen', return_value=io.BytesIO(self.payload)), \
+                    contextlib.redirect_stdout(io.StringIO()):
+                with self.assertRaises(SystemExit) as caught:
+                    install.download_verified(self.url, target, self.approved_digests)
+            message = str(caught.exception)
+            self.assertIn('Checksum mismatch for saved dependency', message)
+            self.assertIn(str(target), message)
+            self.assertIn(f'Expected SHA-256: {self.digest}', message)
+            self.assertIn(f'received: {self.historical_digest}', message)
+            self.assertEqual(target.read_bytes(), self.historical_payload)
 
 
 if __name__ == '__main__':
