@@ -45,6 +45,9 @@ const std::vector<uint8_t>& WristArt() {
 const std::vector<uint8_t>& WheelArt() {
     static const auto pixels=DecodeArt(L"D2RVR_WHEEL_FRAME",768,768);return pixels;
 }
+const std::vector<uint8_t>& HandWheelArt() {
+    static const auto pixels=DecodeArt(L"D2RVR_HAND_WHEEL_FRAME",768,768);return pixels;
+}
 bool KnownVital(bool known,float value,float maximum) {
     return known&&std::isfinite(value)&&std::isfinite(maximum)&&maximum>0&&value>=0;
 }
@@ -90,17 +93,23 @@ std::vector<uint8_t> Paint(const Snapshot& s,const Output& o,int selection) {
     auto text=[&](const char* t,RECT r){wchar_t w[256]{};MultiByteToWideChar(CP_UTF8,0,t,-1,w,256);DrawTextW(dc,w,-1,&r,DT_CENTER|DT_VCENTER|DT_WORDBREAK|DT_NOPREFIX);};
     auto polygon=[&](POINT* p,int n,COLORREF c){auto b=CreateSolidBrush(c);auto was=SelectObject(dc,b);auto pen=SelectObject(dc,GetStockObject(NULL_PEN));Polygon(dc,p,n);SelectObject(dc,pen);SelectObject(dc,was);DeleteObject(b);};
     const bool handWheel=o.wheelHand>=0;
-    auto wheelArt=handWheel?std::vector<uint8_t>{}:WheelArt();
+    const bool fiveSectors=handWheel&&!o.utility;
+    auto wheelArt=fiveSectors?HandWheelArt():WheelArt();
     if(!wheelArt.empty()) {
         static const auto cells=[] {
-            std::vector<int8_t> result(768*768);
-            for(int y=0;y<768;++y)for(int x=0;x<768;++x)result[y*768+x]=int8_t(WheelCell((x+.5f)/768,(y+.5f)/768));
+            std::array<std::vector<int8_t>,2> result;
+            for(int layout=0;layout<2;++layout){
+                result[layout].resize(768*768);
+                for(int y=0;y<768;++y)for(int x=0;x<768;++x)
+                    result[layout][y*768+x]=int8_t(WheelCell((x+.5f)/768,(y+.5f)/768,-1,MenuPage::Spells,layout?0:-1));
+            }
             return result;
         }();
         for(int y=0;y<768;++y)for(int x=0;x<768;++x) {
             auto* p=&wheelArt[(y*768+x)*4];
-            const int cell=cells[y*768+x];
-            if(p[3]&&cell>=0&&(!o.utility||cell!=2)&&(cell==o.hover||(!o.editor&&!o.utility&&cell==selection))) {
+            const int cell=cells[fiveSectors?1:0][y*768+x];
+            const bool active=!o.editor&&!o.utility&&cell==(fiveSectors?0:selection);
+            if(!o.map&&o.editor!=2&&p[3]&&cell>=0&&(!o.utility||cell!=2)&&(cell==o.hover||active)) {
                 const float amount=cell==o.hover?.26f:.13f;
                 const int gold[]={185,133,55};
                 for(int c=0;c<3;++c)p[c]=uint8_t(p[c]*(1-amount)+gold[c]*amount);
@@ -254,7 +263,7 @@ std::vector<uint8_t> Paint(const Snapshot& s,const Output& o,int selection) {
         char active[100];if(handWheel)std::snprintf(active,sizeof active,"Select a button to assign  /  click stick to close");
         else std::snprintf(active,sizeof active,"ACTIVE: %s",o.cue.known?o.cue.name:"Unknown skill");
         const auto prior=SelectObject(dc,skillFont);SetTextColor(dc,RGB(232,196,119));
-        text(active,{150,648,618,681});SelectObject(dc,prior);
+        text(active,handWheel?RECT{150,662,618,685}:RECT{150,648,618,681});SelectObject(dc,prior);
     }
     // Reserved atlas space: a compact weapon icon and an optional two-line
     // explanation. The native icon comes from the same cache as its wheel slot.

@@ -42,3 +42,22 @@ renders both pages with synthetic assignments and locally extracted icons.
 Native spell/item icons are **not** in this folder or in the release. Run
 `steamvr/prepare_icons.py` against a legitimate local Steam installation to
 create `d2rloader/plugins/d2r_vr_icons`. See INSTALL.md for the command.
+
+## Five-slot hand wheel frame
+
+`hand-wheel-frame.png` is original transparent artwork generated with the
+built-in OpenAI image tool on 2026-10-13. Its exact prompt is saved in
+[`hand-wheel-frame-prompt.txt`](hand-wheel-frame-prompt.txt). No game screenshot,
+extracted artwork, or third-party image was used as an input. It follows the
+existing charcoal-stone and aged-bronze UI materials.
+
+Both hand wheels share this frame. It contains five empty 72-degree sectors,
+with the trigger sector centered at twelve o'clock and a divider at six
+o'clock. Button labels, assignment icons, center labels, utility buttons and
+highlights remain runtime content. The equipment page retains the eight-sector
+frame. Both frames are embedded in the DLL, decoded once, and preserve their
+transparent silhouette. No additional loose files are needed for installation.
+
+Run `interaction-preview.exe <output.png> --hands-check` to preview both hand
+layouts. Runtime hover masks use the same five-sector `WheelCell` geometry as
+the laser hit testing.
