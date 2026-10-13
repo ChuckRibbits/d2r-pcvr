@@ -1,6 +1,7 @@
 #pragma once
 #include "frame_math.h"
 #include "world_coordinates.h"
+#include "spell_cast.h"
 #include <array>
 #include <cstdint>
 #include <limits>
@@ -11,7 +12,7 @@ namespace framevr::bowflight {
 using math::Vec;
 inline constexpr float ArrowLength=.75f; // same tail/tip as the tracked draw guide
 inline constexpr float JavelinLength=1.5f,JavelinGrip=.6f;
-enum class Kind : uint32_t { Arrow=0,Javelin=1 };
+enum class Kind : uint32_t { Arrow=0,Javelin=1,Spell=2 };
 inline float Length(Vec v) { return std::sqrt(math::Dot(v,v)); }
 inline bool Finite(Vec v) { return std::isfinite(v.x)&&std::isfinite(v.y)&&std::isfinite(v.z); }
 struct Shot {
@@ -20,8 +21,11 @@ struct Shot {
     float unitsPerMetre=0,draw=0;
     uint64_t session=0,epoch=0,sequence=0,at=0;
     uint32_t equipment=0,stamp=0;
+    int skill=-1,owner=-1,hand=0,slot=-1,missile=-1,level=0;
+    uint64_t binding=0,activation=0;
 };
-inline float ProjectileLength(const Shot& s) {return s.kind==Kind::Javelin?JavelinLength:ArrowLength;}
+inline float ProjectileLength(const Shot& s) {return s.kind==Kind::Spell?0:s.kind==Kind::Javelin?JavelinLength:ArrowLength;}
+inline uint32_t MissileId(const Shot& s){return s.kind==Kind::Spell?uint32_t(s.missile):uint32_t(s.kind);}
 inline bool BasicMissile(uint32_t id){return id<=1;}
 // Flight stays in rendered metres. Native paths/rooms use the unsheared grid.
 // Remove only the launch FLOOR's shear, never the arrow's airborne height or
@@ -33,7 +37,8 @@ inline Vec RenderGround(const Shot& shot,Vec gridWorld) {
     return coordinates::RenderGround(gridWorld*(1/shot.unitsPerMetre),shot.player.y);
 }
 inline bool Valid(const Shot& s) {
-    return BasicMissile(uint32_t(s.kind))&&s.session&&s.sequence&&Finite(s.origin)&&Finite(s.direction)&&Finite(s.player)&&
+    const bool kind=BasicMissile(uint32_t(s.kind))||(s.kind==Kind::Spell&&spellcast::Supported(s.skill)&&s.hand>=0&&s.hand<2&&s.slot>=0&&s.slot<10);
+    return kind&&s.session&&s.sequence&&Finite(s.origin)&&Finite(s.direction)&&Finite(s.player)&&
         std::isfinite(s.unitsPerMetre)&&s.unitsPerMetre>=1&&s.unitsPerMetre<=12&&
         std::isfinite(s.draw)&&s.draw>=0&&s.draw<=1&&
         std::fabs(Length(s.direction)-1)<.01f&&Length(s.origin-s.player)<3.5f;
@@ -42,9 +47,10 @@ struct Gate {
     bool active=false;
     uint64_t session=0,epoch=0,at=0;
     uint32_t equipment=0;
+    bool bowActive=true;
 };
 inline bool Allowed(const Shot& s,const Gate& g,uint64_t now) {
-    return Valid(s)&&g.active&&s.session==g.session&&s.epoch==g.epoch&&s.equipment==g.equipment&&
+    return Valid(s)&&g.active&&(s.kind==Kind::Spell||g.bowActive)&&s.session==g.session&&s.epoch==g.epoch&&s.equipment==g.equipment&&
         now>=s.at&&now-s.at<=150&&now>=g.at&&now-g.at<=150;
 }
 class Once {
@@ -123,6 +129,11 @@ inline float Speed(int nativeVelocity,float draw) {
     if(nativeVelocity<=0||!std::isfinite(draw))return 0;
     return std::clamp(float(nativeVelocity)*(20.f/4608.f)*(.7f+.3f*std::clamp(draw,0.f,1.f)),0.f,100.f);
 }
+inline float FlightSpeed(const Shot& shot,int nativeVelocity) {
+    // Native direction has magnitude 4096; (direction * velocity) >> 8
+    // produces 16.16 cells/tick. A cell is two world units, at 25 ticks/s.
+    return shot.kind==Kind::Spell?std::clamp(nativeVelocity*(50.f/4096.f)/shot.unitsPerMetre,0.f,100.f):Speed(nativeVelocity,shot.draw);
+}
 inline Vec Tip(const Shot& s,float distance) {return s.origin+s.direction*(ProjectileLength(s)+distance);}
 struct Flight {
     Shot shot{};
@@ -152,6 +163,11 @@ public:
         if(Bound())return Matches(candidate);
         entity=candidate;return true;
     }
+    bool BindRoot(uint32_t candidate,bool hasReleasePoint) {
+        // Particle spells use the unit root. Descendant meshes inherit its
+        // translation; binding a mesh as well would apply the offset twice.
+        return !hasReleasePoint&&Bind(candidate,true);
+    }
     void Clear(){entity=UINT32_MAX;}
 };
 // HD projectile models point along local +Z: arrow tail at -.98391676,
@@ -169,6 +185,25 @@ inline void ArrowMatrix(const Flight& f,uint64_t now,float out[16]) {
     out[4]=up.x*scale;out[5]=up.y*scale;out[6]=up.z*scale;out[7]=0;
     out[8]=forward.x*scale;out[9]=forward.y*scale;out[10]=forward.z*scale;out[11]=0;
     out[12]=origin.x;out[13]=origin.y;out[14]=origin.z;out[15]=1;
+}
+inline void SpellMatrix(const Flight& f,uint64_t now,float out[16]) {
+    const auto p=f.TailAt(now)*f.shot.unitsPerMetre;
+    const Vec forward=f.shot.direction;
+    const Vec guide=std::fabs(forward.y)<.95f?Vec{0,1,0}:Vec{1,0,0};
+    const Vec right=math::Normalized(math::Cross(guide,forward)),up=math::Cross(forward,right);
+    const Vec basis[3]={right,up,forward};
+    for(int i=0;i<3;++i) {
+        const float scale=Length({out[i*4],out[i*4+1],out[i*4+2]});
+        out[i*4]=basis[i].x*scale;out[i*4+1]=basis[i].y*scale;out[i*4+2]=basis[i].z*scale;
+    }
+    // These four native VFX have a +4-unit child height; Fireball also has
+    // +2.3 forward. Cancel their authored ground-launch offsets at the root
+    // so the visible emitter, rather than its invisible parent, starts at the
+    // hand. Values verified in the owned game's HD definitions; no assets ship.
+    const float ahead=f.shot.skill==47?2.3f:0;
+    out[12]=p.x-out[4]*4-out[8]*ahead;
+    out[13]=p.y-out[5]*4-out[9]*ahead;
+    out[14]=p.z-out[6]*4-out[10]*ahead;out[15]=1;
 }
 // A nocked game mesh uses the guide's exact tail, direction and length, without
 // native bow animation or prediction. Hidden preview geometry cannot occlude.

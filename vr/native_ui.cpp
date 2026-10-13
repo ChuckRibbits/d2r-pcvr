@@ -16,6 +16,7 @@
 #include "controller_bindings.h"
 #include "skill_slots.h"
 #include "spell_aim.h"
+#include "spell_cast.h"
 #include "weapon_skills.h"
 #include "panel_input.h"
 namespace gamestate {uint32_t DataBank();}
@@ -176,6 +177,10 @@ void Capture(framevr::interaction::Snapshot& s) {
            Read(row+0x24,flags)&&Read(row+0x4e,serverFunction)&&Read(row+0x66,missile)) {
             skill.directed=framevr::spellaim::Directed(flags,missile,serverFunction);
             skill.motion=framevr::weaponskills::Bow(skillId)||(skillId==framevr::weaponskills::Smite&&serverFunction==150);
+            int16_t start=-1;
+            uint8_t los=255;
+            if(Read(row+0x4c,start)&&Read(row+0x231,los))skill.physical=skill.owner==-1&&los==0&&
+                framevr::spellcast::Candidate(h[1],skillId,start,serverFunction,missile,flags);
         }
         const auto name=Name(skillId);std::snprintf(skill.name,sizeof skill.name,"%s",name.c_str());
     }
