@@ -2556,8 +2556,15 @@ XHook g_xhooks[] = {
 // usual camera-yaw turn below makes it a direction on the game's screen.
 // Pointing = the grip's -Z (a controller held like a gun) plus its -Y (a fist
 // round a bow's grip): flattened on the ground, one of the two always remains.
+bool NativeCastOwnsAim() {
+#ifdef D2RVR_NATIVE_OPENXR
+    return framevr::NativeSkillCasting();
+#else
+    return false;
+#endif
+}
 bool BowStick(XINPUT_STATE* s) {
-    if (g_set.bowMode.load() != 1) return false;
+    if (g_set.bowMode.load() != 1 || NativeCastOwnsAim()) return false;
     const XINPUT_GAMEPAD& g = s->Gamepad;
     const WORD skills = XINPUT_GAMEPAD_A | XINPUT_GAMEPAD_B | XINPUT_GAMEPAD_X | XINPUT_GAMEPAD_Y | XINPUT_GAMEPAD_RIGHT_SHOULDER;
     if (!(g.wButtons & skills) && g.bRightTrigger < 128) return false;
@@ -2805,7 +2812,7 @@ void SendKeysMouse(bool down) {
 }
 
 void AimByMouse(XINPUT_STATE* s) {
-    if (g_set.bowMode.load() != 2) {
+    if (g_set.bowMode.load() != 2 || NativeCastOwnsAim()) {
         if (g_aimDown) { SendKeysMouse(false); g_aimDown = false; }
         return;
     }
@@ -2874,7 +2881,7 @@ bool HandStick(float* sx, float* sy) {
 struct PreTurn { int stage = 0; ULONGLONG at = 0; float sx = 0, sy = 0; } g_pre;   // stage 0 idle, 1 turning, 2 attacking
 
 void AimByTurn(XINPUT_STATE* s) {
-    if (g_set.bowMode.load() != 3) { g_pre.stage = 0; return; }
+    if (g_set.bowMode.load() != 3 || NativeCastOwnsAim()) { g_pre.stage = 0; return; }
     XINPUT_GAMEPAD& g = s->Gamepad;
     const bool held = (g.wButtons & XINPUT_GAMEPAD_A) != 0 && !gamestate::MenuOpen();
     if (!held) { g_pre.stage = 0; return; }
@@ -3545,8 +3552,13 @@ bool KeyMoveMode() { return FlatKeyMode() || VrKeyWalk(); }
 // Our camera's views only (F2-F4: the stick turned like any other), no menu, no chat.
 std::atomic<int> g_stickHook{0};   // HookStickGet: 0 not in yet, 1 in, 2 not possible
 bool DirectWalkNow() {
+    // Cast handling can bypass the dedicated walking callbacks. During any
+    // native VR skill cast, leave the real locomotion stick in the pad report
+    // instead of clearing it and relying on those callbacks to restore it.
+    // Aim is resolved separately; neither the aim stick nor stand-still Shift
+    // may replace player movement. Native animation/state gates remain native.
     return g_set.platform.load() == 1 && g_set.directWalk.load() && g_enabled.load() && g_inWorld.load() &&
-           !gamestate::MenuOpen() && !ChatOpen();
+           !gamestate::MenuOpen() && !ChatOpen() && !NativeCastOwnsAim();
 }
 // BodyWalk's stick as the game takes a walking vector (x right, y up on its screen,
 // length <= 1, its dead zone 10349 of 32767 with no rescale), turned by our camera.

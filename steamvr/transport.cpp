@@ -1985,12 +1985,15 @@ bool SpellSelected() {
     return motionControls.load()&&motionInput.active&&!motionOutput.block&&motionOutput.rayValid&&
         (motion.Selection()>=0||motionOutput.skill>=0)&&GetTickCount64()-motionAt<150;
 }
+bool NativeSkillCasting() {
+    std::lock_guard lock(mutex);
+    return motionControls.load()&&gameplay::CastingSkill(motionInput,motionOutput,GetTickCount64()-motionAt);
+}
 bool DirectedSpellActive() {
     std::lock_guard lock(mutex);
     const int slot=motionOutput.skill;
     const auto now=GetTickCount64();
-    if(!motionControls.load()||!motionInput.active||motionOutput.block||!motionOutput.rayValid||
-       now-motionAt>=150||slot<0||slot>=skills::Count||
+    if(!motionControls.load()||!gameplay::CastingSkill(motionInput,motionOutput,now-motionAt)||
        !interaction::Fresh(interactionInput.snapshot,gamestate::LocalPlayer(),now))return false;
     const auto& skill=interactionInput.snapshot.skills[slot];
     if(motionOutput.bowReady&&skill.id==weaponskills::Strafe)return false;

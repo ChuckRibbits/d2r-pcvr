@@ -47,6 +47,11 @@ Projectile targets follow the sampled aim even while walking backward or
 strafing. They use the current native player position and world-space weapon
 direction, without the legacy walking calibration; the final target is corrected
 even when the native movement path skips the usual attack-point helper.
+While a trigger skill or quick-cast shortcut is held, locomotion stays on the
+native controller stick instead of the legacy direct-walk reinjection path.
+Legacy aim modes cannot replace that stick or hold stand-still Shift during a
+VR skill cast. Native cast-animation pauses still require in-game verification;
+this input fix does not remove the game's animation/state restrictions.
 Teeth keeps its native fan, centered on the weapon's horizontal direction.
 Ground placements, buffs, summons and corpse-only skills keep native targeting.
 Host tests and native signature/table checks pass; this aim correction still
