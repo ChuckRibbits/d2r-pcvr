@@ -1,5 +1,31 @@
 # Motion gameplay prototype
 
+## Two-hand wheels source candidate (2026-10-13)
+
+The current source replaces the single held wheel with two toggled hand wheels.
+Click either stick, then use the opposite laser and trigger to edit that hand's
+five slots. Trigger assignments are persistent; face shortcuts are temporary.
+The character's native controller assignments persist the ten bindings across
+weapon sets. Right A retains Interact when its native slot is basic/unassigned;
+an explicit spell assignment replaces it. Native duplicate-binding rules apply.
+
+The left trigger assignment now owns supported bow gestures and physical Smite.
+Right trigger still grabs the bow string; away from the string it uses its own
+assignment. The Weapon skill gestures VR setting disables those skill gestures
+without removing button casts. Unsupported melee skills remain button-only.
+Each hand has its own aim pose and skill indicator. Left casts cannot inherit
+an equipped right-hand wand/staff shaft. Simultaneous input is serialized with
+release gating, not delayed until another cast finishes.
+
+Movement and turning remain available while the wheel owns combat input.
+The Inventory, Map and VR Settings utility tabs replace displaced shortcuts;
+native menu navigation and motion-disabled fallback controls remain available.
+See [CONTROLS.md](../CONTROLS.md) for the current layout. The older controls and
+installed-build reports below are historical and do not describe this candidate.
+This candidate is not installed or headset-tested; the inherited aim/movement
+fix also does not establish uninterrupted movement through native animations.
+
+
 Right-handed OpenXR controls for offline D2R. The owner verified the live native
 bow string/draw and two-hand aiming, then verified revision 4 free-swing melee
 on 2026-10-09. A new **physical basic-arrow build is installed for testing**:

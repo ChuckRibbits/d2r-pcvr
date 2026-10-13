@@ -89,7 +89,8 @@ std::vector<uint8_t> Paint(const Snapshot& s,const Output& o,int selection) {
     auto fill=[&](RECT r,COLORREF c){auto b=CreateSolidBrush(c);FillRect(dc,&r,b);DeleteObject(b);};
     auto text=[&](const char* t,RECT r){wchar_t w[256]{};MultiByteToWideChar(CP_UTF8,0,t,-1,w,256);DrawTextW(dc,w,-1,&r,DT_CENTER|DT_VCENTER|DT_WORDBREAK|DT_NOPREFIX);};
     auto polygon=[&](POINT* p,int n,COLORREF c){auto b=CreateSolidBrush(c);auto was=SelectObject(dc,b);auto pen=SelectObject(dc,GetStockObject(NULL_PEN));Polygon(dc,p,n);SelectObject(dc,pen);SelectObject(dc,was);DeleteObject(b);};
-    auto wheelArt=WheelArt();
+    const bool handWheel=o.wheelHand>=0;
+    auto wheelArt=handWheel?std::vector<uint8_t>{}:WheelArt();
     if(!wheelArt.empty()) {
         static const auto cells=[] {
             std::vector<int8_t> result(768*768);
@@ -136,30 +137,33 @@ std::vector<uint8_t> Paint(const Snapshot& s,const Output& o,int selection) {
             icon(icons::Get(b),{mid,box.top,box.right,box.bottom});
         } else icon(icons::Get(a.handle?a:b),box);
     };
-    for(int i=0;!o.map&&o.editor!=2&&i<8;++i) {
+    const int sectors=handWheel&&!o.utility?5:8;
+    for(int i=0;!o.map&&o.editor!=2&&i<sectors;++i) {
+        const int slot=handWheel&&!o.utility?skills::HandSlot(o.wheelHand,i):i;
         if(o.utility&&i==2)continue; // Native tabbed menu retains journal access.
-        const float angle=i*Pi/4+WheelPhase;
+        const float sector=2*Pi/sectors;
+        const float angle=i*sector+(sectors==5?0:WheelPhase);
         const int x=int(384+std::sin(angle)*218),y=int(345.6f-std::cos(angle)*218)-(std::cos(angle)<-.5f?14:0);
         if(wheelArt.empty()) {
             POINT points[34];int n=0;
-            for(int k=0;k<=16;++k){float a=angle-Pi/8+.012f+(Pi/4-.024f)*k/16;points[n++]={LONG(384+std::sin(a)*308),LONG(345.6f-std::cos(a)*308)};}
-            for(int k=16;k>=0;--k){float a=angle-Pi/8+.012f+(Pi/4-.024f)*k/16;points[n++]={LONG(384+std::sin(a)*110),LONG(345.6f-std::cos(a)*110)};}
+            for(int k=0;k<=16;++k){float a=angle-sector/2+.012f+(sector-.024f)*k/16;points[n++]={LONG(384+std::sin(a)*308),LONG(345.6f-std::cos(a)*308)};}
+            for(int k=16;k>=0;--k){float a=angle-sector/2+.012f+(sector-.024f)*k/16;points[n++]={LONG(384+std::sin(a)*110),LONG(345.6f-std::cos(a)*110)};}
             polygon(points,n,o.hover==i?RGB(100,76,40):RGB(32,29,26));
         }
         char label[120]{};RECT box{x-51,y-64,x+51,y+31};
         if(!o.utility) {
             box={x-37,y-43,x+37,y+28};
-            const auto& skill=s.skills[i];
+            const auto& skill=s.skills[slot];
             if(skill.known&&skill.id>=0)icon(icons::Get("s"+std::to_string(skill.id)),box,skill.available);
             if(o.editor)std::snprintf(label,sizeof label,"%d. %s",i+1,skill.known?skill.name:"Unknown");
             else std::snprintf(label,sizeof label,"%s",skill.known?skill.name:"Unknown");
-            if(!o.editor&&i==selection) {
+            if(!o.editor&&(handWheel?i==0:i==selection)) {
                 const auto pen=CreatePen(PS_SOLID,3,RGB(230,190,96));
                 const auto oldPen=SelectObject(dc,pen),oldBrush=SelectObject(dc,GetStockObject(HOLLOW_BRUSH));
                 RoundRect(dc,box.left-5,box.top-5,box.right+5,box.bottom+5,10,10);
                 SelectObject(dc,oldBrush);SelectObject(dc,oldPen);DeleteObject(pen);
                 fill({x-34,y+12,x+34,y+28},RGB(100,74,29));
-                const auto prior=SelectObject(dc,shortcutFont);text("ACTIVE",{x-34,y+12,x+34,y+28});SelectObject(dc,prior);
+                const auto prior=SelectObject(dc,shortcutFont);text(handWheel?(o.wheelHand==1&&o.leftCue.gesture?"GESTURE":"PRIMARY"):"ACTIVE",{x-34,y+12,x+34,y+28});SelectObject(dc,prior);
             }
         } else if(i<4) {
             const char* utility[]={"Weapon I","Weapon II","",o.stowed?"Draw weapons":"Stow weapons"};
@@ -171,7 +175,7 @@ std::vector<uint8_t> Paint(const Snapshot& s,const Output& o,int selection) {
             if(b.known&&b.count)icon(icons::Get(b.Next()),box);
             std::snprintf(label,sizeof label,"%s%s%d",b.known?(b.count?PotionName(PotionType(b.Next().code)):"Empty"):"Unknown",b.known&&b.count?" x":"\nSlot ",b.known&&b.count?b.count:i-3);
         }
-        SetTextColor(dc,(!o.utility&&s.skills[i].known&&!s.skills[i].available)?RGB(148,137,117):RGB(235,218,181));
+        SetTextColor(dc,(!o.utility&&s.skills[slot].known&&!s.skills[slot].available)?RGB(148,137,117):RGB(235,218,181));
         if(o.utility)text(label,{x-76,y+35,x+76,y+86});
         if(!o.utility) {
             auto previous=SelectObject(dc,skillFont);
@@ -179,10 +183,10 @@ std::vector<uint8_t> Paint(const Snapshot& s,const Output& o,int selection) {
             fill({x-43,y-68,x+43,y-46},RGB(100,78,44));
             fill({x-41,y-66,x+41,y-48},RGB(24,20,16));
             SetTextColor(dc,RGB(235,205,151));
-            text(skills::NativeLabel(i),{x-41,y-68,x+41,y-46});
+            text(handWheel?(i==0?"TRIGGER":i==1?(o.wheelHand?"A / X":"A"):i==2?(o.wheelHand?"B / Y":"B"):"GRIP +") :skills::NativeLabel(i),{x-41,y-68,x+41,y-46});
             SelectObject(dc,shortcutFont);
             SetTextColor(dc,RGB(206,191,159));
-            text(skills::VrLabel(i),{x-62,y+68,x+62,y+99});
+            text(skills::VrLabel(slot),{x-85,y+68,x+85,y+105});
             SelectObject(dc,previous);
         }
     }
@@ -204,7 +208,7 @@ std::vector<uint8_t> Paint(const Snapshot& s,const Output& o,int selection) {
         SelectObject(dc,shortcutFont);text("Use a corner minimap layout in game options",{38,650,730,677});SelectObject(dc,font);
     } else if(o.editor==2) {
         frame({20,28,748,681});
-        char title[120];std::snprintf(title,sizeof title,"CHOOSE SKILL  /  %s",skills::NativeLabel(o.editSlot));
+        char title[120];std::snprintf(title,sizeof title,"CHOOSE SKILL  /  %s",handWheel?skills::VrLabel(o.editSlot):skills::NativeLabel(o.editSlot));
         text(title,{38,47,730,88});
         text(skills::VrLabel(o.editSlot),{38,96,540,143});
         frame({568,92,730,146},o.hover==8);text("CLEAR SLOT",{574,98,724,140});
@@ -220,6 +224,9 @@ std::vector<uint8_t> Paint(const Snapshot& s,const Output& o,int selection) {
             SetTextColor(dc,RGB(169,151,118));text(detail,{x+94,y+68,x+329,y+95});SetTextColor(dc,RGB(235,218,181));
         }
         if(!o.editCount)text("No active skills available",{56,249,712,430});
+    } else if(handWheel&&!o.utility) {
+        text(o.wheelHand?"LEFT HAND":"RIGHT HAND",{290,305,478,345});
+        text("CLOSE",{301,356,467,398});
     } else if(o.editor) {
         text(s.bindingsEditable?"CHOOSE\nA SLOT":"SKILLS\nUNAVAILABLE",{301,301,467,397});
     } else {
@@ -229,10 +236,10 @@ std::vector<uint8_t> Paint(const Snapshot& s,const Output& o,int selection) {
     }
     if(o.editor) {
         char hint[120];std::snprintf(hint,sizeof hint,"Set %s  /  %s",s.activeSet==2?"II":"I",
-            o.result==Result::Pending?"Saving...":o.result==Result::Applied?"Assigned":o.result==Result::Refused?"Changed or unavailable; choose the slot again":"Hold Left Y while editing");
+            o.result==Result::Pending?"Saving...":o.result==Result::Applied?"Assigned":o.result==Result::Refused?"Changed or unavailable; choose the slot again":handWheel?"Click stick to close":"Hold Left Y while editing");
         fill({29,637,739,680},RGB(22,18,14));text(hint,{35,639,733,678});
     }
-    const char* footer[4]={(o.utility||o.map)?"SPELLS":"EQUIPMENT","MAP","VR SETTINGS","EDIT SKILLS"};
+    const char* footer[4]={(o.utility||o.map)?"SPELLS":"EQUIPMENT","MAP","VR SETTINGS",handWheel?"INVENTORY":"EDIT SKILLS"};
     if(o.editor==1){footer[0]="BACK";footer[1]="";footer[2]="DONE";}
     if(o.editor==2){footer[0]="PREVIOUS";footer[1]="NEXT";footer[2]="BACK";}
     fill({20,686,749,745},RGB(18,16,14));
@@ -244,24 +251,29 @@ std::vector<uint8_t> Paint(const Snapshot& s,const Output& o,int selection) {
         text(footer[i],{box.left+5,box.top+5,box.right-5,box.bottom-5});
     }
     if(!o.editor&&!o.utility&&!o.map) {
-        char active[100];std::snprintf(active,sizeof active,"ACTIVE: %s",o.cue.known?o.cue.name:"Unknown skill");
+        char active[100];if(handWheel)std::snprintf(active,sizeof active,"Select a button to assign  /  click stick to close");
+        else std::snprintf(active,sizeof active,"ACTIVE: %s",o.cue.known?o.cue.name:"Unknown skill");
         const auto prior=SelectObject(dc,skillFont);SetTextColor(dc,RGB(232,196,119));
         text(active,{150,648,618,681});SelectObject(dc,prior);
     }
     // Reserved atlas space: a compact weapon icon and an optional two-line
     // explanation. The native icon comes from the same cache as its wheel slot.
-    const auto& cue=o.cue;
+    for(int hand=0;hand<2;++hand){
+    const auto& cue=hand?o.leftCue:o.cue;
+    const int offset=hand*200;
+    auto cueRect=[&](int l,int t,int r,int b){return RECT{l,t+offset,r,b+offset};};
     SetTextColor(dc,RGB(238,235,220));
-    fill({768,0,864,96},RGB(115,89,43));fill({772,4,860,92},RGB(25,21,17));
-    const bool haveIcon=cue.id>=0&&icon(icons::Get("s"+std::to_string(cue.id)),{778,10,854,86},cue.available);
-    if(!haveIcon)text(cue.id<0&&cue.known?"BASIC":"?",{776,8,856,88});
-    fill({768,100,1024,192},RGB(25,21,17));
+    fill(cueRect(768,0,864,96),RGB(115,89,43));fill(cueRect(772,4,860,92),RGB(25,21,17));
+    const bool haveIcon=cue.id>=0&&icon(icons::Get("s"+std::to_string(cue.id)),cueRect(778,10,854,86),cue.available);
+    if(!haveIcon)text(cue.id<0&&cue.known?"BASIC":"?",cueRect(776,8,856,88));
+    fill(cueRect(768,100,1024,192),RGB(25,21,17));
     SetTextColor(dc,cue.available?RGB(235,218,181):RGB(166,153,128));
     const auto priorCue=SelectObject(dc,skillFont);
-    text(cue.name,{774,104,1018,144});
-    SelectObject(dc,shortcutFont);text(cue.hint,{774,146,1018,188});SelectObject(dc,priorCue);
-    if(cue.temporary){SetTextColor(dc,RGB(232,196,119));text("QUICK CAST",{866,8,1018,55});}
-    if(cue.motionUnavailable){SetTextColor(dc,RGB(232,196,119));text("TRIGGER ONLY",{866,8,1018,55});}
+    text(cue.name,cueRect(774,104,1018,144));
+    SelectObject(dc,shortcutFont);text(cue.hint,cueRect(774,146,1018,188));SelectObject(dc,priorCue);
+    if(cue.temporary){SetTextColor(dc,RGB(232,196,119));text("QUICK CAST",cueRect(866,8,1018,55));}
+    if(cue.motionUnavailable){SetTextColor(dc,RGB(232,196,119));text("TRIGGER ONLY",cueRect(866,8,1018,55));}
+    }
     SetTextColor(dc,RGB(238,235,220));
     const COLORREF colours[]={RGB(90,90,90),RGB(169,37,45),RGB(43,82,193),RGB(131,55,165),RGB(67,151,66),RGB(183,191,205),RGB(218,165,70)};
     for(int i=0;i<4;++i) {

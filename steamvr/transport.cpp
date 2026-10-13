@@ -30,7 +30,7 @@
 #include "input.h"
 #include "window_focus.h"
 #include "gameplay.h"
-#include "quick_cast.h"
+#include "hand_controls.h"
 #include "interaction_ui.h"
 #include "interaction_paint.h"
 #include "latest_worker.h"
@@ -91,7 +91,13 @@ std::atomic<bool> symmetricProjection{true};
 std::atomic<bool> eyeTracking{false};
 std::atomic<bool> motionControls{false};
 gameplay::Engine motion;
-skills::QuickCast quickCast;
+skills::HandControls handControls;
+skills::HandOutput handOutput;
+gameplay::Pose handAim[2]{};
+bool handAimTracked[2]{};
+int castHand=0;
+interaction::Skill shieldSkill;
+constexpr int shieldSlot=skills::TriggerSlot(1);
 gameplay::Input motionInput;
 gameplay::Output motionOutput;
 interaction::Engine interactions;
@@ -271,7 +277,7 @@ XrAction haptic=XR_NULL_HANDLE;
 XrAction primary=XR_NULL_HANDLE, secondary=XR_NULL_HANDLE, stickClick=XR_NULL_HANDLE, menu=XR_NULL_HANDLE;
 XrPath hands[2]{}; // right, left, matching the existing wire format.
 XrSpace handSpaces[2]{};
-XrSpace aimSpace=XR_NULL_HANDLE;
+XrSpace aimSpace=XR_NULL_HANDLE,leftAimSpace=XR_NULL_HANDLE;
 XrPosef menuPose{};
 bool menuPlaced=false;
 bool panelMode=false,pointerVisible=false,pointerHit=false,mouseDown=false,triggerWasDown=false,cancelWasDown=false;
@@ -390,7 +396,7 @@ weaponskills::ContactContext ShieldContext(const melee::Sample& sample,uint64_t 
 }
 weaponskills::ContactContext LiveShieldContext() {
     return {gamestate::LocalPlayer(),(meleeEpoch<<32)|bowWorldEpoch,motionInput.skillContext,
-        motionInput.equipment,motion.Selection(),motionInput.selectedOwner};
+        motionInput.equipment,shieldSlot,shieldSkill.owner};
 }
 void CancelShieldCast() {
     shieldPoses.Clear();shieldPulse.Cancel();
@@ -402,7 +408,7 @@ void ClearInput() {
     panelinput::WorldInput(false);
     gamestate::MenuMap(false);
     menuControls.Suspend();menuNavigation.Reset();nativeMenuPad={};laserClick={};panelinput::UseController();
-    quickCast.Suspend();
+    handControls.Suspend();
     bodyCalibration.Suspend();
     settingsInputGate.Suspend();
     ++meleeEpoch;motion.Cancel();motionOutput={};motionAt=0;gamecmd::CancelPotion();
@@ -537,6 +543,7 @@ bool SetupActions() {
     }
     XrActionSpaceCreateInfo sci{XR_TYPE_ACTION_SPACE_CREATE_INFO};sci.action=aimPose;sci.subactionPath=hands[0];sci.poseInActionSpace.orientation.w=1;
     if(!Check(pCreateActionSpace(session,&sci,&aimSpace),"create menu aim space"))return false;
+    sci.subactionPath=hands[1];if(!Check(pCreateActionSpace(session,&sci,&leftAimSpace),"create left aim space"))return false;
     if(gazeReady) {
         XrActionSpaceCreateInfo gi{XR_TYPE_ACTION_SPACE_CREATE_INFO};gi.action=gazeAction;gi.poseInActionSpace.orientation.w=1;
         gazeReady=Check(pCreateActionSpace(session,&gi,&gazeSpace),"create gaze space");
@@ -867,21 +874,22 @@ gameplay::Pose MotionPose(XrPosef pose) {return {V(pose.position),Q(pose.orienta
 XrPosef XrPose(gameplay::Pose p) {return {{p.q.x,p.q.y,p.q.z,p.q.w},{p.p.x,p.p.y,p.p.z}};}
 void MotionPointer() {
     motionInput.hover=-1;
-    if(!motionInput.active||!interactions.WheelVisible(motionInput.palette)||!motionInput.tracked[1]||!motionInput.aimTracked)return;
-    // Attached to the left hand with its orientation; raise the palm to face
-    // the palette toward the eyes. No camera-locked panel following the head.
-    auto pose=motionInput.hand[1];
-    const math::Quat palmTilt{-.70710678f,0,0,.70710678f};
-    pose.q=math::Multiply(pose.q,palmTilt);
-    pose.p=pose.p+math::Rotate(pose.q,{0,.12f,.025f});palettePose=XrPose(pose);
-    const auto ray=motionInput.aim.p,direction=math::Rotate(motionInput.aim.q,{0,0,-1});
+    if(!motionInput.active||handControls.Wheel()<0||!motionInput.tracked[handControls.Wheel()]||!handAimTracked[1-handControls.Wheel()])return;
+    const int hand=handControls.Wheel(),pointer=1-hand;
+    auto pose=motionInput.hand[hand];
+    const auto normal=math::Normalized(motionInput.head.p-pose.p);
+    auto right=math::Normalized(math::Cross({0,1,0},normal));
+    if(math::Dot(right,right)<.5f)return;
+    pose.q=math::FromAxes(right,math::Cross(normal,right),normal);
+    pose.p=pose.p+math::Vec{0,.12f,0};palettePose=XrPose(pose);
+    const auto ray=handAim[pointer].p,direction=math::Rotate(handAim[pointer].q,{0,0,-1});
     math::PanelHit hit;
     pointerHit=math::IntersectPanel(ray,direction,pose.p,pose.q,paletteWidth,paletteHeight,hit);
     beamLength=pointerHit?hit.distance:.65f;
     const auto mid=ray+direction*(beamLength*.5f);
     beamPose=XrPose({mid,math::BeamOrientation(direction,V(head.position)-mid)});pointerVisible=true;
     if(pointerHit) {
-        motionInput.hover=interaction::WheelCell(hit.u,hit.v,interactionOutput.hover,interactions.Page());
+        motionInput.hover=interaction::WheelCell(hit.u,hit.v,interactionOutput.hover,interactions.Page(),hand);
         dotPose=XrPose({hit.point+math::Rotate(pose.q,{0,0,.003f}),pose.q});
     }
 }
@@ -1080,17 +1088,11 @@ void Input() {
         const auto config=vrsettings::Read();
         if(config.ready&&config.result!=settings::Result::Saving){calibrationPrompted=true;if(!calibration::Stored(config.values))OpenBodyCalibration();}
     }
-    const uint8_t quickFaces=((controls.buttons&menus::A)?1:0)|((controls.buttons&menus::B)?2:0)|
-        ((controls.buttons&menus::X)?4:0)|((controls.buttons&menus::Y)?8:0);
-    const bool quickAllowed=motionControls.load()&&gameplayChain&&motionHeadTracked&&
-        !panelMode&&!spatialMode&&!settingsModel.open&&!bodyCalibration.Active()&&!calibrationRelease.blocked&&!interactionOutput.wheel&&
-        interactionOutput.bottle<0&&interactionOutput.owner[0]!=interaction::Owner::Holster&&
-        interactionOutput.owner[1]!=interaction::Owner::Holster&&inWorld&&inWorld();
-    quickCast.Capture(quickAllowed,controls.lt/255.f,quickFaces);
-    const bool inventoryPressed=inventoryButton.Update((controls.buttons&menus::X)!=0)&&!quickCast.Suppress(2);
+    const bool dualBindings=motionControls.load()&&gameplayChain;
+    const bool inventoryPressed=inventoryButton.Update((controls.buttons&menus::X)!=0)&&!dualBindings;
     const bool menuPressed=menuButton.Update((controls.buttons&menus::Start)!=0);
-    const bool settingsChord=menus::SettingsChord(physical,quickCast.Suppress(3));
-    const auto settingsEdges=settingsInputGate.Step(motionHeadTracked,settingsChord,Float(trigger,0),Bool(secondary,0)&&!quickCast.Suppress(1));
+    const bool settingsChord=!dualBindings&&menus::SettingsChord(physical,false);
+    const auto settingsEdges=settingsInputGate.Step(motionHeadTracked,settingsChord,Float(trigger,0),Bool(secondary,0));
     bool settingsOwned=settingsModel.open||calibrationRelease.Step(bodyCalibration.Active(),Float(trigger,0),Float(trigger,1),physical.buttons&(menus::A|menus::B|menus::X|menus::Y|menus::Start));
     if(settingsModel.open&&settingsSession!=gamestate::LocalPlayer()){CloseSettings();settingsOwned=true;}
     if(settingsEdges.chord&&!bodyCalibration.Active()&&!calibrationRelease.blocked){if(settingsModel.open)CloseSettings();else OpenSettings();settingsOwned=true;}
@@ -1135,11 +1137,11 @@ void Input() {
     if(heightResetButton.Update((controls.buttons&menus::LeftStick)!=0,s.leftGrip)&&!settingsOwned&&!nativeUi)ResetHeight();
     motionInput={};motionInput.time=Milliseconds()/1000.;motionInput.head=MotionPose(head);
     motionInput.active=motionControls.load()&&gameplayChain&&motionHeadTracked&&!panelMode&&!spatialMode&&!settingsOwned&&!settingsChord&&!inventoryPressed&&!menuPressed&&inWorld&&inWorld();
-    motionInput.palette=(controls.buttons&menus::Y)&&!quickCast.Suppress(3);
+    motionInput.handBindings=true;
     motionInput.grip[0]=(physical.buttons&menus::RightBumper)&&!(controls.buttons&menus::RightBumper)?0:s.rightGrip;
     motionInput.grip[1]=(physical.buttons&menus::LeftBumper)&&!(controls.buttons&menus::LeftBumper)?0:s.leftGrip;
-    motionInput.cancel=(controls.buttons&menus::B)&&!quickCast.Suppress(1);
-    motionInput.quickCast=quickCast.Layer();
+    motionInput.cancel=false;
+    motionInput.quickCast=false;
     motionInput.trigger=controls.rt/255.f;motionInput.weapon=MotionWeapon();
     motionInput.meleeStyle=MotionMeleeStyle();
     motionInput.equipment=gamestate::HandsKey()^(gamestate::WeaponSet()<<30);
@@ -1159,20 +1161,41 @@ void Input() {
         }
     }
     CalibrationInput();
-    XrSpaceLocation aimed{XR_TYPE_SPACE_LOCATION};
     const auto aimFlags=XR_SPACE_LOCATION_POSITION_VALID_BIT|XR_SPACE_LOCATION_ORIENTATION_VALID_BIT|
                         XR_SPACE_LOCATION_POSITION_TRACKED_BIT|XR_SPACE_LOCATION_ORIENTATION_TRACKED_BIT;
-    if(XR_SUCCEEDED(pLocateSpace(aimSpace,space,frameState.predictedDisplayTime,&aimed))&&(aimed.locationFlags&aimFlags)==aimFlags) {
-        motionInput.aim=MotionPose(aimed.pose);motionInput.aimTracked=true;
+    for(int h=0;h<2;++h){
+        XrSpaceLocation aimed{XR_TYPE_SPACE_LOCATION};
+        handAimTracked[h]=XR_SUCCEEDED(pLocateSpace(h?leftAimSpace:aimSpace,space,frameState.predictedDisplayTime,&aimed))&&(aimed.locationFlags&aimFlags)==aimFlags;
+        if(handAimTracked[h])handAim[h]=MotionPose(aimed.pose);
     }
+    const auto bindingSnapshot=interactionstate::Read();
+    uint64_t bindingContext=bindingSnapshot.session^(uint64_t(bindingSnapshot.bindingBank+1)<<48)^(meleeEpoch<<16)^motionInput.equipment;
+    uint64_t bindingLayout=0;
+    for(const auto& skill:bindingSnapshot.skills)bindingLayout=(bindingLayout^uint32_t(skill.id+2)^uint32_t(skill.owner)^
+        (uint64_t(skill.known)<<40)^(uint64_t(skill.available)<<41)^(uint64_t(skill.motion)<<42))*1099511628211ull;
+    skills::HandInput handInput;handInput.time=motionInput.time;handInput.context=bindingContext;
+    handInput.layout=bindingLayout;
+    handInput.active=motionInput.active&&motionInput.tracked[0]&&motionInput.tracked[1]&&handAimTracked[0]&&handAimTracked[1]&&gamestate::LocalPlayer();
+    handInput.occupied=interactionOutput.bottle>=0||interactionOutput.owner[0]==interaction::Owner::Holster||interactionOutput.owner[1]==interaction::Owner::Holster;
+    for(int h=0;h<2;++h){
+        handInput.trigger[h]=h?controls.lt/255.f:controls.rt/255.f;handInput.grip[h]=motionInput.grip[h];
+        handInput.click[h]=(controls.buttons&(h?menus::LeftStick:menus::RightStick))!=0;
+        if(h==1&&motionInput.grip[1]>.6f)handInput.click[h]=false;
+        handInput.face[h][0]=(controls.buttons&(h?menus::X:menus::A))!=0;
+        handInput.face[h][1]=(controls.buttons&(h?menus::Y:menus::B))!=0;
+    }
+    handOutput=handControls.Step(handInput);
+    motionInput.palette=handOutput.wheel>=0;
+    motionInput.aim=handAim[0];motionInput.aimTracked=handAimTracked[0];
     MotionPointer();
     interactionInput={};interactionInput.time=motionInput.time;interactionInput.session=gamestate::LocalPlayer();
     interactionInput.at=GetTickCount64();interactionInput.epoch=meleeEpoch;interactionInput.active=motionInput.active;
     interactionInput.head={motionInput.head.p,motionInput.head.q};
-    interactionInput.snapshot=interactionstate::Read();interactionInput.reply=interactionstate::Status();
+    interactionInput.snapshot=bindingSnapshot;interactionInput.reply=interactionstate::Status();
     interactionInput.spell=motion.Selection()>=0;interactionInput.wheel=motionInput.palette;interactionInput.cancel=motionInput.cancel;
-    interactionInput.quickCast=motionInput.quickCast;
-    interactionInput.reservedLeft=(controls.buttons&menus::LeftStick)!=0;interactionInput.trigger=motionInput.trigger;interactionInput.hover=motionInput.hover;
+    interactionInput.quickCast=handOutput.slot>=0;
+    interactionInput.wheelHand=handOutput.wheel;
+    interactionInput.reservedLeft=(controls.buttons&menus::LeftStick)!=0;interactionInput.trigger=handOutput.wheel==0?controls.lt/255.f:controls.rt/255.f;interactionInput.hover=motionInput.hover;
     interactionInput.leftTrigger=controls.lt/255.f;
     if(!interactionPaintValid||interactionPaintContext!=interaction::Context(interactionInput.snapshot,interactionOutput,
         interaction::Fresh(interactionInput.snapshot,interactionInput.session,interactionInput.at)))interactionInput.hover=-1;
@@ -1181,7 +1204,8 @@ void Input() {
     interactionOutput=interactions.Step(interactionInput);
     if(interactionOutput.settings){OpenSettings();settingsOwned=true;interactionInput.active=motionInput.active=false;}
     gamestate::MenuMap(mapSupported&&interaction::MapWanted(interactionInput,interactionOutput,interactionInput.at));
-    if(interactionOutput.select>=-1)motion.Select(interactionOutput.select);
+    if(interactionOutput.inventory&&toggleMenus)toggleMenus();
+    if(handOutput.wheel>=0&&!interactionOutput.wheel){handControls.Close();handOutput={};}
     if(interactionOutput.cancelPending)interactionstate::Cancel();
     if(interactionOutput.request.action!=interaction::Action::None)interactionstate::Request(interactionOutput.request);
     if(interactionOutput.feedback)MotionPulse(interactionOutput.feedbackHand,interactionOutput.feedback==2?.65f:.25f,interactionOutput.feedback>=3?100000000:35000000);
@@ -1189,22 +1213,32 @@ void Input() {
     motionInput.active=motionInput.active&&!interactionOutput.block;
     const auto& quickSnapshot=interactionInput.snapshot;
     const bool quickFresh=interaction::Fresh(quickSnapshot,interactionInput.session,interactionInput.at);
-    uint8_t quickAvailable=0;
-    if(quickFresh)for(int i=0;i<skills::Count;++i)
-        if(quickSnapshot.skills[i].known&&quickSnapshot.skills[i].available&&quickSnapshot.skills[i].id>=0)quickAvailable|=1u<<i;
-    motionInput.quickSkill=quickCast.Resolve(motionInput.active&&motionInput.tracked[0]&&motionInput.tracked[1]&&motionInput.aimTracked&&quickFresh,
-        motionInput.grip[1]>.6f,quickAvailable,quickSnapshot.session,meleeEpoch,motionInput.equipment,quickSnapshot.bindingBank,motionInput.time);
-    const int selected=motion.Selection();
-    if(quickFresh&&selected>=0&&selected<skills::Count) {
-        const auto& skill=quickSnapshot.skills[selected];
-        motionInput.selectedSkill=skill.id;motionInput.selectedOwner=skill.owner;
-        motionInput.selectedAvailable=skill.known&&skill.available&&skill.motion;
-    }
-    motionInput.skillContext=interactionInput.session^(uint64_t(quickSnapshot.bindingBank+1)<<48)^(meleeEpoch<<16);
+    const auto& rightSkill=quickSnapshot.skills[skills::TriggerSlot(0)];
+    const auto gestureSettings=vrsettings::Read().values;
+    const int selected=rightSkill.known&&rightSkill.id>=0?skills::TriggerSlot(0):-1;
+    if(motion.Selection()!=selected)motion.Select(selected);
+    motionInput.selectedSkill=rightSkill.id;motionInput.selectedOwner=rightSkill.owner;
+    motionInput.selectedAvailable=quickFresh&&rightSkill.known&&rightSkill.available&&rightSkill.motion;
+    shieldSkill=quickSnapshot.skills[shieldSlot];
+    motionInput.bowSlot=gestureSettings[settings::SkillGestures]>.5f&&shieldSkill.known&&shieldSkill.available&&shieldSkill.motion&&weaponskills::Bow(shieldSkill.id)?shieldSlot:-1;
+    motionInput.bowSkill=motionInput.bowSlot>=0?shieldSkill.id:-1;motionInput.bowOwner=shieldSkill.owner;
+    const int requested=handOutput.slot;
+    const bool requestedKnown=requested>=0&&quickFresh&&quickSnapshot.skills[requested].known&&quickSnapshot.skills[requested].available;
+    handOutput.interact=requestedKnown&&quickSnapshot.skills[requested].id==357;
+    const bool quick=requested>=0&&requested!=skills::TriggerSlot(0);
+    motionInput.quickCast=quick||handOutput.interact;
+    motionInput.quickSkill=quick&&requestedKnown&&!handOutput.interact?requested:-1;
+    motionInput.trigger=requested==skills::TriggerSlot(0)&&!handOutput.interact?controls.rt/255.f:0;
+    if(quick||handOutput.interact){motionInput.aim=handAim[handOutput.hand];motionInput.aimTracked=handAimTracked[handOutput.hand];}
+    castHand=quick||handOutput.interact?handOutput.hand:0;
+    motionInput.skillContext=bindingContext^bindingLayout;
     motionInput.shieldEquipped=gamestate::LeftShield()&&::melee::ShieldReady();
     motionOutput=motion.Step(motionInput);motionAt=GetTickCount64();
-    const bool shieldValid=motionInput.active&&!motionOutput.block&&!motionInput.quickCast&&
-        motionInput.shieldEquipped&&motionInput.selectedAvailable&&motionInput.selectedSkill==weaponskills::Smite&&
+    motionOutput.shieldContact=motionInput.active&&!motionOutput.block&&!motionInput.quickCast&&motionInput.trigger<.2f&&
+        motionInput.shieldEquipped&&gestureSettings[settings::SkillGestures]>.5f&&quickFresh&&shieldSkill.available&&shieldSkill.motion&&shieldSkill.id==weaponskills::Smite;
+    if(motionOutput.skill>=0&&(!quickFresh||!quickSnapshot.skills[motionOutput.skill].available))motionOutput.skill=-1;
+    const bool shieldValid=motionInput.active&&!motionOutput.block&&!motionInput.quickCast&&motionInput.trigger<.2f&&gestureSettings[settings::SkillGestures]>.5f&&
+        motionInput.shieldEquipped&&shieldSkill.available&&shieldSkill.motion&&shieldSkill.id==weaponskills::Smite&&
         weaponskills::Current(shieldCast.context,LiveShieldContext(),shieldCast.at,motionAt);
     if(!shieldValid){
         if(shieldCast.issued&&motionAt>=shieldCast.at&&motionAt-shieldCast.at<=1500)shieldCast.cancelled=true;
@@ -1212,27 +1246,24 @@ void Input() {
         shieldPulse.Cancel();
     }
     else if(!shieldCast.issued) {
-        if(motionAt-shieldCast.at<=150&&shieldPulse.Start(selected,weaponskills::Smite,motionInput.selectedOwner,motionInput.skillContext,motionInput.time))shieldCast.issued=true;
+        if(motionAt-shieldCast.at<=150&&shieldPulse.Start(shieldSlot,weaponskills::Smite,shieldSkill.owner,motionInput.skillContext,motionInput.time))shieldCast.issued=true;
         else {shieldCast={};shieldPulse.Cancel();}
     }
     if(shieldCast.issued&&!shieldCast.cancelled) {
-        motionOutput.skill=shieldPulse.Get(selected,weaponskills::Smite,motionInput.selectedOwner,motionInput.skillContext,motionInput.time);
+        motionOutput.skill=shieldPulse.Get(shieldSlot,weaponskills::Smite,shieldSkill.owner,motionInput.skillContext,motionInput.time);
         motionOutput.meleeContact=false;
         // Keep observing the left stroke during native wind-up. Resetting it
         // here would allow the same continuous swing to become another bash.
     }
-    if(motionOutput.nativeBowRelease&&motionInput.selectedSkill==weaponskills::Strafe)volleyRequestedAt=motionAt;
+    if(motionOutput.nativeBowRelease&&motionInput.bowSkill==weaponskills::Strafe)volleyRequestedAt=motionAt;
     interaction::SkillCue cue;
-    cue.slot=motionInput.quickSkill>=0?motionInput.quickSkill:motion.Selection();
-    cue.temporary=motionInput.quickSkill>=0;
+    cue.slot=motionInput.quickSkill>=0&&castHand==0?motionInput.quickSkill:motion.Selection();
+    cue.temporary=motionInput.quickSkill>=0&&castHand==0;
     if(cue.slot>=0&&cue.slot<skills::Count&&quickFresh) {
         const auto& skill=quickSnapshot.skills[cue.slot];cue.id=skill.id;cue.owner=skill.owner;
         cue.known=skill.known;cue.available=skill.known&&skill.available&&skill.id>=0;
         std::snprintf(cue.name,sizeof cue.name,"%s",skill.known?skill.name:"Unknown skill");
-        std::snprintf(cue.hint,sizeof cue.hint,"%s",cue.available?(cue.temporary?"Point & trigger":
-            weaponskills::Hint(skill.id,skill.motion&&motionInput.weapon==gameplay::Weapon::Bow,skill.motion&&motionInput.shieldEquipped)):"Assignment unavailable");
-        cue.motionUnavailable=!cue.temporary&&cue.available&&skill.id==weaponskills::Smite&&gamestate::LeftShield()&&!::melee::ShieldReady();
-        if(cue.motionUnavailable)std::snprintf(cue.hint,sizeof cue.hint,"Shield bash unavailable; use trigger");
+        std::snprintf(cue.hint,sizeof cue.hint,"%s",cue.available?(cue.temporary?"Right hand shortcut":"Right hand: point & trigger"):"Assignment unavailable");
     } else if(cue.slot<0) {
         cue.known=cue.available=true;
         std::snprintf(cue.name,sizeof cue.name,"%s",motionInput.weapon==gameplay::Weapon::Bow?"Basic Arrow":"Basic Attack");
@@ -1248,8 +1279,22 @@ void Input() {
     if(cue!=previousCue){cueChangedAt=motionAt;previousCue=cue;}
     cue.expanded=motionAt-cueChangedAt<1800||cue.busy||!cue.available||cue.motionUnavailable;
     interactionOutput.cue=cue;
+    auto& leftCue=interactionOutput.leftCue;
+    leftCue.slot=motionInput.quickSkill>=0&&castHand==1?motionInput.quickSkill:shieldSlot;
+    leftCue.temporary=motionInput.quickSkill>=0&&castHand==1;
+    const auto& leftSkill=quickSnapshot.skills[leftCue.slot];leftCue.id=leftSkill.id;leftCue.owner=leftSkill.owner;
+    leftCue.known=quickFresh&&leftSkill.known;leftCue.available=leftCue.known&&leftSkill.available;
+    std::snprintf(leftCue.name,sizeof leftCue.name,"%s",leftCue.known?leftSkill.name:"Unavailable");
+    leftCue.gesture=!leftCue.temporary&&leftCue.available&&gestureSettings[settings::SkillGestures]>.5f&&leftSkill.motion&&
+        ((weaponskills::Bow(leftSkill.id)&&motionInput.weapon==gameplay::Weapon::Bow)||(leftSkill.id==weaponskills::Smite&&motionInput.shieldEquipped));
+    std::snprintf(leftCue.hint,sizeof leftCue.hint,"%s",leftCue.gesture?weaponskills::Hint(leftSkill.id,
+        motionInput.weapon==gameplay::Weapon::Bow,motionInput.shieldEquipped):leftCue.temporary?"Left hand shortcut":"Left hand: point & trigger");
+    leftCue.expanded=leftCue.temporary;
+    leftCue.busy=shieldCast.issued&&!shieldCast.cancelled;
+
     panelinput::WorldInput(motionInput.active&&motionInput.tracked[0]&&motionInput.tracked[1]&&motionInput.aimTracked);
-    if(motionInput.quickCast&&(motionOutput.block||!motionOutput.rayValid))quickCast.Suspend();
+    if(!motionInput.active||motionOutput.block||!motionOutput.rayValid)handOutput.interact=false;
+    if(motionInput.quickCast&&(motionOutput.block||!motionOutput.rayValid))handControls.Close();
     const uint32_t hidden=interactionOutput.stowed?3u:journalMode?2u:interactionOutput.bottleHand>=0?1u<<interactionOutput.bottleHand:0;
     skel::SetInteractionHidden(hidden);
     potionScene=potions::MakeScene(interactionInput,interactionOutput);
@@ -1292,7 +1337,7 @@ void Input() {
         sample.equipment=motionInput.equipment;sample.active=motionInput.active&&motionOutput.meleeContact;
         meleePoses.Push(s.sampleStamp,sample);
         sample.hand=motionInput.hand[1];sample.shield=true;sample.active=motionInput.active&&motionOutput.shieldContact;
-        sample.skillSlot=motion.Selection();sample.skillOwner=motionInput.selectedOwner;sample.skillContext=motionInput.skillContext;
+        sample.skillSlot=shieldSlot;sample.skillOwner=shieldSkill.owner;sample.skillContext=motionInput.skillContext;
         shieldPoses.Push(s.sampleStamp,sample);
     }
     skel::SetMotionBow(motionInput.active&&motionOutput.bowReady,motionOutput.bowDrawing,motionOutput.draw,s.rightHand,s.leftHand,s.sampleStamp);
@@ -1339,7 +1384,7 @@ void Input() {
     // Right A goes only through semantic interact; a raw A bypasses its
     // no-target guard and accidentally attacks when pointing at empty space.
     p.buttons=menus::WorldButtons(controls);
-    if(heightResetButton.MapPressed())p.buttons|=XINPUT_GAMEPAD_LEFT_THUMB;
+    if(!dualBindings&&heightResetButton.MapPressed())p.buttons|=XINPUT_GAMEPAD_LEFT_THUMB;
     p.thumb_lx=controls.lx;p.thumb_ly=controls.ly;p.thumb_rx=controls.rx;p.thumb_ry=controls.ry;
     p.left_trigger=controls.lt;
     const float rightTrigger=controls.rt/255.f;
@@ -1347,10 +1392,11 @@ void Input() {
     p.right_trigger=attackAllowed?uint8_t(std::clamp(rightTrigger,0.f,1.f)*255):0;
     auto& a=*actions.data;a.held=0;
     if(p.right_trigger>128)a.held|=D2RVR_ACT_ATTACK;
-    if((controls.buttons&menus::A)&&!quickCast.Suppress(0))a.held|=D2RVR_ACT_INTERACT;
-    if(heightResetButton.MapPressed())a.held|=D2RVR_ACT_MAP;
-    // Physical right-stick click belongs to native menus (hold-to-sort).
-    // Gameplay swaps are requested by the shoulder gesture or wheel only.
+    if(handOutput.interact||(!dualBindings&&(controls.buttons&menus::A)))a.held|=D2RVR_ACT_INTERACT;
+    if(!dualBindings&&heightResetButton.MapPressed())a.held|=D2RVR_ACT_MAP;
+
+    // Stick clicks toggle wheels here and retain native hold-to-sort in menus.
+    // Gameplay swaps remain shoulder or equipment-wheel actions.
     if(motionControls.load()&&gameplayChain) {
         p.buttons=0;p.left_trigger=p.right_trigger=0;
         a.held&=~D2RVR_ACT_ATTACK;
@@ -1363,7 +1409,7 @@ void Input() {
         if(motionOutput.block||!motionInput.active||!motionOutput.rayValid) {
             a.held=motionOutput.swap?D2RVR_ACT_SWAP:0;p.buttons=0;p.left_trigger=0;
         }
-        if(interactionOutput.wheel) {p.thumb_lx=p.thumb_ly=p.thumb_rx=p.thumb_ry=0;}
+        // Wheel ownership consumes combat, never locomotion or turning.
     }
     if(panelMode||spatialMode||settingsOwned||settingsChord) {
         // Native UI receives a separate report; a laser click has no RT/A
@@ -1794,7 +1840,7 @@ void EndPair() {
     XrCompositionLayerQuad palette{XR_TYPE_COMPOSITION_LAYER_QUAD},bottle{XR_TYPE_COMPOSITION_LAYER_QUAD},chosen{XR_TYPE_COMPOSITION_LAYER_QUAD};
     std::array<XrCompositionLayerQuad,2> bowString{{{XR_TYPE_COMPOSITION_LAYER_QUAD},{XR_TYPE_COMPOSITION_LAYER_QUAD}}};
     std::array<XrCompositionLayerQuad,2> arrow{{{XR_TYPE_COMPOSITION_LAYER_QUAD},{XR_TYPE_COMPOSITION_LAYER_QUAD}}};
-    XrCompositionLayerQuad nock{XR_TYPE_COMPOSITION_LAYER_QUAD},bowHint{XR_TYPE_COMPOSITION_LAYER_QUAD},activeSkill{XR_TYPE_COMPOSITION_LAYER_QUAD};
+    XrCompositionLayerQuad nock{XR_TYPE_COMPOSITION_LAYER_QUAD},bowHint{XR_TYPE_COMPOSITION_LAYER_QUAD},activeSkill{XR_TYPE_COMPOSITION_LAYER_QUAD},leftActiveSkill{XR_TYPE_COMPOSITION_LAYER_QUAD};
     const bool gameplayVisible=layer&&!panelMode&&motionControls.load()&&motionInput.active&&gameplayChain&&motionOutput.rayValid;
     auto motionQuad=[&](XrCompositionLayerQuad& q,XrPosef pose,float w,float h,XrRect2Di rect,XrSwapchain chain) {
         if(count>=contentLimit||!gameplay::Valid(MotionPose(pose))||!std::isfinite(w)||!std::isfinite(h)||w<=0||h<=0)return;
@@ -1848,12 +1894,22 @@ void EndPair() {
     if(gameplayVisible&&!interactionOutput.wheel&&!interactionOutput.stowed&&interactionOutput.bottle<0&&
        interactionPaintValid&&interactionPaintContext.cue==interactionOutput.cue&&interactionChain) {
         const auto& cue=interactionOutput.cue;
-        const int side=motionInput.weapon==gameplay::Weapon::Bow||cue.id==weaponskills::Smite?1:0;
+        const int side=0;
         const auto hand=motionInput.hand[side];
         const auto at=hand.p+math::Rotate(hand.q,{0,-.10f,.08f});
         const auto pose=XrPose({at,Q(head.orientation)});
         if(cue.expanded)motionQuad(activeSkill,pose,.24f,.18f,{{768,0},{256,192}},interactionChain);
         else motionQuad(activeSkill,pose,.075f,.075f,{{768,0},{96,96}},interactionChain);
+    }
+    if(gameplayVisible&&!interactionOutput.wheel&&!interactionOutput.stowed&&interactionOutput.bottle<0&&
+       interactionPaintValid&&interactionPaintContext.leftCue==interactionOutput.leftCue&&interactionChain) {
+        const auto& cue=interactionOutput.leftCue;
+        if(cue.known&&cue.id>=0){
+            const auto hand=motionInput.hand[1];const auto at=hand.p+math::Rotate(hand.q,{0,-.10f,.08f});
+            const auto pose=XrPose({at,Q(head.orientation)});
+            if(cue.expanded)motionQuad(leftActiveSkill,pose,.24f,.18f,{{768,200},{256,192}},interactionChain);
+            else motionQuad(leftActiveSkill,pose,.075f,.075f,{{768,200},{96,96}},interactionChain);
+        }
     }
     if(gameplayVisible&&motionOutput.bowReady) {
         const auto bow=motionInput.hand[1];
@@ -1985,9 +2041,14 @@ bool SpellSelected() {
     return motionControls.load()&&motionInput.active&&!motionOutput.block&&motionOutput.rayValid&&
         (motion.Selection()>=0||motionOutput.skill>=0)&&GetTickCount64()-motionAt<150;
 }
+bool LeftHandAiming(){std::lock_guard lock(mutex);return motionControls.load()&&castHand==1&&motionInput.active&&GetTickCount64()-motionAt<150;}
 bool NativeSkillCasting() {
     std::lock_guard lock(mutex);
     return motionControls.load()&&gameplay::CastingSkill(motionInput,motionOutput,GetTickCount64()-motionAt);
+}
+bool NativeAimOwnership() {
+    std::lock_guard lock(mutex);
+    return motionControls.load()&&(interactionOutput.wheel||gameplay::CastingSkill(motionInput,motionOutput,GetTickCount64()-motionAt));
 }
 bool DirectedSpellActive() {
     std::lock_guard lock(mutex);
@@ -2032,15 +2093,15 @@ int TakeShieldTarget(uint32_t& target) {
     std::lock_guard lock(mutex);
     if(!shieldCast.issued||shieldCast.taken)return 0;
     if(shieldCast.cancelled||!motionControls.load()||!motionInput.active||motionInput.quickCast||
-       GetTickCount64()-motionAt>150||!weaponskills::Current(shieldCast.context,LiveShieldContext(),shieldCast.at,GetTickCount64())||!motionInput.selectedAvailable||
-       motionInput.selectedSkill!=weaponskills::Smite||!motionInput.shieldEquipped||motionOutput.block)return -1;
+       GetTickCount64()-motionAt>150||!weaponskills::Current(shieldCast.context,LiveShieldContext(),shieldCast.at,GetTickCount64())||!shieldSkill.available||!shieldSkill.motion||
+       shieldSkill.id!=weaponskills::Smite||!motionInput.shieldEquipped||motionOutput.block)return -1;
     target=shieldCast.target;shieldCast.taken=true;return 1;
 }
 bool ShieldAim(float& x,float& y) {
     std::lock_guard lock(mutex);
     if(!shieldCast.issued||shieldCast.cancelled||shieldCast.taken||!motionInput.active||motionOutput.block||motionInput.quickCast||
-       motionOutput.skill!=shieldCast.context.slot||motionInput.selectedSkill!=weaponskills::Smite||
-       !motionInput.selectedAvailable||!motionInput.shieldEquipped||GetTickCount64()-motionAt>150||
+       motionOutput.skill!=shieldCast.context.slot||shieldSkill.id!=weaponskills::Smite||
+       !shieldSkill.available||!shieldSkill.motion||!motionInput.shieldEquipped||GetTickCount64()-motionAt>150||
        !weaponskills::Current(shieldCast.context,LiveShieldContext(),shieldCast.at,GetTickCount64()))return false;
     x=shieldCast.gridTarget.x;y=shieldCast.gridTarget.z;return std::isfinite(x+y);
 }
@@ -2129,6 +2190,7 @@ void Shutdown() {
     if(gameplayChain&&pDestroySwapchain)pDestroySwapchain(gameplayChain);gameplayChain=XR_NULL_HANDLE;
     if(pointerChain&&pDestroySwapchain)pDestroySwapchain(pointerChain);pointerChain=XR_NULL_HANDLE;
     if(aimSpace&&pDestroySpace)pDestroySpace(aimSpace);aimSpace=XR_NULL_HANDLE;
+    if(leftAimSpace&&pDestroySpace)pDestroySpace(leftAimSpace);leftAimSpace=XR_NULL_HANDLE;
     if(gazeSpace&&pDestroySpace)pDestroySpace(gazeSpace);gazeSpace=XR_NULL_HANDLE;
     gazeAction=XR_NULL_HANDLE;gazeReady=gazeValid=gazeExtension=gazeSupported=false;gazeStability.Reset();
     for(auto& e:eyes){if(e.chain&&pDestroySwapchain)pDestroySwapchain(e.chain);e={};}

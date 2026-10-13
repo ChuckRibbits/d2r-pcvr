@@ -46,9 +46,11 @@ struct Input {
     // Pointer cell: 0..7 native controller skills, 8 attack, 9 swap,
     // 10/11 unused, 12..15 belt columns. -1 = no hit.
     int hover=-1;
+    bool handBindings=false;
     bool quickCast=false;
     int quickSkill=-1;
     int selectedSkill=-1,selectedOwner=-1;
+    int bowSlot=-1,bowSkill=-1,bowOwner=-1;
     uint64_t skillContext=0;
     bool selectedAvailable=false,shieldEquipped=false;
 };
@@ -110,7 +112,7 @@ public:
         *this=Engine{};selection=chosen;weapon=heldWeapon;equipment=heldEquipment;
     }
     int Selection() const { return selection; }
-    void Select(int slot) {if(slot>=-1&&slot<8){Cancel();selection=slot;}}
+    void Select(int slot) {if(slot>=-1&&slot<skills::Count){Cancel();selection=slot;}}
     Output Step(const Input& in) {
         Output out;
         // Analog trigger hysteresis: a small squeeze fluctuation must not let
@@ -126,7 +128,7 @@ public:
         if(!primed||dt<=0||dt>.10||changed||Length(in.hand[0].p-previousHand)>.35f||Length(in.hand[1].p-previousLeft)>.35f||
            ((in.weapon==Weapon::Melee||in.weapon==Weapon::Javelin)&&bottle<0&&!in.palette&&!in.quickCast&&RotationDistance(previousRotation,in.hand[0].q)>MeleeAngularTrackingLimit*dt)) {
             Cancel();primed=true;previousTime=in.time;previousHand=in.hand[0].p;previousRotation=in.hand[0].q;previousLeft=in.hand[1].p;
-            if(changed&&(in.weapon==Weapon::Bow||in.weapon==Weapon::Melee||in.weapon==Weapon::Javelin))selection=-1;
+            if(changed&&!in.handBindings&&(in.weapon==Weapon::Bow||in.weapon==Weapon::Melee||in.weapon==Weapon::Javelin))selection=-1;
             weapon=in.weapon;equipment=in.equipment;triggerWas=trigger;gripWas=grip;
             out.block=true;return out;
         }
@@ -174,8 +176,10 @@ public:
         }
         if(blockedTrigger) {out.block=true;return out;}
 
-        const bool skillBow=selection>=0&&in.selectedAvailable&&weaponskills::Bow(in.selectedSkill);
-        if((drawing||nativeBowTrigger)&&((selection>=0&&!in.selectedAvailable)||drawSkill!=in.selectedSkill||drawOwner!=in.selectedOwner||drawContext!=in.skillContext)) {
+        const int bowSlot=in.handBindings?in.bowSlot:selection;
+        const int bowSkill=in.handBindings?in.bowSkill:in.selectedSkill,bowOwner=in.handBindings?in.bowOwner:in.selectedOwner;
+        const bool skillBow=bowSlot>=0&&(in.handBindings||in.selectedAvailable)&&weaponskills::Bow(bowSkill);
+        if((drawing||(nativeBowTrigger&&!in.handBindings))&&((!in.handBindings&&selection>=0&&!in.selectedAvailable)||drawSkill!=bowSkill||drawOwner!=bowOwner||drawContext!=in.skillContext)) {
             drawing=nativeBowTrigger=false;skillPulse.Cancel();blockedTrigger=true;out.block=true;return out;
         }
 
@@ -208,7 +212,7 @@ public:
             return out; // only the release spends ammunition; never hold A
         }
 
-        if(in.weapon==Weapon::Bow&&(selection<0||skillBow)) {
+        if(in.weapon==Weapon::Bow&&(in.handBindings||selection<0||skillBow)) {
             const Vec line=in.hand[1].p-in.hand[0].p;
             const float gap=Length(line);
             out.bowReady=true;out.bowForward=BowForward(in.hand[1]);
@@ -217,13 +221,21 @@ public:
             out.bowInReach=Length(in.hand[0].p-out.nockPoint)<.28f;
             if(out.bowInReach&&!bowWasInReach&&!drawing)out.feedback=4;
             bowWasInReach=out.bowInReach;
+            // The bow belongs to the left hand; the right trigger still grabs
+            // its string. Away from it, the right trigger keeps its own skill.
+            if(in.handBindings&&(nativeBowTrigger||(triggerEdge&&!out.bowInReach))) {
+                nativeBowTrigger=trigger;
+                if(trigger){out.skill=selection;out.attack=selection<0;
+                    out.rayOrigin=in.aim.p;out.rayDirection=math::Rotate(in.aim.q,{0,0,-1});return out;}
+                return out;
+            }
             // The equipped bow already belongs to the left hand. No extra
             // grip clutch: trigger grabs its visible string target, including
             // when squeezed just before entering the generous grab region.
             // Away from the string, a fresh press retains the native comfort
             // fallback. Once that press casts, moving into the string cannot
             // also nock an arrow until the trigger has been released.
-            if(skillBow&&triggerEdge&&!out.bowInReach) {
+            if(!in.handBindings&&skillBow&&triggerEdge&&!out.bowInReach) {
                 nativeBowTrigger=true;drawSkill=in.selectedSkill;drawOwner=in.selectedOwner;drawContext=in.skillContext;
             }
             if(nativeBowTrigger) {
@@ -232,7 +244,7 @@ public:
             }
             if(trigger&&!drawing&&out.bowInReach&&in.time>=pulseUntil) {
                 drawing=true;drawStart=in.time;nockGap=gap;out.feedback=1;
-                drawSkill=in.selectedSkill;drawOwner=in.selectedOwner;drawContext=in.skillContext;
+                drawSkill=bowSkill;drawOwner=bowOwner;drawContext=in.skillContext;
             }
             if(drawing&&gap>1.10f) {drawing=false;blockedTrigger=true;out.block=true;return out;}
             out.bowCharged=drawing&&gap>=.28f&&gap-nockGap>=.12f&&in.time-drawStart>=.12;
@@ -243,7 +255,7 @@ public:
                     shotOrigin=in.hand[1].p;shotDirection=math::Normalized(line);
                     pulseUntil=in.time+.065;out.feedback=2;
                     if(skillBow) {
-                        out.nativeBowRelease=skillPulse.Start(selection,in.selectedSkill,in.selectedOwner,in.skillContext,in.time);
+                        out.nativeBowRelease=skillPulse.Start(bowSlot,bowSkill,bowOwner,in.skillContext,in.time);
                     } else out.bowRelease=true;
                     shotAimUntil=in.time+.4;
                 }
@@ -258,7 +270,7 @@ public:
             // skills use one brief native button press, retaining their volley,
             // effects, resource checks and native animation/cadence.
             out.attack=false;
-            if(skillBow)out.skill=skillPulse.Get(selection,in.selectedSkill,in.selectedOwner,in.skillContext,in.time);
+            if(skillBow)out.skill=skillPulse.Get(bowSlot,bowSkill,bowOwner,in.skillContext,in.time);
             return out;
         }
         // Contact melee runs from the equipped weapon's posed transform. It

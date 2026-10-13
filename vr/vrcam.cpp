@@ -2558,7 +2558,7 @@ XHook g_xhooks[] = {
 // round a bow's grip): flattened on the ground, one of the two always remains.
 bool NativeCastOwnsAim() {
 #ifdef D2RVR_NATIVE_OPENXR
-    return framevr::NativeSkillCasting();
+    return framevr::NativeAimOwnership();
 #else
     return false;
 #endif
@@ -2664,7 +2664,7 @@ bool HandRay(float* o, float* d) {
     // final posed weapon in its captured WORLD frame, not a bone from one
     // frame combined with a newer headset yaw from another.
     const auto castingType=gamestate::WeaponType();
-    if(g_eyeOk.load()&&framevr::SpellSelected()&&
+    if(g_eyeOk.load()&&!framevr::LeftHandAiming()&&framevr::SpellSelected()&&
        (castingType==D2RVR_TYPE_WAND||castingType==D2RVR_TYPE_STAFF||castingType==D2RVR_TYPE_SCEPTER||castingType==D2RVR_TYPE_ORB)) {
         skel::MeleeWeaponPose pose;
         if(!skel::MeleeWeapon(pose)||pose.weaponType!=castingType||pose.worldEpoch!=g_meleeTurnEpoch.load())return false;

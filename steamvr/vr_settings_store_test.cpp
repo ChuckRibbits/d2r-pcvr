@@ -25,9 +25,14 @@ int main(){
     Check(vrsettings::Submit(request)&&!vrsettings::Submit(request),"one queued transaction at a time");
     Check(vrsettings::Read().result==Result::Saving&&vrsettings::Poll(name),"write transaction succeeds");
     auto saved=vrsettings::Read();Check(saved.result==Result::Saved&&saved.values[Foveation]==2&&saved.values[Motion]==1,"saved values round trip");
+    Check(saved.values[SkillGestures]==1,"skill gestures default on for existing profiles");
     Check(Int(path,L"render",L"fixed_foveation")==1&&Int(path,L"render",L"eye_tracked_foveation")==1,"eye-tracked mode writes both keys");
     Check(Int(path,L"custom",L"keep")==12345&&Int(path,L"render",L"rings")==6,"Apply preserves unrelated keys");
     Check(Int(backup,L"custom",L"keep")==12345&&Int(backup,L"gameplay",L"motion_controls")==-999,"first Apply preserves original config backup");
+    model.Open(saved);model.Click({Kind::Change,SkillGestures,-1});request=model.Click({Kind::Apply});
+    Check(vrsettings::Submit(request)&&vrsettings::Poll(name),"gesture preference saves through the normal settings transaction");
+    saved=vrsettings::Read();
+    Check(saved.values[SkillGestures]==0&&Int(path,L"gameplay",L"skill_gestures")==0,"gesture opt-out survives profile reload");
     model.Open(saved);model.Click({Kind::Change,Foveation,-1});model.Click({Kind::Change,Foveation,-1});
     request=model.Click({Kind::Apply});
     Check(WritePrivateProfileStringW(L"custom",L"later",L"42",name),"simulate unrelated external edit");
