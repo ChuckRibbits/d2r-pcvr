@@ -1,0 +1,32 @@
+{
+  "release_tag": "v0.3.9-windows-preview",
+  "source_base": "f35bfa1ef4b8766510b494660e19b03bfc242207",
+  "plugin_source_commit": "f35bfa1ef4b8766510b494660e19b03bfc242207",
+  "plugin_sha256": "e6c4e7f918244a2c26a79b77dc1b6ca425896b883a01918eb21d4443f056c4f2",
+  "native_tests_passed": 40,
+  "python_tests_passed": 69,
+  "python_suites": {
+    "setup_windows_test.py": 13,
+    "setup_native_test.py": 14,
+    "install_test.py": 10,
+    "uninstall_windows_test.py": 9,
+    "battlenet_test.py": 8,
+    "launch_windows_test.py": 11,
+    "installer/stage_native_installer_test.py": 4
+  },
+  "compiled_installer_lifecycle": {
+    "result": "passed",
+    "scope": "Stub backend only: file installation, Windows Apps registration, blocked removal retains helpers, successful removal"
+  },
+  "previous_live_validation": {
+    "physical_paladin_smite": "Owner confirmed on Steam Frame / SteamVR with Steam 3.3.93787, before the Map-tab change",
+    "desktop_handoff": "Four consecutive frontend/OpenXR launches; last three used the original SteamVR shortcut route. First three closed normally; fourth was left open for testing. Agent entered no character."
+  },
+  "limits": [
+    "The freshly rebuilt release DLL has not had a headset session.",
+    "Fresh owner-triggered Frame launch, both-eye Map tab placement, Amazon arrow skills, shield fit across models and native wind-up cancellation remain pending.",
+    "Issue #11's underlying install failure is unknown; this release fixes hidden installer diagnostics, not a confirmed cause on the reporter's PC.",
+    "Quest 2 and Battle.net VDXR remain unconfirmed.",
+    "No live game or Steam configuration was changed during release preparation. Mutation tests use disposable fixtures."
+  ]
+}

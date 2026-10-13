@@ -1,4 +1,4 @@
-# D2R PCVR v0.3.8 — Windows preview
+# D2R PCVR v0.3.9 — Windows preview
 
 Play **Diablo II: Resurrected in VR on Windows** with
 **SteamVR or Virtual Desktop (VDXR)**. This preview is for **local offline
@@ -29,27 +29,57 @@ is required for library shortcuts, including with the Battle.net edition.
 
 ## What's new
 
-- **Graphical Windows installer:** run **D2R-PCVR-Setup-0.3.8.exe**, select
-  Steam or Battle.net, then your headset and SteamVR / Virtual Desktop connection.
-  Confirm the detected folders and let Setup add the matching Steam shortcuts.
-- **Private runtime included:** no separate Python installation or Python download
-  is needed for the EXE. Setup still downloads the required loader and ReShade.
-- **Permanent helper folder:** helpers, instructions and verified backups live in
-  `%LOCALAPPDATA%\Programs\D2R PCVR`.
-- **Update / repair:** rerun Setup to keep calibration and video settings. ZIP
-  installations can upgrade; original backups are copied and checked before
-  updating. Setup asks for the backup folder if an older installation has an
-  incomplete record. Keep the old folder until Setup succeeds.
-- **Windows removal:** uninstall through Windows Settings → Apps or the Start menu.
-  This removes all game copies managed by the EXE while keeping character progress,
-  shared stash, current video settings and backups.
-- **Portable option retained:** **d2r-pcvr-windows.zip** still includes the CMD
-  installer, uninstaller, full controller mappings and player instructions.
+- **Installer error details:** the graphical wizard now shows the mod installer's
+  progress and actual error, and saves full output to `setup-install.log` beside
+  `setup-last.log` in `%LOCALAPPDATA%\Programs\D2R PCVR`. This fixes missing
+  diagnostics in [issue #11](https://github.com/bearstonem/d2r-pcvr/issues/11);
+  the reporter's underlying installation failure still needs their detailed log.
+- **Steam VR shortcut startup:** Steam-edition VR launches now use a Windows
+  desktop handoff to avoid the launcher chain associated with early loader
+  crashes. The existing SteamVR and Virtual Desktop shortcuts still work;
+  the selected runtime and game-session lifetime are preserved.
+- **Physical Paladin Smite:** select Smite, then swing or thrust the left shield
+  through an enemy with right trigger released. The shield follows the left wrist
+  independently of the main weapon. Native Smite costs, reach and timing apply.
+- **Amazon bow skills:** draw and release once to request the selected arrow skill.
+  Multiple Shot retains its fan and Strafe its native volley; other supported
+  arrows retain native effects, costs and cadence. Specialized arrows still use
+  native animation and ground-plane flight/collision.
+- **Active skill cues:** the wheel marks the selected skill with a gold ACTIVE
+  badge, and the weapon/shield shows a skill cue. Unavailable motion activation
+  shows TRIGGER ONLY so the button fallback is clear.
+- **Map in the spell menu:** hold left secondary, point with the right laser and
+  select **MAP** in the bottom tabs. **SPELLS** returns to skills without changing
+  the selected skill; releasing left secondary closes the menu. Wrist health,
+  mana, level and XP remain.
 
-Use the game's **left or right corner minimap** layout for wrist-map display.
+Run **D2R-PCVR-Setup-0.3.9.exe** for graphical setup, or use the portable ZIP.
+The EXE includes a private Python runtime and creates the matching shortcuts.
+Choose **Update / repair and keep calibration and video settings** when upgrading;
+keep existing setup backups. Normal desktop Play and Windows removal are retained.
+
+Use the game's **left or right corner minimap** layout for the Map tab.
 Full-screen automap is available through the game's normal map controls.
 
-**[Watch the wrist XP and map demo (12 seconds)](https://github.com/bearstonem/d2r-pcvr/releases/download/v0.3.6-windows-preview/d2r-pcvr-wrist-hud-demo.mp4).**
+## Validation and remaining checks
+
+The native Windows build passes **40 CTest checks**, and **69 Python checks**
+cover setup, repair/removal, rollback, Battle.net, launcher lifecycle and installer
+payload staging. The owner previously confirmed physical Paladin shield bash on
+Steam Frame / SteamVR with Steam 3.3.93787. Four controlled desktop-handoff
+launches reached the frontend and initialized OpenXR; the first three closed
+normally, and the fourth was left open for testing.
+
+The compiled Inno Setup lifecycle fixture also passes installation, Windows Apps
+registration, helper retention after a blocked removal, and successful removal.
+This fixture uses a stub backend and does not modify a real game installation.
+
+A fresh owner-triggered launch from inside Frame, Map-tab placement in both eyes,
+Amazon arrow skills, shield fit across models and cancellation during native
+wind-up still need headset checks. The new installer diagnostics have been tested
+with real hidden Windows subprocesses and disposable installation fixtures;
+the reporter's PC has not been retested. Quest 2 and Battle.net VDXR remain
+unconfirmed.
 
 ## Features
 
@@ -62,7 +92,7 @@ Full-screen automap is available through the game's normal map controls.
 - Weapon-set swapping by reaching your right hand over either shoulder and
   pressing its grip; the swap hand is adjustable in VR settings.
 - Physical belt potions and wrist health, mana, level and experience indicators,
-  plus a square automap showing explored areas and native markers.
+  plus a spell-menu Map tab showing explored areas and native markers.
 - Item pickup, chests, shrines and cave-entrance interactions through the
   right A button.
 - Inventory, skills, conversations and Journal through the tabbed game menu:
@@ -76,7 +106,7 @@ Full-screen automap is available through the game's normal map controls.
 First launch your purchased game normally through its store, finish the account
 prompts, load an offline character, then use **Save & Exit** and fully close D2R.
 
-For graphical setup, download **D2R-PCVR-Setup-0.3.8.exe**, run it and follow the
+For graphical setup, download **D2R-PCVR-Setup-0.3.9.exe**, run it and follow the
 wizard. Fully exit Steam when asked. Reopen Steam, connect your headset and use
 the matching VR shortcut with an offline character.
 
@@ -109,5 +139,5 @@ Use the unmodded game for multiplayer. Keep **setup-backups**, including
 backups in older extracted release folders, until removal is complete.
 
 Read **INSTALL-WINDOWS.md** and **CONTROLS.md** in the helper folder or ZIP, or open the
-[installation guide](https://github.com/bearstonem/d2r-pcvr/blob/v0.3.8-windows-preview/INSTALL-WINDOWS.md)
-and [controller reference](https://github.com/bearstonem/d2r-pcvr/blob/v0.3.8-windows-preview/CONTROLS.md).
+[installation guide](https://github.com/bearstonem/d2r-pcvr/blob/v0.3.9-windows-preview/INSTALL-WINDOWS.md)
+and [controller reference](https://github.com/bearstonem/d2r-pcvr/blob/v0.3.9-windows-preview/CONTROLS.md).

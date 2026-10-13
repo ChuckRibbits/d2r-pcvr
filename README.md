@@ -75,7 +75,8 @@ This is a PCVR mod: the game runs on your Windows PC and streams to the headset.
 - First-person VR with your character's body, hands and equipment.
 - Free-swing melee, including with a wheel skill selected, aimed spells, bows and physical javelin throws.
 - Belt potions you can grab and drink, plus wrist health, mana, level and experience progress.
-- A small square automap above the wrist indicators, showing the game's explored map and markers.
+- A **MAP** tab at the bottom of the spell menu, showing explored areas and native markers.
+- Selected Amazon arrow skills work with bow draw/release; selected Paladin Smite works with left-shield contact.
 - Body calibration for your height and arm span, available on first load
   and through **Left Grip + left secondary → Calibrate body**.
 - Weapon-set swapping: reach your right hand over either shoulder and press
@@ -83,7 +84,8 @@ This is a PCVR mod: the game runs on your Windows PC and streams to the headset.
 - Inventory, skills, conversations and Journal through the game menu:
   **Frame Left A / Quest Left X**.
 
-[Watch the wrist XP and map demo (12 seconds)](https://github.com/bearstonem/d2r-pcvr/releases/download/v0.3.6-windows-preview/d2r-pcvr-wrist-hud-demo.mp4).
+[Watch the earlier wrist HUD demo (v0.3.6, 12 seconds)](https://github.com/bearstonem/d2r-pcvr/releases/download/v0.3.6-windows-preview/d2r-pcvr-wrist-hud-demo.mp4).
+The current preview keeps vitals and XP on the wrist and moves the map into the spell menu.
 
 ## Controller reference
 
@@ -117,6 +119,8 @@ use two tracked VR controllers; an Xbox controller is not required.
 | Free melee swing / thrust | Move your equipped melee weapon through an enemy; also works with a wheel skill selected |
 | Manual attack / selected skill | Right trigger; hold for the skill's native repeat behavior |
 | Bow | Bring the right hand to the bowstring, hold right trigger, draw back, then release |
+| Selected Amazon arrow skill | Draw and release once; Multiple Shot requests its fan and Strafe its native volley |
+| Selected Smite with a shield | Swing or thrust the left shield through an enemy; keep right trigger released |
 | Javelin throw | Javelin equipped in **WEAPON** mode: hold right trigger, make a throwing motion, then release; direction follows the hand's motion |
 | Cancel a grab / bow draw / javelin throw | Right B, then release the inputs |
 | Swap weapon sets I / II | Reach the swap hand over either shoulder and press its grip; right hand by default, adjustable in VR settings |
@@ -124,8 +128,9 @@ use two tracked VR controllers; an Xbox controller is not required.
 | Grab a belt potion | Reach to a bottle and hold that hand's grip |
 | Drink | Keep grip held, bring the bottle opening to your mouth and tip it; release an unused bottle to return it |
 | Quick potion | Wheel → **EQUIPMENT / BELT** → select a potion with right trigger |
-| Wrist health / mana / XP / map | Look at the back of your left wrist, like checking a watch |
-| Map | Left stick click |
+| Wrist health / mana / XP | Look at the back of your left wrist, like checking a watch |
+| Explored minimap | Hold left secondary → **MAP** in the bottom tabs; **SPELLS** returns to skills |
+| Toggle native map | Left stick click |
 | Reset height | Left Grip + left stick click, during gameplay |
 | VR settings | Left Grip + left secondary; also **VR SETTINGS** in the wheel |
 | Calibrate height / arm span | VR settings → **Calibrate body**; stand straight in a T-pose, release both triggers, then hold both together until **Saved** |
@@ -137,10 +142,10 @@ skill changes the right-trigger action; its quick-cast binding stays available.
 The belt shows potions in the game's belt slots even without an equipped belt.
 
 The wrist shows your level and progress toward the next level beneath the
-health/mana orbs. Its square map uses the game's **left or right corner minimap**
-layout. Raising your wrist temporarily opens the automap if needed; lowering
-it restores its previous visibility. Only explored areas and native markers
-appear. Left stick click still toggles the normal map.
+health/mana orbs. The spell menu's **MAP** tab uses the game's **left or right
+corner minimap** layout. Closing the menu restores the map's previous visibility;
+switching tabs preserves the selected skill. Only explored areas and native
+markers appear. Left stick click still toggles the normal map.
 
 Javelins use the game's normal basic throw, ammunition and damage. A stationary
 trigger release does not throw. Jabs work with the trigger released. If a wheel
