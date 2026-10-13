@@ -1,5 +1,29 @@
 # Motion gameplay prototype
 
+## Sorceress casting regression candidate (2026-10-13)
+
+The tester reported a left-trigger Town Portal casting the right-trigger fire
+spell, inaccurate fire-spell aim, and movement stopping during casts. The log
+confirmed distinct native assignments (right slot 0: skill 36, left slot 4:
+skill 219) and an installed spell resolver hook. Controller quick casts also
+use the `0x1446c0 -> 0x143960` aim path; they need a final integer-target
+correction there, independently of the existing `0x190440` resolver hook.
+Only the aim caller gets this correction; movement callers retain their points.
+Native VR casts bypass the legacy walk-learned direction calibration, and a
+missing/stale rendered staff pose falls back to the casting hand's tracked aim.
+
+The left and right trigger use the same native B button in different banks.
+The candidate sends the alternate modifier alone for at least 50 ms and a new
+published packet before allowing its button through. This sequencing happens
+where the game polls the pad, so an XR/render hitch cannot skip the modifier
+report. A release cancels the pending cast. This is a candidate fix for native
+input ordering, not yet confirmed in a headset.
+
+**Movement lock remains unresolved.** Keeping locomotion input present does
+not bypass the native cast state/animation gate. This candidate does not claim
+to enable walking through spell animations. Live native-path inspection and
+offline headset checks are still needed for all three reported symptoms.
+
 ## Two-hand wheels source candidate (2026-10-13)
 
 The current source replaces the single held wheel with two toggled hand wheels.

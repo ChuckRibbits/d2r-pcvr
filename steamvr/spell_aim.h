@@ -40,6 +40,13 @@ inline bool Point(float x,float y,math::Vec direction,float& targetX,float& targ
     if(!std::isfinite(x+y)||!Horizontal(direction,dx,dy))return false;
     targetX=x+dx*60;targetY=y+dy*60;return true;
 }
+// The controller quick-cast path takes integer grid cells. Refuse malformed
+// positions before conversion, rather than returning an unrelated old target.
+inline bool ControllerPoint(float x,float y,math::Vec direction,int& targetX,int& targetY) {
+    float tx=0,ty=0;
+    if(!Point(x,y,direction,tx,ty)||tx<1||ty<1||tx>65534||ty>65534)return false;
+    targetX=int(tx);targetY=int(ty);return true;
+}
 // Apply after native resolution, including paths that use movement/facing
 // without calling AttackPoint. Non-directional skills retain native targets.
 inline bool Resolve(const Cast& cast,float playerX,float playerY,float& targetX,float& targetY) {
