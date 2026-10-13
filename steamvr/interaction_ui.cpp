@@ -3,8 +3,50 @@
 #include "interaction_ui.h"
 #include "interaction_icons.h"
 #include "skill_slots.h"
+#include "wrist_compass.h"
 #include <cstdio>
 #include <string>
+namespace framevr::compass {
+std::vector<uint8_t> Paint() {
+    BITMAPINFO info{};info.bmiHeader.biSize=sizeof(BITMAPINFOHEADER);
+    info.bmiHeader.biWidth=Width;info.bmiHeader.biHeight=-Height;
+    info.bmiHeader.biPlanes=1;info.bmiHeader.biBitCount=32;
+    HDC dc=CreateCompatibleDC(nullptr);void* bits=nullptr;
+    HBITMAP bitmap=CreateDIBSection(dc,&info,DIB_RGB_COLORS,&bits,nullptr,0);
+    if(!dc||!bitmap||!bits){if(bitmap)DeleteObject(bitmap);if(dc)DeleteDC(dc);return {};}
+    auto old=SelectObject(dc,bitmap);std::memset(bits,0,Width*Height*4);
+    auto fill=[&](RECT r,COLORREF color){auto brush=CreateSolidBrush(color);FillRect(dc,&r,brush);DeleteObject(brush);};
+    fill({0,0,Width,StripHeight},RGB(17,16,14));
+    for(int y:{1,StripHeight-3})fill({0,y,Width,y+2},RGB(122,94,51));
+    fill({0,4,Width,5},RGB(51,43,30));
+    const char* labels[]={"N","NE","E","SE","S","SW","W","NW"};
+    HFONT major=CreateFontW(34,0,0,0,FW_BOLD,FALSE,FALSE,FALSE,DEFAULT_CHARSET,
+        OUT_DEFAULT_PRECIS,CLIP_DEFAULT_PRECIS,ANTIALIASED_QUALITY,DEFAULT_PITCH,L"Georgia");
+    HFONT minor=CreateFontW(25,0,0,0,FW_NORMAL,FALSE,FALSE,FALSE,DEFAULT_CHARSET,
+        OUT_DEFAULT_PRECIS,CLIP_DEFAULT_PRECIS,ANTIALIASED_QUALITY,DEFAULT_PITCH,L"Georgia");
+    auto oldFont=SelectObject(dc,major);SetBkMode(dc,TRANSPARENT);
+    for(int x=0;x<=Width;x+=Period/32) {
+        const int step=(x-Window/2+Period)/ (Period/32);
+        const bool cardinal=step%8==0,diagonal=step%4==0;
+        fill({x-1,diagonal?63:73,x+1,85},cardinal?RGB(231,202,141):RGB(133,112,75));
+        if(!diagonal)continue;
+        const int index=(step/4)%8;
+        SelectObject(dc,cardinal?major:minor);
+        SetTextColor(dc,index==0?RGB(240,209,139):cardinal?RGB(229,218,191):RGB(170,157,128));
+        RECT r{x-44,20,x+44,61};DrawTextA(dc,labels[index],-1,&r,DT_CENTER|DT_VCENTER|DT_SINGLELINE|DT_NOPREFIX);
+    }
+    // A separate fixed marker overlays the scrolling bearing strip. Its
+    // transparent tile shares this one immutable atlas and swapchain.
+    for(int y=0;y<MarkerHeight;++y) {
+        const int inset=y;
+        fill({inset,StripHeight+y,MarkerWidth-inset,StripHeight+y+1},RGB(242,204,120));
+    }
+    GdiFlush();const auto* b=static_cast<uint8_t*>(bits);std::vector<uint8_t> rgba(Width*Height*4);
+    for(int i=0;i<Width*Height;++i){rgba[4*i]=b[4*i+2];rgba[4*i+1]=b[4*i+1];rgba[4*i+2]=b[4*i];rgba[4*i+3]=(b[4*i]||b[4*i+1]||b[4*i+2])?255:0;}
+    SelectObject(dc,oldFont);DeleteObject(major);DeleteObject(minor);
+    SelectObject(dc,old);DeleteObject(bitmap);DeleteDC(dc);return rgba;
+}
+}
 namespace framevr::interaction {
 namespace {
 // Decode and downsample once. The small cached RGBA image is shared by every

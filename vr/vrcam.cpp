@@ -2377,18 +2377,19 @@ bool VrViewInner(const d2rcam::WorldView& in, float out[16]) {
     const bool nativeFirst = !ThirdPerson() && !Overhead() && framevr::Active();
     if (nativeFirst) {
         const V3 gf = {-G[2], -G[6], -G[10]};
-        const float baseHeading = atan2f(-gf.x, -gf.z) -
+        const float mapNorth = atan2f(-gf.x, -gf.z);
+        const float baseHeading = mapNorth -
             (g_pairNow.load() ? g_heldYaw.load() : g_mouseYaw.load() + g_turnYaw.load()) * 0.0174532925f;
         const float recenter = g_recenter.load() * 0.0174532925f;
         float center[16];
-        framevr::View(center, L, ViewHeight() + JumpLift(), UserEyeHeightM(), baseHeading, recenter, -1);
+        framevr::View(center, L, ViewHeight() + JumpLift(), UserEyeHeightM(), baseHeading, recenter, -1, mapNorth);
         eye = {-center[12]*center[0]-center[13]*center[1]-center[14]*center[2],
                -center[12]*center[4]-center[13]*center[5]-center[14]*center[6],
                -center[12]*center[8]-center[13]*center[9]-center[14]*center[10]};
         hang = eye;
         const float centerPosition[3]={eye.x,eye.y,eye.z};
         billboards::SetCenter(centerPosition);
-        framevr::View(view, L, ViewHeight() + JumpLift(), UserEyeHeightM(), baseHeading, recenter, g_eye.load());
+        framevr::View(view, L, ViewHeight() + JumpLift(), UserEyeHeightM(), baseHeading, recenter, g_eye.load(), mapNorth);
         fwd = {-center[2], -center[6], -center[10]};
         const float horizontal = std::hypot(fwd.x, fwd.z);
         if (horizontal > 1e-5f) {

@@ -5,6 +5,7 @@
 #include "interaction_icons.h"
 #include "interaction_paint.h"
 #include "latest_worker.h"
+#include "wrist_compass.h"
 #include <cstdio>
 #include <cstring>
 #include <limits>
@@ -29,6 +30,25 @@ static bool SavePng(const char* path,const std::vector<uint8_t>& rgba,UINT width
 int main(int argc,char** argv) {
     using namespace framevr::interaction;
     struct Cleanup {~Cleanup(){icons::Shutdown();}} cleanup;
+    if(argc>2&&!std::strcmp(argv[2],"--compass-check")) {
+        using namespace framevr;
+        const auto atlas=compass::Paint();if(atlas.size()!=compass::Width*compass::Height*4)return 60;
+        for(int y=0;y<compass::StripHeight;++y)for(int x=0;x<compass::Window;++x)
+            if(std::memcmp(&atlas[(y*compass::Width+x)*4],&atlas[(y*compass::Width+x+compass::Period)*4],4))return 61;
+        const int w=compass::Window,h=8*(compass::StripHeight+16);
+        std::vector<uint8_t> gallery(w*h*4);
+        for(int row=0;row<8;++row) {
+            const int crop=compass::Crop(row*compass::Tau/8),top=row*(compass::StripHeight+16);
+            for(int y=0;y<compass::StripHeight;++y)
+                std::memcpy(&gallery[((top+y)*w)*4],&atlas[(y*compass::Width+crop)*4],w*4);
+            for(int y=0;y<compass::MarkerHeight;++y)for(int x=0;x<compass::MarkerWidth;++x) {
+                const auto* p=&atlas[((compass::StripHeight+y)*compass::Width+x)*4];
+                if(p[3])std::memcpy(&gallery[((top+y)*w+(w-compass::MarkerWidth)/2+x)*4],p,4);
+            }
+        }
+        if(!SavePng(argv[1],gallery,w,h))return 62;
+        std::puts("Compass preview: eight bearings, fixed marker and seamless north wrap passed");return 0;
+    }
     if(argc>3){wchar_t path[32768]{};MultiByteToWideChar(CP_UTF8,0,argv[3],-1,path,32768);icons::Directory(path);}
     Snapshot s;s.session=1;s.equipmentKnown=s.beltKnown=s.vitalsKnown=true;s.activeSet=1;
     s.health=74;s.maxHealth=100;s.mana=39;s.maxMana=80;

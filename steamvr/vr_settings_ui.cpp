@@ -80,8 +80,8 @@ std::vector<uint8_t> Paint(const Model& m,Hit hover,const char* runtimeStatus,co
         text(m.page==Page::VR?"Change values, then Apply. Controls are blocked while this panel is open.":runtimeStatus,{40,197,1200,42},false,false,quiet);
         for(int row=0;row<RowCount(m.page);++row){
             const Key key=RowKey(m.page,row);const auto& d=Definitions[key];const float value=m.Get()[key];const int y=RowY+row*RowStep;
-            fill({40,y-4,1200,76},row%2?RGB(19,31,39):RGB(22,36,44));
-            text(d.label,{58,y+1,780,39},true);text(d.detail,{58,y+42,795,30},false,false,quiet);
+            fill({40,y-4,1200,RowStep},row%2?RGB(19,31,39):RGB(22,36,44));
+            text(d.label,{58,y+1,780,29},true);text(d.detail,{58,y+30,795,28},false,false,quiet);
             char label[96];
             if(key==Foveation){const char* modes[]={"Off","Fixed","Eye tracked"};std::snprintf(label,sizeof label,"%s",modes[int(value)]);}
             else if(key==Dominant)std::snprintf(label,sizeof label,"%s",value>.5f?"Left":"Right");
