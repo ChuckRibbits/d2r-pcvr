@@ -150,9 +150,56 @@ dependent on clock speed. Worker startup failure disables the scan.
 covers CPU percentages, reused IDs, absent/invalid counters, restart and
 render-side polling while the scanner is deliberately blocked. In its native
 benchmark the background scan took 53.182 ms while request submission took
-0.300 microseconds. This establishes removal of synchronous scan work from
-Present, not the resulting headset hitch reduction or an average FPS gain;
-those require a new gameplay capture. The larger two-engine-draw cost remains.
+0.300 microseconds.
+
+Runtime commit `918bd5e` was installed and tested with the same local Windows
+5950X / RTX 5090 / Steam Frame setup, Steam game 3.3.93787 and offline Paladin.
+Three 360-pair captures with hooks/GPU queries disabled contained diagnostics
+scans of 57.63, 62.61 and 60.14 ms on the worker. Their maximum complete pair
+times were 34.944, 28.648 and 34.026 ms respectively: the scan no longer
+appears as a roughly 62 ms eye draw. The session's remaining logged >80 ms
+hitch at entry spent 417 ms in the game gap while loading. No average FPS gain
+from the diagnostics change is established by a matched previous-DLL run.
+
+A separate native Windows trial changed only the existing GPU wait option,
+keeping 100% scale, two rings, radius 300, fixed foveation and symmetric
+projection. Each row is 360 pairs with hooks and GPU timestamps disabled:
+
+| Sequence | `defer_gpu_wait` | Mean pair ms | Application FPS | Pair p95 ms | Eye draws ms | GPU fence ms |
+| --- | --- | ---: | ---: | ---: | ---: | ---: |
+| 1791856478 | 0 | 25.302 | 39.5 | 32.594 | 15.750 | 3.337 |
+| 1791856539 | 1 | 22.378 | 44.7 | 25.436 | 15.930 | 0.000 |
+| 1791856550 | 0, restored | 24.005 | 41.7 | 31.543 | 16.018 | 3.219 |
+
+The character stayed at one position, but head yaw changed within and between
+rows (124-153, 111-124 and 124-131 degrees). These are not exact view matches.
+Eye draw times remain similar; with overlap enabled XR end fell to 1.234 ms,
+while XR begin rose to 3.936 ms. This supports a local pacing benefit, not
+eliminated rendering work or a universal percentage gain. Copy allocator
+reuse and shutdown still wait for GPU completion. The INI was restored
+byte-for-byte after this trial; source defaults remain conservative because
+earlier Linux deferred-wait testing did not establish stable streaming.
+
+A subsequent one-minute walking/turning trial held 44.7-45.0 FPS in complete
+ten-second windows with GPU overlap enabled. These moving views are not
+matched before/after benchmarks. The owner confirmed the image, tracking and
+controls looked normal. After the automatic rollback, `defer_gpu_wait=1` was
+enabled as a local preference on this PC; 100% scale, two rings and fixed
+foveation were retained. The shipped default remains 0. Longer sessions,
+area transitions and the broader UI regression checks remain outstanding.
+
+Attribution sequence 1791856607 (`profile_hooks=1`, GPU queries off) covered
+18 threads. Approximately 22,565 pipeline binds/pair reached callbacks;
+sampled VRS pipeline/draw and UI world-bind costs on the main draw thread were
+0.130/0.131/0.120 ms per pair, while its two eye draws totalled 16.359 ms.
+Skeleton game/mod estimates peaked at 0.088/0.034 ms per worker per pair.
+These inclusive concurrent estimates cannot be added into a frame cost.
+The input-tick estimate includes transport-lock waiting and is not exclusive
+CPU work. Sparse resource/HUD-lock timing rounded to zero and must not be
+treated as proof of zero cost. The capture's 36.2 FPS includes attribution
+overhead and changing head direction; it is not a comparable throughput run.
+Profiling keys were restored byte-for-byte afterward. The larger
+two-engine-draw cost remains the primary architectural follow-up.
 
 ## Native Windows continuation, October 10 afternoon
 
