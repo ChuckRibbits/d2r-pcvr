@@ -73,14 +73,57 @@ Validation on Windows, Ryzen 9 5950X (local machine, not the reporter's CPU):
   0.71 aggregate wall ns/query with one thread; 38.91 versus 0.20 with eight
   workers. These are synthetic contention measurements, not game frame-time
   savings. Real UI work can still wait on the HUD lock.
-- No game install/launch, headset comparison or RTX 5080 test was performed.
-  The DLL is staged in `build-frame/windows-native/` only. Deferred GPU waiting,
-  scene resolution and projection defaults were not changed by this candidate.
+- Candidate runtime commit `f014e6d` was installed into the local Steam and
+  Battle.net copies after backing up the previous DLLs, settings and saves.
+  Installation preserved their settings and player data. The Steam edition
+  (game 3.3.93787) was launched and measured in offline Paladin gameplay on a
+  Ryzen 9 5950X / RTX 5090, using SteamVR OpenXR and Steam Link to Steam Frame
+  at 90 Hz. Battle.net gameplay and the reporter's RTX 5080 remain untested.
 
-Next validation uses the same offline character/scene, runtime and settings
-before/after, with routine logs plus separate 360-pair stationary and walking
-captures (`profile_gpu=0`, `profile_hooks=0`). An attribution capture can then
-enable hooks. Test the map tab, labels and spatial NPC/inventory menus as well.
+Local headset measurements, October 12 evening:
+
+| Capture | Scene scale / terrain rings | Mean pair ms | Throughput FPS | Pair p95 ms | Left + right draw ms |
+| --- | --- | ---: | ---: | ---: | ---: |
+| Moving, sequence 10121839 | 133% / 4 | 25.887 | 38.6 | 32.665 | 16.395 |
+| Standing, sequence 10121844 | 100% / 2 | 24.779 | 40.4 | 32.451 | 15.898 |
+
+Each capture contains 360 stereo pairs, with `profile_gpu=0` and
+`profile_hooks=0`. GPU timestamp queries and all-thread hook attribution were
+disabled; main-eye scopes remained active. Routine ten-second windows ranged
+from 41.8-44.1 FPS early in gameplay and 33.2-39.0 FPS during movement. GPU
+utilization spot samples were 29-39% on the RTX 5090, including 34% after the
+second capture. These are application stereo-pair rates, not headset delivery
+or compositor reprojection measurements.
+
+The user changed both scene scale and terrain distance before the planned
+terrain-only comparison could start. Position/view and motion also differ
+between the captures; this table does **not** isolate either setting's effect
+or establish a gain from the candidate DLL. There is no matched previous-DLL
+capture. The bounded captures cannot establish the reporter's bottleneck.
+
+Eye images remain 3840 x 2160. Both runs used fixed foveation and symmetric
+projection, object radius 300, and `defer_gpu_wait=0`; shadows, AO and
+atmospherics were 2, with DLSS and dynamic resolution disabled. In the second
+capture, average XR begin/end were 2.708/4.721 ms, with 3.216 ms of GPU fence
+waiting included in XR end. Coarse per-thread CPU totals averaged 14.714 ms
+across the two eye draws, consistent with CPU draw work and synchronization
+limiting throughput rather than sustained GPU saturation. They are not
+exclusive high-resolution CPU profiles. Periodic roughly 80-90 ms hitches
+included an eye draw around 62 ms without pipeline creation; their cause is
+unresolved. Neither capture reaches the full 90 Hz budget of 11.111 ms.
+
+Temporary profiling keys were removed after each capture, with the INI verified
+byte-identical to its pre-capture contents. The user's final 100% scale and
+two-ring setting were retained. Raw logs, CSVs, DLLs and backups remain local
+under ignored `build-frame/` paths; only aggregate results are recorded here.
+Deferred GPU waiting, scene resolution and projection source defaults were
+not changed by this candidate.
+
+Remaining validation needs the same offline character/scene, runtime and
+settings before/after a DLL swap, with routine logs plus separate 360-pair
+stationary and walking captures (`profile_gpu=0`, `profile_hooks=0`). An
+attribution capture can then enable hooks. Test the map tab, labels and spatial
+NPC/inventory menus as well; those UI regressions have not been checked here.
 Record actual eye dimensions, scene scale, symmetric projection and VRS when
 comparing clarity; the installer's 80% scene scale renders only 64% of the
 pixels at 100%. Lower resolution does not remove CPU draw/submission work.
