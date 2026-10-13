@@ -164,8 +164,9 @@ finish, then closes helpers belonging to that launch if they are still keeping
 Steam's session open. It does not terminate a running game. Normal Steam Play
 still runs without this wrapper's VR session monitor.
 
-The performance preset renders the scene at 80% resolution scale (64% of the
-original pixels) and uses medium shadows, ambient occlusion, and atmospherics.
+The installer renders the scene at 100% resolution scale and uses medium
+shadows, ambient occlusion, and atmospherics. Update / repair preserves existing
+video settings; older installs may still need their scene scale changed to 100%.
 Textures stay at their original quality. Both eyes have their own copy command
 list, with one GPU completion wait after the pair instead of between the draws.
 Native height fog is retained, avoiding the mod's repeated full-memory scans

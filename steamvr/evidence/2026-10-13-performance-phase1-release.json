@@ -1,0 +1,53 @@
+{
+  "release_tag": "v0.3.10-windows-preview",
+  "plugin_source_commit": "918bd5ef5895f258d23acd789f0eafae44278e1c",
+  "plugin_sha256": "48300b4d1ba5e43c56cd7204d5f653014012685790b0e6071f20862dc2ceb366",
+  "plugin_provenance": "Reuse the exact locally built and headset-tested phase 1 DLL; subsequent changes are documentation, installer preset and installer version only. Package manifest records the merged release source separately.",
+  "native_tests_passed": 43,
+  "python_tests_passed": 84,
+  "python_suites": {
+    "steamvr/setup_windows_test.py": 13,
+    "steamvr/setup_native_test.py": 14,
+    "steamvr/install_test.py": 18,
+    "steamvr/uninstall_windows_test.py": 9,
+    "steamvr/battlenet_test.py": 8,
+    "steamvr/launch_windows_test.py": 11,
+    "steamvr/profile_report_test.py": 7,
+    "installer/stage_native_installer_test.py": 4
+  },
+  "installer_resolution": {
+    "fresh_and_full_install": 100,
+    "update_repair": "Preserves the existing settings bytes, including custom resolution scale.",
+    "fixture_coverage": "Steam and Battle.net full install changes 80 to 100, repair keeps custom 92, restore returns original 80 and retains newer character progress."
+  },
+  "compiled_installer_lifecycle": {
+    "result": "passed",
+    "scope": "Stub backend only: installation, Windows Apps registration, blocked removal retains helpers, successful removal."
+  },
+  "headset_validation": {
+    "runtime_source_commit": "918bd5ef5895f258d23acd789f0eafae44278e1c",
+    "game": "Steam D2R 3.3.93787, offline Paladin",
+    "hardware": "Ryzen 9 5950X / RTX 5090",
+    "runtime": "SteamVR OpenXR / Steam Link / Steam Frame, 90 Hz",
+    "diagnostic_scans_ms": [
+      57.63,
+      62.61,
+      60.14
+    ],
+    "capture_max_pair_ms": [
+      34.944,
+      28.648,
+      34.026
+    ],
+    "diagnostic_result": "Background scans no longer coincide with the previous roughly 62 ms eye draws in three 360-pair captures; separate loading hitch remains.",
+    "optional_gpu_overlap_trial": "One-minute walking/turning test: owner confirmed normal image, tracking and controls. This is a local preference; shipped defer_gpu_wait remains 0."
+  },
+  "limits": [
+    "No matched old-DLL benchmark or universal FPS improvement established.",
+    "Two engine draw passes per stereo pair remain; GPU command replay is not part of phase 1.",
+    "Long sessions, area transitions, both-eye Map/label/spatial-menu regressions, Amazon skills and fresh owner-triggered Frame shortcut launch need further headset testing.",
+    "No phase 1 Battle.net gameplay or RTX 5080 validation. Issue 20 remains open.",
+    "Quest 2 and Battle.net VDXR remain unconfirmed.",
+    "Release preparation does not install into a real game, rewrite Steam configuration or change player saves. Mutation checks use disposable fixtures."
+  ]
+}

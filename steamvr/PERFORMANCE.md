@@ -125,8 +125,9 @@ stationary and walking captures (`profile_gpu=0`, `profile_hooks=0`). An
 attribution capture can then enable hooks. Test the map tab, labels and spatial
 NPC/inventory menus as well; those UI regressions have not been checked here.
 Record actual eye dimensions, scene scale, symmetric projection and VRS when
-comparing clarity; the installer's 80% scene scale renders only 64% of the
-pixels at 100%. Lower resolution does not remove CPU draw/submission work.
+comparing clarity. Fresh/full installs use 100% scene scale from v0.3.10;
+the previous 80% default rendered only 64% as many pixels. Update / repair
+preserves existing video settings. Lower resolution does not remove CPU draw/submission work.
 Keep #20 open until the reporter's bottleneck and improvement are measured.
 
 ### Follow-up: periodic diagnostic stalls
