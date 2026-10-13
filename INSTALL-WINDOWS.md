@@ -96,11 +96,32 @@ You can rerun the EXE safely. It updates matching shortcuts without duplicates.
 When upgrading a recorded ZIP installation, it copies and verifies its referenced
 game backups into the permanent helper folder before updating the mod. Do not
 delete the old extracted folder until Setup succeeds. If an older mod has an
-incomplete installation record, the wizard asks you to locate its original
-backup folder. Choose the snapshot folder or the folder containing snapshots
-inside the old mod folder (`setup-backups\game` or `build-frame\backups`).
-Setup also checks alongside recorded backups for older snapshots. If the
-original backup is unavailable, cancel and keep the current installation.
+incomplete installation record, setup checks known backup locations and the
+old helper folder referenced by your VR shortcut. When it finds one verified
+location for this game, it fills in the backup page automatically. Otherwise,
+choose the snapshot folder or the folder containing snapshots inside the old
+mod folder (`setup-backups\game` or `build-frame\backups`). Setup validates it
+when you click **Next**. After copying the backups into the permanent helper
+folder, it records their locations in this game's `d2rloader/pcvr-install.json`;
+future setup runs can find them without asking again. Changing the selected
+game clears the previous game's suggested folder. If the original backup is
+unavailable, cancel and keep the current installation.
+
+You do not need a `d2r-pcvr` folder under your Windows user folder. The backup
+location depends on how you installed the earlier version:
+
+- **Portable ZIP:** open the folder where you previously ran
+  `Install-Windows.cmd`, then select `setup-backups\game` inside it. This is
+  normally inside the extracted `d2r-pcvr-preview` folder, wherever you kept it.
+- **Setup EXE:** paste `%LOCALAPPDATA%\Programs\D2R PCVR\setup-backups\game`
+  into File Explorer's address bar to check the default helper location.
+- **Manual/development install:** check `build-frame\backups` inside the old
+  checkout, unless you selected a different backup location.
+
+The game folder itself or a freshly extracted ZIP is not a replacement for an
+original backup. If none of these locations contains it, cancel and report
+which mod/version and installation method you used previously; an installation
+made by another mod may not have created a compatible backup.
 
 Setup does not change Windows security settings or the system OpenXR runtime.
 Normal Steam / Battle.net **Play** launches the stock desktop game.

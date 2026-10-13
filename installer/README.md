@@ -17,6 +17,15 @@ Unknown hashes still stop setup before game writes, with expected/received
 values in the error. Do not fetch a new trusted digest automatically or bypass
 verification. See the [archive and v0.3.10 release audit](../steamvr/evidence/2026-10-13-loader-archive-repack.json).
 
+Backup discovery is read-only. The probe checks the selected game's receipt
+and managed backups first, then known backup subfolders near the installer or
+the helper referenced by existing PCVR Steam launch settings. Only a complete,
+validated chain for that game can prefill the older-backup page; conflicting
+locations require a manual choice. The wizard revalidates on Next and clears
+the hint when the selected game changes. Successful adoption copies and verifies
+the snapshots, then records their managed locations in that game's existing
+`d2rloader/pcvr-install.json`; there is no separate global backup-history file.
+
 ## Build
 
 Use a clean committed topic branch. Build the native plugin as described in
