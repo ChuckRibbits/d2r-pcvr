@@ -64,7 +64,9 @@ int main(){
         s.in.head.q=math::Yaw(-Pi/2);s.Step();
         Check(std::fabs(s.out.belt[0].p.x-1.46f)<1e-5f,"belt resumes following when horizontal heading returns");
         s.in.snapshot.belt[1]=s.in.snapshot.belt[0];s.in.snapshot.belt[1].items[0].handle=99;
-        s.in.hand[0]=s.out.belt[0];s.in.grip[0]=1;s.Step();
+        s.in.hand[0]=s.out.belt[0];
+        s.in.hand[0].q=math::Multiply(s.in.hand[0].q,{.70710678f,0,0,.70710678f});
+        s.in.grip[0]=1;s.Step();
         Check(s.out.bottle==0,"grab uses the moved belt position");
         s.in.head.p={2,1.4f,1};s.in.head.q=math::Yaw(0);s.in.hand[0].p={2.3f,1.2f,.8f};s.Step();
         auto scene=framevr::potions::MakeScene(s.in,s.out);
@@ -273,7 +275,7 @@ int main(){
     {
         Sim s;s.in.hand[0].p=s.out.belt[0].p;s.Step();s.in.grip[0]=1;
         Check(s.Step().bottle==0&&s.out.request.action==Action::None,"physical bottle grab is non-consuming");
-        s.in.hand[0].q={0,0,-.70710678f,.70710678f};
+        s.in.hand[0].q=math::Multiply({0,0,-.70710678f,.70710678f},{.70710678f,0,0,.70710678f});
         // Neck touches the mouth with the right hand outside the face.
         s.in.hand[0].p={-.115f,1.6f,-.08f};
         int requests=0;Request request;
@@ -289,12 +291,13 @@ int main(){
     {
         Sim s;auto scene=framevr::potions::MakeScene(s.in,s.out);
         Check(scene.count==1&&scene.items[0].code==Code('h','p','1'),"3D belt shows the next exact native potion, no bottles in empty columns");
-        s.in.hand[0].p=s.out.belt[0].p;s.in.grip[0]=1;s.Step();
+        s.in.hand[0].p=s.out.belt[0].p;s.in.hand[0].q={.70710678f,0,0,.70710678f};s.in.grip[0]=1;s.Step();
         scene=framevr::potions::MakeScene(s.in,s.out);
         Check(scene.count==1&&scene.items[0].pose.p.y>s.in.hand[0].p.y,"grab moves one bottle into the right grip, without a duplicate on the belt");
         Check(!scene.items[0].empty&&s.out.request.action==Action::None,"grabbing does not consume");
         // Hand at mouth is insufficient if the actual bottle opening misses.
-        s.in.hand[0].p={0,1.6f,-.08f};s.in.hand[0].q={0,0,.70710678f,.70710678f};
+        s.in.hand[0].p={0,1.6f,-.08f};
+        s.in.hand[0].q=math::Multiply({0,0,.70710678f,.70710678f},{.70710678f,0,0,.70710678f});
         for(int i=0;i<20;++i)Check(s.Step().request.action==Action::None,"neck, not controller center, must reach the mouth");
         s.in.hand[0].p={.115f,1.6f,-.08f};s.Step(6);
         s.in.hand[0].p.z-=.2f;s.Step();s.in.hand[0].p.z+=.2f;
@@ -308,6 +311,30 @@ int main(){
         s.in.grip[0]=0;s.Step();scene=framevr::potions::MakeScene(s.in,s.out);
         Check(s.out.bottle<0&&scene.count==1&&s.in.snapshot.belt==before.belt,"release returns unconsumed bottle");
         s.in.active=false;s.Step();Check(framevr::potions::MakeScene(s.in,s.out).count==0,"menus hide physical bottles");
+    }
+    for(int hand=0;hand<2;++hand)for(float yaw:{0.f,1.2f}) {
+        Sim s;s.in.head.q=math::Yaw(yaw);s.Step();
+        const auto mouth=s.in.head.p+math::Rotate(s.in.head.q,{0,-.10f,-.08f});
+        s.in.hand[hand].p=s.out.belt[0].p;
+        s.in.hand[hand].q=math::Multiply(math::Yaw(yaw),{.70710678f,0,0,.70710678f});
+        s.in.grip[hand]=1;s.Step();
+        auto scene=framevr::potions::MakeScene(s.in,s.out);
+        const auto up=math::Rotate(scene.items[0].pose.q,{0,1,0});
+        Check(s.out.bottleHand==hand&&scene.count==1&&up.y>.99999f&&
+            std::fabs(scene.items[0].pose.p.y-s.in.hand[hand].p.y-.025f)<1e-5f,
+            "either grip holds the bottle upright after the local pitch correction, including when turned");
+        s.in.hand[hand].p=mouth-Vec{0,.115f,0};
+        for(int i=0;i<20;++i)Check(s.Step().request.action==Action::None,
+            "upright corrected bottle cannot drink even with its opening at the mouth");
+        s.in.hand[hand].q=math::Yaw(yaw);
+        s.in.hand[hand].p=mouth+math::Rotate(math::Yaw(yaw),{0,0,.115f});
+        scene=framevr::potions::MakeScene(s.in,s.out);
+        const auto opening=scene.items[0].pose.p+math::Rotate(scene.items[0].pose.q,{0,.09f,0});
+        const auto delta=opening-mouth;
+        Check(math::Dot(delta,delta)<1e-10f,"tipped rendered opening reaches the mouth in either hand");
+        int requests=0;
+        for(int i=0;i<30;++i)requests+=s.Step().request.action==Action::Potion;
+        Check(requests==1,"corrected rendered opening and drink detection agree for either hand");
     }
     {
         Sim s;s.in.hand[0].p=s.out.belt[0].p;s.Step();s.in.grip[0]=1;s.Step();
