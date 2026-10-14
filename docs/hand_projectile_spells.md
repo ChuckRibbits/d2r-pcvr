@@ -22,6 +22,40 @@ both hands without restarting; projectiles already in flight keep their original
 direction. Charged Bolt retains its native planar wandering in either mode.
 The saved preference is `[gameplay] planar_spell_aim=1` (or `0` for free aim).
 
+## Optional projectile aim assist
+
+In **VR Settings > Controls**, cycle **Projectile aim assist** through **Off**
+(the default), **Light**, and **Strong**, then press **Apply**. The saved setting
+is `[gameplay] projectile_aim_assist=0`, `1`, or `2`, respectively. This applies
+only to the five supported Sorceress hand spells above, independently for each
+hand. Bow, javelin and native fallback skills retain their existing aiming.
+
+Light permits up to four degrees of launch correction; Strong permits eight.
+On an accepted cast, assist checks living hostile monster bodies within a
+12-metre ray reach and requires a clear path from the hand muzzle. A shot
+already intersecting an eligible body keeps its exact direction. Otherwise,
+assist favors a small correction into a nearby body, with a slight preference
+for the previous target during uninterrupted repeat casts. That preference
+never widens the angle or range limits and expires after 750 ms without a cast.
+Release, lifecycle and assignment changes reset it. Aim outside the assist
+range or away from eligible bodies and the shot keeps its original direction.
+
+Planar aiming permits horizontal corrections only, so a straight spell cannot
+be assisted into a body entirely below or above its launch height. Free aiming
+also permits a small vertical correction. Charged Bolt uses the target's ground
+footprint and adjusts the volley's heading, preserving native spread and
+wandering. Assistance happens once at launch: no homing, movement lock, added
+target indicator or changes to damage, mana costs and casting cadence.
+
+Target scanning is bounded and runs only after native cast acceptance, avoiding
+repeated scans while a held trigger is refused for insufficient mana or town
+restrictions. It reuses the existing native hostility, body and wall queries;
+no new native address hooks are required. The collision bodies and launch-floor
+approximation still apply, and assist does not lead moving targets. A corrected
+shot can therefore still miss as enemies move or terrain changes.
+
+## Native casting and collision
+
 The native skill-start and skill-dispatch routines validate and consume mana
 on the game thread. Each hand supplies its own skill in a scoped selection;
 the original selection is restored before returning. No controller cast button
@@ -93,6 +127,14 @@ game routines.
 The feedback fixture also checks simultaneous failures, held-input coalescing,
 expiry, menu/death cancellation, character/session changes and clock regression.
 
+The aim-assist fixtures cover angular limits across headings and pitches,
+unchanged direct shots, planar/free/ground targeting, corrected-path wall
+rejection, selection preference and its reset conditions, independent hands,
+and settings normalization, interaction and INI persistence. The Windows build
+and all 57 checks passed for aim assist; its settings layout was also inspected
+with the synthetic preview. Aim-assist feel and native targeting have not yet
+been tested in a headset.
+
 On an offline Sorceress in Steam or Battle.net D2R 3.3.93787:
 
 1. Assign Fireball to the right trigger and Charged Bolt to the left. Fire each
@@ -118,6 +160,13 @@ On an offline Sorceress in Steam or Battle.net D2R 3.3.93787:
    and change areas while holding a trigger. Confirm there are no delayed casts.
 5. Check Town Portal and unsupported skills through their existing native path;
    check bow and javelin flight and normal unmodded desktop play separately.
+6. Compare aim assist Off, Light and Strong against single and clustered enemies,
+   using both hands at different targets. Check direct shots, small misses,
+   deliberate shots away from enemies, walls, closed doors and room boundaries.
+   Repeat with planar aiming On/Off and enemies at different heights; confirm
+   Charged Bolt stays grounded. Check target changes after releasing a trigger,
+   opening a menu, changing skills and turning. Reopen settings and restart to
+   verify persistence. Record headset/runtime and edition with the results.
 
 Native behavior was investigated using the locally owned game's code and data,
 with the public [D2MOO research](https://github.com/ThePhrozenKeep/D2MOO) as a

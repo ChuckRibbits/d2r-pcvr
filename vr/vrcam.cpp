@@ -5799,7 +5799,8 @@ void BowTick() {
     framevr::bowflight::Shot shot;
     if(framevr::TakeBowShot(shot))bowvr::Submit(shot);
     static framevr::spellcast::PlanarAim spellAim[2];
-    const bool planar=vrsettings::Read().values[framevr::settings::PlanarSpellAim]>.5f;
+    const auto spellSettings=vrsettings::Read();
+    const bool planar=spellSettings.values[framevr::settings::PlanarSpellAim]>.5f;
     for(int hand=0;hand<2;++hand)if(framevr::TakeSpellShot(hand,shot)) {
         const auto trackedDirection=shot.direction;
         // The right casting weapon's visible shaft is the aiming reference.
@@ -5817,8 +5818,9 @@ void BowTick() {
         }
         // Apply after the weapon's final casting axis. Native wandering bolts
         // remain ground-grid spells even when straight projectiles use 3D aim.
-        shot.direction=spellAim[hand].Update(shot.session,shot.epoch,shot.direction,trackedDirection,
-            planar||framevr::spellcast::NativePath(shot.skill));
+        shot.planar=planar||framevr::spellcast::NativePath(shot.skill);
+        shot.aimAssist=int(spellSettings.values[framevr::settings::ProjectileAimAssist]);
+        shot.direction=spellAim[hand].Update(shot.session,shot.epoch,shot.direction,trackedDirection,shot.planar);
         bowvr::Submit(shot);
     }
 }

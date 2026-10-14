@@ -24,6 +24,8 @@ struct Shot {
     int skill=-1,owner=-1,hand=0,slot=-1,missile=-1,level=0,member=0;
     uint64_t binding=0,activation=0;
     int castSound=0;
+    int aimAssist=0;
+    bool planar=true;
 };
 inline float ProjectileLength(const Shot& s) {return s.kind==Kind::Spell?0:s.kind==Kind::Javelin?JavelinLength:ArrowLength;}
 inline uint32_t MissileId(const Shot& s){return s.kind==Kind::Spell?uint32_t(s.missile):uint32_t(s.kind);}

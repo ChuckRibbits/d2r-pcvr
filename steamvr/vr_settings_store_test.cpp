@@ -15,6 +15,15 @@ int main(){
     Check(WritePrivateProfileStringW(L"render",L"rings",L"6",name),"write existing setting");
     vrsettings::Poll(name);auto before=vrsettings::Read();
     Check(before.values[MenuDistance]==1&&before.values[TooltipTiming]==0,"legacy profile uses Medium distance and Instant tooltips");
+    Check(before.values[ProjectileAimAssist]==0,"legacy profile defaults to unassisted aim");
+    for(int choice:{1,2,0}) {
+        Model assist;assist.Open(vrsettings::Read());assist.Click({Kind::Change,ProjectileAimAssist,1});
+        const auto request=assist.Click({Kind::Apply});
+        Check(vrsettings::Submit(request)&&vrsettings::Poll(name),"save aim assist preference");
+        const auto saved=vrsettings::Read();
+        Check(saved.values[ProjectileAimAssist]==choice&&Int(path,L"gameplay",L"projectile_aim_assist")==choice,"aim assist survives profile reload");
+        Check(saved.values[PlanarSpellAim]==1&&Int(path,L"custom",L"keep")==12345,"assistance preserves planar aim and unrelated configuration");
+    }
     Check(before.values[OrdinaryMobBars]==0,"legacy profile defaults to hidden ordinary bars");
     Check(before.values[SmoothTurn]==0&&before.values[Snap]==30,"missing turn settings default to snap turning");
     Check(before.values[WristMap]==1,"legacy INI without wrist_map defaults on");
