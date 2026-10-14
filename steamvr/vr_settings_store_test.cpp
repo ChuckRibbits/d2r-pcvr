@@ -21,6 +21,13 @@ int main(){
         Check(vrsettings::Submit(request)&&vrsettings::Poll(name),"highest mask bit persists melee speed");
         Check(vrsettings::Read().values[MeleeHitSpeed]==choice&&Int(path,L"custom",L"keep")==12345,"fractional melee speed reloads without altering unrelated data");
     }
+    for(float choice:{12.25f,24.f,3.f}) {
+        const auto current=vrsettings::Read();Request request;
+        request.base=request.values=current.values;request.values[MeleeHitSpeed]=choice;
+        request.changed=Changed(request.base,request.values);request.sequence=current.sequence+1;
+        Check(vrsettings::Submit(request)&&vrsettings::Poll(name),"save uncapped melee speed");
+        Check(vrsettings::Read().values[MeleeHitSpeed]==choice,"values above six survive INI reload");
+    }
     Check(before.values[MenuDistance]==1&&before.values[TooltipTiming]==0,"legacy profile uses Medium distance and Instant tooltips");
     Check(before.values[ProjectileAimAssist]==0,"legacy profile defaults to unassisted aim");
     for(int choice:{1,2,0}) {

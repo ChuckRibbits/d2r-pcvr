@@ -91,7 +91,7 @@ struct Sweep {Blade before{},after{};uint64_t stroke=0;float speed=0;};
 struct Diagnostics {unsigned discontinuities=0,recovering=0;};
 inline constexpr float WeaponStrokeTravel=.18f;
 inline float WeaponContactSpeed(float value) {
-    return std::isfinite(value)?std::clamp(value,1.5f,6.f):3.f;
+    return std::isfinite(value)?std::max(value,1.5f):3.f;
 }
 class Engine {
     bool primed=false;

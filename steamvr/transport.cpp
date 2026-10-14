@@ -969,11 +969,11 @@ void MotionPointer() {
         dotPose=XrPose({hit.point+math::Rotate(pose.q,{0,0,.003f}),pose.q});
     }
 }
-void MotionPulse(int hand,float strength,XrDuration duration) {
+void MotionPulse(int hand,float strength,XrDuration duration,float frequency=XR_FREQUENCY_UNSPECIFIED) {
     if(!haptic||!pApplyHapticFeedback)return;
     XrHapticActionInfo ai{XR_TYPE_HAPTIC_ACTION_INFO};ai.action=haptic;ai.subactionPath=hands[hand];
     XrHapticVibration vibration{XR_TYPE_HAPTIC_VIBRATION};
-    vibration.duration=duration;vibration.frequency=XR_FREQUENCY_UNSPECIFIED;vibration.amplitude=strength;
+    vibration.duration=duration;vibration.frequency=frequency;vibration.amplitude=strength;
     const auto result=pApplyHapticFeedback(session,&ai,reinterpret_cast<XrHapticBaseHeader*>(&vibration));
     static bool reported[2]{};static ULONGLONG errorAt=0;
     if(XR_SUCCEEDED(result)&&!reported[hand]) {
@@ -1448,10 +1448,12 @@ void Input() {
         bowNeedsWorld=true;
     }
     MotionFeedback(motionOutput);
+    // One sharp tap per confirmed impact. Consume the event once; do not
+    // sustain or refresh it while the weapon remains inside the creature.
     if(const auto at=meleeImpactAt.exchange(0);at&&motionInput.active&&GetTickCount64()-at<150)
-        MotionPulse(0,.72f,45000000);
+        MotionPulse(0,.95f,10000000,180.f);
     if(const auto at=shieldImpactAt.exchange(0);at&&motionInput.active&&GetTickCount64()-at<150)
-        MotionPulse(1,.72f,45000000);
+        MotionPulse(1,.95f,10000000,180.f);
     if(motionOutput.potion>=0)gamecmd::RequestPotion(motionOutput.potion);
     if(!motionInput.active)gamecmd::CancelPotion();
     if(motionOutput.feedback) {

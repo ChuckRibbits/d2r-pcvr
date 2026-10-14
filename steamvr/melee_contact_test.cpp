@@ -12,14 +12,29 @@ struct Sim {
     bool Move(Vec d){sample.hand.p=sample.hand.p+d;sample.blade.base=sample.blade.base+d;sample.blade.tip=sample.blade.tip+d;return Step();}
 };
 int main(){
-    for(float setting:{1.5f,3.f,6.f}) {
+    for(float setting:{1.5f,3.f,6.f,12.f,99.f}) {
         Sim s;s.sample.minWeaponSpeed=setting;s.Step(8);
         bool hit=false;for(int i=0;i<8;++i)hit|=s.Move({.07f,0,0});
         Check(hit==(setting<3.5f),"applied speed changes which swings qualify");
         s.sample.minWeaponSpeed=6;
         Check(!s.Move({.07f,0,0}),"speed adjustment cancels the previous stroke");
     }
-    Check(WeaponContactSpeed(NAN)==3&&WeaponContactSpeed(0)==1.5f&&WeaponContactSpeed(99)==6,"speed bounds are safe");
+    Check(WeaponContactSpeed(NAN)==3&&WeaponContactSpeed(0)==1.5f&&WeaponContactSpeed(99)==99,"speed retains lower bound without upper cap");
+    {
+        Sim s;s.sample.minWeaponSpeed=12;s.Step(8);
+        bool hit=false;for(int i=1;i<=6;++i) {
+            s.sample.hand.q=math::Yaw(i*.2f);
+            s.sample.blade.tip=s.sample.blade.base+math::Rotate(s.sample.hand.q,{0,0,-.7f});
+            hit|=s.Step();
+        }
+        Check(!hit,"seven m/s rotation stays below a configured threshold above the old cap");
+        for(int i=1;i<=6;++i) {
+            s.sample.hand.q=math::Yaw(1.2f+i*.5f);
+            s.sample.blade.tip=s.sample.blade.base+math::Rotate(s.sample.hand.q,{0,0,-.7f});
+            hit|=s.Step();
+        }
+        Check(hit,"faster rotation can satisfy the higher configured threshold");
+    }
     {
         Sim s;
         Check(!s.Move({.10f,0,0}),"fast but short ten-centimeter twitch cannot arm a stroke");

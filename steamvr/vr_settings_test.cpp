@@ -14,7 +14,10 @@ int main(){
         melee.Click(hit);Check(melee.Get()[MeleeHitSpeed]==3.25f,"melee speed quarter step");
         const auto request=melee.Click({Kind::Apply});
         Check(request.changed==(1u<<MeleeHitSpeed),"highest mask bit saves only melee speed");
-        Check(Normalize(MeleeHitSpeed,NAN)==3&&Normalize(MeleeHitSpeed,0)==1.5f&&Normalize(MeleeHitSpeed,99)==6,"melee speed UI bounds");
+        Check(Normalize(MeleeHitSpeed,NAN)==3&&Normalize(MeleeHitSpeed,0)==1.5f&&Normalize(MeleeHitSpeed,99)==99,"melee speed UI has no upper cap");
+        s.values[MeleeHitSpeed]=6;melee.Open(s);melee.Click(hit);
+        Check(melee.Get()[MeleeHitSpeed]==6.25f,"plus button goes beyond old cap");
+        s.values[MeleeHitSpeed]=3;
     }
     Check(s.values[MenuDistance]==1&&s.values[TooltipTiming]==0,"comfortable Medium distance and Instant hover defaults");
     for(auto key:{MenuDistance,TooltipTiming}) {
