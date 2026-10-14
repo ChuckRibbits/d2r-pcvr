@@ -60,8 +60,9 @@ An equipped weapon remains held without continuously squeezing grip.
 | Health/mana | Choose Wrist, Palm, Either, or Off in **VR Settings > HUD** | Palm requires left palm upward in front of the eyes for 0.25 seconds, with left trigger/grip released and no left-hand cast. Vitals follow the hand; automatic low-resource popups/vibration are a separate opt-in, off by default |
 | Journal/map | Open Journal through the native tabbed game menu (Left X / Frame Left A) | Native quest status/text and tabs, readable at a comfortable size |
 
-Preserve Left X inventory, Left Grip + Left Stick Click height reset, ordinary
-Left Stick Click map, Right Stick Click weapon swap, and Right A interaction.
+With current dual-hand controls, Left Grip + Left Stick Click opens the
+native inventory menu; plain stick clicks toggle the corresponding wheel.
+Height reset remains available in VR Settings. Right A defaults to interaction.
 Right B cancels the active grab/preview. Keep button and wheel alternatives for
 seated play or limited reach. All features must work without eye tracking and
 without a particular character class.

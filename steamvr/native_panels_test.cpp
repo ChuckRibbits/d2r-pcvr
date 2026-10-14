@@ -4,6 +4,7 @@
 #include "menu_controls.h"
 #include "quick_cast.h"
 #include "journal.h"
+#include "input.h"
 #include <cstdio>
 #include <cstdlib>
 using namespace framevr;
@@ -164,6 +165,23 @@ int main(){
     // World -> stash -> world, with the same A/trigger/stick held across both
     // boundaries. New controls remain usable without releasing every grip.
     menus::ReleaseGate input;
+    // Quest's system menu button can be reserved by the runtime. The left
+    // grip/stick shortcut must not also open a wheel, sort items, or re-fire
+    // when the native menu changes epoch while both controls remain held.
+    {
+        menus::ReleaseGate gate;GripStickButton shortcut;menus::Pad p;
+        gate.Step(menus::Mode::World,0,{});
+        p.buttons=menus::LeftBumper|menus::LeftStick;
+        auto filtered=gate.Step(menus::Mode::World,0,p);
+        Check(shortcut.Update(filtered.buttons&menus::LeftStick,1)&&shortcut.Consumed(),"fresh grip/stick opens menu once");
+        filtered=gate.Step(menus::Mode::Native,1,p);
+        Check(!shortcut.Update(filtered.buttons&menus::LeftStick,0)&&!shortcut.PlainPressed(),"held chord cannot act in newly opened menu");
+        p.buttons=menus::LeftStick;filtered=gate.Step(menus::Mode::Native,1,p);
+        Check(!shortcut.Update(filtered.buttons&menus::LeftStick,0)&&!shortcut.PlainPressed(),"releasing grip first cannot sort or toggle a wheel");
+        gate.Step(menus::Mode::Native,1,{});shortcut.Update(false,0);
+        p.buttons=menus::LeftBumper|menus::LeftStick;filtered=gate.Step(menus::Mode::Native,1,p);
+        Check(shortcut.Update(filtered.buttons&menus::LeftStick,1),"fresh chord can close the inventory menu");
+    }
     menus::Pad held;held.buttons=menus::A|menus::RightBumper;held.rt=255;held.lx=20000;
     input.Step(menus::Mode::World,0,{});
     Check(input.Step(menus::Mode::World,0,held).rt==255,"fresh world attack available");
