@@ -54,8 +54,7 @@ An equipped weapon remains held without continuously squeezing grip.
 |---|---|---|
 | Weapons | Reach to a holster, squeeze grip, pull the set into use | Holster highlight, item silhouette/name, then confirmed equipped set |
 | Skills/spells | Hold Left Y for an eight-slot wheel over the left palm; point right hand and click trigger to select | Actual skill name/icon, selected mode and availability |
-| Minimap | Look at the back of the left wrist, or select **MAP** in either hand wheel | Native explored map above wrist vitals/XP by default; **VR Settings > HUD > Wrist minimap** disables only the wrist copy; wheel map and selected skill remain available |
-| Compass | Look at the back of the left wrist | Bronze bearing strip above the minimap; center marker shows facing, N is map-up. **VR Settings > HUD > Wrist compass** defaults On and works with wrist minimap Off |
+| Minimap + compass | Choose Wrist, Palm, Either, or Off in **VR Settings > HUD > Minimap / compass location** | Map and bronze bearing strip move together, independently of health/mana. Wrist is the default; Palm uses the same deliberate hold and casting guards as vitals. The center marker shows facing, N is map-up. The wheel's **MAP** tab remains available even when this display is Off |
 | Quick casting | Hold Left Trigger + a face button; add Left Grip for alternate four slots; right hand aims | Same native assignments as the wheel; see GAMEPLAY mapping |
 | Potions | Reach to the front belt, grip a bottle, bring to mouth and tip | Actual potion type/count, then confirmed consumption |
 | Health/mana | Choose Wrist, Palm, Either, or Off in **VR Settings > HUD** | Palm requires left palm upward in front of the eyes for 0.25 seconds, with left trigger/grip released and no left-hand cast. Vitals follow the hand; automatic low-resource popups/vibration are a separate opt-in, off by default |

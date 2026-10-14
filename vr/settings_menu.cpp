@@ -20,7 +20,14 @@ float Value(const wchar_t* path,const wchar_t* section,const wchar_t* key,float 
 }
 Values Load(const wchar_t* path){
     Values v{},raw{};
-    for(int i=0;i<Count;++i){const auto& d=Definitions[i];raw[i]=Value(path,d.section,d.key,d.defaultValue);v[i]=Normalize(Key(i),raw[i]);}
+    for(int i=0;i<Count;++i){
+        const auto& d=Definitions[i];
+        // Legacy separate switches are read only for migration. Both off stays
+        // off; either enabled becomes the combined wrist display. An explicit
+        // navigation_location takes precedence without rewriting old keys.
+        const float fallback=i==NavigationLocation?(v[WristMap]>.5f||v[WristCompass]>.5f?0.f:3.f):d.defaultValue;
+        raw[i]=Value(path,d.section,d.key,fallback);v[i]=Normalize(Key(i),raw[i]);
+    }
     // A malformed/future record must prompt again, not silently become valid
     // through the slider clamps. Camera and settings agree on raw validity.
     if(raw[BodyCalibration]!=1||!framevr::calibration::Valid({raw[EyeHeight],raw[ArmSpan]}))v[BodyCalibration]=0;
