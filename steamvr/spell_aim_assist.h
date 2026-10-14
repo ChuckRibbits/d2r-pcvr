@@ -12,8 +12,8 @@ struct Candidate {
     bool direct=false,valid=false;
 };
 // Find the closest section of a vertical body capsule to the hand ray, then
-// rotate into its interior. No target position or pointer survives
-// launch. Ground volleys use the footprint; planar balls require a body at
+// rotate into its interior. The result holds no native pointers.
+// Ground volleys use the footprint; planar balls require a body at
 // their actual muzzle height rather than silently introducing pitch.
 inline Candidate Evaluate(const Shot& shot,uint32_t id,Vec bottom,Vec top,float radius) {
     Candidate out;out.id=id;
@@ -96,5 +96,51 @@ public:
         last=shot;valid=false;return {target,same};
     }
     void Finish(const Candidate& c){target=c.id;valid=c.valid;}
+};
+// Per-projectile identity, never a retained native pointer. Strong acquires
+// once at launch; losing that target permanently ends steering for this shot.
+struct Homing {
+    static constexpr float Rate=60*Degrees,Budget=45*Degrees,Lifetime=1.5f;
+    uint32_t target=0,classId=0;
+    bool active=false;
+    float age=0,turned=0;
+    Vec previousBody{};
+    void Arm(const Shot& shot,const Candidate& candidate,uint32_t type,Vec body) {
+        *this={};
+        if(shot.kind!=Kind::Spell||shot.aimAssist!=2||spellcast::NativePath(shot.skill)||!candidate.valid||!Finite(body))return;
+        target=candidate.id;classId=type;previousBody=body;active=true;
+    }
+    bool Step(const Flight& flight,Vec bottom,Vec top,float radius,bool visible,float dt,Vec& direction) {
+        if(!active)return false;
+        const auto stop=[&](){active=false;return false;};
+        if(!visible||!Finite(bottom)||!Finite(top)||!std::isfinite(radius)||radius<=0||
+           top.y<bottom.y||!std::isfinite(dt)||dt<=0||dt>.1f)return stop();
+        age+=dt;
+        if(age>Lifetime||turned>=Budget)return stop();
+        const Vec body=(bottom+top)*.5f;
+        // A teleport/path discontinuity must not drag a projectile elsewhere.
+        if(Length(body-previousBody)>std::max(.75f,dt*12.f))return stop();
+        previousBody=body;
+        const Vec origin=flight.Point(),forward=flight.Direction();
+        Vec aim=body;
+        if(flight.shot.planar) {
+            if(origin.y<=bottom.y-radius||origin.y>=top.y+radius)return stop();
+            aim.y=origin.y;
+        }
+        const Vec delta=aim-origin;
+        const float distance=Length(delta);
+        if(!Finite(origin)||!Finite(forward)||!std::isfinite(distance)||distance>Range+2)return stop();
+        if(distance<.001f)return false;
+        const Vec toward=delta*(1/distance);
+        const float cosine=std::clamp(math::Dot(forward,toward),-1.f,1.f);
+        if(cosine<=0)return stop(); // never turn back after passing the enemy
+        const float angle=std::acos(cosine);
+        if(angle<.0001f)return false;
+        const float turn=std::min({angle,Rate*dt,Budget-turned});
+        const Vec side=math::Normalized(toward-forward*cosine);
+        direction=math::Normalized(forward*std::cos(turn)+side*std::sin(turn));
+        if(flight.shot.planar)direction=math::Normalized({direction.x,0,direction.z});
+        turned+=turn;return true;
+    }
 };
 }

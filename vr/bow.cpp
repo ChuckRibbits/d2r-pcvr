@@ -44,6 +44,7 @@ bool shootIn=false,collisionIn=false,clientIn=false,killIn=false,transformIn=fal
 std::mutex mutex;
 struct Arrow {
     Flight flight{};
+    framevr::aimassist::Homing homing{};
     uintptr_t game=0,server=0,client=0,room=0;
     uint32_t serverId=0,clientId=0;
     VisualBinding visualBinding{};
@@ -79,6 +80,7 @@ framevr::aimassist::History assistHistory[2]; // game thread only
 struct AssistStats {
     std::atomic<unsigned> casts{0},bodies{0},heightMisses{0},eligible{0},blocked{0},direct{0},corrected{0};
     std::atomic<int> mode{0};
+    std::atomic<unsigned> steered{0},lost{0};
     std::atomic<float> degrees{0};
 };
 AssistStats assistStats[2];
@@ -93,6 +95,7 @@ std::atomic<unsigned> previewCreated{0},previewRefused{0},uiRecovered{0};
 std::atomic<unsigned> gameRecovered{0};
 struct Launch {
     Shot shot{};uintptr_t game=0,player=0;int slot=-1;
+    framevr::aimassist::Homing homing{};
     unsigned created=0,count=0;
     std::array<int,24> slots{};
 };
@@ -132,7 +135,7 @@ void Store(size_t slot,const Arrow& a) {
     std::lock_guard lock(mutex);
     if(Same(arrows[slot],a)) {
         // UI may have attached the client/entity while the game was stepping.
-        arrows[slot].flight=a.flight;arrows[slot].room=a.room;Recount();
+        arrows[slot].flight=a.flight;arrows[slot].homing=a.homing;arrows[slot].room=a.room;Recount();
     }
 }
 void Recount() { // mutex held
@@ -167,6 +170,28 @@ bool Body(uintptr_t unit,uint32_t classId,const Shot& shot,Vec& bottom,Vec& top,
     bottom=RenderGround(shot,p)+Vec{0,radius,0};top=bottom;top.y=shot.player.y+height-radius;
     return true;
 }
+void Guide(Arrow& a,uintptr_t game,uintptr_t player) {
+    if(!a.homing.active)return;
+    const auto target=melee::ServerUnit(game,1,a.homing.target);
+    uint32_t h[4]{};Vec bottom{},top{};float radius=0;
+    bool visible=target&&Read(target,h)&&h[0]==1&&h[1]==a.homing.classId&&h[2]==a.homing.target&&h[3]!=0&&h[3]!=12&&
+        !a.flight.Seen(h[2])&&Body(target,h[1],a.flight.shot,bottom,top,radius)&&
+        reinterpret_cast<int(*)(uintptr_t,uintptr_t,uintptr_t)>(d2rsig::Addr(RelationRva))(game,player,target);
+    if(visible) {
+        auto room=a.room;
+        const auto end=(bottom+top)*.5f;
+        visible=WallEntry(GridPoint(a.flight.shot,a.flight.Point()),GridPoint(a.flight.shot,end),a.flight.shot.unitsPerMetre,[&](int x,int z) {
+            if(!room)return true;
+            room=reinterpret_cast<uintptr_t(*)(uintptr_t,int,int)>(d2rsig::Addr(RoomPointRva))(room,x,z);
+            return !room||reinterpret_cast<uint16_t(*)(uintptr_t,int,int,int,int)>(d2rsig::Addr(MaskRva))(room,x,z,1,0x804)!=0;
+        })>=1;
+    }
+    Vec direction{};
+    if(a.homing.Step(a.flight,bottom,top,radius,visible,.04f,direction)) {
+        a.flight.Redirect(direction);++assistStats[a.flight.shot.hand].steered;
+    }
+    if(!a.homing.active)++assistStats[a.flight.shot.hand].lost;
+}
 int Collision(uintptr_t game,uintptr_t unit) {
     if(!serverCount.load(std::memory_order_relaxed))return originalCollision(game,unit);
     uint32_t header[3]{};Arrow a;size_t slot=arrows.size();
@@ -198,14 +223,15 @@ int Collision(uintptr_t game,uintptr_t unit) {
     uintptr_t path=0;int velocity=0;
     if(!Read(unit+0x38,path)||!Read(path+0xa0,velocity))return End(slot,a,game,unit);
     a.flight.speed=FlightSpeed(a.flight.shot,velocity);
+    // Reacquire the proxy room before steering/terrain queries; native rooms
+    // can unload between ticks. No native target pointer survives this call.
+    a.room=reinterpret_cast<uintptr_t(*)(uintptr_t)>(d2rsig::Addr(RoomRva))(unit);
+    Guide(a,game,player);
     const float distance=a.flight.distance,step=a.flight.speed*.04f;
-    const Vec from=distance==0?a.flight.shot.origin:Tip(a.flight.shot,distance),to=Tip(a.flight.shot,distance+step);
+    const Vec from=distance==0?a.flight.shot.origin:a.flight.TipAt(distance),to=a.flight.TipAt(distance+step);
     const float length=ProjectileLength(a.flight.shot);
     const float swept=step+(distance==0?length:0);
     const auto advance=[&](float fraction){return std::max(0.f,distance+swept*fraction-(distance==0?length:0));};
-    // The proxy's room is owned by the native unit. Reacquire it every tick;
-    // a previous traversal's adjacent room may have unloaded in the meantime.
-    a.room=reinterpret_cast<uintptr_t(*)(uintptr_t)>(d2rsig::Addr(RoomRva))(unit);
     // Native missile barriers, never monster occupancy: bodies are tested in
     // 3D below. Closed/unloaded room cells are conservative solid barriers.
     float stop=WallEntry(GridPoint(a.flight.shot,from),GridPoint(a.flight.shot,to),a.flight.shot.unitsPerMetre,[&](int x,int z) {
@@ -422,8 +448,9 @@ void __cdecl Present(const D2RL::PluginContext*,void* token) noexcept {
         // supplied to the client allocator, and its id is allocated normally.
         std::array<uint8_t,0x98> params{};
         auto visualShot=a.flight.shot;
-        if(a.flight.NativePath())visualShot.origin=a.flight.Point();
-        VisualParams(visualShot,a.flight.distance,hero,params);
+        const bool spell=visualShot.kind==Kind::Spell;
+        if(spell){visualShot.origin=a.flight.Point();visualShot.direction=a.flight.Direction();}
+        VisualParams(visualShot,spell?0:a.flight.distance,hero,params);
         const auto saved=creatingVisual;const auto savedSession=visualSession,savedSequence=visualSequence;
         creatingVisual=int(i);visualSession=a.flight.shot.session;visualSequence=a.flight.shot.sequence;
         const auto client=projectiles::CreateVisual(reinterpret_cast<uintptr_t>(params.data()));
@@ -582,7 +609,7 @@ void Created(uintptr_t game,uintptr_t params,uintptr_t unit) {
     uintptr_t owner=0,path=0;uint32_t h[3]{};int velocity=0;
     if(!Read(params+8,owner)||owner!=launch.player||!Read(unit,h)||h[0]!=3||h[1]!=MissileId(launch.shot)||
        !Read(unit+0x38,path)||!Read(path+0xa0,velocity))return;
-    Arrow a;a.game=game;a.server=unit;a.serverId=h[2];a.flight.shot=launch.shot;
+    Arrow a;a.game=game;a.server=unit;a.serverId=h[2];a.flight.shot=launch.shot;a.homing=launch.homing;
     a.flight.shot.member=int(launch.created);
     a.flight.speed=FlightSpeed(launch.shot,velocity);a.flight.alive=true;a.flight.updatedAt=GetTickCount64();
     if(a.flight.NativePath()) {
@@ -611,6 +638,7 @@ void AssistSpell(uintptr_t game,uintptr_t player) {
     const auto originRoom=reinterpret_cast<uintptr_t(*)(uintptr_t)>(d2rsig::Addr(RoomRva))(player);
     uintptr_t buckets[128]{};unsigned visited=0;
     if(!originRoom||!Read(game+0x4c6*8,buckets))return;
+    uint32_t selectedClass=0;Vec selectedBody{};
     for(auto target:buckets)for(unsigned chain=0;target&&chain<256&&visited++<4096;++chain) {
         uintptr_t next=0;uint32_t h[4]{};
         if(!Read(target+0x158,next)||!Read(target,h))break;
@@ -637,7 +665,9 @@ void AssistSpell(uintptr_t game,uintptr_t player) {
                                 room=reinterpret_cast<uintptr_t(*)(uintptr_t,int,int)>(d2rsig::Addr(RoomPointRva))(room,x,z);
                                 return !room||reinterpret_cast<uint16_t(*)(uintptr_t,int,int,int,int)>(d2rsig::Addr(MaskRva))(room,x,z,1,0x804)!=0;
                             });
-                            if(barrier>=1)selection.Accept(candidate);else ++stats.blocked;
+                            if(barrier>=1) {
+                                selection.Accept(candidate);selectedClass=h[1];selectedBody=(bottom+top)*.5f;
+                            } else ++stats.blocked;
                         }
                     }
                 }
@@ -646,6 +676,7 @@ void AssistSpell(uintptr_t game,uintptr_t player) {
         target=next;
     }
     const auto& best=selection.Best();history.Finish(best);
+    launch.homing.Arm(shot,best,selectedClass,selectedBody);
     if(best.valid) {
         if(best.direct)++stats.direct;
         else {shot.direction=best.direction;++stats.corrected;stats.degrees=best.angle/framevr::aimassist::Degrees;}
@@ -736,9 +767,10 @@ void Report() {
         auto& a=assistStats[hand];
         const auto casts=a.casts.exchange(0),bodies=a.bodies.exchange(0),height=a.heightMisses.exchange(0);
         const auto eligible=a.eligible.exchange(0),blocked=a.blocked.exchange(0),direct=a.direct.exchange(0),corrected=a.corrected.exchange(0);
-        if(casts||corrected||direct) {
-            char line[320];snprintf(line,sizeof line,"Frame spell assist: hand=%d mode=%d casts=%u bodies=%u outside_height=%u eligible=%u blocked=%u direct=%u corrected=%u last_correction=%.2fdeg",
-                hand,a.mode.load(),casts,bodies,height,eligible,blocked,direct,corrected,a.degrees.load());
+        const auto steered=a.steered.exchange(0),lost=a.lost.exchange(0);
+        if(casts||corrected||direct||steered||lost) {
+            char line[360];snprintf(line,sizeof line,"Frame spell assist: hand=%d mode=%d casts=%u bodies=%u outside_height=%u eligible=%u blocked=%u direct=%u corrected=%u homing_steps=%u homing_ended=%u last_correction=%.2fdeg",
+                hand,a.mode.load(),casts,bodies,height,eligible,blocked,direct,corrected,steered,lost,a.degrees.load());
             framevr::logging::Write(line);
         }
     }

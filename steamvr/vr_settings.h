@@ -49,7 +49,7 @@ inline constexpr std::array<Definition,Count> Definitions{{
     {"Minimap / compass location", "Together on wrist, palm-up, either gesture, or hidden", L"interactions",L"navigation_location",0,0,3,1},
     {"Smooth turning", "Continuous right-stick turning; Off uses snap turning", L"turn",L"smooth",0,0,1,1},
     {"Ordinary mob bars", "Weak mobs' health and names; bosses and elites stay visible", L"hud",L"ordinary_mob_bars",0,0,1,1},
-    {"Projectile aim assist", "Supported hand spells: small launch corrections toward enemies", L"gameplay",L"projectile_aim_assist",0,0,2,1},
+    {"Projectile aim assist", "Hand spells: Light assists launch; Strong adds gentle homing", L"gameplay",L"projectile_aim_assist",0,0,2,1},
 }};
 using Values=std::array<float,Count>;
 inline Values Defaults(){Values v{};for(int i=0;i<Count;++i)v[i]=Definitions[i].defaultValue;return v;}

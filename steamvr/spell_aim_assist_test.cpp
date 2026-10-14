@@ -99,8 +99,73 @@ int main() {
     assert(clear(false)&&!clear(true));
     if(clear(true))visible.Accept(a);assert(!visible.Best().valid);
     if(clear(false))visible.Accept(a);assert(visible.Best().id==1);
-    // Launch direction is a value; subsequent target changes cannot home it.
+    // Selection cannot mutate a saved launch. Steering requires an explicit
+    // per-flight update, independent of the other hand's current selection.
     Flight flight;flight.shot=s;flight.shot.direction=a.direction;
     visible.Accept(direct);assert(flight.shot.direction.x==a.direction.x);
-    puts("Spell assist: bounded correction, exact aim, planar/free/ground paths, visibility, independent hands and lifecycle passed");
+    // Moving-target regression: the launch ray was a direct hit, but the
+    // enemy crosses it before arrival. Only Strong follows that same enemy.
+    for(int mode:{0,1,2}) {
+        auto shot=ShotAt(mode);shot.direction={0,0,1};
+        Flight moving;moving.shot=shot;moving.alive=true;moving.speed=13;
+        Vec center=shot.origin+Vec{0,0,8};
+        auto target=Evaluate(shot,42,center-Vec{0,.4f,0},center+Vec{0,.4f,0},.25f);
+        Homing homing;homing.Arm(shot,target,7,center);
+        bool hit=false;
+        for(int tick=1;tick<=28;++tick) {
+            center.x=shot.origin.x+1.5f*tick*.04f;
+            const Vec before=moving.Point();Vec direction{};
+            const auto previous=moving.Direction();
+            if(homing.Step(moving,center-Vec{0,.4f,0},center+Vec{0,.4f,0},.25f,true,.04f,direction)) {
+                assert(math::Dot(previous,direction)>=std::cos(Homing::Rate*.04f)-.00001f);
+                moving.Redirect(direction);
+                assert(Length(moving.Point()-before)<.00001f); // no jump when bending
+            }
+            moving.distance+=moving.speed*.04f;
+            const Vec after=moving.Point();
+            assert(std::fabs(Length(after-before)-.52f)<.00001f&&after.y==shot.origin.y);
+            assert(homing.turned<=Homing::Budget+.00001f);
+            float entry=0;
+            if(CapsuleEntry(before,after,center-Vec{0,.4f,0},center+Vec{0,.4f,0},.25f,entry)){hit=true;break;}
+        }
+        assert(hit==(mode==2));
+        assert(moving.shot.origin.x==shot.origin.x&&moving.shot.direction.x==0);
+        if(mode==2) {
+            assert(homing.target==42&&homing.classId==7);
+            moving.updatedAt=100;
+            assert(Length(moving.TailAt(120)-(moving.Point()+moving.Direction()*.26f))<.00001f);
+            float matrix[16]={1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1};
+            SpellMatrix(moving,100,matrix);
+            assert(Length(Vec{matrix[8],matrix[9],matrix[10]}-moving.Direction())<.00001f);
+        }
+    }
+    // Wall/death/teleport/height loss ends steering permanently; no new
+    // target is acquired. Free aim can bend vertically, planar cannot.
+    s=ShotAt(2);Vec center=s.origin+Vec{.3f,0,6};
+    const auto target=Evaluate(s,7,center-Vec{0,.4f,0},center+Vec{0,.4f,0},.2f);
+    assert(target.valid);
+    for(int reason=0;reason<5;++reason) {
+        Flight f;f.shot=s;Homing h;h.Arm(s,target,2,center);Vec direction{};
+        Vec c=center;
+        if(reason==1)c.x+=2; // teleport
+        if(reason==2)c.y-=2; // below plane
+        if(reason==3){f.distance=7;c=s.origin+Vec{.3f,0,6};} // behind flight
+        if(reason==4)h.age=Homing::Lifetime;
+        assert(!h.Step(f,c-Vec{0,.4f,0},c+Vec{0,.4f,0},.2f,reason!=0,.04f,direction)&&!h.active);
+        assert(!h.Step(f,center-Vec{0,.4f,0},center+Vec{0,.4f,0},.2f,true,.04f,direction));
+    }
+    {
+        Flight f;f.shot=s;Homing h;h.Arm(s,target,2,center);Vec direction{};
+        h.turned=Homing::Budget-.001f;
+        assert(h.Step(f,center-Vec{0,.4f,0},center+Vec{0,.4f,0},.2f,true,.04f,direction));
+        assert(h.turned<=Homing::Budget+.000001f);
+        assert(!h.Step(f,center-Vec{0,.4f,0},center+Vec{0,.4f,0},.2f,true,.04f,direction));
+        f.shot.planar=false;center.y+=.3f;h.Arm(f.shot,target,2,center);
+        assert(h.Step(f,center-Vec{0,.4f,0},center+Vec{0,.4f,0},.2f,true,.04f,direction)&&direction.y>0);
+        f.shot.skill=38;h.Arm(f.shot,target,2,center);assert(!h.active);
+        f.Redirect(direction);assert(!f.redirected); // ground path stays native
+        f.shot.kind=Kind::Arrow;h.Arm(f.shot,target,2,center);assert(!h.active);
+        f.Redirect(direction);assert(!f.redirected);
+    }
+    puts("Spell assist: bounded launch correction and Strong homing, moving targets, continuous flight, planar/free/ground paths, target loss and lifecycle passed");
 }
