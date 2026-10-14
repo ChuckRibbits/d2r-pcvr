@@ -42,6 +42,7 @@
 #include "journal.h"
 #include "native_panels.h"
 #include "native_hud.h"
+#include "render_resolution.h"
 #include "menu_controls.h"
 #include "ui_blit.h"
 #include "ui_world.h"
@@ -66,7 +67,7 @@ namespace {
 constexpr float kRadToDeg=57.295779513f;
 #define XR_FUNCTIONS(X) \
  X(EnumerateInstanceExtensionProperties) X(CreateInstance) X(DestroyInstance) \
- X(GetSystem) X(GetSystemProperties) X(GetInstanceProperties) X(GetD3D12GraphicsRequirementsKHR) \
+ X(GetSystem) X(GetSystemProperties) X(GetInstanceProperties) X(GetD3D12GraphicsRequirementsKHR) X(EnumerateViewConfigurationViews) \
  X(CreateSession) X(DestroySession) X(PollEvent) X(BeginSession) X(EndSession) \
  X(CreateReferenceSpace) X(DestroySpace) X(LocateSpace) X(LocateViews) \
  X(WaitFrame) X(BeginFrame) X(EndFrame) X(EnumerateSwapchainFormats) \
@@ -210,6 +211,7 @@ MenuTriggerGate menuTriggerGate;
 PressEdge inventoryButton,menuButton;
 float lastRecenter=0;
 uint32_t width=0,height=0;
+resolution::Size recommendedResolution{},maximumResolution{};
 DXGI_FORMAT format=DXGI_FORMAT_UNKNOWN;
 reshade::api::swapchain* gameSwapchain=nullptr;
 ComPtr<ID3D12Device> device;
@@ -720,6 +722,19 @@ bool Initialize(reshade::api::command_queue* rq,reshade::api::swapchain* swap) {
     XrGraphicsBindingD3D12KHR binding{XR_TYPE_GRAPHICS_BINDING_D3D12_KHR};binding.device=device.Get();binding.queue=queue.Get();
     XrSessionCreateInfo ci{XR_TYPE_SESSION_CREATE_INFO};ci.systemId=system;ci.next=&binding;
     if(!Check(pCreateSession(instance,&ci,&session),"create D3D12 session")) return false;
+    XrViewConfigurationView resolutionViews[2]{{XR_TYPE_VIEW_CONFIGURATION_VIEW},{XR_TYPE_VIEW_CONFIGURATION_VIEW}};
+    uint32_t resolutionCount=0;recommendedResolution=maximumResolution={};
+    if(XR_SUCCEEDED(pEnumerateViewConfigurationViews(instance,system,XR_VIEW_CONFIGURATION_TYPE_PRIMARY_STEREO,2,&resolutionCount,resolutionViews))&&resolutionCount==2){
+        recommendedResolution={std::max(resolutionViews[0].recommendedImageRectWidth,resolutionViews[1].recommendedImageRectWidth),
+            std::max(resolutionViews[0].recommendedImageRectHeight,resolutionViews[1].recommendedImageRectHeight)};
+        maximumResolution={std::min(resolutionViews[0].maxImageRectWidth,resolutionViews[1].maxImageRectWidth),
+            std::min(resolutionViews[0].maxImageRectHeight,resolutionViews[1].maxImageRectHeight)};
+        XrSystemProperties properties{XR_TYPE_SYSTEM_PROPERTIES};
+        if(XR_SUCCEEDED(pGetSystemProperties(instance,system,&properties))){
+            maximumResolution.w=std::min(maximumResolution.w,properties.graphicsProperties.maxSwapchainImageWidth);
+            maximumResolution.h=std::min(maximumResolution.h,properties.graphicsProperties.maxSwapchainImageHeight);
+        }else maximumResolution={};
+    }
     XrReferenceSpaceCreateInfo sci{XR_TYPE_REFERENCE_SPACE_CREATE_INFO};sci.poseInReferenceSpace.orientation.w=1;sci.referenceSpaceType=XR_REFERENCE_SPACE_TYPE_STAGE;
     floorSpace=XR_SUCCEEDED(pCreateReferenceSpace(session,&sci,&space));
     if(!floorSpace) { sci.referenceSpaceType=XR_REFERENCE_SPACE_TYPE_LOCAL;if(!Check(pCreateReferenceSpace(session,&sci,&space),"create local space"))return false; }
@@ -1087,7 +1102,8 @@ void SettingsPointer(const settings::InputGate::Edges& edges) {
     const auto now=GetTickCount64();
     if(now>=settingsPaintAt&&!settingsAtlasPending&&atlasUploads.size()<3&&
        (settingsPaintRevision!=settingsModel.revision||settingsPaintHover!=hover||settingsPaintStatus!=status)){
-        auto pixels=settings::Paint(settingsModel,settingsHover,descriptions[status],nullptr,detectedControllers);
+        char resolutionStatus[160];resolution::Describe(resolutionStatus,sizeof resolutionStatus,{width,height});
+        auto pixels=settings::Paint(settingsModel,settingsHover,settingsModel.page==settings::Page::Video?resolutionStatus:descriptions[status],nullptr,detectedControllers);
         if(!pixels.empty()&&UploadAtlas(settingsChain,atlasFormat,settings::Width,settings::Height,pixels,true,&settingsAtlasPending)){
             settingsPaintRevision=settingsModel.revision;settingsPaintHover=hover;settingsPaintStatus=status;
         }
@@ -1482,9 +1498,9 @@ void Events() {
             const auto& s=*reinterpret_cast<XrEventDataSessionStateChanged*>(&event);state=s.state;
             char b[96];std::snprintf(b,sizeof b,"Frame OpenXR: session state %d",int(state));Say(b);
             if(state==XR_SESSION_STATE_READY) { XrSessionBeginInfo bi{XR_TYPE_SESSION_BEGIN_INFO};bi.primaryViewConfigurationType=XR_VIEW_CONFIGURATION_TYPE_PRIMARY_STEREO;running=Check(pBeginSession(session,&bi),"begin session"); }
-            if(state==XR_SESSION_STATE_STOPPING) { if(frame)EndPair();pEndSession(session);running=false;ClearInput(); }
-            if(state==XR_SESSION_STATE_LOSS_PENDING||state==XR_SESSION_STATE_EXITING) {running=false;valid=false;ClearInput();}
-        } else if(event.type==XR_TYPE_EVENT_DATA_INSTANCE_LOSS_PENDING) {running=false;valid=false;ClearInput();}
+            if(state==XR_SESSION_STATE_STOPPING) { if(frame)EndPair();pEndSession(session);running=false;resolution::Restore();ClearInput(); }
+            if(state==XR_SESSION_STATE_LOSS_PENDING||state==XR_SESSION_STATE_EXITING) {running=false;valid=false;resolution::Restore();ClearInput();}
+        } else if(event.type==XR_TYPE_EVENT_DATA_INSTANCE_LOSS_PENDING) {running=false;valid=false;resolution::Restore();ClearInput();}
         event={XR_TYPE_EVENT_DATA_BUFFER};
     }
 }
@@ -1705,7 +1721,7 @@ void Capture(reshade::api::command_queue* rq,reshade::api::swapchain* swap) {
     auto* src=reinterpret_cast<ID3D12Resource*>(swap->get_current_back_buffer().handle);
     const auto desc=src->GetDesc();
     if(desc.Width!=width||desc.Height!=height||desc.Format!=format) {
-        Say("Frame OpenXR: window resized; recreating eye swapchains");Shutdown();failed=false;return;
+        Say("Frame OpenXR: window resized; recreating eye swapchains");Shutdown(true);failed=false;return;
     }
     if(!afr) {
         afrHandle=OpenFileMappingW(FILE_MAP_READ,FALSE,FLATVR_AFR_EYE_NAME);
@@ -1736,6 +1752,8 @@ void Prepare(reshade::api::command_queue* rq,reshade::api::swapchain* swap,const
         Shutdown();retryAt=GetTickCount64()+5000;
         Say("Frame OpenXR: initialization deferred; retrying in 5 seconds");
     }
+    if(gameSwapchain==swap&&session&&running)resolution::Update(static_cast<HWND>(swap->get_hwnd()),!failed,
+        recommendedResolution,maximumResolution,{width,height},int(vrsettings::Read().values[settings::RenderResolution]));
 }
 void AfterEffects(reshade::api::effect_runtime* rt) {
     // ReShade's 'present' event is BEFORE its effects. Capture at its later
@@ -1756,8 +1774,8 @@ void AfterEffects(reshade::api::effect_runtime* rt) {
         Capture(rt->get_command_queue(),gameSwapchain);
     }
 }
-void DestroySwap(reshade::api::swapchain* swap,bool) {
-    std::lock_guard lock(mutex);if(swap==gameSwapchain){Shutdown();failed=false;}
+void DestroySwap(reshade::api::swapchain* swap,bool resize) {
+    std::lock_guard lock(mutex);if(swap==gameSwapchain){Shutdown(resize);failed=false;}
 }
 } // namespace
 
@@ -1774,6 +1792,7 @@ void Register(LogFn log,PanelFn panel,PanelFn world,PanelFn toggle) {
     reshade::register_event<reshade::addon_event::create_pipeline>(&PipelineCreating);
     reshade::register_event<reshade::addon_event::init_pipeline>(&PipelineCreated);
     foveation::Register(log);
+    resolution::Register(log);
     registered=true;Say("Frame OpenXR: registered D3D12 capture; awaiting game Present");
 }
 bool SpatialMenu(){return uiSupported.load()&&uiworld::Ready()&&hud::LayerFound()&&inWorld&&inWorld()&&wantsPanel&&wantsPanel();}
@@ -2287,8 +2306,9 @@ bool Projection(float out[16],float nearWorld,int eye) {
     const auto& f=views[eye&1].fov;
     math::Projection(f.angleLeft,f.angleRight,f.angleDown,f.angleUp,nearWorld,out);return true;
 }
-void Shutdown() {
+void Shutdown(bool preserveResolution) {
     std::lock_guard lock(mutex);
+    if(!preserveResolution)resolution::Restore();
     windowFocus.Cancel();
     EndPair();ClearInput();interactionPainter.Stop();interaction::icons::Shutdown();
     // Completion is mandatory before destroying our commands/resources, even

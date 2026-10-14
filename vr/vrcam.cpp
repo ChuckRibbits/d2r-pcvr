@@ -89,6 +89,7 @@ namespace gamestate {bool LeftShield();}
 #include "afr_eye_shared.h"
 #ifdef D2RVR_NATIVE_OPENXR
 #include "transport.h"
+#include "render_resolution.h"
 #include "menu_controls.h"
 #include "spell_aim.h"
 #include "skill_pad.h"
@@ -4231,6 +4232,8 @@ void HookCursor() {
 // letters, and every other key goes to the game anyway.
 LRESULT CALLBACK GameWndProc(HWND h, UINT msg, WPARAM w, LPARAM l) {
 #ifdef D2RVR_NATIVE_OPENXR
+    LRESULT resolutionResult=0;
+    if(framevr::resolution::Handle(h,msg,w,l,g_gameWndProc,resolutionResult))return resolutionResult;
     if(framevr::HandleWindowFocusMessage(h,msg,w,l))return 0;
 #endif
     // F1..F3 (F4 in VR) pick the view: the game, which has skills on them, never sees them.
@@ -4296,7 +4299,12 @@ void HookGameWindow() {
     RECT rc{};
     if (!h || !GetClientRect(h, &rc) || rc.right < 320 || rc.bottom < 200) return;
     g_gameWndProc = (WNDPROC)SetWindowLongPtrW(h, GWLP_WNDPROC, (LONG_PTR)&GameWndProc);
-    if (g_gameWndProc) g_gameWnd = h;
+    if (g_gameWndProc) {
+        g_gameWnd = h;
+#ifdef D2RVR_NATIVE_OPENXR
+        framevr::resolution::Attach(h);
+#endif
+    }
 }
 
 // The mouse's turn on top of the head: with the shooter controls the pointer's
