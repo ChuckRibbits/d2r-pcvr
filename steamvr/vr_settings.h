@@ -8,7 +8,7 @@ namespace framevr::settings {
 enum class Page { Controls, VR, Video };
 enum Key { Motion, Seated, Dominant, Snap, TurnSpeed, Waist, BeltForward,
            Foveation, Sky, Fog, Ceiling, DrawDistance, ObjectDistance,
-           EyeHeight, ArmSpan, BodyCalibration, Count };
+           EyeHeight, ArmSpan, BodyCalibration, SmoothTurn, Count };
 struct Definition {
     const char* label;
     const char* detail;
@@ -20,8 +20,8 @@ inline constexpr std::array<Definition,Count> Definitions{{
     {"Motion combat", "Physical melee, bow and javelin; spell wheel and belt interactions", L"gameplay",L"motion_controls",0,0,1,1},
     {"Seated belt position", "Raises the belt for seated reach", L"interactions",L"seated",0,0,1,1},
     {"Dominant hand", "Grip over either shoulder switches weapon sets", L"interactions",L"dominant_hand",0,0,1,1},
-    {"Turning", "Zero selects smooth turning; other values are snap angles", L"turn",L"snap",0,0,180,15},
-    {"Smooth turn speed", "Degrees per second; used when turning is set to Smooth", L"turn",L"speed",120,10,720,30},
+    {"Snap turn angle", "Degrees per flick; used when smooth turning is off", L"turn",L"snap",30,15,180,15},
+    {"Smooth turn speed", "Degrees per second; used when smooth turning is on", L"turn",L"speed",120,10,720,30},
     {"Belt drop below eyes", "Standing mode only; smaller values raise the belt", L"interactions",L"waist_below_eyes",.65f,.30f,.95f,.05f},
     {"Belt forward reach", "Distance forward from the estimated torso", L"interactions",L"belt_forward",.26f,.03f,.5f,.025f},
     {"Foveated rendering", "Reduce peripheral shading; missing gaze uses full quality", L"render",L"fixed_foveation",1,0,2,1},
@@ -33,6 +33,7 @@ inline constexpr std::array<Definition,Count> Definitions{{
     {"Standing eye height", "Measured from the SteamVR floor", L"calibration",L"eye_height_m",1.64f,.8f,2.3f,.01f},
     {"Controller span", "Measured between grips in a T-pose", L"calibration",L"arm_span_m",1.6f,.85f,2.6f,.01f},
     {"Body calibration", "Saved body calibration version", L"calibration",L"version",0,0,1,1},
+    {"Smooth turning", "Continuous right-stick turning; Off uses snap turning", L"turn",L"smooth",0,0,1,1},
 }};
 using Values=std::array<float,Count>;
 inline Values Defaults(){Values v{};for(int i=0;i<Count;++i)v[i]=Definitions[i].defaultValue;return v;}
@@ -42,6 +43,11 @@ inline float Normalize(Key key,float value){
     value=std::clamp(value,d.min,d.max);
     return d.step==1?std::round(value):value;
 }
+// Existing profiles used snap=0 for smooth turning. An explicit toggle takes
+// precedence; keep a usable angle so turning smooth off restores snap turning.
+inline bool SmoothTurning(float snap,float smooth){return smooth<0?snap==0:Normalize(SmoothTurn,smooth)>.5f;}
+inline float SnapDegrees(float snap){return snap==0?Definitions[Snap].defaultValue:Normalize(Snap,snap);}
+inline float EffectiveSnapAngle(float snap,float smooth){return SmoothTurning(snap,smooth)?0.f:SnapDegrees(snap);}
 inline uint32_t Changed(const Values& a,const Values& b){uint32_t mask=0;for(int i=0;i<Count;++i)if(std::fabs(a[i]-b[i])>.0001f)mask|=1u<<i;return mask;}
 inline bool Conflict(const Values& current,const Values& base,uint32_t mask){return (Changed(current,base)&mask)!=0;}
 enum class Result { None, Saving, Saved, Failed, Conflict };
@@ -54,12 +60,15 @@ struct Rect {
 constexpr int Width=1280,Height=1024;
 constexpr Rect Tabs[3]={{40,114,386,60},{447,114,386,60},{854,114,386,60}};
 constexpr Rect Apply{965,918,275,68},Close{650,918,275,68},Recenter{40,918,270,68},Calibrate{330,918,300,68};
-constexpr int RowY=246,RowStep=82;
+constexpr int RowY=246,RowStep=76;
 inline Rect Decrease(int row){return {865,RowY+row*RowStep,64,52};}
 inline Rect Increase(int row){return {1176,RowY+row*RowStep,64,52};}
 inline Rect ValueBox(int row){return {942,RowY+row*RowStep,221,52};}
-inline int RowCount(Page page){return page==Page::VR?7:page==Page::Video?6:0;}
-inline Key RowKey(Page page,int row){return Key((page==Page::Video?7:0)+row);}
+inline int RowCount(Page page){return page==Page::VR?8:page==Page::Video?6:0;}
+inline Key RowKey(Page page,int row){
+    constexpr Key vrRows[]={Motion,Seated,Dominant,SmoothTurn,Snap,TurnSpeed,Waist,BeltForward};
+    return page==Page::VR?vrRows[row]:Key(Foveation+row);
+}
 enum class Kind { None, Tab, Change, Apply, Close, Recenter, Calibrate };
 struct Hit {Kind kind=Kind::None;int index=-1,delta=0;};
 inline Hit HitTest(Page page,float u,float v){

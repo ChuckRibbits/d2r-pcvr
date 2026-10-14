@@ -21,6 +21,8 @@ float Value(const wchar_t* path,const wchar_t* section,const wchar_t* key,float 
 Values Load(const wchar_t* path){
     Values v{},raw{};
     for(int i=0;i<Count;++i){const auto& d=Definitions[i];raw[i]=Value(path,d.section,d.key,d.defaultValue);v[i]=Normalize(Key(i),raw[i]);}
+    v[SmoothTurn]=SmoothTurning(raw[Snap],Value(path,L"turn",L"smooth",-1))?1.f:0.f;
+    v[Snap]=SnapDegrees(raw[Snap]);
     // A malformed/future record must prompt again, not silently become valid
     // through the slider clamps. Camera and settings agree on raw validity.
     if(raw[BodyCalibration]!=1||!framevr::calibration::Valid({raw[EyeHeight],raw[ArmSpan]}))v[BodyCalibration]=0;
@@ -33,7 +35,8 @@ bool SameFile(const WIN32_FILE_ATTRIBUTE_DATA& a,const WIN32_FILE_ATTRIBUTE_DATA
 Result Save(const wchar_t* path,const Request& r){
     WIN32_FILE_ATTRIBUTE_DATA before{},after{};
     if(!GetFileAttributesExW(path,GetFileExInfoStandard,&before))return Result::Failed;
-    if(Conflict(Load(path),r.base,r.changed))return Result::Conflict;
+    const auto current=Load(path);
+    if(Conflict(current,r.base,r.changed))return Result::Conflict;
     const std::wstring temp=std::wstring(path)+L".vrmenu."+std::to_wstring(GetCurrentProcessId())+L".tmp";
     if(!CopyFileW(path,temp.c_str(),FALSE))return Result::Failed;
     auto write=[&](const wchar_t* section,const wchar_t* key,float value){
@@ -44,6 +47,9 @@ Result Save(const wchar_t* path,const Request& r){
     for(int i=0;i<Count&&ok;++i)if(r.changed&(1u<<i)){
         const auto& d=Definitions[i];
         if(i==Foveation)ok=write(L"render",L"fixed_foveation",r.values[i]>0?1:0)&&write(L"render",L"eye_tracked_foveation",r.values[i]==2?1:0);
+        // Materialize the mode before replacing legacy snap=0. Changing the
+        // stored angle must not implicitly switch a smooth profile to snap.
+        else if(i==Snap)ok=write(d.section,d.key,r.values[i])&&write(L"turn",L"smooth",(r.changed&(1u<<SmoothTurn))?r.values[SmoothTurn]:current[SmoothTurn]);
         else ok=write(d.section,d.key,r.values[i]);
     }
     WritePrivateProfileStringW(nullptr,nullptr,nullptr,temp.c_str());

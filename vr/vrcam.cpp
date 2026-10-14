@@ -230,7 +230,7 @@ struct Settings {
     std::atomic<float> stickAngleScale{1.0f}; // approximate mode: the stick turns by camera yaw times this
     std::atomic<bool>  rightTurn{true};     // right stick X turns the body (camera + walking)
     std::atomic<float> turnSpeed{120.0f};   // deg/s at full deflection (smooth turn)
-    std::atomic<float> snapAngle{0.0f};     // >0: snap turn by this many degrees per flick instead
+    std::atomic<float> snapAngle{30.0f};    // >0: snap turn by this many degrees per flick instead
     std::atomic<float> turnSign{1.0f};      // flip if right turns left
     std::atomic<bool>  afr{false};          // alternate-frame stereo: left eye, right eye, left...
     std::atomic<float> ipd{0.27f};          // eye separation in world units (hero ~7.5 tall = 1.8 m)
@@ -969,7 +969,8 @@ void LoadSettings() {
     g_set.stickAngleScale.store(std::clamp(IniF(L"stick", L"angle_scale", 1.0f), 0.0f, 4.0f));
     g_set.rightTurn.store(IniB(L"turn", L"right_stick", true));
     g_set.turnSpeed.store(std::clamp(IniF(L"turn", L"speed", 120.0f), 10.0f, 720.0f));
-    g_set.snapAngle.store(std::clamp(IniF(L"turn", L"snap", 0.0f), 0.0f, 180.0f));
+    g_set.snapAngle.store(framevr::settings::EffectiveSnapAngle(
+        IniF(L"turn", L"snap", 30.0f), IniF(L"turn", L"smooth", -1.0f)));
     g_set.turnSign.store(IniF(L"turn", L"sign", 1.0f) < 0 ? -1.0f : 1.0f);
     g_set.afr.store(IniB(L"stereo", L"afr", false) && g_set.platform.load() == 1);   // on a monitor alternate eyes only flicker
     g_set.ipd.store(std::clamp(IniF(L"stereo", L"ipd", 0.27f), 0.0f, 5.0f));

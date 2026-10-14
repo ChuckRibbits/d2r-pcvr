@@ -21,7 +21,7 @@ use two tracked VR controllers; an Xbox controller is not required.
 | Action | VR control |
 | --- | --- |
 | Walk | Left stick |
-| Snap turn | Right stick left / right |
+| Turn (snap by default) | Right stick left / right; enable **Smooth turning** on the **VR** settings tab for continuous turning |
 | Interact / pick up / talk | Right A while aiming at the target |
 | Open the tabbed game menu | Left primary; select Inventory, Character, Skills or Journal in its tabs |
 | Spell wheel | Hold left secondary and turn your left palm toward you; select with right laser + trigger |
@@ -45,6 +45,12 @@ use two tracked VR controllers; an Xbox controller is not required.
 | Calibrate height / arm span | VR settings → **Calibrate body**; stand straight in a T-pose, release both triggers, then hold both together until **Saved** |
 | Recenter | PC F11 |
 | Save stereo images | PC F8 |
+
+On the **VR** settings tab, **Smooth turning** defaults to **Off** (30-degree
+snap turns). Turn it **On**, then **Apply**, for continuous right-stick turning.
+**Snap turn angle** and **Smooth turn speed** keep their values when switching
+modes. Close without applying to discard an edit. Existing smooth-turn profiles
+retain their selected mode.
 
 The wrist shows health, mana, level and XP progress. The minimap is in the
 spell wheel's bottom **MAP** tab. Keep holding left secondary while viewing it;
