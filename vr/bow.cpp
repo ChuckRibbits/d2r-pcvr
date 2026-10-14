@@ -614,7 +614,7 @@ int SpellParams(uintptr_t game,uintptr_t params,std::array<uint8_t,0x98>& adjust
     Param(adjusted,0x24,x);Param(adjusted,0x28,y);Param(adjusted,0x2c,tx);Param(adjusted,0x30,ty);
     return 1; // preserve native init selector/ordinal, count, level and owner
 }
-bool Visual(uint32_t entity,uintptr_t unit,bool hasReleasePoint) {
+bool Visual(uint32_t entity,uintptr_t unit,bool hasReleasePoint,bool isRoot) {
     uint32_t header[3]{};
     if(!Read(unit,header)||header[0]!=3)return false;
     std::lock_guard lock(mutex);
@@ -628,7 +628,7 @@ bool Visual(uint32_t entity,uintptr_t unit,bool hasReleasePoint) {
         if(header[1]==MissileId(a.flight.shot)&&a.flight.shot.sequence&&a.flight.shot.session==current.session&&((a.client==unit&&a.clientId==header[2])||
             (creatingVisual==int(i)&&a.flight.shot.session==visualSession&&a.flight.shot.sequence==visualSequence))) {
             const bool wasBound=a.visualBinding.Bound();
-            const bool bound=a.flight.shot.kind==Kind::Spell?a.visualBinding.BindRoot(entity,hasReleasePoint):a.visualBinding.Bind(entity,hasReleasePoint);
+            const bool bound=a.flight.shot.kind==Kind::Spell?a.visualBinding.BindRoot(entity,isRoot):a.visualBinding.Bind(entity,hasReleasePoint);
             // Descendant release components still need removal even though
             // only the root owns the spell transform.
             if(!bound){++ignoredEntities;return a.flight.shot.kind==Kind::Spell;}

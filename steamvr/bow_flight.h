@@ -184,10 +184,10 @@ public:
         if(Bound())return Matches(candidate);
         entity=candidate;return true;
     }
-    bool BindRoot(uint32_t candidate,bool hasReleasePoint) {
+    bool BindRoot(uint32_t candidate,bool isRoot) {
         // Particle spells use the unit root. Descendant meshes inherit its
         // translation; binding a mesh as well would apply the offset twice.
-        return !hasReleasePoint&&Bind(candidate,true);
+        return isRoot&&Bind(candidate,true);
     }
     void Clear(){entity=UINT32_MAX;}
 };
