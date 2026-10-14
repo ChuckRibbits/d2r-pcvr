@@ -102,7 +102,13 @@ A subsequent offline level-3 Sorceress test in Rogue Encampment used the Steam
 100%, DLSS off. The owner confirmed the HUD was gone and the fog result was
 better. The recording still shows reported roof shading flicker during head
 movement, even with added sky/fog off, ambient occlusion off, and shadows low.
-The rectangular-tile correction is a new candidate awaiting owner comparison.
+The owner confirmed the rectangular-tile correction worked in the same cart
+head-turn test. The first candidate did not activate because the observer
+registered after the engine created its lighting pipelines. Registration now
+runs immediately after loading ReShade, before renderer startup; runtime logs
+confirmed the exact shader match and its use during VR eye rendering before
+the successful comparison. Other acts, runtimes and graphics configurations
+still need broader visual testing.
 Its compiled compute shader passes a software GPU test against a full-pixel
 reference scan, including exact 4096 square, wide views, empty tiles, extrema
 near lower tile edges, atlas scale/offset and padded output stride.
