@@ -61,6 +61,27 @@ int main() {
     cadence.Fired(2,0,UINT32_MAX-5,13);
     assert(!cadence.Ready(2,0,6)&&cadence.Ready(2,0,7));
     {
+        spellcast::ManaWarning warning;
+        warning.Request(0,7,1000);assert(!warning.Take(0,7,1000,true));
+        warning.Request(1,7,1000); // right hand fails
+        warning.Request(1,7,1000); // left hand fails in the same tick
+        assert(warning.Take(1,7,1020,true));
+        assert(!warning.Take(1,7,1020,true));
+        warning.Request(1,7,1100);assert(!warning.Take(1,7,1120,true));
+        warning.Request(1,7,1250);assert(warning.Take(1,7,1250,true));
+        warning.Request(1,7,1500);assert(!warning.Take(1,7,2001,true)); // stale UI callback
+        warning.Request(1,7,2100);assert(!warning.Take(1,7,2100,false)); // menu/death
+        assert(!warning.Take(1,7,2101,true)); // no delayed warning after reopening
+        warning.Request(1,7,2400);assert(!warning.Take(2,7,2400,true)); // same ID, new session
+        warning.Request(2,7,2401);assert(warning.Take(2,7,2401,true));
+        warning.Request(2,7,2700);assert(!warning.Take(2,8,2700,true)); // wrong player
+        warning.Request(2,8,2701);assert(warning.Take(2,8,2701,true));
+        warning.Request(2,8,3000);assert(!warning.Take(2,8,2999,true)); // clock regression
+        warning.Request(3,0,0);assert(warning.Take(3,0,0,true)); // ID/timestamp zero are valid
+        // Feedback never advances either hand's casting cadence.
+        assert(cadence.Ready(3,0,0)&&cadence.Ready(3,1,0));
+    }
+    {
         Sim s;s.input.trigger[0]=s.input.trigger[1]=1;s.Step();
         assert(s.output.slot==-1&&s.output.spells[0]==skills::TriggerSlot(0)&&s.output.spells[1]==skills::TriggerSlot(1));
         const auto left=s.output.activation[1],right=s.output.activation[0];

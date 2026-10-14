@@ -54,4 +54,23 @@ public:
         used[hand]=true;last[hand]=tick;duration[hand]=std::clamp(frames,1u,250u);
     }
 };
+// One short-lived notification shared by both hands. The caller synchronizes
+// game/UI access. Native speech supplies the longer voice repeat cooldown;
+// this only coalesces held-trigger failures and prevents stale delivery.
+class ManaWarning {
+    uint64_t session=0,at=0;
+    uint32_t player=0;
+    bool pending=false,issued=false;
+public:
+    void Request(uint64_t world,uint32_t id,uint64_t now) {
+        if(!world)return;
+        if(world==session&&id==player&&issued&&now>=at&&now-at<250)return;
+        session=world;player=id;at=now;pending=issued=true;
+    }
+    bool Take(uint64_t world,uint32_t id,uint64_t now,bool active) {
+        const bool take=pending&&active&&world&&world==session&&id==player&&now>=at&&now-at<=500;
+        pending=false;
+        return take;
+    }
+};
 }

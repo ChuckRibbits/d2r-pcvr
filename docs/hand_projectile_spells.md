@@ -30,6 +30,17 @@ uses the ordinary Sorceress casting frames, including Faster Cast Rate. Two
 hands intentionally permit twice the single-hand throughput, at the combined
 native mana cost. There is no unlimited or free casting mode.
 
+An insufficient-mana attempt requests the character's normal localized spoken
+warning. The server's own mana predicate identifies the failure for that hand's
+skill; other native refusals do not produce a false mana warning. Both hands
+share a coalesced notification, delivered to the current local client player
+on the UI thread. The game's speech routine retains its voice selection and
+75-tick repeat cooldown. Notifications expire after 500 ms and are discarded
+on a player/session mismatch or while a menu or death animation is active.
+Speech does not send a cast input, consume mana or change movement/cast timing.
+These optional native entry points are separately checked; an unsupported
+speech layout leaves hand casting available without this warning.
+
 Straight projectile flight shares the bow's swept body collision and conservative wall checks.
 Before native hit handling, the missile's actual position and room membership
 move to the physical contact. This lets native Fireball splash, resistances
@@ -79,12 +90,19 @@ all headings, vertical fallback, Charged Bolt eligibility and native path
 displacement, and visible emitter alignment. Existing bow, wheel and
 controller fixtures must also pass. These fixtures do not execute the injected
 game routines.
+The feedback fixture also checks simultaneous failures, held-input coalescing,
+expiry, menu/death cancellation, character/session changes and clock regression.
 
 On an offline Sorceress in Steam or Battle.net D2R 3.3.93787:
 
 1. Assign Fireball to the right trigger and Charged Bolt to the left. Fire each
    separately, then together at different targets. Check mana deductions and
    the separate repeat intervals, including insufficient mana for both.
+   Exhaust mana and try each hand, then hold both: confirm the character's
+   mana voice plays without overlap or rapid repeats. Drink a mana potion and
+   confirm casting resumes immediately. With sufficient mana, a town refusal
+   must not speak the mana warning. Repeat while walking and with each supported
+   projectile spell. Audible behavior requires a live headset test.
 2. Walk forward, backward and sideways while casting. Physically rotate and
    snap-turn through all headings; tilt the controllers up and down. Check that
    straight projectiles stay level at the muzzle height, without snapping to
