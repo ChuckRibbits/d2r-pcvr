@@ -8186,6 +8186,12 @@ D2RL_PLUGIN_EXPORT bool D2RLoaderLoadPlugin(const PluginContext* ctx) noexcept {
     d2rsig::Resolve(ctx);
 
     LoadReShade();
+#ifdef D2RVR_NATIVE_OPENXR
+    // Observe the engine's initial compute pipeline creation. Waiting for the
+    // update thread's slow tick misses cached lighting pipelines made during
+    // renderer startup; init_pipeline is not replayed for existing objects.
+    fx::TryRegister();
+#endif
     d2rcam::SetCallbacks(&VrView, &VrProj);
     d2rcam::SetFrameCallback(&VrFrame);
     d2rcam::SetRayOverride(&VrRay);
