@@ -1172,6 +1172,7 @@ void Input() {
     interactionInput.snapshot=interactionstate::Read();interactionInput.reply=interactionstate::Status();
     interactionInput.spell=motion.Selection()>=0;interactionInput.wheel=motionInput.palette;interactionInput.cancel=motionInput.cancel;
     interactionInput.quickCast=motionInput.quickCast;
+    interactionInput.wristMap=vrsettings::Read().values[settings::WristMap]>.5f;
     interactionInput.reservedLeft=(controls.buttons&menus::LeftStick)!=0;interactionInput.trigger=motionInput.trigger;interactionInput.hover=motionInput.hover;
     interactionInput.leftTrigger=controls.lt/255.f;
     if(!interactionPaintValid||interactionPaintContext!=interaction::Context(interactionInput.snapshot,interactionOutput,
@@ -1812,7 +1813,7 @@ void EndPair() {
         interactionInput.snapshot,interactionOutput,interaction::Fresh(interactionInput.snapshot,interactionInput.session,interactionInput.at)))
         motionQuad(palette,palettePose,paletteWidth,paletteHeight,{{0,0},{768,768}},interactionChain);
     XrCompositionLayerQuad menuMap{XR_TYPE_COMPOSITION_LAYER_QUAD};
-    if(palette.subImage.swapchain&&mapEye.copied&&interaction::MapWanted(interactionInput,interactionOutput,GetTickCount64())) {
+    if(palette.subImage.swapchain&&mapEye.copied&&interaction::MenuMapWanted(interactionInput,interactionOutput,GetTickCount64())) {
         const auto bounds=interaction::MapContent;
         auto pose=MotionPose(palettePose);
         pose.p=pose.p+math::Rotate(pose.q,{((bounds.left+bounds.right)*.5f-.5f)*paletteWidth,
@@ -1822,7 +1823,7 @@ void EndPair() {
     }
     auto interactionPose=[](interaction::Pose p){return XrPose({p.p,p.q});};
     std::array<XrCompositionLayerQuad,4> beltQuads;
-    XrCompositionLayerQuad wrist{XR_TYPE_COMPOSITION_LAYER_QUAD};
+    XrCompositionLayerQuad wrist{XR_TYPE_COMPOSITION_LAYER_QUAD},wristMap{XR_TYPE_COMPOSITION_LAYER_QUAD};
     if(interactionVisible) {
         if(!potionModels.Ready()&&interactionOutput.bottle>=0&&interactionOutput.bottleHand>=0) {
             auto pose=motionInput.hand[interactionOutput.bottleHand];pose.q=potions::HeldRotation(pose.q);
@@ -1843,7 +1844,10 @@ void EndPair() {
             const auto panel=interaction::WristPanel(interactionInput.hand[1],interactionInput.head);
             auto pose=motionInput.hand[1];pose.p=panel.p;pose.q=panel.q;
             if(interactionOutput.critical&&!interactionOutput.wrist){pose.p=V(head.position)+math::Rotate(Q(head.orientation),{-.20f,-.22f,-.55f});pose.q=Q(head.orientation);}
-            motionQuad(wrist,XrPose(pose),.24f,.12f,{{512,768},{512,256}},interactionChain);
+            motionQuad(wrist,XrPose(pose),interaction::WristWidth,interaction::WristHeight,{{512,768},{512,256}},interactionChain);
+            if(wrist.subImage.swapchain&&mapEye.copied&&interaction::WristMapWanted(interactionInput,interactionOutput,GetTickCount64()))
+                motionQuad(wristMap,interactionPose(interaction::WristMapPanel(interactionInput.hand[1],interactionInput.head)),
+                    interaction::WristMapSize,interaction::WristMapSize,{{0,0},{int32_t(mapSide),int32_t(mapSide)}},mapEye.chain);
         }
     }
     if(gameplayVisible&&!interactionOutput.wheel&&!interactionOutput.stowed&&interactionOutput.bottle<0&&
