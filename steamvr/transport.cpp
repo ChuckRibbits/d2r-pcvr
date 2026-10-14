@@ -1724,9 +1724,8 @@ bool CopyUi(reshade::api::command_queue* rq) {
     uiMissingFrames=0;
     bool croppedNpc=false;
     int32_t native[4]{};
-    // Quest test candidate: retain the whole native dialogue canvas while
-    // diagnosing missing Trade/Talk choices at 3072 square. Frame/Index keep
-    // the owner-verified crop. This is deliberately not in the shortcut PR.
+    // Touch profiles need the complete canvas to retain Trade/Talk choices at
+    // square resolutions. Keep the separately tested Frame/Index widget crop.
     const bool quest=detectedControllers.hands[0]==controllers::Layout::Touch||
         detectedControllers.hands[1]==controllers::Layout::Touch;
     static bool uncroppedNpcLogged=false;

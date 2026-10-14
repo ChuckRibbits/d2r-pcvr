@@ -101,6 +101,11 @@ for the experimental adapter's scope and offline testing checklist.
 and Apply for up/down aiming of straight projectile spells; Charged Bolt keeps
 its native planar spread. The preference saves and applies to new casts live.
 
+**Projectile aim assist** on the same tab defaults to Off. Light corrects nearby
+misses at launch; Strong adds gentle homing toward the enemy selected at launch
+for straight hand spells. Charged Bolt remains launch-only. This does not affect
+bows, thrown weapons or other native spells, and does not guarantee a hit.
+
 Other skills retain native repeat behavior, delays and animation restrictions.
 A native action has one owner: the first held input wins, with right-hand
 priority for simultaneous presses. Native and physical casts do not start

@@ -21,3 +21,9 @@ placement after reacquiring focus. The reported case is Quest 3 through Virtual
 Desktop with VDXR, Steam edition, at 3072 by 3072. Physical verification of this
 correction is pending: check the logo and main menu on a fresh launch, return
 from the runtime overlay, then check menu lasers and an offline inventory.
+
+## Release validation update (October 14)
+
+The owner accepted startup placement and subsequently confirmed bottom-row
+selection after the separate native cursor-bounds correction, on Quest 3 through
+Virtual Desktop/VDXR. Repeated overlay/focus transitions remain a regression check.

@@ -239,3 +239,10 @@ canvas. NPC choice crops and waypoint/journal placement are unchanged. The
 October 13 20:22 recording confirms the previously high merchant placement;
 the correction still needs an offline headset check of trading, repairs,
 confirmation buttons and item dragging.
+
+## Release validation update (October 14)
+
+The owner confirmed the complete bottom row is now clickable on Quest 3 through
+Virtual Desktop/VDXR with the combined cursor-bounds build. The earlier failed
+mouse-event-only test above is retained as diagnostic history. This does not
+establish every resolution/runtime combination.

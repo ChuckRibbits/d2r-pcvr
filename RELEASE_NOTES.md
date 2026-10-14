@@ -1,197 +1,128 @@
-# D2R PCVR v0.3.12 — Windows preview
+# D2R PCVR v0.3.13 - Windows preview
 
-Play **Diablo II: Resurrected in VR on Windows** with
-**SteamVR or Virtual Desktop (VDXR)**. This preview is for **local offline
-single-player** and accepts your **Steam copy of D2R 3.3.93787** or
-**Battle.net copy of D2R 3.3.93847** (experimental).
+This release brings together the controls, spellcasting, navigation, rendering,
+menu and Quest fixes developed since v0.3.12.
 
-**This download is a mod, not the original game. You must purchase and install
-your own legitimate copy of Diablo II: Resurrected.** D2R PCVR adds VR
-support and motion interactions to that existing game installation.
+Download **D2R-PCVR-Setup-0.3.13.exe** for graphical installation, or
+**d2r-pcvr-windows.zip** for portable setup. Existing users should choose
+**Update / repair and keep calibration and video settings**, keeping their
+existing helper folders and setup backups.
 
-**No Blizzard game assets are included in the installer or ZIP.** They contain mod files
-and licensed third-party components. Required item/skill icons and potion
-models are read from your own installed game into local caches during setup;
-do not redistribute those caches or your game files.
+You need your own purchased Diablo II: Resurrected: Steam 3.3.93787 or
+Battle.net 3.3.93847 (experimental). Use local offline characters only.
+The installer includes no Blizzard game assets; icons and potion models are
+read locally from your installed game. SteamVR and Virtual Desktop/VDXR are
+supported connection options. The EXE is unsigned; checksums accompany both downloads.
 
-## Headset connections
+## Controls and combat
 
-- **Steam Frame:** SteamVR streaming.
-- **Quest 3:** Steam Link with SteamVR, or Virtual Desktop with VDXR.
-- **Quest 2:** the same Quest connection options; compatibility is not yet confirmed.
+- **Two independent skill wheels:** click either thumbstick to toggle that
+  hand's wheel, then use the other hand's laser and trigger to assign skills.
+  Each hand has trigger, two face-button, and two grip-plus-face-button slots.
+- **Controller-aware labels:** automatic detection and a manual Headset /
+  controllers dropdown for Quest/Touch, Index, Steam Frame, or Generic labels.
+- **Reliable menu access:** left grip + left stick click opens the native
+  inventory/character/skills menu, including controllers whose Menu button is
+  reserved by the runtime. Either wheel also offers INVENTORY.
+- **Weapon skills and potions:** compatible trigger skills apply to physical
+  weapon gestures; weapon-mounted skill indicators are optional and off by
+  default. Grabbed potion bottles sit upright with corrected drinking alignment.
+- **Independent Sorceress casting:** Fire Bolt, Fireball, Ice Bolt, Ice Blast
+  and Charged Bolt can fire from both hands together, with independent aiming
+  and repeat timing, native mana costs and Faster Cast Rate. Walking and turning
+  remain available during these supported casts.
+- **Continuous aiming:** spell direction follows the casting hand/weapon through
+  movement, physical rotation and snap turns. Supported straight projectiles
+  launch from the hand/weapon; Ice Bolt has corrected launch height. Charged Bolt
+  stays on the ground and retains its native spread and wandering.
+- **Planar spell aiming:** on by default; switch it off for vertical aiming of
+  supported straight spells. Horizontal aiming remains continuous in either mode.
+- **Optional projectile aim assist:** Off by default, with Light launch assistance
+  and Strong launch assistance plus gentle target-locked homing for straight
+  hand spells. Charged Bolt uses launch assistance only. Bows, thrown weapons
+  and unsupported native spells are unchanged. Strong is not a guaranteed hit.
+- **Cast feedback:** restore native casting-start sounds and character refusal
+  voices. Town-restricted spells use the town warning, while insufficient mana
+  outside town uses the mana warning, retaining the game's voice cooldown.
+- **Turning choice:** optional smooth turning with independent speed and snap-angle
+  settings. New profiles default to 30-degree snap turns.
 
-The game runs on your Windows PC and streams to your headset.
+## Navigation and HUD
 
-Battle.net has been confirmed with SteamVR. Battle.net with Virtual Desktop /
-VDXR is available but has not yet been confirmed. The Steam desktop client
-is required for library shortcuts, including with the Battle.net edition.
-**Battle.net owners do not need to purchase a second copy through Steam.**
+- **Minimap and compass together:** an optional left-hand navigation display,
+  alongside the map in both wheels. Select Wrist, Palm, Either or Off as one unit.
+  The compass shows bearings, not quest or destination markers.
+- **Independent vitals placement:** health/mana/XP can use Wrist, Palm, Either or
+  Off. Palm placement uses a deliberate palm-up gesture; automatic low-resource
+  alerts are a separate option and off by default.
+- **Compact hand maps:** temporarily use a corner-map layout for VR capture even
+  when the game's full-screen automap is selected, restoring native layout afterward.
+- **Flat HUD removed:** suppress the original bottom toolbar and its menu-transition
+  flashes in VR. Guard hidden experience widgets against the reported casting/
+  level-up crash. Desktop HUD behavior is preserved.
+- **Monster bars:** ordinary monster bars are hidden by default, with a toggle;
+  bosses, champions and other elite bars retain their native behavior.
 
-## What's new: easier installation backup recovery
+## Resolution and menus
 
-- **Find older backups automatically:** setup checks known backup locations and
-  the old helper folder referenced by your VR launch settings. A single verified
-  match for the selected game is filled in on the backup page.
-- **Remember verified backups:** successful upgrades copy and verify backups in
-  the permanent helper folder and record their locations for future setup runs.
-  Valid existing records continue without showing the backup-selection page.
-- **Check before proceeding:** clicking Next validates the selected backup.
-  Switching game copies clears the previous suggestion, while your selected
-  Steam account stays selected during validation.
-- **Clearer folder guidance:** EXE backups normally live in
-  `%LOCALAPPDATA%\Programs\D2R PCVR\setup-backups\game`. ZIP users should look
-  inside the original extracted folder under `setup-backups\game`; manual
-  installs normally use `build-frame\backups`. A development checkout under
-  your Windows user folder is not required.
+- **Monitor-independent VR resolution:** choose Desktop, Headset, or fixed presets
+  up to 4096 x 4096 in VR Settings > Video. A low-resolution desktop monitor no
+  longer caps the VR render source. Higher resolutions increase GPU load.
+- **Graphics Apply recovery:** reapply the VR resolution automatically after
+  changes in the game's video options reset its rendering surfaces.
+- **Square-render corrections:** fix fog/depth behavior and sharp rectangular
+  lighting patches at square VR resolutions; added fog and sky remain available.
+- **Comfortable menus:** eye-level inventory, merchant and main menus with
+  Close / Medium / Far distance presets. Medium is 30 cm farther than the early
+  private-build placement. Startup placement waits for tracked headset poses.
+- **Native UI and laser alignment:** maintain a widescreen layout within the VR
+  render source, correct event scaling and cursor bounds, and restore access to
+  bottom-row Play/Create Character buttons on Quest at custom resolutions.
+- **NPC and waypoint panels:** lower and enlarge dialogue choices, correct their
+  crop and merchant placement, retain the complete dialogue canvas on Touch
+  controllers, and give both waypoint eyes matching black backgrounds.
+- **Item tooltips:** immediate laser hover and eligible equipped-item comparisons,
+  with Instant / Short (300 ms) / Original timing options and more consistent
+  item-grid targeting.
 
-Only locate a backup if setup asks. If the original backup was deleted or was
-never created by a compatible installer, automatic discovery cannot recreate
-it; keep the existing installation and report the previous installation method.
+## Getting started
 
-## Included: installer checksum fix
+1. Install or update, reopen Steam and connect your headset.
+2. Use the SteamVR shortcut for Steam Link/SteamVR, or the VDXR shortcut for
+   Virtual Desktop. Choosing VDXR in Streamer alone does not change a SteamVR launch.
+3. Click either stick to open its wheel. Use the opposite hand to assign spells.
+4. Open VR SETTINGS and Apply your changes: controller labels under VR; aiming
+   under Controls; hand displays/menu distance/tooltips under HUD; resolution
+   under Video.
+5. Use left grip + left stick click whenever you need the native game menu.
 
-- **Fix fresh installation failures:** D2RLoader repackaged its 1.3.1 ZIP under
-  the same filename. Its contents are unchanged, but older PCVR installers reject
-  the new archive checksum. Setup now accepts both reviewed official archives.
-- **Keep verification enabled:** unknown downloads still stop before game files
-  change. Errors include expected and received SHA-256 values for troubleshooting.
-  Existing verified dependency caches remain usable.
-- **Retry with this installer:** if v0.3.10 stopped with a D2RLoader checksum
-  mismatch, download **D2R-PCVR-Setup-0.3.12.exe** and run setup again. Keep
-  existing helper folders and backups. Disabling antivirus does not resolve
-  the changed upstream checksum; keep protection enabled.
+See [installation instructions](INSTALL-WINDOWS.md) and [controls](CONTROLS.md).
 
-This update retains the released phase 1 renderer and 100% fresh-install
-resolution default. The experimental phase 2 renderer is not included.
+## Validation and limitations
 
-## Included: performance update phase 1
+The release candidate passed all 57 native checks and 114 Python checks covering
+setup, repair/removal, launchers, asset preparation and package staging. The
+compiled installer lifecycle fixture passed installation, registration and
+removal using an isolated stub backend. These fixtures do not modify a real
+game installation. Headset feedback on Steam
+D2R with Quest 3/Virtual Desktop/VDXR confirmed menu access and bottom-row pointer
+selection, NPC dialogue, and correct town/mana voice feedback. Earlier offline
+sessions confirmed dual casting, planar aim, projectile-height fixes, square
+resolution lighting, and added fog/sky. These are reported gameplay checks,
+not a claim that every setting, class, runtime or area has been exhaustively tested.
 
-- **Remove a periodic VR stall:** CPU diagnostics now run on a background
-  worker. The system thread scan previously blocked rendering for about 53 ms
-  every ten seconds on the test PC.
-- **Reduce render callback contention:** world draws avoid unnecessary HUD
-  locking, and immutable resource descriptions are cached with lifetime guards.
-- **100% resolution by default:** fresh and full installations now set the game's
-  Resolution Scale to 100%, keeping FXAA, DLSS off and medium shadows/AO/atmospherics.
-  Update / repair preserves your existing video settings. If an older installation
-  uses 80%, change **Options > Video > Resolution Scale** to **100%** in the game.
-- **Consistent draw-distance defaults:** missing INI values use the shipped
-  two terrain rings and object radius 300. Explicit choices are retained;
-  the object-distance control now changes in steps of 50.
-- **Clearer performance diagnostics:** logs separate XR waiting/submission from
-  eye draws, and profiling reports use the full stereo-pair refresh deadline.
-- **Installer file-access errors:** setup identifies the dependency it could not
-  read and points to Windows Security Protection History when relevant.
+Strong homing still needs wider headset testing. Socketed-item tooltip overlap,
+long sessions, every menu/resolution combination, and repeated graphics changes
+remain useful regression scenarios. The new Quest 3 Steam Link session has not
+been reported complete. Battle.net support remains experimental; this release
+has no new Battle.net or Quest 2 gameplay validation.
 
-Run **D2R-PCVR-Setup-0.3.12.exe** for graphical setup, or use the portable ZIP.
-The EXE includes a private Python runtime and creates the matching shortcuts.
-Choose **Update / repair and keep calibration and video settings** when upgrading;
-keep existing setup backups. Normal desktop Play and Windows removal are retained.
+Dual casting and movement freedom apply to the supported Sorceress projectiles;
+other skills keep their native restrictions. Two hands intentionally allow more
+throughput than one. Planar assist cannot hit a body entirely above/below its
+launch plane, and terrain handling retains the launch-floor approximation.
 
-Use the game's **left or right corner minimap** layout for the Map tab.
-Full-screen automap is available through the game's normal map controls.
-
-## Validation and remaining checks
-
-The installer suites pass **76 Python checks**, covering automatic discovery,
-complete upgrade chains, corrupt/missing backups, separate game copies, saved
-backup records, both approved dependency archives and unknown-download rejection.
-The compiled wizard also passed eight isolated UI checks with a stub backend,
-including prefill, invalid-folder rejection, game switching and Steam-account
-preservation. A read-only probe found an existing installation's recorded backups
-without prompting. No new real-game installation or headset session was performed
-for this installer update.
-
-The previous checksum release verified a fresh official loader download and
-reuse of both approved caches. All four loader payload files matched the
-previous archive byte for byte; this release retains that correction.
-
-The unchanged phase 1 renderer previously passed **43 CTest checks**. Its
-v0.3.10 release also passed **84 Python checks** covering setup, repair/removal,
-rollback, Battle.net, launcher lifecycle, payload staging and profiling reports.
-Installer fixtures verify that a full install changes 80% to 100%, repair
-preserves custom settings, and rollback retains character progress for both
-Steam and Battle.net.
-
-Phase 1 was tested with an offline Paladin on Steam D2R 3.3.93787, Ryzen 9 5950X /
-RTX 5090, SteamVR OpenXR and Steam Link to Steam Frame at 90 Hz. Background
-scans of 58-63 ms no longer produced the recurring long eye-draw stall in three
-360-pair captures. A separate one-minute walking/turning trial with the existing
-optional GPU-overlap setting had normal stereo, tracking and controls according
-to the owner. That option remains off in the shipped defaults.
-
-This phase improves stalls and callback overhead. It still runs two engine draw
-passes per stereo pair; a larger rendering change remains future work. These
-captures do not establish a universal FPS gain or resolve the RTX 5080 report in
-[issue #20](https://github.com/bearstonem/d2r-pcvr/issues/20).
-
-The compiled Inno Setup lifecycle fixture passes installation, Windows Apps
-registration, helper retention after a blocked removal, and successful removal.
-It uses a stub backend and does not modify a real game installation.
-
-Longer sessions, area transitions, both-eye Map/label/spatial-menu regressions,
-Amazon arrow skills and a fresh owner-triggered Frame shortcut launch still need
-headset checks. This phase has no Battle.net gameplay or RTX 5080 validation.
-Quest 2 and Battle.net VDXR remain unconfirmed. Issue #11 still needs the
-reporter's detailed installation log.
-
-## Features
-
-- First-person VR with motion controls, free-swing melee, aimed spells, bows
-  and physical javelin throws.
-- Guided Windows installation, headset/connection selection and automatic
-  Steam library shortcuts. Update / repair keeps calibration and video settings.
-- Body calibration for your height and arm span on first load, or through
-  **Left Grip + Frame Left B / Quest Left Y → Calibrate body**.
-- Weapon-set swapping by reaching your right hand over either shoulder and
-  pressing its grip; the swap hand is adjustable in VR settings.
-- Physical belt potions and wrist health, mana, level and experience indicators,
-  plus a spell-menu Map tab showing explored areas and native markers.
-- Item pickup, chests, shrines and cave-entrance interactions through the
-  right A button.
-- Inventory, skills, conversations and Journal through the tabbed game menu:
-  **Frame Left A / Quest Left X**.
-- Native menu buttons and sticks alongside laser selection and inventory dragging.
-  Native **X** drops an item; **press and hold right-stick click** sorts inventory.
-- A complete **[controller reference](CONTROLS.md)** in the README and ZIP.
-
-## Download, install and play
-
-First launch your purchased game normally through its store, finish the account
-prompts, load an offline character, then use **Save & Exit** and fully close D2R.
-
-For graphical setup, download **D2R-PCVR-Setup-0.3.12.exe**, run it and follow the
-wizard. Fully exit Steam when asked. Reopen Steam, connect your headset and use
-the matching VR shortcut with an offline character.
-
-For portable setup:
-
-1. Download **d2r-pcvr-windows.zip** under **Assets** below.
-2. Extract `d2r-pcvr-preview` to a permanent folder.
-3. Double-click **Install-Windows.cmd** and follow the setup wizard. It creates
-   the Steam shortcuts for your chosen game edition, headset and connection.
-   See **INSTALL-WINDOWS.md** for help or manual setup.
-4. Open Steam, connect your headset and use the matching **SteamVR** or
-   **Virtual Desktop** library entry. Battle.net entries include **(Battle.net)**.
-   Keep SteamVR closed for Virtual Desktop / VDXR.
-5. Accept Steam's launch prompt if shown and select an **offline character**.
-
-To launch from Steam or the headset, use the shortcuts created by setup.
-The included **Launch-VR-*.cmd** files are for the **Steam edition**;
-Battle.net players should use the **(Battle.net)** library entries. These
-launch the mod directly, so the Battle.net app may not show it as in progress.
-Manual directions are under **Add Steam library shortcuts** in **INSTALL-WINDOWS.md**.
-Use the matching entry for SteamVR or Virtual
-Desktop; keep SteamVR closed when using Virtual Desktop/VDXR.
-
-**Upgrading from an earlier preview?** Follow **Upgrade while keeping your settings** in
-**INSTALL-WINDOWS.md** to retain body calibration and video settings.
-
-Keep the installed helper folder or extracted ZIP folder after installation. For ordinary desktop play,
-fully exit VR and use the original Steam or Battle.net **Play** button.
-Use the unmodded game for multiplayer. Keep **setup-backups**, including
-backups in older extracted release folders, until removal is complete.
-
-Read **INSTALL-WINDOWS.md** and **CONTROLS.md** in the helper folder or ZIP, or open the
-[installation guide](https://github.com/bearstonem/d2r-pcvr/blob/v0.3.12-windows-preview/INSTALL-WINDOWS.md)
-and [controller reference](https://github.com/bearstonem/d2r-pcvr/blob/v0.3.12-windows-preview/CONTROLS.md).
+Existing installer backup discovery, verified downloads, repair and removal are
+retained. The released phase 1 performance improvements are retained. The closed
+experimental performance phase 2 PR (#24) and unrelated local rendering
+prototypes are not included. Rendering still uses two game draws per stereo pair.
