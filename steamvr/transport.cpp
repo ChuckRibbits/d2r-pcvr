@@ -41,6 +41,7 @@
 #include "../vr/settings_menu.h"
 #include "journal.h"
 #include "native_panels.h"
+#include "npc_dialogue.h"
 #include "native_hud.h"
 #include "light_bounds.h"
 #include "render_resolution.h"
@@ -236,7 +237,8 @@ Eye mapEye;
 bool mapSupported=false;
 constexpr uint32_t mapSide=512;
 std::atomic<bool> uiSupported{false};
-bool journalMode=false,spatialMode=false,workspacePlaced=false,opaqueMenuMode=false;
+bool journalMode=false,spatialMode=false,workspacePlaced=false,opaqueMenuMode=false,upperBandMenuMode=false;
+bool npcChoicesMode=false,npcChoicesCropped=false;
 UiBlit uiBlit;
 UiBlit mapBlit; // Own descriptors: native menu and map copies may share a frame.
 potions::Models potionModels;
@@ -297,7 +299,7 @@ bool panelMode=false,pointerVisible=false,pointerHit=false,mouseDown=false,trigg
 HWND gameWindow=nullptr;
 WORD heldKeyScan=0;
 ULONGLONG keyReleaseAt=0;
-constexpr float panelWidth=2.0f,panelDistance=1.4f;
+constexpr float panelWidth=2.0f,panelDistance=panels::MainDistance;
 XrSwapchain pointerChain=XR_NULL_HANDLE;
 XrPosef beamPose{},dotPose{};
 float beamLength=0;
@@ -820,15 +822,28 @@ bool FocusGameForUi() {
     windowFocus.Request(gameWindow);
     return false;
 }
+panels::Size UiSurfaceSize() {
+    // The handheld journal keeps its book size; native workspaces fit in both axes.
+    if(journalMode)return {uiSize,uiSize*(uiCrop[2]>0?float(uiCrop[3])/uiCrop[2]:1.3f)};
+    if(npcChoicesMode&&npcChoicesCropped)return dialogue::Size({uiCrop[0],uiCrop[1],uiCrop[2],uiCrop[3]},uiWidth,uiHeight);
+    return panels::Fit(uiCrop[2]>0?unsigned(uiCrop[2]):0,uiCrop[3]>0?unsigned(uiCrop[3]):0);
+}
+XrPosef UiSurfacePose() {
+    auto pose=uiPose;
+    if(upperBandMenuMode&&!journalMode) {
+        const auto p=V(pose.position)+math::Rotate(Q(pose.orientation),{0,panels::UpperBandOffset(UiSurfaceSize()),0});
+        pose.position={p.x,p.y,p.z};
+    }
+    return pose;
+}
 void MenuPointer(const menus::Pad& controls) {
     nativeMenuPad={};
     pointerVisible=pointerHit=false;
     if(settingsModel.open||bodyCalibration.Active()||calibrationRelease.blocked)return;
     const bool spatialReady=spatialMode&&(journalMode?journalPlacement.Placed():workspacePlaced)&&uiCrop[2]>0;
     const bool uiActive=panelMode||spatialReady;
-    const auto surfacePose=spatialMode?uiPose:menuPose;
-    const float surfaceWidth=spatialMode?uiSize:panelWidth;
-    const float surfaceHeight=spatialMode?uiSize*(uiCrop[2]>0?float(uiCrop[3])/uiCrop[2]:1.3f):panelWidth*height/width;
+    const auto surfacePose=spatialMode?UiSurfacePose():menuPose;
+    const auto surface=spatialMode?UiSurfaceSize():panels::Fit(width,height,panelWidth);
     const bool pressed=controls.rt>140;
     bool focused=gameWindow&&GetForegroundWindow()==gameWindow;
     if(uiActive&&menus::Busy(controls)&&!focused)focused=FocusGameForUi();
@@ -839,7 +854,7 @@ void MenuPointer(const menus::Pad& controls) {
     math::PanelHit hit{};
     if(aimTracked) {
         const auto ray=V(aim.pose.position),direction=math::Rotate(Q(aim.pose.orientation),{0,0,-1});
-        pointerHit=math::IntersectPanel(ray,direction,V(surfacePose.position),Q(surfacePose.orientation),surfaceWidth,surfaceHeight,hit);
+        pointerHit=math::IntersectPanel(ray,direction,V(surfacePose.position),Q(surfacePose.orientation),surface.width,surface.height,hit);
         beamLength=pointerHit?hit.distance:panelDistance*1.8f;
         const auto mid=ray+direction*(beamLength*.5f);
         const auto rot=math::BeamOrientation(direction,V(head.position)-mid);
@@ -1502,6 +1517,7 @@ void Events() {
             if(state==XR_SESSION_STATE_STOPPING) { if(frame)EndPair();pEndSession(session);running=false;resolution::Restore();ClearInput(); }
             if(state==XR_SESSION_STATE_LOSS_PENDING||state==XR_SESSION_STATE_EXITING) {running=false;valid=false;resolution::Restore();ClearInput();}
         } else if(event.type==XR_TYPE_EVENT_DATA_INSTANCE_LOSS_PENDING) {running=false;valid=false;resolution::Restore();ClearInput();}
+        hud::NativeSession(running);
         event={XR_TYPE_EVENT_DATA_BUFFER};
     }
 }
@@ -1523,8 +1539,10 @@ bool Begin() {
     worldWasLoaded=loaded;
     const bool spatial=SpatialMenu();
     const bool book=spatial&&gamestate::JournalOnly();
-    if(spatial!=spatialMode||book!=journalMode) {
+    const bool npc=spatial&&gamestate::NpcChoicesOnly();
+    if(spatial!=spatialMode||book!=journalMode||npc!=npcChoicesMode) {
         workspacePlaced=false;uiMissingFrames=0;std::fill_n(uiCrop,4,0);
+        npcChoicesCropped=false;
         if(book)journalPlacement.Open();
         // An attack held when an NPC opens its dialog must not select an option.
         ReleasePanelInput();panelMouse.Suspend();
@@ -1532,7 +1550,7 @@ bool Begin() {
     }
     const bool opaque=spatial&&gamestate::OpaqueMenuOpen();
     if(opaque!=opaqueMenuMode)Say(opaque?"Frame panels: shared black menu background":"Frame panels: spatial background restored");
-    spatialMode=spatial;journalMode=book;opaqueMenuMode=opaque;uiEye.copied=false;
+    spatialMode=spatial;journalMode=book;npcChoicesMode=npc;opaqueMenuMode=opaque;upperBandMenuMode=spatial&&gamestate::UpperBandMenuOpen();uiEye.copied=false;
     mapEye.copied=false;hud::MapFrame();
     hud::UiFrame(spatialMode,!journalMode,0);
     const bool panel=wantsPanel&&wantsPanel()&&!spatialMode;
@@ -1573,15 +1591,13 @@ bool Begin() {
             Say("Frame OpenXR: loaded game calibrated from current headset position");
         }
         if(spatialMode&&!journalMode&&!workspacePlaced) {
-            const auto yaw=math::Yaw(math::Heading(Q(head.orientation)));
-            const auto pos=V(head.position)+math::Rotate(yaw,{0,-.10f,-panels::Distance});
-            uiPose.position={pos.x,pos.y,pos.z};uiPose.orientation={yaw.x,yaw.y,yaw.z,yaw.w};
+            const auto placed=panels::AtEyeLevel(V(head.position),Q(head.orientation),panels::Distance);
+            uiPose=XrPose({placed.position,placed.orientation});
             uiSize=panels::Width;workspacePlaced=true;
         }
         if(panelMode&&!menuPlaced) {
-            const auto yaw=math::Yaw(math::Heading(Q(head.orientation)));
-            const auto pos=V(head.position)+math::Rotate(yaw,{0,0,-panelDistance});
-            menuPose.position={pos.x,pos.y,pos.z};menuPose.orientation={yaw.x,yaw.y,yaw.z,yaw.w};menuPlaced=true;
+            const auto placed=panels::AtEyeLevel(V(head.position),Q(head.orientation),panelDistance);
+            menuPose=XrPose({placed.position,placed.orientation});menuPlaced=true;
         }
     }
     timing.locateMs=Milliseconds()-locateStart;
@@ -1685,6 +1701,14 @@ bool CopyUi(reshade::api::command_queue* rq) {
         return true;
     }
     uiMissingFrames=0;
+    bool croppedNpc=false;
+    int32_t native[4]{};
+    if(npcChoicesMode&&gamestate::NpcChoicesRect(native)) {
+        const auto box=dialogue::Crop({native[0],native[1],native[2],native[3]},int(w),int(h));
+        if(box.w>0&&box.h>0) {
+            crop[0]=box.x;crop[1]=box.y;crop[2]=box.w;crop[3]=box.h;croppedNpc=true;
+        }
+    }
     auto& e=uiEye;
     if(e.chain&&(w!=uiWidth||h!=uiHeight)) {
         if(!WaitGpuValue(e.copyFence))return false;
@@ -1712,6 +1736,10 @@ bool CopyUi(reshade::api::command_queue* rq) {
     if(FAILED(e.commands->Close()))return false;
     ID3D12CommandList* lists[]={e.commands.Get()};queue->ExecuteCommandLists(1,lists);
     if(FAILED(queue->Signal(fence.Get(),++fenceValue)))return false;
+    if(croppedNpc&&!npcChoicesCropped) {
+        char b[180];std::snprintf(b,sizeof b,"Frame NPC choices: eye-level 4x surface, crop %d,%d %dx%d of %ux%u",crop[0],crop[1],crop[2],crop[3],w,h);Say(b);
+    }
+    npcChoicesCropped=croppedNpc;
     e.copyFence=fenceValue;e.copied=true;std::copy_n(crop,4,uiCrop);return true;
 }
 void Capture(reshade::api::command_queue* rq,reshade::api::swapchain* swap) {
@@ -1735,8 +1763,8 @@ void Capture(reshade::api::command_queue* rq,reshade::api::swapchain* swap) {
     if((eye==0&&!CopyUi(rq))||!Copy(src,eyes[eye],rq)){failed=true;EndPair();ClearInput();return;}
     if(!stereo) {
         if(!menuPlaced) {
-            const auto pos=V(head.position)+math::Rotate(Q(head.orientation),{0,0,-1.6f});
-            menuPose=head;menuPose.position={pos.x,pos.y,pos.z};menuPlaced=true;
+            const auto placed=panels::AtEyeLevel(V(head.position),Q(head.orientation),panelDistance);
+            menuPose=XrPose({placed.position,placed.orientation});menuPlaced=true;
         }
         EndPair();
     } else if(!pairDrawing&&eyes[0].copied&&eyes[1].copied) {
@@ -1894,7 +1922,8 @@ void EndPair() {
         for(int i=0;i<2;++i){pv[i].pose=views[i].pose;pv[i].fov=views[i].fov;pv[i].subImage.swapchain=eyes[i].chain;pv[i].subImage.imageRect={{0,0},{int32_t(width),int32_t(height)}};}
         projection.space=space;projection.viewCount=2;projection.views=pv.data();layer=reinterpret_cast<const XrCompositionLayerBaseHeader*>(&projection);menuPlaced=false;
     } else if(render&&valid&&eyes[0].copied&&menuPlaced) {
-        quad.space=space;quad.eyeVisibility=XR_EYE_VISIBILITY_BOTH;quad.pose=menuPose;quad.size={panelWidth,panelWidth*height/width};
+        const auto size=panels::Fit(width,height,panelWidth);
+        quad.space=space;quad.eyeVisibility=XR_EYE_VISIBILITY_BOTH;quad.pose=menuPose;quad.size={size.width,size.height};
         quad.subImage.swapchain=eyes[0].chain;quad.subImage.imageRect={{0,0},{int32_t(width),int32_t(height)}};layer=reinterpret_cast<const XrCompositionLayerBaseHeader*>(&quad);
     }
     XrFrameEndInfo ei{XR_TYPE_FRAME_END_INFO};ei.displayTime=frameState.predictedDisplayTime;ei.environmentBlendMode=XR_ENVIRONMENT_BLEND_MODE_OPAQUE;
@@ -2043,7 +2072,8 @@ void EndPair() {
     }
     XrCompositionLayerQuad book{XR_TYPE_COMPOSITION_LAYER_QUAD};
     if(layer&&!settingsModel.open&&!bodyCalibration.Active()&&spatialMode&&(journalMode?journalPlacement.Placed():workspacePlaced)&&uiEye.copied&&uiCrop[2]>0) {
-        motionQuad(book,uiPose,uiSize,uiSize*float(uiCrop[3])/uiCrop[2],
+        const auto size=UiSurfaceSize();
+        motionQuad(book,UiSurfacePose(),size.width,size.height,
             {{uiCrop[0],uiCrop[1]},{uiCrop[2],uiCrop[3]}},uiEye.chain);
         book.layerFlags=opaqueMenuMode?0:XR_COMPOSITION_LAYER_BLEND_TEXTURE_SOURCE_ALPHA_BIT;
     }
@@ -2311,6 +2341,8 @@ bool Projection(float out[16],float nearWorld,int eye) {
 }
 void Shutdown(bool preserveResolution) {
     std::lock_guard lock(mutex);
+    // Keep the HUD hidden through an intentional eye-target/session rebuild.
+    if(!preserveResolution)hud::NativeSession(false);
     if(!preserveResolution)resolution::Restore();
     windowFocus.Cancel();
     EndPair();ClearInput();interactionPainter.Stop();interaction::icons::Shutdown();

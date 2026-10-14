@@ -53,7 +53,12 @@ affect perceived clarity. Higher source sizes cost GPU time and memory.
 In native VR gameplay, the mod hides the game's `HUDPanel` on its UI thread
 as well as suppressing the bottom toolbar draw. This covers controller HUD
 layouts that place the bar away from the bottom at square render sizes.
-Native menus release the panel override; tracked wrist/palm displays remain.
+The panel stays hidden throughout the XR session, including native menus,
+loading and gaps between eye draws; tracked wrist/palm displays remain.
+Native panel messages reapply the override immediately and queue a coalesced
+UI-thread refresh after the native handler. This prevents menu transitions
+from deliberately restoring the toolbar or waiting for the slow state poll.
+Stopping XR releases the override; an intentional resolution rebuild retains it.
 
 The added sky/fog reads a private copy of the scene depth. Square render sizes
 can match a shadow map's dimensions, so selecting depth by size alone can put
@@ -63,6 +68,39 @@ stale/destroyed resources and suppresses depth effects if no suitable source
 is available. Desktop rendering retains ReShade's normal depth channel.
 Update both `d2rl-vrcam.dll` and `reshade-shaders/Shaders/D2R_DepthFog.fx`
 together when testing this fix.
+
+Native inventory/character workspaces and the main menu fit inside their
+original widescreen-sized VR surfaces. Square and portrait render targets
+are uniformly reduced to that height limit instead of producing a much taller
+panel. The complete native image and its aspect ratio are preserved, and the
+laser uses the same fitted dimensions as the displayed surface. This changes
+only menu presentation, not world rendering or the handheld quest journal.
+Inventory workspaces sit 0.55 m away and the main menu 0.70 m away. They are
+placed upright at the current eye height when opened, independent of head
+pitch. The controller's tabbed inventory/character/options view occupies the
+upper widescreen band of a tall canvas; that visible band is centered on the
+eye-height anchor without cropping the remaining canvas. Rendering and laser
+targeting share this offset. Other layouts retain their full-canvas center.
+Automated panel tests cover square, portrait and wide sources at both menu
+sizes, including resolution-independent sizing, seated/standing eye-height
+placement and laser-to-pixel mapping. The owner found the first fitted-height
+candidate too small/far away; closer placement and visible-band centering
+await a fresh headset comparison.
+
+NPC choice menus use their live `NpcDialogPanel`/`DialogBorder` bounds to
+display a separate, eye-level region at the same 0.55 m distance. The region
+has four times the previous workspace's pixel pitch, preserving text aspect
+and remapping laser hits into the native dialogue coordinates. The adjustment
+applies only when NPC choices are the sole modal panel; trade, inventory,
+confirmations over shops and scrolling quest speech retain their existing
+surfaces. Missing/stale/invalid bounds retain the full native surface. Automated
+tests cover crop limits, magnification and laser mapping; live layout mapping
+and headset readability still need owner validation.
+The first NPC candidate incorrectly scaled live source-pixel bounds as authored
+HD coordinates, clipping the left side of Charsi's choices at 4096 square.
+The corrected crop uses the live pixels directly, with border padding. A
+regression fixture uses both rectangles captured in the owner's recording;
+the corrected visual result still awaits headset confirmation.
 
 The native lighting depth reduction also assumes square tiles when calculating
 the row for a linear sample index. Its 32x20 grid has rectangular tiles at
@@ -122,3 +160,13 @@ Diagnostics in `d2rloader/logs/d2r-vr-frame.log` report the requested, source,
 physical and recommended dimensions; matching depth allocations; and the
 OpenXR session's actual eye size. A missing pointer hook or unavailable runtime
 limits retains the desktop path rather than enabling misaligned input.
+
+Merchant trade/repair and gambling screens bypass UISwitcher. They now receive
+its upper widescreen-band height correction too, keeping the approved 0.55 m
+distance and existing scale. At 4096 square this lowers the full canvas by
+about 23.4 cm, centering the visible shop and inventory panes at eye height.
+The laser uses the same pose; tooltips and confirmations remain on the complete
+canvas. NPC choice crops and waypoint/journal placement are unchanged. The
+October 13 20:22 recording confirms the previously high merchant placement;
+the correction still needs an offline headset check of trading, repairs,
+confirmation buttons and item dragging.
