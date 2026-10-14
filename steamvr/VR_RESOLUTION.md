@@ -198,6 +198,22 @@ physical and recommended dimensions; matching depth allocations; and the
 OpenXR session's actual eye size. A missing pointer hook or unavailable runtime
 limits retains the desktop path rather than enabling misaligned input.
 
+Native mouse messages also need conversion: `WM_MOUSEMOVE` and client-coordinate
+button events bypass `ScreenToClient`. They now use the same applied render
+dimensions as polled cursor positions. This prevents the laser's hover/click
+coordinates from remaining at desktop resolution after a VR resize. The mapping
+updates on the window thread when the resize is applied, including live preset
+changes; queued sizes are not used prematurely. Wheel messages retain their
+screen coordinates, captured drags retain signed coordinates outside the window,
+and other windows/Desktop mode remain native.
+
+The real-window pointer fixture checks event/poll agreement at center and edge
+targets and during an outside drag at 1536, 3072, 4096 and portrait dimensions,
+then checks Desktop restoration. All 56 focused native checks passed. Quest 3
+with Virtual Desktop/VDXR still needs a headset retest of Play/Create Character
+at 3K and after changing resolution. These checks do not establish headset
+validation.
+
 Merchant trade/repair and gambling screens bypass UISwitcher. They now receive
 its upper widescreen-band height correction too, keeping the approved 0.55 m
 distance and existing scale. At 4096 square this lowers the full canvas by
