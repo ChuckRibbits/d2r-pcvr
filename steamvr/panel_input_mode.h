@@ -13,6 +13,13 @@ inline bool UiCanvasCaller(uintptr_t rva) {
     for(auto address:UiCanvasReturns)if(rva==address)return true;
     return false;
 }
+// SetCursorPosition (0x14fae0) clamps both axes after native pointer dispatch.
+// Height returns here from GetHeight; width tail-calls the size query from
+// GetWidth, so its return address is in SetCursorPosition itself.
+inline constexpr uintptr_t CursorHeightReturn=0x7f4b2,CursorWidthReturn=0x14fb2a;
+inline bool CursorBoundsCaller(uintptr_t rva) {
+    return rva==CursorHeightReturn||rva==CursorWidthReturn;
+}
 // SendInput is queued: protection must already exist before moving/clicking
 // the pointer, and must survive the last button-up when a panel closes. The
 // short lease expires even if XR stops producing frames.

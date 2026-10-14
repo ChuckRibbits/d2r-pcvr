@@ -11,6 +11,8 @@ void Restore();
 // Fit a widescreen band in the applied size, not a queued request. Desktop
 // remains a passthrough; the world source and pointer conversion stay full-size.
 uint64_t UiSize(uint64_t nativeSize);
+// Pointer bounds cover the whole source, including pixels below the UI band.
+uint64_t CursorSize(uint64_t nativeSize);
 // Reflow once if the signature-guarded UI hook became available after resize.
 void UiSizeReady();
 // Called before native UI dispatch; recovery is deferred until after Apply.

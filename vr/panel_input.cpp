@@ -2,6 +2,7 @@
 #include <intrin.h>
 #include <atomic>
 #include <cstring>
+#include <utility>
 #include "panel_input.h"
 #include "panel_input_mode.h"
 #include "render_resolution.h"
@@ -27,6 +28,7 @@ uintptr_t canvasImageBase=0;
 uint64_t OnCanvasSize(){
     const auto caller=reinterpret_cast<uintptr_t>(_ReturnAddress());
     const auto native=originalCanvasSize();
+    if(framevr::panels::CursorBoundsCaller(caller-canvasImageBase))return framevr::resolution::CursorSize(native);
     return framevr::panels::UiCanvasCaller(caller-canvasImageBase)?framevr::resolution::UiSize(native):native;
 }
 void InstallCanvasSize() {
@@ -38,12 +40,22 @@ void InstallCanvasSize() {
         std::memcpy(call+1,&delta,sizeof delta);
         if(!d2rsig::Check(address-5,call,sizeof call))return;
     }
+    // The width helper uses a tail JMP, preserving its caller's return address.
+    // Guard both that CALL and the tail JMP, plus the height helper's CALL.
+    for(const auto site:{std::pair<uint64_t,uint64_t>{0x7f4ad,CanvasSizeRva},
+                        {0x14fb25,0x7f510},{0x7f521,CanvasSizeRva}}) {
+        uint8_t branch[5]{uint8_t(site.first==0x7f521?0xe9:0xe8)};
+        const int32_t delta=int32_t(site.second-(site.first+5));
+        std::memcpy(branch+1,&delta,sizeof delta);
+        if(!d2rsig::Check(site.first,branch,sizeof branch))return;
+    }
     canvasImageBase=d2rsig::Addr(CanvasSizeRva)-CanvasSizeRva;
     canvasSizeIn=d2rsig::Hook(CanvasSizeRva,CanvasSizeSig,sizeof CanvasSizeSig,
         reinterpret_cast<void*>(&OnCanvasSize),reinterpret_cast<void**>(&originalCanvasSize));
     if(canvasSizeIn) {
         framevr::resolution::UiSizeReady();
         framevr::logging::Write("Frame panels: native UI canvas follows applied VR resolution; physical window unchanged");
+        framevr::logging::Write("Frame panels: native cursor width/height clamp follows full VR source");
     }
 }
 framevr::panels::InputModeLease lease;

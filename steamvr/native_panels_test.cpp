@@ -9,6 +9,12 @@
 using namespace framevr;
 static void Check(bool ok,const char* message){if(!ok){std::fprintf(stderr,"FAIL: %s\n",message);std::exit(1);}}
 int main(){
+    Check(panels::CursorBoundsCaller(0x7f4b2)&&panels::CursorBoundsCaller(0x14fb2a),
+        "native height and tail-called width clamp use full-source bounds");
+    for(auto address:panels::UiCanvasReturns)
+        Check(!panels::CursorBoundsCaller(address),"cursor bounds cannot enlarge native font/layout canvas");
+    for(auto address:{uintptr_t(0),uintptr_t(0x14fb46),uintptr_t(0x667ff1),uintptr_t(0x904b3d)})
+        Check(!panels::CursorBoundsCaller(address),"unrelated and approximate callers retain original size");
     Check(panels::UiCanvasCaller(0x843ed5)&&panels::UiCanvasCaller(0x8453a9)&&
         panels::UiCanvasCaller(0x846239)&&panels::UiCanvasCaller(0x14f31d),"native UI layout and cursor queries use VR canvas");
     for(auto caller:{uintptr_t(0),uintptr_t(0x904b3d),uintptr_t(0x667ff1),uintptr_t(0x668003),uintptr_t(0x846238)})

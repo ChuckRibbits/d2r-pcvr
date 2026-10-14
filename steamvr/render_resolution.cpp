@@ -68,6 +68,10 @@ uint64_t UiSize(uint64_t nativeSize) {
     const auto logical=UiCanvas(window.Logical(attached.load()));
     return logical?uint64_t(logical.w)|(uint64_t(logical.h)<<32):nativeSize;
 }
+uint64_t CursorSize(uint64_t nativeSize) {
+    const auto logical=window.Logical(attached.load());
+    return logical?uint64_t(logical.w)|(uint64_t(logical.h)<<32):nativeSize;
+}
 void UiSizeReady() {
     if(const auto size=Unpack(requested.load());size)window.Request(attached.load(),size,true);
 }
