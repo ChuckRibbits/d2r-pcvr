@@ -578,8 +578,8 @@ void Created(uintptr_t game,uintptr_t params,uintptr_t unit) {
     a.flight.shot.member=int(launch.created);
     a.flight.speed=FlightSpeed(launch.shot,velocity);a.flight.alive=true;a.flight.updatedAt=GetTickCount64();
     if(a.flight.NativePath()) {
-        if(!Position(unit,a.flight.nativeStart))return;
-        a.flight.nativePoint=a.flight.nativePrevious=a.flight.shot.origin;
+        Vec start{};if(!Position(unit,start))return;
+        a.flight.BeginNativePath(start,a.flight.updatedAt);
     }
     a.room=reinterpret_cast<uintptr_t(*)(uintptr_t)>(d2rsig::Addr(RoomRva))(unit);
     {

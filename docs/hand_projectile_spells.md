@@ -6,7 +6,7 @@ trigger or face-button shortcut. Hold it to repeat; both hands can cast their
 own assigned projectile at the same time, with separate aim and cast timing.
 Walking and turning remain available during these casts.
 
-Free-hand shots start 5 cm along that controller's aim ray. The right casting
+Straight free-hand shots start 5 cm along that controller's aim ray. The right casting
 weapon uses its visible shaft direction and an origin 12 cm beyond its hand
 attachment when a fresh weapon pose is available. This is a hand muzzle,
 not an automatically measured staff tip. Each accepted launch freezes its
@@ -36,14 +36,16 @@ move to the physical contact. This lets native Fireball splash, resistances
 and secondary effects use the impact's grid position. Native client hit effects
 run separately on the UI thread; they do not apply damage again. The
 supported spell VFX retain their game assets, with their authored ground-launch
-offsets canceled so the visible emitter starts at the hand.
+offsets canceled so straight projectiles start at the hand and Charged Bolt
+appears on the launch floor.
 
 Charged Bolt invokes the native volley once per cast. The game evaluates its
 bolt count and retains each bolt's wandering path, lifetime, grid collision and
 damage. A scoped target query and copied creation request supply the casting
 hand's horizontal origin and aim without changing player movement or selection.
-The visuals follow each native path's displacement at the hand's launch height;
-Charged Bolt still hits through the game's ground grid. Space for the complete
+The visuals follow each native path's displacement on the launch floor, retaining
+the hand's horizontal placement without its height. Charged Bolt still hits
+through the game's ground grid. Space for the complete
 24-bolt maximum is reserved before dispatch, and mana/cadence apply once per
 volley. Each bolt has a separate visual identity. No straight-shot replacement
 or second damage calculation runs for these bolts.
@@ -85,8 +87,9 @@ On an offline Sorceress in Steam or Battle.net D2R 3.3.93787:
    the separate repeat intervals, including insufficient mana for both.
 2. Walk forward, backward and sideways while casting. Physically rotate and
    snap-turn through all headings; tilt the controllers up and down. Check that
-   flight stays level at the muzzle height, without snapping to cardinal headings;
-   new shots start at the correct hand and old shots keep their trajectory.
+   straight projectiles stay level at the muzzle height, without snapping to
+   cardinal headings; Charged Bolt stays on the floor even with a raised hand.
+   Old shots keep their trajectory.
    Turn Planar spell aiming Off, Apply, and check up/down fire from both hands;
    restore On and confirm new shots return to level flight. Reopen settings and
    restart to check that the chosen mode persists.
