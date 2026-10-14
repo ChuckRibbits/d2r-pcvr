@@ -20,7 +20,9 @@
 #include "weapon_skills.h"
 #include "panel_input.h"
 #include "spells.h"
-namespace gamestate {uint32_t DataBank();bool MenuOpen();}
+#include "../steamvr/attack_speed.h"
+namespace gamestate {uint32_t DataBank();bool MenuOpen();int AttackWeapon();int AttackWsm();}
+namespace melee {void SetAttackCycle(uint64_t session,uint32_t milliseconds);}
 namespace nativeui {
 namespace {
 const D2RL::PluginContext* context=nullptr;
@@ -130,6 +132,23 @@ void Capture(framevr::interaction::Snapshot& s) {
            Read(base+2*xp.rowSize,first)&&first>0&&Read(base+e.level*xp.rowSize,e.start)&&
            Read(base+(e.level+1)*xp.rowSize,e.next))e.known=true;
         e.known=e.Valid();
+    }
+    // Attack speed for free-swing melee (attack_speed.h): class, IAS from the
+    // player's items (ItemStatCost 93, item_fasterattackrate) and the weapon in
+    // hand. Skill speed (Fanaticism, Frenzy, Burst of Speed) and slows are not
+    // read yet. An unknown class or weapon gives cycle 0, which never gates.
+    {
+        const int weapon=gamestate::AttackWeapon(),wsm=gamestate::AttackWsm(),ias=stat(player,93,0);
+        const int frames=weapon>=0?framevr::attackspeed::Frames(int(h[1]),framevr::attackspeed::Weapon(weapon),ias,wsm):0;
+        melee::SetAttackCycle(s.session,framevr::attackspeed::Milliseconds(frames));
+        static int told[5]={-2,-2,-2,-2,-2};
+        const int now[5]={int(h[1]),weapon,ias,wsm,frames};
+        if(!std::equal(now,now+5,told)) {
+            std::copy(now,now+5,told);
+            char line[220];std::snprintf(line,sizeof line,"Frame melee attack speed: class=%d weapon_class=%d ias=%d eias=%d wsm=%d -> %d frames (%u ms per landed hit)",
+                now[0],weapon,ias,framevr::attackspeed::Eias(ias),wsm,frames,framevr::attackspeed::Milliseconds(frames));
+            framevr::logging::Write(line);
+        }
     }
     // Lookup asserts on a missing skill list during load/teardown. The
     // signature-checked accessor's +0x100 layout is guarded separately.

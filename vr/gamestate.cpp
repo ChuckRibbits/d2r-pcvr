@@ -38,6 +38,7 @@
 #include "../steamvr/native_panels.h"
 #include "../steamvr/callback_ticket.h"
 #include "../steamvr/native_hud.h"
+#include "../steamvr/attack_speed.h"
 #include <mutex>
 #ifdef D2RVR_NATIVE_OPENXR
 #include "logging.h"
@@ -379,6 +380,84 @@ bool IsShield(const std::string& code) {
     return std::find(g_shieldTypes.begin(),g_shieldTypes.end(),type)!=g_shieldTypes.end();
 }
 
+// Weapons.txt "speed" (WSM) and "wclass"/"2handedwclass" in an Items row, for
+// the melee attack cycle (attack_speed.h). Found like the two-handed flag: the
+// one place every probe weapon reads its known value. WSM values are normal-
+// tier bases from the Amazon Basin wiki ("Weapon speed"). A failed search
+// leaves the cycle unknown, and an unknown cycle never gates melee.
+int g_wsmOffset = -2, g_wsmWidth = 0;        // -2 not tried yet, -1 failed
+int g_wclassOffset = -1, g_wclass2Offset = -1;
+std::atomic<int> g_attackWeapon{-1}, g_attackWsm{0};
+int SignedAt(const uint8_t* p, int width) {
+    if (width == 4) { int32_t v; memcpy(&v, p, 4); return (int)v; }
+    if (width == 2) { int16_t v; memcpy(&v, p, 2); return (int)v; }
+    return (int)(int8_t)*p;
+}
+void CalibrateAttack() {
+    g_wsmOffset = -1;
+    if (!g_tables || g_typeOffset < 0) return;
+    static const struct { const char* code; int wsm; } kSpeed[] = {
+        {"ssd ", 0}, {"scm ", -20}, {"sbr ", -10}, {"flc ", 20}, {"lsd ", -10}, {"axe ", 10}, {"lax ", -10}, {"clb ", -10},
+        {"mst ", 10}, {"whm ", 20}, {"gma ", 20}, {"dgr ", -20}, {"bld ", -10}, {"spr ", -10}, {"clm ", 10}, {"bar ", 10}};
+    std::vector<std::pair<const uint8_t*, int>> speed;
+    uint32_t speedSize = UINT32_MAX;
+    for (const auto& k : kSpeed) {
+        uint32_t size = 0;
+        if (const uint8_t* r = ItemRow(Four(k.code), &size)) { speed.push_back({r, k.wsm}); speedSize = std::min(speedSize, size); }
+    }
+    std::vector<int> found;
+    int width = 0;
+    if (speed.size() >= 12)
+        for (int w : {4, 2, 1}) {   // whole ints first
+            for (uint32_t o = 0; o + w <= speedSize; o += w) {
+                bool all = true;
+                for (const auto& [row, wsm] : speed) if (SignedAt(row + o, w) != wsm) { all = false; break; }
+                if (all) found.push_back((int)o);
+            }
+            if (!found.empty()) { width = w; break; }
+        }
+    if (found.size() == 1) { g_wsmOffset = found[0]; g_wsmWidth = width; }
+    static const struct { const char* code; const char* wclass; } kClass[] = {
+        {"ssd ", "1hs"}, {"dgr ", "1ht"}, {"jav ", "1ht"}, {"spr ", "2ht"}, {"sst ", "stf"}, {"sbw ", "bow"}, {"lxb ", "xbw"}};
+    std::vector<std::pair<const uint8_t*, const char*>> classes;
+    uint32_t classSize = UINT32_MAX;
+    for (const auto& k : kClass) {
+        uint32_t size = 0;
+        if (const uint8_t* r = ItemRow(Four(k.code), &size)) { classes.push_back({r, k.wclass}); classSize = std::min(classSize, size); }
+    }
+    std::vector<int> places;
+    if (classes.size() == std::size(kClass))
+        for (uint32_t o = 0; o + 3 <= classSize; ++o) {
+            bool all = true;
+            for (const auto& [row, wclass] : classes) if (memcmp(row + o, wclass, 3) != 0) { all = false; break; }
+            if (all) places.push_back((int)o);
+        }
+    // "wclass" and "2handedwclass" sit side by side and agree for these probes.
+    if (places.size() == 1 || (places.size() == 2 && places[1] == places[0] + 4)) {
+        g_wclassOffset = places[0];
+        g_wclass2Offset = places.size() == 2 ? places[1] : -1;
+    }
+    char b[260];
+    snprintf(b, sizeof b, "gamestate: attack speed fields - WSM %s at 0x%X/%d (%d place(s) fit, %d probes); weapon class %s at 0x%X (%d place(s) fit)",
+             g_wsmOffset >= 0 ? "found" : "NOT found - WSM 0", g_wsmOffset >= 0 ? g_wsmOffset : 0, width, (int)found.size(), (int)speed.size(),
+             g_wclassOffset < 0 ? "NOT found - melee cycle unknown" : g_wclass2Offset >= 0 ? "found with its two-handed column" : "found",
+             g_wclassOffset >= 0 ? g_wclassOffset : 0, (int)places.size());
+    Log(b);
+}
+// The attack cycle's inputs for one hand's item: weapon class (-1 unknown) and
+// WSM (0 when the field is unknown). twoHands: a two-handed weapon in both.
+void AttackInputs(const std::string& code, bool twoHands, int& weapon, int& wsm) {
+    weapon = -1; wsm = 0;
+    uint32_t size = 0;
+    const uint8_t* row = code.size() == 4 ? ItemRow(Four(code.c_str()), &size) : nullptr;
+    if (!row) return;
+    const int column = twoHands && g_wclass2Offset >= 0 ? g_wclass2Offset : g_wclassOffset;
+    framevr::attackspeed::Weapon w{};
+    if (column >= 0 && (uint32_t)column + 3 <= size && framevr::attackspeed::FromCode(reinterpret_cast<const char*>(row + column), w))
+        weapon = (int)w;
+    if (g_wsmOffset >= 0 && (uint32_t)(g_wsmOffset + g_wsmWidth) <= size) wsm = SignedAt(row + g_wsmOffset, g_wsmWidth);
+}
+
 void Publish() {
     if (!g_state) return;
     g_state->weaponClass = g_weapon.load();
@@ -504,6 +583,15 @@ void __cdecl ReadItems(const PluginContext* ctx, void* token) noexcept {
     if (KindOf(code[1]) != 0) two |= D2RVR_LEFT_WEAPON;   // a weapon in the left hand (KindOf: no shield, no quiver)
     g_two.store(two);
     g_from.store((uint32_t)from);
+    if (g_wsmOffset == -2 && g_typeOffset >= 0) CalibrateAttack();
+    {   // The melee attack cycle's weapon: nothing but shields in hand is hand-to-hand.
+        int weapon = -1, wsm = 0;
+        if ((code[0].empty() || IsShield(code[0])) && (code[1].empty() || IsShield(code[1])))
+            weapon = (int)framevr::attackspeed::Weapon::HandToHand;
+        else AttackInputs(code[from], (two & D2RVR_TWO_HANDS_ON) != 0, weapon, wsm);
+        g_attackWeapon.store(weapon);
+        g_attackWsm.store(wsm);
+    }
     {   // FNV-1a over both codes: a new grip for any change of what the hands hold
         uint32_t h = 2166136261u;
         for (const std::string* c : {&code[0], &code[1]}) {
@@ -731,6 +819,8 @@ bool LeftShield() {return g_leftShield.load();}
 uint32_t TwoHanded() { return g_two.load(); }
 uint32_t WeaponHand() { return g_from.load(); }
 uint32_t HandsKey() { return g_handsKey.load(); }
+int AttackWeapon() { return g_attackWeapon.load(); }
+int AttackWsm() { return g_attackWsm.load(); }
 bool MenuOpen() { return g_menu.load() != 0; }
 uint32_t MenuEpoch() { return g_menuEpoch.load(); }
 uint64_t LocalPlayer() { return g_player.load(); }
