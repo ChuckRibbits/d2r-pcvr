@@ -4,11 +4,65 @@
 #include "menu_controls.h"
 #include "quick_cast.h"
 #include "journal.h"
+#include "input.h"
 #include <cstdio>
 #include <cstdlib>
 using namespace framevr;
 static void Check(bool ok,const char* message){if(!ok){std::fprintf(stderr,"FAIL: %s\n",message);std::exit(1);}}
 int main(){
+    for(int preset=0;preset<3;++preset)for(bool main:{false,true}) {
+        const float distance=panels::MenuDistance(preset,main);
+        Check(std::fabs(distance-(main?.70f:.55f)-.30f*preset)<.00001f,"distance presets add 30 cm without changing canvas scale");
+        const auto p=panels::AtEyeLevel({0,1.7f,0},math::Yaw(.8f),distance);
+        Check(p.position.y==1.7f,"all distance presets retain eye-level anchor");
+    }
+    panels::TooltipDwell dwell;
+    Check(dwell.Ready(1,2,100,0,1),"instant tooltip on first hover");
+    Check(!dwell.Ready(1,2,110,1,1),"short mode starts fresh on setting change");
+    Check(!dwell.Ready(1,2,210,1,1),"short dwell not yet elapsed");
+    Check(!dwell.Ready(3,0,211,1,1),"empty neighboring grid cannot reset hovered item dwell");
+    Check(!dwell.Ready(1,2,310,1,1)&&dwell.Ready(1,2,410,1,1),"same item across pixels reaches 300 ms");
+    Check(!dwell.Ready(1,4,420,1,1),"different item resets dwell");
+    Check(!dwell.Ready(1,4,430,1,2),"ray miss or drag generation resets dwell");
+    Check(!dwell.Ready(1,4,1000,1,2),"stalled frame cannot mature a stale hover");
+    Check(!dwell.Ready(1,4,1,1,2),"clock reset restarts dwell");
+    Check(dwell.Ready(1,4,2,2,2),"Original mode delegates delay to native producer");
+    Check(!panels::ItemCursorSnap(true,true,true),"item draw uses laser coordinates outside pointer callbacks");
+    Check(panels::ItemCursorSnap(false,true,true)&&panels::ItemCursorSnap(true,false,true),"desktop and unrelated cursor queries remain native");
+    Check(panels::CursorBoundsCaller(0x7f4b2)&&panels::CursorBoundsCaller(0x14fb2a),
+        "native height and tail-called width clamp use full-source bounds");
+    for(auto address:panels::UiCanvasReturns)
+        Check(!panels::CursorBoundsCaller(address),"cursor bounds cannot enlarge native font/layout canvas");
+    for(auto address:{uintptr_t(0),uintptr_t(0x14fb46),uintptr_t(0x667ff1),uintptr_t(0x904b3d)})
+        Check(!panels::CursorBoundsCaller(address),"unrelated and approximate callers retain original size");
+    Check(panels::UiCanvasCaller(0x843ed5)&&panels::UiCanvasCaller(0x8453a9)&&
+        panels::UiCanvasCaller(0x846239)&&panels::UiCanvasCaller(0x14f31d),"native UI layout and cursor queries use VR canvas");
+    for(auto caller:{uintptr_t(0),uintptr_t(0x904b3d),uintptr_t(0x667ff1),uintptr_t(0x668003),uintptr_t(0x846238)})
+        Check(!panels::UiCanvasCaller(caller),"movies, engine queries and unknown return sites stay native");
+    {
+        bool anchored=false;panels::Placement menu{};
+        auto frame=[&](bool rendering,bool focused,bool tracked,math::Vec head) {
+            if(panels::CanAnchor(anchored,rendering,focused,tracked)) {
+                menu=panels::AtEyeLevel(head,math::Yaw(.4f),panels::MainDistance);
+                anchored=true;
+            }
+        };
+        frame(true,false,false,{0,0,0});
+        frame(true,true,false,{0,0,0});
+        frame(true,false,true,{0,0,0});
+        frame(false,true,true,{0,0,0});
+        Check(!anchored,"startup waits for rendering, focus and tracked position/orientation");
+        frame(true,true,true,{0,1.7f,0});
+        Check(anchored&&menu.position.y==1.7f,"first reliable pose anchors menu at standing eye height");
+        const auto fixed=menu.position;
+        frame(true,true,true,{.2f,1.5f,.1f});
+        Check(menu.position.x==fixed.x&&menu.position.y==fixed.y&&menu.position.z==fixed.z,"head movement does not drag an open menu");
+        anchored=false; // Focus return or explicit recenter invalidates placement.
+        frame(true,true,false,{0,0,0});
+        Check(!anchored,"reconnect cannot anchor from an untracked origin");
+        frame(true,true,true,{0,1.2f,0});
+        Check(anchored&&menu.position.y==1.2f,"reacquired tracking supports seated eye height");
+    }
     for(auto name:{"WaypointPanel","WaypointPanelExpansion","WaypointPanelOriginal"})
         Check(panels::Modal(name)&&panels::OpaqueBackground(name),"waypoint destinations use the shared opaque black background instead of different per-eye worlds");
     for(auto name:{"UISwitcher","VendorPanelLayout","VendorPanelOriginalLayout","TradeLayout","GamblePanel",
@@ -141,6 +195,23 @@ int main(){
     // World -> stash -> world, with the same A/trigger/stick held across both
     // boundaries. New controls remain usable without releasing every grip.
     menus::ReleaseGate input;
+    // Quest's system menu button can be reserved by the runtime. The left
+    // grip/stick shortcut must not also open a wheel, sort items, or re-fire
+    // when the native menu changes epoch while both controls remain held.
+    {
+        menus::ReleaseGate gate;GripStickButton shortcut;menus::Pad p;
+        gate.Step(menus::Mode::World,0,{});
+        p.buttons=menus::LeftBumper|menus::LeftStick;
+        auto filtered=gate.Step(menus::Mode::World,0,p);
+        Check(shortcut.Update(filtered.buttons&menus::LeftStick,1)&&shortcut.Consumed(),"fresh grip/stick opens menu once");
+        filtered=gate.Step(menus::Mode::Native,1,p);
+        Check(!shortcut.Update(filtered.buttons&menus::LeftStick,0)&&!shortcut.PlainPressed(),"held chord cannot act in newly opened menu");
+        p.buttons=menus::LeftStick;filtered=gate.Step(menus::Mode::Native,1,p);
+        Check(!shortcut.Update(filtered.buttons&menus::LeftStick,0)&&!shortcut.PlainPressed(),"releasing grip first cannot sort or toggle a wheel");
+        gate.Step(menus::Mode::Native,1,{});shortcut.Update(false,0);
+        p.buttons=menus::LeftBumper|menus::LeftStick;filtered=gate.Step(menus::Mode::Native,1,p);
+        Check(shortcut.Update(filtered.buttons&menus::LeftStick,1),"fresh chord can close the inventory menu");
+    }
     menus::Pad held;held.buttons=menus::A|menus::RightBumper;held.rt=255;held.lx=20000;
     input.Step(menus::Mode::World,0,{});
     Check(input.Step(menus::Mode::World,0,held).rt==255,"fresh world attack available");

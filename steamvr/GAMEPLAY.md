@@ -175,7 +175,7 @@ not generate melee velocity. The layout currently assumes a right-handed player.
 | Journal controls | Right laser + trigger uses native page controls/act tabs; Right B follows native back; Left X performs native X |
 | Inventory drop / sort | Native X (Quest Left X / Frame Left A) / press and hold right stick click; right-stick click no longer swaps in gameplay |
 | Walk / snap turn | Sticks; paused while wheel or journal is open |
-| Height reset / map | Left grip + left stick click / plain left stick click, unchanged |
+| Inventory menu / height reset | Left grip + left stick click / VR Settings > Reset eye height |
 
 The minimap and compass form one navigation display on your left hand.
 **VR Settings > HUD > Minimap / compass location** offers **Wrist** (default),

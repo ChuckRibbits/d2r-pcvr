@@ -146,11 +146,12 @@ and grab-to-mouth belt potions. Fresh installs set `[gameplay] motion_controls=1
 `0` for legacy button controls. See that document for cancellation rules and the distinction
 between gesture-triggered native attacks and physical collision combat.
 
-Hold **left grip**, then **click the left stick** to reset eye height to the
-current headset position. Use it after sitting down or standing up. It preserves
-heading and horizontal room movement; ordinary left-stick clicks still toggle
-the map. Release the stick before another reset. F11 also resets height as part
-of its full camera recenter, including horizontal position and facing.
+Hold **left grip**, then **click the left stick** to open or close the native
+inventory/character/skills menu. This works even when the runtime reserves the
+controller's menu button. A plain stick click still toggles that hand's wheel
+with motion controls enabled. Release the stick before another menu toggle.
+Reset eye height using **VR Settings > Reset eye height**. F11 also resets height
+as part of its full camera recenter, including horizontal position and facing.
 
 Each saved-game load calibrates from the current headset position at the first
 tracked, focused game frame, then recenters facing. Movement during launch is

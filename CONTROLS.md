@@ -52,10 +52,10 @@ Quest left X/Y correspond to Index left A/B; right A/B labels are the same.
 | Switch to the other wheel | Click the other thumbstick |
 | Assign a button | Opposite hand's laser + trigger: select a wedge, then a skill |
 | Finish editing | Click the wheel hand's stick again, or select CLOSE in its center |
-| Inventory / character / skills / journal | Either wheel → INVENTORY; native tabs retain their controls |
+| Inventory / character / skills / journal | Left Grip + left stick click; or either wheel > INVENTORY; native tabs retain their controls |
 | VR settings / body calibration | Either wheel → VR SETTINGS |
 | Minimap | Either wheel → MAP; movement remains available |
-| Reset height | Left Grip + left stick click; does not open a wheel |
+| Reset height | VR Settings > Reset eye height |
 | Interact / pick up / talk | Right A by default; requires an aimed interactable |
 | Free melee swing / thrust | Move the equipped weapon through an enemy |
 | Bow draw | Right trigger near the left-hand bow string; draw and release |
@@ -100,6 +100,11 @@ for the experimental adapter's scope and offline testing checklist.
 **VR Settings > Controls > Planar spell aiming** is On by default. Turn it Off
 and Apply for up/down aiming of straight projectile spells; Charged Bolt keeps
 its native planar spread. The preference saves and applies to new casts live.
+
+**Projectile aim assist** on the same tab defaults to Off. Light corrects nearby
+misses at launch; Strong adds gentle homing toward the enemy selected at launch
+for straight hand spells. Charged Bolt remains launch-only. This does not affect
+bows, thrown weapons or other native spells, and does not guarantee a hit.
 
 Other skills retain native repeat behavior, delays and animation restrictions.
 A native action has one owner: the first held input wins, with right-hand

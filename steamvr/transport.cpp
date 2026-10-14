@@ -208,7 +208,7 @@ std::array<XrView,2> views{{{XR_TYPE_VIEW},{XR_TYPE_VIEW}}};
 XrPosef head{};
 math::Vec origin{};
 bool haveOrigin=false;
-HeightResetButton heightResetButton;
+GripStickButton leftMenuButton;
 MenuTriggerGate menuTriggerGate;
 PressEdge inventoryButton,menuButton;
 float lastRecenter=0;
@@ -438,7 +438,7 @@ void ClearInput() {
     ReleaseUiKey();
     ReleasePanelInput();
     triggerWasDown=cancelWasDown=pointerVisible=pointerHit=false;
-    heightResetButton={};
+    leftMenuButton={};
     // Tracking loss ends any pending mouse press, but a held trigger must
     // still be released before it can become a fresh world attack.
     menuTriggerGate.consumed=true;
@@ -795,7 +795,11 @@ void UpdateControllerLabels() {
                 detected.hands[hand]=controllers::Detect(path);
             }
         }
-        if(detectedControllers!=detected){detectedControllers=detected;++settingsModel.revision;}
+        if(detectedControllers!=detected){
+            detectedControllers=detected;++settingsModel.revision;
+            char line[120];std::snprintf(line,sizeof line,"Frame controllers: right=%s left=%s",
+                controllers::Name(detected.hands[0]),controllers::Name(detected.hands[1]));Say(line);
+        }
         controllerProfilesDirty=retry;
     }
     controllerLabels=controllers::Resolve(controllers::Choice(int(vrsettings::Read().values[settings::ControllerLabels])),detectedControllers);
@@ -842,7 +846,7 @@ void MenuPointer(const menus::Pad& controls) {
     pointerVisible=pointerHit=false;
     if(settingsModel.open||bodyCalibration.Active()||calibrationRelease.blocked){panelinput::ItemHover(false);return;}
     const bool spatialReady=spatialMode&&(journalMode?journalPlacement.Placed():workspacePlaced)&&uiCrop[2]>0;
-    const bool uiActive=panelMode||spatialReady;
+    const bool uiActive=(panelMode&&menuPlaced)||spatialReady;
     const auto surfacePose=spatialMode?UiSurfacePose():menuPose;
     const auto surface=spatialMode?UiSurfaceSize():panels::Fit(width,height,panelWidth);
     const bool pressed=controls.rt>140;
@@ -1155,22 +1159,27 @@ void Input() {
     physical.lx=axis(physicalLeft.x);physical.ly=axis(physicalLeft.y);
     physical.rx=axis(physicalRight.x);physical.ry=axis(physicalRight.y);
     const bool modUi=settingsModel.open||bodyCalibration.Active()||calibrationRelease.blocked;
-    const auto controls=menuControls.Step(modUi?menus::Mode::Blocked:nativeUi?menus::Mode::Native:menus::Mode::World,inputEpoch,physical);
+    auto controls=menuControls.Step(modUi?menus::Mode::Blocked:nativeUi?menus::Mode::Native:menus::Mode::World,inputEpoch,physical);
     SampleGaze();
     atlasUploads.erase(std::remove_if(atlasUploads.begin(),atlasUploads.end(),[](const auto& a){return fence->GetCompletedValue()>=a.fence;}),atlasUploads.end());
     if(!calibrationPrompted&&!settingsModel.open&&!panelMode&&!spatialMode&&inWorld&&inWorld()){
         const auto config=vrsettings::Read();
         if(config.ready&&config.result!=settings::Result::Saving){calibrationPrompted=true;if(!calibration::Stored(config.values))OpenBodyCalibration();}
     }
+    const bool gripMenuPressed=leftMenuButton.Update((controls.buttons&menus::LeftStick)!=0,
+        (controls.buttons&menus::LeftBumper)?1.f:0.f);
+    // Keep the entire modified click out of wheels and native sort/map actions,
+    // including when the grip is released before the stick.
+    if(leftMenuButton.Consumed())controls.buttons&=~menus::LeftStick;
     const bool dualBindings=motionControls.load()&&gameplayChain;
-    const bool inventoryPressed=inventoryButton.Update((controls.buttons&menus::X)!=0)&&!dualBindings;
+    const bool inventoryPressed=(inventoryButton.Update((controls.buttons&menus::X)!=0)&&!dualBindings)||gripMenuPressed;
     const bool menuPressed=menuButton.Update((controls.buttons&menus::Start)!=0);
     const bool settingsChord=!dualBindings&&menus::SettingsChord(physical,false);
     const auto settingsEdges=settingsInputGate.Step(motionHeadTracked,settingsChord,Float(trigger,0),Bool(secondary,0));
     bool settingsOwned=settingsModel.open||calibrationRelease.Step(bodyCalibration.Active(),Float(trigger,0),Float(trigger,1),physical.buttons&(menus::A|menus::B|menus::X|menus::Y|menus::Start));
     if(settingsModel.open&&settingsSession!=gamestate::LocalPlayer()){CloseSettings();settingsOwned=true;}
     if(settingsEdges.chord&&!bodyCalibration.Active()&&!calibrationRelease.blocked){if(settingsModel.open)CloseSettings();else OpenSettings();settingsOwned=true;}
-    else if(settingsModel.open&&(settingsEdges.cancel||menuPressed)){
+    else if(settingsModel.open&&(settingsEdges.cancel||menuPressed||gripMenuPressed)){
         if(!settingsModel.DismissControllerMenu())CloseSettings();settingsOwned=true;
     }
     settingsOwned=settingsOwned||settingsModel.open;
@@ -1178,13 +1187,13 @@ void Input() {
     if(!settingsOwned&&(menuPressed||inventoryPressed)&&!focused)focused=FocusGameForUi();
     if(heldKeyScan&&(!focused||GetTickCount64()>=keyReleaseAt))ReleaseUiKey();
     if(!settingsOwned&&!nativeUi&&focused&&menuPressed)PulseUiKey(VK_ESCAPE);
-    if(!settingsOwned&&!nativeUi&&inventoryPressed&&inWorld&&inWorld()) {
+    if(!settingsOwned&&(!nativeUi||gripMenuPressed)&&inventoryPressed&&inWorld&&inWorld()) {
         // Keyboard shortcuts can be gated after switching input layouts or
         // panels. Queue the game's own panel actions on its UI thread instead.
         // This action targets D2R directly and only requires XR focus (checked
         // above), so a desktop terminal cannot silently swallow Left X.
-        if(toggleMenus&&toggleMenus())Say("Frame OpenXR: Left X menu toggle queued");
-        else Say("Frame OpenXR: Left X menu toggle unavailable");
+        if(toggleMenus&&toggleMenus())Say("Frame OpenXR: inventory menu toggle queued");
+        else Say("Frame OpenXR: inventory menu toggle unavailable");
     }
     if(journalMode) {
         XrSpaceLocation left{XR_TYPE_SPACE_LOCATION};
@@ -1210,7 +1219,6 @@ void Input() {
     s.headHeightM=head.position.y;s.sampleStamp=D2RVRStampNow();s.sampleStampMagic=D2RVR_SAMPLE_STAMP_MAGIC;
     s.roomMagic=D2RVR_ROOM_MAGIC;s.headRoom[0]=head.position.x;s.headRoom[1]=head.position.y;s.headRoom[2]=head.position.z;s.headYawRoomDeg=s.headYawDeg;
     s.gripMagic=D2RVR_GRIP_MAGIC;s.rightGrip=Float(squeeze,0);s.leftGrip=Float(squeeze,1);s.handsValid=0;
-    if(heightResetButton.Update((controls.buttons&menus::LeftStick)!=0,s.leftGrip)&&!settingsOwned&&!nativeUi)ResetHeight();
     motionInput={};motionInput.time=Milliseconds()/1000.;motionInput.head=MotionPose(head);
     motionInput.active=motionControls.load()&&gameplayChain&&motionHeadTracked&&!panelMode&&!spatialMode&&!settingsOwned&&!settingsChord&&!inventoryPressed&&!menuPressed&&inWorld&&inWorld();
     motionInput.handBindings=true;
@@ -1469,7 +1477,7 @@ void Input() {
     // Right A goes only through semantic interact; a raw A bypasses its
     // no-target guard and accidentally attacks when pointing at empty space.
     p.buttons=menus::WorldButtons(controls);
-    if(!dualBindings&&heightResetButton.MapPressed())p.buttons|=XINPUT_GAMEPAD_LEFT_THUMB;
+    if(!dualBindings&&leftMenuButton.PlainPressed())p.buttons|=XINPUT_GAMEPAD_LEFT_THUMB;
     p.thumb_lx=controls.lx;p.thumb_ly=controls.ly;p.thumb_rx=controls.rx;p.thumb_ry=controls.ry;
     p.left_trigger=controls.lt;
     const float rightTrigger=controls.rt/255.f;
@@ -1478,7 +1486,7 @@ void Input() {
     auto& a=*actions.data;a.held=0;
     if(p.right_trigger>128)a.held|=D2RVR_ACT_ATTACK;
     if(handOutput.interact||(!dualBindings&&(controls.buttons&menus::A)))a.held|=D2RVR_ACT_INTERACT;
-    if(!dualBindings&&heightResetButton.MapPressed())a.held|=D2RVR_ACT_MAP;
+    if(!dualBindings&&leftMenuButton.PlainPressed())a.held|=D2RVR_ACT_MAP;
 
     // Stick clicks toggle wheels here and retain native hold-to-sort in menus.
     // Gameplay swaps remain shoulder or equipment-wheel actions.
@@ -1507,12 +1515,24 @@ void Input() {
     p.reserved[1]=inputEpoch;
     ++p.counter;++a.counter;
 }
+void PlaceMainMenu() {
+    if(!panels::CanAnchor(menuPlaced,render&&valid,state==XR_SESSION_STATE_FOCUSED,motionHeadTracked))return;
+    const auto placed=panels::AtEyeLevel(V(head.position),Q(head.orientation),
+        panels::MenuDistance(int(vrsettings::Read().values[settings::MenuDistance]),true));
+    menuPose=XrPose({placed.position,placed.orientation});menuPlaced=true;
+    char b[160];std::snprintf(b,sizeof b,"Frame panels: main menu anchored from tracked head at eye height %.3f m",head.position.y);Say(b);
+}
 void Events() {
     XrEventDataBuffer event{XR_TYPE_EVENT_DATA_BUFFER};
     while(pPollEvent(instance,&event)==XR_SUCCESS) {
         if(event.type==XR_TYPE_EVENT_DATA_INTERACTION_PROFILE_CHANGED)controllerProfilesDirty=true;
         if(event.type==XR_TYPE_EVENT_DATA_SESSION_STATE_CHANGED) {
-            const auto& s=*reinterpret_cast<XrEventDataSessionStateChanged*>(&event);state=s.state;
+            const auto& s=*reinterpret_cast<XrEventDataSessionStateChanged*>(&event);
+            if(s.state==XR_SESSION_STATE_FOCUSED&&state!=s.state) {
+                // Startup/reconnection can change the runtime's head origin.
+                menuPlaced=workspacePlaced=false;
+            }
+            state=s.state;
             char b[96];std::snprintf(b,sizeof b,"Frame OpenXR: session state %d",int(state));Say(b);
             if(state==XR_SESSION_STATE_READY) { XrSessionBeginInfo bi{XR_TYPE_SESSION_BEGIN_INFO};bi.primaryViewConfigurationType=XR_VIEW_CONFIGURATION_TYPE_PRIMARY_STEREO;running=Check(pBeginSession(session,&bi),"begin session"); }
             if(state==XR_SESSION_STATE_STOPPING) { if(frame)EndPair();pEndSession(session);running=false;resolution::Restore();ClearInput(); }
@@ -1591,15 +1611,15 @@ bool Begin() {
             origin=V(head.position);worldCalibrationPending=false;worldRecenter=true;
             Say("Frame OpenXR: loaded game calibrated from current headset position");
         }
-        if(spatialMode&&!journalMode&&!workspacePlaced) {
-            const auto placed=panels::AtEyeLevel(V(head.position),Q(head.orientation),panels::Distance);
+        const int distancePreset=int(vrsettings::Read().values[settings::MenuDistance]);
+        static int previousDistance=-1;
+        if(distancePreset!=previousDistance){workspacePlaced=menuPlaced=false;previousDistance=distancePreset;}
+        if(spatialMode&&!journalMode&&panels::CanAnchor(workspacePlaced,render,state==XR_SESSION_STATE_FOCUSED,motionHeadTracked)) {
+            const auto placed=panels::AtEyeLevel(V(head.position),Q(head.orientation),panels::MenuDistance(distancePreset));
             uiPose=XrPose({placed.position,placed.orientation});
             uiSize=panels::Width;workspacePlaced=true;
         }
-        if(panelMode&&!menuPlaced) {
-            const auto placed=panels::AtEyeLevel(V(head.position),Q(head.orientation),panelDistance);
-            menuPose=XrPose({placed.position,placed.orientation});menuPlaced=true;
-        }
+        if(panelMode)PlaceMainMenu();
     }
     timing.locateMs=Milliseconds()-locateStart;
     const double inputStart=Milliseconds();Input();timing.inputMs=Milliseconds()-inputStart;return true;
@@ -1704,7 +1724,17 @@ bool CopyUi(reshade::api::command_queue* rq) {
     uiMissingFrames=0;
     bool croppedNpc=false;
     int32_t native[4]{};
-    if(npcChoicesMode&&gamestate::NpcChoicesRect(native)) {
+    // Touch profiles need the complete canvas to retain Trade/Talk choices at
+    // square resolutions. Keep the separately tested Frame/Index widget crop.
+    const bool quest=detectedControllers.hands[0]==controllers::Layout::Touch||
+        detectedControllers.hands[1]==controllers::Layout::Touch;
+    static bool uncroppedNpcLogged=false;
+    if(npcChoicesMode&&quest) {
+        crop[0]=crop[1]=0;crop[2]=int(w);crop[3]=int(h);
+        if(!uncroppedNpcLogged)Say("Frame NPC choices: Quest diagnostic uses complete canvas, no widget crop");
+        uncroppedNpcLogged=true;
+    } else uncroppedNpcLogged=false;
+    if(npcChoicesMode&&!quest&&gamestate::NpcChoicesRect(native)) {
         const auto box=dialogue::Crop({native[0],native[1],native[2],native[3]},int(w),int(h));
         if(box.w>0&&box.h>0) {
             crop[0]=box.x;crop[1]=box.y;crop[2]=box.w;crop[3]=box.h;croppedNpc=true;
@@ -1763,10 +1793,7 @@ void Capture(reshade::api::command_queue* rq,reshade::api::swapchain* swap) {
     if(eye==0&&!CopyMap(rq)) {mapSupported=false;mapEye.copied=false;Say("Frame menu map: copy unavailable; optional map suspended");}
     if((eye==0&&!CopyUi(rq))||!Copy(src,eyes[eye],rq)){failed=true;EndPair();ClearInput();return;}
     if(!stereo) {
-        if(!menuPlaced) {
-            const auto placed=panels::AtEyeLevel(V(head.position),Q(head.orientation),panelDistance);
-            menuPose=XrPose({placed.position,placed.orientation});menuPlaced=true;
-        }
+        PlaceMainMenu();
         EndPair();
     } else if(!pairDrawing&&eyes[0].copied&&eyes[1].copied) {
         EndPair();

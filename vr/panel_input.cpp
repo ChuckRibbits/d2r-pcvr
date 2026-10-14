@@ -2,13 +2,63 @@
 #include <intrin.h>
 #include <atomic>
 #include <cstring>
+#include <utility>
 #include "panel_input.h"
 #include "panel_input_mode.h"
+#include "render_resolution.h"
 #include "sigscan.h"
 #include "logging.h"
+#include "settings_menu.h"
 
 namespace panelinput {
 namespace {
+// 3.3.93787: native client-size query used by UI root sizing, safe bounds,
+// layout globals and cursor bounds. It reads GetClientRect through 0x1207b20,
+// independently of the renderer's WM_SIZE. A 3840-wide desktop thus clips
+// menus rendered into a 3072-wide VR source. Override this query only, leaving
+// OS window management, swapchain presentation and other windows physical.
+constexpr uint64_t CanvasSizeRva=0x6545d0;
+constexpr uint8_t CanvasSizeSig[]={
+    0x48,0x83,0xec,0x38,0xe8,0x97,0xd1,0x2a,0x00,0x48,0x8d,0x54,0x24,0x20,0x48,0x8b,
+    0xc8,0xe8,0x3a,0x35,0xbb,0x00,0x8b,0x44,0x24,0x28,0x89,0x44,0x24,0x40,0x8b,0x44,
+    0x24,0x2c,0x89,0x44,0x24,0x44,0x48,0x8b,0x44,0x24,0x40,0x48,0x83,0xc4,0x38,0xc3};
+using CanvasSize=uint64_t(*)();
+CanvasSize originalCanvasSize=nullptr;
+bool canvasSizeIn=false;
+uintptr_t canvasImageBase=0;
+uint64_t OnCanvasSize(){
+    const auto caller=reinterpret_cast<uintptr_t>(_ReturnAddress());
+    const auto native=originalCanvasSize();
+    if(framevr::panels::CursorBoundsCaller(caller-canvasImageBase))return framevr::resolution::CursorSize(native);
+    return framevr::panels::UiCanvasCaller(caller-canvasImageBase)?framevr::resolution::UiSize(native):native;
+}
+void InstallCanvasSize() {
+    if(canvasSizeIn)return;
+    if(!d2rsig::Check(CanvasSizeRva,CanvasSizeSig,sizeof CanvasSizeSig))return;
+    // Validate the relative CALL at every allowed return site before hooking.
+    for(auto address:framevr::panels::UiCanvasReturns) {
+        uint8_t call[5]{0xe8};const int32_t delta=int32_t(CanvasSizeRva-address);
+        std::memcpy(call+1,&delta,sizeof delta);
+        if(!d2rsig::Check(address-5,call,sizeof call))return;
+    }
+    // The width helper uses a tail JMP, preserving its caller's return address.
+    // Guard both that CALL and the tail JMP, plus the height helper's CALL.
+    for(const auto site:{std::pair<uint64_t,uint64_t>{0x7f4ad,CanvasSizeRva},
+                        {0x14fb25,0x7f510},{0x7f521,CanvasSizeRva}}) {
+        uint8_t branch[5]{uint8_t(site.first==0x7f521?0xe9:0xe8)};
+        const int32_t delta=int32_t(site.second-(site.first+5));
+        std::memcpy(branch+1,&delta,sizeof delta);
+        if(!d2rsig::Check(site.first,branch,sizeof branch))return;
+    }
+    canvasImageBase=d2rsig::Addr(CanvasSizeRva)-CanvasSizeRva;
+    canvasSizeIn=d2rsig::Hook(CanvasSizeRva,CanvasSizeSig,sizeof CanvasSizeSig,
+        reinterpret_cast<void*>(&OnCanvasSize),reinterpret_cast<void**>(&originalCanvasSize));
+    if(canvasSizeIn) {
+        framevr::resolution::UiSizeReady();
+        framevr::logging::Write("Frame panels: native UI canvas follows applied VR resolution; physical window unchanged");
+        framevr::logging::Write("Frame panels: native cursor width/height clamp follows full VR source");
+    }
+}
 framevr::panels::InputModeLease lease;
 framevr::panels::ItemTooltipHover itemHover;
 framevr::panels::WorldInputMode worldInput;
@@ -47,9 +97,25 @@ using Key=int(*)(int);
 Key originalKey=nullptr;
 std::atomic<bool> tooltipsReady{false};
 uintptr_t tooltipDelayReturn=0,tooltipCompareReturn=0;
+// Item grids resolve their hovered item during drawing, after pointer dispatch
+// has ended. Their separate cursor-mode query must also use exact laser XY.
+constexpr uint64_t ItemCursorRva=0x2a8a06;
+constexpr uint8_t ItemCursorSig[]={0xe8,0xc5,0x67,0xea,0xff,0x84,0xc0,0x75,0x2c};
+constexpr uint64_t ItemTooltipRva=0x2c3c30;
+constexpr uint8_t ItemTooltipSig[]={0x40,0x55,0x53,0x57,0x48,0x8d,0xac,0x24,0xc0,0xfd,0xff,0xff,0x48,0x81,0xec,0x40,0x03,0x00,0x00};
+using ItemTooltip=void(*)(uintptr_t,uintptr_t);
+ItemTooltip originalItemTooltip=nullptr;
+uintptr_t itemCursorReturn=0;
+framevr::panels::TooltipDwell tooltipDwell;
+std::atomic<uint64_t> hoverGeneration{0};
+std::atomic<int> tooltipTiming{0};
 
 bool ItemHoverActive() {
     return tooltipsReady.load(std::memory_order_acquire)&&!bindingContext&&itemHover.Active(GetTickCount64());
+}
+void OnItemTooltip(uintptr_t widget,uintptr_t item) {
+    if(ItemHoverActive()&&!tooltipDwell.Ready(widget,item,GetTickCount64(),tooltipTiming.load(),hoverGeneration.load()))return;
+    originalItemTooltip(widget,item);
 }
 int OnKey(int key) {
     const auto caller=reinterpret_cast<uintptr_t>(_ReturnAddress());
@@ -61,12 +127,16 @@ void InstallTooltips() {
     // Optional feature: unsupported tooltip code must not disable laser input.
     if(!d2rsig::Check(TooltipDelayRva,TooltipDelaySig,sizeof TooltipDelaySig)||
        !d2rsig::Check(TooltipCompareRva,TooltipCompareSig,sizeof TooltipCompareSig)||
+       !d2rsig::Check(ItemCursorRva,ItemCursorSig,sizeof ItemCursorSig)||
+       (!originalItemTooltip&&!d2rsig::Check(ItemTooltipRva,ItemTooltipSig,sizeof ItemTooltipSig))||
        !d2rsig::Check(KeyRva,KeySig,sizeof KeySig))return;
     tooltipDelayReturn=d2rsig::Addr(TooltipDelayRva)+5;
     tooltipCompareReturn=d2rsig::Addr(TooltipCompareRva)+10;
+    itemCursorReturn=d2rsig::Addr(ItemCursorRva)+5;
+    if(!originalItemTooltip&&!d2rsig::Hook(ItemTooltipRva,ItemTooltipSig,sizeof ItemTooltipSig,reinterpret_cast<void*>(&OnItemTooltip),reinterpret_cast<void**>(&originalItemTooltip)))return;
     if(d2rsig::Hook(KeyRva,KeySig,sizeof KeySig,reinterpret_cast<void*>(&OnKey),reinterpret_cast<void**>(&originalKey))) {
         tooltipsReady.store(true,std::memory_order_release);
-        framevr::logging::Write("Frame panels: immediate laser item tooltips and native equipped-item comparison installed");
+        framevr::logging::Write("Frame panels: exact item hover, selectable tooltip timing and native equipped-item comparison installed");
     }
 }
 
@@ -110,10 +180,14 @@ bool Owns(){return ready.load(std::memory_order_acquire)&&lease.Active(GetTickCo
 bool ControllerMode(){
     if(bindingContext)return true;
     if(pointerContext)return false;
-    if(ItemHoverActive()&&reinterpret_cast<uintptr_t>(_ReturnAddress())==tooltipDelayReturn)return false;
+    if(ItemHoverActive()&&tooltipTiming.load()!=2&&reinterpret_cast<uintptr_t>(_ReturnAddress())==tooltipDelayReturn)return false;
     return isController();
 }
-bool CursorSnap(){return framevr::panels::CursorSnapAllowed(pointerContext,bindingContext)&&originalCursorSnap();}
+bool CursorSnap(){
+    const bool itemQuery=reinterpret_cast<uintptr_t>(_ReturnAddress())==itemCursorReturn;
+    return framevr::panels::ItemCursorSnap(ItemHoverActive(),itemQuery,
+        framevr::panels::CursorSnapAllowed(pointerContext,bindingContext)&&originalCursorSnap());
+}
 template<int I> bool OnPointer(void* event) {
     return framevr::panels::RoutePointer(Owns(),pointerContext,[&]{return originalPointer[I](event);});
 }
@@ -147,7 +221,11 @@ bool OnRequest(int method) {
 }
 void OwnPointer(){pointerFocus=true;lease.Refresh(GetTickCount64());}
 void UseController(){pointerFocus=false;ItemHover(false);}
-void ItemHover(bool active,bool hit,bool dragging){itemHover.Update(GetTickCount64(),active,hit,dragging);}
+void ItemHover(bool active,bool hit,bool dragging){
+    if(!active||!hit||dragging)++hoverGeneration;
+    tooltipTiming=int(vrsettings::Read().values[framevr::settings::TooltipTiming]);
+    itemHover.Update(GetTickCount64(),active,hit,dragging);
+}
 void WorldInput(bool active){worldInput.Update(GetTickCount64(),active);}
 void MaintainWorldController(bool player,bool menu){
     if(!ready.load(std::memory_order_acquire))return;
@@ -174,6 +252,7 @@ bool ControllerReady(){
     return false;
 }
 void Install() {
+    InstallCanvasSize();
     if(ready.load()){InstallTooltips();return;}
     if((!controllerIn&&!d2rsig::Check(ControllerRva,ControllerSig,sizeof ControllerSig))||
        !d2rsig::Check(ActivityRequestRva,ActivityRequestSig,sizeof ActivityRequestSig))return;

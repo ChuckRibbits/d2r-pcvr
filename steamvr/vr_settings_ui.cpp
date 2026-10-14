@@ -65,35 +65,40 @@ std::vector<uint8_t> Paint(const Model& m,Hit hover,const char* runtimeStatus,co
     const char* tabs[]={"Controls","VR","Video","HUD"};
     for(int i=0;i<TabCount;++i)button(Tabs[i],tabs[i],{Kind::Tab,i},int(m.page)==i);
     if(m.page==Page::Controls){
-        text("LEFT HAND",{58,209,520,46},true);text("RIGHT HAND",{676,209,520,46},true);
+        text("Each stick opens its hand's wheel. Use the OTHER hand's laser to assign skills.",{40,180,1200,32},false,false,RGB(116,220,219));
+        text("LEFT HAND",{58,215,520,40},true);text("RIGHT HAND",{676,215,520,40},true);
         struct Help{const char* key;const char* action;};
         const auto leftFaces=labels.Button(1,1)+" / "+labels.Button(1,2);
         const auto leftAlternates=labels.Button(1,3)+" / "+labels.Button(1,4);
         const auto rightFaces=labels.Button(0,1)+" / "+labels.Button(0,2)+" / grip + face";
-        const Help left[]={{"Stick","Walk"},{leftFaces.c_str(),"Assigned left-hand skills"},{leftAlternates.c_str(),"Alternate left-hand skills"},{"Trigger","Assigned left-hand skill"},{"Stick click","Toggle left wheel; right laser edits"},{"Grip + stick click","Reset eye height"},{"Grip near belt","Grab a potion"}};
+        const Help left[]={{"Stick","Walk"},{leftFaces.c_str(),"Assigned left-hand skills"},{leftAlternates.c_str(),"Alternate left-hand skills"},{"Trigger","Assigned left-hand skill"},{"Stick click","Toggle left wheel; right laser edits"},{"Grip + stick click","Inventory / character / skills menu"},{"Grip near belt","Grab a potion"}};
         const Help right[]={{"Stick / click","Turn / toggle right wheel"},{"Trigger","Assigned right skill / grab bow string"},{rightFaces.c_str(),"Interact by default / assigned skills"},{"Dominant grip at shoulder","Either shoulder: swap weapon sets I / II"},{"Trigger at bow string","Nock, pull back, release to shoot"},{"Trigger with javelin","Hold, throw, release in WEAPON mode"},{"Left Grip + Right Trigger","Laser context click in game panels"}};
         for(int i=0;i<7;++i)for(int side=0;side<2;++side){
-            const auto& h=(side?right:left)[i];const int x=side?658:40,y=264+i*64;
-            fill({x,y,582,60},i%2?RGB(19,31,39):RGB(22,36,44));
+            const auto& h=(side?right:left)[i];const int x=side?658:40,y=252+i*58;
+            fill({x,y,582,56},i%2?RGB(19,31,39):RGB(22,36,44));
             text(h.key,{x+18,y+2,550,29},false,false,RGB(116,220,219));
             text(h.action,{x+18,y+30,550,30});
         }
-        text(Definitions[WeaponSkillIndicators].label,{40,714,875,32});
-        text(Definitions[WeaponSkillIndicators].detail,{40,746,875,29},false,false,quiet);
+        text(Definitions[WeaponSkillIndicators].label,{40,660,875,32});
+        text(Definitions[WeaponSkillIndicators].detail,{40,692,875,29},false,false,quiet);
         button(WeaponIndicatorsBox,m.Get()[WeaponSkillIndicators]>.5f?"On":"Off",{Kind::Change,WeaponSkillIndicators,1},false,m.ready&&!m.Busy());
-        text(Definitions[PlanarSpellAim].label,{40,780,875,32});
-        text(Definitions[PlanarSpellAim].detail,{40,812,875,29},false,false,quiet);
+        text(Definitions[PlanarSpellAim].label,{40,722,875,32});
+        text(Definitions[PlanarSpellAim].detail,{40,754,875,29},false,false,quiet);
         button(PlanarSpellAimBox,m.Get()[PlanarSpellAim]>.5f?"On":"Off",{Kind::Change,PlanarSpellAim,1},false,m.ready&&!m.Busy());
+        text(Definitions[ProjectileAimAssist].label,{40,784,875,32});
+        text(Definitions[ProjectileAimAssist].detail,{40,816,875,29},false,false,quiet);
+        button(AimAssistBox,AimAssistNames[int(m.Get()[ProjectileAimAssist])],{Kind::Change,ProjectileAimAssist,1},false,m.ready&&!m.Busy());
         const auto panelHelp="Panels: Left Trigger = Ctrl; Right Grip = Shift; Right "+labels.Button(0,2)+" = Back.";
         text(panelHelp.c_str(),{40,845,1200,29},false,false,quiet);
     }else{
         if(m.page==Page::VR){
-            char status[128];std::snprintf(status,sizeof status,"Headset / controllers   L: %s / R: %s",
+            text("Controller labels - select your controllers",{40,181,810,29},true);
+            char status[128];std::snprintf(status,sizeof status,"Detected: left %s / right %s. Automatic or manual override:",
                 controllers::Name(detected.hands[1]),controllers::Name(detected.hands[0]));
-            text(status,{40,191,815,34},false,false,quiet);
+            text(status,{40,212,815,27},false,false,quiet);
             fill(ControllerBox,hover.kind==Kind::ControllerMenu?RGB(63,103,112):RGB(31,48,56));
-            const std::string selected=std::string(controllers::Choices[int(m.Get()[ControllerLabels])])+"  v";
-            text(selected.c_str(),{ControllerBox.x,ControllerBox.y+7,ControllerBox.w,37},false,true);
+            const std::string selected=std::string(controllers::Choices[int(m.Get()[ControllerLabels])])+"  \xe2\x96\xbc";
+            text(selected.c_str(),{ControllerBox.x,ControllerBox.y+10,ControllerBox.w,37},true,true,RGB(116,220,219));
         }else text(m.page==Page::HUD?"Choose how you check your health, mana and navigation.":runtimeStatus,{40,197,1200,42},false,false,quiet);
         for(int row=0;row<RowCount(m.page);++row){
             const Key key=RowKey(m.page,row);const auto& d=Definitions[key];const float value=m.Get()[key];const int y=RowY+row*RowStep;
@@ -103,6 +108,8 @@ std::vector<uint8_t> Paint(const Model& m,Hit hover,const char* runtimeStatus,co
             if(key==Foveation){const char* modes[]={"Off","Fixed","Eye tracked"};std::snprintf(label,sizeof label,"%s",modes[int(value)]);}
             else if(key==VitalsLocation||key==NavigationLocation)std::snprintf(label,sizeof label,"%s",vitals::LocationNames[int(value)]);
             else if(key==RenderResolution)std::snprintf(label,sizeof label,"%s",resolution::Choices[int(value)]);
+            else if(key==MenuDistance)std::snprintf(label,sizeof label,"%s",MenuDistanceNames[int(value)]);
+            else if(key==TooltipTiming)std::snprintf(label,sizeof label,"%s",TooltipTimingNames[int(value)]);
             else if(key==Dominant)std::snprintf(label,sizeof label,"%s",value>.5f?"Left":"Right");
             else if(d.max==1)std::snprintf(label,sizeof label,"%s",value>.5f?"On":"Off");
             else if(key==Snap)std::snprintf(label,sizeof label,"%.0f deg",value);
@@ -119,9 +126,9 @@ std::vector<uint8_t> Paint(const Model& m,Hit hover,const char* runtimeStatus,co
             text("Headset uses the runtime recommendation, capped at 4096 per side. DLSS: game Options.",{40,795,1200,65},false,false,quiet);
         }
         if(m.page==Page::HUD){
-            text("Palm: raise your left hand in front of you, turn the palm upward and hold briefly.",{58,525,1160,76},false,false,quiet);
-            text("Release the left trigger and grip to check palm displays. Lower or turn your hand to hide them.",{58,615,1160,76},false,false,quiet);
-            text("Minimap and compass move together. Their location is independent of health and mana.",{58,705,1160,76},false,false,quiet);
+            text("Palm: raise your left hand, turn the palm upward and hold briefly. Release trigger and grip.",{58,575,1160,76},false,false,quiet);
+            text("Minimap & Compass move together. Choose Off to hide both; the wheel map stays available.",{58,670,1160,76},false,false,quiet);
+            text("Menu distance: Close matches the previous build; Medium adds 30 cm; Far adds 60 cm.",{58,765,1160,76},false,false,quiet);
         }
     }
     const char* message=!m.ready?"Configuration unavailable; controls help still works.":m.result==Result::Saving?"Saving...":m.result==Result::Saved?"Saved. Changes take effect live.":m.result==Result::Failed?"Save failed. Your edits are still unsaved.":m.result==Result::Conflict?"Settings changed elsewhere. Current values reloaded.":m.Dirty()?"Unsaved changes. Apply saves; Close discards them.":"World remains live. Right B closes this panel.";

@@ -256,7 +256,7 @@ std::vector<uint8_t> Paint(const Snapshot& s,const Output& o,int selection,const
         const RECT content{LONG(MapContent.left*768),LONG(MapContent.top*768),LONG(MapContent.right*768),LONG(MapContent.bottom*768)};
         frame({content.left-4,content.top-4,content.right+4,content.bottom+4});
         text("Waiting for map...",content);
-        SelectObject(dc,shortcutFont);text("Use a corner minimap layout in game options",{38,650,730,677});SelectObject(dc,font);
+        SelectObject(dc,shortcutFont);text("Hand map + compass: VR Settings > HUD",{38,650,730,677});SelectObject(dc,font);
     } else if(o.editor==2) {
         frame({20,28,748,681});
         char title[120];std::snprintf(title,sizeof title,"CHOOSE SKILL  /  %s",handWheel?labels.Slot(o.editSlot).c_str():skills::NativeLabel(o.editSlot));
@@ -302,10 +302,11 @@ std::vector<uint8_t> Paint(const Snapshot& s,const Output& o,int selection,const
         text(footer[i],{box.left+5,box.top+5,box.right-5,box.bottom-5});
     }
     if(!o.editor&&!o.utility&&!o.map) {
-        char active[100];if(handWheel)std::snprintf(active,sizeof active,"Select a button to assign  /  click stick to close");
+        char active[120];if(handWheel)std::snprintf(active,sizeof active,"Other hand: point + trigger to assign. Click this stick to close.");
         else std::snprintf(active,sizeof active,"ACTIVE: %s",o.cue.known?o.cue.name:"Unknown skill");
         const auto prior=SelectObject(dc,skillFont);SetTextColor(dc,RGB(232,196,119));
-        text(active,handWheel?RECT{150,662,618,685}:RECT{150,648,618,681});SelectObject(dc,prior);
+        if(handWheel){SelectObject(dc,shortcutFont);text("Top trigger slot: compatible skills also power weapon gestures.",{38,639,730,662});}
+        text(active,handWheel?RECT{38,662,730,685}:RECT{150,648,618,681});SelectObject(dc,prior);
     }
     // Reserved atlas space: a compact weapon icon and an optional two-line
     // explanation. The native icon comes from the same cache as its wheel slot.

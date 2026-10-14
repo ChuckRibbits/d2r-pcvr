@@ -11,7 +11,8 @@ namespace framevr::settings {
 enum class Page { Controls, VR, Video, HUD };
 enum Key { Motion, Seated, Dominant, Snap, TurnSpeed, Waist, BeltForward,
            Foveation, Sky, Fog, Ceiling, DrawDistance, ObjectDistance,
-           EyeHeight, ArmSpan, BodyCalibration, SkillGestures, WristMap, WristCompass, ControllerLabels, WeaponSkillIndicators, PlanarSpellAim, VitalsLocation, CriticalAlerts, RenderResolution, NavigationLocation, SmoothTurn, OrdinaryMobBars, Count };
+           EyeHeight, ArmSpan, BodyCalibration, SkillGestures, WristMap, WristCompass, ControllerLabels, WeaponSkillIndicators, PlanarSpellAim, VitalsLocation, CriticalAlerts, RenderResolution, NavigationLocation, SmoothTurn, OrdinaryMobBars, MenuDistance, TooltipTiming, ProjectileAimAssist, Count };
+static_assert(Count<32,"settings change mask capacity");
 struct Definition {
     const char* label;
     const char* detail;
@@ -45,16 +46,19 @@ inline constexpr std::array<Definition,Count> Definitions{{
     {"Health / mana location", "Wrist, palm-up, either gesture, or hidden", L"interactions",L"vitals_location",0,0,3,1},
     {"Low health / mana alerts", "Brief popup and vibration when resources are low", L"interactions",L"critical_alerts",0,0,1,1},
     {"VR render resolution", "Independent of monitor; higher values cost GPU time", L"render",L"vr_resolution",0,0,6,1},
-    {"Minimap / compass location", "Together on wrist, palm-up, either gesture, or hidden", L"interactions",L"navigation_location",0,0,3,1},
+    {"Minimap & Compass", "Wrist / Palm / Either / Off; independent of health and mana", L"interactions",L"navigation_location",0,0,3,1},
     {"Smooth turning", "Continuous right-stick turning; Off uses snap turning", L"turn",L"smooth",0,0,1,1},
     {"Ordinary mob bars", "Weak mobs' health and names; bosses and elites stay visible", L"hud",L"ordinary_mob_bars",0,0,1,1},
+    {"Menu distance", "Eye-level inventory, merchant and main menus", L"hud",L"menu_distance",1,0,2,1},
+    {"Item tooltip timing", "Laser hover: Instant, Short (300 ms), or Original timing", L"hud",L"tooltip_timing",0,0,2,1},
+    {"Projectile aim assist", "Hand spells: Light assists launch; Strong adds gentle homing", L"gameplay",L"projectile_aim_assist",0,0,2,1},
 }};
 using Values=std::array<float,Count>;
 inline Values Defaults(){Values v{};for(int i=0;i<Count;++i)v[i]=Definitions[i].defaultValue;return v;}
 inline float Normalize(Key key,float value){
     const auto& d=Definitions[key];
     if(!std::isfinite(value))return d.defaultValue;
-    if((key==ControllerLabels||key==VitalsLocation||key==NavigationLocation||key==RenderResolution)&&(value<d.min||value>d.max||value!=std::round(value)))return d.defaultValue;
+    if((key==ControllerLabels||key==VitalsLocation||key==NavigationLocation||key==RenderResolution||key==MenuDistance||key==TooltipTiming||key==ProjectileAimAssist)&&(value<d.min||value>d.max||value!=std::round(value)))return d.defaultValue;
     value=std::clamp(value,d.min,d.max);
     return d.step==1?std::round(value):value;
 }
@@ -77,15 +81,18 @@ constexpr int TabCount=4;
 constexpr Rect Tabs[TabCount]={{40,114,285,60},{345,114,285,60},{650,114,285,60},{955,114,285,60}};
 constexpr Rect Apply{965,918,275,68},Close{650,918,275,68},Recenter{40,918,270,68},Calibrate{330,918,300,68};
 constexpr int RowY=242,RowStep=62;
-constexpr Rect ControllerBox{865,181,375,44};
-constexpr Rect WeaponIndicatorsBox{942,720,221,52},PlanarSpellAimBox{942,786,221,52};
-inline Rect ControllerOption(int option){return {865,225+option*58,375,58};}
+constexpr Rect ControllerBox{865,181,375,52};
+inline constexpr const char* MenuDistanceNames[]={"Close","Medium","Far"};
+inline constexpr const char* TooltipTimingNames[]={"Instant","Short","Original"};
+constexpr Rect WeaponIndicatorsBox{942,666,221,52},PlanarSpellAimBox{942,728,221,52},AimAssistBox{942,790,221,52};
+inline constexpr const char* AimAssistNames[]={"Off","Light","Strong"};
+inline Rect ControllerOption(int option){return {865,233+option*58,375,58};}
 inline Rect Decrease(int row){return {865,RowY+row*RowStep,64,52};}
 inline Rect Increase(int row){return {1176,RowY+row*RowStep,64,52};}
 inline Rect ValueBox(int row){return {942,RowY+row*RowStep,221,52};}
-inline int RowCount(Page page){return page==Page::VR?10:page==Page::Video?7:page==Page::HUD?3:0;}
+inline int RowCount(Page page){return page==Page::VR?10:page==Page::Video?7:page==Page::HUD?5:0;}
 inline Key RowKey(Page page,int row){
-    constexpr Key hud[]={VitalsLocation,CriticalAlerts,NavigationLocation};
+    constexpr Key hud[]={VitalsLocation,CriticalAlerts,NavigationLocation,MenuDistance,TooltipTiming};
     if(page==Page::HUD)return hud[row];
     if(page==Page::Video&&row==6)return RenderResolution;
     constexpr Key vrRows[]={Motion,Seated,Dominant,SmoothTurn,Snap,TurnSpeed,Waist,BeltForward,SkillGestures,OrdinaryMobBars};
@@ -111,6 +118,7 @@ inline Hit HitTest(Page page,float u,float v,bool controllerMenu=false){
     if(Calibrate.Contains(x,y))return {Kind::Calibrate};
     if(page==Page::Controls&&WeaponIndicatorsBox.Contains(x,y))return {Kind::Change,WeaponSkillIndicators,1};
     if(page==Page::Controls&&PlanarSpellAimBox.Contains(x,y))return {Kind::Change,PlanarSpellAim,1};
+    if(page==Page::Controls&&AimAssistBox.Contains(x,y))return {Kind::Change,ProjectileAimAssist,1};
     for(int r=0;r<RowCount(page);++r){
         const auto key=RowKey(page,r);
         if(Decrease(r).Contains(x,y))return {Kind::Change,key,-1};
@@ -158,6 +166,7 @@ public:
         if(hit.kind==Kind::Change&&hit.index>=0&&hit.index<Count){
             const auto key=Key(hit.index);const auto& d=Definitions[key];
             if(d.max==1)draft[key]=draft[key]>.5f?0.f:1.f;
+            else if(key==ProjectileAimAssist)draft[key]=float((int(draft[key])+(hit.delta<0?2:1))%3);
             else draft[key]=Normalize(key,draft[key]+hit.delta*d.step);
             result=Result::None;++revision;
         }

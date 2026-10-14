@@ -64,6 +64,17 @@ void Register(void (*log)(const char*)) {
     reshade::register_event<reshade::addon_event::init_resource>(&Resource);
 }
 void Attach(HWND h){attached=h;}
+uint64_t UiSize(uint64_t nativeSize) {
+    const auto logical=UiCanvas(window.Logical(attached.load()));
+    return logical?uint64_t(logical.w)|(uint64_t(logical.h)<<32):nativeSize;
+}
+uint64_t CursorSize(uint64_t nativeSize) {
+    const auto logical=window.Logical(attached.load());
+    return logical?uint64_t(logical.w)|(uint64_t(logical.h)<<32):nativeSize;
+}
+void UiSizeReady() {
+    if(const auto size=Unpack(requested.load());size)window.Request(attached.load(),size,true);
+}
 bool Handle(HWND h,UINT message,WPARAM w,LPARAM& l,WNDPROC original,LRESULT& result){return window.Handle(h,message,w,l,original,result);}
 void Update(HWND h,bool running,Size recommended,Size maximum,Size source,int choice) {
     selection=choice;

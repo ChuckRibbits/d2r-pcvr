@@ -55,6 +55,24 @@ public:
             logical=desired.load();
             if(const auto size=Logical(h);size)l=MAKELPARAM(size.w,size.h);
         }
+        // ScreenToClient covers polled cursor positions, but WM_MOUSE* already
+        // carries client pixels and bypasses that detour. Native widget hover
+        // and button dispatch must see the same render coordinates as polling.
+        // Wheel/non-client messages carry screen coordinates: leave them alone.
+        switch(message) {
+        case WM_MOUSEMOVE:
+        case WM_LBUTTONDOWN:case WM_LBUTTONUP:case WM_LBUTTONDBLCLK:
+        case WM_RBUTTONDOWN:case WM_RBUTTONUP:case WM_RBUTTONDBLCLK:
+        case WM_MBUTTONDOWN:case WM_MBUTTONUP:case WM_MBUTTONDBLCLK:
+        case WM_XBUTTONDOWN:case WM_XBUTTONUP:case WM_XBUTTONDBLCLK:
+            if(const auto size=Logical(h);size) {
+                RECT client{};
+                if(GetClientRect(h,&client)&&client.right>1&&client.bottom>1)
+                    l=MAKELPARAM(Coordinate(short(LOWORD(l)),client.right,size.w),
+                        Coordinate(short(HIWORD(l)),client.bottom,size.h));
+            }
+            break;
+        }
         return false;
     }
 };
