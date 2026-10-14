@@ -17,6 +17,10 @@ int main(){
         Check(panels::Modal(name)&&panels::OpaqueBackground(name),"management surfaces use the same opaque background in both eyes");
     for(auto name:{"NpcDialogPanel","ScrollSpeechPanel","QuestLogPanelExpansion","GoldTransferPanel","QuantityPanel","HUDPanel","HUDTradeHint","MiniMenuPanel","TooltipsPanel"})
         Check(!panels::OpaqueBackground(name),"dialogue, journal and auxiliary panels do not independently black out the world");
+    for(auto name:{"UISwitcher","VendorPanelLayout","VendorPanelOriginalLayout","TradeLayout","GamblePanel"})
+        Check(panels::UpperBand(name),"tabbed inventory and independent merchant roots center their upper content at eye level");
+    for(auto name:{"WaypointPanel","NpcDialogPanel","ScrollSpeechPanel","QuestLogPanelExpansion","QuantityPanel","ConfirmationPanel","HUDTradeHint","TooltipsPanel"})
+        Check(!panels::UpperBand(name),"unrelated layouts and auxiliary popups cannot independently shift the workspace");
     panels::InputModeLease mode;
     Check(!mode.PreserveController(100,true),"desktop input untouched without VR ownership");
     mode.Refresh(100);
@@ -221,8 +225,8 @@ int main(){
             "centered NPC laser lands at original dialogue center after crop correction");
     }
     Check(!dialogue::Crop({8000,8000,200,100},3840,2160).w&&!dialogue::Crop({0,0,0,100},4096,4096).h,"missing/outside NPC bounds cannot create an invalid XR crop");
-    Check(panels::TabbedOffset(wide)==0,"widescreen tabbed canvas needs no vertical correction");
-    Check(std::fabs(panels::TabbedOffset(square)+.23378906f)<.00001f,"square inventory centers its visible upper band instead of blank lower canvas");
+    Check(panels::UpperBandOffset(wide)==0,"widescreen tabbed canvas needs no vertical correction");
+    Check(std::fabs(panels::UpperBandOffset(square)+.23378906f)<.00001f,"square inventory centers its visible upper band instead of blank lower canvas");
     for(float eyeHeight:{1.15f,1.75f})for(float pitch:{-.6f,0.f,.6f}) {
         const math::Vec head{.2f,eyeHeight,-.3f};
         const auto look=math::Multiply(math::Yaw(.65f),{std::sin(pitch/2),0,0,std::cos(pitch/2)});
@@ -233,7 +237,7 @@ int main(){
             Check(placed.orientation.x==0&&placed.orientation.z==0,"menu remains upright without inheriting head pitch");
         }
         const auto placed=panels::AtEyeLevel(head,look,panels::Distance);
-        const auto origin=placed.position+math::Vec{0,panels::TabbedOffset(square),0};
+        const auto origin=placed.position+math::Vec{0,panels::UpperBandOffset(square),0};
         math::PanelHit hit;
         const auto direction=math::Rotate(placed.orientation,{0,0,-1});
         Check(math::IntersectPanel(head,direction,origin,placed.orientation,square.width,square.height,hit),"eye-level ray hits the lowered square menu");
@@ -252,7 +256,7 @@ int main(){
         Check(larger.width==surface.width&&larger.height==surface.height,"pixel density does not change physical menu size");
         for(float u:{.01f,.25f,.5f,.75f,.99f})for(float v:{.01f,.5f,.99f}) {
             const auto placed=panels::AtEyeLevel({.3f,1.4f,0},math::Yaw(.65f),panels::Distance);
-            const auto rot=placed.orientation;const auto origin=placed.position+math::Vec{0,panels::TabbedOffset(surface),0};
+            const auto rot=placed.orientation;const auto origin=placed.position+math::Vec{0,panels::UpperBandOffset(surface),0};
             auto point=origin+math::Rotate(rot,{(u-.5f)*surface.width,(.5f-v)*surface.height,0});
             const auto front=math::Rotate(rot,{0,0,1});math::PanelHit hit;math::Vec pixel{};
             Check(math::IntersectPanel(point+front,front*-1,origin,rot,surface.width,surface.height,hit),"rotated panel ray");

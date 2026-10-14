@@ -237,7 +237,7 @@ Eye mapEye;
 bool mapSupported=false;
 constexpr uint32_t mapSide=512;
 std::atomic<bool> uiSupported{false};
-bool journalMode=false,spatialMode=false,workspacePlaced=false,opaqueMenuMode=false,tabbedMenuMode=false;
+bool journalMode=false,spatialMode=false,workspacePlaced=false,opaqueMenuMode=false,upperBandMenuMode=false;
 bool npcChoicesMode=false,npcChoicesCropped=false;
 UiBlit uiBlit;
 UiBlit mapBlit; // Own descriptors: native menu and map copies may share a frame.
@@ -830,8 +830,8 @@ panels::Size UiSurfaceSize() {
 }
 XrPosef UiSurfacePose() {
     auto pose=uiPose;
-    if(tabbedMenuMode&&!journalMode) {
-        const auto p=V(pose.position)+math::Rotate(Q(pose.orientation),{0,panels::TabbedOffset(UiSurfaceSize()),0});
+    if(upperBandMenuMode&&!journalMode) {
+        const auto p=V(pose.position)+math::Rotate(Q(pose.orientation),{0,panels::UpperBandOffset(UiSurfaceSize()),0});
         pose.position={p.x,p.y,p.z};
     }
     return pose;
@@ -1550,7 +1550,7 @@ bool Begin() {
     }
     const bool opaque=spatial&&gamestate::OpaqueMenuOpen();
     if(opaque!=opaqueMenuMode)Say(opaque?"Frame panels: shared black menu background":"Frame panels: spatial background restored");
-    spatialMode=spatial;journalMode=book;npcChoicesMode=npc;opaqueMenuMode=opaque;tabbedMenuMode=spatial&&gamestate::TabbedMenuOpen();uiEye.copied=false;
+    spatialMode=spatial;journalMode=book;npcChoicesMode=npc;opaqueMenuMode=opaque;upperBandMenuMode=spatial&&gamestate::UpperBandMenuOpen();uiEye.copied=false;
     mapEye.copied=false;hud::MapFrame();
     hud::UiFrame(spatialMode,!journalMode,0);
     const bool panel=wantsPanel&&wantsPanel()&&!spatialMode;
