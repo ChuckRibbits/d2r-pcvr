@@ -1,6 +1,12 @@
 #pragma once
 #include <cstdint>
 namespace framevr::nativehud {
+// The native HUD update assumes ExpFlashLeft/ExpFlashRight exist. A hidden
+// controller HUD may lack them (observed null +0x170 during combat).
+// Defer that presentation update until the layout is ready.
+inline bool DeferUpdate(bool hidden,bool readable,uintptr_t first,uintptr_t second) {
+    return hidden&&(!readable||!first||!second);
+}
 // Hide the native panel itself, so nonstandard UI layouts cannot escape a
 // bottom-strip crop. Restore only a panel this override actually hid. Calls
 // run on the UI thread; repeated hides cover native mode/layout refreshes.
