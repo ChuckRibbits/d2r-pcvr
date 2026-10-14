@@ -32,6 +32,21 @@ public:
     }
     bool Active(uint64_t now) const { return lease.Active(now); }
 };
+// UI-thread dwell keyed by native widget AND item, not pointer pixels. Small
+// hand tremors and crossing cells of the same item must not restart the timer.
+class TooltipDwell {
+    uintptr_t widget=0,item=0;
+    uint64_t since=0,last=0,generation=0;
+    int mode=-1;
+public:
+    bool Ready(uintptr_t w,uintptr_t i,uint64_t now,int timing,uint64_t epoch) {
+        if(!w||!i)return false; // Other grids report no item during the same frame.
+        if(w!=widget||i!=item||timing!=mode||epoch!=generation||now<last||now-last>150)since=now;
+        widget=w;item=i;last=now;mode=timing;generation=epoch;
+        return timing!=1||now-since>=300;
+    }
+};
+constexpr bool ItemCursorSnap(bool hover,bool itemQuery,bool native){return hover&&itemQuery?false:native;}
 template<class Callback> int ItemCompareKey(bool hover,bool compareCaller,int key,Callback native) {
     // VK_SHIFT, only at the native equipped-item comparison query. Never
     // synthesize a keyboard event: Shift also buys stacks and moves items.

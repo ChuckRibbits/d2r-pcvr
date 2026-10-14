@@ -4,6 +4,18 @@
 #include "frame_math.h"
 
 namespace framevr::spellcast {
+// One start sound per accepted cast, not one per member of a bolt volley.
+// Called only on the UI thread after a valid visual is created.
+class CastCue {
+    uint64_t session=0,sequence[2]{};
+public:
+    bool Take(uint64_t world,int hand,uint64_t shot,uint64_t at,uint64_t now) {
+        if(!world||hand<0||hand>1||!shot||now<at||now-at>250)return false;
+        if(world!=session){session=world;sequence[0]=sequence[1]=0;}
+        if(shot<=sequence[hand])return false;
+        sequence[hand]=shot;return true;
+    }
+};
 // Preserve continuous yaw, without amplifying tracking noise near vertical.
 // No usable heading on the first sample means no shot, not a default compass
 // direction. Each hand keeps its own fallback until the world/turn changes.

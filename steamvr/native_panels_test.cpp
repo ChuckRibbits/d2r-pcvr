@@ -9,6 +9,25 @@
 using namespace framevr;
 static void Check(bool ok,const char* message){if(!ok){std::fprintf(stderr,"FAIL: %s\n",message);std::exit(1);}}
 int main(){
+    for(int preset=0;preset<3;++preset)for(bool main:{false,true}) {
+        const float distance=panels::MenuDistance(preset,main);
+        Check(std::fabs(distance-(main?.70f:.55f)-.30f*preset)<.00001f,"distance presets add 30 cm without changing canvas scale");
+        const auto p=panels::AtEyeLevel({0,1.7f,0},math::Yaw(.8f),distance);
+        Check(p.position.y==1.7f,"all distance presets retain eye-level anchor");
+    }
+    panels::TooltipDwell dwell;
+    Check(dwell.Ready(1,2,100,0,1),"instant tooltip on first hover");
+    Check(!dwell.Ready(1,2,110,1,1),"short mode starts fresh on setting change");
+    Check(!dwell.Ready(1,2,210,1,1),"short dwell not yet elapsed");
+    Check(!dwell.Ready(3,0,211,1,1),"empty neighboring grid cannot reset hovered item dwell");
+    Check(!dwell.Ready(1,2,310,1,1)&&dwell.Ready(1,2,410,1,1),"same item across pixels reaches 300 ms");
+    Check(!dwell.Ready(1,4,420,1,1),"different item resets dwell");
+    Check(!dwell.Ready(1,4,430,1,2),"ray miss or drag generation resets dwell");
+    Check(!dwell.Ready(1,4,1000,1,2),"stalled frame cannot mature a stale hover");
+    Check(!dwell.Ready(1,4,1,1,2),"clock reset restarts dwell");
+    Check(dwell.Ready(1,4,2,2,2),"Original mode delegates delay to native producer");
+    Check(!panels::ItemCursorSnap(true,true,true),"item draw uses laser coordinates outside pointer callbacks");
+    Check(panels::ItemCursorSnap(false,true,true)&&panels::ItemCursorSnap(true,false,true),"desktop and unrelated cursor queries remain native");
     for(auto name:{"WaypointPanel","WaypointPanelExpansion","WaypointPanelOriginal"})
         Check(panels::Modal(name)&&panels::OpaqueBackground(name),"waypoint destinations use the shared opaque black background instead of different per-eye worlds");
     for(auto name:{"UISwitcher","VendorPanelLayout","VendorPanelOriginalLayout","TradeLayout","GamblePanel",

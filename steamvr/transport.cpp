@@ -1591,13 +1591,16 @@ bool Begin() {
             origin=V(head.position);worldCalibrationPending=false;worldRecenter=true;
             Say("Frame OpenXR: loaded game calibrated from current headset position");
         }
+        const int distancePreset=int(vrsettings::Read().values[settings::MenuDistance]);
+        static int previousDistance=-1;
+        if(distancePreset!=previousDistance){workspacePlaced=menuPlaced=false;previousDistance=distancePreset;}
         if(spatialMode&&!journalMode&&!workspacePlaced) {
-            const auto placed=panels::AtEyeLevel(V(head.position),Q(head.orientation),panels::Distance);
+            const auto placed=panels::AtEyeLevel(V(head.position),Q(head.orientation),panels::MenuDistance(distancePreset));
             uiPose=XrPose({placed.position,placed.orientation});
             uiSize=panels::Width;workspacePlaced=true;
         }
         if(panelMode&&!menuPlaced) {
-            const auto placed=panels::AtEyeLevel(V(head.position),Q(head.orientation),panelDistance);
+            const auto placed=panels::AtEyeLevel(V(head.position),Q(head.orientation),panels::MenuDistance(distancePreset,true));
             menuPose=XrPose({placed.position,placed.orientation});menuPlaced=true;
         }
     }

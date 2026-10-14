@@ -11,6 +11,14 @@ struct Sim {
     void Step(int n=1){while(n--){input.time+=.02;output=controls.Step(input);}}
 };
 int main() {
+    spellcast::CastCue cue;
+    assert(cue.Take(1,0,1,100,100));
+    for(int member=1;member<24;++member)assert(!cue.Take(1,0,1,100,110));
+    assert(cue.Take(1,1,1,100,110)&&cue.Take(1,0,2,120,120));
+    assert(!cue.Take(1,0,1,100,120));
+    assert(!cue.Take(1,0,3,100,351)&&!cue.Take(1,0,3,100,99));
+    assert(cue.Take(2,0,1,400,400));
+    assert(!cue.Take(0,0,1,400,400)&&!cue.Take(2,2,1,400,400));
     spellcast::PlanarAim aim[2];
     for(int yaw=0;yaw<360;++yaw)for(int pitch:{-80,-40,0,40,80}) {
         const float y=yaw*.01745329252f,p=pitch*.01745329252f;

@@ -16,6 +16,7 @@ namespace {
 using namespace framevr::bowflight;
 using namespace native;
 std::atomic<bool> ready{false};
+bool castSoundReady=false;
 std::atomic<unsigned> casts[2]{},denied{};
 framevr::spellcast::Cadence cadence;
 using TargetFn=int(*)(uintptr_t,uintptr_t,int*,int*);
@@ -56,6 +57,7 @@ void Install() {
        !d2rsig::Check(nativeui::abi::SkillLayoutRva,nativeui::abi::SkillLayoutSig,sizeof nativeui::abi::SkillLayoutSig)||
        !d2rsig::Check(nativeui::abi::StatRva,nativeui::abi::StatSig,sizeof nativeui::abi::StatSig))return;
     if(!originalTarget&&!d2rsig::Hook(TargetRva,TargetSig,sizeof TargetSig,reinterpret_cast<void*>(&Target),reinterpret_cast<void**>(&originalTarget)))return;
+    castSoundReady=d2rsig::Check(CastSoundRva,CastSoundSig,sizeof CastSoundSig);
     ready=true;
     framevr::logging::Write("Frame hand spells: independent planar Sorceress bolts/balls and native Charged Bolt volleys ready");
 }
@@ -78,6 +80,8 @@ bool Prepare(Shot& shot,uintptr_t game,uintptr_t player) {
     }
     shot.level=reinterpret_cast<int(*)(uintptr_t,uintptr_t,int,int)>(d2rsig::Addr(SkillLevelRva))(player,node,1,0);
     shot.missile=missile;
+    int16_t sound=0;
+    shot.castSound=castSoundReady&&Read(row+0x152,sound)&&sound>0?sound:0;
     return shot.level>0;
 }
 bool Cast(const Shot& shot,uintptr_t game,uintptr_t player) {

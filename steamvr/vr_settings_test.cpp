@@ -7,6 +7,14 @@ static void Check(bool b,const char* label){if(!b){std::fprintf(stderr,"FAIL: %s
 static Hit At(Page p,Rect r){return HitTest(p,(r.x+r.w*.5f)/Width,(r.y+r.h*.5f)/Height);}
 int main(){
     Snapshot s;s.ready=true;
+    Check(s.values[MenuDistance]==1&&s.values[TooltipTiming]==0,"comfortable Medium distance and Instant hover defaults");
+    for(auto key:{MenuDistance,TooltipTiming}) {
+        Check(Normalize(key,1.5f)==Definitions[key].defaultValue&&Normalize(key,9)==Definitions[key].defaultValue,"invalid comfort enums fall back safely");
+        const int row=key==MenuDistance?3:4;
+        Check(RowKey(Page::HUD,row)==key&&At(Page::HUD,Increase(row)).index==key,"HUD comfort rows hit their own settings");
+        Model comfort;comfort.Open(s);comfort.Click(At(Page::HUD,Increase(row)));
+        Check(comfort.Click({Kind::Apply}).changed==(1u<<key),"comfort Apply affects only its selected setting");
+    }
     Check(s.values[OrdinaryMobBars]==0,"ordinary mob bars are off by default");
     {Model bars;bars.Open(s);bars.Click({Kind::Tab,int(Page::VR)});
         const auto hit=At(Page::VR,ValueBox(9));
@@ -38,7 +46,7 @@ int main(){
     Check(Normalize(NavigationLocation,99)==0&&Normalize(NavigationLocation,1.5f)==0,"invalid navigation location falls back to Wrist");
     {Model navigation;navigation.Open(s);navigation.Click(At(Page::Controls,Tabs[int(Page::HUD)]));
         const int row=2;
-        Check(RowCount(Page::HUD)==3&&RowKey(Page::HUD,row)==NavigationLocation,"one navigation row replaces separate map/compass switches");
+        Check(RowCount(Page::HUD)==5&&RowKey(Page::HUD,row)==NavigationLocation,"one navigation row replaces separate map/compass switches");
         for(int location=1;location<=3;++location){
             navigation.Click(At(Page::HUD,Increase(row)));
             Check(navigation.Get()[NavigationLocation]==location,"navigation offers Palm, Either and Off");

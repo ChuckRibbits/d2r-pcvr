@@ -36,6 +36,10 @@ inline bool Modal(std::string_view name) {
 // use the canvas's background policy. Do not recrop when hovering: that would
 // move the target.
 constexpr float Width=1.9f,Distance=.55f,MainDistance=.70f;
+// Medium restores 30 cm of breathing room; Close retains the prior build.
+inline float MenuDistance(int preset,bool main=false) {
+    return (main?MainDistance:Distance)+.30f*std::clamp(preset,0,2);
+}
 struct Size {float width,height;};
 struct Placement {math::Vec position;math::Quat orientation;};
 inline Placement AtEyeLevel(math::Vec head,math::Quat look,float distance) {

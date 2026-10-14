@@ -5,6 +5,14 @@
 #include <cstdio>
 using namespace framevr::wrist;
 int main() {
+    MapLayoutLease layout;
+    assert(layout.Step(false,0)==-1);
+    assert(layout.Step(true,0)==1&&layout.Step(true,1)==-1);
+    assert(layout.Step(false,1)==0&&layout.Step(false,0)==-1);
+    assert(layout.Step(true,2)==1&&layout.Step(false,1)==2);
+    assert(layout.Step(true,0)==1&&layout.Step(true,2)==1&&layout.Step(false,1)==2);
+    assert(layout.Step(true,0)==1&&layout.Step(false,2)==-1);
+    assert(layout.Step(true,1)==-1&&layout.Step(false,1)==-1);
     using namespace framevr;
     compass::Heading heading;
     const float north=.71f;

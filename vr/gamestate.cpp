@@ -43,6 +43,8 @@
 #include "logging.h"
 #include "panel_input.h"
 #include "render_resolution.h"
+#include "sigscan.h"
+#include "memory.h"
 #endif
 
 using namespace D2RL;
@@ -60,6 +62,22 @@ const ThreadService* g_threads = nullptr;
 const WidgetService* g_widgets = nullptr;
 framevr::nativehud::VisibilityOverride g_toolbarVisibility;
 #ifdef D2RVR_NATIVE_OPENXR
+void MaintainMapLayout(bool capture) {
+    // D2R 3.3.93787 native automap mode setter: 0 full, 1 left, 2 right.
+    // This updates transient map geometry only, not the saved options file.
+    constexpr uint64_t modeRva=0xd3d80;
+    constexpr uint8_t modeSig[]={0x48,0x83,0xec,0x28,0x83,0xf9,0x01,0x0f,0x94,0x05,0x47,0x70,0x95,0x02,
+        0x3b,0x0d,0x3c,0x70,0x95,0x02,0x74,0x1d,0x33,0xc0,0x85,0xc9,0x0f,0x95,0xc0,
+        0x89,0x05,0x2d,0x70,0x95,0x02};
+    static bool checked=false;
+    static framevr::wrist::MapLayoutLease layout;
+    if(!checked){if(!d2rsig::Check(modeRva,modeSig,sizeof modeSig))return;checked=true;}
+    int small=0;uint8_t left=0;
+    if(!framevr::ReadMemory(&small,reinterpret_cast<void*>(d2rsig::Addr(0x2a2add0)),sizeof small)||
+       !framevr::ReadMemory(&left,reinterpret_cast<void*>(d2rsig::Addr(0x2a2add5)),sizeof left)||small<0||small>1)return;
+    const int action=layout.Step(capture,small?(left?1:2):0);
+    if(action>=0)reinterpret_cast<void(*)(int)>(d2rsig::Addr(modeRva))(action);
+}
 // UI-thread-only refreshes; native menu handlers may rebuild/show HUDPanel.
 framevr::CallbackTicket g_toolbarTicket;
 bool g_toolbarUpdating=false;
@@ -360,8 +378,10 @@ void __cdecl ReadItems(const PluginContext* ctx, void* token) noexcept {
     const bool mapWanted=mapAt&&now>=mapAt&&now-mapAt<400;
     const int mapAction=g_menuMapLease.Step(havePlayer?player:0,now,mapWanted,g_menu.load()!=0,g_autoMap.load()!=0);
     // Keep native widget calls on this UI callback, never on the XR thread.
+    const bool capture=g_menuMapLease.Active(now,g_menu.load()!=0);
+    MaintainMapLayout(capture);
     if(mapAction>=0)DispatchAutoMap(ctx,mapAction?(void*)1:nullptr);
-    hud::MenuMapCapture(g_menuMapLease.Active(now,g_menu.load()!=0));
+    hud::MenuMapCapture(capture);
 #endif
     if(!havePlayer)g_menuOpenUntil=0;
     else if(g_menuOpenUntil)FinishMenuOpen(ctx,nullptr);

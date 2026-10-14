@@ -74,6 +74,7 @@ uint64_t previewAttemptAt=0;
 Gate current{};uintptr_t clientHero=0;
 Once once;
 Once spellOnce[2];
+framevr::spellcast::CastCue castCue; // UI thread only
 std::array<Shot,4> pending{};size_t pendingCount=0;
 framevr::CallbackTicket gameCallback,uiCallback;
 uint64_t maintenanceAt=0;
@@ -432,6 +433,13 @@ void __cdecl Present(const D2RL::PluginContext*,void* token) noexcept {
             } else orphan=validClient;
         }
         if(orphan)originalClientKill(client);
+        else if(validClient&&a.flight.shot.kind==Kind::Spell&&a.flight.shot.castSound>0&&
+                castCue.Take(session,a.flight.shot.hand,a.flight.shot.sequence,a.flight.shot.at,GetTickCount64())) {
+            // Direct casting deliberately skips the character animation that
+            // normally plays stsound. Restore that cue once at native volume,
+            // on the client caster, while retaining each missile's travel sound.
+            originalMissileSound(a.flight.shot.castSound,hero,0,0,false);
+        }
     }
 }
 void ClientTick(uintptr_t unit,float dt) {
