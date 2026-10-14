@@ -18,6 +18,7 @@
 #include "../steamvr/transport.h"
 #include "../steamvr/callback_ticket.h"
 #include "../steamvr/world_coordinates.h"
+#include "../steamvr/attack_speed.h"
 namespace gamestate {uint64_t LocalPlayer();bool MenuOpen();uint32_t HandsKey();uint32_t WeaponSet();}
 namespace melee {
 namespace {
@@ -49,6 +50,12 @@ thread_local Contact contact;
 std::atomic<unsigned> samples{0},contacts{0},accepted{0},rejected{0},noServer{0},intersections{0},stale{0},walls{0};
 std::atomic<unsigned> applied{0},recovered{0},playerMissing{0},positionMismatch{0},nearby{0},bodyMissing{0};
 std::atomic<unsigned> shieldSweeps{0},shieldRequests{0},shieldAccepted{0},shieldRejected{0};
+// Attack speed: settings/cycle cross threads; the cadence and the strokes that
+// already landed live on the game thread (Apply) only.
+std::atomic<bool> attackSpeed{false},trace{false};
+std::atomic<uint64_t> cycleSession{0};std::atomic<uint32_t> cycleMs{0};
+std::atomic<unsigned> tooSoon{0},extraTargets{0};
+framevr::attackspeed::Cadence cadence;HitSet landed;
 std::mutex queueMutex;std::array<Engine,2> engines;HitSet hits,shieldHits;
 struct Request {Sweep sweep;Sample sample;uint64_t session=0,at=0;};
 std::array<Request,24> requests;size_t count=0;
@@ -194,6 +201,25 @@ bool BodyFor(uintptr_t unit,uint32_t classId,float upm,float floor,Body& body) {
     body.bottom=framevr::coordinates::RenderGround(p*(1/upm),floor)+Vec{0,body.radius,0};body.top=body.bottom;
     body.top.y=floor+height-body.radius;return true;
 }
+// [debug] melee_trace=1: one line per native attack and per refused stroke,
+// on the game thread, with the time since the previous landed hit. Landed
+// hits should never be closer together than cycle_ms.
+uint64_t tracedStroke[2]{};   // last stroke logged per refusal kind (game thread)
+void TraceRefusal(int kind,const Request& r,uint32_t target) {
+    if(!trace.load()||tracedStroke[kind]==r.sweep.stroke)return;
+    tracedStroke[kind]=r.sweep.stroke;
+    const auto since=cadence.Since(r.session,r.at);
+    char line[240];snprintf(line,sizeof line,"Frame melee trace: stroke=%llu target=%u REFUSED (%s) since_last_landed=%lld ms remaining=%llu ms cycle=%u ms",
+        (unsigned long long)r.sweep.stroke,target,kind?"one creature per stroke":"too soon",since==UINT64_MAX?-1LL:(long long)since,
+        (unsigned long long)cadence.Remaining(r.session,r.at),cycleMs.load());
+    framevr::logging::Write(line);
+}
+void TraceHit(const Request& r,uint32_t target,bool accepted,uint64_t since,uint32_t cycle) {
+    if(!trace.load())return;
+    char line[240];snprintf(line,sizeof line,"Frame melee trace: stroke=%llu target=%u %s since_last_landed=%lld ms cycle=%u ms swing=%.1f m/s",
+        (unsigned long long)r.sweep.stroke,target,accepted?"LANDED":"native rejected",since==UINT64_MAX?-1LL:(long long)since,cycle,r.sweep.speed);
+    framevr::logging::Write(line);
+}
 void __cdecl Apply(const D2RL::PluginContext*,void* token) noexcept {
     std::array<Request,24> batch;size_t n=0;
     {std::lock_guard lock(queueMutex);
@@ -251,6 +277,17 @@ void __cdecl Apply(const D2RL::PluginContext*,void* token) noexcept {
                             }
                             break;
                         }
+                        if(hits.Contains(r.session,r.sweep.stroke,header[2]))continue;
+                        // Attack speed: a basic attack strikes one creature, and
+                        // no sooner than its native attack cycle (IAS, WSM, class)
+                        // after the last landed hit. Misses never start the cycle.
+                        uint32_t cycle=0;
+                        if(attackSpeed.load()) {
+                            if(landed.Contains(r.session,r.sweep.stroke,0)){++extraTargets;TraceRefusal(1,r,header[2]);break;}
+                            if(!cadence.Ready(r.session,r.at)){++tooSoon;TraceRefusal(0,r,header[2]);break;}
+                            cycle=cycleSession.load()==r.session?cycleMs.load():0;
+                        }
+                        const auto since=cadence.Since(r.session,r.at);
                         if(!hits.Insert(r.session,r.sweep.stroke,header[2]))continue;
                         ++contacts;
                         const auto saved=contact;contact={local.game,player,unit,false};
@@ -258,7 +295,11 @@ void __cdecl Apply(const D2RL::PluginContext*,void* token) noexcept {
                         // proc events, criticals, resistances, leech, XP and item
                         // durability. TLS redirects only THIS invocation's target.
                         reinterpret_cast<int(*)(uintptr_t,uintptr_t,int,int)>(d2rsig::Addr(AttackRva))(local.game,player,0,1);
-                        if(contact.accepted){++accepted;framevr::MeleeImpact();}else ++rejected;
+                        if(contact.accepted) {
+                            ++accepted;framevr::MeleeImpact();
+                            if(attackSpeed.load()){cadence.Landed(r.session,r.at,cycle);landed.Insert(r.session,r.sweep.stroke,0);}
+                        } else ++rejected;
+                        TraceHit(r,header[2],contact.accepted,since,cycle);
                         contact=saved;
                         break;
                     }
@@ -306,6 +347,8 @@ void Cancel() {
 void CancelShield() {std::lock_guard lock(queueMutex);current[1].active=false;engines[1].Reset();}
 void CancelWeapon() {std::lock_guard lock(queueMutex);current[0].active=false;engines[0].Reset();}
 bool ShieldReady(){return smiteReady.load();}
+void ConfigureAttackSpeed(bool enabled,bool traceHits){attackSpeed=enabled;trace=traceHits;}
+void SetAttackCycle(uint64_t session,uint32_t milliseconds){cycleMs=milliseconds;cycleSession=session;}
 void Submit(const Sample& sample) {
     uintptr_t token=0;
     {
@@ -338,8 +381,10 @@ void Report() {
     const auto callbacks=applied.exchange(0),retries=recovered.exchange(0),missing=playerMissing.exchange(0);
     const auto mismatch=positionMismatch.exchange(0),monsters=nearby.exchange(0),bodies=bodyMissing.exchange(0);
     Diagnostics d;uint64_t age=0;{std::lock_guard lock(queueMutex);for(auto& e:engines){const auto one=e.TakeDiagnostics();d.discontinuities+=one.discontinuities;d.recovering+=one.recovering;}age=callback.Age(GetTickCount64());}
-    if(!s&&!c&&!g&&!d.discontinuities&&!d.recovering&&!retries)return;
-    char line[560];snprintf(line,sizeof line,"Frame melee: sweep samples=%u physical contacts=%u native accepted=%u rejected=%u missing server=%u intersections=%u stale=%u walls=%u pose resets=%u recovering=%u callbacks=%u abandoned=%u pending_ms=%llu missing_player=%u position_mismatch=%u nearby=%u missing_body=%u",s,c,a,r,g,i,x,w,d.discontinuities,d.recovering,callbacks,retries,(unsigned long long)age,missing,mismatch,monsters,bodies);
+    const auto early=tooSoon.exchange(0),extra=extraTargets.exchange(0);
+    if(!s&&!c&&!g&&!d.discontinuities&&!d.recovering&&!retries&&!early&&!extra)return;
+    char line[680];snprintf(line,sizeof line,"Frame melee: sweep samples=%u physical contacts=%u native accepted=%u rejected=%u missing server=%u intersections=%u stale=%u walls=%u pose resets=%u recovering=%u callbacks=%u abandoned=%u pending_ms=%llu missing_player=%u position_mismatch=%u nearby=%u missing_body=%u attack_speed=%d cycle_ms=%u too_soon=%u extra_targets=%u",s,c,a,r,g,i,x,w,d.discontinuities,d.recovering,callbacks,retries,(unsigned long long)age,missing,mismatch,monsters,bodies,
+        int(attackSpeed.load()),cycleMs.load(),early,extra);
     framevr::logging::Write(line);
 }
 }
