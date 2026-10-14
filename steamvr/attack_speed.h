@@ -4,11 +4,13 @@
 // D2 normal-attack (A1) cadence for free-swing melee. Physical contact replaces
 // the native attack animation, so this restores the animation's pace: one
 // landed hit per attack cycle, shortened by IAS exactly as the game's own
-// breakpoints would. Formula and per-class frame data: The Amazon Basin wiki,
-// "Attack speed" (theamazonbasin.com/wiki/index.php/Attack_speed):
+// breakpoints would. Per-class frame data: The Amazon Basin wiki, "Attack
+// speed" (theamazonbasin.com/wiki/index.php/Attack_speed). Formula as given by
+// Maxroll ("Attack Speed"), which reproduces the Basin's published breakpoint
+// tables at every IAS (the "-1": consecutive attacks share a frame):
 //   EIAS     = floor(120*IAS / (120+IAS))
 //   AnimRate = floor(AnimationSpeed * (100 + EIAS - WSM + SIAS) / 100)
-//   frames   = ceil((FramesPerDirection - 1 - StartingFrame) * 256 / AnimRate)
+//   frames   = ceil((FramesPerDirection - StartingFrame) * 256 / AnimRate) - 1
 // at 25 frames per second. Facts about the game's mechanics; no game data files.
 namespace framevr::attackspeed {
 enum class Weapon:uint8_t {HandToHand,OneHandSwing,OneHandThrust,TwoHandSwing,TwoHandThrust,Staff,Bow,Crossbow,Claw,Count};
@@ -45,8 +47,8 @@ inline int Frames(int classId,Weapon weapon,int ias,int wsm,int sias=0) {
     if(!a.frames)return 0;
     const int percent=std::clamp(100+Eias(ias)-wsm+sias,15,175);
     const int rate=a.speed*percent/100;
-    const int length=(a.frames-1-a.start)*256;
-    return rate>0?(length+rate-1)/rate:0;
+    const int length=(a.frames-a.start)*256;
+    return rate>0?(length+rate-1)/rate-1:0;
 }
 inline uint32_t Milliseconds(int frames) {return frames>0?uint32_t(frames)*1000u/FramesPerSecond:0;}
 // One landed hit per cycle, on the authoritative game thread. Only a native-

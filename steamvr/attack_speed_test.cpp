@@ -17,8 +17,19 @@ int main(){
     };
     for(int c=0;c<ClassCount;++c)for(int w=0;w<int(Weapon::Count);++w)
         Check(Frames(c,Weapon(w),0,0)==acl[c][w],"base cycle matches the published table");
+    // IAS breakpoints published by the Amazon Basin wiki ("Barbarian attack
+    // speed", WSM 0): the minimum IAS for each frame count. The cycle must
+    // reach each count exactly there, and not one IAS sooner.
+    struct Breakpoint {Weapon weapon;int frames,ias;};
+    constexpr Breakpoint barbarian[]={
+        {Weapon::OneHandSwing,14,9},{Weapon::OneHandSwing,13,18},{Weapon::OneHandSwing,12,30},
+        {Weapon::OneHandSwing,11,48},{Weapon::OneHandSwing,10,75},{Weapon::OneHandSwing,9,125},
+        {Weapon::TwoHandSwing,16,8},{Weapon::TwoHandSwing,15,15},{Weapon::TwoHandSwing,14,26},{Weapon::TwoHandSwing,13,39},
+        {Weapon::TwoHandSwing,12,58},{Weapon::TwoHandSwing,11,86},{Weapon::TwoHandSwing,10,138}};
+    for(const auto& b:barbarian)
+        Check(Frames(4,b.weapon,b.ias,0)==b.frames&&Frames(4,b.weapon,b.ias-1,0)==b.frames+1,"Barbarian IAS breakpoints match the published tables");
     Check(Eias(0)==0&&Eias(20)==17&&Eias(60)==40&&Eias(120)==60&&Eias(-15)==0,"IAS has diminishing returns, never negative");
-    // Amazon, no weapon, 60 IAS: EIAS 40 -> AnimRate 358 -> ceil(2816/358) = 8.
+    // Amazon, no weapon, 60 IAS: EIAS 40 -> AnimRate 358 -> ceil(3072/358)-1 = 8.
     Check(Frames(0,Weapon::HandToHand,60,0)==8,"IAS shortens the cycle");
     Check(Frames(4,Weapon::OneHandSwing,0,-20)<Frames(4,Weapon::OneHandSwing,0,0)&&
           Frames(4,Weapon::OneHandSwing,0,20)>Frames(4,Weapon::OneHandSwing,0,0),"negative WSM is faster, positive slower");
