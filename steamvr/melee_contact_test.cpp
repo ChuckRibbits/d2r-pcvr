@@ -12,6 +12,41 @@ struct Sim {
     bool Move(Vec d){sample.hand.p=sample.hand.p+d;sample.blade.base=sample.blade.base+d;sample.blade.tip=sample.blade.tip+d;return Step();}
 };
 int main(){
+    for(double dt:{1./36,1./72,1./90,1./120}) {
+        Sim s;
+        // Slow contact must fail both before and after a real swing.
+        auto move=[&](float speed){
+            const Vec d{float(dt)*speed,0,0};s.sample.time+=dt;
+            s.sample.hand.p=s.sample.hand.p+d;s.sample.blade.base=s.sample.blade.base+d;s.sample.blade.tip=s.sample.blade.tip+d;
+            return s.engine.Step(s.sample,s.sweep);
+        };
+        for(int i=0;i<10;++i)Check(!move(1.0f),"slow approach cannot power weapon damage");
+        bool swung=false;for(int i=0;i<10;++i)swung|=move(2.2f);
+        Check(swung,"comfortable deliberate swing still arms");
+        for(int i=0;i<10;++i)Check(!move(1.0f),"slow follow-through cannot tap after an energetic swing");
+    }
+    {
+        Sim s;
+        for(int i=0;i<20;++i) {
+            const float a=.2f*i;
+            s.sample.hand.q={0,0,std::sin(a/2),std::cos(a/2)};
+            // Shaft lies on Z; wrist roll leaves the actual blade axis still.
+            Check(!s.Step(),"twisting a resting shaft cannot power a hit");
+        }
+    }
+    {
+        Sim s;
+        for(int i=0;i<20;++i) {
+            s.sample.blade.tip=s.sample.blade.base+math::Rotate(math::Yaw(i*.1f),{0,0,-.7f});
+            Check(!s.Step(),"camera turning a blade with a tracked stationary hand cannot power a hit");
+        }
+    }
+    {
+        Sim s;s.sample.shield=true;s.Step(8);
+        bool bash=false;for(int i=0;i<8;++i)bash|=s.Move({.028f,0,0});
+        Check(bash,"shield retains its existing 1.2 m/s onset threshold");
+        Check(s.Move({.02f,0,0}),"shield retains its existing follow-through threshold");
+    }
     const Body body{{0,.3f,0},{0,1.5f,0},.25f};
     Check(Touches({{-.6f,.8f,-.3f},{-.6f,.8f,.3f},.04f},{{.6f,.8f,-.3f},{.6f,.8f,.3f},.04f},body),"fast blade crossing between endpoints hits");
     Check(!Touches({{-.6f,2.1f,-.3f},{-.6f,2.1f,.3f},.04f},{{.6f,2.1f,-.3f},{.6f,2.1f,.3f},.04f},body),"swing above head misses");
@@ -81,10 +116,13 @@ int main(){
         Check(first&&distinct==4,"four wrist-only alternating slashes are four strokes without pausing or translating the hand");
     }
     {
-        Sim s;const auto onset=s.sample.blade;
+        Sim s;
         bool started=false;
-        for(int i=0;i<5&&!started;++i)if(s.Move({.04f,0,0})) {
-            started=true;Check(Length(s.sweep.before.base-onset.base)<.001f,"first powered contact includes initial acceleration path");
+        for(int i=0;i<5&&!started;++i) {
+            const auto prior=s.sample.blade;
+            if(s.Move({.04f,0,0})) {
+                started=true;Check(Length(s.sweep.before.base-prior.base)<.001f,"arming a stroke does not replay earlier unpowered contacts");
+            }
         }
         Check(started,"short deliberate swing starts");
     }

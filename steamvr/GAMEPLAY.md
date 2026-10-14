@@ -567,8 +567,15 @@ animation delay is involved. A contact can hit each creature once per stroke;
 settling or a deliberate translation/rotation reversal permits another stroke.
 A tracking discontinuity drops that motion and requires 80 ms of fresh coherent
 poses; continued swinging can recover without holding the hand still. Strength
-is judged over recent motion, so small windups cannot lock out later slashes. The sweep
-follows the rotating blade’s arc, including the initial acceleration path. Physical controller
+is judged over recent motion, so small windups cannot lock out later slashes. Weapon
+contacts require a coherent 12 cm excursion within 120 ms and at least 1.8 m/s of
+estimated motion at contact, including follow-through. The estimate combines hand
+translation with blade-axis rotation, capped by tracked hand rotation; twisting a
+shaft in place does not power a hit. The sweep follows the rotating blade’s arc
+between the latest poses without replaying earlier unpowered brushes when a
+stroke arms. Shield/Smite gesture thresholds remain unchanged. These weapon
+thresholds pass automated regression checks; headset comfort and weapon-specific
+feel still need testing. Physical controller
 translation/rotation supplies energy, so walking or turning a stationary weapon
 into an enemy does not cause damage. Right trigger remains an explicit native
 button fallback and suppresses simultaneous physical contact attacks.
