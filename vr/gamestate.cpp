@@ -78,7 +78,7 @@ void MaintainToolbar(const PluginContext* ctx) {
     g_toolbarUpdating=false;
 }
 void __cdecl RefreshToolbar(const PluginContext* ctx,void* token) noexcept {
-    if(g_toolbarTicket.Claim(reinterpret_cast<uintptr_t>(token)))MaintainToolbar(ctx);
+    if(g_toolbarTicket.Claim(reinterpret_cast<uintptr_t>(token))){MaintainToolbar(ctx);ReadNpcChoicesRect();}
 }
 void RefreshToolbarAfterMessage(const PluginContext* ctx) {
     if(g_toolbarUpdating)return;
@@ -111,6 +111,10 @@ std::atomic<uint32_t> g_menuEpoch{0};
 std::atomic<bool> g_journalOnly{false};
 std::atomic<bool> g_opaqueMenu{false};
 std::atomic<bool> g_tabbedMenu{false};
+std::atomic<bool> g_npcChoices{false};
+std::mutex npcChoicesMutex;
+int32_t npcChoicesRect[4]{};
+uint64_t npcChoicesAt=0;
 uint64_t g_menuOpenUntil=0; // UI thread only: wait for native layout transition
 std::mutex journalMutex;
 int32_t journalRect[4]{};
@@ -478,6 +482,7 @@ void __cdecl ReadItems(const PluginContext* ctx, void* token) noexcept {
     interactionstate::Capture();
 #endif
     ReadJournalRect();
+    ReadNpcChoicesRect();
 }
 
 std::set<std::string> g_panels;   // open panels, UI thread only
@@ -527,6 +532,8 @@ SharedEvents::UiMessageAction __cdecl OnUiMessage(const PluginContext* ctx, cons
         int menus=0;bool quest=false;
         for(const auto& name:g_panels)if(IsMenuPanel(name)){++menus;quest=name.find("QuestLog")!=std::string::npos;}
         g_journalOnly=menus==1&&quest;
+        const bool npc=menus==1&&g_panels.count("NpcDialogPanel")!=0;
+        if(g_npcChoices.exchange(npc)!=npc){std::lock_guard lock(npcChoicesMutex);npcChoicesAt=0;}
         if(g_journalOnly.load())ReadJournalRect();
         if (menu != before) {
             std::string list;
@@ -683,6 +690,33 @@ int ObjectLight(uint32_t txt, uint32_t mode, float rgb[3]) {
 bool JournalOnly(){return g_journalOnly.load();}
 bool OpaqueMenuOpen(){return g_opaqueMenu.load();}
 bool TabbedMenuOpen(){return g_tabbedMenu.load();}
+bool NpcChoicesOnly(){return g_npcChoices.load();}
+void ReadNpcChoicesRect() {
+    if(!g_npcChoices.load()||!g_widgets||!g_widgets->getWidgetRect||!g_widgets->findPanel)return;
+    Widgets::WidgetHandle panel=0,border=0;Widgets::Rect root{},box{};
+    if(g_widgets->findPanel(g_ctx,"NpcDialogPanel",&panel)!=Widgets::Result::Success||
+       g_widgets->getWidgetRect(g_ctx,panel,&root)!=Widgets::Result::Success)return;
+    box=root;
+    // DialogBorder includes the title, all available choices and the outline;
+    // the panel also contains a full-screen click catcher which is not content.
+    if(g_widgets->findWidget&&g_widgets->findWidget(g_ctx,panel,"DialogBorder",&border)==Widgets::Result::Success) {
+        Widgets::Rect child{};
+        if(g_widgets->getWidgetRect(g_ctx,border,&child)==Widgets::Result::Success&&child.width>0&&child.height>0)
+            box={root.x+child.x,root.y+child.y,child.width,child.height};
+    }
+    if(box.width<16||box.height<16||box.width>3840||box.height>2160||
+       box.x<0||box.y<0||box.x>8192||box.y>8192)return;
+    std::lock_guard lock(npcChoicesMutex);
+    if(!npcChoicesAt||npcChoicesRect[2]!=box.width||npcChoicesRect[3]!=box.height) {
+        char b[180];snprintf(b,sizeof b,"Frame NPC choices: native bounds %d,%d %dx%d",box.x,box.y,box.width,box.height);Log(b);
+    }
+    npcChoicesRect[0]=box.x;npcChoicesRect[1]=box.y;npcChoicesRect[2]=box.width;npcChoicesRect[3]=box.height;npcChoicesAt=GetTickCount64();
+}
+bool NpcChoicesRect(int32_t out[4]) {
+    std::lock_guard lock(npcChoicesMutex);
+    if(!g_npcChoices.load()||!npcChoicesAt||GetTickCount64()-npcChoicesAt>650)return false;
+    std::copy_n(npcChoicesRect,4,out);return true;
+}
 void ReadJournalRect() {
     if(!g_journalOnly.load()||!g_widgets)return;
     Widgets::WidgetHandle panel=0;Widgets::Rect r{};
