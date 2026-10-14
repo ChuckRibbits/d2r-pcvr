@@ -236,6 +236,10 @@ aim across the panel. A small hand tremor will not change methods.
 | Back / close | Right B, or point and click the panel's close/back button |
 | Tabs / page controls | Point and click the native on-screen controls |
 
+Hovering an item with the laser shows its tooltip immediately, including the
+game's equipped-item comparison when a relevant equipped item exists. This
+works in your inventory and merchant inventories without holding a modifier.
+
 Dragging keeps the item held if the ray briefly leaves the panel. Releasing
 the trigger ends the drag at the last valid pointer position. Tracking or
 desktop focus loss releases the injected mouse button; release the trigger
