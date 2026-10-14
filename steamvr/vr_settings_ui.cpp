@@ -62,8 +62,8 @@ std::vector<uint8_t> Paint(const Model& m,Hit hover,const char* runtimeStatus,co
     }else{
     text("DIABLO II / VR SETTINGS",{40,33,960,55},true);
     text("Right-hand laser + trigger",{862,44,378,42},false,true,quiet);
-    const char* tabs[]={"Controls","VR","Video"};
-    for(int i=0;i<3;++i)button(Tabs[i],tabs[i],{Kind::Tab,i},int(m.page)==i);
+    const char* tabs[]={"Controls","VR","Video","HUD"};
+    for(int i=0;i<TabCount;++i)button(Tabs[i],tabs[i],{Kind::Tab,i},int(m.page)==i);
     if(m.page==Page::Controls){
         text("LEFT HAND",{58,209,520,46},true);text("RIGHT HAND",{676,209,520,46},true);
         struct Help{const char* key;const char* action;};
@@ -94,13 +94,14 @@ std::vector<uint8_t> Paint(const Model& m,Hit hover,const char* runtimeStatus,co
             fill(ControllerBox,hover.kind==Kind::ControllerMenu?RGB(63,103,112):RGB(31,48,56));
             const std::string selected=std::string(controllers::Choices[int(m.Get()[ControllerLabels])])+"  v";
             text(selected.c_str(),{ControllerBox.x,ControllerBox.y+7,ControllerBox.w,37},false,true);
-        }else text(runtimeStatus,{40,197,1200,42},false,false,quiet);
+        }else text(m.page==Page::HUD?"Choose how you check your health, mana and navigation.":runtimeStatus,{40,197,1200,42},false,false,quiet);
         for(int row=0;row<RowCount(m.page);++row){
             const Key key=RowKey(m.page,row);const auto& d=Definitions[key];const float value=m.Get()[key];const int y=RowY+row*RowStep;
             fill({40,y-4,1200,RowStep},row%2?RGB(19,31,39):RGB(22,36,44));
             text(d.label,{58,y+1,780,29},true);text(d.detail,{58,y+30,795,28},false,false,quiet);
             char label[96];
             if(key==Foveation){const char* modes[]={"Off","Fixed","Eye tracked"};std::snprintf(label,sizeof label,"%s",modes[int(value)]);}
+            else if(key==VitalsLocation)std::snprintf(label,sizeof label,"%s",vitals::LocationNames[int(value)]);
             else if(key==Dominant)std::snprintf(label,sizeof label,"%s",value>.5f?"Left":"Right");
             else if(d.max==1)std::snprintf(label,sizeof label,"%s",value>.5f?"On":"Off");
             else if(key==Snap&&value==0)std::snprintf(label,sizeof label,"Smooth");
@@ -116,6 +117,11 @@ std::vector<uint8_t> Paint(const Model& m,Hit hover,const char* runtimeStatus,co
         if(m.page==Page::Video){
             text("DLSS, textures and shadows: game Options > Video. Stream resolution: SteamVR.",{40,760,1200,55},false,false,quiet);
             text("Eye tracking requires runtime permission. Some effects may compile on first use.",{40,816,1200,48},false,false,quiet);
+        }
+        if(m.page==Page::HUD){
+            text("Palm: raise your left hand in front of you, turn the palm upward and hold briefly.",{58,525,1160,76},false,false,quiet);
+            text("Release the left trigger and grip to check vitals. Lower or turn your hand to hide them.",{58,615,1160,76},false,false,quiet);
+            text("Minimap and compass stay on the wrist. Alerts are optional; location Off hides all vitals.",{58,705,1160,76},false,false,quiet);
         }
     }
     const char* message=!m.ready?"Configuration unavailable; controls help still works.":m.result==Result::Saving?"Saving...":m.result==Result::Saved?"Saved. Changes take effect live.":m.result==Result::Failed?"Save failed. Your edits are still unsaved.":m.result==Result::Conflict?"Settings changed elsewhere. Current values reloaded.":m.Dirty()?"Unsaved changes. Apply saves; Close discards them.":"World remains live. Right B closes this panel.";

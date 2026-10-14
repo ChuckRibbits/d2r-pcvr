@@ -4,12 +4,13 @@
 #include <cmath>
 #include <cstdint>
 #include "controller_labels.h"
+#include "hand_vitals.h"
 
 namespace framevr::settings {
-enum class Page { Controls, VR, Video };
+enum class Page { Controls, VR, Video, HUD };
 enum Key { Motion, Seated, Dominant, Snap, TurnSpeed, Waist, BeltForward,
            Foveation, Sky, Fog, Ceiling, DrawDistance, ObjectDistance,
-           EyeHeight, ArmSpan, BodyCalibration, SkillGestures, WristMap, WristCompass, ControllerLabels, WeaponSkillIndicators, PlanarSpellAim, Count };
+           EyeHeight, ArmSpan, BodyCalibration, SkillGestures, WristMap, WristCompass, ControllerLabels, WeaponSkillIndicators, PlanarSpellAim, VitalsLocation, CriticalAlerts, Count };
 struct Definition {
     const char* label;
     const char* detail;
@@ -40,13 +41,15 @@ inline constexpr std::array<Definition,Count> Definitions{{
     {"Headset / controller labels", "Automatic uses the active controllers; override if labels do not match", L"interactions",L"controller_labels",0,0,4,1},
     {"Weapon skill indicators", "Show skill icons and names beside both weapons", L"interactions",L"weapon_skill_indicators",0,0,1,1},
     {"Planar spell aiming", "Keep straight projectiles level; Off allows aiming up/down", L"gameplay",L"planar_spell_aim",1,0,1,1},
+    {"Health / mana location", "Wrist, palm-up, either gesture, or hidden", L"interactions",L"vitals_location",0,0,3,1},
+    {"Low health / mana alerts", "Brief popup and vibration when resources are low", L"interactions",L"critical_alerts",0,0,1,1},
 }};
 using Values=std::array<float,Count>;
 inline Values Defaults(){Values v{};for(int i=0;i<Count;++i)v[i]=Definitions[i].defaultValue;return v;}
 inline float Normalize(Key key,float value){
     const auto& d=Definitions[key];
     if(!std::isfinite(value))return d.defaultValue;
-    if(key==ControllerLabels&&(value<d.min||value>d.max||value!=std::round(value)))return d.defaultValue;
+    if((key==ControllerLabels||key==VitalsLocation)&&(value<d.min||value>d.max||value!=std::round(value)))return d.defaultValue;
     value=std::clamp(value,d.min,d.max);
     return d.step==1?std::round(value):value;
 }
@@ -60,7 +63,8 @@ struct Rect {
     bool Contains(float px,float py)const{return px>=x&&px<x+w&&py>=y&&py<y+h;}
 };
 constexpr int Width=1280,Height=1024;
-constexpr Rect Tabs[3]={{40,114,386,60},{447,114,386,60},{854,114,386,60}};
+constexpr int TabCount=4;
+constexpr Rect Tabs[TabCount]={{40,114,285,60},{345,114,285,60},{650,114,285,60},{955,114,285,60}};
 constexpr Rect Apply{965,918,275,68},Close{650,918,275,68},Recenter{40,918,270,68},Calibrate{330,918,300,68};
 constexpr int RowY=242,RowStep=62;
 constexpr Rect ControllerBox{865,181,375,44};
@@ -69,8 +73,12 @@ inline Rect ControllerOption(int option){return {865,225+option*58,375,58};}
 inline Rect Decrease(int row){return {865,RowY+row*RowStep,64,52};}
 inline Rect Increase(int row){return {1176,RowY+row*RowStep,64,52};}
 inline Rect ValueBox(int row){return {942,RowY+row*RowStep,221,52};}
-inline int RowCount(Page page){return page==Page::VR?10:page==Page::Video?6:0;}
-inline Key RowKey(Page page,int row){return page==Page::VR&&row>=7?Key(SkillGestures+row-7):Key((page==Page::Video?7:0)+row);}
+inline int RowCount(Page page){return page==Page::VR?8:page==Page::Video?6:page==Page::HUD?4:0;}
+inline Key RowKey(Page page,int row){
+    constexpr Key hud[]={VitalsLocation,CriticalAlerts,WristMap,WristCompass};
+    if(page==Page::HUD)return hud[row];
+    return page==Page::VR&&row==7?SkillGestures:Key((page==Page::Video?7:0)+row);
+}
 enum class Kind { None, Tab, Change, Apply, Close, Recenter, Calibrate, ControllerMenu, ControllerChoice, DismissMenu };
 struct Hit {Kind kind=Kind::None;int index=-1,delta=0;};
 inline Hit HitTest(Page page,float u,float v,bool controllerMenu=false){
@@ -84,7 +92,7 @@ inline Hit HitTest(Page page,float u,float v,bool controllerMenu=false){
             return {Kind::DismissMenu}; // Never click through the dropdown.
         }
     }
-    for(int i=0;i<3;++i)if(Tabs[i].Contains(x,y))return {Kind::Tab,i};
+    for(int i=0;i<TabCount;++i)if(Tabs[i].Contains(x,y))return {Kind::Tab,i};
     if(Apply.Contains(x,y))return {Kind::Apply};
     if(Close.Contains(x,y))return {Kind::Close};
     if(Recenter.Contains(x,y))return {Kind::Recenter};
@@ -129,7 +137,7 @@ public:
         if(!open)return {};
         if(hit.kind==Kind::Close){Close();return {};}
         if(hit.kind==Kind::DismissMenu){DismissControllerMenu();return {};}
-        if(hit.kind==Kind::Tab&&hit.index>=0&&hit.index<3){controllerMenu=false;page=Page(hit.index);++revision;return {};}
+        if(hit.kind==Kind::Tab&&hit.index>=0&&hit.index<TabCount){controllerMenu=false;page=Page(hit.index);++revision;return {};}
         if(!ready||Busy())return {};
         if(hit.kind==Kind::ControllerMenu&&page==Page::VR){controllerMenu=!controllerMenu;++revision;return {};}
         if(hit.kind==Kind::ControllerChoice&&page==Page::VR&&controllerMenu&&hit.index>=0&&hit.index<int(controllers::Choice::Count)){
