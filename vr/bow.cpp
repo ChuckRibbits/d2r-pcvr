@@ -76,6 +76,12 @@ Gate current{};uintptr_t clientHero=0;
 Once once;
 Once spellOnce[2];
 framevr::aimassist::History assistHistory[2]; // game thread only
+struct AssistStats {
+    std::atomic<unsigned> casts{0},bodies{0},heightMisses{0},eligible{0},blocked{0},direct{0},corrected{0};
+    std::atomic<int> mode{0};
+    std::atomic<float> degrees{0};
+};
+AssistStats assistStats[2];
 std::array<Shot,4> pending{};size_t pendingCount=0;
 framevr::CallbackTicket gameCallback,uiCallback;
 uint64_t maintenanceAt=0;
@@ -599,6 +605,8 @@ void AssistSpell(uintptr_t game,uintptr_t player) {
     if(shot.hand<0||shot.hand>1)return;
     auto& history=assistHistory[shot.hand];
     auto selection=history.Begin(shot);
+    auto& stats=assistStats[shot.hand];
+    ++stats.casts;stats.mode=shot.aimAssist;
     if(!framevr::aimassist::Limit(shot.aimAssist))return;
     const auto originRoom=reinterpret_cast<uintptr_t(*)(uintptr_t)>(d2rsig::Addr(RoomRva))(player);
     uintptr_t buckets[128]{};unsigned visited=0;
@@ -616,16 +624,20 @@ void AssistSpell(uintptr_t game,uintptr_t player) {
                 if(delta.x*delta.x+delta.z*delta.z<=broad*broad) {
                     Vec bottom{},top{};float radius=0;
                     if(Body(target,h[1],shot,bottom,top,radius)) {
+                        ++stats.bodies;
+                        if(shot.planar&&!framevr::spellcast::NativePath(shot.skill)&&
+                           (shot.origin.y<=bottom.y-radius||shot.origin.y>=top.y+radius))++stats.heightMisses;
                         const auto candidate=framevr::aimassist::Evaluate(shot,h[2],bottom,top,radius);
                         if(selection.Better(candidate)&&
                            reinterpret_cast<int(*)(uintptr_t,uintptr_t,uintptr_t)>(d2rsig::Addr(RelationRva))(game,player,target)) {
+                            ++stats.eligible;
                             auto room=originRoom;
                             const auto end=shot.origin+candidate.direction*candidate.distance;
                             const float barrier=WallEntry(GridPoint(shot,shot.origin),GridPoint(shot,end),shot.unitsPerMetre,[&](int x,int z) {
                                 room=reinterpret_cast<uintptr_t(*)(uintptr_t,int,int)>(d2rsig::Addr(RoomPointRva))(room,x,z);
                                 return !room||reinterpret_cast<uint16_t(*)(uintptr_t,int,int,int,int)>(d2rsig::Addr(MaskRva))(room,x,z,1,0x804)!=0;
                             });
-                            if(barrier>=1)selection.Accept(candidate);
+                            if(barrier>=1)selection.Accept(candidate);else ++stats.blocked;
                         }
                     }
                 }
@@ -634,7 +646,10 @@ void AssistSpell(uintptr_t game,uintptr_t player) {
         target=next;
     }
     const auto& best=selection.Best();history.Finish(best);
-    if(best.valid&&!best.direct)shot.direction=best.direction;
+    if(best.valid) {
+        if(best.direct)++stats.direct;
+        else {shot.direction=best.direction;++stats.corrected;stats.degrees=best.angle/framevr::aimassist::Degrees;}
+    }
 }
 bool SpellTarget(uintptr_t game,uintptr_t player,int* x,int* y) {
     if(launch.slot<0||launch.game!=game||launch.player!=player||
@@ -717,6 +732,16 @@ void Install() {
 }
 void Report() {
     spellvr::Report();
+    for(int hand=0;hand<2;++hand) {
+        auto& a=assistStats[hand];
+        const auto casts=a.casts.exchange(0),bodies=a.bodies.exchange(0),height=a.heightMisses.exchange(0);
+        const auto eligible=a.eligible.exchange(0),blocked=a.blocked.exchange(0),direct=a.direct.exchange(0),corrected=a.corrected.exchange(0);
+        if(casts||corrected||direct) {
+            char line[320];snprintf(line,sizeof line,"Frame spell assist: hand=%d mode=%d casts=%u bodies=%u outside_height=%u eligible=%u blocked=%u direct=%u corrected=%u last_correction=%.2fdeg",
+                hand,a.mode.load(),casts,bodies,height,eligible,blocked,direct,corrected,a.degrees.load());
+            framevr::logging::Write(line);
+        }
+    }
     const auto s=submitted.exchange(0),n=spawned.exchange(0),v=visuals.exchange(0),x=stale.exchange(0),r=refused.exchange(0);
     const auto c=contacts.exchange(0),w=walls.exchange(0),e=expired.exchange(0);
     const auto b=boundMeshes.exchange(0),i=ignoredEntities.exchange(0);

@@ -4,7 +4,7 @@
 namespace framevr::aimassist {
 using namespace bowflight;
 inline constexpr float Range=12.f,Degrees=.01745329252f;
-inline float Limit(int mode){return mode==1?4*Degrees:mode==2?8*Degrees:0;}
+inline float Limit(int mode){return mode==1?4*Degrees:mode==2?12*Degrees:0;}
 struct Candidate {
     Vec direction{};
     float angle=0,distance=0;
@@ -12,7 +12,7 @@ struct Candidate {
     bool direct=false,valid=false;
 };
 // Find the closest section of a vertical body capsule to the hand ray, then
-// rotate only far enough to enter it. No target position or pointer survives
+// rotate into its interior. No target position or pointer survives
 // launch. Ground volleys use the footprint; planar balls require a body at
 // their actual muzzle height rather than silently introducing pitch.
 inline Candidate Evaluate(const Shot& shot,uint32_t id,Vec bottom,Vec top,float radius) {
@@ -47,9 +47,14 @@ inline Candidate Evaluate(const Shot& shot,uint32_t id,Vec bottom,Vec top,float 
     const Vec toward=to*(1/distance);
     const float cosine=std::clamp(math::Dot(direction,toward),-1.f,1.f);
     const float theta=std::acos(cosine);
-    // Small inset avoids a numerically tangent shot while preserving aim.
-    const float turn=std::max(0.f,theta-std::asin(std::clamp(section*.95f/distance,0.f,1.f)));
-    if(turn>limit)return out;
+    // Acquisition needs a real intersection inside the angular budget.
+    // Grazing 95% of the radius made tiny target movements enough to miss.
+    // Light aims halfway inside; Strong aims at the axis, capped at the same
+    // correction limit even for targets on the acquisition boundary.
+    const float entryTurn=std::max(0.f,theta-std::asin(std::clamp(section*.95f/distance,0.f,1.f)));
+    if(entryTurn>limit)return out;
+    const float inset=shot.aimAssist==1?.5f:0.f;
+    const float turn=std::min(limit,std::max(0.f,theta-std::asin(std::clamp(section*inset/distance,0.f,1.f))));
     const Vec side=math::Normalized(toward-direction*cosine);
     out.direction=math::Normalized(direction*std::cos(turn)+side*std::sin(turn));
     if(planar)out.direction.y=0;

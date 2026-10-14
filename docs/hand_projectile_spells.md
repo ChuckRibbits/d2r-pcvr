@@ -30,11 +30,14 @@ is `[gameplay] projectile_aim_assist=0`, `1`, or `2`, respectively. This applies
 only to the five supported Sorceress hand spells above, independently for each
 hand. Bow, javelin and native fallback skills retain their existing aiming.
 
-Light permits up to four degrees of launch correction; Strong permits eight.
+Light permits up to four degrees of launch correction; Strong permits twelve.
 On an accepted cast, assist checks living hostile monster bodies within a
 12-metre ray reach and requires a clear path from the hand muzzle. A shot
 already intersecting an eligible body keeps its exact direction. Otherwise,
-assist favors a small correction into a nearby body, with a slight preference
+Light aims halfway inside the body's radius; Strong aims at its axis, capped
+at the correction limit. This leaves more room for enemy movement than aiming
+at the edge, but does not predict movement or guarantee a hit. Assist favors
+a small correction into a nearby body, with a slight preference
 for the previous target during uninterrupted repeat casts. That preference
 never widens the angle or range limits and expires after 750 ms without a cast.
 Release, lifecycle and assignment changes reset it. Aim outside the assist
@@ -117,10 +120,19 @@ game routines.
 The aim-assist fixtures cover angular limits across headings and pitches,
 unchanged direct shots, planar/free/ground targeting, corrected-path wall
 rejection, selection preference and its reset conditions, independent hands,
-and settings normalization, interaction and INI persistence. The Windows build
-and all 57 checks passed for aim assist; its settings layout was also inspected
-with the synthetic preview. Aim-assist feel and native targeting have not yet
-been tested in a headset.
+and settings normalization, interaction and INI persistence. Follow-up fixtures
+cover a small sideways target movement after launch and the wider Strong limit.
+The Windows build and all 57 checks passed; its settings layout was also
+inspected with the synthetic preview. The initial headset test reported
+Fireballs passing beside enemies even on Strong. The deeper correction and
+wider Strong cone still need headset validation.
+
+The existing runtime log now includes `Frame spell assist` counters per hand:
+the sampled mode (0 Off, 1 Light, 2 Strong), casts, nearby bodies, bodies outside
+the launch height, eligible candidates considered for selection, paths blocked
+by terrain, direct shots, corrections, and the last correction angle. These
+periodic diagnostics distinguish weak correction from a missing target or an
+unexpected setting without retaining native enemy pointers after launch.
 
 On an offline Sorceress in Steam or Battle.net D2R 3.3.93787:
 

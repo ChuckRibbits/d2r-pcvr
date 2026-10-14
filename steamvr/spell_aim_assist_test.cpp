@@ -16,7 +16,22 @@ int main() {
     auto s=ShotAt();
     assert(!Enemy(ShotAt(0),1,0).valid&&!Enemy(ShotAt(3),1,0).valid);
     assert(Enemy(s,1,0).direct&&Enemy(s,1,3).valid&&!Enemy(s,1,8).valid);
-    assert(Enemy(ShotAt(2),1,8).valid&&!Enemy(ShotAt(2),1,12).valid);
+    assert(Enemy(ShotAt(2),1,12).valid&&!Enemy(ShotAt(2),1,15).valid);
+    // A small enemy step defeated the old nearly tangent correction. Aim
+    // farther inside, while keeping the correction bounded at the cone edge.
+    for(int mode:{1,2}) {
+        const auto shot=ShotAt(mode);
+        const Vec center=shot.origin+Vec{std::sin(5*Degrees),0,std::cos(5*Degrees)}*6;
+        const auto assisted=Evaluate(shot,1,center-Vec{0,.4f,0},center+Vec{0,.4f,0},.3f);
+        assert(assisted.valid&&!assisted.direct);
+        float entry=0;
+        const Vec shifted=center+Vec{.05f,0,0};
+        assert(CapsuleEntry(shot.origin,shot.origin+assisted.direction*Range,shifted-Vec{0,.4f,0},shifted+Vec{0,.4f,0},.3f,entry));
+        if(mode==2)assert(math::Dot(assisted.direction,math::Normalized(center-shot.origin))>.999999f);
+    }
+    assert(!Enemy(ShotAt(1),1,10).valid&&Enemy(ShotAt(2),1,10).valid);
+    const auto boundary=Enemy(ShotAt(2),1,12.5f);
+    assert(boundary.valid&&boundary.angle<=Limit(2));
     assert(!Enemy(s,1,180).valid&&!Enemy(s,1,0,14).valid);
     auto invalid=s;invalid.direction={};assert(!Enemy(invalid,1,0).valid);
     invalid=s;invalid.origin.x=NAN;assert(!Enemy(invalid,1,0).valid);
