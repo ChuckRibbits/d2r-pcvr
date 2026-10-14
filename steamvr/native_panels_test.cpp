@@ -28,6 +28,10 @@ int main(){
     Check(dwell.Ready(1,4,2,2,2),"Original mode delegates delay to native producer");
     Check(!panels::ItemCursorSnap(true,true,true),"item draw uses laser coordinates outside pointer callbacks");
     Check(panels::ItemCursorSnap(false,true,true)&&panels::ItemCursorSnap(true,false,true),"desktop and unrelated cursor queries remain native");
+    Check(panels::UiCanvasCaller(0x843ed5)&&panels::UiCanvasCaller(0x8453a9)&&
+        panels::UiCanvasCaller(0x846239)&&panels::UiCanvasCaller(0x14f31d),"native UI layout and cursor queries use VR canvas");
+    for(auto caller:{uintptr_t(0),uintptr_t(0x904b3d),uintptr_t(0x667ff1),uintptr_t(0x668003),uintptr_t(0x846238)})
+        Check(!panels::UiCanvasCaller(caller),"movies, engine queries and unknown return sites stay native");
     for(auto name:{"WaypointPanel","WaypointPanelExpansion","WaypointPanelOriginal"})
         Check(panels::Modal(name)&&panels::OpaqueBackground(name),"waypoint destinations use the shared opaque black background instead of different per-eye worlds");
     for(auto name:{"UISwitcher","VendorPanelLayout","VendorPanelOriginalLayout","TradeLayout","GamblePanel",
