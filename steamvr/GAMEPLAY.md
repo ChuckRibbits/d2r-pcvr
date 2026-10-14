@@ -207,6 +207,15 @@ left-hand vibration below 25% health or 10% mana in spell mode. Location **Off**
 suppresses these alerts too. Palm placement and gesture comfort still require
 headset testing on Quest and Index controllers.
 
+Native OpenXR gameplay hides the original flat bottom toolbar (health/mana
+orbs, belt and skill buttons), including with older `hud.hide=0` profiles or
+legacy camera settings that would otherwise draw it back into the view. This
+is automatic and does not change your INI. Native inventory, dialogue and
+other menu panels remain available; desktop/legacy camera HUD preferences
+still apply outside active headset gameplay. Labels and tooltips outside the
+toolbar strip remain visible. Verify both eyes and the game's different UI
+safe-area sizes when testing this fix in a headset.
+
 The Map tab preserves your selected spell and uses the native explored areas
 and markers. Choose the left or right corner minimap layout in game options;
 full-screen automap capture is unsupported. When neither the wrist nor the Map
