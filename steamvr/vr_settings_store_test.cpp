@@ -28,6 +28,17 @@ int main(){
     Check(vrsettings::Submit(request)&&!vrsettings::Submit(request),"one queued transaction at a time");
     Check(vrsettings::Read().result==Result::Saving&&vrsettings::Poll(name),"write transaction succeeds");
     auto saved=vrsettings::Read();Check(saved.result==Result::Saved&&saved.values[Foveation]==2&&saved.values[Motion]==1,"saved values round trip");
+    Check(saved.values[RenderResolution]==0,"legacy profile keeps desktop resolution until opted in");
+    for(int choice=1;choice<framevr::resolution::ChoiceCount;++choice){
+        model.Open(vrsettings::Read());model.Click({Kind::Change,RenderResolution,1});request=model.Click({Kind::Apply});
+        Check(vrsettings::Submit(request)&&vrsettings::Poll(name),"save render resolution");
+        saved=vrsettings::Read();
+        Check(saved.values[RenderResolution]==choice&&Int(path,L"render",L"vr_resolution")==choice&&Int(path,L"custom",L"keep")==12345,
+            "headset and all fixed presets survive reload without changing unrelated settings");
+    }
+    model.Open(saved);for(int i=1;i<framevr::resolution::ChoiceCount;++i)model.Click({Kind::Change,RenderResolution,-1});
+    request=model.Click({Kind::Apply});Check(vrsettings::Submit(request)&&vrsettings::Poll(name),"restore desktop resolution");
+    saved=vrsettings::Read();Check(saved.values[RenderResolution]==0&&Int(path,L"render",L"vr_resolution")==0,"desktop preference survives reload");
     for(int location=1;location<=3;++location){
         model.Open(vrsettings::Read());model.Click({Kind::Change,VitalsLocation,1});request=model.Click({Kind::Apply});
         Check(vrsettings::Submit(request)&&vrsettings::Poll(name),"save vitals location");
