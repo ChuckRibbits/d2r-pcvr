@@ -15,6 +15,13 @@ applied, retaining continuous 360-degree yaw and the muzzle's launch height.
 Within five degrees of vertical, that hand keeps its last stable heading;
 without one, it waits for a usable aim. Turning afterward does not steer a shot.
 
+In **VR Settings > Controls**, **Planar spell aiming** defaults to **On**, including
+existing profiles. Turn it **Off** and press **Apply** for full up/down aiming of
+Fire Bolt, Fireball, Ice Bolt and Ice Blast. The change applies to new casts from
+both hands without restarting; projectiles already in flight keep their original
+direction. Charged Bolt retains its native planar wandering in either mode.
+The saved preference is `[gameplay] planar_spell_aim=1` (or `0` for free aim).
+
 The native skill-start and skill-dispatch routines validate and consume mana
 on the game thread. Each hand supplies its own skill in a scoped selection;
 the original selection is restored before returning. No controller cast button
@@ -80,6 +87,9 @@ On an offline Sorceress in Steam or Battle.net D2R 3.3.93787:
    snap-turn through all headings; tilt the controllers up and down. Check that
    flight stays level at the muzzle height, without snapping to cardinal headings;
    new shots start at the correct hand and old shots keep their trajectory.
+   Turn Planar spell aiming Off, Apply, and check up/down fire from both hands;
+   restore On and confirm new shots return to level flight. Reopen settings and
+   restart to check that the chosen mode persists.
 3. Check Fireball splash and Charged Bolt's native spread against clustered
    enemies and walls, including a room boundary. Check bolt counts, repeated
    two-handed volleys, hit effects and travel audio in both eyes.
