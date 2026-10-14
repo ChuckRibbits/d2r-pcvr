@@ -4,6 +4,12 @@
 
 namespace framevr::panels {
 inline constexpr char TabbedMenu[]="UISwitcher";
+// Shops bypass UISwitcher but occupy the same upper widescreen content band.
+// Keep this independent of opacity: waypoint and dialogue layouts differ.
+inline bool UpperBand(std::string_view name) {
+    return name==TabbedMenu||name.starts_with("Vendor")||
+        name.starts_with("Trade")||name.starts_with("Gamble");
+}
 // These management and waypoint canvases share one opaque image against black in XR.
 // VendorPanelLayout also hosts NPC gambling; keep speech/quest panels spatial.
 inline bool OpaqueBackground(std::string_view name) {
@@ -47,10 +53,10 @@ inline Size Fit(unsigned width,unsigned height,float maxWidth=Width) {
     if(aspect<16.f/9.f)return {maxHeight*aspect,maxHeight};
     return {maxWidth,maxWidth/aspect};
 }
-// UISwitcher occupies the upper widescreen band of a taller native canvas.
+// UISwitcher and merchant panes occupy the upper widescreen band of a taller canvas.
 // Center that band on the placement anchor, retaining the lower canvas for
 // HUD hints, tooltips and drags. Other native layouts use the canvas center.
-inline float TabbedOffset(Size canvas) {
+inline float UpperBandOffset(Size canvas) {
     return -.5f*std::max(0.f,canvas.height-canvas.width*9.f/16.f);
 }
 

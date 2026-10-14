@@ -160,3 +160,13 @@ Diagnostics in `d2rloader/logs/d2r-vr-frame.log` report the requested, source,
 physical and recommended dimensions; matching depth allocations; and the
 OpenXR session's actual eye size. A missing pointer hook or unavailable runtime
 limits retains the desktop path rather than enabling misaligned input.
+
+Merchant trade/repair and gambling screens bypass UISwitcher. They now receive
+its upper widescreen-band height correction too, keeping the approved 0.55 m
+distance and existing scale. At 4096 square this lowers the full canvas by
+about 23.4 cm, centering the visible shop and inventory panes at eye height.
+The laser uses the same pose; tooltips and confirmations remain on the complete
+canvas. NPC choice crops and waypoint/journal placement are unchanged. The
+October 13 20:22 recording confirms the previously high merchant placement;
+the correction still needs an offline headset check of trading, repairs,
+confirmation buttons and item dragging.

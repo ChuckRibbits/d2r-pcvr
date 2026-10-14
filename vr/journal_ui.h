@@ -3,7 +3,7 @@
 namespace gamestate {
 bool JournalOnly();
 bool OpaqueMenuOpen();
-bool TabbedMenuOpen();
+bool UpperBandMenuOpen();
 bool NpcChoicesOnly();
 bool NpcChoicesRect(int32_t out[4]);
 void ReadNpcChoicesRect(); // UI thread only
