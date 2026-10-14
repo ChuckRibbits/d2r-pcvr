@@ -576,11 +576,30 @@ animation delay is involved. A contact can hit each creature once per stroke;
 settling or a deliberate translation/rotation reversal permits another stroke.
 A tracking discontinuity drops that motion and requires 80 ms of fresh coherent
 poses; continued swinging can recover without holding the hand still. Strength
-is judged over recent motion, so small windups cannot lock out later slashes. The sweep
-follows the rotating blade’s arc, including the initial acceleration path. Physical controller
+is judged over recent motion, so small windups cannot lock out later slashes. Weapon
+contacts require a coherent 18 cm excursion within 120 ms and at least 12.0 m/s of
+estimated motion at contact, including follow-through. The estimate combines hand
+translation with blade-axis rotation, capped by tracked hand rotation; twisting a
+shaft in place does not power a hit. The sweep follows the rotating blade’s arc
+between the latest poses without replaying earlier unpowered brushes when a
+stroke arms. Shield/Smite gesture thresholds remain unchanged. These weapon
+thresholds are adjustable under **VR Settings > Combat > Melee hit speed**
+(minimum 1.5 m/s, no upper cap, 0.25 steps, default 12.0). Apply saves
+`[gameplay] melee_hit_speed` and updates the detector live; changing it clears
+the previous stroke. Stroke travel remains 18 cm. The earlier 1.8 m/s candidate
+was too permissive in owner testing; the firmer default still needs headset testing. Physical controller
 translation/rotation supplies energy, so walking or turning a stationary weapon
 into an enemy does not cause damage. Right trigger remains an explicit native
 button fallback and suppresses simultaneous physical contact attacks.
+
+Confirmed weapon and shield impacts request a single 10 ms haptic tap at 95%
+amplitude and 180 Hz on the next XR input update, replacing the previous 45 ms
+buzz. Events are consumed once rather than held during overlap. A dedicated timer
+explicitly stops the vibration at its deadline even if rendering stalls; pulse
+replacement, focus loss and session shutdown cancel pending stops safely.
+This follows owner feedback that the Steam Frame sustained even one short pulse.
+Exact feel and frequency support depend on the controller/runtime and need
+headset validation. Existing saved melee speed choices remain unchanged.
 
 Collision volumes are currently **approximations**, not skinned mesh hitboxes:
 weapon category determines length/radius on the final attachment; native monster
@@ -829,6 +848,10 @@ without failures. The final free-swing run recorded 58 physical contacts and
 Arrow/spell live verification remains open.
 
 ### Ice Bolt visual height correction
+
+New or missing combat preferences default to **Planar spell aiming: Off** and
+**Projectile aim assist: Strong**. Players can still choose planar aiming, Light
+assistance or Off in VR Settings; explicit saved preferences are preserved.
 
 Hand-cast Ice Bolt uses the same airborne flight/planar aiming path as Fireball;
 Charged Bolt alone keeps its native ground path. Spell visuals now identify the

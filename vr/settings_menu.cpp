@@ -80,7 +80,7 @@ Result Save(const wchar_t* path,const Request& r){
 framevr::settings::Snapshot Read(){std::lock_guard lock(mutex);return published;}
 bool Submit(const framevr::settings::Request& r){
     using namespace framevr::settings;
-    if(!r.sequence||!r.changed||(r.changed>>Count)||r.changed!=Changed(r.base,r.values))return false;
+    if(!r.sequence||!r.changed||(uint64_t(r.changed)>>Count)||r.changed!=Changed(r.base,r.values))return false;
     for(int i=0;i<Count;++i)if(!std::isfinite(r.base[i])||!std::isfinite(r.values[i])||Normalize(Key(i),r.values[i])!=r.values[i])return false;
     if(r.values[BodyCalibration]==1&&!framevr::calibration::Stored(r.values))return false;
     std::lock_guard lock(mutex);if(busy)return false;
