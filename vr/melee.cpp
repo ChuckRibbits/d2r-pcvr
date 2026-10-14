@@ -101,6 +101,7 @@ bool Allowed(const Request& r) {
     std::lock_guard lock(queueMutex);
     const auto& now=current[r.sample.shield?1:0];
     return now.active&&r.session==inputSession&&r.sample.epoch==now.epoch&&r.sample.equipment==now.equipment&&
+        r.sample.minWeaponSpeed==now.minWeaponSpeed&&
         r.sample.skillSlot==now.skillSlot&&r.sample.skillOwner==now.skillOwner&&r.sample.skillContext==now.skillContext&&
         GetTickCount64()-r.at<=150&&r.session==gamestate::LocalPlayer()&&!gamestate::MenuOpen()&&
         r.sample.equipment==(gamestate::HandsKey()^(gamestate::WeaponSet()<<30));

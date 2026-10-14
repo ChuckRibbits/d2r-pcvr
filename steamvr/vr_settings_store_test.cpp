@@ -14,6 +14,13 @@ int main(){
     Check(WritePrivateProfileStringW(L"custom",L"keep",L"12345",name),"write unrelated key");
     Check(WritePrivateProfileStringW(L"render",L"rings",L"6",name),"write existing setting");
     vrsettings::Poll(name);auto before=vrsettings::Read();
+    Check(before.values[MeleeHitSpeed]==3,"missing melee speed uses firmer default");
+    for(float choice:{3.25f,3.f}) {
+        Model melee;melee.Open(vrsettings::Read());melee.Click({Kind::Change,MeleeHitSpeed,choice>3?1:-1});
+        const auto request=melee.Click({Kind::Apply});
+        Check(vrsettings::Submit(request)&&vrsettings::Poll(name),"highest mask bit persists melee speed");
+        Check(vrsettings::Read().values[MeleeHitSpeed]==choice&&Int(path,L"custom",L"keep")==12345,"fractional melee speed reloads without altering unrelated data");
+    }
     Check(before.values[MenuDistance]==1&&before.values[TooltipTiming]==0,"legacy profile uses Medium distance and Instant tooltips");
     Check(before.values[ProjectileAimAssist]==0,"legacy profile defaults to unassisted aim");
     for(int choice:{1,2,0}) {

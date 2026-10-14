@@ -7,6 +7,15 @@ static void Check(bool b,const char* label){if(!b){std::fprintf(stderr,"FAIL: %s
 static Hit At(Page p,Rect r){return HitTest(p,(r.x+r.w*.5f)/Width,(r.y+r.h*.5f)/Height);}
 int main(){
     Snapshot s;s.ready=true;
+    Check(s.values[MeleeHitSpeed]==3,"melee defaults to firmer speed");
+    {Model melee;melee.Open(s);melee.Click({Kind::Tab,int(Page::Combat)});
+        const auto hit=At(Page::Combat,Increase(0));
+        Check(hit.index==MeleeHitSpeed&&hit.kind==Kind::Change,"combat speed control hit target");
+        melee.Click(hit);Check(melee.Get()[MeleeHitSpeed]==3.25f,"melee speed quarter step");
+        const auto request=melee.Click({Kind::Apply});
+        Check(request.changed==(1u<<MeleeHitSpeed),"highest mask bit saves only melee speed");
+        Check(Normalize(MeleeHitSpeed,NAN)==3&&Normalize(MeleeHitSpeed,0)==1.5f&&Normalize(MeleeHitSpeed,99)==6,"melee speed UI bounds");
+    }
     Check(s.values[MenuDistance]==1&&s.values[TooltipTiming]==0,"comfortable Medium distance and Instant hover defaults");
     for(auto key:{MenuDistance,TooltipTiming}) {
         Check(Normalize(key,1.5f)==Definitions[key].defaultValue&&Normalize(key,9)==Definitions[key].defaultValue,"invalid comfort enums fall back safely");

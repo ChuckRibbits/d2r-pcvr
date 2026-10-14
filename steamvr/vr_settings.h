@@ -8,11 +8,11 @@
 #include "vr_resolution.h"
 
 namespace framevr::settings {
-enum class Page { Controls, VR, Video, HUD };
+enum class Page { Controls, VR, Video, HUD, Combat };
 enum Key { Motion, Seated, Dominant, Snap, TurnSpeed, Waist, BeltForward,
            Foveation, Sky, Fog, Ceiling, DrawDistance, ObjectDistance,
-           EyeHeight, ArmSpan, BodyCalibration, SkillGestures, WristMap, WristCompass, ControllerLabels, WeaponSkillIndicators, PlanarSpellAim, VitalsLocation, CriticalAlerts, RenderResolution, NavigationLocation, SmoothTurn, OrdinaryMobBars, MenuDistance, TooltipTiming, ProjectileAimAssist, Count };
-static_assert(Count<32,"settings change mask capacity");
+           EyeHeight, ArmSpan, BodyCalibration, SkillGestures, WristMap, WristCompass, ControllerLabels, WeaponSkillIndicators, PlanarSpellAim, VitalsLocation, CriticalAlerts, RenderResolution, NavigationLocation, SmoothTurn, OrdinaryMobBars, MenuDistance, TooltipTiming, ProjectileAimAssist, MeleeHitSpeed, Count };
+static_assert(Count<=32,"settings change mask capacity");
 struct Definition {
     const char* label;
     const char* detail;
@@ -52,6 +52,7 @@ inline constexpr std::array<Definition,Count> Definitions{{
     {"Menu distance", "Eye-level inventory, merchant and main menus", L"hud",L"menu_distance",1,0,2,1},
     {"Item tooltip timing", "Laser hover: Instant, Short (300 ms), or Original timing", L"hud",L"tooltip_timing",0,0,2,1},
     {"Projectile aim assist", "Hand spells: Light assists launch; Strong adds gentle homing", L"gameplay",L"projectile_aim_assist",0,0,2,1},
+    {"Melee hit speed", "Higher requires faster weapon swings; shield bash is unchanged", L"gameplay",L"melee_hit_speed",3,1.5f,6,.25f},
 }};
 using Values=std::array<float,Count>;
 inline Values Defaults(){Values v{};for(int i=0;i<Count;++i)v[i]=Definitions[i].defaultValue;return v;}
@@ -77,8 +78,8 @@ struct Rect {
     bool Contains(float px,float py)const{return px>=x&&px<x+w&&py>=y&&py<y+h;}
 };
 constexpr int Width=1280,Height=1024;
-constexpr int TabCount=4;
-constexpr Rect Tabs[TabCount]={{40,114,285,60},{345,114,285,60},{650,114,285,60},{955,114,285,60}};
+constexpr int TabCount=5;
+constexpr Rect Tabs[TabCount]={{40,114,224,60},{284,114,224,60},{528,114,224,60},{772,114,224,60},{1016,114,224,60}};
 constexpr Rect Apply{965,918,275,68},Close{650,918,275,68},Recenter{40,918,270,68},Calibrate{330,918,300,68};
 constexpr int RowY=242,RowStep=62;
 constexpr Rect ControllerBox{865,181,375,52};
@@ -90,8 +91,9 @@ inline Rect ControllerOption(int option){return {865,233+option*58,375,58};}
 inline Rect Decrease(int row){return {865,RowY+row*RowStep,64,52};}
 inline Rect Increase(int row){return {1176,RowY+row*RowStep,64,52};}
 inline Rect ValueBox(int row){return {942,RowY+row*RowStep,221,52};}
-inline int RowCount(Page page){return page==Page::VR?10:page==Page::Video?7:page==Page::HUD?5:0;}
+inline int RowCount(Page page){return page==Page::Combat?1:page==Page::VR?10:page==Page::Video?7:page==Page::HUD?5:0;}
 inline Key RowKey(Page page,int row){
+    if(page==Page::Combat)return MeleeHitSpeed;
     constexpr Key hud[]={VitalsLocation,CriticalAlerts,NavigationLocation,MenuDistance,TooltipTiming};
     if(page==Page::HUD)return hud[row];
     if(page==Page::Video&&row==6)return RenderResolution;

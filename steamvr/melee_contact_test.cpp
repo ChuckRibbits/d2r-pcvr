@@ -12,6 +12,20 @@ struct Sim {
     bool Move(Vec d){sample.hand.p=sample.hand.p+d;sample.blade.base=sample.blade.base+d;sample.blade.tip=sample.blade.tip+d;return Step();}
 };
 int main(){
+    for(float setting:{1.5f,3.f,6.f}) {
+        Sim s;s.sample.minWeaponSpeed=setting;s.Step(8);
+        bool hit=false;for(int i=0;i<8;++i)hit|=s.Move({.07f,0,0});
+        Check(hit==(setting<3.5f),"applied speed changes which swings qualify");
+        s.sample.minWeaponSpeed=6;
+        Check(!s.Move({.07f,0,0}),"speed adjustment cancels the previous stroke");
+    }
+    Check(WeaponContactSpeed(NAN)==3&&WeaponContactSpeed(0)==1.5f&&WeaponContactSpeed(99)==6,"speed bounds are safe");
+    {
+        Sim s;
+        Check(!s.Move({.10f,0,0}),"fast but short ten-centimeter twitch cannot arm a stroke");
+        s.Step(8);
+        Check(!s.Move({-.10f,0,0}),"separate small twitches cannot accumulate into a stroke");
+    }
     for(double dt:{1./36,1./72,1./90,1./120}) {
         Sim s;
         // Slow contact must fail both before and after a real swing.
@@ -20,10 +34,10 @@ int main(){
             s.sample.hand.p=s.sample.hand.p+d;s.sample.blade.base=s.sample.blade.base+d;s.sample.blade.tip=s.sample.blade.tip+d;
             return s.engine.Step(s.sample,s.sweep);
         };
-        for(int i=0;i<10;++i)Check(!move(1.0f),"slow approach cannot power weapon damage");
-        bool swung=false;for(int i=0;i<10;++i)swung|=move(2.2f);
-        Check(swung,"comfortable deliberate swing still arms");
-        for(int i=0;i<10;++i)Check(!move(1.0f),"slow follow-through cannot tap after an energetic swing");
+        for(int i=0;i<10;++i)Check(!move(2.2f),"slow approach cannot power weapon damage");
+        bool swung=false;for(int i=0;i<10;++i)swung|=move(3.5f);
+        Check(swung,"deliberate swing still arms");
+        for(int i=0;i<10;++i)Check(!move(2.2f),"slow follow-through cannot tap after an energetic swing");
     }
     {
         Sim s;
@@ -63,40 +77,40 @@ int main(){
     }
     {
         Sim s;int powered=0;uint64_t stroke=0;
-        for(int i=0;i<12;++i)if(s.Move({.04f,0,0})){++powered;if(!stroke)stroke=s.sweep.stroke;Check(stroke==s.sweep.stroke,"one stroke through follow-through");}
+        for(int i=0;i<12;++i)if(s.Move({.07f,0,0})){++powered;if(!stroke)stroke=s.sweep.stroke;Check(stroke==s.sweep.stroke,"one stroke through follow-through");}
         Check(powered>0,"ordinary free slash has energy without any button state");
         s.Step(10);Check(!s.sweep.stroke,"resting blade has no damaging sweep");
-        bool backhand=false;for(int i=0;i<8;++i)if(s.Move({-.04f,0,0})){backhand=true;Check(s.sweep.stroke!=stroke,"new slash gets distinct identity");}
+        bool backhand=false;for(int i=0;i<8;++i)if(s.Move({-.07f,0,0})){backhand=true;Check(s.sweep.stroke!=stroke,"new slash gets distinct identity");}
         Check(backhand,"free backhand works");
     }
     {
-        Sim s;uint64_t stroke=0;for(int i=0;i<16;++i)if(s.Move({.04f,0,0}))stroke=s.sweep.stroke;
-        bool reversed=false;for(int i=0;i<8;++i)if(s.Move({-.04f,0,0})){reversed=true;Check(s.sweep.stroke>stroke,"deliberate reversal rearms without a pause");}
+        Sim s;uint64_t stroke=0;for(int i=0;i<16;++i)if(s.Move({.07f,0,0}))stroke=s.sweep.stroke;
+        bool reversed=false;for(int i=0;i<8;++i)if(s.Move({-.07f,0,0})){reversed=true;Check(s.sweep.stroke>stroke,"deliberate reversal rearms without a pause");}
         Check(reversed,"continuous alternating slashes work");
     }
     {
         Sim s;
         for(int i=0;i<30;++i){s.sample.blade.base.x+=.03f;s.sample.blade.tip.x+=.03f;Check(!s.Step(),"camera/locomotion moving weapon cannot supply swing power");}
         for(int i=0;i<100;++i)Check(!s.Move({i%2?.02f:-.02f,0,0}),"tiny repeated hand jitter cannot become a stroke");
-        bool afterJitter=false;for(int i=0;i<8;++i)afterJitter|=s.Move({-.04f,0,0});
+        bool afterJitter=false;for(int i=0;i<8;++i)afterJitter|=s.Move({-.07f,0,0});
         Check(afterJitter,"sub-threshold jitter cannot poison the next deliberate slash's energy history");
         Check(!s.Move({1,0,0}),"tracking teleport cannot hit");
-        for(int i=0;i<3;++i)Check(!s.Move({.04f,0,0}),"discontinuity discards immediate motion");
-        bool recovered=false;for(int i=0;i<10;++i)recovered|=s.Move({-.04f,0,0});
+        for(int i=0;i<3;++i)Check(!s.Move({.07f,0,0}),"discontinuity discards immediate motion");
+        bool recovered=false;for(int i=0;i<10;++i)recovered|=s.Move({-.07f,0,0});
         Check(recovered,"fresh continuous motion recovers from tracking jump without holding still");
     }
     {
-        Sim s;for(int i=0;i<5;++i)s.Move({.04f,0,0});
-        ++s.sample.epoch;Check(!s.Move({.04f,0,0}),"snap turn/recenter cancels old stroke");
-        s.Step(8);++s.sample.equipment;Check(!s.Move({.04f,0,0}),"equipment cancels previous geometry");
-        s.Step(8);s.sample.active=false;Check(!s.Move({.04f,0,0}),"menus and pose loss clear sweep");
-        s.sample.active=true;Check(!s.Move({.04f,0,0}),"returning from menu primes anew");
-        s.Step(8);s.sample.time+=.3;Check(!s.Move({.04f,0,0}),"hitch cannot replay stale stroke");
+        Sim s;for(int i=0;i<5;++i)s.Move({.07f,0,0});
+        ++s.sample.epoch;Check(!s.Move({.07f,0,0}),"snap turn/recenter cancels old stroke");
+        s.Step(8);++s.sample.equipment;Check(!s.Move({.07f,0,0}),"equipment cancels previous geometry");
+        s.Step(8);s.sample.active=false;Check(!s.Move({.07f,0,0}),"menus and pose loss clear sweep");
+        s.sample.active=true;Check(!s.Move({.07f,0,0}),"returning from menu primes anew");
+        s.Step(8);s.sample.time+=.3;Check(!s.Move({.07f,0,0}),"hitch cannot replay stale stroke");
         s.sample.hand.p.x=std::numeric_limits<float>::quiet_NaN();Check(!s.Step(),"invalid pose rejected");
     }
     for(double dt:{1./36,1./72,1./120}) {
         Sim s;bool contact=false;
-        for(int i=0;i<30;++i){s.sample.time+=dt;const Vec d{float(dt)*2,0,0};s.sample.hand.p=s.sample.hand.p+d;s.sample.blade.base=s.sample.blade.base+d;s.sample.blade.tip=s.sample.blade.tip+d;contact|=s.engine.Step(s.sample,s.sweep);}
+        for(int i=0;i<30;++i){s.sample.time+=dt;const Vec d{float(dt)*3.5f,0,0};s.sample.hand.p=s.sample.hand.p+d;s.sample.blade.base=s.sample.blade.base+d;s.sample.blade.tip=s.sample.blade.tip+d;contact|=s.engine.Step(s.sample,s.sweep);}
         Check(contact,"frame-rate independent energy threshold");
     }
     {
@@ -120,7 +134,7 @@ int main(){
         bool started=false;
         for(int i=0;i<5&&!started;++i) {
             const auto prior=s.sample.blade;
-            if(s.Move({.04f,0,0})) {
+            if(s.Move({.07f,0,0})) {
                 started=true;Check(Length(s.sweep.before.base-prior.base)<.001f,"arming a stroke does not replay earlier unpowered contacts");
             }
         }
@@ -179,10 +193,10 @@ int main(){
         }
     }
     {
-        Sim s;for(int i=0;i<8;++i)s.Move({.04f,0,0});
-        s.sample.time+=.25;Check(!s.Move({.04f,0,0}),"hitch itself never damages");
-        for(int i=0;i<3;++i)Check(!s.Move({-.04f,0,0}),"hitch recovery drops old geometry");
-        bool resumed=false;for(int i=0;i<12;++i)resumed|=s.Move({-.04f,0,0});
+        Sim s;for(int i=0;i<8;++i)s.Move({.07f,0,0});
+        s.sample.time+=.25;Check(!s.Move({.07f,0,0}),"hitch itself never damages");
+        for(int i=0;i<3;++i)Check(!s.Move({-.07f,0,0}),"hitch recovery drops old geometry");
+        bool resumed=false;for(int i=0;i<12;++i)resumed|=s.Move({-.07f,0,0});
         Check(resumed,"continued swinging recovers after hitch without requiring a quiet hand");
     }
     {
@@ -207,7 +221,7 @@ int main(){
         // up the current hand is stationary. Timestamp pairing retains the hit.
         Engine mismatched,matched;PoseHistory history;Sample input;Sweep sw;
         input.active=true;input.epoch=1;input.equipment=1;input.unitsPerMetre=4;
-        input.hand.p={-.16f,1,-.5f};input.blade={{-.16f,1,-.5f},{-.16f,1,-1.2f},.025f};
+        input.hand.p={-.19f,1,-.5f};input.blade={{-.19f,1,-.5f},{-.19f,1,-1.2f},.025f};
         const Body target{{0,.9f,-.7f},{0,1.1f,-.7f},.025f};
         Sample rendered=input;uint32_t renderStamp=1;history.Push(renderStamp,input);
         bool oldHit=false,newHit=false;

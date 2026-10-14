@@ -56,6 +56,7 @@ struct Sample {
     Blade blade{}; // world metres (game coordinates divided by unitsPerMetre)
     Vec player{};float unitsPerMetre=1;
     bool shield=false;
+    float minWeaponSpeed=3.f;
     int skillSlot=-1,skillOwner=-1;
     uint64_t skillContext=0;
 };
@@ -88,7 +89,10 @@ public:
 };
 struct Sweep {Blade before{},after{};uint64_t stroke=0;float speed=0;};
 struct Diagnostics {unsigned discontinuities=0,recovering=0;};
-inline constexpr float WeaponContactSpeed=1.8f,WeaponStrokeTravel=.12f;
+inline constexpr float WeaponStrokeTravel=.18f;
+inline float WeaponContactSpeed(float value) {
+    return std::isfinite(value)?std::clamp(value,1.5f,6.f):3.f;
+}
 class Engine {
     bool primed=false;
     Sample previous{};
@@ -142,7 +146,7 @@ public:
         const float handTravel=Length(in.hand.p-previous.hand.p),playerTravel=Length(in.player-previous.player);
         const float bladeTravel=std::max(Length(in.blade.base-previous.blade.base),Length(in.blade.tip-previous.blade.tip));
         if(!primed||dt<=0||dt>.1||in.epoch!=previous.epoch||in.equipment!=previous.equipment||
-           in.shield!=previous.shield||in.skillSlot!=previous.skillSlot||in.skillOwner!=previous.skillOwner||in.skillContext!=previous.skillContext||
+           in.shield!=previous.shield||in.minWeaponSpeed!=previous.minWeaponSpeed||in.skillSlot!=previous.skillSlot||in.skillOwner!=previous.skillOwner||in.skillContext!=previous.skillContext||
            handTravel>std::max(.12f,10.f*float(dt))||angle>gameplay::MeleeAngularTrackingLimit*dt||playerTravel>.5f||
            std::fabs(in.unitsPerMetre-previous.unitsPerMetre)>.05f||
            bladeTravel>std::max(1.2f,handTravel+angle*lever+playerTravel+.1f)) {
@@ -182,12 +186,12 @@ public:
             // Judge this stroke's recent motion. Accumulating all jitter and
             // aborted windups since the last pause made its net/travel ratio
             // impossible to satisfy, causing another indefinite lockout.
-            if(speed<(in.shield?1.2f:WeaponContactSpeed)||!Onset(in,lever,startBlade))return false;
+            if(speed<(in.shield?1.2f:WeaponContactSpeed(in.minWeaponSpeed))||!Onset(in,lever,startBlade))return false;
             stroke=++serial;strokeAt=in.time;direction=math::Normalized(delta);angularDirection=angular;
         }
         // No delayed taps from holding the weapon inside an enemy, and no
         // slowly walking/turning the camera into one with a stationary hand.
-        if(speed<(in.shield?.8f:WeaponContactSpeed))return false;
+        if(speed<(in.shield?.8f:WeaponContactSpeed(in.minWeaponSpeed)))return false;
         // Weapon motion history arms a stroke; it must not retroactively
         // damage something brushed during the earlier low-energy approach.
         // Keep the latest swept segment so a fast between-frame hit survives.

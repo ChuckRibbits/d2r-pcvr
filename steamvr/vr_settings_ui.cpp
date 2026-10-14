@@ -62,7 +62,7 @@ std::vector<uint8_t> Paint(const Model& m,Hit hover,const char* runtimeStatus,co
     }else{
     text("DIABLO II / VR SETTINGS",{40,33,960,55},true);
     text("Right-hand laser + trigger",{862,44,378,42},false,true,quiet);
-    const char* tabs[]={"Controls","VR","Video","HUD"};
+    const char* tabs[]={"Controls","VR","Video","HUD","Combat"};
     for(int i=0;i<TabCount;++i)button(Tabs[i],tabs[i],{Kind::Tab,i},int(m.page)==i);
     if(m.page==Page::Controls){
         text("Each stick opens its hand's wheel. Use the OTHER hand's laser to assign skills.",{40,180,1200,32},false,false,RGB(116,220,219));
@@ -99,7 +99,7 @@ std::vector<uint8_t> Paint(const Model& m,Hit hover,const char* runtimeStatus,co
             fill(ControllerBox,hover.kind==Kind::ControllerMenu?RGB(63,103,112):RGB(31,48,56));
             const std::string selected=std::string(controllers::Choices[int(m.Get()[ControllerLabels])])+"  \xe2\x96\xbc";
             text(selected.c_str(),{ControllerBox.x,ControllerBox.y+10,ControllerBox.w,37},true,true,RGB(116,220,219));
-        }else text(m.page==Page::HUD?"Choose how you check your health, mana and navigation.":runtimeStatus,{40,197,1200,42},false,false,quiet);
+        }else text(m.page==Page::Combat?"Tune physical weapon combat.":m.page==Page::HUD?"Choose how you check your health, mana and navigation.":runtimeStatus,{40,197,1200,42},false,false,quiet);
         for(int row=0;row<RowCount(m.page);++row){
             const Key key=RowKey(m.page,row);const auto& d=Definitions[key];const float value=m.Get()[key];const int y=RowY+row*RowStep;
             fill({40,y-4,1200,RowStep},row%2?RGB(19,31,39):RGB(22,36,44));
@@ -114,6 +114,7 @@ std::vector<uint8_t> Paint(const Model& m,Hit hover,const char* runtimeStatus,co
             else if(d.max==1)std::snprintf(label,sizeof label,"%s",value>.5f?"On":"Off");
             else if(key==Snap)std::snprintf(label,sizeof label,"%.0f deg",value);
             else if(key==TurnSpeed)std::snprintf(label,sizeof label,"%.0f deg/s",value);
+            else if(key==MeleeHitSpeed)std::snprintf(label,sizeof label,"%.2f m/s",value);
             else if(key==Waist||key==BeltForward)std::snprintf(label,sizeof label,"%.1f cm",value*100);
             else std::snprintf(label,sizeof label,"%.0f",value);
             const bool enabled=m.ready&&!m.Busy();
@@ -129,6 +130,11 @@ std::vector<uint8_t> Paint(const Model& m,Hit hover,const char* runtimeStatus,co
             text("Palm: raise your left hand, turn the palm upward and hold briefly. Release trigger and grip.",{58,575,1160,76},false,false,quiet);
             text("Minimap & Compass move together. Choose Off to hide both; the wheel map stays available.",{58,670,1160,76},false,false,quiet);
             text("Menu distance: Close matches the previous build; Medium adds 30 cm; Far adds 60 cm.",{58,765,1160,76},false,false,quiet);
+        }
+        if(m.page==Page::Combat){
+            text("Default: 3.00 m/s. Lower values allow lighter swings; higher values require faster swings.",{58,340,1160,76},false,false,quiet);
+            text("A deliberate stroke must also travel at least 18 cm. Slow follow-through cannot deal damage.",{58,440,1160,76},false,false,quiet);
+            text("Apply saves the setting and updates melee immediately. Shield bash and button attacks keep their existing behavior.",{58,540,1160,100},false,false,quiet);
         }
     }
     const char* message=!m.ready?"Configuration unavailable; controls help still works.":m.result==Result::Saving?"Saving...":m.result==Result::Saved?"Saved. Changes take effect live.":m.result==Result::Failed?"Save failed. Your edits are still unsaved.":m.result==Result::Conflict?"Settings changed elsewhere. Current values reloaded.":m.Dirty()?"Unsaved changes. Apply saves; Close discards them.":"World remains live. Right B closes this panel.";

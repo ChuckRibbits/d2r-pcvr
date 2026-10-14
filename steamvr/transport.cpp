@@ -1428,6 +1428,7 @@ void Input() {
         melee::Sample sample;
         sample.time=motionInput.time;sample.hand=motionInput.hand[0];sample.epoch=meleeEpoch;
         sample.equipment=motionInput.equipment;sample.active=motionInput.active&&motionOutput.meleeContact;
+        sample.minWeaponSpeed=gestureSettings[settings::MeleeHitSpeed];
         meleePoses.Push(s.sampleStamp,sample);
         sample.hand=motionInput.hand[1];sample.shield=true;sample.active=motionInput.active&&motionOutput.shieldContact;
         sample.skillSlot=shieldSlot;sample.skillOwner=shieldSkill.owner;sample.skillContext=motionInput.skillContext;
