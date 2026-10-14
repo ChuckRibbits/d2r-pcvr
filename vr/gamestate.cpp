@@ -37,6 +37,7 @@
 #include "journal_ui.h"
 #include "../steamvr/native_panels.h"
 #include "../steamvr/callback_ticket.h"
+#include "../steamvr/native_hud.h"
 #include <mutex>
 #ifdef D2RVR_NATIVE_OPENXR
 #include "logging.h"
@@ -56,6 +57,7 @@ const ThreadService* g_threads = nullptr;
 // (OpenPanel / ClosePanel 'AutoMap', the same messages its own key sends), and
 // set by sending those messages ourselves (SetAutoMap) - no key, no button.
 const WidgetService* g_widgets = nullptr;
+framevr::nativehud::VisibilityOverride g_toolbarVisibility;
 std::atomic<int> g_autoMap{0};
 std::atomic<uint64_t> g_menuMapAt{0};
 framevr::wrist::MapLease g_menuMapLease;
@@ -312,6 +314,19 @@ void __cdecl ReadItems(const PluginContext* ctx, void* token) noexcept {
     g_player.store(havePlayer ? player : 0);
 #ifdef D2RVR_NATIVE_OPENXR
     panelinput::MaintainWorldController(havePlayer,g_menu.load()!=0);
+    if(g_widgets&&g_widgets->findPanel&&g_widgets->setWidgetVisible){
+        const bool hide=havePlayer&&!g_menu.load()&&hud::NativeToolbarHidden();
+        if(hide||g_toolbarVisibility.hidden){
+            Widgets::WidgetHandle toolbar=0;
+            const bool found=g_widgets->findPanel(ctx,"HUDPanel",&toolbar)==Widgets::Result::Success&&toolbar;
+            const bool previous=g_toolbarVisibility.hidden;
+            g_toolbarVisibility.Update(hide,found,[&](bool visible){
+                return g_widgets->setWidgetVisible(ctx,toolbar,visible)==Widgets::Result::Success;
+            });
+            if(previous!=g_toolbarVisibility.hidden)Log(g_toolbarVisibility.hidden?
+                "Frame HUD: native HUDPanel hidden on UI thread":"Frame HUD: native HUDPanel visibility released");
+        }
+    }
     const auto now=GetTickCount64(),mapAt=g_menuMapAt.load();
     const bool mapWanted=mapAt&&now>=mapAt&&now-mapAt<400;
     const int mapAction=g_menuMapLease.Step(havePlayer?player:0,now,mapWanted,g_menu.load()!=0,g_autoMap.load()!=0);

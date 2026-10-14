@@ -50,6 +50,20 @@ does not imply that every intermediate pass renders at that resolution.
 Streaming bitrate, compression, lens correction and headset optics still
 affect perceived clarity. Higher source sizes cost GPU time and memory.
 
+In native VR gameplay, the mod hides the game's `HUDPanel` on its UI thread
+as well as suppressing the bottom toolbar draw. This covers controller HUD
+layouts that place the bar away from the bottom at square render sizes.
+Native menus release the panel override; tracked wrist/palm displays remain.
+
+The added sky/fog reads a private copy of the scene depth. Square render sizes
+can match a shadow map's dimensions, so selecting depth by size alone can put
+sky or fog across nearby scenery. The private channel requires a matching
+color target, a current-eye binding and a known resource state. It clears
+stale/destroyed resources and suppresses depth effects if no suitable source
+is available. Desktop rendering retains ReShade's normal depth channel.
+Update both `d2rl-vrcam.dll` and `reshade-shaders/Shaders/D2R_DepthFog.fx`
+together when testing this fix.
+
 ## Validation and remaining headset checks
 
 Automated Windows fixtures cover runtime limits, invalid choices, asynchronous
@@ -70,6 +84,15 @@ scene, test both eye images and aspect, click native menu edges/corners and
 inventory slots, check controller laser alignment, apply and cancel choices,
 relaunch, resize/minimize the desktop window, and reconnect the headset.
 Validate VDXR separately. Keep the old DLL available for comparison.
+
+A subsequent offline level-3 Sorceress test in Rogue Encampment used the Steam
+3.3.93787 build, SteamVR and 4096 square rendering at native resolution scale
+100%, DLSS off. The owner confirmed the HUD was gone and the fog result was
+better. The recording still shows reported roof shading flicker during head
+movement: that remains under investigation. The agent inspected recordings
+and desktop output, and observed HUDPanel release when inventory opened;
+this is not agent headset validation. Automated coverage additionally checks
+panel visibility/expiry and scene-depth selection, scaling and lifetimes.
 
 Diagnostics in `d2rloader/logs/d2r-vr-frame.log` report the requested, source,
 physical and recommended dimensions; matching depth allocations; and the

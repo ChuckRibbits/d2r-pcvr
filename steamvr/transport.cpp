@@ -1857,7 +1857,7 @@ void BeginPair() {
     } else profile::SkipPair();
 }
 void EndPair() {
-    hud::NativeGameplay(false);
+    hud::EndNativeEye();
     foveation::EndWorld();
     d2rcam::SetStereoUiEye(-1);
     std::lock_guard lock(mutex);pairDrawing=false;if(!frame||!session)return;
