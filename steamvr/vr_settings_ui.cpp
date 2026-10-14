@@ -101,7 +101,7 @@ std::vector<uint8_t> Paint(const Model& m,Hit hover,const char* runtimeStatus,co
             text(d.label,{58,y+1,780,29},true);text(d.detail,{58,y+30,795,28},false,false,quiet);
             char label[96];
             if(key==Foveation){const char* modes[]={"Off","Fixed","Eye tracked"};std::snprintf(label,sizeof label,"%s",modes[int(value)]);}
-            else if(key==VitalsLocation)std::snprintf(label,sizeof label,"%s",vitals::LocationNames[int(value)]);
+            else if(key==VitalsLocation||key==NavigationLocation)std::snprintf(label,sizeof label,"%s",vitals::LocationNames[int(value)]);
             else if(key==RenderResolution)std::snprintf(label,sizeof label,"%s",resolution::Choices[int(value)]);
             else if(key==Dominant)std::snprintf(label,sizeof label,"%s",value>.5f?"Left":"Right");
             else if(d.max==1)std::snprintf(label,sizeof label,"%s",value>.5f?"On":"Off");
@@ -121,8 +121,8 @@ std::vector<uint8_t> Paint(const Model& m,Hit hover,const char* runtimeStatus,co
         }
         if(m.page==Page::HUD){
             text("Palm: raise your left hand in front of you, turn the palm upward and hold briefly.",{58,525,1160,76},false,false,quiet);
-            text("Release the left trigger and grip to check vitals. Lower or turn your hand to hide them.",{58,615,1160,76},false,false,quiet);
-            text("Minimap and compass stay on the wrist. Alerts are optional; location Off hides all vitals.",{58,705,1160,76},false,false,quiet);
+            text("Release the left trigger and grip to check palm displays. Lower or turn your hand to hide them.",{58,615,1160,76},false,false,quiet);
+            text("Minimap and compass move together. Their location is independent of health and mana.",{58,705,1160,76},false,false,quiet);
         }
     }
     const char* message=!m.ready?"Configuration unavailable; controls help still works.":m.result==Result::Saving?"Saving...":m.result==Result::Saved?"Saved. Changes take effect live.":m.result==Result::Failed?"Save failed. Your edits are still unsaved.":m.result==Result::Conflict?"Settings changed elsewhere. Current values reloaded.":m.Dirty()?"Unsaved changes. Apply saves; Close discards them.":"World remains live. Right B closes this panel.";

@@ -232,7 +232,7 @@ int main(){
             Sim s;s.in.vitalsLocation=location;s.in.hand[1].p={-.18f,1.35f,-.24f};
             s.in.hand[1].q={0,0,-.70710678f,.70710678f};s.Step(20);
             Check(s.out.wrist&&s.out.vitals==(location==Location::Wrist||location==Location::Either),"wrist vitals obey placement selection");
-            Check(WristMapWanted(s.in,s.out,s.in.at)&&WristCompassWanted(s.in,s.out,s.in.at),"navigation survives Palm and Off vitals choices");
+            Check(NavigationWanted(s.in,s.out,s.in.at),"navigation survives Palm and Off vitals choices");
             s.in.hand[1].q={0,0,.70710678f,.70710678f};s.Step(20);
             Check(s.out.vitals==(location==Location::Palm||location==Location::Either),"palm vitals obey placement selection");
         }
@@ -260,20 +260,39 @@ int main(){
             const auto palm=PalmPanel(hand,head);
             Check(Valid(palm)&&std::fabs(math::Dot(math::Rotate(palm.q,{0,0,1}),PalmNormal(hand))-1)<1e-5f,
                 "palm surface remains valid through head/wrist rotations");
-            const auto map=WristMapPanel(hand,head);
-            const auto offset=math::Rotate(math::Conjugate(q),map.p-p.p);
-            Check(Valid(map)&&std::fabs(offset.x)<1e-5f&&std::fabs(offset.z)<1e-5f&&
-                std::fabs(offset.y-(WristHeight+WristMapSize)*.5f-.01f)<1e-5f&&
-                math::Dot(math::Rotate(map.q,{0,0,1}),WristNormal(hand))>.99999f,
-                "minimap stays above vitals with a one-centimeter gap and the same watch face");
-            for(bool shown:{false,true}) {
-                const auto compass=WristCompassPanel(hand,head,shown);
-                const auto below=shown?map:p;
-                const auto delta=math::Rotate(math::Conjugate(q),compass.p-below.p);
+            for(bool palmFace:{false,true})for(bool withVitals:{false,true}) {
+                const auto base=palmFace?palm:p;
+                const auto map=NavigationMapPanel(hand,head,palmFace,withVitals);
+                const auto offset=math::Rotate(math::Conjugate(base.q),map.p-base.p);
+                const float wanted=withVitals?((palmFace?PalmHeight:WristHeight)+WristMapSize)*.5f+.01f:0;
+                Check(Valid(map)&&std::fabs(offset.x)<1e-5f&&std::fabs(offset.z)<1e-5f&&std::fabs(offset.y-wanted)<1e-5f,
+                    "navigation uses chosen hand face and leaves space only for vitals on that face");
+                const auto compass=NavigationCompassPanel(hand,head,palmFace,withVitals);
+                const auto delta=math::Rotate(math::Conjugate(map.q),compass.p-map.p);
                 Check(Valid(compass)&&std::fabs(delta.x)<1e-5f&&std::fabs(delta.z)<1e-5f&&
-                    std::fabs(delta.y-((shown?WristMapSize:WristHeight)+WristCompassHeight)*.5f-.01f)<1e-5f,
-                    "compass sits above the minimap or vitals with a one-centimeter gap");
+                    std::fabs(delta.y-(WristMapSize+WristCompassHeight)*.5f-.01f)<1e-5f,
+                    "compass and map remain a single coplanar unit with a one-centimeter gap");
             }
+        }
+    }
+    {
+        using framevr::vitals::Location;
+        for(auto vitals:{Location::Wrist,Location::Palm,Location::Either,Location::Off})
+        for(auto navigation:{Location::Wrist,Location::Palm,Location::Either,Location::Off}) {
+            Sim s;s.in.vitalsLocation=vitals;s.in.navigationLocation=navigation;
+            s.in.hand[1].p={-.18f,1.35f,-.24f};s.in.hand[1].q={0,0,-.70710678f,.70710678f};s.Step(20);
+            Check(s.out.vitals==framevr::vitals::Wrist(vitals)&&NavigationWanted(s.in,s.out,s.in.at)==framevr::vitals::Wrist(navigation),
+                "wrist vitals and navigation follow independent location choices");
+            s.in.hand[1].q={0,0,.70710678f,.70710678f};
+            Check(!s.Step(10).navigation,"brief palm turn cannot flash navigation");s.Step(5);
+            Check(s.out.vitals==framevr::vitals::Palm(vitals)&&NavigationWanted(s.in,s.out,s.in.at)==framevr::vitals::Palm(navigation),
+                "palm vitals and combined navigation follow independent choices");
+            s.in.tracked[0]=false;s.Step(20);
+            Check(NavigationWanted(s.in,s.out,s.in.at)==framevr::vitals::Palm(navigation),"resting right hand does not hide palm navigation");
+            s.in.leftTrigger=1;s.Step();Check(!NavigationWanted(s.in,s.out,s.in.at),"casting hand cannot reveal palm navigation");
+            s.in.leftTrigger=0;s.in.leftCasting=true;s.Step(20);Check(!NavigationWanted(s.in,s.out,s.in.at),"face-button spell casting hides palm navigation");
+            s.in.leftCasting=false;s.in.grip[1]=1;s.Step(20);Check(!NavigationWanted(s.in,s.out,s.in.at),"grip actions hide palm navigation");
+            s.in.grip[1]=0;s.Step(20);s.in.tracked[1]=false;s.Step();Check(!MapWanted(s.in,s.out,s.in.at),"lost left tracking hides navigation");
         }
     }
     for(int i=0;i<8;++i){float a=i*Pi/4+WheelPhase;Check(WheelCell(.5f+std::sin(a)*.28f,.45f-std::cos(a)*.28f)==i,"wedge centers agree");}
@@ -294,20 +313,19 @@ int main(){
     {
         Sim s;auto click=[&](int hit){s.in.trigger=0;s.Step();s.in.hover=hit;s.in.trigger=1;return s.Step();};
         s.in.hand[1].p={-.18f,1.35f,-.24f};s.in.hand[1].q={0,0,-.70710678f,.70710678f};
-        s.Step();Check(s.out.wrist&&WristMapWanted(s.in,s.out,s.in.at)&&MapWanted(s.in,s.out,s.in.at),"wrist minimap is on by default");
-        Check(WristCompassWanted(s.in,s.out,s.in.at),"compass shares wrist reveal");
-        s.in.wristCompass=false;Check(!WristCompassWanted(s.in,s.out,s.in.at)&&MapWanted(s.in,s.out,s.in.at),"compass Off retains wrist map");s.in.wristCompass=true;
-        Check(!WristCompassWanted(s.in,s.out,s.in.at+651),"stale character cannot show compass");
-        auto gated=s.in;gated.tracked[1]=false;Check(!WristCompassWanted(gated,s.out,s.in.at),"left tracking loss hides compass");
-        gated=s.in;gated.active=false;Check(!WristCompassWanted(gated,s.out,s.in.at),"inactive gameplay hides compass");
-        gated=s.in;++gated.session;Check(!WristCompassWanted(gated,s.out,s.in.at),"another character cannot reuse compass");
-        auto hidden=s.out;hidden.wrist=false;hidden.critical=true;Check(!WristCompassWanted(s.in,hidden,s.in.at),"low-health alert alone cannot summon compass");
-        hidden=s.out;hidden.settings=true;Check(!WristCompassWanted(s.in,hidden,s.in.at),"settings hides compass");
-        s.in.wristMap=false;s.Step();
-        Check(WristCompassWanted(s.in,s.out,s.in.at),"compass works independently with wrist map off");
+        s.Step();Check(s.out.wrist&&NavigationWanted(s.in,s.out,s.in.at)&&MapWanted(s.in,s.out,s.in.at),"wrist minimap is on by default");
+        Check(NavigationWanted(s.in,s.out,s.in.at),"compass shares wrist reveal");
+        Check(!NavigationWanted(s.in,s.out,s.in.at+651),"stale character cannot show compass");
+        auto gated=s.in;gated.tracked[1]=false;Check(!NavigationWanted(gated,s.out,s.in.at),"left tracking loss hides compass");
+        gated=s.in;gated.active=false;Check(!NavigationWanted(gated,s.out,s.in.at),"inactive gameplay hides compass");
+        gated=s.in;++gated.session;Check(!NavigationWanted(gated,s.out,s.in.at),"another character cannot reuse compass");
+        auto hidden=s.out;hidden.navigation=false;hidden.critical=true;Check(!NavigationWanted(s.in,hidden,s.in.at),"low-health alert alone cannot summon compass");
+        hidden=s.out;hidden.settings=true;Check(!NavigationWanted(s.in,hidden,s.in.at),"settings hides compass");
+        s.in.navigationLocation=framevr::vitals::Location::Off;s.Step();
+        Check(!NavigationWanted(s.in,s.out,s.in.at),"Off hides the combined map and compass");
         Check(s.out.wrist&&!MapWanted(s.in,s.out,s.in.at),"disabling wrist map retains watch vitals");
         s.in.wheel=true;click(12);
-        Check(!WristCompassWanted(s.in,s.out,s.in.at),"wheel hides wrist compass");
+        Check(!NavigationWanted(s.in,s.out,s.in.at),"wheel hides wrist compass");
         Check(s.out.wheel&&s.out.map&&!s.out.utility&&s.out.block&&s.out.select==-2&&s.out.request.action==Action::None&&
             MapWanted(s.in,s.out,s.in.at)&&s.e.Page()==MenuPage::Map,"map tab opens without changing selected spell or requesting a native action");
         const auto mapContext=Context(s.in.snapshot,s.out,true);auto spells=s.out;spells.map=false;
@@ -333,10 +351,10 @@ int main(){
         s.in.tracked[0]=s.in.tracked[1]=true;s.Step(3);s.in.wheel=true;s.Step();
         Check(s.out.wheel&&!MapWanted(s.in,s.out,s.in.at),"spell wheel hides wrist map without requesting capture");
         s.in.hover=12;s.in.trigger=1;s.Step();
-        Check(MenuMapWanted(s.in,s.out,s.in.at)&&!WristMapWanted(s.in,s.out,s.in.at),"wheel MAP tab owns the map while open");
-        s.in.wheel=false;s.in.trigger=0;s.Step();Check(WristMapWanted(s.in,s.out,s.in.at),"closing wheel restores presented wrist map");
-        s.in.wristMap=false;s.Step();Check(!MapWanted(s.in,s.out,s.in.at),"saved Off removes wrist capture demand");
-        s.in.wristMap=true;s.Step();Check(MapWanted(s.in,s.out,s.in.at),"saved On restores wrist capture demand");
+        Check(MenuMapWanted(s.in,s.out,s.in.at)&&!NavigationWanted(s.in,s.out,s.in.at),"wheel MAP tab owns the map while open");
+        s.in.wheel=false;s.in.trigger=0;s.Step();Check(NavigationWanted(s.in,s.out,s.in.at),"closing wheel restores presented wrist map");
+        s.in.navigationLocation=framevr::vitals::Location::Off;s.Step();Check(!MapWanted(s.in,s.out,s.in.at),"saved Off removes wrist capture demand");
+        s.in.navigationLocation=framevr::vitals::Location::Wrist;s.Step();Check(MapWanted(s.in,s.out,s.in.at),"saved On restores wrist capture demand");
         s.in.active=false;s.Step();Check(!MapWanted(s.in,s.out,s.in.at),"native menus and settings suppress wrist map");
         s.in.active=true;s.in.hand[1].q={0,0,0,1};s.Step();s.out.critical=true;
         Check(!MapWanted(s.in,s.out,s.in.at),"critical vitals cue alone does not display a floating minimap");

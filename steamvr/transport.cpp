@@ -1275,8 +1275,7 @@ void Input() {
     interactionInput.wheelHand=handOutput.wheel;
     interactionInput.reservedLeft=(controls.buttons&menus::LeftStick)!=0;interactionInput.trigger=handOutput.wheel==0?controls.lt/255.f:controls.rt/255.f;interactionInput.hover=motionInput.hover;
     const auto hudSettings=vrsettings::Read();
-    interactionInput.wristMap=hudSettings.values[settings::WristMap]>.5f;
-    interactionInput.wristCompass=hudSettings.values[settings::WristCompass]>.5f;
+    interactionInput.navigationLocation=vitals::Location(int(hudSettings.values[settings::NavigationLocation]));
     interactionInput.vitalsLocation=vitals::Location(int(hudSettings.values[settings::VitalsLocation]));
     interactionInput.criticalAlerts=hudSettings.values[settings::CriticalAlerts]>.5f;
     interactionInput.leftCasting=handOutput.spells[1]>=0||(handOutput.slot>=0&&handOutput.hand==1);
@@ -2001,21 +2000,21 @@ void EndPair() {
             motionQuad(wrist,XrPose(pose),palm?interaction::PalmWidth:interaction::WristWidth,
                 palm?interaction::PalmHeight:interaction::WristHeight,{{512,768},{512,256}},interactionChain);
         }
-        if(interactionOutput.wrist&&!interactionOutput.wheel) {
-            if(mapEye.copied&&interaction::WristMapWanted(interactionInput,interactionOutput,GetTickCount64()))
-                motionQuad(wristMap,interactionPose(interaction::WristMapPanel(interactionInput.hand[1],interactionInput.head)),
-                    interaction::WristMapSize,interaction::WristMapSize,{{0,0},{int32_t(mapSide),int32_t(mapSide)}},mapEye.chain);
-            if(compassAtlasReady&&compassFrame&&count+2<=contentLimit&&
-               interaction::WristCompassWanted(interactionInput,interactionOutput,GetTickCount64())) {
-                auto compassPose=interaction::WristCompassPanel(interactionInput.hand[1],interactionInput.head,interactionInput.wristMap);
-                motionQuad(wristCompass,interactionPose(compassPose),interaction::WristCompassWidth,interaction::WristCompassHeight,
-                    {{compass::Crop(wristHeading.bearing),0},{compass::Window,compass::StripHeight}},compassChain);
-                constexpr float markerWidth=interaction::WristCompassWidth*compass::MarkerWidth/compass::Window;
-                constexpr float markerHeight=interaction::WristCompassHeight*compass::MarkerHeight/compass::StripHeight;
-                compassPose.p=compassPose.p+math::Rotate(compassPose.q,{0,(interaction::WristCompassHeight-markerHeight)*.5f,.001f});
-                motionQuad(compassMarker,interactionPose(compassPose),markerWidth,markerHeight,
-                    {{0,compass::StripHeight},{compass::MarkerWidth,compass::MarkerHeight}},compassChain);
-            }
+        // Submit the map, compass strip and marker as one navigation display.
+        if(mapEye.copied&&compassAtlasReady&&compassFrame&&count+3<=contentLimit&&
+           interaction::NavigationWanted(interactionInput,interactionOutput,GetTickCount64())) {
+            const bool palm=interactionOutput.navigationPalm;
+            const bool withVitals=interactionOutput.vitals&&interactionOutput.palm==palm;
+            motionQuad(wristMap,interactionPose(interaction::NavigationMapPanel(interactionInput.hand[1],interactionInput.head,palm,withVitals)),
+                interaction::WristMapSize,interaction::WristMapSize,{{0,0},{int32_t(mapSide),int32_t(mapSide)}},mapEye.chain);
+            auto compassPose=interaction::NavigationCompassPanel(interactionInput.hand[1],interactionInput.head,palm,withVitals);
+            motionQuad(wristCompass,interactionPose(compassPose),interaction::WristCompassWidth,interaction::WristCompassHeight,
+                {{compass::Crop(wristHeading.bearing),0},{compass::Window,compass::StripHeight}},compassChain);
+            constexpr float markerWidth=interaction::WristCompassWidth*compass::MarkerWidth/compass::Window;
+            constexpr float markerHeight=interaction::WristCompassHeight*compass::MarkerHeight/compass::StripHeight;
+            compassPose.p=compassPose.p+math::Rotate(compassPose.q,{0,(interaction::WristCompassHeight-markerHeight)*.5f,.001f});
+            motionQuad(compassMarker,interactionPose(compassPose),markerWidth,markerHeight,
+                {{0,compass::StripHeight},{compass::MarkerWidth,compass::MarkerHeight}},compassChain);
         }
     }
     const bool weaponSkillIndicators=vrsettings::Read().values[settings::WeaponSkillIndicators]>.5f;
