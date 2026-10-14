@@ -1,7 +1,6 @@
 #pragma once
 #include <cstdint>
 namespace framevr::nativehud {
-inline bool Recent(uint64_t at,uint64_t now){return at&&now>=at&&now-at<500;}
 // Hide the native panel itself, so nonstandard UI layouts cannot escape a
 // bottom-strip crop. Restore only a panel this override actually hid. Calls
 // run on the UI thread; repeated hides cover native mode/layout refreshes.

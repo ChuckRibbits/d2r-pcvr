@@ -53,7 +53,12 @@ affect perceived clarity. Higher source sizes cost GPU time and memory.
 In native VR gameplay, the mod hides the game's `HUDPanel` on its UI thread
 as well as suppressing the bottom toolbar draw. This covers controller HUD
 layouts that place the bar away from the bottom at square render sizes.
-Native menus release the panel override; tracked wrist/palm displays remain.
+The panel stays hidden throughout the XR session, including native menus,
+loading and gaps between eye draws; tracked wrist/palm displays remain.
+Native panel messages reapply the override immediately and queue a coalesced
+UI-thread refresh after the native handler. This prevents menu transitions
+from deliberately restoring the toolbar or waiting for the slow state poll.
+Stopping XR releases the override; an intentional resolution rebuild retains it.
 
 The added sky/fog reads a private copy of the scene depth. Square render sizes
 can match a shadow map's dimensions, so selecting depth by size alone can put
@@ -70,7 +75,7 @@ are uniformly reduced to that height limit instead of producing a much taller
 panel. The complete native image and its aspect ratio are preserved, and the
 laser uses the same fitted dimensions as the displayed surface. This changes
 only menu presentation, not world rendering or the handheld quest journal.
-Inventory workspaces sit 0.85 m away and the main menu 1.0 m away. They are
+Inventory workspaces sit 0.55 m away and the main menu 0.70 m away. They are
 placed upright at the current eye height when opened, independent of head
 pitch. The controller's tabbed inventory/character/options view occupies the
 upper widescreen band of a tall canvas; that visible band is centered on the

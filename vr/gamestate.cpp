@@ -58,6 +58,41 @@ const ThreadService* g_threads = nullptr;
 // set by sending those messages ourselves (SetAutoMap) - no key, no button.
 const WidgetService* g_widgets = nullptr;
 framevr::nativehud::VisibilityOverride g_toolbarVisibility;
+#ifdef D2RVR_NATIVE_OPENXR
+// UI-thread-only refreshes; native menu handlers may rebuild/show HUDPanel.
+framevr::CallbackTicket g_toolbarTicket;
+bool g_toolbarUpdating=false;
+void MaintainToolbar(const PluginContext* ctx) {
+    if(g_toolbarUpdating||!g_widgets||!g_widgets->findPanel||!g_widgets->setWidgetVisible)return;
+    const bool hide=hud::NativeToolbarHidden();
+    if(!hide&&!g_toolbarVisibility.hidden)return;
+    g_toolbarUpdating=true;
+    Widgets::WidgetHandle toolbar=0;
+    const bool found=g_widgets->findPanel(ctx,"HUDPanel",&toolbar)==Widgets::Result::Success&&toolbar;
+    const bool previous=g_toolbarVisibility.hidden;
+    g_toolbarVisibility.Update(hide,found,[&](bool visible){
+        return g_widgets->setWidgetVisible(ctx,toolbar,visible)==Widgets::Result::Success;
+    });
+    if(previous!=g_toolbarVisibility.hidden)framevr::logging::Write(g_toolbarVisibility.hidden?
+        "Frame HUD: native HUDPanel hidden for VR session":"Frame HUD: native HUDPanel visibility released");
+    g_toolbarUpdating=false;
+}
+void __cdecl RefreshToolbar(const PluginContext* ctx,void* token) noexcept {
+    if(g_toolbarTicket.Claim(reinterpret_cast<uintptr_t>(token)))MaintainToolbar(ctx);
+}
+void RefreshToolbarAfterMessage(const PluginContext* ctx) {
+    if(g_toolbarUpdating)return;
+    MaintainToolbar(ctx);
+    if(!hud::NativeToolbarHidden()||!g_threads||!g_threads->runOnUiThread)return;
+    // Also run after the native message handler, not only before it. Coalesce
+    // bursts of panel messages; retry if the loader discards queued work.
+    const auto now=GetTickCount64();
+    if(g_toolbarTicket.Expired(now,1000))g_toolbarTicket.Cancel();
+    const auto token=g_toolbarTicket.Start(now);
+    if(token&&g_threads->runOnUiThread(ctx,&RefreshToolbar,reinterpret_cast<void*>(token))!=Threads::Result::Success)
+        g_toolbarTicket.Claim(token);
+}
+#endif
 std::atomic<int> g_autoMap{0};
 std::atomic<uint64_t> g_menuMapAt{0};
 framevr::wrist::MapLease g_menuMapLease;
@@ -315,19 +350,7 @@ void __cdecl ReadItems(const PluginContext* ctx, void* token) noexcept {
     g_player.store(havePlayer ? player : 0);
 #ifdef D2RVR_NATIVE_OPENXR
     panelinput::MaintainWorldController(havePlayer,g_menu.load()!=0);
-    if(g_widgets&&g_widgets->findPanel&&g_widgets->setWidgetVisible){
-        const bool hide=havePlayer&&!g_menu.load()&&hud::NativeToolbarHidden();
-        if(hide||g_toolbarVisibility.hidden){
-            Widgets::WidgetHandle toolbar=0;
-            const bool found=g_widgets->findPanel(ctx,"HUDPanel",&toolbar)==Widgets::Result::Success&&toolbar;
-            const bool previous=g_toolbarVisibility.hidden;
-            g_toolbarVisibility.Update(hide,found,[&](bool visible){
-                return g_widgets->setWidgetVisible(ctx,toolbar,visible)==Widgets::Result::Success;
-            });
-            if(previous!=g_toolbarVisibility.hidden)Log(g_toolbarVisibility.hidden?
-                "Frame HUD: native HUDPanel hidden on UI thread":"Frame HUD: native HUDPanel visibility released");
-        }
-    }
+    MaintainToolbar(ctx);
     const auto now=GetTickCount64(),mapAt=g_menuMapAt.load();
     const bool mapWanted=mapAt&&now>=mapAt&&now-mapAt<400;
     const int mapAction=g_menuMapLease.Step(havePlayer?player:0,now,mapWanted,g_menu.load()!=0,g_autoMap.load()!=0);
@@ -475,7 +498,7 @@ bool Has(const char* s, const char* part) {
     return false;
 }
 
-SharedEvents::UiMessageAction __cdecl OnUiMessage(const PluginContext*, const SharedEvents::UiMessageEvent* e, void*) noexcept {
+SharedEvents::UiMessageAction __cdecl OnUiMessage(const PluginContext* ctx, const SharedEvents::UiMessageEvent* e, void*) noexcept {
     if (!e) return SharedEvents::UiMessageAction::Continue;
     const char* target = e->target ? e->target : "";
     const char* command = e->command ? e->command : "";
@@ -511,6 +534,10 @@ SharedEvents::UiMessageAction __cdecl OnUiMessage(const PluginContext*, const Sh
             char b[300]; snprintf(b, sizeof b, "gamestate: menu %s (open: %.200s)", menu ? "OPEN" : "closed", list.c_str()); Log(b);
         }
     }
+#ifdef D2RVR_NATIVE_OPENXR
+    if(!strcmp(target,"PanelManager")||!strcmp(target,"HUDPanel")||
+       (!strcmp(target,"SystemMessage")&&!strcmp(command,"ResolutionChanged")))RefreshToolbarAfterMessage(ctx);
+#endif
     if (g_state) {
         strncpy_s(g_state->lastUi, key.c_str(), _TRUNCATE);
         Publish();

@@ -1514,6 +1514,7 @@ void Events() {
             if(state==XR_SESSION_STATE_STOPPING) { if(frame)EndPair();pEndSession(session);running=false;resolution::Restore();ClearInput(); }
             if(state==XR_SESSION_STATE_LOSS_PENDING||state==XR_SESSION_STATE_EXITING) {running=false;valid=false;resolution::Restore();ClearInput();}
         } else if(event.type==XR_TYPE_EVENT_DATA_INSTANCE_LOSS_PENDING) {running=false;valid=false;resolution::Restore();ClearInput();}
+        hud::NativeSession(running);
         event={XR_TYPE_EVENT_DATA_BUFFER};
     }
 }
@@ -2323,6 +2324,8 @@ bool Projection(float out[16],float nearWorld,int eye) {
 }
 void Shutdown(bool preserveResolution) {
     std::lock_guard lock(mutex);
+    // Keep the HUD hidden through an intentional eye-target/session rebuild.
+    if(!preserveResolution)hud::NativeSession(false);
     if(!preserveResolution)resolution::Restore();
     windowFocus.Cancel();
     EndPair();ClearInput();interactionPainter.Stop();interaction::icons::Shutdown();

@@ -29,7 +29,7 @@ inline bool Modal(std::string_view name) {
 // comparison tooltips, dragged icons and confirmation dialogs. Empty pixels
 // use the canvas's background policy. Do not recrop when hovering: that would
 // move the target.
-constexpr float Width=1.9f,Distance=.85f,MainDistance=1.0f;
+constexpr float Width=1.9f,Distance=.55f,MainDistance=.70f;
 struct Size {float width,height;};
 struct Placement {math::Vec position;math::Quat orientation;};
 inline Placement AtEyeLevel(math::Vec head,math::Quat look,float distance) {

@@ -10,8 +10,9 @@ void ReadJournalRect(); // UI thread only
 namespace hud {
 bool LayerFound();
 void UiFrame(bool active,bool workspace,int eye);
-// Native headset gameplay replaces the desktop toolbar with tracked displays.
-// This per-eye override never writes the user's legacy HUD preferences.
+// Hide the native HUDPanel for the entire XR session, including menus/loading.
+// Per-eye gameplay cropping is separate so native menu content is not erased.
+void NativeSession(bool active);
 void NativeGameplay(bool active);
 void EndNativeEye();
 bool NativeToolbarHidden();
