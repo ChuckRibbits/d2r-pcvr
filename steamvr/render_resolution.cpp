@@ -17,6 +17,7 @@ std::once_flag setup;
 std::atomic<uint64_t> requested{0};
 std::atomic<HWND> attached{nullptr};
 std::atomic<int> selection{0};
+std::atomic<uint64_t> reapplyAt{0};
 bool GameCaller(void* address){const auto p=reinterpret_cast<uintptr_t>(address);return p>=gameBegin&&p<gameEnd;}
 void Scale(HWND h,LPPOINT p,bool toRender) {
     const auto logical=window.Logical(h);RECT client{};
@@ -71,14 +72,23 @@ void Update(HWND h,bool running,Size recommended,Size maximum,Size source,int ch
     if(wanted)std::call_once(setup,Setup);
     const auto next=hooksReady?wanted:Size{};
     const auto prior=requested.exchange(Pack(next));
-    if(h)window.Request(h,next);
+    const auto now=GetTickCount64();
+    auto deadline=reapplyAt.load();
+    const bool reapply=next&&deadline&&now>=deadline&&reapplyAt.compare_exchange_strong(deadline,0);
+    if(!next)reapplyAt=0;
+    // The game's options handler can reset render state without a WM_SIZE.
+    // Keep pointer mapping active, but bypass the cached-size equality once.
+    // RenderWindow posts to the UI thread; never resize under renderer locks.
+    window.Request(h,next,reapply);
+    if(reapply&&logger)logger("Frame resolution: reapplying VR source after native graphics options Apply");
     if(prior!=Pack(next)&&logger){
         RECT client{};GetClientRect(h,&client);
         char line[224];std::snprintf(line,sizeof line,"Frame resolution: requested=%ux%u source=%ux%u desktop=%ldx%ld headset=%ux%u choice=%d",
             next.w,next.h,source.w,source.h,client.right,client.bottom,recommended.w,recommended.h,choice);logger(line);
     }
 }
-void Restore(){requested=0;window.Restore();}
+void OptionsApplied(){if(requested.load())reapplyAt=GetTickCount64()+500;}
+void Restore(){reapplyAt=0;requested=0;window.Restore();}
 void Describe(char* text,size_t capacity,Size source) {
     const auto wanted=Unpack(requested.load());
     std::snprintf(text,capacity,"VR source: %u x %u per eye%s",source.w,source.h,

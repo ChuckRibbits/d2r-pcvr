@@ -9,15 +9,18 @@ class RenderWindow {
     std::atomic<HWND> target{nullptr};
     std::atomic<uint64_t> desired{0},logical{0};
     std::atomic<bool> queued{false};
+    std::atomic<bool> reapply{false};
 public:
     static UINT Message(){static UINT id=RegisterWindowMessageW(L"D2R.PCVR.RenderResolution.v1");return id;}
     HWND Window()const{return target.load();}
     Size Logical(HWND h)const{return h==Window()?Unpack(logical.load()):Size{};}
-    bool Request(HWND h,Size size) {
+    bool Request(HWND h,Size size,bool force=false) {
         if(!h||!IsWindow(h)||!Message())return false;
-        if(target.load()!=h){target=h;logical=0;queued=false;}
+        if(target.load()!=h){target=h;logical=0;queued=false;reapply=false;}
         desired=Pack(size);
-        if(logical.load()==desired.load())return true;
+        if(!size)reapply=false;
+        else if(force)reapply=true;
+        if(logical.load()==desired.load()&&!reapply.load())return true;
         if(queued.exchange(true))return true;
         if(PostMessageW(h,Message(),0,0))return true;
         queued=false;return false;
@@ -30,7 +33,8 @@ public:
             RECT client{};
             if(!GetClientRect(h,&client)||IsIconic(h))return true;
             const auto next=desired.load();
-            if(next==logical.load())return true;
+            const bool forced=reapply.exchange(false);
+            if(next==logical.load()&&!forced)return true;
             logical=next;
             const auto size=next?Unpack(next):Size{uint32_t(client.right),uint32_t(client.bottom)};
             if(size)result=CallWindowProcW(original,h,WM_SIZE,SIZE_RESTORED,MAKELPARAM(size.w,size.h));
@@ -39,7 +43,7 @@ public:
         if(message==WM_CLOSE||message==WM_DESTROY){
             // Restore native dimensions before normal shutdown can persist a
             // windowed-size preference. Never modify Settings.json ourselves.
-            desired=0;queued=false;
+            desired=0;queued=false;reapply=false;
             if(logical.exchange(0)&&message==WM_CLOSE){
                 RECT client{};if(GetClientRect(h,&client)&&client.right>0&&client.bottom>0)
                     CallWindowProcW(original,h,WM_SIZE,SIZE_RESTORED,MAKELPARAM(client.right,client.bottom));
