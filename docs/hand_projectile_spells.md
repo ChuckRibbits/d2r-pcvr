@@ -33,7 +33,7 @@ hand. Bow, javelin and native fallback skills retain their existing aiming.
 Light permits up to four degrees of launch correction; Strong permits twelve.
 On an accepted cast, assist checks living hostile monster bodies within a
 12-metre ray reach and requires a clear path from the hand muzzle. A shot
-already intersecting an eligible body keeps its exact direction. Otherwise,
+already intersecting an eligible body keeps its exact launch direction. Otherwise,
 Light aims halfway inside the body's radius; Strong aims at its axis, capped
 at the correction limit. This leaves more room for enemy movement than aiming
 at the edge, but does not predict movement or guarantee a hit. Assist favors
@@ -47,15 +47,29 @@ Planar aiming permits horizontal corrections only, so a straight spell cannot
 be assisted into a body entirely below or above its launch height. Free aiming
 also permits a small vertical correction. Charged Bolt uses the target's ground
 footprint and adjusts the volley's heading, preserving native spread and
-wandering. Assistance happens once at launch: no homing, movement lock, added
-target indicator or changes to damage, mana costs and casting cadence.
+wandering, with launch-only assistance even on Strong.
+
+For Fire Bolt, Fireball, Ice Bolt and Ice Blast, **Strong adds gentle homing**
+toward the one enemy selected at launch, including a directly aimed target.
+Steering is limited to 60 degrees/second, 45 degrees total, and 1.5 seconds.
+Planar shots stay horizontal; free-aim shots can also bend vertically. The
+projectile never acquires a different enemy after launch. Death, disappearance,
+loss of hostility, a blocked path, a teleport, or passing the target ends
+steering permanently; the projectile continues on its last heading. Normal
+wall/body collisions and native lifetime still apply. Turning your hand or
+casting from the other hand does not redirect an existing shot.
+
+Off uses free aim; Light remains launch-only. Neither assistance mode adds a
+movement lock, target indicator or changes to damage, mana costs and cadence.
 
 Target scanning is bounded and runs only after native cast acceptance, avoiding
 repeated scans while a held trigger is refused for insufficient mana or town
 restrictions. It reuses the existing native hostility, body and wall queries;
-no new native address hooks are required. The collision bodies and launch-floor
-approximation still apply, and assist does not lead moving targets. A corrected
-shot can therefore still miss as enemies move or terrain changes.
+no new native address hooks are required. Strong rechecks only its acquired
+enemy on each native missile tick, resolving its ID afresh without retaining
+a native target pointer. The collision bodies and launch-floor approximation
+still apply. There is no predicted lead, and neither mode guarantees a hit;
+enemies can evade the limited steering or leave the projectile's height.
 
 ## Native casting and collision
 
@@ -134,16 +148,21 @@ The aim-assist fixtures cover angular limits across headings and pitches,
 unchanged direct shots, planar/free/ground targeting, corrected-path wall
 rejection, selection preference and its reset conditions, independent hands,
 and settings normalization, interaction and INI persistence. Follow-up fixtures
-cover a small sideways target movement after launch and the wider Strong limit.
+cover sideways target movement, the wider Strong limit, homing versus straight
+flight, steering bounds, continuous positions through turns, visual heading,
+planar/free/ground behavior, and permanent loss of steering.
 The Windows build and all 57 checks passed; its settings layout was also
 inspected with the synthetic preview. The initial headset test reported
-Fireballs passing beside enemies even on Strong. The deeper correction and
-wider Strong cone still need headset validation.
+Fireballs passing beside moving enemies even on Strong. Subsequent runtime
+logs confirmed launch corrections were applied, but that launch-only policy
+did not track enemy movement during flight. The gentle homing change still
+needs headset validation.
 
 The existing runtime log now includes `Frame spell assist` counters per hand:
 the sampled mode (0 Off, 1 Light, 2 Strong), casts, nearby bodies, bodies outside
 the launch height, eligible candidates considered for selection, paths blocked
-by terrain, direct shots, corrections, and the last correction angle. These
+by terrain, direct shots, launch corrections, homing steps, ended homing tracks,
+and the last launch correction angle. These
 periodic diagnostics distinguish weak correction from a missing target or an
 unexpected setting without retaining native enemy pointers after launch.
 
@@ -161,7 +180,8 @@ On an offline Sorceress in Steam or Battle.net D2R 3.3.93787:
    snap-turn through all headings; tilt the controllers up and down. Check that
    straight projectiles stay level at the muzzle height, without snapping to
    cardinal headings; Charged Bolt stays on the floor even with a raised hand.
-   Old shots keep their trajectory.
+   Off/Light shots keep their trajectory; Strong shots can follow only the
+   enemy acquired at launch, independently of later hand/head movement.
    Turn Planar spell aiming Off, Apply, and check up/down fire from both hands;
    restore On and confirm new shots return to level flight. Reopen settings and
    restart to check that the chosen mode persists.
@@ -179,6 +199,10 @@ On an offline Sorceress in Steam or Battle.net D2R 3.3.93787:
    Charged Bolt stays grounded. Check target changes after releasing a trigger,
    opening a menu, changing skills and turning. Reopen settings and restart to
    verify persistence. Record headset/runtime and edition with the results.
+7. On Strong, cast at enemies moving sideways and confirm a gentle visible
+   curve. Kill the target with the other hand, let it move behind a wall, and
+   fire past it: the old shot must not loop around or switch enemies. Compare
+   Light's straight flight and confirm Charged Bolt retains its native spread.
 
 Native behavior was investigated using the locally owned game's code and data,
 with the public [D2MOO research](https://github.com/ThePhrozenKeep/D2MOO) as a

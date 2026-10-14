@@ -143,6 +143,21 @@ struct Flight {
     float distance=0,speed=0;
     uint64_t updatedAt=0;
     bool alive=false;
+    // A curved spell is a sequence of straight swept segments. Keep the
+    // immutable muzzle pose and total distance; changing heading must never
+    // rotate the distance already travelled around the original hand.
+    Vec segmentOrigin{},segmentDirection{};
+    float segmentAt=0;
+    bool redirected=false;
+    Vec Direction() const {return redirected?segmentDirection:shot.direction;}
+    Vec PointAt(float travelled) const {
+        return redirected?segmentOrigin+segmentDirection*(travelled-segmentAt):shot.origin+shot.direction*travelled;
+    }
+    Vec TipAt(float travelled) const {return PointAt(travelled+ProjectileLength(shot));}
+    void Redirect(Vec direction) {
+        if(shot.kind!=Kind::Spell||NativePath()||!Finite(direction)||std::fabs(Length(direction)-1)>.001f)return;
+        segmentOrigin=PointAt(distance);segmentAt=distance;segmentDirection=direction;redirected=true;
+    }
     Vec nativePoint{},nativePrevious{},nativeStart{};
     bool NativePath() const {return shot.kind==Kind::Spell&&spellcast::NativePath(shot.skill);}
     // Ground spells retain the muzzle's horizontal placement, but not its
@@ -158,7 +173,7 @@ struct Flight {
         nativePoint=NativeOrigin()+(gridWorld-nativeStart)*(1/shot.unitsPerMetre);
         updatedAt=now;
     }
-    Vec Point() const {return NativePath()?nativePoint:shot.origin+shot.direction*distance;}
+    Vec Point() const {return NativePath()?nativePoint:PointAt(distance);}
     std::array<uint32_t,64> hit{};
     size_t hits=0;
     bool Seen(uint32_t id) const {return std::find(hit.begin(),hit.begin()+hits,id)!=hit.begin()+hits;}
@@ -170,7 +185,7 @@ struct Flight {
             return nativePrevious+(nativePoint-nativePrevious)*t;
         }
         const float extra=alive&&now>=updatedAt?std::min(float(now-updatedAt)/1000.f,.04f)*speed:0;
-        return shot.origin+shot.direction*(distance+extra);
+        return PointAt(distance+extra);
     }
 };
 // The asset initializer visits both the unit root and its visible mesh. Only
@@ -212,7 +227,7 @@ inline void ArrowMatrix(const Flight& f,uint64_t now,float out[16]) {
 }
 inline void SpellMatrix(const Flight& f,uint64_t now,float out[16]) {
     const auto p=f.TailAt(now)*f.shot.unitsPerMetre;
-    const Vec forward=f.shot.direction;
+    const Vec forward=f.Direction();
     const Vec guide=std::fabs(forward.y)<.95f?Vec{0,1,0}:Vec{1,0,0};
     const Vec right=math::Normalized(math::Cross(guide,forward)),up=math::Cross(forward,right);
     const Vec basis[3]={right,up,forward};
