@@ -24,6 +24,11 @@ inline Size Select(int choice,Size recommended,Size maximum) {
     return wanted.w>=640&&wanted.h>=480?wanted:Size{};
 }
 inline uint64_t Pack(Size s){return uint64_t(s.w)<<32|s.h;}
+// Native HD menus and font sizing expect a widescreen content band. The world
+// can remain square/portrait; do not enlarge fonts to that taller eye height.
+inline Size UiCanvas(Size render) {
+    return {render.w,std::min(render.h,render.w*9u/16u)};
+}
 inline Size Unpack(uint64_t v){return {uint32_t(v>>32),uint32_t(v)};}
 inline int Coordinate(int point,uint32_t from,uint32_t to) {
     if(from<2||to<2)return point;

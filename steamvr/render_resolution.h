@@ -8,7 +8,8 @@ bool Handle(HWND window,UINT message,WPARAM w,LPARAM& l,WNDPROC original,LRESULT
 void Update(HWND window,bool xrRunning,Size recommended,Size maximum,Size source,int choice);
 void Restore();
 // Native D2R Size ABI: width in the low 32 bits, height in the high 32.
-// Use the applied size, not a queued request; desktop remains a passthrough.
+// Fit a widescreen band in the applied size, not a queued request. Desktop
+// remains a passthrough; the world source and pointer conversion stay full-size.
 uint64_t UiSize(uint64_t nativeSize);
 // Reflow once if the signature-guarded UI hook became available after resize.
 void UiSizeReady();

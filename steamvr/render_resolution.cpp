@@ -65,7 +65,7 @@ void Register(void (*log)(const char*)) {
 }
 void Attach(HWND h){attached=h;}
 uint64_t UiSize(uint64_t nativeSize) {
-    const auto logical=window.Logical(attached.load());
+    const auto logical=UiCanvas(window.Logical(attached.load()));
     return logical?uint64_t(logical.w)|(uint64_t(logical.h)<<32):nativeSize;
 }
 void UiSizeReady() {
