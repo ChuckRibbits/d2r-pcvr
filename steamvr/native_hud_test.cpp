@@ -5,6 +5,15 @@
 #include <initializer_list>
 using namespace framevr::nativehud;
 int main(){
+    // Crash regression: the hidden HUD update dereferenced a null first
+    // notification widget at +0x145. Cover either missing child and a layout
+    // rebuild; normal desktop updates and fully bound layouts pass through.
+    for(bool hidden:{false,true}) {
+        assert(DeferUpdate(hidden,true,0,0x10000)==hidden);
+        assert(DeferUpdate(hidden,true,0x10000,0)==hidden);
+        assert(DeferUpdate(hidden,false,0x10000,0x20000)==hidden);
+        assert(!DeferUpdate(hidden,true,0x10000,0x20000));
+    }
     VisibilityOverride visibility;bool shown=true;int calls=0;
     auto set=[&](bool visible){shown=visible;++calls;return true;};
     visibility.Update(false,true,set);assert(shown&&calls==0); // desktop untouched
