@@ -7,6 +7,26 @@ static void Check(bool b,const char* label){if(!b){std::fprintf(stderr,"FAIL: %s
 static Hit At(Page p,Rect r){return HitTest(p,(r.x+r.w*.5f)/Width,(r.y+r.h*.5f)/Height);}
 int main(){
     Snapshot s;s.ready=true;
+    Check(s.values[SmoothTurn]==0&&s.values[Snap]==30,"snap turning remains the default");
+    Check(EffectiveSnapAngle(30,-1)==30&&EffectiveSnapAngle(0,-1)==0,"legacy snap and smooth profiles retain their mode");
+    Check(EffectiveSnapAngle(45,1)==0&&EffectiveSnapAngle(45,0)==45,"explicit toggle selects camera mode without losing angle");
+    Check(EffectiveSnapAngle(0,0)==30,"turning off legacy smooth mode restores default snap angle");
+    Check(SnapDegrees(NAN)==30&&SnapDegrees(-20)==15&&SnapDegrees(999)==180,"camera and menu share snap bounds");
+    {Model turning;turning.Open(s);
+        turning.Click(At(Page::VR,ValueBox(3)));
+        Check(turning.Get()[SmoothTurn]==1&&turning.Get()[Snap]==30,"value-box click enables smooth turning independently");
+        turning.Click({Kind::Close});turning.Open(s);
+        Check(turning.Get()[SmoothTurn]==0&&!turning.Dirty(),"closing without Apply discards smooth toggle");
+        turning.Click(At(Page::VR,ValueBox(3)));
+        auto request=turning.Click({Kind::Apply});
+        Check(request.changed==(1u<<SmoothTurn),"Apply saves only the turning mode");
+        turning.Click(At(Page::VR,ValueBox(3)));
+        Check(turning.Get()[SmoothTurn]==1,"toggle cannot change while saving");
+        auto saved=s;saved.values=request.values;saved.sequence=request.sequence;saved.result=Result::Saved;
+        turning.Observe(saved);turning.Close();turning.Open(saved);
+        turning.Click(At(Page::VR,ValueBox(3)));
+        Check(turning.Get()[SmoothTurn]==0&&turning.Get()[Snap]==30,"reopened toggle restores snap turning");
+    }
     Check(s.values[NavigationLocation]==0,"combined navigation defaults to Wrist");
     Check(Normalize(NavigationLocation,99)==0&&Normalize(NavigationLocation,1.5f)==0,"invalid navigation location falls back to Wrist");
     {Model navigation;navigation.Open(s);navigation.Click(At(Page::Controls,Tabs[int(Page::HUD)]));
@@ -105,7 +125,7 @@ int main(){
     m.Open(s);for(int i=0;i<200;++i)m.Click({Kind::Change,Snap,1});
     Check(m.Get()[Snap]==180,"upper limit clamps");
     for(int i=0;i<200;++i)m.Click({Kind::Change,Snap,-1});
-    Check(m.Get()[Snap]==0&&Normalize(Waist,INFINITY)==Definitions[Waist].defaultValue,"lower and nonfinite limits");
+    Check(m.Get()[Snap]==15&&Normalize(Waist,INFINITY)==Definitions[Waist].defaultValue,"lower and nonfinite limits");
     s.ready=false;m.Open(s);m.Click({Kind::Change,Motion,1});
     Check(!m.Dirty()&&!m.Click({Kind::Apply}).sequence,"missing config remains read-only");
     InputGate gate;

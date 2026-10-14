@@ -47,7 +47,7 @@ Quest left X/Y correspond to Index left A/B; right A/B labels are the same.
 
 | Action | VR control |
 | --- | --- |
-| Walk / turn | Left stick / right stick, including with a wheel open |
+| Walk / turn | Left stick / right stick, including with a wheel open; snap by default, with optional smooth turning |
 | Open or close a hand wheel | Click that hand's thumbstick; it stays open without holding |
 | Switch to the other wheel | Click the other thumbstick |
 | Assign a button | Opposite hand's laser + trigger: select a wedge, then a skill |
@@ -73,6 +73,11 @@ Editing consumes combat inputs but never pauses the game or zeros locomotion.
 Selection clicks do not cast. Release buttons and triggers after closing before
 using them in combat. Menu, tracking, equipment and assignment changes also
 require a fresh press. Only one wheel is open at a time.
+
+On the **VR** settings tab, **Smooth turning** defaults to **Off** (30-degree
+snap turns). Turn it **On**, then **Apply**, for continuous right-stick turning.
+**Snap turn angle** and **Smooth turn speed** keep their values when switching
+modes. Existing smooth-turn profiles retain their selected mode.
 
 ## Hand skill layouts
 

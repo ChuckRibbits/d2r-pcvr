@@ -105,8 +105,7 @@ std::vector<uint8_t> Paint(const Model& m,Hit hover,const char* runtimeStatus,co
             else if(key==RenderResolution)std::snprintf(label,sizeof label,"%s",resolution::Choices[int(value)]);
             else if(key==Dominant)std::snprintf(label,sizeof label,"%s",value>.5f?"Left":"Right");
             else if(d.max==1)std::snprintf(label,sizeof label,"%s",value>.5f?"On":"Off");
-            else if(key==Snap&&value==0)std::snprintf(label,sizeof label,"Smooth");
-            else if(key==Snap)std::snprintf(label,sizeof label,"Snap %.0f deg",value);
+            else if(key==Snap)std::snprintf(label,sizeof label,"%.0f deg",value);
             else if(key==TurnSpeed)std::snprintf(label,sizeof label,"%.0f deg/s",value);
             else if(key==Waist||key==BeltForward)std::snprintf(label,sizeof label,"%.1f cm",value*100);
             else std::snprintf(label,sizeof label,"%.0f",value);
