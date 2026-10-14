@@ -788,6 +788,7 @@ void LoadSettings() {
     projectiles::Configure(IniB(L"gameplay",L"motion_controls",false),IniF(L"gameplay",L"arrow_speed",2.f),IniB(L"gameplay",L"arrow_direct_release",true));
     bowvr::Configure(IniB(L"gameplay",L"motion_controls",false));
     combat::Configure(IniB(L"gameplay",L"motion_controls",false)&&IniB(L"gameplay",L"contact_hits",true));
+    melee::ConfigureAttackSpeed(IniB(L"gameplay",L"attack_speed",true),IniB(L"debug",L"melee_trace",false));
 #endif
 #ifdef D2RVR_NATIVE_OPENXR
     framevr::foveation::Configure(IniB(L"render",L"fixed_foveation",true),IniF(L"render",L"foveation_inner",0.55f),IniF(L"render",L"gaze_foveation_inner",0.35f));
@@ -3432,12 +3433,25 @@ bool InteractTargetNow() {
 void ApplyActions(XINPUT_STATE* s) {
     const uint32_t held = ActionsHeld();
     // Pick up only onto a target: nothing there, nothing pressed - never an attack.
+    // One press, one target: the one there at the press. A stays down only while
+    // that is still the target; when it changes (a chest spills its loot, the
+    // item is taken) A is let go until the action is released and pressed again,
+    // so a press never also takes what it uncovered and a hold never sweeps the
+    // floor. Native menus return before this, so their A is untouched.
     // Without the hook (another build) it cannot tell, and stays a plain A.
-    const bool interact = (held & D2RVR_ACT_INTERACT) && (InteractTargetNow() || !g_interactHooked.load());
-    static bool wasInteract = false, toldMiss = false;
-    if ((held & D2RVR_ACT_INTERACT) && !interact) {
-        if (!toldMiss) { toldMiss = true; Log("vrcam: pick up - nothing to pick up or open here, A not pressed"); }
-    } else toldMiss = false;
+    const bool interactHeld = (held & D2RVR_ACT_INTERACT) != 0;
+    static bool interactWas = false, wasInteract = false;
+    static uintptr_t interactLatch = 0;   // the press's target; 0 = none or spent
+    if (!interactHeld) interactLatch = 0;
+    else if (!interactWas) {
+        interactLatch = InteractTargetNow() ? g_interactTarget.load() : 0;
+        if (!interactLatch && g_interactHooked.load()) Log("vrcam: pick up - nothing to pick up or open here, A not pressed");
+    } else if (interactLatch && (!InteractTargetNow() || g_interactTarget.load() != interactLatch)) {
+        LogF("vrcam: pick up - target changed during the press (now %p), A let go until pressed again", (void*)g_interactTarget.load());
+        interactLatch = 0;
+    }
+    interactWas = interactHeld;
+    const bool interact = interactHeld && (interactLatch != 0 || !g_interactHooked.load());
     if (interact != wasInteract) { wasInteract = interact; if (interact) LogF("vrcam: pick up / interact - target %p", (void*)g_interactTarget.load()); }
     if ((held & D2RVR_ACT_ATTACK) || interact) s->Gamepad.wButtons |= XINPUT_GAMEPAD_A;
     // A pad button, not the keyboard's I: a key press flips the game's UI to

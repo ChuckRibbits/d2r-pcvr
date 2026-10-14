@@ -37,6 +37,15 @@ The left trigger assignment now owns supported bow gestures and physical Smite.
 Right trigger still grabs the bow string; away from the string it uses its own
 assignment. The Weapon skill gestures VR setting disables those skill gestures
 without removing button casts. Unsupported melee skills remain button-only.
+
+Physical Smite keeps its native input pulse alive for 180 ms so the left-hand
+alternate-bank preparation (50 ms at the game consumer) can finish before the
+button disappears. Native Smite completion cancels that pulse immediately;
+assignment, equipment, menu and tracking cancellation remain in effect. Other
+weapon gesture pulses retain their original duration. A regression fixture
+combines XR report timing with 25 Hz native pad polling across 160 scheduling
+combinations; the former 65 ms pulse loses the button edge in all of them.
+The longer pulse passes those cases; live shield-contact verification is pending.
 Each hand has its own aim pose and optional skill indicator (off by default). Left casts cannot inherit
 an equipped right-hand wand/staff shaft. Simultaneous input is serialized with
 release gating, not delayed until another cast finishes.
@@ -567,11 +576,30 @@ animation delay is involved. A contact can hit each creature once per stroke;
 settling or a deliberate translation/rotation reversal permits another stroke.
 A tracking discontinuity drops that motion and requires 80 ms of fresh coherent
 poses; continued swinging can recover without holding the hand still. Strength
-is judged over recent motion, so small windups cannot lock out later slashes. The sweep
-follows the rotating blade’s arc, including the initial acceleration path. Physical controller
+is judged over recent motion, so small windups cannot lock out later slashes. Weapon
+contacts require a coherent 18 cm excursion within 120 ms and at least 12.0 m/s of
+estimated motion at contact, including follow-through. The estimate combines hand
+translation with blade-axis rotation, capped by tracked hand rotation; twisting a
+shaft in place does not power a hit. The sweep follows the rotating blade’s arc
+between the latest poses without replaying earlier unpowered brushes when a
+stroke arms. Shield/Smite gesture thresholds remain unchanged. These weapon
+thresholds are adjustable under **VR Settings > Combat > Melee hit speed**
+(minimum 1.5 m/s, no upper cap, 0.25 steps, default 12.0). Apply saves
+`[gameplay] melee_hit_speed` and updates the detector live; changing it clears
+the previous stroke. Stroke travel remains 18 cm. The earlier 1.8 m/s candidate
+was too permissive in owner testing; the firmer default still needs headset testing. Physical controller
 translation/rotation supplies energy, so walking or turning a stationary weapon
 into an enemy does not cause damage. Right trigger remains an explicit native
 button fallback and suppresses simultaneous physical contact attacks.
+
+Confirmed weapon and shield impacts request a single 10 ms haptic tap at 95%
+amplitude and 180 Hz on the next XR input update, replacing the previous 45 ms
+buzz. Events are consumed once rather than held during overlap. A dedicated timer
+explicitly stops the vibration at its deadline even if rendering stalls; pulse
+replacement, focus loss and session shutdown cancel pending stops safely.
+This follows owner feedback that the Steam Frame sustained even one short pulse.
+Exact feel and frequency support depend on the controller/runtime and need
+headset validation. Existing saved melee speed choices remain unchanged.
 
 Collision volumes are currently **approximations**, not skinned mesh hitboxes:
 weapon category determines length/radius on the final attachment; native monster
@@ -586,8 +614,24 @@ line-of-sight, hostile relationship, creature life state, damage, elemental
 resistances/immunities, criticals, leech, procs, durability, death and XP still run.
 The existing `contact_hits=1` policy removes local-player random accuracy/block/
 dodge misses. Contact haptics acknowledge native accepted hit flags, including
-hits whose damage an immunity may prevent. Physical stroke timing replaces the
-basic attack's animation cadence; attack-speed stat scaling is not yet modeled.
+hits whose damage an immunity may prevent.
+
+**Attack speed** (`[gameplay] attack_speed=1`, the default) restores the basic
+attack's native pace without its animation. A landed hit starts the character's
+normal-attack cycle; contacts before it ends are refused, and a stroke strikes
+only one creature. The cycle uses D2's own formula (`attack_speed.h`): class and
+weapon class (Weapons.txt `wclass`) set the animation length, item IAS reduces
+it with the usual diminishing returns, and the weapon's speed modifier (WSM)
+lengthens or shortens it, so IAS breakpoints apply to swinging as they would to
+clicking. Whiffs, refused contacts and native rejections never start the cycle.
+Skill speed (Fanaticism, Frenzy, Burst of Speed, werewolf), slows and dual-wield
+attack sequences are not read yet. An unknown class or weapon class (including
+classes outside the original seven) leaves the cycle unknown, which does not
+gate hits. `attack_speed=0` restores unlimited free-swing contacts. The log
+reports the cycle inputs (`Frame melee attack speed:`) and refused contacts
+(`too_soon`, `extra_targets` in `Frame melee:`). `[debug] melee_trace=1` adds one
+`Frame melee trace:` line per native attack and per refused stroke, with the
+time since the previous landed hit; landed hits are never closer than `cycle`.
 
 Physical **basic-arrow** release queues one direct native basic attack on the authoritative
 game thread. The attack creates its normal damage-bearing missile and handles
@@ -804,6 +848,10 @@ without failures. The final free-swing run recorded 58 physical contacts and
 Arrow/spell live verification remains open.
 
 ### Ice Bolt visual height correction
+
+New or missing combat preferences default to **Planar spell aiming: Off** and
+**Projectile aim assist: Strong**. Players can still choose planar aiming, Light
+assistance or Off in VR Settings; explicit saved preferences are preserved.
 
 Hand-cast Ice Bolt uses the same airborne flight/planar aiming path as Fireball;
 Charged Bolt alone keeps its native ground path. Spell visuals now identify the
