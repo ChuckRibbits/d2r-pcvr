@@ -9,6 +9,30 @@
 using namespace framevr;
 static void Check(bool ok,const char* message){if(!ok){std::fprintf(stderr,"FAIL: %s\n",message);std::exit(1);}}
 int main(){
+    {
+        bool anchored=false;panels::Placement menu{};
+        auto frame=[&](bool rendering,bool focused,bool tracked,math::Vec head) {
+            if(panels::CanAnchor(anchored,rendering,focused,tracked)) {
+                menu=panels::AtEyeLevel(head,math::Yaw(.4f),panels::MainDistance);
+                anchored=true;
+            }
+        };
+        frame(true,false,false,{0,0,0});
+        frame(true,true,false,{0,0,0});
+        frame(true,false,true,{0,0,0});
+        frame(false,true,true,{0,0,0});
+        Check(!anchored,"startup waits for rendering, focus and tracked position/orientation");
+        frame(true,true,true,{0,1.7f,0});
+        Check(anchored&&menu.position.y==1.7f,"first reliable pose anchors menu at standing eye height");
+        const auto fixed=menu.position;
+        frame(true,true,true,{.2f,1.5f,.1f});
+        Check(menu.position.x==fixed.x&&menu.position.y==fixed.y&&menu.position.z==fixed.z,"head movement does not drag an open menu");
+        anchored=false; // Focus return or explicit recenter invalidates placement.
+        frame(true,true,false,{0,0,0});
+        Check(!anchored,"reconnect cannot anchor from an untracked origin");
+        frame(true,true,true,{0,1.2f,0});
+        Check(anchored&&menu.position.y==1.2f,"reacquired tracking supports seated eye height");
+    }
     for(auto name:{"WaypointPanel","WaypointPanelExpansion","WaypointPanelOriginal"})
         Check(panels::Modal(name)&&panels::OpaqueBackground(name),"waypoint destinations use the shared opaque black background instead of different per-eye worlds");
     for(auto name:{"UISwitcher","VendorPanelLayout","VendorPanelOriginalLayout","TradeLayout","GamblePanel",
