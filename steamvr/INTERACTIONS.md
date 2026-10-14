@@ -54,11 +54,11 @@ An equipped weapon remains held without continuously squeezing grip.
 |---|---|---|
 | Weapons | Reach to a holster, squeeze grip, pull the set into use | Holster highlight, item silhouette/name, then confirmed equipped set |
 | Skills/spells | Hold Left Y for an eight-slot wheel over the left palm; point right hand and click trigger to select | Actual skill name/icon, selected mode and availability |
-| Minimap | Look at the back of the left wrist, or hold Left Y and select **MAP**; **SPELLS** returns to skills | Native explored map above wrist vitals/XP by default; **VR Settings > VR > Wrist minimap** disables only the wrist copy; wheel map and selected skill remain available |
-| Compass | Look at the back of the left wrist | Bronze bearing strip above the minimap; center marker shows facing, N is map-up. **VR Settings > VR > Wrist compass** defaults On and works with wrist minimap Off |
+| Minimap | Look at the back of the left wrist, or select **MAP** in either hand wheel | Native explored map above wrist vitals/XP by default; **VR Settings > HUD > Wrist minimap** disables only the wrist copy; wheel map and selected skill remain available |
+| Compass | Look at the back of the left wrist | Bronze bearing strip above the minimap; center marker shows facing, N is map-up. **VR Settings > HUD > Wrist compass** defaults On and works with wrist minimap Off |
 | Quick casting | Hold Left Trigger + a face button; add Left Grip for alternate four slots; right hand aims | Same native assignments as the wheel; see GAMEPLAY mapping |
 | Potions | Reach to the front belt, grip a bottle, bring to mouth and tip | Actual potion type/count, then confirmed consumption |
-| Health/mana | Look at the back of the left wrist, like checking a watch | Live life/mana orbs; brief low-health/low-mana cues otherwise |
+| Health/mana | Choose Wrist, Palm, Either, or Off in **VR Settings > HUD** | Palm requires left palm upward in front of the eyes for 0.25 seconds, with left trigger/grip released and no left-hand cast. Vitals follow the hand; automatic low-resource popups/vibration are a separate opt-in, off by default |
 | Journal/map | Open Journal through the native tabbed game menu (Left X / Frame Left A) | Native quest status/text and tabs, readable at a comfortable size |
 
 Preserve Left X inventory, Left Grip + Left Stick Click height reset, ordinary

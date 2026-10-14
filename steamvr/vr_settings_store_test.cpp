@@ -16,6 +16,7 @@ int main(){
     vrsettings::Poll(name);auto before=vrsettings::Read();
     Check(before.values[WristMap]==1,"legacy INI without wrist_map defaults on");
     Check(before.values[WristCompass]==1,"legacy INI without wrist_compass defaults on");
+    Check(before.values[VitalsLocation]==0&&before.values[CriticalAlerts]==0,"legacy INI preserves wrist but disables unsolicited vitals alerts");
     Check(before.ready&&before.values[DrawDistance]==6&&before.values[Foveation]==1&&before.values[ObjectDistance]==300,"explicit distance retained; missing object distance uses shipped default");
     Check(WritePrivateProfileStringW(L"render",L"rings",nullptr,name),"remove terrain distance in isolated legacy profile");
     vrsettings::Poll(name);before=vrsettings::Read();
@@ -27,6 +28,20 @@ int main(){
     Check(vrsettings::Submit(request)&&!vrsettings::Submit(request),"one queued transaction at a time");
     Check(vrsettings::Read().result==Result::Saving&&vrsettings::Poll(name),"write transaction succeeds");
     auto saved=vrsettings::Read();Check(saved.result==Result::Saved&&saved.values[Foveation]==2&&saved.values[Motion]==1,"saved values round trip");
+    for(int location=1;location<=3;++location){
+        model.Open(vrsettings::Read());model.Click({Kind::Change,VitalsLocation,1});request=model.Click({Kind::Apply});
+        Check(vrsettings::Submit(request)&&vrsettings::Poll(name),"save vitals location");
+        saved=vrsettings::Read();
+        Check(saved.values[VitalsLocation]==location&&Int(path,L"interactions",L"vitals_location")==location&&
+            saved.values[CriticalAlerts]==0&&saved.values[WristMap]==1&&saved.values[WristCompass]==1,"all locations survive reload without changing alerts or navigation");
+    }
+    for(int enabled:{1,0}){
+        model.Open(vrsettings::Read());model.Click({Kind::Change,CriticalAlerts,1});request=model.Click({Kind::Apply});
+        Check(vrsettings::Submit(request)&&vrsettings::Poll(name),"save alert preference");
+        saved=vrsettings::Read();
+        Check(saved.values[CriticalAlerts]==enabled&&Int(path,L"interactions",L"critical_alerts")==enabled&&Int(path,L"custom",L"keep")==12345,
+            "alert opt-in and opt-out survive reload and preserve unrelated settings");
+    }
     Check(saved.values[SkillGestures]==1,"skill gestures default on for existing profiles");
     Check(saved.values[WeaponSkillIndicators]==0,"existing profiles hide weapon skill indicators by default");
     model.Open(saved);model.Click({Kind::Change,WeaponSkillIndicators,1});request=model.Click({Kind::Apply});

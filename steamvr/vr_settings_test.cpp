@@ -8,18 +8,27 @@ static Hit At(Page p,Rect r){return HitTest(p,(r.x+r.w*.5f)/Width,(r.y+r.h*.5f)/
 int main(){
     Snapshot s;s.ready=true;
     Check(s.values[WristMap]==1,"wrist minimap defaults on");
-    {Model wrist;wrist.Open(s);wrist.Click(At(Page::Controls,Tabs[1]));
-        const int row=8;
-        Check(RowKey(Page::VR,row)==WristMap&&RowY+row*RowStep+72<876,"wrist map row fits above status and footer");
-        wrist.Click(At(Page::VR,ValueBox(row)));
+    {Model wrist;wrist.Open(s);wrist.Click(At(Page::Controls,Tabs[int(Page::HUD)]));
+        const int row=2;
+        Check(wrist.page==Page::HUD&&RowKey(Page::HUD,row)==WristMap&&RowY+row*RowStep+72<876,"wrist map row fits above status and footer");
+        wrist.Click(At(Page::HUD,ValueBox(row)));
         auto request=wrist.Click({Kind::Apply});
         Check(request.changed==(1u<<WristMap)&&request.values[WristMap]==0,"wrist map toggle saves only its own setting");}
     Check(s.values[WristCompass]==1,"wrist compass defaults on");
-    {Model compass;compass.Open(s);const int row=RowCount(Page::VR)-1;
-        Check(RowKey(Page::VR,row)==WristCompass&&RowY+row*RowStep+72<876,"compass row fits above footer");
-        compass.Click(At(Page::VR,ValueBox(row)));const auto request=compass.Click({Kind::Apply});
+    {Model compass;compass.Open(s);const int row=RowCount(Page::HUD)-1;
+        Check(RowKey(Page::HUD,row)==WristCompass&&RowY+row*RowStep+72<876,"compass row fits above footer");
+        compass.Click(At(Page::HUD,ValueBox(row)));const auto request=compass.Click({Kind::Apply});
         Check(request.changed==(1u<<WristCompass)&&request.values[WristCompass]==0&&request.values[WristMap]==1,
             "compass can be disabled independently of wrist map");}
+    Check(s.values[VitalsLocation]==0&&s.values[CriticalAlerts]==0,"existing wrist placement remains default; automatic alerts require opt-in");
+    Check(Normalize(VitalsLocation,99)==0&&Normalize(VitalsLocation,1.5f)==0,"unknown vitals locations fall back to wrist");
+    {Model hud;hud.Open(s);hud.Click(At(hud.page,Tabs[int(Page::HUD)]));
+        hud.Click(At(hud.page,Increase(0)));
+        Check(hud.Get()[VitalsLocation]==1&&!hud.Get()[CriticalAlerts],"Palm selection does not enable automatic alerts");
+        auto request=hud.Click({Kind::Apply});
+        Check(request.changed==(1u<<VitalsLocation),"palm placement saves independently");
+        hud.Open(s);hud.Click(At(Page::HUD,ValueBox(1)));request=hud.Click({Kind::Apply});
+        Check(request.changed==(1u<<CriticalAlerts)&&request.values[CriticalAlerts]==1,"alert opt-in saves independently");}
     Check(s.values[PlanarSpellAim]==1,"spell aiming defaults to planar");
     {Model aim;aim.Open(s);const auto hit=At(Page::Controls,PlanarSpellAimBox);
         Check(hit.kind==Kind::Change&&hit.index==PlanarSpellAim,"controls tab exposes planar aiming toggle");
@@ -60,7 +69,7 @@ int main(){
     Check(HitTest(Page::VR,-.01f,.5f).kind==Kind::None&&HitTest(Page::VR,NAN,.5f).kind==Kind::None,"invalid laser coordinates ignored");
     Check(At(Page::VR,Calibrate).kind==Kind::Calibrate&&At(Page::VR,Recenter).kind==Kind::Recenter,"separate calibration and recenter buttons");
     Check(Normalize(BeltForward,.06f)==.06f,"settings preserve the closer belt placement");
-    for(int p=0;p<3;++p){
+    for(int p=0;p<TabCount;++p){
         auto hit=At(Page(p),Tabs[p]);Check(hit.kind==Kind::Tab&&hit.index==p,"tab rectangle matches input");
         for(int row=0;row<RowCount(Page(p));++row){
             auto plus=At(Page(p),Increase(row)),minus=At(Page(p),Decrease(row));

@@ -169,7 +169,7 @@ not generate melee velocity. The layout currently assumes a right-handed player.
 | Swap weapon sets | Reach the swap hand over either shoulder and press its grip; right hand by default, selectable in VR settings. Hip anchors are removed |
 | Seated weapon selection | Utility wheel → **Weapon I** or **Weapon II** |
 | Stow/draw | Utility wheel → **Stow weapons** / **Draw weapons**; native equipped stats stay unchanged |
-| Wrist health/mana | Look at the **back of your left wrist, like checking a watch**, within 75 cm of your eyes; red life and blue mana orbs appear there. No button required. Brief status cue also appears at low health or low mana in spell mode |
+| Health/mana | Check the back of your left wrist, or choose **Palm** in **VR Settings > HUD** and hold your left palm upward in front of you briefly. No button required; automatic alerts are off by default |
 | Explored minimap | Hold Left Y ? **MAP** in the bottom tabs; point right laser + trigger. **SPELLS** returns to skills; releasing Left Y closes the menu |
 | Quest journal | Open the native tabbed game menu with Left X / Frame Left A, then select Journal. The duplicate wheel entry is removed |
 | Journal controls | Right laser + trigger uses native page controls/act tabs; Right B follows native back; Left X performs native X |
@@ -178,7 +178,7 @@ not generate melee velocity. The layout currently assumes a right-handed player.
 | Height reset / map | Left grip + left stick click / plain left stick click, unchanged |
 
 The minimap also appears above the health/mana indicators when you look at the
-back of your left wrist. **VR Settings > VR > Wrist minimap** is **On** by
+back of your left wrist. **VR Settings > HUD > Wrist minimap** is **On** by
 default; turn it **Off** and click **Apply** to hide only the wrist copy.
 The wheel's **MAP** tab remains available either way.
 
@@ -188,9 +188,24 @@ with **E/S/W** and diagonal bearings around it. Physical turns, stick turns and
 recenter use the same orientation as the stereo camera. Looking straight down
 retains the last reliable horizontal head direction so the bearings do not flip.
 The strip appears with the watch gesture and hides while a wheel or menu is open.
-**VR Settings > VR > Wrist compass** defaults to **On** and can be disabled
+**VR Settings > HUD > Wrist compass** defaults to **On** and can be disabled
 independently. With the wrist minimap off, it moves directly above the vitals.
 The compass shows direction only; it does not add destination or quest markers.
+
+**VR Settings > HUD > Health / mana location** offers **Wrist** (default),
+**Palm**, **Either**, or **Off**. Click **Apply** to save. Palm mode puts the
+health/mana and XP display just above your left palm: raise it in front of you,
+turn the palm upward toward your eyes, and hold for a quarter second. Release
+the left trigger and grip; casting with that hand hides the display. Lower or
+turn your hand to hide it. Losing left-hand tracking or opening a menu hides it
+and requires a new deliberate hold. The wrist minimap and compass remain
+available independently of the health/mana location.
+
+**Low health / mana alerts** is a separate toggle, **Off** by default. Leave it
+off for gesture-only vitals. Opting in adds a brief popup near your view and
+left-hand vibration below 25% health or 10% mana in spell mode. Location **Off**
+suppresses these alerts too. Palm placement and gesture comfort still require
+headset testing on Quest and Index controllers.
 
 The Map tab preserves your selected spell and uses the native explored areas
 and markers. Choose the left or right corner minimap layout in game options;
@@ -400,11 +415,16 @@ Optional live configuration (metres below/forward/from the estimated torso):
 [interactions]
 seated=0
 wrist_map=1
+wrist_compass=1
+vitals_location=0
+critical_alerts=0
 waist_below_eyes=0.65
 belt_forward=0.26
 hip_width=0.28
 holsters=1
 ```
+
+`vitals_location`: `0` Wrist, `1` Palm, `2` Either, `3` Off.
 
 Seated mode raises the waist anchors. The belt and hip holsters follow tracked
 position and horizontal facing every frame, including while hands are lowered
