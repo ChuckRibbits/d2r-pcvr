@@ -107,7 +107,8 @@ head-turn test. The first candidate did not activate because the observer
 registered after the engine created its lighting pipelines. Registration now
 runs immediately after loading ReShade, before renderer startup; runtime logs
 confirmed the exact shader match and its use during VR eye rendering before
-the successful comparison. Other acts, runtimes and graphics configurations
+the successful comparison. The owner then re-enabled Added Fog and Added Sky
+and confirmed both work with the correction. Other acts, runtimes and graphics configurations
 still need broader visual testing.
 Its compiled compute shader passes a software GPU test against a full-pixel
 reference scan, including exact 4096 square, wide views, empty tiles, extrema
