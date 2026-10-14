@@ -9,7 +9,7 @@ namespace framevr::settings {
 enum class Page { Controls, VR, Video };
 enum Key { Motion, Seated, Dominant, Snap, TurnSpeed, Waist, BeltForward,
            Foveation, Sky, Fog, Ceiling, DrawDistance, ObjectDistance,
-           EyeHeight, ArmSpan, BodyCalibration, SkillGestures, ControllerLabels, WeaponSkillIndicators, Count };
+           EyeHeight, ArmSpan, BodyCalibration, SkillGestures, ControllerLabels, WeaponSkillIndicators, PlanarSpellAim, Count };
 struct Definition {
     const char* label;
     const char* detail;
@@ -37,6 +37,7 @@ inline constexpr std::array<Definition,Count> Definitions{{
     {"Weapon skill gestures", "Compatible trigger skills power shield bash and bow release", L"gameplay",L"skill_gestures",1,0,1,1},
     {"Headset / controller labels", "Automatic uses the active controllers; override if labels do not match", L"interactions",L"controller_labels",0,0,4,1},
     {"Weapon skill indicators", "Show skill icons and names beside both weapons", L"interactions",L"weapon_skill_indicators",0,0,1,1},
+    {"Planar spell aiming", "Keep straight projectiles level; Off allows aiming up/down", L"gameplay",L"planar_spell_aim",1,0,1,1},
 }};
 using Values=std::array<float,Count>;
 inline Values Defaults(){Values v{};for(int i=0;i<Count;++i)v[i]=Definitions[i].defaultValue;return v;}
@@ -61,7 +62,7 @@ constexpr Rect Tabs[3]={{40,114,386,60},{447,114,386,60},{854,114,386,60}};
 constexpr Rect Apply{965,918,275,68},Close{650,918,275,68},Recenter{40,918,270,68},Calibrate{330,918,300,68};
 constexpr int RowY=230,RowStep=78;
 constexpr Rect ControllerBox{865,181,375,44};
-constexpr Rect WeaponIndicatorsBox{942,788,221,52};
+constexpr Rect WeaponIndicatorsBox{942,720,221,52},PlanarSpellAimBox{942,786,221,52};
 inline Rect ControllerOption(int option){return {865,225+option*58,375,58};}
 inline Rect Decrease(int row){return {865,RowY+row*RowStep,64,52};}
 inline Rect Increase(int row){return {1176,RowY+row*RowStep,64,52};}
@@ -87,6 +88,7 @@ inline Hit HitTest(Page page,float u,float v,bool controllerMenu=false){
     if(Recenter.Contains(x,y))return {Kind::Recenter};
     if(Calibrate.Contains(x,y))return {Kind::Calibrate};
     if(page==Page::Controls&&WeaponIndicatorsBox.Contains(x,y))return {Kind::Change,WeaponSkillIndicators,1};
+    if(page==Page::Controls&&PlanarSpellAimBox.Contains(x,y))return {Kind::Change,PlanarSpellAim,1};
     for(int r=0;r<RowCount(page);++r){
         const auto key=RowKey(page,r);
         if(Decrease(r).Contains(x,y))return {Kind::Change,key,-1};

@@ -92,6 +92,10 @@ mana costs apply to each cast, and walking remains available without entering
 the original casting animation. See [hand projectile spells](docs/hand_projectile_spells.md)
 for the experimental adapter's scope and offline testing checklist.
 
+**VR Settings > Controls > Planar spell aiming** is On by default. Turn it Off
+and Apply for up/down aiming of straight projectile spells; Charged Bolt keeps
+its native planar spread. The preference saves and applies to new casts live.
+
 Other skills retain native repeat behavior, delays and animation restrictions.
 A native action has one owner: the first held input wins, with right-hand
 priority for simultaneous presses. Native and physical casts do not start

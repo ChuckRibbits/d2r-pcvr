@@ -25,6 +25,14 @@ int main() {
     assert(aim[0].Update(2,2,{0,-1,0},{0,0,1}).z==1);
     assert(aim[0].Update(2,2,{std::numeric_limits<float>::quiet_NaN(),0,0},{}).z==1);
     assert(aim[0].Update(2,2,{0,std::numeric_limits<float>::infinity(),0},{}).z==1);
+    for(float pitch:{-.9f,.9f}) {
+        const math::Vec direction={std::cos(pitch),std::sin(pitch),0};
+        const auto free=aim[0].Update(3,1,direction,{},false);
+        assert(free.x==direction.x&&free.y==direction.y&&free.z==direction.z);
+        const auto flat=aim[0].Update(3,1,direction,{},true);
+        assert(flat.x==1&&flat.y==0&&flat.z==0);
+    }
+    assert(aim[0].Update(3,1,{0,1,0},{},false).y==1);
     for(int id:{36,39,45,47})assert(spellcast::Candidate(1,id,0,0,56,0));
     assert(spellcast::Candidate(1,38,0,17,-1,0,56));
     assert(!spellcast::Candidate(1,38,0,0,56,0));

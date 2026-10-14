@@ -7,6 +7,14 @@ static void Check(bool b,const char* label){if(!b){std::fprintf(stderr,"FAIL: %s
 static Hit At(Page p,Rect r){return HitTest(p,(r.x+r.w*.5f)/Width,(r.y+r.h*.5f)/Height);}
 int main(){
     Snapshot s;s.ready=true;
+    Check(s.values[PlanarSpellAim]==1,"spell aiming defaults to planar");
+    {Model aim;aim.Open(s);const auto hit=At(Page::Controls,PlanarSpellAimBox);
+        Check(hit.kind==Kind::Change&&hit.index==PlanarSpellAim,"controls tab exposes planar aiming toggle");
+        aim.Click(hit);Check(s.values[PlanarSpellAim]==1&&aim.Get()[PlanarSpellAim]==0,"aim change is a draft");
+        const auto request=aim.Click({Kind::Apply});
+        Check(request.changed==(1u<<PlanarSpellAim)&&request.values[PlanarSpellAim]==0,"free aim saves only its preference");
+        Check(!WeaponIndicatorsBox.Contains(PlanarSpellAimBox.x,PlanarSpellAimBox.y)&&
+              PlanarSpellAimBox.y+PlanarSpellAimBox.h<876,"aim toggle avoids other controls and footer");}
     Check(s.values[WeaponSkillIndicators]==0,"weapon skill indicators default off");
     {Model indicators;indicators.Open(s);const auto hit=At(Page::Controls,WeaponIndicatorsBox);
         Check(hit.kind==Kind::Change&&hit.index==WeaponSkillIndicators,"controls tab exposes weapon indicator toggle");

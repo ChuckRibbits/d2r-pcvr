@@ -17,10 +17,10 @@ class PlanarAim {
         out=math::Normalized({in.x,0,in.z});return true;
     }
 public:
-    math::Vec Update(uint64_t world,uint64_t turn,math::Vec direction,math::Vec fallback) {
+    math::Vec Update(uint64_t world,uint64_t turn,math::Vec direction,math::Vec fallback,bool planar=true) {
         if(world!=session||turn!=epoch){session=world;epoch=turn;last={};}
         if(!Project(direction,last)&&math::Dot(last,last)<.5f)Project(fallback,last);
-        return last;
+        return planar?last:direction;
     }
 };
 inline bool NativePath(int id) {return id==38;} // Charged Bolt keeps its native wandering path and grid hits.
