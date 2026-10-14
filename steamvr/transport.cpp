@@ -795,7 +795,11 @@ void UpdateControllerLabels() {
                 detected.hands[hand]=controllers::Detect(path);
             }
         }
-        if(detectedControllers!=detected){detectedControllers=detected;++settingsModel.revision;}
+        if(detectedControllers!=detected){
+            detectedControllers=detected;++settingsModel.revision;
+            char line[120];std::snprintf(line,sizeof line,"Frame controllers: right=%s left=%s",
+                controllers::Name(detected.hands[0]),controllers::Name(detected.hands[1]));Say(line);
+        }
         controllerProfilesDirty=retry;
     }
     controllerLabels=controllers::Resolve(controllers::Choice(int(vrsettings::Read().values[settings::ControllerLabels])),detectedControllers);
@@ -1711,7 +1715,18 @@ bool CopyUi(reshade::api::command_queue* rq) {
     uiMissingFrames=0;
     bool croppedNpc=false;
     int32_t native[4]{};
-    if(npcChoicesMode&&gamestate::NpcChoicesRect(native)) {
+    // Quest test candidate: retain the whole native dialogue canvas while
+    // diagnosing missing Trade/Talk choices at 3072 square. Frame/Index keep
+    // the owner-verified crop. This is deliberately not in the shortcut PR.
+    const bool quest=detectedControllers.hands[0]==controllers::Layout::Touch||
+        detectedControllers.hands[1]==controllers::Layout::Touch;
+    static bool uncroppedNpcLogged=false;
+    if(npcChoicesMode&&quest) {
+        crop[0]=crop[1]=0;crop[2]=int(w);crop[3]=int(h);
+        if(!uncroppedNpcLogged)Say("Frame NPC choices: Quest diagnostic uses complete canvas, no widget crop");
+        uncroppedNpcLogged=true;
+    } else uncroppedNpcLogged=false;
+    if(npcChoicesMode&&!quest&&gamestate::NpcChoicesRect(native)) {
         const auto box=dialogue::Crop({native[0],native[1],native[2],native[3]},int(w),int(h));
         if(box.w>0&&box.h>0) {
             crop[0]=box.x;crop[1]=box.y;crop[2]=box.w;crop[3]=box.h;croppedNpc=true;
