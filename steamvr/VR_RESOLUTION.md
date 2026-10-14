@@ -133,15 +133,25 @@ UI root/safe-area sizing, layout globals and cursor bounds consume that value.
 With a 3840-wide desktop and a 3072-wide VR source, the character-selection
 list and outer inventory tabs can therefore fall outside the rendered texture.
 A hook guarded by the complete 48-byte query and seven UI call sites returns
-the applied VR width and height only to UI root/layout and cursor consumers.
+the applied VR width and a fitting widescreen height only to UI root/layout
+and cursor consumers. For example, a 3072-square world uses a 3072 x 1728 UI
+band at the top of its full-size texture. Feeding the full square height to
+the native UI triggered a text-rendering crash during startup in the first
+candidate; the fitted band also keeps font sizing in the native layout's
+aspect. The world source and laser-to-source coordinates remain full-size.
 Movie and other engine consumers retain their original dimensions. Before
 resize, after XR shutdown and in Desktop mode,
 it returns the original result. No global `GetClientRect` override is used.
 If the hook installs after the first resize, it queues one reflow on the window
 thread. Unsupported code retains the original query. The real-window fixture
 checks square/portrait sizes, pointer agreement, deferred reflow and restoration;
-the guard matches a local 3.3.93787 code snapshot. Headset edge visibility and
-selection still require testing with this candidate.
+the guards match a local 3.3.93787 code snapshot. The final combined candidate
+passed all 57 automated checks and launched with 3072-square SteamVR eye
+textures. A desktop capture shows the complete character-selection list and
+both outer menu edges; the process continued rendering normally. This probe
+used the native skip-logo-video launch option and did not enter a character.
+Headset edge visibility, inventory tabs, merchant/tooltips and laser selection
+still require testing with this candidate.
 
 Automated Windows fixtures cover runtime limits, invalid choices, asynchronous
 window resize/coalescing, physical-window preservation, desktop restoration,
