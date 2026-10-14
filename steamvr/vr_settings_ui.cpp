@@ -102,6 +102,7 @@ std::vector<uint8_t> Paint(const Model& m,Hit hover,const char* runtimeStatus,co
             char label[96];
             if(key==Foveation){const char* modes[]={"Off","Fixed","Eye tracked"};std::snprintf(label,sizeof label,"%s",modes[int(value)]);}
             else if(key==VitalsLocation)std::snprintf(label,sizeof label,"%s",vitals::LocationNames[int(value)]);
+            else if(key==RenderResolution)std::snprintf(label,sizeof label,"%s",resolution::Choices[int(value)]);
             else if(key==Dominant)std::snprintf(label,sizeof label,"%s",value>.5f?"Left":"Right");
             else if(d.max==1)std::snprintf(label,sizeof label,"%s",value>.5f?"On":"Off");
             else if(key==Snap&&value==0)std::snprintf(label,sizeof label,"Smooth");
@@ -115,8 +116,8 @@ std::vector<uint8_t> Paint(const Model& m,Hit hover,const char* runtimeStatus,co
             button(ValueBox(row),label,{d.max==1?Kind::Change:Kind::None,key,1},false,enabled);
         }
         if(m.page==Page::Video){
-            text("DLSS, textures and shadows: game Options > Video. Stream resolution: SteamVR.",{40,760,1200,55},false,false,quiet);
-            text("Eye tracking requires runtime permission. Some effects may compile on first use.",{40,816,1200,48},false,false,quiet);
+            text("Applying resolution changes rebuilds the VR view. Desktop restores the game's window size.",{40,716,1200,65},false,false,quiet);
+            text("Headset uses the runtime recommendation, capped at 4096 per side. DLSS: game Options.",{40,795,1200,65},false,false,quiet);
         }
         if(m.page==Page::HUD){
             text("Palm: raise your left hand in front of you, turn the palm upward and hold briefly.",{58,525,1160,76},false,false,quiet);

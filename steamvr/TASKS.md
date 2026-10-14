@@ -287,8 +287,9 @@ Broader performance/visual regression checks remain below.
   runtime submission result 0 confirmed; owner verified **"Visible and usable"**
   after testing the panel/laser/tabs. Broader Apply/cancel checks remain above.
 
-Native DLSS/textures/shadows remain in the game Video menu; resolution remains
-in SteamVR. The new panel is not a binding editor and does not pause simulation.
+Native DLSS/textures/shadows remain in the game Video menu. VR source resolution
+now has an independent Video setting; see [VR_RESOLUTION.md](VR_RESOLUTION.md).
+The panel is not a binding editor and does not pause simulation.
 
 ## Next interaction work — owner request, October 9
 
