@@ -145,12 +145,17 @@ int main() {
         const auto impact=bowflight::GridPoint(charged.shot,charged.Point())*shot.unitsPerMetre;
         assert(bowflight::Length(impact-(grid+math::Vec{2,0,-1}))<.0001f);
         // Straight projectile heights are unaffected by the ground-spell rule.
-        auto straight=charged;straight.shot.skill=47;
-        assert(straight.TailAt(140).y==floor+handHeight);
+        for(int skill:{39,47}) {
+            auto straight=charged;straight.shot.skill=skill;
+            assert(straight.TailAt(140).y==floor+handHeight);
+            float m[16]={1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1};
+            bowflight::SpellMatrix(straight,140,m);
+            assert(std::fabs((m[13]+4*m[5])-(floor+handHeight)*shot.unitsPerMetre)<.0001f);
+        }
     }
     const auto frozen=bowflight::Tip(flight.shot,3);shot.direction={1,0,0};
     assert(bowflight::Tip(flight.shot,3).y==frozen.y);
     bowflight::VisualBinding binding;
-    assert(!binding.BindRoot(14,true)&&binding.BindRoot(12,false)&&!binding.BindRoot(13,false));
+    assert(!binding.BindRoot(14,false)&&binding.BindRoot(12,true)&&!binding.BindRoot(13,false));
     puts("Hand spells: planar yaw, dual Fireball/Charged Bolt, native wandering, cancellation, cast cadence and eligibility passed");
 }

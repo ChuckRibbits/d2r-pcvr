@@ -798,3 +798,23 @@ three eligible melee checks, three accuracy overrides and three block bypasses
 without failures. The final free-swing run recorded 58 physical contacts and
 58 native accepted hits with no rejections; the owner reported "works great."
 Arrow/spell live verification remains open.
+
+### Ice Bolt visual height correction
+
+Hand-cast Ice Bolt uses the same airborne flight/planar aiming path as Fireball;
+Charged Bolt alone keeps its native ground path. Spell visuals now identify the
+asset instance root from the native entity list and Transform parent, rather
+than taking the first entity without TrackReleasePoint. Ice Bolt's VFX child
+also lacks that component, so the previous heuristic could bind the child and
+subtract its authored height at the wrong level. Binding only the actual root
+keeps the emitter at the physical shot position with the existing +4-unit
+child-height compensation. Native costs, damage, speeds and flight remain.
+
+The new list/storage/parent offsets are guarded against local 3.3.93787 code.
+Synthetic fixtures visit the release-free child before the root, validate full
+entity generations and reject missing/malformed state. Height checks cover Ice
+Bolt and Fireball at varied hand/floor heights alongside grounded Charged Bolt.
+All 55 native checks pass. The correction still needs an offline headset test
+of Ice Bolt in each hand, planar/free aim and concurrent casting. No agent
+headset validation or game asset distribution. A bounded first-eight-entities
+log records Ice Bolt root classification to help verify the native handoff.
