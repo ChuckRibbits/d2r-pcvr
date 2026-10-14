@@ -20,6 +20,7 @@
 #include "../shared/d2r_vr_state.h"
 #include "../steamvr/transport.h"
 #include "../steamvr/callback_ticket.h"
+#include "../steamvr/spell_aim_assist.h"
 namespace gamestate {uint64_t LocalPlayer();bool MenuOpen();uint32_t HandsKey();uint32_t WeaponSet();uint32_t WeaponType();}
 namespace bowvr {
 namespace {
@@ -74,6 +75,7 @@ uint64_t previewAttemptAt=0;
 Gate current{};uintptr_t clientHero=0;
 Once once;
 Once spellOnce[2];
+framevr::aimassist::History assistHistory[2]; // game thread only
 std::array<Shot,4> pending{};size_t pendingCount=0;
 framevr::CallbackTicket gameCallback,uiCallback;
 uint64_t maintenanceAt=0;
@@ -590,6 +592,49 @@ void Created(uintptr_t game,uintptr_t params,uintptr_t unit) {
     }
     ++launch.created;++spawned;
     lastLatency=unsigned(GetTickCount64()-launch.shot.at);lastSpeedCm=unsigned(a.flight.speed*100);
+}
+void AssistSpell(uintptr_t game,uintptr_t player) {
+    if(launch.slot<0||launch.game!=game||launch.player!=player||launch.shot.kind!=Kind::Spell)return;
+    auto& shot=launch.shot;
+    if(shot.hand<0||shot.hand>1)return;
+    auto& history=assistHistory[shot.hand];
+    auto selection=history.Begin(shot);
+    if(!framevr::aimassist::Limit(shot.aimAssist))return;
+    const auto originRoom=reinterpret_cast<uintptr_t(*)(uintptr_t)>(d2rsig::Addr(RoomRva))(player);
+    uintptr_t buckets[128]{};unsigned visited=0;
+    if(!originRoom||!Read(game+0x4c6*8,buckets))return;
+    for(auto target:buckets)for(unsigned chain=0;target&&chain<256&&visited++<4096;++chain) {
+        uintptr_t next=0;uint32_t h[4]{};
+        if(!Read(target+0x158,next)||!Read(target,h))break;
+        if(h[0]==1&&h[3]!=0&&h[3]!=12) {
+            Vec position{};
+            if(Position(target,position)) {
+                const auto delta=RenderGround(shot,position)-shot.origin;
+                // Include capsule radius in the broad phase, and avoid native
+                // relation/table queries for enemies well outside local range.
+                constexpr float broad=framevr::aimassist::Range+2;
+                if(delta.x*delta.x+delta.z*delta.z<=broad*broad) {
+                    Vec bottom{},top{};float radius=0;
+                    if(Body(target,h[1],shot,bottom,top,radius)) {
+                        const auto candidate=framevr::aimassist::Evaluate(shot,h[2],bottom,top,radius);
+                        if(selection.Better(candidate)&&
+                           reinterpret_cast<int(*)(uintptr_t,uintptr_t,uintptr_t)>(d2rsig::Addr(RelationRva))(game,player,target)) {
+                            auto room=originRoom;
+                            const auto end=shot.origin+candidate.direction*candidate.distance;
+                            const float barrier=WallEntry(GridPoint(shot,shot.origin),GridPoint(shot,end),shot.unitsPerMetre,[&](int x,int z) {
+                                room=reinterpret_cast<uintptr_t(*)(uintptr_t,int,int)>(d2rsig::Addr(RoomPointRva))(room,x,z);
+                                return !room||reinterpret_cast<uint16_t(*)(uintptr_t,int,int,int,int)>(d2rsig::Addr(MaskRva))(room,x,z,1,0x804)!=0;
+                            });
+                            if(barrier>=1)selection.Accept(candidate);
+                        }
+                    }
+                }
+            }
+        }
+        target=next;
+    }
+    const auto& best=selection.Best();history.Finish(best);
+    if(best.valid&&!best.direct)shot.direction=best.direction;
 }
 bool SpellTarget(uintptr_t game,uintptr_t player,int* x,int* y) {
     if(launch.slot<0||launch.game!=game||launch.player!=player||

@@ -88,6 +88,9 @@ bool Cast(const Shot& shot,uintptr_t game,uintptr_t player) {
     Selection selected(player,node);if(!selected.changed)return false;
     using StartFn=int(*)(uintptr_t,uintptr_t,int,int,int);
     if(!reinterpret_cast<StartFn>(d2rsig::Addr(StartRva))(game,player,shot.skill,shot.level,0)){++denied;return false;}
+    // Correct the scoped launch direction once, after native acceptance.
+    // Empty-mana/town refusals do not perform repeated target scans.
+    bowvr::AssistSpell(game,player);
     using DispatchFn=int(*)(uintptr_t,uintptr_t,int,int,int,int,int);
     return reinterpret_cast<DispatchFn>(d2rsig::Addr(DispatchRva))(game,player,shot.skill,shot.level,1,0,0)!=0;
 }
