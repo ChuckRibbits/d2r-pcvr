@@ -90,6 +90,9 @@ namespace gamestate {bool LeftShield();}
 #ifdef D2RVR_NATIVE_OPENXR
 #include "transport.h"
 #include "render_resolution.h"
+#include "scene_depth.h"
+#include "light_bounds.h"
+#include "game_device_only.h"
 #include "menu_controls.h"
 #include "spell_aim.h"
 #include "skill_pad.h"
@@ -7213,13 +7216,16 @@ void Note() {
     else if (g_seenCount < 8) g_seen[g_seenCount++] = {x, y, 1};
     ReleaseSRWLockExclusive(&g_lock);
 }
-void OnBind(command_list* cl, uint32_t, const resource_view*, resource_view dsv) {
+void OnBind(command_list* cl, uint32_t count, const resource_view* rtvs, resource_view dsv) {
     FRAME_PROFILE_SAMPLED(DepthBind);
     if (cl != t_cl) { t_cl = cl; t_vpW = t_vpH = 0.0f; }
     t_dsW = t_dsH = 0;
     if (dsv.handle) {
         device* dev = cl->get_device();
         const resource_desc d = framevr::resources::Describe(dev,framevr::resources::Resolve(dev,dsv));
+#ifdef D2RVR_NATIVE_OPENXR
+        framevr::scenedepth::Observe(cl,count,rtvs,framevr::resources::Resolve(dev,dsv),d);
+#endif
         t_dsW = d.texture.width; t_dsH = d.texture.height;
     }
     Note();
@@ -7339,12 +7345,20 @@ void OnReshadePresent(reshade::api::effect_runtime*) {
     }
 }
 
-void OnBeginEffects(reshade::api::effect_runtime* rt, reshade::api::command_list*, reshade::api::resource_view, reshade::api::resource_view) {
+void OnBeginEffects(reshade::api::effect_runtime* rt, reshade::api::command_list* cl, reshade::api::resource_view, reshade::api::resource_view) {
     FRAME_PROFILE(EffectsSetup);
     pairtime::g_effBegin.store(pairtime::UsNow());
     {
         float s[2];
         renderscale::Frame(rt, s);
+#ifdef D2RVR_NATIVE_OPENXR
+        const bool ownDepth=g_enabled.load()&&g_inWorld.load()&&framevr::Active()&&
+            (FogWanted()||g_set.skyOn.load()||CeilWanted()||TableKeyWanted());
+        framevr::scenedepth::Bind(rt,cl,ownDepth,s);
+        SetBool(rt,"OwnDepth",ownDepth);
+#else
+        SetBool(rt,"OwnDepth",false);
+#endif
         SetFloats(rt, "DepthScale", s, 2);
     }
     depthcam::Publish();
@@ -7714,12 +7728,40 @@ void TryRegister() {
     if (g_registered || !g_self) return;
     if (!reshade::register_addon(g_self)) return;
     framevr::resources::Register();
+#ifdef D2RVR_NATIVE_OPENXR
+    framevr::scenedepth::Register(&Log);
+    framevr::lightbounds::Register(&Log);
+#endif
+#ifdef D2RVR_NATIVE_OPENXR
+    reshade::register_event<reshade::addon_event::reshade_begin_effects>(&d2rvr::D3D12Only<&OnBeginEffects>::Call);
+#else
     reshade::register_event<reshade::addon_event::reshade_begin_effects>(&OnBeginEffects);
+#endif
+#ifdef D2RVR_NATIVE_OPENXR
+    reshade::register_event<reshade::addon_event::reshade_finish_effects>(&d2rvr::D3D12Only<&OnFinishEffects>::Call);
+#else
     reshade::register_event<reshade::addon_event::reshade_finish_effects>(&OnFinishEffects);
+#endif
+#ifdef D2RVR_NATIVE_OPENXR
+    reshade::register_event<reshade::addon_event::reshade_present>(&d2rvr::D3D12Only<&OnReshadePresent>::Call);
+#else
     reshade::register_event<reshade::addon_event::reshade_present>(&OnReshadePresent);
+#endif
+#ifdef D2RVR_NATIVE_OPENXR
+    reshade::register_event<reshade::addon_event::reshade_reloaded_effects>(&d2rvr::D3D12Only<&Forget>::Call);
+#else
     reshade::register_event<reshade::addon_event::reshade_reloaded_effects>(&Forget);
+#endif
+#ifdef D2RVR_NATIVE_OPENXR
+    reshade::register_event<reshade::addon_event::bind_render_targets_and_depth_stencil>(&d2rvr::D3D12Only<&renderscale::OnBind>::Call);
+#else
     reshade::register_event<reshade::addon_event::bind_render_targets_and_depth_stencil>(&renderscale::OnBind);
+#endif
+#ifdef D2RVR_NATIVE_OPENXR
+    reshade::register_event<reshade::addon_event::bind_viewports>(&d2rvr::D3D12Only<&renderscale::OnViewports>::Call);
+#else
     reshade::register_event<reshade::addon_event::bind_viewports>(&renderscale::OnViewports);
+#endif
 #ifdef D2RVR_NATIVE_OPENXR
     uitrace::Register(IniB(L"debug",L"uitrace",false));
     Log(uitrace::Enabled()?"vrcam: UI trace/skip callbacks enabled at startup":"vrcam: UI trace callbacks omitted; set [debug] uitrace=1 and restart for Ctrl+F10 or live shader-skip diagnostics");
@@ -8144,6 +8186,12 @@ D2RL_PLUGIN_EXPORT bool D2RLoaderLoadPlugin(const PluginContext* ctx) noexcept {
     d2rsig::Resolve(ctx);
 
     LoadReShade();
+#ifdef D2RVR_NATIVE_OPENXR
+    // Observe the engine's initial compute pipeline creation. Waiting for the
+    // update thread's slow tick misses cached lighting pipelines made during
+    // renderer startup; init_pipeline is not replayed for existing objects.
+    fx::TryRegister();
+#endif
     d2rcam::SetCallbacks(&VrView, &VrProj);
     d2rcam::SetFrameCallback(&VrFrame);
     d2rcam::SetRayOverride(&VrRay);
@@ -8169,6 +8217,9 @@ D2RL_PLUGIN_EXPORT bool D2RLoaderLoadPlugin(const PluginContext* ctx) noexcept {
 }
 
 D2RL_PLUGIN_EXPORT void D2RLoaderUnloadPlugin() noexcept {
+#ifdef D2RVR_NATIVE_OPENXR
+    framevr::scenedepth::Shutdown();
+#endif
     g_enabled.store(false);
     d2rcam::SetEnabled(false);
 #ifdef D2RVR_NATIVE_OPENXR
