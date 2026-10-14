@@ -841,5 +841,16 @@ tilt, gesture completion and native consumption so failed gestures can be
 separated from native refusals (including a resource already being full).
 
 Both hands and turned poses are covered by synthetic natural-sip and boundary
-wobble checks, alongside the existing rejection/cancellation tests. Headset
-validation of this candidate is pending; no game inventory or stat edits are used.
+wobble checks, alongside the existing rejection/cancellation tests. A Steam
+Frame test confirmed the gesture registered, but exposed a second problem:
+hiding the native HUD also stopped its belt widget from binding the local
+player. Native commands were handled without consuming anything, even with
+mana missing. Before dispatching a validated sip, the UI adapter now refreshes
+that hidden belt's owner with the game's own setter and verifies the result.
+It leaves HUD visibility and native potion rules unchanged, keeps no widget
+pointer between requests, and still requires confirmed inventory removal.
+
+The native-belt fixture covers an uninitialized hidden belt, rebuilt layouts,
+player/session changes, missing widgets, unsupported signatures, rejected
+commands without retries, and unchanged desktop routing. Headset confirmation
+of actual consumption with the owner refresh is pending.
