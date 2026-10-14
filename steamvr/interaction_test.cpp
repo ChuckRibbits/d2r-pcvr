@@ -18,6 +18,33 @@ struct Sim {
     Output Step(int count=1){while(count--){in.time+=.02;in.at=1000000+uint64_t(in.time*1000);in.snapshot.at=in.at;out=e.Step(in);}return out;}
 };
 int main(){
+    for(int hand:{0,1})for(float yaw:{0.f,1.2f}) {
+        Sim s;s.in.head.q=math::Yaw(yaw);s.Step();
+        s.in.hand[hand].p=s.out.belt[0].p;s.in.grip[hand]=1;
+        Check(s.Step().bottleHand==hand,"grab before natural sip");
+        const auto mouth=s.in.head.p+math::Rotate(s.in.head.q,{0,-.10f,-.08f});
+        const float pitch=1.f+Pi/2;
+        s.in.hand[hand].q=math::Multiply(math::Yaw(yaw),{std::sin(pitch/2),0,0,std::cos(pitch/2)});
+        const auto offset=framevr::potions::Opening({},s.in.hand[hand].q);
+        // A 57-degree tilt with the opening in front of the headset should
+        // drink without forcing the controller into the physical headset.
+        s.in.hand[hand].p=mouth-offset+math::Rotate(s.in.head.q,{0,0,-.14f});
+        s.Step();int count=0;Request request;
+        for(int i=0;i<20;++i) {
+            const float gap=i%2?.14f:.18f;
+            s.in.hand[hand].p=mouth-offset+math::Rotate(s.in.head.q,{0,0,-gap});
+            s.Step();if(s.out.request.action==Action::Potion){++count;request=s.out.request;}
+        }
+        Check(count==1&&request.item.handle==42,"natural sip tolerates boundary wobble and requests exact bottle once");
+        s.in.reply={request.sequence,s.in.session,Result::Applied};s.Step();
+        Check(s.out.bottleEmpty&&s.out.feedbackHand==hand,"drink confirmation belongs to the holding hand");
+    }
+    {
+        Sim s;s.in.hand[0].p=s.out.belt[0].p;s.in.grip[0]=1;s.Step();
+        const auto mouth=s.in.head.p+Vec{0,-.10f,-.08f};
+        s.in.hand[0].q={};s.in.hand[0].p=mouth-framevr::potions::Opening({},{} )+Vec{0,0,-.18f};
+        for(int i=0;i<30;++i)Check(s.Step().request.action==Action::None,"exit tolerance alone cannot begin drinking");
+    }
     for(int hand=0;hand<2;++hand)for(int key=0;key<5;++key){
         Sim s;s.in.snapshot.bindingsEditable=true;s.in.snapshot.bindingBank=0;s.in.snapshot.skillCount=1;
         auto& choice=s.in.snapshot.catalog[0];choice.id=47;choice.known=choice.available=true;
@@ -427,11 +454,11 @@ int main(){
         Check(scene.count==1&&scene.items[0].pose.p.y>s.in.hand[0].p.y,"grab moves one bottle into the right grip, without a duplicate on the belt");
         Check(!scene.items[0].empty&&s.out.request.action==Action::None,"grabbing does not consume");
         // Hand at mouth is insufficient if the actual bottle opening misses.
-        s.in.hand[0].p={0,1.6f,-.08f};
+        s.in.hand[0].p={-.10f,1.6f,-.08f};
         s.in.hand[0].q=math::Multiply({0,0,.70710678f,.70710678f},{.70710678f,0,0,.70710678f});
         for(int i=0;i<20;++i)Check(s.Step().request.action==Action::None,"neck, not controller center, must reach the mouth");
         s.in.hand[0].p={.115f,1.6f,-.08f};s.Step(6);
-        s.in.hand[0].p.z-=.2f;s.Step();s.in.hand[0].p.z+=.2f;
+        s.in.hand[0].p.z-=.24f;s.Step();s.in.hand[0].p.z+=.24f;
         for(int i=0;i<10;++i)Check(s.Step().request.action==Action::None,"leaving mouth resets sip dwell");
         const auto before=s.in.snapshot;
         Request request;for(int i=0;i<5;++i){s.Step();if(s.out.request.action!=Action::None)request=s.out.request;}

@@ -2,9 +2,11 @@
 #include <D2RLPlugin/api.h>
 #include <mutex>
 #include <algorithm>
+#include <cstdio>
 #include "interactionstate.h"
 #include "logging.h"
 #include "native_ui.h"
+#include "native_belt.h"
 namespace gamestate {uint32_t WeaponSet();uint64_t LocalPlayer();bool MenuOpen();}
 namespace gamecmd {bool ExecuteUiCommand(uint32_t);}
 namespace interactionstate {
@@ -83,6 +85,10 @@ void Publish(Snapshot s) {
         else if(waiting.action==Action::Equip&&s.equipmentKnown&&s.activeSet==uint32_t(waiting.index))result=Result::Applied;
         else if(s.at-issuedAt>1000)result=Result::Refused;
         reply={waiting.sequence,waiting.session,result};
+        if(waiting.action==Action::Potion&&result==Result::Applied)
+            framevr::logging::Write("Frame potion sip: native belt item consumption confirmed");
+        else if(waiting.action==Action::Potion&&result==Result::Refused)
+            framevr::logging::Write("Frame potion sip: native command did not consume the held belt item");
         if(result!=Result::Pending)waiting={};
     }
 }
@@ -115,7 +121,8 @@ void __cdecl Apply(const PluginContext*,void*) noexcept {
     std::lock_guard lock(mutex);
     if(epoch!=cancelEpoch)valid=false;
     const bool already=r.action==Action::Equip&&s.equipmentKnown&&s.activeSet==uint32_t(r.index);
-    const bool accepted=valid&&(already||gamecmd::ExecuteUiCommand(command));
+    const bool accepted=valid&&(already||(r.action==Action::Potion?
+        nativebelt::Drink(r.index,r.session):gamecmd::ExecuteUiCommand(command)));
     if(accepted&&(r.action==Action::Potion||r.action==Action::Equip)&&!already) {
         waiting=r;issuedAt=now;reply={r.sequence,r.session,Result::Pending};
     } else reply={r.sequence,r.session,accepted?Result::Applied:Result::Refused};
@@ -134,6 +141,11 @@ void Request(const framevr::interaction::Request& r) {
     {std::lock_guard lock(mutex);
      if(queued.action!=Action::None||waiting.action!=Action::None||scheduled)return;
      queued=r;scheduled=true;reply={r.sequence,r.session,Result::Pending};}
+    if(r.action==Action::Potion) {
+        char line[176];std::snprintf(line,sizeof line,"Frame potion sip: gesture completed; native belt command queued (column=%d type=%s)",
+            r.index+1, PotionName(PotionType(r.item.code)));
+        framevr::logging::Write(line);
+    }
     if(threads->runOnUiThread(context,&Apply,nullptr)!=D2RL::Threads::Result::Success) {
         std::lock_guard lock(mutex);queued={};scheduled=false;reply={r.sequence,r.session,Result::Refused};
     }

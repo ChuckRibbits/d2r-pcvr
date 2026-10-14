@@ -32,6 +32,7 @@ target_sources(d2rl-vrcam PRIVATE ${ROOT}/vr/panel_input.cpp)
 target_sources(d2rl-vrcam PRIVATE interaction_assets.rc interaction_icons.cpp ui_blit.cpp ui_world.cpp)
 target_sources(d2rl-vrcam PRIVATE potion_models.cpp)
 target_sources(d2rl-vrcam PRIVATE ${ROOT}/vr/settings_menu.cpp ${CMAKE_CURRENT_SOURCE_DIR}/vr_settings_ui.cpp ${ROOT}/vr/native_ui.cpp ${CMAKE_CURRENT_SOURCE_DIR}/interaction_ui.cpp ${ROOT}/vr/interactionstate.cpp ${ROOT}/vr/bow.cpp ${ROOT}/vr/projectiles.cpp ${ROOT}/vr/combat.cpp ${ROOT}/vr/melee.cpp ${CMAKE_CURRENT_SOURCE_DIR}/transport.cpp ${CMAKE_CURRENT_SOURCE_DIR}/foveation.cpp ${CMAKE_CURRENT_SOURCE_DIR}/logging.cpp ${CMAKE_CURRENT_SOURCE_DIR}/profile.cpp)
+target_sources(d2rl-vrcam PRIVATE ${ROOT}/vr/native_belt.cpp)
 target_include_directories(d2rl-vrcam PRIVATE ${ROOT}/shared ${ROOT}/external/flatvr ${ROOT}/external/bodywalk ${ROOT}/external/reshade/include ${CMAKE_CURRENT_SOURCE_DIR} ${OPENXR_SDK}/include)
 target_link_libraries(d2rl-vrcam PRIVATE d2rcam minhook user32 gdi32 framevr-runtime)
 set_target_properties(d2rl-vrcam PROPERTIES PREFIX "")
@@ -47,6 +48,8 @@ target_include_directories(resource-descriptions-test PRIVATE ${ROOT}/external/r
 target_link_libraries(resource-descriptions-test PRIVATE d3d12 framevr-runtime)
 add_executable(latest-worker-test latest_worker_test.cpp)
 target_link_libraries(latest-worker-test PRIVATE framevr-runtime)
+add_executable(haptic-pulse-test haptic_pulse_test.cpp)
+target_link_libraries(haptic-pulse-test PRIVATE framevr-runtime)
 add_executable(thread-stats-test thread_stats_test.cpp)
 target_link_libraries(thread-stats-test PRIVATE framevr-runtime)
 add_executable(dlss-depth-test dlss_depth_test.cpp)
@@ -82,6 +85,7 @@ target_include_directories(openxr-probe PRIVATE ${OPENXR_SDK}/include)
 target_link_libraries(openxr-probe PRIVATE d3d12 dxgi framevr-runtime)
 
 add_executable(melee-contact-test melee_contact_test.cpp)
+add_executable(attack-speed-test attack_speed_test.cpp)
 add_executable(world-coordinates-test world_coordinates_test.cpp)
 add_executable(bow-flight-test bow_flight_test.cpp)
 target_sources(d2rl-vrcam PRIVATE ${ROOT}/vr/spells.cpp)
@@ -136,17 +140,20 @@ add_executable(gaze-test gaze_test.cpp)
 add_executable(window-focus-test window_focus_test.cpp)
 add_executable(callback-ticket-test callback_ticket_test.cpp)
 add_executable(local-player-test local_player_test.cpp ${ROOT}/vr/combat.cpp)
+add_executable(native-belt-test native_belt_test.cpp ${ROOT}/vr/native_belt.cpp)
+target_include_directories(native-belt-test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} ${ROOT}/cleanroom/sigscan)
+target_link_libraries(native-belt-test PRIVATE framevr-runtime)
 target_include_directories(local-player-test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} ${ROOT}/cleanroom/sigscan)
 target_link_libraries(local-player-test PRIVATE framevr-runtime)
 target_link_libraries(window-focus-test PRIVATE user32)
 enable_testing()
 add_test(NAME light-bounds-test COMMAND light-bounds-test)
 set_tests_properties(light-bounds-test PROPERTIES TIMEOUT 30)
-foreach(test_target IN ITEMS memory-test hook-metrics-test active-keys-test resource-descriptions-test latest-worker-test thread-stats-test
+foreach(test_target IN ITEMS memory-test hook-metrics-test active-keys-test resource-descriptions-test latest-worker-test haptic-pulse-test thread-stats-test
     gameplay-test weapon-skills-test quick-cast-test hand-controls-test skill-pad-test interact-press-test spell-aim-test bow-pose-test body-tracking-test body-calibration-test shoulder-swap-test
     portal-billboard-test composition-layers-test projectile-rules-test
-    combat-rules-test logging-test melee-contact-test world-coordinates-test bow-flight-test spell-cast-test spell-aim-assist-test
-    interaction-test wrist-hud-test native-hud-test render-resolution-test render-pointer-test scene-depth-test game-device-only-test controller-bindings-test journal-test native-panels-test
+    combat-rules-test logging-test melee-contact-test attack-speed-test world-coordinates-test bow-flight-test spell-cast-test spell-aim-assist-test
+    interaction-test native-belt-test wrist-hud-test native-hud-test render-resolution-test render-pointer-test scene-depth-test game-device-only-test controller-bindings-test journal-test native-panels-test
     vr-settings-test vr-settings-store-test controller-labels-test math-test deferred-draw-test monster-bars-test gaze-test window-focus-test callback-ticket-test local-player-test)
   # These fixtures use assert for their checks, including in Release builds.
   if(MSVC)

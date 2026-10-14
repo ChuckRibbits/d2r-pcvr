@@ -35,6 +35,7 @@
 #include "wrist_compass.h"
 #include "interaction_paint.h"
 #include "latest_worker.h"
+#include "haptic_pulse.h"
 #include "interaction_icons.h"
 #include "potion_models.h"
 #include "vr_settings_ui.h"
@@ -77,7 +78,7 @@ constexpr float kRadToDeg=57.295779513f;
  X(AcquireSwapchainImage) X(WaitSwapchainImage) X(ReleaseSwapchainImage) \
  X(StringToPath) X(PathToString) X(GetCurrentInteractionProfile) X(CreateActionSet) X(DestroyActionSet) X(CreateAction) \
  X(CreateActionSpace) X(SuggestInteractionProfileBindings) X(AttachSessionActionSets) \
- X(SyncActions) X(GetActionStateBoolean) X(GetActionStateFloat) X(GetActionStateVector2f) X(GetActionStatePose) X(ApplyHapticFeedback)
+ X(SyncActions) X(GetActionStateBoolean) X(GetActionStateFloat) X(GetActionStateVector2f) X(GetActionStatePose) X(ApplyHapticFeedback) X(StopHapticFeedback)
 #define DECLARE(name) PFN_xr##name p##name=nullptr;
 XR_FUNCTIONS(DECLARE)
 #undef DECLARE
@@ -289,6 +290,7 @@ XrActionSet actionSet=XR_NULL_HANDLE;
 XrAction gripPose=XR_NULL_HANDLE, stick=XR_NULL_HANDLE, trigger=XR_NULL_HANDLE, squeeze=XR_NULL_HANDLE;
 XrAction aimPose=XR_NULL_HANDLE;
 XrAction haptic=XR_NULL_HANDLE;
+haptics::Pulses hapticPulses;
 XrAction primary=XR_NULL_HANDLE, secondary=XR_NULL_HANDLE, stickClick=XR_NULL_HANDLE, menu=XR_NULL_HANDLE;
 XrPath hands[2]{}; // right, left, matching the existing wire format.
 XrSpace handSpaces[2]{};
@@ -421,6 +423,8 @@ void CancelShieldCast() {
     if(shieldCast.issued)shieldCast.cancelled=true;else shieldCast={};
 }
 void ClearInput() {
+    hapticPulses.Cancel();
+    meleeImpactAt=shieldImpactAt=0;
     wristHeading.Reset();compassFrame=false;
     panelinput::WorldInput(false);
     gamestate::MenuMap(false);
@@ -969,12 +973,26 @@ void MotionPointer() {
         dotPose=XrPose({hit.point+math::Rotate(pose.q,{0,0,.003f}),pose.q});
     }
 }
-void MotionPulse(int hand,float strength,XrDuration duration) {
-    if(!haptic||!pApplyHapticFeedback)return;
+void MotionPulse(int hand,float strength,XrDuration duration,float frequency=XR_FREQUENCY_UNSPECIFIED) {
+    if(!haptic||!pApplyHapticFeedback||!pStopHapticFeedback||!session||!running)return;
+    // Capture handles by value. Shutdown joins the timer before destroying
+    // these handles; the worker never takes the transport/render mutex.
+    const auto xrSession=session;const auto action=haptic;const auto stop=pStopHapticFeedback;
+    const std::array<XrPath,2> paths{hands[0],hands[1]};const auto log=logger;
+    if(!hapticPulses.Start([xrSession,action,stop,paths,log,reported=std::array<bool,2>{}](int hand) mutable {
+        XrHapticActionInfo ai{XR_TYPE_HAPTIC_ACTION_INFO};ai.action=action;ai.subactionPath=paths[hand];
+        const auto result=stop(xrSession,&ai);
+        if(!reported[hand]&&log) {
+            char message[128];std::snprintf(message,sizeof message,"Frame haptics: explicit timed stop hand=%d result=%d",hand,int(result));log(message);reported[hand]=true;
+        }
+    }))return;
     XrHapticActionInfo ai{XR_TYPE_HAPTIC_ACTION_INFO};ai.action=haptic;ai.subactionPath=hands[hand];
     XrHapticVibration vibration{XR_TYPE_HAPTIC_VIBRATION};
-    vibration.duration=duration;vibration.frequency=XR_FREQUENCY_UNSPECIFIED;vibration.amplitude=strength;
-    const auto result=pApplyHapticFeedback(session,&ai,reinterpret_cast<XrHapticBaseHeader*>(&vibration));
+    vibration.duration=duration;vibration.frequency=frequency;vibration.amplitude=strength;
+    XrResult result=XR_ERROR_RUNTIME_FAILURE;
+    hapticPulses.Pulse(hand,std::chrono::nanoseconds(duration),[&]{
+        result=pApplyHapticFeedback(session,&ai,reinterpret_cast<XrHapticBaseHeader*>(&vibration));return result==XR_SUCCESS;
+    });
     static bool reported[2]{};static ULONGLONG errorAt=0;
     if(XR_SUCCEEDED(result)&&!reported[hand]) {
         Say(hand==0?"Frame gameplay: right-hand haptic accepted":"Frame gameplay: left-hand haptic accepted");reported[hand]=true;
@@ -1021,6 +1039,7 @@ gameplay::MeleeStyle MotionMeleeStyle() {
     }
 }
 void ResetSettingsInput() {
+    hapticPulses.Cancel();
     panelinput::WorldInput(false);
     gamestate::MenuMap(false);
     motion.Cancel();motionOutput={};interactions.Reset();interactionstate::Cancel();
@@ -1295,6 +1314,17 @@ void Input() {
     for(int i=0;i<2;++i){interactionInput.tracked[i]=motionInput.tracked[i];interactionInput.grip[i]=motionInput.grip[i];
         interactionInput.hand[i]={motionInput.hand[i].p,motionInput.hand[i].q};}
     interactionOutput=interactions.Step(interactionInput);
+    // Bounded diagnostics distinguish gesture misses from native refusal.
+    static ULONGLONG potionReportAt=0;
+    if(interactionOutput.bottleHand>=0&&GetTickCount64()>=potionReportAt) {
+        const auto& hand=interactionInput.hand[interactionOutput.bottleHand];
+        const auto mouth=interactionInput.head.p+math::Rotate(interactionInput.head.q,{0,-.10f,-.08f});
+        const auto delta=potions::Opening(hand.p,hand.q)-mouth;
+        char line[200];std::snprintf(line,sizeof line,"Frame potion sip: hand=%d neck_gap=%.3f m up=%.3f ready=%d empty=%d",
+            interactionOutput.bottleHand,std::sqrt(math::Dot(delta,delta)),math::Rotate(potions::HeldRotation(hand.q),{0,1,0}).y,
+            potions::AtMouth(hand.p,hand.q,interactionInput.head.p,interactionInput.head.q),interactionOutput.bottleEmpty);
+        Say(line);potionReportAt=GetTickCount64()+2000;
+    }
     if(interactionOutput.settings){OpenSettings();settingsOwned=true;interactionInput.active=motionInput.active=false;}
     gamestate::MenuMap(mapSupported&&interaction::MapWanted(interactionInput,interactionOutput,interactionInput.at));
     if(interactionOutput.inventory&&toggleMenus)toggleMenus();
@@ -1428,6 +1458,7 @@ void Input() {
         melee::Sample sample;
         sample.time=motionInput.time;sample.hand=motionInput.hand[0];sample.epoch=meleeEpoch;
         sample.equipment=motionInput.equipment;sample.active=motionInput.active&&motionOutput.meleeContact;
+        sample.minWeaponSpeed=gestureSettings[settings::MeleeHitSpeed];
         meleePoses.Push(s.sampleStamp,sample);
         sample.hand=motionInput.hand[1];sample.shield=true;sample.active=motionInput.active&&motionOutput.shieldContact;
         sample.skillSlot=shieldSlot;sample.skillOwner=shieldSkill.owner;sample.skillContext=motionInput.skillContext;
@@ -1447,10 +1478,12 @@ void Input() {
         bowNeedsWorld=true;
     }
     MotionFeedback(motionOutput);
+    // One sharp tap per confirmed impact. Consume the event once; do not
+    // sustain or refresh it while the weapon remains inside the creature.
     if(const auto at=meleeImpactAt.exchange(0);at&&motionInput.active&&GetTickCount64()-at<150)
-        MotionPulse(0,.72f,45000000);
+        MotionPulse(0,.95f,10000000,180.f);
     if(const auto at=shieldImpactAt.exchange(0);at&&motionInput.active&&GetTickCount64()-at<150)
-        MotionPulse(1,.72f,45000000);
+        MotionPulse(1,.95f,10000000,180.f);
     if(motionOutput.potion>=0)gamecmd::RequestPotion(motionOutput.potion);
     if(!motionInput.active)gamecmd::CancelPotion();
     if(motionOutput.feedback) {
@@ -1535,7 +1568,7 @@ void Events() {
             state=s.state;
             char b[96];std::snprintf(b,sizeof b,"Frame OpenXR: session state %d",int(state));Say(b);
             if(state==XR_SESSION_STATE_READY) { XrSessionBeginInfo bi{XR_TYPE_SESSION_BEGIN_INFO};bi.primaryViewConfigurationType=XR_VIEW_CONFIGURATION_TYPE_PRIMARY_STEREO;running=Check(pBeginSession(session,&bi),"begin session"); }
-            if(state==XR_SESSION_STATE_STOPPING) { if(frame)EndPair();pEndSession(session);running=false;resolution::Restore();ClearInput(); }
+            if(state==XR_SESSION_STATE_STOPPING) { if(frame)EndPair();ClearInput();pEndSession(session);running=false;resolution::Restore(); }
             if(state==XR_SESSION_STATE_LOSS_PENDING||state==XR_SESSION_STATE_EXITING) {running=false;valid=false;resolution::Restore();ClearInput();}
         } else if(event.type==XR_TYPE_EVENT_DATA_INSTANCE_LOSS_PENDING) {running=false;valid=false;resolution::Restore();ClearInput();}
         hud::NativeSession(running);
@@ -2369,6 +2402,7 @@ bool Projection(float out[16],float nearWorld,int eye) {
 }
 void Shutdown(bool preserveResolution) {
     std::lock_guard lock(mutex);
+    hapticPulses.Stop();
     // Keep the HUD hidden through an intentional eye-target/session rebuild.
     if(!preserveResolution)hud::NativeSession(false);
     if(!preserveResolution)resolution::Restore();

@@ -10,6 +10,11 @@ void CancelShield();
 void CancelWeapon();
 bool ShieldReady();
 void Report();
+// Attack speed: one landed weapon hit per native attack cycle, one creature
+// per stroke. Off restores unlimited free-swing contacts. Cycle 0 = unknown,
+// which never gates. SetAttackCycle comes from the UI thread's stat read.
+void ConfigureAttackSpeed(bool enabled,bool traceHits); // trace: [debug] melee_trace
+void SetAttackCycle(uint64_t session,uint32_t milliseconds);
 // Owning game thread only; shared with physical arrows. Re-resolves the unit
 // from its session/id rather than passing a native pointer across threads.
 bool LocalServer(uintptr_t& game,uintptr_t& player);

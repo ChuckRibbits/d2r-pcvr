@@ -789,6 +789,7 @@ void LoadSettings() {
     projectiles::Configure(IniB(L"gameplay",L"motion_controls",false),IniF(L"gameplay",L"arrow_speed",2.f),IniB(L"gameplay",L"arrow_direct_release",true));
     bowvr::Configure(IniB(L"gameplay",L"motion_controls",false));
     combat::Configure(IniB(L"gameplay",L"motion_controls",false)&&IniB(L"gameplay",L"contact_hits",true));
+    melee::ConfigureAttackSpeed(IniB(L"gameplay",L"attack_speed",true),IniB(L"debug",L"melee_trace",false));
 #endif
 #ifdef D2RVR_NATIVE_OPENXR
     framevr::foveation::Configure(IniB(L"render",L"fixed_foveation",true),IniF(L"render",L"foveation_inner",0.55f),IniF(L"render",L"gaze_foveation_inner",0.35f));
