@@ -1,5 +1,6 @@
 #include "gameplay.h"
 #include "melee_contact.h"
+#include "skill_pad.h"
 #include "../vr/shield_pose.h"
 #include "../vr/native_skill_dispatch.h"
 #include <cassert>
@@ -16,6 +17,36 @@ struct Sim {
     void Draw(){in.trigger=1;Step();assert(out.bowDrawing);for(int i=0;i<10;++i){in.hand[0].p.z+=.04f;Step();}}
 };
 int main() {
+    {
+        // Shield contact -> XR reports -> native alternate-bank sequencer.
+        // Vary producer cadence and the phase of the game's 25 Hz polling.
+        // The former 65 ms gesture pulse was swallowed by bank preparation.
+        const int slot=skills::TriggerSlot(1);
+        for(int xrMs:{11,22,33,40})for(int phase=1;phase<=40;++phase) {
+            weaponskills::Pulse pulse;skills::SkillPad pad;
+            assert(pulse.Start(slot,weaponskills::Smite,-1,7,1.0));
+            int reported=-1,edges=0;uint16_t previous=0;uint32_t packet=0;
+            for(int ms=0;ms<300;++ms) {
+                if(ms%xrMs==0) {
+                    reported=pulse.Get(slot,weaponskills::Smite,-1,7,1.0+ms/1000.0);++packet;
+                }
+                if(ms>=phase&&(ms-phase)%40==0) {
+                    const auto buttons=pad.Poll(skills::Buttons(reported),skills::Alternate(reported),packet,1000+ms);
+                    if(buttons&&!previous) {++edges;pulse.Cancel();} // native completion
+                    previous=buttons;
+                }
+            }
+            assert(edges==1);
+        }
+        weaponskills::Pulse pulse;
+        assert(pulse.Start(slot,weaponskills::Smite,-1,7,1.0));
+        assert(pulse.Get(slot,weaponskills::Smite,-1,7,1.10)==slot);
+        assert(pulse.Get(slot,weaponskills::Smite,-1,8,1.11)==-1); // reassignment cancels
+        assert(pulse.Start(slot,weaponskills::Smite,-1,8,2.0));
+        assert(pulse.Get(slot,weaponskills::Smite,-1,8,2.181)==-1); // bounded, no queued cast
+        assert(pulse.Start(0,12,-1,9,3.0));
+        assert(pulse.Get(0,12,-1,9,3.066)==-1); // other gestures retain their duration
+    }
     {
         Sim s;s.in.handBindings=true;s.engine.Select(0);s.in.selectedSkill=47;
         s.in.bowSlot=4;s.in.bowSkill=12;s.in.bowOwner=-1;s.in.skillContext=7;s.Step(3);
