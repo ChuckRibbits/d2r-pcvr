@@ -70,9 +70,17 @@ are uniformly reduced to that height limit instead of producing a much taller
 panel. The complete native image and its aspect ratio are preserved, and the
 laser uses the same fitted dimensions as the displayed surface. This changes
 only menu presentation, not world rendering or the handheld quest journal.
+Inventory workspaces sit 0.85 m away and the main menu 1.0 m away. They are
+placed upright at the current eye height when opened, independent of head
+pitch. The controller's tabbed inventory/character/options view occupies the
+upper widescreen band of a tall canvas; that visible band is centered on the
+eye-height anchor without cropping the remaining canvas. Rendering and laser
+targeting share this offset. Other layouts retain their full-canvas center.
 Automated panel tests cover square, portrait and wide sources at both menu
-sizes, including resolution-independent sizing and laser-to-pixel mapping.
-In-headset comfort and selection on the fitted surfaces await owner testing.
+sizes, including resolution-independent sizing, seated/standing eye-height
+placement and laser-to-pixel mapping. The owner found the first fitted-height
+candidate too small/far away; closer placement and visible-band centering
+await a fresh headset comparison.
 
 The native lighting depth reduction also assumes square tiles when calculating
 the row for a linear sample index. Its 32x20 grid has rectangular tiles at

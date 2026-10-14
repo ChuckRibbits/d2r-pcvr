@@ -236,7 +236,7 @@ Eye mapEye;
 bool mapSupported=false;
 constexpr uint32_t mapSide=512;
 std::atomic<bool> uiSupported{false};
-bool journalMode=false,spatialMode=false,workspacePlaced=false,opaqueMenuMode=false;
+bool journalMode=false,spatialMode=false,workspacePlaced=false,opaqueMenuMode=false,tabbedMenuMode=false;
 UiBlit uiBlit;
 UiBlit mapBlit; // Own descriptors: native menu and map copies may share a frame.
 potions::Models potionModels;
@@ -297,7 +297,7 @@ bool panelMode=false,pointerVisible=false,pointerHit=false,mouseDown=false,trigg
 HWND gameWindow=nullptr;
 WORD heldKeyScan=0;
 ULONGLONG keyReleaseAt=0;
-constexpr float panelWidth=2.0f,panelDistance=1.4f;
+constexpr float panelWidth=2.0f,panelDistance=panels::MainDistance;
 XrSwapchain pointerChain=XR_NULL_HANDLE;
 XrPosef beamPose{},dotPose{};
 float beamLength=0;
@@ -825,13 +825,21 @@ panels::Size UiSurfaceSize() {
     if(journalMode)return {uiSize,uiSize*(uiCrop[2]>0?float(uiCrop[3])/uiCrop[2]:1.3f)};
     return panels::Fit(uiCrop[2]>0?unsigned(uiCrop[2]):0,uiCrop[3]>0?unsigned(uiCrop[3]):0);
 }
+XrPosef UiSurfacePose() {
+    auto pose=uiPose;
+    if(tabbedMenuMode&&!journalMode) {
+        const auto p=V(pose.position)+math::Rotate(Q(pose.orientation),{0,panels::TabbedOffset(UiSurfaceSize()),0});
+        pose.position={p.x,p.y,p.z};
+    }
+    return pose;
+}
 void MenuPointer(const menus::Pad& controls) {
     nativeMenuPad={};
     pointerVisible=pointerHit=false;
     if(settingsModel.open||bodyCalibration.Active()||calibrationRelease.blocked)return;
     const bool spatialReady=spatialMode&&(journalMode?journalPlacement.Placed():workspacePlaced)&&uiCrop[2]>0;
     const bool uiActive=panelMode||spatialReady;
-    const auto surfacePose=spatialMode?uiPose:menuPose;
+    const auto surfacePose=spatialMode?UiSurfacePose():menuPose;
     const auto surface=spatialMode?UiSurfaceSize():panels::Fit(width,height,panelWidth);
     const bool pressed=controls.rt>140;
     bool focused=gameWindow&&GetForegroundWindow()==gameWindow;
@@ -1536,7 +1544,7 @@ bool Begin() {
     }
     const bool opaque=spatial&&gamestate::OpaqueMenuOpen();
     if(opaque!=opaqueMenuMode)Say(opaque?"Frame panels: shared black menu background":"Frame panels: spatial background restored");
-    spatialMode=spatial;journalMode=book;opaqueMenuMode=opaque;uiEye.copied=false;
+    spatialMode=spatial;journalMode=book;opaqueMenuMode=opaque;tabbedMenuMode=spatial&&gamestate::TabbedMenuOpen();uiEye.copied=false;
     mapEye.copied=false;hud::MapFrame();
     hud::UiFrame(spatialMode,!journalMode,0);
     const bool panel=wantsPanel&&wantsPanel()&&!spatialMode;
@@ -1577,15 +1585,13 @@ bool Begin() {
             Say("Frame OpenXR: loaded game calibrated from current headset position");
         }
         if(spatialMode&&!journalMode&&!workspacePlaced) {
-            const auto yaw=math::Yaw(math::Heading(Q(head.orientation)));
-            const auto pos=V(head.position)+math::Rotate(yaw,{0,-.10f,-panels::Distance});
-            uiPose.position={pos.x,pos.y,pos.z};uiPose.orientation={yaw.x,yaw.y,yaw.z,yaw.w};
+            const auto placed=panels::AtEyeLevel(V(head.position),Q(head.orientation),panels::Distance);
+            uiPose=XrPose({placed.position,placed.orientation});
             uiSize=panels::Width;workspacePlaced=true;
         }
         if(panelMode&&!menuPlaced) {
-            const auto yaw=math::Yaw(math::Heading(Q(head.orientation)));
-            const auto pos=V(head.position)+math::Rotate(yaw,{0,0,-panelDistance});
-            menuPose.position={pos.x,pos.y,pos.z};menuPose.orientation={yaw.x,yaw.y,yaw.z,yaw.w};menuPlaced=true;
+            const auto placed=panels::AtEyeLevel(V(head.position),Q(head.orientation),panelDistance);
+            menuPose=XrPose({placed.position,placed.orientation});menuPlaced=true;
         }
     }
     timing.locateMs=Milliseconds()-locateStart;
@@ -1739,8 +1745,8 @@ void Capture(reshade::api::command_queue* rq,reshade::api::swapchain* swap) {
     if((eye==0&&!CopyUi(rq))||!Copy(src,eyes[eye],rq)){failed=true;EndPair();ClearInput();return;}
     if(!stereo) {
         if(!menuPlaced) {
-            const auto pos=V(head.position)+math::Rotate(Q(head.orientation),{0,0,-1.6f});
-            menuPose=head;menuPose.position={pos.x,pos.y,pos.z};menuPlaced=true;
+            const auto placed=panels::AtEyeLevel(V(head.position),Q(head.orientation),panelDistance);
+            menuPose=XrPose({placed.position,placed.orientation});menuPlaced=true;
         }
         EndPair();
     } else if(!pairDrawing&&eyes[0].copied&&eyes[1].copied) {
@@ -2049,7 +2055,7 @@ void EndPair() {
     XrCompositionLayerQuad book{XR_TYPE_COMPOSITION_LAYER_QUAD};
     if(layer&&!settingsModel.open&&!bodyCalibration.Active()&&spatialMode&&(journalMode?journalPlacement.Placed():workspacePlaced)&&uiEye.copied&&uiCrop[2]>0) {
         const auto size=UiSurfaceSize();
-        motionQuad(book,uiPose,size.width,size.height,
+        motionQuad(book,UiSurfacePose(),size.width,size.height,
             {{uiCrop[0],uiCrop[1]},{uiCrop[2],uiCrop[3]}},uiEye.chain);
         book.layerFlags=opaqueMenuMode?0:XR_COMPOSITION_LAYER_BLEND_TEXTURE_SOURCE_ALPHA_BIT;
     }
