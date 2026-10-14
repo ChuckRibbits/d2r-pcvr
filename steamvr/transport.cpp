@@ -41,6 +41,7 @@
 #include "../vr/settings_menu.h"
 #include "journal.h"
 #include "native_panels.h"
+#include "native_hud.h"
 #include "menu_controls.h"
 #include "ui_blit.h"
 #include "ui_world.h"
@@ -1785,6 +1786,7 @@ void ConfigureEyeTracking(bool on) {eyeTracking.store(on);}
 void BeginEye(int eye) {
     hud::UiFrame(spatialMode,!journalMode,eye);
     std::lock_guard lock(mutex);
+    hud::NativeGameplay(nativehud::Gameplay(Active(),inWorld&&inWorld(),wantsPanel&&wantsPanel(),spatialMode));
     d2rcam::SetStereoUiEye(Active()?(eye&1):-1);
     d2rcam::TraceStereoLabels(capturePair?eye:-1);
     if(!Active()){foveation::EndWorld();return;}
@@ -1836,6 +1838,7 @@ void BeginPair() {
     } else profile::SkipPair();
 }
 void EndPair() {
+    hud::NativeGameplay(false);
     foveation::EndWorld();
     d2rcam::SetStereoUiEye(-1);
     std::lock_guard lock(mutex);pairDrawing=false;if(!frame||!session)return;
