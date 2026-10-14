@@ -129,6 +129,7 @@ target_link_libraries(vr-settings-preview PRIVATE user32 gdi32 framevr-runtime)
 
 add_executable(math-test math_test.cpp)
 add_executable(deferred-draw-test deferred_draw_test.cpp)
+add_executable(monster-bars-test monster_bars_test.cpp)
 add_executable(gaze-test gaze_test.cpp)
 add_executable(window-focus-test window_focus_test.cpp)
 add_executable(callback-ticket-test callback_ticket_test.cpp)
@@ -144,7 +145,7 @@ foreach(test_target IN ITEMS memory-test hook-metrics-test active-keys-test reso
     portal-billboard-test composition-layers-test projectile-rules-test
     combat-rules-test logging-test melee-contact-test world-coordinates-test bow-flight-test spell-cast-test
     interaction-test wrist-hud-test native-hud-test render-resolution-test render-pointer-test scene-depth-test game-device-only-test controller-bindings-test journal-test native-panels-test
-    vr-settings-test vr-settings-store-test controller-labels-test math-test deferred-draw-test gaze-test window-focus-test callback-ticket-test local-player-test)
+    vr-settings-test vr-settings-store-test controller-labels-test math-test deferred-draw-test monster-bars-test gaze-test window-focus-test callback-ticket-test local-player-test)
   # These fixtures use assert for their checks, including in Release builds.
   if(MSVC)
     target_compile_options(${test_target} PRIVATE /UNDEBUG)

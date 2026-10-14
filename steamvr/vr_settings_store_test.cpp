@@ -14,6 +14,7 @@ int main(){
     Check(WritePrivateProfileStringW(L"custom",L"keep",L"12345",name),"write unrelated key");
     Check(WritePrivateProfileStringW(L"render",L"rings",L"6",name),"write existing setting");
     vrsettings::Poll(name);auto before=vrsettings::Read();
+    Check(before.values[OrdinaryMobBars]==0,"legacy profile defaults to hidden ordinary bars");
     Check(before.values[SmoothTurn]==0&&before.values[Snap]==30,"missing turn settings default to snap turning");
     Check(before.values[WristMap]==1,"legacy INI without wrist_map defaults on");
     Check(before.values[WristCompass]==1,"legacy INI without wrist_compass defaults on");
@@ -40,10 +41,12 @@ int main(){
         WritePrivateProfileStringW(L"interactions",L"wrist_map",L"1",name)&&WritePrivateProfileStringW(L"interactions",L"wrist_compass",L"1",name),"restore legacy defaults");
     vrsettings::Poll(name);before=vrsettings::Read();
     Model model;model.Open(before);model.Click({Kind::Change,Foveation,1});model.Click({Kind::Change,Motion,1});
+    model.Click({Kind::Change,OrdinaryMobBars,1});
     auto request=model.Click({Kind::Apply});
     Check(vrsettings::Submit(request)&&!vrsettings::Submit(request),"one queued transaction at a time");
     Check(vrsettings::Read().result==Result::Saving&&vrsettings::Poll(name),"write transaction succeeds");
     auto saved=vrsettings::Read();Check(saved.result==Result::Saved&&saved.values[Foveation]==2&&saved.values[Motion]==1,"saved values round trip");
+    Check(saved.values[OrdinaryMobBars]==1&&Int(path,L"hud",L"ordinary_mob_bars")==1,"show ordinary bars round trips");
     Check(saved.values[RenderResolution]==0,"legacy profile keeps desktop resolution until opted in");
     for(int choice=1;choice<framevr::resolution::ChoiceCount;++choice){
         model.Open(vrsettings::Read());model.Click({Kind::Change,RenderResolution,1});request=model.Click({Kind::Apply});
@@ -108,10 +111,12 @@ int main(){
             saved.values[VitalsLocation]==3&&saved.values[CriticalAlerts]==0,"navigation location survives reload independently of vitals");
     }
     model.Open(saved);model.Click({Kind::Change,Foveation,-1});model.Click({Kind::Change,Foveation,-1});
+    model.Click({Kind::Change,OrdinaryMobBars,-1});
     request=model.Click({Kind::Apply});
     Check(WritePrivateProfileStringW(L"custom",L"later",L"42",name),"simulate unrelated external edit");
     Check(vrsettings::Submit(request)&&vrsettings::Poll(name),"merge unrelated external edit");
     Check(Int(path,L"render",L"fixed_foveation")==0&&Int(path,L"render",L"eye_tracked_foveation")==0,"Off writes both keys");
+    Check(vrsettings::Read().values[OrdinaryMobBars]==0&&Int(path,L"hud",L"ordinary_mob_bars")==0,"hide ordinary bars round trips");
     Check(Int(path,L"custom",L"later")==42&&Int(backup,L"custom",L"later")==-999,"backup is not overwritten on subsequent saves");
     model.Open(vrsettings::Read());model.Click({Kind::Change,DrawDistance,-1});request=model.Click({Kind::Apply});
     Check(WritePrivateProfileStringW(L"render",L"rings",L"2",name),"simulate same-key external edit");
