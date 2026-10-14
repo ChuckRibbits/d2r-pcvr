@@ -184,6 +184,25 @@ int main(){
     Check(title.width==1.125f&&title.height==1.125f,"square main menu fits original 2m widescreen envelope");
     const auto missing=panels::Fit(0,0);
     Check(missing.width==wide.width&&missing.height==wide.height,"missing source uses finite widescreen fallback");
+    Check(panels::TabbedOffset(wide)==0,"widescreen tabbed canvas needs no vertical correction");
+    Check(std::fabs(panels::TabbedOffset(square)+.23378906f)<.00001f,"square inventory centers its visible upper band instead of blank lower canvas");
+    for(float eyeHeight:{1.15f,1.75f})for(float pitch:{-.6f,0.f,.6f}) {
+        const math::Vec head{.2f,eyeHeight,-.3f};
+        const auto look=math::Multiply(math::Yaw(.65f),{std::sin(pitch/2),0,0,std::cos(pitch/2)});
+        for(float distance:{panels::Distance,panels::MainDistance}) {
+            const auto placed=panels::AtEyeLevel(head,look,distance);
+            Check(placed.position.y==eyeHeight,"seated/standing menu anchor is at eye level even when opening while looking up or down");
+            Check(std::fabs(math::Dot(placed.position-head,placed.position-head)-distance*distance)<.00001f,"menu stays at the requested close distance");
+            Check(placed.orientation.x==0&&placed.orientation.z==0,"menu remains upright without inheriting head pitch");
+        }
+        const auto placed=panels::AtEyeLevel(head,look,panels::Distance);
+        const auto origin=placed.position+math::Vec{0,panels::TabbedOffset(square),0};
+        math::PanelHit hit;
+        const auto direction=math::Rotate(placed.orientation,{0,0,-1});
+        Check(math::IntersectPanel(head,direction,origin,placed.orientation,square.width,square.height,hit),"eye-level ray hits the lowered square menu");
+        Check(std::fabs(hit.u-.5f)<.00001f&&std::fabs(hit.v-.28125f)<.00001f,"eye-level ray targets center of upper widescreen inventory band");
+        Check(square.width/panels::Distance>1.45f*square.width/1.25f,"square inventory has substantially larger angular text size than first height candidate");
+    }
     // Source pixels, physical panel and mouse mapping agree at both menu sizes,
     // including square presets, portrait headset targets and ultrawide desktop.
     for(float maximum:{panels::Width,2.f})
@@ -195,7 +214,8 @@ int main(){
         const auto larger=panels::Fit(size.w*2,size.h*2,maximum);
         Check(larger.width==surface.width&&larger.height==surface.height,"pixel density does not change physical menu size");
         for(float u:{.01f,.25f,.5f,.75f,.99f})for(float v:{.01f,.5f,.99f}) {
-            const auto rot=math::Yaw(.65f);const math::Vec origin{.3f,1.4f,-1.25f};
+            const auto placed=panels::AtEyeLevel({.3f,1.4f,0},math::Yaw(.65f),panels::Distance);
+            const auto rot=placed.orientation;const auto origin=placed.position+math::Vec{0,panels::TabbedOffset(surface),0};
             auto point=origin+math::Rotate(rot,{(u-.5f)*surface.width,(.5f-v)*surface.height,0});
             const auto front=math::Rotate(rot,{0,0,1});math::PanelHit hit;math::Vec pixel{};
             Check(math::IntersectPanel(point+front,front*-1,origin,rot,surface.width,surface.height,hit),"rotated panel ray");

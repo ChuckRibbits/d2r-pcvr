@@ -29,8 +29,13 @@ inline bool Modal(std::string_view name) {
 // comparison tooltips, dragged icons and confirmation dialogs. Empty pixels
 // use the canvas's background policy. Do not recrop when hovering: that would
 // move the target.
-constexpr float Width=1.9f,Distance=1.25f;
+constexpr float Width=1.9f,Distance=.85f,MainDistance=1.0f;
 struct Size {float width,height;};
+struct Placement {math::Vec position;math::Quat orientation;};
+inline Placement AtEyeLevel(math::Vec head,math::Quat look,float distance) {
+    const auto yaw=math::Yaw(math::Heading(look));
+    return {head+math::Rotate(yaw,{0,0,-distance}),yaw};
+}
 // Fit the entire native canvas inside the original widescreen-sized workspace.
 // Square/portrait eye targets must not turn menus into head-height billboards.
 // Uniform scaling preserves artwork and every native pixel (including tooltips).
@@ -41,6 +46,12 @@ inline Size Fit(unsigned width,unsigned height,float maxWidth=Width) {
     const float aspect=float(width)/height;
     if(aspect<16.f/9.f)return {maxHeight*aspect,maxHeight};
     return {maxWidth,maxWidth/aspect};
+}
+// UISwitcher occupies the upper widescreen band of a taller native canvas.
+// Center that band on the placement anchor, retaining the lower canvas for
+// HUD hints, tooltips and drags. Other native layouts use the canvas center.
+inline float TabbedOffset(Size canvas) {
+    return -.5f*std::max(0.f,canvas.height-canvas.width*9.f/16.f);
 }
 
 // Require a fresh press on the surface; never drop a drag just because a ray

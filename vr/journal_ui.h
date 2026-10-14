@@ -3,6 +3,7 @@
 namespace gamestate {
 bool JournalOnly();
 bool OpaqueMenuOpen();
+bool TabbedMenuOpen();
 bool JournalRect(int32_t out[4]);
 void ReadJournalRect(); // UI thread only
 }
