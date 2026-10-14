@@ -7,8 +7,10 @@
 using namespace framevr::resolution;
 static unsigned resizes=0;
 static Size nativeSize{};
+static LPARAM nativeMouse=0;
 static LRESULT CALLBACK Native(HWND h,UINT m,WPARAM w,LPARAM l){
     if(m==WM_SIZE){++resizes;nativeSize={LOWORD(l),HIWORD(l)};}
+    if(m>=WM_MOUSEFIRST&&m<=WM_MOUSELAST)nativeMouse=l;
     return DefWindowProcW(h,m,w,l);
 }
 static LRESULT CALLBACK Hook(HWND h,UINT m,WPARAM w,LPARAM l){
@@ -47,6 +49,21 @@ int main(){
         assert(ScreenToClient(h,&p)&&p.x==LONG(size.w-1)&&p.y==LONG(size.h-1));
         assert(uint32_t(canvas>>32)<=size.h); // every UI pixel remains reachable
         RECT physical{};assert(GetClientRect(h,&physical)&&EqualRect(&physical,&r));
+        // Real window events and polled mouse coordinates must hit the SAME
+        // native button at the center, edges, and outside during a drag.
+        for(POINT client:{POINT{r.right/2,r.bottom/2},POINT{r.right-1,r.bottom-1},POINT{-12,-8}}) {
+            POINT polled{origin.x+client.x,origin.y+client.y};
+            assert(ScreenToClient(h,&polled));
+            for(UINT message:{WM_MOUSEMOVE,WM_LBUTTONDOWN,WM_LBUTTONUP,WM_RBUTTONDOWN,WM_RBUTTONUP,WM_XBUTTONDOWN}) {
+                SendMessageW(h,message,0,MAKELPARAM(client.x,client.y));
+                assert(short(LOWORD(nativeMouse))==polled.x&&short(HIWORD(nativeMouse))==polled.y);
+                SendMessageW(other,message,0,MAKELPARAM(client.x,client.y));
+                assert(short(LOWORD(nativeMouse))==client.x&&short(HIWORD(nativeMouse))==client.y);
+            }
+        }
+        const auto screen=MAKELPARAM(origin.x+10,origin.y+20);
+        SendMessageW(h,WM_MOUSEWHEEL,0,screen);assert(nativeMouse==screen);
+        SendMessageW(h,WM_MOUSEHWHEEL,0,screen);assert(nativeMouse==screen);
     }
     Update(h,true,{2160,2160},{8192,8192},nativeSize,4);Pump();
     // The UI query may decrypt after the initial resize. Reflow on its owning
@@ -71,6 +88,7 @@ int main(){
     assert(UiSize(nativeCanvas)==nativeCanvas&&UiSize(wideDesktop)==wideDesktop);
     beforeUi=resizes;UiSizeReady();Pump();assert(resizes==beforeUi);
     assert(ScreenToClient(h,&p)&&p.x==r.right-1&&p.y==r.bottom-1);
+    SendMessageW(h,WM_MOUSEMOVE,0,MAKELPARAM(123,234));assert(nativeMouse==MAKELPARAM(123,234));
     count=resizes;OptionsApplied();Sleep(550);
     Update(h,false,{2160,2160},{8192,8192},{uint32_t(r.right),uint32_t(r.bottom)},4);Pump();
     assert(resizes==count);
