@@ -11,7 +11,27 @@ struct Sim {
     void Step(int n=1){while(n--){input.time+=.02;output=controls.Step(input);}}
 };
 int main() {
+    spellcast::PlanarAim aim[2];
+    for(int yaw=0;yaw<360;++yaw)for(int pitch:{-80,-40,0,40,80}) {
+        const float y=yaw*.01745329252f,p=pitch*.01745329252f;
+        const math::Vec expected={std::sin(y),0,std::cos(y)};
+        const auto flat=aim[0].Update(1,1,{std::cos(p)*expected.x,std::sin(p),std::cos(p)*expected.z},{});
+        assert(flat.y==0&&math::Dot(flat,expected)>.99999f);
+    }
+    aim[0].Update(1,1,{1,0,0},{});
+    assert(aim[0].Update(1,1,{.001f,1,.001f},{}).x==1);
+    assert(aim[1].Update(1,1,{0,1,0},{0,0,-1}).z==-1);
+    assert(math::Dot(aim[0].Update(1,2,{0,1,0},{}),{1,1,1})==0);
+    assert(aim[0].Update(2,2,{0,-1,0},{0,0,1}).z==1);
+    assert(aim[0].Update(2,2,{std::numeric_limits<float>::quiet_NaN(),0,0},{}).z==1);
+    assert(aim[0].Update(2,2,{0,std::numeric_limits<float>::infinity(),0},{}).z==1);
     for(int id:{36,39,45,47})assert(spellcast::Candidate(1,id,0,0,56,0));
+    assert(spellcast::Candidate(1,38,0,17,-1,0,56));
+    assert(!spellcast::Candidate(1,38,0,0,56,0));
+    assert(!spellcast::Candidate(1,38,0,17,-1,0,57));
+    assert(!spellcast::Candidate(1,38,0,17,56,0,56));
+    assert(!spellcast::Candidate(0,38,0,17,-1,0,56));
+    assert(spellcast::LaunchCapacity(38)==24&&spellcast::LaunchCapacity(47)==1);
     assert(!spellcast::Candidate(0,47,0,0,56,0));
     assert(!spellcast::Candidate(1,47,1,0,56,0));
     assert(!spellcast::Candidate(1,47,0,8,56,0));
@@ -39,6 +59,16 @@ int main() {
         s.input.trigger[0]=0;s.Step();assert(s.output.spells[0]<0&&s.output.activation[1]==left);
         s.input.trigger[0]=1;s.Step();assert(s.output.activation[0]!=right&&s.output.activation[1]==left);
         s.input.click[1]=true;s.Step();assert(s.output.wheel==1&&s.output.spells[0]<0&&s.output.spells[1]<0);
+    }
+    // Fireball and Charged Bolt enter the same independent-input path. Neither
+    // produces a native cast slot (and therefore neither requests its animation).
+    {
+        Sim s;s.input.independentSlots=0;
+        if(spellcast::Candidate(1,47,0,0,62,0))s.input.independentSlots|=1u<<skills::TriggerSlot(0);
+        if(spellcast::Candidate(1,38,0,17,-1,0,56))s.input.independentSlots|=1u<<skills::TriggerSlot(1);
+        s.Step(3);s.input.trigger[0]=s.input.trigger[1]=1;s.Step();
+        assert(s.output.slot==-1&&s.output.spells[0]>=0&&s.output.spells[1]>=0);
+        s.Step(50);assert(s.output.slot==-1&&s.output.spells[0]>=0&&s.output.spells[1]>=0);
     }
     for(int event=0;event<6;++event){
         Sim s;s.input.trigger[0]=s.input.trigger[1]=1;s.Step();
@@ -76,9 +106,23 @@ int main() {
         assert(math::Dot({m[8],m[9],m[10]},flight.shot.direction)>.9999f);
     }
     assert(std::fabs(bowflight::FlightSpeed(shot,4096)-12.5f)<.001f);
+    // Native wandering displacement is independent of current controller aim,
+    // retains muzzle height/sub-cell XY, and does not overshoot a wall or hit.
+    bowflight::Flight charged;charged.shot=shot;charged.shot.skill=38;charged.shot.direction={1,0,0};
+    charged.nativeStart={100,0,200};charged.nativePoint=charged.nativePrevious=shot.origin;charged.alive=true;
+    charged.NativePosition({102,0,201},100);
+    assert(charged.Point().x==.5f&&charged.Point().y==1.6f&&charged.Point().z==.25f);
+    assert(charged.TailAt(120).x==.25f&&charged.TailAt(200).x==.5f);
+    charged.NativePosition({101,0,202},140);
+    assert(charged.Point().x==.25f&&charged.Point().z==.5f);
+    charged.alive=false;assert(charged.TailAt(140).z==.5f);
+    float cm[16]={1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1};
+    bowflight::SpellMatrix(charged,140,cm);
+    const math::Vec chargedEmitter={cm[12]-.25f*cm[4],cm[13]-.25f*cm[5],cm[14]-.25f*cm[6]};
+    assert(bowflight::Length(chargedEmitter-charged.Point()*shot.unitsPerMetre)<.0001f);
     const auto frozen=bowflight::Tip(flight.shot,3);shot.direction={1,0,0};
     assert(bowflight::Tip(flight.shot,3).y==frozen.y);
     bowflight::VisualBinding binding;
     assert(!binding.BindRoot(14,true)&&binding.BindRoot(12,false)&&!binding.BindRoot(13,false));
-    puts("Hand spells: dual ownership, cancellation, frozen 3D origins, cast cadence and eligibility passed");
+    puts("Hand spells: planar yaw, dual Fireball/Charged Bolt, native wandering, cancellation, cast cadence and eligibility passed");
 }

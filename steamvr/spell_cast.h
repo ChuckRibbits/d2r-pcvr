@@ -1,13 +1,35 @@
 #pragma once
 #include <algorithm>
 #include <cstdint>
+#include "frame_math.h"
 
 namespace framevr::spellcast {
-// First audited family: straight, single-missile Sorceress casts. Other
-// classes, homing missiles, fans, channels and ground skills use native input.
-inline bool Supported(int id) {return id==36||id==39||id==45||id==47;}
-inline bool Candidate(unsigned character,int id,int start,int action,int missile,unsigned flags) {
-    return character==1&&Supported(id)&&start==0&&action==0&&missile>1&&missile<4096&&!(flags&3u);
+// Preserve continuous yaw, without amplifying tracking noise near vertical.
+// No usable heading on the first sample means no shot, not a default compass
+// direction. Each hand keeps its own fallback until the world/turn changes.
+class PlanarAim {
+    uint64_t session=0,epoch=0;
+    math::Vec last{};
+    static bool Project(math::Vec in,math::Vec& out) {
+        if(!std::isfinite(in.x)||!std::isfinite(in.y)||!std::isfinite(in.z))return false;
+        const float horizontal=in.x*in.x+in.z*in.z,total=horizontal+in.y*in.y;
+        if(total<.000001f||horizontal<total*.0076f)return false; // within five degrees of vertical
+        out=math::Normalized({in.x,0,in.z});return true;
+    }
+public:
+    math::Vec Update(uint64_t world,uint64_t turn,math::Vec direction,math::Vec fallback) {
+        if(world!=session||turn!=epoch){session=world;epoch=turn;last={};}
+        if(!Project(direction,last)&&math::Dot(last,last)<.5f)Project(fallback,last);
+        return last;
+    }
+};
+inline bool NativePath(int id) {return id==38;} // Charged Bolt keeps its native wandering path and grid hits.
+inline bool Supported(int id) {return id==36||id==38||id==39||id==45||id==47;}
+inline unsigned LaunchCapacity(int id) {return NativePath(id)?24:1;}
+inline bool Candidate(unsigned character,int id,int start,int action,int missile,unsigned flags,int secondary=-1) {
+    if(character!=1||!Supported(id)||start!=0||(flags&3u))return false;
+    if(NativePath(id))return action==17&&missile==-1&&secondary==56;
+    return action==0&&missile>1&&missile<4096;
 }
 // Ordinary Sorceress cast animation: 14 frames, 256 base animation speed,
 // diminishing returns capped at 75 effective FCR, minus the terminal frame.

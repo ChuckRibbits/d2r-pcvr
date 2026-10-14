@@ -5784,7 +5784,9 @@ void BowTick() {
     bowvr::Update(gate,reinterpret_cast<uintptr_t>(hero));
     framevr::bowflight::Shot shot;
     if(framevr::TakeBowShot(shot))bowvr::Submit(shot);
+    static framevr::spellcast::PlanarAim spellAim[2];
     for(int hand=0;hand<2;++hand)if(framevr::TakeSpellShot(hand,shot)) {
+        const auto trackedDirection=shot.direction;
         // The right casting weapon's visible shaft is the aiming reference.
         // Free-hand casting uses its own complete tracked aim pose instead.
         skel::MeleeWeaponPose pose;
@@ -5798,6 +5800,7 @@ void BowTick() {
                 shot.origin=p+d*.12f;shot.direction=d;
             }
         }
+        shot.direction=spellAim[hand].Update(shot.session,shot.epoch,shot.direction,trackedDirection);
         bowvr::Submit(shot);
     }
 }

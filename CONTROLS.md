@@ -86,8 +86,8 @@ require a fresh press. Only one wheel is open at a time.
 
 There is no left-trigger modifier layer. Each hand aims its own spells. Face
 shortcuts do not change either trigger assignment. On a Sorceress, Fire Bolt,
-Fireball, Ice Bolt and Ice Blast can fire from both hands simultaneously, each
-with its own aim and Faster Cast Rate timing. Hold the input to repeat. Native
+Fireball, Ice Bolt, Ice Blast and Charged Bolt can fire from both hands simultaneously,
+each with horizontal aim and its own Faster Cast Rate timing. Hold the input to repeat. Native
 mana costs apply to each cast, and walking remains available without entering
 the original casting animation. See [hand projectile spells](docs/hand_projectile_spells.md)
 for the experimental adapter's scope and offline testing checklist.
@@ -144,7 +144,7 @@ existing Smite and bow adapters; it does not generalize arbitrary melee skills.
 Turning gestures off or changing equipment/assignments cancels an in-progress
 skill draw. Shield contact and its trigger fallback cannot duplicate a cast.
 Projectile targets follow the casting hand rather than locomotion direction.
-The four supported Sorceress projectile spells bypass the native casting
+The five supported Sorceress projectile spells bypass the native casting
 animation; other skills can still stop movement through their native animation.
 The new physical casting path still requires offline headset validation.
 
