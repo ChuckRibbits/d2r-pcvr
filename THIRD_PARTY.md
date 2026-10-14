@@ -19,6 +19,14 @@ attribution remain. BodyWalk and FlatVR are separate upstream products; this
 native OpenXR preview does not distribute them or use them as runtime dependencies.
 The original user reference, `emmericp/D2R-3D`, is a separate checkout.
 
+The private scene-depth channel and D3D12 event filter in
+`steamvr/scene_depth.*`, `vr/game_device_only.h` and `reshade/D2R_DepthFog.fx`
+adapt further work from `natpoh/diablo2-vr-port` at
+`4b6284c0766c089139693a504333b9a19201cdd2` (MIT, copyright 2026 BodyWalkVR).
+The native OpenXR adaptation uses current-eye color/depth bindings, tracked
+resource states and device lifetimes to keep square shadow maps out of fog/sky
+sampling. This does not include upstream's experimental command replay renderer.
+
 | Component | Source / version | Notice |
 |---|---|---|
 | MinHook (compiled into plugin) | Vendored `third_party/minhook` | `third_party/minhook/LICENSE.txt`, BSD 2-clause |
