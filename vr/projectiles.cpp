@@ -86,6 +86,10 @@ uintptr_t Client(uintptr_t params,int flags) {
     Scope scope(params,0);const auto unit=originalClient(params,flags);ReportSpell(params,0,unit);return unit;
 }
 uintptr_t Server(uintptr_t game,uintptr_t params) {
+    std::array<uint8_t,0x98> adjusted{};
+    const int spell=bowvr::SpellParams(game,params,adjusted);
+    if(spell<0)return 0;
+    if(spell>0)params=reinterpret_cast<uintptr_t>(adjusted.data());
     Scope scope(params,1);const auto unit=originalServer(game,params);
     ReportSpell(params,1,unit);
     if(unit)bowvr::Created(game,params,unit);

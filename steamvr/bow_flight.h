@@ -21,7 +21,7 @@ struct Shot {
     float unitsPerMetre=0,draw=0;
     uint64_t session=0,epoch=0,sequence=0,at=0;
     uint32_t equipment=0,stamp=0;
-    int skill=-1,owner=-1,hand=0,slot=-1,missile=-1,level=0;
+    int skill=-1,owner=-1,hand=0,slot=-1,missile=-1,level=0,member=0;
     uint64_t binding=0,activation=0;
 };
 inline float ProjectileLength(const Shot& s) {return s.kind==Kind::Spell?0:s.kind==Kind::Javelin?JavelinLength:ArrowLength;}
@@ -140,11 +140,26 @@ struct Flight {
     float distance=0,speed=0;
     uint64_t updatedAt=0;
     bool alive=false;
+    Vec nativePoint{},nativePrevious{},nativeStart{};
+    bool NativePath() const {return shot.kind==Kind::Spell&&spellcast::NativePath(shot.skill);}
+    // Preserve the native path's displacement, but keep the sub-cell muzzle
+    // position and height. Never relocate/reset Charged Bolt's wandering path.
+    void NativePosition(Vec gridWorld,uint64_t now) {
+        nativePrevious=nativePoint;
+        nativePoint=shot.origin+(gridWorld-nativeStart)*(1/shot.unitsPerMetre);
+        updatedAt=now;
+    }
+    Vec Point() const {return NativePath()?nativePoint:shot.origin+shot.direction*distance;}
     std::array<uint32_t,64> hit{};
     size_t hits=0;
     bool Seen(uint32_t id) const {return std::find(hit.begin(),hit.begin()+hits,id)!=hit.begin()+hits;}
     bool Remember(uint32_t id) {if(Seen(id)||hits==hit.size())return false;hit[hits++]=id;return true;}
     Vec TailAt(uint64_t now) const {
+        if(NativePath()) {
+            if(!alive)return nativePoint;
+            const float t=now>=updatedAt?std::min(float(now-updatedAt)/40.f,1.f):0;
+            return nativePrevious+(nativePoint-nativePrevious)*t;
+        }
         const float extra=alive&&now>=updatedAt?std::min(float(now-updatedAt)/1000.f,.04f)*speed:0;
         return shot.origin+shot.direction*(distance+extra);
     }
@@ -196,14 +211,15 @@ inline void SpellMatrix(const Flight& f,uint64_t now,float out[16]) {
         const float scale=Length({out[i*4],out[i*4+1],out[i*4+2]});
         out[i*4]=basis[i].x*scale;out[i*4+1]=basis[i].y*scale;out[i*4+2]=basis[i].z*scale;
     }
-    // These four native VFX have a +4-unit child height; Fireball also has
-    // +2.3 forward. Cancel their authored ground-launch offsets at the root
+    // The straight VFX have a +4-unit child height; Charged Bolt has -.25.
+    // Fireball also has +2.3 forward. Cancel authored offsets at the root
     // so the visible emitter, rather than its invisible parent, starts at the
     // hand. Values verified in the owned game's HD definitions; no assets ship.
     const float ahead=f.shot.skill==47?2.3f:0;
-    out[12]=p.x-out[4]*4-out[8]*ahead;
-    out[13]=p.y-out[5]*4-out[9]*ahead;
-    out[14]=p.z-out[6]*4-out[10]*ahead;out[15]=1;
+    const float height=f.shot.skill==38?-.25f:4.f;
+    out[12]=p.x-out[4]*height-out[8]*ahead;
+    out[13]=p.y-out[5]*height-out[9]*ahead;
+    out[14]=p.z-out[6]*height-out[10]*ahead;out[15]=1;
 }
 // A nocked game mesh uses the guide's exact tail, direction and length, without
 // native bow animation or prediction. Hidden preview geometry cannot occlude.

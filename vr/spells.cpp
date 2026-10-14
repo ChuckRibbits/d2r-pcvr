@@ -1,8 +1,9 @@
-// Native single-missile spell adapter. All calls below run on the game thread.
+// Native spell adapter. Cast calls run on the game thread; visual cleanup runs on UI.
 #include <windows.h>
 #include <atomic>
 #include <cstdio>
 #include "spells.h"
+#include "bow.h"
 #include "spell_signatures.h"
 #include "bow_signatures.h"
 #include "native_ui_signatures.h"
@@ -17,6 +18,12 @@ using namespace native;
 std::atomic<bool> ready{false};
 std::atomic<unsigned> casts[2]{},denied{};
 framevr::spellcast::Cadence cadence;
+using TargetFn=int(*)(uintptr_t,uintptr_t,int*,int*);
+TargetFn originalTarget=nullptr;
+int Target(uintptr_t game,uintptr_t player,int* x,int* y) {
+    if(bowvr::SpellTarget(game,player,x,y))return 1;
+    return originalTarget(game,player,x,y);
+}
 template<class T> bool Read(uintptr_t p,T& value) {
     return p>0x10000&&framevr::ReadMemory(&value,reinterpret_cast<const void*>(p),sizeof value);
 }
@@ -42,13 +49,15 @@ void Install() {
 #define CHECK(name) if(!d2rsig::Check(name##Rva,name##Sig,sizeof name##Sig))return
     CHECK(Start);CHECK(Dispatch);CHECK(UsedLayout);CHECK(SkillLevel);CHECK(Relocate);CHECK(RelocateCall);
     CHECK(ClientHit);CHECK(ClientEnd);CHECK(PathMove);
+    CHECK(ChargedCast);CHECK(ChargedLoop);CHECK(Target);
 #undef CHECK
     if(!d2rsig::Check(nativeui::abi::SkillRva,nativeui::abi::SkillSig,sizeof nativeui::abi::SkillSig)||
        !d2rsig::Check(nativeui::abi::SkillListRva,nativeui::abi::SkillListSig,sizeof nativeui::abi::SkillListSig)||
        !d2rsig::Check(nativeui::abi::SkillLayoutRva,nativeui::abi::SkillLayoutSig,sizeof nativeui::abi::SkillLayoutSig)||
        !d2rsig::Check(nativeui::abi::StatRva,nativeui::abi::StatSig,sizeof nativeui::abi::StatSig))return;
+    if(!originalTarget&&!d2rsig::Hook(TargetRva,TargetSig,sizeof TargetSig,reinterpret_cast<void*>(&Target),reinterpret_cast<void**>(&originalTarget)))return;
     ready=true;
-    framevr::logging::Write("Frame hand spells: native dispatch/costs and missile room updates ready (Sorceress bolt/ball family)");
+    framevr::logging::Write("Frame hand spells: independent planar Sorceress bolts/balls and native Charged Bolt volleys ready");
 }
 bool Prepare(Shot& shot,uintptr_t game,uintptr_t player) {
     if(!ready.load()||!framevr::SpellHeld(shot))return false;
@@ -57,11 +66,16 @@ bool Prepare(Shot& shot,uintptr_t game,uintptr_t player) {
     if(!Read(player+4,character)||!Read(player+0x100,list)||!list||!Read(game+0x170,tick)||
        !cadence.Ready(shot.session,shot.hand,tick)||shot.owner!=-1)return false;
     const auto node=Skill(player,shot);uintptr_t row=0;
-    int16_t id=-1,start=-1,action=-1,missile=-1;uint32_t flags=0;uint8_t los=255;
+    int16_t id=-1,start=-1,action=-1,missile=-1,secondary=-1;uint32_t flags=0;uint8_t los=255;
     if(!node||!Read(node,row)||!Read(row,id)||id!=shot.skill||!Read(row+0x4c,start)||
-       !Read(row+0x4e,action)||!Read(row+0x66,missile)||!Read(row+0x24,flags)||
+       !Read(row+0x4e,action)||!Read(row+0x66,missile)||!Read(row+0x68,secondary)||!Read(row+0x24,flags)||
        !Read(row+0x231,los)||los!=0||
-       !framevr::spellcast::Candidate(character,id,start,action,missile,flags))return false;
+       !framevr::spellcast::Candidate(character,id,start,action,missile,flags,secondary))return false;
+    if(framevr::spellcast::NativePath(id)) {
+        uintptr_t function=0;
+        if(!Read(d2rsig::Addr(0x238ea00+17*8),function)||function!=d2rsig::Addr(ChargedCastRva))return false;
+        missile=secondary;
+    }
     shot.level=reinterpret_cast<int(*)(uintptr_t,uintptr_t,int,int)>(d2rsig::Addr(SkillLevelRva))(player,node,1,0);
     shot.missile=missile;
     return shot.level>0;
@@ -101,7 +115,7 @@ bool FinishVisual(uintptr_t client,const Flight& flight) {
     if(!ready.load())return false;
     uintptr_t path=0;
     if(!Read(client+0x38,path)||!path)return false;
-    const auto point=GridPoint(flight.shot,Tip(flight.shot,flight.distance))*flight.shot.unitsPerMetre;
+    const auto point=GridPoint(flight.shot,flight.Point())*flight.shot.unitsPerMetre;
     const int x=int(point.x*.5f),y=int(point.z*.5f);
     auto room=reinterpret_cast<uintptr_t(*)(uintptr_t)>(d2rsig::Addr(bowvr::native::RoomRva))(client);
     room=reinterpret_cast<uintptr_t(*)(uintptr_t,int,int)>(d2rsig::Addr(bowvr::native::RoomPointRva))(room,x,y);
