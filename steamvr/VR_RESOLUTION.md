@@ -127,6 +127,20 @@ lighting. Logs report both a matching pipeline and actual VR activation.
 
 ## Validation and remaining headset checks
 
+The native UI's client-size query also needs the applied VR dimensions. In
+3.3.93787, `0x6545d0` reads the physical client independently of `WM_SIZE`;
+UI root/safe-area sizing, layout globals and cursor bounds consume that value.
+With a 3840-wide desktop and a 3072-wide VR source, the character-selection
+list and outer inventory tabs can therefore fall outside the rendered texture.
+A hook guarded by the complete 48-byte query returns the applied VR width and
+height in its native ABI. Before resize, after XR shutdown and in Desktop mode,
+it returns the original result. No global `GetClientRect` override is used.
+If the hook installs after the first resize, it queues one reflow on the window
+thread. Unsupported code retains the original query. The real-window fixture
+checks square/portrait sizes, pointer agreement, deferred reflow and restoration;
+the guard matches a local 3.3.93787 code snapshot. Headset edge visibility and
+selection still require testing with this candidate.
+
 Automated Windows fixtures cover runtime limits, invalid choices, asynchronous
 window resize/coalescing, physical-window preservation, desktop restoration,
 setting persistence, and real user32 pointer conversion hooks including inverse
