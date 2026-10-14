@@ -91,6 +91,7 @@ namespace gamestate {bool LeftShield();}
 #include "transport.h"
 #include "render_resolution.h"
 #include "scene_depth.h"
+#include "light_bounds.h"
 #include "game_device_only.h"
 #include "menu_controls.h"
 #include "spell_aim.h"
@@ -7729,6 +7730,7 @@ void TryRegister() {
     framevr::resources::Register();
 #ifdef D2RVR_NATIVE_OPENXR
     framevr::scenedepth::Register(&Log);
+    framevr::lightbounds::Register(&Log);
 #endif
 #ifdef D2RVR_NATIVE_OPENXR
     reshade::register_event<reshade::addon_event::reshade_begin_effects>(&d2rvr::D3D12Only<&OnBeginEffects>::Call);

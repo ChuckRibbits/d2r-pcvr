@@ -91,6 +91,9 @@ add_executable(wrist-hud-test wrist_hud_test.cpp)
 add_executable(native-hud-test native_hud_test.cpp)
 target_sources(d2rl-vrcam PRIVATE render_resolution.cpp)
 target_sources(d2rl-vrcam PRIVATE scene_depth.cpp)
+target_sources(d2rl-vrcam PRIVATE light_bounds.cpp)
+add_executable(light-bounds-test light_bounds_test.cpp)
+target_link_libraries(light-bounds-test PRIVATE d3d11 d3dcompiler framevr-runtime)
 add_executable(scene-depth-test scene_depth_test.cpp)
 add_executable(game-device-only-test game_device_only_test.cpp)
 target_include_directories(scene-depth-test PRIVATE ${ROOT}/external/reshade/include)
@@ -134,6 +137,8 @@ target_include_directories(local-player-test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}
 target_link_libraries(local-player-test PRIVATE framevr-runtime)
 target_link_libraries(window-focus-test PRIVATE user32)
 enable_testing()
+add_test(NAME light-bounds-test COMMAND light-bounds-test)
+set_tests_properties(light-bounds-test PROPERTIES TIMEOUT 30)
 foreach(test_target IN ITEMS memory-test hook-metrics-test active-keys-test resource-descriptions-test latest-worker-test thread-stats-test
     gameplay-test weapon-skills-test quick-cast-test hand-controls-test skill-pad-test spell-aim-test bow-pose-test body-tracking-test body-calibration-test shoulder-swap-test
     portal-billboard-test composition-layers-test projectile-rules-test

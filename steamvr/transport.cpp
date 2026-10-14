@@ -42,6 +42,7 @@
 #include "journal.h"
 #include "native_panels.h"
 #include "native_hud.h"
+#include "light_bounds.h"
 #include "render_resolution.h"
 #include "menu_controls.h"
 #include "ui_blit.h"
@@ -1806,6 +1807,7 @@ void BeginEye(int eye) {
     hud::UiFrame(spatialMode,!journalMode,eye);
     std::lock_guard lock(mutex);
     hud::NativeGameplay(nativehud::Gameplay(Active(),inWorld&&inWorld(),wantsPanel&&wantsPanel(),spatialMode));
+    lightbounds::SetActive(Active()&&inWorld&&inWorld());
     d2rcam::SetStereoUiEye(Active()?(eye&1):-1);
     d2rcam::TraceStereoLabels(capturePair?eye:-1);
     if(!Active()){foveation::EndWorld();return;}
@@ -1858,6 +1860,7 @@ void BeginPair() {
 }
 void EndPair() {
     hud::EndNativeEye();
+    lightbounds::SetActive(false);
     foveation::EndWorld();
     d2rcam::SetStereoUiEye(-1);
     std::lock_guard lock(mutex);pairDrawing=false;if(!frame||!session)return;

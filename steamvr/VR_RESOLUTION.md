@@ -64,6 +64,18 @@ is available. Desktop rendering retains ReShade's normal depth channel.
 Update both `d2rl-vrcam.dll` and `reshade-shaders/Shaders/D2R_DepthFog.fx`
 together when testing this fix.
 
+The native lighting depth reduction also assumes square tiles when calculating
+the row for a linear sample index. Its 32x20 grid has rectangular tiles at
+square VR resolutions: the height divisor misses lower rows and can reject
+lights in hard rectangular patches. An independently written replacement
+uses the tile width for both coordinate calculations, preserving the native
+depth/sampler/constant/output layout and 2x2 gather footprint. Only the exact
+verified `light_bin_depth_bounds_c` shader in game build 3.3.93787 is matched.
+The replacement binds only during native VR eye rendering; other shaders and
+desktop rendering retain their original pipelines. No native shader bytecode
+is distributed. Failure to compile or create the replacement retains native
+lighting. Logs report both a matching pipeline and actual VR activation.
+
 ## Validation and remaining headset checks
 
 Automated Windows fixtures cover runtime limits, invalid choices, asynchronous
@@ -89,7 +101,12 @@ A subsequent offline level-3 Sorceress test in Rogue Encampment used the Steam
 3.3.93787 build, SteamVR and 4096 square rendering at native resolution scale
 100%, DLSS off. The owner confirmed the HUD was gone and the fog result was
 better. The recording still shows reported roof shading flicker during head
-movement: that remains under investigation. The agent inspected recordings
+movement, even with added sky/fog off, ambient occlusion off, and shadows low.
+The rectangular-tile correction is a new candidate awaiting owner comparison.
+Its compiled compute shader passes a software GPU test against a full-pixel
+reference scan, including exact 4096 square, wide views, empty tiles, extrema
+near lower tile edges, atlas scale/offset and padded output stride.
+The agent inspected recordings
 and desktop output, and observed HUDPanel release when inventory opened;
 this is not agent headset validation. Automated coverage additionally checks
 panel visibility/expiry and scene-depth selection, scaling and lifetimes.
