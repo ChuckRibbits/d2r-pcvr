@@ -14,6 +14,7 @@ int main(){
     Check(WritePrivateProfileStringW(L"custom",L"keep",L"12345",name),"write unrelated key");
     Check(WritePrivateProfileStringW(L"render",L"rings",L"6",name),"write existing setting");
     vrsettings::Poll(name);auto before=vrsettings::Read();
+    Check(before.values[SmoothTurn]==0&&before.values[Snap]==30,"missing turn settings default to snap turning");
     Check(before.values[WristMap]==1,"legacy INI without wrist_map defaults on");
     Check(before.values[WristCompass]==1,"legacy INI without wrist_compass defaults on");
     Check(before.values[VitalsLocation]==0&&before.values[CriticalAlerts]==0,"legacy INI preserves wrist but disables unsolicited vitals alerts");
@@ -132,6 +133,28 @@ int main(){
     vrsettings::Poll(name);Check(!framevr::calibration::Stored(vrsettings::Read().values),"unknown record version requests calibration");
     Check(WritePrivateProfileStringW(L"calibration",L"version",L"1",name)&&WritePrivateProfileStringW(L"calibration",L"eye_height_m",L"3.4",name),"simulate corrupt height");
     vrsettings::Poll(name);Check(!framevr::calibration::Stored(vrsettings::Read().values),"invalid raw height cannot become calibrated through clamps");
+    Check(WritePrivateProfileStringW(L"turn",L"snap",L"45",name),"set a custom snap angle");
+    vrsettings::Poll(name);
+    for(int mode=1;mode>=0;--mode){
+        model.Open(vrsettings::Read());model.Click({Kind::Change,SmoothTurn,1});request=model.Click({Kind::Apply});
+        Check(vrsettings::Submit(request)&&vrsettings::Poll(name),"save smooth turning toggle");
+        saved=vrsettings::Read();
+        Check(saved.values[SmoothTurn]==mode&&saved.values[Snap]==45&&Int(path,L"turn",L"smooth")==mode&&Int(path,L"turn",L"snap")==45,"toggle round trip preserves custom snap angle");
+        Check(EffectiveSnapAngle(saved.values[Snap],saved.values[SmoothTurn])==(mode?0:45),"saved mode selects expected camera turning");
+    }
+    Check(WritePrivateProfileStringW(L"turn",L"smooth",nullptr,name)&&WritePrivateProfileStringW(L"turn",L"snap",L"0",name),"simulate legacy smooth profile");
+    vrsettings::Poll(name);saved=vrsettings::Read();
+    Check(saved.values[SmoothTurn]==1&&saved.values[Snap]==30,"legacy smooth profile loads with a usable snap angle");
+    model.Open(saved);model.Click({Kind::Change,SmoothTurn,1});request=model.Click({Kind::Apply});
+    Check(vrsettings::Submit(request)&&vrsettings::Poll(name),"legacy smooth profile can opt into snap turning");
+    saved=vrsettings::Read();
+    Check(saved.values[SmoothTurn]==0&&saved.values[Snap]==30&&EffectiveSnapAngle(float(Int(path,L"turn",L"snap")),float(Int(path,L"turn",L"smooth")))==30,"explicit off overrides legacy snap zero in menu and camera");
+    Check(WritePrivateProfileStringW(L"turn",L"smooth",nullptr,name),"restore legacy smooth mode");
+    vrsettings::Poll(name);model.Open(vrsettings::Read());model.Click({Kind::Change,Snap,1});request=model.Click({Kind::Apply});
+    Check(vrsettings::Submit(request)&&vrsettings::Poll(name),"edit angle in legacy smooth profile");
+    saved=vrsettings::Read();
+    Check(saved.values[SmoothTurn]==1&&saved.values[Snap]==45&&Int(path,L"turn",L"smooth")==1,"angle edit preserves legacy smooth mode explicitly");
+    Check(Int(path,L"custom",L"keep")==12345,"turning changes preserve unrelated settings");
     model.Open(vrsettings::Read());model.Click({Kind::Change,Motion,-1});request=model.Click({Kind::Apply});
     Check(DeleteFileW(name)&&vrsettings::Submit(request)&&!vrsettings::Poll(name),"missing file fails safely");
     Check(!vrsettings::Read().ready&&vrsettings::Read().result==Result::Failed,"failure status published");
