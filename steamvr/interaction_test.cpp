@@ -198,6 +198,14 @@ int main(){
                 std::fabs(offset.y-(WristHeight+WristMapSize)*.5f-.01f)<1e-5f&&
                 math::Dot(math::Rotate(map.q,{0,0,1}),WristNormal(hand))>.99999f,
                 "minimap stays above vitals with a one-centimeter gap and the same watch face");
+            for(bool shown:{false,true}) {
+                const auto compass=WristCompassPanel(hand,head,shown);
+                const auto below=shown?map:p;
+                const auto delta=math::Rotate(math::Conjugate(q),compass.p-below.p);
+                Check(Valid(compass)&&std::fabs(delta.x)<1e-5f&&std::fabs(delta.z)<1e-5f&&
+                    std::fabs(delta.y-((shown?WristMapSize:WristHeight)+WristCompassHeight)*.5f-.01f)<1e-5f,
+                    "compass sits above the minimap or vitals with a one-centimeter gap");
+            }
         }
     }
     for(int i=0;i<8;++i){float a=i*Pi/4+WheelPhase;Check(WheelCell(.5f+std::sin(a)*.28f,.45f-std::cos(a)*.28f)==i,"wedge centers agree");}
@@ -219,9 +227,19 @@ int main(){
         Sim s;auto click=[&](int hit){s.in.trigger=0;s.Step();s.in.hover=hit;s.in.trigger=1;return s.Step();};
         s.in.hand[1].p={-.18f,1.35f,-.24f};s.in.hand[1].q={0,0,-.70710678f,.70710678f};
         s.Step();Check(s.out.wrist&&WristMapWanted(s.in,s.out,s.in.at)&&MapWanted(s.in,s.out,s.in.at),"wrist minimap is on by default");
+        Check(WristCompassWanted(s.in,s.out,s.in.at),"compass shares wrist reveal");
+        s.in.wristCompass=false;Check(!WristCompassWanted(s.in,s.out,s.in.at)&&MapWanted(s.in,s.out,s.in.at),"compass Off retains wrist map");s.in.wristCompass=true;
+        Check(!WristCompassWanted(s.in,s.out,s.in.at+651),"stale character cannot show compass");
+        auto gated=s.in;gated.tracked[1]=false;Check(!WristCompassWanted(gated,s.out,s.in.at),"left tracking loss hides compass");
+        gated=s.in;gated.active=false;Check(!WristCompassWanted(gated,s.out,s.in.at),"inactive gameplay hides compass");
+        gated=s.in;++gated.session;Check(!WristCompassWanted(gated,s.out,s.in.at),"another character cannot reuse compass");
+        auto hidden=s.out;hidden.wrist=false;hidden.critical=true;Check(!WristCompassWanted(s.in,hidden,s.in.at),"low-health alert alone cannot summon compass");
+        hidden=s.out;hidden.settings=true;Check(!WristCompassWanted(s.in,hidden,s.in.at),"settings hides compass");
         s.in.wristMap=false;s.Step();
+        Check(WristCompassWanted(s.in,s.out,s.in.at),"compass works independently with wrist map off");
         Check(s.out.wrist&&!MapWanted(s.in,s.out,s.in.at),"disabling wrist map retains watch vitals");
         s.in.wheel=true;click(12);
+        Check(!WristCompassWanted(s.in,s.out,s.in.at),"wheel hides wrist compass");
         Check(s.out.wheel&&s.out.map&&!s.out.utility&&s.out.block&&s.out.select==-2&&s.out.request.action==Action::None&&
             MapWanted(s.in,s.out,s.in.at)&&s.e.Page()==MenuPage::Map,"map tab opens without changing selected spell or requesting a native action");
         const auto mapContext=Context(s.in.snapshot,s.out,true);auto spells=s.out;spells.map=false;

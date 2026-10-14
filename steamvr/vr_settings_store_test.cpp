@@ -15,6 +15,7 @@ int main(){
     Check(WritePrivateProfileStringW(L"render",L"rings",L"6",name),"write existing setting");
     vrsettings::Poll(name);auto before=vrsettings::Read();
     Check(before.values[WristMap]==1,"legacy INI without wrist_map defaults on");
+    Check(before.values[WristCompass]==1,"legacy INI without wrist_compass defaults on");
     Check(before.ready&&before.values[DrawDistance]==6&&before.values[Foveation]==1&&before.values[ObjectDistance]==300,"explicit distance retained; missing object distance uses shipped default");
     Check(WritePrivateProfileStringW(L"render",L"rings",nullptr,name),"remove terrain distance in isolated legacy profile");
     vrsettings::Poll(name);before=vrsettings::Read();
@@ -36,6 +37,11 @@ int main(){
     Check(vrsettings::Submit(request)&&vrsettings::Poll(name),"save wrist minimap On");
     saved=vrsettings::Read();
     Check(Int(path,L"interactions",L"wrist_map")==1&&saved.values[WristMap]==1,"wrist minimap On survives reload");
+    model.Open(saved);model.Click({Kind::Change,WristCompass,-1});request=model.Click({Kind::Apply});
+    Check(vrsettings::Submit(request)&&vrsettings::Poll(name),"save wrist compass Off");
+    saved=vrsettings::Read();
+    Check(Int(path,L"interactions",L"wrist_compass")==0&&saved.values[WristCompass]==0&&saved.values[WristMap]==1,
+        "compass Off persists without disabling wrist map");
     model.Open(saved);model.Click({Kind::Change,Foveation,-1});model.Click({Kind::Change,Foveation,-1});
     request=model.Click({Kind::Apply});
     Check(WritePrivateProfileStringW(L"custom",L"later",L"42",name),"simulate unrelated external edit");

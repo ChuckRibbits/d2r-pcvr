@@ -44,6 +44,13 @@ inline Pose WristMapPanel(Pose hand,Pose head) {
     panel.p=panel.p+math::Rotate(panel.q,{0,(WristHeight+WristMapSize)*.5f+.01f,0});
     return panel;
 }
+constexpr float WristCompassWidth=.24f,WristCompassHeight=.045f;
+inline Pose WristCompassPanel(Pose hand,Pose head,bool map) {
+    auto panel=WristPanel(hand,head);
+    const float offset=(WristHeight+WristCompassHeight)*.5f+.01f+(map?WristMapSize+.01f:0);
+    panel.p=panel.p+math::Rotate(panel.q,{0,offset,0});
+    return panel;
+}
 inline bool WristPresented(Pose hand,Pose head) {
     if(!Valid(hand)||!Valid(head))return false;
     const Vec toward=head.p-hand.p;
@@ -200,7 +207,7 @@ struct Input {
     double time=0;
     uint64_t session=0,epoch=0,at=0; // at shares the native snapshot's monotonic clock
     bool active=false,tracked[2]{},wheel=false,cancel=false,reservedLeft=false,spell=false,quickCast=false;
-    bool wristMap=true;
+    bool wristMap=true,wristCompass=true;
     Pose head{},hand[2]{};
     float trigger=0,leftTrigger=0,grip[2]{};
     int hover=-1;
@@ -229,6 +236,10 @@ inline bool MenuMapWanted(const Input& in,const Output& out,uint64_t now) {
 }
 inline bool WristMapWanted(const Input& in,const Output& out,uint64_t now) {
     return in.active&&in.wristMap&&out.wrist&&!out.wheel&&!out.settings&&
+        in.tracked[1]&&Fresh(in.snapshot,in.session,now);
+}
+inline bool WristCompassWanted(const Input& in,const Output& out,uint64_t now) {
+    return in.active&&in.wristCompass&&out.wrist&&!out.wheel&&!out.settings&&
         in.tracked[1]&&Fresh(in.snapshot,in.session,now);
 }
 inline bool MapWanted(const Input& in,const Output& out,uint64_t now) {
