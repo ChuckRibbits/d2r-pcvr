@@ -5,6 +5,14 @@
 #include <string_view>
 
 namespace framevr::panels {
+// Audited native UI root, layout-global and cursor-scale consumers. The same
+// engine size query serves movies and other render paths; leave those alone.
+inline constexpr uintptr_t UiCanvasReturns[]={0x843ed5,0x844195,0x8453a9,0x846239,
+    0x14d7e4,0x14f31d,0x14f943};
+inline bool UiCanvasCaller(uintptr_t rva) {
+    for(auto address:UiCanvasReturns)if(rva==address)return true;
+    return false;
+}
 // SendInput is queued: protection must already exist before moving/clicking
 // the pointer, and must survive the last button-up when a panel closes. The
 // short lease expires even if XR stops producing frames.

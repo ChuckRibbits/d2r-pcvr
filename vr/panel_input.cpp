@@ -23,10 +23,22 @@ constexpr uint8_t CanvasSizeSig[]={
 using CanvasSize=uint64_t(*)();
 CanvasSize originalCanvasSize=nullptr;
 bool canvasSizeIn=false;
-uint64_t OnCanvasSize(){return framevr::resolution::UiSize(originalCanvasSize());}
+uintptr_t canvasImageBase=0;
+uint64_t OnCanvasSize(){
+    const auto caller=reinterpret_cast<uintptr_t>(_ReturnAddress());
+    const auto native=originalCanvasSize();
+    return framevr::panels::UiCanvasCaller(caller-canvasImageBase)?framevr::resolution::UiSize(native):native;
+}
 void InstallCanvasSize() {
     if(canvasSizeIn)return;
     if(!d2rsig::Check(CanvasSizeRva,CanvasSizeSig,sizeof CanvasSizeSig))return;
+    // Validate the relative CALL at every allowed return site before hooking.
+    for(auto address:framevr::panels::UiCanvasReturns) {
+        uint8_t call[5]{0xe8};const int32_t delta=int32_t(CanvasSizeRva-address);
+        std::memcpy(call+1,&delta,sizeof delta);
+        if(!d2rsig::Check(address-5,call,sizeof call))return;
+    }
+    canvasImageBase=d2rsig::Addr(CanvasSizeRva)-CanvasSizeRva;
     canvasSizeIn=d2rsig::Hook(CanvasSizeRva,CanvasSizeSig,sizeof CanvasSizeSig,
         reinterpret_cast<void*>(&OnCanvasSize),reinterpret_cast<void**>(&originalCanvasSize));
     if(canvasSizeIn) {

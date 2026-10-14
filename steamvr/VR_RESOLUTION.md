@@ -132,8 +132,10 @@ The native UI's client-size query also needs the applied VR dimensions. In
 UI root/safe-area sizing, layout globals and cursor bounds consume that value.
 With a 3840-wide desktop and a 3072-wide VR source, the character-selection
 list and outer inventory tabs can therefore fall outside the rendered texture.
-A hook guarded by the complete 48-byte query returns the applied VR width and
-height in its native ABI. Before resize, after XR shutdown and in Desktop mode,
+A hook guarded by the complete 48-byte query and seven UI call sites returns
+the applied VR width and height only to UI root/layout and cursor consumers.
+Movie and other engine consumers retain their original dimensions. Before
+resize, after XR shutdown and in Desktop mode,
 it returns the original result. No global `GetClientRect` override is used.
 If the hook installs after the first resize, it queues one reflow on the window
 thread. Unsupported code retains the original query. The real-window fixture
