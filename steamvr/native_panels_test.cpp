@@ -26,6 +26,29 @@ int main(){
     Check(panels::FocusUsesPointer(mode.Active(800),true),"laser hover keeps exact widget focus");
     Check(!panels::FocusUsesPointer(mode.Active(800),false),"native navigation restores cursor snapping despite queued mouse-release lease");
     Check(mode.Active(800),"switching focus does not cancel protection for queued pointer events");
+    panels::ItemTooltipHover hover;
+    Check(!hover.Active(100),"desktop starts without immediate tooltip or automatic comparison ownership");
+    hover.Update(100,true,true,false);
+    Check(hover.Active(100),"first laser hit enables tooltips without a dwell timer");
+    int keyReads=0;
+    auto key=[&](int k){++keyReads;return k==0x11?1:0;};
+    Check(panels::ItemCompareKey(hover.Active(100),true,0x10,key)==1&&keyReads==0,
+        "native equipped-item comparison needs no physical Shift press");
+    Check(!panels::ItemCompareKey(hover.Active(100),false,0x10,key)&&keyReads==1,
+        "purchase, transfer and gameplay Shift queries retain native state");
+    Check(panels::ItemCompareKey(hover.Active(100),true,0x11,key)==1&&keyReads==2,
+        "other held modifiers retain native state even inside tooltip code");
+    Check(hover.Active(399)&&!hover.Active(400),"stopped XR frames expire tooltip ownership");
+    for(int lost=0;lost<3;++lost) {
+        hover.Update(500,true,true,false);
+        hover.Update(501,lost!=0,lost!=1,lost==2);
+        Check(!hover.Active(501),"focus/tracking/navigation loss, ray miss or drag clears item hover immediately");
+        Check(!panels::ItemCompareKey(hover.Active(501),true,0x10,key),"inactive laser cannot force native comparison");
+        Check(panels::ItemCompareKey(hover.Active(501),true,0x10,[](int){return 1;})==1,
+            "real Shift still compares items with automatic comparison inactive");
+    }
+    hover.Update(600,true,true,false);
+    Check(hover.Active(600),"reacquiring item hover is immediate after a miss or drag");
     // Reproduce a laser-started Amazon session: physical bow/javelin releases
     // and walking send no native A, so KB/M remains active and target lookup
     // never gives the semantic interact guard a usable item/entrance target.
