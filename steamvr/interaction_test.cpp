@@ -196,6 +196,56 @@ int main(){
         Check(!s.Step().wrist,"lost wrist tracking hides panel");
     }
     {
+        using framevr::vitals::Location;
+        Sim s;s.in.vitalsLocation=Location::Palm;
+        s.in.hand[1].p={-.18f,1.35f,-.24f};s.in.hand[1].q={0,0,.70710678f,.70710678f};
+        Check(!s.Step(10).palm&&!s.out.vitals,"brief palm-up motion cannot flash the HUD");
+        Check(s.Step(5).palm&&s.out.vitals&&!s.out.wrist&&!s.out.block,"deliberate palm-up reveals passive vitals");
+        const auto panel=PalmPanel(s.in.hand[1],s.in.head);
+        Check(Valid(panel)&&math::Dot(math::Rotate(panel.q,{0,0,1}),PalmNormal(s.in.hand[1]))>.9999f&&
+            math::Dot(panel.p-s.in.hand[1].p,PalmNormal(s.in.hand[1]))>.05f,"panel follows the palm face with a hover gap");
+        const auto yaw=math::Yaw(1.2f);
+        for(auto* pose:{&s.in.hand[1],&s.in.head}){pose->p=math::Rotate(yaw,pose->p);pose->q=math::Multiply(yaw,pose->q);}
+        Check(s.Step().palm,"palm reveal follows world heading");
+        s.in.tracked[0]=false;Check(s.Step(20).palm&&s.out.block,"occluded right hand does not hide passive left-palm vitals");
+        s.in.tracked[1]=false;Check(!s.Step().palm,"left tracking loss immediately hides palm");
+        s.in.tracked[1]=true;Check(!s.Step(10).palm&&s.Step(5).palm,"tracking recovery requires a fresh dwell");
+        s.in.leftTrigger=1;Check(!s.Step(20).palm,"left trigger casting cannot summon palm HUD");
+        s.in.leftTrigger=0;s.in.leftCasting=true;Check(!s.Step(20).palm,"left face-button casting also hides palm HUD");
+        s.in.leftCasting=false;s.in.grip[1]=1;Check(!s.Step(20).palm,"left grip actions hide palm HUD");
+        s.in.grip[1]=0;s.in.quickCast=true;Check(s.Step(15).palm,"right-hand casting permits checking idle left palm");
+        s.in.wheel=true;Check(!s.Step().palm,"wheel hides palm");s.in.wheel=false;
+        Check(s.Step(15).palm,"closing wheel re-enables deliberate gesture");
+        s.in.active=false;Check(!s.Step().palm,"native menus hide palm");s.in.active=true;
+        Check(!s.Step(10).palm&&s.Step(5).palm,"returning from menus rearms palm dwell");
+        ++s.in.epoch;Check(!s.Step().palm&&s.Step(15).palm,"recenter resets palm dwell");
+        ++s.in.session;Check(!s.Step(20).palm,"stale character snapshot hides palm");
+        s.in.snapshot.session=s.in.session;Check(s.Step(15).palm,"new character gets fresh dwell");
+        s.in.time+=.3;Check(!s.Step().palm&&s.Step(15).palm,"frame gap resets palm dwell");
+        s.in.hand[1].p=s.in.head.p+Vec{0,-.9f,0};Check(!s.Step().palm,"lowered palm stays hidden");
+        s.in.hand[1].p=s.in.head.p+math::Rotate(s.in.head.q,{0,-.3f,.3f});Check(!s.Step(20).palm,"palm behind head cannot reveal HUD");
+        s.in.hand[1].p.x=NAN;Check(!s.Step(20).palm,"invalid palm pose cannot reveal HUD");
+    }
+    {
+        using framevr::vitals::Location;
+        for(auto location:{Location::Wrist,Location::Palm,Location::Either,Location::Off}){
+            Sim s;s.in.vitalsLocation=location;s.in.hand[1].p={-.18f,1.35f,-.24f};
+            s.in.hand[1].q={0,0,-.70710678f,.70710678f};s.Step(20);
+            Check(s.out.wrist&&s.out.vitals==(location==Location::Wrist||location==Location::Either),"wrist vitals obey placement selection");
+            Check(WristMapWanted(s.in,s.out,s.in.at)&&WristCompassWanted(s.in,s.out,s.in.at),"navigation survives Palm and Off vitals choices");
+            s.in.hand[1].q={0,0,.70710678f,.70710678f};s.Step(20);
+            Check(s.out.vitals==(location==Location::Palm||location==Location::Either),"palm vitals obey placement selection");
+        }
+        Sim s;s.in.snapshot.vitalsKnown=true;s.in.snapshot.health=12;s.in.snapshot.maxHealth=100;
+        Check(!s.Step().critical&&s.out.feedback!=4,"default low health cannot cause unsolicited popup or haptics");
+        s.in.criticalAlerts=true;Check(s.Step().critical,"low health alert requires explicit opt-in");
+        s.in.criticalAlerts=false;Check(!s.Step().critical,"opt-out immediately dismisses an active alert");
+        s.in.criticalAlerts=true;s.in.vitalsLocation=Location::Off;Check(!s.Step().critical,"Off location suppresses alerts too");
+        s.in.vitalsLocation=Location::Palm;s.in.snapshot.health=100;s.in.spell=true;s.in.snapshot.mana=1;s.in.snapshot.maxMana=100;
+        Check(s.Step().critical,"explicit alert opt-in also covers low spell mana");
+        s.in.criticalAlerts=false;Check(!s.Step().critical,"palm-only choice has no automatic low-mana popup");
+    }
+    {
         // Sweep rotations including head-up parallel to the watch normal.
         // Every rendered face must stay on -X with a unit, finite quaternion.
         Pose hand{{-.18f,1.35f,-.24f}},head{{0,1.7f,0}};
@@ -207,6 +257,9 @@ int main(){
                 "watch panel stays valid through head/wrist rotations");
             Check(math::Dot(math::Rotate(q,{0,0,1}),WristNormal(hand))>.99999f,
                 "readability adjustment preserves back-of-wrist face");
+            const auto palm=PalmPanel(hand,head);
+            Check(Valid(palm)&&std::fabs(math::Dot(math::Rotate(palm.q,{0,0,1}),PalmNormal(hand))-1)<1e-5f,
+                "palm surface remains valid through head/wrist rotations");
             const auto map=WristMapPanel(hand,head);
             const auto offset=math::Rotate(math::Conjugate(q),map.p-p.p);
             Check(Valid(map)&&std::fabs(offset.x)<1e-5f&&std::fabs(offset.z)<1e-5f&&
@@ -421,6 +474,7 @@ int main(){
     }
     {
         Sim s;s.in.snapshot.vitalsKnown=true;s.in.snapshot.health=12;s.in.snapshot.maxHealth=100;
+        s.in.criticalAlerts=true;
         Check(s.Step().critical&&s.out.feedbackHand==1,"critical health cue requests left-hand feedback");
         Check(!s.Step(90).critical,"critical cue is brief, not permanent HUD");
         s.in.snapshot.health=90;Check(!s.Step().critical,"healthy state removes cue");

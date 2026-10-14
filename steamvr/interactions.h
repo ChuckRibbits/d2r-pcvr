@@ -4,6 +4,7 @@
 #include "frame_math.h"
 #include "potion_pose.h"
 #include "wrist_hud.h"
+#include "hand_vitals.h"
 #include <array>
 #include <cstdint>
 #include <cstring>
@@ -29,16 +30,19 @@ inline Pose UprightBody(Pose head,Quat previousYaw={0,0,0,1}) {
 // Grip +/-Y is the thumb/knuckle edge, not either face of the wrist.
 // https://registry.khronos.org/OpenXR/specs/1.1/html/xrspec.html#semantic-path-grip-pose
 inline Vec WristNormal(Pose hand) {return math::Normalized(math::Rotate(hand.q,{-1,0,0}));}
-inline Pose WristPanel(Pose hand,Pose head) {
-    const Vec normal=WristNormal(hand);
+inline Vec PalmNormal(Pose hand) {return math::Normalized(math::Rotate(hand.q,{1,0,0}));}
+inline Pose HandFacePanel(Pose hand,Pose head,Vec normal,Vec offset) {
     // Keep the panel on the watch face, rotating only within that plane so
     // the text reads upright instead of sideways when the forearm is crossed.
     auto right=math::Cross(math::Rotate(head.q,{0,1,0}),normal);
     if(math::Dot(right,right)<.01f)right=math::Cross(math::Rotate(hand.q,{0,0,-1}),normal);
     right=math::Normalized(right);
-    return {hand.p+math::Rotate(hand.q,{-.055f,0,.06f}),
+    return {hand.p+math::Rotate(hand.q,offset),
         math::FromAxes(right,math::Cross(normal,right),normal)};
 }
+inline Pose WristPanel(Pose hand,Pose head) {return HandFacePanel(hand,head,WristNormal(hand),{-.055f,0,.06f});}
+inline Pose PalmPanel(Pose hand,Pose head) {return HandFacePanel(hand,head,PalmNormal(hand),{.055f,0,-.04f});}
+constexpr float PalmWidth=.20f,PalmHeight=.10f;
 constexpr float WristWidth=.24f,WristHeight=.12f,WristMapSize=.24f;
 inline Pose WristMapPanel(Pose hand,Pose head) {
     auto panel=WristPanel(hand,head);
@@ -58,6 +62,17 @@ inline bool WristPresented(Pose hand,Pose head) {
     const float distance2=math::Dot(toward,toward);
     return distance2>.01f&&distance2<.75f*.75f&&
         math::Dot(WristNormal(hand),math::Normalized(toward))>.55f;
+}
+inline bool PalmPresented(Pose hand,Pose head,bool keeping=false) {
+    if(!Valid(hand)||!Valid(head))return false;
+    const auto toward=head.p-hand.p,normal=PalmNormal(hand);
+    const float distance2=math::Dot(toward,toward);
+    if(distance2<.15f*.15f||distance2>(keeping?.80f*.80f:.70f*.70f))return false;
+    // Face upward, toward the eyes, and stay in front of the player. A casting
+    // pose with the palm facing sideways or behind the head is not a reveal.
+    return normal.y>(keeping?.50f:.70f)&&toward.y>.10f&&toward.y<(keeping?.75f:.60f)&&
+        math::Dot(normal,math::Normalized(toward))>(keeping?.35f:.55f)&&
+        math::Dot(math::Rotate(head.q,{0,0,-1}),math::Normalized(toward)*-1)>(keeping?.35f:.50f);
 }
 enum class Owner { Combat, Wheel, Bottle, Holster, Journal, Rearm };
 enum class Potion { Unknown, Health, Mana, Rejuvenation, Antidote, Thawing, Stamina };
@@ -211,6 +226,8 @@ struct Input {
     uint64_t session=0,epoch=0,at=0; // at shares the native snapshot's monotonic clock
     bool active=false,tracked[2]{},wheel=false,cancel=false,reservedLeft=false,spell=false,quickCast=false;
     bool wristMap=true,wristCompass=true;
+    vitals::Location vitalsLocation=vitals::Location::Wrist;
+    bool criticalAlerts=false,leftCasting=false;
     Pose head{},hand[2]{};
     float trigger=0,leftTrigger=0,grip[2]{};
     int hover=-1,wheelHand=-1;
@@ -221,6 +238,7 @@ struct Output {
     SkillCue cue{},leftCue{};
     Owner owner[2]{Owner::Combat,Owner::Combat};
     bool block=false,wheel=false,utility=false,map=false,stowed=false,wrist=false,cancelPending=false,critical=false,settings=false;
+    bool vitals=false,palm=false;
     int wheelHand=-1;
     bool inventory=false;
     int select=-2,bottle=-1,bottleHand=-1,nearBelt=-1,nearHolster=-1,hover=-1;
@@ -265,6 +283,7 @@ class Engine {
     int editor=0,editSlot=-1,editPage=0,editBank=-1,choiceCount=0,lastWheelHand=-1;
     Skill previousBinding{};
     shoulder::Gesture shoulderSwap;
+    vitals::PalmReveal palmReveal;
     std::array<Skill,128> choices{};
     void Drop() {bottle=bottleHand=holster=holsterHand=-1;drinkStart=0;spent=consumed=false;held={};owner[0]=owner[1]=Owner::Combat;}
 public:
@@ -278,6 +297,12 @@ public:
         // still require both hands; a resting/occluded right hand must not hide
         // a correctly presented watch or permit an input through the guard.
         out.wrist=in.active&&in.session&&in.tracked[1]&&std::isfinite(in.time)&&WristPresented(in.hand[1],in.head);
+        const bool palmAllowed=in.active&&in.tracked[1]&&vitals::Palm(in.vitalsLocation)&&
+            !in.wheel&&!in.cancel&&!in.leftCasting&&in.leftTrigger<.2f&&in.grip[1]<.6f&&
+            !in.reservedLeft&&bottleHand!=1&&holsterHand!=1&&Fresh(in.snapshot,in.session,in.at);
+        out.palm=palmReveal.Step(in.session,in.epoch,in.time,palmAllowed,
+            PalmPresented(in.hand[1],in.head),PalmPresented(in.hand[1],in.head,true));
+        out.vitals=out.palm||(out.wrist&&vitals::Wrist(in.vitalsLocation));
         const bool trigger=in.trigger>(triggerWas?.2f:.55f);
         const bool grips[2]={in.grip[0]>.6f,in.grip[1]>.6f};
         const uint64_t now=in.at;
@@ -312,7 +337,8 @@ public:
         }
         if(result!=Result::Pending&&in.time-resultAt>2.5)result=Result::None;
         const auto& stats=in.snapshot;
-        const bool low=fresh&&stats.vitalsKnown&&stats.health>0&&stats.maxHealth>0&&
+        const bool low=in.criticalAlerts&&in.vitalsLocation!=vitals::Location::Off&&
+            fresh&&stats.vitalsKnown&&stats.health>0&&stats.maxHealth>0&&
             (stats.health/stats.maxHealth<.25f||(in.spell&&stats.maxMana>0&&stats.mana/stats.maxMana<.10f));
         if(low&&in.time>=criticalAgain){criticalUntil=in.time+1.5;criticalAgain=in.time+10;out.feedback=4;out.feedbackHand=1;}
         if(!low)criticalUntil=criticalAgain=0;

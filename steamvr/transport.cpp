@@ -1241,8 +1241,12 @@ void Input() {
     interactionInput.quickCast=handOutput.slot>=0||handOutput.spells[0]>=0||handOutput.spells[1]>=0;
     interactionInput.wheelHand=handOutput.wheel;
     interactionInput.reservedLeft=(controls.buttons&menus::LeftStick)!=0;interactionInput.trigger=handOutput.wheel==0?controls.lt/255.f:controls.rt/255.f;interactionInput.hover=motionInput.hover;
-    interactionInput.wristMap=vrsettings::Read().values[settings::WristMap]>.5f;
-    interactionInput.wristCompass=vrsettings::Read().values[settings::WristCompass]>.5f;
+    const auto hudSettings=vrsettings::Read();
+    interactionInput.wristMap=hudSettings.values[settings::WristMap]>.5f;
+    interactionInput.wristCompass=hudSettings.values[settings::WristCompass]>.5f;
+    interactionInput.vitalsLocation=vitals::Location(int(hudSettings.values[settings::VitalsLocation]));
+    interactionInput.criticalAlerts=hudSettings.values[settings::CriticalAlerts]>.5f;
+    interactionInput.leftCasting=handOutput.spells[1]>=0||(handOutput.slot>=0&&handOutput.hand==1);
     interactionInput.leftTrigger=controls.lt/255.f;
     if(!interactionPaintValid||interactionPaintContext!=interaction::Context(interactionInput.snapshot,interactionOutput,
         interaction::Fresh(interactionInput.snapshot,interactionInput.session,interactionInput.at),controllerLabels))interactionInput.hover=-1;
@@ -1354,7 +1358,7 @@ void Input() {
         const uint64_t key=(interaction::icons::Revision()*0x9e3779b97f4a7c15ull)^(uint64_t(interactionOutput.editor)<<60)^(uint64_t(interactionOutput.editSlot+1)<<56)^(uint64_t(interactionOutput.editPage)<<48)^(uint64_t(interactionInput.snapshot.revision)<<32)^(uint64_t(interactionOutput.utility)<<24)^(
             uint64_t(interactionOutput.hover+1)<<16)^(uint64_t(motion.Selection()+1)<<8)^(uint64_t(interactionOutput.result)<<4)^uint64_t(interactionOutput.stowed)^(uint64_t(interactionOutput.map)<<1)^(uint64_t(interactionOutput.nearHolster+1)<<26)^(uint64_t(interactionOutput.bottle+1)<<28)^(uint64_t(interactionOutput.bottleEmpty)<<2)^(uint64_t(snapshotFresh)<<3);
         const auto now=GetTickCount64();
-        const bool visible=motionInput.active||interactionOutput.wheel||interactionOutput.wrist||interactionOutput.critical||interactionOutput.bottle>=0||
+        const bool visible=motionInput.active||interactionOutput.wheel||interactionOutput.wrist||interactionOutput.vitals||interactionOutput.critical||interactionOutput.bottle>=0||
             interactionOutput.nearBelt>=0||interactionOutput.nearHolster>=0||math::Rotate(Q(head.orientation),{0,0,-1}).y<-.60f;
         const auto context=interaction::Context(interactionInput.snapshot,interactionOutput,snapshotFresh,controllerLabels);
         if(visible&&(!interactionPaintValid||key!=interactionPaintKey||context!=interactionPaintContext)) {
@@ -1934,12 +1938,17 @@ void EndPair() {
                 motionQuad(beltQuads[i],interactionPose(pose),.08f,.0506f,{{i*128,943},{128,81}},interactionChain);
             } else motionQuad(beltQuads[i],interactionPose(pose),.065f,.13f,{{i*128,768},{128,256}},interactionChain);
         }
-        if((interactionOutput.wrist||interactionOutput.critical)&&!interactionOutput.wheel) {
-            const auto panel=interaction::WristPanel(interactionInput.hand[1],interactionInput.head);
+        if((interactionOutput.vitals||interactionOutput.critical)&&!interactionOutput.wheel) {
+            const bool palm=interactionOutput.palm;
+            const auto panel=palm?interaction::PalmPanel(interactionInput.hand[1],interactionInput.head):
+                interaction::WristPanel(interactionInput.hand[1],interactionInput.head);
             auto pose=motionInput.hand[1];pose.p=panel.p;pose.q=panel.q;
-            if(interactionOutput.critical&&!interactionOutput.wrist){pose.p=V(head.position)+math::Rotate(Q(head.orientation),{-.20f,-.22f,-.55f});pose.q=Q(head.orientation);}
-            motionQuad(wrist,XrPose(pose),interaction::WristWidth,interaction::WristHeight,{{512,768},{512,256}},interactionChain);
-            if(wrist.subImage.swapchain&&mapEye.copied&&interaction::WristMapWanted(interactionInput,interactionOutput,GetTickCount64()))
+            if(interactionOutput.critical&&!interactionOutput.vitals){pose.p=V(head.position)+math::Rotate(Q(head.orientation),{-.20f,-.22f,-.55f});pose.q=Q(head.orientation);}
+            motionQuad(wrist,XrPose(pose),palm?interaction::PalmWidth:interaction::WristWidth,
+                palm?interaction::PalmHeight:interaction::WristHeight,{{512,768},{512,256}},interactionChain);
+        }
+        if(interactionOutput.wrist&&!interactionOutput.wheel) {
+            if(mapEye.copied&&interaction::WristMapWanted(interactionInput,interactionOutput,GetTickCount64()))
                 motionQuad(wristMap,interactionPose(interaction::WristMapPanel(interactionInput.hand[1],interactionInput.head)),
                     interaction::WristMapSize,interaction::WristMapSize,{{0,0},{int32_t(mapSide),int32_t(mapSide)}},mapEye.chain);
             if(compassAtlasReady&&compassFrame&&count+2<=contentLimit&&
