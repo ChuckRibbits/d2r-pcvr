@@ -2556,8 +2556,15 @@ XHook g_xhooks[] = {
 // usual camera-yaw turn below makes it a direction on the game's screen.
 // Pointing = the grip's -Z (a controller held like a gun) plus its -Y (a fist
 // round a bow's grip): flattened on the ground, one of the two always remains.
+bool NativeCastOwnsAim() {
+#ifdef D2RVR_NATIVE_OPENXR
+    return framevr::NativeSkillCasting();
+#else
+    return false;
+#endif
+}
 bool BowStick(XINPUT_STATE* s) {
-    if (g_set.bowMode.load() != 1) return false;
+    if (g_set.bowMode.load() != 1 || NativeCastOwnsAim()) return false;
     const XINPUT_GAMEPAD& g = s->Gamepad;
     const WORD skills = XINPUT_GAMEPAD_A | XINPUT_GAMEPAD_B | XINPUT_GAMEPAD_X | XINPUT_GAMEPAD_Y | XINPUT_GAMEPAD_RIGHT_SHOULDER;
     if (!(g.wButtons & skills) && g.bRightTrigger < 128) return false;
@@ -2805,7 +2812,7 @@ void SendKeysMouse(bool down) {
 }
 
 void AimByMouse(XINPUT_STATE* s) {
-    if (g_set.bowMode.load() != 2) {
+    if (g_set.bowMode.load() != 2 || NativeCastOwnsAim()) {
         if (g_aimDown) { SendKeysMouse(false); g_aimDown = false; }
         return;
     }
@@ -2874,7 +2881,7 @@ bool HandStick(float* sx, float* sy) {
 struct PreTurn { int stage = 0; ULONGLONG at = 0; float sx = 0, sy = 0; } g_pre;   // stage 0 idle, 1 turning, 2 attacking
 
 void AimByTurn(XINPUT_STATE* s) {
-    if (g_set.bowMode.load() != 3) { g_pre.stage = 0; return; }
+    if (g_set.bowMode.load() != 3 || NativeCastOwnsAim()) { g_pre.stage = 0; return; }
     XINPUT_GAMEPAD& g = s->Gamepad;
     const bool held = (g.wButtons & XINPUT_GAMEPAD_A) != 0 && !gamestate::MenuOpen();
     if (!held) { g_pre.stage = 0; return; }
@@ -2959,8 +2966,13 @@ SpellResolveFn OrigSpellResolve=nullptr;
 std::atomic<bool> g_spellAimReady{false};
 thread_local framevr::spellaim::Cast g_spellCast;
 bool DirectedSpellAim(float& gx,float& gy) {
+    float origin[3],direction[3];
+    // Native OpenXR poses already use world X/Z == grid X/Y. The legacy
+    // walk-learned calibration can confuse a cast vector with the opposite
+    // travel direction while backpedaling; it must not rotate spell aim.
     return g_spellAimReady.load()&&g_enabled.load()&&!gamestate::MenuOpen()&&
-        framevr::DirectedSpellActive()&&HandGridDir(&gx,&gy);
+        framevr::DirectedSpellActive()&&HandRay(origin,direction)&&
+        framevr::spellaim::Horizontal({direction[0],direction[1],direction[2]},gx,gy);
 }
 uintptr_t HookSpellControllerTarget(uintptr_t manager,int id) {
     if(g_spellCast.directed&&uintptr_t(_ReturnAddress())==d2rsig::Addr(spellaimabi::ControllerCallRva+5))return 0;
@@ -2971,15 +2983,30 @@ uintptr_t HookSpellHoverTarget(int player) {
     return OrigSpellHoverTarget(player);
 }
 bool IsHeroUnit(const void* unit);
+bool SpellPlayerPosition(const void* unit,float& x,float& y) {
+    // Identify the local player by native ID, not distance from the rendered
+    // camera: movement can put that rendered position a frame behind logic.
+    uint32_t id=0,header[3]{},position[2]{};uintptr_t path=0;
+    if(!unit||!combat::LocalPlayerId(id)||!framevr::ReadMemory(header,unit,sizeof header)||header[0]!=0||header[2]!=id||
+       !framevr::ReadMemory(&path,static_cast<const uint8_t*>(unit)+0x38,sizeof path)||path<0x10000||
+       !framevr::ReadMemory(position,reinterpret_cast<const void*>(path),sizeof position))return false;
+    // Dynamic paths store unsigned 16.16 coordinates, in native grid cells.
+    x=position[0]/65536.f;y=position[1]/65536.f;return true;
+}
 void HookSpellResolve(uintptr_t manager,void* unit,bool assist,float* x,float* y) {
     framevr::spellaim::Cast cast;
-    cast.directed=unit&&x&&y&&IsHeroUnit(unit)&&DirectedSpellAim(cast.x,cast.y);
-    if(unit&&x&&y&&IsHeroUnit(unit)&&g_spellAimReady.load()&&g_enabled.load()&&!gamestate::MenuOpen()&&
+    float playerX=0,playerY=0;
+    const bool local=x&&y&&SpellPlayerPosition(unit,playerX,playerY);
+    cast.directed=local&&DirectedSpellAim(cast.x,cast.y);
+    if(local&&g_spellAimReady.load()&&g_enabled.load()&&!gamestate::MenuOpen()&&
        framevr::ShieldAim(cast.x,cast.y))cast.directed=cast.contactPoint=true;
     framevr::spellaim::Scope scope(g_spellCast,cast);
     // The last native aim-assist stage can bend a free cast toward a nearby
     // point even after selected-target lookup. Keep it off for this call only.
     OrigSpellResolve(manager,unit,cast.directed?false:assist,x,y);
+    // Every native branch ends here. In particular, a moving controller may
+    // supply its own target without reaching our AttackPoint hook below.
+    if(cast.directed)framevr::spellaim::Resolve(cast,playerX,playerY,*x,*y);
     if(cast.directed) {
         static std::atomic<ULONGLONG> reported{0};
         const auto now=GetTickCount64();auto before=reported.load();
@@ -3525,8 +3552,13 @@ bool KeyMoveMode() { return FlatKeyMode() || VrKeyWalk(); }
 // Our camera's views only (F2-F4: the stick turned like any other), no menu, no chat.
 std::atomic<int> g_stickHook{0};   // HookStickGet: 0 not in yet, 1 in, 2 not possible
 bool DirectWalkNow() {
+    // Cast handling can bypass the dedicated walking callbacks. During any
+    // native VR skill cast, leave the real locomotion stick in the pad report
+    // instead of clearing it and relying on those callbacks to restore it.
+    // Aim is resolved separately; neither the aim stick nor stand-still Shift
+    // may replace player movement. Native animation/state gates remain native.
     return g_set.platform.load() == 1 && g_set.directWalk.load() && g_enabled.load() && g_inWorld.load() &&
-           !gamestate::MenuOpen() && !ChatOpen();
+           !gamestate::MenuOpen() && !ChatOpen() && !NativeCastOwnsAim();
 }
 // BodyWalk's stick as the game takes a walking vector (x right, y up on its screen,
 // length <= 1, its dead zone 10349 of 32767 with no rescale), turned by our camera.

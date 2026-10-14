@@ -75,6 +75,11 @@ inline int PaletteCell(float u,float v) {
     return int((v-.125f)/.1875f)*4+int(u*4);
 }
 // Values from XInput's public button constants; no Windows dependency in tests.
+// Shared by native aim and locomotion routing: a selected skill alone does
+// not own input, and a stale/blocked cast cannot change the movement route.
+inline bool CastingSkill(const Input& in,const Output& out,uint64_t ageMs) {
+    return in.active&&!out.block&&out.rayValid&&ageMs<150&&out.skill>=0&&out.skill<skills::Count;
+}
 inline uint16_t SkillButtons(int slot) {
     return skills::Buttons(slot);
 }
