@@ -474,9 +474,9 @@ public:
             if(!grips[bottleHand]||(!spent&&(!fresh||!SameBelt(in.snapshot,held)))) {Drop();rearm=true;}
             else {
                 out.bottle=bottle;out.bottleHand=bottleHand;out.bottleItem=held.item;out.bottleEmpty=consumed;owner[bottleHand]=Owner::Bottle;
-                if(!spent&&potions::AtMouth(in.hand[bottleHand].p,in.hand[bottleHand].q,in.head.p,in.head.q)) {
+                if(!spent&&potions::AtMouth(in.hand[bottleHand].p,in.hand[bottleHand].q,in.head.p,in.head.q,drinkStart!=0)) {
                     if(!drinkStart)drinkStart=in.time;
-                    if(in.time-drinkStart>=.25&&request(Action::Potion,bottle,held.item,held.revision))spent=true;
+                    if(in.time-drinkStart>=.25&&request(Action::Potion,bottle,held.item,held.revision)){spent=true;pendingHand=bottleHand;}
                 } else drinkStart=0;
             }
         }

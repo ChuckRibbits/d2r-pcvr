@@ -83,6 +83,10 @@ void Publish(Snapshot s) {
         else if(waiting.action==Action::Equip&&s.equipmentKnown&&s.activeSet==uint32_t(waiting.index))result=Result::Applied;
         else if(s.at-issuedAt>1000)result=Result::Refused;
         reply={waiting.sequence,waiting.session,result};
+        if(waiting.action==Action::Potion&&result==Result::Applied)
+            framevr::logging::Write("Frame potion sip: native belt item consumption confirmed");
+        else if(waiting.action==Action::Potion&&result==Result::Refused)
+            framevr::logging::Write("Frame potion sip: native command did not consume the held belt item");
         if(result!=Result::Pending)waiting={};
     }
 }
@@ -134,6 +138,7 @@ void Request(const framevr::interaction::Request& r) {
     {std::lock_guard lock(mutex);
      if(queued.action!=Action::None||waiting.action!=Action::None||scheduled)return;
      queued=r;scheduled=true;reply={r.sequence,r.session,Result::Pending};}
+    if(r.action==Action::Potion)framevr::logging::Write("Frame potion sip: gesture completed; native belt command queued");
     if(threads->runOnUiThread(context,&Apply,nullptr)!=D2RL::Threads::Result::Success) {
         std::lock_guard lock(mutex);queued={};scheduled=false;reply={r.sequence,r.session,Result::Refused};
     }

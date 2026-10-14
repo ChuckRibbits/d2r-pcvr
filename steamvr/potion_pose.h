@@ -15,9 +15,15 @@ inline math::Vec Center(math::Vec hand,math::Quat rotation) {
 inline math::Vec Opening(math::Vec hand,math::Quat rotation) {
     return Center(hand,rotation)+math::Rotate(HeldRotation(rotation),{0,Height*.5f,0});
 }
-inline bool AtMouth(math::Vec hand,math::Quat rotation,math::Vec head,math::Quat headRotation) {
+inline bool AtMouth(math::Vec hand,math::Quat rotation,math::Vec head,math::Quat headRotation,bool sipping=false) {
     const auto mouth=head+math::Rotate(headRotation,{0,-.10f,-.08f});
     const auto difference=Opening(hand,rotation)-mouth;
-    return math::Dot(difference,difference)<.105f*.105f&&math::Rotate(HeldRotation(rotation),{0,1,0}).y<.25f;
+    // Leave room for the headset shell and face-position differences. A
+    // roughly 50-degree tilt is intentional drinking; requiring near-horizontal
+    // alignment made ordinary sips fail. Wider exit bounds prevent a small
+    // tracking wobble from repeatedly resetting the continuous dwell.
+    const float radius=sipping?.19f:.16f;
+    return math::Dot(difference,difference)<radius*radius&&
+        math::Rotate(HeldRotation(rotation),{0,1,0}).y<(sipping?.75f:.65f);
 }
 }

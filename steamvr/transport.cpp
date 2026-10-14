@@ -1295,6 +1295,17 @@ void Input() {
     for(int i=0;i<2;++i){interactionInput.tracked[i]=motionInput.tracked[i];interactionInput.grip[i]=motionInput.grip[i];
         interactionInput.hand[i]={motionInput.hand[i].p,motionInput.hand[i].q};}
     interactionOutput=interactions.Step(interactionInput);
+    // Bounded diagnostics distinguish gesture misses from native refusal.
+    static ULONGLONG potionReportAt=0;
+    if(interactionOutput.bottleHand>=0&&GetTickCount64()>=potionReportAt) {
+        const auto& hand=interactionInput.hand[interactionOutput.bottleHand];
+        const auto mouth=interactionInput.head.p+math::Rotate(interactionInput.head.q,{0,-.10f,-.08f});
+        const auto delta=potions::Opening(hand.p,hand.q)-mouth;
+        char line[200];std::snprintf(line,sizeof line,"Frame potion sip: hand=%d neck_gap=%.3f m up=%.3f ready=%d empty=%d",
+            interactionOutput.bottleHand,std::sqrt(math::Dot(delta,delta)),math::Rotate(potions::HeldRotation(hand.q),{0,1,0}).y,
+            potions::AtMouth(hand.p,hand.q,interactionInput.head.p,interactionInput.head.q),interactionOutput.bottleEmpty);
+        Say(line);potionReportAt=GetTickCount64()+2000;
+    }
     if(interactionOutput.settings){OpenSettings();settingsOwned=true;interactionInput.active=motionInput.active=false;}
     gamestate::MenuMap(mapSupported&&interaction::MapWanted(interactionInput,interactionOutput,interactionInput.at));
     if(interactionOutput.inventory&&toggleMenus)toggleMenus();

@@ -822,3 +822,24 @@ All 55 native checks pass. The correction still needs an offline headset test
 of Ice Bolt in each hand, planar/free aim and concurrent casting. No agent
 headset validation or game asset distribution. A bounded first-eight-entities
 log records Ice Bolt root classification to help verify the native handoff.
+
+### Potion sipping tolerance
+
+A held potion now begins its 250 ms sip when the rendered opening is within
+16 cm of the estimated mouth and tipped at least about 50 degrees from upright.
+Once a sip starts, 19 cm / about 41 degrees keeps the dwell alive through small
+tracking wobbles. Leaving those bounds resets it. This accommodates headset
+clearance and face-position differences; the previous 10.5 cm / 75-degree
+requirement could reject a natural sip entirely.
+
+Upright bottles, distant hands, release, tracking loss, menus, recentering and
+changed belt items still cannot consume a potion. Only the exact captured item
+is requested, once per grab, through the native belt command; the bottle becomes
+empty only after native inventory confirms consumption. Feedback uses the hand
+holding the bottle. Bounded `Frame potion sip` logs report opening distance,
+tilt, gesture completion and native consumption so failed gestures can be
+separated from native refusals (including a resource already being full).
+
+Both hands and turned poses are covered by synthetic natural-sip and boundary
+wobble checks, alongside the existing rejection/cancellation tests. Headset
+validation of this candidate is pending; no game inventory or stat edits are used.
