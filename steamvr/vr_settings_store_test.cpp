@@ -23,6 +23,21 @@ int main(){
     Check(before.values[DrawDistance]==2&&before.values[ObjectDistance]==300,"missing draw distances do not silently select 4 rings and radius 1000");
     Check(WritePrivateProfileStringW(L"render",L"rings",L"6",name),"restore explicit terrain distance");
     vrsettings::Poll(name);before=vrsettings::Read();
+    // Old separate switches migrate only until an explicit combined choice exists.
+    for(int map:{0,1})for(int compass:{0,1}) {
+        Check(WritePrivateProfileStringW(L"interactions",L"wrist_map",map?L"1":L"0",name),"write legacy map preference");
+        Check(WritePrivateProfileStringW(L"interactions",L"wrist_compass",compass?L"1":L"0",name),"write legacy compass preference");
+        vrsettings::Poll(name);
+        Check(vrsettings::Read().values[NavigationLocation]==(map||compass?0:3),"legacy both-off stays off; either enabled migrates to combined wrist");
+    }
+    Check(WritePrivateProfileStringW(L"interactions",L"navigation_location",L"1",name),"set explicit palm navigation");
+    Check(WritePrivateProfileStringW(L"interactions",L"wrist_map",L"0",name)&&WritePrivateProfileStringW(L"interactions",L"wrist_compass",L"0",name),"legacy switches now off");
+    vrsettings::Poll(name);Check(vrsettings::Read().values[NavigationLocation]==1,"explicit combined preference overrides old switches");
+    Check(WritePrivateProfileStringW(L"interactions",L"navigation_location",L"1.5",name),"malformed enum");
+    vrsettings::Poll(name);Check(vrsettings::Read().values[NavigationLocation]==0,"fractional location falls back to Wrist");
+    Check(WritePrivateProfileStringW(L"interactions",L"navigation_location",nullptr,name)&&
+        WritePrivateProfileStringW(L"interactions",L"wrist_map",L"1",name)&&WritePrivateProfileStringW(L"interactions",L"wrist_compass",L"1",name),"restore legacy defaults");
+    vrsettings::Poll(name);before=vrsettings::Read();
     Model model;model.Open(before);model.Click({Kind::Change,Foveation,1});model.Click({Kind::Change,Motion,1});
     auto request=model.Click({Kind::Apply});
     Check(vrsettings::Submit(request)&&!vrsettings::Submit(request),"one queued transaction at a time");
@@ -84,18 +99,13 @@ int main(){
     Check(vrsettings::Submit(request)&&vrsettings::Poll(name),"gesture preference saves through the normal settings transaction");
     saved=vrsettings::Read();
     Check(saved.values[SkillGestures]==0&&Int(path,L"gameplay",L"skill_gestures")==0,"gesture opt-out survives profile reload");
-    model.Open(saved);model.Click({Kind::Change,WristMap,-1});request=model.Click({Kind::Apply});
-    Check(vrsettings::Submit(request)&&vrsettings::Poll(name),"save wrist minimap Off");
-    Check(Int(path,L"interactions",L"wrist_map")==0&&vrsettings::Read().values[WristMap]==0,"wrist minimap Off persists and publishes for live use");
-    model.Open(vrsettings::Read());model.Click({Kind::Change,WristMap,1});request=model.Click({Kind::Apply});
-    Check(vrsettings::Submit(request)&&vrsettings::Poll(name),"save wrist minimap On");
-    saved=vrsettings::Read();
-    Check(Int(path,L"interactions",L"wrist_map")==1&&saved.values[WristMap]==1,"wrist minimap On survives reload");
-    model.Open(saved);model.Click({Kind::Change,WristCompass,-1});request=model.Click({Kind::Apply});
-    Check(vrsettings::Submit(request)&&vrsettings::Poll(name),"save wrist compass Off");
-    saved=vrsettings::Read();
-    Check(Int(path,L"interactions",L"wrist_compass")==0&&saved.values[WristCompass]==0&&saved.values[WristMap]==1,
-        "compass Off persists without disabling wrist map");
+    for(int location=1;location<=3;++location){
+        model.Open(vrsettings::Read());model.Click({Kind::Change,NavigationLocation,1});request=model.Click({Kind::Apply});
+        Check(vrsettings::Submit(request)&&vrsettings::Poll(name),"save combined navigation location");
+        saved=vrsettings::Read();
+        Check(saved.values[NavigationLocation]==location&&Int(path,L"interactions",L"navigation_location")==location&&
+            saved.values[VitalsLocation]==3&&saved.values[CriticalAlerts]==0,"navigation location survives reload independently of vitals");
+    }
     model.Open(saved);model.Click({Kind::Change,Foveation,-1});model.Click({Kind::Change,Foveation,-1});
     request=model.Click({Kind::Apply});
     Check(WritePrivateProfileStringW(L"custom",L"later",L"42",name),"simulate unrelated external edit");

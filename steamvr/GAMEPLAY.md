@@ -177,19 +177,21 @@ not generate melee velocity. The layout currently assumes a right-handed player.
 | Walk / snap turn | Sticks; paused while wheel or journal is open |
 | Height reset / map | Left grip + left stick click / plain left stick click, unchanged |
 
-The minimap also appears above the health/mana indicators when you look at the
-back of your left wrist. **VR Settings > HUD > Wrist minimap** is **On** by
-default; turn it **Off** and click **Apply** to hide only the wrist copy.
-The wheel's **MAP** tab remains available either way.
+The minimap and compass form one navigation display on your left hand.
+**VR Settings > HUD > Minimap / compass location** offers **Wrist** (default),
+**Palm**, **Either**, or **Off**. Click **Apply** to save. Both appear and hide
+together, independently of health/mana. When both displays share a hand face,
+navigation sits above the vitals; otherwise it sits directly at the hand anchor.
+The wheel's **MAP** tab remains available even when navigation is **Off**.
 
-A slim bronze **wrist compass** sits above the left wrist minimap. Its fixed
+A slim bronze **compass** sits above the minimap. Its fixed
 center marker shows your facing direction; **N** is the top of the native map,
 with **E/S/W** and diagonal bearings around it. Physical turns, stick turns and
 recenter use the same orientation as the stereo camera. Looking straight down
 retains the last reliable horizontal head direction so the bearings do not flip.
-The strip appears with the watch gesture and hides while a wheel or menu is open.
-**VR Settings > HUD > Wrist compass** defaults to **On** and can be disabled
-independently. With the wrist minimap off, it moves directly above the vitals.
+Wrist placement uses the watch gesture. Palm placement uses the same deliberate
+palm-up hold and casting guards as health/mana below. Both navigation elements
+hide while a wheel or menu is open; low-resource alerts never summon them.
 The compass shows direction only; it does not add destination or quest markers.
 
 **VR Settings > HUD > Health / mana location** offers **Wrist** (default),
@@ -198,8 +200,8 @@ health/mana and XP display just above your left palm: raise it in front of you,
 turn the palm upward toward your eyes, and hold for a quarter second. Release
 the left trigger and grip; casting with that hand hides the display. Lower or
 turn your hand to hide it. Losing left-hand tracking or opening a menu hides it
-and requires a new deliberate hold. The wrist minimap and compass remain
-available independently of the health/mana location.
+and requires a new deliberate hold. Navigation has its own location setting, so
+you can keep health/mana on the wrist and navigation in the palm, or vice versa.
 
 **Low health / mana alerts** is a separate toggle, **Off** by default. Leave it
 off for gesture-only vitals. Opting in adds a brief popup near your view and
@@ -424,8 +426,7 @@ Optional live configuration (metres below/forward/from the estimated torso):
 ```ini
 [interactions]
 seated=0
-wrist_map=1
-wrist_compass=1
+navigation_location=0
 vitals_location=0
 critical_alerts=0
 waist_below_eyes=0.65
@@ -434,7 +435,10 @@ hip_width=0.28
 holsters=1
 ```
 
-`vitals_location`: `0` Wrist, `1` Palm, `2` Either, `3` Off.
+`vitals_location` and `navigation_location`: `0` Wrist, `1` Palm, `2` Either,
+`3` Off. Older profiles without `navigation_location` start at Wrist if either
+legacy `wrist_map` or `wrist_compass` is enabled, or Off if both are disabled.
+An explicit navigation location takes precedence over those legacy switches.
 
 Seated mode raises the waist anchors. The belt and hip holsters follow tracked
 position and horizontal facing every frame, including while hands are lowered
