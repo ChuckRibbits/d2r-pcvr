@@ -26,5 +26,10 @@ or the HUD's widget pointers.
 
 Validation: focused Windows build and all 56 native checks passed, including
 either missing widget, unreadable layout, ready layout, and desktop pass-through.
-Quest combat, leveling, planar toggles, and menu transitions still need headset
-verification. Raw dumps and native code inspection artifacts remain local.
+The combined tester build passed all 57 checks. On October 14 the owner
+confirmed that Fireball casting and leveling up no longer crashed on Quest
+through Virtual Desktop with SteamVR/OpenXR, using combined build `4d56cca`.
+Runtime logs confirm the guard deferred incomplete HUD updates and the wrist
+HUD continued reporting level 5 and XP progress. Repeated planar toggles and
+menu-transition stress testing remain unverified. Raw dumps and native code
+inspection artifacts remain local.
