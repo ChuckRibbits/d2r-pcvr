@@ -852,5 +852,7 @@ pointer between requests, and still requires confirmed inventory removal.
 
 The native-belt fixture covers an uninitialized hidden belt, rebuilt layouts,
 player/session changes, missing widgets, unsupported signatures, rejected
-commands without retries, and unchanged desktop routing. Headset confirmation
-of actual consumption with the owner refresh is pending.
+commands without retries, and unchanged desktop routing. On 2026-10-14 the owner
+confirmed drinking works on Steam Frame / SteamVR (Steam edition, offline
+Paladin). Runtime logs confirmed the hidden belt owner changed from -1/type 6
+to the local player, followed by consumption of the exact captured mana potion.
