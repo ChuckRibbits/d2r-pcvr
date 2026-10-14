@@ -32,7 +32,28 @@ int main() {
         }
     }
     float x=5,y=7;
+    for(int degree=-180;degree<=180;degree+=5) {
+        const float angle=degree*3.14159265f/180;
+        const spellaim::Cast cast{true,std::cos(angle),std::sin(angle)};
+        // Native resolution can return the movement target without invoking
+        // AttackPoint. Simulate forward, backward, strafing and idle results.
+        for(float travel:{0.f,1.57079633f,3.14159265f,-1.57079633f})for(float distance:{0.f,8.f}) {
+            const float playerX=1200.25f+std::cos(angle+travel)*distance;
+            const float playerY=1300.75f+std::sin(angle+travel)*distance;
+            x=playerX+std::cos(angle+travel)*3;y=playerY+std::sin(angle+travel)*3;
+            Check(spellaim::Resolve(cast,playerX,playerY,x,y),"moving cast overrides every native resolver result");
+            const auto actual=math::Normalized(math::Vec{x-playerX,0,y-playerY});
+            Check(actual.x*cast.x+actual.z*cast.y>.99999f,"projectile aim is independent of forward, backward or sideways travel");
+            Check(std::fabs(std::hypot(x-playerX,y-playerY)-60)<.001f,"cast target follows current player position at full aiming precision");
+        }
+    }
+    x=5;y=7;
+    Check(!spellaim::Resolve({},1200,1300,x,y)&&x==5&&y==7,"non-projectile native targets are preserved");
+    Check(spellaim::Resolve({true,23,42,true},1200,1300,x,y)&&x==23&&y==42,"shield contact keeps its exact point instead of projectile range");
+    x=5;y=7;
+    Check(!spellaim::Resolve({true,NAN,0},1200,1300,x,y)&&x==5&&y==7,"invalid cast aim preserves native result");
+    Check(!spellaim::Resolve({true,1,0},NAN,1300,x,y)&&x==5&&y==7,"invalid player position preserves native result");
     Check(!spellaim::Point(0,0,{0,1,0},x,y)&&x==5&&y==7,"vertical aim cannot invent a horizontal direction");
     Check(!spellaim::Point(0,0,{NAN,0,1},x,y),"invalid direction is refused");
-    std::puts("Spell aiming: native behavior classification, scoped targeting, fan direction and cell precision passed");
+    std::puts("Spell aiming: native behavior, scoped targeting, movement-independent cast resolution and cell precision passed");
 }
