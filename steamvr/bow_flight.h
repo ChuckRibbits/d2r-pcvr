@@ -142,11 +142,17 @@ struct Flight {
     bool alive=false;
     Vec nativePoint{},nativePrevious{},nativeStart{};
     bool NativePath() const {return shot.kind==Kind::Spell&&spellcast::NativePath(shot.skill);}
-    // Preserve the native path's displacement, but keep the sub-cell muzzle
-    // position and height. Never relocate/reset Charged Bolt's wandering path.
+    // Ground spells retain the muzzle's horizontal placement, but not its
+    // height. Use the launch floor, including the first interpolated frame.
+    Vec NativeOrigin() const {return {shot.origin.x,shot.player.y,shot.origin.z};}
+    void BeginNativePath(Vec gridWorld,uint64_t now) {
+        nativeStart=gridWorld;nativePoint=nativePrevious=NativeOrigin();updatedAt=now;
+    }
+    // Preserve native wandering displacement without relocating/resetting its
+    // path. Raising the casting hand must not lift Charged Bolt off the floor.
     void NativePosition(Vec gridWorld,uint64_t now) {
         nativePrevious=nativePoint;
-        nativePoint=shot.origin+(gridWorld-nativeStart)*(1/shot.unitsPerMetre);
+        nativePoint=NativeOrigin()+(gridWorld-nativeStart)*(1/shot.unitsPerMetre);
         updatedAt=now;
     }
     Vec Point() const {return NativePath()?nativePoint:shot.origin+shot.direction*distance;}
@@ -213,8 +219,8 @@ inline void SpellMatrix(const Flight& f,uint64_t now,float out[16]) {
     }
     // The straight VFX have a +4-unit child height; Charged Bolt has -.25.
     // Fireball also has +2.3 forward. Cancel authored offsets at the root
-    // so the visible emitter, rather than its invisible parent, starts at the
-    // hand. Values verified in the owned game's HD definitions; no assets ship.
+    // so the visible emitter starts at the hand for straight shots and on the
+    // floor for Charged Bolt. Values verified in owned HD definitions; no assets ship.
     const float ahead=f.shot.skill==47?2.3f:0;
     const float height=f.shot.skill==38?-.25f:4.f;
     out[12]=p.x-out[4]*height-out[8]*ahead;

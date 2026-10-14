@@ -115,11 +115,11 @@ int main() {
     }
     assert(std::fabs(bowflight::FlightSpeed(shot,4096)-12.5f)<.001f);
     // Native wandering displacement is independent of current controller aim,
-    // retains muzzle height/sub-cell XY, and does not overshoot a wall or hit.
+    // retains horizontal muzzle placement, and does not overshoot a wall or hit.
     bowflight::Flight charged;charged.shot=shot;charged.shot.skill=38;charged.shot.direction={1,0,0};
-    charged.nativeStart={100,0,200};charged.nativePoint=charged.nativePrevious=shot.origin;charged.alive=true;
+    charged.BeginNativePath({100,0,200},60);charged.alive=true;
     charged.NativePosition({102,0,201},100);
-    assert(charged.Point().x==.5f&&charged.Point().y==1.6f&&charged.Point().z==.25f);
+    assert(charged.Point().x==.5f&&charged.Point().y==0&&charged.Point().z==.25f);
     assert(charged.TailAt(120).x==.25f&&charged.TailAt(200).x==.5f);
     charged.NativePosition({101,0,202},140);
     assert(charged.Point().x==.25f&&charged.Point().z==.5f);
@@ -128,6 +128,26 @@ int main() {
     bowflight::SpellMatrix(charged,140,cm);
     const math::Vec chargedEmitter={cm[12]-.25f*cm[4],cm[13]-.25f*cm[5],cm[14]-.25f*cm[6]};
     assert(bowflight::Length(chargedEmitter-charged.Point()*shot.unitsPerMetre)<.0001f);
+    // First frame, native updates, interpolation and VFX all stay on the
+    // launch floor, regardless of hand height or elevated/sheared world floor.
+    for(float floor:{0.f,1.25f,-.5f})for(float handHeight:{.3f,1.6f,2.2f}) {
+        charged.shot.player={10,floor,20};
+        charged.shot.origin={10.15f,floor+handHeight,20.35f};
+        const auto grid=bowflight::GridPoint(charged.shot,charged.shot.origin)*shot.unitsPerMetre;
+        charged.BeginNativePath(grid,100);charged.alive=true;
+        assert(charged.Point().y==floor&&charged.TailAt(100).y==floor);
+        charged.NativePosition(grid+math::Vec{2,0,-1},140);
+        for(uint64_t at:{140,160,180}) {
+            assert(charged.TailAt(at).y==floor);
+            bowflight::SpellMatrix(charged,at,cm);
+            assert(std::fabs((cm[13]-.25f*cm[5])-floor*shot.unitsPerMetre)<.0001f);
+        }
+        const auto impact=bowflight::GridPoint(charged.shot,charged.Point())*shot.unitsPerMetre;
+        assert(bowflight::Length(impact-(grid+math::Vec{2,0,-1}))<.0001f);
+        // Straight projectile heights are unaffected by the ground-spell rule.
+        auto straight=charged;straight.shot.skill=47;
+        assert(straight.TailAt(140).y==floor+handHeight);
+    }
     const auto frozen=bowflight::Tip(flight.shot,3);shot.direction={1,0,0};
     assert(bowflight::Tip(flight.shot,3).y==frozen.y);
     bowflight::VisualBinding binding;
