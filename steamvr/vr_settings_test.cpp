@@ -7,6 +7,13 @@ static void Check(bool b,const char* label){if(!b){std::fprintf(stderr,"FAIL: %s
 static Hit At(Page p,Rect r){return HitTest(p,(r.x+r.w*.5f)/Width,(r.y+r.h*.5f)/Height);}
 int main(){
     Snapshot s;s.ready=true;
+    Check(s.values[WristMap]==1,"wrist minimap defaults on");
+    {Model wrist;wrist.Open(s);wrist.Click(At(Page::Controls,Tabs[1]));
+        const int row=RowCount(Page::VR)-1;
+        Check(RowKey(Page::VR,row)==WristMap&&RowY+row*RowStep+72<876,"wrist map row fits above status and footer");
+        wrist.Click(At(Page::VR,ValueBox(row)));
+        auto request=wrist.Click({Kind::Apply});
+        Check(request.changed==(1u<<WristMap)&&request.values[WristMap]==0,"wrist map toggle saves only its own setting");}
     Check(s.values[DrawDistance]==2&&s.values[ObjectDistance]==300,"distance fallbacks match release configuration");
     {Model distance;distance.Open(s);
         for(int i=0;i<3;++i)distance.Click({Kind::Change,ObjectDistance,-1});
