@@ -74,6 +74,11 @@ Selection clicks do not cast. Release buttons and triggers after closing before
 using them in combat. Menu, tracking, equipment and assignment changes also
 require a fresh press. Only one wheel is open at a time.
 
+Interact latches the target present when you press A. Pressing at empty space
+does not wait for an item to come into range. Release and press again for each
+new target. A release during an inventory/NPC menu rearms interaction; holding
+the button through a menu or game-session change cannot reuse the old target.
+
 On the **VR** settings tab, **Smooth turning** defaults to **Off** (30-degree
 snap turns). Turn it **On**, then **Apply**, for continuous right-stick turning.
 **Snap turn angle** and **Smooth turn speed** keep their values when switching

@@ -25,6 +25,7 @@
 #include "../steamvr/profile.h"
 #include "../steamvr/resource_descriptions.h"
 #include "../steamvr/vr_settings.h"
+#include "../steamvr/interact_press.h"
 #include <tlhelp32.h>
 #include <intrin.h>
 #include <xinput.h>
@@ -3425,8 +3426,21 @@ std::atomic<ULONGLONG> g_interactTargetAt{0};
 std::atomic<bool> g_interactHooked{false};   // = g_h.interact, which is declared further down
 uintptr_t HookInteractTarget(uintptr_t mgr, uint32_t player);
 
-bool InteractTargetNow() {
-    return g_interactHooked.load() && g_interactTarget.load() != 0 && GetTickCount64() - g_interactTargetAt.load() < 200;
+SRWLOCK g_interactPressLock=SRWLOCK_INIT;
+framevr::interaction::InteractPress g_interactPress;
+bool InteractButton(bool active,uint32_t held) {
+    const bool hooked=g_interactHooked.load();
+    const uintptr_t target=hooked&&GetTickCount64()-g_interactTargetAt.load()<200?g_interactTarget.load():0;
+    AcquireSRWLockExclusive(&g_interactPressLock);
+    const auto out=g_interactPress.Poll((held&D2RVR_ACT_INTERACT)!=0,target,hooked,active,
+        gamestate::LocalPlayer(),gamestate::MenuEpoch());
+    static bool wasInteract=false;
+    const bool started=out.down&&!wasInteract;wasInteract=out.down;
+    ReleaseSRWLockExclusive(&g_interactPressLock);
+    if(out.miss)Log("vrcam: pick up - nothing to pick up or open here, A not pressed");
+    if(out.lost)LogF("vrcam: pick up - target changed during the press (now %p), A let go until pressed again",(void*)target);
+    if(started)LogF("vrcam: pick up / interact - target %p",(void*)target);
+    return out.down;
 }
 
 void ApplyActions(XINPUT_STATE* s) {
@@ -3436,22 +3450,9 @@ void ApplyActions(XINPUT_STATE* s) {
     // that is still the target; when it changes (a chest spills its loot, the
     // item is taken) A is let go until the action is released and pressed again,
     // so a press never also takes what it uncovered and a hold never sweeps the
-    // floor. Native menus return before this, so their A is untouched.
+    // floor. Native menus observe releases separately without changing menu A.
     // Without the hook (another build) it cannot tell, and stays a plain A.
-    const bool interactHeld = (held & D2RVR_ACT_INTERACT) != 0;
-    static bool interactWas = false, wasInteract = false;
-    static uintptr_t interactLatch = 0;   // the press's target; 0 = none or spent
-    if (!interactHeld) interactLatch = 0;
-    else if (!interactWas) {
-        interactLatch = InteractTargetNow() ? g_interactTarget.load() : 0;
-        if (!interactLatch && g_interactHooked.load()) Log("vrcam: pick up - nothing to pick up or open here, A not pressed");
-    } else if (interactLatch && (!InteractTargetNow() || g_interactTarget.load() != interactLatch)) {
-        LogF("vrcam: pick up - target changed during the press (now %p), A let go until pressed again", (void*)g_interactTarget.load());
-        interactLatch = 0;
-    }
-    interactWas = interactHeld;
-    const bool interact = interactHeld && (interactLatch != 0 || !g_interactHooked.load());
-    if (interact != wasInteract) { wasInteract = interact; if (interact) LogF("vrcam: pick up / interact - target %p", (void*)g_interactTarget.load()); }
+    const bool interact = InteractButton(true,held);
     if ((held & D2RVR_ACT_ATTACK) || interact) s->Gamepad.wButtons |= XINPUT_GAMEPAD_A;
     // A pad button, not the keyboard's I: a key press flips the game's UI to
     // mouse and keyboard, the way Shift + click did in bow mode 2. Menu (Start)
@@ -3944,6 +3945,7 @@ template <int I> DWORD WINAPI XDetour(DWORD idx, XINPUT_STATE* s) {
     // Flat without a pad: no controller anywhere, so no pad event ever asks
     // the game for its controller UI (docs/move_recon.md §6).
     if (FlatNoPad()) {
+        if(idx==0)InteractButton(false,ActionsHeld());
         if (s) memset(s, 0, sizeof *s);
         return ERROR_DEVICE_NOT_CONNECTED;
     }
@@ -3964,7 +3966,7 @@ template <int I> DWORD WINAPI XDetour(DWORD idx, XINPUT_STATE* s) {
         // the same context AND UI epoch before accepting either kind of pad.
         const bool allowed=!tagged||framevr::menus::Allowed(report.reserved[0],report.reserved[1],gamestate::MenuEpoch(),nativeUi,framevr::SettingsOpen());
         if(!allowed||nativeUi||framevr::SettingsOpen()) {
-            if(idx==0)SequenceSkillPad(s,false);
+            if(idx==0){SequenceSkillPad(s,false);InteractButton(false,ActionsHeld());}
             if(!allowed||framevr::SettingsOpen())s->Gamepad={};
             if(idx==0){g_aHeld.store(false);g_skillHeld.store(false);g_rightX.store(0.f);}
             // Native menu buttons/sticks bypass gameplay action translation
@@ -3985,7 +3987,7 @@ template <int I> DWORD WINAPI XDetour(DWORD idx, XINPUT_STATE* s) {
             }
         }
         TurnStick(s, mirror);
-    }
+    } else if(t_xDepth==0&&idx==0)InteractButton(false,ActionsHeld());
     return r;
 }
 void* const kXDetours[] = {(void*)&XDetour<0>, (void*)&XDetour<1>, (void*)&XDetour<2>, (void*)&XDetour<3>, (void*)&XDetour<4>};
