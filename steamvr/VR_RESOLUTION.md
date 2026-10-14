@@ -214,6 +214,22 @@ with Virtual Desktop/VDXR still needs a headset retest of Play/Create Character
 at 3K and after changing resolution. These checks do not establish headset
 validation.
 
+The Quest/VDXR retest showed that scaling mouse messages alone did not restore
+the bottom row. Native `SetCursorPosition` subsequently clamps X/Y using
+desktop width/height. At a 1440-high desktop, a button at source Y=1650 is
+unreachable regardless of the correct incoming event. Two audited size-query
+return sites now receive the full applied VR source for that clamp. Height
+uses a direct call; width tail-calls the query, so both the caller and tail
+jump are signature-checked. UI layout/font callers still receive only the
+widescreen band. Desktop mode retains the native bounds.
+
+The real-window fixture reproduces the desktop-height truncation and verifies
+bottom-row coordinates survive the corrected clamp after each live size
+change, with desktop restoration. The three added branch guards match the
+local 3.3.93787 code snapshot. All 56 focused checks pass; a new headset retest
+of the entire bottom row is required. The prior event-only build failed that
+headset scenario.
+
 Merchant trade/repair and gambling screens bypass UISwitcher. They now receive
 its upper widescreen-band height correction too, keeping the approved 0.55 m
 distance and existing scale. At 4096 square this lowers the full canvas by

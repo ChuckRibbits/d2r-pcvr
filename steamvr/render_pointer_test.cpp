@@ -28,9 +28,9 @@ int main(){
     POINT origin{};assert(ClientToScreen(h,&origin));
     POINT otherOrigin{};assert(ClientToScreen(other,&otherOrigin));
     const uint64_t nativeCanvas=uint64_t(r.right)|(uint64_t(r.bottom)<<32);
-    Attach(h);assert(UiSize(nativeCanvas)==nativeCanvas);
+    Attach(h);assert(UiSize(nativeCanvas)==nativeCanvas&&CursorSize(nativeCanvas)==nativeCanvas);
     Update(h,true,{2160,2160},{8192,8192},{uint32_t(r.right),uint32_t(r.bottom)},4);
-    assert(UiSize(nativeCanvas)==nativeCanvas); // queued is not yet applied
+    assert(UiSize(nativeCanvas)==nativeCanvas&&CursorSize(nativeCanvas)==nativeCanvas); // queued is not yet applied
     Pump();assert(UiSize(nativeCanvas)==(uint64_t(2560)|(uint64_t(1440)<<32)));
     POINT p{origin.x+r.right-1,origin.y+r.bottom-1};
     assert(ScreenToClient(h,&p)&&p.x==2559&&p.y==2559);
@@ -45,6 +45,14 @@ int main(){
         assert((nativeSize==size));
         const auto canvas=UiSize(wideDesktop);
         assert(uint32_t(canvas)==size.w&&uint32_t(canvas>>32)==size.w*9/16);
+        const auto bounds=CursorSize(nativeCanvas);
+        assert(uint32_t(bounds)==size.w&&uint32_t(bounds>>32)==size.h);
+        // Reproduce the native post-dispatch clamp: old desktop bounds make
+        // bottom-row controls unreachable even when the ray/event XY is right.
+        POINT bottom{LONG(size.w-100),LONG(uint32_t(canvas>>32)-40)};
+        assert(std::clamp(bottom.y,0L,r.bottom-1)!=bottom.y);
+        assert(std::clamp(bottom.x,0L,LONG(uint32_t(bounds))-1)==bottom.x);
+        assert(std::clamp(bottom.y,0L,LONG(uint32_t(bounds>>32))-1)==bottom.y);
         p={origin.x+r.right-1,origin.y+r.bottom-1};
         assert(ScreenToClient(h,&p)&&p.x==LONG(size.w-1)&&p.y==LONG(size.h-1));
         assert(uint32_t(canvas>>32)<=size.h); // every UI pixel remains reachable
@@ -85,7 +93,7 @@ int main(){
     assert(ScreenToClient(h,&p)&&p.x==2559&&p.y==2559);
     OptionsApplied(); // XR shutdown cancels pending recovery.
     Restore();Pump();p={origin.x+r.right-1,origin.y+r.bottom-1};
-    assert(UiSize(nativeCanvas)==nativeCanvas&&UiSize(wideDesktop)==wideDesktop);
+    assert(UiSize(nativeCanvas)==nativeCanvas&&UiSize(wideDesktop)==wideDesktop&&CursorSize(nativeCanvas)==nativeCanvas);
     beforeUi=resizes;UiSizeReady();Pump();assert(resizes==beforeUi);
     assert(ScreenToClient(h,&p)&&p.x==r.right-1&&p.y==r.bottom-1);
     SendMessageW(h,WM_MOUSEMOVE,0,MAKELPARAM(123,234));assert(nativeMouse==MAKELPARAM(123,234));
