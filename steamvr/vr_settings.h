@@ -5,12 +5,13 @@
 #include <cstdint>
 #include "controller_labels.h"
 #include "hand_vitals.h"
+#include "vr_resolution.h"
 
 namespace framevr::settings {
 enum class Page { Controls, VR, Video, HUD };
 enum Key { Motion, Seated, Dominant, Snap, TurnSpeed, Waist, BeltForward,
            Foveation, Sky, Fog, Ceiling, DrawDistance, ObjectDistance,
-           EyeHeight, ArmSpan, BodyCalibration, SkillGestures, WristMap, WristCompass, ControllerLabels, WeaponSkillIndicators, PlanarSpellAim, VitalsLocation, CriticalAlerts, Count };
+           EyeHeight, ArmSpan, BodyCalibration, SkillGestures, WristMap, WristCompass, ControllerLabels, WeaponSkillIndicators, PlanarSpellAim, VitalsLocation, CriticalAlerts, RenderResolution, Count };
 struct Definition {
     const char* label;
     const char* detail;
@@ -43,13 +44,14 @@ inline constexpr std::array<Definition,Count> Definitions{{
     {"Planar spell aiming", "Keep straight projectiles level; Off allows aiming up/down", L"gameplay",L"planar_spell_aim",1,0,1,1},
     {"Health / mana location", "Wrist, palm-up, either gesture, or hidden", L"interactions",L"vitals_location",0,0,3,1},
     {"Low health / mana alerts", "Brief popup and vibration when resources are low", L"interactions",L"critical_alerts",0,0,1,1},
+    {"VR render resolution", "Independent of monitor; higher values cost GPU time", L"render",L"vr_resolution",0,0,6,1},
 }};
 using Values=std::array<float,Count>;
 inline Values Defaults(){Values v{};for(int i=0;i<Count;++i)v[i]=Definitions[i].defaultValue;return v;}
 inline float Normalize(Key key,float value){
     const auto& d=Definitions[key];
     if(!std::isfinite(value))return d.defaultValue;
-    if((key==ControllerLabels||key==VitalsLocation)&&(value<d.min||value>d.max||value!=std::round(value)))return d.defaultValue;
+    if((key==ControllerLabels||key==VitalsLocation||key==RenderResolution)&&(value<d.min||value>d.max||value!=std::round(value)))return d.defaultValue;
     value=std::clamp(value,d.min,d.max);
     return d.step==1?std::round(value):value;
 }
@@ -73,10 +75,11 @@ inline Rect ControllerOption(int option){return {865,225+option*58,375,58};}
 inline Rect Decrease(int row){return {865,RowY+row*RowStep,64,52};}
 inline Rect Increase(int row){return {1176,RowY+row*RowStep,64,52};}
 inline Rect ValueBox(int row){return {942,RowY+row*RowStep,221,52};}
-inline int RowCount(Page page){return page==Page::VR?8:page==Page::Video?6:page==Page::HUD?4:0;}
+inline int RowCount(Page page){return page==Page::VR?8:page==Page::Video?7:page==Page::HUD?4:0;}
 inline Key RowKey(Page page,int row){
     constexpr Key hud[]={VitalsLocation,CriticalAlerts,WristMap,WristCompass};
     if(page==Page::HUD)return hud[row];
+    if(page==Page::Video&&row==6)return RenderResolution;
     return page==Page::VR&&row==7?SkillGestures:Key((page==Page::Video?7:0)+row);
 }
 enum class Kind { None, Tab, Change, Apply, Close, Recenter, Calibrate, ControllerMenu, ControllerChoice, DismissMenu };

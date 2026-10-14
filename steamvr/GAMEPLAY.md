@@ -295,7 +295,7 @@ tabs and a **Reset eye height** button:
 |---|---|
 | Controls | Left/right controller reference for movement, menus, melee, bow, spells, potions, holsters and height reset |
 | VR | Motion combat on/off, seated belt position, dominant hand, smooth/snap turning, smooth turn speed, belt height and forward reach, wrist minimap on/off (default On) |
-| Video | Foveation Off / Fixed / Eye tracked, runtime capability/gaze status, added sky, fog, dungeon ceilings, terrain and object draw distances |
+| Video | Foveation Off / Fixed / Eye tracked, actual VR source size, added sky, fog, dungeon ceilings, terrain and object draw distances, VR render resolution |
 
 Click **Apply** to save changed values to `d2rloader/plugins/d2r_vr.ini` and
 reload them live. Closing without Apply discards pending edits. The first Apply
@@ -312,8 +312,9 @@ when motion combat is off and from the title/character screen while XR is active
 Eye-tracked shading requires runtime support, permission and valid gaze. Missing
 gaze uses full quality; unsupported VRS also renders at full quality. The menu
 does not change runtime privacy permissions. DLSS, textures and shadows stay in
-the game's **Options → Video**; headset render resolution stays in SteamVR.
-There is no in-menu resolution override or control rebinding in this candidate.
+the game's **Options → Video**. **VR render resolution** selects the game's
+source size independently of the physical monitor. See [resolution settings
+and testing notes](VR_RESOLUTION.md). There is no control rebinding here.
 
 First headset check: open/close from the shortcut, then from the wheel; visit all
 three tabs and reset height; cancel an edit and confirm it is discarded; Apply

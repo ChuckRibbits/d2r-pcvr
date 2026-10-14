@@ -45,7 +45,7 @@ struct FrameTiming {
     uint32_t pipelines=0;bool gpuValid=false;
 };
 FrameTiming LastTiming();
-void Shutdown();
+void Shutdown(bool preserveResolution=false);
 void BeginPair();
 void BeginEye(int eye);
 // Diagnostic only: F8 saves the next complete gameplay pair via ReShade.
