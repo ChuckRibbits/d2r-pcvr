@@ -86,6 +86,10 @@ uintptr_t Client(uintptr_t params,int flags) {
     Scope scope(params,0);const auto unit=originalClient(params,flags);ReportSpell(params,0,unit);return unit;
 }
 uintptr_t Server(uintptr_t game,uintptr_t params) {
+    std::array<uint8_t,0x98> adjusted{};
+    const int spell=bowvr::SpellParams(game,params,adjusted);
+    if(spell<0)return 0;
+    if(spell>0)params=reinterpret_cast<uintptr_t>(adjusted.data());
     Scope scope(params,1);const auto unit=originalServer(game,params);
     ReportSpell(params,1,unit);
     if(unit)bowvr::Created(game,params,unit);
@@ -123,7 +127,8 @@ bool HasComponent(uintptr_t storage,uint32_t entity) {
 }
 void Release(uintptr_t assets,uintptr_t definition,uint32_t entity,uintptr_t unit) {
     uint32_t type=~0u,missile=~0u;
-    if(enabled.load()&&Read(unit,type)&&type==3&&Read(unit+4,missile)&&framevr::bowflight::BasicMissile(missile)) {
+    if(enabled.load()&&Read(unit,type)&&type==3&&Read(unit+4,missile)&&
+       (framevr::bowflight::BasicMissile(missile)||bowvr::OwnsVisual(unit))) {
         const auto owner=reinterpret_cast<uintptr_t(*)(uintptr_t)>(d2rsig::Addr(OwnerRva))(unit);
         const auto registry=d2rsig::Addr(RegistryRva);
         if(EntityAlive(registry,entity)) {

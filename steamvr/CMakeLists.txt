@@ -83,6 +83,8 @@ target_link_libraries(openxr-probe PRIVATE d3d12 dxgi framevr-runtime)
 add_executable(melee-contact-test melee_contact_test.cpp)
 add_executable(world-coordinates-test world_coordinates_test.cpp)
 add_executable(bow-flight-test bow_flight_test.cpp)
+target_sources(d2rl-vrcam PRIVATE ${ROOT}/vr/spells.cpp)
+add_executable(spell-cast-test spell_cast_test.cpp)
 
 add_executable(interaction-test interaction_test.cpp)
 add_executable(wrist-hud-test wrist_hud_test.cpp)
@@ -121,7 +123,7 @@ enable_testing()
 foreach(test_target IN ITEMS memory-test hook-metrics-test active-keys-test resource-descriptions-test latest-worker-test thread-stats-test
     gameplay-test weapon-skills-test quick-cast-test hand-controls-test skill-pad-test spell-aim-test bow-pose-test body-tracking-test body-calibration-test shoulder-swap-test
     portal-billboard-test composition-layers-test projectile-rules-test
-    combat-rules-test logging-test melee-contact-test world-coordinates-test bow-flight-test
+    combat-rules-test logging-test melee-contact-test world-coordinates-test bow-flight-test spell-cast-test
     interaction-test wrist-hud-test controller-bindings-test journal-test native-panels-test
     vr-settings-test vr-settings-store-test controller-labels-test math-test deferred-draw-test gaze-test window-focus-test callback-ticket-test local-player-test)
   # These fixtures use assert for their checks, including in Release builds.

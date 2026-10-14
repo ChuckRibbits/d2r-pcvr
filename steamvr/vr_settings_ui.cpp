@@ -73,14 +73,17 @@ std::vector<uint8_t> Paint(const Model& m,Hit hover,const char* runtimeStatus,co
         const Help left[]={{"Stick","Walk"},{leftFaces.c_str(),"Assigned left-hand skills"},{leftAlternates.c_str(),"Alternate left-hand skills"},{"Trigger","Assigned left-hand skill"},{"Stick click","Toggle left wheel; right laser edits"},{"Grip + stick click","Reset eye height"},{"Grip near belt","Grab a potion"}};
         const Help right[]={{"Stick / click","Turn / toggle right wheel"},{"Trigger","Assigned right skill / grab bow string"},{rightFaces.c_str(),"Interact by default / assigned skills"},{"Dominant grip at shoulder","Either shoulder: swap weapon sets I / II"},{"Trigger at bow string","Nock, pull back, release to shoot"},{"Trigger with javelin","Hold, throw, release in WEAPON mode"},{"Left Grip + Right Trigger","Laser context click in game panels"}};
         for(int i=0;i<7;++i)for(int side=0;side<2;++side){
-            const auto& h=(side?right:left)[i];const int x=side?658:40,y=264+i*72;
-            fill({x,y,582,66},i%2?RGB(19,31,39):RGB(22,36,44));
-            text(h.key,{x+18,y+5,550,31},false,false,RGB(116,220,219));
-            text(h.action,{x+18,y+33,550,34});
+            const auto& h=(side?right:left)[i];const int x=side?658:40,y=264+i*64;
+            fill({x,y,582,60},i%2?RGB(19,31,39):RGB(22,36,44));
+            text(h.key,{x+18,y+2,550,29},false,false,RGB(116,220,219));
+            text(h.action,{x+18,y+30,550,30});
         }
-        text(Definitions[WeaponSkillIndicators].label,{40,783,875,32});
-        text(Definitions[WeaponSkillIndicators].detail,{40,815,875,29},false,false,quiet);
+        text(Definitions[WeaponSkillIndicators].label,{40,714,875,32});
+        text(Definitions[WeaponSkillIndicators].detail,{40,746,875,29},false,false,quiet);
         button(WeaponIndicatorsBox,m.Get()[WeaponSkillIndicators]>.5f?"On":"Off",{Kind::Change,WeaponSkillIndicators,1},false,m.ready&&!m.Busy());
+        text(Definitions[PlanarSpellAim].label,{40,780,875,32});
+        text(Definitions[PlanarSpellAim].detail,{40,812,875,29},false,false,quiet);
+        button(PlanarSpellAimBox,m.Get()[PlanarSpellAim]>.5f?"On":"Off",{Kind::Change,PlanarSpellAim,1},false,m.ready&&!m.Busy());
         const auto panelHelp="Panels: Left Trigger = Ctrl; Right Grip = Shift; Right "+labels.Button(0,2)+" = Back.";
         text(panelHelp.c_str(),{40,845,1200,29},false,false,quiet);
     }else{

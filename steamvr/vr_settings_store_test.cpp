@@ -36,6 +36,15 @@ int main(){
     model.Open(saved);model.Click({Kind::Change,WeaponSkillIndicators,1});request=model.Click({Kind::Apply});
     Check(vrsettings::Submit(request)&&vrsettings::Poll(name),"weapon indicators can be hidden again");
     saved=vrsettings::Read();Check(saved.values[WeaponSkillIndicators]==0&&saved.values[SkillGestures]==1,"hiding indicators preserves weapon skill gestures");
+    Check(saved.values[PlanarSpellAim]==1,"existing profile with missing aim key defaults to planar");
+    model.Open(saved);model.Click({Kind::Change,PlanarSpellAim,1});request=model.Click({Kind::Apply});
+    Check(vrsettings::Submit(request)&&vrsettings::Poll(name),"free spell aim opt-in saves");
+    saved=vrsettings::Read();
+    Check(saved.values[PlanarSpellAim]==0&&Int(path,L"gameplay",L"planar_spell_aim")==0,"free aim survives INI reload");
+    model.Open(saved);model.Click({Kind::Change,PlanarSpellAim,1});request=model.Click({Kind::Apply});
+    Check(vrsettings::Submit(request)&&vrsettings::Poll(name),"planar aiming can be restored");
+    saved=vrsettings::Read();
+    Check(saved.values[PlanarSpellAim]==1&&Int(path,L"gameplay",L"planar_spell_aim")==1,"planar restore survives INI reload");
     Check(saved.values[ControllerLabels]==0,"existing INI defaults to automatic labels");
     model.Open(saved);model.Click({Kind::Tab,int(Page::VR)});model.Click({Kind::ControllerMenu});
     model.Click({Kind::ControllerChoice,int(framevr::controllers::Choice::Index)});request=model.Click({Kind::Apply});
