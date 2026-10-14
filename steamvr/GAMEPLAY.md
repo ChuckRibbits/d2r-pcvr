@@ -37,6 +37,15 @@ The left trigger assignment now owns supported bow gestures and physical Smite.
 Right trigger still grabs the bow string; away from the string it uses its own
 assignment. The Weapon skill gestures VR setting disables those skill gestures
 without removing button casts. Unsupported melee skills remain button-only.
+
+Physical Smite keeps its native input pulse alive for 180 ms so the left-hand
+alternate-bank preparation (50 ms at the game consumer) can finish before the
+button disappears. Native Smite completion cancels that pulse immediately;
+assignment, equipment, menu and tracking cancellation remain in effect. Other
+weapon gesture pulses retain their original duration. A regression fixture
+combines XR report timing with 25 Hz native pad polling across 160 scheduling
+combinations; the former 65 ms pulse loses the button edge in all of them.
+The longer pulse passes those cases; live shield-contact verification is pending.
 Each hand has its own aim pose and optional skill indicator (off by default). Left casts cannot inherit
 an equipped right-hand wand/staff shaft. Simultaneous input is serialized with
 release gating, not delayed until another cast finishes.

@@ -39,7 +39,13 @@ public:
     void Cancel(){*this=Pulse{};}
     bool Start(int nextSlot,int nextId,int nextOwner,uint64_t nextContext,double now) {
         if(nextSlot<0||nextSlot>=skills::Count||nextId<0||!std::isfinite(now)||now<until)return false;
-        slot=nextSlot;id=nextId;owner=nextOwner;context=nextContext;started=now;until=now+.065;return true;
+        // Shield contact uses the left trigger's alternate bank. SkillPad
+        // needs 50 ms at the native consumer before exposing its button; a
+        // 65 ms producer pulse can disappear between the game's polls.
+        // Allow bank preparation plus two native ticks and XR scheduling.
+        // FinishShieldSkill still cancels immediately when Smite executes.
+        const double duration=nextId==Smite?.180:.065;
+        slot=nextSlot;id=nextId;owner=nextOwner;context=nextContext;started=now;until=now+duration;return true;
     }
     int Get(int currentSlot,int currentId,int currentOwner,uint64_t currentContext,double now) {
         if(!std::isfinite(now)||now<started||now>=until||currentSlot!=slot||currentId!=id||currentOwner!=owner||currentContext!=context) {
