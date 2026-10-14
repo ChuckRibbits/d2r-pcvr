@@ -4,6 +4,17 @@
 #include <initializer_list>
 using namespace framevr::nativehud;
 int main(){
+    assert(Recent(100,100)&&Recent(100,599)&&!Recent(100,600)&&!Recent(0,1)&&!Recent(100,99));
+    VisibilityOverride visibility;bool shown=true;int calls=0;
+    auto set=[&](bool visible){shown=visible;++calls;return true;};
+    visibility.Update(false,true,set);assert(shown&&calls==0); // desktop untouched
+    visibility.Update(true,true,set);assert(!shown&&visibility.hidden);
+    shown=true;visibility.Update(true,true,set);assert(!shown); // game rebuilt controller HUD
+    visibility.Update(false,true,[](bool){return false;});assert(visibility.hidden); // retry restoration
+    visibility.Update(false,true,set);assert(shown&&!visibility.hidden); // menu/VR stop
+    visibility.Update(true,false,set);assert(!visibility.hidden); // unloaded panel
+    visibility.Update(true,true,set);assert(!shown&&visibility.hidden); // new game
+    visibility.Update(false,false,set);assert(!visibility.hidden); // no stale handle on exit
     // Reproduce both reported routes: old hide=0 INIs and a classic camera
     // with its toolbar zoom/position effect enabled. Neither can leak a bar.
     for(int configured:{0,1,2})for(bool classic:{false,true})for(bool changed:{false,true})for(bool staleMenu:{false,true}){

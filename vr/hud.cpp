@@ -85,6 +85,7 @@ void Log(const char* s) { if (g_log) g_log(s); }
 
 std::atomic<int> g_hide{0};   // 0 nothing, 1 the toolbar, 2 everything
 std::atomic<bool> g_nativeGameplay{false}; // latched for each native OpenXR eye, reset after the pair
+std::atomic<uint64_t> g_nativeGameplayAt{0}; // UI visibility survives the gap between eye pairs
 std::atomic<float> g_uiScale{1.0f};
 std::atomic<bool> g_menu{false};   // the main menu, or a panel (inventory, trade...) open: nothing is hidden then   // the game's interface size, 0.5..1
 std::atomic<uint64_t> g_layer{0};   // the interface's resource, learnt from its clear
@@ -565,7 +566,9 @@ void UiFrame(bool active,bool workspace,int eye){
     framevr::uiworld::SetActive(active);
 #endif
 }
-void NativeGameplay(bool active){g_nativeGameplay.store(active);}
+void NativeGameplay(bool active){g_nativeGameplay.store(active);g_nativeGameplayAt.store(active?GetTickCount64():0);}
+void EndNativeEye(){g_nativeGameplay=false;}
+bool NativeToolbarHidden(){return framevr::nativehud::Recent(g_nativeGameplayAt.load(),GetTickCount64());}
 uint64_t UiTexture(uint32_t& width,uint32_t& height,int32_t crop[4]) {
     std::lock_guard lock(g_lock);
     if(!uiActive.load()||!uiCaptured||!g_lab.tex.handle)return 0;
