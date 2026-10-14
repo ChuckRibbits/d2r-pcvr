@@ -846,7 +846,7 @@ void MenuPointer(const menus::Pad& controls) {
     pointerVisible=pointerHit=false;
     if(settingsModel.open||bodyCalibration.Active()||calibrationRelease.blocked){panelinput::ItemHover(false);return;}
     const bool spatialReady=spatialMode&&(journalMode?journalPlacement.Placed():workspacePlaced)&&uiCrop[2]>0;
-    const bool uiActive=panelMode||spatialReady;
+    const bool uiActive=(panelMode&&menuPlaced)||spatialReady;
     const auto surfacePose=spatialMode?UiSurfacePose():menuPose;
     const auto surface=spatialMode?UiSurfaceSize():panels::Fit(width,height,panelWidth);
     const bool pressed=controls.rt>140;
@@ -1515,12 +1515,24 @@ void Input() {
     p.reserved[1]=inputEpoch;
     ++p.counter;++a.counter;
 }
+void PlaceMainMenu() {
+    if(!panels::CanAnchor(menuPlaced,render&&valid,state==XR_SESSION_STATE_FOCUSED,motionHeadTracked))return;
+    const auto placed=panels::AtEyeLevel(V(head.position),Q(head.orientation),
+        panels::MenuDistance(int(vrsettings::Read().values[settings::MenuDistance]),true));
+    menuPose=XrPose({placed.position,placed.orientation});menuPlaced=true;
+    char b[160];std::snprintf(b,sizeof b,"Frame panels: main menu anchored from tracked head at eye height %.3f m",head.position.y);Say(b);
+}
 void Events() {
     XrEventDataBuffer event{XR_TYPE_EVENT_DATA_BUFFER};
     while(pPollEvent(instance,&event)==XR_SUCCESS) {
         if(event.type==XR_TYPE_EVENT_DATA_INTERACTION_PROFILE_CHANGED)controllerProfilesDirty=true;
         if(event.type==XR_TYPE_EVENT_DATA_SESSION_STATE_CHANGED) {
-            const auto& s=*reinterpret_cast<XrEventDataSessionStateChanged*>(&event);state=s.state;
+            const auto& s=*reinterpret_cast<XrEventDataSessionStateChanged*>(&event);
+            if(s.state==XR_SESSION_STATE_FOCUSED&&state!=s.state) {
+                // Startup/reconnection can change the runtime's head origin.
+                menuPlaced=workspacePlaced=false;
+            }
+            state=s.state;
             char b[96];std::snprintf(b,sizeof b,"Frame OpenXR: session state %d",int(state));Say(b);
             if(state==XR_SESSION_STATE_READY) { XrSessionBeginInfo bi{XR_TYPE_SESSION_BEGIN_INFO};bi.primaryViewConfigurationType=XR_VIEW_CONFIGURATION_TYPE_PRIMARY_STEREO;running=Check(pBeginSession(session,&bi),"begin session"); }
             if(state==XR_SESSION_STATE_STOPPING) { if(frame)EndPair();pEndSession(session);running=false;resolution::Restore();ClearInput(); }
@@ -1602,15 +1614,12 @@ bool Begin() {
         const int distancePreset=int(vrsettings::Read().values[settings::MenuDistance]);
         static int previousDistance=-1;
         if(distancePreset!=previousDistance){workspacePlaced=menuPlaced=false;previousDistance=distancePreset;}
-        if(spatialMode&&!journalMode&&!workspacePlaced) {
+        if(spatialMode&&!journalMode&&panels::CanAnchor(workspacePlaced,render,state==XR_SESSION_STATE_FOCUSED,motionHeadTracked)) {
             const auto placed=panels::AtEyeLevel(V(head.position),Q(head.orientation),panels::MenuDistance(distancePreset));
             uiPose=XrPose({placed.position,placed.orientation});
             uiSize=panels::Width;workspacePlaced=true;
         }
-        if(panelMode&&!menuPlaced) {
-            const auto placed=panels::AtEyeLevel(V(head.position),Q(head.orientation),panels::MenuDistance(distancePreset,true));
-            menuPose=XrPose({placed.position,placed.orientation});menuPlaced=true;
-        }
+        if(panelMode)PlaceMainMenu();
     }
     timing.locateMs=Milliseconds()-locateStart;
     const double inputStart=Milliseconds();Input();timing.inputMs=Milliseconds()-inputStart;return true;
@@ -1785,10 +1794,7 @@ void Capture(reshade::api::command_queue* rq,reshade::api::swapchain* swap) {
     if(eye==0&&!CopyMap(rq)) {mapSupported=false;mapEye.copied=false;Say("Frame menu map: copy unavailable; optional map suspended");}
     if((eye==0&&!CopyUi(rq))||!Copy(src,eyes[eye],rq)){failed=true;EndPair();ClearInput();return;}
     if(!stereo) {
-        if(!menuPlaced) {
-            const auto placed=panels::AtEyeLevel(V(head.position),Q(head.orientation),panelDistance);
-            menuPose=XrPose({placed.position,placed.orientation});menuPlaced=true;
-        }
+        PlaceMainMenu();
         EndPair();
     } else if(!pairDrawing&&eyes[0].copied&&eyes[1].copied) {
         EndPair();

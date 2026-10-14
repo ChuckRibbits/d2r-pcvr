@@ -42,6 +42,11 @@ inline float MenuDistance(int preset,bool main=false) {
 }
 struct Size {float width,height;};
 struct Placement {math::Vec position;math::Quat orientation;};
+// A valid but untracked startup pose may still be at the reference-space origin.
+// Never latch that pose into a persistent menu. Once placed, keep it world-fixed.
+inline bool CanAnchor(bool placed,bool rendering,bool focused,bool tracked) {
+    return !placed&&rendering&&focused&&tracked;
+}
 inline Placement AtEyeLevel(math::Vec head,math::Quat look,float distance) {
     const auto yaw=math::Yaw(math::Heading(look));
     return {head+math::Rotate(yaw,{0,0,-distance}),yaw};
