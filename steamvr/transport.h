@@ -52,7 +52,8 @@ void Recenter();
 bool TakeWorldRecenter();
 bool Active();
 bool SpatialMenu();
+// mapNorth is the unmodified native camera's horizontal heading (map-up).
 bool View(float out[16], const float hero[3], float eyeHeight,
-          float userEyeHeight, float bodyHeading, float recenterYaw, int eye);
+          float userEyeHeight, float bodyHeading, float recenterYaw, int eye, float mapNorth);
 bool Projection(float out[16], float nearWorld, int eye);
 }
