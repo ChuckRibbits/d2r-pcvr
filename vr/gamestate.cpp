@@ -42,6 +42,7 @@
 #ifdef D2RVR_NATIVE_OPENXR
 #include "logging.h"
 #include "panel_input.h"
+#include "render_resolution.h"
 #endif
 
 using namespace D2RL;
@@ -543,6 +544,11 @@ SharedEvents::UiMessageAction __cdecl OnUiMessage(const PluginContext* ctx, cons
         }
     }
 #ifdef D2RVR_NATIVE_OPENXR
+    // Native AcceptChanges is observed even when the output dimensions stay
+    // unchanged. Do not listen to ResolutionChanged here: our own WM_SIZE
+    // recovery emits that event and would schedule another resize forever.
+    if(!strcmp(target,"OptionsPanelMessage")&&!strcmp(command,"AcceptChanges"))
+        framevr::resolution::OptionsApplied();
     if(!strcmp(target,"PanelManager")||!strcmp(target,"HUDPanel")||
        (!strcmp(target,"SystemMessage")&&!strcmp(command,"ResolutionChanged")))RefreshToolbarAfterMessage(ctx);
 #endif
