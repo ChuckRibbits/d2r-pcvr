@@ -870,3 +870,37 @@ All 55 native checks pass. The correction still needs an offline headset test
 of Ice Bolt in each hand, planar/free aim and concurrent casting. No agent
 headset validation or game asset distribution. A bounded first-eight-entities
 log records Ice Bolt root classification to help verify the native handoff.
+
+### Potion sipping tolerance
+
+A held potion now begins its 250 ms sip when the rendered opening is within
+16 cm of the estimated mouth and tipped at least about 50 degrees from upright.
+Once a sip starts, 19 cm / about 41 degrees keeps the dwell alive through small
+tracking wobbles. Leaving those bounds resets it. This accommodates headset
+clearance and face-position differences; the previous 10.5 cm / 75-degree
+requirement could reject a natural sip entirely.
+
+Upright bottles, distant hands, release, tracking loss, menus, recentering and
+changed belt items still cannot consume a potion. Only the exact captured item
+is requested, once per grab, through the native belt command; the bottle becomes
+empty only after native inventory confirms consumption. Feedback uses the hand
+holding the bottle. Bounded `Frame potion sip` logs report opening distance,
+tilt, gesture completion and native consumption so failed gestures can be
+separated from native refusals (including a resource already being full).
+
+Both hands and turned poses are covered by synthetic natural-sip and boundary
+wobble checks, alongside the existing rejection/cancellation tests. A Steam
+Frame test confirmed the gesture registered, but exposed a second problem:
+hiding the native HUD also stopped its belt widget from binding the local
+player. Native commands were handled without consuming anything, even with
+mana missing. Before dispatching a validated sip, the UI adapter now refreshes
+that hidden belt's owner with the game's own setter and verifies the result.
+It leaves HUD visibility and native potion rules unchanged, keeps no widget
+pointer between requests, and still requires confirmed inventory removal.
+
+The native-belt fixture covers an uninitialized hidden belt, rebuilt layouts,
+player/session changes, missing widgets, unsupported signatures, rejected
+commands without retries, and unchanged desktop routing. On 2026-10-14 the owner
+confirmed drinking works on Steam Frame / SteamVR (Steam edition, offline
+Paladin). Runtime logs confirmed the hidden belt owner changed from -1/type 6
+to the local player, followed by consumption of the exact captured mana potion.
