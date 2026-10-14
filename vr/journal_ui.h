@@ -9,6 +9,9 @@ void ReadJournalRect(); // UI thread only
 namespace hud {
 bool LayerFound();
 void UiFrame(bool active,bool workspace,int eye);
+// Native headset gameplay replaces the desktop toolbar with tracked displays.
+// This per-eye override never writes the user's legacy HUD preferences.
+void NativeGameplay(bool active);
 // Menu map lease is maintained by the game's UI thread. Each XR pair must
 // capture a new native map before its texture can be submitted in either eye.
 void MenuMapCapture(bool active);
