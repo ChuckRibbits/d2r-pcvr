@@ -29,6 +29,17 @@ therefore appear stretched. Returning to Desktop restores the physical client
 size. The override also releases on normal window close or XR session stop.
 The saved preference does not change unmodded desktop play.
 
+Applying the game's native graphics options now queues a fresh request for
+the selected VR resolution, even when its dimensions have not changed. This
+addresses the reported broken view after native Apply that previously needed
+a manual VR resolution change. The request waits at least 500 ms after the
+last `OptionsPanelMessage/AcceptChanges`, then posts to the window thread;
+repeated Apply events coalesce. It retains pointer coordinates and physical
+window size. Desktop mode and XR shutdown cancel pending recovery. The mod
+does not listen to its own `ResolutionChanged` notifications for recovery,
+avoiding a resize loop. Automated window/message fixtures pass; the actual
+native graphics Apply sequence still needs an offline headset comparison.
+
 ## What changes
 
 Previously, the native OpenXR path copied the game's desktop-sized backbuffer

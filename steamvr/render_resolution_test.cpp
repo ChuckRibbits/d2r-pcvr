@@ -54,12 +54,25 @@ int main(){
     assert(render.Request(h,{2560,2560}));Pump();assert(sizes.size()==1);
     assert(render.Request(h,{3072,3072}));assert(render.Request(h,{4096,4096}));
     Pump();assert(sizes.size()==2&&(sizes.back()==Size{4096,4096}));
+    // Native Apply can discard its render configuration without changing the
+    // remembered window size. Re-send that size once without losing pointer
+    // coordinates or resizing the physical monitor/window.
+    const auto beforeApply=sizes.size();
+    assert(render.Request(h,{4096,4096},true));
+    assert(render.Request(h,{4096,4096},true));
+    assert((render.Logical(h)==Size{4096,4096})&&sizes.size()==beforeApply);
+    Pump();assert(sizes.size()==beforeApply+1&&(sizes.back()==Size{4096,4096})&&Physical(h)==physical);
+    render.Request(h,{4096,4096});Pump();assert(sizes.size()==beforeApply+1);
+    render.Request(h,{4096,4096},true);render.Request(h,{3072,3072});
+    Pump();assert(sizes.size()==beforeApply+2&&(sizes.back()==Size{3072,3072}));
+    render.Request(h,{4096,4096});Pump();
     assert(SetWindowPos(h,nullptr,0,0,900,700,SWP_NOMOVE|SWP_NOZORDER|SWP_NOACTIVATE));
     assert((sizes.back()==Size{4096,4096})&&Physical(h)!=physical);
     const auto resized=Physical(h);
     render.Restore();Pump();assert(sizes.back()==resized&&!render.Logical(h));
     // A superseded queued request must not re-enable the override.
     auto count=sizes.size();render.Request(h,{4096,4096});render.Restore();Pump();assert(sizes.size()==count);
+    render.Request(h,{4096,4096},true);render.Restore();Pump();assert(sizes.size()==count);
     render.Request(h,{2560,2560});Pump();
     SendMessageW(h,WM_SIZE,SIZE_MINIMIZED,0);assert((render.Logical(h)==Size{2560,2560}));
     SendMessageW(h,WM_SIZE,SIZE_RESTORED,MAKELPARAM(resized.w,resized.h));assert((sizes.back()==Size{2560,2560}));
