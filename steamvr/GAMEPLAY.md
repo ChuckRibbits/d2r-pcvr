@@ -1,5 +1,55 @@
 # Motion gameplay prototype
 
+## Sorceress casting regression candidate (2026-10-13)
+
+The tester reported a left-trigger Town Portal casting the right-trigger fire
+spell, inaccurate fire-spell aim, and movement stopping during casts. The log
+confirmed distinct native assignments (right slot 0: skill 36, left slot 4:
+skill 219) and an installed spell resolver hook. Controller quick casts also
+use the `0x1446c0 -> 0x143960` aim path; they need a final integer-target
+correction there, independently of the existing `0x190440` resolver hook.
+Only the aim caller gets this correction; movement callers retain their points.
+Native VR casts bypass the legacy walk-learned direction calibration, and a
+missing/stale rendered staff pose falls back to the casting hand's tracked aim.
+
+The left and right trigger use the same native B button in different banks.
+The candidate sends the alternate modifier alone for at least 50 ms and a new
+published packet before allowing its button through. This sequencing happens
+where the game polls the pad, so an XR/render hitch cannot skip the modifier
+report. A release cancels the pending cast. This is a candidate fix for native
+input ordering, not yet confirmed in a headset.
+
+**Movement lock remains unresolved.** Keeping locomotion input present does
+not bypass the native cast state/animation gate. This candidate does not claim
+to enable walking through spell animations. Live native-path inspection and
+offline headset checks are still needed for all three reported symptoms.
+
+## Two-hand wheels source candidate (2026-10-13)
+
+The current source replaces the single held wheel with two toggled hand wheels.
+Click either stick, then use the opposite laser and trigger to edit that hand's
+five slots. Trigger assignments are persistent; face shortcuts are temporary.
+The character's native controller assignments persist the ten bindings across
+weapon sets. Right A retains Interact when its native slot is basic/unassigned;
+an explicit spell assignment replaces it. Native duplicate-binding rules apply.
+
+The left trigger assignment now owns supported bow gestures and physical Smite.
+Right trigger still grabs the bow string; away from the string it uses its own
+assignment. The Weapon skill gestures VR setting disables those skill gestures
+without removing button casts. Unsupported melee skills remain button-only.
+Each hand has its own aim pose and optional skill indicator (off by default). Left casts cannot inherit
+an equipped right-hand wand/staff shaft. Simultaneous input is serialized with
+release gating, not delayed until another cast finishes.
+
+Movement and turning remain available while the wheel owns combat input.
+The Inventory, Map and VR Settings utility tabs replace displaced shortcuts;
+native menu navigation and motion-disabled fallback controls remain available.
+See [CONTROLS.md](../CONTROLS.md) for the current layout. The older controls and
+installed-build reports below are historical and do not describe this candidate.
+This candidate is not installed or headset-tested; the inherited aim/movement
+fix also does not establish uninterrupted movement through native animations.
+
+
 Right-handed OpenXR controls for offline D2R. The owner verified the live native
 bow string/draw and two-hand aiming, then verified revision 4 free-swing melee
 on 2026-10-09. A new **physical basic-arrow build is installed for testing**:
@@ -47,10 +97,22 @@ Projectile targets follow the sampled aim even while walking backward or
 strafing. They use the current native player position and world-space weapon
 direction, without the legacy walking calibration; the final target is corrected
 even when the native movement path skips the usual attack-point helper.
+The controller's press/repeat command is corrected again after its second
+selected-unit lookup, before native command validation. This override changes
+only the current local directional cast's target, without changing native
+action flags, costs or cadence. Resolver, final-command and missile-creation
+diagnostics distinguish the requested aim from what native creation receives.
+The owner confirmed separate trigger spells now work, but reported fire-spell
+direction sticking between quarter turns even after the final-command correction.
+Missile logs and native validation identified the cause: the previous 60-cell
+aim point exceeded the server's 50-cell limit on each axis except near diagonals.
+The aim point now sits 40 cells away, leaving movement margin and preserving all
+headings. This changes the heading reference, not native projectile lifetime or
+travel range. The corrected range still needs headset validation.
 While a trigger skill or quick-cast shortcut is held, locomotion stays on the
 native controller stick instead of the legacy direct-walk reinjection path.
 Legacy aim modes cannot replace that stick or hold stand-still Shift during a
-VR skill cast. Native cast-animation pauses still require in-game verification;
+VR skill cast. The owner reports that casting still stops character movement;
 this input fix does not remove the game's animation/state restrictions.
 Teeth keeps its native fan, centered on the weapon's horizontal direction.
 Ground placements, buffs, summons and corpse-only skills keep native targeting.
@@ -382,8 +444,10 @@ occlusion and the bottle art is a functional placeholder.
 
 Select a supported skill on the wheel, release the selection trigger, then use
 the weapon's familiar motion. The gold **ACTIVE** border/badge identifies the
-persistent selection independently of the hovered wedge. With the wheel closed,
-a small native skill icon follows the weapon hand. Its name and action hint
+persistent selection independently of the hovered wedge. Weapon-side indicators
+are off by default; enable **VR Settings > Controls > Weapon skill indicators**
+and Apply to restore them. When enabled with the wheel closed, a small native
+skill icon follows the weapon hand. Its name and action hint
 appear briefly on change, or while busy/unavailable. Quick casting temporarily
 shows its own icon and **QUICK CAST** cue, then restores the persistent choice.
 These indicators show assignments and observed actions, not invented mana or

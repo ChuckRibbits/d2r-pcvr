@@ -9,7 +9,7 @@ int main(){
     Snapshot s;s.ready=true;
     Check(s.values[WristMap]==1,"wrist minimap defaults on");
     {Model wrist;wrist.Open(s);wrist.Click(At(Page::Controls,Tabs[1]));
-        const int row=7;
+        const int row=8;
         Check(RowKey(Page::VR,row)==WristMap&&RowY+row*RowStep+72<876,"wrist map row fits above status and footer");
         wrist.Click(At(Page::VR,ValueBox(row)));
         auto request=wrist.Click({Kind::Apply});
@@ -20,6 +20,29 @@ int main(){
         compass.Click(At(Page::VR,ValueBox(row)));const auto request=compass.Click({Kind::Apply});
         Check(request.changed==(1u<<WristCompass)&&request.values[WristCompass]==0&&request.values[WristMap]==1,
             "compass can be disabled independently of wrist map");}
+    Check(s.values[WeaponSkillIndicators]==0,"weapon skill indicators default off");
+    {Model indicators;indicators.Open(s);const auto hit=At(Page::Controls,WeaponIndicatorsBox);
+        Check(hit.kind==Kind::Change&&hit.index==WeaponSkillIndicators,"controls tab exposes weapon indicator toggle");
+        indicators.Click(hit);auto request=indicators.Click({Kind::Apply});
+        Check(request.changed==(1u<<WeaponSkillIndicators)&&request.values[WeaponSkillIndicators]==1,"indicator opt-in saves only its preference");}
+    Check(s.values[ControllerLabels]==0&&Normalize(ControllerLabels,99)==0&&Normalize(ControllerLabels,1.5f)==0,"unknown controller preferences use automatic");
+    {Model chooser;chooser.Open(s);chooser.Click({Kind::Tab,int(Page::VR)});
+        auto hit=[&](Rect r){return HitTest(chooser.page,(r.x+r.w*.5f)/Width,(r.y+r.h*.5f)/Height,chooser.controllerMenu);};
+        chooser.Click(hit(ControllerBox));Check(chooser.controllerMenu&&!chooser.Dirty(),"dropdown opens without changing selection");
+        chooser.Click(hit(ControllerOption(2)));
+        Check(!chooser.controllerMenu&&chooser.Get()[ControllerLabels]==2&&chooser.Dirty(),"Index option changes draft only");
+        chooser.Click(hit(ControllerBox));
+        const auto covered=hit(ValueBox(0));
+        Check(covered.kind==Kind::ControllerChoice,"dropdown options own covered setting rows");
+        const auto outside=hit({58,RowY,100,40});
+        Check(outside.kind==Kind::DismissMenu,"open dropdown consumes outside clicks instead of changing rows");
+        chooser.Click(outside);Check(!chooser.controllerMenu&&chooser.Get()[Motion]==0,"outside click only dismisses");
+        chooser.Click(hit(ControllerBox));Check(chooser.DismissControllerMenu()&&chooser.open,"Back dismisses dropdown first");
+        auto pending=chooser.Click({Kind::Apply});
+        Check(pending.changed==(1u<<ControllerLabels)&&pending.values[ControllerLabels]==2,"Apply queues preference alone");
+        chooser.Click(hit(ControllerBox));Check(!chooser.controllerMenu,"cannot edit while saving");
+        chooser.Close();chooser.Open(s);Check(chooser.Get()[ControllerLabels]==0&&!chooser.controllerMenu,"reopen discards unsaved choice");
+    }
     Check(s.values[DrawDistance]==2&&s.values[ObjectDistance]==300,"distance fallbacks match release configuration");
     {Model distance;distance.Open(s);
         for(int i=0;i<3;++i)distance.Click({Kind::Change,ObjectDistance,-1});
