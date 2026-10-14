@@ -25,12 +25,33 @@ int main(){
     assert(h&&other);RECT r{};assert(GetClientRect(h,&r));
     POINT origin{};assert(ClientToScreen(h,&origin));
     POINT otherOrigin{};assert(ClientToScreen(other,&otherOrigin));
-    Attach(h);Update(h,true,{2160,2160},{8192,8192},{uint32_t(r.right),uint32_t(r.bottom)},4);Pump();
+    const uint64_t nativeCanvas=uint64_t(r.right)|(uint64_t(r.bottom)<<32);
+    Attach(h);assert(UiSize(nativeCanvas)==nativeCanvas);
+    Update(h,true,{2160,2160},{8192,8192},{uint32_t(r.right),uint32_t(r.bottom)},4);
+    assert(UiSize(nativeCanvas)==nativeCanvas); // queued is not yet applied
+    Pump();assert(UiSize(nativeCanvas)==(uint64_t(2560)|(uint64_t(2560)<<32)));
     POINT p{origin.x+r.right-1,origin.y+r.bottom-1};
     assert(ScreenToClient(h,&p)&&p.x==2559&&p.y==2559);
     assert(ClientToScreen(h,&p)&&p.x==origin.x+r.right-1&&p.y==origin.y+r.bottom-1);
     p={otherOrigin.x+r.right-1,otherOrigin.y+r.bottom-1};
     assert(ScreenToClient(other,&p)&&p.x==r.right-1&&p.y==r.bottom-1);
+    // Regression: the entire 3840-wide native menu must reflow into a smaller
+    // VR canvas, while pointer coordinates agree and OS client size stays real.
+    const uint64_t wideDesktop=uint64_t(3840)|(uint64_t(2160)<<32);
+    for(const auto size:{Size{1536,1536},Size{3072,3072},Size{4096,4096},Size{2160,2400}}) {
+        Update(h,true,size,{8192,8192},nativeSize,1);Pump();
+        assert((nativeSize==size));
+        const auto canvas=UiSize(wideDesktop);
+        assert(uint32_t(canvas)==size.w&&uint32_t(canvas>>32)==size.h);
+        p={origin.x+r.right-1,origin.y+r.bottom-1};
+        assert(ScreenToClient(h,&p)&&p.x==LONG(uint32_t(canvas)-1)&&p.y==LONG(uint32_t(canvas>>32)-1));
+        RECT physical{};assert(GetClientRect(h,&physical)&&EqualRect(&physical,&r));
+    }
+    Update(h,true,{2160,2160},{8192,8192},nativeSize,4);Pump();
+    // The UI query may decrypt after the initial resize. Reflow on its owning
+    // thread once it is hooked, without applying a different source size.
+    auto beforeUi=resizes;UiSizeReady();assert(resizes==beforeUi);
+    Pump();assert(resizes==beforeUi+1&&(nativeSize==Size{2560,2560}));
     // Reproduce native Apply invalidating its configuration behind our cached
     // logical size. The real module must defer/coalesce then re-send 2560.
     auto count=resizes;nativeSize={1920,1080};
@@ -46,6 +67,8 @@ int main(){
     assert(ScreenToClient(h,&p)&&p.x==2559&&p.y==2559);
     OptionsApplied(); // XR shutdown cancels pending recovery.
     Restore();Pump();p={origin.x+r.right-1,origin.y+r.bottom-1};
+    assert(UiSize(nativeCanvas)==nativeCanvas&&UiSize(wideDesktop)==wideDesktop);
+    beforeUi=resizes;UiSizeReady();Pump();assert(resizes==beforeUi);
     assert(ScreenToClient(h,&p)&&p.x==r.right-1&&p.y==r.bottom-1);
     count=resizes;OptionsApplied();Sleep(550);
     Update(h,false,{2160,2160},{8192,8192},{uint32_t(r.right),uint32_t(r.bottom)},4);Pump();
@@ -54,5 +77,5 @@ int main(){
     assert(resizes==count); // Desktop never forces a VR resize.
     assert(MH_Uninitialize()==MH_OK);DestroyWindow(other);DestroyWindow(h);
     UnregisterClassW(cls.lpszClassName,cls.hInstance);
-    std::puts("Real user32 hooks: native pointer coordinates, inverse cursor warp, unrelated window and desktop restoration passed");
+    std::puts("Native UI canvas, deferred reflow, real pointer hooks, inverse cursor warp, unrelated window and desktop restoration passed");
 }

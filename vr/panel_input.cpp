@@ -4,11 +4,36 @@
 #include <cstring>
 #include "panel_input.h"
 #include "panel_input_mode.h"
+#include "render_resolution.h"
 #include "sigscan.h"
 #include "logging.h"
 
 namespace panelinput {
 namespace {
+// 3.3.93787: native client-size query used by UI root sizing, safe bounds,
+// layout globals and cursor bounds. It reads GetClientRect through 0x1207b20,
+// independently of the renderer's WM_SIZE. A 3840-wide desktop thus clips
+// menus rendered into a 3072-wide VR source. Override this query only, leaving
+// OS window management, swapchain presentation and other windows physical.
+constexpr uint64_t CanvasSizeRva=0x6545d0;
+constexpr uint8_t CanvasSizeSig[]={
+    0x48,0x83,0xec,0x38,0xe8,0x97,0xd1,0x2a,0x00,0x48,0x8d,0x54,0x24,0x20,0x48,0x8b,
+    0xc8,0xe8,0x3a,0x35,0xbb,0x00,0x8b,0x44,0x24,0x28,0x89,0x44,0x24,0x40,0x8b,0x44,
+    0x24,0x2c,0x89,0x44,0x24,0x44,0x48,0x8b,0x44,0x24,0x40,0x48,0x83,0xc4,0x38,0xc3};
+using CanvasSize=uint64_t(*)();
+CanvasSize originalCanvasSize=nullptr;
+bool canvasSizeIn=false;
+uint64_t OnCanvasSize(){return framevr::resolution::UiSize(originalCanvasSize());}
+void InstallCanvasSize() {
+    if(canvasSizeIn)return;
+    if(!d2rsig::Check(CanvasSizeRva,CanvasSizeSig,sizeof CanvasSizeSig))return;
+    canvasSizeIn=d2rsig::Hook(CanvasSizeRva,CanvasSizeSig,sizeof CanvasSizeSig,
+        reinterpret_cast<void*>(&OnCanvasSize),reinterpret_cast<void**>(&originalCanvasSize));
+    if(canvasSizeIn) {
+        framevr::resolution::UiSizeReady();
+        framevr::logging::Write("Frame panels: native UI canvas follows applied VR resolution; physical window unchanged");
+    }
+}
 framevr::panels::InputModeLease lease;
 framevr::panels::ItemTooltipHover itemHover;
 framevr::panels::WorldInputMode worldInput;
@@ -174,6 +199,7 @@ bool ControllerReady(){
     return false;
 }
 void Install() {
+    InstallCanvasSize();
     if(ready.load()){InstallTooltips();return;}
     if((!controllerIn&&!d2rsig::Check(ControllerRva,ControllerSig,sizeof ControllerSig))||
        !d2rsig::Check(ActivityRequestRva,ActivityRequestSig,sizeof ActivityRequestSig))return;
