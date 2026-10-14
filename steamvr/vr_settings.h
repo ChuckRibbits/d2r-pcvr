@@ -8,7 +8,7 @@ namespace framevr::settings {
 enum class Page { Controls, VR, Video };
 enum Key { Motion, Seated, Dominant, Snap, TurnSpeed, Waist, BeltForward,
            Foveation, Sky, Fog, Ceiling, DrawDistance, ObjectDistance,
-           EyeHeight, ArmSpan, BodyCalibration, Count };
+           EyeHeight, ArmSpan, BodyCalibration, OrdinaryMobBars, Count };
 struct Definition {
     const char* label;
     const char* detail;
@@ -33,6 +33,7 @@ inline constexpr std::array<Definition,Count> Definitions{{
     {"Standing eye height", "Measured from the SteamVR floor", L"calibration",L"eye_height_m",1.64f,.8f,2.3f,.01f},
     {"Controller span", "Measured between grips in a T-pose", L"calibration",L"arm_span_m",1.6f,.85f,2.6f,.01f},
     {"Body calibration", "Saved body calibration version", L"calibration",L"version",0,0,1,1},
+    {"Ordinary mob bars", "Weak mobs' health and names; bosses and elites stay visible", L"hud",L"ordinary_mob_bars",0,0,1,1},
 }};
 using Values=std::array<float,Count>;
 inline Values Defaults(){Values v{};for(int i=0;i<Count;++i)v[i]=Definitions[i].defaultValue;return v;}
@@ -54,12 +55,12 @@ struct Rect {
 constexpr int Width=1280,Height=1024;
 constexpr Rect Tabs[3]={{40,114,386,60},{447,114,386,60},{854,114,386,60}};
 constexpr Rect Apply{965,918,275,68},Close{650,918,275,68},Recenter{40,918,270,68},Calibrate{330,918,300,68};
-constexpr int RowY=246,RowStep=82;
+constexpr int RowY=246,RowStep=78;
 inline Rect Decrease(int row){return {865,RowY+row*RowStep,64,52};}
 inline Rect Increase(int row){return {1176,RowY+row*RowStep,64,52};}
 inline Rect ValueBox(int row){return {942,RowY+row*RowStep,221,52};}
-inline int RowCount(Page page){return page==Page::VR?7:page==Page::Video?6:0;}
-inline Key RowKey(Page page,int row){return Key((page==Page::Video?7:0)+row);}
+inline int RowCount(Page page){return page==Page::VR?8:page==Page::Video?6:0;}
+inline Key RowKey(Page page,int row){return page==Page::VR&&row==7?OrdinaryMobBars:Key((page==Page::Video?7:0)+row);}
 enum class Kind { None, Tab, Change, Apply, Close, Recenter, Calibrate };
 struct Hit {Kind kind=Kind::None;int index=-1,delta=0;};
 inline Hit HitTest(Page page,float u,float v){

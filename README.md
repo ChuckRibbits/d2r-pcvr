@@ -141,6 +141,10 @@ Free swings pause during casting, menus and potion handling. Selecting a wheel
 skill changes the right-trigger action; its quick-cast binding stays available.
 The belt shows potions in the game's belt slots even without an equipped belt.
 
+Ordinary monsters' health and name bars are hidden by default in VR. To show
+them, open **VR settings > VR**, turn **Ordinary mob bars** On, then **Apply**.
+Bosses, champions, uniques and their minions keep their bars with either setting.
+
 The wrist shows your level and progress toward the next level beneath the
 health/mana orbs. The spell menu's **MAP** tab uses the game's **left or right
 corner minimap** layout. Closing the menu restores the map's previous visibility;

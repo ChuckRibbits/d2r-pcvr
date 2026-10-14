@@ -7,6 +7,13 @@ static void Check(bool b,const char* label){if(!b){std::fprintf(stderr,"FAIL: %s
 static Hit At(Page p,Rect r){return HitTest(p,(r.x+r.w*.5f)/Width,(r.y+r.h*.5f)/Height);}
 int main(){
     Snapshot s;s.ready=true;
+    Check(s.values[OrdinaryMobBars]==0,"ordinary mob bars are off by default");
+    {Model bars;bars.Open(s);bars.Click({Kind::Tab,int(Page::VR)});
+        const auto hit=At(Page::VR,ValueBox(7));
+        Check(hit.kind==Kind::Change&&hit.index==OrdinaryMobBars,"VR tab exposes ordinary mob toggle");
+        Check(RowY+7*RowStep+72<876,"last row leaves room for save status");
+        bars.Click(hit);auto request=bars.Click({Kind::Apply});
+        Check(request.changed==(1u<<OrdinaryMobBars)&&request.values[OrdinaryMobBars]==1,"toggle saves only mob visibility");}
     Check(s.values[DrawDistance]==2&&s.values[ObjectDistance]==300,"distance fallbacks match release configuration");
     {Model distance;distance.Open(s);
         for(int i=0;i<3;++i)distance.Click({Kind::Change,ObjectDistance,-1});
