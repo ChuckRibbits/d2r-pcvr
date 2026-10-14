@@ -30,8 +30,17 @@ inline bool Modal(std::string_view name) {
 // use the canvas's background policy. Do not recrop when hovering: that would
 // move the target.
 constexpr float Width=1.9f,Distance=1.25f;
-inline float Height(unsigned width,unsigned height) {
-    return width&&height?Width*float(height)/width:1.06875f;
+struct Size {float width,height;};
+// Fit the entire native canvas inside the original widescreen-sized workspace.
+// Square/portrait eye targets must not turn menus into head-height billboards.
+// Uniform scaling preserves artwork and every native pixel (including tooltips).
+// The compositor and laser must use the same dimensions.
+inline Size Fit(unsigned width,unsigned height,float maxWidth=Width) {
+    const float maxHeight=maxWidth*9.f/16.f;
+    if(!width||!height)return {maxWidth,maxHeight};
+    const float aspect=float(width)/height;
+    if(aspect<16.f/9.f)return {maxHeight*aspect,maxHeight};
+    return {maxWidth,maxWidth/aspect};
 }
 
 // Require a fresh press on the surface; never drop a drag just because a ray

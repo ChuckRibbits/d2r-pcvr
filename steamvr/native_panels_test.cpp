@@ -177,13 +177,28 @@ int main(){
     for(int frame=0;frame<90;++frame)
         Check(inventory.Step(true,drop,true,.5f,.5f,false).buttons==menus::X,"X/drop is forwarded for the entire native hold duration");
     Check(!menus::Busy(sortGate.Step(menus::Mode::World,10,sort)),"closing inventory during a sort hold cannot swap in gameplay");
-    // Source pixels, physical panel and mouse mapping agree at multiple aspects.
-    for(auto size:{journal::Rect{0,0,3840,2160},journal::Rect{0,0,2560,1440},journal::Rect{0,0,1920,1200}}) {
+    const auto square=panels::Fit(4096,4096),wide=panels::Fit(3840,2160);
+    Check(std::fabs(square.height-1.06875f)<.00001f&&square.width==square.height,"4096 square inventory fits original workspace height without distortion");
+    Check(wide.width==panels::Width&&wide.height==square.height,"widescreen workspace remains unchanged");
+    const auto title=panels::Fit(4096,4096,2.f);
+    Check(title.width==1.125f&&title.height==1.125f,"square main menu fits original 2m widescreen envelope");
+    const auto missing=panels::Fit(0,0);
+    Check(missing.width==wide.width&&missing.height==wide.height,"missing source uses finite widescreen fallback");
+    // Source pixels, physical panel and mouse mapping agree at both menu sizes,
+    // including square presets, portrait headset targets and ultrawide desktop.
+    for(float maximum:{panels::Width,2.f})
+    for(auto size:{journal::Rect{0,0,3840,2160},journal::Rect{0,0,2560,1440},journal::Rect{0,0,1920,1200},
+                  journal::Rect{0,0,1536,1536},journal::Rect{0,0,4096,4096},journal::Rect{0,0,2160,2400},journal::Rect{0,0,3440,1440}}) {
+        const auto surface=panels::Fit(size.w,size.h,maximum);
+        Check(surface.width<=maximum&&surface.height<=maximum*9.f/16.f,"native canvas stays within comfortable width and height");
+        Check(std::fabs(surface.width/surface.height-float(size.w)/size.h)<.00001f,"menu artwork retains source aspect");
+        const auto larger=panels::Fit(size.w*2,size.h*2,maximum);
+        Check(larger.width==surface.width&&larger.height==surface.height,"pixel density does not change physical menu size");
         for(float u:{.01f,.25f,.5f,.75f,.99f})for(float v:{.01f,.5f,.99f}) {
             const auto rot=math::Yaw(.65f);const math::Vec origin{.3f,1.4f,-1.25f};
-            auto point=origin+math::Rotate(rot,{(u-.5f)*panels::Width,(.5f-v)*panels::Height(size.w,size.h),0});
+            auto point=origin+math::Rotate(rot,{(u-.5f)*surface.width,(.5f-v)*surface.height,0});
             const auto front=math::Rotate(rot,{0,0,1});math::PanelHit hit;math::Vec pixel{};
-            Check(math::IntersectPanel(point+front,front*-1,origin,rot,panels::Width,panels::Height(size.w,size.h),hit),"rotated panel ray");
+            Check(math::IntersectPanel(point+front,front*-1,origin,rot,surface.width,surface.height,hit),"rotated panel ray");
             Check(journal::Pixel(size,hit.u,hit.v,size.w,size.h,pixel)&&std::fabs(pixel.x-u)<.00001f&&std::fabs(pixel.y-v)<.00001f,"native pixel mapping across both panes and tooltips");
         }
     }

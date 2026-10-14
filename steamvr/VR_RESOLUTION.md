@@ -64,6 +64,16 @@ is available. Desktop rendering retains ReShade's normal depth channel.
 Update both `d2rl-vrcam.dll` and `reshade-shaders/Shaders/D2R_DepthFog.fx`
 together when testing this fix.
 
+Native inventory/character workspaces and the main menu fit inside their
+original widescreen-sized VR surfaces. Square and portrait render targets
+are uniformly reduced to that height limit instead of producing a much taller
+panel. The complete native image and its aspect ratio are preserved, and the
+laser uses the same fitted dimensions as the displayed surface. This changes
+only menu presentation, not world rendering or the handheld quest journal.
+Automated panel tests cover square, portrait and wide sources at both menu
+sizes, including resolution-independent sizing and laser-to-pixel mapping.
+In-headset comfort and selection on the fitted surfaces await owner testing.
+
 The native lighting depth reduction also assumes square tiles when calculating
 the row for a linear sample index. Its 32x20 grid has rectangular tiles at
 square VR resolutions: the height divisor misses lower rows and can reject
