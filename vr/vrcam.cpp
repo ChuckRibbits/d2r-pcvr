@@ -792,6 +792,7 @@ void LoadSettings() {
 #ifdef D2RVR_NATIVE_OPENXR
     framevr::foveation::Configure(IniB(L"render",L"fixed_foveation",true),IniF(L"render",L"foveation_inner",0.55f),IniF(L"render",L"gaze_foveation_inner",0.35f));
     d2rcam::SetStereoLabels(IniB(L"hud",L"stereo_labels",true));
+    d2rcam::SetOrdinaryMobBars(IniB(L"hud",L"ordinary_mob_bars",false));
     d2rcam::SetMonsterDrawOrder(IniB(L"hud",L"monster_draw_order",true));
     // Remote debugging can request the same one-shot capture without stealing
     // keyboard focus from SteamVR. Change the positive counter while running.

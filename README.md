@@ -139,6 +139,10 @@ Selection clicks do not cast. Release buttons and triggers after closing before
 using them in combat. Menu, tracking, equipment and assignment changes also
 require a fresh press. Only one wheel is open at a time.
 
+Ordinary monsters' health and name bars are hidden by default in VR. To show
+them, open **VR settings > VR**, turn **Ordinary mob bars** On, then **Apply**.
+Bosses, champions, uniques and their minions keep their bars with either setting.
+
 ### Hand skill layouts
 
 | Slot | Quest left | Quest right | Index, either hand |
