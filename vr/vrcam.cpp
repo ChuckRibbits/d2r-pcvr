@@ -91,6 +91,7 @@ namespace gamestate {bool LeftShield();}
 #include "transport.h"
 #include "menu_controls.h"
 #include "spell_aim.h"
+#include "skill_pad.h"
 #include "spell_aim_signatures.h"
 #include "settings_menu.h"
 #include "projectiles.h"
@@ -2559,7 +2560,7 @@ XHook g_xhooks[] = {
 // round a bow's grip): flattened on the ground, one of the two always remains.
 bool NativeCastOwnsAim() {
 #ifdef D2RVR_NATIVE_OPENXR
-    return framevr::NativeSkillCasting();
+    return framevr::NativeAimOwnership();
 #else
     return false;
 #endif
@@ -2665,14 +2666,19 @@ bool HandRay(float* o, float* d) {
     // final posed weapon in its captured WORLD frame, not a bone from one
     // frame combined with a newer headset yaw from another.
     const auto castingType=gamestate::WeaponType();
-    if(g_eyeOk.load()&&framevr::SpellSelected()&&
+    if(g_eyeOk.load()&&!framevr::LeftHandAiming()&&framevr::SpellSelected()&&
        (castingType==D2RVR_TYPE_WAND||castingType==D2RVR_TYPE_STAFF||castingType==D2RVR_TYPE_SCEPTER||castingType==D2RVR_TYPE_ORB)) {
         skel::MeleeWeaponPose pose;
-        if(!skel::MeleeWeapon(pose)||pose.weaponType!=castingType||pose.worldEpoch!=g_meleeTurnEpoch.load())return false;
-        const auto axis=framevr::math::Normalized({pose.castingAxis[0],pose.castingAxis[1],pose.castingAxis[2]});
-        if(!std::isfinite(axis.x+axis.y+axis.z)||framevr::math::Dot(axis,axis)<.99f)return false;
-        std::copy_n(pose.origin,3,o);d[0]=axis.x;d[1]=axis.y;d[2]=axis.z;
-        return true;
+        if(skel::MeleeWeapon(pose)&&pose.weaponType==castingType&&pose.worldEpoch==g_meleeTurnEpoch.load()) {
+            const auto axis=framevr::math::Normalized({pose.castingAxis[0],pose.castingAxis[1],pose.castingAxis[2]});
+            if(std::isfinite(axis.x+axis.y+axis.z)&&std::hypot(axis.x,axis.z)>.001f&&framevr::math::Dot(axis,axis)>.99f) {
+                std::copy_n(pose.origin,3,o);d[0]=axis.x;d[1]=axis.y;d[2]=axis.z;
+                return true;
+            }
+        }
+        // A culled/not-yet-posed staff or a snap-turn must not restore native
+        // movement/facing aim. The fresh tracked aim below belongs to the
+        // casting hand and remains usable when the render pose is unavailable.
     }
     float motionOrigin[3],motionDirection[3];
     if(g_eyeOk.load()&&framevr::GameplayRay(motionOrigin,motionDirection)) {
@@ -2947,6 +2953,11 @@ bool HandWorldTheta(float* theta) {
 bool HandGridDir(float* gx, float* gy) {
     float theta;
     if (!HandWorldTheta(&theta)) return false;
+#ifdef D2RVR_NATIVE_OPENXR
+    if(framevr::NativeSkillCasting()) {
+        *gx=cosf(theta);*gy=sinf(theta);return true;
+    }
+#endif
     AcquireSRWLockShared(&g_calLock); const Calib c = g_cal; ReleaseSRWLockShared(&g_calLock);
     const float tg = !c.ok ? theta : c.mirror ? c.angle - theta : c.angle + theta;
     *gx = cosf(tg); *gy = sinf(tg);
@@ -2966,6 +2977,26 @@ SpellHoverTargetFn OrigSpellHoverTarget=nullptr;
 SpellResolveFn OrigSpellResolve=nullptr;
 std::atomic<bool> g_spellAimReady{false};
 thread_local framevr::spellaim::Cast g_spellCast;
+using SpellCommandFn=int(*)(framevr::spellaim::NativeCommand*);
+SpellCommandFn OrigSpellCommand=nullptr;
+thread_local framevr::spellaim::CommandAim g_spellCommand;
+std::atomic<bool> g_spellCommandReady{false};
+int HookSpellCommand(framevr::spellaim::NativeCommand* command) {
+    // Only the current local VR MapClick owns this stack command. An unrelated
+    // validation on this thread must not inherit target suppression.
+    const auto oldTarget=command->target;
+    const int oldX=command->x,oldY=command->y;
+    const bool changed=framevr::spellaim::ApplyCommand(g_spellCommand,*command);
+    const int result=OrigSpellCommand(command);
+    if(changed) {
+        static std::atomic<ULONGLONG> reported{0};
+        const auto now=GetTickCount64();auto before=reported.load();
+        if(now-before>1000&&reported.compare_exchange_strong(before,now))
+            LogF("Frame spell command: target %s, point %d,%d -> %d,%d, flags %x, native check %d",
+                oldTarget?"selected":"none",oldX,oldY,command->x,command->y,command->flags,result);
+    }
+    return result;
+}
 bool DirectedSpellAim(float& gx,float& gy) {
     float origin[3],direction[3];
     // Native OpenXR poses already use world X/Z == grid X/Y. The legacy
@@ -3012,7 +3043,7 @@ void HookSpellResolve(uintptr_t manager,void* unit,bool assist,float* x,float* y
         static std::atomic<ULONGLONG> reported{0};
         const auto now=GetTickCount64();auto before=reported.load();
         if(now-before>2000&&reported.compare_exchange_strong(before,now))
-            LogF("Frame spell aim: native projectile cast follows weapon %.3f %.3f; automatic target selection off",cast.x,cast.y);
+            LogF("Frame spell aim: resolver direction %.3f %.3f, point %.2f %.2f",cast.x,cast.y,*x,*y);
     }
 }
 #endif
@@ -3186,6 +3217,22 @@ uint64_t HookAttackTarget(void* self, void* unit, float* dir, int* outX, int* ou
         turned = true;
     }
     const uint64_t r = OrigAttackTarget(self, unit, d, outX, outY);
+#ifdef D2RVR_NATIVE_OPENXR
+    // Controller quick casts also resolve through 0x1446c0 -> 0x143960,
+    // without entering 0x190440. Correct only that aim call: the other callers
+    // are locomotion and must keep their movement destinations.
+    if(outX&&outY&&caller==d2rsig::Rva(RVA_ATTACK_POINT_RET)) {
+        float px=0,py=0,dx=0,dy=0;
+        if(SpellPlayerPosition(unit,px,py)&&DirectedSpellAim(dx,dy)&&
+           framevr::spellaim::ControllerPoint(px,py,{dx,0,dy},*outX,*outY)) {
+            static ULONGLONG told=0;
+            if(GetTickCount64()-told>2000) {
+                told=GetTickCount64();
+                LogF("Frame spell aim: controller cast follows hand %.3f %.3f",dx,dy);
+            }
+        }
+    }
+#endif
     // the log: which caller, what vector, what point - a few times a second per caller
     static uintptr_t lastCaller[4] = {};
     static ULONGLONG lastAt[4] = {};
@@ -3737,6 +3784,20 @@ uint64_t HookMapClick(void* unit, int type, int x, int y, uint64_t flags) {
     // Mouse menu events must never become world movement, attacks, or loot,
     // including a delayed release after the native dialog closes itself.
     if(g_enabled.load()&&g_inWorld.load()&&(gamestate::MenuOpen()||panelinput::BlocksWorld()))return 0;
+    struct CommandScope {
+        framevr::spellaim::CommandAim previous=g_spellCommand;
+        CommandScope(){g_spellCommand={};}
+        ~CommandScope(){g_spellCommand=previous;}
+    } scope;
+    const auto caller=uintptr_t(_ReturnAddress());
+    float px=0,py=0,dx=0,dy=0;int tx=0,ty=0;
+    if(g_spellCommandReady.load()&&framevr::spellaim::ControllerCast(type)&&
+       (caller==d2rsig::Addr(spellaimabi::CastClickRva+5)||caller==d2rsig::Addr(spellaimabi::RepeatClickRva+5))&&
+       SpellPlayerPosition(unit,px,py)&&DirectedSpellAim(dx,dy)&&
+       framevr::spellaim::ControllerPoint(px,py,{dx,0,dy},tx,ty)) {
+        g_spellCommand={reinterpret_cast<uintptr_t>(unit),tx,ty};
+        x=tx;y=ty;
+    }
 #endif
     if (unit && (type == 0 || type == 1 || type == 3 || type == 4) && !(flags & 0xFF) &&
         g_set.flatClickShoot.load() && KeyMoveMode() && ShooterActive()) {
@@ -3764,8 +3825,14 @@ void InstallMapClickHook() {
     wanted=true; // Also protects native VR panels when keyboard walking is off.
 #endif
     if (!g_ctx || g_mapClick.load() != 0 || !wanted) return;
+    bool hoverReady=false;
+#ifdef D2RVR_NATIVE_OPENXR
+    // The spell hook owns this same entry once installed. Its trampoline was
+    // checked before detouring; checking the patched entry can never succeed.
+    hoverReady=OrigSpellHoverTarget!=nullptr;
+#endif
     if (!Matches(RVA_MAP_CLICK, kSigMapClick, sizeof kSigMapClick) || !Matches(RVA_CLIENT_INDEX, kSigClientIndex, sizeof kSigClientIndex) ||
-        !Matches(RVA_HOVER_UNIT, kSigHoverUnit, sizeof kSigHoverUnit)) {
+        (!hoverReady&&!Matches(RVA_HOVER_UNIT, kSigHoverUnit, sizeof kSigHoverUnit))) {
         if (flat && g_inWorld.load() && ++misses >= 20) {   // VR: no verdict, the code may run (and decrypt) much later
             g_mapClick.store(2);
             Log("vrcam: flat: click hook NOT possible (0xFE3B0 / 0x9A820 / 0xF1900 not as expected - another build?) - a click on the ground walks");
@@ -3842,6 +3909,17 @@ void KeysAsStick(XINPUT_STATE* s, DWORD* r) {
 // stick reached the outer one, which then read the turn as 0.
 thread_local int t_xDepth = 0;
 
+#ifdef D2RVR_NATIVE_OPENXR
+SRWLOCK g_skillPadLock=SRWLOCK_INIT;
+framevr::skills::SkillPad g_skillPad;
+void SequenceSkillPad(XINPUT_STATE* state,bool active) {
+    AcquireSRWLockExclusive(&g_skillPadLock);
+    if(active)state->Gamepad.wButtons=g_skillPad.Poll(state->Gamepad.wButtons,
+        state->Gamepad.bLeftTrigger>=128,state->dwPacketNumber,GetTickCount64());
+    else g_skillPad.Reset();
+    ReleaseSRWLockExclusive(&g_skillPadLock);
+}
+#endif
 template <int I> DWORD WINAPI XDetour(DWORD idx, XINPUT_STATE* s) {
     g_xhooks[I].calls++;
     // Flat without a pad: no controller anywhere, so no pad event ever asks
@@ -3867,12 +3945,14 @@ template <int I> DWORD WINAPI XDetour(DWORD idx, XINPUT_STATE* s) {
         // the same context AND UI epoch before accepting either kind of pad.
         const bool allowed=!tagged||framevr::menus::Allowed(report.reserved[0],report.reserved[1],gamestate::MenuEpoch(),nativeUi,framevr::SettingsOpen());
         if(!allowed||nativeUi||framevr::SettingsOpen()) {
+            if(idx==0)SequenceSkillPad(s,false);
             if(!allowed||framevr::SettingsOpen())s->Gamepad={};
             if(idx==0){g_aHeld.store(false);g_skillHeld.store(false);g_rightX.store(0.f);}
             // Native menu buttons/sticks bypass gameplay action translation
             // and camera-relative movement. Laser reports are already empty.
             return r;
         }
+        if(idx==0)SequenceSkillPad(s,tagged&&g_enabled.load());
 #endif
         if (idx == 0) ApplyActions(s);
         {   // which entry polls what, with BodyWalk's pad or without (2026-10-07): at most 30 lines a session
@@ -4810,6 +4890,15 @@ void InstallHooks() {
     }
 #ifdef D2RVR_NATIVE_OPENXR
     static bool spellController=false,spellHover=false,spellResolve=false;
+    if(!g_spellCommandReady.load()&&
+       d2rsig::Check(spellaimabi::CastClickRva,spellaimabi::CastClickSig,sizeof spellaimabi::CastClickSig)&&
+       d2rsig::Check(spellaimabi::RepeatClickRva,spellaimabi::RepeatClickSig,sizeof spellaimabi::RepeatClickSig)) {
+        if(d2rsig::Hook(spellaimabi::CommandRva,spellaimabi::CommandSig,sizeof spellaimabi::CommandSig,
+            reinterpret_cast<void*>(&HookSpellCommand),reinterpret_cast<void**>(&OrigSpellCommand))) {
+            g_spellCommandReady=true;
+            Log("Frame spell aim: final controller command target override ready");
+        }
+    }
     if(!g_spellAimReady.load()&&g_h.point&&
        d2rsig::Check(spellaimabi::ControllerCallRva,spellaimabi::ControllerCallSig,sizeof spellaimabi::ControllerCallSig)&&
        d2rsig::Check(spellaimabi::HoverCallRva,spellaimabi::HoverCallSig,sizeof spellaimabi::HoverCallSig)&&
@@ -4838,7 +4927,7 @@ void InstallHooks() {
 
 bool AllHooksIn() {
 #ifdef D2RVR_NATIVE_OPENXR
-    if(!g_spellAimReady.load())return false;
+    if(!g_spellAimReady.load()||!g_spellCommandReady.load())return false;
 #endif
     return g_h.camera && g_h.skeleton && g_h.target && g_h.facing && g_h.point && g_h.blit && g_h.interact;
 }

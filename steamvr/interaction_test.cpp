@@ -18,6 +18,21 @@ struct Sim {
     Output Step(int count=1){while(count--){in.time+=.02;in.at=1000000+uint64_t(in.time*1000);in.snapshot.at=in.at;out=e.Step(in);}return out;}
 };
 int main(){
+    for(int hand=0;hand<2;++hand)for(int key=0;key<5;++key){
+        Sim s;s.in.snapshot.bindingsEditable=true;s.in.snapshot.bindingBank=0;s.in.snapshot.skillCount=1;
+        auto& choice=s.in.snapshot.catalog[0];choice.id=47;choice.known=choice.available=true;
+        s.in.wheelHand=hand;s.in.wheel=true;s.Step(3);
+        s.in.hover=key;s.in.trigger=1;s.Step();
+        const int slot=framevr::skills::HandSlot(hand,key);
+        Check(s.out.editor==2&&s.out.editSlot==slot&&s.out.select==-2,"hand wedge edits its own binding without casting");
+        s.in.trigger=0;s.Step();s.in.hover=0;s.in.trigger=1;s.Step();
+        const auto r=s.out.request;
+        Check(r.action==Action::BindSkill&&r.index==slot&&CanBind(s.in.snapshot,r,s.in.at),"all ten bindings use validated native requests");
+        s.in.trigger=0;s.in.reply={r.sequence,s.in.session,Result::Applied};s.Step();
+        Check(s.out.wheel&&s.out.editor==0&&s.out.select==-2,"assignment returns to same wheel, no cast or trigger reselection");
+        s.in.wheelHand=1-hand;s.in.trigger=1;s.Step();
+        Check(s.out.editor==0&&s.out.request.action==Action::None,"switching wheels with held selection trigger cannot edit another slot");
+    }
     for(int dominant=0;dominant<2;++dominant)for(float side:{-.23f,.23f}){
         Sim s;Config c;c.dominant=dominant;s.e.Configure(c);s.Step(4);
         s.in.hand[dominant].p=s.in.head.p+Vec{side,-.2f,.14f};s.Step(10);

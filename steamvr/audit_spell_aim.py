@@ -27,7 +27,7 @@ def main():
         if offset < 0 or data[offset:offset + len(expected)] != expected:
             raise SystemExit(f'Signature mismatch: {name} at {address}')
         count += 1
-    if count != 7:
+    if count != 10:
         raise SystemExit('Incomplete spell aim guard set')
     print(f'Spell aiming: {count} native entry/call-site guards match')
     paths = (args.skills_bin, args.skills_txt, args.missiles_txt)
