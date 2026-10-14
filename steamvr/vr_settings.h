@@ -53,7 +53,7 @@ inline constexpr std::array<Definition,Count> Definitions{{
     {"Menu distance", "Eye-level inventory, merchant and main menus", L"hud",L"menu_distance",1,0,2,1},
     {"Item tooltip timing", "Laser hover: Instant, Short (300 ms), or Original timing", L"hud",L"tooltip_timing",0,0,2,1},
     {"Projectile aim assist", "Hand spells: Light assists launch; Strong adds gentle homing", L"gameplay",L"projectile_aim_assist",0,0,2,1},
-    {"Melee hit speed", "Higher requires faster weapon swings; shield bash is unchanged", L"gameplay",L"melee_hit_speed",3,1.5f,std::numeric_limits<float>::max(),.25f},
+    {"Melee hit speed", "Higher requires faster weapon swings; shield bash is unchanged", L"gameplay",L"melee_hit_speed",12,1.5f,std::numeric_limits<float>::max(),.25f},
 }};
 using Values=std::array<float,Count>;
 inline Values Defaults(){Values v{};for(int i=0;i<Count;++i)v[i]=Definitions[i].defaultValue;return v;}

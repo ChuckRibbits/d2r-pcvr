@@ -6,7 +6,7 @@ using namespace framevr;using namespace framevr::melee;
 void Check(bool ok,const char* why){if(!ok){std::fprintf(stderr,"FAIL: %s\n",why);std::exit(1);}}
 struct Sim {
     Engine engine;Sample sample;Sweep sweep;
-    Sim(){sample.active=true;sample.epoch=1;sample.equipment=1;sample.unitsPerMetre=4;
+    Sim(){sample.minWeaponSpeed=3;sample.active=true;sample.epoch=1;sample.equipment=1;sample.unitsPerMetre=4;
         sample.hand.p={0,1,-.5f};sample.blade={{0,1,-.5f},{0,1,-1.2f},.04f};Step(8);}
     bool Step(int n=1){bool result=false;while(n--){sample.time+=.02;result=engine.Step(sample,sweep);}return result;}
     bool Move(Vec d){sample.hand.p=sample.hand.p+d;sample.blade.base=sample.blade.base+d;sample.blade.tip=sample.blade.tip+d;return Step();}
@@ -19,7 +19,7 @@ int main(){
         s.sample.minWeaponSpeed=6;
         Check(!s.Move({.07f,0,0}),"speed adjustment cancels the previous stroke");
     }
-    Check(WeaponContactSpeed(NAN)==3&&WeaponContactSpeed(0)==1.5f&&WeaponContactSpeed(99)==99,"speed retains lower bound without upper cap");
+    Check(Sample{}.minWeaponSpeed==12&&WeaponContactSpeed(NAN)==12&&WeaponContactSpeed(0)==1.5f&&WeaponContactSpeed(99)==99,"twelve m/s default and lower bound without upper cap");
     {
         Sim s;s.sample.minWeaponSpeed=12;s.Step(8);
         bool hit=false;for(int i=1;i<=6;++i) {
@@ -235,7 +235,7 @@ int main(){
         // its stale blade with the new velocity misses; when the blade catches
         // up the current hand is stationary. Timestamp pairing retains the hit.
         Engine mismatched,matched;PoseHistory history;Sample input;Sweep sw;
-        input.active=true;input.epoch=1;input.equipment=1;input.unitsPerMetre=4;
+        input.minWeaponSpeed=3;input.active=true;input.epoch=1;input.equipment=1;input.unitsPerMetre=4;
         input.hand.p={-.19f,1,-.5f};input.blade={{-.19f,1,-.5f},{-.19f,1,-1.2f},.025f};
         const Body target{{0,.9f,-.7f},{0,1.1f,-.7f},.025f};
         Sample rendered=input;uint32_t renderStamp=1;history.Push(renderStamp,input);

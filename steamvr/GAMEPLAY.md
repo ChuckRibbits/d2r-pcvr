@@ -568,14 +568,14 @@ settling or a deliberate translation/rotation reversal permits another stroke.
 A tracking discontinuity drops that motion and requires 80 ms of fresh coherent
 poses; continued swinging can recover without holding the hand still. Strength
 is judged over recent motion, so small windups cannot lock out later slashes. Weapon
-contacts require a coherent 18 cm excursion within 120 ms and at least 3.0 m/s of
+contacts require a coherent 18 cm excursion within 120 ms and at least 12.0 m/s of
 estimated motion at contact, including follow-through. The estimate combines hand
 translation with blade-axis rotation, capped by tracked hand rotation; twisting a
 shaft in place does not power a hit. The sweep follows the rotating blade’s arc
 between the latest poses without replaying earlier unpowered brushes when a
 stroke arms. Shield/Smite gesture thresholds remain unchanged. These weapon
 thresholds are adjustable under **VR Settings > Combat > Melee hit speed**
-(minimum 1.5 m/s, no upper cap, 0.25 steps, default 3.0). Apply saves
+(minimum 1.5 m/s, no upper cap, 0.25 steps, default 12.0). Apply saves
 `[gameplay] melee_hit_speed` and updates the detector live; changing it clears
 the previous stroke. Stroke travel remains 18 cm. The earlier 1.8 m/s candidate
 was too permissive in owner testing; the firmer default still needs headset testing. Physical controller
@@ -585,8 +585,12 @@ button fallback and suppresses simultaneous physical contact attacks.
 
 Confirmed weapon and shield impacts request a single 10 ms haptic tap at 95%
 amplitude and 180 Hz on the next XR input update, replacing the previous 45 ms
-buzz. Events are consumed once rather than held during overlap. Exact feel and
-frequency support depend on the controller/runtime and need headset validation.
+buzz. Events are consumed once rather than held during overlap. A dedicated timer
+explicitly stops the vibration at its deadline even if rendering stalls; pulse
+replacement, focus loss and session shutdown cancel pending stops safely.
+This follows owner feedback that the Steam Frame sustained even one short pulse.
+Exact feel and frequency support depend on the controller/runtime and need
+headset validation. Existing saved melee speed choices remain unchanged.
 
 Collision volumes are currently **approximations**, not skinned mesh hitboxes:
 weapon category determines length/radius on the final attachment; native monster

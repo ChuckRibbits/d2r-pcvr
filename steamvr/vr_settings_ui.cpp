@@ -132,7 +132,7 @@ std::vector<uint8_t> Paint(const Model& m,Hit hover,const char* runtimeStatus,co
             text("Menu distance: Close matches the previous build; Medium adds 30 cm; Far adds 60 cm.",{58,765,1160,76},false,false,quiet);
         }
         if(m.page==Page::Combat){
-            text("Default: 3.00 m/s. Higher requires faster swings. Adjust in 0.25 steps with no upper limit.",{58,340,1160,76},false,false,quiet);
+            text("Default: 12.00 m/s. Higher requires faster swings. Adjust in 0.25 steps with no upper limit.",{58,340,1160,76},false,false,quiet);
             text("A deliberate stroke must also travel at least 18 cm. Slow follow-through cannot deal damage.",{58,440,1160,76},false,false,quiet);
             text("Apply saves the setting and updates melee immediately. Shield bash and button attacks keep their existing behavior.",{58,540,1160,100},false,false,quiet);
         }

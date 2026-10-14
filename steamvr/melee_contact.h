@@ -56,7 +56,7 @@ struct Sample {
     Blade blade{}; // world metres (game coordinates divided by unitsPerMetre)
     Vec player{};float unitsPerMetre=1;
     bool shield=false;
-    float minWeaponSpeed=3.f;
+    float minWeaponSpeed=12.f;
     int skillSlot=-1,skillOwner=-1;
     uint64_t skillContext=0;
 };
@@ -91,7 +91,7 @@ struct Sweep {Blade before{},after{};uint64_t stroke=0;float speed=0;};
 struct Diagnostics {unsigned discontinuities=0,recovering=0;};
 inline constexpr float WeaponStrokeTravel=.18f;
 inline float WeaponContactSpeed(float value) {
-    return std::isfinite(value)?std::max(value,1.5f):3.f;
+    return std::isfinite(value)?std::max(value,1.5f):12.f;
 }
 class Engine {
     bool primed=false;
