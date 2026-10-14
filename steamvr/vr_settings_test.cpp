@@ -7,19 +7,18 @@ static void Check(bool b,const char* label){if(!b){std::fprintf(stderr,"FAIL: %s
 static Hit At(Page p,Rect r){return HitTest(p,(r.x+r.w*.5f)/Width,(r.y+r.h*.5f)/Height);}
 int main(){
     Snapshot s;s.ready=true;
-    Check(s.values[WristMap]==1,"wrist minimap defaults on");
-    {Model wrist;wrist.Open(s);wrist.Click(At(Page::Controls,Tabs[int(Page::HUD)]));
+    Check(s.values[NavigationLocation]==0,"combined navigation defaults to Wrist");
+    Check(Normalize(NavigationLocation,99)==0&&Normalize(NavigationLocation,1.5f)==0,"invalid navigation location falls back to Wrist");
+    {Model navigation;navigation.Open(s);navigation.Click(At(Page::Controls,Tabs[int(Page::HUD)]));
         const int row=2;
-        Check(wrist.page==Page::HUD&&RowKey(Page::HUD,row)==WristMap&&RowY+row*RowStep+72<876,"wrist map row fits above status and footer");
-        wrist.Click(At(Page::HUD,ValueBox(row)));
-        auto request=wrist.Click({Kind::Apply});
-        Check(request.changed==(1u<<WristMap)&&request.values[WristMap]==0,"wrist map toggle saves only its own setting");}
-    Check(s.values[WristCompass]==1,"wrist compass defaults on");
-    {Model compass;compass.Open(s);const int row=RowCount(Page::HUD)-1;
-        Check(RowKey(Page::HUD,row)==WristCompass&&RowY+row*RowStep+72<876,"compass row fits above footer");
-        compass.Click(At(Page::HUD,ValueBox(row)));const auto request=compass.Click({Kind::Apply});
-        Check(request.changed==(1u<<WristCompass)&&request.values[WristCompass]==0&&request.values[WristMap]==1,
-            "compass can be disabled independently of wrist map");}
+        Check(RowCount(Page::HUD)==3&&RowKey(Page::HUD,row)==NavigationLocation,"one navigation row replaces separate map/compass switches");
+        for(int location=1;location<=3;++location){
+            navigation.Click(At(Page::HUD,Increase(row)));
+            Check(navigation.Get()[NavigationLocation]==location,"navigation offers Palm, Either and Off");
+        }
+        auto request=navigation.Click({Kind::Apply});
+        Check(request.changed==(1u<<NavigationLocation)&&request.values[NavigationLocation]==3&&request.values[VitalsLocation]==0,
+            "combined navigation can turn off without changing vitals");}
     Check(s.values[VitalsLocation]==0&&s.values[CriticalAlerts]==0,"existing wrist placement remains default; automatic alerts require opt-in");
     Check(Normalize(VitalsLocation,99)==0&&Normalize(VitalsLocation,1.5f)==0,"unknown vitals locations fall back to wrist");
     {Model hud;hud.Open(s);hud.Click(At(hud.page,Tabs[int(Page::HUD)]));

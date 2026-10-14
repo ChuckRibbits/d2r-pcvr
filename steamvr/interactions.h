@@ -44,16 +44,17 @@ inline Pose WristPanel(Pose hand,Pose head) {return HandFacePanel(hand,head,Wris
 inline Pose PalmPanel(Pose hand,Pose head) {return HandFacePanel(hand,head,PalmNormal(hand),{.055f,0,-.04f});}
 constexpr float PalmWidth=.20f,PalmHeight=.10f;
 constexpr float WristWidth=.24f,WristHeight=.12f,WristMapSize=.24f;
-inline Pose WristMapPanel(Pose hand,Pose head) {
-    auto panel=WristPanel(hand,head);
-    panel.p=panel.p+math::Rotate(panel.q,{0,(WristHeight+WristMapSize)*.5f+.01f,0});
+// Navigation uses one face and one layout for both the map and compass.
+// Reserve space for vitals only when they are displayed on that same face.
+inline Pose NavigationMapPanel(Pose hand,Pose head,bool palm,bool vitalsOnFace) {
+    auto panel=palm?PalmPanel(hand,head):WristPanel(hand,head);
+    if(vitalsOnFace)panel.p=panel.p+math::Rotate(panel.q,{0,((palm?PalmHeight:WristHeight)+WristMapSize)*.5f+.01f,0});
     return panel;
 }
 constexpr float WristCompassWidth=.24f,WristCompassHeight=.045f;
-inline Pose WristCompassPanel(Pose hand,Pose head,bool map) {
-    auto panel=WristPanel(hand,head);
-    const float offset=(WristHeight+WristCompassHeight)*.5f+.01f+(map?WristMapSize+.01f:0);
-    panel.p=panel.p+math::Rotate(panel.q,{0,offset,0});
+inline Pose NavigationCompassPanel(Pose hand,Pose head,bool palm,bool vitalsOnFace) {
+    auto panel=NavigationMapPanel(hand,head,palm,vitalsOnFace);
+    panel.p=panel.p+math::Rotate(panel.q,{0,(WristMapSize+WristCompassHeight)*.5f+.01f,0});
     return panel;
 }
 inline bool WristPresented(Pose hand,Pose head) {
@@ -225,7 +226,7 @@ struct Input {
     double time=0;
     uint64_t session=0,epoch=0,at=0; // at shares the native snapshot's monotonic clock
     bool active=false,tracked[2]{},wheel=false,cancel=false,reservedLeft=false,spell=false,quickCast=false;
-    bool wristMap=true,wristCompass=true;
+    vitals::Location navigationLocation=vitals::Location::Wrist;
     vitals::Location vitalsLocation=vitals::Location::Wrist;
     bool criticalAlerts=false,leftCasting=false;
     Pose head{},hand[2]{};
@@ -238,7 +239,7 @@ struct Output {
     SkillCue cue{},leftCue{};
     Owner owner[2]{Owner::Combat,Owner::Combat};
     bool block=false,wheel=false,utility=false,map=false,stowed=false,wrist=false,cancelPending=false,critical=false,settings=false;
-    bool vitals=false,palm=false;
+    bool vitals=false,palm=false,navigation=false,navigationPalm=false;
     int wheelHand=-1;
     bool inventory=false;
     int select=-2,bottle=-1,bottleHand=-1,nearBelt=-1,nearHolster=-1,hover=-1;
@@ -257,16 +258,12 @@ inline MenuPage Page(const Output& out) {
 inline bool MenuMapWanted(const Input& in,const Output& out,uint64_t now) {
     return in.active&&out.wheel&&out.map&&!out.editor&&Fresh(in.snapshot,in.session,now);
 }
-inline bool WristMapWanted(const Input& in,const Output& out,uint64_t now) {
-    return in.active&&in.wristMap&&out.wrist&&!out.wheel&&!out.settings&&
-        in.tracked[1]&&Fresh(in.snapshot,in.session,now);
-}
-inline bool WristCompassWanted(const Input& in,const Output& out,uint64_t now) {
-    return in.active&&in.wristCompass&&out.wrist&&!out.wheel&&!out.settings&&
+inline bool NavigationWanted(const Input& in,const Output& out,uint64_t now) {
+    return in.active&&in.navigationLocation!=vitals::Location::Off&&out.navigation&&!out.wheel&&!out.settings&&
         in.tracked[1]&&Fresh(in.snapshot,in.session,now);
 }
 inline bool MapWanted(const Input& in,const Output& out,uint64_t now) {
-    return MenuMapWanted(in,out,now)||WristMapWanted(in,out,now);
+    return MenuMapWanted(in,out,now)||NavigationWanted(in,out,now);
 }
 class Engine {
     Config config{};
@@ -297,12 +294,15 @@ public:
         // still require both hands; a resting/occluded right hand must not hide
         // a correctly presented watch or permit an input through the guard.
         out.wrist=in.active&&in.session&&in.tracked[1]&&std::isfinite(in.time)&&WristPresented(in.hand[1],in.head);
-        const bool palmAllowed=in.active&&in.tracked[1]&&vitals::Palm(in.vitalsLocation)&&
+        const bool palmAllowed=in.active&&in.tracked[1]&&(vitals::Palm(in.vitalsLocation)||vitals::Palm(in.navigationLocation))&&
             !in.wheel&&!in.cancel&&!in.leftCasting&&in.leftTrigger<.2f&&in.grip[1]<.6f&&
             !in.reservedLeft&&bottleHand!=1&&holsterHand!=1&&Fresh(in.snapshot,in.session,in.at);
-        out.palm=palmReveal.Step(in.session,in.epoch,in.time,palmAllowed,
+        const bool palm=palmReveal.Step(in.session,in.epoch,in.time,palmAllowed,
             PalmPresented(in.hand[1],in.head),PalmPresented(in.hand[1],in.head,true));
+        out.palm=palm&&vitals::Palm(in.vitalsLocation);
         out.vitals=out.palm||(out.wrist&&vitals::Wrist(in.vitalsLocation));
+        out.navigationPalm=palm&&vitals::Palm(in.navigationLocation);
+        out.navigation=out.navigationPalm||(out.wrist&&vitals::Wrist(in.navigationLocation));
         const bool trigger=in.trigger>(triggerWas?.2f:.55f);
         const bool grips[2]={in.grip[0]>.6f,in.grip[1]>.6f};
         const uint64_t now=in.at;
