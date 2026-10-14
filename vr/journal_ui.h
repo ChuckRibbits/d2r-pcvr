@@ -4,6 +4,9 @@ namespace gamestate {
 bool JournalOnly();
 bool OpaqueMenuOpen();
 bool TabbedMenuOpen();
+bool NpcChoicesOnly();
+bool NpcChoicesRect(int32_t out[4]);
+void ReadNpcChoicesRect(); // UI thread only
 bool JournalRect(int32_t out[4]);
 void ReadJournalRect(); // UI thread only
 }

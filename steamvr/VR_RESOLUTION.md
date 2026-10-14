@@ -87,6 +87,16 @@ placement and laser-to-pixel mapping. The owner found the first fitted-height
 candidate too small/far away; closer placement and visible-band centering
 await a fresh headset comparison.
 
+NPC choice menus use their live `NpcDialogPanel`/`DialogBorder` bounds to
+display a separate, eye-level region at the same 0.55 m distance. The region
+has four times the previous workspace's pixel pitch, preserving text aspect
+and remapping laser hits into the native dialogue coordinates. The adjustment
+applies only when NPC choices are the sole modal panel; trade, inventory,
+confirmations over shops and scrolling quest speech retain their existing
+surfaces. Missing/stale/invalid bounds retain the full native surface. Automated
+tests cover crop limits, magnification and laser mapping; live layout mapping
+and headset readability still need owner validation.
+
 The native lighting depth reduction also assumes square tiles when calculating
 the row for a linear sample index. Its 32x20 grid has rectangular tiles at
 square VR resolutions: the height divisor misses lower rows and can reject

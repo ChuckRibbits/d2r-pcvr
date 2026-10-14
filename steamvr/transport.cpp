@@ -41,6 +41,7 @@
 #include "../vr/settings_menu.h"
 #include "journal.h"
 #include "native_panels.h"
+#include "npc_dialogue.h"
 #include "native_hud.h"
 #include "light_bounds.h"
 #include "render_resolution.h"
@@ -237,6 +238,7 @@ bool mapSupported=false;
 constexpr uint32_t mapSide=512;
 std::atomic<bool> uiSupported{false};
 bool journalMode=false,spatialMode=false,workspacePlaced=false,opaqueMenuMode=false,tabbedMenuMode=false;
+bool npcChoicesMode=false,npcChoicesCropped=false;
 UiBlit uiBlit;
 UiBlit mapBlit; // Own descriptors: native menu and map copies may share a frame.
 potions::Models potionModels;
@@ -823,6 +825,7 @@ bool FocusGameForUi() {
 panels::Size UiSurfaceSize() {
     // The handheld journal keeps its book size; native workspaces fit in both axes.
     if(journalMode)return {uiSize,uiSize*(uiCrop[2]>0?float(uiCrop[3])/uiCrop[2]:1.3f)};
+    if(npcChoicesMode&&npcChoicesCropped)return dialogue::Size({uiCrop[0],uiCrop[1],uiCrop[2],uiCrop[3]},uiWidth,uiHeight);
     return panels::Fit(uiCrop[2]>0?unsigned(uiCrop[2]):0,uiCrop[3]>0?unsigned(uiCrop[3]):0);
 }
 XrPosef UiSurfacePose() {
@@ -1536,8 +1539,10 @@ bool Begin() {
     worldWasLoaded=loaded;
     const bool spatial=SpatialMenu();
     const bool book=spatial&&gamestate::JournalOnly();
-    if(spatial!=spatialMode||book!=journalMode) {
+    const bool npc=spatial&&gamestate::NpcChoicesOnly();
+    if(spatial!=spatialMode||book!=journalMode||npc!=npcChoicesMode) {
         workspacePlaced=false;uiMissingFrames=0;std::fill_n(uiCrop,4,0);
+        npcChoicesCropped=false;
         if(book)journalPlacement.Open();
         // An attack held when an NPC opens its dialog must not select an option.
         ReleasePanelInput();panelMouse.Suspend();
@@ -1545,7 +1550,7 @@ bool Begin() {
     }
     const bool opaque=spatial&&gamestate::OpaqueMenuOpen();
     if(opaque!=opaqueMenuMode)Say(opaque?"Frame panels: shared black menu background":"Frame panels: spatial background restored");
-    spatialMode=spatial;journalMode=book;opaqueMenuMode=opaque;tabbedMenuMode=spatial&&gamestate::TabbedMenuOpen();uiEye.copied=false;
+    spatialMode=spatial;journalMode=book;npcChoicesMode=npc;opaqueMenuMode=opaque;tabbedMenuMode=spatial&&gamestate::TabbedMenuOpen();uiEye.copied=false;
     mapEye.copied=false;hud::MapFrame();
     hud::UiFrame(spatialMode,!journalMode,0);
     const bool panel=wantsPanel&&wantsPanel()&&!spatialMode;
@@ -1696,6 +1701,14 @@ bool CopyUi(reshade::api::command_queue* rq) {
         return true;
     }
     uiMissingFrames=0;
+    bool croppedNpc=false;
+    int32_t native[4]{};
+    if(npcChoicesMode&&gamestate::NpcChoicesRect(native)) {
+        const auto box=dialogue::Crop({native[0],native[1],native[2],native[3]},int(w),int(h));
+        if(box.w>0&&box.h>0) {
+            crop[0]=box.x;crop[1]=box.y;crop[2]=box.w;crop[3]=box.h;croppedNpc=true;
+        }
+    }
     auto& e=uiEye;
     if(e.chain&&(w!=uiWidth||h!=uiHeight)) {
         if(!WaitGpuValue(e.copyFence))return false;
@@ -1723,6 +1736,10 @@ bool CopyUi(reshade::api::command_queue* rq) {
     if(FAILED(e.commands->Close()))return false;
     ID3D12CommandList* lists[]={e.commands.Get()};queue->ExecuteCommandLists(1,lists);
     if(FAILED(queue->Signal(fence.Get(),++fenceValue)))return false;
+    if(croppedNpc&&!npcChoicesCropped) {
+        char b[180];std::snprintf(b,sizeof b,"Frame NPC choices: eye-level 4x surface, crop %d,%d %dx%d of %ux%u",crop[0],crop[1],crop[2],crop[3],w,h);Say(b);
+    }
+    npcChoicesCropped=croppedNpc;
     e.copyFence=fenceValue;e.copied=true;std::copy_n(crop,4,uiCrop);return true;
 }
 void Capture(reshade::api::command_queue* rq,reshade::api::swapchain* swap) {

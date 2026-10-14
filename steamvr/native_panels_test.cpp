@@ -1,4 +1,5 @@
 #include "native_panels.h"
+#include "npc_dialogue.h"
 #include "panel_input_mode.h"
 #include "menu_controls.h"
 #include "quick_cast.h"
@@ -184,6 +185,27 @@ int main(){
     Check(title.width==1.125f&&title.height==1.125f,"square main menu fits original 2m widescreen envelope");
     const auto missing=panels::Fit(0,0);
     Check(missing.width==wide.width&&missing.height==wide.height,"missing source uses finite widescreen fallback");
+    // The NPC box is a small region of the full UI. Enlarge its pixel pitch,
+    // not its surrounding canvas, and map each displayed choice back to the
+    // original native coordinate after moving the region to eye level.
+    for(auto source:{journal::Rect{0,0,4096,4096},journal::Rect{0,0,1920,1080},journal::Rect{0,0,2160,2400}}) {
+        const auto crop=dialogue::Crop({1740,120,360,240},source.w,source.h);
+        const auto size=dialogue::Size(crop,source.w,source.h);
+        Check(crop.w>0&&crop.h>0,"NPC bounds produce a source region at square, wide and portrait resolutions");
+        Check(std::fabs(size.width/crop.w-4.f*panels::Fit(source.w,source.h).width/source.w)<.00001f,"NPC text has four times the original workspace pixel pitch");
+        const auto placed=panels::AtEyeLevel({0,1.65f,0},math::Yaw(.4f),panels::Distance);
+        for(float u:{.02f,.5f,.98f})for(float v:{.02f,.3f,.7f,.98f}) {
+            const auto p=placed.position+math::Rotate(placed.orientation,{(u-.5f)*size.width,(.5f-v)*size.height,0});
+            const auto front=math::Rotate(placed.orientation,{0,0,1});math::PanelHit hit;math::Vec pixel{};
+            Check(math::IntersectPanel(p+front,front*-1,placed.position,placed.orientation,size.width,size.height,hit),"laser hits the enlarged eye-level NPC surface");
+            Check(journal::Pixel(crop,hit.u,hit.v,source.w,source.h,pixel)&&
+                std::fabs(pixel.x-(crop.x+u*crop.w)/source.w)<.00001f&&
+                std::fabs(pixel.y-(crop.y+v*crop.h)/source.h)<.00001f,"enlarged NPC choices map back to native dialogue pixels");
+        }
+    }
+    const auto edge=dialogue::Crop({0,0,200,100},3840,2160);
+    Check(edge.x==0&&edge.y==0&&edge.w==208&&edge.h==108,"dialogue border padding clips at source edges");
+    Check(!dialogue::Crop({8000,8000,200,100},3840,2160).w&&!dialogue::Crop({0,0,0,100},4096,4096).h,"missing/outside NPC bounds cannot create an invalid XR crop");
     Check(panels::TabbedOffset(wide)==0,"widescreen tabbed canvas needs no vertical correction");
     Check(std::fabs(panels::TabbedOffset(square)+.23378906f)<.00001f,"square inventory centers its visible upper band instead of blank lower canvas");
     for(float eyeHeight:{1.15f,1.75f})for(float pitch:{-.6f,0.f,.6f}) {
