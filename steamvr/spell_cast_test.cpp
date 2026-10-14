@@ -11,6 +11,30 @@ struct Sim {
     void Step(int n=1){while(n--){input.time+=.02;output=controls.Step(input);}}
 };
 int main() {
+    {
+        using spellcast::Failure;
+        for(bool town:{false,true})for(bool mana:{false,true}) {
+            bool selected=true;unsigned calls=0;
+            const auto result=spellcast::StartWithFeedback([&]{
+                assert(selected);return spellcast::Refusal(town,mana);
+            },[&]{++calls;selected=false;return false;});
+            assert(calls==1&&!result.accepted);
+            assert(result.failure==(town?Failure::Town:mana?Failure::None:Failure::Mana));
+        }
+        const auto accepted=spellcast::StartWithFeedback([]{return Failure::Mana;},[]{return true;});
+        assert(accepted.accepted&&accepted.failure==Failure::None);
+        spellcast::CastWarning warning;
+        warning.Request(1,7,1000,Failure::Mana);
+        warning.Request(1,7,1001,Failure::Town);
+        assert(warning.Take(1,7,1002,true)==Failure::Town);
+        warning.Request(1,7,1100,Failure::Town);
+        assert(warning.Take(1,7,1100,true)==Failure::None);
+        warning.Request(1,7,1300,Failure::Town);
+        assert(warning.Take(1,7,1801,true)==Failure::None);
+        warning.Request(1,7,1900,Failure::None);
+        assert(warning.Take(1,7,1900,true)==Failure::None);
+    }
+
     spellcast::PlanarAim aim[2];
     for(int yaw=0;yaw<360;++yaw)for(int pitch:{-80,-40,0,40,80}) {
         const float y=yaw*.01745329252f,p=pitch*.01745329252f;
@@ -60,6 +84,27 @@ int main() {
     assert(cadence.Ready(2,0,1));
     cadence.Fired(2,0,UINT32_MAX-5,13);
     assert(!cadence.Ready(2,0,6)&&cadence.Ready(2,0,7));
+    {
+        spellcast::CastWarning warning;
+        warning.Request(0,7,1000,spellcast::Failure::Mana);assert((warning.Take(0,7,1000,true)==spellcast::Failure::None));
+        warning.Request(1,7,1000,spellcast::Failure::Mana); // right hand fails
+        warning.Request(1,7,1000,spellcast::Failure::Mana); // left hand fails in the same tick
+        assert(warning.Take(1,7,1020,true)==spellcast::Failure::Mana);
+        assert((warning.Take(1,7,1020,true)==spellcast::Failure::None));
+        warning.Request(1,7,1100,spellcast::Failure::Mana);assert((warning.Take(1,7,1120,true)==spellcast::Failure::None));
+        warning.Request(1,7,1250,spellcast::Failure::Mana);assert(warning.Take(1,7,1250,true)==spellcast::Failure::Mana);
+        warning.Request(1,7,1500,spellcast::Failure::Mana);assert((warning.Take(1,7,2001,true)==spellcast::Failure::None)); // stale UI callback
+        warning.Request(1,7,2100,spellcast::Failure::Mana);assert((warning.Take(1,7,2100,false)==spellcast::Failure::None)); // menu/death
+        assert((warning.Take(1,7,2101,true)==spellcast::Failure::None)); // no delayed warning after reopening
+        warning.Request(1,7,2400,spellcast::Failure::Mana);assert((warning.Take(2,7,2400,true)==spellcast::Failure::None)); // same ID, new session
+        warning.Request(2,7,2401,spellcast::Failure::Mana);assert(warning.Take(2,7,2401,true)==spellcast::Failure::Mana);
+        warning.Request(2,7,2700,spellcast::Failure::Mana);assert((warning.Take(2,8,2700,true)==spellcast::Failure::None)); // wrong player
+        warning.Request(2,8,2701,spellcast::Failure::Mana);assert(warning.Take(2,8,2701,true)==spellcast::Failure::Mana);
+        warning.Request(2,8,3000,spellcast::Failure::Mana);assert((warning.Take(2,8,2999,true)==spellcast::Failure::None)); // clock regression
+        warning.Request(3,0,0,spellcast::Failure::Mana);assert(warning.Take(3,0,0,true)==spellcast::Failure::Mana); // ID/timestamp zero are valid
+        // Feedback never advances either hand's casting cadence.
+        assert(cadence.Ready(3,0,0)&&cadence.Ready(3,1,0));
+    }
     {
         Sim s;s.input.trigger[0]=s.input.trigger[1]=1;s.Step();
         assert(s.output.slot==-1&&s.output.spells[0]==skills::TriggerSlot(0)&&s.output.spells[1]==skills::TriggerSlot(1));
