@@ -156,14 +156,21 @@ Bosses, champions, uniques and their minions keep their bars with either setting
 There is no left-trigger modifier layer. Each hand aims its own spells. Face
 shortcuts do not change either trigger assignment. On a Sorceress, Fire Bolt,
 Fireball, Ice Bolt, Ice Blast and Charged Bolt can fire from both hands simultaneously,
-each with horizontal aim and its own Faster Cast Rate timing. Hold the input to repeat. Native
+each with independent aim and its own Faster Cast Rate timing. Hold the input to repeat. Native
 mana costs apply to each cast, and walking remains available without entering
 the original casting animation. See [hand projectile spells](docs/hand_projectile_spells.md)
 for the experimental adapter's scope and offline testing checklist.
 
-**VR Settings > Controls > Planar spell aiming** is On by default. Turn it Off
-and Apply for up/down aiming of straight projectile spells; Charged Bolt keeps
-its native planar spread. The preference saves and applies to new casts live.
+**VR Settings > Controls > Planar spell aiming** defaults to Off for new or
+missing settings, allowing up/down aiming of straight projectile spells. Turn
+it On and Apply to keep those spells level; Charged Bolt keeps its native planar
+spread. Existing saved preferences are retained, and changes apply to new casts.
+
+**Projectile aim assist** on the same tab defaults to Strong for new or missing
+settings. Strong adds launch assistance and gentle homing for supported straight
+hand spells; Light assists only at launch, and Off disables assistance. Charged
+Bolt uses launch assistance only. Bows, thrown weapons and other native spells
+are unchanged. Existing saved choices are retained; Strong does not guarantee a hit.
 
 Other skills retain native repeat behavior, delays and animation restrictions.
 A native action has one owner: the first held input wins, with right-hand
