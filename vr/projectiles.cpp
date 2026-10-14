@@ -19,6 +19,12 @@ namespace {
 constexpr uint64_t ClientRva=0x1B7760,ServerRva=0x5371A0,VelocityRva=0x342AE0;
 constexpr uint64_t ReleaseRva=0x771A10,RemoveReleaseRva=0x70DC70,OwnerRva=0x09A7B0;
 constexpr uint64_t ReleaseStorageRva=0x6E3CD0,RegistryRva=0x2677170;
+constexpr uint64_t TransformStorageRva=0x2035b0,TransformParentRva=0xe3a94c,InstanceEntitiesRva=0x7507f1;
+constexpr uint8_t TransformStorageSig[]={0x48,0x89,0x5c,0x24,0x20,0x56,0x57,0x41,0x56,0x48,0x83,0xec,0x40,0x48,0x8b,0xf9,0xe8,0x2b,0x83,0x00,0x00};
+constexpr uint8_t TransformParentSig[]={0x44,0x8b,0xb7,0xc0,0x00,0x00,0x00};
+constexpr uint64_t TransformStrideRva=0xe3a998;
+constexpr uint8_t TransformStrideSig[]={0x4c,0x69,0xc0,0xd0,0x00,0x00,0x00};
+constexpr uint8_t InstanceEntitiesSig[]={0x48,0x8b,0x44,0x24,0x68,0x0f,0x29,0xb4,0x24,0xd0,0x03,0x00,0x00,0x48,0x8b,0x48,0x10,0x48,0x8b,0x40,0x18,0x48,0x89,0x4d,0xb8};
 constexpr uint8_t ClientSig[]={0x89,0x54,0x24,0x10,0x55,0x57,0x41,0x55,0x41,0x57,0x48,0x8d,0x6c,0x24,0xc1};
 constexpr uint8_t ServerSig[]={0x40,0x55,0x57,0x41,0x56,0x48,0x8d,0x6c,0x24,0xc0,0x48,0x81,0xec,0x40,0x01,0x00,0x00};
 constexpr uint8_t VelocitySig[]={0x48,0x85,0xc9,0x74,0x55,0x48,0x89,0x5c,0x24,0x08,0x57,0x48,0x83,0xec,0x20};
@@ -134,9 +140,23 @@ void Release(uintptr_t assets,uintptr_t definition,uint32_t entity,uintptr_t uni
         if(EntityAlive(registry,entity)) {
             const auto storage=reinterpret_cast<uintptr_t(*)(uintptr_t)>(d2rsig::Addr(ReleaseStorageRva))(registry);
             const bool hasReleasePoint=HasComponent(storage,entity);
-            // This callback also visits the unit root. Only the release mesh
-            // may own the physical world transform; the root has no component.
-            const bool physical=bowvr::Visual(entity,unit,hasReleasePoint);
+            // Arrows bind the release mesh; spells bind the actual root.
+            // Ice Bolt's child has no release component, so absence alone
+            // can bind that child and subtract its authored height twice.
+            bool root=false;
+            if(!framevr::bowflight::BasicMissile(missile)) {
+                const auto transforms=reinterpret_cast<uintptr_t(*)(uintptr_t)>(d2rsig::Addr(TransformStorageRva))(registry);
+                root=VisualRoot(definition,transforms,entity,[](uintptr_t p,auto& value){return Read(p,value);});
+            }
+            const bool physical=bowvr::Visual(entity,unit,hasReleasePoint,root);
+            if(missile==59) {
+                static std::atomic<unsigned> samples{0};
+                if(samples.fetch_add(1)<8) {
+                    char line[160];std::snprintf(line,sizeof line,"Frame Ice Bolt visual: entity=%u instance_root=%d release_component=%d owned=%d",
+                        entity,int(root),int(hasReleasePoint),int(physical));
+                    framevr::logging::Write(line);
+                }
+            }
             if(hasReleasePoint&&(physical||(missile==0&&direct.load()&&IsLocalOwner(owner)))) {
                 // Use the native removal operation, on the same renderer
                 // thread as initialization. The base arrow transform/heading
@@ -164,7 +184,11 @@ void Install() {
     if(velocityIn&&clientIn&&serverIn&&!speedHooksReady.exchange(true))
         framevr::logging::Write("Frame bow flight: client/server velocity hooks ready (local basic arrows only)");
     if(!releaseIn&&d2rsig::Check(OwnerRva,OwnerSig,sizeof OwnerSig)&&d2rsig::Check(RemoveReleaseRva,RemoveSig,sizeof RemoveSig)&&
-       d2rsig::Check(ReleaseStorageRva,StorageSig,sizeof StorageSig)) {
+       d2rsig::Check(ReleaseStorageRva,StorageSig,sizeof StorageSig)&&
+       d2rsig::Check(TransformStorageRva,TransformStorageSig,sizeof TransformStorageSig)&&
+       d2rsig::Check(TransformParentRva,TransformParentSig,sizeof TransformParentSig)&&
+       d2rsig::Check(TransformStrideRva,TransformStrideSig,sizeof TransformStrideSig)&&
+       d2rsig::Check(InstanceEntitiesRva,InstanceEntitiesSig,sizeof InstanceEntitiesSig)) {
         releaseIn=d2rsig::Hook(ReleaseRva,ReleaseSig,sizeof ReleaseSig,reinterpret_cast<void*>(&Release),reinterpret_cast<void**>(&originalRelease));
         if(releaseIn)framevr::logging::Write("Frame bow flight: native release-point handoff hook ready");
     }
