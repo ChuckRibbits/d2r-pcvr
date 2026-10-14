@@ -169,6 +169,9 @@ uint64_t bowSequence=0;
 bowflight::Shot bowPending{},bowReadyShot{},bowPreviewPose{};
 bool bowPreviewVisible=false;
 bool bowNeedsWorld=false,bowHasShot=false;
+bowflight::Shot spellReadyShot[2]{};
+bool spellHasShot[2]{};
+uint64_t spellResolvedAt[2]{};
 std::atomic<ULONGLONG> meleeImpactAt{0},shieldImpactAt{0};
 XrSwapchain gameplayChain=XR_NULL_HANDLE;
 XrPosef palettePose{};
@@ -1210,9 +1213,13 @@ void Input() {
     uint64_t bindingContext=bindingSnapshot.session^(uint64_t(bindingSnapshot.bindingBank+1)<<48)^(meleeEpoch<<16)^motionInput.equipment;
     uint64_t bindingLayout=0;
     for(const auto& skill:bindingSnapshot.skills)bindingLayout=(bindingLayout^uint32_t(skill.id+2)^uint32_t(skill.owner)^
-        (uint64_t(skill.known)<<40)^(uint64_t(skill.available)<<41)^(uint64_t(skill.motion)<<42))*1099511628211ull;
+        (uint64_t(skill.known)<<40)^(uint64_t(skill.available)<<41)^(uint64_t(skill.motion)<<42)^(uint64_t(skill.physical)<<43))*1099511628211ull;
     skills::HandInput handInput;handInput.time=motionInput.time;handInput.context=bindingContext;
     handInput.layout=bindingLayout;
+    if(bowvr::SpellReady()&&interaction::Fresh(bindingSnapshot,gamestate::LocalPlayer(),GetTickCount64()))
+        for(int i=0;i<skills::Count;++i)if(bindingSnapshot.skills[i].physical&&bindingSnapshot.skills[i].available)
+            handInput.independentSlots|=1u<<i;
+    handInput.layout^=uint64_t(handInput.independentSlots)<<48;
     handInput.active=motionInput.active&&motionInput.tracked[0]&&motionInput.tracked[1]&&handAimTracked[0]&&handAimTracked[1]&&gamestate::LocalPlayer();
     handInput.occupied=interactionOutput.bottle>=0||interactionOutput.owner[0]==interaction::Owner::Holster||interactionOutput.owner[1]==interaction::Owner::Holster;
     for(int h=0;h<2;++h){
@@ -1231,7 +1238,7 @@ void Input() {
     interactionInput.head={motionInput.head.p,motionInput.head.q};
     interactionInput.snapshot=bindingSnapshot;interactionInput.reply=interactionstate::Status();
     interactionInput.spell=motion.Selection()>=0;interactionInput.wheel=motionInput.palette;interactionInput.cancel=motionInput.cancel;
-    interactionInput.quickCast=handOutput.slot>=0;
+    interactionInput.quickCast=handOutput.slot>=0||handOutput.spells[0]>=0||handOutput.spells[1]>=0;
     interactionInput.wheelHand=handOutput.wheel;
     interactionInput.reservedLeft=(controls.buttons&menus::LeftStick)!=0;interactionInput.trigger=handOutput.wheel==0?controls.lt/255.f:controls.rt/255.f;interactionInput.hover=motionInput.hover;
     interactionInput.wristMap=vrsettings::Read().values[settings::WristMap]>.5f;
@@ -2106,7 +2113,9 @@ bool NativeSkillCasting() {
 }
 bool NativeAimOwnership() {
     std::lock_guard lock(mutex);
-    return motionControls.load()&&(interactionOutput.wheel||gameplay::CastingSkill(motionInput,motionOutput,GetTickCount64()-motionAt));
+    const bool physical=motionInput.active&&!motionOutput.block&&GetTickCount64()-motionAt<100&&
+        (handOutput.spells[0]>=0||handOutput.spells[1]>=0);
+    return motionControls.load()&&(physical||interactionOutput.wheel||gameplay::CastingSkill(motionInput,motionOutput,GetTickCount64()-motionAt));
 }
 bool DirectedSpellActive() {
     std::lock_guard lock(mutex);
@@ -2178,13 +2187,30 @@ void SetBowWorldEpoch(uint32_t epoch) {
 uint64_t BowRenderTime(){return bowRenderTime.load();}
 bowflight::Gate BowGate() {
     std::lock_guard lock(mutex);
-    return {motionControls.load()&&motionInput.active&&(motionOutput.bowReady||motionOutput.javelinReady),
-        gamestate::LocalPlayer(),(meleeEpoch<<32)|bowWorldEpoch,motionAt,motionInput.equipment};
+    return {motionControls.load()&&motionInput.active&&!motionOutput.block,
+        gamestate::LocalPlayer(),(meleeEpoch<<32)|bowWorldEpoch,motionAt,motionInput.equipment,
+        motionOutput.bowReady||motionOutput.javelinReady};
 }
 bool TakeBowShot(bowflight::Shot& shot) {
     std::lock_guard lock(mutex);
     if(!bowHasShot)return false;
     bowHasShot=false;shot=bowReadyShot;return true;
+}
+bool TakeSpellShot(int hand,bowflight::Shot& shot) {
+    std::lock_guard lock(mutex);
+    if(hand<0||hand>1||!spellHasShot[hand])return false;
+    spellHasShot[hand]=false;shot=spellReadyShot[hand];return true;
+}
+bool SpellHeld(const bowflight::Shot& shot) {
+    std::lock_guard lock(mutex);
+    const auto now=GetTickCount64();
+    if(shot.kind!=bowflight::Kind::Spell||shot.hand<0||shot.hand>1||shot.slot<0||shot.slot>=skills::Count||
+       !motionControls.load()||!motionInput.active||motionOutput.block||now-motionAt>100||
+       handOutput.spells[shot.hand]!=shot.slot||handOutput.activation[shot.hand]!=shot.activation||shot.binding!=motionInput.skillContext||
+       shot.epoch!=((meleeEpoch<<32)|bowWorldEpoch)||shot.equipment!=motionInput.equipment||
+       !interaction::Fresh(interactionInput.snapshot,shot.session,now)||shot.session!=gamestate::LocalPlayer())return false;
+    const auto& skill=interactionInput.snapshot.skills[shot.slot];
+    return skill.known&&skill.available&&skill.physical&&skill.id==shot.skill&&skill.owner==shot.owner;
 }
 bool BowPreviewPose(bowflight::Shot& pose,bool& visible) {
     std::lock_guard lock(mutex);
@@ -2207,6 +2233,23 @@ bool View(float out[16],const float hero[3],float eyeHeight,float userEyeHeight,
         shot.player={hero[0]/upm,hero[1]/upm,hero[2]/upm};shot.unitsPerMetre=upm;
         return shot;
     };
+    for(int h=0;h<2;++h) {
+        const int slot=handOutput.spells[h];
+        if(!motionControls.load()||!motionInput.active||motionOutput.block||slot<0||!handAimTracked[h]) {
+            spellHasShot[h]=false;continue;
+        }
+        if(spellResolvedAt[h]==motionAt)continue; // same frozen pose for both eyes
+        spellResolvedAt[h]=motionAt;
+        const auto& skill=interactionInput.snapshot.skills[slot];
+        bowflight::Shot shot;shot.kind=bowflight::Kind::Spell;
+        shot.direction=math::Rotate(handAim[h].q,{0,0,-1});
+        shot.origin=handAim[h].p+shot.direction*.05f;
+        shot.at=motionAt;shot.session=gamestate::LocalPlayer();shot.sequence=++bowSequence;
+        shot.epoch=(meleeEpoch<<32)|bowWorldEpoch;shot.equipment=motionInput.equipment;
+        shot.hand=h;shot.slot=slot;shot.skill=skill.id;shot.owner=skill.owner;shot.binding=motionInput.skillContext;
+        shot.activation=handOutput.activation[h];
+        spellReadyShot[h]=resolveBow(shot);spellHasShot[h]=true;
+    }
     bowflight::Shot held;
     held.origin=motionOutput.bowDrawing?motionInput.hand[0].p:motionOutput.nockPoint;
     held.direction=motionOutput.bowDrawing?motionOutput.rayDirection:motionOutput.bowForward;

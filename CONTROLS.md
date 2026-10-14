@@ -85,10 +85,21 @@ require a fresh press. Only one wheel is open at a time.
 | Alternate third | Left Grip + Y | Right Grip + B | Same-hand Grip + B |
 
 There is no left-trigger modifier layer. Each hand aims its own spells. Face
-shortcuts do not change either trigger assignment. Hold a cast input for native
-repeat behavior; costs, delays, targeting restrictions and animation timing
-remain native. The first held input owns casting; simultaneous fresh presses
-prefer the right hand. A losing input must be released and pressed again, never
+shortcuts do not change either trigger assignment. On a Sorceress, Fire Bolt,
+Fireball, Ice Bolt, Ice Blast and Charged Bolt can fire from both hands simultaneously,
+each with horizontal aim and its own Faster Cast Rate timing. Hold the input to repeat. Native
+mana costs apply to each cast, and walking remains available without entering
+the original casting animation. See [hand projectile spells](docs/hand_projectile_spells.md)
+for the experimental adapter's scope and offline testing checklist.
+
+**VR Settings > Controls > Planar spell aiming** is On by default. Turn it Off
+and Apply for up/down aiming of straight projectile spells; Charged Bolt keeps
+its native planar spread. The preference saves and applies to new casts live.
+
+Other skills retain native repeat behavior, delays and animation restrictions.
+A native action has one owner: the first held input wins, with right-hand
+priority for simultaneous presses. Native and physical casts do not start
+together. A competing input must be released and pressed again; it is never
 queued to fire unexpectedly when the first hand stops.
 
 Select a wheel wedge to edit its binding directly. **CLEAR SLOT** removes the
@@ -120,8 +131,8 @@ indicators, open **VR Settings > Controls > Weapon skill indicators**, turn it
 assigned spells and weapon skill gestures keep working. The saved preference
 is `[interactions] weapon_skill_indicators=0` (hidden) or `1` (shown).
 
-The trigger skill is the persistent gesture skill for its hand. Small hand-side
-icons show the assignments. Left-trigger Smite supports physical shield swings
+The trigger skill is the persistent gesture skill for its hand. Optional
+hand-side icons show the assignments. Left-trigger Smite supports physical shield swings
 and thrusts when a shield and its native hook are available. Supported arrow
 skills assigned to left trigger fire on bow draw/release using the right hand
 to pull the string. The left trigger remains a button fallback; right trigger
@@ -137,8 +148,9 @@ existing Smite and bow adapters; it does not generalize arbitrary melee skills.
 Turning gestures off or changing equipment/assignments cancels an in-progress
 skill draw. Shield contact and its trigger fallback cannot duplicate a cast.
 Projectile targets follow the casting hand rather than locomotion direction.
-Native animation restrictions still need offline headset validation; preserving
-movement input alone does not prove uninterrupted movement through every cast.
+The five supported Sorceress projectile spells bypass the native casting
+animation; other skills can still stop movement through their native animation.
+The new physical casting path still requires offline headset validation.
 
 ## Menus: laser and native buttons
 
