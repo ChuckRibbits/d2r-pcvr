@@ -17,6 +17,11 @@ static LRESULT CALLBACK Hook(HWND h,UINT m,WPARAM w,LPARAM l){
 static void Pump(){MSG m{};while(PeekMessageW(&m,nullptr,0,0,PM_REMOVE))DispatchMessageW(&m);}
 static Size Physical(HWND h){RECT r{};assert(GetClientRect(h,&r));return {uint32_t(r.right),uint32_t(r.bottom)};}
 int main(){
+    assert((UiCanvas({3072,3072})==Size{3072,1728}));
+    assert((UiCanvas({4096,4096})==Size{4096,2304}));
+    assert((UiCanvas({2160,2400})==Size{2160,1215}));
+    assert((UiCanvas({3440,1440})==Size{3440,1440}));
+    assert(!UiCanvas({}));
     assert(!Select(0,{3000,3000},{8192,8192}));
     assert(!Select(-1,{3000,3000},{8192,8192}));
     assert(!Select(7,{3000,3000},{8192,8192}));

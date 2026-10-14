@@ -29,7 +29,7 @@ int main(){
     Attach(h);assert(UiSize(nativeCanvas)==nativeCanvas);
     Update(h,true,{2160,2160},{8192,8192},{uint32_t(r.right),uint32_t(r.bottom)},4);
     assert(UiSize(nativeCanvas)==nativeCanvas); // queued is not yet applied
-    Pump();assert(UiSize(nativeCanvas)==(uint64_t(2560)|(uint64_t(2560)<<32)));
+    Pump();assert(UiSize(nativeCanvas)==(uint64_t(2560)|(uint64_t(1440)<<32)));
     POINT p{origin.x+r.right-1,origin.y+r.bottom-1};
     assert(ScreenToClient(h,&p)&&p.x==2559&&p.y==2559);
     assert(ClientToScreen(h,&p)&&p.x==origin.x+r.right-1&&p.y==origin.y+r.bottom-1);
@@ -42,9 +42,10 @@ int main(){
         Update(h,true,size,{8192,8192},nativeSize,1);Pump();
         assert((nativeSize==size));
         const auto canvas=UiSize(wideDesktop);
-        assert(uint32_t(canvas)==size.w&&uint32_t(canvas>>32)==size.h);
+        assert(uint32_t(canvas)==size.w&&uint32_t(canvas>>32)==size.w*9/16);
         p={origin.x+r.right-1,origin.y+r.bottom-1};
-        assert(ScreenToClient(h,&p)&&p.x==LONG(uint32_t(canvas)-1)&&p.y==LONG(uint32_t(canvas>>32)-1));
+        assert(ScreenToClient(h,&p)&&p.x==LONG(size.w-1)&&p.y==LONG(size.h-1));
+        assert(uint32_t(canvas>>32)<=size.h); // every UI pixel remains reachable
         RECT physical{};assert(GetClientRect(h,&physical)&&EqualRect(&physical,&r));
     }
     Update(h,true,{2160,2160},{8192,8192},nativeSize,4);Pump();
