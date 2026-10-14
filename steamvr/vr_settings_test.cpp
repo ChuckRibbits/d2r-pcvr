@@ -27,15 +27,15 @@ int main(){
         Model comfort;comfort.Open(s);comfort.Click(At(Page::HUD,Increase(row)));
         Check(comfort.Click({Kind::Apply}).changed==(1u<<key),"comfort Apply affects only its selected setting");
     }
-    Check(s.values[ProjectileAimAssist]==0,"aim assist is opt-in");
-    for(float bad:{-1.f,3.f,1.5f,NAN})Check(Normalize(ProjectileAimAssist,bad)==0,"invalid aim-assist preference falls back to Off");
+    Check(s.values[ProjectileAimAssist]==2,"aim assist defaults to Strong");
+    for(float bad:{-1.f,3.f,1.5f,NAN})Check(Normalize(ProjectileAimAssist,bad)==2,"invalid aim-assist preference falls back to Strong");
     {Model assist;assist.Open(s);const auto hit=At(Page::Controls,AimAssistBox);
         Check(hit.kind==Kind::Change&&hit.index==ProjectileAimAssist,"controls tab exposes aim assist");
-        for(float choice:{1.f,2.f,0.f,1.f}){assist.Click(hit);Check(assist.Get()[ProjectileAimAssist]==choice,"aim assist cycles Light Strong Off");}
+        for(float choice:{0.f,1.f,2.f,0.f,1.f}){assist.Click(hit);Check(assist.Get()[ProjectileAimAssist]==choice,"aim assist cycles Off Light Strong");}
         auto request=assist.Click({Kind::Apply});
         Check(request.changed==(1u<<ProjectileAimAssist)&&request.values[ProjectileAimAssist]==1,"assist saves independently");
         assist.Click(hit);Check(assist.Get()[ProjectileAimAssist]==1,"assist cannot change while saving");
-        assist.Close();assist.Open(s);Check(assist.Get()[ProjectileAimAssist]==0,"discarded assist draft does not enable runtime assistance");
+        assist.Close();assist.Open(s);Check(assist.Get()[ProjectileAimAssist]==2,"discarding edits restores saved assistance");
         Check(AimAssistBox.y>=PlanarSpellAimBox.y+PlanarSpellAimBox.h&&AimAssistBox.y+AimAssistBox.h<845,"assist avoids planar control and footer");}
     Check(s.values[OrdinaryMobBars]==0,"ordinary mob bars are off by default");
     {Model bars;bars.Open(s);bars.Click({Kind::Tab,int(Page::VR)});
@@ -85,12 +85,12 @@ int main(){
         Check(request.changed==(1u<<VitalsLocation),"palm placement saves independently");
         hud.Open(s);hud.Click(At(Page::HUD,ValueBox(1)));request=hud.Click({Kind::Apply});
         Check(request.changed==(1u<<CriticalAlerts)&&request.values[CriticalAlerts]==1,"alert opt-in saves independently");}
-    Check(s.values[PlanarSpellAim]==1,"spell aiming defaults to planar");
+    Check(s.values[PlanarSpellAim]==0,"spell aiming defaults to free vertical aim");
     {Model aim;aim.Open(s);const auto hit=At(Page::Controls,PlanarSpellAimBox);
         Check(hit.kind==Kind::Change&&hit.index==PlanarSpellAim,"controls tab exposes planar aiming toggle");
-        aim.Click(hit);Check(s.values[PlanarSpellAim]==1&&aim.Get()[PlanarSpellAim]==0,"aim change is a draft");
+        aim.Click(hit);Check(s.values[PlanarSpellAim]==0&&aim.Get()[PlanarSpellAim]==1,"aim change is a draft");
         const auto request=aim.Click({Kind::Apply});
-        Check(request.changed==(1u<<PlanarSpellAim)&&request.values[PlanarSpellAim]==0,"free aim saves only its preference");
+        Check(request.changed==(1u<<PlanarSpellAim)&&request.values[PlanarSpellAim]==1,"planar aim saves only its preference");
         Check(!WeaponIndicatorsBox.Contains(PlanarSpellAimBox.x,PlanarSpellAimBox.y)&&
               PlanarSpellAimBox.y+PlanarSpellAimBox.h<876,"aim toggle avoids other controls and footer");}
     Check(s.values[WeaponSkillIndicators]==0,"weapon skill indicators default off");

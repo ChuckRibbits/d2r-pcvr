@@ -30,14 +30,14 @@ int main(){
     }
     Check(vrsettings::Read().values[MeleeHitSpeed]==3,"explicit older preference remains unchanged by new default");
     Check(before.values[MenuDistance]==1&&before.values[TooltipTiming]==0,"legacy profile uses Medium distance and Instant tooltips");
-    Check(before.values[ProjectileAimAssist]==0,"legacy profile defaults to unassisted aim");
-    for(int choice:{1,2,0}) {
+    Check(before.values[ProjectileAimAssist]==2,"missing aim assist defaults to Strong");
+    for(int choice:{0,1,2,0}) {
         Model assist;assist.Open(vrsettings::Read());assist.Click({Kind::Change,ProjectileAimAssist,1});
         const auto request=assist.Click({Kind::Apply});
         Check(vrsettings::Submit(request)&&vrsettings::Poll(name),"save aim assist preference");
         const auto saved=vrsettings::Read();
         Check(saved.values[ProjectileAimAssist]==choice&&Int(path,L"gameplay",L"projectile_aim_assist")==choice,"aim assist survives profile reload");
-        Check(saved.values[PlanarSpellAim]==1&&Int(path,L"custom",L"keep")==12345,"assistance preserves planar aim and unrelated configuration");
+        Check(saved.values[PlanarSpellAim]==0&&Int(path,L"custom",L"keep")==12345,"assistance preserves free aim and unrelated configuration");
     }
     Check(before.values[OrdinaryMobBars]==0,"legacy profile defaults to hidden ordinary bars");
     Check(before.values[SmoothTurn]==0&&before.values[Snap]==30,"missing turn settings default to snap turning");
@@ -106,15 +106,15 @@ int main(){
     model.Open(saved);model.Click({Kind::Change,WeaponSkillIndicators,1});request=model.Click({Kind::Apply});
     Check(vrsettings::Submit(request)&&vrsettings::Poll(name),"weapon indicators can be hidden again");
     saved=vrsettings::Read();Check(saved.values[WeaponSkillIndicators]==0&&saved.values[SkillGestures]==1,"hiding indicators preserves weapon skill gestures");
-    Check(saved.values[PlanarSpellAim]==1,"existing profile with missing aim key defaults to planar");
+    Check(saved.values[PlanarSpellAim]==0,"missing planar key defaults to free aim");
     model.Open(saved);model.Click({Kind::Change,PlanarSpellAim,1});request=model.Click({Kind::Apply});
     Check(vrsettings::Submit(request)&&vrsettings::Poll(name),"free spell aim opt-in saves");
     saved=vrsettings::Read();
-    Check(saved.values[PlanarSpellAim]==0&&Int(path,L"gameplay",L"planar_spell_aim")==0,"free aim survives INI reload");
+    Check(saved.values[PlanarSpellAim]==1&&Int(path,L"gameplay",L"planar_spell_aim")==1,"explicit planar aim survives INI reload");
     model.Open(saved);model.Click({Kind::Change,PlanarSpellAim,1});request=model.Click({Kind::Apply});
-    Check(vrsettings::Submit(request)&&vrsettings::Poll(name),"planar aiming can be restored");
+    Check(vrsettings::Submit(request)&&vrsettings::Poll(name),"free aiming can be restored");
     saved=vrsettings::Read();
-    Check(saved.values[PlanarSpellAim]==1&&Int(path,L"gameplay",L"planar_spell_aim")==1,"planar restore survives INI reload");
+    Check(saved.values[PlanarSpellAim]==0&&Int(path,L"gameplay",L"planar_spell_aim")==0,"free aim restore survives INI reload");
     Check(saved.values[ControllerLabels]==0,"existing INI defaults to automatic labels");
     model.Open(saved);model.Click({Kind::Tab,int(Page::VR)});model.Click({Kind::ControllerMenu});
     model.Click({Kind::ControllerChoice,int(framevr::controllers::Choice::Index)});request=model.Click({Kind::Apply});

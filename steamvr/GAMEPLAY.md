@@ -824,6 +824,10 @@ Arrow/spell live verification remains open.
 
 ### Ice Bolt visual height correction
 
+New or missing combat preferences default to **Planar spell aiming: Off** and
+**Projectile aim assist: Strong**. Players can still choose planar aiming, Light
+assistance or Off in VR Settings; explicit saved preferences are preserved.
+
 Hand-cast Ice Bolt uses the same airborne flight/planar aiming path as Fireball;
 Charged Bolt alone keeps its native ground path. Spell visuals now identify the
 asset instance root from the native entity list and Transform parent, rather
