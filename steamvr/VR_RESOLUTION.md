@@ -96,6 +96,11 @@ confirmations over shops and scrolling quest speech retain their existing
 surfaces. Missing/stale/invalid bounds retain the full native surface. Automated
 tests cover crop limits, magnification and laser mapping; live layout mapping
 and headset readability still need owner validation.
+The first NPC candidate incorrectly scaled live source-pixel bounds as authored
+HD coordinates, clipping the left side of Charsi's choices at 4096 square.
+The corrected crop uses the live pixels directly, with border padding. A
+regression fixture uses both rectangles captured in the owner's recording;
+the corrected visual result still awaits headset confirmation.
 
 The native lighting depth reduction also assumes square tiles when calculating
 the row for a linear sample index. Its 32x20 grid has rectangular tiles at

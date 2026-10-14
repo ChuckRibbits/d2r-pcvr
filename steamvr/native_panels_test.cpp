@@ -205,6 +205,21 @@ int main(){
     }
     const auto edge=dialogue::Crop({0,0,200,100},3840,2160);
     Check(edge.x==0&&edge.y==0&&edge.w==208&&edge.h==108,"dialogue border padding clips at source edges");
+    // Captured Charsi bounds at 4096 square. The old design-resolution
+    // conversion began at x=1832, cutting 106 pixels off a box starting at 1726.
+    for(auto native:{journal::Rect{1726,306,300,244},journal::Rect{1698,252,300,244}}) {
+        const auto crop=dialogue::Crop(native,4096,4096);
+        Check(crop.x==native.x-8&&crop.y==native.y-8&&crop.w==316&&crop.h==260,
+            "live Charsi source-pixel rectangle retains the full border and every choice");
+        const auto anotherSource=dialogue::Crop(native,3840,2160);
+        Check(crop.x==anotherSource.x&&crop.y==anotherSource.y&&crop.w==anotherSource.w&&crop.h==anotherSource.h,
+            "source size must not rescale already-resolved native widget coordinates");
+        math::Vec pixel{};
+        Check(journal::Pixel(crop,.5f,.5f,4096,4096,pixel)&&
+            std::fabs(pixel.x-(native.x+native.w*.5f)/4096)<.00001f&&
+            std::fabs(pixel.y-(native.y+native.h*.5f)/4096)<.00001f,
+            "centered NPC laser lands at original dialogue center after crop correction");
+    }
     Check(!dialogue::Crop({8000,8000,200,100},3840,2160).w&&!dialogue::Crop({0,0,0,100},4096,4096).h,"missing/outside NPC bounds cannot create an invalid XR crop");
     Check(panels::TabbedOffset(wide)==0,"widescreen tabbed canvas needs no vertical correction");
     Check(std::fabs(panels::TabbedOffset(square)+.23378906f)<.00001f,"square inventory centers its visible upper band instead of blank lower canvas");
