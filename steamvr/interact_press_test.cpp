@@ -22,7 +22,7 @@ int main(){
     // there must clear the old press, so the first new press works on exit.
     assert(!poll(true,103,false,2).down);
     assert(!poll(false,0,false,2).down);
-    poll(false,0,true,3); // new world report after menu closes
+    // No neutral gameplay poll between closing the menu and this fresh press.
     assert(poll(true,104,true,3).down);
     // If A stayed down through the entire menu, it cannot interact on exit.
     assert(!poll(true,104,false,4).down);
@@ -42,5 +42,10 @@ int main(){
     assert(fallback.Poll(true,0,false,true,1,1).down);
     assert(fallback.Poll(true,0,false,true,1,1).down);
     assert(!fallback.Poll(false,0,false,true,1,1).down);
+    assert(fallback.Poll(true,0,false,true,1,1).down);
+    assert(!fallback.Poll(true,0,false,true,2,2).down);
+    assert(!fallback.Poll(true,0,false,true,2,2).down);
+    fallback.Poll(false,0,false,true,2,2);
+    assert(fallback.Poll(true,0,false,true,2,2).down);
     std::puts("One-target interaction, menu release, context cancellation and fallback tests passed");
 }
