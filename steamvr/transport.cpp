@@ -398,6 +398,7 @@ void PanelModifier(WORD key,bool wanted,bool& held) {
     if(SendInput(1,&input,sizeof input)==1)held=wanted;
 }
 void ReleasePanelInput() {
+    panelinput::ItemHover(false);
     if(mouseDown||rightMouseDown||controlDown||shiftDown)panelinput::OwnPointer();
     for(int i=0;i<2;++i) {
         bool& held=i?rightMouseDown:mouseDown;
@@ -839,7 +840,7 @@ XrPosef UiSurfacePose() {
 void MenuPointer(const menus::Pad& controls) {
     nativeMenuPad={};
     pointerVisible=pointerHit=false;
-    if(settingsModel.open||bodyCalibration.Active()||calibrationRelease.blocked)return;
+    if(settingsModel.open||bodyCalibration.Active()||calibrationRelease.blocked){panelinput::ItemHover(false);return;}
     const bool spatialReady=spatialMode&&(journalMode?journalPlacement.Placed():workspacePlaced)&&uiCrop[2]>0;
     const bool uiActive=panelMode||spatialReady;
     const auto surfacePose=spatialMode?UiSurfacePose():menuPose;
@@ -878,15 +879,16 @@ void MenuPointer(const menus::Pad& controls) {
             math::Vec native{hit.u,hit.v,0};
             if(spatialMode&&!journal::Pixel({uiCrop[0],uiCrop[1],uiCrop[2],uiCrop[3]},hit.u,hit.v,uiWidth,uiHeight,native))pointerHit=false;
             POINT pixel{LONG(native.x*(client.right-1)),LONG(native.y*(client.bottom-1))};
-            if(pointerHit&&ClientToScreen(gameWindow,&pixel))SetCursorPos(pixel.x,pixel.y);
+            if(pointerHit&&ClientToScreen(gameWindow,&pixel))pointerHit=SetCursorPos(pixel.x,pixel.y)!=FALSE;
             else pointerHit=false;
-        }
+        } else pointerHit=false;
     }
     const bool modifiers=active&&(pointerHit||mouseDown||rightMouseDown);
     PanelModifier(VK_CONTROL,modifiers&&controls.lt>140,controlDown);
     PanelModifier(VK_SHIFT,modifiers&&(controls.buttons&menus::RightBumper),shiftDown);
     laserClick.Step(pressed,(controls.buttons&menus::LeftBumper)!=0);
     const auto edges=panelMouse.Step(active,pointerHit,laserClick.Left(),laserClick.Right());
+    panelinput::ItemHover(active,pointerHit,panelMouse.down[0]||panelMouse.down[1]);
     for(int i=0;i<2;++i) {
         bool& held=i?rightMouseDown:mouseDown;
         if(edges.release[i]&&held) {INPUT up{};up.type=INPUT_MOUSE;up.mi.dwFlags=i?MOUSEEVENTF_RIGHTUP:MOUSEEVENTF_LEFTUP;SendInput(1,&up,sizeof up);held=false;}
