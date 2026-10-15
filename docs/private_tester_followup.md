@@ -11,8 +11,9 @@ dropped-item names with a Right Grip + Right Trigger toggle, and sky/world
 effects retained behind NPC dialogue. The area label follows the navigation
 placement; health/mana tilt adjusts the vitals panel independently.
 
-The native Windows build and all 64 automated checks passed together. Headset
-verification is pending; use the scenarios below in one offline test session.
+The previous native Windows build and all 64 automated checks passed together.
+The owner subsequently confirmed the NPC dialogue correction working in-headset.
+Use the remaining scenarios below in one offline test session.
 Building stages the DLL only. Install that combined DLL with the game closed
 before launching the headset test; launching an existing installation does not
 deploy the staged output or include open PRs automatically.
@@ -24,7 +25,13 @@ its own Controls entry. A second run showed only the right 20% of NPC choices
 after pressing A. The widget crop has now been removed on every controller
 profile: conversations retain the complete fitted native canvas and matching
 laser mapping, with a stable upper-band anchor through story transitions.
-All 64 checks pass; headset visibility and readability remain unverified.
+The owner confirmed this correction working, then clarified that the loot combo
+should toggle the native Show Items (Alt) action. The combo now holds/releases
+that command: on reveals nearby item labels, off restores ordinary drop/hover
+labels. Label rendering is never vetoed by this toggle. The revised Show Items
+behavior still needs headset verification; larger text and stronger backing remain.
+The revised native build passes all 65 automated checks, including the actual
+Show Items command dispatcher with a simulated loader/UI queue.
 
 ## Settings and behavior
 
@@ -111,8 +118,11 @@ Battle.net edition, headset, controllers, connection/runtime and resolution.
    Check the larger dropped-item names against bright/dark terrain and in a
    crowded loot pile; verify quality colors, spacing, click targets and pickup.
    Check VR Settings > Controls lists Right Grip + Right Trigger for item names.
-   Hold Right Grip, then squeeze Right Trigger to hide/show names. Holding the
-   combo must toggle once; releasing grip first must not cast or shoot. Release
+   Let dropped-item labels time out, then hold Right Grip and squeeze Right
+   Trigger: nearby labels should appear as if holding Alt. Toggle off: ordinary
+   new-drop and hovered-item labels must still appear. Verify the native loot
+   filter still applies. Test the combo before any labels have appeared.
+   Holding the combo must toggle once; releasing grip first must not cast or shoot. Release
    only the trigger and repeat with grip held; check small squeeze fluctuations
    do not repeat toggles. Adding grip to an existing attack must not toggle names.
    Try ordinary wheel clicks and native inventory hold-to-sort afterward, then

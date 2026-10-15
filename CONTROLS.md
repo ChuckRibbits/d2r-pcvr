@@ -56,7 +56,7 @@ Quest left X/Y correspond to Index left A/B; right A/B labels are the same.
 | VR settings / body calibration | Either wheel → VR SETTINGS |
 | Minimap | Either wheel → MAP; movement remains available |
 | Reset height | VR Settings > Reset eye height |
-| Show / hide dropped-item names | Hold **Right Grip**, then squeeze **Right Trigger** during gameplay. Release trigger before repeating; no cast or shot accompanies the combo. Also listed in **VR Settings > Controls** |
+| Toggle show all item labels (Alt) | Hold **Right Grip**, then squeeze **Right Trigger** during gameplay. On holds the native Show Items action; off restores normal drop/hover labels. Release trigger before repeating; no cast or shot accompanies the combo. Also listed in **VR Settings > Controls** |
 | Interact / pick up / talk | Right A by default; requires an aimed interactable. One press acts on one target: press again for each item, including loot a chest just dropped |
 | Free melee swing / thrust | Move the equipped weapon through an enemy |
 | Bow draw | Right trigger near the left-hand bow string; draw and release |

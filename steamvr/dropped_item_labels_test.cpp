@@ -7,16 +7,18 @@ using namespace framevr;
 int main() {
     using namespace lootlabels;
     Display look;
-    assert(!look.Active(1000)&&look.Visible(1000));
-    look.Refresh(1,1000,true);assert(look.Active(1000)&&look.Visible(1000));
-    assert(!look.Toggle()&&!look.Visible(1001));
-    look.Refresh(1,1100,true);assert(!look.Visible(1200));
-    assert(!look.Active(1400)&&look.Visible(1400)); // no stale override in desktop play
-    look.Refresh(1,1500,true);assert(!look.Visible(1500)); // same character retains the choice
-    look.Refresh(1,1600,false);assert(!look.Active(1600)&&look.Visible(1600));
-    look.Refresh(2,1700,true);assert(look.Visible(1700)); // a new character starts visible
-    look.Toggle();look.Clear();assert(look.Visible(1701));
-    look.Refresh(0,1800,true);assert(!look.Active(1800)&&look.Visible(1800));
+    assert(!look.Active(1000)&&!look.ShowAll(1000));
+    look.Refresh(1,1000,true);assert(look.Active(1000)&&!look.ShowAll(1000)); // normal drop/hover behavior by default
+    assert(look.Toggle()&&look.ShowAll(1001));
+    look.Refresh(1,1100,true);assert(look.ShowAll(1200));
+    assert(!look.Active(1400)&&!look.ShowAll(1400)); // no stale Alt hold in desktop play
+    look.Refresh(1,1500,true);assert(look.ShowAll(1500)); // same character retains the choice
+    look.Refresh(1,1600,false);assert(!look.Active(1600)&&!look.ShowAll(1600));
+    look.Refresh(1,1650,true);assert(look.ShowAll(1650));
+    assert(!look.Toggle()&&!look.ShowAll(1651)&&look.Active(1651)); // off keeps the larger native labels
+    look.Toggle();look.Refresh(2,1700,true);assert(!look.ShowAll(1700)); // a new character starts normal
+    look.Toggle();look.Clear();assert(!look.ShowAll(1701));
+    look.Refresh(0,1800,true);assert(!look.Active(1800)&&!look.ShowAll(1800));
     assert(TextScale==1.5f&&BackingAlpha(.6f)==.85f&&BackingAlpha(.95f)==.95f);
     assert(BackingAlpha(0)==0&&BackingAlpha(-1)==-1);
     Shortcut combo;uint64_t now=1000,session=1,epoch=1;
@@ -84,5 +86,5 @@ int main() {
         {TextScaleScope nested(multiplier,1);assert(multiplier==1);}
         assert(multiplier==1.5f);}
     assert(multiplier==0); // other native text retains its original scale
-    std::puts("Loot labels: contrast/geometry, visibility lease, grip/trigger hysteresis, combat consumption and lifecycle guards passed");
+    std::puts("Loot labels: contrast/geometry, Show Items lease, grip/trigger hysteresis, combat consumption and lifecycle guards passed");
 }

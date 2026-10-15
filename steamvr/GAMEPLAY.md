@@ -179,7 +179,7 @@ not generate melee velocity. The layout currently assumes a right-handed player.
 | Seated weapon selection | Utility wheel → **Weapon I** or **Weapon II** |
 | Stow/draw | Utility wheel → **Stow weapons** / **Draw weapons**; native equipped stats stay unchanged |
 | Health/mana | Check the back of your left wrist, or choose **Palm** in **VR Settings > HUD** and hold your left palm upward in front of you briefly. No button required; automatic alerts are off by default |
-| Dropped-item names | Hold **Right Grip**, then squeeze **Right Trigger** to toggle names on/off during gameplay. Release the trigger before toggling again; listed in **VR Settings > Controls** |
+| Show all item labels (Alt) | Hold **Right Grip**, then squeeze **Right Trigger** to toggle the native Show Items action. Off restores normal drop/hover labels. Release the trigger before toggling again; listed in **VR Settings > Controls** |
 | Explored minimap | Hold Left Y ? **MAP** in the bottom tabs; point right laser + trigger. **SPELLS** returns to skills; releasing Left Y closes the menu |
 | Quest journal | Open the native tabbed game menu with Left X / Frame Left A, then select Journal. The duplicate wheel entry is removed |
 | Journal controls | Right laser + trigger uses native page controls/act tabs; Right B follows native back; Left X performs native X |
@@ -190,16 +190,20 @@ not generate melee velocity. The layout currently assumes a right-handed player.
 Dropped-item names use **150% text size** and a darker backing in native VR
 gameplay, preserving the game's item-quality colors. The native label bounds
 grow with the text so placement and click targets match. **Right Grip + Right
-Trigger** hides or restores the names, with a short vibration. It consumes
+Trigger** toggles the native **Show Items (Alt)** action, with a short vibration.
+On holds that action to reveal nearby item labels; off releases it and restores
+normal labels for newly dropped or hovered items. It consumes
 the trigger squeeze without casting or shooting, including if you release grip first.
 Hold grip before squeezing the trigger; adding grip to an existing attack does
 not toggle names. Analog hysteresis prevents squeeze noise from repeating a toggle.
 Release the combo before casting or starting a grip interaction again.
 Use it outside menus and wheels, with no potion or holster interaction active.
 Normal right-stick clicks still toggle the wheel; native menu hold-to-sort stays
-available. Names start visible for a new character session, retain your choice
-through menus and tracking interruptions, and follow the game's native item
-visibility/filter rules. Inventory tooltips and monster labels keep their styling.
+available. Show-all starts off for a new character session. Your choice is retained
+through menus and tracking interruptions, but the native command is released while
+gameplay is suspended and resumes on return. Leaving VR releases the command.
+The game's native item/filter rules apply. Inventory tooltips and monster labels
+keep their styling.
 
 The minimap and compass form one navigation display on your left hand.
 **VR Settings > HUD > Minimap / compass location** offers **Wrist** (default),

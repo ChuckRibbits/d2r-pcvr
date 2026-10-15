@@ -4753,8 +4753,9 @@ void InstallBiomeHook() {
 // [hud_floor] labels_size: the box made again round the name measured at the
 // other scale, about the same bottom middle, and the name drawn at that
 // scale - inside LabelPaint only (t_labelScale), every other text untouched.
-// Native VR uses a short gameplay lease for larger, stronger labels and its
-// quick visibility toggle. Legacy views keep their existing profile settings.
+// Native VR uses a short gameplay lease for larger, stronger labels. Showing
+// all items is a native command in gamecmd.cpp, never a label-rendering veto.
+// Legacy views keep their existing profile settings.
 constexpr uint64_t RVA_LABEL_LAYOUT = 0x1FA9F0, RVA_LABEL_PAINT = 0x1FA8E0, RVA_TEXT_DRAW = 0x902E20;
 constexpr uint64_t RVA_TEXT_MEASURE = 0x909560, RVA_UI_SCALE = 0x8460F0, RVA_IS_HD = 0x846210;
 // push rbp, rbx, rsi, r12, r15; mov rbp, rsp; sub rsp, 0x50; mov r12d, r9d; mov byte [rdx], 0; mov rsi, r8
@@ -4793,9 +4794,6 @@ float LabelSizeNow() {
 
 bool HookLabelLayout(void* unit, char* name, int32_t* box, int32_t minX, int32_t maxX, uint8_t flag) {
     const bool shown = OrigLabelLayout(unit, name, box, minX, maxX, flag);
-#ifdef D2RVR_NATIVE_OPENXR
-    if(!framevr::lootlabels::display.Visible(GetTickCount64()))return false;
-#endif
     const float k = LabelSizeNow();
     if (!shown || !box || !name || std::abs(k - 1.0f) < 0.005f) return shown;
     if (!((IsHdFn)d2rsig::Addr(RVA_IS_HD))()) return shown;   // the old graphics: their text has no scale
@@ -4816,8 +4814,7 @@ uintptr_t HookLabelPaint(const int32_t* box, const char* name, const float* colo
     LabelLookNow(&alpha, &size);
     bool native=false;
 #ifdef D2RVR_NATIVE_OPENXR
-    const auto at=GetTickCount64();native=framevr::lootlabels::display.Active(at);
-    if(!framevr::lootlabels::display.Visible(at))return 0;
+    native=framevr::lootlabels::display.Active(GetTickCount64());
 #endif
     if (!colour || (!native&&(!g_set.labelsNativeFloor.load() || (alpha >= 0.995f && std::abs(size - 1.0f) < 0.005f))))
         return OrigLabelPaint(box, name, colour);
@@ -4860,7 +4857,7 @@ void InstallLabelHooks() {
         const bool in = d2rsig::Hook(RVA_LABEL_PAINT, kSigLabelPaint, sizeof kSigLabelPaint, (void*)&HookLabelPaint, (void**)&OrigLabelPaint);
         paintFailed = !in;
         g_labelPaintIn.store(in);
-    Log(in ? "vrcam: item-label hook in - native label backing and visibility available"
+    Log(in ? "vrcam: item-label hook in - native label backing available"
                : "vrcam: item-label hook FAILED - [hud_floor] labels_alpha fades them as a picture, labels_size does nothing");
         if (!in) return;
     }
@@ -4878,9 +4875,6 @@ void InstallLabelHooks() {
     const bool in = drawIn && d2rsig::Hook(RVA_LABEL_LAYOUT, kSigLabelLayout, sizeof kSigLabelLayout, (void*)&HookLabelLayout, (void**)&OrigLabelLayout);
     sizeFailed = !in;
     g_labelSizeIn.store(in);
-#ifdef D2RVR_NATIVE_OPENXR
-    framevr::lootlabels::hooksReady.store(in);
-#endif
     Log(in ? "vrcam: item-label size hooks in - native VR uses 150% text; legacy views retain labels_size"
            : "vrcam: item-label size hooks FAILED - labels_size does nothing");
 }

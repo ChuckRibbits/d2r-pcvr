@@ -96,6 +96,9 @@ add_executable(interaction-test interaction_test.cpp)
 add_executable(wrist-hud-test wrist_hud_test.cpp)
 add_executable(navigation-info-test navigation_info_test.cpp)
 add_executable(dropped-item-labels-test dropped_item_labels_test.cpp)
+add_executable(show-items-command-test show_items_command_test.cpp ${ROOT}/vr/gamecmd.cpp)
+target_include_directories(show-items-command-test PRIVATE ${D2RL_SDK}/include ${ROOT}/shared ${ROOT}/cleanroom/sigscan)
+target_link_libraries(show-items-command-test PRIVATE framevr-runtime)
 add_executable(native-hud-test native_hud_test.cpp)
 target_sources(d2rl-vrcam PRIVATE render_resolution.cpp)
 target_sources(d2rl-vrcam PRIVATE scene_depth.cpp)
@@ -155,7 +158,7 @@ foreach(test_target IN ITEMS memory-test hook-metrics-test active-keys-test reso
     gameplay-test weapon-skills-test quick-cast-test hand-controls-test skill-pad-test interact-press-test spell-aim-test bow-pose-test body-tracking-test body-calibration-test shoulder-swap-test
     portal-billboard-test composition-layers-test projectile-rules-test
     combat-rules-test logging-test melee-contact-test attack-speed-test world-coordinates-test bow-flight-test spell-cast-test spell-aim-assist-test
-    interaction-test native-belt-test wrist-hud-test navigation-info-test dropped-item-labels-test native-hud-test render-resolution-test render-pointer-test scene-depth-test game-device-only-test controller-bindings-test journal-test native-panels-test
+    interaction-test native-belt-test wrist-hud-test navigation-info-test dropped-item-labels-test show-items-command-test native-hud-test render-resolution-test render-pointer-test scene-depth-test game-device-only-test controller-bindings-test journal-test native-panels-test
     vr-settings-test vr-settings-store-test controller-labels-test math-test deferred-draw-test monster-bars-test gaze-test window-focus-test callback-ticket-test local-player-test)
   # These fixtures use assert for their checks, including in Release builds.
   if(MSVC)

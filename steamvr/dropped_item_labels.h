@@ -8,24 +8,26 @@
 namespace framevr::lootlabels {
 constexpr float TextScale=1.5f,BackgroundAlpha=.85f;
 constexpr uint64_t LeaseMs=300;
+constexpr uint32_t ShowItemsCommand=0x25; // native "Show items (Alt)"; honors the player's loot filter
+constexpr uint64_t ShowItemsMask=uint64_t{1}<<ShowItemsCommand;
 // XR publishes a short gameplay lease. Native label callbacks never take the
-// XR lock, and desktop play automatically regains native appearance/visibility.
+// XR lock. The command dispatcher holds Show Items only while that lease is live;
+// turning it off leaves native drop/hover labels alone.
 class Display {
     uint64_t session=0; // XR writer only
     std::atomic<uint64_t> until{0};
-    std::atomic<bool> shown{true};
+    std::atomic<bool> showAll{false};
 public:
     void Refresh(uint64_t player,uint64_t now,bool active) {
-        if(player!=session){session=player;shown.store(true);}
+        if(player!=session){until.store(0,std::memory_order_release);session=player;showAll.store(false);}
         until.store(active&&player?now+LeaseMs:0,std::memory_order_release);
     }
     void Clear(){until.store(0,std::memory_order_release);}
     bool Active(uint64_t now)const {const auto end=until.load(std::memory_order_acquire);return end&&now<end;}
-    bool Visible(uint64_t now)const {return !Active(now)||shown.load();}
-    bool Toggle(){const bool next=!shown.load();shown.store(next);return next;}
+    bool ShowAll(uint64_t now)const {return Active(now)&&showAll.load();}
+    bool Toggle(){const bool next=!showAll.load();showAll.store(next);return next;}
 };
 inline Display display;
-inline std::atomic<bool> hooksReady{false};
 // Only raise the opacity of an existing native box. Negative/zero alpha tells
 // the game not to fill it; rarity colors and intentional no-fill styles survive.
 inline float BackingAlpha(float native){return native>0?std::max(native,BackgroundAlpha):native;}

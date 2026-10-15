@@ -1288,18 +1288,16 @@ void Input() {
     handInput.active=motionInput.active&&motionInput.tracked[0]&&motionInput.tracked[1]&&handAimTracked[0]&&handAimTracked[1]&&gamestate::LocalPlayer();
     handInput.occupied=interactionOutput.bottle>=0||interactionOutput.owner[0]==interaction::Owner::Holster||interactionOutput.owner[1]==interaction::Owner::Holster;
     const auto lootNow=GetTickCount64(),lootSession=gamestate::LocalPlayer();
-    const bool lootWorld=motionHeadTracked&&!nativeUi&&inWorld&&inWorld()&&lootSession;
+    const bool lootWorld=motionHeadTracked&&!nativeUi&&!settingsOwned&&!settingsChord&&inWorld&&inWorld()&&lootSession;
     lootlabels::display.Refresh(lootSession,lootNow,lootWorld);
     const bool lootAllowed=lootWorld&&!settingsOwned&&!settingsChord&&motionInput.tracked[0]&&
         !handInput.occupied&&handControls.Wheel()<0;
     const bool lootPressed=lootLabelShortcut.Step(lootSession,inputEpoch,lootNow,lootAllowed,
         controls.rt/255.f,motionInput.grip[0]);
     if(lootPressed) {
-        if(lootlabels::hooksReady.load()) {
-            const bool shown=lootlabels::display.Toggle();
-            Say(shown?"Frame loot labels: shown":"Frame loot labels: hidden");
-            MotionPulse(0,shown?.45f:.2f,45000000);
-        } else Say("Frame loot labels: native label hooks are not ready yet");
+        const bool showAll=lootlabels::display.Toggle();
+        Say(showAll?"Frame loot labels: Show Items (Alt) held":"Frame loot labels: normal drop/hover behavior");
+        MotionPulse(0,showAll?.45f:.2f,45000000);
     }
     // The world shortcut owns the whole trigger squeeze, including if grip is
     // released first. A consumed grip also needs its own physical release so
