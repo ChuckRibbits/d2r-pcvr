@@ -241,7 +241,7 @@ bool mapSupported=false;
 constexpr uint32_t mapSide=512;
 std::atomic<bool> uiSupported{false};
 bool journalMode=false,spatialMode=false,workspacePlaced=false,opaqueMenuMode=false,upperBandMenuMode=false;
-bool npcChoicesMode=false,npcChoicesCropped=false;
+bool npcChoicesMode=false;
 UiBlit uiBlit;
 UiBlit mapBlit; // Own descriptors: native menu and map copies may share a frame.
 potions::Models potionModels;
@@ -838,7 +838,6 @@ bool FocusGameForUi() {
 panels::Size UiSurfaceSize() {
     // The handheld journal keeps its book size; native workspaces fit in both axes.
     if(journalMode)return {uiSize,uiSize*(uiCrop[2]>0?float(uiCrop[3])/uiCrop[2]:1.3f)};
-    if(npcChoicesMode&&npcChoicesCropped)return dialogue::Size({uiCrop[0],uiCrop[1],uiCrop[2],uiCrop[3]},uiWidth,uiHeight);
     return panels::Fit(uiCrop[2]>0?unsigned(uiCrop[2]):0,uiCrop[3]>0?unsigned(uiCrop[3]):0);
 }
 XrPosef UiSurfacePose() {
@@ -1620,14 +1619,15 @@ bool Begin() {
     const bool spatial=SpatialMenu();
     const bool book=spatial&&gamestate::JournalOnly();
     const bool npc=spatial&&gamestate::NpcChoicesOnly();
-    if(spatial!=spatialMode||book!=journalMode||npc!=npcChoicesMode) {
+    const bool surfaceChanged=spatial!=spatialMode||book!=journalMode;
+    if(surfaceChanged) {
         workspacePlaced=false;uiMissingFrames=0;std::fill_n(uiCrop,4,0);
-        npcChoicesCropped=false;
         if(book)journalPlacement.Open();
-        // An attack held when an NPC opens its dialog must not select an option.
-        ReleasePanelInput();panelMouse.Suspend();
         Say(spatial?(book?"Frame panels: handheld quest log":"Frame panels: native menus in stereo world"):"Frame panels: native surface closed");
     }
+    // Rearm pointer input when story/choices change, keeping the same anchored
+    // canvas. A trigger that dismisses speech must not also choose an option.
+    if(surfaceChanged||npc!=npcChoicesMode){ReleasePanelInput();panelMouse.Suspend();}
     const bool opaque=spatial&&gamestate::OpaqueMenuOpen();
     if(opaque!=opaqueMenuMode)Say(opaque?"Frame panels: shared black menu background":"Frame panels: spatial background restored");
     spatialMode=spatial;journalMode=book;npcChoicesMode=npc;opaqueMenuMode=opaque;upperBandMenuMode=spatial&&gamestate::UpperBandMenuOpen();uiEye.copied=false;
@@ -1781,24 +1781,15 @@ bool CopyUi(reshade::api::command_queue* rq) {
         return true;
     }
     uiMissingFrames=0;
-    bool croppedNpc=false;
-    int32_t native[4]{};
-    // Touch profiles need the complete canvas to retain Trade/Talk choices at
-    // square resolutions. Keep the separately tested Frame/Index widget crop.
-    const bool quest=detectedControllers.hands[0]==controllers::Layout::Touch||
-        detectedControllers.hands[1]==controllers::Layout::Touch;
-    static bool uncroppedNpcLogged=false;
-    if(npcChoicesMode&&quest) {
-        crop[0]=crop[1]=0;crop[2]=int(w);crop[3]=int(h);
-        if(!uncroppedNpcLogged)Say("Frame NPC choices: Quest diagnostic uses complete canvas, no widget crop");
-        uncroppedNpcLogged=true;
-    } else uncroppedNpcLogged=false;
-    if(npcChoicesMode&&!quest&&gamestate::NpcChoicesRect(native)) {
-        const auto box=dialogue::Crop({native[0],native[1],native[2],native[3]},int(w),int(h));
-        if(box.w>0&&box.h>0) {
-            crop[0]=box.x;crop[1]=box.y;crop[2]=box.w;crop[3]=box.h;croppedNpc=true;
+    static bool completeNpcLogged=false;
+    if(npcChoicesMode) {
+        const auto canvas=dialogue::Canvas(int(w),int(h));
+        crop[0]=canvas.x;crop[1]=canvas.y;crop[2]=canvas.w;crop[3]=canvas.h;
+        if(!completeNpcLogged) {
+            char b[180];std::snprintf(b,sizeof b,"Frame NPC choices: complete %ux%u source canvas; widget crop disabled",w,h);Say(b);
         }
     }
+    completeNpcLogged=npcChoicesMode;
     auto& e=uiEye;
     if(e.chain&&(w!=uiWidth||h!=uiHeight)) {
         if(!WaitGpuValue(e.copyFence))return false;
@@ -1826,10 +1817,6 @@ bool CopyUi(reshade::api::command_queue* rq) {
     if(FAILED(e.commands->Close()))return false;
     ID3D12CommandList* lists[]={e.commands.Get()};queue->ExecuteCommandLists(1,lists);
     if(FAILED(queue->Signal(fence.Get(),++fenceValue)))return false;
-    if(croppedNpc&&!npcChoicesCropped) {
-        char b[180];std::snprintf(b,sizeof b,"Frame NPC choices: eye-level 4x surface, crop %d,%d %dx%d of %ux%u",crop[0],crop[1],crop[2],crop[3],w,h);Say(b);
-    }
-    npcChoicesCropped=croppedNpc;
     e.copyFence=fenceValue;e.copied=true;std::copy_n(crop,4,uiCrop);return true;
 }
 void Capture(reshade::api::command_queue* rq,reshade::api::swapchain* swap) {

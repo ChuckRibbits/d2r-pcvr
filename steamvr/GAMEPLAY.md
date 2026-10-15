@@ -271,6 +271,11 @@ black background in both eyes. Dialogue and journal panels retain the world
 backdrop, including any enabled sky, fog and cave ceiling effects. Opening an
 NPC conversation or continuing its speech keeps those effects visible; entering
 a merchant, stash or waypoint retains the shared black management background.
+NPC choices and story text retain the complete native canvas, using the same
+fitted surface and laser coordinates on all supported controllers. Their
+placement stays fixed when speech ends and choices return. The previous
+widget-based magnified crop was removed because it cut off choices after a
+VR resize; readability and selection still need a headset check.
 Inventory/equipment, NPC
 choices and speech, shops, stash, cube, waypoint, skills and character panels
 retain D2R's original artwork, text, prices, grids and tooltips. Inventory and

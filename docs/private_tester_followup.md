@@ -20,8 +20,11 @@ deploy the staged output or include open PRs automatically.
 The owner's first combined headset run reported intermittent loot-shortcut
 registration and invisible NPC choices when story dialogue opens. The loot
 shortcut now uses the requested grip/trigger combo with analog hysteresis and
-its own Controls entry. NPC visibility remains under investigation; transition
-and native root/border bounds logging were added for the next reproduction.
+its own Controls entry. A second run showed only the right 20% of NPC choices
+after pressing A. The widget crop has now been removed on every controller
+profile: conversations retain the complete fitted native canvas and matching
+laser mapping, with a stable upper-band anchor through story transitions.
+All 64 checks pass; headset visibility and readability remain unverified.
 
 ## Settings and behavior
 
@@ -84,6 +87,11 @@ Battle.net edition, headset, controllers, connection/runtime and resolution.
    enabled and, indoors, an enabled cave ceiling. Enter a merchant or waypoint
    and check the shared black background, then return to dialogue and close it.
    Check both eyes during transitions. Headset verification is pending.
+   Engage NPCs with A, including one with automatic story text. Check the whole
+   choices menu (Trade, Talk, topics and Cancel), then dismiss/finish speech and
+   return to choices. Confirm no cut-off text or surface jump. Try laser and
+   native controller selection at 3072/4096 square and a widescreen resolution;
+   verify the changed canvas remains readable at each menu-distance preset.
 4. Start with the game's full-size map setting, then raise the wrist/palm and
    open each wheel's MAP tab. Expect a compact map and no full-screen map flash.
    Lower the hand, open menus and leave/rejoin a character; confirm native map

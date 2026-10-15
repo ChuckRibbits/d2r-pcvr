@@ -4,11 +4,12 @@
 
 namespace framevr::panels {
 inline constexpr char TabbedMenu[]="UISwitcher";
-// Shops bypass UISwitcher but occupy the same upper widescreen content band.
-// Keep this independent of opacity: waypoint and dialogue layouts differ.
+// Shops and conversations use the upper widescreen content band. Keep this
+// independent of opacity: conversations retain the stereo world behind them.
 inline bool UpperBand(std::string_view name) {
     return name==TabbedMenu||name.starts_with("Vendor")||
-        name.starts_with("Trade")||name.starts_with("Gamble");
+        name.starts_with("Trade")||name.starts_with("Gamble")||
+        name=="NpcDialogPanel"||name=="ScrollSpeechPanel";
 }
 // These management and waypoint canvases share one opaque image against black in XR.
 // VendorPanelLayout also hosts NPC gambling; keep speech/quest panels spatial.
