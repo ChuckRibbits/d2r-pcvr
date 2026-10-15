@@ -262,7 +262,7 @@ struct Settings {
     std::atomic<float> nightBright{0.25f};  // [sky] night_brightness: the sky and the fog at full night, times their day brightness
     std::atomic<bool>  skyAlways{false};    // whatever the biome (testing): caves get a sky too
     std::atomic<bool>  skyHidePanels{true}; // no sky while a side panel shifts the picture
-    std::atomic<bool>  fogCaves{true};      // [fog] caves: the fog in caves and dungeons too (every area off [sky] outdoor)
+    std::atomic<bool>  fogCaves{false};     // [fog] caves: opt-in added indoor fog; native lighting/effects remain
     std::atomic<bool>  ceilOn{false};       // [ceiling] enabled: a vault over the void in caves (first person only)
     std::atomic<float> ceilHeight{30.0f};   // [ceiling] height: over the hero's floor, world units
     std::atomic<float> ceilScale{10.0f};    // [ceiling] scale: world units per tile (the test grid's cell)
@@ -1033,7 +1033,7 @@ void LoadSettings() {
     g_set.fogCaveStrength.store(std::clamp(IniF(L"fog", L"caves_strength", 1.0f), 0.0f, 1.0f));
     g_set.fogCurve.store(std::clamp(IniF(L"fog", L"curve", 1.6f), 0.3f, 4.0f));
     g_set.fogBlur.store(std::clamp(IniF(L"fog", L"blur", 3.0f), 0.0f, 12.0f));
-    g_set.fogCaves.store(IniB(L"fog", L"caves", true));
+    g_set.fogCaves.store(IniB(L"fog", L"caves", false));
     {
         wchar_t poke[256];
         GetPrivateProfileStringW(L"debug", L"fog_poke", L"", poke, (DWORD)std::size(poke), g_iniPath);
