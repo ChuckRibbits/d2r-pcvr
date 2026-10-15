@@ -299,6 +299,11 @@ int main(){
                 Check(Valid(compass)&&std::fabs(delta.x)<1e-5f&&std::fabs(delta.z)<1e-5f&&
                     std::fabs(delta.y-(WristMapSize+WristCompassHeight)*.5f-.01f)<1e-5f,
                     "compass and map remain a single coplanar unit with a one-centimeter gap");
+                const auto info=NavigationInfoPanel(hand,head,palmFace,withVitals);
+                const auto infoDelta=math::Rotate(math::Conjugate(compass.q),info.p-compass.p);
+                Check(Valid(info)&&std::fabs(infoDelta.x)<1e-5f&&std::fabs(infoDelta.z)<1e-5f&&
+                    std::fabs(infoDelta.y-(WristCompassHeight+NavigationInfoHeight)*.5f-.006f)<1e-5f,
+                    "area and act sit above the compass on the same wrist or palm face, clear of map and vitals");
             }
         }
     }

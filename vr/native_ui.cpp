@@ -28,6 +28,7 @@ namespace {
 const D2RL::PluginContext* context=nullptr;
 const D2RL::LocalizationService* strings=nullptr;
 const D2RL::DataTableService* tables=nullptr;
+D2RL::Reimplementations::GetLevelIdFromUnitFn getLevelId=nullptr;
 std::map<int,std::string> names;
 bool ready=false;
 bool bindingReady=false;
@@ -80,7 +81,13 @@ std::string Name(int id) {
     std::snprintf(text,sizeof text,"Skill %d",id);return text;
 }
 }
-void Init(const D2RL::PluginContext* c){context=c;c->QueryService(&strings);c->QueryService(&tables);}
+void Init(const D2RL::PluginContext* c){
+    context=c;c->QueryService(&strings);c->QueryService(&tables);
+    const auto core=GetModuleHandleW(L"D2RCore.dll");
+    getLevelId=core?reinterpret_cast<D2RL::Reimplementations::GetLevelIdFromUnitFn>(
+        GetProcAddress(core,MAKEINTRESOURCEA(D2RL::Reimplementations::GetLevelIdFromUnitInfo.ordinal))):nullptr;
+    if(!getLevelId)framevr::logging::Write("Frame navigation: loader level accessor unavailable");
+}
 void Capture(framevr::interaction::Snapshot& s) {
     int reason=1;uintptr_t player=0;uint32_t id=0,clientId=0;
     struct Trace {
@@ -109,6 +116,19 @@ void Capture(framevr::interaction::Snapshot& s) {
     if(!combat::ObserveUiPlayer(player,s.session))return;
     if(!combat::LocalPlayerId(id))return;
     reason=5;if(id!=h[2])return;
+    // The supported loader accessor reads this live, identity-checked UI player.
+    // Copy its current table row/name on the UI thread every capture so warps,
+    // loading gaps and language changes cannot reuse a previous area's label.
+    if(getLevelId&&tables&&tables->findRowById) {
+        const int level=getLevelId(reinterpret_cast<const void*>(player));
+        D2RL::DataTables::RowView row{};row.structSize=sizeof row;
+        if(level>0&&tables->findRowById(context,D2RL::DataTables::Bank(gamestate::DataBank()),
+            D2RL::DataTables::TableId::Levels,uint32_t(level),&row)==D2RL::DataTables::Result::Success)
+            s.location=framevr::navigation::ReadLocation(level,reinterpret_cast<uintptr_t>(row.row),row.rowSize,
+                [](uintptr_t p,auto& value){return Read(p,value);},
+                [](const char* key,char* text,uint32_t size){return strings&&strings->getStringByKey&&
+                    strings->getStringByKey(context,key,text,size,nullptr)==D2RL::Localization::Result::Success;});
+    }
     spellvr::Feedback(s.session,player,id,!gamestate::MenuOpen()&&(h[3]==1||h[3]==2||h[3]==3));
     auto stat=reinterpret_cast<int(*)(uintptr_t,int,int)>(d2rsig::Addr(abi::StatRva));
     s.health=stat(player,6,0)/256.f;s.maxHealth=stat(player,7,0)/256.f;
