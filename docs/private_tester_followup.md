@@ -11,9 +11,13 @@ dropped-item names with a Right Grip + Right Trigger hold, and sky/world
 effects retained behind NPC dialogue. The area label follows the navigation
 placement; health/mana tilt adjusts the vitals panel independently.
 
-The previous native Windows build and all 64 automated checks passed together.
-The owner subsequently confirmed the NPC dialogue correction working in-headset.
-Use the remaining scenarios below in one offline test session.
+The native Windows build at `2f5c6db` passed all 65 automated checks and was
+installed into the owner's Steam installation. After the final hold-to-show
+change, the owner reported that all session changes now work in-headset.
+This is owner-reported validation; the agent did not perform headset gameplay.
+The checklist below remains available for broader regression testing; individual
+headset/controller, resolution and character-class combinations were not recorded
+in the final confirmation.
 Building stages the DLL only. Install that combined DLL with the game closed
 before launching the headset test; launching an existing installation does not
 deploy the staged output or include open PRs automatically.
@@ -29,8 +33,8 @@ The owner confirmed this correction working. The loot combo now holds the native
 Show Items (Alt) action only while Right Grip and Right Trigger are both held.
 It shows the native nearby loot list, with no VR aiming/pickup-distance restriction.
 Release either button to restore ordinary drop/hover labels. Label rendering is
-never vetoed by the shortcut. The revised Show Items hold still needs headset
-verification; larger text and stronger backing remain.
+never vetoed by the shortcut. The revised Show Items hold is included in the
+owner's successful session confirmation; larger text and stronger backing remain.
 The revised native build passes all 65 automated checks, including the actual
 Show Items command dispatcher with a simulated loader/UI queue.
 
@@ -41,7 +45,8 @@ It now reads the verified runtime layout and the full two-byte level ID. The
 native compiler descriptors and installed loader's table service/validator were
 independently checked; regression coverage includes town, outdoor, dungeon and
 act transitions. Changes in level, lookup result, row size and resolved name
-are logged for follow-up. The correction awaits the next offline headset test.
+are logged for follow-up. The correction is included in the owner's successful
+session confirmation.
 
 ## Settings and behavior
 
@@ -98,12 +103,12 @@ Battle.net edition, headset, controllers, connection/runtime and resolution.
    angles, then Apply. Try Wrist, Palm and Either with navigation on the same
    face and on the opposite face. Check readability, a stable panel center,
    unchanged map/compass placement, and persistence after restart. Close without
-   Apply should discard edits. Headset verification of tilt is pending.
+   Apply should discard edits.
    With the sky enabled outdoors, open NPC choices, continue speech and open the
    journal; verify the sky stays visible behind these panels. Repeat with fog
    enabled and, indoors, an enabled cave ceiling. Enter a merchant or waypoint
    and check the shared black background, then return to dialogue and close it.
-   Check both eyes during transitions. Headset verification is pending.
+   Check both eyes during transitions.
    Engage NPCs with A, including one with automatic story text. Check the whole
    choices menu (Trade, Talk, topics and Cancel), then dismiss/finish speech and
    return to choices. Confirm no cut-off text or surface jump. Try laser and
@@ -118,7 +123,7 @@ Battle.net edition, headset, controllers, connection/runtime and resolution.
    walking across a boundary, using a waypoint/portal and changing acts. Try Wrist,
    Palm and Either; verify no overlap with vitals and no previous-area label after
    loading or rejoining. The area label and compass should remain usable if map
-   capture is unavailable. Headset verification of these labels is pending.
+   capture is unavailable.
 5. Sweep the laser over every occupied cell of a tall/wide item, its edges and
    its sockets in inventory and a merchant. Check ordinary, empty-socket and
    socket-filled items. Expect a stable item tooltip and eligible equipped
@@ -142,7 +147,7 @@ Battle.net edition, headset, controllers, connection/runtime and resolution.
    Try ordinary wheel clicks and native inventory hold-to-sort afterward, then
    menus, tracking loss and leaving/rejoining a character. Each interruption must
    release Show Items and require a fresh trigger release before another hold. Verify inventory
-   tooltips and monster labels retain their appearance. Headset testing is pending.
+   tooltips and monster labels retain their appearance.
 6. Cast Charged Bolt alone, then alongside Fireball, while stationary and
    moving. Listen for one normal casting cue per hand per accepted cast, with
    no burst proportional to bolt count. Check native effects volume/mute.
