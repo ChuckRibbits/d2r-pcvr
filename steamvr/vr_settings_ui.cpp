@@ -113,6 +113,7 @@ std::vector<uint8_t> Paint(const Model& m,Hit hover,const char* runtimeStatus,co
             else if(key==Dominant)std::snprintf(label,sizeof label,"%s",value>.5f?"Left":"Right");
             else if(d.max==1)std::snprintf(label,sizeof label,"%s",value>.5f?"On":"Off");
             else if(key==Snap)std::snprintf(label,sizeof label,"%.0f deg",value);
+            else if(key==VitalsTilt)std::snprintf(label,sizeof label,"%+.6g deg",value);
             else if(key==TurnSpeed)std::snprintf(label,sizeof label,"%.0f deg/s",value);
             else if(key==MeleeHitSpeed)std::snprintf(label,sizeof label,"%.2f m/s",value);
             else if(key==Waist||key==BeltForward)std::snprintf(label,sizeof label,"%.1f cm",value*100);
@@ -127,9 +128,9 @@ std::vector<uint8_t> Paint(const Model& m,Hit hover,const char* runtimeStatus,co
             text("Headset uses the runtime recommendation, capped at 4096 per side. DLSS: game Options.",{40,795,1200,65},false,false,quiet);
         }
         if(m.page==Page::HUD){
-            text("Palm: raise your left hand, turn the palm upward and hold briefly. Release trigger and grip.",{58,575,1160,76},false,false,quiet);
-            text("Minimap & Compass move together. Choose Off to hide both; the wheel map stays available.",{58,670,1160,76},false,false,quiet);
-            text("Menu distance: Close matches the previous build; Medium adds 30 cm; Far adds 60 cm.",{58,765,1160,76},false,false,quiet);
+            text("Palm: raise your left hand, turn the palm upward and hold briefly. Release trigger and grip.",{58,635,1160,60},false,false,quiet);
+            text("Health / mana tilt: -60 to +60 degrees in steps of 5. Apply saves; 0 restores the original angle.",{58,710,1160,60},false,false,quiet);
+            text("Minimap & Compass move together. Their placement is independent of health / mana tilt.",{58,785,1160,60},false,false,quiet);
         }
         if(m.page==Page::Combat){
             text("Default: 12.00 m/s. Higher requires faster swings. Adjust in 0.25 steps with no upper limit.",{58,340,1160,76},false,false,quiet);

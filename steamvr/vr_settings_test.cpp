@@ -13,7 +13,7 @@ int main(){
         Check(hit.index==MeleeHitSpeed&&hit.kind==Kind::Change,"combat speed control hit target");
         melee.Click(hit);Check(melee.Get()[MeleeHitSpeed]==12.25f,"melee speed quarter step");
         const auto request=melee.Click({Kind::Apply});
-        Check(request.changed==(1u<<MeleeHitSpeed),"highest mask bit saves only melee speed");
+        Check(request.changed==(1u<<MeleeHitSpeed),"melee mask bit saves only melee speed");
         Check(Normalize(MeleeHitSpeed,NAN)==12&&Normalize(MeleeHitSpeed,0)==1.5f&&Normalize(MeleeHitSpeed,99)==99,"melee speed UI has no upper cap");
         s.values[MeleeHitSpeed]=6;melee.Open(s);melee.Click(hit);
         Check(melee.Get()[MeleeHitSpeed]==6.25f,"plus button goes beyond old cap");
@@ -22,7 +22,7 @@ int main(){
     Check(s.values[MenuDistance]==1&&s.values[TooltipTiming]==0,"comfortable Medium distance and Instant hover defaults");
     for(auto key:{MenuDistance,TooltipTiming}) {
         Check(Normalize(key,1.5f)==Definitions[key].defaultValue&&Normalize(key,9)==Definitions[key].defaultValue,"invalid comfort enums fall back safely");
-        const int row=key==MenuDistance?3:4;
+        const int row=key==MenuDistance?4:5;
         Check(RowKey(Page::HUD,row)==key&&At(Page::HUD,Increase(row)).index==key,"HUD comfort rows hit their own settings");
         Model comfort;comfort.Open(s);comfort.Click(At(Page::HUD,Increase(row)));
         Check(comfort.Click({Kind::Apply}).changed==(1u<<key),"comfort Apply affects only its selected setting");
@@ -67,8 +67,8 @@ int main(){
     Check(s.values[NavigationLocation]==0,"combined navigation defaults to Wrist");
     Check(Normalize(NavigationLocation,99)==0&&Normalize(NavigationLocation,1.5f)==0,"invalid navigation location falls back to Wrist");
     {Model navigation;navigation.Open(s);navigation.Click(At(Page::Controls,Tabs[int(Page::HUD)]));
-        const int row=2;
-        Check(RowCount(Page::HUD)==5&&RowKey(Page::HUD,row)==NavigationLocation,"one navigation row replaces separate map/compass switches");
+        const int row=3;
+        Check(RowCount(Page::HUD)==6&&RowKey(Page::HUD,row)==NavigationLocation,"one navigation row replaces separate map/compass switches");
         for(int location=1;location<=3;++location){
             navigation.Click(At(Page::HUD,Increase(row)));
             Check(navigation.Get()[NavigationLocation]==location,"navigation offers Palm, Either and Off");
@@ -83,8 +83,28 @@ int main(){
         Check(hud.Get()[VitalsLocation]==1&&!hud.Get()[CriticalAlerts],"Palm selection does not enable automatic alerts");
         auto request=hud.Click({Kind::Apply});
         Check(request.changed==(1u<<VitalsLocation),"palm placement saves independently");
-        hud.Open(s);hud.Click(At(Page::HUD,ValueBox(1)));request=hud.Click({Kind::Apply});
+        hud.Open(s);hud.Click(At(Page::HUD,ValueBox(2)));request=hud.Click({Kind::Apply});
         Check(request.changed==(1u<<CriticalAlerts)&&request.values[CriticalAlerts]==1,"alert opt-in saves independently");}
+    Check(s.values[VitalsTilt]==0,"vitals tilt keeps the original angle by default");
+    Check(Normalize(VitalsTilt,NAN)==0&&Normalize(VitalsTilt,INFINITY)==0&&
+        Normalize(VitalsTilt,-999)==-60&&Normalize(VitalsTilt,999)==60,"tilt rejects nonfinite input and clamps at sixty degrees");
+    {Model tilt;tilt.Open(s);tilt.Click({Kind::Tab,int(Page::HUD)});
+        Check(RowKey(Page::HUD,1)==VitalsTilt&&At(Page::HUD,Increase(1)).index==VitalsTilt&&
+            At(Page::HUD,Decrease(1)).index==VitalsTilt,"tilt controls sit next to vitals placement");
+        tilt.Click(At(Page::HUD,Increase(1)));Check(tilt.Get()[VitalsTilt]==5,"plus tilts five degrees");
+        const auto request=tilt.Click({Kind::Apply});
+        Check(request.changed==(ChangeMask{1}<<VitalsTilt)&&request.changed>UINT32_MAX,
+            "Apply preserves the new setting bit above the previous 32-bit mask");
+        Check(request.values[VitalsLocation]==0&&request.values[NavigationLocation]==0&&request.values[CriticalAlerts]==0,
+            "tilt saves independently of placement, navigation and alerts");
+        auto external=s.values;external[VitalsTilt]=-5;Check(Conflict(external,request.base,request.changed),"high-bit tilt conflicts are detected");
+        external=s.values;external[NavigationLocation]=1;Check(!Conflict(external,request.base,request.changed),"navigation edits do not conflict with tilt");
+        tilt.Open(s);tilt.Click(At(Page::HUD,Decrease(1)));Check(tilt.Get()[VitalsTilt]==-5,"minus tilts in the opposite direction");
+        tilt.Close();tilt.Open(s);Check(tilt.Get()[VitalsTilt]==0&&!tilt.Dirty(),"Close discards unapplied tilt");
+        for(int i=0;i<30;++i)tilt.Click(At(Page::HUD,Increase(1)));
+        Check(tilt.Get()[VitalsTilt]==60,"tilt upper limit clamps");
+        for(int i=0;i<60;++i)tilt.Click(At(Page::HUD,Decrease(1)));
+        Check(tilt.Get()[VitalsTilt]==-60,"tilt lower limit clamps");}
     Check(s.values[PlanarSpellAim]==0,"spell aiming defaults to free vertical aim");
     {Model aim;aim.Open(s);const auto hit=At(Page::Controls,PlanarSpellAimBox);
         Check(hit.kind==Kind::Change&&hit.index==PlanarSpellAim,"controls tab exposes planar aiming toggle");

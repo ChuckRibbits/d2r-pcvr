@@ -57,7 +57,7 @@ An equipped weapon remains held without continuously squeezing grip.
 | Minimap + compass | Choose Wrist, Palm, Either, or Off in **VR Settings > HUD > Minimap / compass location** | Map and bronze bearing strip move together, independently of health/mana. Wrist is the default; Palm uses the same deliberate hold and casting guards as vitals. The center marker shows facing, N is map-up. The wheel's **MAP** tab remains available even when this display is Off |
 | Quick casting | Hold Left Trigger + a face button; add Left Grip for alternate four slots; right hand aims | Same native assignments as the wheel; see GAMEPLAY mapping |
 | Potions | Reach to the front belt, grip a bottle, bring to mouth and tip | Actual potion type/count, then confirmed consumption |
-| Health/mana | Choose Wrist, Palm, Either, or Off in **VR Settings > HUD** | Palm requires left palm upward in front of the eyes for 0.25 seconds, with left trigger/grip released and no left-hand cast. Vitals follow the hand; automatic low-resource popups/vibration are a separate opt-in, off by default |
+| Health/mana | Choose Wrist, Palm, Either, or Off and adjust **Health / mana tilt** in **VR Settings > HUD** | Tilt the hand-mounted vitals/XP panel from -60 to +60 degrees in 5-degree steps; Apply saves, 0 restores the original angle. Palm requires left palm upward in front of the eyes for 0.25 seconds, with left trigger/grip released and no left-hand cast. Vitals follow the hand; automatic low-resource popups/vibration are a separate opt-in, off by default |
 | Journal/map | Open Journal through the native tabbed game menu (Left X / Frame Left A) | Native quest status/text and tabs, readable at a comfortable size |
 
 With current dual-hand controls, Left Grip + Left Stick Click opens the
