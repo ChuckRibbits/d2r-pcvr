@@ -352,19 +352,24 @@ tabs and a **Reset eye height** button:
 | Video | Foveation Off / Fixed / Eye tracked, actual VR source size, added sky, fog, dungeon ceilings, terrain and object draw distances, VR render resolution |
 | HUD | Health/mana location and tilt, optional resource alerts, navigation location, menu distance and tooltip timing |
 | Combat | Melee hit speed |
-| Haptics | Overall strength and separate melee, bow draw, bow/throw release, spell, interaction and resource-alert strengths; left/right Test buttons for each category |
+| Haptics | Overall strength and separate melee, bow draw, bow/throw release, spell, interaction and resource-alert strengths; tests follow each action's hands |
 
 **VR Settings > Haptics** tunes vibration for different controllers. Each strength
 ranges from **0% (Off) to 200%**, in **10% steps**, with **100%** as the default.
 Overall strength multiplies the category strength: 50% overall and 50% bow draw
 produce 25% of the original draw amplitude. The controller's maximum amplitude
 still limits strong pulses. **Short melee pulses** is **Off by default**: weapon
-and shield impacts use a 45 ms tap at the controller's preferred frequency.
-Turn it On for the original 10 ms / 180 Hz tap. The melee Test button uses the
-same choice, including unsaved edits. Other categories keep their pulse timing.
+impacts use a 90 ms tap to make contact easier to feel during fast swings;
+shield impacts retain their 45 ms tap. Both use the controller's preferred
+frequency. Turn it On for the original 10 ms / 180 Hz tap on either hand.
+The **Weapon** and **Shield** tests use the same choice, including unsaved edits.
 
-**Test L** and **Test R** play a short sample on only the named hand using the
-displayed, unsaved values. Use them to check routing separately from pulse feel.
+Tests use the displayed, unsaved values and follow gameplay hand ownership:
+**Weapon** tests the right hand, **Shield** the left; bow draw tests both hands
+with the normal asymmetric pull pulses. **Bow** release tests both hands and
+**Throw** only the right. Spells and interactions retain **Test L / Test R**
+because either hand can perform them. Resource alerts have one **Test** on the
+left hand. A test is a sample, not a simulated gameplay action.
 **Apply** saves and updates gameplay feedback; **Close** discards unsaved edits.
 Muting a category stops its active vibration; Overall Off stops both controllers.
 Bow draw covers string proximity, nocking, pulling and full draw. Bow/throw release
@@ -667,14 +672,18 @@ translation/rotation supplies energy, so walking or turning a stationary weapon
 into an enemy does not cause damage. Right trigger remains an explicit native
 button fallback and suppresses simultaneous physical contact attacks.
 
-Confirmed weapon and shield impacts request a single 45 ms haptic tap at 95%
-base amplitude and the runtime's preferred frequency on the next XR input update.
+Confirmed weapon impacts request a single 90 ms haptic tap; shield impacts keep
+their 45 ms tap. Both use 95% base amplitude and the runtime's preferred
+frequency on the next XR input update.
 **VR Settings > Haptics > Short melee pulses** opts into a 10 ms / 180 Hz tap;
 it is Off by default, and both melee Test and real impacts use the selected pulse.
 Overall and Melee impacts strength scale its amplitude. Events are consumed once
 rather than held during overlap. A dedicated timer
 explicitly stops the vibration at its deadline even if rendering stalls; pulse
 replacement, focus loss and session shutdown cancel pending stops safely.
+Weaker incidental cues cannot replace a still-active melee pulse. New impacts,
+stronger cues and deliberate settings previews can replace it; mute and explicit
+cancellation still stop it immediately.
 Weapon hits target the right controller; shield bashes target the left. Each
 controller has its own OpenXR vibration action and binding, shared by pulse
 start and stop, to avoid depending on a shared action's hand filtering.

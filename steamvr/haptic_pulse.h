@@ -35,7 +35,7 @@ public:
 // The owner must Stop() before destroying the captured XR session/action.
 class Pulses {
     using Clock=std::chrono::steady_clock;
-    struct Hand {bool active=false;Clock::time_point end{};Category category=Category::Interaction;};
+    struct Hand {bool active=false;Clock::time_point end{};Category category=Category::Interaction;float amplitude=0;};
     std::array<Hand,2> hands{};
     std::mutex mutex;
     std::condition_variable wake;
@@ -86,8 +86,14 @@ public:
         if(stopped||hand<0||hand>=2||int(category)<0||int(category)>=CategoryCount||duration.count()<=0)return false;
         const auto& levels=preview?*preview:strengths;
         const float scaled=ScaleAmplitude(amplitude,levels.master,levels.category[int(category)]);
-        if(scaled<=0||!apply(scaled))return false;
-        hands[hand]={true,Clock::now()+duration,category};wake.notify_one();return true;
+        if(scaled<=0)return false;
+        const auto& current=hands[hand];
+        // Let a landed impact finish before a weaker incidental cue. A new
+        // impact, explicit preview, mute, focus loss or cancellation still wins.
+        if(!preview&&category!=Category::Melee&&current.active&&current.category==Category::Melee&&
+           Clock::now()<current.end&&scaled<current.amplitude)return false;
+        if(!apply(scaled))return false;
+        hands[hand]={true,Clock::now()+duration,category,scaled};wake.notify_one();return true;
     }
     void Cancel() {std::lock_guard lock(mutex);CancelLocked();wake.notify_one();}
     void Stop() {

@@ -15,11 +15,16 @@ int main(){
         Check(RowKey(Page::Haptics,row)==key&&At(Page::Haptics,Increase(row)).index==key,"each haptic row targets its own setting");
         h.Click(At(Page::Haptics,Decrease(row)));Check(h.Get()[key]==90,"strength moves in ten-percent steps");
         if(row){
-            for(int hand=0;hand<2;++hand){
-                const auto box=TestHapticsBox(row,hand),other=TestHapticsBox(row,hand^1);
+            const auto category=framevr::haptics::Category(i-HapticMelee);
+            for(int choice=0;choice<framevr::haptics::PreviewCount(category);++choice){
+                const auto box=TestHapticsBox(row,choice,category);
                 const auto test=At(Page::Haptics,box);
-                Check(test.kind==Kind::TestHaptics&&test.index==i-HapticMelee&&test.delta==hand+1&&h.CanTestHaptics(test.index),"category Test addresses only its named hand with unsaved settings");
-                Check(!other.Contains(box.x+box.w*.5f,box.y+box.h*.5f)&&box.x+box.w<Decrease(row).x,"hand tests do not overlap each other or strength controls");
+                Check(test.kind==Kind::TestHaptics&&test.index==i-HapticMelee&&test.delta==choice+1&&h.CanTestHaptics(test.index),"category Test selects its action preview with unsaved settings");
+                if(framevr::haptics::PreviewCount(category)==2){
+                    const auto other=TestHapticsBox(row,choice^1,category);
+                    Check(!other.Contains(box.x+box.w*.5f,box.y+box.h*.5f),"action preview buttons do not overlap");
+                }else Check(HitTest(Page::Haptics,620.f/Width,(box.y+box.h*.5f)/Height).kind==Kind::None,"single-preview row has no invisible second test");
+                Check(box.x+box.w<Decrease(row).x,"tests do not overlap strength controls");
                 Check(!h.Click(test).sequence&&h.Dirty()&&h.Get()[key]==90,"Test does not persist draft changes");
             }
         }
@@ -32,13 +37,13 @@ int main(){
         const auto toggle=At(Page::Haptics,ValueBox(2));
         Check(s.values[HapticShortMelee]==0&&toggle.kind==Kind::Change&&toggle.index==HapticShortMelee,"default longer melee pulse has its own toggle");
         const auto normal=HapticSample(h.Get(),framevr::haptics::Category::Melee);
-        Check(normal.milliseconds==45&&normal.frequency==0,"default impact uses longer runtime-frequency pulse");
-        for(int hand=0;hand<2;++hand)Check(At(Page::Haptics,TestHapticsBox(2,hand)).kind==Kind::None,"toggle row does not steal a category Test button");
+        Check(normal.milliseconds==90&&normal.frequency==0&&HapticSample(h.Get(),framevr::haptics::Category::Melee,1).milliseconds==45,"weapon impact lasts longer through a swing while shield keeps its existing tap");
+        for(int choice=0;choice<2;++choice)Check(At(Page::Haptics,TestHapticsBox(2,choice,framevr::haptics::Category::Melee)).kind==Kind::None,"toggle row does not steal a category Test button");
         h.Click(toggle);const auto sharp=HapticSample(h.Get(),framevr::haptics::Category::Melee);
         Check(sharp.milliseconds==10&&sharp.frequency==180&&sharp.amplitude==normal.amplitude,"draft test immediately uses short pulse at the same strength");
         const auto request=h.Click({Kind::Apply});
         Check(request.changed==(ChangeMask{1}<<HapticShortMelee)&&request.values[HapticMelee]==100,"pulse shape saves without changing strength");
-        h.Close();h.Open(s);Check(HapticSample(h.Get(),framevr::haptics::Category::Melee).milliseconds==45,"closing discards unsaved short-pulse choice");
+        h.Close();h.Open(s);Check(HapticSample(h.Get(),framevr::haptics::Category::Melee).milliseconds==90,"closing discards unsaved short-pulse choice");
     }
     {auto missing=s;missing.ready=false;Model h;h.Open(missing);h.Click({Kind::Tab,int(Page::Haptics)});
         Check(!h.CanTestHaptics(0)&&!h.CanTestHaptics(-1)&&!h.CanTestHaptics(framevr::haptics::CategoryCount),"unavailable settings cannot preview");}

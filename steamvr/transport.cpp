@@ -983,9 +983,9 @@ void MotionPointer() {
         dotPose=XrPose({hit.point+math::Rotate(pose.q,{0,0,.003f}),pose.q});
     }
 }
-void MotionPulse(int hand,haptics::Category category,float strength,XrDuration duration,float frequency=XR_FREQUENCY_UNSPECIFIED,const haptics::Strengths* preview=nullptr) {
+bool MotionPulse(int hand,haptics::Category category,float strength,XrDuration duration,float frequency=XR_FREQUENCY_UNSPECIFIED,const haptics::Strengths* preview=nullptr) {
     const auto ai=hapticActions.Info(hand);
-    if(!ai.action||!pApplyHapticFeedback||!pStopHapticFeedback||!session||!running)return;
+    if(!ai.action||!pApplyHapticFeedback||!pStopHapticFeedback||!session||!running)return false;
     hapticPulses.Configure(settings::HapticLevels(vrsettings::Read().values));
     // Capture handles by value. Shutdown joins the timer before destroying
     // these handles; the worker never takes the transport/render mutex.
@@ -996,7 +996,7 @@ void MotionPulse(int hand,haptics::Category category,float strength,XrDuration d
         if(!reported[hand]&&log) {
             char message[128];std::snprintf(message,sizeof message,"Frame haptics: explicit timed stop hand=%d result=%d",hand,int(result));log(message);reported[hand]=true;
         }
-    }))return;
+    }))return false;
     XrHapticVibration vibration{XR_TYPE_HAPTIC_VIBRATION};
     vibration.duration=duration;vibration.frequency=frequency;
     XrResult result=XR_SUCCESS;
@@ -1017,20 +1017,29 @@ void MotionPulse(int hand,haptics::Category category,float strength,XrDuration d
         char message[128];std::snprintf(message,sizeof message,"Frame gameplay: haptic failed hand=%d result=%d",hand,int(result));Say(message);
         errorAt=GetTickCount64()+5000;
     }
+    return applied;
+}
+void MotionPattern(haptics::Category category,const haptics::Pattern& pattern,const haptics::Strengths* preview=nullptr) {
+    for(int hand=0;hand<2;++hand){
+        const auto& sample=pattern[hand];
+        if(sample.milliseconds>0)MotionPulse(hand,category,sample.amplitude,XrDuration(sample.milliseconds)*1000000,sample.frequency,preview);
+    }
 }
 void MotionFeedback(const gameplay::Output& out) {
     static double lastPull=0;static float previousDraw=0;
     const unsigned event=out.feedback;
     if(event) {
         const auto category=haptics::MotionCategory(event,out.bowReady,out.javelinReady);
-        MotionPulse(0,category,event==6?.12f:event==4?.2f:event==2||event==3?.65f:.45f,event==4||event==6?20000000:45000000);
-        if(out.bowReady&&(event==1||event==2||event==5))MotionPulse(1,category,event==2?.65f:.25f,35000000);
+        if(event==2&&(out.bowReady||out.javelinReady))MotionPattern(category,haptics::Release(out.bowReady));
+        else {
+            MotionPulse(0,category,event==6?.12f:event==4?.2f:event==2||event==3?.65f:.45f,event==4||event==6?20000000:45000000);
+            if(out.bowReady&&(event==1||event==5))MotionPulse(1,category,.25f,35000000);
+        }
         lastPull=motionInput.time;previousDraw=out.draw;
     } else if(out.bowDrawing&&motionInput.time-lastPull>.07&&std::fabs(out.draw-previousDraw)>.018f) {
         // A light ratchet felt while pulling, rather than only the native
         // attack rumble after release. No repeated buzz while held still.
-        MotionPulse(0,haptics::Category::BowDraw,.22f+.28f*out.draw,25000000);
-        MotionPulse(1,haptics::Category::BowDraw,.1f+.15f*out.draw,20000000);
+        MotionPattern(haptics::Category::BowDraw,haptics::BowPull(out.draw));
         lastPull=motionInput.time;previousDraw=out.draw;
     }
     if(!out.bowDrawing)previousDraw=0;
@@ -1148,9 +1157,7 @@ void SettingsPointer(const settings::InputGate::Edges& edges) {
         else if(settingsHover.kind==settings::Kind::TestHaptics&&settingsModel.CanTestHaptics(settingsHover.index)){
             const auto levels=settings::HapticLevels(settingsModel.Get());
             const auto category=haptics::Category(settingsHover.index);
-            const auto sample=settings::HapticSample(settingsModel.Get(),category);
-            const int hand=settingsHover.delta-1;
-            if(hand>=0&&hand<2)MotionPulse(hand,category,sample.amplitude,XrDuration(sample.milliseconds)*1000000,sample.frequency,&levels);
+            MotionPattern(category,haptics::Preview(category,settingsHover.delta-1,settingsModel.Get()[settings::HapticShortMelee]>.5f),&levels);
         }
         else {
             const auto request=settingsModel.Click(settingsHover);
@@ -1529,13 +1536,13 @@ void Input() {
     MotionFeedback(motionOutput);
     // One sharp tap per confirmed impact. Consume the event once; do not
     // sustain or refresh it while the weapon remains inside the creature.
-    const auto impact=settings::HapticSample(gestureSettings,haptics::Category::Melee);
     auto impactPulse=[&](int hand){
-        MotionPulse(hand,haptics::Category::Melee,impact.amplitude,XrDuration(impact.milliseconds)*1000000,impact.frequency);
+        const auto impact=settings::HapticSample(gestureSettings,haptics::Category::Melee,hand);
+        const bool sent=MotionPulse(hand,haptics::Category::Melee,impact.amplitude,XrDuration(impact.milliseconds)*1000000,impact.frequency);
         static ULONGLONG reportAt[2]{};const auto now=GetTickCount64();
         if(now>=reportAt[hand]) {
-            char line[160];std::snprintf(line,sizeof line,"Frame melee haptics: source=%s output=%s duration_ms=%d frequency=%.0f",
-                hand==0?"weapon":"shield",hand==0?"right":"left",impact.milliseconds,impact.frequency);Say(line);reportAt[hand]=now+1000;
+            char line[160];std::snprintf(line,sizeof line,"Frame melee haptics: source=%s output=%s duration_ms=%d frequency=%.0f sent=%d",
+                hand==0?"weapon":"shield",hand==0?"right":"left",impact.milliseconds,impact.frequency,sent);Say(line);reportAt[hand]=now+1000;
         }
     };
     if(const auto at=meleeImpactAt.exchange(0);at&&motionInput.active&&GetTickCount64()-at<150)

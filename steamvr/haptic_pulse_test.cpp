@@ -55,13 +55,24 @@ void Routing() {
     for(const auto& binding:bindings)runtime.bound[binding.action].push_back(binding.binding);
     Pulses pulses;
     Check(pulses.Start([outputs=actions,&runtime](int hand){runtime.Send(outputs.Info(hand),true);}),"start routed timer");
-    Check(pulses.Pulse(0,Category::Melee,10ms,.95f,[&](float){runtime.Send(actions.Info(0),false);return true;}),"right sword impact");
+    auto preview=[&](Category category,int choice){
+        const auto pattern=Preview(category,choice);
+        for(int hand=0;hand<2;++hand)if(pattern[hand].milliseconds){
+            const auto sample=pattern[hand];
+            Check(pulses.Pulse(hand,category,std::chrono::milliseconds(sample.milliseconds),sample.amplitude,[&](float){runtime.Send(actions.Info(hand),false);return true;}),"send preview to its gameplay output");
+        }
+    };
+    preview(Category::Melee,0);
     runtime.Verify(1,0);
-    Check(pulses.Pulse(1,Category::Melee,10ms,.95f,[&](float){runtime.Send(actions.Info(1),false);return true;}),"left shield bash");
+    preview(Category::Melee,1);
     runtime.Verify(1,1);
     for(int hand=0;hand<2;++hand)
         Check(pulses.Pulse(hand,Category::Spell,5s,.4f,[&](float){runtime.Send(actions.Info(hand),false);return true;}),"simultaneous per-hand feedback");
-    pulses.Cancel();runtime.Verify(2,2);pulses.Stop();
+    pulses.Cancel();runtime.Verify(2,2);
+    preview(Category::BowDraw,0);pulses.Cancel();runtime.Verify(3,3);
+    preview(Category::BowRelease,0);pulses.Cancel();runtime.Verify(4,4);
+    preview(Category::BowRelease,1);pulses.Cancel();runtime.Verify(5,4);
+    preview(Category::Alert,0);pulses.Cancel();runtime.Verify(5,5);pulses.Stop();
     const auto previous=actions.Info(0).action;
     actions.Reset();Check(!actions.Info(0).action&&!actions.Info(1).action&&!actions.Info(-1).action&&!actions.Info(2).action,"shutdown and invalid hands have no output");
     Check(actions.Create(XR_NULL_HANDLE,Runtime::Create)==XR_SUCCESS&&actions.Info(0).action!=previous,"new session replaces old haptic handles");
@@ -97,6 +108,22 @@ void NativeRumble() {
 int main() {
     Routing();
     NativeRumble();
+    {
+        const auto weapon=Preview(Category::Melee,0),shield=Preview(Category::Melee,1);
+        Check(weapon[0].milliseconds==90&&weapon[0].amplitude==.95f&&!weapon[1].milliseconds,"weapon test uses longer right impact");
+        Check(shield[1].milliseconds==45&&shield[1].amplitude==.95f&&!shield[0].milliseconds,"shield test retains left impact");
+        for(int hand=0;hand<2;++hand){
+            const auto sharp=Preview(Category::Melee,hand,true)[hand];
+            Check(sharp.milliseconds==10&&sharp.frequency==180,"short pulse opt-in covers both impact types");
+        }
+        const auto pull=Preview(Category::BowDraw,0);
+        Check(PreviewCount(Category::BowDraw)==1&&pull[0].milliseconds==25&&pull[1].milliseconds==20&&
+            std::fabs(pull[0].amplitude-.36f)<.00001f&&std::fabs(pull[1].amplitude-.175f)<.00001f,"draw test represents a half draw on both hands with gameplay strengths");
+        Check(PreviewCount(Category::Alert)==1&&Preview(Category::Alert,0)[1].milliseconds==100&&!Preview(Category::Alert,0)[0].milliseconds,"alert has one preview on its gameplay hand");
+        Check(Preview(Category::Spell,0)[1].milliseconds==25&&Preview(Category::Spell,1)[0].milliseconds==25,"spell left/right previews keep their named hands");
+        Check(Preview(Category::Interaction,0)[1].milliseconds==45&&Preview(Category::Interaction,1)[0].milliseconds==45,"interaction previews support either hand");
+        Check(!Preview(Category::Alert,1)[1].milliseconds&&!Preview(Category::Melee,-1)[0].milliseconds,"invalid previews stay silent");
+    }
     Pulses pulses;
     auto pulse=[&](int hand,auto duration,bool accept=true){return pulses.Pulse(hand,Category::Melee,duration,.95f,[&](float amplitude){Check(amplitude==.95f,"default strength preserves native amplitude");return accept;});};
     std::mutex mutex;std::condition_variable changed;std::array<int,2> stops{};
@@ -120,6 +147,21 @@ int main() {
     Check(!pulse(0,10ms),"no calls after shutdown");
     Check(pulses.Start(callback)&&pulse(1,10ms),"new session can restart");
     Check(wait(1,3,2s),"restarted timer expires");pulses.Stop();
+    {
+        Pulses impacts;std::atomic<int> ended{0};bool weakerApplied=false;
+        Check(impacts.Start([&](int hand){if(hand==0)++ended;}),"start impact protection fixture");
+        auto impact=[&]{return impacts.Pulse(0,Category::Melee,200ms,.95f,[](float){return true;});};
+        Check(impact(),"landed impact begins");
+        Check(!impacts.Pulse(0,Category::Interaction,10ms,.25f,[&](float){weakerApplied=true;return true;})&&!weakerApplied,"weaker cue cannot overwrite a landed impact");
+        Check(impacts.Pulse(1,Category::Interaction,10ms,.25f,[](float){return true;}),"impact protection is per hand");
+        std::this_thread::sleep_for(30ms);Check(ended==0,"rejected weak cue cannot shorten impact deadline");
+        impacts.Cancel();Check(ended==1,"explicit cancellation still stops protected impact");
+        Check(impact()&&impacts.Pulse(0,Category::Alert,10ms,1.f,[](float){return true;}),"stronger alert can replace an impact");
+        impacts.Cancel();Check(ended==2,"replacement owns the single stop");
+        Strengths preview;
+        Check(impact()&&impacts.Pulse(0,Category::Interaction,10ms,.25f,[](float){return true;},&preview),"deliberate settings preview can replace an impact");
+        impacts.Stop();Check(ended==3,"shutdown stops preview once");
+    }
     {
         Pulses tuned;Strengths levels;std::array<std::atomic<int>,2> canceled{};
         Check(tuned.Start([&](int h){++canceled[h];}),"start strength fixture");

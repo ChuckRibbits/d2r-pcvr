@@ -70,7 +70,7 @@ inline constexpr std::array<Definition,Count> Definitions{{
 using Values=std::array<float,Count>;
 inline bool HapticKey(Key key){return key>=HapticStrength&&key<=HapticAlert;}
 inline int HapticCategory(Key key){return key>=HapticMelee&&key<=HapticAlert?key-HapticMelee:-1;}
-inline haptics::Sample HapticSample(const Values& values,haptics::Category category){return haptics::SampleFor(category,values[HapticShortMelee]>.5f);}
+inline haptics::Sample HapticSample(const Values& values,haptics::Category category,int hand=0){return haptics::SampleFor(category,values[HapticShortMelee]>.5f,hand);}
 inline haptics::Strengths HapticLevels(const Values& values){
     haptics::Strengths levels;levels.master=values[HapticStrength];
     static_assert(HapticAlert-HapticMelee+1==haptics::CategoryCount);
@@ -110,7 +110,7 @@ constexpr Rect ControllerBox{865,181,375,52};
 inline constexpr const char* MenuDistanceNames[]={"Close","Medium","Far"};
 inline constexpr const char* TooltipTimingNames[]={"Instant","Short","Original"};
 constexpr Rect WeaponIndicatorsBox{942,666,221,52},PlanarSpellAimBox{942,728,221,52},AimAssistBox{942,790,221,52};
-inline Rect TestHapticsBox(int row,int hand){return {hand==0?718:590,RowY+row*RowStep,122,52};}
+inline Rect TestHapticsBox(int row,int choice,haptics::Category category){return {haptics::PreviewCount(category)==1?700:590+choice*128,RowY+row*RowStep,haptics::PreviewCount(category)==1?140:122,52};}
 inline constexpr const char* AimAssistNames[]={"Off","Light","Strong"};
 inline Rect ControllerOption(int option){return {865,233+option*58,375,58};}
 inline Rect Decrease(int row){return {865,RowY+row*RowStep,64,52};}
@@ -150,8 +150,11 @@ inline Hit HitTest(Page page,float u,float v,bool controllerMenu=false){
     if(page==Page::Controls&&AimAssistBox.Contains(x,y))return {Kind::Change,ProjectileAimAssist,1};
     for(int r=0;r<RowCount(page);++r){
         const auto key=RowKey(page,r);
-        if(page==Page::Haptics&&HapticCategory(key)>=0)
-            for(int hand=0;hand<2;++hand)if(TestHapticsBox(r,hand).Contains(x,y))return {Kind::TestHaptics,HapticCategory(key),hand+1};
+        if(page==Page::Haptics&&HapticCategory(key)>=0){
+            const auto category=haptics::Category(HapticCategory(key));
+            for(int choice=0;choice<haptics::PreviewCount(category);++choice)
+                if(TestHapticsBox(r,choice,category).Contains(x,y))return {Kind::TestHaptics,HapticCategory(key),choice+1};
+        }
         if(Decrease(r).Contains(x,y))return {Kind::Change,key,-1};
         if(Increase(r).Contains(x,y))return {Kind::Change,key,1};
         if(Definitions[key].max==1&&ValueBox(r).Contains(x,y))return {Kind::Change,key,1};
