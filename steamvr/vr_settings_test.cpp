@@ -15,9 +15,13 @@ int main(){
         Check(RowKey(Page::Haptics,row)==key&&At(Page::Haptics,Increase(row)).index==key,"each haptic row targets its own setting");
         h.Click(At(Page::Haptics,Decrease(row)));Check(h.Get()[key]==90,"strength moves in ten-percent steps");
         if(row){
-            const auto test=At(Page::Haptics,TestHapticsBox(row));
-            Check(test.kind==Kind::TestHaptics&&test.index==i-HapticMelee&&h.CanTestHaptics(test.index),"category Test uses unsaved settings");
-            Check(!h.Click(test).sequence&&h.Dirty()&&h.Get()[key]==90,"Test does not persist draft changes");
+            for(int hand=0;hand<2;++hand){
+                const auto box=TestHapticsBox(row,hand),other=TestHapticsBox(row,hand^1);
+                const auto test=At(Page::Haptics,box);
+                Check(test.kind==Kind::TestHaptics&&test.index==i-HapticMelee&&test.delta==hand+1&&h.CanTestHaptics(test.index),"category Test addresses only its named hand with unsaved settings");
+                Check(!other.Contains(box.x+box.w*.5f,box.y+box.h*.5f)&&box.x+box.w<Decrease(row).x,"hand tests do not overlap each other or strength controls");
+                Check(!h.Click(test).sequence&&h.Dirty()&&h.Get()[key]==90,"Test does not persist draft changes");
+            }
         }
         const auto request=h.Click({Kind::Apply});
         Check(request.changed==(ChangeMask{1}<<key)&&request.values[key]==90&&!h.CanTestHaptics(0),"Apply saves only selected haptic strength and blocks preview while saving");
@@ -29,7 +33,7 @@ int main(){
         Check(s.values[HapticShortMelee]==0&&toggle.kind==Kind::Change&&toggle.index==HapticShortMelee,"default longer melee pulse has its own toggle");
         const auto normal=HapticSample(h.Get(),framevr::haptics::Category::Melee);
         Check(normal.milliseconds==45&&normal.frequency==0,"default impact uses longer runtime-frequency pulse");
-        Check(At(Page::Haptics,TestHapticsBox(2)).kind==Kind::None,"toggle row does not steal a category Test button");
+        for(int hand=0;hand<2;++hand)Check(At(Page::Haptics,TestHapticsBox(2,hand)).kind==Kind::None,"toggle row does not steal a category Test button");
         h.Click(toggle);const auto sharp=HapticSample(h.Get(),framevr::haptics::Category::Melee);
         Check(sharp.milliseconds==10&&sharp.frequency==180&&sharp.amplitude==normal.amplitude,"draft test immediately uses short pulse at the same strength");
         const auto request=h.Click({Kind::Apply});

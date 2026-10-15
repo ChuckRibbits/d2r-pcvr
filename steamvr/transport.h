@@ -18,6 +18,7 @@ void ConfigureGameplay(bool enabled);
 void ConfigureInteractions(bool seated,float waistBelowEyes,float beltForward,int dominantHand);
 // Current motion-combat aim in the existing head-yaw-relative hand frame.
 bool SettingsOpen();
+bool OwnsControllerRumble(); // lock-free; VR input owns feedback instead of gamepad motors
 bool SpellSelected();
 bool LeftHandAiming();
 bool NativeAimOwnership(); // hand casting or wheel: preserve locomotion, suppress legacy aim modes

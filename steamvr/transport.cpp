@@ -38,6 +38,7 @@
 #include "latest_worker.h"
 #include "haptic_pulse.h"
 #include "haptic_actions.h"
+#include "xinput_rumble.h"
 #include "interaction_icons.h"
 #include "potion_models.h"
 #include "vr_settings_ui.h"
@@ -295,6 +296,7 @@ XrAction aimPose=XR_NULL_HANDLE;
 haptics::Actions hapticActions;
 haptics::Pulses hapticPulses;
 haptics::CastEvents spellHaptics;
+haptics::RumbleLease controllerRumbleLease;
 XrAction primary=XR_NULL_HANDLE, secondary=XR_NULL_HANDLE, stickClick=XR_NULL_HANDLE, menu=XR_NULL_HANDLE;
 XrPath hands[2]{}; // right, left, matching the existing wire format.
 XrSpace handSpaces[2]{};
@@ -427,6 +429,7 @@ void CancelShieldCast() {
     if(shieldCast.issued)shieldCast.cancelled=true;else shieldCast={};
 }
 void ClearInput() {
+    controllerRumbleLease.Update(0,false);
     hapticPulses.Cancel();
     spellHaptics.Clear();
     lootlabels::display.Clear();
@@ -1146,7 +1149,8 @@ void SettingsPointer(const settings::InputGate::Edges& edges) {
             const auto levels=settings::HapticLevels(settingsModel.Get());
             const auto category=haptics::Category(settingsHover.index);
             const auto sample=settings::HapticSample(settingsModel.Get(),category);
-            for(int hand=0;hand<2;++hand)MotionPulse(hand,category,sample.amplitude,XrDuration(sample.milliseconds)*1000000,sample.frequency,&levels);
+            const int hand=settingsHover.delta-1;
+            if(hand>=0&&hand<2)MotionPulse(hand,category,sample.amplitude,XrDuration(sample.milliseconds)*1000000,sample.frequency,&levels);
         }
         else {
             const auto request=settingsModel.Click(settingsHover);
@@ -1181,6 +1185,7 @@ void Input() {
     XrActiveActionSet active{actionSet,XR_NULL_PATH};
     XrActionsSyncInfo si{XR_TYPE_ACTIONS_SYNC_INFO};si.countActiveActionSets=1;si.activeActionSets=&active;
     if(pSyncActions(session,&si)!=XR_SUCCESS) {gazeStability.Reset();ClearInput();return;}
+    controllerRumbleLease.Update(GetTickCount64(),motionControls.load());
     UpdateControllerLabels();
     const bool nativeUi=panelMode||spatialMode;
     const uint32_t inputEpoch=gamestate::MenuEpoch();
@@ -1525,10 +1530,18 @@ void Input() {
     // One sharp tap per confirmed impact. Consume the event once; do not
     // sustain or refresh it while the weapon remains inside the creature.
     const auto impact=settings::HapticSample(gestureSettings,haptics::Category::Melee);
+    auto impactPulse=[&](int hand){
+        MotionPulse(hand,haptics::Category::Melee,impact.amplitude,XrDuration(impact.milliseconds)*1000000,impact.frequency);
+        static ULONGLONG reportAt[2]{};const auto now=GetTickCount64();
+        if(now>=reportAt[hand]) {
+            char line[160];std::snprintf(line,sizeof line,"Frame melee haptics: source=%s output=%s duration_ms=%d frequency=%.0f",
+                hand==0?"weapon":"shield",hand==0?"right":"left",impact.milliseconds,impact.frequency);Say(line);reportAt[hand]=now+1000;
+        }
+    };
     if(const auto at=meleeImpactAt.exchange(0);at&&motionInput.active&&GetTickCount64()-at<150)
-        MotionPulse(0,haptics::Category::Melee,impact.amplitude,XrDuration(impact.milliseconds)*1000000,impact.frequency);
+        impactPulse(0);
     if(const auto at=shieldImpactAt.exchange(0);at&&motionInput.active&&GetTickCount64()-at<150)
-        MotionPulse(1,haptics::Category::Melee,impact.amplitude,XrDuration(impact.milliseconds)*1000000,impact.frequency);
+        impactPulse(1);
     for(int hand=0;hand<2;++hand)if(spellHaptics.Take(hand,gamestate::LocalPlayer(),GetTickCount64(),motionInput.active)) {
         const auto sample=haptics::Samples[int(haptics::Category::Spell)];
         MotionPulse(hand,haptics::Category::Spell,sample.amplitude,XrDuration(sample.milliseconds)*1000000,sample.frequency);
@@ -2337,6 +2350,7 @@ void FinishShieldSkill(bool accepted) {
     if(accepted)shieldImpactAt=shieldFeedbackAt;
 }
 void MeleeImpact() {meleeImpactAt=GetTickCount64();}
+bool OwnsControllerRumble() {return motionControls.load()&&controllerRumbleLease.Owns(GetTickCount64());}
 void SpellCast(int hand,uint64_t session) {spellHaptics.Publish(hand,session,GetTickCount64());}
 void SetBowWorldEpoch(uint32_t epoch) {
     std::lock_guard lock(mutex);

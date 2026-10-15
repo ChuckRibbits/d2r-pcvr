@@ -1,5 +1,6 @@
 #include "haptic_pulse.h"
 #include "haptic_actions.h"
+#include "xinput_rumble.h"
 #include <cstdio>
 #include <cstdlib>
 #include <atomic>
@@ -65,9 +66,37 @@ void Routing() {
     actions.Reset();Check(!actions.Info(0).action&&!actions.Info(1).action&&!actions.Info(-1).action&&!actions.Info(2).action,"shutdown and invalid hands have no output");
     Check(actions.Create(XR_NULL_HANDLE,Runtime::Create)==XR_SUCCESS&&actions.Info(0).action!=previous,"new session replaces old haptic handles");
 }
+void NativeRumble() {
+    RumbleLease lease;GamepadRumble rumble;
+    XINPUT_VIBRATION low{50000,0},high{0,45000},zero{};
+    unsigned calls=0;DWORD result=ERROR_SUCCESS,lastIndex=99;XINPUT_VIBRATION last{};bool gotNull=false;
+    auto forward=[&](DWORD index,XINPUT_VIBRATION* value){++calls;lastIndex=index;gotNull=!value;if(value)last=*value;return result;};
+    Check(!lease.Owns(1000),"desktop starts without VR feedback ownership");
+    Check(rumble.Send(lease.Owns(1000),0,&low,forward)==ERROR_SUCCESS&&calls==1&&last.wLeftMotorSpeed==50000,"desktop rumble passes through intact");
+    lease.Update(1000,true);
+    Check(rumble.Send(lease.Owns(1001),0,&high,forward)==ERROR_SUCCESS&&calls==2&&!last.wLeftMotorSpeed&&!last.wRightMotorSpeed,"VR takeover clears previously active desktop rumble once");
+    for(auto* request:{&low,&high,&zero})
+        Check(rumble.Send(lease.Owns(1002),0,request,forward)==ERROR_SUCCESS&&calls==2,"native low/high motor pulses and stop commands cannot overwrite OpenXR feedback");
+    Check(low.wLeftMotorSpeed==50000&&high.wRightMotorSpeed==45000,"filter never alters caller vibration data");
+    Check(rumble.Send(true,1,&low,forward)==ERROR_SUCCESS&&calls==3&&lastIndex==1&&last.wLeftMotorSpeed==50000,"other gamepads retain native rumble");
+    result=ERROR_BAD_ARGUMENTS;
+    Check(rumble.Send(true,0,nullptr,forward)==result&&calls==4&&gotNull,"invalid requests preserve native error behavior");
+    result=ERROR_DEVICE_NOT_CONNECTED;
+    Check(rumble.Send(true,0,&high,forward)==ERROR_SUCCESS&&calls==4,"VR virtual pad succeeds without a physical Xbox controller");
+    Check(!lease.Owns(999)&&lease.Owns(1249)&&!lease.Owns(1250),"ownership expires and rejects a backwards clock");
+    Check(rumble.Send(lease.Owns(1250),0,&high,forward)==result&&calls==5,"expired VR input restores native calls and error codes");
+    lease.Update(1300,true);
+    Check(rumble.Send(true,0,&low,forward)==ERROR_SUCCESS&&calls==5,"failed desktop output needs no takeover stop");
+    lease.Update(1301,false);Check(!lease.Owns(1301),"focus loss or disabled motion immediately relinquishes output");
+    result=ERROR_SUCCESS;
+    Check(rumble.Send(lease.Owns(1301),0,&high,forward)==ERROR_SUCCESS&&calls==6&&last.wRightMotorSpeed==45000,"returning to desktop restores the original motor levels");
+    Check(rumble.Send(false,0,&zero,forward)==ERROR_SUCCESS&&calls==7,"desktop stop remains effective");
+    Check(rumble.Send(true,0,&zero,forward)==ERROR_SUCCESS&&calls==7,"fresh VR ownership does not send redundant stops into new haptics");
+}
 }
 int main() {
     Routing();
+    NativeRumble();
     Pulses pulses;
     auto pulse=[&](int hand,auto duration,bool accept=true){return pulses.Pulse(hand,Category::Melee,duration,.95f,[&](float amplitude){Check(amplitude==.95f,"default strength preserves native amplitude");return accept;});};
     std::mutex mutex;std::condition_variable changed;std::array<int,2> stops{};
@@ -134,5 +163,5 @@ int main() {
         casts.Publish(-1,1,1600);casts.Publish(2,1,1600);casts.Publish(0,0,1600);
         Check(!casts.Take(0,1,1601,true)&&!casts.Take(2,1,1601,true),"invalid hand or session never produces feedback");
     }
-    std::puts("Haptics: per-hand output bindings, master/categories, runtime amplitude, mute/cancel, preview isolation, cast events, expiry and lifecycle passed");
+    std::puts("Haptics: native gamepad rumble isolation, per-hand output bindings, master/categories, runtime amplitude, mute/cancel, preview isolation, cast events, expiry and lifecycle passed");
 }

@@ -97,6 +97,7 @@ namespace gamestate {bool OpaqueMenuOpen();}
 #include "light_bounds.h"
 #include "game_device_only.h"
 #include "menu_controls.h"
+#include "xinput_rumble.h"
 #include "native_panels.h"
 #include "spell_aim.h"
 #include "skill_pad.h"
@@ -2564,6 +2565,30 @@ XHook g_xhooks[] = {
     {L"xinput1_3.dll",   "XInputGetStateEx", 100, nullptr, false, {0}},
     {L"xinput9_1_0.dll", "XInputGetState",   0,   nullptr, false, {0}},
 };
+#ifdef D2RVR_NATIVE_OPENXR
+using XInputSetStateFn = DWORD (WINAPI*)(DWORD,XINPUT_VIBRATION*);
+struct RumbleHook {const wchar_t* dll;XInputSetStateFn original=nullptr;bool done=false;};
+RumbleHook g_rumbleHooks[]={{L"xinput1_4.dll"},{L"xinput1_3.dll"},{L"xinput9_1_0.dll"}};
+framevr::haptics::GamepadRumble g_gamepadRumble;
+thread_local bool t_rumbleForwarding=false;
+template<int I> DWORD WINAPI RumbleDetour(DWORD index,XINPUT_VIBRATION* vibration) {
+    const auto original=g_rumbleHooks[I].original;
+    if(t_rumbleForwarding)return original(index,vibration); // forwarded XInput DLL exports can call one another
+    const bool owns=framevr::OwnsControllerRumble();
+    if(owns&&index==0&&vibration&&(vibration->wLeftMotorSpeed||vibration->wRightMotorSpeed)) {
+        static std::atomic<ULONGLONG> reportAt{0};const auto now=GetTickCount64();auto last=reportAt.load();
+        if(now-last>=3000&&reportAt.compare_exchange_strong(last,now)) {
+            char line[160];snprintf(line,sizeof line,"Frame haptics: suppress native gamepad rumble low=%u high=%u; OpenXR owns controller feedback",
+                unsigned(vibration->wLeftMotorSpeed),unsigned(vibration->wRightMotorSpeed));Log(line);
+        }
+    }
+    return g_gamepadRumble.Send(owns,index,vibration,[original](DWORD user,XINPUT_VIBRATION* value){
+        struct Forwarding {Forwarding(){t_rumbleForwarding=true;}~Forwarding(){t_rumbleForwarding=false;}} forwarding;
+        return original(user,value);
+    });
+}
+void* const kRumbleDetours[]={(void*)&RumbleDetour<0>,(void*)&RumbleDetour<1>,(void*)&RumbleDetour<2>};
+#endif
 
 // Bow aim: while a skill button is held, the left stick is the bow hand's
 // pointing, so the game aims (and turns the hero) that way instead of where
@@ -4001,6 +4026,15 @@ void* const kXDetours[] = {(void*)&XDetour<0>, (void*)&XDetour<1>, (void*)&XDeto
 
 // XInput DLLs are often loaded late, so this runs until each one is in.
 void HookXInput() {
+#ifdef D2RVR_NATIVE_OPENXR
+    for(size_t i=0;i<std::size(g_rumbleHooks);++i) {
+        auto& h=g_rumbleHooks[i];if(h.done)continue;
+        const auto module=GetModuleHandleW(h.dll);if(!module)continue;h.done=true;
+        void* fn=(void*)GetProcAddress(module,"XInputSetState");if(!fn)continue;
+        const bool ok=MH_CreateHook(fn,kRumbleDetours[i],(void**)&h.original)==MH_OK&&MH_EnableHook(fn)==MH_OK;
+        char line[160];snprintf(line,sizeof line,"vrcam: %ls!XInputSetState rumble isolation %s",h.dll,ok?"hooked":"FAILED");Log(line);
+    }
+#endif
     for (size_t i = 0; i < std::size(g_xhooks); ++i) {
         XHook& h = g_xhooks[i];
         if (h.done) continue;

@@ -352,7 +352,7 @@ tabs and a **Reset eye height** button:
 | Video | Foveation Off / Fixed / Eye tracked, actual VR source size, added sky, fog, dungeon ceilings, terrain and object draw distances, VR render resolution |
 | HUD | Health/mana location and tilt, optional resource alerts, navigation location, menu distance and tooltip timing |
 | Combat | Melee hit speed |
-| Haptics | Overall strength and separate melee, bow draw, bow/throw release, spell, interaction and resource-alert strengths; a Test button for each category |
+| Haptics | Overall strength and separate melee, bow draw, bow/throw release, spell, interaction and resource-alert strengths; left/right Test buttons for each category |
 
 **VR Settings > Haptics** tunes vibration for different controllers. Each strength
 ranges from **0% (Off) to 200%**, in **10% steps**, with **100%** as the default.
@@ -363,7 +363,8 @@ and shield impacts use a 45 ms tap at the controller's preferred frequency.
 Turn it On for the original 10 ms / 180 Hz tap. The melee Test button uses the
 same choice, including unsaved edits. Other categories keep their pulse timing.
 
-**Test** plays a short sample on both hands using the displayed, unsaved values.
+**Test L** and **Test R** play a short sample on only the named hand using the
+displayed, unsaved values. Use them to check routing separately from pulse feel.
 **Apply** saves and updates gameplay feedback; **Close** discards unsaved edits.
 Muting a category stops its active vibration; Overall Off stops both controllers.
 Bow draw covers string proximity, nocking, pulling and full draw. Bow/throw release
@@ -677,6 +678,14 @@ replacement, focus loss and session shutdown cancel pending stops safely.
 Weapon hits target the right controller; shield bashes target the left. Each
 controller has its own OpenXR vibration action and binding, shared by pulse
 start and stop, to avoid depending on a shared action's hand filtering.
+While motion controls supply focused VR input, the mod suppresses the game's
+XInput pad-0 rumble (including native stop requests) so it cannot compete with
+OpenXR feedback. Those gamepad motor channels represent low/high frequency,
+not VR hand ownership. An existing desktop rumble is cleared once on takeover;
+desktop play, other gamepads and expired VR input pass through normally. The
+game's saved rumble preference is unchanged. Native rumble suppression and
+weapon/shield output requests are logged to distinguish overlapping feedback
+from reversed controller routing. Physical confirmation remains necessary.
 Exact feel and frequency support depend on the controller/runtime and need
 headset validation. Existing saved melee speed choices remain unchanged.
 
