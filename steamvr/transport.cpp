@@ -28,6 +28,7 @@
 #include "composition_layers.h"
 #include "swapchain_format.h"
 #include "input.h"
+#include "dropped_item_labels.h"
 #include "window_focus.h"
 #include "gameplay.h"
 #include "hand_controls.h"
@@ -36,6 +37,8 @@
 #include "interaction_paint.h"
 #include "latest_worker.h"
 #include "haptic_pulse.h"
+#include "haptic_actions.h"
+#include "xinput_rumble.h"
 #include "interaction_icons.h"
 #include "potion_models.h"
 #include "vr_settings_ui.h"
@@ -210,6 +213,7 @@ XrPosef head{};
 math::Vec origin{};
 bool haveOrigin=false;
 GripStickButton leftMenuButton;
+lootlabels::Shortcut lootLabelShortcut;
 MenuTriggerGate menuTriggerGate;
 PressEdge inventoryButton,menuButton;
 float lastRecenter=0;
@@ -239,7 +243,7 @@ bool mapSupported=false;
 constexpr uint32_t mapSide=512;
 std::atomic<bool> uiSupported{false};
 bool journalMode=false,spatialMode=false,workspacePlaced=false,opaqueMenuMode=false,upperBandMenuMode=false;
-bool npcChoicesMode=false,npcChoicesCropped=false;
+bool npcChoicesMode=false;
 UiBlit uiBlit;
 UiBlit mapBlit; // Own descriptors: native menu and map copies may share a frame.
 potions::Models potionModels;
@@ -289,8 +293,10 @@ Block<D2RVR_Actions> actions;
 XrActionSet actionSet=XR_NULL_HANDLE;
 XrAction gripPose=XR_NULL_HANDLE, stick=XR_NULL_HANDLE, trigger=XR_NULL_HANDLE, squeeze=XR_NULL_HANDLE;
 XrAction aimPose=XR_NULL_HANDLE;
-XrAction haptic=XR_NULL_HANDLE;
+haptics::Actions hapticActions;
 haptics::Pulses hapticPulses;
+haptics::CastEvents spellHaptics;
+haptics::RumbleLease controllerRumbleLease;
 XrAction primary=XR_NULL_HANDLE, secondary=XR_NULL_HANDLE, stickClick=XR_NULL_HANDLE, menu=XR_NULL_HANDLE;
 XrPath hands[2]{}; // right, left, matching the existing wire format.
 XrSpace handSpaces[2]{};
@@ -423,7 +429,11 @@ void CancelShieldCast() {
     if(shieldCast.issued)shieldCast.cancelled=true;else shieldCast={};
 }
 void ClearInput() {
+    controllerRumbleLease.Update(0,false);
     hapticPulses.Cancel();
+    spellHaptics.Clear();
+    lootlabels::display.Clear();
+    lootLabelShortcut.Suspend();
     meleeImpactAt=shieldImpactAt=0;
     wristHeading.Reset();compassFrame=false;
     panelinput::WorldInput(false);
@@ -523,22 +533,23 @@ bool SetupActions() {
     std::strcpy(ci.actionSetName,"d2r");std::strcpy(ci.localizedActionSetName,"Diablo II");
     if(!Check(pCreateActionSet(instance,&ci,&actionSet),"create action set")) return false;
     if(!MakeAction(gripPose,"hands",XR_ACTION_TYPE_POSE_INPUT) || !MakeAction(stick,"sticks",XR_ACTION_TYPE_VECTOR2F_INPUT) ||
-       !MakeAction(aimPose,"menu_aim",XR_ACTION_TYPE_POSE_INPUT) || !MakeAction(haptic,"feedback",XR_ACTION_TYPE_VIBRATION_OUTPUT) ||
+       !MakeAction(aimPose,"menu_aim",XR_ACTION_TYPE_POSE_INPUT) || !Check(hapticActions.Create(actionSet,pCreateAction),"create hand haptics") ||
        !MakeAction(trigger,"triggers",XR_ACTION_TYPE_FLOAT_INPUT) || !MakeAction(squeeze,"grips",XR_ACTION_TYPE_FLOAT_INPUT) ||
        !MakeAction(primary,"primary",XR_ACTION_TYPE_BOOLEAN_INPUT) || !MakeAction(secondary,"secondary",XR_ACTION_TYPE_BOOLEAN_INPUT) ||
        !MakeAction(stickClick,"stick_click",XR_ACTION_TYPE_BOOLEAN_INPUT) || !MakeAction(menu,"menu",XR_ACTION_TYPE_BOOLEAN_INPUT)) return false;
+    Say("Frame haptics: separate feedback_right and feedback_left actions; apply and timed stop use each hand's own output");
     for(const auto* profile:{"/interaction_profiles/valve/index_controller","/interaction_profiles/oculus/touch_controller","/interaction_profiles/microsoft/motion_controller",controllers::FrameProfile}) {
         const bool frameController=std::string_view(profile)==controllers::FrameProfile;
         if(frameController&&!frameControllerExtension)continue;
         const bool index=std::strstr(profile,"index"), touch=std::strstr(profile,"touch");
         const auto layout=controllers::Detect(profile);
         std::vector<XrActionSuggestedBinding> bindings;
+        if(!Check(hapticActions.Bind(instance,pStringToPath,bindings),"bind hand haptics"))return false;
         for(int i=0;i<2;++i) {
             const std::string base=i==0?"/user/hand/right/input/":"/user/hand/left/input/";
             auto bind=[&](XrAction a,const char* suffix){bindings.push_back({a,Path((base+suffix).c_str())});};
             bind(gripPose,"grip/pose");bind(stick,"thumbstick");bind(stickClick,"thumbstick/click");bind(trigger,"trigger/value");
             bind(aimPose,"aim/pose");
-            bindings.push_back({haptic,Path((std::string(i==0?"/user/hand/right":"/user/hand/left")+"/output/haptic").c_str())});
             // Motion controllers expose squeeze/click (boolean), so omit our float grip there.
             if(index||touch||frameController) bind(squeeze,index?"squeeze/force":"squeeze/value");
             if(index||touch||frameController) {
@@ -834,7 +845,6 @@ bool FocusGameForUi() {
 panels::Size UiSurfaceSize() {
     // The handheld journal keeps its book size; native workspaces fit in both axes.
     if(journalMode)return {uiSize,uiSize*(uiCrop[2]>0?float(uiCrop[3])/uiCrop[2]:1.3f)};
-    if(npcChoicesMode&&npcChoicesCropped)return dialogue::Size({uiCrop[0],uiCrop[1],uiCrop[2],uiCrop[3]},uiWidth,uiHeight);
     return panels::Fit(uiCrop[2]>0?unsigned(uiCrop[2]):0,uiCrop[3]>0?unsigned(uiCrop[3]):0);
 }
 XrPosef UiSurfacePose() {
@@ -973,46 +983,63 @@ void MotionPointer() {
         dotPose=XrPose({hit.point+math::Rotate(pose.q,{0,0,.003f}),pose.q});
     }
 }
-void MotionPulse(int hand,float strength,XrDuration duration,float frequency=XR_FREQUENCY_UNSPECIFIED) {
-    if(!haptic||!pApplyHapticFeedback||!pStopHapticFeedback||!session||!running)return;
+bool MotionPulse(int hand,haptics::Category category,float strength,XrDuration duration,float frequency=XR_FREQUENCY_UNSPECIFIED,const haptics::Strengths* preview=nullptr) {
+    const auto ai=hapticActions.Info(hand);
+    if(!ai.action||!pApplyHapticFeedback||!pStopHapticFeedback||!session||!running)return false;
+    hapticPulses.Configure(settings::HapticLevels(vrsettings::Read().values));
     // Capture handles by value. Shutdown joins the timer before destroying
     // these handles; the worker never takes the transport/render mutex.
-    const auto xrSession=session;const auto action=haptic;const auto stop=pStopHapticFeedback;
-    const std::array<XrPath,2> paths{hands[0],hands[1]};const auto log=logger;
-    if(!hapticPulses.Start([xrSession,action,stop,paths,log,reported=std::array<bool,2>{}](int hand) mutable {
-        XrHapticActionInfo ai{XR_TYPE_HAPTIC_ACTION_INFO};ai.action=action;ai.subactionPath=paths[hand];
+    const auto xrSession=session;const auto outputs=hapticActions;const auto stop=pStopHapticFeedback;const auto log=logger;
+    if(!hapticPulses.Start([xrSession,outputs,stop,log,reported=std::array<bool,2>{}](int hand) mutable {
+        const auto ai=outputs.Info(hand);
         const auto result=stop(xrSession,&ai);
         if(!reported[hand]&&log) {
             char message[128];std::snprintf(message,sizeof message,"Frame haptics: explicit timed stop hand=%d result=%d",hand,int(result));log(message);reported[hand]=true;
         }
-    }))return;
-    XrHapticActionInfo ai{XR_TYPE_HAPTIC_ACTION_INFO};ai.action=haptic;ai.subactionPath=hands[hand];
+    }))return false;
     XrHapticVibration vibration{XR_TYPE_HAPTIC_VIBRATION};
-    vibration.duration=duration;vibration.frequency=frequency;vibration.amplitude=strength;
-    XrResult result=XR_ERROR_RUNTIME_FAILURE;
-    hapticPulses.Pulse(hand,std::chrono::nanoseconds(duration),[&]{
+    vibration.duration=duration;vibration.frequency=frequency;
+    XrResult result=XR_SUCCESS;
+    const bool applied=hapticPulses.Pulse(hand,category,std::chrono::nanoseconds(duration),strength,[&](float amplitude){
+        vibration.amplitude=amplitude;
         result=pApplyHapticFeedback(session,&ai,reinterpret_cast<XrHapticBaseHeader*>(&vibration));return result==XR_SUCCESS;
-    });
+    },preview);
+    if(preview) {
+        char message[192];std::snprintf(message,sizeof message,
+            "Frame haptics test: hand=%d category=%d amplitude=%.3f duration_ms=%lld frequency=%.0f sent=%d result=%d",
+            hand,int(category),vibration.amplitude,static_cast<long long>(duration/1000000),frequency,applied,int(result));
+        Say(message);
+    }
     static bool reported[2]{};static ULONGLONG errorAt=0;
-    if(XR_SUCCEEDED(result)&&!reported[hand]) {
+    if(applied&&!reported[hand]) {
         Say(hand==0?"Frame gameplay: right-hand haptic accepted":"Frame gameplay: left-hand haptic accepted");reported[hand]=true;
     } else if(XR_FAILED(result)&&GetTickCount64()>=errorAt) {
         char message[128];std::snprintf(message,sizeof message,"Frame gameplay: haptic failed hand=%d result=%d",hand,int(result));Say(message);
         errorAt=GetTickCount64()+5000;
+    }
+    return applied;
+}
+void MotionPattern(haptics::Category category,const haptics::Pattern& pattern,const haptics::Strengths* preview=nullptr) {
+    for(int hand=0;hand<2;++hand){
+        const auto& sample=pattern[hand];
+        if(sample.milliseconds>0)MotionPulse(hand,category,sample.amplitude,XrDuration(sample.milliseconds)*1000000,sample.frequency,preview);
     }
 }
 void MotionFeedback(const gameplay::Output& out) {
     static double lastPull=0;static float previousDraw=0;
     const unsigned event=out.feedback;
     if(event) {
-        MotionPulse(0,event==6?.12f:event==4?.2f:event==2||event==3?.65f:.45f,event==4||event==6?20000000:45000000);
-        if(out.bowReady&&(event==1||event==2||event==5))MotionPulse(1,event==2?.65f:.25f,35000000);
+        const auto category=haptics::MotionCategory(event,out.bowReady,out.javelinReady);
+        if(event==2&&(out.bowReady||out.javelinReady))MotionPattern(category,haptics::Release(out.bowReady));
+        else {
+            MotionPulse(0,category,event==6?.12f:event==4?.2f:event==2||event==3?.65f:.45f,event==4||event==6?20000000:45000000);
+            if(out.bowReady&&(event==1||event==5))MotionPulse(1,category,.25f,35000000);
+        }
         lastPull=motionInput.time;previousDraw=out.draw;
     } else if(out.bowDrawing&&motionInput.time-lastPull>.07&&std::fabs(out.draw-previousDraw)>.018f) {
         // A light ratchet felt while pulling, rather than only the native
         // attack rumble after release. No repeated buzz while held still.
-        MotionPulse(0,.22f+.28f*out.draw,25000000);
-        MotionPulse(1,.1f+.15f*out.draw,20000000);
+        MotionPattern(haptics::Category::BowDraw,haptics::BowPull(out.draw));
         lastPull=motionInput.time;previousDraw=out.draw;
     }
     if(!out.bowDrawing)previousDraw=0;
@@ -1040,6 +1067,7 @@ gameplay::MeleeStyle MotionMeleeStyle() {
 }
 void ResetSettingsInput() {
     hapticPulses.Cancel();
+    spellHaptics.Clear();
     panelinput::WorldInput(false);
     gamestate::MenuMap(false);
     motion.Cancel();motionOutput={};interactions.Reset();interactionstate::Cancel();
@@ -1078,7 +1106,7 @@ void CalibrationInput() {
     bodyCalibration.Observe(vrsettings::Read(),motionInput.time);
     if(phaseBefore==calibration::Phase::Saving&&bodyCalibration.phase==calibration::Phase::Saved){
         origin=calibrationOrigin;haveOrigin=true;worldRecenter=true;
-        MotionPulse(0,.45f,70000000);MotionPulse(1,.45f,70000000);
+        MotionPulse(0,haptics::Category::Interaction,.45f,70000000);MotionPulse(1,haptics::Category::Interaction,.45f,70000000);
         const auto m=bodyCalibration.Get();char message[180];
         std::snprintf(message,sizeof message,"Frame body calibration: saved eye height %.3f m, controller span %.3f m",m.eyeHeight,m.armSpan);Say(message);
     }
@@ -1124,8 +1152,13 @@ void SettingsPointer(const settings::InputGate::Edges& edges) {
     }
     if(edges.click&&pointerHit&&settingsImageReady&&settingsPaintRevision==settingsModel.revision){
         if(settingsHover.kind==settings::Kind::Close)CloseSettings();
-        else if(settingsHover.kind==settings::Kind::Recenter){ResetHeight();MotionPulse(1,.4f,35000000);}
+        else if(settingsHover.kind==settings::Kind::Recenter){ResetHeight();MotionPulse(1,haptics::Category::Interaction,.4f,35000000);}
         else if(settingsHover.kind==settings::Kind::Calibrate&&settingsModel.ready&&!settingsModel.Busy()&&!settingsModel.Dirty())OpenBodyCalibration();
+        else if(settingsHover.kind==settings::Kind::TestHaptics&&settingsModel.CanTestHaptics(settingsHover.index)){
+            const auto levels=settings::HapticLevels(settingsModel.Get());
+            const auto category=haptics::Category(settingsHover.index);
+            MotionPattern(category,haptics::Preview(category,settingsHover.delta-1,settingsModel.Get()[settings::HapticShortMelee]>.5f),&levels);
+        }
         else {
             const auto request=settingsModel.Click(settingsHover);
             if(request.sequence&&!vrsettings::Submit(request)){
@@ -1155,9 +1188,11 @@ void Input() {
     gazeValid=false;
     if(!tracking.data) return;
     if(!valid||state!=XR_SESSION_STATE_FOCUSED) {gazeStability.Reset();ClearInput();return; }
+    hapticPulses.Configure(settings::HapticLevels(vrsettings::Read().values));
     XrActiveActionSet active{actionSet,XR_NULL_PATH};
     XrActionsSyncInfo si{XR_TYPE_ACTIONS_SYNC_INFO};si.countActiveActionSets=1;si.activeActionSets=&active;
     if(pSyncActions(session,&si)!=XR_SUCCESS) {gazeStability.Reset();ClearInput();return;}
+    controllerRumbleLease.Update(GetTickCount64(),motionControls.load());
     UpdateControllerLabels();
     const bool nativeUi=panelMode||spatialMode;
     const uint32_t inputEpoch=gamestate::MenuEpoch();
@@ -1284,6 +1319,25 @@ void Input() {
     handInput.layout^=uint64_t(handInput.independentSlots)<<48;
     handInput.active=motionInput.active&&motionInput.tracked[0]&&motionInput.tracked[1]&&handAimTracked[0]&&handAimTracked[1]&&gamestate::LocalPlayer();
     handInput.occupied=interactionOutput.bottle>=0||interactionOutput.owner[0]==interaction::Owner::Holster||interactionOutput.owner[1]==interaction::Owner::Holster;
+    const auto lootNow=GetTickCount64(),lootSession=gamestate::LocalPlayer();
+    const bool lootWorld=motionHeadTracked&&!nativeUi&&!settingsOwned&&!settingsChord&&inWorld&&inWorld()&&lootSession;
+    const bool lootAllowed=lootWorld&&!settingsOwned&&!settingsChord&&motionInput.tracked[0]&&
+        !handInput.occupied&&handControls.Wheel()<0;
+    const bool lootHeld=lootLabelShortcut.Step(lootSession,inputEpoch,lootNow,lootAllowed,
+        controls.rt/255.f,motionInput.grip[0]);
+    const bool wasLootHeld=lootlabels::display.ShowAll(lootNow);
+    lootlabels::display.Refresh(lootSession,lootNow,lootWorld,lootHeld);
+    if(lootHeld!=wasLootHeld) {
+        Say(lootHeld?"Frame loot labels: Show Items (Alt) held":"Frame loot labels: normal drop/hover behavior");
+        if(lootHeld)MotionPulse(0,haptics::Category::Interaction,.45f,45000000);
+    }
+    // The world shortcut owns the whole trigger squeeze, including if grip is
+    // released first. A consumed grip also needs its own physical release so
+    // it cannot reappear as a potion grab or shoulder swap. Native panel
+    // trigger/Shift actions and ordinary stick clicks retain their bindings.
+    lootLabelShortcut.Filter(controls,motionInput.grip[0],nativeUi);
+    motionInput.trigger=controls.rt/255.f;
+    handInput.occupied|=lootLabelShortcut.Consumed(nativeUi)||lootLabelShortcut.GripConsumed(nativeUi);
     for(int h=0;h<2;++h){
         handInput.trigger[h]=h?controls.lt/255.f:controls.rt/255.f;handInput.grip[h]=motionInput.grip[h];
         handInput.click[h]=(controls.buttons&(h?menus::LeftStick:menus::RightStick))!=0;
@@ -1306,6 +1360,7 @@ void Input() {
     const auto hudSettings=vrsettings::Read();
     interactionInput.navigationLocation=vitals::Location(int(hudSettings.values[settings::NavigationLocation]));
     interactionInput.vitalsLocation=vitals::Location(int(hudSettings.values[settings::VitalsLocation]));
+    interactionInput.vitalsTilt=hudSettings.values[settings::VitalsTilt];
     interactionInput.criticalAlerts=hudSettings.values[settings::CriticalAlerts]>.5f;
     interactionInput.leftCasting=handOutput.spells[1]>=0||(handOutput.slot>=0&&handOutput.hand==1);
     interactionInput.leftTrigger=controls.lt/255.f;
@@ -1331,7 +1386,8 @@ void Input() {
     if(handOutput.wheel>=0&&!interactionOutput.wheel){handControls.Close();handOutput={};}
     if(interactionOutput.cancelPending)interactionstate::Cancel();
     if(interactionOutput.request.action!=interaction::Action::None)interactionstate::Request(interactionOutput.request);
-    if(interactionOutput.feedback)MotionPulse(interactionOutput.feedbackHand,interactionOutput.feedback==2?.65f:.25f,interactionOutput.feedback>=3?100000000:35000000);
+    if(interactionOutput.feedback)MotionPulse(interactionOutput.feedbackHand,interactionOutput.feedback==4?haptics::Category::Alert:haptics::Category::Interaction,
+        interactionOutput.feedback==2?.65f:.25f,interactionOutput.feedback>=3?100000000:35000000);
     motionInput.palette=false; // Dedicated interaction owner handles the new wheel/belt.
     motionInput.active=motionInput.active&&!interactionOutput.block;
     const auto& quickSnapshot=interactionInput.snapshot;
@@ -1480,10 +1536,23 @@ void Input() {
     MotionFeedback(motionOutput);
     // One sharp tap per confirmed impact. Consume the event once; do not
     // sustain or refresh it while the weapon remains inside the creature.
+    auto impactPulse=[&](int hand){
+        const auto impact=settings::HapticSample(gestureSettings,haptics::Category::Melee,hand);
+        const bool sent=MotionPulse(hand,haptics::Category::Melee,impact.amplitude,XrDuration(impact.milliseconds)*1000000,impact.frequency);
+        static ULONGLONG reportAt[2]{};const auto now=GetTickCount64();
+        if(now>=reportAt[hand]) {
+            char line[160];std::snprintf(line,sizeof line,"Frame melee haptics: source=%s output=%s duration_ms=%d frequency=%.0f sent=%d",
+                hand==0?"weapon":"shield",hand==0?"right":"left",impact.milliseconds,impact.frequency,sent);Say(line);reportAt[hand]=now+1000;
+        }
+    };
     if(const auto at=meleeImpactAt.exchange(0);at&&motionInput.active&&GetTickCount64()-at<150)
-        MotionPulse(0,.95f,10000000,180.f);
+        impactPulse(0);
     if(const auto at=shieldImpactAt.exchange(0);at&&motionInput.active&&GetTickCount64()-at<150)
-        MotionPulse(1,.95f,10000000,180.f);
+        impactPulse(1);
+    for(int hand=0;hand<2;++hand)if(spellHaptics.Take(hand,gamestate::LocalPlayer(),GetTickCount64(),motionInput.active)) {
+        const auto sample=haptics::Samples[int(haptics::Category::Spell)];
+        MotionPulse(hand,haptics::Category::Spell,sample.amplitude,XrDuration(sample.milliseconds)*1000000,sample.frequency);
+    }
     if(motionOutput.potion>=0)gamecmd::RequestPotion(motionOutput.potion);
     if(!motionInput.active)gamecmd::CancelPotion();
     if(motionOutput.feedback) {
@@ -1594,14 +1663,15 @@ bool Begin() {
     const bool spatial=SpatialMenu();
     const bool book=spatial&&gamestate::JournalOnly();
     const bool npc=spatial&&gamestate::NpcChoicesOnly();
-    if(spatial!=spatialMode||book!=journalMode||npc!=npcChoicesMode) {
+    const bool surfaceChanged=spatial!=spatialMode||book!=journalMode;
+    if(surfaceChanged) {
         workspacePlaced=false;uiMissingFrames=0;std::fill_n(uiCrop,4,0);
-        npcChoicesCropped=false;
         if(book)journalPlacement.Open();
-        // An attack held when an NPC opens its dialog must not select an option.
-        ReleasePanelInput();panelMouse.Suspend();
         Say(spatial?(book?"Frame panels: handheld quest log":"Frame panels: native menus in stereo world"):"Frame panels: native surface closed");
     }
+    // Rearm pointer input when story/choices change, keeping the same anchored
+    // canvas. A trigger that dismisses speech must not also choose an option.
+    if(surfaceChanged||npc!=npcChoicesMode){ReleasePanelInput();panelMouse.Suspend();}
     const bool opaque=spatial&&gamestate::OpaqueMenuOpen();
     if(opaque!=opaqueMenuMode)Say(opaque?"Frame panels: shared black menu background":"Frame panels: spatial background restored");
     spatialMode=spatial;journalMode=book;npcChoicesMode=npc;opaqueMenuMode=opaque;upperBandMenuMode=spatial&&gamestate::UpperBandMenuOpen();uiEye.copied=false;
@@ -1755,24 +1825,15 @@ bool CopyUi(reshade::api::command_queue* rq) {
         return true;
     }
     uiMissingFrames=0;
-    bool croppedNpc=false;
-    int32_t native[4]{};
-    // Touch profiles need the complete canvas to retain Trade/Talk choices at
-    // square resolutions. Keep the separately tested Frame/Index widget crop.
-    const bool quest=detectedControllers.hands[0]==controllers::Layout::Touch||
-        detectedControllers.hands[1]==controllers::Layout::Touch;
-    static bool uncroppedNpcLogged=false;
-    if(npcChoicesMode&&quest) {
-        crop[0]=crop[1]=0;crop[2]=int(w);crop[3]=int(h);
-        if(!uncroppedNpcLogged)Say("Frame NPC choices: Quest diagnostic uses complete canvas, no widget crop");
-        uncroppedNpcLogged=true;
-    } else uncroppedNpcLogged=false;
-    if(npcChoicesMode&&!quest&&gamestate::NpcChoicesRect(native)) {
-        const auto box=dialogue::Crop({native[0],native[1],native[2],native[3]},int(w),int(h));
-        if(box.w>0&&box.h>0) {
-            crop[0]=box.x;crop[1]=box.y;crop[2]=box.w;crop[3]=box.h;croppedNpc=true;
+    static bool completeNpcLogged=false;
+    if(npcChoicesMode) {
+        const auto canvas=dialogue::Canvas(int(w),int(h));
+        crop[0]=canvas.x;crop[1]=canvas.y;crop[2]=canvas.w;crop[3]=canvas.h;
+        if(!completeNpcLogged) {
+            char b[180];std::snprintf(b,sizeof b,"Frame NPC choices: complete %ux%u source canvas; widget crop disabled",w,h);Say(b);
         }
     }
+    completeNpcLogged=npcChoicesMode;
     auto& e=uiEye;
     if(e.chain&&(w!=uiWidth||h!=uiHeight)) {
         if(!WaitGpuValue(e.copyFence))return false;
@@ -1800,10 +1861,6 @@ bool CopyUi(reshade::api::command_queue* rq) {
     if(FAILED(e.commands->Close()))return false;
     ID3D12CommandList* lists[]={e.commands.Get()};queue->ExecuteCommandLists(1,lists);
     if(FAILED(queue->Signal(fence.Get(),++fenceValue)))return false;
-    if(croppedNpc&&!npcChoicesCropped) {
-        char b[180];std::snprintf(b,sizeof b,"Frame NPC choices: eye-level 4x surface, crop %d,%d %dx%d of %ux%u",crop[0],crop[1],crop[2],crop[3],w,h);Say(b);
-    }
-    npcChoicesCropped=croppedNpc;
     e.copyFence=fenceValue;e.copied=true;std::copy_n(crop,4,uiCrop);return true;
 }
 void Capture(reshade::api::command_queue* rq,reshade::api::swapchain* swap) {
@@ -2005,7 +2062,6 @@ void EndPair() {
     const bool padQuads=composition::NeedsQuadPadding(wineOpenXR,layer,pointerChain);
     const uint32_t contentLimit=padQuads&&capacity>1?capacity-1:capacity;
     XrCompositionLayerQuad palette{XR_TYPE_COMPOSITION_LAYER_QUAD},bottle{XR_TYPE_COMPOSITION_LAYER_QUAD},chosen{XR_TYPE_COMPOSITION_LAYER_QUAD};
-    std::array<XrCompositionLayerQuad,2> bowString{{{XR_TYPE_COMPOSITION_LAYER_QUAD},{XR_TYPE_COMPOSITION_LAYER_QUAD}}};
     std::array<XrCompositionLayerQuad,2> arrow{{{XR_TYPE_COMPOSITION_LAYER_QUAD},{XR_TYPE_COMPOSITION_LAYER_QUAD}}};
     XrCompositionLayerQuad nock{XR_TYPE_COMPOSITION_LAYER_QUAD},bowHint{XR_TYPE_COMPOSITION_LAYER_QUAD},activeSkill{XR_TYPE_COMPOSITION_LAYER_QUAD},leftActiveSkill{XR_TYPE_COMPOSITION_LAYER_QUAD};
     const bool gameplayVisible=layer&&!panelMode&&motionControls.load()&&motionInput.active&&gameplayChain&&motionOutput.rayValid;
@@ -2037,6 +2093,7 @@ void EndPair() {
     std::array<XrCompositionLayerQuad,4> beltQuads;
     XrCompositionLayerQuad wrist{XR_TYPE_COMPOSITION_LAYER_QUAD},wristMap{XR_TYPE_COMPOSITION_LAYER_QUAD};
     XrCompositionLayerQuad wristCompass{XR_TYPE_COMPOSITION_LAYER_QUAD},compassMarker{XR_TYPE_COMPOSITION_LAYER_QUAD};
+    XrCompositionLayerQuad navigationInfo{XR_TYPE_COMPOSITION_LAYER_QUAD};
     if(interactionVisible) {
         if(!potionModels.Ready()&&interactionOutput.bottle>=0&&interactionOutput.bottleHand>=0) {
             auto pose=motionInput.hand[interactionOutput.bottleHand];pose.q=potions::HeldRotation(pose.q);
@@ -2055,19 +2112,22 @@ void EndPair() {
         }
         if((interactionOutput.vitals||interactionOutput.critical)&&!interactionOutput.wheel) {
             const bool palm=interactionOutput.palm;
-            const auto panel=palm?interaction::PalmPanel(interactionInput.hand[1],interactionInput.head):
-                interaction::WristPanel(interactionInput.hand[1],interactionInput.head);
+            const auto panel=interaction::VitalsPanel(interactionInput.hand[1],interactionInput.head,palm,interactionInput.vitalsTilt);
             auto pose=motionInput.hand[1];pose.p=panel.p;pose.q=panel.q;
             if(interactionOutput.critical&&!interactionOutput.vitals){pose.p=V(head.position)+math::Rotate(Q(head.orientation),{-.20f,-.22f,-.55f});pose.q=Q(head.orientation);}
             motionQuad(wrist,XrPose(pose),palm?interaction::PalmWidth:interaction::WristWidth,
                 palm?interaction::PalmHeight:interaction::WristHeight,{{512,768},{512,256}},interactionChain);
         }
-        // Submit the map, compass strip and marker as one navigation display.
-        if(mapEye.copied&&compassAtlasReady&&compassFrame&&count+3<=contentLimit&&
+        // The area label and compass remain usable during a missing map capture.
+        // Never submit a label painted for another session or a previous area.
+        const uint32_t navigationLayers=2+uint32_t(mapEye.copied);
+        const bool locationReady=interactionPaintValid&&count+navigationLayers+1<=contentLimit&&
+            interaction::LocationImageCurrent(interactionPaintContext,interactionInput.snapshot);
+        if(compassAtlasReady&&compassFrame&&count+navigationLayers<=contentLimit&&
            interaction::NavigationWanted(interactionInput,interactionOutput,GetTickCount64())) {
             const bool palm=interactionOutput.navigationPalm;
             const bool withVitals=interactionOutput.vitals&&interactionOutput.palm==palm;
-            motionQuad(wristMap,interactionPose(interaction::NavigationMapPanel(interactionInput.hand[1],interactionInput.head,palm,withVitals)),
+            if(mapEye.copied)motionQuad(wristMap,interactionPose(interaction::NavigationMapPanel(interactionInput.hand[1],interactionInput.head,palm,withVitals)),
                 interaction::WristMapSize,interaction::WristMapSize,{{0,0},{int32_t(mapSide),int32_t(mapSide)}},mapEye.chain);
             auto compassPose=interaction::NavigationCompassPanel(interactionInput.hand[1],interactionInput.head,palm,withVitals);
             motionQuad(wristCompass,interactionPose(compassPose),interaction::WristCompassWidth,interaction::WristCompassHeight,
@@ -2077,6 +2137,9 @@ void EndPair() {
             compassPose.p=compassPose.p+math::Rotate(compassPose.q,{0,(interaction::WristCompassHeight-markerHeight)*.5f,.001f});
             motionQuad(compassMarker,interactionPose(compassPose),markerWidth,markerHeight,
                 {{0,compass::StripHeight},{compass::MarkerWidth,compass::MarkerHeight}},compassChain);
+            if(locationReady)motionQuad(navigationInfo,interactionPose(interaction::NavigationInfoPanel(
+                interactionInput.hand[1],interactionInput.head,palm,withVitals)),interaction::NavigationInfoWidth,interaction::NavigationInfoHeight,
+                {{navigation::AtlasX,navigation::AtlasY},{navigation::Width,navigation::Height}},interactionChain);
         }
     }
     const bool weaponSkillIndicators=vrsettings::Read().values[settings::WeaponSkillIndicators]>.5f;
@@ -2103,17 +2166,8 @@ void EndPair() {
     if(gameplayVisible&&motionOutput.bowReady) {
         const auto bow=motionInput.hand[1];
         const auto center=motionOutput.bowDrawing?motionInput.hand[0].p:motionOutput.nockPoint;
-        auto up=math::Rotate(bow.q,{0,0,-1});
-        if(std::fabs(math::Dot(up,motionOutput.bowForward))>.8f)up=math::Rotate(bow.q,{0,1,0});
-        up=math::Normalized(up-motionOutput.bowForward*math::Dot(up,motionOutput.bowForward));
-        // Unrecognized rigs retain the draw guides. Once the actual model is
-        // posed, remove these overlapping copies of its string and arrow.
-        const bool nativeBow=skel::MotionBowPosed();
-        for(int i=0;i<2&&!nativeBow;++i) {
-            const auto end=bow.p+up*(i==0?.40f:-.40f),mid=(center+end)*.5f;
-            motionQuad(bowString[i],XrPose({mid,math::BeamOrientation(end-center,V(head.position)-mid)}),
-                .0015f,gameplay::Length(end-center),{{0,0},{64,32}},pointerChain);
-        }
+        // The game's bow mesh supplies the string. Do not draw the teal
+        // V-string guide over it, even when its rig cannot follow the hand.
         if(!bowvr::PreviewReady()&&(motionOutput.bowDrawing||motionOutput.bowInReach)) {
             const auto direction=motionOutput.bowDrawing?motionOutput.rayDirection:motionOutput.bowForward;
             const auto mid=center+direction*(bowflight::ArrowLength*.5f);
@@ -2123,7 +2177,7 @@ void EndPair() {
         }
         // Native bows have a visible string to grab. The extra idle marker
         // correlated with compositor pose errors; omit it on this path.
-        if(!nativeBow&&!motionOutput.bowDrawing) {
+        if(!skel::MotionBowPosed()&&!motionOutput.bowDrawing) {
             const float size=motionOutput.bowInReach?.045f:.025f;
             motionQuad(nock,XrPose({center,Q(head.orientation)}),size,size,{{0,32},{64,64}},pointerChain);
         }
@@ -2303,6 +2357,8 @@ void FinishShieldSkill(bool accepted) {
     if(accepted)shieldImpactAt=shieldFeedbackAt;
 }
 void MeleeImpact() {meleeImpactAt=GetTickCount64();}
+bool OwnsControllerRumble() {return motionControls.load()&&controllerRumbleLease.Owns(GetTickCount64());}
+void SpellCast(int hand,uint64_t session) {spellHaptics.Publish(hand,session,GetTickCount64());}
 void SetBowWorldEpoch(uint32_t epoch) {
     std::lock_guard lock(mutex);
     if(bowWorldEpoch==epoch)return;
@@ -2433,6 +2489,7 @@ void Shutdown(bool preserveResolution) {
     if(session&&pDestroySession)pDestroySession(session);if(actionSet&&pDestroyActionSet)pDestroyActionSet(actionSet);
     if(instance&&pDestroyInstance)pDestroyInstance(instance);
     session=XR_NULL_HANDLE;instance=XR_NULL_HANDLE;actionSet=XR_NULL_HANDLE;headSpace=space=XR_NULL_HANDLE;
+    hapticActions.Reset();
     running=frame=valid=render=haveOrigin=menuPlaced=panelMode=false;state=XR_SESSION_STATE_UNKNOWN;gameWindow=nullptr;
     worldWasLoaded=worldCalibrationPending=worldRecenter=false;
     if(fenceEvent)CloseHandle(fenceEvent);fenceEvent=nullptr;
