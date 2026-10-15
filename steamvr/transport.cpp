@@ -37,6 +37,7 @@
 #include "interaction_paint.h"
 #include "latest_worker.h"
 #include "haptic_pulse.h"
+#include "haptic_actions.h"
 #include "interaction_icons.h"
 #include "potion_models.h"
 #include "vr_settings_ui.h"
@@ -291,7 +292,7 @@ Block<D2RVR_Actions> actions;
 XrActionSet actionSet=XR_NULL_HANDLE;
 XrAction gripPose=XR_NULL_HANDLE, stick=XR_NULL_HANDLE, trigger=XR_NULL_HANDLE, squeeze=XR_NULL_HANDLE;
 XrAction aimPose=XR_NULL_HANDLE;
-XrAction haptic=XR_NULL_HANDLE;
+haptics::Actions hapticActions;
 haptics::Pulses hapticPulses;
 haptics::CastEvents spellHaptics;
 XrAction primary=XR_NULL_HANDLE, secondary=XR_NULL_HANDLE, stickClick=XR_NULL_HANDLE, menu=XR_NULL_HANDLE;
@@ -529,22 +530,23 @@ bool SetupActions() {
     std::strcpy(ci.actionSetName,"d2r");std::strcpy(ci.localizedActionSetName,"Diablo II");
     if(!Check(pCreateActionSet(instance,&ci,&actionSet),"create action set")) return false;
     if(!MakeAction(gripPose,"hands",XR_ACTION_TYPE_POSE_INPUT) || !MakeAction(stick,"sticks",XR_ACTION_TYPE_VECTOR2F_INPUT) ||
-       !MakeAction(aimPose,"menu_aim",XR_ACTION_TYPE_POSE_INPUT) || !MakeAction(haptic,"feedback",XR_ACTION_TYPE_VIBRATION_OUTPUT) ||
+       !MakeAction(aimPose,"menu_aim",XR_ACTION_TYPE_POSE_INPUT) || !Check(hapticActions.Create(actionSet,pCreateAction),"create hand haptics") ||
        !MakeAction(trigger,"triggers",XR_ACTION_TYPE_FLOAT_INPUT) || !MakeAction(squeeze,"grips",XR_ACTION_TYPE_FLOAT_INPUT) ||
        !MakeAction(primary,"primary",XR_ACTION_TYPE_BOOLEAN_INPUT) || !MakeAction(secondary,"secondary",XR_ACTION_TYPE_BOOLEAN_INPUT) ||
        !MakeAction(stickClick,"stick_click",XR_ACTION_TYPE_BOOLEAN_INPUT) || !MakeAction(menu,"menu",XR_ACTION_TYPE_BOOLEAN_INPUT)) return false;
+    Say("Frame haptics: separate feedback_right and feedback_left actions; apply and timed stop use each hand's own output");
     for(const auto* profile:{"/interaction_profiles/valve/index_controller","/interaction_profiles/oculus/touch_controller","/interaction_profiles/microsoft/motion_controller",controllers::FrameProfile}) {
         const bool frameController=std::string_view(profile)==controllers::FrameProfile;
         if(frameController&&!frameControllerExtension)continue;
         const bool index=std::strstr(profile,"index"), touch=std::strstr(profile,"touch");
         const auto layout=controllers::Detect(profile);
         std::vector<XrActionSuggestedBinding> bindings;
+        if(!Check(hapticActions.Bind(instance,pStringToPath,bindings),"bind hand haptics"))return false;
         for(int i=0;i<2;++i) {
             const std::string base=i==0?"/user/hand/right/input/":"/user/hand/left/input/";
             auto bind=[&](XrAction a,const char* suffix){bindings.push_back({a,Path((base+suffix).c_str())});};
             bind(gripPose,"grip/pose");bind(stick,"thumbstick");bind(stickClick,"thumbstick/click");bind(trigger,"trigger/value");
             bind(aimPose,"aim/pose");
-            bindings.push_back({haptic,Path((std::string(i==0?"/user/hand/right":"/user/hand/left")+"/output/haptic").c_str())});
             // Motion controllers expose squeeze/click (boolean), so omit our float grip there.
             if(index||touch||frameController) bind(squeeze,index?"squeeze/force":"squeeze/value");
             if(index||touch||frameController) {
@@ -979,20 +981,19 @@ void MotionPointer() {
     }
 }
 void MotionPulse(int hand,haptics::Category category,float strength,XrDuration duration,float frequency=XR_FREQUENCY_UNSPECIFIED,const haptics::Strengths* preview=nullptr) {
-    if(hand<0||hand>=2||!haptic||!pApplyHapticFeedback||!pStopHapticFeedback||!session||!running)return;
+    const auto ai=hapticActions.Info(hand);
+    if(!ai.action||!pApplyHapticFeedback||!pStopHapticFeedback||!session||!running)return;
     hapticPulses.Configure(settings::HapticLevels(vrsettings::Read().values));
     // Capture handles by value. Shutdown joins the timer before destroying
     // these handles; the worker never takes the transport/render mutex.
-    const auto xrSession=session;const auto action=haptic;const auto stop=pStopHapticFeedback;
-    const std::array<XrPath,2> paths{hands[0],hands[1]};const auto log=logger;
-    if(!hapticPulses.Start([xrSession,action,stop,paths,log,reported=std::array<bool,2>{}](int hand) mutable {
-        XrHapticActionInfo ai{XR_TYPE_HAPTIC_ACTION_INFO};ai.action=action;ai.subactionPath=paths[hand];
+    const auto xrSession=session;const auto outputs=hapticActions;const auto stop=pStopHapticFeedback;const auto log=logger;
+    if(!hapticPulses.Start([xrSession,outputs,stop,log,reported=std::array<bool,2>{}](int hand) mutable {
+        const auto ai=outputs.Info(hand);
         const auto result=stop(xrSession,&ai);
         if(!reported[hand]&&log) {
             char message[128];std::snprintf(message,sizeof message,"Frame haptics: explicit timed stop hand=%d result=%d",hand,int(result));log(message);reported[hand]=true;
         }
     }))return;
-    XrHapticActionInfo ai{XR_TYPE_HAPTIC_ACTION_INFO};ai.action=haptic;ai.subactionPath=hands[hand];
     XrHapticVibration vibration{XR_TYPE_HAPTIC_VIBRATION};
     vibration.duration=duration;vibration.frequency=frequency;
     XrResult result=XR_SUCCESS;
@@ -2467,6 +2468,7 @@ void Shutdown(bool preserveResolution) {
     if(session&&pDestroySession)pDestroySession(session);if(actionSet&&pDestroyActionSet)pDestroyActionSet(actionSet);
     if(instance&&pDestroyInstance)pDestroyInstance(instance);
     session=XR_NULL_HANDLE;instance=XR_NULL_HANDLE;actionSet=XR_NULL_HANDLE;headSpace=space=XR_NULL_HANDLE;
+    hapticActions.Reset();
     running=frame=valid=render=haveOrigin=menuPlaced=panelMode=false;state=XR_SESSION_STATE_UNKNOWN;gameWindow=nullptr;
     worldWasLoaded=worldCalibrationPending=worldRecenter=false;
     if(fenceEvent)CloseHandle(fenceEvent);fenceEvent=nullptr;

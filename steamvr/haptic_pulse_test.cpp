@@ -1,11 +1,73 @@
 #include "haptic_pulse.h"
+#include "haptic_actions.h"
 #include <cstdio>
 #include <cstdlib>
 #include <atomic>
+#include <map>
+#include <string>
 using namespace std::chrono_literals;
 using namespace framevr::haptics;
 static void Check(bool value,const char* message){if(!value){std::fprintf(stderr,"FAIL: %s\n",message);std::exit(1);}}
+namespace {
+// Resolve the actual suggested bindings, rather than treating a hand index
+// passed to Pulse as proof that the intended controller received anything.
+struct Runtime {
+    static inline uintptr_t serial=100;
+    static inline std::map<XrAction,std::string> names;
+    static XrResult XRAPI_CALL Create(XrActionSet,const XrActionCreateInfo* info,XrAction* action) {
+        Check(info->type==XR_TYPE_ACTION_CREATE_INFO&&info->actionType==XR_ACTION_TYPE_VIBRATION_OUTPUT,"create output action");
+        Check(info->countSubactionPaths==0&&!info->subactionPaths,"dedicated output does not depend on subaction filtering");
+        *action=reinterpret_cast<XrAction>(++serial);
+        names[*action]=info->actionName;return XR_SUCCESS;
+    }
+    static XrResult XRAPI_CALL Path(XrInstance,const char* name,XrPath* output) {
+        const std::string path=name;
+        if(path=="/user/hand/right/output/haptic")*output=91;
+        else if(path=="/user/hand/left/output/haptic")*output=47;
+        else return XR_ERROR_PATH_FORMAT_INVALID;
+        return XR_SUCCESS;
+    }
+    std::map<XrAction,std::vector<XrPath>> bound;
+    std::map<XrPath,int> applied,stopped;
+    std::mutex mutex;std::condition_variable changed;
+    void Send(XrHapticActionInfo info,bool stop) {
+        std::lock_guard lock(mutex);
+        Check(info.type==XR_TYPE_HAPTIC_ACTION_INFO&&info.action&&info.subactionPath==XR_NULL_PATH,"send through dedicated action without hand filter");
+        const auto& outputs=bound[info.action];
+        Check(outputs.size()==1,"a hand's action must bind exactly one physical output");
+        ++(stop?stopped:applied)[outputs[0]];changed.notify_all();
+    }
+    void Verify(int right,int left) {
+        std::unique_lock lock(mutex);
+        Check(changed.wait_for(lock,2s,[&]{return stopped[91]>=right&&stopped[47]>=left;}),"timed stops reach requested controllers");
+        Check(applied[91]==right&&applied[47]==left&&stopped[91]==right&&stopped[47]==left,"only the intended hand receives apply and stop");
+    }
+};
+void Routing() {
+    Actions actions;
+    Check(actions.Create(XR_NULL_HANDLE,Runtime::Create)==XR_SUCCESS,"create per-hand outputs");
+    Check(actions.Info(0).action!=actions.Info(1).action,"hands use distinct action handles");
+    Check(Runtime::names[actions.Info(0).action]=="feedback_right"&&Runtime::names[actions.Info(1).action]=="feedback_left","stable named outputs replace shared feedback binding");
+    std::vector<XrActionSuggestedBinding> bindings;
+    Check(actions.Bind(XR_NULL_HANDLE,Runtime::Path,bindings)==XR_SUCCESS&&bindings.size()==2,"bind both outputs");
+    Runtime runtime;
+    for(const auto& binding:bindings)runtime.bound[binding.action].push_back(binding.binding);
+    Pulses pulses;
+    Check(pulses.Start([outputs=actions,&runtime](int hand){runtime.Send(outputs.Info(hand),true);}),"start routed timer");
+    Check(pulses.Pulse(0,Category::Melee,10ms,.95f,[&](float){runtime.Send(actions.Info(0),false);return true;}),"right sword impact");
+    runtime.Verify(1,0);
+    Check(pulses.Pulse(1,Category::Melee,10ms,.95f,[&](float){runtime.Send(actions.Info(1),false);return true;}),"left shield bash");
+    runtime.Verify(1,1);
+    for(int hand=0;hand<2;++hand)
+        Check(pulses.Pulse(hand,Category::Spell,5s,.4f,[&](float){runtime.Send(actions.Info(hand),false);return true;}),"simultaneous per-hand feedback");
+    pulses.Cancel();runtime.Verify(2,2);pulses.Stop();
+    const auto previous=actions.Info(0).action;
+    actions.Reset();Check(!actions.Info(0).action&&!actions.Info(1).action&&!actions.Info(-1).action&&!actions.Info(2).action,"shutdown and invalid hands have no output");
+    Check(actions.Create(XR_NULL_HANDLE,Runtime::Create)==XR_SUCCESS&&actions.Info(0).action!=previous,"new session replaces old haptic handles");
+}
+}
 int main() {
+    Routing();
     Pulses pulses;
     auto pulse=[&](int hand,auto duration,bool accept=true){return pulses.Pulse(hand,Category::Melee,duration,.95f,[&](float amplitude){Check(amplitude==.95f,"default strength preserves native amplitude");return accept;});};
     std::mutex mutex;std::condition_variable changed;std::array<int,2> stops{};
@@ -72,5 +134,5 @@ int main() {
         casts.Publish(-1,1,1600);casts.Publish(2,1,1600);casts.Publish(0,0,1600);
         Check(!casts.Take(0,1,1601,true)&&!casts.Take(2,1,1601,true),"invalid hand or session never produces feedback");
     }
-    std::puts("Haptics: master/categories, runtime amplitude, mute/cancel, preview isolation, cast events, expiry and lifecycle passed");
+    std::puts("Haptics: per-hand output bindings, master/categories, runtime amplitude, mute/cancel, preview isolation, cast events, expiry and lifecycle passed");
 }

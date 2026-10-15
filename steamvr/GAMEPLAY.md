@@ -674,6 +674,9 @@ Overall and Melee impacts strength scale its amplitude. Events are consumed once
 rather than held during overlap. A dedicated timer
 explicitly stops the vibration at its deadline even if rendering stalls; pulse
 replacement, focus loss and session shutdown cancel pending stops safely.
+Weapon hits target the right controller; shield bashes target the left. Each
+controller has its own OpenXR vibration action and binding, shared by pulse
+start and stop, to avoid depending on a shared action's hand filtering.
 Exact feel and frequency support depend on the controller/runtime and need
 headset validation. Existing saved melee speed choices remain unchanged.
 
