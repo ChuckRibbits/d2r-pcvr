@@ -18,16 +18,20 @@ inline const char* ActLabel(int act) {
 inline const char* AreaLabel(const Location& location) {
     return location.name[0]?location.name:"Location unavailable";
 }
-// D2R 3.3.93787 Levels.bin: 404-byte rows, Id byte at 4, zero-based Act
-// at 13, and a 40-byte LevelName localization key at 261. Checked against
-// all 138 rows in the installed game's TXT/BIN; other layouts fail closed.
+// D2R 3.3.93787's LIVE Levels rows differ from the archived 404-byte BIN.
+// The native compiler's field descriptors at RVA 0x3300d4,
+// 0x33024d..0x330261 and row-size argument at 0x33038c use a 396-byte row
+// with a 40-byte LevelName at 253. D2RCore's DataTableService also reports
+// 396, and its level validator reads a uint16 Id at 4 and Act byte at 13.
+// Read only the service's live layout; never reinterpret an archived BIN row.
+constexpr uint32_t LevelRowSize=396,LevelNameOffset=253;
 template<class Read,class Localize>
 Location ReadLocation(int level,uintptr_t row,uint32_t rowSize,Read read,Localize localize) {
     Location result;
-    if(level<=0||level>255||row<0x10000||row>UINTPTR_MAX-404||rowSize!=404)return result;
-    uint8_t id=0,act=0;char key[40]{};
+    if(level<=0||level>UINT16_MAX||row<0x10000||row>UINTPTR_MAX-LevelRowSize||rowSize!=LevelRowSize)return result;
+    uint16_t id=0;uint8_t act=0;char key[40]{};
     if(!read(row+4,id)||id!=level||!read(row+13,act)||act>=5||
-       !read(row+261,key)||!key[0]||!std::memchr(key,0,sizeof key))return result;
+       !read(row+LevelNameOffset,key)||!key[0]||!std::memchr(key,0,sizeof key))return result;
     result.level=level;result.act=act+1;
     char qualified[48]{};std::snprintf(qualified,sizeof qualified,"d2r:%s",key);
     if(!localize(qualified,result.name,sizeof result.name)||!std::memchr(result.name,0,sizeof result.name))

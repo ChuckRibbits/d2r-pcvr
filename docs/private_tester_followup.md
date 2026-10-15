@@ -33,6 +33,15 @@ behavior still needs headset verification; larger text and stronger backing rema
 The revised native build passes all 65 automated checks, including the actual
 Show Items command dispatcher with a simulated loader/UI queue.
 
+The owner also reported `ACT -- / Location unavailable` both in Act I town
+and outside it. The location reader had used the archive BIN layout (404 bytes,
+name at 261) for the live table returned by the loader (396 bytes, name at 253).
+It now reads the verified runtime layout and the full two-byte level ID. The
+native compiler descriptors and installed loader's table service/validator were
+independently checked; regression coverage includes town, outdoor, dungeon and
+act transitions. Changes in level, lookup result, row size and resolved name
+are logged for follow-up. The correction awaits the next offline headset test.
+
 ## Settings and behavior
 
 | Feedback | Change |
