@@ -193,6 +193,13 @@ together, independently of health/mana. When both displays share a hand face,
 navigation sits above the vitals; otherwise it sits directly at the hand anchor.
 The wheel's **MAP** tab remains available even when navigation is **Off**.
 
+The label above the compass shows your current **act (I-V)** and **area name**,
+including named dungeon floors. It follows the same wrist/palm placement and
+visibility as navigation, and updates when you cross a boundary or use a waypoint
+or portal. Area names use the game's current language. While location data is
+unavailable, the label says **Location unavailable** instead of retaining the
+previous area. The label and compass can still appear while map capture is unavailable.
+
 A slim bronze **compass** sits above the minimap. Its fixed
 center marker shows your facing direction; **N** is the top of the native map,
 with **E/S/W** and diagonal bearings around it. Physical turns, stick turns and

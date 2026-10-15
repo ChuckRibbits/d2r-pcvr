@@ -58,7 +58,12 @@ Battle.net edition, headset, controllers, connection/runtime and resolution.
    open each wheel's MAP tab. Expect a compact map and no full-screen map flash.
    Lower the hand, open menus and leave/rejoin a character; confirm native map
    visibility/layout restoration. Repeat with left/right corner settings and
-   hand navigation Off. Compass and map should appear/hide together.
+   hand navigation Off. Compass, area/act label and map should appear/hide together.
+   Check the area name (including dungeon floor) and act above the compass while
+   walking across a boundary, using a waypoint/portal and changing acts. Try Wrist,
+   Palm and Either; verify no overlap with vitals and no previous-area label after
+   loading or rejoining. The area label and compass should remain usable if map
+   capture is unavailable. Headset verification of these labels is pending.
 5. Sweep the laser over every occupied cell of a tall/wide item, its edges and
    its sockets in inventory and a merchant. Check ordinary, empty-socket and
    socket-filled items. Expect a stable item tooltip and eligible equipped

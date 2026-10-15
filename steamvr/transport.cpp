@@ -2037,6 +2037,7 @@ void EndPair() {
     std::array<XrCompositionLayerQuad,4> beltQuads;
     XrCompositionLayerQuad wrist{XR_TYPE_COMPOSITION_LAYER_QUAD},wristMap{XR_TYPE_COMPOSITION_LAYER_QUAD};
     XrCompositionLayerQuad wristCompass{XR_TYPE_COMPOSITION_LAYER_QUAD},compassMarker{XR_TYPE_COMPOSITION_LAYER_QUAD};
+    XrCompositionLayerQuad navigationInfo{XR_TYPE_COMPOSITION_LAYER_QUAD};
     if(interactionVisible) {
         if(!potionModels.Ready()&&interactionOutput.bottle>=0&&interactionOutput.bottleHand>=0) {
             auto pose=motionInput.hand[interactionOutput.bottleHand];pose.q=potions::HeldRotation(pose.q);
@@ -2062,12 +2063,16 @@ void EndPair() {
             motionQuad(wrist,XrPose(pose),palm?interaction::PalmWidth:interaction::WristWidth,
                 palm?interaction::PalmHeight:interaction::WristHeight,{{512,768},{512,256}},interactionChain);
         }
-        // Submit the map, compass strip and marker as one navigation display.
-        if(mapEye.copied&&compassAtlasReady&&compassFrame&&count+3<=contentLimit&&
+        // The area label and compass remain usable during a missing map capture.
+        // Never submit a label painted for another session or a previous area.
+        const uint32_t navigationLayers=2+uint32_t(mapEye.copied);
+        const bool locationReady=interactionPaintValid&&count+navigationLayers+1<=contentLimit&&
+            interaction::LocationImageCurrent(interactionPaintContext,interactionInput.snapshot);
+        if(compassAtlasReady&&compassFrame&&count+navigationLayers<=contentLimit&&
            interaction::NavigationWanted(interactionInput,interactionOutput,GetTickCount64())) {
             const bool palm=interactionOutput.navigationPalm;
             const bool withVitals=interactionOutput.vitals&&interactionOutput.palm==palm;
-            motionQuad(wristMap,interactionPose(interaction::NavigationMapPanel(interactionInput.hand[1],interactionInput.head,palm,withVitals)),
+            if(mapEye.copied)motionQuad(wristMap,interactionPose(interaction::NavigationMapPanel(interactionInput.hand[1],interactionInput.head,palm,withVitals)),
                 interaction::WristMapSize,interaction::WristMapSize,{{0,0},{int32_t(mapSide),int32_t(mapSide)}},mapEye.chain);
             auto compassPose=interaction::NavigationCompassPanel(interactionInput.hand[1],interactionInput.head,palm,withVitals);
             motionQuad(wristCompass,interactionPose(compassPose),interaction::WristCompassWidth,interaction::WristCompassHeight,
@@ -2077,6 +2082,9 @@ void EndPair() {
             compassPose.p=compassPose.p+math::Rotate(compassPose.q,{0,(interaction::WristCompassHeight-markerHeight)*.5f,.001f});
             motionQuad(compassMarker,interactionPose(compassPose),markerWidth,markerHeight,
                 {{0,compass::StripHeight},{compass::MarkerWidth,compass::MarkerHeight}},compassChain);
+            if(locationReady)motionQuad(navigationInfo,interactionPose(interaction::NavigationInfoPanel(
+                interactionInput.hand[1],interactionInput.head,palm,withVitals)),interaction::NavigationInfoWidth,interaction::NavigationInfoHeight,
+                {{navigation::AtlasX,navigation::AtlasY},{navigation::Width,navigation::Height}},interactionChain);
         }
     }
     const bool weaponSkillIndicators=vrsettings::Read().values[settings::WeaponSkillIndicators]>.5f;

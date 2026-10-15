@@ -5,6 +5,7 @@
 #include "potion_pose.h"
 #include "wrist_hud.h"
 #include "hand_vitals.h"
+#include "navigation_info.h"
 #include <array>
 #include <cstdint>
 #include <cstring>
@@ -55,6 +56,13 @@ constexpr float WristCompassWidth=.24f,WristCompassHeight=.045f;
 inline Pose NavigationCompassPanel(Pose hand,Pose head,bool palm,bool vitalsOnFace) {
     auto panel=NavigationMapPanel(hand,head,palm,vitalsOnFace);
     panel.p=panel.p+math::Rotate(panel.q,{0,(WristMapSize+WristCompassHeight)*.5f+.01f,0});
+    return panel;
+}
+constexpr float NavigationInfoWidth=WristCompassWidth;
+constexpr float NavigationInfoHeight=NavigationInfoWidth*navigation::Height/navigation::Width;
+inline Pose NavigationInfoPanel(Pose hand,Pose head,bool palm,bool vitalsOnFace) {
+    auto panel=NavigationCompassPanel(hand,head,palm,vitalsOnFace);
+    panel.p=panel.p+math::Rotate(panel.q,{0,(WristCompassHeight+NavigationInfoHeight)*.5f+.006f,0});
     return panel;
 }
 inline bool WristPresented(Pose hand,Pose head) {
@@ -130,6 +138,7 @@ struct Snapshot {
     float health=0,maxHealth=0,mana=0,maxMana=0;
     bool vitalsKnown=false;
     wrist::Experience experience;
+    navigation::Location location;
     bool actionKnown=false;
     uint32_t actionMode=0;
 };
