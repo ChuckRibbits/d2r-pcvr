@@ -56,7 +56,7 @@ Quest left X/Y correspond to Index left A/B; right A/B labels are the same.
 | VR settings / body calibration | Either wheel → VR SETTINGS |
 | Minimap | Either wheel → MAP; movement remains available |
 | Reset height | VR Settings > Reset eye height |
-| Adjust controller vibration | **VR Settings > Haptics**: overall strength plus separate melee, bow draw, bow/throw release, spell, interaction and resource-alert strengths. **Test** previews a category; **Apply** saves |
+| Adjust controller vibration | **VR Settings > Haptics**: overall strength plus separate melee, bow draw, bow/throw release, spell, interaction and resource-alert strengths. Tests match each action's hands; **Apply** saves |
 | Hold to show all nearby loot labels (Alt) | Hold **Right Grip + Right Trigger** during gameplay, grip first. Labels stay shown while both are held; release either to restore normal drop/hover labels. Uses the native Alt range, independently of where you aim. No cast or shot accompanies the combo. Also listed in **VR Settings > Controls** |
 | Interact / pick up / talk | Right A by default; requires an aimed interactable. One press acts on one target: press again for each item, including loot a chest just dropped |
 | Free melee swing / thrust | Move the equipped weapon through an enemy |
@@ -85,6 +85,14 @@ On the **VR** settings tab, **Smooth turning** defaults to **Off** (30-degree
 snap turns). Turn it **On**, then **Apply**, for continuous right-stick turning.
 **Snap turn angle** and **Smooth turn speed** keep their values when switching
 modes. Existing smooth-turn profiles retain their selected mode.
+
+The **Haptics** tab offers **Weapon / Shield** tests for melee, a combined bow-draw
+test, **Bow / Throw** release tests, **Test L / Test R** for spells and interactions,
+and one left-hand alert test. Tests use the displayed values before Apply.
+**Short melee pulses** defaults Off: weapon impacts last 90 ms and shield impacts
+45 ms at the controller's preferred frequency. On selects the earlier 10 ms /
+180 Hz pulse. **HUD > Low health / mana alerts** must also be enabled for
+automatic resource warnings.
 
 ## Hand skill layouts
 
