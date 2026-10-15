@@ -75,6 +75,13 @@ Battle.net edition, headset, controllers, connection/runtime and resolution.
    comparison. Check another item, empty cells, dragging and controller
    navigation. Try Instant, Short and Original; verify purchasing/stack
    shortcuts still honor only the player's actual modifiers.
+   Check the larger dropped-item names against bright/dark terrain and in a
+   crowded loot pile; verify quality colors, spacing, click targets and pickup.
+   Hold Right Grip and click Right Stick to hide/show names. Holding the combo
+   must toggle once; releasing grip before the stick must not open a wheel.
+   Try ordinary wheel clicks and native inventory hold-to-sort afterward, then
+   menus, tracking loss and leaving/rejoining a character. Verify inventory
+   tooltips and monster labels retain their appearance. Headset testing is pending.
 6. Cast Charged Bolt alone, then alongside Fireball, while stationary and
    moving. Listen for one normal casting cue per hand per accepted cast, with
    no burst proportional to bolt count. Check native effects volume/mute.

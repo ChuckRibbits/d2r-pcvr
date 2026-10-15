@@ -179,12 +179,25 @@ not generate melee velocity. The layout currently assumes a right-handed player.
 | Seated weapon selection | Utility wheel → **Weapon I** or **Weapon II** |
 | Stow/draw | Utility wheel → **Stow weapons** / **Draw weapons**; native equipped stats stay unchanged |
 | Health/mana | Check the back of your left wrist, or choose **Palm** in **VR Settings > HUD** and hold your left palm upward in front of you briefly. No button required; automatic alerts are off by default |
+| Dropped-item names | Hold **Right Grip**, then click the **Right Stick** to toggle names on/off during gameplay. Release the stick before toggling again |
 | Explored minimap | Hold Left Y ? **MAP** in the bottom tabs; point right laser + trigger. **SPELLS** returns to skills; releasing Left Y closes the menu |
 | Quest journal | Open the native tabbed game menu with Left X / Frame Left A, then select Journal. The duplicate wheel entry is removed |
 | Journal controls | Right laser + trigger uses native page controls/act tabs; Right B follows native back; Left X performs native X |
 | Inventory drop / sort | Native X (Quest Left X / Frame Left A) / press and hold right stick click; right-stick click no longer swaps in gameplay |
 | Walk / snap turn | Sticks; paused while wheel or journal is open |
 | Inventory menu / height reset | Left grip + left stick click / VR Settings > Reset eye height |
+
+Dropped-item names use **150% text size** and a darker backing in native VR
+gameplay, preserving the game's item-quality colors. The native label bounds
+grow with the text so placement and click targets match. **Right Grip + Right
+Stick Click** hides or restores the names, with a short vibration. It consumes
+the stick press without opening the wheel, including if you release grip first.
+Release the combo before casting or starting a grip interaction again.
+Use it outside menus and wheels, with no potion or holster interaction active.
+Normal right-stick clicks still toggle the wheel; native menu hold-to-sort stays
+available. Names start visible for a new character session, retain your choice
+through menus and tracking interruptions, and follow the game's native item
+visibility/filter rules. Inventory tooltips and monster labels keep their styling.
 
 The minimap and compass form one navigation display on your left hand.
 **VR Settings > HUD > Minimap / compass location** offers **Wrist** (default),
