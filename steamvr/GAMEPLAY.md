@@ -179,7 +179,7 @@ not generate melee velocity. The layout currently assumes a right-handed player.
 | Seated weapon selection | Utility wheel → **Weapon I** or **Weapon II** |
 | Stow/draw | Utility wheel → **Stow weapons** / **Draw weapons**; native equipped stats stay unchanged |
 | Health/mana | Check the back of your left wrist, or choose **Palm** in **VR Settings > HUD** and hold your left palm upward in front of you briefly. No button required; automatic alerts are off by default |
-| Dropped-item names | Hold **Right Grip**, then click the **Right Stick** to toggle names on/off during gameplay. Release the stick before toggling again |
+| Dropped-item names | Hold **Right Grip**, then squeeze **Right Trigger** to toggle names on/off during gameplay. Release the trigger before toggling again; listed in **VR Settings > Controls** |
 | Explored minimap | Hold Left Y ? **MAP** in the bottom tabs; point right laser + trigger. **SPELLS** returns to skills; releasing Left Y closes the menu |
 | Quest journal | Open the native tabbed game menu with Left X / Frame Left A, then select Journal. The duplicate wheel entry is removed |
 | Journal controls | Right laser + trigger uses native page controls/act tabs; Right B follows native back; Left X performs native X |
@@ -190,8 +190,10 @@ not generate melee velocity. The layout currently assumes a right-handed player.
 Dropped-item names use **150% text size** and a darker backing in native VR
 gameplay, preserving the game's item-quality colors. The native label bounds
 grow with the text so placement and click targets match. **Right Grip + Right
-Stick Click** hides or restores the names, with a short vibration. It consumes
-the stick press without opening the wheel, including if you release grip first.
+Trigger** hides or restores the names, with a short vibration. It consumes
+the trigger squeeze without casting or shooting, including if you release grip first.
+Hold grip before squeezing the trigger; adding grip to an existing attack does
+not toggle names. Analog hysteresis prevents squeeze noise from repeating a toggle.
 Release the combo before casting or starting a grip interaction again.
 Use it outside menus and wheels, with no potion or holster interaction active.
 Normal right-stick clicks still toggle the wheel; native menu hold-to-sort stays

@@ -20,36 +20,56 @@ int main() {
     assert(TextScale==1.5f&&BackingAlpha(.6f)==.85f&&BackingAlpha(.95f)==.95f);
     assert(BackingAlpha(0)==0&&BackingAlpha(-1)==-1);
     Shortcut combo;uint64_t now=1000,session=1,epoch=1;
-    auto step=[&](bool click,float grip=1,bool allowed=true){now+=20;return combo.Step(session,epoch,now,allowed,click,grip);};
+    auto step=[&](float trigger,float grip=1,bool allowed=true){now+=20;return combo.Step(session,epoch,now,allowed,trigger,grip);};
     assert(!step(true)&&combo.Consumed()); // a combo held on first sample cannot toggle
     assert(!step(false)&&!combo.Consumed());
-    assert(combo.GripConsumed()&&!combo.GripConsumed(true)); // releasing stick first cannot replay grip
+    assert(combo.GripConsumed()&&!combo.GripConsumed(true)); // releasing trigger first cannot replay grip
     assert(step(true)&&combo.Consumed());
     for(int i=0;i<5;++i)assert(!step(true)); // once per press
-    assert(!step(true,0)&&combo.Consumed()); // release grip first: no wheel replay
+    assert(!step(true,0)&&combo.Consumed()); // release grip first: no attack replay
     assert(!combo.GripConsumed());
-    assert(!combo.Consumed(true)); // native menu sort retains its stick click
+    assert(!combo.Consumed(true)); // native panel trigger and Shift remain available
     assert(!step(false,0)&&!combo.Consumed());
     assert(!step(true,0)&&!combo.Consumed());
-    assert(!step(true,1)); // adding a grip to an already-clicked stick is not a new combo
+    assert(!step(true,1)&&!combo.Consumed()); // adding grip during an attack cannot steal its trigger
     step(false);assert(step(true));
     for(int event=0;event<5;++event) {
         step(false);
         if(event==0)++session;if(event==1)++epoch;if(event==2)now+=1000;
         if(event==3)combo.Suspend();
         assert(!step(true,1,event!=4));
-        assert(!step(true,1)); // recovery cannot replay a held click
+        assert(!step(true,1)); // recovery cannot replay a held trigger
         step(false);assert(step(true));
     }
     step(false);assert(!step(true,NAN));step(false);assert(step(true));
-    // A consumed press never opens the hand wheel; an ordinary click still does.
+    step(false);assert(!step(NAN,1));step(false);assert(step(true));
+    // Analog squeeze noise cannot retrigger or release a consumed chord.
+    step(0,0);step(0,.6f);assert(step(.8f,.6f));
+    for(float value:{.5f,.4f,.3f})assert(!step(value,.45f)&&combo.Consumed()&&combo.GripConsumed());
+    assert(!step(.19f,.45f)&&!combo.Consumed()&&combo.GripConsumed());
+    assert(step(.8f,.45f)); // repeat while the same grip stays held
+    assert(!step(1,.3f)&&combo.Consumed()&&!combo.GripConsumed());
+    assert(!step(1,1)&&combo.Consumed()); // repressing grip cannot toggle a held trigger
+    step(0,0);assert(!step(.4f,.4f)&&!combo.Consumed()); // gentle touch is not a chord
+    step(0,1);assert(step(1,1));
+    // The production filter consumes right trigger/grip before skill routing,
+    // while preserving the other hand, face buttons, movement and wheel click.
+    menus::Pad raw;raw.rt=raw.lt=255;raw.buttons=menus::RightBumper|menus::LeftBumper|menus::RightStick|menus::A;raw.lx=18000;
+    auto filtered=raw;float grip=1;combo.Filter(filtered,grip);
+    assert(!filtered.rt&&grip==0&&filtered.lt==255&&filtered.lx==18000);
+    assert(filtered.buttons==(raw.buttons&~menus::RightBumper));
+    auto native=raw;float nativeGrip=1;combo.Filter(native,nativeGrip,true);
+    assert(native.rt==255&&native.buttons==raw.buttons&&nativeGrip==1);
     skills::HandControls hands;skills::HandInput input;input.context=input.layout=1;input.active=true;
     for(int i=0;i<3;++i){input.time+=.02;hands.Step(input);}
-    input.click[0]=true;input.click[0]&=!combo.Consumed();input.time+=.02;
-    assert(hands.Step(input).wheel==-1);
-    step(true,0);input.click[0]=!combo.Consumed();input.time+=.02;assert(hands.Step(input).wheel==-1);
-    step(false,0);input.click[0]=false;input.time+=.02;hands.Step(input);
-    step(true,0);input.click[0]=!combo.Consumed();input.time+=.02;assert(hands.Step(input).wheel==0);
+    input.occupied=combo.Consumed()||combo.GripConsumed();
+    input.trigger[0]=filtered.rt/255.f;input.time+=.02;
+    assert(hands.Step(input).slot==-1); // toggling names does not cast the assigned skill
+    step(1,0);filtered=raw;grip=0;combo.Filter(filtered,grip);assert(!filtered.rt);
+    step(0,0);filtered=raw;grip=0;combo.Filter(filtered,grip);assert(filtered.rt==255);
+    input.occupied=false;input.time+=.02;hands.Step(input);
+    input.click[0]=(filtered.buttons&menus::RightStick)!=0;input.time+=.02;
+    assert(hands.Step(input).wheel==0); // ordinary stick clicks keep their wheel binding after release
     std::array<int32_t,4> box{100,150,120,28};
     const int32_t beforeText[]={100,20},afterText[]={150,30};
     assert(Resize(box.data(),beforeText,afterText,TextScale));
@@ -64,5 +84,5 @@ int main() {
         {TextScaleScope nested(multiplier,1);assert(multiplier==1);}
         assert(multiplier==1.5f);}
     assert(multiplier==0); // other native text retains its original scale
-    std::puts("Loot labels: contrast/geometry, scoped text scale, visibility expiry, combo consumption and lifecycle guards passed");
+    std::puts("Loot labels: contrast/geometry, visibility lease, grip/trigger hysteresis, combat consumption and lifecycle guards passed");
 }

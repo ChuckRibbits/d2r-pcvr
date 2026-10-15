@@ -1294,22 +1294,20 @@ void Input() {
     const bool lootAllowed=lootWorld&&!settingsOwned&&!settingsChord&&motionInput.tracked[0]&&
         !handInput.occupied&&handControls.Wheel()<0;
     const bool lootPressed=lootLabelShortcut.Step(lootSession,inputEpoch,lootNow,lootAllowed,
-        (physical.buttons&menus::RightStick)!=0,(physical.buttons&menus::RightBumper)?1.f:0.f);
-    if(lootPressed&&(controls.buttons&(menus::RightStick|menus::RightBumper))==(menus::RightStick|menus::RightBumper)) {
+        controls.rt/255.f,motionInput.grip[0]);
+    if(lootPressed) {
         if(lootlabels::hooksReady.load()) {
             const bool shown=lootlabels::display.Toggle();
             Say(shown?"Frame loot labels: shown":"Frame loot labels: hidden");
             MotionPulse(0,shown?.45f:.2f,45000000);
         } else Say("Frame loot labels: native label hooks are not ready yet");
     }
-    // Retain native right-stick hold-to-sort in menus. In the world, consume
-    // the whole modified click even if the grip is released first. Keep the
-    // grip consumed until its physical release too, so releasing only the
-    // stick cannot become a fresh potion grab or shoulder swap.
-    if(lootLabelShortcut.Consumed(nativeUi))controls.buttons&=~menus::RightStick;
-    if(lootLabelShortcut.GripConsumed(nativeUi)) {
-        controls.buttons&=~menus::RightBumper;motionInput.grip[0]=0;
-    }
+    // The world shortcut owns the whole trigger squeeze, including if grip is
+    // released first. A consumed grip also needs its own physical release so
+    // it cannot reappear as a potion grab or shoulder swap. Native panel
+    // trigger/Shift actions and ordinary stick clicks retain their bindings.
+    lootLabelShortcut.Filter(controls,motionInput.grip[0],nativeUi);
+    motionInput.trigger=controls.rt/255.f;
     handInput.occupied|=lootLabelShortcut.Consumed(nativeUi)||lootLabelShortcut.GripConsumed(nativeUi);
     for(int h=0;h<2;++h){
         handInput.trigger[h]=h?controls.lt/255.f:controls.rt/255.f;handInput.grip[h]=motionInput.grip[h];

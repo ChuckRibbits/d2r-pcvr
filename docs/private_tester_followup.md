@@ -7,7 +7,7 @@ address that build's menu comfort, discovery, map and casting feedback.
 
 This candidate combines PRs #78, #79, #81 and #82 in one DLL: area and act
 information above the hand compass, adjustable health/mana tilt, larger
-dropped-item names with a Right Grip + Right Stick toggle, and sky/world
+dropped-item names with a Right Grip + Right Trigger toggle, and sky/world
 effects retained behind NPC dialogue. The area label follows the navigation
 placement; health/mana tilt adjusts the vitals panel independently.
 
@@ -16,6 +16,12 @@ verification is pending; use the scenarios below in one offline test session.
 Building stages the DLL only. Install that combined DLL with the game closed
 before launching the headset test; launching an existing installation does not
 deploy the staged output or include open PRs automatically.
+
+The owner's first combined headset run reported intermittent loot-shortcut
+registration and invisible NPC choices when story dialogue opens. The loot
+shortcut now uses the requested grip/trigger combo with analog hysteresis and
+its own Controls entry. NPC visibility remains under investigation; transition
+and native root/border bounds logging were added for the next reproduction.
 
 ## Settings and behavior
 
@@ -96,8 +102,11 @@ Battle.net edition, headset, controllers, connection/runtime and resolution.
    shortcuts still honor only the player's actual modifiers.
    Check the larger dropped-item names against bright/dark terrain and in a
    crowded loot pile; verify quality colors, spacing, click targets and pickup.
-   Hold Right Grip and click Right Stick to hide/show names. Holding the combo
-   must toggle once; releasing grip before the stick must not open a wheel.
+   Check VR Settings > Controls lists Right Grip + Right Trigger for item names.
+   Hold Right Grip, then squeeze Right Trigger to hide/show names. Holding the
+   combo must toggle once; releasing grip first must not cast or shoot. Release
+   only the trigger and repeat with grip held; check small squeeze fluctuations
+   do not repeat toggles. Adding grip to an existing attack must not toggle names.
    Try ordinary wheel clicks and native inventory hold-to-sort afterward, then
    menus, tracking loss and leaving/rejoining a character. Verify inventory
    tooltips and monster labels retain their appearance. Headset testing is pending.
