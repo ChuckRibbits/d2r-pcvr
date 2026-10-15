@@ -758,7 +758,10 @@ attachment pose, avoiding a newer hand position being applied to an older rig.
 A pull produces light haptic pulses as draw distance changes, plus nock and
 release pulses. Runtime acceptance is logged; that does not prove the user felt
 it. The native arrow is hidden until nocked. Unknown rigs retain their native
-animation plus the crossed-plane arrow and V-string guides.
+string and limb animation; their string does not yet follow the drawing hand.
+The teal V-string overlay is removed for all bow rigs. The nock marker and
+crossed-plane arrow fallback remain available when their native counterparts
+are not driven by the mod.
 
 The palette, neutral bottle and fallback nock/bow guides are lightweight
 OpenXR quads, stereo-positioned but not depth-tested against the game world.

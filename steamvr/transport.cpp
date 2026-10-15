@@ -2041,7 +2041,6 @@ void EndPair() {
     const bool padQuads=composition::NeedsQuadPadding(wineOpenXR,layer,pointerChain);
     const uint32_t contentLimit=padQuads&&capacity>1?capacity-1:capacity;
     XrCompositionLayerQuad palette{XR_TYPE_COMPOSITION_LAYER_QUAD},bottle{XR_TYPE_COMPOSITION_LAYER_QUAD},chosen{XR_TYPE_COMPOSITION_LAYER_QUAD};
-    std::array<XrCompositionLayerQuad,2> bowString{{{XR_TYPE_COMPOSITION_LAYER_QUAD},{XR_TYPE_COMPOSITION_LAYER_QUAD}}};
     std::array<XrCompositionLayerQuad,2> arrow{{{XR_TYPE_COMPOSITION_LAYER_QUAD},{XR_TYPE_COMPOSITION_LAYER_QUAD}}};
     XrCompositionLayerQuad nock{XR_TYPE_COMPOSITION_LAYER_QUAD},bowHint{XR_TYPE_COMPOSITION_LAYER_QUAD},activeSkill{XR_TYPE_COMPOSITION_LAYER_QUAD},leftActiveSkill{XR_TYPE_COMPOSITION_LAYER_QUAD};
     const bool gameplayVisible=layer&&!panelMode&&motionControls.load()&&motionInput.active&&gameplayChain&&motionOutput.rayValid;
@@ -2146,17 +2145,8 @@ void EndPair() {
     if(gameplayVisible&&motionOutput.bowReady) {
         const auto bow=motionInput.hand[1];
         const auto center=motionOutput.bowDrawing?motionInput.hand[0].p:motionOutput.nockPoint;
-        auto up=math::Rotate(bow.q,{0,0,-1});
-        if(std::fabs(math::Dot(up,motionOutput.bowForward))>.8f)up=math::Rotate(bow.q,{0,1,0});
-        up=math::Normalized(up-motionOutput.bowForward*math::Dot(up,motionOutput.bowForward));
-        // Unrecognized rigs retain the draw guides. Once the actual model is
-        // posed, remove these overlapping copies of its string and arrow.
-        const bool nativeBow=skel::MotionBowPosed();
-        for(int i=0;i<2&&!nativeBow;++i) {
-            const auto end=bow.p+up*(i==0?.40f:-.40f),mid=(center+end)*.5f;
-            motionQuad(bowString[i],XrPose({mid,math::BeamOrientation(end-center,V(head.position)-mid)}),
-                .0015f,gameplay::Length(end-center),{{0,0},{64,32}},pointerChain);
-        }
+        // The game's bow mesh supplies the string. Do not draw the teal
+        // V-string guide over it, even when its rig cannot follow the hand.
         if(!bowvr::PreviewReady()&&(motionOutput.bowDrawing||motionOutput.bowInReach)) {
             const auto direction=motionOutput.bowDrawing?motionOutput.rayDirection:motionOutput.bowForward;
             const auto mid=center+direction*(bowflight::ArrowLength*.5f);
@@ -2166,7 +2156,7 @@ void EndPair() {
         }
         // Native bows have a visible string to grab. The extra idle marker
         // correlated with compositor pose errors; omit it on this path.
-        if(!nativeBow&&!motionOutput.bowDrawing) {
+        if(!skel::MotionBowPosed()&&!motionOutput.bowDrawing) {
             const float size=motionOutput.bowInReach?.045f:.025f;
             motionQuad(nock,XrPose({center,Q(head.orientation)}),size,size,{{0,32},{64,64}},pointerChain);
         }
