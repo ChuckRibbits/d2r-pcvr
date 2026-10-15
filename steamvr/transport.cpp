@@ -28,6 +28,7 @@
 #include "composition_layers.h"
 #include "swapchain_format.h"
 #include "input.h"
+#include "dropped_item_labels.h"
 #include "window_focus.h"
 #include "gameplay.h"
 #include "hand_controls.h"
@@ -210,6 +211,7 @@ XrPosef head{};
 math::Vec origin{};
 bool haveOrigin=false;
 GripStickButton leftMenuButton;
+lootlabels::Shortcut lootLabelShortcut;
 MenuTriggerGate menuTriggerGate;
 PressEdge inventoryButton,menuButton;
 float lastRecenter=0;
@@ -424,6 +426,8 @@ void CancelShieldCast() {
 }
 void ClearInput() {
     hapticPulses.Cancel();
+    lootlabels::display.Clear();
+    lootLabelShortcut.Suspend();
     meleeImpactAt=shieldImpactAt=0;
     wristHeading.Reset();compassFrame=false;
     panelinput::WorldInput(false);
@@ -1284,6 +1288,29 @@ void Input() {
     handInput.layout^=uint64_t(handInput.independentSlots)<<48;
     handInput.active=motionInput.active&&motionInput.tracked[0]&&motionInput.tracked[1]&&handAimTracked[0]&&handAimTracked[1]&&gamestate::LocalPlayer();
     handInput.occupied=interactionOutput.bottle>=0||interactionOutput.owner[0]==interaction::Owner::Holster||interactionOutput.owner[1]==interaction::Owner::Holster;
+    const auto lootNow=GetTickCount64(),lootSession=gamestate::LocalPlayer();
+    const bool lootWorld=motionHeadTracked&&!nativeUi&&inWorld&&inWorld()&&lootSession;
+    lootlabels::display.Refresh(lootSession,lootNow,lootWorld);
+    const bool lootAllowed=lootWorld&&!settingsOwned&&!settingsChord&&motionInput.tracked[0]&&
+        !handInput.occupied&&handControls.Wheel()<0;
+    const bool lootPressed=lootLabelShortcut.Step(lootSession,inputEpoch,lootNow,lootAllowed,
+        (physical.buttons&menus::RightStick)!=0,(physical.buttons&menus::RightBumper)?1.f:0.f);
+    if(lootPressed&&(controls.buttons&(menus::RightStick|menus::RightBumper))==(menus::RightStick|menus::RightBumper)) {
+        if(lootlabels::hooksReady.load()) {
+            const bool shown=lootlabels::display.Toggle();
+            Say(shown?"Frame loot labels: shown":"Frame loot labels: hidden");
+            MotionPulse(0,shown?.45f:.2f,45000000);
+        } else Say("Frame loot labels: native label hooks are not ready yet");
+    }
+    // Retain native right-stick hold-to-sort in menus. In the world, consume
+    // the whole modified click even if the grip is released first. Keep the
+    // grip consumed until its physical release too, so releasing only the
+    // stick cannot become a fresh potion grab or shoulder swap.
+    if(lootLabelShortcut.Consumed(nativeUi))controls.buttons&=~menus::RightStick;
+    if(lootLabelShortcut.GripConsumed(nativeUi)) {
+        controls.buttons&=~menus::RightBumper;motionInput.grip[0]=0;
+    }
+    handInput.occupied|=lootLabelShortcut.Consumed(nativeUi)||lootLabelShortcut.GripConsumed(nativeUi);
     for(int h=0;h<2;++h){
         handInput.trigger[h]=h?controls.lt/255.f:controls.rt/255.f;handInput.grip[h]=motionInput.grip[h];
         handInput.click[h]=(controls.buttons&(h?menus::LeftStick:menus::RightStick))!=0;

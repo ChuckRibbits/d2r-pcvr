@@ -26,6 +26,7 @@
 #include "../steamvr/resource_descriptions.h"
 #include "../steamvr/vr_settings.h"
 #include "../steamvr/interact_press.h"
+#include "../steamvr/dropped_item_labels.h"
 #include <tlhelp32.h>
 #include <intrin.h>
 #include <xinput.h>
@@ -1797,6 +1798,9 @@ bool FloorView() { return g_enabled.load() && TableView(); }
 // Flat keeps the game's labels: it has no such tabs.
 void LabelLookNow(float* alpha, float* size) {
     *alpha = 1.0f; *size = 1.0f;
+#ifdef D2RVR_NATIVE_OPENXR
+    if(framevr::lootlabels::display.Active(GetTickCount64())){*size=framevr::lootlabels::TextScale;return;}
+#endif
     if (g_set.platform.load() != 1) return;
     if (FloorView()) { *alpha = g_set.labelsAlphaFloor.load(); *size = g_set.labelsSizeFloor.load(); }
     else if (!g_enabled.load() || TopPersp()) { *alpha = g_set.labelsAlphaTop.load(); *size = g_set.labelsSizeTop.load(); }
@@ -4729,7 +4733,7 @@ void InstallBiomeHook() {
     Log(g_h.biome ? "vrcam: biome hook in - the sky knows the area" : "vrcam: biome hook FAILED - the sky stays off unless [sky] always=1");
 }
 
-// -- Item labels on the ground, through the game's own code (F3 floor) --------
+// -- Ground-item labels through the game's own code (VR and legacy views) ----
 // Recon on the D2RLoader-layout snapshot: docs/labels_recon.md. A label is a
 // record of the game's ground-label list: +0x00 its box (x, y, w, h, ints),
 // +0x14 the box's colour (float RGBA, the game's own {0, 0, 0, 0.6}), +0x24
@@ -4747,7 +4751,8 @@ void InstallBiomeHook() {
 // [hud_floor] labels_size: the box made again round the name measured at the
 // other scale, about the same bottom middle, and the name drawn at that
 // scale - inside LabelPaint only (t_labelScale), every other text untouched.
-// Only on the floor; the hooks go in the first time the floor wants them.
+// Native VR uses a short gameplay lease for larger, stronger labels and its
+// quick visibility toggle. Legacy views keep their existing profile settings.
 constexpr uint64_t RVA_LABEL_LAYOUT = 0x1FA9F0, RVA_LABEL_PAINT = 0x1FA8E0, RVA_TEXT_DRAW = 0x902E20;
 constexpr uint64_t RVA_TEXT_MEASURE = 0x909560, RVA_UI_SCALE = 0x8460F0, RVA_IS_HD = 0x846210;
 // push rbp, rbx, rsi, r12, r15; mov rbp, rsp; sub rsp, 0x50; mov r12d, r9d; mov byte [rdx], 0; mov rsi, r8
@@ -4777,11 +4782,18 @@ thread_local float t_labelScale = 0.0f;   // inside LabelPaint: the name drawn a
 float LabelSizeNow() {
     float alpha, size;
     LabelLookNow(&alpha, &size);
-    return g_set.labelsNativeFloor.load() && g_labelSizeIn.load() ? size : 1.0f;
+    bool native=false;
+#ifdef D2RVR_NATIVE_OPENXR
+    native=framevr::lootlabels::display.Active(GetTickCount64());
+#endif
+    return (native||g_set.labelsNativeFloor.load()) && g_labelSizeIn.load() ? size : 1.0f;
 }
 
 bool HookLabelLayout(void* unit, char* name, int32_t* box, int32_t minX, int32_t maxX, uint8_t flag) {
     const bool shown = OrigLabelLayout(unit, name, box, minX, maxX, flag);
+#ifdef D2RVR_NATIVE_OPENXR
+    if(!framevr::lootlabels::display.Visible(GetTickCount64()))return false;
+#endif
     const float k = LabelSizeNow();
     if (!shown || !box || !name || std::abs(k - 1.0f) < 0.005f) return shown;
     if (!((IsHdFn)d2rsig::Addr(RVA_IS_HD))()) return shown;   // the old graphics: their text has no scale
@@ -4793,28 +4805,26 @@ bool HookLabelLayout(void* unit, char* name, int32_t* box, int32_t minX, int32_t
     measure(name, name + 0x80, was, s, most);
     measure(name, name + 0x80, now, s * k, most);
     // the padding the game put round the name, scaled with it; anything else is not the box expected
-    const int32_t padW = box[2] - was[0], padH = box[3] - was[1];
-    if (was[0] <= 0 || was[1] <= 0 || now[0] <= 0 || now[1] <= 0 || padW < 0 || padH < 0 || padW > 400 || padH > 200)
-        return shown;
-    const int32_t w = now[0] + (int32_t)std::ceil((float)padW * k), h = now[1] + (int32_t)std::ceil((float)padH * k);
-    const int32_t mid = box[0] + box[2] / 2, bottom = box[1] + box[3];
-    box[0] = mid - w / 2; box[1] = bottom - h; box[2] = w; box[3] = h;
+    framevr::lootlabels::Resize(box,was,now,k);
     return shown;
 }
 
 uintptr_t HookLabelPaint(const int32_t* box, const char* name, const float* colour) {
     float alpha, size;
     LabelLookNow(&alpha, &size);
-    if (!colour || !g_set.labelsNativeFloor.load() || (alpha >= 0.995f && std::abs(size - 1.0f) < 0.005f))
+    bool native=false;
+#ifdef D2RVR_NATIVE_OPENXR
+    const auto at=GetTickCount64();native=framevr::lootlabels::display.Active(at);
+    if(!framevr::lootlabels::display.Visible(at))return 0;
+#endif
+    if (!colour || (!native&&(!g_set.labelsNativeFloor.load() || (alpha >= 0.995f && std::abs(size - 1.0f) < 0.005f))))
         return OrigLabelPaint(box, name, colour);
     float c[4];
     memcpy(c, colour, sizeof c);
-    if (c[3] > 0.0f) c[3] *= alpha;   // below 0 the game skips the fill: left so
-    const float keep = t_labelScale;
-    t_labelScale = LabelSizeNow();
-    const uintptr_t r = OrigLabelPaint(box, name, c);
-    t_labelScale = keep;
-    return r;
+    if(native)c[3]=framevr::lootlabels::BackingAlpha(c[3]);
+    else if (c[3] > 0.0f) c[3] *= alpha;   // below 0 the game skips the fill: left so
+    const framevr::lootlabels::TextScaleScope scope(t_labelScale,LabelSizeNow());
+    return OrigLabelPaint(box, name, c);
 }
 
 uintptr_t HookTextDraw(const char* text, const int32_t* box, const void* style, float scale) {
@@ -4827,10 +4837,14 @@ uintptr_t HookTextDraw(const char* text, const int32_t* box, const void* style, 
 void InstallLabelHooks() {
     static bool paintFailed = false, sizeFailed = false, drawIn = false;
     static int misses = 0;
-    if (!g_ctx || !g_inWorld.load() || !g_set.labelsNativeFloor.load()) return;
+    bool native=false;
+#ifdef D2RVR_NATIVE_OPENXR
+    native=framevr::lootlabels::display.Active(GetTickCount64());
+#endif
+    if (!g_ctx || !g_inWorld.load() || (!native&&!g_set.labelsNativeFloor.load())) return;
     float alpha, size;
     LabelLookNow(&alpha, &size);   // the view now: the hooks go in the first time any view wants them
-    const bool wantBox = alpha < 0.995f;
+    const bool wantBox = native||alpha < 0.995f;
     const bool wantSize = std::abs(size - 1.0f) > 0.005f;
     if (!wantBox && !wantSize) return;
     if (!g_labelPaintIn.load()) {
@@ -4844,7 +4858,7 @@ void InstallLabelHooks() {
         const bool in = d2rsig::Hook(RVA_LABEL_PAINT, kSigLabelPaint, sizeof kSigLabelPaint, (void*)&HookLabelPaint, (void**)&OrigLabelPaint);
         paintFailed = !in;
         g_labelPaintIn.store(in);
-        Log(in ? "vrcam: item-label hook in - on the floor the labels' box fades by the game's own code ([hud_floor] labels_alpha)"
+    Log(in ? "vrcam: item-label hook in - native label backing and visibility available"
                : "vrcam: item-label hook FAILED - [hud_floor] labels_alpha fades them as a picture, labels_size does nothing");
         if (!in) return;
     }
@@ -4862,7 +4876,10 @@ void InstallLabelHooks() {
     const bool in = drawIn && d2rsig::Hook(RVA_LABEL_LAYOUT, kSigLabelLayout, sizeof kSigLabelLayout, (void*)&HookLabelLayout, (void**)&OrigLabelLayout);
     sizeFailed = !in;
     g_labelSizeIn.store(in);
-    Log(in ? "vrcam: item-label size hooks in - on the floor [hud_floor] labels_size sets the labels' size"
+#ifdef D2RVR_NATIVE_OPENXR
+    framevr::lootlabels::hooksReady.store(in);
+#endif
+    Log(in ? "vrcam: item-label size hooks in - native VR uses 150% text; legacy views retain labels_size"
            : "vrcam: item-label size hooks FAILED - labels_size does nothing");
 }
 

@@ -1,0 +1,71 @@
+#pragma once
+#include "input.h"
+#include <algorithm>
+#include <atomic>
+#include <cmath>
+#include <cstdint>
+
+namespace framevr::lootlabels {
+constexpr float TextScale=1.5f,BackgroundAlpha=.85f;
+constexpr uint64_t LeaseMs=300;
+// XR publishes a short gameplay lease. Native label callbacks never take the
+// XR lock, and desktop play automatically regains native appearance/visibility.
+class Display {
+    uint64_t session=0; // XR writer only
+    std::atomic<uint64_t> until{0};
+    std::atomic<bool> shown{true};
+public:
+    void Refresh(uint64_t player,uint64_t now,bool active) {
+        if(player!=session){session=player;shown.store(true);}
+        until.store(active&&player?now+LeaseMs:0,std::memory_order_release);
+    }
+    void Clear(){until.store(0,std::memory_order_release);}
+    bool Active(uint64_t now)const {const auto end=until.load(std::memory_order_acquire);return end&&now<end;}
+    bool Visible(uint64_t now)const {return !Active(now)||shown.load();}
+    bool Toggle(){const bool next=!shown.load();shown.store(next);return next;}
+};
+inline Display display;
+inline std::atomic<bool> hooksReady{false};
+// Only raise the opacity of an existing native box. Negative/zero alpha tells
+// the game not to fill it; rarity colors and intentional no-fill styles survive.
+inline float BackingAlpha(float native){return native>0?std::max(native,BackgroundAlpha):native;}
+
+class Shortcut {
+    GripStickButton button;
+    uint64_t session=0,epoch=0,last=0;
+    bool armed=false,gripConsumed=false;
+public:
+    void Suspend(){armed=false;last=0;}
+    bool Step(uint64_t player,uint64_t version,uint64_t now,bool allowed,bool clicked,float grip) {
+        const bool valid=allowed&&player&&std::isfinite(grip);
+        if(!valid||player!=session||version!=epoch||now<=last||now-last>150)armed=false;
+        session=player;epoch=version;last=now;
+        const bool pressed=button.Update(clicked,std::isfinite(grip)?grip:0.f);
+        if(!std::isfinite(grip)||grip<=.5f)gripConsumed=false;
+        else if(button.Consumed())gripConsumed=true;
+        if(!clicked&&valid)armed=true;
+        return valid&&armed&&pressed;
+    }
+    bool Consumed(bool nativeUi=false)const{return !nativeUi&&button.Consumed();}
+    bool GripConsumed(bool nativeUi=false)const{return !nativeUi&&gripConsumed;}
+};
+struct TextScaleScope {
+    float& slot;float previous;
+    TextScaleScope(float& value,float scale):slot(value),previous(value){slot=scale;}
+    ~TextScaleScope(){slot=previous;}
+    TextScaleScope(const TextScaleScope&)=delete;
+};
+
+// Rebuild the native bounds using actual text measurements at the new scale.
+// This keeps overlap placement, the backing box and click bounds in agreement.
+inline bool Resize(int32_t* box,const int32_t* oldText,const int32_t* newText,float scale) {
+    if(!box||!oldText||!newText||!std::isfinite(scale)||scale<.2f||scale>2.f)return false;
+    const int64_t padW=int64_t(box[2])-oldText[0],padH=int64_t(box[3])-oldText[1];
+    if(oldText[0]<=0||oldText[1]<=0||newText[0]<=0||newText[1]<=0||padW<0||padH<0||padW>400||padH>200)return false;
+    const int64_t width=int64_t(newText[0])+int64_t(std::ceil(float(padW)*scale));
+    const int64_t height=int64_t(newText[1])+int64_t(std::ceil(float(padH)*scale));
+    const int64_t x=int64_t(box[0])+box[2]/2-width/2,y=int64_t(box[1])+box[3]-height;
+    if(width>INT32_MAX||height>INT32_MAX||x<INT32_MIN||x>INT32_MAX||y<INT32_MIN||y>INT32_MAX)return false;
+    box[0]=int32_t(x);box[1]=int32_t(y);box[2]=int32_t(width);box[3]=int32_t(height);return true;
+}
+}
