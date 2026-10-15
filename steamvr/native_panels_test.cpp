@@ -71,6 +71,23 @@ int main(){
         Check(panels::Modal(name)&&panels::OpaqueBackground(name),"management surfaces use the same opaque background in both eyes");
     for(auto name:{"NpcDialogPanel","ScrollSpeechPanel","QuestLogPanelExpansion","GoldTransferPanel","QuantityPanel","HUDPanel","HUDTradeHint","MiniMenuPanel","TooltipsPanel"})
         Check(!panels::OpaqueBackground(name),"dialogue, journal and auxiliary panels do not independently black out the world");
+    for(auto name:{"NpcDialogPanel","ScrollSpeechPanel","QuestLogSpeechPanel","QuestLogPanelExpansion","ConfirmationPanel"}) {
+        Check(!panels::BlockWorldEffects(panels::Modal(name),true,panels::OpaqueBackground(name)),
+            "spatial conversations, speech and journals keep sky, fog and cave ceiling behind their transparent UI");
+        Check(panels::BlockWorldEffects(panels::Modal(name),false,panels::OpaqueBackground(name)),
+            "unavailable spatial UI retains flat-menu suppression of world effects");
+    }
+    for(auto name:{"VendorPanelLayout","GamblePanel","WaypointPanel","UISwitcher","BankExpansionLayout"})
+        Check(panels::BlockWorldEffects(panels::Modal(name),true,panels::OpaqueBackground(name)),
+            "opaque management menus keep their black background and suppress world effects");
+    Check(!panels::BlockWorldEffects(false,false,false),"ordinary gameplay retains world effects without spatial UI");
+    Check(!panels::BlockWorldEffects(false,true,true),"a stale opaque flag alone cannot disable gameplay effects");
+    // An NPC conversation may open a merchant without closing all of its
+    // other roots. Any remaining opaque root owns the backdrop until closed.
+    for(bool merchant:{false,true,false})
+        Check(panels::BlockWorldEffects(true,true,panels::OpaqueBackground("NpcDialogPanel")||
+            (merchant&&panels::OpaqueBackground("VendorPanelLayout")))==merchant,
+            "dialogue to merchant to dialogue restores world effects when the opaque root closes");
     for(auto name:{"UISwitcher","VendorPanelLayout","VendorPanelOriginalLayout","TradeLayout","GamblePanel"})
         Check(panels::UpperBand(name),"tabbed inventory and independent merchant roots center their upper content at eye level");
     for(auto name:{"WaypointPanel","NpcDialogPanel","ScrollSpeechPanel","QuestLogPanelExpansion","QuantityPanel","ConfirmationPanel","HUDTradeHint","TooltipsPanel"})

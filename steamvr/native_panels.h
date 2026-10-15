@@ -19,6 +19,12 @@ inline bool OpaqueBackground(std::string_view name) {
         name.starts_with("PlayerInventory")||name.starts_with("HoradricCube")||
         name.starts_with("HirelingInventory")||name.starts_with("MercenaryInventory");
 }
+// Spatial conversations/journals retain a live stereo world behind the UI.
+// Keep its sky, fog and cave ceiling; opaque management surfaces and the
+// flat-menu fallback keep their existing suppression of world effects.
+inline bool BlockWorldEffects(bool menuOpen,bool spatialMenuReady,bool opaqueMenuOpen) {
+    return menuOpen&&(!spatialMenuReady||opaqueMenuOpen);
+}
 // Persistent HUD roots are not modal. Speech can outlive NpcDialogPanel.
 inline bool Modal(std::string_view name) {
     if(name==TabbedMenu||name=="ControllerOverlay")return true;

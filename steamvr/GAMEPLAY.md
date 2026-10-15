@@ -266,7 +266,10 @@ health, mana, level and XP progress with the wrist minimap turned off.
 Native in-game menus share a room-anchored surface in front of you. The full
 tabbed character menu, stash, inventory, cube, trade and waypoint surfaces use one opaque
 black background in both eyes. Dialogue and journal panels retain the world
-backdrop. Inventory/equipment, NPC
+backdrop, including any enabled sky, fog and cave ceiling effects. Opening an
+NPC conversation or continuing its speech keeps those effects visible; entering
+a merchant, stash or waypoint retains the shared black management background.
+Inventory/equipment, NPC
 choices and speech, shops, stash, cube, waypoint, skills and character panels
 retain D2R's original artwork, text, prices, grids and tooltips. Inventory and
 shop panes keep their native relative positions; hovering a comparison tooltip
