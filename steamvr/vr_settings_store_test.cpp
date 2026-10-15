@@ -14,6 +14,15 @@ int main(){
     Check(WritePrivateProfileStringW(L"custom",L"keep",L"12345",name),"write unrelated key");
     Check(WritePrivateProfileStringW(L"render",L"rings",L"6",name),"write existing setting");
     vrsettings::Poll(name);auto before=vrsettings::Read();
+    Check(before.values[HapticShortMelee]==0,"missing short-melee preference selects the compatible longer pulse");
+    for(int choice:{1,0}){
+        const auto current=vrsettings::Read();Model h;h.Open(current);h.Click({Kind::Change,HapticShortMelee,1});
+        const auto request=h.Click({Kind::Apply});
+        Check(request.changed==(ChangeMask{1}<<HapticShortMelee)&&vrsettings::Submit(request)&&vrsettings::Poll(name),"persist short-melee toggle");
+        const auto saved=vrsettings::Read();
+        Check(saved.values[HapticShortMelee]==choice&&Int(path,L"haptics",L"short_melee")==choice,"short-melee toggle survives profile reload");
+        Check(Changed(saved.values,current.values)==(ChangeMask{1}<<HapticShortMelee)&&Int(path,L"custom",L"keep")==12345,"pulse toggle preserves all strengths and unrelated settings");
+    }
     for(int i=HapticStrength;i<=HapticAlert;++i){
         const auto key=Key(i);const auto& definition=Definitions[key];
         Check(before.values[key]==100,"existing profiles keep full haptic strength");

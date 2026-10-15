@@ -22,7 +22,15 @@ inline Category MotionCategory(unsigned event,bool bowReady,bool javelinReady) {
     return Category::Interaction;
 }
 struct Sample {float amplitude;int milliseconds;float frequency=0;};
-inline constexpr std::array<Sample,CategoryCount> Samples{{{.95f,10,180},{.35f,25},{.65f,45},{.4f,25},{.45f,45},{.25f,100}}};
+inline constexpr std::array<Sample,CategoryCount> Samples{{{.95f,45},{.35f,25},{.65f,45},{.4f,25},{.45f,45},{.25f,100}}};
+// Share the selected melee pulse between real impacts and the settings test.
+// Default to a longer tap at the runtime's preferred frequency; the original
+// 10 ms / 180 Hz pulse is an opt-in for controllers that reproduce it well.
+inline constexpr Sample SampleFor(Category category,bool shortMelee=false) {
+    if(int(category)<0||int(category)>=CategoryCount)return {};
+    if(category==Category::Melee&&shortMelee)return {.95f,10,180};
+    return Samples[int(category)];
+}
 inline float NormalizeStrength(float percent) {
     if(!std::isfinite(percent))return DefaultStrength;
     return std::round(std::clamp(percent,0.f,MaxStrength)/StrengthStep)*StrengthStep;

@@ -60,11 +60,20 @@ casting hand, including one pulse for a multi-projectile volley.
 
 The native build passed all 65 checks, including category scaling/muting,
 preview isolation, spell-event expiry and INI persistence. Synthetic Haptics and
-Controls previews were checked for layout. This follow-up has not yet been tested
-in-headset. On an offline character,
+Controls previews were checked for layout. The owner reported that the category
+controls worked, but the melee Test button produced no perceptible feedback at
+any strength. That preview uniquely used a 10 ms pulse at a fixed 180 Hz; its
+timing/frequency are the suspected cause, not yet a confirmed hardware diagnosis.
+**Short melee pulses** now defaults Off, selecting a 45 ms tap at the controller's
+preferred frequency for both the preview and actual impacts. On restores the
+10 ms / 180 Hz pulse. Each manual test logs hand, category, amplitude, duration,
+frequency and runtime result. The revised melee pulses need headset verification.
+On an offline character,
 compare the same category's Test at 0%, 50%, 100% and 200%; save and reopen, then
 restart to check persistence. Verify that reducing bow draw leaves melee and
-release feedback unchanged. Check a melee/shield impact, a bow draw/release,
+release feedback unchanged. Compare melee Test with Short melee pulses Off and
+On, including an unsaved toggle, and check it persists only after Apply. Check a
+melee/shield impact with each pulse choice, a bow draw/release,
 spell casts on each hand, a loot shortcut and potion interaction. Check that
 refused casts do not vibrate, multi-projectile spells pulse once per cast, and
 menus/tracking loss do not replay old feedback. Resource alerts should remain

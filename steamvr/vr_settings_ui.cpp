@@ -105,7 +105,7 @@ std::vector<uint8_t> Paint(const Model& m,Hit hover,const char* runtimeStatus,co
             fill({40,y-4,1200,RowStep},row%2?RGB(19,31,39):RGB(22,36,44));
             const int textWidth=m.page==Page::Haptics?620:780;
             text(d.label,{58,y+1,textWidth,29},true);text(d.detail,{58,y+30,textWidth,28},false,false,quiet);
-            if(m.page==Page::Haptics&&row>0)button(TestHapticsBox(row),"Test",{Kind::TestHaptics,row-1},false,m.CanTestHaptics(row-1));
+            if(m.page==Page::Haptics&&HapticCategory(key)>=0)button(TestHapticsBox(row),"Test",{Kind::TestHaptics,HapticCategory(key)},false,m.CanTestHaptics(HapticCategory(key)));
             char label[96];
             if(key==Foveation){const char* modes[]={"Off","Fixed","Eye tracked"};std::snprintf(label,sizeof label,"%s",modes[int(value)]);}
             else if(key==VitalsLocation||key==NavigationLocation)std::snprintf(label,sizeof label,"%s",vitals::LocationNames[int(value)]);
@@ -141,8 +141,8 @@ std::vector<uint8_t> Paint(const Model& m,Hit hover,const char* runtimeStatus,co
             text("Apply saves the setting and updates melee immediately. Shield bash and button attacks keep their existing behavior.",{58,540,1160,100},false,false,quiet);
         }
         if(m.page==Page::Haptics){
-            text("0% is Off. 100% is normal. Each category combines with Overall strength (up to the controller's maximum). Adjust in steps of 10%.",{58,710,1160,65},false,false,quiet);
-            text("Test tries the displayed settings on both hands. Apply saves; Close discards edits. Resource alerts also require the HUD alerts option.",{58,795,1160,65},false,false,quiet);
+            text("0% is Off; 100% is normal. Overall strength scales each category, up to the controller's maximum. Adjust in steps of 10%.",{58,750,1160,56},false,false,quiet);
+            text("Test tries the displayed settings on both hands. Apply saves; Close discards edits. Resource alerts also require the HUD alerts option.",{58,810,1160,56},false,false,quiet);
         }
     }
     const char* message=!m.ready?"Configuration unavailable; controls help still works.":m.result==Result::Saving?"Saving...":m.result==Result::Saved?"Saved. Changes take effect live.":m.result==Result::Failed?"Save failed. Your edits are still unsaved.":m.result==Result::Conflict?"Settings changed elsewhere. Current values reloaded.":m.Dirty()?"Unsaved changes. Apply saves; Close discards them.":"World remains live. Right B closes this panel.";

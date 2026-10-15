@@ -358,7 +358,10 @@ tabs and a **Reset eye height** button:
 ranges from **0% (Off) to 200%**, in **10% steps**, with **100%** as the default.
 Overall strength multiplies the category strength: 50% overall and 50% bow draw
 produce 25% of the original draw amplitude. The controller's maximum amplitude
-still limits strong pulses. Existing pulse lengths and frequencies stay the same.
+still limits strong pulses. **Short melee pulses** is **Off by default**: weapon
+and shield impacts use a 45 ms tap at the controller's preferred frequency.
+Turn it On for the original 10 ms / 180 Hz tap. The melee Test button uses the
+same choice, including unsaved edits. Other categories keep their pulse timing.
 
 **Test** plays a short sample on both hands using the displayed, unsaved values.
 **Apply** saves and updates gameplay feedback; **Close** discards unsaved edits.
@@ -373,7 +376,8 @@ after a spell successfully creates its projectiles. A volley gives one pulse,
 and a refused cast gives none. Feedback is discarded when stale, inactive or from
 another character session. The **Spell casts** setting controls this pulse.
 Settings are stored under `[haptics]` as `strength`, `melee`, `bow_draw`,
-`bow_release`, `spells`, `interactions` and `alerts`; missing keys default to 100.
+`bow_release`, `spells`, `interactions` and `alerts`; missing strength keys default
+to 100. `[haptics] short_melee=0` selects the longer tap; `1` selects the short tap.
 
 Click **Apply** to save changed values to `d2rloader/plugins/d2r_vr.ini` and
 reload them live. Closing without Apply discards pending edits. The first Apply
@@ -662,12 +666,14 @@ translation/rotation supplies energy, so walking or turning a stationary weapon
 into an enemy does not cause damage. Right trigger remains an explicit native
 button fallback and suppresses simultaneous physical contact attacks.
 
-Confirmed weapon and shield impacts request a single 10 ms haptic tap at 95%
-amplitude and 180 Hz on the next XR input update, replacing the previous 45 ms
-buzz. Events are consumed once rather than held during overlap. A dedicated timer
+Confirmed weapon and shield impacts request a single 45 ms haptic tap at 95%
+base amplitude and the runtime's preferred frequency on the next XR input update.
+**VR Settings > Haptics > Short melee pulses** opts into a 10 ms / 180 Hz tap;
+it is Off by default, and both melee Test and real impacts use the selected pulse.
+Overall and Melee impacts strength scale its amplitude. Events are consumed once
+rather than held during overlap. A dedicated timer
 explicitly stops the vibration at its deadline even if rendering stalls; pulse
 replacement, focus loss and session shutdown cancel pending stops safely.
-This follows owner feedback that the Steam Frame sustained even one short pulse.
 Exact feel and frequency support depend on the controller/runtime and need
 headset validation. Existing saved melee speed choices remain unchanged.
 

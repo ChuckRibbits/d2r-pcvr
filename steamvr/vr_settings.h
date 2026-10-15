@@ -13,7 +13,7 @@ namespace framevr::settings {
 enum class Page { Controls, VR, Video, HUD, Combat, Haptics };
 enum Key { Motion, Seated, Dominant, Snap, TurnSpeed, Waist, BeltForward,
            Foveation, Sky, Fog, Ceiling, DrawDistance, ObjectDistance,
-           EyeHeight, ArmSpan, BodyCalibration, SkillGestures, WristMap, WristCompass, ControllerLabels, WeaponSkillIndicators, PlanarSpellAim, VitalsLocation, CriticalAlerts, RenderResolution, NavigationLocation, SmoothTurn, OrdinaryMobBars, MenuDistance, TooltipTiming, ProjectileAimAssist, MeleeHitSpeed, VitalsTilt, HapticStrength, HapticMelee, HapticBowDraw, HapticBowRelease, HapticSpell, HapticInteraction, HapticAlert, Count };
+           EyeHeight, ArmSpan, BodyCalibration, SkillGestures, WristMap, WristCompass, ControllerLabels, WeaponSkillIndicators, PlanarSpellAim, VitalsLocation, CriticalAlerts, RenderResolution, NavigationLocation, SmoothTurn, OrdinaryMobBars, MenuDistance, TooltipTiming, ProjectileAimAssist, MeleeHitSpeed, VitalsTilt, HapticStrength, HapticMelee, HapticBowDraw, HapticBowRelease, HapticSpell, HapticInteraction, HapticAlert, HapticShortMelee, Count };
 using ChangeMask=uint64_t;
 static_assert(Count<=64,"settings change mask capacity");
 constexpr ChangeMask SupportedChanges=~ChangeMask{0}>>(64-Count);
@@ -65,9 +65,12 @@ inline constexpr std::array<Definition,Count> Definitions{{
     {"Spell casts", "Supported hand spells; one pulse per cast", L"haptics",L"spells",100,0,200,10},
     {"Interactions", "Loot, potions, holsters and menu feedback", L"haptics",L"interactions",100,0,200,10},
     {"Resource alerts", "Optional low health / mana warnings", L"haptics",L"alerts",100,0,200,10},
+    {"Short melee pulses", "Off: longer taps; On: very short, sharp taps", L"haptics",L"short_melee",0,0,1,1},
 }};
 using Values=std::array<float,Count>;
 inline bool HapticKey(Key key){return key>=HapticStrength&&key<=HapticAlert;}
+inline int HapticCategory(Key key){return key>=HapticMelee&&key<=HapticAlert?key-HapticMelee:-1;}
+inline haptics::Sample HapticSample(const Values& values,haptics::Category category){return haptics::SampleFor(category,values[HapticShortMelee]>.5f);}
 inline haptics::Strengths HapticLevels(const Values& values){
     haptics::Strengths levels;levels.master=values[HapticStrength];
     static_assert(HapticAlert-HapticMelee+1==haptics::CategoryCount);
@@ -113,9 +116,10 @@ inline Rect ControllerOption(int option){return {865,233+option*58,375,58};}
 inline Rect Decrease(int row){return {865,RowY+row*RowStep,64,52};}
 inline Rect Increase(int row){return {1176,RowY+row*RowStep,64,52};}
 inline Rect ValueBox(int row){return {942,RowY+row*RowStep,221,52};}
-inline int RowCount(Page page){return page==Page::Haptics?1+haptics::CategoryCount:page==Page::Combat?1:page==Page::VR?10:page==Page::Video?7:page==Page::HUD?6:0;}
+inline int RowCount(Page page){return page==Page::Haptics?2+haptics::CategoryCount:page==Page::Combat?1:page==Page::VR?10:page==Page::Video?7:page==Page::HUD?6:0;}
 inline Key RowKey(Page page,int row){
-    if(page==Page::Haptics)return Key(HapticStrength+row);
+    constexpr Key hapticRows[]={HapticStrength,HapticMelee,HapticShortMelee,HapticBowDraw,HapticBowRelease,HapticSpell,HapticInteraction,HapticAlert};
+    if(page==Page::Haptics)return hapticRows[row];
     if(page==Page::Combat)return MeleeHitSpeed;
     constexpr Key hud[]={VitalsLocation,VitalsTilt,CriticalAlerts,NavigationLocation,MenuDistance,TooltipTiming};
     if(page==Page::HUD)return hud[row];
@@ -146,7 +150,7 @@ inline Hit HitTest(Page page,float u,float v,bool controllerMenu=false){
     if(page==Page::Controls&&AimAssistBox.Contains(x,y))return {Kind::Change,ProjectileAimAssist,1};
     for(int r=0;r<RowCount(page);++r){
         const auto key=RowKey(page,r);
-        if(page==Page::Haptics&&r>0&&TestHapticsBox(r).Contains(x,y))return {Kind::TestHaptics,r-1};
+        if(page==Page::Haptics&&HapticCategory(key)>=0&&TestHapticsBox(r).Contains(x,y))return {Kind::TestHaptics,HapticCategory(key)};
         if(Decrease(r).Contains(x,y))return {Kind::Change,key,-1};
         if(Increase(r).Contains(x,y))return {Kind::Change,key,1};
         if(Definitions[key].max==1&&ValueBox(r).Contains(x,y))return {Kind::Change,key,1};

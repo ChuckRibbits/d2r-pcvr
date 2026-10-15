@@ -8,7 +8,7 @@ static Hit At(Page p,Rect r){return HitTest(p,(r.x+r.w*.5f)/Width,(r.y+r.h*.5f)/
 int main(){
     Snapshot s;s.ready=true;
     for(int i=HapticStrength;i<=HapticAlert;++i){
-        const auto key=Key(i);const int row=i-HapticStrength;
+        const auto key=Key(i);const int row=i-HapticStrength+(i>=HapticBowDraw?1:0);
         Check(s.values[key]==100,"haptics default to normal strength");
         Check(Normalize(key,-1)==0&&Normalize(key,250)==200&&Normalize(key,54)==50&&Normalize(key,NAN)==100,"haptic settings clamp, step and reject nonfinite values");
         Model h;h.Open(s);h.Click({Kind::Tab,int(Page::Haptics)});
@@ -16,7 +16,7 @@ int main(){
         h.Click(At(Page::Haptics,Decrease(row)));Check(h.Get()[key]==90,"strength moves in ten-percent steps");
         if(row){
             const auto test=At(Page::Haptics,TestHapticsBox(row));
-            Check(test.kind==Kind::TestHaptics&&test.index==row-1&&h.CanTestHaptics(test.index),"category Test uses unsaved settings");
+            Check(test.kind==Kind::TestHaptics&&test.index==i-HapticMelee&&h.CanTestHaptics(test.index),"category Test uses unsaved settings");
             Check(!h.Click(test).sequence&&h.Dirty()&&h.Get()[key]==90,"Test does not persist draft changes");
         }
         const auto request=h.Click({Kind::Apply});
@@ -24,6 +24,18 @@ int main(){
         h.Close();h.Open(s);Check(h.Get()[key]==100&&!h.CanTestHaptics(0),"close discards edits and Controls page has no preview");
     }
     Check(!Model{}.CanTestHaptics(0),"closed menu cannot preview haptics");
+    {Model h;h.Open(s);h.Click({Kind::Tab,int(Page::Haptics)});
+        const auto toggle=At(Page::Haptics,ValueBox(2));
+        Check(s.values[HapticShortMelee]==0&&toggle.kind==Kind::Change&&toggle.index==HapticShortMelee,"default longer melee pulse has its own toggle");
+        const auto normal=HapticSample(h.Get(),framevr::haptics::Category::Melee);
+        Check(normal.milliseconds==45&&normal.frequency==0,"default impact uses longer runtime-frequency pulse");
+        Check(At(Page::Haptics,TestHapticsBox(2)).kind==Kind::None,"toggle row does not steal a category Test button");
+        h.Click(toggle);const auto sharp=HapticSample(h.Get(),framevr::haptics::Category::Melee);
+        Check(sharp.milliseconds==10&&sharp.frequency==180&&sharp.amplitude==normal.amplitude,"draft test immediately uses short pulse at the same strength");
+        const auto request=h.Click({Kind::Apply});
+        Check(request.changed==(ChangeMask{1}<<HapticShortMelee)&&request.values[HapticMelee]==100,"pulse shape saves without changing strength");
+        h.Close();h.Open(s);Check(HapticSample(h.Get(),framevr::haptics::Category::Melee).milliseconds==45,"closing discards unsaved short-pulse choice");
+    }
     {auto missing=s;missing.ready=false;Model h;h.Open(missing);h.Click({Kind::Tab,int(Page::Haptics)});
         Check(!h.CanTestHaptics(0)&&!h.CanTestHaptics(-1)&&!h.CanTestHaptics(framevr::haptics::CategoryCount),"unavailable settings cannot preview");}
     {auto values=s.values;values[HapticStrength]=50;

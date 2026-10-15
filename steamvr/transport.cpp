@@ -1000,6 +1000,12 @@ void MotionPulse(int hand,haptics::Category category,float strength,XrDuration d
         vibration.amplitude=amplitude;
         result=pApplyHapticFeedback(session,&ai,reinterpret_cast<XrHapticBaseHeader*>(&vibration));return result==XR_SUCCESS;
     },preview);
+    if(preview) {
+        char message[192];std::snprintf(message,sizeof message,
+            "Frame haptics test: hand=%d category=%d amplitude=%.3f duration_ms=%lld frequency=%.0f sent=%d result=%d",
+            hand,int(category),vibration.amplitude,static_cast<long long>(duration/1000000),frequency,applied,int(result));
+        Say(message);
+    }
     static bool reported[2]{};static ULONGLONG errorAt=0;
     if(applied&&!reported[hand]) {
         Say(hand==0?"Frame gameplay: right-hand haptic accepted":"Frame gameplay: left-hand haptic accepted");reported[hand]=true;
@@ -1138,7 +1144,7 @@ void SettingsPointer(const settings::InputGate::Edges& edges) {
         else if(settingsHover.kind==settings::Kind::TestHaptics&&settingsModel.CanTestHaptics(settingsHover.index)){
             const auto levels=settings::HapticLevels(settingsModel.Get());
             const auto category=haptics::Category(settingsHover.index);
-            const auto sample=haptics::Samples[settingsHover.index];
+            const auto sample=settings::HapticSample(settingsModel.Get(),category);
             for(int hand=0;hand<2;++hand)MotionPulse(hand,category,sample.amplitude,XrDuration(sample.milliseconds)*1000000,sample.frequency,&levels);
         }
         else {
@@ -1517,10 +1523,11 @@ void Input() {
     MotionFeedback(motionOutput);
     // One sharp tap per confirmed impact. Consume the event once; do not
     // sustain or refresh it while the weapon remains inside the creature.
+    const auto impact=settings::HapticSample(gestureSettings,haptics::Category::Melee);
     if(const auto at=meleeImpactAt.exchange(0);at&&motionInput.active&&GetTickCount64()-at<150)
-        MotionPulse(0,haptics::Category::Melee,.95f,10000000,180.f);
+        MotionPulse(0,haptics::Category::Melee,impact.amplitude,XrDuration(impact.milliseconds)*1000000,impact.frequency);
     if(const auto at=shieldImpactAt.exchange(0);at&&motionInput.active&&GetTickCount64()-at<150)
-        MotionPulse(1,haptics::Category::Melee,.95f,10000000,180.f);
+        MotionPulse(1,haptics::Category::Melee,impact.amplitude,XrDuration(impact.milliseconds)*1000000,impact.frequency);
     for(int hand=0;hand<2;++hand)if(spellHaptics.Take(hand,gamestate::LocalPlayer(),GetTickCount64(),motionInput.active)) {
         const auto sample=haptics::Samples[int(haptics::Category::Spell)];
         MotionPulse(hand,haptics::Category::Spell,sample.amplitude,XrDuration(sample.milliseconds)*1000000,sample.frequency);
