@@ -195,7 +195,7 @@ void __cdecl Apply(const PluginContext*, void*) noexcept {
     const uint64_t had[2] = {g_applied[0].load(), g_applied[1].load()};
     auto store = [&] { g_applied[0].store(want[0]); g_applied[1].store(want[1]); };
     // Do not acknowledge a press before the executors exist. An early VR
-    // toggle must still reach the game once its key-command code is ready.
+    // hold must still reach the game once its key-command code is ready.
     if (!Ready()) return;
     // Motion drinking requests the same belt command as a normal key. No item
     // edits, no delayed consumption after a menu/loading pause or lost focus.

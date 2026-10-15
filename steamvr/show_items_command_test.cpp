@@ -48,26 +48,40 @@ int main() {
     D2RL::PluginApi api{};api.apiSize=sizeof api;api.queryService=&Query;
     D2RL::PluginContext context{};context.contextSize=sizeof context;context.api=&api;
     gamecmd::Init(&context);
-    uint64_t player=1;
-    auto refresh=[&]{display.Refresh(player,GetTickCount64(),true);};
+    uint64_t player=1,epoch=1,sampleTime=1000;
+    Shortcut chord;
+    auto sample=[&](float trigger,float grip,bool allowed=true){
+        sampleTime+=20;
+        const bool show=chord.Step(player,epoch,sampleTime,allowed,trigger,grip);
+        display.Refresh(player,GetTickCount64(),allowed,show);
+    };
     auto tick=[&]{gamecmd::Tick();Drain(context);};
-    refresh();tick();assert(edges.empty()); // default does not override drop/hover labels
-    assert(display.Toggle());tick();assert(edges.empty()); // key code not decrypted yet
-    verified=true;refresh();tick();assert(held&&edges.size()==1); // retry the same requested hold
-    for(int i=0;i<10;++i){refresh();tick();}assert(edges.size()==1); // held, no repeated presses
-    assert(!display.Toggle());tick();assert(!held&&edges.size()==2); // restores native behavior
+    sample(0,0);tick();assert(edges.empty()); // normal drop/hover labels
+    sample(1,1);tick();assert(edges.empty()); // key code not decrypted yet
+    verified=true;sample(1,1);tick();assert(held&&edges.size()==1); // retry while still physically held
+    for(int i=0;i<10;++i){sample(.7f,.8f);tick();}assert(edges.size()==1); // no repeated presses
+    sample(0,1);tick();assert(!held&&edges.size()==2); // releasing trigger restores native behavior
     assert(display.Active(GetTickCount64())); // readability remains on with show-all off
-    display.Toggle();refresh();tick();assert(held);
+    sample(1,1);tick();assert(held);
+    sample(1,0);tick();assert(!held&&chord.Consumed()); // grip release hides labels but cannot cast
+    sample(1,1);tick();assert(held&&chord.GripConsumed()); // regrip resumes labels without a grab
     menu=true;tick();assert(!held); // menu before next XR refresh releases the command
-    menu=false;refresh();tick();assert(held); // same session resumes show-all
-    display.Clear();tick();assert(!held); // lost focus, tracking or VR session
-    refresh();tick();assert(held);
-    display.Refresh(player,GetTickCount64()-LeaseMs,true);tick();assert(!held); // stopped producer
-    refresh();tick();assert(held);
-    ++player;refresh();tick();assert(!held); // new character returns to normal labels
+    sample(1,1,false);menu=false;sample(1,1);tick();assert(!held); // no held replay after a menu
+    sample(0,0);sample(1,1);tick();assert(held);
+    display.Clear();chord.Suspend();tick();assert(!held); // lost focus, tracking or VR session
+    sample(1,1);tick();assert(!held); // fresh release is needed on recovery
+    sample(0,0);sample(1,1);tick();assert(held);
+    display.Refresh(player,GetTickCount64()-LeaseMs,true,true);tick();assert(!held); // stopped producer
+    sampleTime+=1000;sample(1,1);tick();assert(!held); // stalled input cannot silently resume
+    sample(0,0);sample(1,1);tick();assert(held);
+    ++player;sample(1,1);tick();assert(!held); // new character cannot inherit a held chord
     // A queued request must re-read the lease; never press Alt after entering a menu.
-    display.Toggle();gamecmd::Tick();assert(queued);menu=true;Drain(context);assert(!held);
-    menu=false;refresh();tick();assert(held);
+    sample(0,0);sample(1,1);gamecmd::Tick();assert(queued);menu=true;Drain(context);assert(!held);
+    sample(1,1,false);menu=false;sample(0,0);sample(1,1);tick();assert(held);
     display.Refresh(0,GetTickCount64(),false);tick();assert(!held); // leaving the world
-    std::puts("Native Show Items: press/hold/release, late code readiness, queued cancellation, menus, lease expiry and character changes passed");
+    // Releasing while a press is queued must cancel that press, too.
+    sample(0,0);sample(1,1);gamecmd::Tick();assert(queued);sample(0,1);Drain(context);assert(!held);
+    // An ongoing normal attack cannot become a loot chord by adding grip.
+    sample(0,0);sample(1,0);sample(1,1);tick();assert(!held&&!chord.Consumed());
+    std::puts("Native Show Items: physical chord hold, either release, no combat replay, queued cancellation and lifecycle guards passed");
 }

@@ -12,20 +12,19 @@ constexpr uint32_t ShowItemsCommand=0x25; // native "Show items (Alt)"; honors t
 constexpr uint64_t ShowItemsMask=uint64_t{1}<<ShowItemsCommand;
 // XR publishes a short gameplay lease. Native label callbacks never take the
 // XR lock. The command dispatcher holds Show Items only while that lease is live;
-// turning it off leaves native drop/hover labels alone.
+// releasing the chord leaves native drop/hover labels alone. Show Items uses
+// the game's nearby loot list, without a VR aim/pickup-distance restriction.
 class Display {
-    uint64_t session=0; // XR writer only
-    std::atomic<uint64_t> until{0};
-    std::atomic<bool> showAll{false};
+    std::atomic<uint64_t> until{0},showUntil{0};
 public:
-    void Refresh(uint64_t player,uint64_t now,bool active) {
-        if(player!=session){until.store(0,std::memory_order_release);session=player;showAll.store(false);}
-        until.store(active&&player?now+LeaseMs:0,std::memory_order_release);
+    void Refresh(uint64_t player,uint64_t now,bool active,bool held=false) {
+        const auto end=active&&player?now+LeaseMs:0;
+        showUntil.store(held?end:0,std::memory_order_release);
+        until.store(end,std::memory_order_release);
     }
-    void Clear(){until.store(0,std::memory_order_release);}
+    void Clear(){showUntil.store(0,std::memory_order_release);until.store(0,std::memory_order_release);}
     bool Active(uint64_t now)const {const auto end=until.load(std::memory_order_acquire);return end&&now<end;}
-    bool ShowAll(uint64_t now)const {return Active(now)&&showAll.load();}
-    bool Toggle(){const bool next=!showAll.load();showAll.store(next);return next;}
+    bool ShowAll(uint64_t now)const {const auto end=showUntil.load(std::memory_order_acquire);return end&&now<end;}
 };
 inline Display display;
 // Only raise the opacity of an existing native box. Negative/zero alpha tells
@@ -50,9 +49,13 @@ public:
         const bool edge=triggerHeld&&!wasTrigger;
         if(!triggerHeld)triggerConsumed=false;
         if(!gripHeld)gripConsumed=false;
-        if(valid&&triggerHeld&&gripHeld&&(edge||!armed))triggerConsumed=gripConsumed=true;
+        if(valid&&triggerHeld&&gripHeld&&(edge||!armed||triggerConsumed))triggerConsumed=gripConsumed=true;
         if(!triggerHeld&&valid)armed=true;
-        return valid&&armed&&edge&&gripHeld;
+        // Hold, never latch. Either release hides the extra labels immediately,
+        // while the remaining consumed button cannot replay into combat/grabs.
+        // Grip may be re-squeezed during our consumed trigger hold; adding it
+        // to an unrelated attack still cannot steal that attack's trigger.
+        return valid&&armed&&triggerHeld&&gripHeld&&triggerConsumed;
     }
     bool Consumed(bool nativeUi=false)const{return !nativeUi&&triggerConsumed;}
     bool GripConsumed(bool nativeUi=false)const{return !nativeUi&&gripConsumed;}

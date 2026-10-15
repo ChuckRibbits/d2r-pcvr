@@ -9,27 +9,30 @@ int main() {
     Display look;
     assert(!look.Active(1000)&&!look.ShowAll(1000));
     look.Refresh(1,1000,true);assert(look.Active(1000)&&!look.ShowAll(1000)); // normal drop/hover behavior by default
-    assert(look.Toggle()&&look.ShowAll(1001));
-    look.Refresh(1,1100,true);assert(look.ShowAll(1200));
+    look.Refresh(1,1020,true,true);assert(look.ShowAll(1020));
+    look.Refresh(1,1100,true,true);assert(look.ShowAll(1200));
     assert(!look.Active(1400)&&!look.ShowAll(1400)); // no stale Alt hold in desktop play
-    look.Refresh(1,1500,true);assert(look.ShowAll(1500)); // same character retains the choice
+    look.Refresh(1,1500,true);assert(!look.ShowAll(1500)); // no retained toggle after expiration
     look.Refresh(1,1600,false);assert(!look.Active(1600)&&!look.ShowAll(1600));
-    look.Refresh(1,1650,true);assert(look.ShowAll(1650));
-    assert(!look.Toggle()&&!look.ShowAll(1651)&&look.Active(1651)); // off keeps the larger native labels
-    look.Toggle();look.Refresh(2,1700,true);assert(!look.ShowAll(1700)); // a new character starts normal
-    look.Toggle();look.Clear();assert(!look.ShowAll(1701));
-    look.Refresh(0,1800,true);assert(!look.Active(1800)&&!look.ShowAll(1800));
+    look.Refresh(1,1650,true,true);assert(look.ShowAll(1650));
+    look.Refresh(1,1651,true);assert(!look.ShowAll(1651)&&look.Active(1651)); // release keeps larger native labels
+    look.Refresh(2,1700,true);assert(!look.ShowAll(1700)); // new session, no saved choice
+    look.Refresh(2,1701,true,true);look.Clear();assert(!look.ShowAll(1701));
+    look.Refresh(0,1800,true,true);assert(!look.Active(1800)&&!look.ShowAll(1800));
+    look.Refresh(2,1900,false,true);assert(!look.Active(1900)&&!look.ShowAll(1900));
     assert(TextScale==1.5f&&BackingAlpha(.6f)==.85f&&BackingAlpha(.95f)==.95f);
     assert(BackingAlpha(0)==0&&BackingAlpha(-1)==-1);
     Shortcut combo;uint64_t now=1000,session=1,epoch=1;
     auto step=[&](float trigger,float grip=1,bool allowed=true){now+=20;return combo.Step(session,epoch,now,allowed,trigger,grip);};
-    assert(!step(true)&&combo.Consumed()); // a combo held on first sample cannot toggle
+    assert(!step(true)&&combo.Consumed()); // first sample must see a release before showing
     assert(!step(false)&&!combo.Consumed());
     assert(combo.GripConsumed()&&!combo.GripConsumed(true)); // releasing trigger first cannot replay grip
     assert(step(true)&&combo.Consumed());
-    for(int i=0;i<5;++i)assert(!step(true)); // once per press
+    for(int i=0;i<5;++i)assert(step(true)); // stays shown for the entire hold
     assert(!step(true,0)&&combo.Consumed()); // release grip first: no attack replay
     assert(!combo.GripConsumed());
+    assert(step(true,1)&&combo.GripConsumed()); // regrip resumes labels and consumes the new grip
+    assert(!step(true,0)&&combo.Consumed());
     assert(!combo.Consumed(true)); // native panel trigger and Shift remain available
     assert(!step(false,0)&&!combo.Consumed());
     assert(!step(true,0)&&!combo.Consumed());
@@ -45,13 +48,13 @@ int main() {
     }
     step(false);assert(!step(true,NAN));step(false);assert(step(true));
     step(false);assert(!step(NAN,1));step(false);assert(step(true));
-    // Analog squeeze noise cannot retrigger or release a consumed chord.
+    // Analog squeeze noise cannot interrupt a consumed chord.
     step(0,0);step(0,.6f);assert(step(.8f,.6f));
-    for(float value:{.5f,.4f,.3f})assert(!step(value,.45f)&&combo.Consumed()&&combo.GripConsumed());
+    for(float value:{.5f,.4f,.3f})assert(step(value,.45f)&&combo.Consumed()&&combo.GripConsumed());
     assert(!step(.19f,.45f)&&!combo.Consumed()&&combo.GripConsumed());
     assert(step(.8f,.45f)); // repeat while the same grip stays held
     assert(!step(1,.3f)&&combo.Consumed()&&!combo.GripConsumed());
-    assert(!step(1,1)&&combo.Consumed()); // repressing grip cannot toggle a held trigger
+    assert(step(1,1)&&combo.Consumed()&&combo.GripConsumed()); // regrip resumes without a grab
     step(0,0);assert(!step(.4f,.4f)&&!combo.Consumed()); // gentle touch is not a chord
     step(0,1);assert(step(1,1));
     // The production filter consumes right trigger/grip before skill routing,
@@ -66,7 +69,7 @@ int main() {
     for(int i=0;i<3;++i){input.time+=.02;hands.Step(input);}
     input.occupied=combo.Consumed()||combo.GripConsumed();
     input.trigger[0]=filtered.rt/255.f;input.time+=.02;
-    assert(hands.Step(input).slot==-1); // toggling names does not cast the assigned skill
+    assert(hands.Step(input).slot==-1); // showing names does not cast the assigned skill
     step(1,0);filtered=raw;grip=0;combo.Filter(filtered,grip);assert(!filtered.rt);
     step(0,0);filtered=raw;grip=0;combo.Filter(filtered,grip);assert(filtered.rt==255);
     input.occupied=false;input.time+=.02;hands.Step(input);
