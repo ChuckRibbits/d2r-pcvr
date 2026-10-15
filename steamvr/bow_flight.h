@@ -209,6 +209,25 @@ public:
     }
     void Clear(){entity=UINT32_MAX;}
 };
+// A retained client unit does not guarantee that its HD mesh still renders.
+// Recover only after sustained visible demand, with time for asynchronous
+// loading. Menus, holstering and tracking loss cancel that demand. The UI
+// thread rechecks this before retiring anything; queuing work is not an attempt.
+class PreviewRecovery {
+    bool missing=false,attempted=false;
+    uint64_t missingAt=0,attemptAt=0;
+public:
+    static bool Rendered(uint64_t at,uint64_t now) {return at&&now>=at&&now-at<150;}
+    void Observe(bool wanted,uint64_t renderedAt,uint64_t now) {
+        if(!wanted||Rendered(renderedAt,now)){missing=false;return;}
+        if(!missing){missing=true;missingAt=now;}
+    }
+    bool Due(bool hasClient,uint64_t now) const {
+        return missing&&(!attempted||(now>=attemptAt&&now-attemptAt>=500))&&
+            (!hasClient||(now>=missingAt&&now-missingAt>=3000));
+    }
+    void Attempt(uint64_t now) {attempted=true;attemptAt=now;missingAt=now;}
+};
 // HD projectile models point along local +Z: arrow tail at -.98391676,
 // javelin tail at -1, and both tips at +1 (confirmed in the headset).
 // Its entity's stock 45-degree yaw/release-bone offset is replaced, not added.

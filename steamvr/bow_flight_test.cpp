@@ -196,5 +196,55 @@ int main() {
             Check(!binding.Bound()&&!binding.Matches(mesh)&&binding.Bind(recycled,true),"new arrow may bind new generation after cleanup");
         }
     }
-    std::puts("Physical bow: release ownership, cancellation, cave coordinates, swept contacts, walls, speed, visual-axis and mesh-binding tests passed");
+    {
+        // Reproduce #93: the model initially renders, then its mesh stops
+        // updating while the client pointer remains alive. That pointer used
+        // to prevent any retry, even though the fallback was already visible.
+        PreviewRecovery recovery;VisualBinding binding;
+        constexpr uint32_t mesh=0x10003,recycled=mesh+(1u<<20);
+        recovery.Observe(true,0,1000);
+        Check(recovery.Due(false,1000),"visible bow with no client requests a preview");
+        recovery.Attempt(1000);
+        Check(binding.Bind(mesh,true),"first preview binds its native mesh");
+        for(uint64_t now=1050;now<=10000;now+=50) {
+            recovery.Observe(true,now,now);
+            Check(!recovery.Due(true,now),"healthy retained preview never gets recreated");
+        }
+        Check(PreviewRecovery::Rendered(10000,10149)&&!PreviewRecovery::Rendered(10000,10150),
+            "fallback appears when native render readiness expires");
+        recovery.Observe(true,10000,10150);
+        Check(!recovery.Due(true,13149),"brief render gaps have a recovery grace period");
+        Check(recovery.Due(true,13150),"stale mesh recovers even though native client still exists");
+        // A render arriving after scheduling but before the UI callback wins.
+        recovery.Observe(true,13151,13151);
+        Check(!recovery.Due(true,13151),"UI recheck preserves a preview that resumed rendering");
+        recovery.Observe(true,13151,13301);
+        Check(recovery.Due(true,16301),"later sustained render loss can recover again");
+        recovery.Attempt(16301);binding.Clear();
+        recovery.Observe(true,0,16302);
+        Check(!recovery.Due(false,16800)&&recovery.Due(false,16801),"retirement and replacement are rate limited");
+        recovery.Attempt(16801);
+        Check(binding.Bind(recycled,true)&&!binding.Matches(mesh),"replacement owns only its new mesh generation");
+        Check(!recovery.Due(true,19800),"replacement gets time for asynchronous mesh loading");
+        recovery.Observe(true,19800,19800);
+        Check(PreviewRecovery::Rendered(19800,19801)&&!recovery.Due(true,19801),"rendered replacement removes fallback and ends recovery");
+    }
+    {
+        PreviewRecovery recovery;
+        recovery.Observe(true,0,1000);recovery.Attempt(1000);
+        Check(!recovery.Due(false,1499)&&recovery.Due(false,1500),"failed allocations cannot retry every frame or fired arrow");
+        recovery.Attempt(1500);
+        Check(!recovery.Due(true,4499)&&recovery.Due(true,4500),"never-rendered native client can also recover after loading grace");
+        recovery.Observe(false,0,4500);
+        Check(!recovery.Due(true,60000)&&!recovery.Due(false,60000),"menus, holstering and tracking loss suspend recovery and creation");
+        recovery.Observe(true,0,60000);
+        Check(!recovery.Due(true,62999)&&recovery.Due(true,63000),"returning to bow starts a fresh visible grace period");
+        recovery.Observe(false,0,63000);recovery.Observe(true,0,64000);
+        recovery.Observe(true,64001,64001);
+        Check(!recovery.Due(true,70000),"resuming rendering cancels a queued recovery");
+        recovery={};recovery.Observe(true,0,100);
+        Check(recovery.Due(false,100)&&!recovery.Due(true,100),"new session forgets prior attempts and missing-render history");
+        Check(!PreviewRecovery::Rendered(0,100)&&!PreviewRecovery::Rendered(101,100),"missing and future render timestamps cannot hide fallback");
+    }
+    std::puts("Physical bow: release ownership, cancellation, cave coordinates, swept contacts, walls, speed, visual-axis, mesh-binding and preview recovery tests passed");
 }
