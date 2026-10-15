@@ -342,14 +342,38 @@ pending.
 
 ### In-headset VR settings
 
-The panel opens in front of the headset and stays in room space. It has three
+The panel opens in front of the headset and stays in room space. It has six
 tabs and a **Reset eye height** button:
 
 | Tab | Contents |
 |---|---|
 | Controls | Left/right controller reference for movement, menus, melee, bow, spells, potions, holsters and height reset |
-| VR | Motion combat on/off, seated belt position, dominant hand, smooth/snap turning, smooth turn speed, belt height and forward reach, wrist minimap on/off (default On) |
+| VR | Controller labels, motion combat, seated belt position, dominant hand, smooth/snap turning, belt height and reach, weapon skill gestures and ordinary mob bars |
 | Video | Foveation Off / Fixed / Eye tracked, actual VR source size, added sky, fog, dungeon ceilings, terrain and object draw distances, VR render resolution |
+| HUD | Health/mana location and tilt, optional resource alerts, navigation location, menu distance and tooltip timing |
+| Combat | Melee hit speed |
+| Haptics | Overall strength and separate melee, bow draw, bow/throw release, spell, interaction and resource-alert strengths; a Test button for each category |
+
+**VR Settings > Haptics** tunes vibration for different controllers. Each strength
+ranges from **0% (Off) to 200%**, in **10% steps**, with **100%** as the default.
+Overall strength multiplies the category strength: 50% overall and 50% bow draw
+produce 25% of the original draw amplitude. The controller's maximum amplitude
+still limits strong pulses. Existing pulse lengths and frequencies stay the same.
+
+**Test** plays a short sample on both hands using the displayed, unsaved values.
+**Apply** saves and updates gameplay feedback; **Close** discards unsaved edits.
+Muting a category stops its active vibration; Overall Off stops both controllers.
+Bow draw covers string proximity, nocking, pulling and full draw. Bow/throw release
+covers shooting and throwing. Melee covers weapon and shield impacts. Interactions
+cover loot, potions, holsters and menu feedback. Resource alerts still require
+**HUD > Low health / mana alerts** to be enabled for automatic warnings.
+
+Supported independent hand spells now give one brief pulse on the casting hand
+after a spell successfully creates its projectiles. A volley gives one pulse,
+and a refused cast gives none. Feedback is discarded when stale, inactive or from
+another character session. The **Spell casts** setting controls this pulse.
+Settings are stored under `[haptics]` as `strength`, `melee`, `bow_draw`,
+`bow_release`, `spells`, `interactions` and `alerts`; missing keys default to 100.
 
 Click **Apply** to save changed values to `d2rloader/plugins/d2r_vr.ini` and
 reload them live. Closing without Apply discards pending edits. The first Apply
@@ -371,7 +395,7 @@ source size independently of the physical monitor. See [resolution settings
 and testing notes](VR_RESOLUTION.md). There is no control rebinding here.
 
 First headset check: open/close from the shortcut, then from the wheel; visit all
-three tabs and reset height; cancel an edit and confirm it is discarded; Apply
+six tabs and reset height; cancel an edit and confirm it is discarded; Apply
 a turn-mode change and confirm it persists on reopening; disable motion combat
 and reopen with the shortcut; switch foveation off/fixed/eye tracked and check
 clarity and gaze status. Confirm no menu click attacks, drinks or swaps a weapon,

@@ -293,6 +293,7 @@ XrAction gripPose=XR_NULL_HANDLE, stick=XR_NULL_HANDLE, trigger=XR_NULL_HANDLE, 
 XrAction aimPose=XR_NULL_HANDLE;
 XrAction haptic=XR_NULL_HANDLE;
 haptics::Pulses hapticPulses;
+haptics::CastEvents spellHaptics;
 XrAction primary=XR_NULL_HANDLE, secondary=XR_NULL_HANDLE, stickClick=XR_NULL_HANDLE, menu=XR_NULL_HANDLE;
 XrPath hands[2]{}; // right, left, matching the existing wire format.
 XrSpace handSpaces[2]{};
@@ -426,6 +427,7 @@ void CancelShieldCast() {
 }
 void ClearInput() {
     hapticPulses.Cancel();
+    spellHaptics.Clear();
     lootlabels::display.Clear();
     lootLabelShortcut.Suspend();
     meleeImpactAt=shieldImpactAt=0;
@@ -976,8 +978,9 @@ void MotionPointer() {
         dotPose=XrPose({hit.point+math::Rotate(pose.q,{0,0,.003f}),pose.q});
     }
 }
-void MotionPulse(int hand,float strength,XrDuration duration,float frequency=XR_FREQUENCY_UNSPECIFIED) {
-    if(!haptic||!pApplyHapticFeedback||!pStopHapticFeedback||!session||!running)return;
+void MotionPulse(int hand,haptics::Category category,float strength,XrDuration duration,float frequency=XR_FREQUENCY_UNSPECIFIED,const haptics::Strengths* preview=nullptr) {
+    if(hand<0||hand>=2||!haptic||!pApplyHapticFeedback||!pStopHapticFeedback||!session||!running)return;
+    hapticPulses.Configure(settings::HapticLevels(vrsettings::Read().values));
     // Capture handles by value. Shutdown joins the timer before destroying
     // these handles; the worker never takes the transport/render mutex.
     const auto xrSession=session;const auto action=haptic;const auto stop=pStopHapticFeedback;
@@ -991,13 +994,14 @@ void MotionPulse(int hand,float strength,XrDuration duration,float frequency=XR_
     }))return;
     XrHapticActionInfo ai{XR_TYPE_HAPTIC_ACTION_INFO};ai.action=haptic;ai.subactionPath=hands[hand];
     XrHapticVibration vibration{XR_TYPE_HAPTIC_VIBRATION};
-    vibration.duration=duration;vibration.frequency=frequency;vibration.amplitude=strength;
-    XrResult result=XR_ERROR_RUNTIME_FAILURE;
-    hapticPulses.Pulse(hand,std::chrono::nanoseconds(duration),[&]{
+    vibration.duration=duration;vibration.frequency=frequency;
+    XrResult result=XR_SUCCESS;
+    const bool applied=hapticPulses.Pulse(hand,category,std::chrono::nanoseconds(duration),strength,[&](float amplitude){
+        vibration.amplitude=amplitude;
         result=pApplyHapticFeedback(session,&ai,reinterpret_cast<XrHapticBaseHeader*>(&vibration));return result==XR_SUCCESS;
-    });
+    },preview);
     static bool reported[2]{};static ULONGLONG errorAt=0;
-    if(XR_SUCCEEDED(result)&&!reported[hand]) {
+    if(applied&&!reported[hand]) {
         Say(hand==0?"Frame gameplay: right-hand haptic accepted":"Frame gameplay: left-hand haptic accepted");reported[hand]=true;
     } else if(XR_FAILED(result)&&GetTickCount64()>=errorAt) {
         char message[128];std::snprintf(message,sizeof message,"Frame gameplay: haptic failed hand=%d result=%d",hand,int(result));Say(message);
@@ -1008,14 +1012,15 @@ void MotionFeedback(const gameplay::Output& out) {
     static double lastPull=0;static float previousDraw=0;
     const unsigned event=out.feedback;
     if(event) {
-        MotionPulse(0,event==6?.12f:event==4?.2f:event==2||event==3?.65f:.45f,event==4||event==6?20000000:45000000);
-        if(out.bowReady&&(event==1||event==2||event==5))MotionPulse(1,event==2?.65f:.25f,35000000);
+        const auto category=haptics::MotionCategory(event,out.bowReady,out.javelinReady);
+        MotionPulse(0,category,event==6?.12f:event==4?.2f:event==2||event==3?.65f:.45f,event==4||event==6?20000000:45000000);
+        if(out.bowReady&&(event==1||event==2||event==5))MotionPulse(1,category,event==2?.65f:.25f,35000000);
         lastPull=motionInput.time;previousDraw=out.draw;
     } else if(out.bowDrawing&&motionInput.time-lastPull>.07&&std::fabs(out.draw-previousDraw)>.018f) {
         // A light ratchet felt while pulling, rather than only the native
         // attack rumble after release. No repeated buzz while held still.
-        MotionPulse(0,.22f+.28f*out.draw,25000000);
-        MotionPulse(1,.1f+.15f*out.draw,20000000);
+        MotionPulse(0,haptics::Category::BowDraw,.22f+.28f*out.draw,25000000);
+        MotionPulse(1,haptics::Category::BowDraw,.1f+.15f*out.draw,20000000);
         lastPull=motionInput.time;previousDraw=out.draw;
     }
     if(!out.bowDrawing)previousDraw=0;
@@ -1043,6 +1048,7 @@ gameplay::MeleeStyle MotionMeleeStyle() {
 }
 void ResetSettingsInput() {
     hapticPulses.Cancel();
+    spellHaptics.Clear();
     panelinput::WorldInput(false);
     gamestate::MenuMap(false);
     motion.Cancel();motionOutput={};interactions.Reset();interactionstate::Cancel();
@@ -1081,7 +1087,7 @@ void CalibrationInput() {
     bodyCalibration.Observe(vrsettings::Read(),motionInput.time);
     if(phaseBefore==calibration::Phase::Saving&&bodyCalibration.phase==calibration::Phase::Saved){
         origin=calibrationOrigin;haveOrigin=true;worldRecenter=true;
-        MotionPulse(0,.45f,70000000);MotionPulse(1,.45f,70000000);
+        MotionPulse(0,haptics::Category::Interaction,.45f,70000000);MotionPulse(1,haptics::Category::Interaction,.45f,70000000);
         const auto m=bodyCalibration.Get();char message[180];
         std::snprintf(message,sizeof message,"Frame body calibration: saved eye height %.3f m, controller span %.3f m",m.eyeHeight,m.armSpan);Say(message);
     }
@@ -1127,8 +1133,14 @@ void SettingsPointer(const settings::InputGate::Edges& edges) {
     }
     if(edges.click&&pointerHit&&settingsImageReady&&settingsPaintRevision==settingsModel.revision){
         if(settingsHover.kind==settings::Kind::Close)CloseSettings();
-        else if(settingsHover.kind==settings::Kind::Recenter){ResetHeight();MotionPulse(1,.4f,35000000);}
+        else if(settingsHover.kind==settings::Kind::Recenter){ResetHeight();MotionPulse(1,haptics::Category::Interaction,.4f,35000000);}
         else if(settingsHover.kind==settings::Kind::Calibrate&&settingsModel.ready&&!settingsModel.Busy()&&!settingsModel.Dirty())OpenBodyCalibration();
+        else if(settingsHover.kind==settings::Kind::TestHaptics&&settingsModel.CanTestHaptics(settingsHover.index)){
+            const auto levels=settings::HapticLevels(settingsModel.Get());
+            const auto category=haptics::Category(settingsHover.index);
+            const auto sample=haptics::Samples[settingsHover.index];
+            for(int hand=0;hand<2;++hand)MotionPulse(hand,category,sample.amplitude,XrDuration(sample.milliseconds)*1000000,sample.frequency,&levels);
+        }
         else {
             const auto request=settingsModel.Click(settingsHover);
             if(request.sequence&&!vrsettings::Submit(request)){
@@ -1158,6 +1170,7 @@ void Input() {
     gazeValid=false;
     if(!tracking.data) return;
     if(!valid||state!=XR_SESSION_STATE_FOCUSED) {gazeStability.Reset();ClearInput();return; }
+    hapticPulses.Configure(settings::HapticLevels(vrsettings::Read().values));
     XrActiveActionSet active{actionSet,XR_NULL_PATH};
     XrActionsSyncInfo si{XR_TYPE_ACTIONS_SYNC_INFO};si.countActiveActionSets=1;si.activeActionSets=&active;
     if(pSyncActions(session,&si)!=XR_SUCCESS) {gazeStability.Reset();ClearInput();return;}
@@ -1297,7 +1310,7 @@ void Input() {
     lootlabels::display.Refresh(lootSession,lootNow,lootWorld,lootHeld);
     if(lootHeld!=wasLootHeld) {
         Say(lootHeld?"Frame loot labels: Show Items (Alt) held":"Frame loot labels: normal drop/hover behavior");
-        if(lootHeld)MotionPulse(0,.45f,45000000);
+        if(lootHeld)MotionPulse(0,haptics::Category::Interaction,.45f,45000000);
     }
     // The world shortcut owns the whole trigger squeeze, including if grip is
     // released first. A consumed grip also needs its own physical release so
@@ -1354,7 +1367,8 @@ void Input() {
     if(handOutput.wheel>=0&&!interactionOutput.wheel){handControls.Close();handOutput={};}
     if(interactionOutput.cancelPending)interactionstate::Cancel();
     if(interactionOutput.request.action!=interaction::Action::None)interactionstate::Request(interactionOutput.request);
-    if(interactionOutput.feedback)MotionPulse(interactionOutput.feedbackHand,interactionOutput.feedback==2?.65f:.25f,interactionOutput.feedback>=3?100000000:35000000);
+    if(interactionOutput.feedback)MotionPulse(interactionOutput.feedbackHand,interactionOutput.feedback==4?haptics::Category::Alert:haptics::Category::Interaction,
+        interactionOutput.feedback==2?.65f:.25f,interactionOutput.feedback>=3?100000000:35000000);
     motionInput.palette=false; // Dedicated interaction owner handles the new wheel/belt.
     motionInput.active=motionInput.active&&!interactionOutput.block;
     const auto& quickSnapshot=interactionInput.snapshot;
@@ -1504,9 +1518,13 @@ void Input() {
     // One sharp tap per confirmed impact. Consume the event once; do not
     // sustain or refresh it while the weapon remains inside the creature.
     if(const auto at=meleeImpactAt.exchange(0);at&&motionInput.active&&GetTickCount64()-at<150)
-        MotionPulse(0,.95f,10000000,180.f);
+        MotionPulse(0,haptics::Category::Melee,.95f,10000000,180.f);
     if(const auto at=shieldImpactAt.exchange(0);at&&motionInput.active&&GetTickCount64()-at<150)
-        MotionPulse(1,.95f,10000000,180.f);
+        MotionPulse(1,haptics::Category::Melee,.95f,10000000,180.f);
+    for(int hand=0;hand<2;++hand)if(spellHaptics.Take(hand,gamestate::LocalPlayer(),GetTickCount64(),motionInput.active)) {
+        const auto sample=haptics::Samples[int(haptics::Category::Spell)];
+        MotionPulse(hand,haptics::Category::Spell,sample.amplitude,XrDuration(sample.milliseconds)*1000000,sample.frequency);
+    }
     if(motionOutput.potion>=0)gamecmd::RequestPotion(motionOutput.potion);
     if(!motionInput.active)gamecmd::CancelPotion();
     if(motionOutput.feedback) {
@@ -2321,6 +2339,7 @@ void FinishShieldSkill(bool accepted) {
     if(accepted)shieldImpactAt=shieldFeedbackAt;
 }
 void MeleeImpact() {meleeImpactAt=GetTickCount64();}
+void SpellCast(int hand,uint64_t session) {spellHaptics.Publish(hand,session,GetTickCount64());}
 void SetBowWorldEpoch(uint32_t epoch) {
     std::lock_guard lock(mutex);
     if(bowWorldEpoch==epoch)return;

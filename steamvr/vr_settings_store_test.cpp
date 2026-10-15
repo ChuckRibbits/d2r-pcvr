@@ -14,6 +14,20 @@ int main(){
     Check(WritePrivateProfileStringW(L"custom",L"keep",L"12345",name),"write unrelated key");
     Check(WritePrivateProfileStringW(L"render",L"rings",L"6",name),"write existing setting");
     vrsettings::Poll(name);auto before=vrsettings::Read();
+    for(int i=HapticStrength;i<=HapticAlert;++i){
+        const auto key=Key(i);const auto& definition=Definitions[key];
+        Check(before.values[key]==100,"existing profiles keep full haptic strength");
+        for(int choice:{50,0,200,100}){
+            const auto current=vrsettings::Read();Model h;h.Open(current);
+            const int delta=(choice-int(current.values[key]))/10;
+            for(int step=0;step<std::abs(delta);++step)h.Click({Kind::Change,key,delta>0?1:-1});
+            const auto request=h.Click({Kind::Apply});
+            Check(request.changed==(ChangeMask{1}<<key)&&vrsettings::Submit(request)&&vrsettings::Poll(name),"save haptic strength through its high mask bit");
+            const auto saved=vrsettings::Read();
+            Check(saved.values[key]==choice&&Int(path,definition.section,definition.key)==choice,"muted, reduced and boosted strengths survive INI reload");
+            Check(Changed(saved.values,current.values)==(ChangeMask{1}<<key)&&Int(path,L"custom",L"keep")==12345,"haptic edits preserve other categories and unrelated preferences");
+        }
+    }
     Check(before.values[VitalsTilt]==0,"existing profiles keep their original vitals angle");
     for(int choice:{5,0,-5,0}) {
         const auto current=vrsettings::Read();Model tilt;tilt.Open(current);

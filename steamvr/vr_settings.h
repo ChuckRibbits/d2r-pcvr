@@ -7,12 +7,13 @@
 #include "controller_labels.h"
 #include "hand_vitals.h"
 #include "vr_resolution.h"
+#include "haptic_strength.h"
 
 namespace framevr::settings {
-enum class Page { Controls, VR, Video, HUD, Combat };
+enum class Page { Controls, VR, Video, HUD, Combat, Haptics };
 enum Key { Motion, Seated, Dominant, Snap, TurnSpeed, Waist, BeltForward,
            Foveation, Sky, Fog, Ceiling, DrawDistance, ObjectDistance,
-           EyeHeight, ArmSpan, BodyCalibration, SkillGestures, WristMap, WristCompass, ControllerLabels, WeaponSkillIndicators, PlanarSpellAim, VitalsLocation, CriticalAlerts, RenderResolution, NavigationLocation, SmoothTurn, OrdinaryMobBars, MenuDistance, TooltipTiming, ProjectileAimAssist, MeleeHitSpeed, VitalsTilt, Count };
+           EyeHeight, ArmSpan, BodyCalibration, SkillGestures, WristMap, WristCompass, ControllerLabels, WeaponSkillIndicators, PlanarSpellAim, VitalsLocation, CriticalAlerts, RenderResolution, NavigationLocation, SmoothTurn, OrdinaryMobBars, MenuDistance, TooltipTiming, ProjectileAimAssist, MeleeHitSpeed, VitalsTilt, HapticStrength, HapticMelee, HapticBowDraw, HapticBowRelease, HapticSpell, HapticInteraction, HapticAlert, Count };
 using ChangeMask=uint64_t;
 static_assert(Count<=64,"settings change mask capacity");
 constexpr ChangeMask SupportedChanges=~ChangeMask{0}>>(64-Count);
@@ -57,13 +58,28 @@ inline constexpr std::array<Definition,Count> Definitions{{
     {"Projectile aim assist", "Hand spells: Light assists launch; Strong adds gentle homing", L"gameplay",L"projectile_aim_assist",2,0,2,1},
     {"Melee hit speed", "Higher requires faster weapon swings; shield bash is unchanged", L"gameplay",L"melee_hit_speed",12,1.5f,std::numeric_limits<float>::max(),.25f},
     {"Health / mana tilt", "Wrist / palm angle; + tilts the top toward you", L"interactions",L"vitals_tilt",0,vitals::MinTilt,vitals::MaxTilt,vitals::TiltStep},
+    {"Overall strength", "Both controllers; scales every category below", L"haptics",L"strength",100,0,200,10},
+    {"Melee impacts", "Weapon and shield contact", L"haptics",L"melee",100,0,200,10},
+    {"Bow draw", "Nocking, pulling and full-draw cues", L"haptics",L"bow_draw",100,0,200,10},
+    {"Bow / throw release", "Arrow releases and javelin throws", L"haptics",L"bow_release",100,0,200,10},
+    {"Spell casts", "Supported hand spells; one pulse per cast", L"haptics",L"spells",100,0,200,10},
+    {"Interactions", "Loot, potions, holsters and menu feedback", L"haptics",L"interactions",100,0,200,10},
+    {"Resource alerts", "Optional low health / mana warnings", L"haptics",L"alerts",100,0,200,10},
 }};
 using Values=std::array<float,Count>;
+inline bool HapticKey(Key key){return key>=HapticStrength&&key<=HapticAlert;}
+inline haptics::Strengths HapticLevels(const Values& values){
+    haptics::Strengths levels;levels.master=values[HapticStrength];
+    static_assert(HapticAlert-HapticMelee+1==haptics::CategoryCount);
+    for(int i=0;i<haptics::CategoryCount;++i)levels.category[i]=values[HapticMelee+i];
+    return levels;
+}
 inline Values Defaults(){Values v{};for(int i=0;i<Count;++i)v[i]=Definitions[i].defaultValue;return v;}
 inline float Normalize(Key key,float value){
     const auto& d=Definitions[key];
     if(!std::isfinite(value))return d.defaultValue;
     if(key==VitalsTilt)return vitals::NormalizeTilt(value);
+    if(HapticKey(key))return haptics::NormalizeStrength(value);
     if((key==ControllerLabels||key==VitalsLocation||key==NavigationLocation||key==RenderResolution||key==MenuDistance||key==TooltipTiming||key==ProjectileAimAssist)&&(value<d.min||value>d.max||value!=std::round(value)))return d.defaultValue;
     value=std::clamp(value,d.min,d.max);
     return d.step==1?std::round(value):value;
@@ -83,21 +99,23 @@ struct Rect {
     bool Contains(float px,float py)const{return px>=x&&px<x+w&&py>=y&&py<y+h;}
 };
 constexpr int Width=1280,Height=1024;
-constexpr int TabCount=5;
-constexpr Rect Tabs[TabCount]={{40,114,224,60},{284,114,224,60},{528,114,224,60},{772,114,224,60},{1016,114,224,60}};
+constexpr int TabCount=6;
+constexpr Rect Tabs[TabCount]={{40,114,185,60},{243,114,185,60},{446,114,185,60},{649,114,185,60},{852,114,185,60},{1055,114,185,60}};
 constexpr Rect Apply{965,918,275,68},Close{650,918,275,68},Recenter{40,918,270,68},Calibrate{330,918,300,68};
 constexpr int RowY=242,RowStep=62;
 constexpr Rect ControllerBox{865,181,375,52};
 inline constexpr const char* MenuDistanceNames[]={"Close","Medium","Far"};
 inline constexpr const char* TooltipTimingNames[]={"Instant","Short","Original"};
 constexpr Rect WeaponIndicatorsBox{942,666,221,52},PlanarSpellAimBox{942,728,221,52},AimAssistBox{942,790,221,52};
+inline Rect TestHapticsBox(int row){return {700,RowY+row*RowStep,140,52};}
 inline constexpr const char* AimAssistNames[]={"Off","Light","Strong"};
 inline Rect ControllerOption(int option){return {865,233+option*58,375,58};}
 inline Rect Decrease(int row){return {865,RowY+row*RowStep,64,52};}
 inline Rect Increase(int row){return {1176,RowY+row*RowStep,64,52};}
 inline Rect ValueBox(int row){return {942,RowY+row*RowStep,221,52};}
-inline int RowCount(Page page){return page==Page::Combat?1:page==Page::VR?10:page==Page::Video?7:page==Page::HUD?6:0;}
+inline int RowCount(Page page){return page==Page::Haptics?1+haptics::CategoryCount:page==Page::Combat?1:page==Page::VR?10:page==Page::Video?7:page==Page::HUD?6:0;}
 inline Key RowKey(Page page,int row){
+    if(page==Page::Haptics)return Key(HapticStrength+row);
     if(page==Page::Combat)return MeleeHitSpeed;
     constexpr Key hud[]={VitalsLocation,VitalsTilt,CriticalAlerts,NavigationLocation,MenuDistance,TooltipTiming};
     if(page==Page::HUD)return hud[row];
@@ -105,7 +123,7 @@ inline Key RowKey(Page page,int row){
     constexpr Key vrRows[]={Motion,Seated,Dominant,SmoothTurn,Snap,TurnSpeed,Waist,BeltForward,SkillGestures,OrdinaryMobBars};
     return page==Page::VR?vrRows[row]:Key(Foveation+row);
 }
-enum class Kind { None, Tab, Change, Apply, Close, Recenter, Calibrate, ControllerMenu, ControllerChoice, DismissMenu };
+enum class Kind { None, Tab, Change, Apply, Close, Recenter, Calibrate, ControllerMenu, ControllerChoice, DismissMenu, TestHaptics };
 struct Hit {Kind kind=Kind::None;int index=-1,delta=0;};
 inline Hit HitTest(Page page,float u,float v,bool controllerMenu=false){
     if(!std::isfinite(u)||!std::isfinite(v)||u<0||u>=1||v<0||v>=1)return {};
@@ -128,6 +146,7 @@ inline Hit HitTest(Page page,float u,float v,bool controllerMenu=false){
     if(page==Page::Controls&&AimAssistBox.Contains(x,y))return {Kind::Change,ProjectileAimAssist,1};
     for(int r=0;r<RowCount(page);++r){
         const auto key=RowKey(page,r);
+        if(page==Page::Haptics&&r>0&&TestHapticsBox(r).Contains(x,y))return {Kind::TestHaptics,r-1};
         if(Decrease(r).Contains(x,y))return {Kind::Change,key,-1};
         if(Increase(r).Contains(x,y))return {Kind::Change,key,1};
         if(Definitions[key].max==1&&ValueBox(r).Contains(x,y))return {Kind::Change,key,1};
@@ -145,6 +164,7 @@ public:
     const Values& Get()const{return draft;}
     bool Dirty()const{return Changed(base,draft)!=0;}
     bool Busy()const{return pending!=0;}
+    bool CanTestHaptics(int category)const{return open&&ready&&!Busy()&&page==Page::Haptics&&category>=0&&category<haptics::CategoryCount;}
     void Open(const Snapshot& s){open=true;controllerMenu=false;page=Page::Controls;base=draft=s.values;ready=s.ready;result=s.result;serial=std::max(serial,s.sequence);pending=s.result==Result::Saving?s.sequence:0;++revision;}
     void Close(){open=false;controllerMenu=false;++revision;}
     bool DismissControllerMenu(){if(!controllerMenu)return false;controllerMenu=false;++revision;return true;}

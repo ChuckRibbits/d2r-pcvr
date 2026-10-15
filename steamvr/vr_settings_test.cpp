@@ -7,6 +7,29 @@ static void Check(bool b,const char* label){if(!b){std::fprintf(stderr,"FAIL: %s
 static Hit At(Page p,Rect r){return HitTest(p,(r.x+r.w*.5f)/Width,(r.y+r.h*.5f)/Height);}
 int main(){
     Snapshot s;s.ready=true;
+    for(int i=HapticStrength;i<=HapticAlert;++i){
+        const auto key=Key(i);const int row=i-HapticStrength;
+        Check(s.values[key]==100,"haptics default to normal strength");
+        Check(Normalize(key,-1)==0&&Normalize(key,250)==200&&Normalize(key,54)==50&&Normalize(key,NAN)==100,"haptic settings clamp, step and reject nonfinite values");
+        Model h;h.Open(s);h.Click({Kind::Tab,int(Page::Haptics)});
+        Check(RowKey(Page::Haptics,row)==key&&At(Page::Haptics,Increase(row)).index==key,"each haptic row targets its own setting");
+        h.Click(At(Page::Haptics,Decrease(row)));Check(h.Get()[key]==90,"strength moves in ten-percent steps");
+        if(row){
+            const auto test=At(Page::Haptics,TestHapticsBox(row));
+            Check(test.kind==Kind::TestHaptics&&test.index==row-1&&h.CanTestHaptics(test.index),"category Test uses unsaved settings");
+            Check(!h.Click(test).sequence&&h.Dirty()&&h.Get()[key]==90,"Test does not persist draft changes");
+        }
+        const auto request=h.Click({Kind::Apply});
+        Check(request.changed==(ChangeMask{1}<<key)&&request.values[key]==90&&!h.CanTestHaptics(0),"Apply saves only selected haptic strength and blocks preview while saving");
+        h.Close();h.Open(s);Check(h.Get()[key]==100&&!h.CanTestHaptics(0),"close discards edits and Controls page has no preview");
+    }
+    Check(!Model{}.CanTestHaptics(0),"closed menu cannot preview haptics");
+    {auto missing=s;missing.ready=false;Model h;h.Open(missing);h.Click({Kind::Tab,int(Page::Haptics)});
+        Check(!h.CanTestHaptics(0)&&!h.CanTestHaptics(-1)&&!h.CanTestHaptics(framevr::haptics::CategoryCount),"unavailable settings cannot preview");}
+    {auto values=s.values;values[HapticStrength]=50;
+        for(int i=0;i<framevr::haptics::CategoryCount;++i)values[HapticMelee+i]=float(i*10);
+        const auto levels=HapticLevels(values);Check(levels.master==50,"master level reaches runtime configuration");
+        for(int i=0;i<framevr::haptics::CategoryCount;++i)Check(levels.category[i]==i*10,"each saved category maps to its runtime channel");}
     Check(s.values[MeleeHitSpeed]==12,"melee defaults to twelve m/s");
     {Model melee;melee.Open(s);melee.Click({Kind::Tab,int(Page::Combat)});
         const auto hit=At(Page::Combat,Increase(0));

@@ -48,6 +48,30 @@ act transitions. Changes in level, lookup result, row size and resolved name
 are logged for follow-up. The correction is included in the owner's successful
 session confirmation.
 
+## Controller haptic tuning follow-up
+
+VR Settings now has a Haptics tab with overall strength and independent melee,
+bow draw, bow/throw release, spell-cast, interaction and resource-alert strengths.
+All range from 0% to 200% in 10% steps and default to 100%. Category and overall
+strength multiply, capped at the controller's maximum amplitude. Each category's
+Test button previews the draft on both hands; Apply saves and Close discards.
+Supported independent hand spells add one short pulse per successful cast, on the
+casting hand, including one pulse for a multi-projectile volley.
+
+The native build passed all 65 checks, including category scaling/muting,
+preview isolation, spell-event expiry and INI persistence. Synthetic Haptics and
+Controls previews were checked for layout. This follow-up has not yet been tested
+in-headset. On an offline character,
+compare the same category's Test at 0%, 50%, 100% and 200%; save and reopen, then
+restart to check persistence. Verify that reducing bow draw leaves melee and
+release feedback unchanged. Check a melee/shield impact, a bow draw/release,
+spell casts on each hand, a loot shortcut and potion interaction. Check that
+refused casts do not vibrate, multi-projectile spells pulse once per cast, and
+menus/tracking loss do not replay old feedback. Resource alerts should remain
+opt-in through HUD settings. Overall Off should silence every category; category
+Off should silence only that category. Test a draft change and close without Apply
+to confirm gameplay keeps the saved values. Repeat on available controller types.
+
 ## Settings and behavior
 
 | Feedback | Change |
