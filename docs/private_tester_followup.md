@@ -54,6 +54,11 @@ Battle.net edition, headset, controllers, connection/runtime and resolution.
    VD quality alone do not establish the game's actual render resolution.
 3. Try all menu distances with inventory, character, merchant and main menus.
    Check eye-level content, full tooltips, readable text and matching laser hits.
+   With the sky enabled outdoors, open NPC choices, continue speech and open the
+   journal; verify the sky stays visible behind these panels. Repeat with fog
+   enabled and, indoors, an enabled cave ceiling. Enter a merchant or waypoint
+   and check the shared black background, then return to dialogue and close it.
+   Check both eyes during transitions. Headset verification is pending.
 4. Start with the game's full-size map setting, then raise the wrist/palm and
    open each wheel's MAP tab. Expect a compact map and no full-screen map flash.
    Lower the hand, open menus and leave/rejoin a character; confirm native map

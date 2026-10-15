@@ -82,6 +82,7 @@ namespace gamestate { bool ToggleMenus(); }
 namespace gamestate { uint32_t MenuEpoch(); }
 namespace gamestate { void Init(const D2RL::PluginContext* ctx); void Tick(); uint32_t WeaponClass(); uint32_t WeaponSet(); uint32_t WeaponType(); uint32_t HandsHeld(); uint32_t TwoHanded(); uint32_t WeaponHand(); uint32_t HandsKey(); bool MenuOpen(); int ObjectLight(uint32_t txt, uint32_t mode, float rgb[3]); uint64_t LocalPlayer(); void SetViewMode(uint32_t mode); bool AutoMapOpen(); bool SetAutoMap(bool open); void PollPlate(); bool PlateRect(int32_t out[4]); }
 namespace gamestate {bool LeftShield();}
+namespace gamestate {bool OpaqueMenuOpen();}
 #include "d2r_vr_state.h"
 
 #include "MinHook.h"
@@ -95,6 +96,7 @@ namespace gamestate {bool LeftShield();}
 #include "light_bounds.h"
 #include "game_device_only.h"
 #include "menu_controls.h"
+#include "native_panels.h"
 #include "spell_aim.h"
 #include "skill_pad.h"
 #include "spell_aim_signatures.h"
@@ -6878,6 +6880,14 @@ int Lights(Light* out) {
 }
 }  // namespace worldobj
 
+bool WorldMenuBlocksEffects() {
+#ifdef D2RVR_NATIVE_OPENXR
+    return framevr::panels::BlockWorldEffects(gamestate::MenuOpen(),framevr::SpatialMenu(),gamestate::OpaqueMenuOpen());
+#else
+    return gamestate::MenuOpen();
+#endif
+}
+
 void SkyTick() {
     env::Find();
     solidwalls::Tick();
@@ -6912,7 +6922,7 @@ void SkyTick() {
         if (!g_set.ceilOn.load()) cw = "[ceiling] enabled=0";
         else if (!g_ceilBiome.load()) cw = "not on [ceiling] biomes";
         else if (!g_enabled.load() || ThirdPerson()) cw = "not first person";
-        else if (gamestate::MenuOpen()) cw = "a menu is open";
+        else if (WorldMenuBlocksEffects()) cw = "a menu hides the world backdrop";
         static std::string toldCeil = "?";
         if (std::string(cw ? cw : "") != toldCeil) {
             toldCeil = cw ? cw : "";
@@ -6930,7 +6940,7 @@ void SkyTick() {
     else if (TableView()) why = "the table view (the room round the game)";
     else if (TopPersp()) why = "the view from above";
     else if (palette < 0) why = "not outdoors";
-    else if (gamestate::MenuOpen()) why = "a menu is open";
+    else if (WorldMenuBlocksEffects()) why = "a menu hides the world backdrop";
     g_skyPalette.store(why ? -1 : palette);
     static std::string toldWhy = "?";
     if (std::string(why ? why : "") != toldWhy) {
@@ -7101,7 +7111,7 @@ bool BoneAxesWanted() { return false; }
 bool StampWanted() { return g_enabled.load() && g_afrBlock && g_set.stamps.load() && g_set.stampPixels.load(); }
 
 bool FogWanted() {
-    return g_set.fogOn.load() && g_enabled.load() && !Overhead() && g_inWorld.load() && !gamestate::MenuOpen() &&
+    return g_set.fogOn.load() && g_enabled.load() && !Overhead() && g_inWorld.load() && !WorldMenuBlocksEffects() &&
            (g_set.fogCaves.load() || !g_underground.load());   // [fog] caves=0: none underground
 }
 // The table (F5): the void black, the game lifted off black - D2R_DepthFog.fx TableKey.
@@ -7110,7 +7120,7 @@ bool TableKeyWanted() { return TableView() && g_inWorld.load() && !gamestate::Me
 // never from above, from behind or on the floor (all three run as ThirdPerson).
 bool CeilWanted() {
     return g_set.ceilOn.load() && g_enabled.load() && !ThirdPerson() && g_inWorld.load() && g_ceilBiome.load() &&
-           !gamestate::MenuOpen();
+           !WorldMenuBlocksEffects();
 }
 
 // The pictures of each act as the shader's preprocessor definitions; only what
