@@ -80,6 +80,22 @@ public:
 
 // Visor texture: one square image stretched over the field of view.
 constexpr int Size=1024;
+constexpr float VisorDistance=4;
+struct QuadExtent {float width=0,height=0;};
+inline QuadExtent VisorExtent(math::Fov left,math::Fov right) {
+    // Bound the decorative visor to the angular footprint verified on Quest 3
+    // through both VDXR and SteamVR. Frame's larger symmetric render frustum
+    // otherwise stretches the rim splats about 20% farther from the centre.
+    // Smaller views retain their existing fit; this never alters world FOV.
+    constexpr float maxHorizontal=.9424778f,maxVertical=.9599311f; // 54 / 55 degrees per side
+    for(const auto& f:{left,right}) {
+        for(float a:{f.left,f.right,f.down,f.up})if(!std::isfinite(a)||std::fabs(a)>=1.5707963f)return {};
+        if(f.left>=0||f.right<=0||f.down>=0||f.up<=0)return {};
+    }
+    const auto f=math::EnclosingSymmetricFov(left,right);
+    return {2*VisorDistance*std::tan(std::min(f.right,maxHorizontal))*1.05f,
+            2*VisorDistance*std::tan(std::min(f.up,maxVertical))*1.05f};
+}
 // Splatter art: SpriteCount square cells side by side (assets/blood-splatters.png).
 constexpr int SpriteCount=8,Cell=384,StripWidth=SpriteCount*Cell,StripHeight=Cell;
 constexpr int Placements=16;
