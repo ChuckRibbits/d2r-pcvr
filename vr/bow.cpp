@@ -70,6 +70,7 @@ struct Preview {
     std::array<float,16> rendered{},previous{};
 };
 Preview preview;
+PreviewRenderPose previewRenderPose;
 std::atomic<bool> previewClient{false};
 std::atomic<uint64_t> previewReadyAt{0};
 PreviewRecovery previewRecovery;
@@ -535,19 +536,24 @@ uintptr_t Transform(uintptr_t out,uint32_t entity,uintptr_t component) {
     const auto result=originalTransform(out,entity,component);
     if(!renderCount.load(std::memory_order_relaxed))return result;
     std::array<float,16> matrix{},previous{};bool found=false,held=false,heldVisible=false;
-    uint64_t heldSession=0;uintptr_t heldClient=0;uint32_t heldId=0;
+    uint64_t heldSession=0,heldRevision=0;uintptr_t heldClient=0;uint32_t heldId=0;
     const uint64_t at=framevr::BowRenderTime();
     {
         std::lock_guard lock(mutex);
         if(preview.binding.Matches(entity)&&preview.pose.session==current.session) {
-            if(preview.renderAt!=at||preview.rendered[15]!=1) {
+            Shot pose=preview.pose;bool visible=false;
+            const bool active=enabled.load()&&previewRenderPose.Read(current.session,at,GetTickCount64(),pose,visible);
+            if(preview.renderAt!=at) {
                 preview.previous=preview.rendered;
-                PreviewMatrix(preview.pose,preview.active&&preview.visible,preview.rendered.data());
-                if(preview.previous[15]!=1)preview.previous=preview.rendered;
                 preview.renderAt=at;
             }
-            matrix=preview.rendered;previous=preview.previous;found=held=true;heldVisible=preview.active&&preview.visible;
-            heldSession=preview.pose.session;heldClient=preview.client;heldId=preview.clientId;
+            // View can refresh the world anchor again within this pair. Always
+            // use that pose, while keeping previous-frame motion history for
+            // both eyes. The timer-owned pose remains for client lifecycle only.
+            PreviewMatrix(pose,active&&visible,preview.rendered.data());
+            if(preview.previous[15]!=1)preview.previous=preview.rendered;
+            matrix=preview.rendered;previous=preview.previous;found=held=true;heldVisible=active&&visible;
+            heldSession=pose.session;heldClient=preview.client;heldId=preview.clientId;heldRevision=previewRenderPose.revision;
         }
         for(auto& a:UsedArrows())if(!held&&a.visualBinding.Matches(entity)&&a.flight.shot.session==current.session) {
             if(a.renderAt!=at||a.rendered[15]!=1) {
@@ -570,7 +576,7 @@ uintptr_t Transform(uintptr_t out,uint32_t entity,uintptr_t component) {
     framevr::WriteMemory(reinterpret_cast<void*>(component+0x80),previous.data(),sizeof previous);
     if(held&&heldVisible&&written) {
         std::lock_guard lock(mutex);
-        if(enabled.load()&&preview.active&&preview.visible&&preview.binding.Matches(entity)&&
+        if(enabled.load()&&previewRenderPose.revision==heldRevision&&preview.binding.Matches(entity)&&
            preview.pose.session==heldSession&&current.session==heldSession&&preview.client==heldClient&&preview.clientId==heldId)
             previewReadyAt=GetTickCount64();
     }
@@ -583,6 +589,10 @@ void Init(const D2RL::PluginContext* ctx) {
        !D2RL::HasThreadServiceField(threads,D2RL::ThreadServiceRequiredSize))threads=nullptr;
 }
 void Configure(bool on){enabled=on;}
+void PublishPreviewPose(const Shot& pose,const Gate& gate,bool visible,uint64_t frame) {
+    std::lock_guard lock(mutex);
+    previewRenderPose.Publish(pose,gate,visible,frame);
+}
 bool PreviewReady() {
     const auto at=previewReadyAt.load();
     return enabled.load()&&PreviewRecovery::Rendered(at,GetTickCount64());

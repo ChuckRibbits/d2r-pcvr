@@ -246,5 +246,51 @@ int main() {
         Check(recovery.Due(false,100)&&!recovery.Due(true,100),"new session forgets prior attempts and missing-render history");
         Check(!PreviewRecovery::Rendered(0,100)&&!PreviewRecovery::Rendered(101,100),"missing and future render timestamps cannot hide fallback");
     }
-    std::puts("Physical bow: release ownership, cancellation, cave coordinates, swept contacts, walls, speed, visual-axis, mesh-binding and preview recovery tests passed");
+    {
+        // A delayed gameplay timer must not pin the nocked arrow to an older
+        // player position. Camera movement and hand draw arrive every render
+        // pair, including a camera refresh within a pair and both eye passes.
+        const auto timerPose=Release();PreviewRenderPose render;
+        Flight fired;fired.shot=timerPose;fired.alive=true;fired.updatedAt=1000;
+        float firedBefore[16]{};ArrowMatrix(fired,1000,firedBefore);
+        for(int step=1;step<=40;++step) {
+            const uint64_t now=1000+step*25;
+            auto live=timerPose;live.at=now;
+            const Vec walk{step*.07f,0,-step*.11f};live.player=live.player+walk;live.origin=live.origin+walk;
+            live.direction={.6f,0,-.8f};
+            const Gate gate{true,live.session,live.epoch,now,live.equipment};
+            render.Publish(live,gate,true,now);
+            for(int eye=0;eye<2;++eye) {
+                Shot pose;bool visible=false;float matrix[16]{};
+                Check(render.Read(live.session,now,now,pose,visible)&&visible,"both eyes consume this pair's held arrow pose");
+                PreviewMatrix(pose,visible,matrix);
+                const auto tail=Point(matrix,{0,0,-.98391676f})*(1/live.unitsPerMetre);
+                Check(Length(tail-live.origin)<.0002f,"nocked arrow follows walking and strafing without waiting for timer");
+                Check(Length(tail-timerPose.origin)>.1f,"negative control distinguishes stale timer pose from moving bow");
+            }
+            const auto revision=render.revision;
+            live.player.x+=.2f;live.origin.x+=.2f;
+            render.Publish(live,gate,true,now);
+            Shot latest;bool visible=false;
+            Check(render.Read(live.session,now,now,latest,visible)&&render.revision!=revision&&
+                Length(latest.origin-live.origin)<.0001f,"later camera refresh in same pair replaces earlier world anchor");
+        }
+        float firedAfter[16]{};ArrowMatrix(fired,1000,firedAfter);
+        for(int i=0;i<16;++i)Check(firedBefore[i]==firedAfter[i],"render preview updates cannot drag a released arrow with the player");
+        auto live=timerPose;live.at=2200;Gate gate{true,live.session,live.epoch,2200,live.equipment};
+        Shot pose;bool visible=false;
+        render.Publish(live,gate,true,2200);
+        Check(!render.Read(live.session,2201,2201,pose,visible),"a missing current camera sample cannot reuse last pair's pose");
+        Check(!render.Read(live.session+1,2200,2200,pose,visible),"preview cannot cross character sessions");
+        Check(!render.Read(live.session,2200,2351,pose,visible),"stale tracking cannot keep a nocked arrow visible");
+        gate.active=false;render.Publish(live,gate,true,2200);
+        Check(!render.Read(live.session,2200,2200,pose,visible),"menus and inactive controls hide preview");
+        gate.active=true;gate.bowActive=false;render.Publish(live,gate,true,2200);
+        Check(!render.Read(live.session,2200,2200,pose,visible),"switching away from bow hides preview");
+        gate.bowActive=true;++gate.epoch;render.Publish(live,gate,true,2200);
+        Check(!render.Read(live.session,2200,2200,pose,visible),"recenter context mismatch rejects old hand pose");
+        --gate.epoch;render.Publish(live,gate,false,2200);
+        Check(render.Read(live.session,2200,2200,pose,visible)&&!visible,"out-of-reach preview remains hidden with valid tracking");
+    }
+    std::puts("Physical bow: release ownership, cancellation, cave coordinates, swept contacts, walls, speed, visual-axis, mesh-binding, preview recovery and render-pose tests passed");
 }

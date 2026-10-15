@@ -228,6 +228,22 @@ public:
     }
     void Attempt(uint64_t now) {attempted=true;attemptAt=now;missingAt=now;}
 };
+// A held arrow follows the camera's current world anchor, not a pose copied by
+// the asynchronous gameplay timer. Only this render pair may consume it.
+struct PreviewRenderPose {
+    Shot pose{};
+    Gate gate{};
+    uint64_t frame=0,revision=0;
+    bool visible=false;
+    void Publish(const Shot& shot,const Gate& input,bool shown,uint64_t renderFrame) {
+        pose=shot;gate=input;visible=shown;frame=renderFrame;++revision;
+    }
+    bool Read(uint64_t session,uint64_t renderFrame,uint64_t now,Shot& shot,bool& shown) const {
+        shown=false;
+        if(!frame||frame!=renderFrame||pose.session!=session||!Allowed(pose,gate,now))return false;
+        shot=pose;shown=visible;return true;
+    }
+};
 // HD projectile models point along local +Z: arrow tail at -.98391676,
 // javelin tail at -1, and both tips at +1 (confirmed in the headset).
 // Its entity's stock 45-degree yaw/release-bone offset is replaced, not added.
