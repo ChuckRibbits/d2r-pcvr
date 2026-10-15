@@ -43,6 +43,15 @@ inline Pose HandFacePanel(Pose hand,Pose head,Vec normal,Vec offset) {
 }
 inline Pose WristPanel(Pose hand,Pose head) {return HandFacePanel(hand,head,WristNormal(hand),{-.055f,0,.06f});}
 inline Pose PalmPanel(Pose hand,Pose head) {return HandFacePanel(hand,head,PalmNormal(hand),{.055f,0,-.04f});}
+inline Pose VitalsPanel(Pose hand,Pose head,bool palm,float tiltDegrees=0) {
+    auto panel=palm?PalmPanel(hand,head):WristPanel(hand,head);
+    // Pitch about the readable panel's horizontal axis, keeping its center
+    // fixed. Positive tilt brings the top edge toward the viewer. Navigation
+    // retains the original hand-face plane and its existing spacing.
+    const float half=vitals::NormalizeTilt(tiltDegrees)*.00872664626f;
+    panel.q=math::Multiply(panel.q,{std::sin(half),0,0,std::cos(half)});
+    return panel;
+}
 constexpr float PalmWidth=.20f,PalmHeight=.10f;
 constexpr float WristWidth=.24f,WristHeight=.12f,WristMapSize=.24f;
 // Navigation uses one face and one layout for both the map and compass.
@@ -237,6 +246,7 @@ struct Input {
     bool active=false,tracked[2]{},wheel=false,cancel=false,reservedLeft=false,spell=false,quickCast=false;
     vitals::Location navigationLocation=vitals::Location::Wrist;
     vitals::Location vitalsLocation=vitals::Location::Wrist;
+    float vitalsTilt=0;
     bool criticalAlerts=false,leftCasting=false;
     Pose head{},hand[2]{};
     float trigger=0,leftTrigger=0,grip[2]{};

@@ -54,6 +54,11 @@ Battle.net edition, headset, controllers, connection/runtime and resolution.
    VD quality alone do not establish the game's actual render resolution.
 3. Try all menu distances with inventory, character, merchant and main menus.
    Check eye-level content, full tooltips, readable text and matching laser hits.
+   In VR Settings > HUD, adjust Health / mana tilt to negative, zero and positive
+   angles, then Apply. Try Wrist, Palm and Either with navigation on the same
+   face and on the opposite face. Check readability, a stable panel center,
+   unchanged map/compass placement, and persistence after restart. Close without
+   Apply should discard edits. Headset verification of tilt is pending.
 4. Start with the game's full-size map setting, then raise the wrist/palm and
    open each wheel's MAP tab. Expect a compact map and no full-screen map flash.
    Lower the hand, open menus and leave/rejoin a character; confirm native map

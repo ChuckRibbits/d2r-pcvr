@@ -219,6 +219,14 @@ turn your hand to hide it. Losing left-hand tracking or opening a menu hides it
 and requires a new deliberate hold. Navigation has its own location setting, so
 you can keep health/mana on the wrist and navigation in the palm, or vice versa.
 
+**VR Settings > HUD > Health / mana tilt** adjusts the angle of the hand-mounted
+health, mana and XP display from **-60 to +60 degrees**, in **5-degree steps**.
+Positive values lean its top edge toward you; negative values lean it away.
+Click **Apply** to save and use the angle immediately. **0 degrees** restores
+the original angle and is the default for existing profiles. The panel pivots
+around its center on both Wrist and Palm placements (including Either).
+Navigation keeps its own placement, and low-resource popups continue to face you.
+
 **Low health / mana alerts** is a separate toggle, **Off** by default. Leave it
 off for gesture-only vitals. Opting in adds a brief popup near your view and
 left-hand vibration below 25% health or 10% mana in spell mode. Location **Off**
@@ -444,6 +452,7 @@ Optional live configuration (metres below/forward/from the estimated torso):
 seated=0
 navigation_location=0
 vitals_location=0
+vitals_tilt=0
 critical_alerts=0
 waist_below_eyes=0.65
 belt_forward=0.26
@@ -455,6 +464,8 @@ holsters=1
 `3` Off. Older profiles without `navigation_location` start at Wrist if either
 legacy `wrist_map` or `wrist_compass` is enabled, or Off if both are disabled.
 An explicit navigation location takes precedence over those legacy switches.
+`vitals_tilt` is the health/mana/XP panel's tilt offset in degrees, clamped to
+`-60` through `60`; a missing or nonfinite value uses `0`.
 
 Seated mode raises the waist anchors. The belt and hip holsters follow tracked
 position and horizontal facing every frame, including while hands are lowered

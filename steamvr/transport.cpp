@@ -1306,6 +1306,7 @@ void Input() {
     const auto hudSettings=vrsettings::Read();
     interactionInput.navigationLocation=vitals::Location(int(hudSettings.values[settings::NavigationLocation]));
     interactionInput.vitalsLocation=vitals::Location(int(hudSettings.values[settings::VitalsLocation]));
+    interactionInput.vitalsTilt=hudSettings.values[settings::VitalsTilt];
     interactionInput.criticalAlerts=hudSettings.values[settings::CriticalAlerts]>.5f;
     interactionInput.leftCasting=handOutput.spells[1]>=0||(handOutput.slot>=0&&handOutput.hand==1);
     interactionInput.leftTrigger=controls.lt/255.f;
@@ -2056,8 +2057,7 @@ void EndPair() {
         }
         if((interactionOutput.vitals||interactionOutput.critical)&&!interactionOutput.wheel) {
             const bool palm=interactionOutput.palm;
-            const auto panel=palm?interaction::PalmPanel(interactionInput.hand[1],interactionInput.head):
-                interaction::WristPanel(interactionInput.hand[1],interactionInput.head);
+            const auto panel=interaction::VitalsPanel(interactionInput.hand[1],interactionInput.head,palm,interactionInput.vitalsTilt);
             auto pose=motionInput.hand[1];pose.p=panel.p;pose.q=panel.q;
             if(interactionOutput.critical&&!interactionOutput.vitals){pose.p=V(head.position)+math::Rotate(Q(head.orientation),{-.20f,-.22f,-.55f});pose.q=Q(head.orientation);}
             motionQuad(wrist,XrPose(pose),palm?interaction::PalmWidth:interaction::WristWidth,
