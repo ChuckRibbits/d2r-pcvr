@@ -3,6 +3,33 @@
 #include <cstdlib>
 using namespace framevr;
 static void Check(bool b,const char* label){if(!b){std::fprintf(stderr,"FAIL: %s\n",label);std::exit(1);}}
+static void CheckVisorExtent() {
+    // Projection FOVs from the reported 2026-10-15 sessions: Quest 3 had the
+    // same values through VDXR and SteamVR; Frame's splats sat too far out.
+    const math::Fov quest{-.94248f,.94248f,-.95993f,.95993f};
+    const math::Fov frame{-1.03239f,1.03239f,-1.04476f,1.04476f};
+    auto oldExtent=[](math::Fov f){return blood::QuadExtent{8*std::tan(f.right)*1.05f,8*std::tan(f.up)*1.05f};};
+    const auto oldQuest=oldExtent(quest),oldFrame=oldExtent(frame);
+    const auto q=blood::VisorExtent(quest,quest),f=blood::VisorExtent(frame,frame);
+    Check(std::fabs(q.width-oldQuest.width)<.0001f&&std::fabs(q.height-oldQuest.height)<.0001f,
+          "preserve the Quest 3 placement verified through both runtimes");
+    Check(std::fabs(f.width-q.width)<.0001f&&std::fabs(f.height-q.height)<.0001f,
+          "Frame rim splats use the same angular footprint as the verified Quest visor");
+    Check(f.width<oldFrame.width*.85f&&f.height<oldFrame.height*.85f,
+          "bring the reported Frame splats inward on both axes");
+    const math::Fov narrow{-.7f,.7f,-.75f,.75f};
+    const auto n=blood::VisorExtent(narrow,narrow),oldNarrow=oldExtent(narrow);
+    Check(n.width==oldNarrow.width&&n.height==oldNarrow.height,"smaller fields of view keep their original fit");
+    const math::Fov asymmetricLeft{-.9f,.7f,-.8f,.85f},asymmetricRight{-.7f,.9f,-.8f,.85f};
+    const auto a=blood::VisorExtent(asymmetricLeft,asymmetricRight);
+    const auto swapped=blood::VisorExtent(asymmetricRight,asymmetricLeft);
+    Check(a.width==swapped.width&&a.height==swapped.height&&a.width>n.width&&a.width<q.width,
+          "asymmetric eye bounds fit consistently regardless of eye order");
+    for(const math::Fov invalid:{math::Fov{},math::Fov{NAN,.8f,-.8f,.8f},math::Fov{-.8f,INFINITY,-.8f,.8f},math::Fov{-.8f,.8f,-.8f,1.6f}}) {
+        Check(blood::VisorExtent(invalid,quest).width==0&&blood::VisorExtent(quest,invalid).height==0,
+              "invalid eye FOVs suppress the optional visor quad");
+    }
+}
 struct Sim {
     blood::Engine e;blood::Input in;blood::Output out;
     float lowest=1;
@@ -27,6 +54,7 @@ struct Sim {
     }
 };
 int main(){
+    CheckVisorExtent();
     {Sim s;s.Step(30);Check(s.out.coverage==0&&s.out.visible==0,"full life draws nothing");}
     Check(blood::Target(70,100)==0&&blood::Target(55,100)==.35f&&blood::Target(30,100)==.65f&&blood::Target(10,100)==1,"three life bands");
     Check(blood::Target(0,100)<0&&blood::Target(NAN,100)<0&&blood::Target(50,0)<0,"dead or unknown life holds");
@@ -148,5 +176,5 @@ int main(){
         sums[1]+=alpha(some,x,y);sums[2]+=alpha(all,x,y);sums[3]+=alpha(dripped,x,y);grew+=alpha(dripped,x,y)>alpha(all,x,y);
     }
     Check(sums[2]>sums[1]&&sums[3]>sums[2]&&grew>500,"coverage grows with wounds, then with drips");
-    std::puts("Blood visor: bands, heal fades, scrub at any time, re-splash on hits, max-life changes, wipe toggle, exclusions, sessions, hitches, drips and compositor passed");
+    std::puts("Blood visor: headset sizing, bands, heal fades, scrub at any time, re-splash on hits, max-life changes, wipe toggle, exclusions, sessions, hitches, drips and compositor passed");
 }

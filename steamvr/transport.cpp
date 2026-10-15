@@ -2267,21 +2267,20 @@ void EndPair() {
         motionQuad(laser,beamPose,.003f,beamLength,{{0,0},{64,32}},pointerChain);
         if(pointerHit)motionQuad(dot,dotPose,.018f,.018f,{{0,32},{64,64}},pointerChain);
     }
-    // Head-locked blood: VIEW space, sized from both eyes' field of view, far
-    // enough that the pattern fuses like a screen effect. It goes directly above
+    // Head-locked blood: VIEW space, with a bounded angular size so large render
+    // frusta cannot push the rim out of sight. It goes directly above
     // the world and below every HUD quad, and only into a spare layer slot.
     XrCompositionLayerQuad bloodQuad{XR_TYPE_COMPOSITION_LAYER_QUAD};
     if(bloodImageReady&&bloodShown&&bloodOutput.visible&&layer&&!panelMode&&!blackMenu&&!settingsModel.open&&
        !bodyCalibration.Active()&&headSpace&&count<contentLimit) {
-        constexpr float distance=4,cap=1.4f; // cap: ~80 degrees per side
-        const auto fov=math::EnclosingSymmetricFov(
+        const auto extent=blood::VisorExtent(
             {views[0].fov.angleLeft,views[0].fov.angleRight,views[0].fov.angleDown,views[0].fov.angleUp},
             {views[1].fov.angleLeft,views[1].fov.angleRight,views[1].fov.angleDown,views[1].fov.angleUp});
-        const float width=2*distance*std::tan(std::min(fov.right,cap))*1.05f,height=2*distance*std::tan(std::min(fov.up,cap))*1.05f;
+        const float width=extent.width,height=extent.height;
         if(std::isfinite(width)&&std::isfinite(height)&&width>0&&height>0) {
             bloodQuad.layerFlags=XR_COMPOSITION_LAYER_BLEND_TEXTURE_SOURCE_ALPHA_BIT|XR_COMPOSITION_LAYER_UNPREMULTIPLIED_ALPHA_BIT;
             bloodQuad.space=headSpace;bloodQuad.eyeVisibility=XR_EYE_VISIBILITY_BOTH;
-            bloodQuad.pose.orientation.w=1;bloodQuad.pose.position.z=-distance;bloodQuad.size={width,height};
+            bloodQuad.pose.orientation.w=1;bloodQuad.pose.position.z=-blood::VisorDistance;bloodQuad.size={width,height};
             bloodQuad.subImage.swapchain=bloodChain;bloodQuad.subImage.imageRect={{0,0},{blood::Size,blood::Size}};
             const uint32_t below=count&&layers[0]==layer?1:0;
             for(uint32_t i=count;i>below;--i)layers[i]=layers[i-1];
