@@ -3,6 +3,20 @@
 Feedback was recorded against private build `20261013-6abf4e5`. The changes below
 address that build's menu comfort, discovery, map and casting feedback.
 
+## October 14 combined session candidate
+
+This candidate combines PRs #78, #79, #81 and #82 in one DLL: area and act
+information above the hand compass, adjustable health/mana tilt, larger
+dropped-item names with a Right Grip + Right Stick toggle, and sky/world
+effects retained behind NPC dialogue. The area label follows the navigation
+placement; health/mana tilt adjusts the vitals panel independently.
+
+The native Windows build and all 64 automated checks passed together. Headset
+verification is pending; use the scenarios below in one offline test session.
+Building stages the DLL only. Install that combined DLL with the game closed
+before launching the headset test; launching an existing installation does not
+deploy the staged output or include open PRs automatically.
+
 ## Settings and behavior
 
 | Feedback | Change |
