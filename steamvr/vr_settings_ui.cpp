@@ -117,6 +117,7 @@ std::vector<uint8_t> Paint(const Model& m,Hit hover,const char* runtimeStatus,co
             else if(key==MenuDistance)std::snprintf(label,sizeof label,"%s",MenuDistanceNames[int(value)]);
             else if(key==TooltipTiming)std::snprintf(label,sizeof label,"%s",TooltipTimingNames[int(value)]);
             else if(key==Dominant)std::snprintf(label,sizeof label,"%s",value>.5f?"Left":"Right");
+            else if(key==MeleeRules)std::snprintf(label,sizeof label,"%s",MeleeRulesNames[value>.5f?1:0]);
             else if(d.max==1)std::snprintf(label,sizeof label,"%s",value>.5f?"On":"Off");
             else if(key==Snap)std::snprintf(label,sizeof label,"%.0f deg",value);
             else if(key==VitalsTilt)std::snprintf(label,sizeof label,"%+.6g deg",value);
@@ -140,9 +141,9 @@ std::vector<uint8_t> Paint(const Model& m,Hit hover,const char* runtimeStatus,co
             text("Minimap & Compass move together. Their placement is independent of health / mana tilt.",{58,830,1160,40},false,false,quiet);
         }
         if(m.page==Page::Combat){
-            text("Default: 12.00 m/s. Higher requires faster swings. Adjust in 0.25 steps with no upper limit.",{58,340,1160,76},false,false,quiet);
-            text("A deliberate stroke must also travel at least 18 cm. Slow follow-through cannot deal damage.",{58,440,1160,76},false,false,quiet);
-            text("Apply saves the setting and updates melee immediately. Shield bash and button attacks keep their existing behavior.",{58,540,1160,100},false,false,quiet);
+            text("Unleashed: every weapon contact strikes once per swing. Classic: attack rating, defense and block decide each hit, and attack speed (IAS) paces them; misses use up the attack.",{58,402,1160,76},false,false,quiet);
+            text("Melee hit speed default: 12.00 m/s. Higher requires faster swings. Adjust in 0.25 steps with no upper limit. A deliberate stroke must also travel at least 18 cm.",{58,502,1160,76},false,false,quiet);
+            text("Apply saves and updates melee immediately, mid-game. Rules apply to swings and trigger melee; arrows and spells are unchanged.",{58,602,1160,100},false,false,quiet);
         }
         if(m.page==Page::Haptics){
             text("0% is Off; 100% is normal. Overall strength scales each category, up to the controller's maximum. Adjust in steps of 10%.",{58,750,1160,56},false,false,quiet);
