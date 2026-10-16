@@ -528,7 +528,10 @@ landing's hireling class and distance (`Frame potion toss:`).
 game thread every 200 ms with the same native stat call as the wrist vitals.
 Below 50% life it is tinted with the game's own `red` state (states.txt row 91,
 a colour shift with no stats) through the native toggle-state call, so the game
-syncs it like any other state. The tint clears on recovery, on death (the corpse
+syncs it like any other state. The game shows only the highest-priority tint
+(cold 100 and poison 95 would hide red's 70), so a hook on the native colour
+update applies red's own colour shift last, only on a hireling that has it; a
+chilled or poisoned hurt merc still shows red. The tint clears on recovery, on death (the corpse
 too), for a rehired or resurrected merc, and within about 1.5 s of leaving VR
 gameplay; desktop and flat play never sample or tint. The log records each
 change (`Frame merc:`).

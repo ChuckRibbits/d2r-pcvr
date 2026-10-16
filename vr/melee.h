@@ -32,7 +32,8 @@ bool HirelingVitals(uint32_t hint,float& health,float& maxHealth,uint32_t& class
 // Owning game thread only, on that exact hireling. Native cosmetic effects
 // synced to the client like the game's own: a state (colour tint) and a
 // one-shot overlay. Setting needs a live hireling; clearing a state also
-// reaches a dead one. False when unavailable or the hireling is gone.
+// reaches a dead one. A state set here outranks the hireling's other colour
+// tints (cold, poison) until it is cleared. False when unavailable or gone.
 bool HirelingState(uint32_t unitId,int state,bool on);
 bool HirelingOverlay(uint32_t unitId,int overlay);
 }
