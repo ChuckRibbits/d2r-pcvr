@@ -407,6 +407,15 @@ binding also remains available.
 
 ## If something goes wrong
 
+Setup checks Windows HDR on active desktop displays. When it is on, the wizard
+shows an advisory before installation; the portable setup and logs show it too.
+Players have reported VR visual problems that improve with HDR off. Open
+**Windows Settings > System > Display > HDR**, select the relevant display and
+turn **Use HDR** Off before playing. Setup can continue and does not change
+display settings. If the query is unavailable, setup says it could not check;
+HDR support alone does not trigger the enabled warning. This check covers the
+current desktop display mode, not per-game Auto HDR or an in-game HDR toggle.
+
 - **Game opens flat:** use the matching VR library shortcut and connect your
   headset before launching. For the Steam edition, check the Steam launch options.
 - **Virtual Desktop cannot launch VR:** install its Windows Streamer in the

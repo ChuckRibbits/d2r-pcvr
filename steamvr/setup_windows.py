@@ -5,6 +5,7 @@ import csv
 import hashlib
 import json
 import os
+import hdr_check
 from pathlib import Path, PurePosixPath
 import subprocess
 import sys
@@ -218,6 +219,10 @@ def apply_setup(manifest, store, version, headset, connections, steam, game, pro
     """Shared console/graphical execution; callers collect and confirm choices first."""
     root = Path(root) if root is not None else ROOT
     require_closed()
+    hdr = hdr_check.check()
+    print('Windows HDR check: ' + hdr['hdr_status'], flush=True)
+    if hdr['hdr_warning']:
+        print(hdr['hdr_warning'], flush=True)
     routing = {} if store == 'steam' else {'store': store, 'python': Path(sys.executable).resolve(),
         'wrapper': root / 'steamvr/launch_windows.py', 'runtime': runtime}
     options = launch_options(Path(sys.executable).resolve(), root / 'steamvr/launch_windows.py', runtime) if store == 'steam' else None
@@ -318,6 +323,9 @@ def main():
     options = launch_options(Path(sys.executable).resolve(), ROOT / 'steamvr/launch_windows.py', runtime) if store == 'steam' else None
     old_options = preflight_steam(profile, steam, game, options, connections, **routing)
     print('\nReady to set up:')
+    hdr = hdr_check.check()
+    if hdr['hdr_warning']:
+        print(hdr['hdr_warning'])
     print(f'  Edition: {"Steam" if store == "steam" else "Battle.net (experimental)"}, D2R {version}')
     print(f'  Headset: {headset}\n  Game: {game}\n  Steam account: {accounts[selected][1]} (local ID {profile.name})')
     specs = steam_config.shortcut_specs(steam, game, **routing)

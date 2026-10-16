@@ -198,6 +198,7 @@ def write_probe(path, root, steam=None, game=None, managed_root=None, source_roo
         'profiles': str(len(accounts)),
         'backup_required': '0', 'backup_message': '', 'backup_folder': '',
     }
+    values.update(setup.hdr_check.check())
     if game is not None:
         required, message, folder = probe_backups(game.resolve(), Path(managed_root or root),
             accounts, steam_game, source_root, backup_hint)

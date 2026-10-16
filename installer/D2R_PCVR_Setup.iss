@@ -52,6 +52,7 @@ Filename: "{code:SteamExecutable}"; Description: "Open Steam to use your new VR 
 var
   EditionPage, HeadsetPage, ConnectionPage, AccountPage, ModePage: TInputOptionWizardPage;
   PathsPage, RuntimePage, BackupPage: TInputDirWizardPage;
+  HDRPage: TOutputMsgWizardPage;
   ProfileIDs: TStringList;
   PayloadRoot, ProbeFile, ChoicesFile, LastOutput, PreviousEdition, BackupGame: String;
   SetupFailed, BackendBusy: Boolean;
@@ -194,7 +195,9 @@ begin
   ModePage.Add('Full install with recommended settings (resets calibration)');
   ModePage.Add('Only configure Steam shortcuts (keep the installed mod)');
   ModePage.SelectedValueIndex := 1;
-  BackupPage := CreateInputDirPage(ModePage.ID, 'Locate an older installation backup',
+  HDRPage := CreateOutputMsgPage(ModePage.ID, 'Check HDR before playing',
+    'HDR can affect VR visuals', '');
+  BackupPage := CreateInputDirPage(HDRPage.ID, 'Locate an older installation backup',
     'Keep the original files available for removal',
     'Setup fills in a verified backup when it can find one. Otherwise select the original snapshot or its backup folder (usually setup-backups\game or build-frame\backups in the old mod folder). Setup will copy it into the helper folder and remember it for this game. If it is unavailable, cancel and keep the current installation.', False, '');
   BackupPage.Add('Original installation backup folder:');
@@ -223,6 +226,7 @@ begin
   Result := ((PageID = ConnectionPage.ID) and (HeadsetPage.SelectedValueIndex in [0, 3])) or
             ((PageID = RuntimePage.ID) and not UsesSteamVR) or
             ((PageID = AccountPage.ID) and (ProfileIDs.Count = 1)) or
+            ((PageID = HDRPage.ID) and (GetIniString('detected', 'hdr_warning', '', ProbeFile) = '')) or
             ((PageID = BackupPage.ID) and (GetIniInt('detected', 'backup_required', 0, 0, 1, ProbeFile) = 0));
 end;
 
@@ -300,7 +304,8 @@ var
   Connection: String;
 begin
   if ExpandConstant('{param:CONFIG|}') <> '' then begin
-    Result := 'Using the supplied setup choices: ' + ExpandConstant('{param:CONFIG|}');
+    Result := 'Using the supplied setup choices: ' + ExpandConstant('{param:CONFIG|}') + NewLine +
+      GetIniString('detected', 'hdr_warning', '', ProbeFile);
     Exit;
   end;
   Connection := 'SteamVR';
@@ -318,6 +323,8 @@ begin
   if BackupPage.Values[0] <> '' then Result := Result + 'Original backup location: ' + BackupPage.Values[0] + NewLine;
   Result := Result + NewLine +
     'Save and exit D2R, then fully exit Steam before installing. Use an offline character in VR.';
+  if GetIniString('detected', 'hdr_warning', '', ProbeFile) <> '' then
+    Result := Result + NewLine + NewLine + GetIniString('detected', 'hdr_warning', '', ProbeFile);
 end;
 
 function PrepareToInstall(var NeedsRestart: Boolean): String;
@@ -347,6 +354,8 @@ end;
 
 procedure CurPageChanged(CurPageID: Integer);
 begin
+  if CurPageID = HDRPage.ID then
+    HDRPage.MsgLabel.Caption := GetIniString('detected', 'hdr_warning', '', ProbeFile);
   if CurPageID = wpFinished then begin
     if SetupFailed then begin
       WizardForm.FinishedHeadingLabel.Caption := 'D2R PCVR setup needs attention';

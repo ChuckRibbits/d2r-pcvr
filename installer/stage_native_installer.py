@@ -14,7 +14,7 @@ ROOT_FILES = {
     'reshade/D2R_DepthFog.fx', 'third_party/minhook/LICENSE.txt', 'external/reshade/LICENSE.md',
     'bin/d2rl-vrcam.dll', 'bin/openxr_loader.dll', 'bin/CascLib.dll', 'steamvr/vendor/bitknit.py',
 }
-SCRIPTS = {'setup_windows.ps1', 'setup_windows.py', 'setup_native.py', 'uninstall_windows.py',
+SCRIPTS = {'setup_windows.ps1', 'setup_windows.py', 'setup_native.py', 'uninstall_windows.py', 'hdr_check.py',
            'steam_config.py', 'install.py', 'launch_windows.py', 'prepare_icons.py',
            'steam_assets.py', 'game_assets.py', 'game_install.py', 'casc_assets.py',
            'prepare_potions.py', 'potion_assets.py'}
