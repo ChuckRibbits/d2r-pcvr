@@ -95,7 +95,7 @@ uintptr_t Client(uintptr_t params,int flags) {
     if(crossbow)params=reinterpret_cast<uintptr_t>(adjusted.data());
     crossbowvr::BeginClient(crossbow?&bolt:nullptr);
     Scope scope(params,0);const auto unit=originalClient(params,flags);
-    if(crossbow&&unit)crossbowvr::Created(unit,bolt);
+    if(crossbow&&unit)bowvr::CrossbowClient(unit,bolt.flight);
     crossbowvr::EndClient();ReportSpell(params,0,unit);return unit;
 }
 uintptr_t Server(uintptr_t game,uintptr_t params) {
@@ -104,8 +104,10 @@ uintptr_t Server(uintptr_t game,uintptr_t params) {
     if(spell<0)return 0;
     if(spell>0)params=reinterpret_cast<uintptr_t>(adjusted.data());
     std::array<uint8_t,0x98> boltParams{};framevr::crossbow::Launch bolt;
-    if(enabled.load()&&crossbowvr::Prepare(params,boltParams,bolt,true))params=reinterpret_cast<uintptr_t>(boltParams.data());
+    const bool crossbow=enabled.load()&&crossbowvr::Prepare(params,boltParams,bolt,true);
+    if(crossbow)params=reinterpret_cast<uintptr_t>(boltParams.data());
     Scope scope(params,1);const auto unit=originalServer(game,params);
+    if(crossbow)crossbowvr::ServerDone(bolt,unit&&bowvr::AdoptCrossbow(game,unit,bolt.flight));
     ReportSpell(params,1,unit);
     if(unit)bowvr::Created(game,params,unit);
     return unit;
@@ -157,8 +159,7 @@ void Release(uintptr_t assets,uintptr_t definition,uint32_t entity,uintptr_t uni
                 const auto transforms=reinterpret_cast<uintptr_t(*)(uintptr_t)>(d2rsig::Addr(TransformStorageRva))(registry);
                 root=VisualRoot(definition,transforms,entity,[](uintptr_t p,auto& value){return Read(p,value);});
             }
-            const bool physical=bowvr::Visual(entity,unit,hasReleasePoint,root)||
-                (missile==31&&crossbowvr::Visual(entity,unit,hasReleasePoint));
+            const bool physical=bowvr::Visual(entity,unit,hasReleasePoint,root);
             if(missile==59) {
                 static std::atomic<unsigned> samples{0};
                 if(samples.fetch_add(1)<8) {

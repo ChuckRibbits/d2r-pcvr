@@ -1,6 +1,7 @@
 #pragma once
 #include "../vr/bow_pose.h"
 #include "world_coordinates.h"
+#include "bow_flight.h"
 #include <cstdint>
 
 namespace framevr::crossbow {
@@ -33,33 +34,39 @@ struct Pose {
     float scale=0;
     uint64_t at=0,session=0;
     uint32_t equipment=0,worldEpoch=0,heroGeneration=0;
+    float unitsPerMetre=0;
 };
 inline bool Fresh(const Pose& p,uint64_t now,uint64_t session,uint32_t equipment,uint32_t epoch) {
     return p.session&&p.at&&now>=p.at&&now-p.at<=100&&p.session==session&&p.equipment==equipment&&p.worldEpoch==epoch&&
         std::isfinite(p.muzzle.x+p.muzzle.y+p.muzzle.z+p.player.x+p.player.y+p.player.z+p.scale)&&
         p.scale>.01f&&p.scale<20&&math::Dot(p.direction,p.direction)>.99f&&math::Dot(p.direction,p.direction)<1.01f;
 }
-struct Launch {Pose pose{};int x=0,y=0,tx=0,ty=0;};
+struct Launch {Pose pose{};int x=0,y=0,tx=0,ty=0;bowflight::Shot flight{};};
 inline bool Aim(const Pose& pose,Launch& out) {
     const Vec grid=coordinates::GridPlane({pose.muzzle.x,pose.player.y,pose.muzzle.z});
     const float horizontal=std::hypot(pose.direction.x,pose.direction.z);
-    if(!std::isfinite(grid.x+grid.z+horizontal)||horizontal<.05f||grid.x<2||grid.z<2||grid.x>131000||grid.z>131000)return false;
+    if(!std::isfinite(grid.x+grid.z+horizontal)||grid.x<2||grid.z<2||grid.x>131000||grid.z>131000)return false;
     Launch shot;shot.pose=pose;shot.x=int(grid.x*.5f);shot.y=int(grid.z*.5f);
-    shot.tx=shot.x+int(pose.direction.x/horizontal*60);shot.ty=shot.y+int(pose.direction.z/horizontal*60);
+    // The native path owns damage/lifetime only; a vertical shot still needs
+    // a valid nonzero native target, while physical flight retains full aim.
+    shot.tx=shot.x+(horizontal>.001f?int(pose.direction.x/horizontal*60):0);
+    shot.ty=shot.y+(horizontal>.001f?int(pose.direction.z/horizontal*60):1);
     if(shot.tx<1||shot.ty<1||shot.tx>65534||shot.ty>65534)return false;
     out=shot;return true;
 }
-// Native bolts retain their native ground path, speed, hits, ammo and cadence.
-// Place their visible tip at the frozen muzzle plus that path's displacement.
-// This also removes native grid quantization and the authored +6/-1 VFX offset.
-inline bool Matrix(const Launch& launch,Vec grid,Mat& out) {
-    if(!std::isfinite(grid.x+grid.z))return false;
-    const Vec forward=math::Normalized(Vec{float(launch.tx-launch.x),0,float(launch.ty-launch.y)});
-    if(math::Dot(forward,forward)<.99f)return false;
-    const Vec right=math::Normalized(math::Cross({0,1,0},forward)),up=math::Cross(forward,right);
-    const Vec tip=launch.pose.muzzle+grid-Vec{2.f*launch.x,0,2.f*launch.y};
-    out={};const Vec rows[3]={right,up,forward};
-    for(int i=0;i<3;++i){out.m[i*4]=rows[i].x*launch.pose.scale;out.m[i*4+1]=rows[i].y*launch.pose.scale;out.m[i*4+2]=rows[i].z*launch.pose.scale;}
-    Position(out,tip-forward*(BoltTip*launch.pose.scale));out.m[15]=1;return true;
+inline bool Physical(Launch& launch,uint64_t epoch,uint64_t sequence) {
+    const auto& p=launch.pose;bowflight::Shot s;
+    s.kind=bowflight::Kind::Crossbow;s.unitsPerMetre=p.unitsPerMetre;s.draw=1;
+    if(!std::isfinite(p.unitsPerMetre)||p.unitsPerMetre<1||p.unitsPerMetre>12)return false;
+    s.boltLength=2*BoltTip*p.scale/p.unitsPerMetre;
+    s.direction=p.direction;s.origin=p.muzzle*(1/p.unitsPerMetre)-s.direction*s.boltLength;
+    s.player=p.player*(1/p.unitsPerMetre);s.session=p.session;s.epoch=epoch;s.sequence=sequence;
+    s.at=p.at;s.equipment=p.equipment;s.planar=false;
+    if(!bowflight::Valid(s))return false;
+    launch.flight=s;return true;
+}
+// Support the stock without rotating a cupped palm through a fist alignment.
+inline Mat SupportHand(Mat tracked,Vec palmLocal,Vec contact) {
+    Position(tracked,contact-Vector(tracked,palmLocal));return tracked;
 }
 }

@@ -236,8 +236,14 @@ Known diagnostic lessons:
   `bolt_helper`, item-local transform and hero weapon attachment define its
   barrel; a manually rotated controller ray can disagree with the actual mesh.
   Check both server/client launch coordinates and the release mesh's current/
-  previous transforms when diagnosing an offset or ghost trail. Native bolt
-  ground collision remains separate from visible muzzle height.
+  previous transforms when diagnosing an offset or ghost trail. Basic bolts
+  use the shared physical-arrow flight path. Learn item rigs independently of
+  hero pose availability and refresh them from the completed hero pose; static
+  item skeletons may not receive another animation callback. Recognize helper
+  bones plus exact owner entity, not an assumed full archive-path model name.
+  Check `Frame crossbow` capture/adoption diagnostics before assuming the new
+  path ran. The first #106 candidate passed fixtures but never captured a held
+  pose in the owner's session; its headset test failed.
 - Melee settings are motion speed in m/s, not acceleration. Classic/Unleashed
   are game-rule choices; they do not remove the physical motion threshold.
 
