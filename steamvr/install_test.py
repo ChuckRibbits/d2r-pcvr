@@ -383,6 +383,46 @@ class DependencyDownloadTests(unittest.TestCase):
             download.assert_not_called()
             self.assertEqual(target.read_bytes(), self.payload)
 
+    def test_security_block_preserves_checksums_and_gives_temporary_recovery_steps(self):
+        for code in (225, 226):
+            with self.subTest(code=code), tempfile.TemporaryDirectory() as temporary:
+                target = Path(temporary) / 'fixture.zip'
+                error = OSError(22, 'Invalid argument')
+                error.winerror = code
+                with patch.object(Path, 'read_bytes', side_effect=error), \
+                        patch.object(install.urllib.request, 'urlopen') as download:
+                    with self.assertRaises(SystemExit) as caught:
+                        install.download_verified(self.url, target, self.digest)
+                message = str(caught.exception)
+                self.assertIn('Security software blocked', message)
+                self.assertIn(str(target), message)
+                self.assertIn('Protection history', message)
+                self.assertIn('Real-time protection Off', message)
+                self.assertIn('back On immediately', message)
+                self.assertIn('even if setup fails', message)
+                self.assertIn('approved dependency checksums', message)
+                self.assertNotIn('\n', message)
+                download.assert_not_called()
+
+    @unittest.skipUnless(os.name == 'nt', 'Win32 error recovery')
+    def test_errno22_recovers_security_block_without_misdiagnosing_other_errors(self):
+        target = Path('fixture.zip')
+        for code in (225, 226, 2, 5, 32, 87, None):
+            with self.subTest(code=code), patch.object(install, 'windows_read_error', return_value=code):
+                message = str(install.dependency_io_error(target, 'read', OSError(22, 'Invalid argument')))
+                self.assertEqual('Security software blocked' in message, code in (225, 226))
+                self.assertEqual('Real-time protection Off' in message, code in (225, 226))
+
+    @unittest.skipUnless(os.name == 'nt', 'Real Win32 file probe')
+    def test_native_error_probe_leaves_readable_file_intact(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            target = Path(temporary) / 'fixture.zip'
+            target.write_bytes(self.payload)
+            self.assertIsNone(install.windows_read_error(target))
+            self.assertEqual(target.read_bytes(), self.payload)
+            target.unlink()  # No leaked handle.
+            self.assertEqual(install.windows_read_error(target), 2)
+
     def test_file_blocked_after_download_is_reported_immediately(self):
         with tempfile.TemporaryDirectory() as temporary:
             target = Path(temporary) / 'fixture.zip'

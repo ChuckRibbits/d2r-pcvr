@@ -207,7 +207,9 @@ def run_installer(command, root, hide_console=False):
             result = process.wait()
         output.write(f'Installer exit code: {result} (0x{result & 0xffffffff:08x})\n')
     if result:
-        detail = last_line[-800:] or 'The installer produced no diagnostic output.'
+        # Keep the diagnosis and recovery steps together, including the reminder
+        # to re-enable protection. Paths and security guidance can exceed 800 chars.
+        detail = last_line[:4096] or 'The installer produced no diagnostic output.'
         raise ValueError(f'Mod installation failed (exit code {result}): {detail} Full output: {log}')
 
 

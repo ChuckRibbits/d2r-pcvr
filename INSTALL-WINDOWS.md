@@ -89,8 +89,23 @@ affected file path and time with the error report, after removing personal detai
 A readable dependency ZIP with the pinned SHA-256 is reused on retry; setup does
 not deliberately delete it. A file disappearing or becoming unreadable needs
 its security/file-access event checked. A checksum match establishes the expected
-version, not that an antivirus detection is a false positive. Keep protection enabled
-while the detection is investigated.
+version, not that an antivirus detection is a false positive.
+
+When Windows reports a confirmed security block, setup shows the affected file
+and recovery steps. VR loaders hook into the game to enable mods, which can
+trigger antivirus detections. Review the detection before continuing. If you
+trust the file, allowing that specific detection keeps protection active for
+other files.
+
+If you choose to retry with protection temporarily off, open **Windows Security
+> Virus & threat protection > Manage settings**, turn **Real-time protection**
+Off, then rerun Setup and choose **Update / repair**. Turn protection back **On
+immediately after the attempt, even if setup fails**. Only do this for a download
+you trust: your PC is less protected while it is off. See Microsoft's
+[real-time protection instructions](https://support.microsoft.com/en-us/windows/security/windows-security/stay-protected-with-the-windows-security-app).
+Setup never changes antivirus settings and continues to enforce the approved
+dependency checksums. Ordinary missing-file/permission errors do not trigger
+this confirmed-block message.
 
 You can rerun the EXE safely. It updates matching shortcuts without duplicates.
 When upgrading a recorded ZIP installation, it copies and verifies its referenced

@@ -212,6 +212,20 @@ class SteamSetupTests(unittest.TestCase):
 
 
 class InstallerOutputTests(unittest.TestCase):
+    def test_security_recovery_message_reaches_wizard_without_losing_start_or_reminder(self):
+        import install
+        error = OSError(22, 'Invalid argument')
+        error.winerror = 225
+        message = str(install.dependency_io_error(Path('C:/fixture/D2RLoader.zip'), 'read', error))
+        self.assertGreater(len(message), 800)
+        with tempfile.TemporaryDirectory() as directory, contextlib.redirect_stdout(io.StringIO()):
+            root = Path(directory)
+            child = 'import sys; raise SystemExit(sys.argv[1])'
+            with self.assertRaises(ValueError) as caught:
+                setup.run_installer([sys.executable, '-c', child, message], root, hide_console=True)
+            self.assertIn(message, str(caught.exception))
+            self.assertIn(message, (root / 'setup-install.log').read_text(encoding='utf-8'))
+
     @unittest.skipUnless(os.name == 'nt', 'Windows hidden-process pipe inheritance')
     def test_hidden_child_failure_reaches_wizard_output_and_persistent_log(self):
         with tempfile.TemporaryDirectory(prefix='setup with spaces ') as directory:
