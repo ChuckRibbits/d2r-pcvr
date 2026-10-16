@@ -599,7 +599,13 @@ observed native sequence after a physical release; it does not estimate readines
 
 The equipped left shield now follows its authored bind-pose relationship to the
 tracked wrist, including wrist rotation, instead of an attack/walk animation's
-attachment or the main weapon's adjustment. With **Smite** selected, an energetic
+attachment or the main weapon's adjustment. In native first-person VR, reaching
+beyond the model's normal arm length extends the shield arm to follow the
+controller. The palm, fingers and shield retain their size; bringing the hand
+back restores normal arm proportions. Extension is bounded at twice the arm's
+current length for extreme tracking/calibration errors. Contact uses the same
+final shield pose. This reach adjustment still needs headset verification.
+With **Smite** selected, an energetic
 left-arm swing or thrust that intersects an eligible creature requests one native
 Smite against that creature. A stationary shield cannot bash; one continuous
 stroke requests at most one bash, and a deliberate reversal/settle rearms it.
