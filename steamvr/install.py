@@ -337,7 +337,7 @@ def main():
     # Track the chain before other writes, including interrupted installs.
     put(RECORD, (json.dumps(record, indent=2) + '\n').encode('utf-8'))
     if found.legacy:
-        # Up to 0.3.15 D2R PCVR was d2rl-vrcam.dll with d2r_vr.ini (D2R VR's names).
+        # Up to 0.3.16 D2R PCVR was d2rl-vrcam.dll with d2r_vr.ini (D2R VR's names).
         # Update / repair keeps the player's settings and calibration under the new
         # name; then the old files go, before the new plugin is written, so D2RLoader
         # never sees two copies of this mod.

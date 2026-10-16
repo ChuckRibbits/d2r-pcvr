@@ -109,6 +109,7 @@ namespace gamestate {bool OpaqueMenuOpen();}
 #include "combat.h"
 #include "melee.h"
 #include "bow.h"
+#include "crossbow.h"
 #include "memory.h"
 #endif
 #include "dlss_mv.h"
@@ -264,7 +265,7 @@ struct Settings {
     std::atomic<float> nightBright{0.25f};  // [sky] night_brightness: the sky and the fog at full night, times their day brightness
     std::atomic<bool>  skyAlways{false};    // whatever the biome (testing): caves get a sky too
     std::atomic<bool>  skyHidePanels{true}; // no sky while a side panel shifts the picture
-    std::atomic<bool>  fogCaves{true};      // [fog] caves: the fog in caves and dungeons too (every area off [sky] outdoor)
+    std::atomic<bool>  fogCaves{false};     // [fog] caves: opt-in added indoor fog; native lighting/effects remain
     std::atomic<bool>  ceilOn{false};       // [ceiling] enabled: a vault over the void in caves (first person only)
     std::atomic<float> ceilHeight{30.0f};   // [ceiling] height: over the hero's floor, world units
     std::atomic<float> ceilScale{10.0f};    // [ceiling] scale: world units per tile (the test grid's cell)
@@ -814,7 +815,13 @@ void LoadSettings() {
     projectiles::Configure(IniB(L"gameplay",L"motion_controls",false),IniF(L"gameplay",L"arrow_speed",2.f),IniB(L"gameplay",L"arrow_direct_release",true));
     bowvr::Configure(IniB(L"gameplay",L"motion_controls",false));
     combat::Configure(IniB(L"gameplay",L"motion_controls",false)&&IniB(L"gameplay",L"contact_hits",true));
-    melee::ConfigureAttackSpeed(IniB(L"gameplay",L"attack_speed",true),IniB(L"debug",L"melee_trace",false));
+    // [gameplay] melee_rules (VR Settings > Combat, applied live): 0 Unleashed
+    // - every weapon contact strikes, no attack-speed gate; 1 Classic -
+    // native attack rating, defense and block decide melee, attack speed paces
+    // it. Arrows and spells keep contact_hits either way.
+    const bool classicMelee=IniF(L"gameplay",L"melee_rules",0)>.5f;
+    melee::ConfigureAttackSpeed(classicMelee,IniB(L"debug",L"melee_trace",false));
+    melee::ConfigureAttackRating(classicMelee);
 #endif
 #ifdef D2RVR_NATIVE_OPENXR
     framevr::foveation::Configure(IniB(L"render",L"fixed_foveation",true),IniF(L"render",L"foveation_inner",0.55f),IniF(L"render",L"gaze_foveation_inner",0.35f));
@@ -926,7 +933,13 @@ void LoadSettings() {
     g_set.plateAlpha.store(std::clamp(IniF(L"hud", L"monster_alpha", 1.0f), 0.0f, 1.0f));
     g_set.labelsSizeTop.store(std::clamp(IniF(L"hud_top", L"labels_size", 100.0f), 20.0f, 150.0f) * 0.01f);
     g_set.labelsSizeThird.store(std::clamp(IniF(L"hud_third", L"labels_size", 100.0f), 20.0f, 150.0f) * 0.01f);
+#ifdef D2RVR_NATIVE_OPENXR
+    const auto& lootSize = framevr::settings::Definitions[framevr::settings::LootLabelSize];
+    g_set.labelsSizeBody.store(framevr::settings::Normalize(framevr::settings::LootLabelSize,
+        IniF(lootSize.section, lootSize.key, lootSize.defaultValue)) * 0.01f);
+#else
     g_set.labelsSizeBody.store(std::clamp(IniF(L"hud", L"labels_size", 100.0f), 20.0f, 150.0f) * 0.01f);
+#endif
     g_set.labelsNear.store(std::clamp(IniF(L"hud", L"labels_near", 0.0f), -20.0f, 20.0f));
     g_set.labelsTilt.store(std::clamp(IniF(L"hud", L"labels_tilt", 0.0f), -40.0f, 40.0f));
     for (int i = 0; i < 2; ++i) {
@@ -1054,7 +1067,7 @@ void LoadSettings() {
     g_set.fogCaveStrength.store(std::clamp(IniF(L"fog", L"caves_strength", 1.0f), 0.0f, 1.0f));
     g_set.fogCurve.store(std::clamp(IniF(L"fog", L"curve", 1.6f), 0.3f, 4.0f));
     g_set.fogBlur.store(std::clamp(IniF(L"fog", L"blur", 3.0f), 0.0f, 12.0f));
-    g_set.fogCaves.store(IniB(L"fog", L"caves", true));
+    g_set.fogCaves.store(IniB(L"fog", L"caves", false));
     {
         wchar_t poke[256];
         GetPrivateProfileStringW(L"debug", L"fog_poke", L"", poke, (DWORD)std::size(poke), g_iniPath);
@@ -1822,9 +1835,8 @@ bool FloorView() { return g_enabled.load() && TableView(); }
 // Flat keeps the game's labels: it has no such tabs.
 void LabelLookNow(float* alpha, float* size) {
     *alpha = 1.0f; *size = 1.0f;
-#ifdef D2RVR_NATIVE_OPENXR
-    if(framevr::lootlabels::display.Active(GetTickCount64())){*size=framevr::lootlabels::TextScale;return;}
-#endif
+    // Native OpenXR uses the first-person [hud] profile too. Its stronger
+    // backing / Show Items lease must not override the saved labels_size.
     if (g_set.platform.load() != 1) return;
     if (FloorView()) { *alpha = g_set.labelsAlphaFloor.load(); *size = g_set.labelsSizeFloor.load(); }
     else if (!g_enabled.load() || TopPersp()) { *alpha = g_set.labelsAlphaTop.load(); *size = g_set.labelsSizeTop.load(); }
@@ -2739,6 +2751,12 @@ bool HandRay(float* o, float* d) {
         // A culled/not-yet-posed staff or a snap-turn must not restore native
         // movement/facing aim. The fresh tracked aim below belongs to the
         // casting hand and remains usable when the render pose is unavailable.
+    }
+    framevr::crossbow::Pose crossbow;
+    if(castingType==D2RVR_TYPE_CROSSBOW&&framevr::CrossbowAiming()&&skel::CrossbowPose(crossbow)&&
+       framevr::crossbow::Fresh(crossbow,GetTickCount64(),gamestate::LocalPlayer(),gamestate::HandsKey()^(gamestate::WeaponSet()<<30),g_meleeTurnEpoch.load())) {
+        o[0]=crossbow.muzzle.x;o[1]=crossbow.muzzle.y;o[2]=crossbow.muzzle.z;
+        d[0]=crossbow.direction.x;d[1]=crossbow.direction.y;d[2]=crossbow.direction.z;return true;
     }
     float motionOrigin[3],motionDirection[3];
     if(g_eyeOk.load()&&framevr::GameplayRay(motionOrigin,motionDirection)) {
@@ -4803,7 +4821,7 @@ void InstallBiomeHook() {
 // [hud_floor] labels_size: the box made again round the name measured at the
 // other scale, about the same bottom middle, and the name drawn at that
 // scale - inside LabelPaint only (t_labelScale), every other text untouched.
-// Native VR uses a short gameplay lease for larger, stronger labels. Showing
+// Native VR uses a short gameplay lease for stronger label backing. Showing
 // all items is a native command in gamecmd.cpp, never a label-rendering veto.
 // Legacy views keep their existing profile settings.
 constexpr uint64_t RVA_LABEL_LAYOUT = 0x1FA9F0, RVA_LABEL_PAINT = 0x1FA8E0, RVA_TEXT_DRAW = 0x902E20;
@@ -4925,7 +4943,7 @@ void InstallLabelHooks() {
     const bool in = drawIn && d2rsig::Hook(RVA_LABEL_LAYOUT, kSigLabelLayout, sizeof kSigLabelLayout, (void*)&HookLabelLayout, (void**)&OrigLabelLayout);
     sizeFailed = !in;
     g_labelSizeIn.store(in);
-    Log(in ? "vrcam: item-label size hooks in - native VR uses 150% text; legacy views retain labels_size"
+    Log(in ? "vrcam: item-label size hooks in - labels use the current view's saved labels_size"
            : "vrcam: item-label size hooks FAILED - labels_size does nothing");
 }
 
@@ -5874,9 +5892,11 @@ void BowTick() {
     auto* hero=combat::LocalPlayerUnit(localHero)?reinterpret_cast<void*>(localHero):nullptr;
     if(!hero)gate.active=false;
     if(hero)combat::ObserveLocalPlayer(reinterpret_cast<uintptr_t>(hero));
+    crossbowvr::Gate(bowvr::MotionReady()&&gate.active&&gamestate::WeaponType()==D2RVR_TYPE_CROSSBOW,gate.session,gate.equipment,gate.epoch);
     bowvr::Update(gate,reinterpret_cast<uintptr_t>(hero));
     framevr::bowflight::Shot shot;
     if(framevr::TakeBowShot(shot))bowvr::Submit(shot);
+    if(framevr::TakeCrossbowShot(shot))bowvr::Submit(shot);
     static framevr::spellcast::PlanarAim spellAim[2];
     const auto spellSettings=vrsettings::Read();
     const bool planar=spellSettings.values[framevr::settings::PlanarSpellAim]>.5f;
@@ -5934,6 +5954,7 @@ void MeleeContactTick() {
     sample.unitsPerMetre=upm;sample.player={pose.player[0]/upm,pose.player[1]/upm,pose.player[2]/upm};
     sample.blade.base={pose.origin[0]/upm,pose.origin[1]/upm,pose.origin[2]/upm};
     sample.blade.tip=sample.blade.base+Vec{pose.axis[0],pose.axis[1],pose.axis[2]}*length;
+    sample.thrustAxis=framevr::melee::TrackingThrustAxis({pose.gripAxis[0],pose.gripAxis[1],pose.gripAxis[2]},sample.hand.q);
     sample.blade.radius=radius;melee::Submit(sample);
 }
 void ShieldContactTick() {
@@ -8237,7 +8258,7 @@ void LoadReShade() {
     else LogF("vrcam: ReShade64.dll did not load (error %lu)", GetLastError());
 }
 
-// D2R PCVR's own identity (vr/pcvr_identity.h). Until 0.3.15 this was D2R VR's
+// D2R PCVR's own identity (vr/pcvr_identity.h). Until 0.3.16 this was D2R VR's
 // "d2r-vr-vrcam" / "vrcam" 0.152.0 by BodyWalkVR, which a D2RLoader log could not
 // tell apart from D2R VR itself.
 static const char g_info_version[] = D2RPCVR_VERSION;
@@ -8289,7 +8310,7 @@ D2RL_PLUGIN_EXPORT bool D2RLoaderLoadPlugin(const PluginContext* ctx) noexcept {
     if(!pairtime::threadStats.Start())ctx->LogWarn("Frame CPU diagnostics worker could not start; thread scans disabled");
 #endif
 
-    // d2r_pcvr.ini beside this DLL (d2r_vr.ini until 0.3.15; the installer carries it over)
+    // d2r_pcvr.ini beside this DLL (d2r_vr.ini until 0.3.16; the installer carries it over)
     DWORD n = GetModuleFileNameW(g_self, g_iniPath, MAX_PATH);
     while (n > 0 && g_iniPath[n - 1] != L'\\') --n;
     g_iniPath[n] = 0;
