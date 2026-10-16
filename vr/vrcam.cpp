@@ -115,6 +115,7 @@ namespace gamestate {bool OpaqueMenuOpen();}
 #include "billboards.h"
 #ifdef D2RVR_NATIVE_OPENXR
 #include "panel_input.h"
+#include "native_belt.h"
 #endif
 #include "pad_mirror_shared.h"
 
@@ -8166,6 +8167,7 @@ DWORD WINAPI UpdateThread(void*) {
 #ifdef D2RVR_NATIVE_OPENXR
             projectiles::Install();
             panelinput::Install();
+            nativebelt::Install();
             projectiles::Report();
             combat::Install();
             combat::Report();

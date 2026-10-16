@@ -8,8 +8,10 @@
 #include <array>
 #include <cstdio>
 #include <vector>
+#include <algorithm>
 #include "native_skill_dispatch.h"
 #include "bow_signatures.h"
+#include "native_ui_signatures.h"
 #include "melee.h"
 #include "combat.h"
 #include "sigscan.h"
@@ -338,6 +340,107 @@ bool LocalServer(uintptr_t& game,uintptr_t& player) {
 }
 uintptr_t ServerUnit(uintptr_t game,int type,uint32_t id) {
     return ready.load()&&game?originalLookup(game,type,id):0;
+}
+// Thrown potions. Vanilla hireling.txt classes: roguehire, act2hire, act3hire,
+// act5hire1/2. Offline, the only live, non-hostile one is the player's own.
+constexpr uint32_t HirelingClasses[]={271,338,359,560,561};
+constexpr float HirelingFeetRadius=1.5f; // metres from the hireling's ground position
+bool IsHireling(uint32_t classId) {
+    return std::find(std::begin(HirelingClasses),std::end(HirelingClasses),classId)!=std::end(HirelingClasses);
+}
+// Bounded walk of live, non-hostile monsters on the local server (owning game
+// thread). f(unit,classId,gridPosition) for each; no pointer escapes the call.
+template<class F> bool EachFriendly(uintptr_t game,uintptr_t self,F f) {
+    uintptr_t buckets[128]{};
+    if(!Read(game+0x4c6*8,buckets))return false;
+    unsigned visited=0;
+    for(uintptr_t unit:buckets) {
+        for(unsigned chain=0;unit&&chain<256&&visited++<4096;++chain) {
+            uintptr_t next=0;uint32_t header[4]{};Vec pos{};
+            if(!Read(unit+0x158,next)||!Read(unit,header))break;
+            if(header[0]==1&&header[3]!=0&&header[3]!=12&&Position(unit,pos)&&
+               !reinterpret_cast<int(*)(uintptr_t,uintptr_t,uintptr_t)>(d2rsig::Addr(RelationRva))(game,self,unit))
+                f(unit,header[1],pos);
+            unit=next;
+        }
+    }
+    return true;
+}
+bool NearHireling(Vec world,Vec player,float upm,float& distance,uint32_t& classId) {
+    distance=-1;classId=0;
+    uintptr_t game=0,self=0;uint32_t mode=0;Vec selfPos{};
+    if(!LocalServer(game,self)||!Read(self+0xc,mode)||mode==0||mode==17||!Position(self,selfPos)||
+       !framevr::coordinates::MatchesPlayer(selfPos,player,upm))return false;
+    // Same grid plane as arrows: remove only the launch floor's shear.
+    const auto landing=framevr::coordinates::GridPlane({world.x,player.y,world.z});
+    float friendly=-1;uint32_t friendlyClass=0;
+    if(!EachFriendly(game,self,[&](uintptr_t,uint32_t id,Vec pos){
+        const float d=std::hypot(pos.x/upm-landing.x,pos.z/upm-landing.z);
+        if(IsHireling(id)){if(distance<0||d<distance){distance=d;classId=id;}}
+        else if(friendly<0||d<friendly){friendly=d;friendlyClass=id;}
+    }))return false;
+    if(distance<0)classId=friendlyClass; // log the nearest friendly class when no hireling class matched
+    return distance>=0&&distance<=HirelingFeetRadius;
+}
+// 3.3.93787 native unit effects, the same calls monster AI uses on itself:
+// STATES_ToggleState(unit,state,on) and UNITS_SetOverlay(unit,overlay,0).
+// Both end in the unit-update call, so the server syncs them to the client.
+constexpr uint64_t ToggleStateRva=0x3354c0,SetOverlayRva=0x349020;
+constexpr uint8_t ToggleStateSig[]={0x48,0x89,0x5c,0x24,0x08,0x48,0x89,0x6c,0x24,0x18,0x48,0x89,0x74,0x24,0x20,0x57,
+    0x48,0x83,0xec,0x20,0x41,0x8b,0xe8,0x8b,0xda,0x48,0x8b,0xf1,0x85,0xd2,0x78,0x38};
+constexpr uint8_t SetOverlaySig[]={0x48,0x89,0x5c,0x24,0x18,0x55,0x57,0x41,0x56,0x48,0x83,0xec,0x30,0x45,0x8b,0xf0,
+    0x8b,0xfa,0x48,0x8b,0xd9,0x48,0x85,0xc9,0x75,0x18,0x88,0x4c,0x24,0x58,0x48,0x8d};
+// The hireling with this id, or 0 (gone or another unit). alive: also refuse
+// a dead hireling; clearing a cosmetic state must still reach its corpse.
+uintptr_t Hireling(uintptr_t game,uintptr_t self,uint32_t id,bool alive) {
+    const auto unit=originalLookup(game,1,id);uint32_t header[4]{};
+    if(!unit||!Read(unit,header)||header[0]!=1||header[2]!=id||!IsHireling(header[1]))return 0;
+    if(alive&&(header[3]==0||header[3]==12))return 0;
+    return reinterpret_cast<int(*)(uintptr_t,uintptr_t,uintptr_t)>(d2rsig::Addr(RelationRva))(game,self,unit)?0:unit;
+}
+bool HirelingVitals(uint32_t hint,float& health,float& maxHealth,uint32_t& classId,uint32_t& unitId) {
+    health=maxHealth=0;classId=unitId=0;
+    const bool statReady=d2rsig::Check(nativeui::abi::StatRva,nativeui::abi::StatSig,sizeof nativeui::abi::StatSig);
+    uintptr_t game=0,self=0;uint32_t mode=0;Vec selfPos{};
+    if(!statReady||!LocalServer(game,self)||!Read(self+0xc,mode)||mode==0||mode==17||!Position(self,selfPos))return false;
+    // Known hireling: one direct lookup. Otherwise (first sample, death,
+    // rehire) walk for it, at most once a second while none is found.
+    // Offline the only live, non-hostile hireling is the player's own; the
+    // walk takes the nearest if a mod ever adds more.
+    uintptr_t best=hint?Hireling(game,self,hint,true):0;
+    if(best)unitId=hint;
+    else {
+        static uint64_t walkedAt=0;const auto now=GetTickCount64();
+        if(now-walkedAt<1000)return false;
+        walkedAt=now;float bestDistance=-1;
+        if(!EachFriendly(game,self,[&](uintptr_t unit,uint32_t id,Vec pos){
+            const float d=std::hypot(pos.x-selfPos.x,pos.z-selfPos.z);uint32_t header[3]{};
+            if(IsHireling(id)&&(bestDistance<0||d<bestDistance)&&Read(unit,header)){bestDistance=d;best=unit;unitId=header[2];}
+        })||!best)return false;
+        walkedAt=0; // found: later samples use the direct lookup
+    }
+    uint32_t header[2]{};
+    if(!Read(best,header))return false;
+    classId=header[1];
+    auto stat=reinterpret_cast<int(*)(uintptr_t,int,int)>(d2rsig::Addr(nativeui::abi::StatRva));
+    health=stat(best,6,0)/256.f;maxHealth=stat(best,7,0)/256.f; // life, max life (8.8 fixed point)
+    return maxHealth>0&&health>=0&&health<=maxHealth*2&&maxHealth<1000000;
+}
+bool HirelingState(uint32_t unitId,int state,bool on) {
+    uintptr_t game=0,self=0;
+    if(!d2rsig::Check(ToggleStateRva,ToggleStateSig,sizeof ToggleStateSig)||!LocalServer(game,self))return false;
+    const auto unit=Hireling(game,self,unitId,on);
+    if(!unit)return false;
+    reinterpret_cast<void(*)(uintptr_t,int,int)>(d2rsig::Addr(ToggleStateRva))(unit,state,on?1:0);
+    return true;
+}
+bool HirelingOverlay(uint32_t unitId,int overlay) {
+    uintptr_t game=0,self=0;
+    if(!d2rsig::Check(SetOverlayRva,SetOverlaySig,sizeof SetOverlaySig)||!LocalServer(game,self))return false;
+    const auto unit=Hireling(game,self,unitId,true);
+    if(!unit)return false;
+    reinterpret_cast<void(*)(uintptr_t,int,int)>(d2rsig::Addr(SetOverlayRva))(unit,overlay,0);
+    return true;
 }
 void Install() {
     if(ready.load()){InstallSmite();return;}

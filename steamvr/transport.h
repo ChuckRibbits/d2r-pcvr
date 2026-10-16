@@ -60,6 +60,9 @@ void ResetHeight();
 void Recenter();
 bool TakeWorldRecenter();
 bool Active();
+// Any thread: a focused VR session with motion controls ran input recently.
+// False in desktop/flat play, so VR-only world effects stay out of it.
+bool VrGameplay(uint64_t now);
 bool SpatialMenu();
 // mapNorth is the unmodified native camera's horizontal heading (map-up).
 bool View(float out[16], const float hero[3], float eyeHeight,
