@@ -57,8 +57,15 @@ paths, repeated repair, rollback, shared dependency preservation, conflicting
 loader versions, and unrelated-file preservation. Native checks cover path
 selection, ReShade isolation and creating the runtime log folder.
 
-Before merging, test actual SteamVR and VDXR launch, settings/calibration,
-normal offline character visibility, ReShade effects and ordinary desktop play.
-Also test switching between independently installed D2R-PCVR and D2R-VR.
+The owner verified Full install and then Update / repair on the combined
+Windows preview, including retained VR settings, calibration and characters.
+Both installer attempts completed successfully. The configured connection was
+Steam Frame / SteamVR; the confirmation did not separately specify the runtime.
+The first migration used Full install, which intentionally resets configuration.
+
+Remaining release checks include VDXR, explicit ReShade and ordinary desktop
+play checks, switching between independently installed D2R-PCVR and D2R-VR,
+real uninstall, and an old-layout upgrade that preserves settings/calibration.
+Automated fixtures cover the latter migration and uninstall behavior.
 The `pcvr-dev` developer scenario mod requires its own plugin staging under
 this layout; the production migration does not provision that developer setup.
