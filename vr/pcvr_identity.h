@@ -3,12 +3,12 @@
 // its file properties and a support log all say the same thing.
 //
 // D2R PCVR started as a fork of D2R VR 0.152 by BodyWalkVR (MIT), and until
-// 0.3.15 it kept D2R VR's plugin id, name, version, author and file names. The
+// 0.3.16 it kept D2R VR's plugin id, name, version, author and file names. The
 // two mods now have their own: D2R PCVR is d2rl-pcvr.dll with d2r_pcvr.ini;
 // D2R VR keeps d2rl-vrcam.dll with d2r_vr.ini.
 //
 // Keep D2RPCVR_VERSION in step with installer/D2R_PCVR_Setup.iss (ModVersion)
-// and installer/build_native_installer.ps1 (-Version); steamvr/identity_test.py
+// and installer/build_native_installer.ps1 (-Version); steamvr/mod_identity_test.py
 // checks that they agree.
 #pragma once
 
@@ -16,8 +16,8 @@
 #define D2RPCVR_PLUGIN_ID "d2r-pcvr-vrcam"
 #define D2RPCVR_NAME "D2R PCVR"
 #define D2RPCVR_AUTHOR "bearstonem"
-#define D2RPCVR_VERSION "0.3.15"
-#define D2RPCVR_VERSION_RC 0, 3, 15, 0
+#define D2RPCVR_VERSION "0.3.16"
+#define D2RPCVR_VERSION_RC 0, 3, 16, 0
 #define D2RPCVR_PLUGIN_FILE "d2rl-pcvr.dll"
 #define D2RPCVR_SETTINGS_FILE_W L"d2r_pcvr.ini"
 // D2R VR's plugin. When it sits beside ours D2RLoader would load both VR layers

@@ -60,7 +60,10 @@ Quest left X/Y correspond to Index left A/B; right A/B labels are the same.
 | Hold to show all nearby loot labels (Alt) | Hold **Right Grip + Right Trigger** during gameplay, grip first. Labels stay shown while both are held; release either to restore normal drop/hover labels. Uses the native Alt range, independently of where you aim. No cast or shot accompanies the combo. Also listed in **VR Settings > Controls** |
 | Interact / pick up / talk | Right A by default; requires an aimed interactable. One press acts on one target: press again for each item, including loot a chest just dropped |
 | Free melee swing / thrust | Move the equipped weapon through an enemy |
+| Choose melee rules / motion thresholds | **VR Settings > Combat**: Unleashed or Classic, Melee hit speed, and Melee thrust speed |
 | Bow draw | Right trigger near the left-hand bow string; draw and release |
+| Fire a crossbow | Equip bolts and assign **Attack** to Right Trigger; aim and fire while moving. Release Right Grip so the loot-label combo does not consume the trigger |
+| Support a crossbow | Hold Left Grip near the stock; release to free the hand. After a shoulder swap, release the swap grip before grabbing the stock again |
 | Javelin throw | Clear the right trigger skill for basic weapon mode; hold trigger, throw, release |
 | Cancel a physical attack / draw | Open either wheel, then release the held controls |
 | Swap weapon sets I / II | Dominant grip over either shoulder; or wheel → EQUIPMENT |
@@ -69,6 +72,7 @@ Quest left X/Y correspond to Index left A/B; right A/B labels are the same.
 | Quick potion | Wheel → EQUIPMENT → potion, using opposite laser + trigger |
 | Grab wheel potion | Wheel → EQUIPMENT → potion, using the pointing hand's grip |
 | Wrist health / mana / XP | Look at the back of the left wrist |
+| Wipe blood off the visor | Scrub either hand side to side in front of your face, trigger released. About six strokes clear a full visor. **HUD > Face wipe gesture** turns this off |
 | Recenter / stereo capture | PC F11 / F8 |
 
 Editing consumes combat inputs but never pauses the game or zeros locomotion.
@@ -93,6 +97,30 @@ and one left-hand alert test. Tests use the displayed values before Apply.
 45 ms at the controller's preferred frequency. On selects the earlier 10 ms /
 180 Hz pulse. **HUD > Low health / mana alerts** must also be enabled for
 automatic resource warnings.
+
+**Combat > Melee rules** defaults to **Unleashed**: physical strokes can hit
+each creature they reach once, without hit rolls or an attack-speed cooldown.
+**Classic** uses native hit/block checks and the modeled class/weapon/IAS cycle,
+with one target per physical stroke. Both modes require deliberate motion.
+**Melee thrust speed** is separate from swing speed: 2 m/s by default, adjustable
+from 0.75 to 10 m/s in 0.25 m/s steps. Push along the blade and pull back between
+stabs. The old `attack_speed` INI key does not select Classic; choose it here.
+
+**HUD > Loot label size** adjusts dropped-item text and its darker backing from
+20% to 150% in five-point steps. The original size is 45%; Apply saves the choice
+to `[hud] labels_size`. Existing explicit sizes are preserved on update.
+
+**HUD > Blood on visor** (default On) splashes blood around the edge of the
+view as life drops below 60%, 40% and 20%; large splats drip slowly, then dry.
+Healing back above a band, from any source, fades that band's blood out over
+about a second. Changing maximum life alone (Battle Orders, Oak Sage, +life gear)
+neither splashes nor fades. With **HUD > Face wipe gesture** On (the default),
+scrubbing a hand side to side in front of the face wipes blood
+at any time: each stroke ticks the controller and smears some splats away. While
+you are still hurt, the visor then stays clean until the next hit splashes it
+again. The centre of the view always stays clear. While a hand is scrubbing it
+does not attack; a held potion, squeezed trigger or bow draw never counts as
+wiping.
 
 ## Hand skill layouts
 

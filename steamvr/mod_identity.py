@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Which VR mod owns the plugin files in a game folder: D2R PCVR or D2R VR.
 
-D2R PCVR started as a fork of D2R VR 0.152 by BodyWalkVR (MIT). Up to 0.3.15
+D2R PCVR started as a fork of D2R VR 0.152 by BodyWalkVR (MIT). Up to 0.3.16
 both mods installed d2rloader/plugins/d2rl-vrcam.dll with d2r_vr.ini beside it,
 so either installer replaced the other mod's files. D2R PCVR now installs
 d2rl-pcvr.dll and d2r_pcvr.ini; D2R VR keeps the old names.
@@ -23,7 +23,7 @@ from pathlib import Path
 MOD_ID = 'd2r-pcvr'
 PLUGIN = Path('d2rloader/plugins/d2rl-pcvr.dll')
 SETTINGS = Path('d2rloader/plugins/d2r_pcvr.ini')
-# What D2R PCVR installed up to 0.3.15, and what D2R VR still installs.
+# What D2R PCVR installed up to 0.3.16, and what D2R VR still installs.
 LEGACY_PLUGIN = Path('d2rloader/plugins/d2rl-vrcam.dll')
 LEGACY_SETTINGS = Path('d2rloader/plugins/d2r_vr.ini')
 LEGACY_FILES = (LEGACY_PLUGIN, LEGACY_SETTINGS)
@@ -97,7 +97,7 @@ def installed_legacy_files(game, roots=()):
     From this version on D2R PCVR never writes those names, so once its own
     d2rl-pcvr.dll is in the folder the old names are not its files. Otherwise the
     newest snapshot that installed a plugin decides; a record whose snapshots
-    cannot be read was written by an earlier release (0.3.15 or older), all of
+    cannot be read was written by an earlier release (0.3.16 or older), all of
     which used the old names."""
     if (game / PLUGIN).is_file():
         return False
