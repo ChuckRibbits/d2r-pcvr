@@ -15,6 +15,7 @@ void ConfigureDeferredWait(bool enabled);
 void ConfigureSymmetricProjection(bool enabled);
 void ConfigureEyeTracking(bool enabled);
 void ConfigureGameplay(bool enabled);
+void ConfigureQuiver(bool enabled,bool preview); // [bow] quiver, quiver_preview
 void ConfigureInteractions(bool seated,float waistBelowEyes,float beltForward,int dominantHand);
 // Current motion-combat aim in the existing head-yaw-relative hand frame.
 bool SettingsOpen();

@@ -188,6 +188,10 @@ struct ShieldCast {
 };
 ShieldCast shieldCast;
 weaponskills::Pulse shieldPulse;
+// [bow] quiver: face-button arrow skills load the following physical arrows.
+std::atomic<bool> quiverEnabled{true},quiverPreview{true};
+weaponskills::Quiver quiver;
+weaponskills::Loaded quiverArrow{}; // the skill the next release carries, if any
 uint64_t shieldFeedbackAt=0,cueChangedAt=0,volleyRequestedAt=0;
 bool shieldRefused=false;
 interaction::SkillCue previousCue{};
@@ -1480,7 +1484,29 @@ void Input() {
     shieldSkill=quickSnapshot.skills[shieldSlot];
     motionInput.bowSlot=gestureSettings[settings::SkillGestures]>.5f&&shieldSkill.known&&shieldSkill.available&&shieldSkill.motion&&weaponskills::Bow(shieldSkill.id)?shieldSlot:-1;
     motionInput.bowSkill=motionInput.bowSlot>=0?shieldSkill.id:-1;motionInput.bowOwner=shieldSkill.owner;
-    const int requested=handOutput.slot;
+    int requested=handOutput.slot;
+    {
+        // A held face button whose skill is a quiver arrow loads, swaps or
+        // unloads it once per press, instead of a native animated cast.
+        const bool bow=quiverEnabled.load()&&motionInput.active&&gestureSettings[settings::SkillGestures]>.5f&&
+            motionInput.weapon==gameplay::Weapon::Bow&&quickFresh;
+        const bool face=requested>=0&&requested<skills::Count&&requested!=skills::TriggerSlot(0)&&requested!=shieldSlot;
+        const auto& held=quickSnapshot.skills[face?requested:0];
+        const auto step=quiver.Step(gamestate::LocalPlayer(),face?requested:-1,held.id,held.owner,held.missile,
+            bow&&face&&held.known&&held.available);
+        if(step.consumed){requested=-1;handOutput.interact=false;}
+        if(step.change!=weaponskills::Quiver::Change::None)
+            MotionPulse(handOutput.hand,haptics::Category::Interaction,step.change==weaponskills::Quiver::Change::Loaded?.45f:.25f,35000000);
+        quiverArrow={};
+        if(bow) {
+            // A loaded skill wins; otherwise a quiver skill on the left trigger
+            // (the bow's gesture skill) uses the same physical release.
+            if(quiver.Current().Active())quiverArrow=quiver.Current();
+            else if(shieldSkill.known&&shieldSkill.available&&weaponskills::QuiverSkill(shieldSkill.id)&&weaponskills::QuiverMissile(shieldSkill.missile))
+                quiverArrow={shieldSkill.id,shieldSkill.owner,shieldSkill.missile};
+        }
+        if(quiverArrow.Active()){motionInput.bowSlot=-1;motionInput.bowSkill=-1;}
+    }
     const bool requestedKnown=requested>=0&&quickFresh&&quickSnapshot.skills[requested].known&&quickSnapshot.skills[requested].available;
     handOutput.interact=requestedKnown&&quickSnapshot.skills[requested].id==357;
     const bool quick=requested>=0&&requested!=skills::TriggerSlot(0);
@@ -1538,6 +1564,13 @@ void Input() {
         std::snprintf(cue.hint,sizeof cue.hint,"%s",motionInput.weapon==gameplay::Weapon::Bow?"Draw & release":motionInput.weapon==gameplay::Weapon::Javelin?"Swing / throw":"Swing / trigger");
     } else {
         std::snprintf(cue.name,sizeof cue.name,"Skill unavailable");std::snprintf(cue.hint,sizeof cue.hint,"Refresh assignments");
+    }
+    if(quiverArrow.Active()&&!cue.temporary&&motionInput.weapon==gameplay::Weapon::Bow) {
+        const char* name=nullptr;
+        for(const auto& skill:quickSnapshot.skills)if(skill.known&&skill.id==quiverArrow.skill&&skill.owner==quiverArrow.owner){name=skill.name;break;}
+        cue.id=quiverArrow.skill;cue.owner=quiverArrow.owner;cue.known=cue.available=true;
+        std::snprintf(cue.name,sizeof cue.name,"%s",name?name:"Skill arrow");
+        std::snprintf(cue.hint,sizeof cue.hint,"%s",quiver.Current().Active()?"Loaded: draw & release":"Draw & release");
     }
     cue.busy=(shieldCast.issued&&!shieldCast.cancelled)||(cue.id==weaponskills::Strafe&&quickFresh&&quickSnapshot.actionKnown&&quickSnapshot.actionMode==16&&
         volleyRequestedAt&&motionAt>=volleyRequestedAt&&motionAt-volleyRequestedAt<10000);
@@ -1617,6 +1650,8 @@ void Input() {
         if(motionOutput.javelinRelease) {
             bowPending.kind=bowflight::Kind::Javelin;
             bowPending.origin=bowPending.origin-bowPending.direction*bowflight::JavelinGrip;
+        } else if(quiverArrow.Active()) {
+            bowPending.skill=quiverArrow.skill;bowPending.owner=quiverArrow.owner;bowPending.missile=quiverArrow.missile;
         }
         bowPending.draw=motionOutput.draw;bowPending.at=GetTickCount64();bowPending.stamp=s.sampleStamp;
         bowPending.session=gamestate::LocalPlayer();bowPending.equipment=motionInput.equipment;
@@ -2385,6 +2420,14 @@ void ConfigureGameplay(bool enabled) {
     if(motionControls.exchange(enabled)!=enabled)
         Say(enabled?"Frame gameplay: motion controls enabled (right-handed prototype)":"Frame gameplay: motion controls disabled; legacy buttons restored");
 }
+void ConfigureQuiver(bool enabled,bool preview) {
+    std::lock_guard lock(mutex);
+    quiverPreview=preview;
+    if(quiverEnabled.exchange(enabled)!=enabled) {
+        quiver.Clear();quiverArrow={};
+        Say(enabled?"Frame bow quiver: arrow skills load physical arrows":"Frame bow quiver: disabled; arrow skills use native buttons");
+    }
+}
 void ConfigureInteractions(bool seated,float waist,float forward,int dominant) {
     static interaction::Config previous;static bool configured=false;
     interaction::Config c;c.seated=seated;c.waistBelowEyes=std::clamp(waist,.30f,.95f);
@@ -2577,6 +2620,7 @@ bool View(float out[16],const float hero[3],float eyeHeight,float userEyeHeight,
     held.direction=motionOutput.bowDrawing?motionOutput.rayDirection:motionOutput.bowForward;
     held.draw=motionOutput.draw;held.at=motionAt;held.session=gamestate::LocalPlayer();
     held.epoch=(meleeEpoch<<32)|bowWorldEpoch;held.equipment=motionInput.equipment;held.sequence=1;
+    if(quiverArrow.Active()&&quiverPreview.load()){held.skill=quiverArrow.skill;held.owner=quiverArrow.owner;held.missile=quiverArrow.missile;}
     bowPreviewPose=resolveBow(held);bowPreviewVisible=motionOutput.bowDrawing||motionOutput.bowInReach;
     const bowflight::Gate previewGate{motionControls.load()&&motionInput.active&&!motionOutput.block,
         held.session,held.epoch,motionAt,motionInput.equipment,motionOutput.bowReady};

@@ -65,8 +65,9 @@ auto UsedArrows(){return std::span<Arrow>(arrows.data(),usedSlots.load(std::memo
 struct Preview {
     Shot pose{};
     bool active=false,visible=false;
+    bool recreate=false; // quiver changed: replace the held client without recovery delay
     uintptr_t client=0;
-    uint32_t clientId=0;
+    uint32_t clientId=0,missile=0; // native id of the held client, 0 = basic arrow
     VisualBinding binding{};
     uint64_t renderAt=0;
     std::array<float,16> rendered{},previous{};
@@ -101,6 +102,7 @@ std::atomic<unsigned> boundMeshes{0},ignoredEntities{0};
 std::atomic<unsigned> positionMismatch{0};
 std::atomic<unsigned> previewCreated{0},previewRefused{0},previewRecovered{0},uiRecovered{0};
 std::atomic<unsigned> gameRecovered{0};
+std::atomic<unsigned> quiverShots{0},quiverFallbacks{0},quiverRefused{0};
 struct Launch {
     Shot shot{};uintptr_t game=0,player=0;int slot=-1;
     framevr::aimassist::Homing homing{};
@@ -111,6 +113,7 @@ thread_local Launch launch;
 thread_local int creatingVisual=-1;
 thread_local uint64_t visualSession=0,visualSequence=0;
 thread_local uint64_t previewCreatingSession=0;
+thread_local uint32_t previewCreatingMissile=0;
 int MissileSound(int sound,uintptr_t unit,int a,int b,bool c) {
     // The nocked model is not a fired projectile. Suppress only its creation
     // scope's travel sound; genuine releases and other game audio pass through.
@@ -160,8 +163,10 @@ int End(size_t slot,Arrow& a,uintptr_t game,uintptr_t unit) {
     reinterpret_cast<int(*)(uintptr_t,uintptr_t,uintptr_t,int)>(d2rsig::Addr(HitRva))(game,unit,0,1);
     return 2;
 }
+// Spells and quiver arrows keep their native server missile at the physical
+// contact, so splash, explosions and secondary missiles start at the impact.
 bool MoveSpell(Arrow& a,Vec point) {
-    if(a.flight.shot.kind!=Kind::Spell)return true;
+    if(a.flight.shot.kind!=Kind::Spell&&!SkillArrow(a.flight.shot))return true;
     const auto grid=GridPoint(a.flight.shot,point)*a.flight.shot.unitsPerMetre;
     const int x=int(grid.x*.5f),y=int(grid.z*.5f);
     const auto room=reinterpret_cast<uintptr_t(*)(uintptr_t,int,int)>(d2rsig::Addr(RoomPointRva))(a.room,x,y);
@@ -357,6 +362,12 @@ void __cdecl Apply(const D2RL::PluginContext*,void* token) noexcept {
         const bool javelin=shot.kind==Kind::Javelin;
         const bool spell=shot.kind==Kind::Spell;
         if(spell&&!spellvr::Prepare(shot,game,player))continue;
+        // A quiver arrow the game cannot start (skill missing, wrong state)
+        // still leaves the bow as the basic arrow that was drawn.
+        bool quiverArrow=SkillArrow(shot);
+        if(quiverArrow&&!spellvr::PrepareArrow(shot,game,player)) {
+            shot.skill=shot.owner=shot.missile=-1;shot.level=0;quiverArrow=false;++quiverRefused;
+        }
         if(!spell&&(javelin?gamestate::WeaponType()!=D2RVR_TYPE_JAVELIN:crossbow?
            (gamestate::WeaponType()!=D2RVR_TYPE_CROSSBOW||
             reinterpret_cast<int(*)(uintptr_t,int*)>(d2rsig::Addr(MissileTypeRva))(player,&level)!=31):
@@ -384,6 +395,18 @@ void __cdecl Apply(const D2RL::PluginContext*,void* token) noexcept {
         if(spell) {
             spellvr::Cast(shot,game,player);
             if(launch.created)spellvr::Fired(shot,game,player);
+        } else if(quiverArrow) {
+            // The skill's own start/dispatch pays mana and creates its missile
+            // through Shoot, which takes the frozen bow vector like a basic arrow.
+            spellvr::Cast(shot,game,player);
+            if(launch.created)++quiverShots;
+            else {
+                // Refused (usually mana): the native warning plays, and the
+                // drawn arrow flies as a basic attack instead of a dud.
+                ++quiverFallbacks;
+                launch.shot.skill=launch.shot.owner=launch.shot.missile=-1;launch.shot.level=0;
+                reinterpret_cast<int(*)(uintptr_t,uintptr_t,int,int)>(d2rsig::Addr(AttackRva))(game,player,0,1);
+            }
         } else reinterpret_cast<int(*)(uintptr_t,uintptr_t,int,int)>(d2rsig::Addr(javelin?ThrowRva:AttackRva))(game,player,javelin?2:0,1);
         if(!launch.created)++refused;
         if(crossbow)crossbowCadence.Landed(shot.session,fireAt,launch.created?crossbowCycle:100);
@@ -407,29 +430,36 @@ void VisualParams(const Shot& shot,float distance,uintptr_t hero,std::array<uint
     Param(params,0,uint32_t(0x21));Param(params,8,hero);Param(params,0x10,hero);
     Param(params,0x20,MissileId(shot));
     Param(params,0x24,x);Param(params,0x28,y);Param(params,0x2c,tx);Param(params,0x30,ty);
-    Param(params,0x3c,shot.kind==Kind::Spell?shot.skill:0);
-    Param(params,0x40,shot.kind==Kind::Spell?shot.level:1);
+    const bool skill=shot.kind==Kind::Spell||SkillArrow(shot);
+    Param(params,0x3c,skill?shot.skill:0);
+    Param(params,0x40,skill?std::max(shot.level,1):1);
 }
 // Requires mutex. Invalidate ownership before native destruction so late
 // renderer callbacks cannot revive the old binding or its readiness timestamp.
 void ClearPreviewClient() {
-    preview.client=0;preview.clientId=0;preview.binding.Clear();
+    preview.client=0;preview.clientId=0;preview.missile=0;preview.binding.Clear();
     preview.renderAt=0;preview.rendered={};preview.previous={};previewReadyAt=0;
 }
 void ObservePreview(uint64_t now) {
     previewRecovery.Observe(enabled.load()&&preview.active&&preview.visible&&Allowed(preview.pose,current,now),previewReadyAt.load(),now);
 }
 void PresentPreview(uintptr_t hero,uint64_t session) {
-    Preview snapshot;bool recover=false;uint64_t lastRendered=0;
+    Preview snapshot;bool recover=false,swap=false;uint64_t lastRendered=0;
     {
         std::lock_guard lock(mutex);
         const auto now=GetTickCount64();ObservePreview(now);
+        // A quiver change swaps the held model at once: retire the old client
+        // now, create the new missile on the next UI pass.
+        swap=preview.client&&preview.missile!=MissileId(preview.pose);
+        const bool recreate=!preview.client&&preview.recreate;
         if(enabled.load()) {
-            if(!hero||!session||preview.pose.session!=session||!previewRecovery.Due(preview.client!=0,now))return;
-            recover=preview.client!=0;
+            if(!hero||!session||preview.pose.session!=session||(!swap&&!recreate&&!previewRecovery.Due(preview.client!=0,now)))return;
+            recover=preview.client!=0&&!swap;
         } else if(!preview.client)return;
-        snapshot=preview;lastRendered=previewReadyAt.load();previewRecovery.Attempt(now);
+        snapshot=preview;lastRendered=previewReadyAt.load();
+        if(!swap&&!recreate)previewRecovery.Attempt(now);
         if(snapshot.client){ClearPreviewClient();Recount();}
+        preview.recreate=swap&&enabled.load();
     }
     if(snapshot.client) {
         uint32_t header[3]{};
@@ -448,16 +478,18 @@ void PresentPreview(uintptr_t hero,uint64_t session) {
     }
     // Client visual only: no server missile, attack, ammo or damage request.
     std::array<uint8_t,0x98> params{};VisualParams(snapshot.pose,0,hero,params);
-    const auto saved=previewCreatingSession;previewCreatingSession=session;
+    const uint32_t missile=SkillArrow(snapshot.pose)?MissileId(snapshot.pose):0;
+    const auto saved=previewCreatingSession;const auto savedMissile=previewCreatingMissile;
+    previewCreatingSession=session;previewCreatingMissile=missile;
     const auto client=projectiles::CreateVisual(reinterpret_cast<uintptr_t>(params.data()));
-    previewCreatingSession=saved;
+    previewCreatingSession=saved;previewCreatingMissile=savedMissile;
     uint32_t header[3]{};
     const bool valid=client&&Read(client,header)&&header[0]==3&&header[1]==0;
     bool orphan=false;
     {
         std::lock_guard lock(mutex);
         if(valid&&current.session==session&&preview.active&&(!preview.client||preview.client==client)) {
-            preview.client=client;preview.clientId=header[2];++previewCreated;
+            preview.client=client;preview.clientId=header[2];preview.missile=missile;preview.recreate=false;++previewCreated;
         } else {
             orphan=valid;++previewRefused;
             if(preview.client==client)ClearPreviewClient();
@@ -527,7 +559,8 @@ void ClientTick(uintptr_t unit,float dt) {
         }
         for(size_t i=0;i<usedSlots.load(std::memory_order_relaxed);++i)if(arrows[i].client==unit&&arrows[i].clientId==header[2]) {
             slot=i;alive=arrows[i].flight.alive&&arrows[i].flight.shot.session==current.session&&enabled.load();
-            spellEnd=!alive&&arrows[i].flight.shot.kind==Kind::Spell&&arrows[i].flight.shot.session==current.session&&enabled.load();
+            spellEnd=!alive&&(arrows[i].flight.shot.kind==Kind::Spell||SkillArrow(arrows[i].flight.shot))&&
+                arrows[i].flight.shot.session==current.session&&enabled.load();
             if(spellEnd)ended=arrows[i].flight;
             if(!alive){arrows[i].client=0;arrows[i].visualBinding.Clear();Recount();}break;
         }
@@ -567,7 +600,7 @@ uintptr_t Transform(uintptr_t out,uint32_t entity,uintptr_t component) {
             // View can refresh the world anchor again within this pair. Always
             // use that pose, while keeping previous-frame motion history for
             // both eyes. The timer-owned pose remains for client lifecycle only.
-            PreviewMatrix(pose,active&&visible,preview.rendered.data());
+            PreviewMatrix(pose,active&&visible,preview.rendered.data(),preview.missile);
             if(preview.previous[15]!=1)preview.previous=preview.rendered;
             matrix=preview.rendered;previous=preview.previous;found=held=true;heldVisible=active&&visible;
             heldSession=pose.session;heldClient=preview.client;heldId=preview.clientId;heldRevision=previewRenderPose.revision;
@@ -578,7 +611,8 @@ uintptr_t Transform(uintptr_t out,uint32_t entity,uintptr_t component) {
                 if(a.flight.shot.kind==Kind::Spell) {
                     if(!Read(out,a.rendered))continue;
                     SpellMatrix(a.flight,at,a.rendered.data());
-                } else ArrowMatrix(a.flight,at,a.rendered.data());
+                } else if(SkillArrow(a.flight.shot))QuiverMatrix(a.flight,at,a.rendered.data());
+                else ArrowMatrix(a.flight,at,a.rendered.data());
                 if(a.previous[15]!=1)a.previous=a.rendered;
                 a.renderAt=at;
             }
@@ -616,6 +650,7 @@ bool PreviewReady() {
 }
 bool MotionReady(){return enabled.load()&&ready.load();}
 bool DirectCrossbow(){return launch.slot>=0&&launch.shot.kind==Kind::Crossbow;}
+uint32_t QuiverLaunchMissile(){return launch.slot>=0&&SkillArrow(launch.shot)?MissileId(launch.shot):0;}
 void SetCrossbowCycle(uint64_t session,uint32_t equipment,uint32_t milliseconds) {
     std::lock_guard lock(mutex);crossbowRate={session,GetTickCount64(),equipment,milliseconds};
 }
@@ -639,7 +674,8 @@ void Update(const Gate& gate,uintptr_t hero) {
         ObservePreview(now);
         if(gameCallback.Expired(now,500)){gameCallback.Cancel();pendingCount=0;++gameRecovered;}
         if(uiCallback.Expired(now,500)){uiCallback.Cancel();++uiRecovered;}
-        const bool needsPreview=(!enabled.load()&&preview.client)||previewRecovery.Due(preview.client!=0,now);
+        const bool needsPreview=(!enabled.load()&&preview.client)||previewRecovery.Due(preview.client!=0,now)||
+            (enabled.load()&&preview.active&&(preview.recreate||(preview.client&&preview.missile!=MissileId(preview.pose))));
         bool needsVisual=false;
         if(ready.load())for(const auto& a:UsedArrows())if(a.flight.alive&&!a.visualDone){needsVisual=true;break;}
         if(ready.load()&&(needsPreview||needsVisual)) {
@@ -809,9 +845,14 @@ bool Visual(uint32_t entity,uintptr_t unit,bool hasReleasePoint,bool isRoot) {
     if(!Read(unit,header)||header[0]!=3)return false;
     const auto* crossbow=crossbowvr::Creating();
     std::lock_guard lock(mutex);
-    if(header[1]==0&&preview.pose.session==current.session&&((preview.active&&previewCreatingSession&&previewCreatingSession==current.session)||
+    const bool creatingPreview=preview.active&&previewCreatingSession&&previewCreatingSession==current.session;
+    const uint32_t heldMissile=creatingPreview?previewCreatingMissile:preview.missile;
+    if(header[1]==heldMissile&&preview.pose.session==current.session&&(creatingPreview||
        (preview.client==unit&&preview.clientId==header[2]))) {
-        if(!preview.binding.Bind(entity,hasReleasePoint))return false;
+        // A quiver model binds its root; its arrow mesh and particles follow,
+        // and those descendants drop the hero release-bone blend.
+        const bool rooted=heldMissile!=0;
+        if(!(rooted?preview.binding.BindRoot(entity,isRoot):preview.binding.Bind(entity,hasReleasePoint)))return rooted;
         preview.client=unit;preview.clientId=header[2];Recount();return true;
     }
     for(size_t i=0;i<usedSlots.load(std::memory_order_relaxed);++i) {
@@ -820,10 +861,11 @@ bool Visual(uint32_t entity,uintptr_t unit,bool hasReleasePoint,bool isRoot) {
             (creatingVisual==int(i)&&a.flight.shot.session==visualSession&&a.flight.shot.sequence==visualSequence)||
             (crossbow&&a.flight.shot.kind==Kind::Crossbow&&a.flight.shot.session==crossbow->session&&a.flight.shot.sequence==crossbow->sequence))) {
             const bool wasBound=a.visualBinding.Bound();
-            const bool bound=a.flight.shot.kind==Kind::Spell?a.visualBinding.BindRoot(entity,isRoot):a.visualBinding.Bind(entity,hasReleasePoint);
+            const bool rooted=a.flight.shot.kind==Kind::Spell||SkillArrow(a.flight.shot);
+            const bool bound=rooted?a.visualBinding.BindRoot(entity,isRoot):a.visualBinding.Bind(entity,hasReleasePoint);
             // Descendant release components still need removal even though
             // only the root owns the spell transform.
-            if(!bound){++ignoredEntities;return a.flight.shot.kind==Kind::Spell;}
+            if(!bound){++ignoredEntities;return rooted;}
             if(!wasBound)++boundMeshes;
             a.client=unit;a.clientId=header[2];Recount();return true;
         }
@@ -833,9 +875,11 @@ bool Visual(uint32_t entity,uintptr_t unit,bool hasReleasePoint,bool isRoot) {
 bool OwnsVisual(uintptr_t unit) {
     uint32_t h[3]{};if(!Read(unit,h)||h[0]!=3)return false;
     std::lock_guard lock(mutex);
+    if(h[1]&&preview.pose.session==current.session&&((preview.missile==h[1]&&preview.client==unit&&preview.clientId==h[2])||
+       (preview.active&&previewCreatingSession==current.session&&previewCreatingMissile==h[1])))return true;
     for(size_t i=0;i<usedSlots.load(std::memory_order_relaxed);++i) {
         const auto& a=arrows[i];
-        if(a.flight.shot.kind==Kind::Spell&&a.flight.shot.sequence&&a.flight.shot.session==current.session&&
+        if((a.flight.shot.kind==Kind::Spell||SkillArrow(a.flight.shot))&&a.flight.shot.sequence&&a.flight.shot.session==current.session&&
            h[1]==MissileId(a.flight.shot)&&((a.client==unit&&a.clientId==h[2])||
            (creatingVisual==int(i)&&a.flight.shot.sequence==visualSequence&&a.flight.shot.session==visualSession)))return true;
     }
@@ -869,6 +913,13 @@ void Report() {
         framevr::logging::Write(line);
     }
     spellvr::Report();
+    {
+        const auto shots=quiverShots.exchange(0),fallbacks=quiverFallbacks.exchange(0),refusedStart=quiverRefused.exchange(0);
+        if(shots||fallbacks||refusedStart) {
+            char line[192];snprintf(line,sizeof line,"Frame bow quiver: skill arrows=%u basic fallbacks after refusal=%u unprepared=%u",shots,fallbacks,refusedStart);
+            framevr::logging::Write(line);
+        }
+    }
     for(int hand=0;hand<2;++hand) {
         auto& a=assistStats[hand];
         const auto casts=a.casts.exchange(0),bodies=a.bodies.exchange(0),height=a.heightMisses.exchange(0);

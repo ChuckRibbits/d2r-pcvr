@@ -15,6 +15,60 @@ inline Action Classify(int skill) {
     }
 }
 inline bool Bow(int skill) {return Classify(skill)==Action::Arrow||Classify(skill)==Action::Volley;}
+// Single-missile arrow skills: Skills.txt srvdofunc 0 with one srvmissile,
+// the same native shape as the hand bolts. Multiple Shot, Guided Arrow and
+// Strafe have their own server functions and keep the native button path.
+inline bool QuiverSkill(int skill) {
+    switch(skill) {
+        case 6:case 7:case 11:case 16:case 21:case 27:case 31:return true;
+        default:return false;
+    }
+}
+// Their missiles (Missiles.txt): magicarrow, firearrow, icearrow, coldarrow,
+// explodingarrow, immolationarrow, freezingarrow.
+inline bool QuiverMissile(int missile) {
+    switch(missile) {
+        case 12:case 27:case 28:case 40:case 41:case 85:case 87:return true;
+        default:return false;
+    }
+}
+// Bow quiver: pressing a face button assigned to a quiver skill loads that
+// skill into every following nocked arrow instead of casting it. Pressing the
+// loaded skill's button again returns to basic arrows; another skill swaps.
+// The press is consumed while held. Native mana, ammunition and skill checks
+// stay authoritative at each release.
+struct Loaded {
+    int skill=-1,owner=-1,missile=-1;
+    bool Active() const {return skill>=0;}
+    bool operator==(const Loaded&) const=default;
+};
+class Quiver {
+    uint64_t session=0;
+    Loaded loaded{};
+    int held=-1;      // slot of the current press; release rearms it
+    bool owned=false; // that press toggled the quiver and never casts
+public:
+    enum class Change {None,Loaded,Unloaded};
+    struct Result {bool consumed=false;Change change=Change::None;};
+    const Loaded& Current() const {return loaded;}
+    void Clear(){loaded={};held=-1;owned=false;}
+    // slot: the face button currently held (-1 for none); its native assignment
+    // follows. eligible: a bow is ready and the feature is enabled. A press
+    // keeps its first owner until released: a stale frame mid-press neither
+    // leaks a native cast nor toggles again.
+    Result Step(uint64_t world,int slot,int skill,int owner,int missile,bool eligible) {
+        if(world!=session){session=world;Clear();}
+        Result out;
+        if(slot<0){held=-1;owned=false;return out;}
+        if(slot==held){out.consumed=owned;return out;}
+        held=slot;owned=eligible&&QuiverSkill(skill)&&QuiverMissile(missile);
+        if(!owned)return out;
+        out.consumed=true;
+        if(loaded.skill==skill&&loaded.owner==owner){loaded={};out.change=Change::Unloaded;}
+        else {loaded={skill,owner,missile};out.change=Change::Loaded;}
+        return out;
+    }
+};
 inline const char* Hint(int skill,bool bow,bool shield) {
     if(bow&&Bow(skill))return skill==Strafe?"Release for volley":"Draw & release";
     if(shield&&skill==Smite)return "Shield swing / thrust";

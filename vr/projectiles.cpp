@@ -55,22 +55,26 @@ bool IsLocalOwner(uintptr_t owner) {
     uint32_t id=~0u,type=~0u,ownerId=~0u;
     return combat::LocalPlayerId(id)&&Read(owner,type)&&Read(owner+8,ownerId)&&SamePlayer(0,id,type,ownerId);
 }
-bool LocalArrowParams(uintptr_t params) {
+// Basic arrows, and a quiver arrow inside its own game-thread launch, share
+// the configured arrow speed. Native skill casts elsewhere keep theirs.
+uint32_t LocalArrowParams(uintptr_t params) {
     uint32_t missile=~0u;uintptr_t owner=0;
-    return enabled.load()&&Read(params+0x20,missile)&&missile==0&&Read(params+8,owner)&&IsLocalOwner(owner);
+    if(!enabled.load()||!Read(params+0x20,missile)||!Read(params+8,owner)||!IsLocalOwner(owner))return ~0u;
+    return missile==0||(missile&&missile==bowvr::QuiverLaunchMissile())?missile:~0u;
 }
 
 // Scope is on the game's actual creation thread, on BOTH client and server.
 // Nesting an unrelated projectile temporarily clears it; unrelated path calls
 // never inherit a previous arrow. No game-owned table or request is edited.
-struct Creation {int side=-1;float multiplier=1;uintptr_t changedPath=0;};
+struct Creation {int side=-1;float multiplier=1;uintptr_t changedPath=0;uint32_t missile=0;};
 thread_local Creation creation;
 struct Scope {
     Creation saved;
     Scope(uintptr_t params,int side):saved(creation) {
         creation={};
-        if(speedHooksReady.load()&&LocalArrowParams(params)) {
-            creation.side=side;creation.multiplier=speed.load();++observed[side];
+        const uint32_t missile=speedHooksReady.load()?LocalArrowParams(params):~0u;
+        if(missile!=~0u) {
+            creation.side=side;creation.multiplier=speed.load();creation.missile=missile;++observed[side];
         }
     }
     ~Scope(){creation=saved;}
@@ -119,7 +123,7 @@ void Velocity(uintptr_t path,int native,uintptr_t source,int line) {
     // corrections outside creation retain their normal behavior.
     if(creation.side>=0&&native>0&&path!=creation.changedPath) {
         uintptr_t unit=0,back=0;uint32_t type=~0u,missile=~0u;
-        if(Read(path+0x40,unit)&&Read(unit,type)&&type==3&&Read(unit+4,missile)&&missile==0&&Read(unit+0x38,back)&&back==path) {
+        if(Read(path+0x40,unit)&&Read(unit,type)&&type==3&&Read(unit+4,missile)&&missile==creation.missile&&Read(unit+0x38,back)&&back==path) {
             adjusted=ScaledVelocity(native,creation.multiplier);
             creation.changedPath=path;
             if(adjusted!=native) {const int side=creation.side;++accelerated[side];before[side]=native;after[side]=adjusted;}

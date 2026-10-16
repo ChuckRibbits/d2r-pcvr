@@ -193,6 +193,18 @@ skills assigned to left trigger fire on bow draw/release using the right hand
 to pull the string. The left trigger remains a button fallback; right trigger
 away from the string uses the right hand's own assignment.
 
+**Bow quiver.** With a bow, a face button assigned to Magic Arrow, Fire Arrow,
+Cold Arrow, Exploding Arrow, Ice Arrow, Immolation Arrow or Freezing Arrow loads
+that skill instead of casting it. Every following arrow you nock shows the
+skill on the string and flies the basic arrow's physical path when released;
+press the same button again for basic arrows, or another arrow skill's button
+to swap. The skill's own mana cost, damage and impact effects apply to each
+shot. If the game refuses it (usually not enough mana), the drawn arrow flies as
+a basic arrow and the character's mana warning plays. With nothing loaded, a
+supported arrow skill on left trigger uses the same physical release. Multiple
+Shot, Guided Arrow and Strafe keep their native behavior. Set
+`[bow] quiver=0` to restore native buttons for these skills.
+
 Face-button skills never replace gesture skills. Ordinary melee swings remain
 basic attacks for skills without a supported physical adapter; assigning a
 spell does not cast it on every swing. Physical skill gestures can be disabled
