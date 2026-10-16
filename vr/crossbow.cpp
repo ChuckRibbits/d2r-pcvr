@@ -30,6 +30,9 @@ void Gate(bool active,uint64_t session,uint32_t equipment,uint64_t epoch) {
     if(gate.session!=session)pending={};
     gate={active,session,GetTickCount64(),epoch,equipment};
 }
+bool MakeShot(const Pose& pose,uint64_t epoch,Launch& shot) {
+    return Aim(pose,shot)&&Physical(shot,epoch,++sequence);
+}
 bool Prepare(uintptr_t params,std::array<uint8_t,0x98>& adjusted,Launch& shot,bool server) {
     uint32_t missile=0,ownerHeader[3]{},id=0;uintptr_t owner=0;int skill=-1;
     if((server&&(gamestate::WeaponType()!=D2RVR_TYPE_CROSSBOW||gamestate::MenuOpen()))||
@@ -50,7 +53,7 @@ bool Prepare(uintptr_t params,std::array<uint8_t,0x98>& adjusted,Launch& shot,bo
     if(server) {
         if(!g.active||now<g.at||now-g.at>100||g.equipment!=(gamestate::HandsKey()^(gamestate::WeaponSet()<<30)))return false;
         if(!skel::CrossbowPose(pose)||!Fresh(pose,now,g.session,g.equipment,uint32_t(g.epoch))||
-           !Aim(pose,shot)||!Physical(shot,g.epoch,++sequence)){++refused;return false;}
+           !MakeShot(pose,g.epoch,shot)){++refused;return false;}
         std::lock_guard lock(mutex);pending[nextPending++%pending.size()]={id,target[0],target[1],shot,false};
     } else if(!paired)return false;
     uint32_t flags=0;std::memcpy(&flags,adjusted.data(),sizeof flags);flags|=1;

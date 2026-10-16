@@ -5875,6 +5875,7 @@ void BowTick() {
     bowvr::Update(gate,reinterpret_cast<uintptr_t>(hero));
     framevr::bowflight::Shot shot;
     if(framevr::TakeBowShot(shot))bowvr::Submit(shot);
+    if(framevr::TakeCrossbowShot(shot))bowvr::Submit(shot);
     static framevr::spellcast::PlanarAim spellAim[2];
     const auto spellSettings=vrsettings::Read();
     const bool planar=spellSettings.values[framevr::settings::PlanarSpellAim]>.5f;

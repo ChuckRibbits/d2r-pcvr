@@ -21,6 +21,16 @@ template<size_t N,class T> static void Put(std::array<uint8_t,N>& b,size_t at,T 
 template<class T,size_t N> static T Get(const std::array<uint8_t,N>& b,size_t at){T v;std::memcpy(&v,b.data()+at,sizeof v);return v;}
 static bool Near(Vec a,Vec b){return skel::bow::Length(a-b)<.004f;}
 int main() {
+    // Independent firing keeps a real cycle even though no native attack
+    // animation owns locomotion. Missing/stale stats never become rapid fire.
+    FireRate rate{7,1000,42,720};
+    assert(rate.Cycle(7,42,1100)==720&&rate.Cycle(7,42,2501)==1000);
+    assert(rate.Cycle(8,42,1100)==1000&&rate.Cycle(7,43,1100)==1000&&rate.Cycle(7,42,999)==1000);
+    rate.milliseconds=0;assert(rate.Cycle(7,42,1100)==1000);
+    framevr::attackspeed::Cadence cadence;
+    cadence.Landed(7,1000,720);
+    for(uint64_t at=1001;at<1720;++at)assert(!cadence.Ready(7,at));
+    assert(cadence.Ready(7,1720)&&cadence.Ready(8,1100));
     // An unloaded helper can be far forward of the barrel. Locate the stock
     // from its limb roots rather than treating that helper as a bolt centre.
     Mat cog=skel::bow::Identity(),helper=cog,left=cog,right=cog,barrel;
@@ -66,7 +76,8 @@ int main() {
         const auto muzzle=Muzzle(line);
         assert(Near(muzzle,Position(world)));
         const Vec palm=Position(attach),support=Support(line,palm,.3f,4.f);
-        assert(skel::bow::Length(framevr::math::Cross(support+line.up*.12f-line.center,line.direction))<.005f);
+        assert(skel::bow::Length(framevr::math::Cross(support+line.up*(SupportDrop*4)-line.center,line.direction))<.005f);
+        assert(std::fabs(framevr::math::Dot(support-line.center,line.up)+.28f)<.005f);
         assert(framevr::math::Dot(support-line.center,line.direction)<=-.24f+.005f);
         assert(framevr::math::Dot(support-palm,line.direction)<=1.2f+.005f);
         Pose p{muzzle,line.direction,{22600,2,15600},line.scale,100,7,42,3,4,4.f};

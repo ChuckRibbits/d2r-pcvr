@@ -104,7 +104,7 @@ uintptr_t Server(uintptr_t game,uintptr_t params) {
     if(spell<0)return 0;
     if(spell>0)params=reinterpret_cast<uintptr_t>(adjusted.data());
     std::array<uint8_t,0x98> boltParams{};framevr::crossbow::Launch bolt;
-    const bool crossbow=enabled.load()&&crossbowvr::Prepare(params,boltParams,bolt,true);
+    const bool crossbow=enabled.load()&&!bowvr::DirectCrossbow()&&crossbowvr::Prepare(params,boltParams,bolt,true);
     if(crossbow)params=reinterpret_cast<uintptr_t>(boltParams.data());
     Scope scope(params,1);const auto unit=originalServer(game,params);
     if(crossbow)crossbowvr::ServerDone(bolt,unit&&bowvr::AdoptCrossbow(game,unit,bolt.flight));

@@ -2,6 +2,7 @@
 #include "../vr/bow_pose.h"
 #include "world_coordinates.h"
 #include "bow_flight.h"
+#include "attack_speed.h"
 #include <cstdint>
 
 namespace framevr::crossbow {
@@ -11,6 +12,14 @@ using skel::bow::Vector;
 using skel::bow::Position;
 using skel::bow::Multiply;
 inline constexpr float BoltTip=.69698172f; // owned x_bow_bolt mesh, local +Z
+inline constexpr float SupportDrop=.07f; // palm below the bolt axis, metres
+struct FireRate {
+    uint64_t session=0,at=0;uint32_t equipment=0,milliseconds=0;
+    uint32_t Cycle(uint64_t owner,uint32_t gear,uint64_t now) const {
+        return session==owner&&equipment==gear&&now>=at&&now-at<=1500&&milliseconds?
+            milliseconds:1000; // unknown/stale class data must never mean unlimited fire
+    }
+};
 struct Line {Vec center{},direction{},up{};float scale=0;};
 inline bool FromBolt(const Mat& bolt,Line& out) {
     Mat basis=bolt;Position(basis,{});const Vec center=Position(bolt);
@@ -57,7 +66,7 @@ inline bool SupportLatched(bool held,bool pressedBefore,bool latched,bool inReac
 // controller ray. Project the driving palm onto that line before advancing.
 inline Vec Support(const Line& line,Vec rightPalm,float ahead,float unitsPerMetre) {
     const float along=std::min(math::Dot(rightPalm-line.center,line.direction)+ahead*unitsPerMetre,-.06f*unitsPerMetre);
-    return line.center+line.direction*along-line.up*(.03f*unitsPerMetre);
+    return line.center+line.direction*along-line.up*(SupportDrop*unitsPerMetre);
 }
 struct Pose {
     Vec muzzle{},direction{},player{};
