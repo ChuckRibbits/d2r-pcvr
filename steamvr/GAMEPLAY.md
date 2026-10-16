@@ -354,6 +354,11 @@ tabs and a **Reset eye height** button:
 | Combat | Melee hit speed |
 | Haptics | Overall strength and separate melee, bow draw, bow/throw release, spell, interaction and resource-alert strengths; tests follow each action's hands |
 
+Added indoor fog defaults to **Off** for new profiles, preserving the game's
+own lighting and effects, including Tyrael's wings. Outdoor fog keeps its
+existing setting. There is currently no indoor-fog toggle in VR Settings.
+Existing saved `[fog] caves` choices are preserved when updating.
+
 **VR Settings > Haptics** tunes vibration for different controllers. Each strength
 ranges from **0% (Off) to 200%**, in **10% steps**, with **100%** as the default.
 Overall strength multiplies the category strength: 50% overall and 50% bow draw
