@@ -15,6 +15,7 @@ import setup_native as native
 import setup_windows as setup
 import steam_config as steam
 import install
+import mod_identity
 import uninstall_windows as uninstall
 
 LOCAL = '"UserLocalConfigStore" { "friends" { "PersonaName" "Player" } "Software" { "Valve" { "Steam" { "apps" { "2536520" { "LaunchOptions" "-original-option" } } } } } }'
@@ -315,6 +316,50 @@ class NativeSetupTests(unittest.TestCase):
                 self.assertEqual([str(path) for path, _ in chain], expected)
                 self.assertEqual(Path(chain[0][1]['game']), target)
 
+    def test_d2r_vr_in_the_game_folder_stops_the_wizard_without_touching_it(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            app, game, client, saves, profile, values = self.fixture(root)
+            plugin = self.put(game / mod_identity.LEGACY_PLUGIN, b'MZ D2R VR BodyWalk Game Link')
+            ini = self.put(game / mod_identity.LEGACY_SETTINGS, b'[mode]\nplatform=1\n')
+            result = self.probe(root, app, game, client, saves)
+            self.assertIn('D2R VR', result['other_mod'])
+            self.assertEqual(result['installed_mod'], '')
+            self.assertEqual(result['backup_required'], '0')
+            for mode in ('repair', 'full'):
+                with self.subTest(mode=mode), patch.object(setup, 'verify_release', return_value={'sha256': {}}):
+                    with self.assertRaisesRegex(ValueError, 'Remove D2R VR with its own uninstaller'):
+                        native.validate_choices({**values, 'mode': mode}, app)
+            self.assertEqual(plugin.read_bytes(), b'MZ D2R VR BodyWalk Game Link')
+            self.assertEqual(ini.read_bytes(), b'[mode]\nplatform=1\n')
+            self.assertEqual(list(app.iterdir()), [])
+
+    def test_old_release_under_old_names_is_offered_update_and_validates(self):
+        for recorded in (True, False):
+            with self.subTest(recorded=recorded), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                app, game, client, saves, profile, values = self.fixture(root)
+                folder = root / 'old-zip/build-frame/backups'
+                original = folder / '20261001'
+                self.put(original / 'manifest.json', json.dumps(dict(game=str(game), saves=str(saves), previous_mod=False,
+                    installed=[str(mod_identity.LEGACY_PLUGIN), str(mod_identity.LEGACY_SETTINGS), str(install.RECORD)])).encode())
+                self.put(original / 'saves/Settings.json', b'{}')
+                self.put(game / mod_identity.LEGACY_PLUGIN, b'MZ old D2R PCVR ' + 'd2r_vr_icons'.encode('utf-16-le'))
+                self.put(game / mod_identity.LEGACY_SETTINGS, b'[body_calibration]\nheight=1.83\n')
+                if recorded:
+                    install.write_record(game, {'game': str(game), 'snapshots': [str(original)]})
+                hint = None if recorded else folder
+                result = self.probe(root, app, game, client, saves, backup_hint=hint)
+                self.assertEqual(result['other_mod'], '')
+                self.assertEqual(result['installed_mod'], 'd2r-pcvr')
+                values = {**values, 'mode': 'repair', 'backups': '' if recorded else str(folder)}
+                with patch.object(setup, 'verify_release', return_value={'sha256': {}}):
+                    self.assertEqual(native.validate_choices(values, app)['mode'], 0)
+                    if not recorded:
+                        # Without the old backup the plugin is not provably this mod's.
+                        with self.assertRaisesRegex(ValueError, 'did not install'):
+                            native.validate_choices({**values, 'backups': ''}, app)
+
     def test_probe_only_arguments_are_rejected_for_install_actions(self):
         with patch.object(sys, 'argv', ['setup_native.py', '--install', 'fixture.ini', '--backup-hint', 'backup']), \
                 contextlib.redirect_stderr(io.StringIO()), patch.object(setup, 'verify_release') as verify:
@@ -504,7 +549,7 @@ class NativeSetupTests(unittest.TestCase):
     def test_repeated_repair_preserves_calibration_and_keeps_one_managed_entry(self):
         with tempfile.TemporaryDirectory() as directory:
             app, game, client, saves, profile, values = self.fixture(Path(directory))
-            calibration = self.put(game / 'd2rloader/plugins/d2r_vr.ini', b'calibrated player')
+            calibration = self.put(game / 'd2rloader/plugins/d2r_pcvr.ini', b'calibrated player')
             values['mode'] = 'repair'
             selection = dict(manifest={}, store='steam', version='3.3.93787', headset='Steam Frame',
                 connections=['steamvr'], steam=client, game=game, profile=profile, saves=saves,
@@ -576,7 +621,7 @@ class NativeSetupTests(unittest.TestCase):
                 snapshot = args.backup_dir / 'fixture-failed-attempt'
                 (snapshot / 'saves').mkdir(parents=True)
                 shutil.copy2(args.saves / 'Settings.json', snapshot / 'saves/Settings.json')
-                plugin = Path('d2rloader/plugins/d2rl-vrcam.dll')
+                plugin = Path('d2rloader/plugins/d2rl-pcvr.dll')
                 (snapshot / 'manifest.json').write_text(json.dumps(dict(game=str(args.game),
                     saves=str(args.saves), installed=[str(plugin)], previous_mod=False)))
                 (args.game / plugin).parent.mkdir(parents=True, exist_ok=True)

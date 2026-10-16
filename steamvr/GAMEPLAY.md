@@ -136,7 +136,7 @@ synthetic timing regression passes, and the owner reported **"works great"** in
 Steam Frame on 2026-10-09 after the sword comparison. Other weapon categories and
 creature sizes still need checks.
 
-Fresh installs enable motion controls in `GAME/d2rloader/plugins/d2r_vr.ini`:
+Fresh installs enable motion controls in `GAME/d2rloader/plugins/d2r_pcvr.ini`:
 
 ```ini
 [gameplay]
@@ -189,7 +189,7 @@ not generate melee velocity. The layout currently assumes a right-handed player.
 
 Dropped-item names use **VR Settings > HUD > Loot label size**: **45%** by
 default, adjustable from **20% to 150%** in five-percentage-point steps.
-Apply saves `[hud] labels_size` in `d2r_vr.ini` and updates it live; existing
+Apply saves `[hud] labels_size` in `d2r_pcvr.ini` and updates it live; existing
 saved sizes are preserved. Text, dark backing bounds and click targets scale
 together; item-quality colors are preserved. **Right Grip + Right
 Trigger** holds the native **Show Items (Alt)** action, with a short vibration
@@ -392,9 +392,9 @@ Settings are stored under `[haptics]` as `strength`, `melee`, `bow_draw`,
 `bow_release`, `spells`, `interactions` and `alerts`; missing strength keys default
 to 100. `[haptics] short_melee=0` selects the longer tap; `1` selects the short tap.
 
-Click **Apply** to save changed values to `d2rloader/plugins/d2r_vr.ini` and
+Click **Apply** to save changed values to `d2rloader/plugins/d2r_pcvr.ini` and
 reload them live. Closing without Apply discards pending edits. The first Apply
-creates `d2r_vr.ini.before-vr-menu`; later saves retain that original backup.
+creates `d2r_pcvr.ini.before-vr-menu`; later saves retain that original backup.
 Unrelated INI entries are preserved. A conflicting external edit reloads the
 current values instead of overwriting them. Reset eye height is immediate and
 does not require Apply. The controls tab is a reference, not a binding editor.

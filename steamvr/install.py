@@ -16,6 +16,7 @@ import zipfile
 from prepare_icons import prepare as prepare_icons
 from prepare_potions import prepare as prepare_potions, CODES as POTION_CODES
 from game_install import validate_game
+import mod_identity
 
 ROOT = Path(__file__).resolve().parent.parent
 STEAM = Path.home() / '.local/share/Steam'
@@ -32,7 +33,7 @@ RESHADE_HASH = 'afe4c8f13048306307983b8b3d41d5bf00a86820440b0e57dea10950e1176445
 SDK_VERSION = '10.0.26100.9169'
 SDK_HASH = '475269434dcd808a67853773272f972c3229c0e10c3ddc821290e70cc0f6904d'
 COMPILER_HASH = '3bd6d7acfe8a0a84acd166fba1a537ce68bd21c8edce2bd9bb863cfa034136d4'
-RECORD = Path('d2rloader/pcvr-install.json')
+RECORD = mod_identity.RECORD
 
 
 def read_record(game):
@@ -158,7 +159,7 @@ def main():
     ap.add_argument('--game', type=Path, default=GAME)
     ap.add_argument('--deps', type=Path, default=Path.home() / 'vrdeps')
     ap.add_argument('--saves', type=Path, help='Saved Games folder (for custom prefixes/redirected Windows folders)')
-    ap.add_argument('--plugin', type=Path, default=ROOT / 'build-frame/d2rl-vrcam.dll')
+    ap.add_argument('--plugin', type=Path, default=ROOT / 'build-frame/windows-native/d2rl-pcvr.dll')
     ap.add_argument('--openxr-loader', type=Path, help='Windows x64 openxr_loader.dll; required on native Windows')
     ap.add_argument('--backup-dir', type=Path, default=ROOT / 'build-frame/backups')
     ap.add_argument('--download-deps', action='store_true', help='Fetch pinned D2RLoader and ReShade from their official sites')
@@ -176,8 +177,13 @@ def main():
         m = json.loads((snapshot / 'manifest.json').read_text())
         if str(game) != m['game']:
             raise SystemExit('Snapshot belongs to a different game folder')
+        # D2R VR's d2rl-vrcam.dll / d2r_vr.ini, installed after this snapshot: never touched.
+        keep = ({str(name).lower() for name in mod_identity.LEGACY_FILES}
+                if mod_identity.plugin_owner(game / mod_identity.LEGACY_PLUGIN) == mod_identity.OTHER_MOD else set())
         for rel in m['installed']:
             rel = safe_relative(rel)
+            if str(rel).lower() in keep:
+                continue
             target = game / rel
             old = snapshot / 'previous' / rel
             if old.exists():
@@ -209,6 +215,12 @@ def main():
     if not (saves / 'Settings.json').is_file():
         raise SystemExit(f'Launch stock D2R once first, or pass --saves; Settings.json not found in {saves}')
     record = read_record(game)
+    # Another VR mod's plugin in this folder (D2R VR's d2rl-vrcam.dll): leave it
+    # alone and stop, as D2RLoader would load both. An earlier D2R PCVR under the
+    # old names is carried over below (steamvr/mod_identity.py).
+    found = mod_identity.survey(game, [args.backup_dir])
+    if found.other:
+        raise SystemExit(found.message + ' No game files changed.')
     # Read and validate all inputs before changing any game files.
     settings = json.loads((saves / 'Settings.json').read_text(encoding='utf-8-sig'))
     archive = args.deps / 'D2RLoader-1.3.1-beta.zip'
@@ -252,7 +264,7 @@ def main():
     except OSError as error:
         raise dependency_io_error(archive, 'read', error) from error
     payload[Path('ReShade64.dll')] = read_dependency(reshade)
-    payload[Path('d2rloader/plugins/d2rl-vrcam.dll')] = args.plugin.read_bytes()
+    payload[mod_identity.PLUGIN] = args.plugin.read_bytes()
     if compiler.is_file():
         payload[Path('d2rloader/runtime/d3dcompiler_47.dll')] = compiler.read_bytes()
     if args.openxr_loader:
@@ -283,7 +295,7 @@ def main():
     shutil.copytree(saves, snapshot / 'saves')
     installed = []
     manifest = {'game': str(game), 'store': store, 'game_version': version,
-                'previous_mod': (game / 'd2rloader/plugins/d2rl-vrcam.dll').is_file(),
+                'mod': mod_identity.MOD_ID, 'previous_mod': found.ours,
                 'saves': str(saves), 'installed': installed}
     (snapshot / 'manifest.json').write_text(json.dumps(manifest, indent=2))
 
@@ -299,17 +311,44 @@ def main():
         (snapshot / 'manifest.json').write_text(json.dumps(manifest, indent=2))
         dest.write_bytes(content)
 
+    def remove(rel):
+        """Journaled removal: the snapshot keeps the file, so --restore and a
+        failed setup put it back, and removal restores the pre-mod state."""
+        dest = game / rel
+        if not dest.is_file():
+            return
+        old = snapshot / 'previous' / rel
+        old.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(dest, old)
+        installed.append(str(rel))
+        manifest.setdefault('removed', []).append(str(rel))
+        (snapshot / 'manifest.json').write_text(json.dumps(manifest, indent=2))
+        dest.unlink()
+
     record.update({'game': str(game), 'store': store, 'saves': str(saves),
                    'snapshots': record.get('snapshots', []) + [str(snapshot.resolve())]})
     # Track the chain before other writes, including interrupted installs.
     put(RECORD, (json.dumps(record, indent=2) + '\n').encode('utf-8'))
+    if found.legacy:
+        # Up to 0.3.16 D2R PCVR was d2rl-vrcam.dll with d2r_vr.ini (D2R VR's names).
+        # Update / repair keeps the player's settings and calibration under the new
+        # name; then the old files go, before the new plugin is written, so D2RLoader
+        # never sees two copies of this mod.
+        legacy_settings = game / mod_identity.LEGACY_SETTINGS
+        if args.preserve_settings and legacy_settings.is_file() and not (game / mod_identity.SETTINGS).is_file():
+            put(mod_identity.SETTINGS, legacy_settings.read_bytes())
+            print('Carried your settings and body calibration over from d2r_vr.ini to d2r_pcvr.ini.')
+        for rel in mod_identity.LEGACY_FILES:
+            remove(rel)
+        print('Removed the old D2R PCVR plugin files (d2rl-vrcam.dll, d2r_vr.ini); '
+              'D2R PCVR is now d2rl-pcvr.dll with d2r_pcvr.ini. They are kept in the backup.')
     for rel, content in payload.items():
         put(rel, content)
     cfg = configparser.ConfigParser(interpolation=None, strict=False, allow_no_value=True)
     # The introductory comment also mentions [camera]. Splitting that comment
     # produced a malformed first camera section which Win32 profile reads used
     # instead of the real one, silently restoring the large default near plane.
-    lines = (ROOT / 'd2r_vr.ini').read_text(encoding='utf-8').splitlines()
+    lines = (ROOT / 'd2r_pcvr.ini').read_text(encoding='utf-8').splitlines()
     start = next(i for i, line in enumerate(lines) if line.strip() == '[camera]')
     cfg.read_string('\n'.join(lines[start:]))
     changes = {
@@ -335,7 +374,7 @@ def main():
         if not args.preserve_settings or not (game / rel).is_file():
             put(rel, content)
 
-    put_config(Path('d2rloader/plugins/d2r_vr.ini'), out.getvalue().encode())
+    put_config(mod_identity.SETTINGS, out.getvalue().encode())
     put_config(Path('ReShade.ini'), b'[GENERAL]\nEffectSearchPaths=.\\reshade-shaders\\Shaders\nTextureSearchPaths=.\\reshade-shaders\\Textures\nPresetPath=.\\D2R_Frame_ReShade.ini\n[INPUT]\nKeyOverlay=36,0,0,0\n')
     put_config(Path('D2R_Frame_ReShade.ini'), b'Techniques=D2R_DepthFog@D2R_DepthFog.fx\n')
     put(Path('reshade-shaders/Shaders/D2R_DepthFog.fx'), (ROOT / 'reshade/D2R_DepthFog.fx').read_bytes())

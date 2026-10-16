@@ -1,8 +1,24 @@
 # Native Windows setup EXE
 
 `D2R_PCVR_Setup.iss` builds the graphical installer for the native OpenXR mod.
-The older `D2R_VR_Setup.iss` and `build_installer.ps1` belong to the original
-upstream implementation and are not used by this build.
+(The upstream D2R VR installer scripts, `D2R_VR_Setup.iss` and
+`build_installer.ps1`, carried D2R VR's own AppId and are no longer kept here.)
+
+D2R PCVR installs `d2rloader\plugins\d2rl-pcvr.dll` with `d2r_pcvr.ini`.
+Releases up to 0.3.16 used D2R VR's names, `d2rl-vrcam.dll` and `d2r_vr.ini`;
+D2R VR still uses them. Setup decides whose those files are from this mod's
+own install record and snapshots plus the plugin's content, never from the
+name (`steamvr/mod_identity.py`):
+
+- An earlier D2R PCVR: Update / repair copies `d2r_vr.ini` (settings and body
+  calibration) to `d2r_pcvr.ini`, then removes the old plugin and ini. Both are
+  journaled in the new snapshot, so a failed setup or `install.py --restore`
+  puts them back, and removal still restores the pre-mod state.
+- D2R VR (or a `d2rl-vrcam.dll` no D2R PCVR record lists): setup says another
+  mod is installed and stops before changing anything; D2RLoader would load
+  both VR plugins. Its files are never changed, moved or deleted, and removal
+  of D2R PCVR leaves them in place. The plugin itself also stays off while a
+  `d2rl-vrcam.dll` sits beside it.
 
 The wizard and portable CMD setup share `steamvr/setup_windows.py` for the
 installation and Steam configuration. `steamvr/setup_native.py` adds unattended

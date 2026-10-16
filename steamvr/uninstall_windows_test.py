@@ -10,6 +10,7 @@ import unittest
 from unittest.mock import patch
 
 import install
+import mod_identity
 import steam_config as steam
 import setup_windows as setup
 import uninstall_windows as uninstall
@@ -99,6 +100,52 @@ class UninstallTests(unittest.TestCase):
             self.snapshot(root / 'backups/20260201', root / 'other game', [str(uninstall.PLUGIN)], {}, saves, True)
             fresh = self.snapshot(root / 'backups/20260301', game, [str(uninstall.PLUGIN)], {}, saves, True)
             self.assertEqual([p for p, _ in uninstall.snapshots(game, {}, [old.parent])], [fresh])
+
+    def test_removal_leaves_d2r_vr_files_installed_after_this_mod(self):
+        # D2R PCVR 0.3.15 (old names) was installed first; D2R VR was installed over it later.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            game, saves = root / 'game', root / 'saves'
+            legacy_plugin, legacy_ini = str(mod_identity.LEGACY_PLUGIN), str(mod_identity.LEGACY_SETTINGS)
+            first = self.snapshot(root / 'backups/20261001', game,
+                                  [legacy_plugin, legacy_ini, 'ReShade.ini', str(install.RECORD)],
+                                  {'ReShade.ini': b'original'}, saves, True)
+            record = {'game': str(game), 'snapshots': [str(first)]}
+            install.write_record(game, record)
+            plugin = self.write(game / legacy_plugin, b'MZ D2R VR BodyWalk Game Link')
+            ini = self.write(game / legacy_ini, b'[mode]\nplatform=1\n')
+            self.write(game / 'ReShade.ini', b'current')
+            plan = uninstall.restore_plan(game, uninstall.snapshots(game, record, []))
+            self.assertNotIn(plugin, plan)
+            self.assertNotIn(ini, plan)
+            self.assertEqual(plan[game / 'ReShade.ini'], b'original')
+            uninstall.apply_updates(plan, root / 'removal', lambda: None)
+            self.assertEqual(plugin.read_bytes(), b'MZ D2R VR BodyWalk Game Link')
+            self.assertEqual(ini.read_bytes(), b'[mode]\nplatform=1\n')
+            self.assertFalse((game / install.RECORD).exists())
+            # Without D2R VR there, the old names are this mod's leftovers and go.
+            plugin.write_bytes(b'MZ old D2R PCVR ' + 'd2r_vr_icons'.encode('utf-16-le'))
+            plan = uninstall.restore_plan(game, [(first, json.loads((first / 'manifest.json').read_text()))])
+            self.assertIsNone(plan[plugin])
+            self.assertIsNone(plan[ini])
+
+    def test_chain_across_the_rename_keeps_the_first_install_as_original(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            game, saves = root / 'game', root / 'saves'
+            legacy_plugin, legacy_ini = str(mod_identity.LEGACY_PLUGIN), str(mod_identity.LEGACY_SETTINGS)
+            first = self.snapshot(root / 'backups/20261001', game, [legacy_plugin, legacy_ini], {}, saves, True)
+            # The update that renamed: new files written, old ones journaled and removed.
+            second = self.snapshot(root / 'backups/20261015', game,
+                                   [str(mod_identity.SETTINGS), legacy_plugin, legacy_ini, str(uninstall.PLUGIN)],
+                                   {legacy_plugin: b'old plugin', legacy_ini: b'calibration'}, saves)
+            record = {'game': str(game), 'snapshots': [str(first), str(second)]}
+            self.assertEqual([path for path, _ in uninstall.snapshots(game, record, [])], [first, second])
+            # Rolling back only the update returns the old release's files.
+            plan = uninstall.restore_plan(game, [(second, json.loads((second / 'manifest.json').read_text()))])
+            self.assertEqual(plan[game / legacy_plugin], b'old plugin')
+            self.assertEqual(plan[game / legacy_ini], b'calibration')
+            self.assertIsNone(plan[game / uninstall.PLUGIN])
 
     def test_restore_rejects_original_game_paths_traversal_and_directory_targets(self):
         with tempfile.TemporaryDirectory() as tmp:

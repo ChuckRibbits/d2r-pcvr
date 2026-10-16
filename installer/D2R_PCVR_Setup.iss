@@ -36,6 +36,13 @@ CloseApplications=no
 RestartApplications=no
 UninstallDisplayName=D2R PCVR (Windows VR mod)
 UninstallDisplayIcon={app}\.runtime\python\python.exe
+; The setup program's own file properties: D2R PCVR, not D2R VR.
+VersionInfoVersion={#ModVersion}
+VersionInfoProductName=D2R PCVR
+VersionInfoProductVersion={#ModVersion}
+VersionInfoCompany=D2R PCVR contributors
+VersionInfoDescription=D2R PCVR setup (a VR mod for Diablo II: Resurrected; based on D2R VR by BodyWalkVR, MIT)
+VersionInfoCopyright=MIT licence. D2R PCVR contributors; D2R VR (c) 2026 BodyWalkVR
 
 [Files]
 Source: "{#PayloadDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
@@ -226,6 +233,11 @@ begin
             ((PageID = BackupPage.ID) and (GetIniInt('detected', 'backup_required', 0, 0, 1, ProbeFile) = 0));
 end;
 
+function InstalledHere: Boolean;
+begin
+  Result := GetIniString('detected', 'installed_mod', '', ProbeFile) = 'd2r-pcvr';
+end;
+
 function NextButtonClick(CurPageID: Integer): Boolean;
 var
   Edition, Key: String;
@@ -253,12 +265,17 @@ begin
         Result := False;
       end;
       if RuntimePage.Values[0] = '' then RuntimePage.Values[0] := GetIniString('detected', 'steamvr', '', ProbeFile);
-      if FileExists(PathsPage.Values[1] + '\d2rloader\plugins\d2rl-vrcam.dll') then ModePage.SelectedValueIndex := 0
+      // Another VR mod (D2R VR) in this game folder: its files stay as they are and setup does not go on.
+      if Result and (GetIniString('detected', 'other_mod', '', ProbeFile) <> '') then begin
+        MsgBox(GetIniString('detected', 'other_mod', '', ProbeFile), mbError, MB_OK);
+        Result := False;
+      end;
+      // D2R PCVR already here (d2rl-pcvr.dll, or d2rl-vrcam.dll of a release up to 0.3.16): offer Update / repair.
+      if InstalledHere then ModePage.SelectedValueIndex := 0
       else ModePage.SelectedValueIndex := 1;
     end;
   end;
-  if (CurPageID = ModePage.ID) and (ModePage.SelectedValueIndex = 1) and
-      FileExists(PathsPage.Values[1] + '\d2rloader\plugins\d2rl-vrcam.dll') then
+  if (CurPageID = ModePage.ID) and (ModePage.SelectedValueIndex = 1) and InstalledHere then
     Result := MsgBox('Full install resets body calibration and applies recommended video settings. Continue?', mbConfirmation, MB_YESNO or MB_DEFBUTTON2) = IDYES;
   if CurPageID = BackupPage.ID then begin
     if not DirExists(BackupPage.Values[0]) then begin
