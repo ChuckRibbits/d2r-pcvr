@@ -53,7 +53,7 @@ int main(){
         for(int i=0;i<framevr::haptics::CategoryCount;++i)Check(levels.category[i]==i*10,"each saved category maps to its runtime channel");}
     Check(s.values[MeleeHitSpeed]==12,"melee defaults to twelve m/s");
     {Model melee;melee.Open(s);melee.Click({Kind::Tab,int(Page::Combat)});
-        const auto hit=At(Page::Combat,Increase(0));
+        const auto hit=At(Page::Combat,Increase(1));
         Check(hit.index==MeleeHitSpeed&&hit.kind==Kind::Change,"combat speed control hit target");
         melee.Click(hit);Check(melee.Get()[MeleeHitSpeed]==12.25f,"melee speed quarter step");
         const auto request=melee.Click({Kind::Apply});
@@ -62,6 +62,13 @@ int main(){
         s.values[MeleeHitSpeed]=6;melee.Open(s);melee.Click(hit);
         Check(melee.Get()[MeleeHitSpeed]==6.25f,"plus button goes beyond old cap");
         s.values[MeleeHitSpeed]=12;
+    }
+    {Model rules;rules.Open(s);rules.Click({Kind::Tab,int(Page::Combat)});
+        Check(s.values[MeleeRules]==0&&RowKey(Page::Combat,0)==MeleeRules,"melee rules default to Unleashed, first on the Combat page");
+        rules.Click(At(Page::Combat,ValueBox(0)));
+        Check(rules.Get()[MeleeRules]==1,"clicking the value switches to Classic");
+        const auto request=rules.Click({Kind::Apply});
+        Check(request.changed==(ChangeMask{1}<<MeleeRules),"melee rules save only their own setting");
     }
     Check(s.values[MenuDistance]==1&&s.values[TooltipTiming]==0,"comfortable Medium distance and Instant hover defaults");
     for(auto key:{MenuDistance,TooltipTiming}) {

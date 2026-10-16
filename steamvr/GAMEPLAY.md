@@ -713,22 +713,41 @@ and parries remain future work.
 Only a confirmed physical contact overrides legacy melee grid reach. Native
 line-of-sight, hostile relationship, creature life state, damage, elemental
 resistances/immunities, criticals, leech, procs, durability, death and XP still run.
-The existing `contact_hits=1` policy removes local-player random accuracy/block/
-dodge misses. Contact haptics acknowledge native accepted hit flags, including
-hits whose damage an immunity may prevent.
+**Melee rules** (VR Settings > Combat, `[gameplay] melee_rules`, applied live,
+mid-game) choose between two modes for physical swings and trigger/button melee:
 
-**Attack speed** (`[gameplay] attack_speed=1`, the default) restores the basic
-attack's native pace without its animation. A landed hit starts the character's
-normal-attack cycle; contacts before it ends are refused, and a stroke strikes
-only one creature. The cycle uses D2's own formula (`attack_speed.h`): class and
+- **Unleashed** (`0`, the default): every weapon contact strikes each
+  creature once per stroke. No to-hit, block or dodge roll and no attack-speed
+  gate (the `contact_hits` policy).
+- **Classic** (`1`): native attack rating, monster defense, block and the
+  level penalty decide each attack, and attack speed paces them (below). A rolled
+  miss uses up the attack, as a missed swing animation would.
+
+Missile hit checks (arrows, missile spells) keep `contact_hits` in both modes.
+In Classic, button melee keeps native monster block only where the game checks
+block inside its hit check; `native block/dodge in melee` in `Frame combat:`
+confirms it. Every weapon contact with a hostile creature taps the controller once
+per stroke and creature, whether the attack then lands, misses its roll or is
+refused by attack speed; damage, not the tap, reports the outcome.
+
+**Attack speed** (Classic melee rules) restores the basic
+attack's native pace without its animation. A resolved attack, hit or rolled
+miss, starts the character's normal-attack cycle; contacts before it ends are
+refused, and a stroke attacks only one creature. The cycle uses D2's own formula (`attack_speed.h`): class and
 weapon class (Weapons.txt `wclass`) set the animation length, item IAS reduces
 it with the usual diminishing returns, and the weapon's speed modifier (WSM)
 lengthens or shortens it, so IAS breakpoints apply to swinging as they would to
 clicking. Whiffs, refused contacts and native rejections never start the cycle.
+`missed` in `Frame melee:` counts attacks whose to-hit roll failed.
+Trigger/button melee shares the cycle: each of its native melee hit checks
+starts it (`button_cycles`), so alternating trigger attacks with swings is no
+faster than swinging. A trigger attack started right after a swing is still
+paced only by its own native animation. This needs the combat hooks, which
+`contact_hits=1` (the default) installs.
 Skill speed (Fanaticism, Frenzy, Burst of Speed, werewolf), slows and dual-wield
 attack sequences are not read yet. An unknown class or weapon class (including
 classes outside the original seven) leaves the cycle unknown, which does not
-gate hits. `attack_speed=0` restores unlimited free-swing contacts. The log
+gate hits. Unleashed restores unlimited free-swing contacts. The log
 reports the cycle inputs (`Frame melee attack speed:`) and refused contacts
 (`too_soon`, `extra_targets` in `Frame melee:`). `[debug] melee_trace=1` adds one
 `Frame melee trace:` line per native attack and per refused stroke, with the
