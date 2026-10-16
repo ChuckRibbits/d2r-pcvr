@@ -823,7 +823,9 @@ reacquiring tracking while still squeezing does not grab the stock. Waiting for
 a usable attachment keeps the support hand free instead of selecting the older
 always-two-handed pose. Native controller placement accepts wide idle/swap hand
 poses, so switching from a shield set does not require firing first to initialize
-the crossbow. This swap/release fix still needs owner headset verification.
+the crossbow. The owner verified the swap/release fix in a headset on 2026-10-15
+and approved merging it. The headset/runtime and individual regression scenarios
+were not specified in that confirmation.
 
 Collision is approximate: creature capsules use native footprint/artwork height,
 and the floor is the launch floor. Walls extend vertically; arrows cannot fly
