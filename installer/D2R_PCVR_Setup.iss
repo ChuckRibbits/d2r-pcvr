@@ -270,7 +270,7 @@ begin
         MsgBox(GetIniString('detected', 'other_mod', '', ProbeFile), mbError, MB_OK);
         Result := False;
       end;
-      // D2R PCVR already here (d2rl-pcvr.dll, or d2rl-vrcam.dll of a release up to 0.3.15): offer Update / repair.
+      // D2R PCVR already here (d2rl-pcvr.dll, or d2rl-vrcam.dll of a release up to 0.3.16): offer Update / repair.
       if InstalledHere then ModePage.SelectedValueIndex := 0
       else ModePage.SelectedValueIndex := 1;
     end;

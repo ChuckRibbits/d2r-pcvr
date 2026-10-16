@@ -5,7 +5,7 @@
 `build_installer.ps1`, carried D2R VR's own AppId and are no longer kept here.)
 
 D2R PCVR installs `d2rloader\plugins\d2rl-pcvr.dll` with `d2r_pcvr.ini`.
-Releases up to 0.3.15 used D2R VR's names, `d2rl-vrcam.dll` and `d2r_vr.ini`;
+Releases up to 0.3.16 used D2R VR's names, `d2rl-vrcam.dll` and `d2r_vr.ini`;
 D2R VR still uses them. Setup decides whose those files are from this mod's
 own install record and snapshots plus the plugin's content, never from the
 name (`steamvr/mod_identity.py`):
