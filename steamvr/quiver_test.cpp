@@ -1,5 +1,7 @@
 #include "bow_flight.h"
 #include "gameplay.h"
+#include "hand_controls.h"
+#include <array>
 #include <cstdio>
 #include <cstdlib>
 using namespace framevr;
@@ -90,6 +92,24 @@ int main() {
         for(int i=0;i<16;++i)Check(Near(quiver[i],held[i]),"nocked Fire Arrow uses the root placement");
         PreviewMatrix(pose,false,hidden,12);
         Check(std::fabs(hidden[0])<std::fabs(quiver[0])*.01f+1e-6f&&Near(hidden[12],quiver[12]),"hidden quiver preview collapses in place");
+    }
+    {
+        // Headset regression 2: Fire Arrow on left X (slot 5) never loaded.
+        // Presses come from the raw buttons, so a trigger held on the string
+        // does not block them, and a gripped bow hand falls back from an
+        // empty grip layer to the plain button.
+        std::array<int,skills::Count> ids{};ids.fill(-1);ids[0]=0;ids[5]=7;ids[8]=357;
+        auto assigned=[&](int slot){return ids[slot];};
+        skills::HandInput in;
+        Check(skills::QuiverFace(in,assigned).slot<0,"no press, no slot");
+        in.face[1][0]=true;
+        auto p=skills::QuiverFace(in,assigned);Check(p.slot==5&&p.hand==1,"left X names slot 5");
+        in.trigger[0]=1;p=skills::QuiverFace(in,assigned);Check(p.slot==5,"right trigger drawing the string does not block it");
+        in.grip[1]=1;p=skills::QuiverFace(in,assigned);Check(p.slot==5,"gripped bow hand with an empty grip layer keeps left X");
+        ids[7]=36;p=skills::QuiverFace(in,assigned);Check(p.slot==7,"an assigned grip layer still wins");
+        in={};in.face[0][1]=true;p=skills::QuiverFace(in,assigned);Check(p.slot==1&&p.hand==0,"right B names slot 1");
+        in={};in.face[0][0]=true;p=skills::QuiverFace(in,assigned);Check(p.slot==8,"right A stays Interact's slot");
+        Quiver q;Check(!q.Step(1,8,357,-1,-1,true).consumed,"Interact is never loaded");
     }
     {
         // Headset regression: a nocked Magic Arrow (27) was checked against

@@ -13,6 +13,18 @@ struct HandInput {
     double time=0;
 };
 struct HandOutput {int wheel=-1,slot=-1,hand=0;bool interact=false;int spells[2]{-1,-1};uint64_t activation[2]{};};
+// The face slot a bow quiver press names, read from the raw buttons: a press
+// while the trigger holds the string still counts, unlike a native cast which
+// needs the single action owner. A gripped bow hand selects its grip layer
+// only when that layer has an assignment. assigned(slot) returns a skill id.
+struct FacePress {int slot=-1,hand=0;};
+template<class Assigned> FacePress QuiverFace(const HandInput& in,Assigned assigned) {
+    for(int h=0;h<2;++h)for(int b=0;b<2;++b)if(in.face[h][b]) {
+        const int plain=HandSlot(h,b+1),gripped=HandSlot(h,b+3);
+        return {in.grip[h]>.6f&&assigned(gripped)>=0?gripped:plain,h};
+    }
+    return {};
+}
 class HandControls {
     bool clickWas[2]{},held[2][3]{},blocked[2][3]{{true,true,true},{true,true,true}};
     bool primed=false;
