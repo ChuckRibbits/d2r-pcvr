@@ -422,7 +422,9 @@ void __cdecl Apply(const D2RL::PluginContext*,void* token) noexcept {
         launch=saved;
     }
 }
-void VisualParams(const Shot& shot,float distance,uintptr_t hero,std::array<uint8_t,0x98>& params) {
+// skill: a fired spell or quiver arrow names its skill and level. The nocked
+// preview is purely visual and is requested like a basic arrow of that missile.
+void VisualParams(const Shot& shot,float distance,uintptr_t hero,std::array<uint8_t,0x98>& params,bool withSkill=true) {
     const auto tip=GridPoint(shot,Tip(shot,distance))*shot.unitsPerMetre;
     const int x=int(tip.x*.5f),y=int(tip.z*.5f);
     const auto d=framevr::math::Normalized(Vec{shot.direction.x,0,shot.direction.z});
@@ -430,7 +432,7 @@ void VisualParams(const Shot& shot,float distance,uintptr_t hero,std::array<uint
     Param(params,0,uint32_t(0x21));Param(params,8,hero);Param(params,0x10,hero);
     Param(params,0x20,MissileId(shot));
     Param(params,0x24,x);Param(params,0x28,y);Param(params,0x2c,tx);Param(params,0x30,ty);
-    const bool skill=shot.kind==Kind::Spell||SkillArrow(shot);
+    const bool skill=withSkill&&(shot.kind==Kind::Spell||SkillArrow(shot));
     Param(params,0x3c,skill?shot.skill:0);
     Param(params,0x40,skill?std::max(shot.level,1):1);
 }
@@ -477,22 +479,24 @@ void PresentPreview(uintptr_t hero,uint64_t session) {
         return;
     }
     // Client visual only: no server missile, attack, ammo or damage request.
-    std::array<uint8_t,0x98> params{};VisualParams(snapshot.pose,0,hero,params);
+    std::array<uint8_t,0x98> params{};VisualParams(snapshot.pose,0,hero,params,false);
     const uint32_t missile=SkillArrow(snapshot.pose)?MissileId(snapshot.pose):0;
     const auto saved=previewCreatingSession;const auto savedMissile=previewCreatingMissile;
     previewCreatingSession=session;previewCreatingMissile=missile;
     const auto client=projectiles::CreateVisual(reinterpret_cast<uintptr_t>(params.data()));
     previewCreatingSession=saved;previewCreatingMissile=savedMissile;
     uint32_t header[3]{};
-    const bool valid=client&&Read(client,header)&&header[0]==3&&header[1]==0;
+    const bool readable=client&&Read(client,header);
     bool orphan=false;
     {
         std::lock_guard lock(mutex);
-        if(valid&&current.session==session&&preview.active&&(!preview.client||preview.client==client)) {
+        const bool wanted=current.session==session&&preview.active&&(!preview.client||preview.client==client);
+        const auto use=CreatedClient(readable,header,missile,wanted);
+        if(use==ClientUse::Keep) {
             preview.client=client;preview.clientId=header[2];preview.missile=missile;preview.recreate=false;++previewCreated;
         } else {
-            orphan=valid;++previewRefused;
-            if(preview.client==client)ClearPreviewClient();
+            orphan=use==ClientUse::Destroy;++previewRefused;
+            if(client&&preview.client==client)ClearPreviewClient();
         }
         Recount();
     }
@@ -527,15 +531,16 @@ void __cdecl Present(const D2RL::PluginContext*,void* token) noexcept {
         const auto client=projectiles::CreateVisual(reinterpret_cast<uintptr_t>(params.data()));
         creatingVisual=saved;visualSession=savedSession;visualSequence=savedSequence;
         uint32_t header[3]{};
-        const bool validClient=client&&Read(client,header)&&header[0]==3&&header[1]==MissileId(a.flight.shot);
+        const bool readable=client&&Read(client,header);
+        const bool validClient=CreatedClient(readable,header,MissileId(a.flight.shot),true)==ClientUse::Keep;
         bool orphan=false;
         {
             std::lock_guard lock(mutex);
             if(Same(arrows[i],a)) {
                 arrows[i].creating=false;
                 if(validClient){arrows[i].client=client;arrows[i].clientId=header[2];++visuals;Recount();}
-                else ++refused;
-            } else orphan=validClient;
+                else {++refused;orphan=CreatedClient(readable,header,0,false)==ClientUse::Destroy;}
+            } else orphan=CreatedClient(readable,header,0,false)==ClientUse::Destroy;
         }
         if(orphan)originalClientKill(client);
         else if(validClient&&a.flight.shot.kind==Kind::Spell&&a.flight.shot.castSound>0&&

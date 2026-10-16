@@ -92,6 +92,19 @@ int main() {
         Check(std::fabs(hidden[0])<std::fabs(quiver[0])*.01f+1e-6f&&Near(hidden[12],quiver[12]),"hidden quiver preview collapses in place");
     }
     {
+        // Headset regression: a nocked Magic Arrow (27) was checked against
+        // the basic id 0, refused and dropped alive, so each retry flew off
+        // the bow as a native missile. Every unkept live client is destroyed.
+        const uint32_t magic[3]{3,27,900},basic[3]{3,0,901},monster[3]{1,27,902};
+        Check(CreatedClient(true,magic,27,true)==ClientUse::Keep,"requested quiver preview kept");
+        Check(CreatedClient(true,magic,0,true)==ClientUse::Destroy,"unexpected missile destroyed, not leaked");
+        Check(CreatedClient(true,basic,27,true)==ClientUse::Destroy,"basic client for a quiver request destroyed");
+        Check(CreatedClient(true,magic,27,false)==ClientUse::Destroy,"stale/unwanted preview destroyed");
+        Check(CreatedClient(true,basic,0,true)==ClientUse::Keep,"basic nocked arrow unchanged");
+        Check(CreatedClient(false,magic,27,true)==ClientUse::Unreadable,"unreadable result is never killed");
+        Check(CreatedClient(true,monster,27,true)==ClientUse::Unreadable,"non-missile unit is never killed");
+    }
+    {
         // With a quiver arrow the engine's bow slot is cleared: a full draw
         // is a physical release, never the native skill button pulse.
         gameplay::Engine engine;gameplay::Input in;gameplay::Output out;

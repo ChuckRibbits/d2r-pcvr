@@ -189,7 +189,7 @@ struct ShieldCast {
 ShieldCast shieldCast;
 weaponskills::Pulse shieldPulse;
 // [bow] quiver: face-button arrow skills load the following physical arrows.
-std::atomic<bool> quiverEnabled{true},quiverPreview{true};
+std::atomic<bool> quiverEnabled{true},quiverPreview{false};
 weaponskills::Quiver quiver;
 weaponskills::Loaded quiverArrow{}; // the skill the next release carries, if any
 uint64_t shieldFeedbackAt=0,cueChangedAt=0,volleyRequestedAt=0;

@@ -36,6 +36,14 @@ inline float ProjectileLength(const Shot& s) {return s.kind==Kind::Spell?0:s.kin
 inline bool SkillArrow(const Shot& s){return s.kind==Kind::Arrow&&s.skill>=0;}
 inline uint32_t MissileId(const Shot& s){return s.kind==Kind::Spell||SkillArrow(s)?uint32_t(s.missile):uint32_t(s.kind);}
 inline bool BasicMissile(uint32_t id){return id<=1||id==31;}
+// What the client allocator returned for one of our visual requests. Only the
+// requested missile is kept; any other live missile unit we created is still a
+// native unit that would fly and must be destroyed, never dropped.
+enum class ClientUse {Unreadable,Keep,Destroy};
+inline ClientUse CreatedClient(bool readable,const uint32_t header[3],uint32_t missile,bool wanted) {
+    if(!readable||header[0]!=3)return ClientUse::Unreadable;
+    return wanted&&header[1]==missile?ClientUse::Keep:ClientUse::Destroy;
+}
 // Flight stays in rendered metres. Native paths/rooms use the unsheared grid.
 // Remove only the launch FLOOR's shear, never the arrow's airborne height or
 // the current player's floor after an area transition.
