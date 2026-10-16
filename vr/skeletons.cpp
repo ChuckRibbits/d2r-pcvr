@@ -862,14 +862,50 @@ Mat TurnAbout(V3 k, float deg) {
 
 // One arm's two-bone IK, the wrist to T: elbow down, a little out to its own
 // side and back - of the body as turned.
-void Reach(const Hero& h, int side, V3 T, bool turn, float c, float s, const std::vector<Mat>& baseW, std::vector<Mat>& newW) {
+void Reach(const Hero& h, int side, V3 T, bool turn, float c, float s, const std::vector<Mat>& baseW, std::vector<Mat>& newW, bool trackedShield=false) {
     const int u = h.upr[side], l = h.lwr[side], k = h.hand[side];
     const V3 S = Pos(newW[u]);
-    const float L1 = Len(Sub(Pos(newW[l]), S)), L2 = Len(Sub(Pos(newW[k]), Pos(newW[l])));
+    float L1 = Len(Sub(Pos(newW[l]), S)), L2 = Len(Sub(Pos(newW[k]), Pos(newW[l])));
+    const std::vector<Mat>* offsets=&baseW;
+    std::vector<Mat> extended;
+#ifdef D2RVR_NATIVE_OPENXR
+    const V3 requested=T;
+    float reachScale=1;
+    if(trackedShield) {
+        const float scale=shield::ReachScale({S.x,S.y,S.z},{T.x,T.y,T.z},L1,L2);
+        reachScale=scale;
+        if(scale>1.f) {
+            extended=newW;
+            std::vector<char> subtree(h.count,0);subtree[u]=1;
+            for(int i=u;i<h.count;++i) {
+                if(i!=u&&h.parent[i]>=0)subtree[i]=subtree[h.parent[i]];
+                if(subtree[i])framevr::body::ScaleArmBone(newW[i].m,{S.x,S.y,S.z},scale);
+            }
+            // Fit the arm skin, preserving the palm, fingers and equipment.
+            for(int row=0;row<3;++row)for(int col=0;col<3;++col)newW[k].m[row*4+col]=extended[k].m[row*4+col];
+            std::vector<char> fromHand(h.count,0);fromHand[k]=1;
+            Propagate(h,extended,newW,fromHand,k);
+            // IK must propagate the extended offsets, otherwise its two
+            // rotations would silently restore the original short forearm.
+            extended=newW;offsets=&extended;
+            L1=Len(Sub(Pos(newW[l]),S));L2=Len(Sub(Pos(newW[k]),Pos(newW[l])));
+        }
+    }
+#endif
     V3 pole = {side == 0 ? -0.5f : 0.5f, -1.0f, -0.3f};
     if (turn) pole = {pole.x * c + pole.z * s, pole.y, -pole.x * s + pole.z * c};
     const V3 E = Elbow(S, L1, L2, T, pole);
-    AimChain(h, u, l, k, E, T, baseW, newW);
+    AimChain(h, u, l, k, E, T, *offsets, newW);
+#ifdef D2RVR_NATIVE_OPENXR
+    if(trackedShield) {
+        static ULONGLONG reportAt=0;const auto now=GetTickCount64();
+        if(now>=reportAt) {
+            char line[180];snprintf(line,sizeof line,"Frame shield reach: extension=%.3f requested=%.3f wrist-error=%.4f model units",
+                reachScale,Len(Sub(requested,S)),Len(Sub(Pos(newW[k]),requested)));
+            framevr::logging::Write(line);reportAt=now+5000;
+        }
+    }
+#endif
 }
 
 // a's rotation part turned toward b's by t (rows blended, made square again,
@@ -1144,7 +1180,7 @@ void PoseBody(uintptr_t self, const Hero& h, const Input& in) {
             const Wrist wr = PlanWrist(h, side, baseW, in, c, s);
             // The grip point is the middle of the palm; the wrist bone is half a hand behind it.
             if (wr.ok) T = Sub(T, Scale(wr.point, 0.5f * wr.reach));
-            Reach(h, side, T, turn, c, s, baseW, newW);
+            Reach(h, side, T, turn, c, s, baseW, newW, side==1&&in.leftShield);
             if (wr.ok) {
                 ApplyWrist(newW[k], wr);
                 std::vector<char> fromK(n, 0); fromK[k] = 1;

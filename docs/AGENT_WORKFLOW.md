@@ -264,6 +264,13 @@ Known diagnostic lessons:
   modifiers remain unmodeled); unknown or stale data falls back to one second.
 - Melee settings are motion speed in m/s, not acceleration. Classic/Unleashed
   are game-rule choices; they do not remove the physical motion threshold.
+- The shield follows the final posed left wrist. Arm IK used to clamp that
+  wrist to the character's arm length, even with valid controller tracking.
+  Native shield reach now extends only that arm when needed (bounded to 2x),
+  preserving hand/equipment size and using the same shield pose for contact.
+  `Frame shield reach` logs extension and wrist error in model units. The
+  geometry fixtures do not replace headset checks of reach, arm skin, wrist
+  rotation and Smite. Leave stored body calibration intact during installation.
 
 ## End-of-session record
 
