@@ -790,8 +790,21 @@ This first physical path supports **ordinary basic arrows**, not elemental,
 explosive, magic or guided missile variants. A bow that converts its basic attack
 to a special missile is currently refused before ammo is spent; use its assigned
 native skill through the palette instead. Selected arrow skills gain the candidate
-draw/release adapter above; their flight remains native. Crossbows and other
-skills/spells keep native controls, costs, timings and ground-based collision.
+draw/release adapter above; their flight remains native. Other skills/spells
+retain their existing controls, costs, timings and collision behavior.
+
+For ordinary **basic crossbow bolts**, the held model's `bolt_helper` supplies
+the barrel line and muzzle. The supporting palm sits below that line, including
+the item's attachment transform and weapon adjustments. Native server/client
+creation uses the same frozen muzzle and full barrel direction. Basic bolts
+use the bow's straight 3D flight, swept creature collision and wall checks,
+including upward/downward aim. Their native missile still supplies damage,
+ammunition, lifetime and trigger attack cadence; no second attack or client
+projectile is created. Both eyes share the corrected current/previous mesh
+transforms. The support palm keeps the controller's wrist angle when gripping
+from underneath or above. Special missile skills and unrecognized/stale rigs
+retain their native release behavior. The physical collision limitations below
+also apply to basic crossbow bolts.
 
 Collision is approximate: creature capsules use native footprint/artwork height,
 and the floor is the launch floor. Walls extend vertically; arrows cannot fly

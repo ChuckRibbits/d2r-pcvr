@@ -232,6 +232,30 @@ Known diagnostic lessons:
   Do not claim the fog change has proven that separate issue fixed.
 - Pose timestamps matter: nocked arrows and melee blade geometry must use the
   input that produced the rendered pose, not the newest controller sample.
+- Crossbow basic attacks create native missile 31, not arrow 0. The held item's
+  `bolt_helper`, item-local transform and hero weapon attachment define its
+  barrel; a manually rotated controller ray can disagree with the actual mesh.
+  Check both server/client launch coordinates and the release mesh's current/
+  previous transforms when diagnosing an offset or ghost trail. Basic bolts
+  use the shared physical-arrow flight path. Learn item rigs independently of
+  hero pose availability and refresh them from the completed hero pose; static
+  item skeletons may not receive another animation callback. Recognize helper
+  bones plus exact owner entity, not an assumed full archive-path model name.
+  Check `Frame crossbow` capture/adoption diagnostics before assuming the new
+  path ran. The first #106 candidate passed fixtures but never captured a held
+  pose in the owner's session; its headset test failed.
+  The next candidate captured/adopted shots but still failed placement testing.
+  Item-local times wrist is an approximation: the native transform evaluator
+  also applies attachment overrides. Capture the rendered item transform after
+  evaluation, then retain its relationship to the matching posed wrist for the
+  next support-hand pose. The bolt helper's bind origin is an unloaded tail;
+  the stock front is located using the limb roots projected onto the bolt axis.
+  The owner verified the rendered-muzzle correction. Native trigger attacks
+  still lock walking during the attack animation; physical basic crossbow fire
+  uses the bow's direct game-thread attack path and consumes the pad attack.
+  Check `Frame crossbow free fire` for successful direct shots/cadence. The
+  existing class/weapon/IAS cadence table supplies the cycle (skill speed/slow
+  modifiers remain unmodeled); unknown or stale data falls back to one second.
 - Melee settings are motion speed in m/s, not acceleration. Classic/Unleashed
   are game-rule choices; they do not remove the physical motion threshold.
 
