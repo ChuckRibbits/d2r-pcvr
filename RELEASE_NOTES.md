@@ -1,13 +1,13 @@
-# D2R PCVR v0.3.15 - Windows preview
+# D2R PCVR v0.3.16 - Windows preview
 
-This update adds controller vibration controls, clearer loot labels, area and
-act information on the hand compass, and fixes for NPC conversations. It
-includes the combined changes in [#83](https://github.com/bearstonem/d2r-pcvr/pull/83).
+This update focuses on physical combat, bows and crossbows, shield movement,
+and clearer visuals. Choose between Unleashed and Classic melee rules, stab
+with your weapon, and wipe blood from your visor.
 
-Download **D2R-PCVR-Setup-0.3.15.exe** for graphical installation, or
+Download **D2R-PCVR-Setup-0.3.16.exe** for graphical installation, or
 **d2r-pcvr-windows.zip** for portable setup. Existing users should choose
 **Update / repair and keep calibration and video settings**, keeping their
-existing helper folders and setup backups. Existing saved settings are preserved.
+existing helper folders and setup backups.
 
 You need your own purchased Diablo II: Resurrected: Steam 3.3.93787 or
 Battle.net 3.3.93847 (experimental). Use local offline characters only.
@@ -15,70 +15,98 @@ No Blizzard game assets are included; icons and potion models are read locally
 from your installed game. SteamVR and Virtual Desktop/VDXR remain supported.
 The installer is unsigned; SHA-256 checksums accompany both downloads.
 
-## Controller vibration
+## Melee and shields
 
-- **Tune feedback for your controllers:** the new **VR Settings > Haptics** tab
-  offers overall strength plus separate controls for melee impacts, bow draw,
-  bow/throw release, spell casts, interactions and resource alerts. Each ranges
-  from Off to 200% in 10% steps. Apply saves; Close discards unsaved edits.
-- **Tests follow the action:** Weapon tests the right hand and Shield the left.
-  Bow draw and Bow release test both hands; Throw tests the right. Spells and
-  interactions have left/right tests, and alerts test the left hand. Tests use
-  the displayed settings, including edits you have not saved yet.
-- **More noticeable melee feedback:** weapon impacts use a 90 ms tap and shield
-  impacts a 45 ms tap. **Short melee pulses** defaults Off; enable it for the
-  earlier 10 ms / 180 Hz pulse. Weaker incidental cues cannot cut an impact short.
-- **Correct hand routing:** separate controller outputs and isolation from the
-  game's ordinary gamepad rumble keep weapon and shield feedback on their
-  intended hands. Normal desktop rumble remains available outside active VR.
-- **Spell feedback:** supported independent hand spells pulse on the casting
-  hand after a successful cast, once per cast or volley.
+- **Choose your melee rules - contributed by ChuckRibbits:**
+  **VR Settings > Combat > Melee rules** switches live between **Unleashed**
+  and **Classic**. Unleashed is the default: a physical stroke can strike each
+  creature it reaches once, without attack-rating rolls or an attack-speed
+  cooldown. Classic uses native attack-rating, defense, block and dodge checks,
+  plus the class/weapon/IAS attack cycle and one target per physical stroke.
+  Both modes still require deliberate weapon movement; arrows and spells keep
+  their existing rules.
+- **Thrust attacks:** forward stabs now register independently of swing speed.
+  **VR Settings > Combat > Melee thrust speed** defaults to **2 m/s**, adjustable
+  from **0.75 to 10 m/s** in **0.25 m/s** steps. Pull back between thrusts; resting
+  a weapon against an enemy does not repeatedly hit it.
+- **Freer shield movement:** the shield arm can extend farther from the body
+  to follow your tracked hand. The shield keeps its size and the contact used
+  for shield attacks follows the displayed pose.
 
-## Loot and hand displays
+## Bows and crossbows
 
-- **Hold to show nearby loot:** hold **Right Grip + Right Trigger**, grip first,
-  to use the game's Show Items (Alt) behavior. Release either to restore normal
-  drop/hover labels. It uses the native nearby-item range regardless of where
-  you aim, and the combo does not also cast or shoot. The shortcut is listed in
-  **VR Settings > Controls**.
-- **Clearer item names:** dropped-item labels are 150% size with darker backing.
-- **Area and act at a glance:** the left-hand minimap/compass now shows the
-  current area and act. The label follows the navigation display's position,
-  and the live location lookup works in town and outdoors.
-- **Adjustable health/mana tilt:** **VR Settings > HUD > Health / mana tilt**
-  changes the hand display's angle independently of the minimap/compass.
+- **More reliable nocked arrows:** recover the native bow preview when its
+  updates stall, and keep the nocked arrow aligned while walking and turning.
+  This fixes the arrow lagging behind and snapping back into place. Unsupported
+  bow rigs can still use the fallback preview.
+- **Crossbow aim and bolt origin:** basic bolts launch from the rendered
+  crossbow's muzzle and use the bow's physical free-aim flight path.
+- **Move while firing:** basic Right Trigger crossbow attacks no longer lock
+  movement behind the native firing animation. Equip bolts and assign **Attack**
+  to Right Trigger. Native ammo and damage still apply, along with the existing
+  class/weapon/IAS firing cadence.
+- **Better support-hand placement:** the supporting hand sits lower under the
+  stock and retains its tracked wrist orientation.
+- **Release the support hand after swapping:** switching from sword/shield to
+  crossbow over the shoulder no longer traps both hands on the crossbow. Release
+  **Left Grip** after the swap, then grip near the stock to support it again.
 
-## Conversations and bows
+## Visor, loot and indoor visuals
 
-- **Visible NPC dialogue choices:** preserve the complete dialogue panel after
-  VR resolution changes, fixing menus that showed only a narrow strip of their
-  options. Placement stays consistent through story and choice transitions.
-- **Keep the world behind conversations:** enabled sky, fog and ceiling effects
-  remain visible while talking to NPCs.
-- **Remove the teal bowstring guide:** the debug-looking V-shaped overlay is
-  gone. Existing native string posing remains for supported bows; this release
-  does not add native posing support for additional bow rigs.
+- **Blood on the visor - contributed by ChuckRibbits:** life dropping below
+  **60%, 40% and 20%** adds splatters around the edges of your view. Healing back
+  above a band fades its blood away. Changes to maximum life alone do not cause
+  a splash or fade, and the centre of the view stays clear.
+- **Wipe it away:** scrub either hand side to side in front of your face with
+  the trigger released. Each stroke removes some blood and gives a small haptic
+  tick. **VR Settings > HUD > Blood on visor** and **Face wipe gesture** control
+  the effect and gesture separately; both default On.
+- **Steam Frame visibility:** splatters stay within a visible part of wider
+  headset views. The adjustment was checked on Steam Frame and Quest 3.
+- **Original loot-label size restored, with an adjustment:** the forced 150%
+  enlargement is removed. **VR Settings > HUD > Loot label size** defaults to
+  the original **45%**, with a **20-150%** range in five-point steps. Existing
+  saved sizes are respected. The darker backing and hold-to-show loot shortcut
+  remain available.
+- **Clearer indoor effects:** added indoor fog defaults Off, avoiding dark
+  scenery silhouettes through Tyrael's wings and preserving indoor lighting.
+  The indoor-fog control is hidden for now. Outdoor fog remains available;
+  an explicitly saved indoor-fog value is preserved on update.
+
+Existing saved settings and calibration are preserved. Melee rules is a new
+choice that defaults to Unleashed when unset; an old `attack_speed` setting does
+not select Classic. Choose Classic in Combat settings if that is your preference.
+
+A huge thank-you to **ChuckRibbits** for the blood visor and melee rules work,
+and to everyone who reported issues and tested the fixes across headsets!
 
 ## Validation and remaining limits
 
-The merged gameplay build passed **65/65 native checks**. The owner verified
-the installed combined build after the final haptics changes. Earlier feedback
-covered the loot hold, area display and NPC dialogue, plus Paladin sword/shield
-feedback. The release uses that exact installed DLL from `0fd3491`; subsequent
-source changes update release documentation and installer version only.
+The plain-main gameplay build passed **68/68 native checks**. This release
+packages the exact DLL built and installed from `1d7ae63`; the release follow-up
+changes documentation and installer version only. The DEV menu, equipment
+grants, teleport shortcuts and unmerged elemental-hands prototype are excluded.
 
-All **114 Python checks** passed for setup, repair/removal, launchers, asset
-preparation, diagnostics and package staging. The compiled installer lifecycle
-fixture passed installation, registration, failed-removal helper retention and
-successful removal with an isolated stub backend. These checks do not replace
-a new end-to-end installer run against a real game installation.
+The owner verified the bow movement fix, melee rules, thrusts, shield reach,
+loot sizing, indoor wing rendering and crossbow fixes during development.
+Blood visibility was checked on Steam Frame through SteamVR and Quest 3;
+the original Quest baseline was tested through both SteamVR and VDXR. The blood
+was also reported to fade after respawning. Later confirmations did not specify
+every headset/runtime or individual scenario. The final plain-main artifact
+has not received a separate complete headset pass.
 
-Headset validation is owner-reported. The final confirmation did not enumerate
-every controller, class or feature combination; there is no new Quest, Index,
-Battle.net or VDXR gameplay validation. Battle.net remains experimental.
-Earlier combat, potion, dual-casting and VR resolution improvements are retained.
-Unmerged experimental features are excluded.
+All **114 Python checks** passed for setup, repair/removal, launchers, local
+asset preparation, diagnostics and package staging. The compiled installer
+lifecycle fixture passed installation, registration, failed-removal helper
+retention and successful removal using an isolated stub backend. These checks
+do not replace a fresh end-to-end installer run against a real game installation.
+
+Installer behavior is unchanged in this update; the installer carries the new
+version and payload. Battle.net remains experimental. Special crossbow skills keep
+their existing casting route. Airborne enemy targeting and the reported Act III
+resource-exhaustion crash are not fixed by this release. Skill-based attack-speed
+modifiers remain outside the modeled physical attack cadence.
 
 See [installation instructions](INSTALL-WINDOWS.md) and [controls](CONTROLS.md).
 
-[Full source comparison](https://github.com/bearstonem/d2r-pcvr/compare/v0.3.14-windows-preview...v0.3.15-windows-preview)
+[Full source comparison](https://github.com/bearstonem/d2r-pcvr/compare/v0.3.15-windows-preview...v0.3.16-windows-preview)
