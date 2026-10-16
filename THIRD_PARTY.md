@@ -27,6 +27,12 @@ The native OpenXR adaptation uses current-eye color/depth bindings, tracked
 resource states and device lifetimes to keep square shadow maps out of fog/sky
 sampling. This does not include upstream's experimental command replay renderer.
 
+Native renderer/entity pool growth, its allocator checks, signatures and snapshot
+test are adapted from Sergious / BodyWalkVR
+[`natpoh/diablo2-vr-port`](https://github.com/natpoh/diablo2-vr-port) at
+`47a258c971c6a3be030769acba39764fcc1f6067` (MIT, copyright 2026 BodyWalkVR).
+Game snapshots used for optional local allocator tests are not distributed.
+
 | Component | Source / version | Notice |
 |---|---|---|
 | MinHook (compiled into plugin) | Vendored `third_party/minhook` | `third_party/minhook/LICENSE.txt`, BSD 2-clause |

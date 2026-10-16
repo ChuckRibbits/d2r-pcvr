@@ -46,7 +46,7 @@ add_library(minhook STATIC
 target_include_directories(minhook PUBLIC ${MINHOOK_DIR}/include)
 
 # Our camera and render distance, written clean-room from the game (cleanroom/).
-add_library(d2rcam STATIC cleanroom/camera/d2rcam.cpp cleanroom/drawdist/drawdist.cpp cleanroom/sigscan/sigscan.cpp)
+add_library(d2rcam STATIC cleanroom/camera/d2rcam.cpp cleanroom/drawdist/drawdist.cpp cleanroom/sigscan/sigscan.cpp cleanroom/pools/pools.cpp)
 target_include_directories(d2rcam PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/cleanroom/camera ${CMAKE_CURRENT_SOURCE_DIR}/cleanroom/sigscan)
 target_link_libraries(d2rcam PUBLIC D2RLPlugin::D2RLPlugin)
 target_compile_definitions(d2rcam PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
