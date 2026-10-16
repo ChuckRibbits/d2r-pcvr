@@ -1775,10 +1775,19 @@ void PoseBody(uintptr_t self, const Hero& h, const Input& in) {
         HeroXform hx;Mat model;
         if(in.havePoseStamp&&HeroTransform(&hx)&&hx.self==self&&(hx.parent&0xFFFFFu)==0xFFFFFu&&
            SafeCopy(model.m,reinterpret_cast<const void*>(hx.comp),sizeof model)) {
-            const Mat world=Mul(w,model);
+            // Contact motion follows the right controller, independently of
+            // native inventory slots. A free staff uses its authored attachment.
+            const int contactSide=freeStaff?staffSide:0;
+            const int contactBone=h.weapon[contactSide];
+            const Mat attachment=contactBone>=0?newW[contactBone]:Mat{};
+            const Mat world=Mul(attachment,model);
             const V3 origin=Pos(world),axis=Norm({world.m[4],world.m[5],world.m[6]}),player=Pos(model);
             g.melee={{origin.x,origin.y,origin.z},{axis.x,axis.y,axis.z},{player.x,player.y,player.z},in.poseStamp,in.worldEpoch,HeroGen()};
             g.melee.weaponType=in.weaponType;
+            const V3 headAxis=back(Norm({attachment.m[4],attachment.m[5],attachment.m[6]}));
+            const framevr::math::Quat grip{in.rot[0][0],in.rot[0][1],in.rot[0][2],in.rot[0][3]};
+            const auto gripAxis=framevr::math::Rotate(framevr::math::Conjugate(grip),{headAxis.x,headAxis.y,headAxis.z});
+            g.melee.gripAxis[0]=gripAxis.x;g.melee.gripAxis[1]=gripAxis.y;g.melee.gripAxis[2]=gripAxis.z;
             const int row=abs(castingAxis)-1;
             const V3 casting=Scale(Norm({world.m[row*4],world.m[row*4+1],world.m[row*4+2]}),castingAxis<0?-1.f:1.f);
             g.melee.castingAxis[0]=casting.x;g.melee.castingAxis[1]=casting.y;g.melee.castingAxis[2]=casting.z;

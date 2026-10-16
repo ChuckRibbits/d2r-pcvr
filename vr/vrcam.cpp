@@ -5924,6 +5924,7 @@ void MeleeContactTick() {
     sample.unitsPerMetre=upm;sample.player={pose.player[0]/upm,pose.player[1]/upm,pose.player[2]/upm};
     sample.blade.base={pose.origin[0]/upm,pose.origin[1]/upm,pose.origin[2]/upm};
     sample.blade.tip=sample.blade.base+Vec{pose.axis[0],pose.axis[1],pose.axis[2]}*length;
+    sample.thrustAxis=framevr::melee::TrackingThrustAxis({pose.gripAxis[0],pose.gripAxis[1],pose.gripAxis[2]},sample.hand.q);
     sample.blade.radius=radius;melee::Submit(sample);
 }
 void ShieldContactTick() {
