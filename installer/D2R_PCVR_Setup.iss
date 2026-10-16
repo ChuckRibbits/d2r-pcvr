@@ -62,12 +62,29 @@ begin
   Result := '"' + Value + '"';
 end;
 
+function IsSecurityBlock: Boolean;
+begin
+  Result := Pos('[PCVR_SECURITY_BLOCK]', LastOutput) > 0;
+end;
+
+function SecurityBlockMessage: String;
+begin
+  Result := 'Windows Security interrupted setup. To finish installing:'#13#10#13#10 +
+    '1. Open Windows Security > Virus & threat protection > Manage settings.'#13#10#13#10 +
+    '2. Temporarily turn Real-time protection Off.'#13#10#13#10 +
+    '3. Run this installer again and choose Update / repair.'#13#10#13#10 +
+    '4. Turn Real-time protection back On immediately afterward, even if setup does not complete.'#13#10#13#10 +
+    'Your saves and settings have been kept.';
+end;
+
 procedure BackendOutput(const S: String; const Error, FirstLine: Boolean);
 begin
   Log(S);
   if Trim(S) <> '' then LastOutput := S;
   if BackendBusy then begin
-    WizardForm.StatusLabel.Caption := Copy(S, 1, 180);
+    if IsSecurityBlock then
+      WizardForm.StatusLabel.Caption := 'Windows Security interrupted setup. Follow the steps shown to retry.'
+    else WizardForm.StatusLabel.Caption := Copy(S, 1, 180);
     WizardForm.StatusLabel.Update;
     SaveStringToFile(ExpandConstant('{app}\setup-last.log'), S + #13#10, True);
   end;
@@ -332,8 +349,10 @@ begin
   Result := '';
   if ExpandConstant('{param:CONFIG|}') <> '' then ChoicesFile := ExpandConstant('{param:CONFIG|}')
   else WriteChoices;
-  if not RunBackend(PayloadRoot, '--validate ' + Q(ChoicesFile) + ' --managed-root ' + Q(ExpandConstant('{app}'))) then
-    Result := LastOutput + #13#10#13#10 + 'No game or Steam files were changed. Correct the selections, or Save & Exit D2R and fully exit Steam, then retry.';
+  if not RunBackend(PayloadRoot, '--validate ' + Q(ChoicesFile) + ' --managed-root ' + Q(ExpandConstant('{app}'))) then begin
+    if IsSecurityBlock then Result := SecurityBlockMessage
+    else Result := LastOutput + #13#10#13#10 + 'No game or Steam files were changed. Correct the selections, or Save & Exit D2R and fully exit Steam, then retry.';
+  end;
 end;
 
 procedure CurStepChanged(CurStep: TSetupStep);
@@ -347,7 +366,8 @@ begin
     end;
     if SetupFailed then begin
       Log('Game configuration did not complete. Helper files and backups are retained for repair.');
-      MsgBox(LastOutput + #13#10#13#10 + 'Setup did not complete. Your helper files and backups have been kept. See setup-last.log in ' + ExpandConstant('{app}') + ', then rerun Setup to repair.', mbError, MB_OK);
+      if IsSecurityBlock then MsgBox(SecurityBlockMessage, mbInformation, MB_OK)
+      else MsgBox(LastOutput + #13#10#13#10 + 'Setup did not complete. Your helper files and backups have been kept. See setup-last.log in ' + ExpandConstant('{app}') + ', then rerun Setup to repair.', mbError, MB_OK);
     end;
   end;
 end;
@@ -358,8 +378,13 @@ begin
     HDRPage.MsgLabel.Caption := GetIniString('detected', 'hdr_warning', '', ProbeFile);
   if CurPageID = wpFinished then begin
     if SetupFailed then begin
-      WizardForm.FinishedHeadingLabel.Caption := 'D2R PCVR setup needs attention';
-      WizardForm.FinishedLabel.Caption := 'Game configuration did not complete. Your backups and helper files were kept. Check setup-last.log in ' + ExpandConstant('{app}') + ' and rerun Setup to repair.';
+      if IsSecurityBlock then begin
+        WizardForm.FinishedHeadingLabel.Caption := 'One more step to finish setup';
+        WizardForm.FinishedLabel.Caption := SecurityBlockMessage;
+      end else begin
+        WizardForm.FinishedHeadingLabel.Caption := 'D2R PCVR setup needs attention';
+        WizardForm.FinishedLabel.Caption := 'Game configuration did not complete. Your backups and helper files were kept. Check setup-last.log in ' + ExpandConstant('{app}') + ' and rerun Setup to repair.';
+      end;
     end else WizardForm.FinishedLabel.Caption :=
       'Your VR shortcuts are ready in Steam. Connect your headset and use the matching SteamVR or Virtual Desktop shortcut with an OFFLINE character.'#13#10#13#10 +
       'Normal Steam / Battle.net Play stays stock. First VR load asks for body calibration. Help and controller mappings are in the D2R PCVR Start menu folder.';

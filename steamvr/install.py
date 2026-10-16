@@ -115,17 +115,12 @@ def dependency_io_error(path, action, error):
             pass  # Keep the original I/O diagnosis if probing also fails.
     if code in (225, 226):
         return SystemExit(
-            f'Security software blocked required dependency "{path}" (Windows error {code}). '
-            'VR loaders hook into the game to enable mods, which can trigger antivirus detections; '
-            'this does not prove a false positive. '
-            'Review Windows Security > Protection history and the detected file. '
-            'If you trust it, allowing that specific file keeps protection active elsewhere. '
-            'To retry with protection temporarily off: open Windows Security > Virus & threat protection '
-            '> Manage settings, turn Real-time protection Off, then rerun Setup > Update / repair. '
-            'Only do this for a download you trust; your PC is less protected while it is off. '
-            'Turn Real-time protection back On immediately after the attempt, even if setup fails. '
-            'Setup never changes antivirus settings and still requires the approved dependency checksums. '
-            'No game files changed.')
+            '[PCVR_SECURITY_BLOCK] Windows Security interrupted setup. '
+            '1) Open Windows Security > Virus & threat protection > Manage settings. '
+            '2) Temporarily turn Real-time protection Off. '
+            '3) Run this installer again and choose Update / repair. '
+            '4) Turn Real-time protection back On immediately afterward, even if setup does not complete. '
+            f'Details: required dependency "{path}", Windows error {code}. No game files changed.')
     return SystemExit(
         f'Could not {action} required dependency "{path}": {error}. '
         'The file may be missing, blocked/quarantined by security software, or inaccessible. '

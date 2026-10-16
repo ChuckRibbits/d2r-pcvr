@@ -216,7 +216,8 @@ class InstallerOutputTests(unittest.TestCase):
         import install
         error = OSError(22, 'Invalid argument')
         error.winerror = 225
-        message = str(install.dependency_io_error(Path('C:/fixture/D2RLoader.zip'), 'read', error))
+        long_path = Path('C:/fixture') / ('nested-folder/' * 50) / 'D2RLoader.zip'
+        message = str(install.dependency_io_error(long_path, 'read', error))
         self.assertGreater(len(message), 800)
         with tempfile.TemporaryDirectory() as directory, contextlib.redirect_stdout(io.StringIO()):
             root = Path(directory)

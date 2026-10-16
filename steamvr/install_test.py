@@ -394,13 +394,12 @@ class DependencyDownloadTests(unittest.TestCase):
                     with self.assertRaises(SystemExit) as caught:
                         install.download_verified(self.url, target, self.digest)
                 message = str(caught.exception)
-                self.assertIn('Security software blocked', message)
+                self.assertIn('[PCVR_SECURITY_BLOCK]', message)
                 self.assertIn(str(target), message)
-                self.assertIn('Protection history', message)
                 self.assertIn('Real-time protection Off', message)
                 self.assertIn('back On immediately', message)
-                self.assertIn('even if setup fails', message)
-                self.assertIn('approved dependency checksums', message)
+                self.assertIn('even if setup does not complete', message)
+                self.assertIn('Update / repair', message)
                 self.assertNotIn('\n', message)
                 download.assert_not_called()
 
@@ -410,7 +409,7 @@ class DependencyDownloadTests(unittest.TestCase):
         for code in (225, 226, 2, 5, 32, 87, None):
             with self.subTest(code=code), patch.object(install, 'windows_read_error', return_value=code):
                 message = str(install.dependency_io_error(target, 'read', OSError(22, 'Invalid argument')))
-                self.assertEqual('Security software blocked' in message, code in (225, 226))
+                self.assertEqual('[PCVR_SECURITY_BLOCK]' in message, code in (225, 226))
                 self.assertEqual('Real-time protection Off' in message, code in (225, 226))
 
     @unittest.skipUnless(os.name == 'nt', 'Real Win32 file probe')
