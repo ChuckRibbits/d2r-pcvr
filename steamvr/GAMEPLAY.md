@@ -816,6 +816,15 @@ from underneath or above. Special missile skills and unrecognized/stale rigs
 retain their native release behavior. The physical collision limitations below
 also apply to basic crossbow bolts.
 
+Crossbow support is a held grip: release **Left Grip** to free the support hand.
+After a shoulder weapon swap, release the swap grip before grabbing the stock.
+The latch resets when equipment or the hero model changes, and on lost tracking;
+reacquiring tracking while still squeezing does not grab the stock. Waiting for
+a usable attachment keeps the support hand free instead of selecting the older
+always-two-handed pose. Native controller placement accepts wide idle/swap hand
+poses, so switching from a shield set does not require firing first to initialize
+the crossbow. This swap/release fix still needs owner headset verification.
+
 Collision is approximate: creature capsules use native footprint/artwork height,
 and the floor is the launch floor. Walls extend vertically; arrows cannot fly
 over them. The native damage-owner proxy retains its launch grid location while
