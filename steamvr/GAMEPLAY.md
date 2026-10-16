@@ -604,7 +604,8 @@ beyond the model's normal arm length extends the shield arm to follow the
 controller. The palm, fingers and shield retain their size; bringing the hand
 back restores normal arm proportions. Extension is bounded at twice the arm's
 current length for extreme tracking/calibration errors. Contact uses the same
-final shield pose. This reach adjustment still needs headset verification.
+final shield pose. The owner verified this adjustment in the combined developer
+build; individual class/shield combinations were not specified.
 With **Smite** selected, an energetic
 left-arm swing or thrust that intersects an eligible creature requests one native
 Smite against that creature. A stationary shield cannot bash; one continuous
