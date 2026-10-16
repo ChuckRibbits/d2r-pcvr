@@ -4,7 +4,6 @@
 (The upstream D2R VR installer scripts, `D2R_VR_Setup.iss` and
 `build_installer.ps1`, carried D2R VR's own AppId and are no longer kept here.)
 
-<<<<<<< HEAD
 Players see it as **D2R VR Unleashed** (the installer's name, Installed apps,
 `modinfo.json`'s description); the ids stay D2R PCVR's. It installs as the
 D2RLoader mod `D2R-PCVR`: `mods\D2R-PCVR\d2rloader\plugins\d2rl-pcvr.dll` with
