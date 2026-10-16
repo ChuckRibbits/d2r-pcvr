@@ -84,6 +84,9 @@ def restore_plan(game, chain, restore_video=False):
     keep = set()
     if mod_identity.plugin_owner(game / mod_identity.LEGACY_PLUGIN) == mod_identity.OTHER_MOD:
         keep = {str(name).lower() for name in mod_identity.LEGACY_FILES}
+    # D2RLoader is shared: while another mod starts through it (D2R VR as mods\D2R-VR, say), its files stay and only
+    # this mod's own files go.
+    shared = bool(mod_identity.other_loader_users(game))
     for snapshot, manifest in chain:
         for name in manifest['installed']:
             relative = install.safe_relative(name)
@@ -98,7 +101,7 @@ def restore_plan(game, chain, restore_video=False):
                 raise ValueError(f'Backup path escapes its folder: {name}')
             if target.exists() and not target.is_file() or source.exists() and not source.is_file():
                 raise ValueError(f'Backup path is not a file: {name}')
-            if str(relative).lower() in keep:
+            if str(relative).lower() in keep or shared and mod_identity.loader_file(relative):
                 continue
             if target not in updates:
                 updates[target] = source.read_bytes() if source.is_file() else None

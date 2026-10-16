@@ -170,5 +170,33 @@ class IdentityTests(unittest.TestCase):
         self.assertFalse((ROOT / 'installer/build_installer.ps1').exists())
 
 
+
+class ModFolderTests(unittest.TestCase):
+    def test_everything_of_the_mod_is_in_its_folder(self):
+        for path in (ids.PLUGIN, ids.SETTINGS, ids.RESHADE, ids.OPENXR_LOADER, ids.MODINFO):
+            self.assertEqual(path.parts[:2], ('mods', 'D2R-PCVR'), path)
+        info = json.loads(ids.modinfo_bytes())
+        self.assertEqual((info['name'], info['savepath']), ('D2R-PCVR', '../'))
+        self.assertIn('D2R VR Unleashed', info['description'])
+
+    def test_loader_files_are_told_from_the_mod_files(self):
+        for name in ('D2RLoader.exe', 'D2RCore.dll', 'd2rloader.mpq', 'd2rloader/config/d2rloader.toml', 'mods/Other/x.txt'):
+            self.assertTrue(ids.loader_file(Path(name)), name)
+        for name in (ids.PLUGIN, ids.SETTINGS, ids.RESHADE, ids.RECORD, ids.LEGACY_PLUGIN, ids.GLOBAL_PLUGIN,
+                     Path('d2rloader/runtime/d3dcompiler_47.dll'), Path('ReShade64.dll'), Path('openxr_loader.dll')):
+            self.assertFalse(ids.loader_file(name), name)
+
+    def test_other_loader_users(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            game = Path(temporary)
+            (game / 'mods/D2R-PCVR/d2rloader/plugins').mkdir(parents=True)
+            (game / 'mods/Empty').mkdir()
+            (game / 'd2rloader/plugins').mkdir(parents=True)
+            (game / ids.GLOBAL_PLUGIN).write_bytes(NEW_PCVR_PLUGIN)
+            self.assertEqual(ids.other_loader_users(game), [])
+            (game / 'mods/D2R-VR/d2rloader/plugins').mkdir(parents=True)
+            (game / 'd2rloader/plugins/another.dll').write_bytes(b'MZ another')
+            self.assertEqual(sorted(ids.other_loader_users(game)), ['D2R-VR', 'another.dll'])
+
 if __name__ == '__main__':
     unittest.main()

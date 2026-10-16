@@ -549,7 +549,7 @@ class NativeSetupTests(unittest.TestCase):
     def test_repeated_repair_preserves_calibration_and_keeps_one_managed_entry(self):
         with tempfile.TemporaryDirectory() as directory:
             app, game, client, saves, profile, values = self.fixture(Path(directory))
-            calibration = self.put(game / 'd2rloader/plugins/d2r_pcvr.ini', b'calibrated player')
+            calibration = self.put(game / mod_identity.SETTINGS, b'calibrated player')
             values['mode'] = 'repair'
             selection = dict(manifest={}, store='steam', version='3.3.93787', headset='Steam Frame',
                 connections=['steamvr'], steam=client, game=game, profile=profile, saves=saves,
@@ -621,7 +621,7 @@ class NativeSetupTests(unittest.TestCase):
                 snapshot = args.backup_dir / 'fixture-failed-attempt'
                 (snapshot / 'saves').mkdir(parents=True)
                 shutil.copy2(args.saves / 'Settings.json', snapshot / 'saves/Settings.json')
-                plugin = Path('d2rloader/plugins/d2rl-pcvr.dll')
+                plugin = Path('mods/D2R-PCVR/d2rloader/plugins/d2rl-pcvr.dll')
                 (snapshot / 'manifest.json').write_text(json.dumps(dict(game=str(args.game),
                     saves=str(args.saves), installed=[str(plugin)], previous_mod=False)))
                 (args.game / plugin).parent.mkdir(parents=True, exist_ok=True)

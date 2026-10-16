@@ -15,7 +15,7 @@ several seconds for the view to return. Reopen Video to see the actual
 | 3072 × 3072 | Fixed square preset | 5 |
 | 4096 × 4096 | Fixed square preset | 6 |
 
-The preference is `[render] vr_resolution` in `d2rloader/plugins/d2r_pcvr.ini`.
+The preference is `[render] vr_resolution` in `mods/D2R-PCVR/d2rloader/plugins/d2r_pcvr.ini`.
 Missing or invalid values retain Desktop. Start with a moderate preset and
 increase only if frame timing permits. Independent sizes respect both eyes'
 OpenXR limits and the system's swapchain limits, with an additional cap of

@@ -23,6 +23,7 @@
 #endif
 #include <windows.h>
 #include "pcvr_identity.h"
+#include "pcvr_mod_layout.h"
 #include "../steamvr/profile.h"
 #include "../steamvr/resource_descriptions.h"
 #include "../steamvr/vr_settings.h"
@@ -616,14 +617,33 @@ void LoadCaveFog() {
     AcquireSRWLockExclusive(&g_skyCfgLock); g_caveFog = f; ReleaseSRWLockExclusive(&g_skyCfgLock);
 }
 
-// A bare name is looked for where ReShade looks (reshade-shaders\Textures next to the game).
+// Where ReShade64.dll and ReShade's own files (its ini, preset, shaders, textures) are:
+// the mod's reshade\ folder when this plugin is the D2RLoader mod D2R-PCVR's and its
+// ReShade is there (vr/pcvr_mod_layout.h), else the game's folder (an older install).
+const std::wstring& ReShadeDir() {
+    static const std::wstring dir = [] {
+        wchar_t buf[MAX_PATH];
+        DWORD n = GetModuleFileNameW(nullptr, buf, MAX_PATH);
+        while (n && buf[n - 1] != L'\\') --n;
+        buf[n] = 0;
+        const std::wstring game = buf;
+        std::wstring mod;
+        n = g_self ? GetModuleFileNameW(g_self, buf, MAX_PATH) : 0;
+        if (n && n < MAX_PATH) {
+            while (n && buf[n - 1] != L'\\') --n;
+            buf[n] = 0;
+            mod = pcvrlayout::ModRootOfPluginDir(buf);
+        }
+        const bool own = !mod.empty() && GetFileAttributesW((mod + L"reshade\\ReShade64.dll").c_str()) != INVALID_FILE_ATTRIBUTES;
+        return pcvrlayout::ReShadeDir(game, mod, own);
+    }();
+    return dir;
+}
+
+// A bare name is looked for where ReShade looks (reshade-shaders\Textures in ReShade's folder).
 bool SkyFileExists(const std::wstring& name) {
     if (name.find(L':') != std::wstring::npos || name.rfind(L"\\\\", 0) == 0) return GetFileAttributesW(name.c_str()) != INVALID_FILE_ATTRIBUTES;
-    wchar_t dir[MAX_PATH];
-    DWORD n = GetModuleFileNameW(nullptr, dir, MAX_PATH);
-    while (n && dir[n - 1] != L'\\') --n;
-    dir[n] = 0;
-    return GetFileAttributesW((std::wstring(dir) + L"reshade-shaders\\Textures\\" + name).c_str()) != INVALID_FILE_ATTRIBUTES;
+    return GetFileAttributesW((ReShadeDir() + L"reshade-shaders\\Textures\\" + name).c_str()) != INVALID_FILE_ATTRIBUTES;
 }
 
 void LoadCrosshairFile();   // [input] crosshair (the flat crosshair's picture), with the cursor code
@@ -4236,13 +4256,8 @@ void CrosshairTick() {
     builtVrSide = vrSide;
     AcquireSRWLockShared(&g_crossLock); std::wstring f = g_crossFile; ReleaseSRWLockShared(&g_crossLock);
     std::wstring full = f;
-    if (!f.empty() && f.find(L':') == std::wstring::npos && f.rfind(L"\\\\", 0) != 0) {
-        wchar_t dir[MAX_PATH];
-        DWORD n = GetModuleFileNameW(nullptr, dir, MAX_PATH);
-        while (n && dir[n - 1] != L'\\') --n;
-        dir[n] = 0;
-        full = std::wstring(dir) + L"reshade-shaders\\Textures\\" + f;
-    }
+    if (!f.empty() && f.find(L':') == std::wstring::npos && f.rfind(L"\\\\", 0) != 0)
+        full = ReShadeDir() + L"reshade-shaders\\Textures\\" + f;
     if (vrSide) {
         std::vector<uint8_t> px;
         HCURSOR c = nullptr;
@@ -7854,13 +7869,9 @@ void TryRegister() {
     Log("vrcam: joined ReShade - the fog and the sky follow d2r_pcvr.ini [fog] [sky]");
     // Both read ReShade's depth, which Generic Depth provides (FlatVR's addon
     // only corrects its pick); without it the shader sees no depth and stays off.
-    wchar_t ini[MAX_PATH];
-    DWORD n = GetModuleFileNameW(nullptr, ini, MAX_PATH);
-    while (n && ini[n - 1] != L'\\') --n;
-    ini[n] = 0;
-    wcscat_s(ini, L"ReShade.ini");
+    const std::wstring ini = ReShadeDir() + L"ReShade.ini";
     wchar_t off[512] = {};
-    GetPrivateProfileStringW(L"ADDON", L"DisabledAddons", L"", off, 512, ini);
+    GetPrivateProfileStringW(L"ADDON", L"DisabledAddons", L"", off, 512, ini.c_str());
     if (wcsstr(off, L"Generic Depth"))
         Log("vrcam: ReShade's Generic Depth add-on is OFF (ReShade.ini DisabledAddons) - the fog and the sky get no depth and stay off; tick it on ReShade's Add-ons tab");
 }
@@ -8204,10 +8215,13 @@ void LoadReShade() {
             "rename it to ReShade64.dll and vrcam loads it");
         return;
     }
-    wchar_t path[MAX_PATH];
-    wcscpy_s(path, dir);
-    wcscat_s(path, L"ReShade64.dll");
-    if (GetFileAttributesW(path) == INVALID_FILE_ATTRIBUTES) { Log("vrcam: no ReShade64.dll beside the game - no fog, sky or FlatVR picture"); return; }
+    // The mod's own ReShade (mods\D2R-PCVR\reshade\) with that folder as its base, so its ini,
+    // preset, shaders and textures are the mod's and another mod's ReShade files are not read.
+    const std::wstring base = ReShadeDir();
+    const bool modOwn = base != dir;
+    const std::wstring path = base + L"ReShade64.dll";
+    if (GetFileAttributesW(path.c_str()) == INVALID_FILE_ATTRIBUTES) { Log("vrcam: no ReShade64.dll in the mod or beside the game - no fog, sky or FlatVR picture"); return; }
+    if (modOwn) SetEnvironmentVariableW(L"RESHADE_BASE_PATH_OVERRIDE", base.substr(0, base.size() - 1).c_str());
 #ifdef D2RVR_NATIVE_OPENXR
     // Optional Microsoft SDK compiler, private to the mod. Preload before
     // ReShade requests D3DCompiler_47 by name; stock Steam Play never loads
@@ -8219,7 +8233,7 @@ void LoadReShade() {
         else LogF("Frame effects: optional shader compiler load failed (%lu); using system compiler",GetLastError());
     }
 #endif
-    if (LoadLibraryW(path)) Log("vrcam: ReShade loaded from ReShade64.dll");
+    if (LoadLibraryW(path.c_str())) LogF("vrcam: ReShade loaded from ReShade64.dll - %ls", modOwn ? L"the D2RLoader mod's own (mods\\D2R-PCVR\\reshade)" : L"beside the game");
     else LogF("vrcam: ReShade64.dll did not load (error %lu)", GetLastError());
 }
 
@@ -8237,10 +8251,12 @@ static const PluginInfo g_info = {
 
 D2RL_PLUGIN_EXPORT const PluginInfo* D2RLoaderGetPluginInfo() noexcept { return &g_info; }
 
-// True when D2R VR's plugin (d2rl-vrcam.dll) is in the same plugins folder:
-// D2RLoader loads every plugin there, and two VR layers hooking one game would
-// fight over the camera, the swapchain and the input. This plugin then stays out
-// of the game and says why; the other mod's files are not touched.
+// True when D2R VR's plugin (d2rl-vrcam.dll) loads into this same game: in this
+// plugin's folder, or - this plugin being the mod D2R-PCVR's - in D2RLoader's global
+// plugins folder, which loads with every mod. Two VR layers hooking one game would
+// fight over the camera, the swapchain and the input; this plugin then stays out of
+// the game and says why, and the other mod's files are not touched. D2R VR as its
+// own D2RLoader mod (mods\D2R-VR) only loads when that mod runs: not looked at.
 static bool g_standDown = false;
 static bool OtherVrPluginBeside(HMODULE self) {
     wchar_t path[MAX_PATH];
@@ -8248,8 +8264,9 @@ static bool OtherVrPluginBeside(HMODULE self) {
     if (n == 0 || n >= MAX_PATH) return false;
     while (n > 0 && path[n - 1] != L'\\') --n;
     path[n] = 0;
-    if (wcscat_s(path, D2RPCVR_OTHER_PLUGIN_FILE_W) != 0) return false;
-    return GetFileAttributesW(path) != INVALID_FILE_ATTRIBUTES;
+    for (const auto& dir : pcvrlayout::SameGamePluginDirs(path))
+        if (GetFileAttributesW((dir + D2RPCVR_OTHER_PLUGIN_FILE_W).c_str()) != INVALID_FILE_ATTRIBUTES) return true;
+    return false;
 }
 
 D2RL_PLUGIN_EXPORT bool D2RLoaderLoadPlugin(const PluginContext* ctx) noexcept {
@@ -8259,8 +8276,8 @@ D2RL_PLUGIN_EXPORT bool D2RLoaderLoadPlugin(const PluginContext* ctx) noexcept {
     GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT, (LPCWSTR)&UpdateThread, &g_self);
     if (OtherVrPluginBeside(g_self)) {
         g_standDown = true;
-        ctx->LogWarn(D2RPCVR_NAME " " D2RPCVR_VERSION " is not starting: another VR mod's plugin (d2rl-vrcam.dll, D2R VR) is in this "
-                     "plugins folder and D2RLoader would run both. Remove one of the two mods with its own uninstaller.");
+        ctx->LogWarn(D2RPCVR_NAME " " D2RPCVR_VERSION " is not starting: another VR mod's plugin (d2rl-vrcam.dll, D2R VR) loads "
+                     "into the same game (this plugins folder or D2RLoader's global one) and D2RLoader would run both. Remove one of the two mods with its own uninstaller.");
         ctx->WriteConsoleMessage(D2RPCVR_NAME " is off: another VR mod (d2rl-vrcam.dll) is installed in this game folder.",
                                  ConsoleMessageKind::Output);
         g_ctx = nullptr;

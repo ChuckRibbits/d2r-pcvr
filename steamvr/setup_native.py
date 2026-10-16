@@ -272,7 +272,7 @@ def validate_choices(values, root, managed_root=None):
     if found.other:
         raise ValueError(found.message + ' No game or Steam files were changed.')
     if mode == 2 and not all((game / name).is_file() for name in (
-            'D2RLoader.exe', 'ReShade64.dll', 'openxr_loader.dll', mod_identity.PLUGIN, mod_identity.SETTINGS)):
+            'D2RLoader.exe', mod_identity.RESHADE, mod_identity.OPENXR_LOADER, mod_identity.PLUGIN, mod_identity.SETTINGS)):
         raise ValueError('Shortcuts only requires a complete installed mod. Choose Update / repair instead.')
     options = setup.launch_options(target / '.runtime/python/python.exe', target / 'steamvr/launch_windows.py', runtime) if store == 'steam' else None
     routing = {} if store == 'steam' else {'store': store, 'python': target / '.runtime/python/python.exe',

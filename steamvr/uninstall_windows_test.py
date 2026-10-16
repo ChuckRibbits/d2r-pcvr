@@ -75,6 +75,28 @@ class UninstallTests(unittest.TestCase):
             self.assertNotIn(character, plan)
             self.assertNotIn(stash, plan)
 
+    def test_d2rloader_stays_while_another_mod_uses_it(self):
+        for other in (None, 'mods/D2R-VR/d2rloader/plugins/d2rl-vrcam.dll', 'd2rloader/plugins/another-mod.dll'):
+            with self.subTest(other=other), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                game, saves = root / 'game', root / 'saves'
+                loader = ['D2RLoader.exe', 'D2RCore.dll', 'd2rloader.mpq', 'd2rloader/config/d2rloader.toml']
+                files = [str(uninstall.PLUGIN), str(mod_identity.RESHADE), str(install.RECORD)] + loader
+                first = self.snapshot(root / 'backups/20261016', game, files, {}, saves, True)
+                for name in files:
+                    self.write(game / name, b'installed')
+                if other:
+                    self.write(game / other, b'another mod')
+                install.write_record(game, {'game': str(game), 'snapshots': [str(first)]})
+                chain = uninstall.snapshots(game, install.read_record(game), [])
+                uninstall.apply_updates(uninstall.restore_plan(game, chain), root / 'removal', lambda: None)
+                for name in (str(uninstall.PLUGIN), str(mod_identity.RESHADE), str(install.RECORD)):
+                    self.assertFalse((game / name).exists(), name)
+                for name in loader:
+                    self.assertEqual((game / name).exists(), other is not None, name)
+                if other:
+                    self.assertEqual((game / other).read_bytes(), b'another mod')
+
     def test_missing_original_backup_blocks_removal_and_can_be_relocated(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

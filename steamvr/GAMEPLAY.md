@@ -136,7 +136,7 @@ synthetic timing regression passes, and the owner reported **"works great"** in
 Steam Frame on 2026-10-09 after the sword comparison. Other weapon categories and
 creature sizes still need checks.
 
-Fresh installs enable motion controls in `GAME/d2rloader/plugins/d2r_pcvr.ini`:
+Fresh installs enable motion controls in `GAME/mods/D2R-PCVR/d2rloader/plugins/d2r_pcvr.ini`:
 
 ```ini
 [gameplay]
@@ -385,7 +385,7 @@ Settings are stored under `[haptics]` as `strength`, `melee`, `bow_draw`,
 `bow_release`, `spells`, `interactions` and `alerts`; missing strength keys default
 to 100. `[haptics] short_melee=0` selects the longer tap; `1` selects the short tap.
 
-Click **Apply** to save changed values to `d2rloader/plugins/d2r_pcvr.ini` and
+Click **Apply** to save changed values to `mods/D2R-PCVR/d2rloader/plugins/d2r_pcvr.ini` and
 reload them live. Closing without Apply discards pending edits. The first Apply
 creates `d2r_pcvr.ini.before-vr-menu`; later saves retain that original backup.
 Unrelated INI entries are preserved. A conflicting external edit reloads the

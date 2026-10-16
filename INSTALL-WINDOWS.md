@@ -439,18 +439,35 @@ same game edition if prompted, and choose
 **Update / repair and keep calibration and video settings**. Setup refreshes
 the mod and its launch paths while keeping your calibration and video settings.
 
-**File names since this release:** D2R PCVR is now
-`d2rloader\plugins\d2rl-pcvr.dll` with its settings in `d2r_pcvr.ini`.
+**The D2RLoader mod D2R-PCVR (shown as D2R VR Unleashed):** everything of
+this mod is in the game's `mods\D2R-PCVR` folder: the plugin
+`mods\D2R-PCVR\d2rloader\plugins\d2rl-pcvr.dll` with its settings
+`d2r_pcvr.ini` and its OpenXR loader beside it, its own ReShade and ReShade's
+files in `mods\D2R-PCVR\reshade\`, and `mods\D2R-PCVR\D2R-PCVR.mpq\modinfo.json`
+(`savepath "../"`: your usual characters). The VR shortcuts start
+`D2RLoader.exe -mod D2R-PCVR`; D2RLoader loads a mod's plugin only while that mod
+runs, so another VR mod in its own mod folder (D2R VR as `mods\D2R-VR`) can be
+installed beside it and the shortcut you start picks the mod. Setup keeps an
+existing `d2rloader\config\d2rloader.toml` (your D2RLoader settings and
+`default_mod`) as it is. Removal takes this mod's own files; D2RLoader itself
+stays while another mod uses it. An install of this release's first file names
+in D2RLoader's global plugins folder (`d2rloader\plugins\d2rl-pcvr.dll`, which
+would load with every mod) moves into the mod folder with your settings and
+calibration on **Update / repair** (the old files stay in the setup backup).
+
+**File names:** D2R PCVR is `d2rl-pcvr.dll` with its settings in `d2r_pcvr.ini`.
 Releases up to 0.3.15 used `d2rl-vrcam.dll` and `d2r_vr.ini`, the names of
 D2R VR, the mod D2R PCVR is based on. **Update / repair** carries your settings
 and body calibration over to `d2r_pcvr.ini` and removes the old D2R PCVR files
 (they stay in the setup backup). Setup recognises them by its own installation
-record, not by the name: if D2R VR is installed in the same game folder, setup
-leaves D2R VR's files alone and stops, because D2RLoader would start both mods.
-Remove one mod with its own uninstaller before installing the other.
+record, not by the name: if D2R VR 0.167 or older is installed in the same game
+folder (its plugin in D2RLoader's global `d2rloader\plugins`, loaded with every
+mod), setup leaves D2R VR's files alone and stops, because D2RLoader would start
+both mods. Update D2R VR to its D2RLoader-mod release (`mods\D2R-VR`) or remove
+it with its own uninstaller before installing this one.
 
 For a manual DLL-only upgrade, keep a copy of the existing
-`d2rloader\plugins\d2rl-pcvr.dll` and `d2r_pcvr.ini` from your game folder.
+`mods\D2R-PCVR\d2rloader\plugins\d2rl-pcvr.dll` and `d2r_pcvr.ini` from your game folder.
 Replace only that DLL with the new release's `bin\d2rl-pcvr.dll`.
 Keep your existing INI to retain calibration. Coming from 0.3.15 or older, use
 **Update / repair** once instead, so the old names are carried over. For the Steam edition, repeat

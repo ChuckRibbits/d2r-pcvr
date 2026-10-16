@@ -154,6 +154,9 @@ def default_saves(game):
     return game.parent.parent / 'compatdata/2536520/pfx/drive_c/users/steamuser/Saved Games/Diablo II Resurrected'
 
 
+LOADER_CONFIG = Path('d2rloader/config/d2rloader.toml')
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--game', type=Path, default=GAME)
@@ -260,15 +263,19 @@ def main():
                     rel = safe_relative(name)
                     if rel.parts[0].lower() not in ('mods', 'd2rloader', 'd2rloader.exe', 'd2rcore.dll', 'd2rloader.mpq'):
                         raise SystemExit(f'Unexpected file in loader archive: {name}')
+                    # D2RLoader's settings (default_mod, extensions) are the player's and other mods' too: an existing
+                    # d2rloader.toml stays as it is.
+                    if rel == LOADER_CONFIG and (game / rel).is_file():
+                        continue
                     payload[rel] = z.read(name)
     except OSError as error:
         raise dependency_io_error(archive, 'read', error) from error
-    payload[Path('ReShade64.dll')] = read_dependency(reshade)
+    payload[mod_identity.RESHADE] = read_dependency(reshade)
     payload[mod_identity.PLUGIN] = args.plugin.read_bytes()
     if compiler.is_file():
         payload[Path('d2rloader/runtime/d3dcompiler_47.dll')] = compiler.read_bytes()
     if args.openxr_loader:
-        payload[Path('openxr_loader.dll')] = args.openxr_loader.read_bytes()
+        payload[mod_identity.OPENXR_LOADER] = args.openxr_loader.read_bytes()
     # Native artwork is read locally, never downloaded/bundled with the mod.
     # Prepare before mutating the install and journal it with all other files.
     with tempfile.TemporaryDirectory(prefix='d2r-vr-icons-') as temporary:
@@ -278,7 +285,7 @@ def main():
             print(f'Native icon cache unavailable; wheel labels still work: {error}')
         else:
             for name in result['images'] + ['manifest.tsv', 'cache.json']:
-                payload[Path('d2rloader/plugins/d2r_vr_icons') / safe_relative(name)] = (Path(temporary) / name).read_bytes()
+                payload[mod_identity.PLUGIN.parent / 'd2r_vr_icons' / safe_relative(name)] = (Path(temporary) / name).read_bytes()
             print(f"Prepared {result['icons']} native icon bindings from your installed game.")
     with tempfile.TemporaryDirectory(prefix='d2r-vr-potions-') as temporary:
         try:
@@ -287,7 +294,7 @@ def main():
             print(f'Native potion models unavailable; retaining icon fallback: {error}')
         else:
             for name in [code + '.pvr' for code in POTION_CODES] + ['cache.json']:
-                payload[Path('d2rloader/plugins/d2r_vr_potions') / safe_relative(name)] = (Path(temporary) / name).read_bytes()
+                payload[mod_identity.PLUGIN.parent / 'd2r_vr_potions' / safe_relative(name)] = (Path(temporary) / name).read_bytes()
             print(f"Prepared {result['models']} original 3D potion models from your installed game.")
     require_game_closed()
     snapshot = args.backup_dir / datetime.now().strftime('%Y%m%d-%H%M%S-%f')
@@ -342,6 +349,17 @@ def main():
             remove(rel)
         print('Removed the old D2R PCVR plugin files (d2rl-vrcam.dll, d2r_vr.ini); '
               'D2R PCVR is now d2rl-pcvr.dll with d2r_pcvr.ini. They are kept in the backup.')
+    if found.moved:
+        # D2R PCVR's plugin in D2RLoader's global plugins folder would load with every mod (D2R VR's too): it moves
+        # into the mod folder, the settings and calibration with it.
+        global_settings = game / mod_identity.GLOBAL_SETTINGS
+        if args.preserve_settings and global_settings.is_file() and not (game / mod_identity.SETTINGS).is_file():
+            put(mod_identity.SETTINGS, global_settings.read_bytes())
+            print(f'Carried your settings and body calibration over into {mod_identity.SETTINGS}.')
+        for rel in mod_identity.GLOBAL_FILES:
+            remove(rel)
+        print(f'D2R PCVR is now the D2RLoader mod {mod_identity.MOD_NAME} ({mod_identity.MOD_DIR}); '
+              'its files left the global plugins folder. They are kept in the backup.')
     for rel, content in payload.items():
         put(rel, content)
     cfg = configparser.ConfigParser(interpolation=None, strict=False, allow_no_value=True)
@@ -375,12 +393,14 @@ def main():
             put(rel, content)
 
     put_config(mod_identity.SETTINGS, out.getvalue().encode())
-    put_config(Path('ReShade.ini'), b'[GENERAL]\nEffectSearchPaths=.\\reshade-shaders\\Shaders\nTextureSearchPaths=.\\reshade-shaders\\Textures\nPresetPath=.\\D2R_Frame_ReShade.ini\n[INPUT]\nKeyOverlay=36,0,0,0\n')
-    put_config(Path('D2R_Frame_ReShade.ini'), b'Techniques=D2R_DepthFog@D2R_DepthFog.fx\n')
-    put(Path('reshade-shaders/Shaders/D2R_DepthFog.fx'), (ROOT / 'reshade/D2R_DepthFog.fx').read_bytes())
+    put(mod_identity.MODINFO, mod_identity.modinfo_bytes())
+    # ReShade's paths are relative to its base, the mod's reshade\ folder (the plugin sets it).
+    put_config(mod_identity.RESHADE_DIR / 'ReShade.ini', b'[GENERAL]\nEffectSearchPaths=.\\reshade-shaders\\Shaders\nTextureSearchPaths=.\\reshade-shaders\\Textures\nPresetPath=.\\D2R_Frame_ReShade.ini\n[INPUT]\nKeyOverlay=36,0,0,0\n')
+    put_config(mod_identity.RESHADE_DIR / 'D2R_Frame_ReShade.ini', b'Techniques=D2R_DepthFog@D2R_DepthFog.fx\n')
+    put(mod_identity.RESHADE_DIR / 'reshade-shaders/Shaders/D2R_DepthFog.fx', (ROOT / 'reshade/D2R_DepthFog.fx').read_bytes())
     for texture in (ROOT / 'reshade/sky').glob('*.png'):
-        put(Path('D2R_Sky_ours') / texture.name, texture.read_bytes())
-        put(Path('reshade-shaders/Textures/D2R_Sky_ours') / texture.name, texture.read_bytes())
+        put(mod_identity.RESHADE_DIR / 'D2R_Sky_ours' / texture.name, texture.read_bytes())
+        put(mod_identity.RESHADE_DIR / 'reshade-shaders/Textures/D2R_Sky_ours' / texture.name, texture.read_bytes())
     settings.update({'VSync': 0, 'NVIDIA DLSS': 0, 'Anti Aliasing': 1, 'Framerate Cap': 0,
                      'Dynamic Resolution Scaling': 0, 'Camera Shake': 0,
                      'Resolution Scale': 100, 'Ambient Occlusion Quality': 2,
