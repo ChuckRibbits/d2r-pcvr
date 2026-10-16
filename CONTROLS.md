@@ -60,7 +60,10 @@ Quest left X/Y correspond to Index left A/B; right A/B labels are the same.
 | Hold to show all nearby loot labels (Alt) | Hold **Right Grip + Right Trigger** during gameplay, grip first. Labels stay shown while both are held; release either to restore normal drop/hover labels. Uses the native Alt range, independently of where you aim. No cast or shot accompanies the combo. Also listed in **VR Settings > Controls** |
 | Interact / pick up / talk | Right A by default; requires an aimed interactable. One press acts on one target: press again for each item, including loot a chest just dropped |
 | Free melee swing / thrust | Move the equipped weapon through an enemy |
+| Choose melee rules / motion thresholds | **VR Settings > Combat**: Unleashed or Classic, Melee hit speed, and Melee thrust speed |
 | Bow draw | Right trigger near the left-hand bow string; draw and release |
+| Fire a crossbow | Equip bolts and assign **Attack** to Right Trigger; aim and fire while moving. Release Right Grip so the loot-label combo does not consume the trigger |
+| Support a crossbow | Hold Left Grip near the stock; release to free the hand. After a shoulder swap, release the swap grip before grabbing the stock again |
 | Javelin throw | Clear the right trigger skill for basic weapon mode; hold trigger, throw, release |
 | Cancel a physical attack / draw | Open either wheel, then release the held controls |
 | Swap weapon sets I / II | Dominant grip over either shoulder; or wheel → EQUIPMENT |
@@ -94,6 +97,18 @@ and one left-hand alert test. Tests use the displayed values before Apply.
 45 ms at the controller's preferred frequency. On selects the earlier 10 ms /
 180 Hz pulse. **HUD > Low health / mana alerts** must also be enabled for
 automatic resource warnings.
+
+**Combat > Melee rules** defaults to **Unleashed**: physical strokes can hit
+each creature they reach once, without hit rolls or an attack-speed cooldown.
+**Classic** uses native hit/block checks and the modeled class/weapon/IAS cycle,
+with one target per physical stroke. Both modes require deliberate motion.
+**Melee thrust speed** is separate from swing speed: 2 m/s by default, adjustable
+from 0.75 to 10 m/s in 0.25 m/s steps. Push along the blade and pull back between
+stabs. The old `attack_speed` INI key does not select Classic; choose it here.
+
+**HUD > Loot label size** adjusts dropped-item text and its darker backing from
+20% to 150% in five-point steps. The original size is 45%; Apply saves the choice
+to `[hud] labels_size`. Existing explicit sizes are preserved on update.
 
 **HUD > Blood on visor** (default On) splashes blood around the edge of the
 view as life drops below 60%, 40% and 20%; large splats drip slowly, then dry.
