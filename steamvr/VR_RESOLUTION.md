@@ -15,7 +15,7 @@ several seconds for the view to return. Reopen Video to see the actual
 | 3072 × 3072 | Fixed square preset | 5 |
 | 4096 × 4096 | Fixed square preset | 6 |
 
-The preference is `[render] vr_resolution` in `d2rloader/plugins/d2r_vr.ini`.
+The preference is `[render] vr_resolution` in `d2rloader/plugins/d2r_pcvr.ini`.
 Missing or invalid values retain Desktop. Start with a moderate preset and
 increase only if frame timing permits. Independent sizes respect both eyes'
 OpenXR limits and the system's swapchain limits, with an additional cap of
@@ -77,7 +77,7 @@ sky or fog across nearby scenery. The private channel requires a matching
 color target, a current-eye binding and a known resource state. It clears
 stale/destroyed resources and suppresses depth effects if no suitable source
 is available. Desktop rendering retains ReShade's normal depth channel.
-Update both `d2rl-vrcam.dll` and `reshade-shaders/Shaders/D2R_DepthFog.fx`
+Update both `d2rl-pcvr.dll` and `reshade-shaders/Shaders/D2R_DepthFog.fx`
 together when testing this fix.
 
 Native inventory/character workspaces and the main menu fit inside their

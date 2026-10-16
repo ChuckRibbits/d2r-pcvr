@@ -213,7 +213,7 @@ Replace the example path below with that folder, then run both lines:
 
 ```powershell
 $Game = 'C:\Program Files (x86)\Steam\steamapps\common\Diablo II Resurrected'
-py -3 .\steamvr\install.py --game "$Game" --plugin .\bin\d2rl-vrcam.dll --openxr-loader .\bin\openxr_loader.dll --deps .\deps --download-deps
+py -3 .\steamvr\install.py --game "$Game" --plugin .\bin\d2rl-pcvr.dll --openxr-loader .\bin\openxr_loader.dll --deps .\deps --download-deps
 ```
 
 The installer downloads the required components, prepares icons and potions
@@ -439,10 +439,21 @@ same game edition if prompted, and choose
 **Update / repair and keep calibration and video settings**. Setup refreshes
 the mod and its launch paths while keeping your calibration and video settings.
 
+**File names since this release:** D2R PCVR is now
+`d2rloader\plugins\d2rl-pcvr.dll` with its settings in `d2r_pcvr.ini`.
+Releases up to 0.3.15 used `d2rl-vrcam.dll` and `d2r_vr.ini`, the names of
+D2R VR, the mod D2R PCVR is based on. **Update / repair** carries your settings
+and body calibration over to `d2r_pcvr.ini` and removes the old D2R PCVR files
+(they stay in the setup backup). Setup recognises them by its own installation
+record, not by the name: if D2R VR is installed in the same game folder, setup
+leaves D2R VR's files alone and stops, because D2RLoader would start both mods.
+Remove one mod with its own uninstaller before installing the other.
+
 For a manual DLL-only upgrade, keep a copy of the existing
-`d2rloader\plugins\d2rl-vrcam.dll` and `d2r_vr.ini` from your game folder.
-Replace only that DLL with the new release's `bin\d2rl-vrcam.dll`.
-Keep your existing INI to retain calibration. For the Steam edition, repeat
+`d2rloader\plugins\d2rl-pcvr.dll` and `d2r_pcvr.ini` from your game folder.
+Replace only that DLL with the new release's `bin\d2rl-pcvr.dll`.
+Keep your existing INI to retain calibration. Coming from 0.3.15 or older, use
+**Update / repair** once instead, so the old names are carried over. For the Steam edition, repeat
 the Steam launch-option step using the new extracted folder. For Battle.net,
 rerun the wizard and choose **Only configure Steam shortcuts** to update its paths.
 Run the full installer if the new release

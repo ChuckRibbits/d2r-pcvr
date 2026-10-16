@@ -265,7 +265,7 @@ void DrainRetired(device* dev) {
 
 HANDLE g_blockMem = nullptr;
 FlatVRGameHud* g_block = nullptr;
-// How FlatVR is to show them: [hud] in d2r_vr.ini (D2R VR Settings > Interface), via SetLook.
+// How FlatVR is to show them: [hud] in d2r_pcvr.ini (D2R VR Settings > Interface), via SetLook.
 FlatVRGameHudLook g_look = FlatVRGameHudDefaultLook();
 // The hero's forearm each panel lies on (SetForearm, from the skeleton), copied into the block with every Publish.
 FlatVRGameHudPose g_pose[FLATVR_GAME_HUD_PANELS] = {};
