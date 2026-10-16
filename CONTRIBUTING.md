@@ -70,6 +70,8 @@ run the relevant Python fixture tests, for example:
 .\deps\python\python.exe -m unittest discover -s steamvr -p launch_windows_test.py
 .\deps\python\python.exe -m unittest discover -s steamvr -p battlenet_test.py
 .\deps\python\python.exe -m unittest discover -s steamvr -p uninstall_windows_test.py
+.\deps\python\python.exe -m unittest discover -s steamvr -p setup_native_test.py
+.\deps\python\python.exe -m unittest discover -s steamvr -p mod_identity_test.py
 ```
 
 Report the commands you ran and any failures. Documentation-only changes

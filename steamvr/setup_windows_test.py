@@ -23,7 +23,7 @@ class SteamSetupTests(unittest.TestCase):
     def test_release_integrity_rejects_changed_file_and_escaping_path(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
-            names = ('bin/d2rl-vrcam.dll', 'bin/openxr_loader.dll', 'steamvr/install.py',
+            names = ('bin/d2rl-pcvr.dll', 'bin/openxr_loader.dll', 'steamvr/install.py', 'steamvr/mod_identity.py',
                      'steamvr/setup_windows.py', 'steamvr/steam_config.py', 'steamvr/launch_windows.py',
                      'steamvr/game_install.py', 'steamvr/game_assets.py', 'steamvr/casc_assets.py',
                      'Uninstall-Windows.cmd', 'steamvr/uninstall_windows.py')
@@ -172,7 +172,8 @@ class SteamSetupTests(unittest.TestCase):
                 (game / 'D2R.exe').write_bytes('3.3.93787'.encode('utf-16-le'))
                 (game / 'Data').mkdir()
                 (game / 'Data/.build.config').write_text('fixture')
-                for name in ('D2RLoader.exe', 'ReShade64.dll', 'openxr_loader.dll', 'd2rloader/plugins/d2rl-vrcam.dll', 'd2rloader/plugins/d2r_vr.ini'):
+                for name in ('D2RLoader.exe', 'mods/D2R-PCVR/reshade/ReShade64.dll', 'mods/D2R-PCVR/d2rloader/plugins/openxr_loader.dll',
+                             'mods/D2R-PCVR/d2rloader/plugins/d2rl-pcvr.dll', 'mods/D2R-PCVR/d2rloader/plugins/d2r_pcvr.ini'):
                     file = game / name
                     file.parent.mkdir(parents=True, exist_ok=True)
                     file.write_bytes(b'fixture')
@@ -188,7 +189,7 @@ class SteamSetupTests(unittest.TestCase):
                         patch.object(setup, 'saved_games', return_value=saves), patch.object(setup, 'wait_for_closed'), \
                         patch.object(setup, 'require_closed'), patch.object(setup.subprocess, 'run') as run, \
                         patch.object(setup.subprocess, 'Popen') as popen, patch('builtins.input', side_effect=answers), \
-                        patch('launch_windows.vdxr_manifest', return_value=game / 'openxr_loader.dll'), \
+                        patch('launch_windows.vdxr_manifest', return_value=game / 'mods/D2R-PCVR/d2rloader/plugins/openxr_loader.dll'), \
                         patch.object(setup.sys, 'argv', ['setup_windows.py']), contextlib.redirect_stdout(io.StringIO()) as output:
                     setup.main()
                 result = json.loads((root / 'setup-result.json').read_text())

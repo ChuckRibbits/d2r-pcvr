@@ -37,9 +37,9 @@ def main():
              'Install-Windows.cmd', 'Uninstall-Windows.cmd', 'steamvr/setup_windows.ps1',
              'steamvr/uninstall_windows.py',
              'steamvr/setup_windows.py', 'steamvr/steam_config.py', 'steamvr/hdr_check.py',
-             'THIRD_PARTY.md', 'LICENSE', 'd2r_vr.ini',
+             'THIRD_PARTY.md', 'LICENSE', 'd2r_pcvr.ini',
              'reshade/D2R_DepthFog.fx', 'third_party/minhook/LICENSE.txt',
-             'external/reshade/LICENSE.md', 'steamvr/install.py',
+             'external/reshade/LICENSE.md', 'steamvr/install.py', 'steamvr/mod_identity.py',
              'steamvr/launch_windows.py']
     if args.platform == 'linux-proton':
         paths += ['INSTALL-LINUX.md', 'steamvr/launch.sh', 'steamvr/run-proton.sh', 'steamvr/session.py']
@@ -52,7 +52,7 @@ def main():
     for folder, pattern in [('reshade/sky', '*.png'), ('steamvr/licenses', '*.txt')]:
         for path in sorted((ROOT / folder).glob(pattern)):
             files[path.relative_to(ROOT).as_posix()] = path
-    files['bin/d2rl-vrcam.dll'] = args.build / 'd2rl-vrcam.dll'
+    files['bin/d2rl-pcvr.dll'] = args.build / 'd2rl-pcvr.dll'
     if args.platform == 'linux-proton':
         files['bin/openxr-probe.exe'] = args.build / 'openxr-probe.exe'
     files['bin/openxr_loader.dll'] = args.openxr_loader

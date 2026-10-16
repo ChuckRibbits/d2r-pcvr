@@ -1,8 +1,31 @@
 # Native Windows setup EXE
 
 `D2R_PCVR_Setup.iss` builds the graphical installer for the native OpenXR mod.
-The older `D2R_VR_Setup.iss` and `build_installer.ps1` belong to the original
-upstream implementation and are not used by this build.
+(The upstream D2R VR installer scripts, `D2R_VR_Setup.iss` and
+`build_installer.ps1`, carried D2R VR's own AppId and are no longer kept here.)
+
+Players see it as **D2R VR Unleashed** (the installer's name, Installed apps,
+`modinfo.json`'s description); the ids stay D2R PCVR's. It installs as the
+D2RLoader mod `D2R-PCVR`: `mods\D2R-PCVR\d2rloader\plugins\d2rl-pcvr.dll` with
+`d2r_pcvr.ini` and `openxr_loader.dll`, its ReShade in `mods\D2R-PCVR\reshade\`,
+`mods\D2R-PCVR\D2R-PCVR.mpq\modinfo.json`; the shortcuts start
+`D2RLoader.exe -mod D2R-PCVR` (`steamvr/mod_identity.py`, `steamvr/launch_windows.py`).
+See [migration and validation notes](../docs/MOD_COEXISTENCE.md) for shared
+dependency protection, ReShade migration, log paths and remaining gameplay checks.
+Releases up to 0.3.16 used D2R VR's names, `d2rl-vrcam.dll` and `d2r_vr.ini`;
+D2R VR still uses them. Setup decides whose those files are from this mod's
+own install record and snapshots plus the plugin's content, never from the
+name (`steamvr/mod_identity.py`):
+
+- An earlier D2R PCVR: Update / repair copies `d2r_vr.ini` (settings and body
+  calibration) to `d2r_pcvr.ini`, then removes the old plugin and ini. Both are
+  journaled in the new snapshot, so a failed setup or `install.py --restore`
+  puts them back, and removal still restores the pre-mod state.
+- D2R VR (or a `d2rl-vrcam.dll` no D2R PCVR record lists): setup says another
+  mod is installed and stops before changing anything; D2RLoader would load
+  both VR plugins. Its files are never changed, moved or deleted, and removal
+  of D2R PCVR leaves them in place. The plugin itself also stays off while a
+  `d2rl-vrcam.dll` sits beside it.
 
 The wizard and portable CMD setup share `steamvr/setup_windows.py` for the
 installation and Steam configuration. `steamvr/setup_native.py` adds unattended

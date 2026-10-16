@@ -14,7 +14,7 @@
 // With the sky on, the fog fades into the sky's horizon instead of FogColor.
 //
 // vrcam joins ReShade as an add-on and sets every uniform each frame from
-// d2r_vr.ini [fog] and [sky] - the settings window's sliders. It also switches
+// d2r_pcvr.ini [fog] and [sky] - the settings window's sliders. It also switches
 // the technique on and off. Values typed into ReShade's own UI are overwritten
 // while vrcam is running.
 //
@@ -149,7 +149,7 @@ sampler2D HudMaskSmp { Texture = HudMaskTex; MinFilter = POINT; MagFilter = POIN
 sampler2D HudMaskOldSmp { Texture = HudMaskOldTex; MinFilter = POINT; MagFilter = POINT; };
 
 // Painted skies (tools/gen_sky.py, or any picture), one pair per act. vrcam sets
-// the file names as preprocessor definitions from d2r_vr.ini [sky] texture_* /
+// the file names as preprocessor definitions from d2r_pcvr.ini [sky] texture_* /
 // cap_* (bare names are looked for in reshade-shaders\Textures); a slot with no
 // picture keeps the act 1 files here and is never sampled. Pictures of another
 // size are scaled to the declared one.

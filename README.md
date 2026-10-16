@@ -326,7 +326,15 @@ own release, which runs through BodyWalk and FlatVR, visit the
 
 D2R PCVR adds native OpenXR support for SteamVR and Virtual Desktop (VDXR),
 motion combat, the physical bow and potions, VR menus, foveated rendering and
-the guided Windows installer. Licenses for all third-party components are in
+the guided Windows installer.
+
+D2R PCVR has its own plugin identity (`d2r-pcvr-vrcam`, shown as D2R PCVR by
+bearstonem in D2RLoader and in the DLL's file properties) and its own file
+names, `d2rl-pcvr.dll` and `d2r_pcvr.ini`, so its installer no longer replaces
+D2R VR's `d2rl-vrcam.dll` and `d2r_vr.ini`. Releases up to 0.3.15 used D2R VR's
+names; Update / repair carries their settings and calibration over. The two
+mods cannot run in the same game folder at the same time: setup stops and says
+so when D2R VR is installed there. Licenses for all third-party components are in
 [THIRD_PARTY.md](THIRD_PARTY.md).
 
 This project is not affiliated with or endorsed by Blizzard Entertainment.

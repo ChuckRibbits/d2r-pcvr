@@ -11,13 +11,14 @@
 
 [Setup]
 AppId=D2R-PCVR-Native-Windows
-AppName=D2R PCVR
+; Players see "D2R VR Unleashed"; the ids stay D2R PCVR's (AppId, the program folder, the D2RLoader mod D2R-PCVR).
+AppName=D2R VR Unleashed
 AppVersion={#ModVersion}
 AppPublisher=D2R PCVR contributors
 AppPublisherURL=https://github.com/bearstonem/d2r-pcvr
 AppSupportURL=https://github.com/bearstonem/d2r-pcvr/issues
 DefaultDirName={localappdata}\Programs\D2R PCVR
-DefaultGroupName=D2R PCVR
+DefaultGroupName=D2R VR Unleashed
 DisableDirPage=yes
 DisableProgramGroupPage=yes
 DisableWelcomePage=no
@@ -34,8 +35,15 @@ SolidCompression=yes
 WizardStyle=modern
 CloseApplications=no
 RestartApplications=no
-UninstallDisplayName=D2R PCVR (Windows VR mod)
+UninstallDisplayName=D2R VR Unleashed (Windows VR mod)
 UninstallDisplayIcon={app}\.runtime\python\python.exe
+; The setup program's own file properties: D2R VR Unleashed (D2R PCVR), not D2R VR.
+VersionInfoVersion={#ModVersion}
+VersionInfoProductName=D2R VR Unleashed
+VersionInfoProductVersion={#ModVersion}
+VersionInfoCompany=D2R PCVR contributors
+VersionInfoDescription=D2R VR Unleashed setup (Diablo II reimagined for physical, immersive VR; D2R PCVR, based on D2R VR by BodyWalkVR, MIT)
+VersionInfoCopyright=MIT licence. D2R PCVR contributors; D2R VR (c) 2026 BodyWalkVR
 
 [Files]
 Source: "{#PayloadDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
@@ -43,7 +51,7 @@ Source: "{#PayloadDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs
 [Icons]
 Name: "{group}\Installation help"; Filename: "{sys}\notepad.exe"; Parameters: """{app}\INSTALL-WINDOWS.md"""
 Name: "{group}\Controller mappings"; Filename: "{sys}\notepad.exe"; Parameters: """{app}\CONTROLS.md"""
-Name: "{group}\Uninstall D2R PCVR"; Filename: "{uninstallexe}"
+Name: "{group}\Uninstall D2R VR Unleashed"; Filename: "{uninstallexe}"
 
 [Run]
 Filename: "{code:SteamExecutable}"; Description: "Open Steam to use your new VR shortcuts"; Flags: nowait postinstall skipifsilent; Check: SetupSucceeded
@@ -247,6 +255,11 @@ begin
             ((PageID = BackupPage.ID) and (GetIniInt('detected', 'backup_required', 0, 0, 1, ProbeFile) = 0));
 end;
 
+function InstalledHere: Boolean;
+begin
+  Result := GetIniString('detected', 'installed_mod', '', ProbeFile) = 'd2r-pcvr';
+end;
+
 function NextButtonClick(CurPageID: Integer): Boolean;
 var
   Edition, Key: String;
@@ -274,12 +287,17 @@ begin
         Result := False;
       end;
       if RuntimePage.Values[0] = '' then RuntimePage.Values[0] := GetIniString('detected', 'steamvr', '', ProbeFile);
-      if FileExists(PathsPage.Values[1] + '\d2rloader\plugins\d2rl-vrcam.dll') then ModePage.SelectedValueIndex := 0
+      // Another VR mod (D2R VR) in this game folder: its files stay as they are and setup does not go on.
+      if Result and (GetIniString('detected', 'other_mod', '', ProbeFile) <> '') then begin
+        MsgBox(GetIniString('detected', 'other_mod', '', ProbeFile), mbError, MB_OK);
+        Result := False;
+      end;
+      // D2R PCVR already here (d2rl-pcvr.dll, or d2rl-vrcam.dll of a release up to 0.3.16): offer Update / repair.
+      if InstalledHere then ModePage.SelectedValueIndex := 0
       else ModePage.SelectedValueIndex := 1;
     end;
   end;
-  if (CurPageID = ModePage.ID) and (ModePage.SelectedValueIndex = 1) and
-      FileExists(PathsPage.Values[1] + '\d2rloader\plugins\d2rl-vrcam.dll') then
+  if (CurPageID = ModePage.ID) and (ModePage.SelectedValueIndex = 1) and InstalledHere then
     Result := MsgBox('Full install resets body calibration and applies recommended video settings. Continue?', mbConfirmation, MB_YESNO or MB_DEFBUTTON2) = IDYES;
   if CurPageID = BackupPage.ID then begin
     if not DirExists(BackupPage.Values[0]) then begin
@@ -382,12 +400,12 @@ begin
         WizardForm.FinishedHeadingLabel.Caption := 'One more step to finish setup';
         WizardForm.FinishedLabel.Caption := SecurityBlockMessage;
       end else begin
-        WizardForm.FinishedHeadingLabel.Caption := 'D2R PCVR setup needs attention';
+        WizardForm.FinishedHeadingLabel.Caption := 'D2R VR Unleashed setup needs attention';
         WizardForm.FinishedLabel.Caption := 'Game configuration did not complete. Your backups and helper files were kept. Check setup-last.log in ' + ExpandConstant('{app}') + ' and rerun Setup to repair.';
       end;
     end else WizardForm.FinishedLabel.Caption :=
       'Your VR shortcuts are ready in Steam. Connect your headset and use the matching SteamVR or Virtual Desktop shortcut with an OFFLINE character.'#13#10#13#10 +
-      'Normal Steam / Battle.net Play stays stock. First VR load asks for body calibration. Help and controller mappings are in the D2R PCVR Start menu folder.';
+      'Normal Steam / Battle.net Play stays stock. First VR load asks for body calibration. Help and controller mappings are in the ' + ExpandConstant('{groupname}') + ' Start menu folder.';
   end;
 end;
 
