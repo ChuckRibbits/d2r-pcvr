@@ -1,4 +1,4 @@
-// D2R_VR_Settings.exe - sliders for d2r_pcvr.ini (d2r_vr.ini until D2R PCVR 0.3.15).
+// D2R_VR_Settings.exe - sliders for d2r_pcvr.ini (d2r_vr.ini until D2R PCVR 0.3.16).
 //
 // Lives next to the ini in <game>\d2rloader\plugins. Every slider or tick box
 // writes its key the moment it moves; vrcam re-reads the file within half a

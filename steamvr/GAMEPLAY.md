@@ -189,7 +189,7 @@ not generate melee velocity. The layout currently assumes a right-handed player.
 
 Dropped-item names use **VR Settings > HUD > Loot label size**: **45%** by
 default, adjustable from **20% to 150%** in five-percentage-point steps.
-Apply saves `[hud] labels_size` in `d2r_vr.ini` and updates it live; existing
+Apply saves `[hud] labels_size` in `d2r_pcvr.ini` and updates it live; existing
 saved sizes are preserved. Text, dark backing bounds and click targets scale
 together; item-quality colors are preserved. **Right Grip + Right
 Trigger** holds the native **Show Items (Alt)** action, with a short vibration

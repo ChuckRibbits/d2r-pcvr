@@ -4,6 +4,7 @@
 (The upstream D2R VR installer scripts, `D2R_VR_Setup.iss` and
 `build_installer.ps1`, carried D2R VR's own AppId and are no longer kept here.)
 
+<<<<<<< HEAD
 Players see it as **D2R VR Unleashed** (the installer's name, Installed apps,
 `modinfo.json`'s description); the ids stay D2R PCVR's. It installs as the
 D2RLoader mod `D2R-PCVR`: `mods\D2R-PCVR\d2rloader\plugins\d2rl-pcvr.dll` with
@@ -12,7 +13,7 @@ D2RLoader mod `D2R-PCVR`: `mods\D2R-PCVR\d2rloader\plugins\d2rl-pcvr.dll` with
 `D2RLoader.exe -mod D2R-PCVR` (`steamvr/mod_identity.py`, `steamvr/launch_windows.py`).
 See [migration and validation notes](../docs/MOD_COEXISTENCE.md) for shared
 dependency protection, ReShade migration, log paths and remaining gameplay checks.
-Releases up to 0.3.15 used D2R VR's names, `d2rl-vrcam.dll` and `d2r_vr.ini`;
+Releases up to 0.3.16 used D2R VR's names, `d2rl-vrcam.dll` and `d2r_vr.ini`;
 D2R VR still uses them. Setup decides whose those files are from this mod's
 own install record and snapshots plus the plugin's content, never from the
 name (`steamvr/mod_identity.py`):
