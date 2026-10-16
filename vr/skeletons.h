@@ -179,6 +179,8 @@ struct MeleeWeaponPose {
 bool MeleeWeapon(MeleeWeaponPose& out);
 bool ShieldWeapon(MeleeWeaponPose& out);
 bool CrossbowPose(framevr::crossbow::Pose& out);
+// Called after the game's complete attachment/world transform is evaluated.
+void CrossbowRendered(uint32_t entity,uintptr_t component,uintptr_t matrix);
 #endif
 #endif
 // Where the game's own pose points the hero, in model space (deg, atan2 of each bone's z row):

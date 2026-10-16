@@ -10,6 +10,7 @@
 #include <cstring>
 #include "bow.h"
 #include "crossbow.h"
+#include "skeletons.h"
 #include "bow_signatures.h"
 #include "spells.h"
 #include "melee.h"
@@ -535,6 +536,7 @@ void ClientKill(uintptr_t unit) {
 }
 uintptr_t Transform(uintptr_t out,uint32_t entity,uintptr_t component) {
     const auto result=originalTransform(out,entity,component);
+    skel::CrossbowRendered(entity,component,out);
     if(!renderCount.load(std::memory_order_relaxed))return result;
     std::array<float,16> matrix{},previous{};bool found=false,held=false,heldVisible=false;
     uint64_t heldSession=0,heldRevision=0;uintptr_t heldClient=0;uint32_t heldId=0;

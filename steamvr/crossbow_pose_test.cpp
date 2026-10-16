@@ -21,6 +21,39 @@ template<size_t N,class T> static void Put(std::array<uint8_t,N>& b,size_t at,T 
 template<class T,size_t N> static T Get(const std::array<uint8_t,N>& b,size_t at){T v;std::memcpy(&v,b.data()+at,sizeof v);return v;}
 static bool Near(Vec a,Vec b){return skel::bow::Length(a-b)<.004f;}
 int main() {
+    // An unloaded helper can be far forward of the barrel. Locate the stock
+    // from its limb roots rather than treating that helper as a bolt centre.
+    Mat cog=skel::bow::Identity(),helper=cog,left=cog,right=cog,barrel;
+    Position(helper,{0,-.12f,-4});Position(left,{1,0,-2});Position(right,{-1,0,-2}); // inverse binds
+    assert(BarrelInCog(cog,helper,left,right,barrel));
+    assert(Near(Position(barrel),{0,.12f,2}));
+    Position(helper,{0,-.12f,-6});Mat other;
+    assert(BarrelInCog(cog,helper,left,right,other)&&Near(Position(other),Position(barrel)));
+    // Real attachment evaluation includes an extra transform between item
+    // local and the chosen wrist. The old reconstructed pose omitted it.
+    Mat item=skel::bow::Rotation({0,0,1},{1,0,1});Position(item,{.2f,0,-.1f});
+    Mat override=skel::bow::Rotation({0,1,0},{0,1,1});Position(override,{.5f,-.2f,.3f});
+    for(float mirror:{-1.f,1.f}) {
+        Mat wrist=skel::bow::Rotation({0,0,1},{-1,.3f,1});
+        for(int i=0;i<3;++i)wrist.m[i]*=mirror;
+        Position(wrist,{22600,7,15600});
+        const Mat rendered=Multiply(Multiply(item,override),wrist);
+        Mat actual,relative;assert(RenderedGeometry(barrel,rendered,wrist,actual,relative));
+        const Mat expected=Multiply(barrel,rendered),wrong=Multiply(Multiply(barrel,item),wrist);
+        assert(Near(Position(actual),Position(expected))&&!Near(Position(actual),Position(wrong)));
+        assert(skel::bow::Length(Vector(actual,{0,0,1})-Vector(wrong,{0,0,1}))>.1f);
+        // Support follows the next completed wrist pose without retaining the
+        // previous frame's world position, including locomotion/turning.
+        Mat next=skel::bow::Rotation({0,0,1},{1,0,-1});Position(next,{22605,8,15607});
+        const Mat predicted=Multiply(relative,next),drawn=Multiply(Multiply(Multiply(barrel,item),override),next);
+        assert(Near(Position(predicted),Position(drawn)));
+        assert(Near(Vector(predicted,{0,0,1}),Vector(drawn,{0,0,1})));
+    }
+    assert(!SupportLatched(true,false,false,false,true));
+    assert(SupportLatched(true,true,false,true,true)); // enter range with Grip already held
+    assert(SupportLatched(true,true,true,false,true)); // latched until release
+    assert(!SupportLatched(false,true,true,true,true));
+    assert(!SupportLatched(true,true,false,true,false)); // existing staff press behavior
     // Includes vertical aim: the former ground-path adapter refused these
     // shots and flattened every other bolt's direction to horizontal.
     for(float scale:{.7f,1.f,1.4f})for(float sign:{-1.f,1.f})
@@ -31,10 +64,11 @@ int main() {
         Position(attach,{22600,8,15600});
         const Mat world=Multiply(local,attach);Line line;assert(FromBolt(world,line));
         const auto muzzle=Muzzle(line);
-        assert(Near(muzzle,Position(world)+Vector(world,{0,0,BoltTip})));
+        assert(Near(muzzle,Position(world)));
         const Vec palm=Position(attach),support=Support(line,palm,.3f,4.f);
         assert(skel::bow::Length(framevr::math::Cross(support+line.up*.12f-line.center,line.direction))<.005f);
-        assert(std::fabs(framevr::math::Dot(support-palm,line.direction)-1.2f)<.005f);
+        assert(framevr::math::Dot(support-line.center,line.direction)<=-.24f+.005f);
+        assert(framevr::math::Dot(support-palm,line.direction)<=1.2f+.005f);
         Pose p{muzzle,line.direction,{22600,2,15600},line.scale,100,7,42,3,4,4.f};
         Launch launch;assert(Aim(p,launch)&&Physical(launch,3,1));
         using namespace framevr::bowflight;

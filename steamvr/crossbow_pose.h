@@ -22,11 +22,41 @@ inline bool FromBolt(const Mat& bolt,Line& out) {
     if(math::Dot(up,up)<.99f||std::fabs(math::Dot(x,math::Cross(y,z)))<1e-8f)return false;
     out={center,direction,up,scale};return true;
 }
-inline Vec Muzzle(const Line& line){return line.center+line.direction*(BoltTip*line.scale);}
+// Use the front of the stock, where the two bow limbs join, projected onto
+// the authored bolt axis. A helper's bind position is the unloaded bolt's
+// tail, not the centre of the flying projectile or the loaded muzzle.
+inline bool BarrelInCog(const Mat& inverseCog,const Mat& inverseHelper,const Mat& inverseLeft,
+                        const Mat& inverseRight,Mat& out) {
+    Mat helper,left,right;
+    if(!skel::bow::Affine(inverseCog)||!skel::bow::Inverse(inverseHelper,helper)||
+       !skel::bow::Inverse(inverseLeft,left)||!skel::bow::Inverse(inverseRight,right))return false;
+    Line line;if(!FromBolt(helper,line))return false;
+    const Vec front=(Position(left)+Position(right))*.5f;
+    Position(helper,line.center+line.direction*math::Dot(front-line.center,line.direction));
+    out=Multiply(helper,inverseCog);return skel::bow::Affine(out);
+}
+inline Vec Muzzle(const Line& line){return line.center;}
+// The renderer can apply attachment overrides between the item and wrist.
+// Learn that complete relationship from the rendered item, then reapply it to
+// each new wrist pose. Subtract the world anchor before inversion: town/world
+// coordinates can exceed the bounded local-matrix validator's range.
+inline bool RenderedGeometry(const Mat& boltInItem,const Mat& itemWorld,const Mat& wristWorld,
+                             Mat& boltWorld,Mat& boltInWrist) {
+    Mat relativeItem=itemWorld,wrist=wristWorld,inverse;
+    Position(relativeItem,Position(itemWorld)-Position(wristWorld));Position(wrist,{});
+    if(!skel::bow::Affine(boltInItem)||!skel::bow::Affine(relativeItem)||!skel::bow::Inverse(wrist,inverse))return false;
+    const Mat local=Multiply(Multiply(boltInItem,relativeItem),inverse);
+    const Mat world=Multiply(boltInItem,itemWorld);Line line;
+    if(!skel::bow::Affine(local)||!FromBolt(world,line))return false;
+    boltWorld=world;boltInWrist=local;return true;
+}
+inline bool SupportLatched(bool held,bool pressedBefore,bool latched,bool inReach,bool crossbow) {
+    return held&&(latched||((crossbow||!pressedBefore)&&inReach));
+}
 // The support palm is under the actual stock, not on a separately rotated
 // controller ray. Project the driving palm onto that line before advancing.
 inline Vec Support(const Line& line,Vec rightPalm,float ahead,float unitsPerMetre) {
-    const float along=math::Dot(rightPalm-line.center,line.direction)+ahead*unitsPerMetre;
+    const float along=std::min(math::Dot(rightPalm-line.center,line.direction)+ahead*unitsPerMetre,-.06f*unitsPerMetre);
     return line.center+line.direction*along-line.up*(.03f*unitsPerMetre);
 }
 struct Pose {

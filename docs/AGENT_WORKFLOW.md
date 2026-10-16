@@ -244,6 +244,12 @@ Known diagnostic lessons:
   Check `Frame crossbow` capture/adoption diagnostics before assuming the new
   path ran. The first #106 candidate passed fixtures but never captured a held
   pose in the owner's session; its headset test failed.
+  The next candidate captured/adopted shots but still failed placement testing.
+  Item-local times wrist is an approximation: the native transform evaluator
+  also applies attachment overrides. Capture the rendered item transform after
+  evaluation, then retain its relationship to the matching posed wrist for the
+  next support-hand pose. The bolt helper's bind origin is an unloaded tail;
+  the stock front is located using the limb roots projected onto the bolt axis.
 - Melee settings are motion speed in m/s, not acceleration. Classic/Unleashed
   are game-rule choices; they do not remove the physical motion threshold.
 
