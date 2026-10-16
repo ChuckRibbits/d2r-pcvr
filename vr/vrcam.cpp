@@ -107,6 +107,7 @@ namespace gamestate {bool OpaqueMenuOpen();}
 #include "combat.h"
 #include "melee.h"
 #include "bow.h"
+#include "crossbow.h"
 #include "memory.h"
 #endif
 #include "dlss_mv.h"
@@ -2724,6 +2725,12 @@ bool HandRay(float* o, float* d) {
         // A culled/not-yet-posed staff or a snap-turn must not restore native
         // movement/facing aim. The fresh tracked aim below belongs to the
         // casting hand and remains usable when the render pose is unavailable.
+    }
+    framevr::crossbow::Pose crossbow;
+    if(castingType==D2RVR_TYPE_CROSSBOW&&framevr::CrossbowAiming()&&skel::CrossbowPose(crossbow)&&
+       framevr::crossbow::Fresh(crossbow,GetTickCount64(),gamestate::LocalPlayer(),gamestate::HandsKey()^(gamestate::WeaponSet()<<30),g_meleeTurnEpoch.load())) {
+        o[0]=crossbow.muzzle.x;o[1]=crossbow.muzzle.y;o[2]=crossbow.muzzle.z;
+        d[0]=crossbow.direction.x;d[1]=crossbow.direction.y;d[2]=crossbow.direction.z;return true;
     }
     float motionOrigin[3],motionDirection[3];
     if(g_eyeOk.load()&&framevr::GameplayRay(motionOrigin,motionDirection)) {
@@ -5864,6 +5871,7 @@ void BowTick() {
     auto* hero=combat::LocalPlayerUnit(localHero)?reinterpret_cast<void*>(localHero):nullptr;
     if(!hero)gate.active=false;
     if(hero)combat::ObserveLocalPlayer(reinterpret_cast<uintptr_t>(hero));
+    crossbowvr::Gate(bowvr::MotionReady()&&gate.active&&gamestate::WeaponType()==D2RVR_TYPE_CROSSBOW,gate.session,gate.equipment,g_meleeTurnEpoch.load());
     bowvr::Update(gate,reinterpret_cast<uintptr_t>(hero));
     framevr::bowflight::Shot shot;
     if(framevr::TakeBowShot(shot))bowvr::Submit(shot);

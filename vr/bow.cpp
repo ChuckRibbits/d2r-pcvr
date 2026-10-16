@@ -9,6 +9,7 @@
 #include <cstdio>
 #include <cstring>
 #include "bow.h"
+#include "crossbow.h"
 #include "bow_signatures.h"
 #include "spells.h"
 #include "melee.h"
@@ -523,6 +524,7 @@ void ClientTick(uintptr_t unit,float dt) {
     // Running native client prediction here would resurrect flat-grid hits.
 }
 void ClientKill(uintptr_t unit) {
+    crossbowvr::Destroyed(unit);
     if(!clientCount.load(std::memory_order_relaxed)&&!previewClient.load(std::memory_order_relaxed)){originalClientKill(unit);return;}
     {
         std::lock_guard lock(mutex);
@@ -534,6 +536,7 @@ void ClientKill(uintptr_t unit) {
 }
 uintptr_t Transform(uintptr_t out,uint32_t entity,uintptr_t component) {
     const auto result=originalTransform(out,entity,component);
+    crossbowvr::Transform(out,entity,component);
     if(!renderCount.load(std::memory_order_relaxed))return result;
     std::array<float,16> matrix{},previous{};bool found=false,held=false,heldVisible=false;
     uint64_t heldSession=0,heldRevision=0;uintptr_t heldClient=0;uint32_t heldId=0;
@@ -597,6 +600,7 @@ bool PreviewReady() {
     const auto at=previewReadyAt.load();
     return enabled.load()&&PreviewRecovery::Rendered(at,GetTickCount64());
 }
+bool MotionReady(){return enabled.load()&&ready.load();}
 bool SpellReady(){return enabled.load()&&ready.load()&&spellvr::Ready();}
 void Update(const Gate& gate,uintptr_t hero) {
     bool visible=false;
@@ -809,6 +813,7 @@ void Install() {
         framevr::logging::Write("Frame physical projectiles: tracked native-arrow preview and frozen 6DoF arrow/javelin flight; terrain-correct grid/room queries; mesh-only transforms; native basic attack/throw costs");
 }
 void Report() {
+    crossbowvr::Report();
     spellvr::Report();
     for(int hand=0;hand<2;++hand) {
         auto& a=assistStats[hand];

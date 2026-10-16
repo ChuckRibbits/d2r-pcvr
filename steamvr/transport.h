@@ -21,6 +21,7 @@ bool SettingsOpen();
 bool OwnsControllerRumble(); // lock-free; VR input owns feedback instead of gamepad motors
 bool SpellSelected();
 bool LeftHandAiming();
+bool CrossbowAiming();
 bool NativeAimOwnership(); // hand casting or wheel: preserve locomotion, suppress legacy aim modes
 bool NativeSkillCasting(); // any active trigger/quick cast; retain native locomotion input
 bool DirectedSpellActive(); // fresh native assignment, actually casting (wheel or quick shortcut)

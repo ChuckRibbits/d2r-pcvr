@@ -232,6 +232,12 @@ Known diagnostic lessons:
   Do not claim the fog change has proven that separate issue fixed.
 - Pose timestamps matter: nocked arrows and melee blade geometry must use the
   input that produced the rendered pose, not the newest controller sample.
+- Crossbow basic attacks create native missile 31, not arrow 0. The held item's
+  `bolt_helper`, item-local transform and hero weapon attachment define its
+  barrel; a manually rotated controller ray can disagree with the actual mesh.
+  Check both server/client launch coordinates and the release mesh's current/
+  previous transforms when diagnosing an offset or ghost trail. Native bolt
+  ground collision remains separate from visible muzzle height.
 - Melee settings are motion speed in m/s, not acceleration. Classic/Unleashed
   are game-rule choices; they do not remove the physical motion threshold.
 

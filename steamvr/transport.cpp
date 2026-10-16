@@ -2372,6 +2372,15 @@ bool SpellSelected() {
         (motion.Selection()>=0||motionOutput.skill>=0)&&GetTickCount64()-motionAt<150;
 }
 bool LeftHandAiming(){std::lock_guard lock(mutex);return motionControls.load()&&castHand==1&&motionInput.active&&GetTickCount64()-motionAt<150;}
+bool CrossbowAiming() {
+    std::lock_guard lock(mutex);
+    if(!motionControls.load()||!motionInput.active||motionOutput.block||castHand==1||
+       motionInput.weapon!=gameplay::Weapon::Crossbow||GetTickCount64()-motionAt>100)return false;
+    if(motionOutput.attack)return true;
+    const int slot=motionOutput.skill;
+    if(slot<0||slot>=skills::Count||!interaction::Fresh(interactionInput.snapshot,gamestate::LocalPlayer(),GetTickCount64()))return false;
+    const auto& skill=interactionInput.snapshot.skills[slot];return skill.known&&skill.available&&skill.id==0;
+}
 bool NativeSkillCasting() {
     std::lock_guard lock(mutex);
     return motionControls.load()&&gameplay::CastingSkill(motionInput,motionOutput,GetTickCount64()-motionAt);

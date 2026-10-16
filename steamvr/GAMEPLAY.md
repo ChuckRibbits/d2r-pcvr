@@ -793,6 +793,17 @@ native skill through the palette instead. Selected arrow skills gain the candida
 draw/release adapter above; their flight remains native. Crossbows and other
 skills/spells keep native controls, costs, timings and ground-based collision.
 
+For ordinary **basic crossbow bolts**, the held model's `bolt_helper` supplies
+the barrel line and muzzle. The supporting palm sits below that line, including
+the item's attachment transform and weapon adjustments. Native server/client
+creation uses the same frozen muzzle and horizontal barrel direction; the bolt
+mesh follows native path displacement from that point instead of blending from
+the original animated release bone. Both eyes share its current and previous
+transforms. This changes placement, not attack cadence, ammunition or damage.
+It does not add physical 3D collision to crossbows: native ground collision
+remains, with the visual held at launch height. Special missile skills and
+unrecognized/stale rigs retain their native release behavior.
+
 Collision is approximate: creature capsules use native footprint/artwork height,
 and the floor is the launch floor. Walls extend vertically; arrows cannot fly
 over them. The native damage-owner proxy retains its launch grid location while
