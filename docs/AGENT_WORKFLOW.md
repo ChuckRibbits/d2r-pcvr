@@ -217,6 +217,12 @@ physical RAM exhaustion, VRAM exhaustion, or a headset defect.
 
 Known diagnostic lessons:
 
+- Loot label size comes from `[hud] labels_size` in `d2r_vr.ini` for native
+  first-person VR; VR Settings > HUD > Loot label size edits the same key.
+  Default 45%, range 20-150%, five-point steps; explicit saved sizes are kept.
+  The 150% enlargement bypassed this saved value. Changing that override to
+  100% did not restore the earlier appearance; remove the override and respect
+  the profile. The darker backing and hold-to-show shortcut are independent.
 - Render defaults checked in v0.3.15: terrain rings **2**, object radius **300**.
   The reported Act III sessions used 2 / 510: terrain was default, objects were
   above default. 1 / 150 plus a full restart is an unverified mitigation/test,

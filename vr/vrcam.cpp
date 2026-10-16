@@ -912,7 +912,13 @@ void LoadSettings() {
     g_set.plateAlpha.store(std::clamp(IniF(L"hud", L"monster_alpha", 1.0f), 0.0f, 1.0f));
     g_set.labelsSizeTop.store(std::clamp(IniF(L"hud_top", L"labels_size", 100.0f), 20.0f, 150.0f) * 0.01f);
     g_set.labelsSizeThird.store(std::clamp(IniF(L"hud_third", L"labels_size", 100.0f), 20.0f, 150.0f) * 0.01f);
+#ifdef D2RVR_NATIVE_OPENXR
+    const auto& lootSize = framevr::settings::Definitions[framevr::settings::LootLabelSize];
+    g_set.labelsSizeBody.store(framevr::settings::Normalize(framevr::settings::LootLabelSize,
+        IniF(lootSize.section, lootSize.key, lootSize.defaultValue)) * 0.01f);
+#else
     g_set.labelsSizeBody.store(std::clamp(IniF(L"hud", L"labels_size", 100.0f), 20.0f, 150.0f) * 0.01f);
+#endif
     g_set.labelsNear.store(std::clamp(IniF(L"hud", L"labels_near", 0.0f), -20.0f, 20.0f));
     g_set.labelsTilt.store(std::clamp(IniF(L"hud", L"labels_tilt", 0.0f), -40.0f, 40.0f));
     for (int i = 0; i < 2; ++i) {
@@ -1808,9 +1814,8 @@ bool FloorView() { return g_enabled.load() && TableView(); }
 // Flat keeps the game's labels: it has no such tabs.
 void LabelLookNow(float* alpha, float* size) {
     *alpha = 1.0f; *size = 1.0f;
-#ifdef D2RVR_NATIVE_OPENXR
-    if(framevr::lootlabels::display.Active(GetTickCount64())){*size=framevr::lootlabels::TextScale;return;}
-#endif
+    // Native OpenXR uses the first-person [hud] profile too. Its stronger
+    // backing / Show Items lease must not override the saved labels_size.
     if (g_set.platform.load() != 1) return;
     if (FloorView()) { *alpha = g_set.labelsAlphaFloor.load(); *size = g_set.labelsSizeFloor.load(); }
     else if (!g_enabled.load() || TopPersp()) { *alpha = g_set.labelsAlphaTop.load(); *size = g_set.labelsSizeTop.load(); }
@@ -4800,7 +4805,7 @@ void InstallBiomeHook() {
 // [hud_floor] labels_size: the box made again round the name measured at the
 // other scale, about the same bottom middle, and the name drawn at that
 // scale - inside LabelPaint only (t_labelScale), every other text untouched.
-// Native VR uses a short gameplay lease for larger, stronger labels. Showing
+// Native VR uses a short gameplay lease for stronger label backing. Showing
 // all items is a native command in gamecmd.cpp, never a label-rendering veto.
 // Legacy views keep their existing profile settings.
 constexpr uint64_t RVA_LABEL_LAYOUT = 0x1FA9F0, RVA_LABEL_PAINT = 0x1FA8E0, RVA_TEXT_DRAW = 0x902E20;
@@ -4922,7 +4927,7 @@ void InstallLabelHooks() {
     const bool in = drawIn && d2rsig::Hook(RVA_LABEL_LAYOUT, kSigLabelLayout, sizeof kSigLabelLayout, (void*)&HookLabelLayout, (void**)&OrigLabelLayout);
     sizeFailed = !in;
     g_labelSizeIn.store(in);
-    Log(in ? "vrcam: item-label size hooks in - native VR uses original text size; legacy views retain labels_size"
+    Log(in ? "vrcam: item-label size hooks in - labels use the current view's saved labels_size"
            : "vrcam: item-label size hooks FAILED - labels_size does nothing");
 }
 
