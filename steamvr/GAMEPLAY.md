@@ -174,6 +174,7 @@ not generate melee velocity. The layout currently assumes a right-handed player.
 | Cancel active grab/draw | Right B; release inputs before starting again |
 | Physical belt potion | Reach to an original 3D bottle on the front belt and hold **Right Grip** to grab; left-hand grip also works |
 | Drink | Keep grip held, bring the bottle's opening to your mouth and tip nearly horizontal for 0.25 seconds; release to return an unused potion |
+| Heal the mercenary | Toss a held Health, Rejuvenation, Antidote or Thawing bottle (release mid-swing, at least 1.4 m/s) so it lands within 1.5 m of your mercenary's feet. It shatters on landing; a miss leaves the potion on the belt |
 | Quick potion | Left Y → **EQUIPMENT / BELT** → trigger a potion wedge; grip on a potion wedge instead grabs it into the right hand |
 | Swap weapon sets | Reach the swap hand over either shoulder and press its grip; right hand by default, selectable in VR settings. Hip anchors are removed |
 | Seated weapon selection | Utility wheel → **Weapon I** or **Weapon II** |
@@ -498,6 +499,39 @@ native item disappears. A request, grab haptic or mouse click is not proof of
 consumption. A refused attempt never automatically retries. Confirm HP/mana and
 belt changes in the first test. Success feedback is brief and a grab consumes
 at most once. Weapon swaps similarly wait for the observed equipment set.
+
+A Health, Rejuvenation, Antidote or Thawing bottle released with a deliberate throwing motion,
+away from its belt slot, flies on a ballistic arc and lands on the world floor.
+Its launch velocity is 1:1 with the hand: the fastest controller velocity the
+OpenXR runtime reported in the last 0.12 s before the grip opened (pose
+differences only when the runtime reports none), capped at 20 m/s. Once released
+it is in the world: its arc is integrated in world metres from the release frame,
+against the floor height under the player at release, so walking, turning or
+recentering afterwards never carries it along.
+
+The landing point is checked on the game thread against the live, non-hostile
+hireling. Within 1.5 m of its feet, the UI thread presses the column's native
+belt key while the belt's own "give to mercenary?" query (the check Shift+belt
+uses) answers yes for that one press only, so the native mercenary use, voice
+line and rules apply. It is confirmed by the item leaving the belt. If that
+query cannot be answered (hook unavailable or its native gate set) nothing is
+pressed, so a throw never becomes your drink. A miss, a dead or absent
+mercenary or a changed belt sends nothing and the potion stays belted. Every
+landing plays the game's own glass-break sound (`object_glass_break_1`, whose
+native group picks one of three variants and its HD version) at the player, and
+a confirmed feed plays the game's own `healing` overlay (overlay.txt row 26) on
+the merc through the native set-overlay call. Slow releases still return the
+bottle; mana and stamina potions are never thrown. The log records each
+landing's hireling class and distance (`Frame potion toss:`).
+
+**Hurt merc.** During VR gameplay the local hireling's life is sampled on the
+game thread every 200 ms with the same native stat call as the wrist vitals.
+Below 50% life it is tinted with the game's own `red` state (states.txt row 91,
+a colour shift with no stats) through the native toggle-state call, so the game
+syncs it like any other state. The tint clears on recovery, on death (the corpse
+too), for a rehired or resurrected merc, and within about 1.5 s of leaving VR
+gameplay; desktop and flat play never sample or tint. The log records each
+change (`Frame merc:`).
 
 The 18 cm bottle's opening must be within 10.5 cm of the mouth while tipped for
 0.25 seconds; bringing only the controller center to the face does not count.
