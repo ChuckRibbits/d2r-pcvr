@@ -90,6 +90,17 @@ class NativeSetupTests(unittest.TestCase):
             self.assertEqual(result['backup_required'], '0')
             self.assertEqual(result['backup_folder'], '')
 
+    def test_probe_reports_hdr_advice_without_changing_game_settings(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            app, game, client, saves, profile, values = self.fixture(root)
+            with patch.object(setup.hdr_check, 'query', return_value=[setup.hdr_check.Display('Fixture HDR', True)]):
+                result = self.probe(root, app, game, client, saves)
+            self.assertEqual(result['hdr_status'], 'on')
+            self.assertIn('Fixture HDR', result['hdr_warning'])
+            self.assertIn('Use HDR Off', result['hdr_warning'])
+            self.assertIn('continue setup', result['hdr_warning'])
+
     def test_probe_finds_complete_legacy_chain_from_steam_wrapper_with_unicode_and_spaces(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

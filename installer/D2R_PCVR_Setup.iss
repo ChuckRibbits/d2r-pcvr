@@ -60,6 +60,7 @@ Filename: "{code:SteamExecutable}"; Description: "Open Steam to use your new VR 
 var
   EditionPage, HeadsetPage, ConnectionPage, AccountPage, ModePage: TInputOptionWizardPage;
   PathsPage, RuntimePage, BackupPage: TInputDirWizardPage;
+  HDRPage: TOutputMsgWizardPage;
   ProfileIDs: TStringList;
   PayloadRoot, ProbeFile, ChoicesFile, LastOutput, PreviousEdition, BackupGame: String;
   SetupFailed, BackendBusy: Boolean;
@@ -69,12 +70,29 @@ begin
   Result := '"' + Value + '"';
 end;
 
+function IsSecurityBlock: Boolean;
+begin
+  Result := Pos('[PCVR_SECURITY_BLOCK]', LastOutput) > 0;
+end;
+
+function SecurityBlockMessage: String;
+begin
+  Result := 'Windows Security interrupted setup. To finish installing:'#13#10#13#10 +
+    '1. Open Windows Security > Virus & threat protection > Manage settings.'#13#10#13#10 +
+    '2. Temporarily turn Real-time protection Off.'#13#10#13#10 +
+    '3. Run this installer again and choose Update / repair.'#13#10#13#10 +
+    '4. Turn Real-time protection back On immediately afterward, even if setup does not complete.'#13#10#13#10 +
+    'Your saves and settings have been kept.';
+end;
+
 procedure BackendOutput(const S: String; const Error, FirstLine: Boolean);
 begin
   Log(S);
   if Trim(S) <> '' then LastOutput := S;
   if BackendBusy then begin
-    WizardForm.StatusLabel.Caption := Copy(S, 1, 180);
+    if IsSecurityBlock then
+      WizardForm.StatusLabel.Caption := 'Windows Security interrupted setup. Follow the steps shown to retry.'
+    else WizardForm.StatusLabel.Caption := Copy(S, 1, 180);
     WizardForm.StatusLabel.Update;
     SaveStringToFile(ExpandConstant('{app}\setup-last.log'), S + #13#10, True);
   end;
@@ -202,7 +220,9 @@ begin
   ModePage.Add('Full install with recommended settings (resets calibration)');
   ModePage.Add('Only configure Steam shortcuts (keep the installed mod)');
   ModePage.SelectedValueIndex := 1;
-  BackupPage := CreateInputDirPage(ModePage.ID, 'Locate an older installation backup',
+  HDRPage := CreateOutputMsgPage(ModePage.ID, 'Check HDR before playing',
+    'HDR can affect VR visuals', '');
+  BackupPage := CreateInputDirPage(HDRPage.ID, 'Locate an older installation backup',
     'Keep the original files available for removal',
     'Setup fills in a verified backup when it can find one. Otherwise select the original snapshot or its backup folder (usually setup-backups\game or build-frame\backups in the old mod folder). Setup will copy it into the helper folder and remember it for this game. If it is unavailable, cancel and keep the current installation.', False, '');
   BackupPage.Add('Original installation backup folder:');
@@ -231,6 +251,7 @@ begin
   Result := ((PageID = ConnectionPage.ID) and (HeadsetPage.SelectedValueIndex in [0, 3])) or
             ((PageID = RuntimePage.ID) and not UsesSteamVR) or
             ((PageID = AccountPage.ID) and (ProfileIDs.Count = 1)) or
+            ((PageID = HDRPage.ID) and (GetIniString('detected', 'hdr_warning', '', ProbeFile) = '')) or
             ((PageID = BackupPage.ID) and (GetIniInt('detected', 'backup_required', 0, 0, 1, ProbeFile) = 0));
 end;
 
@@ -318,7 +339,8 @@ var
   Connection: String;
 begin
   if ExpandConstant('{param:CONFIG|}') <> '' then begin
-    Result := 'Using the supplied setup choices: ' + ExpandConstant('{param:CONFIG|}');
+    Result := 'Using the supplied setup choices: ' + ExpandConstant('{param:CONFIG|}') + NewLine +
+      GetIniString('detected', 'hdr_warning', '', ProbeFile);
     Exit;
   end;
   Connection := 'SteamVR';
@@ -336,6 +358,8 @@ begin
   if BackupPage.Values[0] <> '' then Result := Result + 'Original backup location: ' + BackupPage.Values[0] + NewLine;
   Result := Result + NewLine +
     'Save and exit D2R, then fully exit Steam before installing. Use an offline character in VR.';
+  if GetIniString('detected', 'hdr_warning', '', ProbeFile) <> '' then
+    Result := Result + NewLine + NewLine + GetIniString('detected', 'hdr_warning', '', ProbeFile);
 end;
 
 function PrepareToInstall(var NeedsRestart: Boolean): String;
@@ -343,8 +367,10 @@ begin
   Result := '';
   if ExpandConstant('{param:CONFIG|}') <> '' then ChoicesFile := ExpandConstant('{param:CONFIG|}')
   else WriteChoices;
-  if not RunBackend(PayloadRoot, '--validate ' + Q(ChoicesFile) + ' --managed-root ' + Q(ExpandConstant('{app}'))) then
-    Result := LastOutput + #13#10#13#10 + 'No game or Steam files were changed. Correct the selections, or Save & Exit D2R and fully exit Steam, then retry.';
+  if not RunBackend(PayloadRoot, '--validate ' + Q(ChoicesFile) + ' --managed-root ' + Q(ExpandConstant('{app}'))) then begin
+    if IsSecurityBlock then Result := SecurityBlockMessage
+    else Result := LastOutput + #13#10#13#10 + 'No game or Steam files were changed. Correct the selections, or Save & Exit D2R and fully exit Steam, then retry.';
+  end;
 end;
 
 procedure CurStepChanged(CurStep: TSetupStep);
@@ -358,17 +384,25 @@ begin
     end;
     if SetupFailed then begin
       Log('Game configuration did not complete. Helper files and backups are retained for repair.');
-      MsgBox(LastOutput + #13#10#13#10 + 'Setup did not complete. Your helper files and backups have been kept. See setup-last.log in ' + ExpandConstant('{app}') + ', then rerun Setup to repair.', mbError, MB_OK);
+      if IsSecurityBlock then MsgBox(SecurityBlockMessage, mbInformation, MB_OK)
+      else MsgBox(LastOutput + #13#10#13#10 + 'Setup did not complete. Your helper files and backups have been kept. See setup-last.log in ' + ExpandConstant('{app}') + ', then rerun Setup to repair.', mbError, MB_OK);
     end;
   end;
 end;
 
 procedure CurPageChanged(CurPageID: Integer);
 begin
+  if CurPageID = HDRPage.ID then
+    HDRPage.MsgLabel.Caption := GetIniString('detected', 'hdr_warning', '', ProbeFile);
   if CurPageID = wpFinished then begin
     if SetupFailed then begin
-      WizardForm.FinishedHeadingLabel.Caption := 'D2R VR Unleashed setup needs attention';
-      WizardForm.FinishedLabel.Caption := 'Game configuration did not complete. Your backups and helper files were kept. Check setup-last.log in ' + ExpandConstant('{app}') + ' and rerun Setup to repair.';
+      if IsSecurityBlock then begin
+        WizardForm.FinishedHeadingLabel.Caption := 'One more step to finish setup';
+        WizardForm.FinishedLabel.Caption := SecurityBlockMessage;
+      end else begin
+        WizardForm.FinishedHeadingLabel.Caption := 'D2R VR Unleashed setup needs attention';
+        WizardForm.FinishedLabel.Caption := 'Game configuration did not complete. Your backups and helper files were kept. Check setup-last.log in ' + ExpandConstant('{app}') + ' and rerun Setup to repair.';
+      end;
     end else WizardForm.FinishedLabel.Caption :=
       'Your VR shortcuts are ready in Steam. Connect your headset and use the matching SteamVR or Virtual Desktop shortcut with an OFFLINE character.'#13#10#13#10 +
       'Normal Steam / Battle.net Play stays stock. First VR load asks for body calibration. Help and controller mappings are in the ' + ExpandConstant('{groupname}') + ' Start menu folder.';

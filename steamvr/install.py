@@ -84,7 +84,44 @@ def require_game_closed():
         raise SystemExit('Save and exit D2R before installing or restoring the mod.')
 
 
+def windows_read_error(path):
+    """Recover Win32's reason when Python maps a Defender block to errno 22.
+
+    Only opens an existing file for reading, then closes it. No security policy
+    or file contents are changed. 225/226 are ERROR_VIRUS_INFECTED/DELETED.
+    """
+    if os.name != 'nt':
+        return None
+    import ctypes
+    from ctypes import wintypes
+    kernel = ctypes.WinDLL('kernel32', use_last_error=True)
+    kernel.CreateFileW.argtypes = [wintypes.LPCWSTR, wintypes.DWORD, wintypes.DWORD,
+        ctypes.c_void_p, wintypes.DWORD, wintypes.DWORD, wintypes.HANDLE]
+    kernel.CreateFileW.restype = wintypes.HANDLE
+    kernel.CloseHandle.argtypes = [wintypes.HANDLE]
+    kernel.CloseHandle.restype = wintypes.BOOL
+    handle = kernel.CreateFileW(str(path), 0x80000000, 7, None, 3, 0x80, None)
+    if handle == ctypes.c_void_p(-1).value:
+        return ctypes.get_last_error()
+    kernel.CloseHandle(handle)
+    return None
+
+
 def dependency_io_error(path, action, error):
+    code = getattr(error, 'winerror', None)
+    if code is None and os.name == 'nt':
+        try:
+            code = windows_read_error(path)
+        except OSError:
+            pass  # Keep the original I/O diagnosis if probing also fails.
+    if code in (225, 226):
+        return SystemExit(
+            '[PCVR_SECURITY_BLOCK] Windows Security interrupted setup. '
+            '1) Open Windows Security > Virus & threat protection > Manage settings. '
+            '2) Temporarily turn Real-time protection Off. '
+            '3) Run this installer again and choose Update / repair. '
+            '4) Turn Real-time protection back On immediately afterward, even if setup does not complete. '
+            f'Details: required dependency "{path}", Windows error {code}. No game files changed.')
     return SystemExit(
         f'Could not {action} required dependency "{path}": {error}. '
         'The file may be missing, blocked/quarantined by security software, or inaccessible. '

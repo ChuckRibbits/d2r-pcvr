@@ -36,7 +36,7 @@ def main():
              'Launch-VR-SteamVR.cmd', 'Launch-VR-VDXR.cmd',
              'Install-Windows.cmd', 'Uninstall-Windows.cmd', 'steamvr/setup_windows.ps1',
              'steamvr/uninstall_windows.py',
-             'steamvr/setup_windows.py', 'steamvr/steam_config.py',
+             'steamvr/setup_windows.py', 'steamvr/steam_config.py', 'steamvr/hdr_check.py',
              'THIRD_PARTY.md', 'LICENSE', 'd2r_pcvr.ini',
              'reshade/D2R_DepthFog.fx', 'third_party/minhook/LICENSE.txt',
              'external/reshade/LICENSE.md', 'steamvr/install.py', 'steamvr/mod_identity.py',
