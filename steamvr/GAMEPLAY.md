@@ -187,11 +187,11 @@ not generate melee velocity. The layout currently assumes a right-handed player.
 | Walk / snap turn | Sticks; paused while wheel or journal is open |
 | Inventory menu / height reset | Left grip + left stick click / VR Settings > Reset eye height |
 
-Dropped-item names respect **`[hud] labels_size`** in `d2r_vr.ini` (a percentage of
-the game's text size; the shipped profile uses **45**) and use a darker backing
-in native VR gameplay. Text, backing bounds and click targets scale together;
-item-quality colors are preserved. Size is currently an INI setting, not a
-control in VR Settings. **Right Grip + Right
+Dropped-item names use **VR Settings > HUD > Loot label size**: **45%** by
+default, adjustable from **20% to 150%** in five-percentage-point steps.
+Apply saves `[hud] labels_size` in `d2r_vr.ini` and updates it live; existing
+saved sizes are preserved. Text, dark backing bounds and click targets scale
+together; item-quality colors are preserved. **Right Grip + Right
 Trigger** holds the native **Show Items (Alt)** action, with a short vibration
 when the hold starts. All nearby loot labels stay shown while both buttons are
 held, using the game's native Alt range rather than a VR aiming or pickup radius.

@@ -14,6 +14,19 @@ int main(){
     Check(WritePrivateProfileStringW(L"custom",L"keep",L"12345",name),"write unrelated key");
     Check(WritePrivateProfileStringW(L"render",L"rings",L"6",name),"write existing setting");
     vrsettings::Poll(name);auto before=vrsettings::Read();
+    Check(before.values[LootLabelSize]==45,"missing loot size uses original shipped percentage");
+    Check(WritePrivateProfileStringW(L"hud",L"labels_size",L"65",name),"existing player loot size");
+    vrsettings::Poll(name);
+    {
+        const auto current=vrsettings::Read();
+        Check(current.values[LootLabelSize]==65,"explicit loot size is preserved");
+        Model loot;loot.Open(current);loot.Click({Kind::Change,LootLabelSize,1});
+        const auto request=loot.Click({Kind::Apply});
+        Check(vrsettings::Submit(request)&&vrsettings::Poll(name),"save loot size with the normal transaction");
+        const auto saved=vrsettings::Read();
+        Check(saved.values[LootLabelSize]==70&&Int(path,L"hud",L"labels_size")==70,"loot size survives INI reload");
+        Check(Changed(saved.values,current.values)==(ChangeMask{1}<<LootLabelSize)&&Int(path,L"custom",L"keep")==12345,"loot change preserves all other settings");
+    }
     Check(before.values[HapticShortMelee]==0,"missing short-melee preference selects the compatible longer pulse");
     for(int choice:{1,0}){
         const auto current=vrsettings::Read();Model h;h.Open(current);h.Click({Kind::Change,HapticShortMelee,1});

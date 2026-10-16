@@ -911,7 +911,13 @@ void LoadSettings() {
     g_set.plateAlpha.store(std::clamp(IniF(L"hud", L"monster_alpha", 1.0f), 0.0f, 1.0f));
     g_set.labelsSizeTop.store(std::clamp(IniF(L"hud_top", L"labels_size", 100.0f), 20.0f, 150.0f) * 0.01f);
     g_set.labelsSizeThird.store(std::clamp(IniF(L"hud_third", L"labels_size", 100.0f), 20.0f, 150.0f) * 0.01f);
+#ifdef D2RVR_NATIVE_OPENXR
+    const auto& lootSize = framevr::settings::Definitions[framevr::settings::LootLabelSize];
+    g_set.labelsSizeBody.store(framevr::settings::Normalize(framevr::settings::LootLabelSize,
+        IniF(lootSize.section, lootSize.key, lootSize.defaultValue)) * 0.01f);
+#else
     g_set.labelsSizeBody.store(std::clamp(IniF(L"hud", L"labels_size", 100.0f), 20.0f, 150.0f) * 0.01f);
+#endif
     g_set.labelsNear.store(std::clamp(IniF(L"hud", L"labels_near", 0.0f), -20.0f, 20.0f));
     g_set.labelsTilt.store(std::clamp(IniF(L"hud", L"labels_tilt", 0.0f), -40.0f, 40.0f));
     for (int i = 0; i < 2; ++i) {

@@ -218,7 +218,8 @@ physical RAM exhaustion, VRAM exhaustion, or a headset defect.
 Known diagnostic lessons:
 
 - Loot label size comes from `[hud] labels_size` in `d2r_vr.ini` for native
-  first-person VR; the shipped profile uses 45%. It is not in VR Settings yet.
+  first-person VR; VR Settings > HUD > Loot label size edits the same key.
+  Default 45%, range 20-150%, five-point steps; explicit saved sizes are kept.
   The 150% enlargement bypassed this saved value. Changing that override to
   100% did not restore the earlier appearance; remove the override and respect
   the profile. The darker backing and hold-to-show shortcut are independent.
