@@ -18,8 +18,12 @@ int main(){
     assert(ModRootOfPluginDir(L"D:\\oldmods\\x\\d2rloader\\plugins\\")==L"");
     // ReShade: the mod's own when it is there, else the game folder (an older install).
     assert(ReShadeDir(game,mod,true)==mod+L"reshade\\");
-    assert(ReShadeDir(game,mod,false)==game);
+    assert(ReShadeDir(game,mod,false)==mod+L"reshade\\");
     assert(ReShadeDir(game,L"",true)==game);
+    const auto candidates = SettingsCandidates(game);
+    assert(candidates.front() == modPlugins + L"d2r_pcvr.ini");
+    assert(SettingsCandidates(modPlugins)[1] == modPlugins + L"d2r_pcvr.ini");
+    assert(SettingsCandidates(mod)[2] == modPlugins + L"d2r_pcvr.ini");
     // The other VR mod is looked for where its plugin would load into this game: this
     // plugin's folder and the global plugins folder, never another mod's folder.
     auto dirs=SameGamePluginDirs(modPlugins);

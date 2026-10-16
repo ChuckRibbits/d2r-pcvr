@@ -1,6 +1,6 @@
 # Agent workflow and session handoff
 
-Last checked: 2026-10-15. This records working procedures, not a claim that the
+Last checked: 2026-10-16. This records working procedures, not a claim that the
 current checkout, installed DLL and latest release are identical. Verify those
 separately. Read [CONTRIBUTING.md](../CONTRIBUTING.md) first.
 
@@ -45,14 +45,15 @@ powershell -NoProfile -ExecutionPolicy Bypass -File steamvr/build_windows.ps1 -T
 ```
 
 The active project is `steamvr/CMakeLists.txt`, not the historical root project.
-Normal output is `build-frame/windows-native/d2rl-vrcam.dll`. Developer-capable
+Normal output is `build-frame/windows-native/d2rl-pcvr.dll`. Developer-capable
 branches also accept:
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File steamvr/build_windows.ps1 -Developer -Test
 ```
 
-Developer output is `build-frame/windows-developer/d2rl-vrcam.dll`. Neither
+Developer branches predating the identity change output
+`build-frame/windows-developer/d2rl-vrcam.dll`; inspect the selected branch. Neither
 command installs or launches anything. The developer helpers historically live
 on `feat/development-scenarios`; first inspect the current branch and options.
 The last checked suites had 67 production and 69 developer tests. Counts change;
@@ -87,6 +88,13 @@ Locate the real game directory, then verify the plugin path and current process
 state. The historical plugin is `d2rloader/plugins/d2rl-vrcam.dll`; identity and
 filename migration work may change this. Inspect the current installer/manifest
 rather than assuming names remain permanent.
+
+This branch uses the [D2RLoader mod layout](MOD_COEXISTENCE.md):
+`mods/D2R-PCVR/d2rloader/plugins/d2rl-pcvr.dll`, with `d2r_pcvr.ini` beside it.
+A first migration needs the matching installer and launch wrapper, not just a
+renamed DLL. The wrapper selects `-mod D2R-PCVR`. Developer scenarios using a
+different mod selection need separate staging; do not assume the old global
+plugin is still available.
 
 For a DLL-only update to the owner's configured installation:
 
@@ -195,6 +203,12 @@ The existing owner test character is not permission to alter normal saves.
 
 Look in the **active game's** directory, independent of headset brand:
 
+With the mod-folder layout, the buffered runtime log below moves to
+`mods/D2R-PCVR/d2rloader/logs/d2r-vr-frame.log`, and ReShade uses
+`mods/D2R-PCVR/reshade`. The launch log remains in the shared folder. Locate
+plugin startup logs by the current `d2r-pcvr-vrcam` identity; the table also
+records historical paths for older release reports.
+
 | File | Purpose |
 | --- | --- |
 | `d2rloader/logs/d2r-vr-frame.log` | Main buffered PCVR runtime/gameplay/render diagnostics |
@@ -217,7 +231,8 @@ physical RAM exhaustion, VRAM exhaustion, or a headset defect.
 
 Known diagnostic lessons:
 
-- Loot label size comes from `[hud] labels_size` in `d2r_vr.ini` for native
+- Loot label size comes from `[hud] labels_size` in `d2r_pcvr.ini` (formerly
+  `d2r_vr.ini`) for native
   first-person VR; VR Settings > HUD > Loot label size edits the same key.
   Default 45%, range 20-150%, five-point steps; explicit saved sizes are kept.
   The 150% enlargement bypassed this saved value. Changing that override to

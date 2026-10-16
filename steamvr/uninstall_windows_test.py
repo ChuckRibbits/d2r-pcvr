@@ -61,8 +61,11 @@ class UninstallTests(unittest.TestCase):
             plan = uninstall.restore_plan(game, chain)
             backup = uninstall.apply_updates(plan, root / 'backups', lambda: None)
             self.assertTrue((backup / 'manifest.json').is_file())
-            self.assertEqual((game / 'ReShade.ini').read_bytes(), b'original other mod configuration')
-            for path in (game / uninstall.PLUGIN, game / install.RECORD, game / 'openxr_loader.dll'):
+            # Another installed plugin can use these shared files. Do not put
+            # an old snapshot's configuration back over its current setup.
+            self.assertEqual((game / 'ReShade.ini').read_bytes(), b'current mod')
+            self.assertEqual((game / 'openxr_loader.dll').read_bytes(), b'current mod')
+            for path in (game / uninstall.PLUGIN, game / install.RECORD):
                 self.assertFalse(path.exists())
             self.assertEqual(stock.read_bytes(), b'original game, updated since install')
             self.assertEqual(character.read_bytes(), b'latest progress')
@@ -140,16 +143,18 @@ class UninstallTests(unittest.TestCase):
             plan = uninstall.restore_plan(game, uninstall.snapshots(game, record, []))
             self.assertNotIn(plugin, plan)
             self.assertNotIn(ini, plan)
-            self.assertEqual(plan[game / 'ReShade.ini'], b'original')
+            self.assertNotIn(game / 'ReShade.ini', plan)
             uninstall.apply_updates(plan, root / 'removal', lambda: None)
             self.assertEqual(plugin.read_bytes(), b'MZ D2R VR BodyWalk Game Link')
             self.assertEqual(ini.read_bytes(), b'[mode]\nplatform=1\n')
+            self.assertEqual((game / 'ReShade.ini').read_bytes(), b'current')
             self.assertFalse((game / install.RECORD).exists())
             # Without D2R VR there, the old names are this mod's leftovers and go.
             plugin.write_bytes(b'MZ old D2R PCVR ' + 'd2r_vr_icons'.encode('utf-16-le'))
             plan = uninstall.restore_plan(game, [(first, json.loads((first / 'manifest.json').read_text()))])
             self.assertIsNone(plan[plugin])
             self.assertIsNone(plan[ini])
+            self.assertEqual(plan[game / 'ReShade.ini'], b'original')
 
     def test_chain_across_the_rename_keeps_the_first_install_as_original(self):
         with tempfile.TemporaryDirectory() as tmp:

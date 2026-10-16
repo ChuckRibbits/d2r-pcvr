@@ -10,6 +10,8 @@ D2RLoader mod `D2R-PCVR`: `mods\D2R-PCVR\d2rloader\plugins\d2rl-pcvr.dll` with
 `d2r_pcvr.ini` and `openxr_loader.dll`, its ReShade in `mods\D2R-PCVR\reshade\`,
 `mods\D2R-PCVR\D2R-PCVR.mpq\modinfo.json`; the shortcuts start
 `D2RLoader.exe -mod D2R-PCVR` (`steamvr/mod_identity.py`, `steamvr/launch_windows.py`).
+See [migration and validation notes](../docs/MOD_COEXISTENCE.md) for shared
+dependency protection, ReShade migration, log paths and remaining gameplay checks.
 Releases up to 0.3.15 used D2R VR's names, `d2rl-vrcam.dll` and `d2r_vr.ini`;
 D2R VR still uses them. Setup decides whose those files are from this mod's
 own install record and snapshots plus the plugin's content, never from the

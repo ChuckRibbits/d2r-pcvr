@@ -101,7 +101,7 @@ def restore_plan(game, chain, restore_video=False):
                 raise ValueError(f'Backup path escapes its folder: {name}')
             if target.exists() and not target.is_file() or source.exists() and not source.is_file():
                 raise ValueError(f'Backup path is not a file: {name}')
-            if str(relative).lower() in keep or shared and mod_identity.loader_file(relative):
+            if str(relative).lower() in keep or shared and mod_identity.shared_dependency(relative):
                 continue
             if target not in updates:
                 updates[target] = source.read_bytes() if source.is_file() else None

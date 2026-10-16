@@ -68,7 +68,7 @@ def modinfo_bytes():
 
 
 def loader_file(relative):
-    """True for a file of D2RLoader itself (from its archive), not one of this mod's: the loader's exe, core and
+    r"""True for a file of D2RLoader itself (from its archive), not one of this mod's: the loader's exe, core and
     mpq, its d2rloader\ folder except the plugins, the runtime and this mod's record, and a mods\ folder other
     than this mod's."""
     parts = [part.lower() for part in Path(relative).parts]
@@ -80,14 +80,16 @@ def loader_file(relative):
 
 
 def other_loader_users(game):
-    """Other mods that start through this folder's D2RLoader: another mod folder with D2RLoader content (its
+    r"""Other mods that start through this folder's D2RLoader: another mod folder with D2RLoader content (its
     d2rloader\ or modinfo), or a plugin in the global plugins folder that is not this mod's."""
     game = Path(game)
     users = []
     mods = game / 'mods'
     if mods.is_dir():
         for folder in mods.iterdir():
-            if folder.is_dir() and folder.name.lower() != MOD_NAME.lower() and (folder / 'd2rloader').is_dir():
+            if (folder.is_dir() and folder.name.lower() != MOD_NAME.lower()
+                    and ((folder / 'd2rloader').is_dir() or (folder / 'modinfo.json').is_file()
+                         or any(folder.glob('*.mpq/modinfo.json')))):
                 users.append(folder.name)
     plugins = game / 'd2rloader/plugins'
     if plugins.is_dir():
@@ -96,6 +98,38 @@ def other_loader_users(game):
             if dll.name.lower() not in own and plugin_owner(dll) != MOD_ID:
                 users.append(dll.name)
     return users
+
+
+def legacy_effect_file(relative):
+    """Files formerly installed outside PCVR's mod folder; never an arbitrary game file."""
+    parts = [part.lower() for part in Path(relative).parts]
+    return (len(parts) == 1 and parts[0] in ('reshade64.dll', 'reshade.ini', 'd2r_frame_reshade.ini')
+            or len(parts) > 1 and parts[0] in ('reshade-shaders', 'd2r_sky_ours'))
+
+
+def shared_dependency(relative):
+    """Dependencies an old snapshot must not restore/remove while another mod uses the game."""
+    path = Path(relative)
+    return (loader_file(path) or legacy_effect_file(path)
+            or path.as_posix().lower() == 'openxr_loader.dll'
+            or path.as_posix().lower().startswith('d2rloader/runtime/'))
+
+
+def legacy_effect_files(game, roots=()):
+    """Only files our earlier snapshots actually installed, bounded to the game directory."""
+    game = Path(game).resolve()
+    found = set()
+    for manifest in _manifests(game, roots):
+        for name in manifest['installed']:
+            relative = Path(str(name).replace('\\', '/'))
+            if relative.is_absolute() or '..' in relative.parts or not legacy_effect_file(relative):
+                continue
+            path = game / relative
+            if not path.resolve().is_relative_to(game):
+                raise ValueError(f'Legacy effect path leaves the game folder: {relative}')
+            if path.is_file():
+                found.add(relative)
+    return sorted(found)
 
 
 def plugin_owner(path):

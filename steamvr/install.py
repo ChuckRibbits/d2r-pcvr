@@ -157,6 +157,42 @@ def default_saves(game):
 LOADER_CONFIG = Path('d2rloader/config/d2rloader.toml')
 
 
+def migrate_reshade_paths(content, game):
+    """Retain user values/comments and rebase paths when moving ReShade's base.
+
+    Owned shaders/textures are copied into the mod. Keep the old search folder
+    as a fallback for unrelated/custom files that are deliberately left alone.
+    """
+    encoding = 'utf-16' if content.startswith((b'\xff\xfe', b'\xfe\xff')) else 'utf-8-sig'
+    text = content.decode(encoding)
+    general = False
+    lines = []
+    for line in text.splitlines(keepends=True):
+        stripped = line.strip()
+        if stripped.startswith('['):
+            general = stripped.lower() == '[general]'
+        key, separator, value = line.partition('=')
+        kind = key.strip().lower()
+        if general and separator and kind in ('effectsearchpaths', 'texturesearchpaths', 'presetpath'):
+            paths = []
+            for raw in value.strip().split(','):
+                if not raw.strip():
+                    continue
+                p = Path(raw.strip().replace('\\', '/'))
+                old = p if p.is_absolute() else game / p
+                old = old.resolve()
+                relative = old.relative_to(game) if old.is_relative_to(game) else None
+                mapped = relative is not None and bool(relative.parts) and (relative.parts[0].lower() == 'reshade-shaders'
+                    or relative.as_posix().lower() == 'd2r_frame_reshade.ini')
+                paths.append(str(game / mod_identity.RESHADE_DIR / relative) if mapped else str(old))
+                if mapped and kind != 'presetpath':
+                    paths.append(str(old))
+            ending = '\r\n' if line.endswith('\r\n') else '\n' if line.endswith('\n') else ''
+            line = key + '=' + ','.join(dict.fromkeys(paths)) + ending
+        lines.append(line)
+    return ''.join(lines).encode(encoding)
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--game', type=Path, default=GAME)
@@ -183,9 +219,10 @@ def main():
         # D2R VR's d2rl-vrcam.dll / d2r_vr.ini, installed after this snapshot: never touched.
         keep = ({str(name).lower() for name in mod_identity.LEGACY_FILES}
                 if mod_identity.plugin_owner(game / mod_identity.LEGACY_PLUGIN) == mod_identity.OTHER_MOD else set())
+        shared = bool(mod_identity.other_loader_users(game))
         for rel in m['installed']:
             rel = safe_relative(rel)
-            if str(rel).lower() in keep:
+            if str(rel).lower() in keep or shared and mod_identity.shared_dependency(rel):
                 continue
             target = game / rel
             old = snapshot / 'previous' / rel
@@ -224,6 +261,16 @@ def main():
     found = mod_identity.survey(game, [args.backup_dir])
     if found.other:
         raise SystemExit(found.message + ' No game files changed.')
+    legacy_effects = (mod_identity.legacy_effect_files(game, [args.backup_dir])
+                      if found.legacy or found.moved else [])
+    effect_configs = {}
+    if args.preserve_settings:
+        for rel in legacy_effects:
+            if rel.as_posix().lower() in ('reshade.ini', 'd2r_frame_reshade.ini'):
+                content = (game / rel).read_bytes()
+                if rel.name.lower() == 'reshade.ini':
+                    content = migrate_reshade_paths(content, game)
+                effect_configs[mod_identity.RESHADE_DIR / rel.name] = content
     # Read and validate all inputs before changing any game files.
     settings = json.loads((saves / 'Settings.json').read_text(encoding='utf-8-sig'))
     archive = args.deps / 'D2RLoader-1.3.1-beta.zip'
@@ -256,6 +303,7 @@ def main():
     if loader_digest not in LOADER_HASHES:
         raise dependency_checksum_error(f'D2RLoader archive {archive}', LOADER_HASHES, loader_digest)
     payload = {}
+    shared_loader = bool(mod_identity.other_loader_users(game))
     try:
         with zipfile.ZipFile(archive) as z:
             for name in z.namelist():
@@ -267,7 +315,14 @@ def main():
                     # d2rloader.toml stays as it is.
                     if rel == LOADER_CONFIG and (game / rel).is_file():
                         continue
-                    payload[rel] = z.read(name)
+                    data = z.read(name)
+                    if shared_loader and mod_identity.loader_file(rel) and (game / rel).is_file():
+                        if rel.as_posix().lower() in mod_identity.LOADER_NAMES and (game / rel).read_bytes() != data:
+                            raise SystemExit('Another mod uses a different installed D2RLoader. '
+                                             'Select a compatible shared loader before updating PCVR. No game files changed.')
+                        # Preserve the other mod's existing shared configuration/resources.
+                        continue
+                    payload[rel] = data
     except OSError as error:
         raise dependency_io_error(archive, 'read', error) from error
     payload[mod_identity.RESHADE] = read_dependency(reshade)
@@ -306,16 +361,26 @@ def main():
                 'saves': str(saves), 'installed': installed}
     (snapshot / 'manifest.json').write_text(json.dumps(manifest, indent=2))
 
-    def put(rel, content):
+    journaled = set()
+
+    def journal(rel):
+        key = str(rel).casefold()
+        if key in journaled:
+            return
         dest = game / rel
         if dest.exists():
             old = snapshot / 'previous' / rel
             old.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(dest, old)
-        dest.parent.mkdir(parents=True, exist_ok=True)
         installed.append(str(rel))
         # Journal before replacing so an interrupted install can be restored.
         (snapshot / 'manifest.json').write_text(json.dumps(manifest, indent=2))
+        journaled.add(key)
+
+    def put(rel, content):
+        journal(rel)
+        dest = game / rel
+        dest.parent.mkdir(parents=True, exist_ok=True)
         dest.write_bytes(content)
 
     def remove(rel):
@@ -324,10 +389,7 @@ def main():
         dest = game / rel
         if not dest.is_file():
             return
-        old = snapshot / 'previous' / rel
-        old.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(dest, old)
-        installed.append(str(rel))
+        journal(rel)
         manifest.setdefault('removed', []).append(str(rel))
         (snapshot / 'manifest.json').write_text(json.dumps(manifest, indent=2))
         dest.unlink()
@@ -360,6 +422,19 @@ def main():
             remove(rel)
         print(f'D2R PCVR is now the D2RLoader mod {mod_identity.MOD_NAME} ({mod_identity.MOD_DIR}); '
               'its files left the global plugins folder. They are kept in the backup.')
+    # Copy only our recorded legacy files. Existing mod-folder settings win on
+    # repair; shared roots stay intact while another mod uses this loader.
+    for dest, content in effect_configs.items():
+        if not (game / dest).exists():
+            put(dest, content)
+    shared = bool(mod_identity.other_loader_users(game))
+    for rel in legacy_effects:
+        dest = mod_identity.RESHADE_DIR / rel
+        if rel.name.lower() not in ('reshade64.dll', 'reshade.ini', 'd2r_frame_reshade.ini'):
+            if not (game / dest).exists():
+                put(dest, (game / rel).read_bytes())
+        if not shared:
+            remove(rel)
     for rel, content in payload.items():
         put(rel, content)
     cfg = configparser.ConfigParser(interpolation=None, strict=False, allow_no_value=True)

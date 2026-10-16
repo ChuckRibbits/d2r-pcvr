@@ -8306,7 +8306,7 @@ D2RL_PLUGIN_EXPORT bool D2RLoaderLoadPlugin(const PluginContext* ctx) noexcept {
     }
 #ifdef D2RVR_NATIVE_OPENXR
     if(!framevr::logging::Start(g_self))ctx->LogWarn("Frame buffered logger could not start; routine diagnostics disabled to protect gameplay");
-    else ctx->LogInfo("Frame runtime diagnostics: d2rloader/logs/d2r-vr-frame.log (buffered, no per-message disk flush)");
+    else ctx->LogInfo("Frame runtime diagnostics: d2r-vr-frame.log in this plugin's d2rloader/logs folder (buffered, no per-message disk flush)");
     if(!pairtime::threadStats.Start())ctx->LogWarn("Frame CPU diagnostics worker could not start; thread scans disabled");
 #endif
 

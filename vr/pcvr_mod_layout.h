@@ -43,11 +43,18 @@ inline std::wstring ModRootOfPluginDir(const std::wstring& pluginDir) {
     return scope.size() > game.size() ? scope : L"";
 }
 
-// Where ReShade64.dll and ReShade's own files are: the mod's reshade\ when it has its
-// ReShade there, else the game folder (an install from before the mod folder).
-inline std::wstring ReShadeDir(const std::wstring& gameDir, const std::wstring& modRoot, bool modHasReShade) {
-    if (!modRoot.empty() && modHasReShade) return modRoot + L"reshade\\";
+// A mod-local plugin must not fall back to another mod's root ReShade when its
+// own dependency is missing. Legacy global plugins still use the game root.
+inline std::wstring ReShadeDir(const std::wstring& gameDir, const std::wstring& modRoot, bool) {
+    if (!modRoot.empty()) return modRoot + L"reshade\\";
     return gameDir;
+}
+
+// New mod-folder settings take precedence over a stale legacy copy. The app
+// can be placed beside D2R.exe, at the mod root or beside the plugin/INI.
+inline std::vector<std::wstring> SettingsCandidates(const std::wstring& exeDir) {
+    return {exeDir + L"mods\\D2R-PCVR\\d2rloader\\plugins\\d2r_pcvr.ini",
+            exeDir + L"d2r_pcvr.ini", exeDir + L"d2rloader\\plugins\\d2r_pcvr.ini"};
 }
 
 // The folders whose plugins load into the same game as this one: its own, and D2RLoader's
