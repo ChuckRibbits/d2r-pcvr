@@ -36,6 +36,20 @@ target_sources(d2rl-pcvr PRIVATE ${ROOT}/vr/native_belt.cpp)
 target_include_directories(d2rl-pcvr PRIVATE ${ROOT}/shared ${ROOT}/external/flatvr ${ROOT}/external/bodywalk ${ROOT}/external/reshade/include ${CMAKE_CURRENT_SOURCE_DIR} ${OPENXR_SDK}/include)
 target_link_libraries(d2rl-pcvr PRIVATE d2rcam minhook user32 gdi32 framevr-runtime)
 set_target_properties(d2rl-pcvr PROPERTIES PREFIX "")
+# Compile-check the retained desktop settings editor explicitly. It is not part
+# of the native PCVR release payload; in-headset settings remain the primary UI.
+set(SRC "${ROOT}/vr/pcvr_identity.h")
+set(OUT "${CMAKE_CURRENT_BINARY_DIR}/settings-generated/d2r_vr_version.h")
+include("${ROOT}/tools/settings/version.cmake")
+unset(SRC)
+unset(OUT)
+add_executable(pcvr-settings-check WIN32 EXCLUDE_FROM_ALL ${ROOT}/tools/settings/settings.cpp ${ROOT}/tools/settings/settings.rc)
+target_compile_definitions(pcvr-settings-check PRIVATE UNICODE _UNICODE _WIN32_WINNT=0x0A00 WINVER=0x0A00 NTDDI_VERSION=0x0A000002)
+target_include_directories(pcvr-settings-check PRIVATE ${ROOT}/shared ${ROOT}/external/flatvr ${ROOT}/cleanroom/sigscan "${CMAKE_CURRENT_BINARY_DIR}/settings-generated")
+target_link_libraries(pcvr-settings-check PRIVATE comctl32 shell32 ole32 comdlg32 winhttp crypt32 bcrypt gdi32 advapi32 framevr-runtime)
+if(MINGW)
+  target_link_options(pcvr-settings-check PRIVATE -municode)
+endif()
 add_executable(memory-test memory_test.cpp)
 add_executable(memory-benchmark memory_benchmark.cpp)
 target_link_libraries(memory-benchmark PRIVATE framevr-runtime)
@@ -64,6 +78,7 @@ add_executable(quick-cast-test quick_cast_test.cpp)
 add_executable(hand-controls-test hand_controls_test.cpp)
 add_executable(skill-pad-test skill_pad_test.cpp)
 add_executable(interact-press-test interact_press_test.cpp)
+add_executable(mod-layout-test mod_layout_test.cpp)
 add_executable(spell-aim-test spell_aim_test.cpp)
 add_executable(bow-pose-test bow_pose_test.cpp)
 add_executable(crossbow-pose-test crossbow_pose_test.cpp ${ROOT}/vr/crossbow.cpp)
@@ -164,7 +179,7 @@ set_tests_properties(depth-fog-test PROPERTIES TIMEOUT 30)
 add_test(NAME light-bounds-test COMMAND light-bounds-test)
 set_tests_properties(light-bounds-test PROPERTIES TIMEOUT 30)
 foreach(test_target IN ITEMS memory-test hook-metrics-test active-keys-test resource-descriptions-test latest-worker-test haptic-pulse-test thread-stats-test
-    gameplay-test weapon-skills-test quick-cast-test hand-controls-test skill-pad-test interact-press-test spell-aim-test bow-pose-test crossbow-pose-test body-tracking-test body-calibration-test shoulder-swap-test blood-screen-test
+    gameplay-test weapon-skills-test quick-cast-test hand-controls-test skill-pad-test interact-press-test mod-layout-test spell-aim-test bow-pose-test crossbow-pose-test body-tracking-test body-calibration-test shoulder-swap-test blood-screen-test
     portal-billboard-test composition-layers-test projectile-rules-test
     combat-rules-test logging-test melee-contact-test attack-speed-test world-coordinates-test bow-flight-test spell-cast-test spell-aim-assist-test
     interaction-test native-belt-test wrist-hud-test navigation-info-test dropped-item-labels-test show-items-command-test native-hud-test render-resolution-test render-pointer-test scene-depth-test game-device-only-test controller-bindings-test journal-test native-panels-test

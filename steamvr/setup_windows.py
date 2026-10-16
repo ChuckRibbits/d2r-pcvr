@@ -312,7 +312,7 @@ def main():
         raise ValueError(found.message + ' No game or Steam configuration was changed.')
     existing = found.ours
     mode = choose('How should setup install the mod?', ['Update / repair and keep calibration and video settings', 'Full install with recommended settings (resets calibration)', 'Only configure Steam shortcuts (keep installed mod)']) if existing else 1
-    if mode == 2 and not all((game / name).is_file() for name in ('D2RLoader.exe', 'ReShade64.dll', 'openxr_loader.dll', mod_identity.PLUGIN, mod_identity.SETTINGS)):
+    if mode == 2 and not all((game / name).is_file() for name in ('D2RLoader.exe', mod_identity.RESHADE, mod_identity.OPENXR_LOADER, mod_identity.PLUGIN, mod_identity.SETTINGS)):
         raise ValueError('The existing mod installation is incomplete. Rerun setup and choose Update / repair.')
     routing = {} if store == 'steam' else {'store': store, 'python': Path(sys.executable).resolve(),
                                           'wrapper': ROOT / 'steamvr/launch_windows.py', 'runtime': runtime}

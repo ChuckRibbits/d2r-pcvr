@@ -11,13 +11,14 @@
 
 [Setup]
 AppId=D2R-PCVR-Native-Windows
-AppName=D2R PCVR
+; Players see "D2R VR Unleashed"; the ids stay D2R PCVR's (AppId, the program folder, the D2RLoader mod D2R-PCVR).
+AppName=D2R VR Unleashed
 AppVersion={#ModVersion}
 AppPublisher=D2R PCVR contributors
 AppPublisherURL=https://github.com/bearstonem/d2r-pcvr
 AppSupportURL=https://github.com/bearstonem/d2r-pcvr/issues
 DefaultDirName={localappdata}\Programs\D2R PCVR
-DefaultGroupName=D2R PCVR
+DefaultGroupName=D2R VR Unleashed
 DisableDirPage=yes
 DisableProgramGroupPage=yes
 DisableWelcomePage=no
@@ -34,14 +35,14 @@ SolidCompression=yes
 WizardStyle=modern
 CloseApplications=no
 RestartApplications=no
-UninstallDisplayName=D2R PCVR (Windows VR mod)
+UninstallDisplayName=D2R VR Unleashed (Windows VR mod)
 UninstallDisplayIcon={app}\.runtime\python\python.exe
-; The setup program's own file properties: D2R PCVR, not D2R VR.
+; The setup program's own file properties: D2R VR Unleashed (D2R PCVR), not D2R VR.
 VersionInfoVersion={#ModVersion}
-VersionInfoProductName=D2R PCVR
+VersionInfoProductName=D2R VR Unleashed
 VersionInfoProductVersion={#ModVersion}
 VersionInfoCompany=D2R PCVR contributors
-VersionInfoDescription=D2R PCVR setup (a VR mod for Diablo II: Resurrected; based on D2R VR by BodyWalkVR, MIT)
+VersionInfoDescription=D2R VR Unleashed setup (Diablo II reimagined for physical, immersive VR; D2R PCVR, based on D2R VR by BodyWalkVR, MIT)
 VersionInfoCopyright=MIT licence. D2R PCVR contributors; D2R VR (c) 2026 BodyWalkVR
 
 [Files]
@@ -50,7 +51,7 @@ Source: "{#PayloadDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs
 [Icons]
 Name: "{group}\Installation help"; Filename: "{sys}\notepad.exe"; Parameters: """{app}\INSTALL-WINDOWS.md"""
 Name: "{group}\Controller mappings"; Filename: "{sys}\notepad.exe"; Parameters: """{app}\CONTROLS.md"""
-Name: "{group}\Uninstall D2R PCVR"; Filename: "{uninstallexe}"
+Name: "{group}\Uninstall D2R VR Unleashed"; Filename: "{uninstallexe}"
 
 [Run]
 Filename: "{code:SteamExecutable}"; Description: "Open Steam to use your new VR shortcuts"; Flags: nowait postinstall skipifsilent; Check: SetupSucceeded
@@ -366,11 +367,11 @@ procedure CurPageChanged(CurPageID: Integer);
 begin
   if CurPageID = wpFinished then begin
     if SetupFailed then begin
-      WizardForm.FinishedHeadingLabel.Caption := 'D2R PCVR setup needs attention';
+      WizardForm.FinishedHeadingLabel.Caption := 'D2R VR Unleashed setup needs attention';
       WizardForm.FinishedLabel.Caption := 'Game configuration did not complete. Your backups and helper files were kept. Check setup-last.log in ' + ExpandConstant('{app}') + ' and rerun Setup to repair.';
     end else WizardForm.FinishedLabel.Caption :=
       'Your VR shortcuts are ready in Steam. Connect your headset and use the matching SteamVR or Virtual Desktop shortcut with an OFFLINE character.'#13#10#13#10 +
-      'Normal Steam / Battle.net Play stays stock. First VR load asks for body calibration. Help and controller mappings are in the D2R PCVR Start menu folder.';
+      'Normal Steam / Battle.net Play stays stock. First VR load asks for body calibration. Help and controller mappings are in the ' + ExpandConstant('{groupname}') + ' Start menu folder.';
   end;
 end;
 

@@ -14,6 +14,7 @@ from unittest.mock import patch
 import zipfile
 
 import install
+import mod_identity
 import launch_windows
 import uninstall_windows as uninstall
 
@@ -35,11 +36,14 @@ class InstallationTests(unittest.TestCase):
             (game / 'D2R.exe').write_bytes(exe)
             (game / 'Data').mkdir()
             (game / ('Data/.build.config' if store == 'steam' else '.build.info')).write_text('fixture')
+            # A ReShade.ini beside the game (the player's, or another mod's): the mod's ReShade has its own.
             (game / 'ReShade.ini').write_text('existing config')
-            icon_dir = game / 'd2rloader/plugins/d2r_vr_icons'
+            mod = game / 'mods/D2R-PCVR'
+            mod_plugins = mod / 'd2rloader/plugins'
+            icon_dir = mod_plugins / 'd2r_vr_icons'
             icon_dir.mkdir(parents=True)
             (icon_dir / 'manifest.tsv').write_text('old local cache')
-            potion_dir = game / 'd2rloader/plugins/d2r_vr_potions'
+            potion_dir = mod_plugins / 'd2r_vr_potions'
             potion_dir.mkdir()
             (potion_dir / 'hp1.pvr').write_bytes(b'previous potion')
             # On Windows default_saves points at the user's REAL Saved Games.
@@ -130,8 +134,22 @@ class InstallationTests(unittest.TestCase):
                 self.assertTrue((potion_dir / 'rvl.pvr').is_file())
                 self.assertEqual((game / 'd2rloader/runtime/d3dcompiler_47.dll').read_bytes(), compiler.read_bytes())
                 self.assertFalse((game / 'd3dcompiler_47.dll').exists())
+                # Everything of the mod in mods\D2R-PCVR; nothing of it in the game folder or D2RLoader's global plugins.
+                self.assertEqual(json.loads((mod / 'D2R-PCVR.mpq/modinfo.json').read_text())['name'], 'D2R-PCVR')
+                self.assertEqual(json.loads((mod / 'D2R-PCVR.mpq/modinfo.json').read_text())['savepath'], '../')
+                self.assertIn('D2R VR Unleashed', json.loads((mod / 'D2R-PCVR.mpq/modinfo.json').read_text())['description'])
+                self.assertEqual((mod / 'reshade/ReShade64.dll').read_bytes(), b'fixture reshade')
+                self.assertTrue((mod / 'reshade/ReShade.ini').is_file())
+                self.assertTrue((mod / 'reshade/D2R_Frame_ReShade.ini').is_file())
+                self.assertTrue((mod / 'reshade/reshade-shaders/Shaders/D2R_DepthFog.fx').is_file())
+                self.assertEqual((mod_plugins / 'openxr_loader.dll').read_bytes(), b'fixture xr loader')
+                self.assertEqual((mod_plugins / 'd2rl-pcvr.dll').read_bytes(), b'fixture plugin')
+                self.assertEqual((game / 'ReShade.ini').read_text(), 'existing config')
+                for name in ('ReShade64.dll', 'openxr_loader.dll', 'D2R_Frame_ReShade.ini', 'reshade-shaders', 'D2R_Sky_ours',
+                             'd2rloader/plugins/d2rl-pcvr.dll', 'd2rloader/plugins/d2r_pcvr.ini'):
+                    self.assertFalse((game / name).exists(), name)
                 cfg=configparser.ConfigParser(allow_no_value=True)
-                cfg.read(game / 'd2rloader/plugins/d2r_pcvr.ini')
+                cfg.read(mod_plugins / 'd2r_pcvr.ini')
                 # Python merges duplicate sections differently from Win32.
                 # Check the actual API used by the mod, including the near plane.
                 if os.name == 'nt':
@@ -142,7 +160,7 @@ class InstallationTests(unittest.TestCase):
                     for key, expected in [('near', '0.2'), ('fov', '64'), ('height', '6.3')]:
                         value = ctypes.create_unicode_buffer(64)
                         read_profile('camera', key, 'missing', value, len(value),
-                                     str(game / 'd2rloader/plugins/d2r_pcvr.ini'))
+                                     str(mod_plugins / 'd2r_pcvr.ini'))
                         self.assertEqual(value.value, expected)
                 self.assertTrue(cfg.getboolean('render','symmetric_projection'))
                 self.assertTrue(cfg.getboolean('hud','monster_draw_order'))
@@ -152,18 +170,21 @@ class InstallationTests(unittest.TestCase):
                 # An upgrade refreshes files without resetting calibration/video.
                 custom_ini = b'[body_calibration]\nheight=1.83\nspan=1.91\n'
                 custom_video = b'{"Resolution Scale": 92, "custom": "preserved"}\r\n'
-                (game / 'd2rloader/plugins/d2r_pcvr.ini').write_bytes(custom_ini)
+                (mod_plugins / 'd2r_pcvr.ini').write_bytes(custom_ini)
                 (saves / 'Settings.json').write_bytes(custom_video)
-                (game / 'ReShade.ini').write_bytes(b'custom reshade settings')
+                (mod / 'reshade/ReShade.ini').write_bytes(b'custom reshade settings')
+                # D2RLoader's own settings (another mod made itself the default) stay as they are.
+                (game / 'd2rloader/config/d2rloader.toml').write_text('default_mod = "D2R-VR"')
                 plugin.write_bytes(b'updated fixture plugin')
                 archive.write_bytes(historical_archive)
                 with patch.object(sys, 'argv', common + ['--preserve-settings']), \
                         patch.object(install, 'LOADER_HASHES', loader_hashes):
                     install.main()
-                self.assertEqual((game / 'd2rloader/plugins/d2r_pcvr.ini').read_bytes(), custom_ini)
+                self.assertEqual((mod_plugins / 'd2r_pcvr.ini').read_bytes(), custom_ini)
                 self.assertEqual((saves / 'Settings.json').read_bytes(), custom_video)
-                self.assertEqual((game / 'ReShade.ini').read_bytes(), b'custom reshade settings')
-                self.assertEqual((game / 'd2rloader/plugins/d2rl-pcvr.dll').read_bytes(), b'updated fixture plugin')
+                self.assertEqual((mod / 'reshade/ReShade.ini').read_bytes(), b'custom reshade settings')
+                self.assertEqual((game / 'd2rloader/config/d2rloader.toml').read_text(), 'default_mod = "D2R-VR"')
+                self.assertEqual((mod_plugins / 'd2rl-pcvr.dll').read_bytes(), b'updated fixture plugin')
                 self.assertFalse((game / 'd2rloader/plugins/d2rl-vrcam.dll').exists())
                 self.assertFalse((game / 'd2rloader/plugins/d2r_vr.ini').exists())
                 record = install.read_record(game)
@@ -181,7 +202,10 @@ class InstallationTests(unittest.TestCase):
                 self.assertEqual((icon_dir / 'manifest.tsv').read_text(), 'old local cache')
                 self.assertEqual((potion_dir / 'hp1.pvr').read_bytes(), b'previous potion')
                 self.assertFalse((potion_dir / 'rvl.pvr').exists())
-                self.assertFalse((game / 'openxr_loader.dll').exists())
+                self.assertFalse((mod_plugins / 'openxr_loader.dll').exists())
+                self.assertFalse((mod_plugins / 'd2rl-pcvr.dll').exists())
+                self.assertFalse((mod / 'reshade/ReShade64.dll').exists())
+                self.assertFalse((mod / 'D2R-PCVR.mpq/modinfo.json').exists())
                 self.assertFalse((game / 'd2rloader/runtime/d3dcompiler_47.dll').exists())
                 self.assertEqual(json.loads((saves / 'Settings.json').read_text())['Resolution Scale'], 80)
 
@@ -195,8 +219,12 @@ class InstallationTests(unittest.TestCase):
         self.assertEqual(launch_windows.prepare(original), (original, None))
         with patch.object(Path, 'is_file', return_value=True):
             command, cwd = launch_windows.prepare(original + ['--frame-vr'])
-        self.assertEqual(command, ['C:\\Steam Library\\D2RLoader.exe', '-some-argument', 'a value'])
+        self.assertEqual(command, ['C:\\Steam Library\\D2RLoader.exe', '-mod', 'D2R-PCVR', '-some-argument', 'a value'])
         self.assertEqual(cwd, 'C:\\Steam Library')
+        # Launch options that already name a mod are left to choose it.
+        with patch.object(Path, 'is_file', return_value=True):
+            command, _ = launch_windows.prepare(['C:\\Steam Library\\D2R.exe', '-mod', 'Other', '--frame-vr'])
+        self.assertEqual(command, ['C:\\Steam Library\\D2RLoader.exe', '-mod', 'Other'])
 
     def test_windows_runtime_override_only_applies_to_explicit_vr(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -263,7 +291,7 @@ class InstallationTests(unittest.TestCase):
                     patch.dict(os.environ, {'XR_RUNTIME_JSON': 'other-runtime', 'SteamAppId': '2536520'}), \
                     patch.object(Path, 'is_file', return_value=True):
                 command, cwd = launch_windows.prepare(options + ['--frame-vr'])
-                self.assertEqual(command, ['C:\\Steam Library\\D2RLoader.exe'] + original[1:])
+                self.assertEqual(command, ['C:\\Steam Library\\D2RLoader.exe', '-mod', 'D2R-PCVR'] + original[1:])
                 self.assertEqual(cwd, 'C:\\Steam Library')
                 for arguments in (options + ['--frame-vr'], ['--frame-vr', launch_windows.VDXR_OPTION]):
                     environment = launch_windows.launch_environment(arguments)
@@ -353,8 +381,9 @@ class RenameMigrationTests(unittest.TestCase):
             first = self.old_release(root, game, saves)
             output = self.run_install('--preserve-settings')
             plugins = game / 'd2rloader/plugins'
-            self.assertEqual((plugins / 'd2r_pcvr.ini').read_bytes(), self.CALIBRATION)
-            self.assertEqual((plugins / 'd2rl-pcvr.dll').read_bytes(), b'MZ new D2R PCVR d2r-pcvr-vrcam')
+            mod = game / 'mods/D2R-PCVR/d2rloader/plugins'
+            self.assertEqual((mod / 'd2r_pcvr.ini').read_bytes(), self.CALIBRATION)
+            self.assertEqual((mod / 'd2rl-pcvr.dll').read_bytes(), b'MZ new D2R PCVR d2r-pcvr-vrcam')
             self.assertFalse((plugins / 'd2rl-vrcam.dll').exists())
             self.assertFalse((plugins / 'd2r_vr.ini').exists())
             self.assertIn('Carried your settings and body calibration over', output)
@@ -369,15 +398,16 @@ class RenameMigrationTests(unittest.TestCase):
             self.assertEqual((second / 'previous/d2rloader/plugins/d2rl-vrcam.dll').read_bytes(), self.OLD_PLUGIN)
             self.assertEqual((second / 'previous/d2rloader/plugins/d2r_vr.ini').read_bytes(), self.CALIBRATION)
             # A repeated repair keeps the carried settings and finds nothing old to remove.
-            (plugins / 'd2r_pcvr.ini').write_bytes(self.CALIBRATION + b'tuned=1\n')
+            (mod / 'd2r_pcvr.ini').write_bytes(self.CALIBRATION + b'tuned=1\n')
             self.assertNotIn('Carried', self.run_install('--preserve-settings'))
-            self.assertEqual((plugins / 'd2r_pcvr.ini').read_bytes(), self.CALIBRATION + b'tuned=1\n')
+            self.assertEqual((mod / 'd2r_pcvr.ini').read_bytes(), self.CALIBRATION + b'tuned=1\n')
             # Removal across the rename: back to the game as it was before the first install.
             chain = uninstall.snapshots(game, install.read_record(game), [])
             self.assertEqual([path for path, _ in chain][0], first.resolve())
             uninstall.apply_updates(uninstall.restore_plan(game, chain), root / 'removal', lambda: None)
             for name in ('d2rl-pcvr.dll', 'd2r_pcvr.ini', 'd2rl-vrcam.dll', 'd2r_vr.ini'):
                 self.assertFalse((plugins / name).exists(), name)
+                self.assertFalse((mod / name).exists(), name)
             self.assertFalse((game / install.RECORD).exists())
             self.assertEqual((saves / 'Friend.d2s').read_bytes(), b'progress')
 
@@ -404,7 +434,7 @@ class RenameMigrationTests(unittest.TestCase):
             self.run_install()
             plugins = game / 'd2rloader/plugins'
             cfg = configparser.ConfigParser(interpolation=None, strict=False, allow_no_value=True)
-            cfg.read(plugins / 'd2r_pcvr.ini')
+            cfg.read(game / mod_identity.SETTINGS)
             self.assertEqual(cfg.get('camera', 'near'), '0.2')
             self.assertFalse(cfg.has_section('body_calibration'))
             self.assertFalse((plugins / 'd2rl-vrcam.dll').exists())
@@ -447,8 +477,48 @@ class RenameMigrationTests(unittest.TestCase):
             (root / 'backups').mkdir(exist_ok=True)
             (root / 'elsewhere').rename(snapshot)
             self.run_install('--preserve-settings')
-            self.assertEqual((game / 'd2rloader/plugins/d2r_pcvr.ini').read_bytes(), self.CALIBRATION)
+            self.assertEqual((game / mod_identity.SETTINGS).read_bytes(), self.CALIBRATION)
             self.assertFalse((game / 'd2rloader/plugins/d2rl-vrcam.dll').exists())
+
+    def test_the_global_plugins_install_moves_into_the_mod_folder(self):
+        # d2rl-pcvr.dll / d2r_pcvr.ini in D2RLoader's global plugins folder (loaded with every mod, D2R VR's too).
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            game, saves = self.fixture(root)
+            self.old_release(root, game, saves)
+            self.run_install('--preserve-settings')
+            plugins = game / 'd2rloader/plugins'
+            for name in ('d2rl-pcvr.dll', 'd2r_pcvr.ini'):
+                (game / 'mods/D2R-PCVR/d2rloader/plugins' / name).replace(plugins / name)
+            output = self.run_install('--preserve-settings')
+            self.assertIn('D2RLoader mod D2R-PCVR', output)
+            self.assertEqual((game / mod_identity.SETTINGS).read_bytes(), self.CALIBRATION)
+            self.assertTrue((game / mod_identity.PLUGIN).is_file())
+            self.assertFalse((plugins / 'd2rl-pcvr.dll').exists())
+            self.assertFalse((plugins / 'd2r_pcvr.ini').exists())
+            third = Path(install.read_record(game)['snapshots'][-1])
+            self.assertEqual((third / 'previous/d2rloader/plugins/d2r_pcvr.ini').read_bytes(), self.CALIBRATION)
+
+    def test_d2r_vr_as_its_own_mod_does_not_stop_setup(self):
+        # D2R VR in mods\D2R-VR loads only when that mod runs: the two mods sit side by side.
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            game, saves = self.fixture(root)
+            theirs = {name: self.put(game / 'mods/D2R-VR' / name, data) for name, data in (
+                ('d2rloader/plugins/d2rl-vrcam.dll', self.D2R_VR_PLUGIN), ('d2rloader/plugins/d2r_vr.ini', b'[mode]\nplatform=1\n'),
+                ('reshade/ReShade64.dll', b'their reshade'), ('D2R-VR.mpq/modinfo.json', b'{"name": "D2R-VR"}'))}
+            before = {name: path.read_bytes() for name, path in theirs.items()}
+            self.run_install()
+            self.assertTrue((game / mod_identity.PLUGIN).is_file())
+            self.assertEqual({name: path.read_bytes() for name, path in theirs.items()}, before)
+            # Removing this mod takes only its own folder's files; D2RLoader stays for D2R VR.
+            chain = uninstall.snapshots(game, install.read_record(game), [])
+            uninstall.apply_updates(uninstall.restore_plan(game, chain), root / 'removal', lambda: None)
+            self.assertFalse((game / mod_identity.PLUGIN).exists())
+            self.assertFalse((game / mod_identity.RESHADE).exists())
+            self.assertEqual((game / 'D2RLoader.exe').read_bytes(), b'fixture loader')
+            self.assertEqual({name: path.read_bytes() for name, path in theirs.items()}, before)
+            self.assertFalse((game / install.RECORD).exists())
 
 
 class DependencyDownloadTests(unittest.TestCase):

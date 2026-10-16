@@ -129,7 +129,7 @@ native height fog, VSync off, DLSS off and non-temporal anti-aliasing. Fixed
 foveation uses a full-quality center and 2x2 peripheral shading on supported
 D3D12 VRS hardware; unsupported devices stay at full quality. This default uses
 a fixed center. To compare, set `[render] fixed_foveation=0` in
-`GAME/d2rloader/plugins/d2r_pcvr.ini` (`d2r_vr.ini` up to 0.3.15). Settings reload live.
+`GAME/mods/D2R-PCVR/d2rloader/plugins/d2r_pcvr.ini` (`d2rloader/plugins/d2r_vr.ini` up to 0.3.15). Settings reload live.
 
 Current source also includes an **experimental Steam Frame eye-tracking mode**,
 disabled by default and included in the v0.2 handoff packages. See

@@ -488,6 +488,21 @@ bool LoadFunctions() {
     // Negotiate it directly, or use a standard Windows loader as a fallback.
     loader=LoadLibraryW(L"wineopenxr.dll");
     wineOpenXR=loader!=nullptr;
+    // The mod's own loader beside this plugin (mods\D2R-PCVR\d2rloader\plugins), then
+    // the usual search (the game folder of an older install).
+    if(!loader) {
+        HMODULE self=nullptr;
+        wchar_t path[MAX_PATH]{};
+        if(GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS|GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,reinterpret_cast<LPCWSTR>(&LoadFunctions),&self)) {
+            DWORD n=GetModuleFileNameW(self,path,MAX_PATH);
+            if(n&&n<MAX_PATH) {
+                while(n&&path[n-1]!=L'\\')--n;
+                path[n]=0;
+                if(wcscat_s(path,L"openxr_loader.dll")==0&&GetFileAttributesW(path)!=INVALID_FILE_ATTRIBUTES)
+                    loader=LoadLibraryExW(path,nullptr,LOAD_WITH_ALTERED_SEARCH_PATH);
+            }
+        }
+    }
     if(!loader) loader=LoadLibraryW(L"openxr_loader.dll");
     if(!loader) { Say("Frame OpenXR: no WineOpenXR/Windows OpenXR loader; use Proton 11 or Experimental");return false; }
     getProc=reinterpret_cast<PFN_xrGetInstanceProcAddr>(GetProcAddress(loader,"xrGetInstanceProcAddr"));

@@ -21,13 +21,31 @@ import json
 from pathlib import Path
 
 MOD_ID = 'd2r-pcvr'
-PLUGIN = Path('d2rloader/plugins/d2rl-pcvr.dll')
-SETTINGS = Path('d2rloader/plugins/d2r_pcvr.ini')
-# What D2R PCVR installed up to 0.3.16, and what D2R VR still installs.
+# Installed as the D2RLoader mod D2R-PCVR: this mod's files live under <game>\mods\D2R-PCVR, so another VR mod
+# (D2R VR, the mod D2R-VR) can sit beside it and D2RLoader runs the one it is started with (-mod D2R-PCVR).
+# D2RLoader loads a mod's plugins only while that mod is active. Players see DISPLAY_NAME.
+MOD_NAME = 'D2R-PCVR'
+DISPLAY_NAME = 'D2R VR Unleashed'
+TAGLINE = 'Diablo II reimagined for physical, immersive VR'
+MOD_DIR = Path('mods') / MOD_NAME
+PLUGIN = MOD_DIR / 'd2rloader/plugins/d2rl-pcvr.dll'
+SETTINGS = MOD_DIR / 'd2rloader/plugins/d2r_pcvr.ini'
+# D2R's own mod format: <mod>\<mod>.mpq\modinfo.json; savepath "../" keeps the usual characters.
+MODINFO = MOD_DIR / f'{MOD_NAME}.mpq/modinfo.json'
+# The mod's own ReShade, loaded by the plugin with this folder as ReShade's base (its ini, preset, shaders,
+# textures), and its OpenXR loader beside the plugin.
+RESHADE_DIR = MOD_DIR / 'reshade'
+RESHADE = RESHADE_DIR / 'ReShade64.dll'
+OPENXR_LOADER = PLUGIN.parent / 'openxr_loader.dll'
+# The new names in D2RLoader's global plugins folder (loaded with every mod), before the mod folder.
+GLOBAL_PLUGIN = Path('d2rloader/plugins/d2rl-pcvr.dll')
+GLOBAL_SETTINGS = Path('d2rloader/plugins/d2r_pcvr.ini')
+GLOBAL_FILES = (GLOBAL_PLUGIN, GLOBAL_SETTINGS)
+# What D2R PCVR installed up to 0.3.16, and what D2R VR 0.167 and earlier still installs.
 LEGACY_PLUGIN = Path('d2rloader/plugins/d2rl-vrcam.dll')
 LEGACY_SETTINGS = Path('d2rloader/plugins/d2r_vr.ini')
 LEGACY_FILES = (LEGACY_PLUGIN, LEGACY_SETTINGS)
-PLUGINS = (PLUGIN, LEGACY_PLUGIN)
+PLUGINS = (PLUGIN, GLOBAL_PLUGIN, LEGACY_PLUGIN)
 # The same path as install.RECORD (install.py imports this module).
 RECORD = Path('d2rloader/pcvr-install.json')
 
@@ -39,6 +57,79 @@ OTHER_MARKS = (b'BodyWalk Game Link', 'd2r_vr_skill_icons'.encode('utf-16-le'))
 # Only D2R PCVR's plugin carries these: its icon cache folder (UTF-16, every
 # release) and, from this version on, its own plugin id.
 OWN_MARKS = ('d2r_vr_icons'.encode('utf-16-le'), b'd2r-pcvr-vrcam')
+# D2RLoader's own files (one D2RLoader serves every mod in the folder).
+LOADER_NAMES = ('d2rloader.exe', 'd2rcore.dll', 'd2rloader.mpq')
+
+
+def modinfo_bytes():
+    """modinfo.json: "name" is the id D2R and D2RLoader find the mod by; the display name is in "description"."""
+    return (json.dumps({'name': MOD_NAME, 'savepath': '../', 'description': f'{DISPLAY_NAME} - {TAGLINE}'},
+                       indent=2) + '\n').encode('utf-8')
+
+
+def loader_file(relative):
+    r"""True for a file of D2RLoader itself (from its archive), not one of this mod's: the loader's exe, core and
+    mpq, its d2rloader\ folder except the plugins, the runtime and this mod's record, and a mods\ folder other
+    than this mod's."""
+    parts = [part.lower() for part in Path(relative).parts]
+    if len(parts) == 1:
+        return parts[0] in LOADER_NAMES
+    if parts[0] == 'd2rloader':
+        return parts[1] not in ('plugins', 'runtime') and Path(relative).as_posix().lower() != RECORD.as_posix().lower()
+    return parts[0] == 'mods' and parts[1] != MOD_NAME.lower()
+
+
+def other_loader_users(game):
+    r"""Other mods that start through this folder's D2RLoader: another mod folder with D2RLoader content (its
+    d2rloader\ or modinfo), or a plugin in the global plugins folder that is not this mod's."""
+    game = Path(game)
+    users = []
+    mods = game / 'mods'
+    if mods.is_dir():
+        for folder in mods.iterdir():
+            if (folder.is_dir() and folder.name.lower() != MOD_NAME.lower()
+                    and ((folder / 'd2rloader').is_dir() or (folder / 'modinfo.json').is_file()
+                         or any(folder.glob('*.mpq/modinfo.json')))):
+                users.append(folder.name)
+    plugins = game / 'd2rloader/plugins'
+    if plugins.is_dir():
+        own = {GLOBAL_PLUGIN.name.lower()}
+        for dll in plugins.glob('*.dll'):
+            if dll.name.lower() not in own and plugin_owner(dll) != MOD_ID:
+                users.append(dll.name)
+    return users
+
+
+def legacy_effect_file(relative):
+    """Files formerly installed outside PCVR's mod folder; never an arbitrary game file."""
+    parts = [part.lower() for part in Path(relative).parts]
+    return (len(parts) == 1 and parts[0] in ('reshade64.dll', 'reshade.ini', 'd2r_frame_reshade.ini')
+            or len(parts) > 1 and parts[0] in ('reshade-shaders', 'd2r_sky_ours'))
+
+
+def shared_dependency(relative):
+    """Dependencies an old snapshot must not restore/remove while another mod uses the game."""
+    path = Path(relative)
+    return (loader_file(path) or legacy_effect_file(path)
+            or path.as_posix().lower() == 'openxr_loader.dll'
+            or path.as_posix().lower().startswith('d2rloader/runtime/'))
+
+
+def legacy_effect_files(game, roots=()):
+    """Only files our earlier snapshots actually installed, bounded to the game directory."""
+    game = Path(game).resolve()
+    found = set()
+    for manifest in _manifests(game, roots):
+        for name in manifest['installed']:
+            relative = Path(str(name).replace('\\', '/'))
+            if relative.is_absolute() or '..' in relative.parts or not legacy_effect_file(relative):
+                continue
+            path = game / relative
+            if not path.resolve().is_relative_to(game):
+                raise ValueError(f'Legacy effect path leaves the game folder: {relative}')
+            if path.is_file():
+                found.add(relative)
+    return sorted(found)
 
 
 def plugin_owner(path):
@@ -99,7 +190,7 @@ def installed_legacy_files(game, roots=()):
     newest snapshot that installed a plugin decides; a record whose snapshots
     cannot be read was written by an earlier release (0.3.16 or older), all of
     which used the old names."""
-    if (game / PLUGIN).is_file():
+    if (game / PLUGIN).is_file() or (game / GLOBAL_PLUGIN).is_file():
         return False
     manifests = [m for m in _manifests(game, roots) if any(_listed(m, p) for p in PLUGINS)]
     if manifests:
@@ -113,6 +204,7 @@ class Survey:
     legacy: bool     # its old d2rl-vrcam.dll / d2r_vr.ini are here, to carry over and remove
     other: 'str | None'   # OTHER_MOD or 'unknown': a d2rl-vrcam.dll that is not D2R PCVR's
     message: str     # what to tell the player about `other` ('' when None)
+    moved: bool = False   # its d2rl-pcvr.dll / d2r_pcvr.ini in the global plugins folder, to carry into the mod
 
 
 def other_mod_message(owner):
@@ -131,12 +223,13 @@ def other_mod_message(owner):
 def survey(game, roots=()):
     """What is in this game folder, read only."""
     game = Path(game)
-    new = (game / PLUGIN).is_file()
+    moved = any((game / name).is_file() for name in GLOBAL_FILES)
+    new = (game / PLUGIN).is_file() or moved
     owner = plugin_owner(game / LEGACY_PLUGIN)
     ours_legacy = owner != OTHER_MOD and installed_legacy_files(game, roots)
     legacy = ours_legacy and any((game / name).is_file() for name in LEGACY_FILES)
     other = None
     if owner is not None and not ours_legacy:
         other = OTHER_MOD if owner == OTHER_MOD else 'unknown'
-    return Survey(ours=new or legacy, legacy=legacy, other=other,
+    return Survey(ours=new or legacy, legacy=legacy, moved=moved, other=other,
                   message=other_mod_message(other) if other else '')
