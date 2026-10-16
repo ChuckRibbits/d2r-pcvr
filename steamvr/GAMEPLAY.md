@@ -350,7 +350,7 @@ tabs and a **Reset eye height** button:
 | VR | Controller labels, motion combat, seated belt position, dominant hand, smooth/snap turning, belt height and reach, weapon skill gestures and ordinary mob bars |
 | Video | Foveation Off / Fixed / Eye tracked, actual VR source size, added sky, fog, dungeon ceilings, terrain and object draw distances, VR render resolution |
 | HUD | Health/mana location and tilt, optional resource alerts, navigation location, menu distance and tooltip timing |
-| Combat | Melee hit speed |
+| Combat | Melee rules, swing hit speed and thrust speed |
 | Haptics | Overall strength and separate melee, bow draw, bow/throw release, spell, interaction and resource-alert strengths; tests follow each action's hands |
 
 Added indoor fog defaults to **Off** for new profiles, preserving the game's
@@ -660,19 +660,36 @@ animation delay is involved. A contact can hit each creature once per stroke;
 settling or a deliberate translation/rotation reversal permits another stroke.
 A tracking discontinuity drops that motion and requires 80 ms of fresh coherent
 poses; continued swinging can recover without holding the hand still. Strength
-is judged over recent motion, so small windups cannot lock out later slashes. Weapon
+is judged over recent motion, so small windups cannot lock out later slashes. Swing
 contacts require a coherent 18 cm excursion within 120 ms and at least 12.0 m/s of
 estimated motion at contact, including follow-through. The estimate combines hand
 translation with blade-axis rotation, capped by tracked hand rotation; twisting a
 shaft in place does not power a hit. The sweep follows the rotating blade’s arc
 between the latest poses without replaying earlier unpowered brushes when a
-stroke arms. Shield/Smite gesture thresholds remain unchanged. These weapon
-thresholds are adjustable under **VR Settings > Combat > Melee hit speed**
+stroke arms. Shield/Smite gesture thresholds remain unchanged. Swing speed
+is adjustable under **VR Settings > Combat > Melee hit speed**
 (minimum 1.5 m/s, no upper cap, 0.25 steps, default 12.0). Apply saves
 `[gameplay] melee_hit_speed` and updates the detector live; changing it clears
-the previous stroke. Stroke travel remains 18 cm. The earlier 1.8 m/s candidate
-was too permissive in owner testing; the firmer default still needs headset testing. Physical controller
-translation/rotation supplies energy, so walking or turning a stationary weapon
+the previous stroke. Swing travel remains 18 cm.
+
+**Thrusts** use a separate forward-motion check in both Unleashed and Classic.
+Push toward the posed weapon tip for at least 12 cm within 200 ms, with at least
+85% of the hand's travel along that axis. Default forward speed is 2.0 m/s,
+adjustable under **VR Settings > Combat > Melee thrust speed** from 0.75 to
+10 m/s in 0.25 steps (`[gameplay] melee_thrust_speed`). Apply updates it live
+and cancels the previous stroke without changing the swing-speed preference.
+The axis comes from the final weapon attachment and its matching tracked grip,
+including weapon adjustments and two-hand posing; controller-forward alone is
+not assumed to point along the blade. Contact uses the latest swept capsule,
+without replaying earlier low-speed brushes. Holding or slowly advancing a
+blade inside an enemy does not keep dealing damage. Pulling back at least 8 cm
+rearms a quick jab without counting the withdrawal as another stab. Thrusts
+share the same per-creature stroke deduplication and Classic hit/cadence rules
+as swings. Automated traces cover 36–144 Hz, dagger/sword/spear lengths,
+repeated jabs, pullbacks, jitter, settings changes and invalid axes; physical
+headset testing of the new thrust detector remains pending.
+
+Physical controller translation/rotation supplies energy, so walking or turning a stationary weapon
 into an enemy does not cause damage. Right trigger remains an explicit native
 button fallback and suppresses simultaneous physical contact attacks.
 

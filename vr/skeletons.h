@@ -171,6 +171,7 @@ struct MeleeWeaponPose {
     uint32_t poseStamp=0,worldEpoch=0,heroGeneration=0;
     uint32_t weaponType=0;
     float castingAxis[3]{}; // final visible shaft, including staff's chosen axis/sign
+    float gripAxis[3]{}; // collision blade direction relative to its driving right grip
 };
 bool MeleeWeapon(MeleeWeaponPose& out);
 bool ShieldWeapon(MeleeWeaponPose& out);

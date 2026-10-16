@@ -70,6 +70,14 @@ int main(){
         const auto request=rules.Click({Kind::Apply});
         Check(request.changed==(ChangeMask{1}<<MeleeRules),"melee rules save only their own setting");
     }
+    {Model thrust;thrust.Open(s);thrust.Click({Kind::Tab,int(Page::Combat)});
+        const auto hit=At(Page::Combat,Increase(2));
+        Check(s.values[MeleeThrustSpeed]==2&&hit.index==MeleeThrustSpeed&&hit.kind==Kind::Change,"thrust has its own Combat row and two m/s default");
+        thrust.Click(hit);Check(thrust.Get()[MeleeThrustSpeed]==2.25f,"thrust speed adjusts in quarter steps");
+        const auto request=thrust.Click({Kind::Apply});
+        Check(request.changed==(ChangeMask{1}<<MeleeThrustSpeed),"thrust edit does not change swing speed or combat rules");
+        Check(Normalize(MeleeThrustSpeed,NAN)==2&&Normalize(MeleeThrustSpeed,0)==.75f&&Normalize(MeleeThrustSpeed,99)==10,"thrust speed has finite usable bounds");
+    }
     Check(s.values[MenuDistance]==1&&s.values[TooltipTiming]==0,"comfortable Medium distance and Instant hover defaults");
     for(auto key:{MenuDistance,TooltipTiming}) {
         Check(Normalize(key,1.5f)==Definitions[key].defaultValue&&Normalize(key,9)==Definitions[key].defaultValue,"invalid comfort enums fall back safely");

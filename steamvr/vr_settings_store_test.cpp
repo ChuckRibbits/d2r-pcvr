@@ -62,6 +62,15 @@ int main(){
         Check(!vrsettings::Submit(request),"unsupported high change bits are rejected");
     }
     Check(before.values[MeleeHitSpeed]==12,"missing melee speed uses twelve m/s default");
+    Check(before.values[MeleeThrustSpeed]==2,"existing profiles gain the independent thrust default");
+    for(float choice:{2.25f,2.f}) {
+        const auto current=vrsettings::Read();Model thrust;thrust.Open(current);
+        thrust.Click({Kind::Change,MeleeThrustSpeed,choice>2?1:-1});
+        const auto request=thrust.Click({Kind::Apply});
+        Check(request.changed==(ChangeMask{1}<<MeleeThrustSpeed)&&vrsettings::Submit(request)&&vrsettings::Poll(name),"thrust speed saves through its high mask bit");
+        const auto saved=vrsettings::Read();
+        Check(saved.values[MeleeThrustSpeed]==choice&&Changed(saved.values,current.values)==request.changed&&Int(path,L"custom",L"keep")==12345,"thrust reload preserves swing speed, rules and unrelated settings");
+    }
     for(float choice:{12.25f,12.f}) {
         Model melee;melee.Open(vrsettings::Read());melee.Click({Kind::Change,MeleeHitSpeed,choice>12?1:-1});
         const auto request=melee.Click({Kind::Apply});
