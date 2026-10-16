@@ -12,7 +12,7 @@
 //   - the left stick the game reads through XInput is turned by the view's yaw,
 //     so "forward" is forward in the view - BodyWalk walking, a VR stick, a pad
 //     or W A S D;
-//   - every number lives in d2r_vr.ini next to this DLL, re-read when it changes.
+//   - every number lives in d2r_pcvr.ini next to this DLL, re-read when it changes.
 //
 // Keys: F12 off / first person / third person, F11 recenter, F9 mouse look and
 // W A S D on / off, F10 skeleton dump. Middle mouse drag turns the view too.
@@ -22,6 +22,7 @@
 #define NOMINMAX
 #endif
 #include <windows.h>
+#include "pcvr_identity.h"
 #include "../steamvr/profile.h"
 #include "../steamvr/resource_descriptions.h"
 #include "../steamvr/vr_settings.h"
@@ -156,7 +157,7 @@ void Say(const char* text) {
     g_ctx->WriteConsoleMessage(text, ConsoleMessageKind::Output);
 }
 
-// Settings (d2r_vr.ini, re-read on change)
+// Settings (d2r_pcvr.ini, re-read on change)
 struct Settings {
     // [mode] - the settings program's Home page, and F1..F4 in the game.
     // platform 0 flat (monitor, mouse, no BodyWalk), 1 VR (headset, BodyWalk, FlatVR).
@@ -4932,7 +4933,7 @@ void GameCodeTick(bool iniChanged) {
     if (d2rsig::Generation() == written) return;
     written = d2rsig::Generation();
     std::wstring path = g_iniPath;
-    path.resize(path.size() - wcslen(L"d2r_vr.ini"));
+    path.resize(path.size() - wcslen(D2RPCVR_SETTINGS_FILE_W));
     path += L"d2r_vr_game_code.txt";
     FILE* f = _wfopen(path.c_str(), L"wb");
     if (!f) return;
@@ -7850,7 +7851,7 @@ void TryRegister() {
     framevr::Register(&Log, +[](){return gamestate::MenuOpen()||!g_inWorld.load();}, +[](){return g_inWorld.load();}, &gamestate::ToggleMenus);
 #endif
     g_registered = true;
-    Log("vrcam: joined ReShade - the fog and the sky follow d2r_vr.ini [fog] [sky]");
+    Log("vrcam: joined ReShade - the fog and the sky follow d2r_pcvr.ini [fog] [sky]");
     // Both read ReShade's depth, which Generic Depth provides (FlatVR's addon
     // only corrects its pick); without it the shader sees no depth and stays off.
     wchar_t ini[MAX_PATH];
@@ -8222,39 +8223,67 @@ void LoadReShade() {
     else LogF("vrcam: ReShade64.dll did not load (error %lu)", GetLastError());
 }
 
-static const char g_info_version[] = "0.152.0";
+// D2R PCVR's own identity (vr/pcvr_identity.h). Until 0.3.15 this was D2R VR's
+// "d2r-vr-vrcam" / "vrcam" 0.152.0 by BodyWalkVR, which a D2RLoader log could not
+// tell apart from D2R VR itself.
+static const char g_info_version[] = D2RPCVR_VERSION;
 
 static const PluginInfo g_info = {
-    PluginInfoSize, D2RL_PLUGIN_ABI_VERSION, "d2r-vr-vrcam", "vrcam", g_info_version, "BodyWalkVR",
+    PluginInfoSize, D2RL_PLUGIN_ABI_VERSION, D2RPCVR_PLUGIN_ID, D2RPCVR_NAME, g_info_version, D2RPCVR_AUTHOR,
     "D2R in a headset or as a first-person game: head-driven camera through BodyWalk's D2R Bridge, mouse look and W A S D. "
-    "F12 off / first / third person, F11 recenter, F9 mouse look.",
+    "F12 off / first / third person, F11 recenter, F9 mouse look. " D2RPCVR_CREDITS,
     PluginFlags::Shared | PluginFlags::NativeHooks, {0, 0, 0, 0},
 };
 
 D2RL_PLUGIN_EXPORT const PluginInfo* D2RLoaderGetPluginInfo() noexcept { return &g_info; }
+
+// True when D2R VR's plugin (d2rl-vrcam.dll) is in the same plugins folder:
+// D2RLoader loads every plugin there, and two VR layers hooking one game would
+// fight over the camera, the swapchain and the input. This plugin then stays out
+// of the game and says why; the other mod's files are not touched.
+static bool g_standDown = false;
+static bool OtherVrPluginBeside(HMODULE self) {
+    wchar_t path[MAX_PATH];
+    DWORD n = GetModuleFileNameW(self, path, MAX_PATH);
+    if (n == 0 || n >= MAX_PATH) return false;
+    while (n > 0 && path[n - 1] != L'\\') --n;
+    path[n] = 0;
+    if (wcscat_s(path, D2RPCVR_OTHER_PLUGIN_FILE_W) != 0) return false;
+    return GetFileAttributesW(path) != INVALID_FILE_ATTRIBUTES;
+}
 
 D2RL_PLUGIN_EXPORT bool D2RLoaderLoadPlugin(const PluginContext* ctx) noexcept {
     if (ctx == nullptr) return true;
     g_ctx = ctx;
     g_base = ctx->exeBase;
     GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT, (LPCWSTR)&UpdateThread, &g_self);
+    if (OtherVrPluginBeside(g_self)) {
+        g_standDown = true;
+        ctx->LogWarn(D2RPCVR_NAME " " D2RPCVR_VERSION " is not starting: another VR mod's plugin (d2rl-vrcam.dll, D2R VR) is in this "
+                     "plugins folder and D2RLoader would run both. Remove one of the two mods with its own uninstaller.");
+        ctx->WriteConsoleMessage(D2RPCVR_NAME " is off: another VR mod (d2rl-vrcam.dll) is installed in this game folder.",
+                                 ConsoleMessageKind::Output);
+        g_ctx = nullptr;
+        return true;
+    }
 #ifdef D2RVR_NATIVE_OPENXR
     if(!framevr::logging::Start(g_self))ctx->LogWarn("Frame buffered logger could not start; routine diagnostics disabled to protect gameplay");
     else ctx->LogInfo("Frame runtime diagnostics: d2rloader/logs/d2r-vr-frame.log (buffered, no per-message disk flush)");
     if(!pairtime::threadStats.Start())ctx->LogWarn("Frame CPU diagnostics worker could not start; thread scans disabled");
 #endif
 
-    // d2r_vr.ini beside this DLL
+    // d2r_pcvr.ini beside this DLL (d2r_vr.ini until 0.3.15; the installer carries it over)
     DWORD n = GetModuleFileNameW(g_self, g_iniPath, MAX_PATH);
     while (n > 0 && g_iniPath[n - 1] != L'\\') --n;
     g_iniPath[n] = 0;
-    wcscat_s(g_iniPath, L"d2r_vr.ini");
+    wcscat_s(g_iniPath, D2RPCVR_SETTINGS_FILE_W);
 #ifdef D2RVR_NATIVE_OPENXR
     vrsettings::Poll(g_iniPath);
 #endif
     ReloadIfChanged();
     g_mouseLookOn.store(MouseLookForView());
-    LogF("vrcam %s: game build %s (%s), made for D2R 3.3.93787 under D2RLoader 1.3.1", g_info_version,
+    LogF("vrcam: " D2RPCVR_NAME " %s (plugin " D2RPCVR_PLUGIN_ID ", " D2RPCVR_PLUGIN_FILE "): game build %s (%s), "
+         "made for D2R 3.3.93787 under D2RLoader 1.3.1", g_info_version,
          ctx->buildVersion ? ctx->buildVersion : "?", ctx->buildName ? ctx->buildName : "?");
     // Every game address this build has, before any hook rewrites the bytes it is found by.
     d2rsig::SetShiftTest(GetPrivateProfileIntW(L"debug", L"sig_shift_test", 0, g_iniPath));
@@ -8292,6 +8321,7 @@ D2RL_PLUGIN_EXPORT bool D2RLoaderLoadPlugin(const PluginContext* ctx) noexcept {
 }
 
 D2RL_PLUGIN_EXPORT void D2RLoaderUnloadPlugin() noexcept {
+    if (g_standDown) return;   // nothing was started
 #ifdef D2RVR_NATIVE_OPENXR
     framevr::scenedepth::Shutdown();
 #endif

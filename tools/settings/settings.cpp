@@ -1,4 +1,4 @@
-// D2R_VR_Settings.exe - sliders for d2r_vr.ini.
+// D2R_VR_Settings.exe - sliders for d2r_pcvr.ini (d2r_vr.ini until D2R PCVR 0.3.15).
 //
 // Lives next to the ini in <game>\d2rloader\plugins. Every slider or tick box
 // writes its key the moment it moves; vrcam re-reads the file within half a
@@ -8,7 +8,7 @@
 // columns as the window is wide, and what does not fit scrolls. Per-monitor
 // DPI aware; Ctrl + wheel (or Ctrl +, Ctrl -, Ctrl 0) zooms on top of that.
 // The window's own size, zoom and tab go to d2r_vr_settings.ini, never to
-// d2r_vr.ini (a write there makes vrcam re-read it).
+// d2r_pcvr.ini (a write there makes vrcam re-read it).
 
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
@@ -2418,7 +2418,7 @@ void RefreshGameCode() {
     const Item* head = FindItem(L"@status", L"sig_summary");
     if (!head || g_tab != head->tab) return;
     std::wstring path = g_ini;
-    path.resize(path.size() - wcslen(L"d2r_vr.ini"));
+    path.resize(path.size() - wcslen(L"d2r_pcvr.ini"));
     path += L"d2r_vr_game_code.txt";
     std::ifstream f(path);
     std::string line, time, summary;
@@ -3271,7 +3271,7 @@ LRESULT CALLBACK WndProc(HWND wnd, UINT msg, WPARAM w, LPARAM l) {
 // ---------------------------------------------------------------------------
 // D2R_VR_Settings.exe --setup-bodywalk <settings file>...
 //
-// For the mod's installer (installer/D2R_VR_Setup.iss): BodyWalk's settings
+// For D2R VR's installer (upstream D2R_VR_Setup.iss, not kept here): BodyWalk's settings
 // as the VR mode needs them - Universal tracking output (the head reaches the
 // bridge), FlatVR on, Head Lock follows the game, frame generation off (it
 // shakes the picture in D2R) - and the D2R Bridge plugin not switched off.
@@ -3349,17 +3349,17 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int show) {
     {
         wchar_t here[MAX_PATH];
         wcscpy_s(here, g_ini);
-        wcscat_s(g_ini, L"d2r_vr.ini");
+        wcscat_s(g_ini, L"d2r_pcvr.ini");
         if (GetFileAttributesW(g_ini) == INVALID_FILE_ATTRIBUTES) {
             wcscpy_s(g_ini, here);
-            wcscat_s(g_ini, L"d2rloader\\plugins\\d2r_vr.ini");
+            wcscat_s(g_ini, L"d2rloader\\plugins\\d2r_pcvr.ini");
         }
     }
     wcscpy_s(g_uiIni, g_ini);
-    g_uiIni[wcslen(g_uiIni) - wcslen(L"d2r_vr.ini")] = 0;
+    g_uiIni[wcslen(g_uiIni) - wcslen(L"d2r_pcvr.ini")] = 0;
     wcscat_s(g_uiIni, L"d2r_vr_settings.ini");
     if (GetFileAttributesW(g_ini) == INVALID_FILE_ATTRIBUTES) {
-        MessageBoxW(nullptr, L"There is no d2r_vr.ini in d2rloader\\plugins next to this program.\n"
+        MessageBoxW(nullptr, L"There is no d2r_pcvr.ini in d2rloader\\plugins next to this program.\n"
                              L"Put this program next to the game's D2R.exe, with the mod installed.",
                     L"D2R VR Settings", MB_ICONWARNING);
         return 1;

@@ -10,6 +10,7 @@ import subprocess
 import sys
 
 import install
+import mod_identity
 import steam_config
 from game_install import validate_game, battlenet_location, STEAM_VERSION, BATTLENET_VERSION
 
@@ -140,7 +141,7 @@ def verify_release(root):
     if manifest.get('platform') != 'native-windows':
         raise ValueError('This setup needs the native Windows release ZIP.')
     hashes = manifest['sha256']
-    required = {'bin/d2rl-vrcam.dll', 'bin/openxr_loader.dll', 'steamvr/install.py',
+    required = {'bin/d2rl-pcvr.dll', 'bin/openxr_loader.dll', 'steamvr/install.py', 'steamvr/mod_identity.py',
                 'steamvr/setup_windows.py', 'steamvr/steam_config.py', 'steamvr/launch_windows.py',
                 'steamvr/game_install.py', 'steamvr/game_assets.py', 'steamvr/casc_assets.py',
                 'Uninstall-Windows.cmd', 'steamvr/uninstall_windows.py'}
@@ -223,7 +224,7 @@ def apply_setup(manifest, store, version, headset, connections, steam, game, pro
     old_options = preflight_steam(profile, steam, game, options, connections, **routing)
     if mode != 2:
         command = [sys.executable, str(root / 'steamvr/install.py'), '--game', str(game),
-                   '--saves', str(saves), '--plugin', str(root / 'bin/d2rl-vrcam.dll'),
+                   '--saves', str(saves), '--plugin', str(root / 'bin/d2rl-pcvr.dll'),
                    '--openxr-loader', str(root / 'bin/openxr_loader.dll'), '--deps', str(root / 'deps'),
                    '--backup-dir', str(root / 'setup-backups/game'), '--download-deps', '--store', store]
         if store == 'battlenet':
@@ -306,10 +307,12 @@ def main():
     selected = choose('Add shortcuts for which Steam account?', [f'{name} (local ID {profile.name})' for profile, name in accounts]) if len(accounts) > 1 else 0
     profile = accounts[selected][0]
     saves = folder('D2R saved games folder', saved_games(), 'Settings.json')
-    plugin = game / 'd2rloader/plugins/d2rl-vrcam.dll'
-    existing = plugin.is_file()
+    found = mod_identity.survey(game, [ROOT / 'setup-backups/game', ROOT / 'build-frame/backups'])
+    if found.other:
+        raise ValueError(found.message + ' No game or Steam configuration was changed.')
+    existing = found.ours
     mode = choose('How should setup install the mod?', ['Update / repair and keep calibration and video settings', 'Full install with recommended settings (resets calibration)', 'Only configure Steam shortcuts (keep installed mod)']) if existing else 1
-    if mode == 2 and not all((game / name).is_file() for name in ('D2RLoader.exe', 'ReShade64.dll', 'openxr_loader.dll', 'd2rloader/plugins/d2r_vr.ini')):
+    if mode == 2 and not all((game / name).is_file() for name in ('D2RLoader.exe', 'ReShade64.dll', 'openxr_loader.dll', mod_identity.PLUGIN, mod_identity.SETTINGS)):
         raise ValueError('The existing mod installation is incomplete. Rerun setup and choose Update / repair.')
     routing = {} if store == 'steam' else {'store': store, 'python': Path(sys.executable).resolve(),
                                           'wrapper': ROOT / 'steamvr/launch_windows.py', 'runtime': runtime}
