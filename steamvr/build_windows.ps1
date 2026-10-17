@@ -15,4 +15,4 @@ if ($Test) {
     & (Join-Path (Split-Path $cmake) 'ctest.exe') --test-dir $buildDirectory --output-on-failure
     if ($LASTEXITCODE -ne 0) { throw 'Native Windows tests failed' }
 }
-Write-Host "Built $buildDirectory/d2rl-vrcam.dll (staged; installation is separate)."
+Write-Host "Built $buildDirectory/d2rl-pcvr.dll (staged; installation is separate)."

@@ -380,7 +380,7 @@ The prioritized feature backlog and headset verification checklist live in
 [TASKS.md](TASKS.md), including UI, combat gestures and eye-tracked foveation.
 
 For a bounded performance capture, change `[debug] profile_capture` to a new
-positive integer in the installed `d2r_vr.ini` while gameplay is running. The
+positive integer in the installed `d2r_pcvr.ini` while gameplay is running. The
 next 360 valid stereo pairs record per-eye CPU spans, sampled mod callbacks,
 OpenXR wait/locate/input/acquire/copy/fence/release/submit spans, and optional
 D3D12 timestamps. The probes then become idle automatically. Use a stationary
@@ -508,7 +508,7 @@ include a UTC offset when analyzing logs away from the capture machine's timezon
 
 - Runtime log: `d2rloader/logs/d2r-vr-frame.log` in the game folder. A bounded
   queue writes batches on a worker without forced disk flushes. The old SDK log,
-  `d2r-vr-vrcam.log`, remains for loader/startup messages. Live syscall sampling
+  `d2r-pcvr-vrcam.log` (`d2r-vr-vrcam.log` up to 0.3.15), remains for loader/startup messages. Live syscall sampling
   identified repeated main-thread `fsync()` waits on that old file during hitches.
   The new logger's concurrent-producer and shutdown-drain test passes in Proton.
   The user confirmed improved hitches after deployment. A subsequent 599-sample
