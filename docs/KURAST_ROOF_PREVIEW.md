@@ -1,6 +1,6 @@
 # Native environment roof retention
 
-Status: native fix awaiting headset verification. The current implementation
+Status: owner verified roof retention in Kurast Docks on 2026-10-16. The implementation
 intercepts the shared environmental cutaway request, without per-area preset
 overrides. First-person VR is the supported use case; overhead-view support is
 not a requirement.
@@ -46,9 +46,16 @@ Before testing the native DLL, remove the earlier data preview using its
 `--remove` command below, with the game closed. Start the isolated developer
 build and enter Asheara's hut in Kurast Docks. Check the whole roof from inside
 and outside, then another building in town and a Kurast Bazaar building. Look
-for visibility, underside lighting and doorway obstruction. No area has yet
-been verified in the headset with the native hook; other game editions/builds
-are also unverified.
+for visibility, underside lighting and doorway obstruction.
+
+The owner confirmed the roof fix works in the 17:34 test, with a clip showing
+Asheara's roof remaining visible on entry. Steam D2R 3.3.93787, SteamVR/OpenXR,
+offline developer Paladin, integration `b033f19` (native change `b3dcb12`). Logs
+confirm hook installation at 17:31:59 and a suppressed hide request at 17:33:25.
+The user also reports erratic hanging-fixture movement throughout the game;
+track that separately rather than treating this report as verification of light
+or physics behavior. Wider building/area coverage and other game editions/builds
+remain unverified. No overhead test is required.
 
 ## Earlier data-only diagnostic (superseded)
 
