@@ -27,6 +27,7 @@
 #include "deferred_draw.h"
 #include "monster_bars.h"
 #include "../sigscan/sigscan.h"
+#include "../pools/pools.h"
 
 #include <D2RLPlugin/api.h>
 
@@ -702,6 +703,10 @@ void SetRenderRadius(int rooms) { drawdist::SetRadius(rooms); }
 int  GetRenderRadius() { return drawdist::Radius(); }
 bool  SetModelRadius(float units) { return drawdist::SetModelRadius(units); }
 float GetModelRadius() { return drawdist::ModelRadius(); }
+
+bool GrowPools(unsigned renderMb, unsigned entityMb, char* line, size_t lineSize) {
+	return pools::Grow(renderMb, entityMb, line, lineSize);
+}
 
 Status GetStatus() {
 	const Frame& f = Current();

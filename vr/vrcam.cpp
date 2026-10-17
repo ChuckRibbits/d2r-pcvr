@@ -178,6 +178,8 @@ struct Settings {
     std::atomic<bool>  followJump{true};    // the camera goes up when the animation lifts the hero (Leap)
     std::atomic<float> jumpFrom{0.3f};      // hip rise (model units) still taken for the stride's bob
     std::atomic<float> pitch{-60.0f};       // camera pitch relative to the game's own (deg); -60 = level, more negative = higher
+    std::atomic<int>   renderPoolMb{64};
+    std::atomic<int>   entityPoolMb{280};
     std::atomic<int>   rings{int(framevr::settings::Definitions[framevr::settings::DrawDistance].defaultValue)};
     std::atomic<float> modelRadius{framevr::settings::Definitions[framevr::settings::ObjectDistance].defaultValue};
     std::atomic<int>   hudMap{0};           // [hud] map: 0 in the picture, 1 out of it, into its own texture
@@ -891,6 +893,8 @@ void LoadSettings() {
     g_set.followJump.store(IniB(L"camera", L"follow_jump", true));
     g_set.jumpFrom.store(std::clamp(IniF(L"camera", L"jump_from", 0.3f), 0.0f, 3.0f));
     g_set.pitch.store(std::clamp(IniF(L"camera", L"pitch", -60.0f), -150.0f, 60.0f));
+    g_set.renderPoolMb.store(std::clamp((int)IniF(L"render", L"render_pool_mb", 64.0f), 0, 4096));
+    g_set.entityPoolMb.store(std::clamp((int)IniF(L"render", L"entity_pool_mb", 280.0f), 0, 4096));
     g_set.rings.store(std::clamp((int)IniF(L"render", L"rings", framevr::settings::Definitions[framevr::settings::DrawDistance].defaultValue), 1, 8));
     g_set.modelRadius.store(std::clamp(IniF(L"render", L"model_radius", framevr::settings::Definitions[framevr::settings::ObjectDistance].defaultValue), 10.0f, 10000.0f));
     g_set.mouseLook.store(IniB(L"input", L"mouse_look", false));
@@ -4950,6 +4954,22 @@ void InstallLabelHooks() {
 // The game's addresses for the settings program's Status tab: d2r_vr_game_code.txt
 // beside the ini, rewritten whenever the resolver's report changes. Its Scan
 // button bumps [status] scan in the ini: what is not found is searched for again.
+// [render] render_pool_mb and entity_pool_mb: the game's Renderer Pool (12 MB) and Entity
+// System Pool (70 MB) grown once the game has made them (cleanroom/pools). With more rooms
+// drawn the renderer's ran out in the Act 3 jungle and the game crashed (issue #7). Once per
+// game start - a change in the ini counts at the next. One line in the log.
+void ApplyPools() {
+    static bool done = false, toldWaiting = false;
+    static ULONGLONG since = 0;
+    if (done) return;
+    char line[400]{};
+    done = d2rcam::GrowPools((unsigned)g_set.renderPoolMb.load(), (unsigned)g_set.entityPoolMb.load(), line, sizeof line);
+    if (!since) since = GetTickCount64();
+    if (done) LogF("vrcam: %s", line);
+    else if (!toldWaiting && GetTickCount64() - since > 120000) { toldWaiting = true; LogF("vrcam: %s (still waiting)", line); }
+}
+
+
 void GameCodeTick(bool iniChanged) {
     static int answered = -1;
     static uint32_t written = ~0u;
@@ -8172,6 +8192,7 @@ DWORD WINAPI UpdateThread(void*) {
             FollowMode();
             d2rsig::Resolve(g_ctx);   // what waits for its page to be decrypted
             GameCodeTick(iniChanged);
+            ApplyPools();
             dlssdepth::Install(&Log, +[]() { return g_enabled.load() && g_inWorld.load(); });
             billboards::Install(&Log, +[]() { return g_enabled.load() && g_inWorld.load() && !ThirdPerson() && !Overhead() && !gamestate::MenuOpen(); });
             if (!AllHooksIn()) InstallHooks();
