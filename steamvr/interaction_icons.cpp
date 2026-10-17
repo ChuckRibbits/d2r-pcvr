@@ -91,6 +91,7 @@ std::shared_ptr<const Image> Get(Item item) {
 }
 uint64_t Revision(){return revision.load();}
 void Prefetch(const Snapshot& s) {
+    for(const auto& d:companions::Definitions)if(d.skill>=0&&(s.companions.relevant&companions::Bit(d.type)))Get("s"+std::to_string(d.skill));
     for(const auto& skill:s.skills)if(skill.known&&skill.id>=0)Get("s"+std::to_string(skill.id));
     for(unsigned i=0;i<s.skillCount&&i<s.catalog.size();++i)if(s.catalog[i].id>=0)Get("s"+std::to_string(s.catalog[i].id));
     if(s.equipmentKnown)for(const auto& set:s.sets)for(const auto& item:set)Get(item);

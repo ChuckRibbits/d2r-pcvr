@@ -81,6 +81,7 @@ This is a PCVR mod: the game runs on your Windows PC and streams to the headset.
 - Belt potions you can grab and drink, plus wrist health, mana, level and experience progress.
 - A left-hand minimap/compass with current area and act, independent health/mana tilt,
   and adjustable controller vibration under **VR Settings > Haptics**.
+- Optional summon icons and live companion counts beneath the hand minimap, adapting to your available summons.
 - A **MAP** tab at the bottom of the spell menu, showing explored areas and native markers.
 - Load supported arrow skills into a physical bow quiver, with the selected
   arrow visible on the string. Selected Paladin Smite works with left-shield contact.

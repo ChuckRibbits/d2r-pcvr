@@ -10,6 +10,7 @@
 #include "native_belt.h"
 #include "melee.h"
 #include "bow.h"
+#include "companions.h"
 namespace gamestate {uint32_t WeaponSet();uint64_t LocalPlayer();bool MenuOpen();}
 namespace gamecmd {bool ExecuteUiCommand(uint32_t);}
 namespace framevr {bool VrGameplay(uint64_t now);}
@@ -30,6 +31,7 @@ bool tossHit=false; // FeedMerc: the game thread found the hireling at the landi
 // each snapshot while younger than MercMaxAge.
 constexpr uint64_t MercPeriod=200,MercMaxAge=1000;
 Mercenary merc;uint64_t mercAt=0,mercAskedAt=0,mercSession=0;bool mercAsking=false,mercWasLow=false;
+framevr::companions::Roster companions;
 // Native cosmetic cues (states.txt / overlay.txt rows): the hurt merc is tinted
 // with state "red"; a confirmed thrown potion plays overlay "healing" on it.
 constexpr int HurtTintState=91,HealOverlay=26;
@@ -81,13 +83,17 @@ Snapshot Collect() {
     s.beltKnown=inventory->forEachInventoryItem(context,player,&filter,&BeltItem,&belt)==Inventory::Result::Success&&!belt.invalid;
     for(auto& b:s.belt)b.known=s.beltKnown;
     nativeui::Capture(s);
-    {std::lock_guard lock(mutex);if(mercSession==s.session&&s.at>=mercAt&&s.at-mercAt<=MercMaxAge)s.merc=merc;}
+    {std::lock_guard lock(mutex);if(mercSession==s.session&&s.at>=mercAt&&s.at-mercAt<=MercMaxAge){s.merc=merc;s.companions=companions;}}
+    if(s.companions.known)for(unsigned i=0;i<s.skillCount&&i<s.catalog.size();++i)
+        if(s.catalog[i].known&&s.catalog[i].available)
+            s.companions.relevant|=framevr::companions::Bit(framevr::companions::SkillType(s.catalog[i].id));
     return s;
 }
 void __cdecl SampleMerc(const PluginContext*,void* token) noexcept {
     const uint64_t session=reinterpret_cast<uint64_t>(token);
     static uint32_t hint=0;
     Mercenary m;
+    const auto roster=companionstate::Sample(session);
     m.known=session==gamestate::LocalPlayer()&&melee::HirelingVitals(hint,m.health,m.maxHealth,m.classId,m.unitId);
     hint=m.known?m.unitId:0;
     const bool low=MercLow(m);
@@ -95,7 +101,7 @@ void __cdecl SampleMerc(const PluginContext*,void* token) noexcept {
     // when another unit is the hireling (resurrected/rehired).
     if(const auto tinted=tintedUnit.load();tinted&&(!low||tinted!=m.unitId)){melee::HirelingState(tinted,HurtTintState,false);tintedUnit=0;}
     if(low&&!tintedUnit.load()&&melee::HirelingState(m.unitId,HurtTintState,true))tintedUnit=m.unitId;
-    {std::lock_guard lock(mutex);merc=m;mercAt=GetTickCount64();mercSession=session;mercAsking=false;
+    {std::lock_guard lock(mutex);merc=m;companions=roster;mercAt=GetTickCount64();mercSession=session;mercAsking=false;
      if(low==mercWasLow)return;mercWasLow=low;}
     char line[180];std::snprintf(line,sizeof line,"Frame merc: %s (class=%u life %.0f/%.0f, red tint %s)",
         low?"low health":"health recovered",m.classId,m.health,m.maxHealth,tintedUnit.load()?"on":"off");
@@ -108,7 +114,7 @@ void __cdecl ClearTint(const PluginContext*,void*) noexcept {
         melee::HirelingState(tinted,HurtTintState,false);
         framevr::logging::Write("Frame merc: VR gameplay inactive - red tint cleared");
     }
-    std::lock_guard lock(mutex);mercAsking=false;mercWasLow=false;
+    std::lock_guard lock(mutex);mercAsking=false;mercWasLow=false;companions={};
 }
 void Publish(Snapshot s) {
     std::lock_guard lock(mutex);
@@ -118,7 +124,7 @@ void Publish(Snapshot s) {
                  s.catalog!=snapshot.catalog||s.skillCount!=snapshot.skillCount||s.bindingBank!=snapshot.bindingBank||s.bindingsEditable!=snapshot.bindingsEditable||
                  s.vitalsKnown!=snapshot.vitalsKnown||int(s.health)!=int(snapshot.health)||int(s.mana)!=int(snapshot.mana)||
                  s.maxHealth!=snapshot.maxHealth||s.maxMana!=snapshot.maxMana||s.experience!=snapshot.experience||s.location!=snapshot.location||
-                 s.actionKnown!=snapshot.actionKnown||s.actionMode!=snapshot.actionMode;
+                 s.actionKnown!=snapshot.actionKnown||s.actionMode!=snapshot.actionMode||s.companions!=snapshot.companions;
     for(int i=0;i<4;++i) {
         auto& b=s.belt[i];const auto& before=snapshot.belt[i];
         const bool change=s.session!=snapshot.session||b.items!=before.items||b.known!=before.known||b.count!=before.count;
@@ -216,6 +222,7 @@ void __cdecl AimAtHireling(const PluginContext*,void*) noexcept {
 }
 }
 void Init(const D2RL::PluginContext* ctx) {
+    companionstate::Init(ctx);
     nativeui::Init(ctx);
     context=ctx;inventory=Service<D2RL::InventoryService>(ctx);items=Service<D2RL::ItemService>(ctx);threads=Service<D2RL::ThreadService>(ctx);
 }

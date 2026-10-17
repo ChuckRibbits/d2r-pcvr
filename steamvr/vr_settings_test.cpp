@@ -139,7 +139,7 @@ int main(){
     Check(Normalize(NavigationLocation,99)==0&&Normalize(NavigationLocation,1.5f)==0,"invalid navigation location falls back to Wrist");
     {Model navigation;navigation.Open(s);navigation.Click(At(Page::Controls,Tabs[int(Page::HUD)]));
         const int row=3;
-        Check(RowCount(Page::HUD)==9&&RowKey(Page::HUD,row)==NavigationLocation,"one navigation row replaces separate map/compass switches");
+        Check(RowCount(Page::HUD)==10&&RowKey(Page::HUD,row)==NavigationLocation,"one navigation row replaces separate map/compass switches");
         for(int location=1;location<=3;++location){
             navigation.Click(At(Page::HUD,Increase(row)));
             Check(navigation.Get()[NavigationLocation]==location,"navigation offers Palm, Either and Off");
@@ -278,5 +278,10 @@ int main(){
     gate.Step(false,true,1,true);e=gate.Step(true,true,1,true);
     Check(!e.chord&&!e.click&&!e.cancel,"tracking return cannot replay held inputs");
     gate.Step(true,false,0,false);Check(gate.Step(true,false,0,true).cancel,"fresh B cancels");
+    Check(Defaults()[CompanionCounts]==1&&RowKey(Page::HUD,9)==CompanionCounts,"companion counts default on in HUD");
+    s.ready=true;s.values=Defaults();m.Open(s);m.Click({Kind::Tab,int(Page::HUD)});
+    m.Click(At(Page::HUD,ValueBox(9)));
+    Check(m.Get()[CompanionCounts]==0&&m.Get()[NavigationLocation]==0,"companion toggle is independent of map placement");
+    Check(m.Click({Kind::Apply}).changed==(ChangeMask{1}<<CompanionCounts),"companion toggle uses its own high change-mask bit");
     std::puts("VR settings draft, persistence requests, conflicts, hit regions and input-gating tests passed");
 }

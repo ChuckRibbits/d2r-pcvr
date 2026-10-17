@@ -111,6 +111,16 @@ stabs. The old `attack_speed` INI key does not select Classic; choose it here.
 20% to 150% in five-point steps. The original size is 45%; Apply saves the choice
 to `[hud] labels_size`. Existing explicit sizes are preserved on update.
 
+**HUD > Companion counts** (default On) adds summon icons and live counts below
+the left-hand minimap. Necromancers see skeletons, skeletal mages, golem and
+revives as those skills become available; other classes use their own summon
+groups. Item-granted summons also qualify. A hired mercenary has its own count.
+Counts come from your summon roster, including companions outside your view.
+Used/available groups stay visible at zero, with the zero highlighted. The row
+follows **Minimap & Compass** wrist/palm placement and hides with navigation;
+turning off Companion counts preserves the map and compass. Unknown or stale
+rosters are hidden during loading rather than presented as a lost army.
+
 **HUD > Blood on visor** (default On) splashes blood around the edge of the
 view as life drops below 60%, 40% and 20%; large splats drip slowly, then dry.
 Healing back above a band, from any source, fades that band's blood out over

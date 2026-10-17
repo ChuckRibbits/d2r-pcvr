@@ -6,6 +6,7 @@
 #include "wrist_hud.h"
 #include "hand_vitals.h"
 #include "navigation_info.h"
+#include "companions.h"
 #include <array>
 #include <cstdint>
 #include <cstring>
@@ -56,22 +57,30 @@ constexpr float PalmWidth=.20f,PalmHeight=.10f;
 constexpr float WristWidth=.24f,WristHeight=.12f,WristMapSize=.24f;
 // Navigation uses one face and one layout for both the map and compass.
 // Reserve space for vitals only when they are displayed on that same face.
-inline Pose NavigationMapPanel(Pose hand,Pose head,bool palm,bool vitalsOnFace) {
+inline Pose NavigationMapPanel(Pose hand,Pose head,bool palm,bool vitalsOnFace,float footer=0) {
     auto panel=palm?PalmPanel(hand,head):WristPanel(hand,head);
-    if(vitalsOnFace)panel.p=panel.p+math::Rotate(panel.q,{0,((palm?PalmHeight:WristHeight)+WristMapSize)*.5f+.01f,0});
+    if(vitalsOnFace)panel.p=panel.p+math::Rotate(panel.q,{0,((palm?PalmHeight:WristHeight)+WristMapSize)*.5f+.01f+footer,0});
     return panel;
 }
 constexpr float WristCompassWidth=.24f,WristCompassHeight=.045f;
-inline Pose NavigationCompassPanel(Pose hand,Pose head,bool palm,bool vitalsOnFace) {
-    auto panel=NavigationMapPanel(hand,head,palm,vitalsOnFace);
+inline Pose NavigationCompassPanel(Pose hand,Pose head,bool palm,bool vitalsOnFace,float footer=0) {
+    auto panel=NavigationMapPanel(hand,head,palm,vitalsOnFace,footer);
     panel.p=panel.p+math::Rotate(panel.q,{0,(WristMapSize+WristCompassHeight)*.5f+.01f,0});
     return panel;
 }
 constexpr float NavigationInfoWidth=WristCompassWidth;
 constexpr float NavigationInfoHeight=NavigationInfoWidth*navigation::Height/navigation::Width;
-inline Pose NavigationInfoPanel(Pose hand,Pose head,bool palm,bool vitalsOnFace) {
-    auto panel=NavigationCompassPanel(hand,head,palm,vitalsOnFace);
+inline Pose NavigationInfoPanel(Pose hand,Pose head,bool palm,bool vitalsOnFace,float footer=0) {
+    auto panel=NavigationCompassPanel(hand,head,palm,vitalsOnFace,footer);
     panel.p=panel.p+math::Rotate(panel.q,{0,(WristCompassHeight+NavigationInfoHeight)*.5f+.006f,0});
+    return panel;
+}
+inline float CompanionHeight(int rows){return WristMapSize*companions::RowHeight/companions::Width*rows;}
+inline float CompanionSpace(int rows){return rows>0?CompanionHeight(rows)+.006f:0;}
+// A footer below the complete map, with extra spacing above wrist vitals.
+inline Pose NavigationCompanionsPanel(Pose hand,Pose head,bool palm,bool vitalsOnFace,int rows) {
+    auto panel=NavigationMapPanel(hand,head,palm,vitalsOnFace,CompanionSpace(rows));
+    panel.p=panel.p+math::Rotate(panel.q,{0,-(WristMapSize+CompanionHeight(rows))*.5f-.006f,0});
     return panel;
 }
 inline bool WristPresented(Pose hand,Pose head) {
@@ -193,6 +202,7 @@ struct Snapshot {
     bool actionKnown=false;
     uint32_t actionMode=0;
     Mercenary merc;
+    companions::Roster companions;
 };
 struct SkillCue {
     int slot=-1,id=-1,owner=-1;

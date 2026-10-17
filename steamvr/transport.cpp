@@ -139,6 +139,9 @@ uint32_t bloodShown=0; // splats in the uploaded image
 ULONGLONG bloodPaintAt=0;
 bool bloodAtlasPending=false,bloodImageReady=false;
 XrSwapchain interactionChain=XR_NULL_HANDLE;
+XrSwapchain companionChain=XR_NULL_HANDLE;
+bool companionAtlasPending=false,companionPaintValid=false;
+interaction::PaintContext companionPaintContext{};
 XrSwapchain compassChain=XR_NULL_HANDLE;
 compass::Heading wristHeading;
 bool compassFrame=false,compassAtlasReady=false;
@@ -168,7 +171,8 @@ bool interactionPaintValid=false;
 LatestWorker<interaction::PaintJob,interaction::PaintedAtlas> interactionPainter([](const interaction::PaintJob& job) {
     const auto start=hookmetrics::Nanos();
     auto pixels=interaction::Paint(job.snapshot,job.output,job.selection,job.labels);
-    return interaction::PaintedAtlas{std::move(pixels),double(hookmetrics::Nanos()-start)/1e6};
+    auto companionPixels=companions::Count(job.snapshot.companions)?interaction::PaintCompanions(job.snapshot.companions):std::vector<uint8_t>{};
+    return interaction::PaintedAtlas{std::move(pixels),double(hookmetrics::Nanos()-start)/1e6,std::move(companionPixels)};
 });
 uint64_t interactionPrefetchSession=0;
 uint32_t interactionPrefetchRevision=~0u;
@@ -1678,17 +1682,21 @@ void Input() {
         const bool visible=motionInput.active||interactionOutput.wheel||interactionOutput.wrist||interactionOutput.vitals||interactionOutput.critical||interactionOutput.bottle>=0||
             interactionOutput.nearBelt>=0||interactionOutput.nearHolster>=0||math::Rotate(Q(head.orientation),{0,0,-1}).y<-.60f;
         const auto context=interaction::Context(interactionInput.snapshot,interactionOutput,snapshotFresh,controllerLabels);
-        if(visible&&(!interactionPaintValid||key!=interactionPaintKey||context!=interactionPaintContext)) {
+        const bool missingCompanions=snapshotFresh&&companions::Count(context.companions)&&!companionPaintValid;
+        if(visible&&(!interactionPaintValid||missingCompanions||key!=interactionPaintKey||context!=interactionPaintContext)) {
             if(now>=interactionPaintAt&&(!interactionPaintRequest||key!=interactionRequestedKey||context!=interactionRequestedContext)) {
                 interactionPaintRequest=interactionPainter.Submit({snapshotFresh?interactionInput.snapshot:interaction::Snapshot{},interactionOutput,motion.Selection(),controllerLabels});
                 interactionRequestedKey=key;interactionRequestedContext=context;interactionPaintAt=now+100;
             }
             interaction::PaintedAtlas painted;
-            if(key==interactionRequestedKey&&context==interactionRequestedContext&&atlasUploads.size()<3&&!interactionAtlasPending&&
-               interactionPainter.Take(interactionPaintRequest,painted)) {
+            if(key==interactionRequestedKey&&context==interactionRequestedContext&&atlasUploads.size()<2&&!interactionAtlasPending&&
+               !companionAtlasPending&&interactionPainter.Take(interactionPaintRequest,painted)) {
                 const auto uploadStart=Milliseconds();
                 if(!painted.pixels.empty()&&UploadAtlas(interactionChain,atlasFormat,1024,1024,painted.pixels,true)) {
                     interactionPaintKey=key;interactionPaintContext=context;interactionPaintValid=true;
+                    companionPaintValid=!painted.companions.empty()&&UploadAtlas(companionChain,atlasFormat,
+                        companions::Width,companions::Height,painted.companions,true,&companionAtlasPending);
+                    if(companionPaintValid)companionPaintContext=context;
                 }
                 interactionPaintRequest=0;
                 const auto uploadMs=Milliseconds()-uploadStart;
@@ -2252,6 +2260,10 @@ void EndPair() {
         XrSwapchainImageReleaseInfo release{XR_TYPE_SWAPCHAIN_IMAGE_RELEASE_INFO};
         Check(pReleaseSwapchainImage(interactionChain,&release),"release interaction atlas");interactionAtlasPending=false;
     }
+    if(companionAtlasPending) {
+        XrSwapchainImageReleaseInfo release{XR_TYPE_SWAPCHAIN_IMAGE_RELEASE_INFO};
+        companionPaintValid=Check(pReleaseSwapchainImage(companionChain,&release),"release companion atlas")&&companionPaintValid;companionAtlasPending=false;
+    }
     if(bloodAtlasPending) {
         XrSwapchainImageReleaseInfo release{XR_TYPE_SWAPCHAIN_IMAGE_RELEASE_INFO};
         bloodImageReady=Check(pReleaseSwapchainImage(bloodChain,&release),"release blood visor");bloodAtlasPending=false;
@@ -2296,6 +2308,7 @@ void EndPair() {
     XrCompositionLayerQuad wrist{XR_TYPE_COMPOSITION_LAYER_QUAD},wristMap{XR_TYPE_COMPOSITION_LAYER_QUAD};
     XrCompositionLayerQuad wristCompass{XR_TYPE_COMPOSITION_LAYER_QUAD},compassMarker{XR_TYPE_COMPOSITION_LAYER_QUAD};
     XrCompositionLayerQuad navigationInfo{XR_TYPE_COMPOSITION_LAYER_QUAD};
+    XrCompositionLayerQuad companionRow{XR_TYPE_COMPOSITION_LAYER_QUAD};
     if(interactionVisible) {
         if(!potionModels.Ready()&&interactionOutput.bottle>=0&&interactionOutput.bottleHand>=0) {
             auto pose=motionInput.hand[interactionOutput.bottleHand];pose.q=potions::HeldRotation(pose.q);
@@ -2329,9 +2342,14 @@ void EndPair() {
            interaction::NavigationWanted(interactionInput,interactionOutput,GetTickCount64())) {
             const bool palm=interactionOutput.navigationPalm;
             const bool withVitals=interactionOutput.vitals&&interactionOutput.palm==palm;
-            if(mapEye.copied)motionQuad(wristMap,interactionPose(interaction::NavigationMapPanel(interactionInput.hand[1],interactionInput.head,palm,withVitals)),
+            const bool companionsReady=vrsettings::Read().values[settings::CompanionCounts]>.5f&&companionPaintValid&&
+                companionChain&&count+navigationLayers+uint32_t(locationReady)+1<=contentLimit&&
+                interaction::CompanionImageCurrent(companionPaintContext,interactionInput.snapshot);
+            const int companionRows=companionsReady?companions::Rows(interactionInput.snapshot.companions):0;
+            const float footer=interaction::CompanionSpace(companionRows);
+            if(mapEye.copied)motionQuad(wristMap,interactionPose(interaction::NavigationMapPanel(interactionInput.hand[1],interactionInput.head,palm,withVitals,footer)),
                 interaction::WristMapSize,interaction::WristMapSize,{{0,0},{int32_t(mapSide),int32_t(mapSide)}},mapEye.chain);
-            auto compassPose=interaction::NavigationCompassPanel(interactionInput.hand[1],interactionInput.head,palm,withVitals);
+            auto compassPose=interaction::NavigationCompassPanel(interactionInput.hand[1],interactionInput.head,palm,withVitals,footer);
             motionQuad(wristCompass,interactionPose(compassPose),interaction::WristCompassWidth,interaction::WristCompassHeight,
                 {{compass::Crop(wristHeading.bearing),0},{compass::Window,compass::StripHeight}},compassChain);
             constexpr float markerWidth=interaction::WristCompassWidth*compass::MarkerWidth/compass::Window;
@@ -2340,8 +2358,11 @@ void EndPair() {
             motionQuad(compassMarker,interactionPose(compassPose),markerWidth,markerHeight,
                 {{0,compass::StripHeight},{compass::MarkerWidth,compass::MarkerHeight}},compassChain);
             if(locationReady)motionQuad(navigationInfo,interactionPose(interaction::NavigationInfoPanel(
-                interactionInput.hand[1],interactionInput.head,palm,withVitals)),interaction::NavigationInfoWidth,interaction::NavigationInfoHeight,
+                interactionInput.hand[1],interactionInput.head,palm,withVitals,footer)),interaction::NavigationInfoWidth,interaction::NavigationInfoHeight,
                 {{navigation::AtlasX,navigation::AtlasY},{navigation::Width,navigation::Height}},interactionChain);
+            if(companionRows)motionQuad(companionRow,interactionPose(interaction::NavigationCompanionsPanel(
+                interactionInput.hand[1],interactionInput.head,palm,withVitals,companionRows)),interaction::WristMapSize,interaction::CompanionHeight(companionRows),
+                {{0,0},{companions::Width,companions::UsedHeight(interactionInput.snapshot.companions)}},companionChain);
         }
     }
     const bool weaponSkillIndicators=vrsettings::Read().values[settings::WeaponSkillIndicators]>.5f;
@@ -2742,6 +2763,8 @@ void Shutdown(bool preserveResolution) {
     atlasUploads.clear();interactionPaintKey=~0ull;interactionPrefetchSession=0;interactionPrefetchRevision=~0u;interactions.Reset();interactionstate::Cancel();
     interactionPaintRequest=0;interactionRequestedKey=~0ull;interactionPaintValid=false;interactionPaintContext={};interactionRequestedContext={};interactionPaintAt=0;
     if(interactionChain&&pDestroySwapchain)pDestroySwapchain(interactionChain);interactionChain=XR_NULL_HANDLE;
+    if(companionChain&&pDestroySwapchain)pDestroySwapchain(companionChain);companionChain=XR_NULL_HANDLE;
+    companionAtlasPending=companionPaintValid=false;companionPaintContext={};
     if(compassChain&&pDestroySwapchain)pDestroySwapchain(compassChain);compassChain=XR_NULL_HANDLE;wristHeading.Reset();compassFrame=compassAtlasReady=false;
     if(gameplayChain&&pDestroySwapchain)pDestroySwapchain(gameplayChain);gameplayChain=XR_NULL_HANDLE;
     if(bloodChain&&pDestroySwapchain)pDestroySwapchain(bloodChain);bloodChain=XR_NULL_HANDLE;
