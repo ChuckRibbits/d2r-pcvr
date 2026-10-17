@@ -250,6 +250,8 @@ std::atomic<bool> settingsOpen{false};
 bool settingsAtlasPending=false,settingsImageReady=false;
 uint64_t settingsPaintRevision=~0ull,settingsSession=0;
 int settingsPaintHover=-1,settingsPaintStatus=-1;
+settings::HoverHelp settingsHelp;
+int settingsPaintHelp=settings::NoHelp,settingsHelpVisible=settings::NoHelp;
 ULONGLONG settingsPaintAt=0;
 XrPosef settingsPose{};
 constexpr float settingsWidth=.95f,settingsHeight=settingsWidth*settings::Height/settings::Width;
@@ -560,6 +562,7 @@ void CancelShieldCast() {
     if(shieldCast.issued)shieldCast.cancelled=true;else shieldCast={};
 }
 void ClearInput() {
+    settingsHelp.Clear();settingsHelpVisible=settings::NoHelp;
     controllerRumbleLease.Update(0,false);
     hapticPulses.Cancel();
     spellHaptics.Clear();
@@ -1214,6 +1217,7 @@ gameplay::MeleeStyle MotionMeleeStyle() {
     }
 }
 void ResetSettingsInput() {
+    settingsHelp.Clear();settingsPaintHelp=settingsHelpVisible=settings::NoHelp;
     hapticPulses.Cancel();
     spellHaptics.Clear();
     panelinput::WorldInput(false);
@@ -1280,13 +1284,16 @@ void CalibrationInput() {
     const auto now=GetTickCount64();
     if(key!=calibrationPaintKey&&now>=settingsPaintAt&&!settingsAtlasPending&&atlasUploads.size()<3){
         auto pixels=settings::Paint(settingsModel,{},"",&bodyCalibration);
-        if(!pixels.empty()&&UploadAtlas(settingsChain,atlasFormat,settings::Width,settings::Height,pixels,true,&settingsAtlasPending))calibrationPaintKey=key;
+        if(!pixels.empty()&&UploadAtlas(settingsChain,atlasFormat,settings::AtlasWidth,settings::Height,pixels,true,&settingsAtlasPending))calibrationPaintKey=key;
         settingsPaintAt=now+100;
     }
 }
 void SettingsPointer(const settings::InputGate::Edges& edges) {
     if(!settingsModel.open)return;
     settingsModel.Observe(vrsettings::Read());settingsHover={};pointerVisible=pointerHit=false;
+    int helpTarget=settings::NoHelp;
+    const auto previousPage=settingsModel.page;
+    const bool previousMenu=settingsModel.controllerMenu;
     XrSpaceLocation aim{XR_TYPE_SPACE_LOCATION};
     const auto needed=XR_SPACE_LOCATION_POSITION_VALID_BIT|XR_SPACE_LOCATION_ORIENTATION_VALID_BIT|
                       XR_SPACE_LOCATION_POSITION_TRACKED_BIT|XR_SPACE_LOCATION_ORIENTATION_TRACKED_BIT;
@@ -1296,6 +1303,7 @@ void SettingsPointer(const settings::InputGate::Edges& edges) {
         beamLength=pointerHit?hit.distance:1.5f;const auto mid=ray+direction*(beamLength*.5f);
         beamPose=XrPose({mid,math::BeamOrientation(direction,V(head.position)-mid)});pointerVisible=true;
         if(pointerHit){settingsHover=settings::HitTest(settingsModel.page,hit.u,hit.v,settingsModel.controllerMenu);dotPose=settingsPose;
+            helpTarget=settings::HelpAt(settingsModel.page,hit.u,hit.v,settingsModel.controllerMenu);
             const auto p=hit.point+math::Rotate(Q(settingsPose.orientation),{0,0,.004f});dotPose.position={p.x,p.y,p.z};}
     }
     if(edges.click&&pointerHit&&settingsImageReady&&settingsPaintRevision==settingsModel.revision){
@@ -1322,12 +1330,14 @@ void SettingsPointer(const settings::InputGate::Edges& edges) {
         "Foveated shading available. Gaze inactive or waiting for tracked samples.",
         "Foveated shading available. Eye-tracking samples are active."};
     const auto now=GetTickCount64();
+    if(previousPage!=settingsModel.page||previousMenu!=settingsModel.controllerMenu)helpTarget=settings::NoHelp;
+    const int help=settingsHelpVisible=settingsHelp.Step(helpTarget,now);
     if(now>=settingsPaintAt&&!settingsAtlasPending&&atlasUploads.size()<3&&
-       (settingsPaintRevision!=settingsModel.revision||settingsPaintHover!=hover||settingsPaintStatus!=status)){
+       (settingsPaintRevision!=settingsModel.revision||settingsPaintHover!=hover||settingsPaintStatus!=status||settingsPaintHelp!=help)){
         char resolutionStatus[160];resolution::Describe(resolutionStatus,sizeof resolutionStatus,{width,height});
-        auto pixels=settings::Paint(settingsModel,settingsHover,settingsModel.page==settings::Page::Video?resolutionStatus:descriptions[status],nullptr,detectedControllers);
-        if(!pixels.empty()&&UploadAtlas(settingsChain,atlasFormat,settings::Width,settings::Height,pixels,true,&settingsAtlasPending)){
-            settingsPaintRevision=settingsModel.revision;settingsPaintHover=hover;settingsPaintStatus=status;
+        auto pixels=settings::Paint(settingsModel,settingsHover,settingsModel.page==settings::Page::Video?resolutionStatus:descriptions[status],nullptr,detectedControllers,help);
+        if(!pixels.empty()&&UploadAtlas(settingsChain,atlasFormat,settings::AtlasWidth,settings::Height,pixels,true,&settingsAtlasPending)){
+            settingsPaintRevision=settingsModel.revision;settingsPaintHover=hover;settingsPaintStatus=status;settingsPaintHelp=help;
         }
         settingsPaintAt=now+100;
     }
@@ -2564,8 +2574,17 @@ void EndPair() {
         book.layerFlags=opaqueMenuMode?0:XR_COMPOSITION_LAYER_BLEND_TEXTURE_SOURCE_ALPHA_BIT;
     }
     XrCompositionLayerQuad settingsPanel{XR_TYPE_COMPOSITION_LAYER_QUAD};
-    if(layer&&(settingsModel.open||bodyCalibration.Active())&&settingsImageReady)
-        motionQuad(settingsPanel,settingsPose,settingsWidth,settingsHeight,{{0,0},{settings::Width,settings::Height}},settingsChain);
+    if(layer&&(settingsModel.open||bodyCalibration.Active())&&settingsImageReady){
+        // Extend to the right, without moving or shrinking any control. Input
+        // still intersects the original panel. Calibration uses only that crop.
+        const bool showHelp=!bodyCalibration.Active()&&settingsHelpVisible!=settings::NoHelp&&settingsPaintHelp==settingsHelpVisible;
+        const int pixels=showHelp?settings::AtlasWidth:settings::Width;
+        const float fullWidth=settingsWidth*pixels/settings::Width;
+        auto pose=settingsPose;
+        const auto shift=math::Rotate(Q(pose.orientation),{(fullWidth-settingsWidth)*.5f,0,0});
+        pose.position.x+=shift.x;pose.position.y+=shift.y;pose.position.z+=shift.z;
+        motionQuad(settingsPanel,pose,fullWidth,settingsHeight,{{0,0},{pixels,settings::Height}},settingsChain);
+    }
     XrCompositionLayerQuad laser{XR_TYPE_COMPOSITION_LAYER_QUAD},dot{XR_TYPE_COMPOSITION_LAYER_QUAD};
     if(layer&&(settingsModel.open||panelMode||spatialMode||(interactionVisible&&interactionOutput.wheel))&&pointerChain&&pointerVisible) {
         // The pointer needs the same finite-pose checks and normalization as

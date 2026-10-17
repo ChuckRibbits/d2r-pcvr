@@ -3,8 +3,9 @@
 #include <cstring>
 #include "vr_settings_ui.h"
 namespace framevr::settings {
-std::vector<uint8_t> Paint(const Model& m,Hit hover,const char* runtimeStatus,const calibration::Flow* body,const controllers::Labels& detected){
-    BITMAPINFO info{};info.bmiHeader.biSize=sizeof(BITMAPINFOHEADER);info.bmiHeader.biWidth=Width;
+std::vector<uint8_t> Paint(const Model& m,Hit hover,const char* runtimeStatus,const calibration::Flow* body,const controllers::Labels& detected,int help){
+    const bool showHelp=!body&&help!=NoHelp&&HelpText(help)[0];
+    BITMAPINFO info{};info.bmiHeader.biSize=sizeof(BITMAPINFOHEADER);info.bmiHeader.biWidth=AtlasWidth;
     info.bmiHeader.biHeight=-Height;info.bmiHeader.biPlanes=1;info.bmiHeader.biBitCount=32;
     HDC dc=CreateCompatibleDC(nullptr);void* bits=nullptr;
     HBITMAP bitmap=CreateDIBSection(dc,&info,DIB_RGB_COLORS,&bits,nullptr,0);
@@ -61,7 +62,7 @@ std::vector<uint8_t> Paint(const Model& m,Hit hover,const char* runtimeStatus,co
         text("Controls are blocked. The game world remains live.",{80,939,1120,50},false,true,quiet);
     }else{
     text("DIABLO II / VR SETTINGS",{40,33,960,55},true);
-    text("Right-hand laser + trigger",{862,44,378,42},false,true,quiet);
+    text("Point for help; trigger to change",{820,44,420,42},false,true,quiet);
     const char* tabs[]={"Controls","VR","Video","HUD","Combat","Haptics"};
     for(int i=0;i<TabCount;++i)button(Tabs[i],tabs[i],{Kind::Tab,i},int(m.page)==i);
     if(m.page==Page::Controls){
@@ -162,8 +163,18 @@ std::vector<uint8_t> Paint(const Model& m,Hit hover,const char* runtimeStatus,co
             button(ControllerOption(i),controllers::Choices[i],{Kind::ControllerChoice,i},int(m.Get()[ControllerLabels])==i);
     }
     }
-    GdiFlush();std::vector<uint8_t> rgba(Width*Height*4);const auto* p=static_cast<uint8_t*>(bits);
-    for(int i=0;i<Width*Height;++i){rgba[4*i]=p[4*i+2];rgba[4*i+1]=p[4*i+1];rgba[4*i+2]=p[4*i];rgba[4*i+3]=255;}
+    if(showHelp){
+        fill(HelpCard,RGB(22,36,44));
+        fill({HelpCard.x,HelpCard.y,4,HelpCard.h},RGB(116,220,219));
+        text(HelpTitle(help),{HelpCard.x+24,HelpCard.y+24,HelpCard.w-48,92},true);
+        text(HelpText(help),{HelpCard.x+24,HelpCard.y+128,HelpCard.w-48,HelpCard.h-152});
+    }
+    GdiFlush();std::vector<uint8_t> rgba(AtlasWidth*Height*4);const auto* p=static_cast<uint8_t*>(bits);
+    for(int y=0;y<Height;++y)for(int x=0;x<AtlasWidth;++x){
+        const int i=y*AtlasWidth+x;
+        if(x>=Width&&!(showHelp&&HelpCard.Contains(float(x),float(y))))continue;
+        rgba[4*i]=p[4*i+2];rgba[4*i+1]=p[4*i+1];rgba[4*i+2]=p[4*i];rgba[4*i+3]=255;
+    }
     SelectObject(dc,oldFont);DeleteObject(normal);DeleteObject(bold);SelectObject(dc,old);DeleteObject(bitmap);DeleteDC(dc);return rgba;
 }
 }
