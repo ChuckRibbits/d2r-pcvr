@@ -7,14 +7,14 @@ void Install();
 void Submit(const framevr::melee::Sample& sample);
 void Cancel();
 void CancelShield();
-void CancelWeapon();
+void CancelWeapon(int hand=0);
 bool ShieldReady();
 void Report();
 // Attack speed: one landed weapon hit per native attack cycle, one creature
 // per stroke. Off restores unlimited free-swing contacts. Cycle 0 = unknown,
 // which never gates. SetAttackCycle comes from the UI thread's stat read.
 void ConfigureAttackSpeed(bool enabled,bool traceHits); // trace: [debug] melee_trace
-void SetAttackCycle(uint64_t session,uint32_t milliseconds);
+void SetAttackCycle(uint64_t session,uint32_t milliseconds,int hand=0);
 // Physical swings and trigger/button melee use the native to-hit/block/level
 // rolls. Off restores the contact_hits policy for them. Missiles unaffected.
 void ConfigureAttackRating(bool native); // [gameplay] melee_rules=1 (Classic)

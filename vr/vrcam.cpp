@@ -6010,13 +6010,13 @@ void BowTick() {
         bowvr::Submit(shot);
     }
 }
-void MeleeContactTick() {
+void MeleeContactHand(int hand) {
     framevr::melee::Sample sample;
     skel::MeleeWeaponPose pose;
     if(!g_enabled.load()||!g_inWorld.load()||ThirdPerson()||Overhead()||!g_eyeOk.load()||
-       gamestate::MenuOpen()||!skel::MeleeWeapon(pose)||pose.worldEpoch!=g_meleeTurnEpoch.load()||
-       !framevr::MeleeSample(pose.poseStamp,sample)) {
-        melee::CancelWeapon();return;
+       gamestate::MenuOpen()||!skel::MeleeWeapon(pose,hand)||!pose.weaponType||pose.worldEpoch!=g_meleeTurnEpoch.load()||
+       !framevr::MeleeSample(pose.poseStamp,sample,hand)) {
+        melee::CancelWeapon(hand);return;
     }
     const float upm=std::max(1.f,ViewHeight())/UserEyeHeightM();
     using framevr::math::Vec;
@@ -6024,7 +6024,7 @@ void MeleeContactTick() {
     // attachment (+Y is blade/shaft, -Y is hilt). Mesh-specific bounds remain
     // a refinement; no class-specific animation or targeting is involved.
     float length=.65f,radius=.065f;
-    switch(gamestate::WeaponType()) {
+    switch(pose.weaponType) {
         case D2RVR_TYPE_UNARMED:length=.04f;radius=.08f;break;
         case D2RVR_TYPE_DAGGER:case D2RVR_TYPE_CLAW:case D2RVR_TYPE_ORB:length=.28f;break;
         case D2RVR_TYPE_WAND:length=.38f;break;
@@ -6035,7 +6035,7 @@ void MeleeContactTick() {
     // The checked UI-thread accessor refreshes the native local unit across
     // warps. Do not gate swings on aim-hook traffic or camera proximity.
     uintptr_t nativeHero=0;
-    if(!combat::LocalPlayerUnit(nativeHero)){melee::CancelWeapon();return;}
+    if(!combat::LocalPlayerUnit(nativeHero)){melee::CancelWeapon(hand);return;}
     combat::ObserveLocalPlayer(nativeHero);
     sample.epoch=(sample.epoch<<32)|pose.worldEpoch;
     sample.unitsPerMetre=upm;sample.player={pose.player[0]/upm,pose.player[1]/upm,pose.player[2]/upm};
@@ -6044,6 +6044,7 @@ void MeleeContactTick() {
     sample.thrustAxis=framevr::melee::TrackingThrustAxis({pose.gripAxis[0],pose.gripAxis[1],pose.gripAxis[2]},sample.hand.q);
     sample.blade.radius=radius;melee::Submit(sample);
 }
+void MeleeContactTick(){MeleeContactHand(0);MeleeContactHand(1);}
 void ShieldContactTick() {
     framevr::melee::Sample sample;skel::MeleeWeaponPose pose;
     if(!g_enabled.load()||!g_inWorld.load()||ThirdPerson()||Overhead()||!g_eyeOk.load()||gamestate::MenuOpen()||!gamestate::LeftShield()) {

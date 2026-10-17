@@ -39,6 +39,7 @@
 #include "../steamvr/callback_ticket.h"
 #include "../steamvr/native_hud.h"
 #include "../steamvr/attack_speed.h"
+#include "../steamvr/dual_wield.h"
 #include <mutex>
 #ifdef D2RVR_NATIVE_OPENXR
 #include "logging.h"
@@ -217,6 +218,7 @@ int g_twoOffset = -2;                        // -2 not tried yet, -1 failed
 std::atomic<uint32_t> g_two{0};
 std::atomic<uint32_t> g_from{0};
 std::atomic<bool> g_leftShield{false};
+std::mutex g_meleeEquipmentMutex;framevr::dualwield::Equipment g_meleeEquipment;
 std::vector<uint32_t> g_shieldTypes;
 std::atomic<uint32_t> g_handsKey{0};          // what is in the two hands, as one number (HandsKey)             // the hand slot the weapon kind came from: 0 right, 1 left              // D2RVR_TWO_HANDED* bits of what is held
 
@@ -387,7 +389,7 @@ bool IsShield(const std::string& code) {
 // leaves the cycle unknown, and an unknown cycle never gates melee.
 int g_wsmOffset = -2, g_wsmWidth = 0;        // -2 not tried yet, -1 failed
 int g_wclassOffset = -1, g_wclass2Offset = -1;
-std::atomic<int> g_attackWeapon{-1}, g_attackWsm{0};
+std::atomic<int> g_attackWeapon{-1}, g_attackWsm{0},g_offAttackWeapon{-1},g_offAttackWsm{0};
 int SignedAt(const uint8_t* p, int width) {
     if (width == 4) { int32_t v; memcpy(&v, p, 4); return (int)v; }
     if (width == 2) { int16_t v; memcpy(&v, p, 2); return (int)v; }
@@ -500,6 +502,7 @@ void __cdecl ReadItems(const PluginContext* ctx, void* token) noexcept {
         g_type.store(D2RVR_TYPE_UNKNOWN);
         g_held.store(0);
         g_leftShield=false;
+        {std::lock_guard lock(g_meleeEquipmentMutex);g_meleeEquipment={};}
         g_two.store(0);
         g_set.store(0);
 #ifdef D2RVR_NATIVE_OPENXR
@@ -567,6 +570,11 @@ void __cdecl ReadItems(const PluginContext* ctx, void* token) noexcept {
     // kind we know (a shield) is skipped. Unknown kinds fall back to the class.
     if (g_typeOffset == -2) CalibrateTypes();
     g_leftShield=IsShield(code[1]);
+    const uint32_t handTypes[2]={KindOf(code[0]),KindOf(code[1])};
+    {std::lock_guard lock(g_meleeEquipmentMutex);
+        if(g_meleeEquipment.id[0]!=id[0]||g_meleeEquipment.id[1]!=id[1])g_meleeEquipment={};
+        g_meleeEquipment.id[0]=id[0];g_meleeEquipment.id[1]=id[1];
+        g_meleeEquipment.type[0]=handTypes[0];g_meleeEquipment.type[1]=handTypes[1];}
     if (g_objLitOffset == -2) CalibrateObjectLights();
     if (g_twoOffset == -2 && g_typeOffset >= 0) CalibrateTwoHanded();
     uint32_t kind = KindOf(code[0]);
@@ -595,6 +603,7 @@ void __cdecl ReadItems(const PluginContext* ctx, void* token) noexcept {
         else AttackInputs(code[from], (two & D2RVR_TWO_HANDS_ON) != 0, weapon, wsm);
         g_attackWeapon.store(weapon);
         g_attackWsm.store(wsm);
+        AttackInputs(code[1],false,weapon,wsm);g_offAttackWeapon=weapon;g_offAttackWsm=wsm;
     }
     {   // FNV-1a over both codes: a new grip for any change of what the hands hold
         uint32_t h = 2166136261u;
@@ -827,8 +836,13 @@ bool LeftShield() {return g_leftShield.load();}
 uint32_t TwoHanded() { return g_two.load(); }
 uint32_t WeaponHand() { return g_from.load(); }
 uint32_t HandsKey() { return g_handsKey.load(); }
-int AttackWeapon() { return g_attackWeapon.load(); }
-int AttackWsm() { return g_attackWsm.load(); }
+framevr::dualwield::Equipment MeleeEquipment(){std::lock_guard lock(g_meleeEquipmentMutex);return g_meleeEquipment;}
+void SetMeleeOrder(uint32_t right,uint32_t left) {
+    std::lock_guard lock(g_meleeEquipmentMutex);
+    if(framevr::dualwield::SamePair(right,left,g_meleeEquipment)){g_meleeEquipment.displayed[0]=right;g_meleeEquipment.displayed[1]=left;}
+}
+int AttackWeapon(int hand) { return hand==1?g_offAttackWeapon.load():g_attackWeapon.load(); }
+int AttackWsm(int hand) { return hand==1?g_offAttackWsm.load():g_attackWsm.load(); }
 bool MenuOpen() { return g_menu.load() != 0; }
 uint32_t MenuEpoch() { return g_menuEpoch.load(); }
 uint64_t LocalPlayer() { return g_player.load(); }
