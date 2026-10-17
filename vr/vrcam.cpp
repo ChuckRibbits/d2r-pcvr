@@ -112,6 +112,7 @@ namespace gamestate {bool OpaqueMenuOpen();}
 #include "crossbow.h"
 #include "memory.h"
 #include "environment_cutaway.h"
+#include "roof_materials.h"
 #include "stereo_prop_physics.h"
 #endif
 #include "dlss_mv.h"
@@ -8403,6 +8404,7 @@ DWORD WINAPI UpdateThread(void*) {
             if (!AllHooksIn()) InstallHooks();
 #ifdef D2RVR_NATIVE_OPENXR
             roofcutaway::Tick();
+            roofmaterials::Install(&Log, +[]() { return g_set.platform.load() == 1; });
             propphysics::Tick();
             projectiles::Install();
             panelinput::Install();
@@ -8555,6 +8557,10 @@ D2RL_PLUGIN_EXPORT bool D2RLoaderLoadPlugin(const PluginContext* ctx) noexcept {
     // Every game address this build has, before any hook rewrites the bytes it is found by.
     d2rsig::SetShiftTest(GetPrivateProfileIntW(L"debug", L"sig_shift_test", 0, g_iniPath));
     d2rsig::Resolve(ctx);
+
+#ifdef D2RVR_NATIVE_OPENXR
+    roofmaterials::Install(&Log, +[]() { return g_set.platform.load() == 1; });
+#endif
 
     LoadReShade();
 #ifdef D2RVR_NATIVE_OPENXR
