@@ -1,7 +1,61 @@
-# Kurast roof-retention experiment
+# Native environment roof retention
 
-Status: local developer preview. Headset results are pending; this is not a
-production fix and is not called by the installer or launcher.
+Status: native fix awaiting headset verification. The current implementation
+intercepts the shared environmental cutaway request, without per-area preset
+overrides. First-person VR is the supported use case; overhead-view support is
+not a requirement.
+
+## Shared runtime fix
+
+`vr/vrcam.cpp` hooks the game's opacity-target setter, but changes only calls
+from the verified `FadeTargetComponent` hide branch. When the mod's world camera
+is active, that branch requests alpha 1 instead of 0. The original setter still
+owns interpolation and receives the original duration. Creature fades and other
+opacity callers keep their original arguments. No entity storage is edited.
+
+This covers any area's pieces using that native cutaway mechanism, including
+attached decorations. It does not identify roofs by filename, repair missing
+undersides, or manufacture ceilings. Retained geometry may expose lighting or
+model defects that need a separate fix.
+
+Evidence from the local Steam D2R 3.3.93787 executable:
+
+- `FadeTargetComponent` has type hash `0xD94BE0C2`, size `0x58`, and storage
+  getter RVA `0x6DFB30`. Its update loop calls the per-entity handler `0xF52090`.
+- The handler compares the component's target name with active cutaway boxes.
+  On a match, call RVA `0xF52216` requests alpha 0, duration 0.5 seconds. With no
+  match, `0xF5223A` requests alpha 1 through the same setter `0xEEA920`.
+- The detour captures its own return address and only changes the hide caller
+  (`0xF5221B`). It checks both the setter prologue and the exact hide setup/call
+  bytes before installation. A mismatch leaves native behavior alone; no broad
+  pattern guess or unchecked alternate-build offset is used.
+- `environment_cutaway_test.cpp` checks both fingerprints byte by byte, the
+  relative call destination, inactive behavior, all other observed callers and
+  preservation of nonzero opacity arguments.
+
+Runtime log messages distinguish `environment roof cutaway hook ready` from
+`environment roof cutaway suppressed a native hide request`. Installation of a
+hook alone does not prove that the desired scene ran through it.
+
+The owner's 17:20 clip was **Kurast Docks**, not Kurast Bazaar. The earlier preset
+preview below did not cover the town, so that clip did not validate it. Town data
+attaches fade targets to Asheara's front roof and Alkor's front roof; Asheara's
+back roof has no such link, matching the half-visible roof in the clip.
+
+Before testing the native DLL, remove the earlier data preview using its
+`--remove` command below, with the game closed. Start the isolated developer
+build and enter Asheara's hut in Kurast Docks. Check the whole roof from inside
+and outside, then another building in town and a Kurast Bazaar building. Look
+for visibility, underside lighting and doorway obstruction. No area has yet
+been verified in the headset with the native hook; other game editions/builds
+are also unverified.
+
+## Earlier data-only diagnostic (superseded)
+
+The helper below is retained for reproducing/removing the earlier experiment.
+Do not combine its generated overrides with the native test or wire it into
+normal installation. Only source code belongs in the PR; native image dumps
+and generated game presets remain local.
 
 The owner reports that Act III / Kurast buildings lose their roofs when entered,
 leaving the sky visible from inside. The native Kurast HD presets attach
@@ -32,11 +86,10 @@ script refuses existing overrides, changed receipt-owned files, linked paths and
 development metadata that points at normal saves. Removal only deletes matching
 receipt-owned files. It neither reads nor edits character saves.
 
-This preview also retains roofs in overhead views **inside pcvr-dev**. A future
-production implementation must account for view switching and compatibility with
-other mods; do not automatically add this experiment to normal installation.
+Do not automatically add this experiment to normal installation. Use the native
+hook above for the current test, after removing these data overrides.
 
-## Install and test
+### Reproduce or remove the old diagnostic
 
 Use an already configured developer build with exact pcvr-dev metadata and its
 own plugin/settings. Close D2R and D2RLoader first. From the topic checkout:
@@ -58,7 +111,7 @@ To restore native preset behavior, close the game and run:
 .\deps\python\python.exe steamvr/prepare_roof_preview.py --game "YOUR GAME DIRECTORY" --remove
 ```
 
-## Verification so far
+### Verification of the old diagnostic
 
 - Ten synthetic Python checks pass: selective removal, mixed variations,
   preservation, preset scope, collision refusal, install/remove lifecycle,
@@ -70,6 +123,6 @@ To restore native preset behavior, close the game and run:
 - Headset appearance, native acceptance of these overrides, runtime performance
   and complete underside coverage remain unverified.
 
-Next: use the headset result to decide whether removing native roof fade links
-is sufficient, or whether some model undersides need separate treatment. Keep
-that distinction explicit when reporting this experiment.
+The native hook now replaces this experiment. Its own build/check results and
+headset status are recorded in the PR; the data-only checks above do not validate
+the hook.
