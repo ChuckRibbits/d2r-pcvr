@@ -19,16 +19,26 @@ bool TakeButtonMelee(uint64_t& session,uint64_t& at);
 void ConfigureGuard(bool enabled,uint32_t parryMs,bool trace=false); // trace: [debug] guard_trace
 // [gameplay] enemies_always_hit: monsters' to-hit rolls against the local player always connect.
 void ConfigureEnemiesAlwaysHit(bool on);
+// The game's Master x Combat volume (Settings.json, 0..1), re-read at most every
+// 2 s and only when the game saved it. Any thread.
+float GameVolume();
 // Game thread (melee.cpp): a physical swing's native attack on this monster id
 // is running (NoSwing UINT32_MAX = none). Returns the previous value.
 uint32_t PhysicalSwing(uint32_t target);
+// Game thread (melee.cpp), around one physical swing's native attack: that
+// stroke's recovery damage factor (0..1, Unleashed). Returns the previous value.
+float SwingRecovery(float factor);
+// Unleashed: attack rating scales physical swing damage - the native 5..95 to-hit
+// chance, read where HitSuccessful passes it on - instead of deciding a miss.
+// floor: the share of damage kept at zero chance (0 = the raw chance).
+void ConfigureArDamage(bool on,float floor);
 // Game thread: a parry flinched this monster; its next physical hit within the window is a riposte.
 void NoteRiposte(uint32_t monster);
-// [gameplay] riposte_bonus (% extra damage), riposte_ms, guard_swing_damage (% of
-// damage dealt with the shield raised), riposte_sound_file (empty: the built-in sound; else a WAV, next to the ini unless a full path).
-// guard_swing_step: % less on each further hit while the shield stays raised (to 0).
+// A riposte is a clean hit: no attack-rating or recovery penalty.
+// [gameplay] riposte_bonus (% extra damage on top, default 0), riposte_ms, riposte_sound_file (empty:
+// the built-in sound; else a WAV, next to the ini unless a full path).
 // riposte_volume: % on top of the game's own Master x Combat volume (Settings.json).
-void ConfigureRiposte(float bonus,uint32_t windowMs,float raisedFactor,float raisedStep,float volume,const wchar_t* soundFile);
+void ConfigureRiposte(float bonus,uint32_t windowMs,float volume,const wchar_t* soundFile);
 // UI thread, every tick: where the headset looks on the ground (render X/Z, the way
 // the guard faces); the shield hand from the head in the view's turn (metres, x right,
 // y up, z back) decides raised and the parry swing. leftShield: the shield's hand.

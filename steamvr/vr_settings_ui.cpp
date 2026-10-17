@@ -118,6 +118,7 @@ std::vector<uint8_t> Paint(const Model& m,Hit hover,const char* runtimeStatus,co
             else if(key==TooltipTiming)std::snprintf(label,sizeof label,"%s",TooltipTimingNames[int(value)]);
             else if(key==Dominant)std::snprintf(label,sizeof label,"%s",value>.5f?"Left":"Right");
             else if(key==MeleeRules)std::snprintf(label,sizeof label,"%s",MeleeRulesNames[value>.5f?1:0]);
+            else if(key==StrainDark)std::snprintf(label,sizeof label,"%s",StrainColorNames[value>.5f?1:0]);
             else if(d.max==1)std::snprintf(label,sizeof label,"%s",value>.5f?"On":"Off");
             else if(key==Snap)std::snprintf(label,sizeof label,"%.0f deg",value);
             else if(key==VitalsTilt)std::snprintf(label,sizeof label,"%+.6g deg",value);
@@ -142,9 +143,9 @@ std::vector<uint8_t> Paint(const Model& m,Hit hover,const char* runtimeStatus,co
             text("Loot size: 20-150%, in steps of 5. Apply saves; Close discards edits.",{58,840,1160,30},false,false,quiet);
         }
         if(m.page==Page::Combat){
-            text("Unleashed: each deliberate stroke can hit multiple creatures. Classic: attack rating, defense and block decide each hit; attack speed paces them and misses spend the attack.",{58,450,1160,76},false,false,quiet);
-            text("Swings: 12.00 m/s by default and 18 cm of travel. Thrusts: 2.00 m/s by default and 12 cm toward the weapon tip. Pull back before stabbing again.",{58,550,1160,76},false,false,quiet);
-            text("Both speed settings apply in either mode. Apply updates them immediately. Shield bash, arrows and spells are unchanged.",{58,650,1160,76},false,false,quiet);
+            text("Unleashed: each deliberate stroke can hit multiple creatures. Classic: attack rating, defense and block decide each hit; attack speed paces them and misses spend the attack.",{58,570,1160,76},false,false,quiet);
+            text("Swings: 12.00 m/s by default and 18 cm of travel. Thrusts: 2.00 m/s by default and 12 cm toward the weapon tip. Pull back before stabbing again.",{58,650,1160,76},false,false,quiet);
+            text("Both speed settings apply in either mode. Apply updates them immediately. Shield bash, arrows and spells are unchanged.",{58,730,1160,76},false,false,quiet);
         }
         if(m.page==Page::Haptics){
             text("0% is Off; 100% is normal. Overall strength scales each category, up to the controller's maximum. Adjust in steps of 10%.",{58,750,1160,56},false,false,quiet);

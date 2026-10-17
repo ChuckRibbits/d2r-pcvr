@@ -18,6 +18,15 @@ void SetAttackCycle(uint64_t session,uint32_t milliseconds);
 // Physical swings and trigger/button melee use the native to-hit/block/level
 // rolls. Off restores the contact_hits policy for them. Missiles unaffected.
 void ConfigureAttackRating(bool native); // [gameplay] melee_rules=1 (Classic)
+// Unleashed: a stroke's damage scales with how much of the native attack cycle
+// passed since the previous landed stroke; every creature one stroke reaches
+// shares that factor. Contacts are never refused. [gameplay] swing_recovery_damage;
+// curve: the factor's power (swing_recovery_curve); grace: the share of the
+// cycle after which a stroke is fully recovered (swing_recovery_grace, 1 = none).
+void ConfigureSwingRecovery(bool on,float curve,float grace);
+// Unleashed cleave falloff: each further creature one stroke lands on deals
+// `step` less (0..1, 0 = off), never below `floor`. [gameplay] cleave_falloff, cleave_min
+void ConfigureCleave(float step,float floor);
 // Owning game thread only; shared with physical arrows. Re-resolves the unit
 // from its session/id rather than passing a native pointer across threads.
 bool LocalServer(uintptr_t& game,uintptr_t& player);

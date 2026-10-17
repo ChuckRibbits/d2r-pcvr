@@ -87,6 +87,12 @@ by Universfield, from Pixabay (item 352458), used under the
 [Pixabay Content License](https://pixabay.com/service/license-summary/); it was
 converted from MP3 to WAV and is embedded in the plugin.
 
+The guard strain heartbeat in `steamvr/assets/guard-heartbeat.wav` is one beat cut
+from "Heartbeat" by SoundReality, from Pixabay (item 549797), used under the
+[Pixabay Content License](https://pixabay.com/service/license-summary/); it was
+decoded from MP3, trimmed to a single beat with short fades, peak-normalised and
+embedded in the plugin.
+
 Diablo II: Resurrected, its executable, archives and save data belong to Blizzard
 Entertainment / their owners and are not distributed in this preview. This
 project is not affiliated with or endorsed by Blizzard Entertainment, Valve,

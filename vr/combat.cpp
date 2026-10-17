@@ -92,11 +92,26 @@ ApplyDamageFn originalApplyDamage=nullptr;bool applyDamageIn=false;std::atomic<b
 constexpr uint32_t NoSwing=UINT32_MAX;
 thread_local uint32_t swingTarget=NoSwing;thread_local uintptr_t damageRecord=0;
 // Riposte: a parry opens a window for one stronger hit on the parried monster.
-std::atomic<float> riposteBonus{.50f},raisedSwingFactor{.50f},raisedSwingStep{.25f};std::atomic<uint32_t> riposteMs{1500};
-// Hits landed since the shield went up: each one weaker than the last, down to nothing.
-std::atomic<unsigned> raisedStreak{0};
+std::atomic<float> riposteBonus{0};std::atomic<uint32_t> riposteMs{1500};
 std::atomic<uint32_t> riposteMonster{NoSwing};std::atomic<uint64_t> riposteUntil{0};
-std::atomic<unsigned> ripostesLanded{0},raisedHits{0};
+std::atomic<unsigned> ripostesLanded{0};
+// Unleashed swing damage: attack rating and attack speed scale a physical
+// swing's damage instead of deciding whether it lands. HitSuccessful computes
+// the clamped chance (44BD44: edi=min(95,max(5,...))), rolls, then passes both
+// to 427EA0 (game, attacker, defender, chance, roll) - its only call site. A
+// pass-through hook there records the chance of the swing on this thread.
+constexpr uint64_t HitChanceRva=0x427ea0,ChanceClampAt=0x44bd44,ChanceCallAt=0x44bda2;
+constexpr uint8_t HitChanceSig[]={0x40,0x53,0x55,0x56,0x57,0x41,0x56,0x41,0x57,0x48,0x81,0xec,0x98,0x02,0x00,0x00};
+constexpr uint8_t ChanceClampSig[]={0xbf,0x5f,0x00,0x00,0x00,0x41,0x03,0xcd,0x41,0x0f,0xaf,0xd5,0x8d,0x04,0x12,0x99,0xf7,0xf9,
+    0xb9,0x05,0x00,0x00,0x00,0x3b,0xc1,0x0f,0x4f,0xc8,0x3b,0xcf,0x0f,0x4c,0xf9};
+constexpr uint8_t ChanceCallSig[]={0x89,0x5c,0x24,0x20,0x44,0x8b,0xcf,0x4d,0x8b,0xc6,0x48,0x8b,0xd6,0xe8,0xec,0xc0,0xfd,0xff};
+using HitChanceFn=uint64_t(*)(uintptr_t,uintptr_t,uintptr_t,int,int);
+HitChanceFn originalHitChance=nullptr;bool hitChanceIn=false;
+std::atomic<bool> arDamage{false};std::atomic<float> arFloor{0};
+thread_local int swingChance=-1;     // this swing's native to-hit %, -1 = not seen
+thread_local float swingRecovery=1;  // this stroke's recovery factor (melee.cpp)
+std::atomic<unsigned> scaledHits{0},chanceUnseen{0};
+std::atomic<int> lastChance{-1};std::atomic<float> lastRecovery{1},lastFactor{1};
 // The riposte's own sound: a WAV next to d2r_vr.ini, played from memory at
 // the game's own volume (Settings.json: Master x the active preset's Combat).
 std::mutex riposteSoundMutex;std::vector<std::vector<uint8_t>> riposteWavs; // every buffer kept alive: one may be playing
@@ -167,8 +182,8 @@ template<class T> bool Read(uintptr_t p,T& out) {
     return p>0x10000&&framevr::ReadMemory(&out,reinterpret_cast<const void*>(p),sizeof out);
 }
 void SetStat(uintptr_t unit,int stat,int value,int layer) {
-    // The life write of a physical swing's damage: scale it. Shield raised:
-    // the hit is weaker; a riposte on the parried monster: stronger, once.
+    // The life write of a physical swing's damage: a riposte on the parried
+    // monster is stronger, once.
     if(stat==6&&layer==0&&swingTarget!=NoSwing&&damageRecord&&damageScaleReady.load(std::memory_order_relaxed)&&
        reinterpret_cast<uintptr_t>(_ReturnAddress())==d2rsig::Addr(LifeWriteReturn)) {
         uint32_t header[3]{};int damage=0;
@@ -176,13 +191,16 @@ void SetStat(uintptr_t unit,int stat,int value,int layer) {
             float factor=1;
             const auto now=GetTickCount64();
             if(riposteMonster.load()==header[2]&&now<riposteUntil.load()) {
+                // A riposte is a clean hit: no attack-rating or recovery penalty.
                 factor=1+riposteBonus.load();riposteMonster=NoSwing;riposteUntil=0;++ripostesLanded;PlayRiposteSound();
             } else {
-                bool raised=false;{std::lock_guard lock(guardMutex);raised=guard.eligible&&guard.state.raised;}
-                if(raised) {   // 50%, 25%, 0%... for as long as the shield stays up
-                    factor=std::max(0.f,raisedSwingFactor.load()-raisedSwingStep.load()*float(raisedStreak.fetch_add(1)));
-                    ++raisedHits;
+                // Unleashed: attack rating and recovery decide how hard it lands.
+                if(arDamage.load(std::memory_order_relaxed)) {
+                    if(swingChance>=0)factor*=ArFactor(swingChance,arFloor.load(std::memory_order_relaxed));
+                    else ++chanceUnseen;
                 }
+                factor*=swingRecovery;
+                if(factor!=1){++scaledHits;lastChance=swingChance;lastRecovery=swingRecovery;lastFactor=factor;}
             }
             if(factor!=1) {
                 const int before=reinterpret_cast<GetStatFn>(d2rsig::Addr(GetStatRva))(unit,6,0);
@@ -192,6 +210,14 @@ void SetStat(uintptr_t unit,int stat,int value,int layer) {
         }
     }
     originalSetStat(unit,stat,value,layer);
+}
+uint64_t HitChance(uintptr_t game,uintptr_t attacker,uintptr_t defender,int chance,int roll) {
+    // Only the hit check of the physical swing running on this thread.
+    if(swingTarget!=NoSwing) {
+        uint32_t a=~0u,d[3]{};
+        if(Read(attacker,a)&&a==0&&Read(defender,d)&&d[0]==1&&d[2]==swingTarget)swingChance=chance;
+    }
+    return originalHitChance(game,attacker,defender,chance,roll);
 }
 uint64_t ApplyDamage(uintptr_t game,uintptr_t attacker,uintptr_t defender,int flag,uintptr_t damage) {
     const auto saved=damageRecord;damageRecord=damage;
@@ -316,8 +342,10 @@ int GuardedBlock(uintptr_t game,uintptr_t attacker,uintptr_t defender,int avoid,
     if(!served)++guardUnserved; // native never reached its block roll (dodged/avoided first, or cannot block)
     else if(g==Guard::Open)++guardOpen;
     else {
-        ++guardBlocks;framevr::ShieldGuardImpact();
-        if(g==Guard::Parry&&melee::QueueParry(monster,durability))++guardParries;
+        ++guardBlocks;
+        const bool parried=g==Guard::Parry&&melee::QueueParry(monster,durability);
+        framevr::ShieldGuardImpact(parried);   // a block strains the guard; a parry does not
+        if(parried)++guardParries;
         else {
             // The native block's own sound never plays in first person (only the
             // haptics did, 2026-10-16): the game's block sound at the hero.
@@ -378,14 +406,26 @@ bool TakeButtonMelee(uint64_t& session,uint64_t& at) {
 }
 void ConfigureGuard(bool on,uint32_t parryMs,bool trace) {guardEnabled=on;guardParryMs=parryMs;guardTrace=trace;}
 void ConfigureEnemiesAlwaysHit(bool on) {enemiesAlwaysHit=on;}
-uint32_t PhysicalSwing(uint32_t target) {const auto was=swingTarget;swingTarget=target;return was;}
+float GameVolume() {
+    static std::mutex m;static ULONGLONG checkAt=0;static FILETIME seen{};static float volume=-1;
+    std::lock_guard lock(m);
+    const auto now=GetTickCount64();
+    if(volume>=0&&now<checkAt)return volume;
+    checkAt=now+2000;
+    WIN32_FILE_ATTRIBUTE_DATA a{};
+    const bool known=GetFileAttributesExW(GameSettingsPath().c_str(),GetFileExInfoStandard,&a);
+    if(volume<0||!known||CompareFileTime(&a.ftLastWriteTime,&seen)){if(known)seen=a.ftLastWriteTime;volume=GameCombatVolume();}
+    return volume;
+}
+uint32_t PhysicalSwing(uint32_t target) {const auto was=swingTarget;swingTarget=target;swingChance=-1;return was;}
+float SwingRecovery(float factor) {const float was=swingRecovery;swingRecovery=factor;return was;}
+void ConfigureArDamage(bool on,float floor) {arDamage=on;arFloor=std::clamp(floor,0.f,1.f);}
 void NoteRiposte(uint32_t monster) {
-    if(riposteBonus.load()<=0)return;
+    if(riposteMs.load()==0)return;   // a riposte is worth having with no bonus: it is a clean hit
     riposteMonster=monster;riposteUntil=GetTickCount64()+riposteMs.load();
 }
-void ConfigureRiposte(float bonus,uint32_t windowMs,float raisedFactor,float raisedStep,float volume,const wchar_t* soundFile) {
-    riposteBonus=std::clamp(bonus,0.f,4.f);riposteMs=windowMs;raisedSwingFactor=std::clamp(raisedFactor,0.f,1.f);
-    raisedSwingStep=std::clamp(raisedStep,0.f,1.f);
+void ConfigureRiposte(float bonus,uint32_t windowMs,float volume,const wchar_t* soundFile) {
+    riposteBonus=std::clamp(bonus,0.f,4.f);riposteMs=windowMs;
     {std::lock_guard lock(riposteSoundMutex);const float v=std::clamp(volume,0.f,4.f);if(riposteExtra!=v){riposteExtra=v;riposteGain=-1;}}
     static std::wstring loaded=L"?"; // settings thread only
     if(soundFile&&loaded!=soundFile) {
@@ -414,15 +454,15 @@ void PublishGuard(uint64_t session,bool eligible,bool posed,const float view[3],
                   const float hand[3],bool handOk,bool leftShield) {
     const auto now=GetTickCount64();const auto t=GuardTuning();
     if(!(upm>=1))upm=1;
-    uint64_t lateAfter=0;bool late=false;
+    uint64_t lateAfter=0;bool late=false,raised=false;
     {
     std::lock_guard lock(guardMutex);
     if(guard.session!=session||!eligible)guard.state={};
     if(eligible)framevr::guard::Update(guard.state,{hand[0],hand[1],hand[2]},handOk,leftShield,
                                        {view[0],view[1],view[2]},now,posed,t);
     if(eligible&&framevr::guard::SwingAfterBlock(guard.state,now,t,lateAfter)){late=true;++guardLate;}
-    if(!(eligible&&guard.state.raised))raisedStreak=0;   // lowering the shield restores full swings
     guard.session=session;guard.eligible=eligible;guard.upm=upm;guard.at=now;
+    raised=eligible&&guard.state.raised;
     // Trace: where the posed shield sits relative to the body, every 2 s, so a
     // held guard can be checked against the thresholds without being hit.
     static uint64_t traceAt=0;
@@ -433,6 +473,7 @@ void PublishGuard(uint64_t session,bool eligible,bool posed,const float view[3],
         framevr::logging::Write(line);
     }
     }
+    framevr::ShieldGuardState(eligible,raised);   // the strain light drains only while the shield is down
     FollowGameVolume();
     // A parry swing that came after the hit it was meant for: how late (no parry).
     if(late&&guardTrace.load(std::memory_order_relaxed)) {
@@ -449,14 +490,22 @@ void Install() {
         framevr::logging::Write(guardChecked?"Frame guard: block roll verified; Unleashed physical shield blocking ready":
                                              "Frame guard: block roll signature mismatch; native block roll retained");
     }
-    // The stat setter and damage application: riposte / raised-guard damage
+    // The stat setter and damage application: riposte damage
     // scaling on physical swings.
     if(!setStatIn&&d2rsig::Check(GetStatRva,GetStatSig,sizeof GetStatSig))
         setStatIn=d2rsig::Hook(SetStatRva,SetStatSig,sizeof SetStatSig,reinterpret_cast<void*>(&SetStat),reinterpret_cast<void**>(&originalSetStat));
     if(setStatIn&&!applyDamageIn&&d2rsig::Check(LifeWriteAt,LifeWriteSig,sizeof LifeWriteSig))
         applyDamageIn=d2rsig::Hook(ApplyDamageRva,ApplyDamageSig,sizeof ApplyDamageSig,reinterpret_cast<void*>(&ApplyDamage),reinterpret_cast<void**>(&originalApplyDamage));
     if(applyDamageIn&&!damageScaleReady.exchange(true))
-        framevr::logging::Write("Frame riposte: damage application verified; riposte and raised-guard swing damage ready");
+        framevr::logging::Write("Frame riposte: damage application verified; riposte damage ready");
+    // Unleashed attack-rating damage: the native to-hit chance, read where
+    // HitSuccessful hands it to 427EA0. Without it swings keep full damage.
+    if(damageScaleReady.load()&&!hitChanceIn&&d2rsig::Check(ChanceClampAt,ChanceClampSig,sizeof ChanceClampSig)&&
+       d2rsig::Check(ChanceCallAt,ChanceCallSig,sizeof ChanceCallSig)) {
+        hitChanceIn=d2rsig::Hook(HitChanceRva,HitChanceSig,sizeof HitChanceSig,reinterpret_cast<void*>(&HitChance),reinterpret_cast<void**>(&originalHitChance));
+        framevr::logging::Write(hitChanceIn?"Frame swing damage: native hit chance verified; attack-rating damage ready":
+                                            "Frame swing damage: hit chance hook failed; swings keep full damage");
+    }
     if(!seedIn)seedIn=d2rsig::Hook(SeedRva,SeedSig,sizeof SeedSig,reinterpret_cast<void*>(&GetSeed),reinterpret_cast<void**>(&originalSeed));
     if(!hitIn)hitIn=d2rsig::Hook(HitRva,HitSig,sizeof HitSig,reinterpret_cast<void*>(&Hit),reinterpret_cast<void**>(&originalHit));
     if(!blockIn)blockIn=d2rsig::Hook(BlockRva,BlockSig,sizeof BlockSig,reinterpret_cast<void*>(&Block),reinterpret_cast<void**>(&originalBlock));
@@ -471,8 +520,13 @@ void Report() {
     if(uint32_t m=riposteMonster.load(),seen=m;m!=NoSwing&&GetTickCount64()>riposteUntil.load()&&riposteMonster.compare_exchange_strong(m,NoSwing)) {
         char line[120];snprintf(line,sizeof line,"Frame riposte: window expired unused (monster=%u)",seen);framevr::logging::Write(line);
     }
-    if(const auto rl=ripostesLanded.exchange(0),rh=raisedHits.exchange(0);rl||rh) {
-        char line[160];snprintf(line,sizeof line,"Frame riposte: landed=%u swings_with_guard_raised=%u",rl,rh);
+    if(const auto sh=scaledHits.exchange(0),cu=chanceUnseen.exchange(0);sh||cu) {
+        char line[200];snprintf(line,sizeof line,"Frame swing damage: scaled hits=%u last chance=%d%% last recovery x cleave=%.2f last factor=%.2f chance unseen=%u",
+            sh,lastChance.load(),lastRecovery.load(),lastFactor.load(),cu);
+        framevr::logging::Write(line);
+    }
+    if(const auto rl=ripostesLanded.exchange(0)) {
+        char line[160];snprintf(line,sizeof line,"Frame riposte: landed=%u",rl);
         framevr::logging::Write(line);
     }
     if(gb||go||gp||gu||gf||fh||gl||gm) {

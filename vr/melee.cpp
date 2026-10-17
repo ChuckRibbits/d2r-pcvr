@@ -15,6 +15,7 @@
 #include "melee.h"
 #include "bow.h"
 #include "combat.h"
+#include "combat_rules.h"
 #include "sigscan.h"
 #include "memory.h"
 #include "logging.h"
@@ -60,6 +61,13 @@ std::atomic<bool> attackSpeed{false},trace{false},attackRating{true};
 std::atomic<uint64_t> cycleSession{0};std::atomic<uint32_t> cycleMs{0};
 std::atomic<unsigned> tooSoon{0},extraTargets{0},missed{0},buttonAttacks{0};
 framevr::attackspeed::Cadence cadence;HitSet landed,felt;
+// Unleashed recovery: the stroke whose first landed contact set the factor
+// that its other creatures share (game thread, Apply, only).
+std::atomic<bool> swingRecovery{false};std::atomic<float> recoveryCurve{2},recoveryGrace{1};
+uint64_t strokeSession=0,strokeId=0;float strokeRecovery=1;
+// Unleashed cleave falloff: creatures the current stroke has landed on (Apply only).
+std::atomic<float> cleaveStep{0},cleaveFloor{.25f};
+uint64_t cleaveSession=0,cleaveStroke=0;unsigned cleaveLanded=0;
 std::mutex queueMutex;std::array<Engine,2> engines;HitSet hits,shieldHits;
 struct Request {Sweep sweep;Sample sample;uint64_t session=0,at=0;};
 std::array<Request,24> requests;size_t count=0;
@@ -337,6 +345,17 @@ void __cdecl Apply(const D2RL::PluginContext*,void* token) noexcept {
                             cycle=cycleSession.load()==r.session?cycleMs.load():0;
                         }
                         const auto since=cadence.Since(r.session,r.at);
+                        // Unleashed: the stroke's first landed contact measures how
+                        // recovered it is; every creature that stroke reaches shares it.
+                        float recovery=1;bool strokeStart=false;
+                        if(swingRecovery.load(std::memory_order_relaxed)&&!attackSpeed.load()) {
+                            if(strokeSession==r.session&&strokeId==r.sweep.stroke)recovery=strokeRecovery;
+                            else {
+                                cycle=cycleSession.load()==r.session?cycleMs.load():0;
+                                recovery=combat::RecoveryFactor(since,cycle,recoveryCurve.load(std::memory_order_relaxed),
+                                                                recoveryGrace.load(std::memory_order_relaxed));strokeStart=true;
+                            }
+                        }
                         if(!hits.Insert(r.session,r.sweep.stroke,header[2]))continue;
                         ++contacts;
                         const auto saved=contact;contact={local.game,player,unit,false};
@@ -344,12 +363,22 @@ void __cdecl Apply(const D2RL::PluginContext*,void* token) noexcept {
                         // proc events, criticals, resistances, leech, XP and item
                         // durability. TLS redirects only THIS invocation's target.
                         const bool rolls=combat::NativeRolls(attackRating.load());
-                        const uint32_t swing=combat::PhysicalSwing(header[2]);   // its damage may be scaled (riposte / guard raised)
+                        const uint32_t swing=combat::PhysicalSwing(header[2]);   // its damage may be scaled (riposte, attack rating, recovery)
+                        // Unleashed: each further creature this stroke lands on takes less.
+                        float cleave=1;bool cleaveTracked=false;
+                        if(const float step=cleaveStep.load(std::memory_order_relaxed);step>0&&!attackSpeed.load()) {
+                            if(cleaveSession!=r.session||cleaveStroke!=r.sweep.stroke){cleaveSession=r.session;cleaveStroke=r.sweep.stroke;cleaveLanded=0;}
+                            cleave=combat::CleaveFactor(cleaveLanded,step,cleaveFloor.load(std::memory_order_relaxed));cleaveTracked=true;
+                        }
+                        const float swingRecoverySaved=combat::SwingRecovery(recovery*cleave);
                         reinterpret_cast<int(*)(uintptr_t,uintptr_t,int,int)>(d2rsig::Addr(AttackRva))(local.game,player,0,1);
+                        combat::SwingRecovery(swingRecoverySaved);
                         combat::PhysicalSwing(swing);
                         combat::NativeRolls(rolls);
                         if(contact.accepted)++accepted;else if(contact.resolved)++missed;else ++rejected;
                         if(contact.resolved&&attackSpeed.load()){cadence.Landed(r.session,r.at,cycle);landed.Insert(r.session,r.sweep.stroke,0);}
+                        if(contact.resolved&&strokeStart){cadence.Landed(r.session,r.at,cycle);strokeSession=r.session;strokeId=r.sweep.stroke;strokeRecovery=recovery;}
+                        if(contact.resolved&&cleaveTracked)++cleaveLanded;
                         TraceHit(r,header[2],contact.accepted?"LANDED":contact.resolved?"MISSED (roll)":"native rejected",since,cycle);
                         contact=saved;
                         break;
@@ -604,6 +633,8 @@ void CancelShield() {std::lock_guard lock(queueMutex);current[1].active=false;en
 void CancelWeapon() {std::lock_guard lock(queueMutex);current[0].active=false;engines[0].Reset();}
 bool ShieldReady(){return smiteReady.load();}
 void ConfigureAttackSpeed(bool enabled,bool traceHits){attackSpeed=enabled;trace=traceHits;}
+void ConfigureSwingRecovery(bool on,float curve,float grace){swingRecovery=on;recoveryCurve=curve;recoveryGrace=grace;}
+void ConfigureCleave(float step,float floor){cleaveStep=step;cleaveFloor=floor;}
 void ConfigureAttackRating(bool native){attackRating=native;combat::ConfigureMeleeRolls(native);}
 void ConfigureBlockSound(int sound) {
     static bool loaded=false; // settings thread only
