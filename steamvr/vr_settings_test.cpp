@@ -1,4 +1,4 @@
-#include "vr_settings.h"
+#include "vr_settings_help.h"
 #include <cstdio>
 #include <cstdlib>
 #include <limits>
@@ -6,6 +6,26 @@ using namespace framevr::settings;
 static void Check(bool b,const char* label){if(!b){std::fprintf(stderr,"FAIL: %s\n",label);std::exit(1);}}
 static Hit At(Page p,Rect r){return HitTest(p,(r.x+r.w*.5f)/Width,(r.y+r.h*.5f)/Height);}
 int main(){
+    {
+        HoverHelp help;
+        Check(help.Step(MeleeRules,100)==NoHelp&&help.Step(MeleeRules,549)==NoHelp,"passing over a setting does not flash help");
+        Check(help.Step(MeleeRules,550)==MeleeRules,"steady hover reveals help after 450 ms");
+        Check(help.Step(MeleeHitSpeed,600)==NoHelp&&help.Step(MeleeHitSpeed,1050)==MeleeHitSpeed,"changing settings restarts dwell and clears old help");
+        Check(help.Step(NoHelp,1100)==NoHelp&&help.Step(MeleeHitSpeed,1600)==NoHelp,"leaving panel or losing tracking clears dwell");
+        help.Clear();Check(help.Step(MeleeHitSpeed,3000)==NoHelp,"close or focus loss cannot retain old dwell");
+        Check(HelpAt(Page::Combat,NAN,.5f)==NoHelp&&HelpAt(Page::Combat,1,.5f)==NoHelp,"invalid help coordinates ignored");
+        for(int p=0;p<TabCount;++p)for(int row=0;row<RowCount(Page(p));++row){
+            const float v=float(RowY+row*RowStep+20)/Height;
+            const auto key=RowKey(Page(p),row);
+            Check(HelpAt(Page(p),100.f/Width,v)==key&&HelpAt(Page(p),1100.f/Width,v)==key,"labels and values explain the same setting");
+            Check(HelpText(key)[0]&&HelpTitle(key)[0],"every visible row has help");
+            Check(HitTest(Page(p),100.f/Width,v).kind==Kind::None,"hovering or clicking a label does not edit settings");
+        }
+        Check(HelpAt(Page::VR,900.f/Width,250.f/Height,true)==NoHelp,"dropdown blocks help for covered settings");
+        Check(HelpAt(Page::Controls,100.f/Width,750.f/Height)==PlanarSpellAim,"controls page label has help");
+        Check(HelpAt(Page::HUD,1000.f/Width,950.f/Height)==HelpApply,"footer buttons have help");
+        Check(HelpCard.x>=Width&&HelpCard.y+HelpCard.h<Apply.y,"help never covers controls or footer");
+    }
     Snapshot s;s.ready=true;
     {
         Check(s.values[LootLabelSize]==45,"loot labels retain original shipped size by default");

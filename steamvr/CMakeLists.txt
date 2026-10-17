@@ -231,3 +231,4 @@ add_test(NAME interaction-map-tab-test COMMAND interaction-preview "${CMAKE_CURR
 add_test(NAME interaction-hand-wheels-test COMMAND interaction-preview "${CMAKE_CURRENT_BINARY_DIR}/hand-wheels-preview.png" --hands-check)
 add_test(NAME wrist-compass-art-test COMMAND interaction-preview "${CMAKE_CURRENT_BINARY_DIR}/wrist-compass-preview.png" --compass-check)
 add_test(NAME navigation-info-art-test COMMAND interaction-preview "${CMAKE_CURRENT_BINARY_DIR}/navigation-info-preview.png" --navigation-check)
+add_test(NAME vr-settings-help-art-test COMMAND vr-settings-preview "${CMAKE_CURRENT_BINARY_DIR}/settings-help.bmp" 4 --help-check)
