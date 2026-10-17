@@ -135,6 +135,29 @@ One stroke can hit several monsters, each further one a little weaker.
 20% to 150% in five-point steps. The original size is 45%; Apply saves the choice
 to `[hud] labels_size`. Existing explicit sizes are preserved on update.
 
+**HUD > Companions & effects** (default On) adds summon icons and live counts below
+the left-hand minimap. Necromancers see skeletons, skeletal mages, golem and
+revives as those skills become available; other classes use their own summon
+groups. Item-granted summons also qualify. A hired mercenary has its own count.
+Counts come from your summon roster, including companions outside your view.
+Used/available groups stay visible at zero, with the zero highlighted. The row
+follows **Minimap & Compass** wrist/palm placement and hides with navigation;
+turning off Companions & effects preserves the map and compass. Unknown or stale
+rosters are hidden during loading rather than presented as a lost army.
+
+The same display shows **effects currently on your character**: active buffs,
+auras (including received auras), armor spells, warcries, curses, poison/chill,
+potion effects and shrine bonuses. These come from native active states, not
+learned skills or button assignments. Indicators disappear when the state ends.
+Harmful effects appear first in red, beneficial effects in green, and other
+statuses in gold. Names remain visible when an effect has no cached skill icon.
+Permanent passive skills and internal animation flags are omitted. No duration
+or charge count is inferred; this first version indicates presence only.
+
+The display is bounded to three effect rows. If more than 21 effects overlap,
+the final cell shows how many additional effects are active. Existing
+`[interactions] companion_counts` preferences also control this expanded row.
+
 **HUD > Blood on visor** (default On) splashes blood around the edge of the
 view as life drops below 60%, 40% and 20%; large splats drip slowly, then dry.
 Healing back above a band, from any source, fades that band's blood out over
