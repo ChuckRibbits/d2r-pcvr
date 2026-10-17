@@ -1,4 +1,7 @@
-# D2R PCVR
+# D2R VR Unleashed
+
+Previously released as **D2R PCVR**; the repository and download filenames keep
+that identifier.
 
 Play **Diablo II: Resurrected in VR on Windows**, with support for
 **SteamVR and Virtual Desktop (VDXR)**. Use motion controls to swing your
@@ -36,7 +39,7 @@ and follow **[Install and play](INSTALL-WINDOWS.md)**.
 If the release offers **D2R-PCVR-Setup-VERSION.exe**, download and run it for
 graphical setup. It keeps its helpers in
 `%LOCALAPPDATA%\Programs\D2R PCVR`, includes a private Python runtime and
-adds removal under **Windows Settings → Apps → Installed apps → D2R PCVR**.
+adds removal under **Windows Settings → Apps → Installed apps → D2R VR Unleashed**.
 Rerun Setup to update or repair while keeping calibration and video settings.
 
 For the portable option (including v0.3.7), download **d2r-pcvr-windows.zip**,
@@ -78,7 +81,8 @@ This is a PCVR mod: the game runs on your Windows PC and streams to the headset.
 - A left-hand minimap/compass with current area and act, independent health/mana tilt,
   and adjustable controller vibration under **VR Settings > Haptics**.
 - A **MAP** tab at the bottom of the spell menu, showing explored areas and native markers.
-- Selected Amazon arrow skills work with bow draw/release; selected Paladin Smite works with left-shield contact.
+- Load supported arrow skills into a physical bow quiver, with the selected
+  arrow visible on the string. Selected Paladin Smite works with left-shield contact.
 - Body calibration for your height and arm span, available on first load
   and through **Left Grip + left secondary → Calibrate body**.
 - Weapon-set swapping: reach your right hand over either shoulder and press

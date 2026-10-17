@@ -1,4 +1,4 @@
-# Install and play D2R PCVR on Windows
+# Install and play D2R VR Unleashed on Windows
 
 This preview supports **SteamVR and Virtual Desktop (VDXR)** on Windows.
 
@@ -446,7 +446,7 @@ Update / repair preserves your existing scale; if an older install still uses
 80%, set **Options > Video > Resolution Scale** to **100%** in the game.
 
 To remove an EXE installation, open **Windows Settings → Apps → Installed apps →
-D2R PCVR → Uninstall**, or the D2R PCVR Start menu uninstaller. This removes the
+D2R VR Unleashed → Uninstall**, or the D2R VR Unleashed Start menu uninstaller. This removes the
 mod from **every Steam and Battle.net copy managed by that EXE**, restores its
 tracked original files and removes matching VR shortcuts. Your current characters,
 shared stash and video settings are kept. Backups and logs remain in the helper
