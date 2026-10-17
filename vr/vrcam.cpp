@@ -111,6 +111,7 @@ namespace gamestate {bool OpaqueMenuOpen();}
 #include "bow.h"
 #include "crossbow.h"
 #include "memory.h"
+#include "environment_cutaway.h"
 #include "stereo_prop_physics.h"
 #endif
 #include "dlss_mv.h"
@@ -6639,6 +6640,46 @@ void Tick() {
 }  // namespace solidwalls
 
 #ifdef D2RVR_NATIVE_OPENXR
+namespace roofcutaway {
+using SetAlphaFn = void(__fastcall*)(void*, float, float);
+SetAlphaFn original = nullptr;
+std::atomic<uintptr_t> hideReturn{0};
+std::atomic<bool> observed{false};
+
+void __fastcall SetAlpha(void* opacity, float alpha, float duration) {
+    // The return address must be captured in the actual detour, not a helper.
+    const uintptr_t caller = reinterpret_cast<uintptr_t>(_ReturnAddress());
+    const float wanted = environmentcutaway::TargetAlpha(
+        g_enabled.load() && g_inWorld.load(), caller, hideReturn.load(), alpha);
+    if (wanted != alpha && alpha == 0.0f) observed.store(true);
+    // The loader can enable the detour just before publishing its trampoline.
+    auto& slot = reinterpret_cast<SetAlphaFn const volatile&>(original);
+    SetAlphaFn call = slot;
+    for (int i = 0; !call && i < (1 << 20); ++i) { YieldProcessor(); call = slot; }
+    if (call) call(opacity, wanted, duration);
+}
+
+void Tick() {
+    static bool installed = false, toldMissing = false, toldObserved = false;
+    if (!installed && g_ctx && g_base) {
+        if (environmentcutaway::Verified(Matches)) {
+            hideReturn.store(g_base + environmentcutaway::HideReturnRva);
+            installed = d2rsig::Hook(environmentcutaway::SetterRva,
+                environmentcutaway::SetterSig, sizeof environmentcutaway::SetterSig,
+                reinterpret_cast<void*>(&SetAlpha), reinterpret_cast<void**>(&original));
+            if (installed) Log("vrcam: environment roof cutaway hook ready (native fade targets retained in VR)");
+        } else if (!toldMissing) {
+            toldMissing = true;
+            Log("vrcam: environment roof cutaway signatures unavailable; leaving native fades unchanged (will retry)");
+        }
+    }
+    if (!toldObserved && observed.load()) {
+        toldObserved = true;
+        Log("vrcam: environment roof cutaway suppressed a native hide request");
+    }
+}
+} // namespace roofcutaway
+
 namespace propphysics {
 using PrepareFn=void(__fastcall*)(void*,const void*,const void*,float);
 using SimulateFn=void(__fastcall*)(void*,float);
@@ -8260,6 +8301,7 @@ DWORD WINAPI UpdateThread(void*) {
             billboards::Install(&Log, +[]() { return g_enabled.load() && g_inWorld.load() && !ThirdPerson() && !Overhead() && !gamestate::MenuOpen(); });
             if (!AllHooksIn()) InstallHooks();
 #ifdef D2RVR_NATIVE_OPENXR
+            roofcutaway::Tick();
             propphysics::Tick();
             projectiles::Install();
             panelinput::Install();
