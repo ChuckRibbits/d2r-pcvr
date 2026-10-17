@@ -64,8 +64,26 @@ int main() {
     for(int lod=0;lod<5;++lod) {
         std::string path=tavern;path[path.find("_lod")+4]=char('0'+lod);assert(Selected(path,"ext_floor"));
     }
+    // Regression: a visible ceiling left sky gaps through the tavern shell.
+    // Both storeys use single-sided exterior walls/window surrounds at every LOD.
+    for(int level:{1,2}) for(int lod=-1;lod<5;++lod) {
+        const auto path=std::string("data/hd/env/model/act2/town/act2_town_building_tavern/level0")+
+            std::to_string(level)+(lod<0?"":"_lod"+std::to_string(lod))+".model";
+        for(const char* mat:{"ext_wall01a","ext_awning_shutters","ext_front_entrance","ext_rear_arch",
+            "ext_half_circle_base","ext_front_window01_01","ext_front_window01_02",
+            "ext_front_window02_01","ext_front_window02_02","ext_side_window01",
+            "ext_overhang_window01a_01","ext_overhang_window01a_02",
+            "ext_overhang_window01b_01","ext_overhang_window01b_02",
+            "ext_overhang_window02_01","ext_overhang_window02_02",
+            "int_plaster01a","int_plaster01b","int_plaster02a","int_plaster02b","int_dividers","int_stockroom_roof"})
+            assert(Selected(path,mat));
+        assert(!Selected(path,"med_props04")&&!Selected(path,"ext_wall01a_extra"));
+    }
+    assert(!Selected("data/hd/env/model/act2/town/other_building/level02.model","ext_wall01a"));
+    assert(!Selected("data/hd/env/model/act2/town/act2_town_building_tavern/level03.model","ext_wall01a"));
+    assert(!Selected("data/hd/env/model/act2/town/act2_town_building_tavern/level02_lod5.model","ext_wall01a"));
     assert(Selected("data/hd/env/model/act3/kurast/act3_kurast_roof/roof_center_lod0.model","roof01"));
-    for (const char* mat : {"ext_wall01a","med_props04","ext_awning_shutters","ext_front_window01_02","ext_roof_column"})
+    for (const char* mat : {"med_props04","ext_roof_column","ext_chimney","fireplace01a","int_wood_column","ext_wall01a_extra"})
         assert(!Selected(tavern,mat));
     for (const char* path : {"data/hd/character/roof.model","data/hd/items/roof.model",
         "data/hd/env/model/global/prop/roof.model","data/hd/env/model/act2/roof.model.bak",
@@ -101,6 +119,10 @@ int main() {
     {Scope guard(current,&scope);Member out{};assert(Find(fixture.type,fixture.object,"IsDoubleSided",&out));assert(out.value==&assetFlag);}
     failBuild=false;Install(nullptr,gate);assert(ready.load() && findInstalls==1 && buildInstalls==2);
     assert(Run()==reinterpret_cast<void*>(11) && !current && assetFlag==0);
+    fixture.name="ext_wall01a";assert(Run()==reinterpret_cast<void*>(11)&&assetFlag==0);
+    fixture.name="ext_overhang_window01a_01";assert(Run()==reinterpret_cast<void*>(11)&&assetFlag==0);
+    fixture.name="med_props04";assert(Run()==reinterpret_cast<void*>(10)&&assetFlag==0);
+    fixture.name="ext_floor";
     active=false;assert(Run()==reinterpret_cast<void*>(10));active=true;
     Member out{};assert(Find(fixture.type,fixture.object,"IsDoubleSided",&out) && out.value==&assetFlag);
     for(int kind : {10,13,14,15,16,17,18})assert(!Override(&scope,scope.type,scope.object,"IsDoubleSided",kind,0,0));

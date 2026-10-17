@@ -1,6 +1,7 @@
 # Two-sided environment roof materials
 
-Status: candidate; headset verification pending. The owner reported sky showing
+Status: candidate. The owner confirmed roof visibility in the 2026-10-17
+13:24 recording; the expanded wall/window coverage still needs headset testing. The owner reported sky showing
 through Atma's tavern in Lut Gholein while upper-floor props and beams remained
 visible. The existing environmental cutaway hook was installed and had suppressed
 a hide request in that session. Local inspection of lower-detail native models
@@ -18,7 +19,17 @@ material, rather than changing culling for the whole scene:
   `ext_half_circle_roof`, `ext_roof_tile01`, `ext_roof_tile02`, `ext_twig_roof`,
   `ext_roof_trim` and `ext_awning01`. Its upper floor forms the ceiling from below.
 
-The lower tavern model, props, walls, creatures, equipment and unrelated materials
+- Both tavern `level01` and `level02`, including LOD0-4: the audited exterior
+  wall panels, half-circle base, rear arch, entrance, shutter panels, front/side/
+  overhang window surrounds, interior plaster and divider panels. `int_stockroom_roof` also gets
+  its underside. The 13:24 follow-up clip showed sky gaps around the restored
+  ceiling; these native materials have `IsDoubleSided=0` and were explicitly
+  excluded by the initial roof-only selection. The local audit confirmed the
+  metadata on lower-storey LOD2-4 and upper-storey LOD1-4. LOD0 decoding remains
+  incomplete; live logs from the prior roof test identify the same model family
+  at LOD0, but this expanded selection still needs a headset check there.
+
+Props, fireplaces, columns, creatures, equipment and unrelated building materials
 are excluded. This is conservative name-based coverage, not a promise to cover
 every building in the game. It cannot fill holes that contain no polygons.
 
@@ -62,7 +73,10 @@ Use the isolated offline developer setup, **DEV > Lut Gholein**, then enter
 Atma's tavern. Look at the ceiling from several positions, walk out and back in,
 and check that the upper-floor props no longer appear unsupported. Check for
 dark/inverted underside lighting, flickering, doorway obstruction and changes
-to the exterior. Check a dedicated roof model in Kurast separately.
+to the exterior. Walk around the upper wall/window panels visible in the
+13:24 follow-up clip and check the ground-floor stockroom too. Window and doorway
+holes intentionally modeled without polygons will remain open; this changes
+culling only. Check a dedicated roof model in Kurast separately.
 
 Runtime logs distinguish `roof undersides: scoped native two-sided material
 hooks ready` from a matched model/material with `double-sided overrides=N`.

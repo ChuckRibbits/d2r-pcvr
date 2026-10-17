@@ -88,7 +88,7 @@ void* Build(const char* model,void* file,void* mesh,const Material* material,uin
     // Nested non-roof material builds must not inherit an outer roof's scope.
     Scope guard(current,selected?&scope:nullptr);
     void* result=call(model,file,mesh,material,flags,pass);
-    if (selected && reports.fetch_add(1)<24 && logger) {
+    if (selected && reports.fetch_add(1)<96 && logger) {
         char line[832]; std::snprintf(line,sizeof line,
             "roof undersides: %s material=%s double-sided overrides=%u build=%s",
             path,name,scope.changes,result?"ok":"failed");

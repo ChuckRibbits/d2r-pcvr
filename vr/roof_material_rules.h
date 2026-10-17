@@ -45,13 +45,32 @@ inline bool Selected(std::string_view model, std::string_view material) {
         model.find("..")!=model.npos || !model.ends_with(".model")) return false;
     constexpr std::string_view tavern="data/hd/env/model/act2/town/act2_town_building_tavern/";
     if (model.starts_with(tavern)) {
-        auto file=model.substr(tavern.size());
-        if (file!="level02.model" && !(file.size()==18 && file.starts_with("level02_lod") &&
-            file[11]>='0' && file[11]<='4' && file.substr(12)==".model")) return false;
-        // The upper floor is the ceiling when seen from the room below.
-        return material=="ext_floor" || material=="ext_half_circle_roof" ||
-            material=="ext_roof_tile01" || material=="ext_roof_tile02" ||
-            material=="ext_twig_roof" || material=="ext_roof_trim" || material=="ext_awning01";
+        const auto file=model.substr(tavern.size());
+        // The lower and upper storeys share the thin exterior shell. Keep
+        // coverage consistent as either switches LOD; never include props.
+        const bool level01=file.starts_with("level01"),level02=file.starts_with("level02");
+        if (!level01&&!level02) return false;
+        const auto suffix=file.substr(7);
+        if (suffix!=".model" && !(suffix.size()==11 && suffix.starts_with("_lod") &&
+            suffix[4]>='0' && suffix[4]<='4' && suffix.substr(5)==".model")) return false;
+        // Audited native materials: roof/floor surfaces above the player,
+        // plus the wall panels, arches and window surrounds visible from
+        // inside. IsDoubleSided does not fill modeled window/door openings.
+        constexpr std::string_view shell[]={
+            "ext_half_circle_roof","ext_roof_tile01","ext_roof_tile02",
+            "ext_twig_roof","ext_roof_trim","ext_awning01","int_stockroom_roof",
+            "ext_wall01a","ext_half_circle_base","ext_rear_arch",
+            "ext_front_entrance","ext_awning_shutters",
+            "ext_front_window01_01","ext_front_window01_02",
+            "ext_front_window02_01","ext_front_window02_02","ext_side_window01",
+            "ext_overhang_window01a_01","ext_overhang_window01a_02",
+            "ext_overhang_window01b_01","ext_overhang_window01b_02",
+            "ext_overhang_window02_01","ext_overhang_window02_02",
+            "int_plaster01a","int_plaster01b","int_plaster02a","int_plaster02b","int_dividers"
+        };
+        if (level02&&material=="ext_floor") return true; // ceiling from below
+        for (const auto name:shell) if (material==name) return true;
+        return false;
     }
     // Dedicated environment roof families; never match a material name alone.
     auto file=model.substr(model.find_last_of('/')+1);
