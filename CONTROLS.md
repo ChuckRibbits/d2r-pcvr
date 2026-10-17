@@ -205,6 +205,10 @@ a basic arrow and the character's mana warning plays. With nothing loaded, a
 supported arrow skill on left trigger uses the same physical release. Multiple
 Shot, Guided Arrow and Strafe keep their native behavior. Set
 `[bow] quiver=0` to restore native buttons for these skills.
+The selected skill also changes the nocked arrow's model and particles. Set
+`[bow] quiver_preview=0` to keep the basic nocked model while still firing skill
+arrows. Model swaps wait for the native client update to retire the previous
+arrow; a brief basic fallback can appear while the new model loads.
 
 Face-button skills never replace gesture skills. Ordinary melee swings remain
 basic attacks for skills without a supported physical adapter; assigning a

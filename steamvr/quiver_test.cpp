@@ -1,6 +1,7 @@
 #include "bow_flight.h"
 #include "gameplay.h"
 #include "hand_controls.h"
+#include "client_retirement.h"
 #include <array>
 #include <cstdio>
 #include <cstdlib>
@@ -138,6 +139,47 @@ int main() {
         Check(out.bowCharged,"draw charges");
         in.trigger=0;step();
         Check(out.bowRelease&&!out.nativeBowRelease&&out.skill<0,"quiver release is physical");
+    }
+    {
+        // Regression: selecting/unloading a skill deleted the old preview
+        // immediately from the UI callback, while HD entity mutation could be
+        // forbidden. Requests must keep ownership until the native client
+        // tick destroys the exact object and returns, including skill arrows.
+        ClientRetirements retire;
+        unsigned destroys=0;
+        for(uint32_t missile:{0u,12u,27u,28u,40u,41u,85u,87u}) {
+            const uintptr_t unit=0x1000+missile;
+            const uint32_t header[3]{3,missile,500+missile};
+            retire.Request(unit,header[2],missile); // UI: schedule only
+            retire.Request(unit,header[2],missile); // repeated UI callback
+            Check(retire.Pending()&&retire.Contains(unit,header[2],missile),"swap keeps exact old preview owned until native cleanup");
+            Check(!retire.Begin(unit+1000,header),"unrelated missile is not retired");
+            const auto ticket=retire.Begin(unit,header); // native client update
+            Check(ticket!=0,"native tick retires basic AND skill previews");
+            Check(retire.Pending()&&!retire.Begin(unit,header),"reentrant update neither destroys twice nor allows replacement");
+            ++destroys;
+            retire.Finish(ticket+1000);
+            Check(retire.Pending(),"unrelated completion cannot release the creation barrier");
+            retire.Finish(ticket); // after native destruction returns
+            Check(!retire.Pending(),"replacement can now be created for latest selection");
+        }
+        Check(destroys==8,"one retirement per old model, including unloading to basic");
+        for(const std::array<uint32_t,3> recycled: {std::array<uint32_t,3>{3,12,902},{3,40,901},{1,12,901}}) {
+            retire.Request(0x2000,901,12);
+            Check(!retire.Begin(0x2000,recycled.data())&&!retire.Pending(),"reused address/id/type is discarded without deleting another unit");
+        }
+        const uint32_t fire[3]{3,12,901},ice[3]{3,40,902};
+        retire.Request(0x2000,901,12);const auto stale=retire.Begin(0x2000,fire);
+        retire.Reset(); // area/character teardown owns the old objects
+        retire.Request(0x3000,902,40);const auto current=retire.Begin(0x3000,ice);
+        retire.Finish(stale);
+        Check(retire.Pending()&&current!=stale,"old-session completion cannot clear new preview retirement");
+        retire.Finish(current);
+        retire.Request(0x2000,901,12);retire.Request(0x3000,902,40);
+        const auto first=retire.Begin(0x2000,fire);retire.Finish(first);
+        Check(retire.Pending(),"unwanted creation and old preview can both wait for native cleanup");
+        retire.Finish(retire.Begin(0x3000,ice));
+        Check(!retire.Pending(),"all queued native objects are retired");
     }
     std::puts("quiver tests passed");
 }
