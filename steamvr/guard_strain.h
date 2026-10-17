@@ -1,0 +1,148 @@
+#pragma once
+#include <algorithm>
+#include <cmath>
+#include <cstdint>
+#include <vector>
+
+// Guard strain light (Unleashed physical guard). Value-only: the transport
+// supplies blocked hits, parries and whether the shield is raised; nothing
+// here reads native memory or XR state.
+//
+// Every blocked hit strains the guard. Strain shows as soft white light at
+// the rim of the view that creeps inward; each block sends one pulse in from
+// the edge. Full strain breaks the guard: the light swells toward the centre
+// and breathes slowly. The shield still blocks throughout; what the player
+// loses is sight of the fight. Lowering the shield is the only reset: strain
+// drains while it is down, and a broken guard stays broken until it has fully
+// faded. Raising it again part way keeps what is left. Parries add nothing.
+//
+// Comfort: no hard flashes. Pulses are a smooth attack/release envelope that
+// re-triggers without dropping, so rapid blocks hold a swell rather than
+// strobing; breathing is well under 1 Hz; opacity never exceeds brightness.
+namespace framevr::strain {
+struct Tuning {
+    float perBlock=.10f;     // strain per blocked hit (1 = broken)
+    float resetSeconds=3.f;  // lowered: full strain clears in this long
+    float clear=.10f;        // radius left clear at full swell (1 = visor image edge)
+    float brightness=1.f;    // peak opacity, 0 = off ([gameplay] guard_strain_light)
+    float breatheSeconds=1.6f; // one slow swell while broken
+    float feather=.45f;      // width of the inner blend (softness); the glow's midpoint stays put
+    uint32_t color=0xFFF7EA; // 0xRRGGBB: the pale white light; 0x000000 (guard_strain_dark) darkens the rim
+};
+// Ring geometry, in the visor image's radius (1 = image edge; the headset's
+// view ends near .95). The light covers everything outside `edge`.
+constexpr float FirstEdge=.90f,FullEdge=.60f,Feather=.60f; // Feather: the default softness
+// The glow is half bright at edge+Middle whatever the softness, so softening
+// widens the blend both ways instead of pushing the light out of view.
+constexpr float Middle=.125f;
+constexpr float PulseIn=.10f,PulseAlpha=.25f;       // a block's pulse: edge pulled in, extra opacity (of brightness)
+constexpr float PulseAttack=.12f,PulseRelease=.45f; // seconds
+constexpr float SwellSeconds=.6f;                   // broken: rim to full swell
+constexpr float BreatheEdge=.03f,BreatheAlpha=.15f;
+
+inline float SmoothStep(float a,float b,float x){const float t=std::clamp((x-a)/(b-a),0.f,1.f);return t*t*(3-2*t);}
+
+struct Input {
+    double time=0;
+    uint64_t session=0;
+    bool enabled=false;       // Unleashed, light setting above 0
+    bool eligible=false;      // first person, in a game, shield equipped, no menu
+    bool raised=false;        // the guard is up (shield_guard.h)
+    unsigned blocks=0,parries=0; // since the last step
+};
+struct Output {
+    float strain=0,swell=0,pulse=0;
+    float edge=1,alpha=0;     // what to paint
+    bool visible=false,broken=false;
+    bool brokeNow=false,clearedNow=false;
+};
+class Engine {
+    uint64_t session=0;
+    double last=0,pulseAt=-1;
+    float strain=0,swell=0,pulse=0;
+    bool broken=false,attacking=false;
+public:
+    void Reset(){*this=Engine{};}
+    Output Step(const Input& in,const Tuning& t) {
+        Output out;
+        if(!in.enabled||!std::isfinite(in.time)||!(t.brightness>0)){Reset();return out;}
+        if(in.session!=session){Reset();session=in.session;}
+        const double raw=last>0?in.time-last:0;
+        const float dt=raw>0&&raw<=.25?float(raw):0; // hitches and loads do not drain or swell
+        last=in.time;
+        const bool up=in.eligible&&in.raised;
+        if(up&&in.blocks) {
+            strain=std::min(1.f,strain+float(in.blocks)*std::max(0.f,t.perBlock));
+            attacking=true;pulseAt=in.time;
+            if(strain>=1&&!broken){broken=true;out.brokeNow=true;}
+        }
+        if(!up&&strain>0) {
+            strain=t.resetSeconds>0?std::max(0.f,strain-dt/t.resetSeconds):0;
+            if(strain<=0&&broken){broken=false;out.clearedNow=true;}
+        }
+        if(strain<=0)broken=false;
+        // Swell: grows while broken, never outlasts the strain it came from.
+        if(broken&&up)swell=std::min(1.f,swell+dt/SwellSeconds);
+        swell=std::min(swell,strain);
+        // Pulse envelope: re-triggered blocks keep rising instead of dropping.
+        if(attacking) {
+            pulse=dt>0?std::min(1.f,pulse+dt/PulseAttack):std::max(pulse,.5f);
+            if(pulse>=1)attacking=false;
+        } else pulse=std::max(0.f,pulse-dt/PulseRelease);
+        float edge=FirstEdge+(FullEdge-FirstEdge)*strain;
+        edge+=(std::clamp(t.clear,0.f,FullEdge)-edge)*swell;
+        float alpha=.30f+.45f*strain+.25f*swell;
+        if(broken) {
+            const float phase=t.breatheSeconds>0?float(std::sin(in.time*6.2831853/t.breatheSeconds)):0.f;
+            edge+=BreatheEdge*phase*swell;alpha*=1-BreatheAlpha*swell*(.5f-.5f*phase);
+        }
+        edge-=PulseIn*pulse*(1-swell*.5f);
+        alpha+=PulseAlpha*pulse;
+        // Fades in from nothing and back out as the last strain drains.
+        alpha*=std::min(1.f,(strain+pulse)*8);
+        out.strain=strain;out.swell=swell;out.pulse=pulse;out.broken=broken;
+        out.edge=std::clamp(edge,0.f,1.5f);
+        out.alpha=std::clamp(alpha,0.f,1.f)*std::clamp(t.brightness,0.f,1.f);
+        out.visible=out.alpha>.004f;
+        return out;
+    }
+};
+
+// Light image: Size x Size straight-alpha RGBA, stretched over the same
+// visor extent as the blood (blood_screen.h VisorExtent). A smooth radial
+// field, so a small texture is enough. Inward from the rim the light thins
+// out over `feather` with an ease-in (smoothstep squared): no visible inner
+// rim, just a glow that fades toward the centre. Squared smoothstep is half
+// at t=.6436, so the blend starts that far (of feather) inside the midpoint.
+constexpr int Size=256;
+constexpr uint32_t White=0xFFF7EA; // the pale, slightly warm white first tried
+inline float Radius(int x,int y) {
+    const float u=(x+.5f)/Size*2-1,v=(y+.5f)/Size*2-1;
+    return std::sqrt(u*u*.85f+v*v); // same aspect as the blood's clear centre
+}
+inline float Falloff(float edge,float feather,float radius) {
+    feather=std::clamp(feather,.02f,1.f);
+    const float start=edge+Middle-.6436f*feather;
+    const float a=SmoothStep(start,start+feather,radius);
+    return a*a;
+}
+inline std::vector<uint8_t> Compose(float edge,float alpha,float feather=Feather,uint32_t color=0x000000) {
+    std::vector<uint8_t> rgba(size_t(Size)*Size*4,0);
+    if(!std::isfinite(edge)||!std::isfinite(alpha)||!std::isfinite(feather)||alpha<=0)return rgba;
+    alpha=std::min(alpha,1.f);
+    for(int y=0;y<Size;++y)for(int x=0;x<Size;++x) {
+        auto* p=&rgba[(size_t(y)*Size+x)*4];
+        p[0]=uint8_t(color>>16);p[1]=uint8_t(color>>8);p[2]=uint8_t(color);
+        p[3]=uint8_t(std::lround(255*alpha*Falloff(edge,feather,Radius(x,y))));
+    }
+    return rgba;
+}
+// Repaint only on a visible change: edge and softness to 1/256 of the image,
+// opacity to 1/128, or a new colour. 0: nothing to paint.
+inline uint64_t PaintKey(float edge,float alpha,float feather=Feather,uint32_t color=0x000000) {
+    if(!std::isfinite(edge)||!std::isfinite(alpha)||!std::isfinite(feather)||alpha<=0)return 0;
+    const uint64_t shape=(uint64_t(std::lround(std::clamp(feather,0.f,1.f)*256))<<32)|
+           (uint64_t(std::lround(std::clamp(edge,0.f,1.5f)*256))<<16)|uint64_t(std::lround(std::clamp(alpha,0.f,1.f)*128)+1);
+    return (shape*1000003u+(color&0xFFFFFFu))|1;
+}
+}

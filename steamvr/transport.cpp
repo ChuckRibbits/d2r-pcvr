@@ -10,11 +10,14 @@
 #include <openxr/openxr_loader_negotiation.h>
 #include <reshade.hpp>
 #include <xinput.h>
+#include <mmsystem.h>
 #include <algorithm>
 #include <array>
 #include <atomic>
 #include <cstdio>
 #include <cstring>
+#include <deque>
+#include <memory>
 #include <mutex>
 #include <string>
 #include <vector>
@@ -35,6 +38,8 @@
 #include "hand_controls.h"
 #include "interaction_ui.h"
 #include "blood_screen.h"
+#include "guard_strain.h"
+#include "heartbeat.h"
 #include "wrist_compass.h"
 #include "interaction_paint.h"
 #include "latest_worker.h"
@@ -68,6 +73,7 @@ namespace gamestate {uint32_t WeaponType();uint32_t HandsKey();uint32_t WeaponSe
 namespace gamecmd {void RequestPotion(int slot);void CancelPotion();}
 namespace gamestate {void MenuMap(bool wanted);}
 namespace gamestate {bool LeftShield();}
+namespace combat {float GameVolume();}
 
 namespace framevr {
 using Microsoft::WRL::ComPtr;
@@ -138,6 +144,91 @@ uint64_t bloodPaintKey=~0ull,bloodRequestedKey=~0ull,bloodPaintRequest=0;
 uint32_t bloodShown=0; // splats in the uploaded image
 ULONGLONG bloodPaintAt=0;
 bool bloodAtlasPending=false,bloodImageReady=false;
+// Guard strain light: soft white at the rim, directly beneath the blood. Fed by
+// the game thread's blocks and the guard tick; painted small in the background.
+strain::Engine guardStrain;
+strain::Output strainOutput;
+std::mutex strainTuningMutex;strain::Tuning strainTuning;
+std::atomic<unsigned> guardBlockEvents{0},guardParryEvents{0};
+std::atomic<ULONGLONG> guardStateAt{0};std::atomic<bool> guardEligible{false},guardRaised{false};
+struct StrainJob {float edge=1,alpha=0,feather=strain::Feather;uint32_t color=0;};
+LatestWorker<StrainJob,std::vector<uint8_t>> strainPainter([](const StrainJob& job){return strain::Compose(job.edge,job.alpha,job.feather,job.color);});
+XrSwapchain strainChain=XR_NULL_HANDLE;
+uint64_t strainPaintKey=~0ull,strainRequestedKey=~0ull,strainPaintRequest=0;
+ULONGLONG strainPaintAt=0;
+bool strainAtlasPending=false,strainImageReady=false,strainSlotReported=false;
+// Guard strain heartbeat: its own waveOut stream, since PlaySound plays one sound
+// per process and would cut off the riposte. Frame thread only. Each buffer is
+// one beat period; the next is queued just before the current one ends, so
+// loudness and tempo follow strain beat by beat and stop with it.
+std::mutex heartMutex;heartbeat::Tuning heartTuning;
+std::shared_ptr<const heartbeat::Pcm> heartSource=std::make_shared<heartbeat::Pcm>(heartbeat::BuiltIn());
+std::wstring heartFile=L"?";   // never a real path: the first configure loads the built-in beat
+const char* heartSourceName="built-in recording"; // for the first "started" line (under heartMutex)
+heartbeat::Level heartLevel;double heartAt=0;
+void Say(const char* msg);   // logging, defined below
+class HeartStream {
+    using OpenFn=MMRESULT(WINAPI*)(LPHWAVEOUT,UINT,LPCWAVEFORMATEX,DWORD_PTR,DWORD_PTR,DWORD);
+    using HeaderFn=MMRESULT(WINAPI*)(HWAVEOUT,LPWAVEHDR,UINT);
+    using PositionFn=MMRESULT(WINAPI*)(HWAVEOUT,LPMMTIME,UINT);
+    using HandleFn=MMRESULT(WINAPI*)(HWAVEOUT);
+    OpenFn open=nullptr;HeaderFn prepare=nullptr,unprepare=nullptr,write=nullptr;PositionFn position=nullptr;HandleFn reset=nullptr,close=nullptr;
+    bool loaded=false;
+    HWAVEOUT out=nullptr;int rate=0,channels=0;
+    uint64_t queuedEnd=0; // frames written since open
+    struct Buffer {WAVEHDR header{};std::vector<int16_t> pcm;};
+    std::deque<std::unique_ptr<Buffer>> buffers;
+    bool Load() {
+        if(loaded)return open!=nullptr;
+        loaded=true;
+        if(HMODULE m=LoadLibraryW(L"winmm.dll")) {
+            open=reinterpret_cast<OpenFn>(GetProcAddress(m,"waveOutOpen"));prepare=reinterpret_cast<HeaderFn>(GetProcAddress(m,"waveOutPrepareHeader"));
+            unprepare=reinterpret_cast<HeaderFn>(GetProcAddress(m,"waveOutUnprepareHeader"));write=reinterpret_cast<HeaderFn>(GetProcAddress(m,"waveOutWrite"));
+            position=reinterpret_cast<PositionFn>(GetProcAddress(m,"waveOutGetPosition"));
+            reset=reinterpret_cast<HandleFn>(GetProcAddress(m,"waveOutReset"));close=reinterpret_cast<HandleFn>(GetProcAddress(m,"waveOutClose"));
+        }
+        if(!(open&&prepare&&unprepare&&write&&position&&reset&&close)){open=nullptr;Say("Frame guard heartbeat: winmm waveOut unavailable; heartbeat silent");}
+        return open!=nullptr;
+    }
+    uint64_t Played() {
+        MMTIME t{};t.wType=TIME_SAMPLES;
+        if(!out||position(out,&t,sizeof t)!=MMSYSERR_NOERROR||t.wType!=TIME_SAMPLES)return queuedEnd;
+        return t.u.sample;
+    }
+public:
+    void Reap() {
+        while(!buffers.empty()&&(buffers.front()->header.dwFlags&WHDR_DONE)) {
+            unprepare(out,&buffers.front()->header,sizeof(WAVEHDR));buffers.pop_front();
+        }
+    }
+    // Frames still to play of what is queued.
+    uint64_t Remaining() {if(!out||buffers.empty())return 0;const auto p=Played();return queuedEnd>p?queuedEnd-p:0;}
+    bool Queue(int sourceRate,int sourceChannels,std::vector<int16_t>&& pcm) {
+        if(pcm.empty()||!Load())return false;
+        if(out&&(sourceRate!=rate||sourceChannels!=channels))Stop();
+        if(!out) {
+            WAVEFORMATEX f{};f.wFormatTag=WAVE_FORMAT_PCM;f.nChannels=WORD(sourceChannels);f.nSamplesPerSec=DWORD(sourceRate);
+            f.wBitsPerSample=16;f.nBlockAlign=WORD(sourceChannels*2);f.nAvgBytesPerSec=f.nSamplesPerSec*f.nBlockAlign;
+            if(open(&out,WAVE_MAPPER,&f,0,0,CALLBACK_NULL)!=MMSYSERR_NOERROR){out=nullptr;return false;}
+            rate=sourceRate;channels=sourceChannels;queuedEnd=0;
+        }
+        auto b=std::make_unique<Buffer>();b->pcm=std::move(pcm);
+        b->header.lpData=reinterpret_cast<LPSTR>(b->pcm.data());b->header.dwBufferLength=DWORD(b->pcm.size()*sizeof(int16_t));
+        if(prepare(out,&b->header,sizeof(WAVEHDR))!=MMSYSERR_NOERROR)return false;
+        if(write(out,&b->header,sizeof(WAVEHDR))!=MMSYSERR_NOERROR){unprepare(out,&b->header,sizeof(WAVEHDR));return false;}
+        queuedEnd+=b->pcm.size()/size_t(channels);buffers.push_back(std::move(b));
+        return true;
+    }
+    int Rate() const {return rate;}
+    void Stop() {
+        if(!out)return;
+        reset(out);   // marks every queued buffer done
+        for(auto& b:buffers)unprepare(out,&b->header,sizeof(WAVEHDR));
+        buffers.clear();close(out);out=nullptr;rate=channels=0;queuedEnd=0;
+    }
+    ~HeartStream(){Stop();}
+} heartStream;
+bool heartPlaying=false;
 XrSwapchain interactionChain=XR_NULL_HANDLE;
 XrSwapchain companionChain=XR_NULL_HANDLE;
 bool companionAtlasPending=false,companionPaintValid=false;
@@ -717,6 +808,7 @@ bool SetupPointer(DXGI_FORMAT eyeFormat) {
 bool SetupGameplay(DXGI_FORMAT eyeFormat) {
     if(!interactionPainter.Start())Say("Frame UI: background painter unavailable; interaction artwork cannot refresh");
     if(!bloodPainter.Start())Say("Frame blood visor: background painter unavailable; blood stays hidden");
+    if(!strainPainter.Start())Say("Frame guard strain: background painter unavailable; the light stays hidden");
     const auto compassPixels=compass::Paint();
     compassAtlasReady=!compassPixels.empty()&&UploadAtlas(compassChain,eyeFormat,compass::Width,compass::Height,compassPixels);
     if(!compassAtlasReady)Say("Frame wrist compass: static atlas unavailable");
@@ -1499,6 +1591,58 @@ void Input() {
             bloodPaintRequest=0;
         }
     }
+    // Guard strain light (Unleashed shield): blocks strain the guard, light
+    // creeps in from the rim; lowering the shield is the only reset.
+    {
+        const auto now=GetTickCount64();
+        strain::Tuning tuning;{std::lock_guard lock(strainTuningMutex);tuning=strainTuning;}
+        const float lightOn=tuning.brightness;   // [gameplay] guard_strain_light
+        tuning.brightness=1;   // strain itself runs regardless of the light; only the drawing is scaled
+        strain::Input in;
+        in.time=interactionInput.time;in.session=interactionInput.session;
+        in.enabled=hudSettings.values[settings::MeleeRules]<.5f&&motionControls.load();
+        in.eligible=guardEligible.load()&&now-guardStateAt.load()<=250;
+        in.raised=guardRaised.load();
+        in.blocks=guardBlockEvents.exchange(0);in.parries=guardParryEvents.exchange(0);
+        strainOutput=guardStrain.Step(in,tuning);
+        strainOutput.alpha*=std::clamp(lightOn,0.f,1.f);strainOutput.visible=strainOutput.alpha>.004f;
+        if(strainOutput.brokeNow) {
+            MotionPulse(1,haptics::Category::Alert,.6f,120000000);
+            Say("Frame guard strain: guard broken; lower the shield to clear the light");
+        }
+        if(strainOutput.clearedNow)Say("Frame guard strain: cleared");
+        // Repaint only on a visible change, at most 25 Hz (a small smooth image).
+        if(!strainOutput.visible&&!strainPaintRequest)strainPaintKey=~0ull; // never reshow a stale light
+        const auto key=strain::PaintKey(strainOutput.edge,strainOutput.alpha,tuning.feather,tuning.color);
+        if(strainOutput.visible&&key!=strainPaintKey&&now>=strainPaintAt&&(!strainPaintRequest||key!=strainRequestedKey)) {
+            strainPaintRequest=strainPainter.Submit({strainOutput.edge,strainOutput.alpha,tuning.feather,tuning.color});strainRequestedKey=key;strainPaintAt=now+40;
+        }
+        std::vector<uint8_t> painted;
+        if(strainPaintRequest&&!strainAtlasPending&&atlasUploads.size()<3&&strainPainter.Take(strainPaintRequest,painted)) {
+            if(!painted.empty()&&UploadAtlas(strainChain,atlasFormat,strain::Size,strain::Size,painted,true,&strainAtlasPending))strainPaintKey=strainRequestedKey;
+            strainPaintRequest=0;
+        }
+        // Heartbeat: queue the next beat ~80 ms before the current one ends, at the
+        // strain's loudness and tempo now. No strain: the last beat finishes, then silence.
+        heartStream.Reap();
+        heartbeat::Tuning heart;std::shared_ptr<const heartbeat::Pcm> source;const char* sourceName=nullptr;
+        {std::lock_guard lock(heartMutex);heart=heartTuning;source=heartSource;sourceName=heartSourceName;}
+        // Its own level: winds down slower than the light, quieter and slower beat by beat.
+        const float level=heartLevel.Step(strainOutput.strain,heartAt>0?interactionInput.time-heartAt:0,heart.fadeSeconds);
+        heartAt=interactionInput.time;
+        if(level>0&&heart.volume>0&&source) {
+            if(heartStream.Remaining()<uint64_t(std::max(1,source->rate)*8/100)) {
+                heart.volume*=combat::GameVolume();
+                auto beat=heartbeat::Beat(*source,level,heart);
+                if(!beat.empty()&&heartStream.Queue(source->rate,source->channels,std::move(beat))&&!heartPlaying) {
+                    heartPlaying=true;
+                    static bool namedSource=false;   // the first start says which beat is playing
+                    if(!namedSource){namedSource=true;char line[120];snprintf(line,sizeof line,"Frame guard heartbeat: started (%s)",sourceName?sourceName:"?");Say(line);}
+                    else Say("Frame guard heartbeat: started");
+                }
+            }
+        } else if(heartPlaying&&!heartStream.Remaining()){heartPlaying=false;Say("Frame guard heartbeat: stopped");}
+    }
     // Bounded diagnostics distinguish gesture misses from native refusal.
     static ULONGLONG potionReportAt=0;
     if(interactionOutput.bottleHand>=0&&GetTickCount64()>=potionReportAt) {
@@ -2268,6 +2412,10 @@ void EndPair() {
         XrSwapchainImageReleaseInfo release{XR_TYPE_SWAPCHAIN_IMAGE_RELEASE_INFO};
         bloodImageReady=Check(pReleaseSwapchainImage(bloodChain,&release),"release blood visor");bloodAtlasPending=false;
     }
+    if(strainAtlasPending) {
+        XrSwapchainImageReleaseInfo release{XR_TYPE_SWAPCHAIN_IMAGE_RELEASE_INFO};
+        strainImageReady=Check(pReleaseSwapchainImage(strainChain,&release),"release guard strain light");strainAtlasPending=false;
+    }
     // Tabbed, trade and waypoint menus use the same black background in both eyes.
     // Submit just their shared opaque quad: no different cached world per eye.
     const bool blackMenu=opaqueMenuMode&&workspacePlaced&&uiEye.copied&&uiCrop[2]>0&&!settingsModel.open&&!bodyCalibration.Active();
@@ -2445,6 +2593,26 @@ void EndPair() {
             layers[below]=reinterpret_cast<const XrCompositionLayerBaseHeader*>(&bloodQuad);++count;
         }
     }
+    // Guard strain light: the blood's head-locked extent, inserted at the same
+    // slot after it, so it sits directly above the world and beneath the blood.
+    XrCompositionLayerQuad strainQuad{XR_TYPE_COMPOSITION_LAYER_QUAD};
+    if(strainImageReady&&strainPaintKey&&strainPaintKey!=~0ull&&strainOutput.visible&&layer&&!panelMode&&!blackMenu&&!settingsModel.open&&
+       !bodyCalibration.Active()&&headSpace) {
+        const auto extent=blood::VisorExtent(
+            {views[0].fov.angleLeft,views[0].fov.angleRight,views[0].fov.angleDown,views[0].fov.angleUp},
+            {views[1].fov.angleLeft,views[1].fov.angleRight,views[1].fov.angleDown,views[1].fov.angleUp});
+        if(count>=contentLimit) {
+            if(!strainSlotReported){Say("Frame guard strain: no spare composition layer; light hidden");strainSlotReported=true;}
+        } else if(std::isfinite(extent.width)&&std::isfinite(extent.height)&&extent.width>0&&extent.height>0) {
+            strainQuad.layerFlags=XR_COMPOSITION_LAYER_BLEND_TEXTURE_SOURCE_ALPHA_BIT|XR_COMPOSITION_LAYER_UNPREMULTIPLIED_ALPHA_BIT;
+            strainQuad.space=headSpace;strainQuad.eyeVisibility=XR_EYE_VISIBILITY_BOTH;
+            strainQuad.pose.orientation.w=1;strainQuad.pose.position.z=-blood::VisorDistance;strainQuad.size={extent.width,extent.height};
+            strainQuad.subImage.swapchain=strainChain;strainQuad.subImage.imageRect={{0,0},{strain::Size,strain::Size}};
+            const uint32_t below=count&&layers[0]==layer?1:0;
+            for(uint32_t i=count;i>below;--i)layers[i]=layers[i-1];
+            layers[below]=reinterpret_cast<const XrCompositionLayerBaseHeader*>(&strainQuad);++count;
+        }
+    }
     XrCompositionLayerQuad winePadding{XR_TYPE_COMPOSITION_LAYER_QUAD};
     if(padQuads&&composition::PrependQuadPadding(layers.data(),count,capacity,winePadding,headSpace,pointerChain)) {
         static bool reported=false;
@@ -2618,6 +2786,53 @@ void FinishShieldSkill(bool accepted) {
     if(accepted)shieldImpactAt=shieldFeedbackAt;
 }
 void MeleeImpact() {meleeImpactAt=GetTickCount64();}
+void ShieldGuardImpact(bool parry) {shieldImpactAt=GetTickCount64();(parry?guardParryEvents:guardBlockEvents).fetch_add(1);}
+void ShieldGuardState(bool eligible,bool raised) {guardStateAt=GetTickCount64();guardEligible=eligible;guardRaised=raised;}
+void ConfigureGuardStrain(float perBlock,float resetSeconds,float clear,float breatheSeconds,float softness,float brightness,uint32_t color) {
+    strain::Tuning t;
+    t.perBlock=std::isfinite(perBlock)?std::clamp(perBlock,0.f,1.f):t.perBlock;
+    t.resetSeconds=std::isfinite(resetSeconds)?std::clamp(resetSeconds,0.f,10.f):t.resetSeconds;
+    t.clear=std::isfinite(clear)?std::clamp(clear,0.f,strain::FullEdge):t.clear;
+    t.breatheSeconds=std::isfinite(breatheSeconds)?std::clamp(breatheSeconds,1.f,10.f):t.breatheSeconds;
+    t.feather=std::isfinite(softness)?std::clamp(softness,.05f,1.f):t.feather;
+    t.brightness=std::isfinite(brightness)?std::clamp(brightness,0.f,1.f):t.brightness;
+    t.color=color&0xFFFFFFu;
+    std::lock_guard lock(strainTuningMutex);strainTuning=t;
+}
+void ConfigureHeartbeat(float volume,float bpmMin,float bpmMax,float fadeSeconds,const wchar_t* file) {
+    heartbeat::Tuning t;
+    t.fadeSeconds=std::isfinite(fadeSeconds)?std::clamp(fadeSeconds,0.f,30.f):t.fadeSeconds;
+    t.volume=std::isfinite(volume)?std::clamp(volume,0.f,4.f):t.volume;
+    t.bpmMin=std::isfinite(bpmMin)?std::clamp(bpmMin,30.f,200.f):t.bpmMin;
+    t.bpmMax=std::isfinite(bpmMax)?std::clamp(bpmMax,t.bpmMin,200.f):std::max(t.bpmMax,t.bpmMin);
+    const std::wstring path=file?file:L"";
+    bool reload=false;
+    {std::lock_guard lock(heartMutex);heartTuning=t;reload=path!=heartFile;if(reload)heartFile=path;}
+    if(!reload)return;
+    auto pcm=std::make_shared<heartbeat::Pcm>();
+    bool fromFile=false;
+    if(!path.empty()) {
+        std::vector<uint8_t> bytes;
+        if(FILE* f=_wfopen(path.c_str(),L"rb")){uint8_t buf[65536];size_t n;while((n=fread(buf,1,sizeof buf,f))>0&&bytes.size()<16u<<20)bytes.insert(bytes.end(),buf,buf+n);fclose(f);}
+        fromFile=heartbeat::ParseWav(bytes,*pcm);
+    }
+    bool embedded=false;
+    if(!fromFile) {   // the recording embedded by interaction_assets.rc; synthesized if it is missing
+        HMODULE module=nullptr;std::vector<uint8_t> bytes;
+        GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS|GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                           reinterpret_cast<LPCWSTR>(&ConfigureHeartbeat),&module);
+        if(HRSRC res=module?FindResourceW(module,L"D2RVR_HEARTBEAT_SOUND",MAKEINTRESOURCEW(10)):nullptr)
+            if(HGLOBAL h=LoadResource(module,res))
+                if(const auto* p=static_cast<const uint8_t*>(LockResource(h)))bytes.assign(p,p+SizeofResource(module,res));
+        embedded=heartbeat::ParseWav(bytes,*pcm);
+        if(!embedded)*pcm=heartbeat::BuiltIn();
+    }
+    {std::lock_guard lock(heartMutex);heartSource=pcm;heartSourceName=fromFile?"ini WAV":embedded?"built-in recording":"synthesized beat";}
+    Say(fromFile?"Frame guard heartbeat: ini WAV loaded":
+        !path.empty()?(embedded?"Frame guard heartbeat: ini WAV missing or not 16-bit PCM; built-in recording":
+                                "Frame guard heartbeat: ini WAV missing or not 16-bit PCM; synthesized beat"):
+        embedded?"Frame guard heartbeat: built-in recording":"Frame guard heartbeat: recording missing; synthesized beat");
+}
 bool OwnsControllerRumble() {return motionControls.load()&&controllerRumbleLease.Owns(GetTickCount64());}
 void SpellCast(int hand,uint64_t session) {spellHaptics.Publish(hand,session,GetTickCount64());}
 void SetBowWorldEpoch(uint32_t epoch) {
@@ -2751,7 +2966,7 @@ void Shutdown(bool preserveResolution) {
     if(!preserveResolution)hud::NativeSession(false);
     if(!preserveResolution)resolution::Restore();
     windowFocus.Cancel();
-    EndPair();ClearInput();interactionPainter.Stop();bloodPainter.Stop();interaction::icons::Shutdown();
+    EndPair();ClearInput();interactionPainter.Stop();bloodPainter.Stop();strainPainter.Stop();interaction::icons::Shutdown();
     // Completion is mandatory before destroying our commands/resources, even
     // when ordinary frame submission uses queue ordering without a CPU wait.
     if(fence&&!WaitGpu())failed=true;
@@ -2769,6 +2984,9 @@ void Shutdown(bool preserveResolution) {
     if(gameplayChain&&pDestroySwapchain)pDestroySwapchain(gameplayChain);gameplayChain=XR_NULL_HANDLE;
     if(bloodChain&&pDestroySwapchain)pDestroySwapchain(bloodChain);bloodChain=XR_NULL_HANDLE;
     bloodScreen.Reset();bloodOutput={};bloodShown=0;bloodPaintKey=bloodRequestedKey=~0ull;bloodPaintRequest=0;bloodPaintAt=0;bloodAtlasPending=bloodImageReady=false;
+    if(strainChain&&pDestroySwapchain)pDestroySwapchain(strainChain);strainChain=XR_NULL_HANDLE;
+    heartStream.Stop();heartPlaying=false;heartLevel.Reset();heartAt=0;
+    guardStrain.Reset();strainOutput={};strainPaintKey=strainRequestedKey=~0ull;strainPaintRequest=0;strainPaintAt=0;strainAtlasPending=strainImageReady=strainSlotReported=false;
     if(pointerChain&&pDestroySwapchain)pDestroySwapchain(pointerChain);pointerChain=XR_NULL_HANDLE;
     if(aimSpace&&pDestroySpace)pDestroySpace(aimSpace);aimSpace=XR_NULL_HANDLE;
     if(leftAimSpace&&pDestroySpace)pDestroySpace(leftAimSpace);leftAimSpace=XR_NULL_HANDLE;

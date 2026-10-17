@@ -62,6 +62,24 @@ Run `interaction-preview.exe <output.png> --hands-check` to preview both hand
 layouts. Runtime hover masks use the same five-sector `WheelCell` geometry as
 the laser hit testing.
 
+## Riposte sound
+
+`riposte-impact.wav` (16-bit PCM, 48 kHz stereo, 1.08 s) is the impact played when
+a riposte lands. It is "Combat Impact" by Universfield on Pixabay (item 352458),
+supplied by the contributor (ChuckRibbits) as an MP3 and converted to WAV without
+other changes. It is embedded by `interaction_assets.rc` and played from memory at
+the game's Master x Combat volume; `[gameplay] riposte_sound_file` replaces it.
+
+## Guard strain heartbeat
+
+`guard-heartbeat.wav` (16-bit PCM, 48 kHz stereo, 0.50 s) is one lub-dub played
+while the shield guard is strained. It is the third beat of "Heartbeat" by
+SoundReality on Pixabay (item 549797), supplied by the contributor (ChuckRibbits)
+as an MP3: decoded at its own 48 kHz, cut from 20 ms before the lub to 0.50 s with a
+5 ms fade in and a 60 ms fade out, and peak-normalised to -1 dBFS. It is embedded by
+`interaction_assets.rc` and queued once per beat at a tempo and loudness that follow
+the strain; `[gameplay] guard_strain_heart_file` replaces it.
+
 ## Visor blood
 
 `blood-splatters.png` packs eight transparent blood-splatter images supplied by

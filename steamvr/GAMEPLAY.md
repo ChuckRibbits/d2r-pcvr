@@ -652,7 +652,7 @@ Smite against that creature. A stationary shield cannot bash; one continuous
 stroke requests at most one bash, and a deliberate reversal/settle rearms it.
 Native reach, walls, resources, animation/cadence, damage, stun and knockback
 remain authoritative. Left-hand haptics acknowledge native acceptance, not proof
-of positive damage. Physical blocking/parrying is still pending.
+of positive damage. Physical blocking and parrying are described under melee rules below.
 
 Contact casting activates only when the native Smite implementation is identified
 from the audited attack/throw dispatch table, an exact bounded entry in the game
@@ -771,8 +771,8 @@ weapon category determines length/radius on the final attachment; native monster
 footprint and legacy artwork height determine its body capsule. Generic class
 support is implemented, but specific weapon axes, small creatures, bosses and
 sloped ground need headset checks. Basic contacts use the main hand; the candidate
-adds selected Smite shield contacts. Other off-hand strikes, physical shield blocks
-and parries remain future work.
+adds selected Smite shield contacts. Physical shield blocks and parries are below;
+other off-hand strikes remain future work.
 
 Only a confirmed physical contact overrides legacy melee grid reach. Native
 line-of-sight, hostile relationship, creature life state, damage, elemental
@@ -782,7 +782,26 @@ mid-game) choose between two modes for physical swings and trigger/button melee:
 
 - **Unleashed** (`0`, the default): every weapon contact strikes each
   creature once per stroke. No to-hit, block or dodge roll and no attack-speed
-  gate (the `contact_hits` policy).
+  gate (the `contact_hits` policy). Instead, attack rating and attack speed scale
+  how hard a physical swing lands:
+  - **Attack rating** (`ar_damage`, 1): damage x the native to-hit chance (5-95%,
+    attack rating, defense and level penalty), read where the game's hit check
+    passes it on. `ar_damage_floor` (0) keeps that % of damage at zero chance.
+  - **Recovery** (`swing_recovery_damage`, 1): damage x the share of the native
+    attack cycle (class, weapon, IAS, WSM) since the previous landed stroke, to
+    the power `swing_recovery_curve` (2), at most 1. With 2, flailing at twice
+    the cycle's rate deals half the damage per second (1 would be neutral).
+    `swing_recovery_grace` (100 = none) counts a stroke from that % of the cycle
+    as fully recovered. Every creature one stroke reaches shares the stroke's
+    recovery factor, so flailing does not pay.
+  - **Cleave falloff** (`cleave_falloff`, 25): each further creature one stroke
+    lands on deals that % less than the one before, never below `cleave_min` (25):
+    100%, 75%, 50%, 25%, 25%... 0 turns it off. Creatures count in the order
+    the game resolves them, which follows the blade frame to frame but not
+    within a single frame. A riposte is still a clean hit (no falloff) and
+    counts as one of the stroke's creatures.
+  Leech, crushing blow and other on-hit effects still run on the unscaled hit.
+  `Frame swing damage:` in the log reports scaled hits and the last factors.
 - **Classic** (`1`): native attack rating, monster defense, block and the
   level penalty decide each attack, and attack speed paces them (below). A rolled
   miss uses up the attack, as a missed swing animation would.
@@ -816,6 +835,79 @@ reports the cycle inputs (`Frame melee attack speed:`) and refused contacts
 (`too_soon`, `extra_targets` in `Frame melee:`). `[debug] melee_trace=1` adds one
 `Frame melee trace:` line per native attack and per refused stroke, with the
 time since the previous landed hit; landed hits are never closer than `cycle`.
+
+### Physical shield blocking, parry and riposte (Unleashed)
+
+With **Unleashed** melee rules and a shield on, blocking is decided by where the
+shield is held, not by the block-chance roll. A monster still has to pass its
+native to-hit roll; then its native block roll (44B930) takes the physical verdict
+instead of a random one. Classic keeps the native roll.
+
+- **Block**: the shield hand up in front of the chest (measured from the head in its
+  turn: forward -0.20 to 0.85 m, up -0.62 to 0.30 m, out to 0.65 m on the shield's
+  side or 0.50 m across; held guards get 5 cm more), facing the attacker within
+  60 degrees of where the headset looks. Walking or running (PlrMode WL/RN/TW)
+  drops the guard. Every block plays `[gameplay] block_sound` (default 398,
+  block_weapon_1) and taps the left controller.
+- **Parry**: a diagonal shield swing across the view, lower right to upper left for
+  a left-hand shield (at least 15 cm within 120 ms, within ~35 degrees of the
+  diagonal), after the attacker's attack began (its mode change, 34E5F0) and at
+  most `[gameplay] parry_ms` (VR Settings > Combat, default 400 ms, 0 = off) before
+  the hit, from a melee attacker within 3 m. One parry per swing. The attacker is
+  put into native hit recovery (445E60) on a later game update, any shield wear
+  the game applied for that hit is restored (`shield_wear_refunded` in `Frame
+  guard:` counts it; not every block wears a shield, and none has been observed
+  yet in testing), and `parry_sound` plays (default 236, the Archon Plate equip
+  sound).
+- **Riposte**: the next physical weapon hit on the parried monster within
+  `riposte_ms` (1500) is a clean hit - no attack-rating or recovery penalty - plus
+  `riposte_bonus` % more damage (0), and plays a built-in
+  impact sound (`steamvr/assets/riposte-impact.wav`; `riposte_sound_file` replaces
+  it with a WAV next to the ini). Its volume follows the game's own Master x Combat
+  sliders (re-read from Settings.json when the game saves it), times
+  `riposte_volume` (100).
+- **Guard strain light**: every blocked hit (not a parry) strains the guard by
+  `guard_strain_per_block` % (10). Strain shows as a soft vignette at the rim of the
+  view (a pale white light by default; VR Settings > Combat > **Guard strain
+  color** switches it to a black shadow, `guard_strain_dark`, and
+  `guard_strain_color` takes any RRGGBB hex, default FFF7EA), beneath the blood on
+  the visor, creeping inward as it builds;
+  each block sends one smooth pulse in from the edge. At full strain the guard
+  breaks: the light swells until only `guard_strain_clear` % (10) of the view is
+  clear and breathes slowly (`guard_strain_breathe_ms`, 1600), with one alert tap on
+  the left controller. The shield keeps blocking throughout; the cost is sight.
+  Strain never drains while the shield stays up. Lowering it (or a menu, or losing
+  the shield) drains full strain in `guard_strain_reset_ms` (3000); a broken guard
+  stays broken until the light has fully faded, and raising the shield again part
+  way keeps what is left. Opacity is `guard_strain_light` (100 %, 0 = none; strain and
+  the heartbeat still run). The light's inner blend is
+  `guard_strain_softness` % of the visor radius (45) about a fixed midpoint, so it
+  fades toward the centre with no visible inner rim. Pulses re-trigger without
+  dropping, so rapid blocks hold a swell rather than flashing.
+- **Guard strain heartbeat**: while the guard is strained a heartbeat plays, quiet at
+  the first block and louder and faster as strain builds (`guard_strain_heart_bpm_min`
+  70 to `guard_strain_heart_bpm_max` 115 when broken). The beat itself keeps its
+  natural speed and pitch; only the time between beats shortens. When strain drains
+  the heartbeat winds down more slowly than the light, no faster than
+  `guard_strain_heart_fade_ms` (4000) from full: quieter and slower beat by beat, then
+  silent. Loudness is `guard_strain_heartbeat` % (200, 0 = off) on top of the game's
+  Master x Combat volume; above 70 % of full scale the beat bends smoothly toward
+  full scale (a soft limiter) rather than clipping. The built-in beat is a recording embedded in the plugin
+  (`steamvr/assets/guard-heartbeat.wav`); `guard_strain_heart_file` replaces it with a
+  one-beat 16-bit PCM WAV, next to the ini unless a full path. It plays on its own
+  audio stream, so it never cuts off the riposte or block sounds.
+
+Damage is scaled at the native damage application's final life write (44CE80,
+whose `Set(defender, life, ...)` returns to 44D098), so resistances, criticals and
+leech have already run; only the local player's physical swings are scaled - not
+spells, missiles or thorns. `[gameplay] enemies_always_hit=1` is a test aid that
+makes every enemy to-hit roll succeed so each attack reaches the shield. It applies
+in Unleashed only; Classic always uses the native monster chance to hit.
+`[debug] guard_trace=1` logs every judged hit (`Frame guard trace:`) with the hand
+position, cover angle, swing and attack timing. Hard swings (a riposte straight
+after a parry) are tracked up to 20 m/s and 100 rad/s; `Frame melee resets:` and
+`Frame melee stale:` report any swing the tracker discarded, and
+`Frame riposte: window expired unused` any parry whose riposte never landed.
 
 Physical **basic-arrow** release queues one direct native basic attack on the authoritative
 game thread. The attack creates its normal damage-bearing missile and handles

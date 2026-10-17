@@ -34,6 +34,17 @@ int TakeShieldTarget(uint32_t& target); // 1 physical target, -1 cancelled cast,
 bool ShieldAim(float& x,float& y);
 void FinishShieldSkill(bool accepted);
 void MeleeImpact(); // thread-safe; haptic delivered by XR input update
+void ShieldGuardImpact(bool parry=false); // thread-safe; a physical block taps the left controller and strains the guard (a parry does not)
+// Thread-safe, every guard tick: shield eligible (first person, shield, no menu) and raised.
+void ShieldGuardState(bool eligible,bool raised);
+// [gameplay] guard_strain_*: strain per block (1 = broken), lowered reset time,
+// clear radius at full swell (1 = visor edge), broken breathing period, inner softness,
+// opacity (0 = none; strain and the heartbeat still run) and colour (0xRRGGBB).
+void ConfigureGuardStrain(float perBlock,float resetSeconds,float clear,float breatheSeconds,float softness,float brightness,uint32_t color);
+// [gameplay] guard_strain_heartbeat (x the game's Master x Combat volume, 0 = off),
+// tempo at first strain and when broken, wind-down time from full, and an optional
+// one-beat 16-bit PCM WAV (empty: the built-in beat). Reloads the WAV only when the path changes.
+void ConfigureHeartbeat(float volume,float bpmMin,float bpmMax,float fadeSeconds,const wchar_t* file);
 void SpellCast(int hand,uint64_t session); // one successful hand spell, not each projectile
 bool TakeBowShot(bowflight::Shot& shot);
 bool TakeCrossbowShot(bowflight::Shot& shot);

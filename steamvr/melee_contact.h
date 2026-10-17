@@ -90,7 +90,11 @@ public:
     }
 };
 struct Sweep {Blade before{},after{};uint64_t stroke=0;float speed=0;bool thrust=false;};
-struct Diagnostics {unsigned discontinuities=0,recovering=0;};
+// Why the path was restarted (pose resets): a state change (epoch, equipment,
+// skill...), a timing gap, the hand moving or turning too fast for tracking,
+// the player jumping, or the blade jumping further than hand+turn explain.
+enum ResetReason {ResetState,ResetTiming,ResetHandTravel,ResetHandTurn,ResetPlayer,ResetBlade,ResetReasons};
+struct Diagnostics {unsigned discontinuities=0,recovering=0,reasons[ResetReasons]{};float fastestHand=0,fastestTurn=0;};
 inline constexpr float WeaponStrokeTravel=.18f;
 inline constexpr float ThrustTravel=.12f,ThrustRetreat=.08f;
 inline float WeaponContactSpeed(float value) {
@@ -174,12 +178,17 @@ public:
         const float lever=std::min(1.5f,Length(in.blade.tip-in.blade.base));
         const float handTravel=Length(in.hand.p-previous.hand.p),playerTravel=Length(in.player-previous.player);
         const float bladeTravel=std::max(Length(in.blade.base-previous.blade.base),Length(in.blade.tip-previous.blade.tip));
-        if(!primed||dt<=0||dt>.1||in.epoch!=previous.epoch||in.equipment!=previous.equipment||
+        const bool stateChanged=in.epoch!=previous.epoch||in.equipment!=previous.equipment||
            in.shield!=previous.shield||in.minWeaponSpeed!=previous.minWeaponSpeed||in.minThrustSpeed!=previous.minThrustSpeed||in.skillSlot!=previous.skillSlot||in.skillOwner!=previous.skillOwner||in.skillContext!=previous.skillContext||
-           handTravel>std::max(.12f,10.f*float(dt))||angle>gameplay::MeleeAngularTrackingLimit*dt||playerTravel>.5f||
-           std::fabs(in.unitsPerMetre-previous.unitsPerMetre)>.05f||
-           bladeTravel>std::max(1.2f,handTravel+angle*lever+playerTravel+.1f)) {
-            if(primed)++diagnostics.discontinuities;
+           std::fabs(in.unitsPerMetre-previous.unitsPerMetre)>.05f;
+        const bool badTiming=dt<=0||dt>.1,fastHand=handTravel>std::max(.12f,gameplay::MeleeHandTrackingLimit*float(dt)),fastTurn=angle>gameplay::MeleeAngularTrackingLimit*dt;
+        const bool jumped=playerTravel>.5f,bladeJump=bladeTravel>std::max(1.2f,handTravel+angle*lever+playerTravel+.1f);
+        if(!primed||stateChanged||badTiming||fastHand||fastTurn||jumped||bladeJump) {
+            if(primed) {
+                ++diagnostics.discontinuities;
+                ++diagnostics.reasons[stateChanged?ResetState:badTiming?ResetTiming:fastHand?ResetHandTravel:fastTurn?ResetHandTurn:jumped?ResetPlayer:ResetBlade];
+                if(dt>0&&dt<=.1){diagnostics.fastestHand=std::max(diagnostics.fastestHand,handTravel/float(dt));diagnostics.fastestTurn=std::max(diagnostics.fastestTurn,angle/float(dt));}
+            }
             Reset();primed=true;previous=in;RestartPath(in);
             recoverUntil=in.time+.08;return false;
         }

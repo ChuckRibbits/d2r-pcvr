@@ -100,6 +100,9 @@ target_include_directories(composition-layers-test PRIVATE ${OPENXR_SDK}/include
 target_link_libraries(composition-layers-test PRIVATE framevr-runtime)
 add_executable(projectile-rules-test projectile_rules_test.cpp)
 add_executable(combat-rules-test combat_rules_test.cpp)
+add_executable(shield-guard-test shield_guard_test.cpp)
+add_executable(guard-strain-test guard_strain_test.cpp)
+add_executable(heartbeat-test heartbeat_test.cpp)
 add_executable(logging-test logging_test.cpp logging.cpp)
 set_target_properties(logging-test PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/logging-fixture/plugins")
 file(MAKE_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/logging-fixture/logs")
@@ -211,7 +214,7 @@ set_tests_properties(light-bounds-test PROPERTIES TIMEOUT 30)
 foreach(test_target IN ITEMS memory-test hook-metrics-test active-keys-test resource-descriptions-test latest-worker-test haptic-pulse-test thread-stats-test
     gameplay-test weapon-skills-test quick-cast-test hand-controls-test skill-pad-test interact-press-test mod-layout-test spell-aim-test bow-pose-test crossbow-pose-test body-tracking-test body-calibration-test shoulder-swap-test blood-screen-test
     portal-billboard-test composition-layers-test projectile-rules-test environment-cutaway-test stereo-prop-physics-test
-    combat-rules-test logging-test melee-contact-test attack-speed-test world-coordinates-test bow-flight-test spell-cast-test spell-aim-assist-test
+    combat-rules-test shield-guard-test guard-strain-test heartbeat-test logging-test melee-contact-test attack-speed-test world-coordinates-test bow-flight-test spell-cast-test spell-aim-assist-test
     interaction-test native-belt-test wrist-hud-test navigation-info-test companions-test active-effects-test dropped-item-labels-test show-items-command-test native-hud-test render-resolution-test render-pointer-test scene-depth-test game-device-only-test controller-bindings-test journal-test native-panels-test
     vr-settings-test vr-settings-store-test controller-labels-test math-test deferred-draw-test monster-bars-test gaze-test window-focus-test callback-ticket-test local-player-test)
   # These fixtures use assert for their checks, including in Release builds.

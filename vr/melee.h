@@ -18,10 +18,34 @@ void SetAttackCycle(uint64_t session,uint32_t milliseconds);
 // Physical swings and trigger/button melee use the native to-hit/block/level
 // rolls. Off restores the contact_hits policy for them. Missiles unaffected.
 void ConfigureAttackRating(bool native); // [gameplay] melee_rules=1 (Classic)
+// Unleashed: a stroke's damage scales with how much of the native attack cycle
+// passed since the previous landed stroke; every creature one stroke reaches
+// shares that factor. Contacts are never refused. [gameplay] swing_recovery_damage;
+// curve: the factor's power (swing_recovery_curve); grace: the share of the
+// cycle after which a stroke is fully recovered (swing_recovery_grace, 1 = none).
+void ConfigureSwingRecovery(bool on,float curve,float grace);
+// Unleashed cleave falloff: each further creature one stroke lands on deals
+// `step` less (0..1, 0 = off), never below `floor`. [gameplay] cleave_falloff, cleave_min
+void ConfigureCleave(float step,float floor);
 // Owning game thread only; shared with physical arrows. Re-resolves the unit
 // from its session/id rather than passing a native pointer across threads.
 bool LocalServer(uintptr_t& game,uintptr_t& player);
 uintptr_t ServerUnit(uintptr_t game,int type,uint32_t id); // owning game thread only
+// Perfect parry: native hit recovery for this monster on a LATER game update,
+// never inside its own attack. Thread-safe. False when unavailable/not queued.
+// durability: the shield's before the parried hit, refunded; -2 = read it now.
+bool QueueParry(uint32_t monster,int durability=-2);
+// When this monster's current attack began (GetTickCount64), from the native
+// mode setter on the server; 0 when not seen in the last 3 s. Thread-safe.
+uint64_t AttackStart(uint32_t monster);
+// The block sound at the hero ([gameplay] block_sound). Thread-safe.
+void QueueBlockSound();
+// [gameplay] block_sound: sounds.txt row played at the hero on every physical
+// block (default 398 block_weapon_1); 0 is silent. A change plays it once.
+void ConfigureBlockSound(int sound);
+// [gameplay] parry_sound: sounds.txt row played at the hero on a parry; 0 is
+// silent. Changing it while in game plays the new sound once (audition).
+void ConfigureParrySound(int sound);
 // Owning game thread only. The live, non-hostile hireling nearest a thrown
 // bottle's landing point (world metres, with the rendered player and scale of
 // that frame); true when it landed at the hireling's feet. distance<0: none.
