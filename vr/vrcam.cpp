@@ -111,6 +111,7 @@ namespace gamestate {bool OpaqueMenuOpen();}
 #include "bow.h"
 #include "crossbow.h"
 #include "memory.h"
+#include "stereo_prop_physics.h"
 #endif
 #include "dlss_mv.h"
 #include "dlss_depth.h"
@@ -6637,6 +6638,68 @@ void Tick() {
 }
 }  // namespace solidwalls
 
+#ifdef D2RVR_NATIVE_OPENXR
+namespace propphysics {
+using PrepareFn=void(__fastcall*)(void*,const void*,const void*,float);
+using SimulateFn=void(__fastcall*)(void*,float);
+PrepareFn originalPrepare=nullptr;
+SimulateFn originalSimulate=nullptr;
+std::atomic<bool> ready{false};
+std::atomic<uintptr_t> prepareReturn{0},simulateReturn{0};
+std::atomic<uint32_t> prepared{0},simulated{0},heldPrepare{0},heldSimulate{0};
+
+template<class Fn> Fn Original(Fn const volatile& slot) {
+    Fn call=slot;
+    for(int i=0;!call&&i<(1<<20);++i){YieldProcessor();call=slot;}
+    return call;
+}
+bool Hold(uintptr_t caller,uintptr_t expected) {
+    return stereoprops::Hold(ready.load(),g_pairNow.load(),g_eye.load(),caller,expected);
+}
+void __fastcall Prepare(void* self,const void* transform,const void* settings,float dt) {
+    const auto caller=reinterpret_cast<uintptr_t>(_ReturnAddress());
+    const bool held=stereoprops::Stage(Hold(caller,prepareReturn.load()),[&]{
+        if(auto call=Original<PrepareFn>(originalPrepare))call(self,transform,settings,dt);
+    });
+    if(caller==prepareReturn.load())(held?heldPrepare:prepared).fetch_add(1,std::memory_order_relaxed);
+}
+void __fastcall Simulate(void* self,float dt) {
+    const auto caller=reinterpret_cast<uintptr_t>(_ReturnAddress());
+    const bool held=stereoprops::Stage(Hold(caller,simulateReturn.load()),[&]{
+        if(auto call=Original<SimulateFn>(originalSimulate))call(self,dt);
+    });
+    if(caller==simulateReturn.load())(held?heldSimulate:simulated).fetch_add(1,std::memory_order_relaxed);
+}
+void Tick() {
+    static bool prepIn=false,simIn=false,toldMissing=false;
+    if(!ready.load()&&g_ctx&&g_base) {
+        const bool verified=stereoprops::Verified([&](uintptr_t rva,const uint8_t* sig,size_t n){
+            return (rva==stereoprops::PrepareRva&&prepIn) ||
+                   (rva==stereoprops::SimulateRva&&simIn) || Matches(rva,sig,n);
+        });
+        if(verified) {
+            prepareReturn.store(g_base+stereoprops::PrepareReturnRva);
+            simulateReturn.store(g_base+stereoprops::SimulateReturnRva);
+            if(!prepIn)prepIn=d2rsig::Hook(stereoprops::PrepareRva,stereoprops::PrepareSig,sizeof stereoprops::PrepareSig,
+                reinterpret_cast<void*>(&Prepare),reinterpret_cast<void**>(&originalPrepare));
+            if(!simIn)simIn=d2rsig::Hook(stereoprops::SimulateRva,stereoprops::SimulateSig,sizeof stereoprops::SimulateSig,
+                reinterpret_cast<void*>(&Simulate),reinterpret_cast<void**>(&originalSimulate));
+            if(prepIn&&simIn){ready.store(true);Log("vrcam: stereo prop physics hooks ready; partial-ragdoll simulation held for second eye, native pose application retained");}
+        } else if(!toldMissing) {
+            toldMissing=true;
+            Log("vrcam: stereo prop physics signatures unavailable; leaving simulation native (will retry)");
+        }
+    }
+    static ULONGLONG last=0;
+    if(ready.load()&&GetTickCount64()-last>=10000) {
+        last=GetTickCount64();
+        const auto p=prepared.exchange(0),s=simulated.exchange(0),hp=heldPrepare.exchange(0),hs=heldSimulate.exchange(0);
+        if(p||s||hp||hs)LogF("vrcam: stereo prop physics: native prepare=%u simulate=%u; second-eye held prepare=%u simulate=%u",p,s,hp,hs);
+    }
+}
+} // namespace propphysics
+#endif
+
 // Torches from the game itself (2026-10-07): the fire found in the picture took the depth
 // of the wall behind the flame, and its light jumped about as the hero walked. Objects
 // near the hero, walked to the classic D2 way - the hero's path (+0x38), its room
@@ -8197,6 +8260,7 @@ DWORD WINAPI UpdateThread(void*) {
             billboards::Install(&Log, +[]() { return g_enabled.load() && g_inWorld.load() && !ThirdPerson() && !Overhead() && !gamestate::MenuOpen(); });
             if (!AllHooksIn()) InstallHooks();
 #ifdef D2RVR_NATIVE_OPENXR
+            propphysics::Tick();
             projectiles::Install();
             panelinput::Install();
             projectiles::Report();
