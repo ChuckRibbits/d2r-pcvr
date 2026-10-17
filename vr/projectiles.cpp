@@ -98,7 +98,7 @@ uintptr_t Client(uintptr_t params,int flags) {
     const bool crossbow=enabled.load()&&crossbowvr::Prepare(params,adjusted,bolt);
     if(crossbow)params=reinterpret_cast<uintptr_t>(adjusted.data());
     crossbowvr::BeginClient(crossbow?&bolt:nullptr);
-    Scope scope(params,0);const auto unit=originalClient(params,flags);
+    Scope scope(params,0);const auto unit=bowvr::ImpactVisual(params,flags,originalClient);
     if(crossbow&&unit)bowvr::CrossbowClient(unit,bolt.flight);
     crossbowvr::EndClient();ReportSpell(params,0,unit);return unit;
 }

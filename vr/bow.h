@@ -28,5 +28,8 @@ bool AdoptCrossbow(uintptr_t game,uintptr_t unit,const framevr::bowflight::Shot&
 void CrossbowClient(uintptr_t unit,const framevr::bowflight::Shot& shot);
 bool Visual(uint32_t entity,uintptr_t unit,bool hasReleasePoint,bool isRoot);
 bool OwnsVisual(uintptr_t unit);
+// Preserve native client-effect creation/lifetime; capture only effects inside
+// the physical quiver arrow's hit callback, including synchronous HD binding.
+uintptr_t ImpactVisual(uintptr_t params,int flags,uintptr_t(*create)(uintptr_t,int));
 void Report();
 }

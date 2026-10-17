@@ -23,6 +23,7 @@
 #include "../steamvr/transport.h"
 #include "../steamvr/callback_ticket.h"
 #include "../steamvr/client_retirement.h"
+#include "../steamvr/quiver_impact.h"
 #include "../steamvr/spell_aim_assist.h"
 namespace gamestate {uint64_t LocalPlayer();bool MenuOpen();uint32_t HandsKey();uint32_t WeaponSet();uint32_t WeaponType();}
 namespace bowvr {
@@ -79,6 +80,8 @@ std::atomic<bool> previewClient{false};
 std::atomic<uint64_t> previewReadyAt{0};
 PreviewRecovery previewRecovery;
 ClientRetirements clientRetirements; // mutex; UI requests, native client hooks retire
+ImpactVisuals impactVisuals; // visual placement only; native effects own lifetime
+std::atomic<bool> impactClients{false};
 Gate current{};uintptr_t clientHero=0;
 Once once;
 Once crossbowOnce;
@@ -116,6 +119,8 @@ thread_local int creatingVisual=-1;
 thread_local uint64_t visualSession=0,visualSequence=0;
 thread_local uint64_t previewCreatingSession=0;
 thread_local uint32_t previewCreatingMissile=0;
+thread_local const Flight* finishingImpact=nullptr;
+thread_local uint64_t creatingImpact=0;
 int MissileSound(int sound,uintptr_t unit,int a,int b,bool c) {
     // The nocked model is not a fired projectile. Suppress only its creation
     // scope's travel sound; genuine releases and other game audio pass through.
@@ -152,7 +157,8 @@ void Store(size_t slot,const Arrow& a) {
     }
 }
 void Recount() { // mutex held
-    unsigned r=preview.binding.Bound()?1:0,s=0,c=0;
+    impactClients=impactVisuals.Pending();
+    unsigned r=(preview.binding.Bound()?1:0)+(impactClients.load()?1:0),s=0,c=0;
     auto size=usedSlots.load(std::memory_order_relaxed);
     while(size&&!arrows[size-1].flight.alive&&!arrows[size-1].client&&!arrows[size-1].creating&&!arrows[size-1].reserved)--size;
     usedSlots.store(size,std::memory_order_relaxed);
@@ -303,10 +309,12 @@ int Collision(uintptr_t game,uintptr_t unit) {
         ++contacts;framevr::MeleeImpact();
         if(result==2) {
             a.flight.distance=advance(t.fraction);a.flight.alive=false;
+            a.flight.Contact(from+(to-from)*t.fraction);
             a.flight.updatedAt=GetTickCount64();Store(slot,a);return 2;
         }
     }
     a.flight.distance=advance(stop);a.flight.updatedAt=GetTickCount64();
+    if(stop<1)a.flight.Contact(from+(to-from)*stop);
     if(!MoveSpell(a,from+(to-from)*std::max(0.f,stop-(stop<1?.0001f:0.f))))return End(slot,a,game,unit);
     if(stop<1){++walls;return End(slot,a,game,unit);}
     Store(slot,a);return 1;
@@ -599,12 +607,19 @@ void ClientTick(uintptr_t unit,float dt) {
     }
     if(held||retiring)return;
     if(slot==arrows.size()){originalClientTick(unit,dt);return;}
-    if(!alive&&(!spellEnd||!spellvr::FinishVisual(unit,ended)))originalClientKill(unit);
+    if(!alive) {
+        const auto saved=finishingImpact;
+        finishingImpact=spellEnd&&SkillArrow(ended.shot)?&ended:nullptr;
+        const bool finished=spellEnd&&spellvr::FinishVisual(unit,ended);
+        finishingImpact=saved;
+        if(!finished)originalClientKill(unit);
+    }
     // Server owns lifetime/collision; the HD transform owns full 3D movement.
     // Running native client prediction here would resurrect flat-grid hits.
 }
 void ClientKill(uintptr_t unit) {
-    if(!clientCount.load(std::memory_order_relaxed)&&!previewClient.load(std::memory_order_relaxed)){originalClientKill(unit);return;}
+    if(!clientCount.load(std::memory_order_relaxed)&&!previewClient.load(std::memory_order_relaxed)&&
+       !impactClients.load(std::memory_order_relaxed)){originalClientKill(unit);return;}
     uint64_t retirement=0;
     {
         std::lock_guard lock(mutex);
@@ -615,6 +630,7 @@ void ClientKill(uintptr_t unit) {
         uint32_t header[3]{};
         if(Read(unit,header))retirement=clientRetirements.Begin(unit,header);
         for(auto& a:UsedArrows())if(a.client==unit){a.client=0;a.visualBinding.Clear();}
+        impactVisuals.Forget(unit);
         Recount();
     }
     originalClientKill(unit);
@@ -657,6 +673,10 @@ uintptr_t Transform(uintptr_t out,uint32_t entity,uintptr_t component) {
                 a.renderAt=at;
             }
             matrix=a.rendered;previous=a.previous;found=true;break;
+        }
+        if(!found&&enabled.load()&&impactVisuals.Pending()&&Read(out,matrix)&&
+           impactVisuals.Matrix(entity,current.session,matrix.data())) {
+            previous=matrix;found=true;
         }
     }
     if(!found)return result;
@@ -709,7 +729,7 @@ void Update(const Gate& gate,uintptr_t hero) {
         std::lock_guard lock(mutex);
         if(current.session!=gate.session) {
             for(auto& a:UsedArrows())a={};
-            usedSlots=0;preview={};previewReadyAt=0;previewRecovery={};clientRetirements.Reset();
+            usedSlots=0;preview={};previewReadyAt=0;previewRecovery={};clientRetirements.Reset();impactVisuals.Reset();
             pendingCount=0;gameCallback.Cancel();uiCallback.Cancel();Recount();
         }
         current=gate;clientHero=hero;
@@ -717,6 +737,7 @@ void Update(const Gate& gate,uintptr_t hero) {
         if(held)preview.pose=pose;
         if(!held||!visible)previewReadyAt=0;
         const auto now=GetTickCount64();
+        if(impactVisuals.Pending()){impactVisuals.Expire(gate.session,now);Recount();}
         ObservePreview(now);
         if(gameCallback.Expired(now,500)){gameCallback.Cancel();pendingCount=0;++gameRecovered;}
         if(uiCallback.Expired(now,500)){uiCallback.Cancel();++uiRecovered;}
@@ -886,11 +907,36 @@ int SpellParams(uintptr_t game,uintptr_t params,std::array<uint8_t,0x98>& adjust
     Param(adjusted,0x24,x);Param(adjusted,0x28,y);Param(adjusted,0x2c,tx);Param(adjusted,0x30,ty);
     return 1; // preserve native init selector/ordinal, count, level and owner
 }
+uintptr_t ImpactVisual(uintptr_t params,int flags,uintptr_t(*create)(uintptr_t,int)) {
+    const auto saved=creatingImpact;creatingImpact=0;
+    uint64_t ticket=0;int missile=-1;
+    if(finishingImpact&&enabled.load()&&Read(params+0x20,missile)) {
+        std::lock_guard lock(mutex);
+        if(finishingImpact->shot.session==current.session)
+            ticket=impactVisuals.Reserve(*finishingImpact,missile,GetTickCount64());
+        Recount();
+    }
+    creatingImpact=ticket;
+    const auto unit=create(params,flags);
+    if(ticket) {
+        uint32_t h[3]{};Read(unit,h);Vec grid{};const bool positioned=unit&&Position(unit,grid);
+        {std::lock_guard lock(mutex);impactVisuals.Complete(ticket,unit,h,positioned?&grid:nullptr);Recount();}
+        char line[176];snprintf(line,sizeof line,"Frame quiver impact: source=%d effect=%d contact=%.3f,%.3f,%.3f client=%s",
+            finishingImpact->shot.missile,missile,finishingImpact->ImpactPoint().x,finishingImpact->ImpactPoint().y,
+            finishingImpact->ImpactPoint().z,unit?"yes":"no");
+        framevr::logging::Write(line);
+    }
+    creatingImpact=saved;return unit;
+}
 bool Visual(uint32_t entity,uintptr_t unit,bool hasReleasePoint,bool isRoot) {
     uint32_t header[3]{};
     if(!Read(unit,header)||header[0]!=3)return false;
     const auto* crossbow=crossbowvr::Creating();
     std::lock_guard lock(mutex);
+    if(impactVisuals.Owns(creatingImpact,unit,header)) {
+        Vec grid{};const bool positioned=isRoot&&Position(unit,grid);
+        impactVisuals.Bind(creatingImpact,unit,header,entity,isRoot,positioned?&grid:nullptr);Recount();return true;
+    }
     const bool creatingPreview=preview.active&&previewCreatingSession&&previewCreatingSession==current.session;
     const uint32_t heldMissile=creatingPreview?previewCreatingMissile:preview.missile;
     if(header[1]==heldMissile&&preview.pose.session==current.session&&(creatingPreview||
@@ -921,6 +967,7 @@ bool Visual(uint32_t entity,uintptr_t unit,bool hasReleasePoint,bool isRoot) {
 bool OwnsVisual(uintptr_t unit) {
     uint32_t h[3]{};if(!Read(unit,h)||h[0]!=3)return false;
     std::lock_guard lock(mutex);
+    if(impactVisuals.Owns(creatingImpact,unit,h))return true;
     if(h[1]&&preview.pose.session==current.session&&((preview.missile==h[1]&&preview.client==unit&&preview.clientId==h[2])||
        (preview.active&&previewCreatingSession==current.session&&previewCreatingMissile==h[1])))return true;
     for(size_t i=0;i<usedSlots.load(std::memory_order_relaxed);++i) {
