@@ -13,7 +13,7 @@ namespace framevr::settings {
 enum class Page { Controls, VR, Video, HUD, Combat, Haptics };
 enum Key { Motion, Seated, Dominant, Snap, TurnSpeed, Waist, BeltForward,
            Foveation, Sky, Fog, Ceiling, DrawDistance, ObjectDistance,
-           EyeHeight, ArmSpan, BodyCalibration, SkillGestures, WristMap, WristCompass, ControllerLabels, WeaponSkillIndicators, PlanarSpellAim, VitalsLocation, CriticalAlerts, RenderResolution, NavigationLocation, SmoothTurn, OrdinaryMobBars, MenuDistance, TooltipTiming, ProjectileAimAssist, MeleeHitSpeed, VitalsTilt, HapticStrength, HapticMelee, HapticBowDraw, HapticBowRelease, HapticSpell, HapticInteraction, HapticAlert, HapticShortMelee, BloodVisor, BloodWipe, MeleeRules, MeleeThrustSpeed, LootLabelSize, Count };
+           EyeHeight, ArmSpan, BodyCalibration, SkillGestures, WristMap, WristCompass, ControllerLabels, WeaponSkillIndicators, PlanarSpellAim, VitalsLocation, CriticalAlerts, RenderResolution, NavigationLocation, SmoothTurn, OrdinaryMobBars, MenuDistance, TooltipTiming, ProjectileAimAssist, MeleeHitSpeed, VitalsTilt, HapticStrength, HapticMelee, HapticBowDraw, HapticBowRelease, HapticSpell, HapticInteraction, HapticAlert, HapticShortMelee, BloodVisor, BloodWipe, MeleeRules, MeleeThrustSpeed, LootLabelSize, CompanionCounts, ParryWindow, StrainDark, Count };
 using ChangeMask=uint64_t;
 static_assert(Count<=64,"settings change mask capacity");
 constexpr ChangeMask SupportedChanges=~ChangeMask{0}>>(64-Count);
@@ -71,6 +71,9 @@ inline constexpr std::array<Definition,Count> Definitions{{
     {"Melee rules", "Unleashed: every contact lands. Classic: attack rating and attack speed apply", L"gameplay",L"melee_rules",0,0,1,1},
     {"Melee thrust speed", "Forward stabs along the blade; independent of swing speed", L"gameplay",L"melee_thrust_speed",2,.75f,10,.25f},
     {"Loot label size", "Dropped-item names; 45% is the original size", L"hud",L"labels_size",45,20,150,5},
+    {"Companions & effects", "Companion counts and current buffs, auras and harmful effects", L"interactions",L"companion_counts",1,0,1,1},
+    {"Perfect parry window", "Unleashed: swing the shield (lower right to upper left) at most this long before a melee hit to stagger the attacker", L"gameplay",L"parry_ms",400,0,400,25},
+    {"Guard strain color", "Blocking strain at the rim of the view: pale white light or black shadow", L"gameplay",L"guard_strain_dark",0,0,1,1},
 }};
 using Values=std::array<float,Count>;
 inline bool HapticKey(Key key){return key>=HapticStrength&&key<=HapticAlert;}
@@ -118,16 +121,17 @@ constexpr Rect WeaponIndicatorsBox{942,666,221,52},PlanarSpellAimBox{942,728,221
 inline Rect TestHapticsBox(int row,int choice,haptics::Category category){return {haptics::PreviewCount(category)==1?700:590+choice*128,RowY+row*RowStep,haptics::PreviewCount(category)==1?140:122,52};}
 inline constexpr const char* AimAssistNames[]={"Off","Light","Strong"};
 inline constexpr const char* MeleeRulesNames[]={"Unleashed","Classic"};
+inline constexpr const char* StrainColorNames[]={"White","Black"};
 inline Rect ControllerOption(int option){return {865,233+option*58,375,58};}
 inline Rect Decrease(int row){return {865,RowY+row*RowStep,64,52};}
 inline Rect Increase(int row){return {1176,RowY+row*RowStep,64,52};}
 inline Rect ValueBox(int row){return {942,RowY+row*RowStep,221,52};}
-inline int RowCount(Page page){return page==Page::Haptics?2+haptics::CategoryCount:page==Page::Combat?3:page==Page::VR?10:page==Page::Video?7:page==Page::HUD?9:0;}
+inline int RowCount(Page page){return page==Page::Haptics?2+haptics::CategoryCount:page==Page::Combat?5:page==Page::VR?10:page==Page::Video?7:page==Page::HUD?10:0;}
 inline Key RowKey(Page page,int row){
     constexpr Key hapticRows[]={HapticStrength,HapticMelee,HapticShortMelee,HapticBowDraw,HapticBowRelease,HapticSpell,HapticInteraction,HapticAlert};
     if(page==Page::Haptics)return hapticRows[row];
-    if(page==Page::Combat)return row==0?MeleeRules:row==1?MeleeHitSpeed:MeleeThrustSpeed;
-    constexpr Key hud[]={VitalsLocation,VitalsTilt,CriticalAlerts,NavigationLocation,MenuDistance,TooltipTiming,BloodVisor,BloodWipe,LootLabelSize};
+    if(page==Page::Combat)return row==0?MeleeRules:row==1?MeleeHitSpeed:row==2?MeleeThrustSpeed:row==3?ParryWindow:StrainDark;
+    constexpr Key hud[]={VitalsLocation,VitalsTilt,CriticalAlerts,NavigationLocation,MenuDistance,TooltipTiming,BloodVisor,BloodWipe,LootLabelSize,CompanionCounts};
     if(page==Page::HUD)return hud[row];
     if(page==Page::Video&&row==6)return RenderResolution;
     constexpr Key vrRows[]={Motion,Seated,Dominant,SmoothTurn,Snap,TurnSpeed,Waist,BeltForward,SkillGestures,OrdinaryMobBars};

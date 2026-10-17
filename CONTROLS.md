@@ -108,9 +108,56 @@ with one target per physical stroke. Both modes require deliberate motion.
 from 0.75 to 10 m/s in 0.25 m/s steps. Push along the blade and pull back between
 stabs. The old `attack_speed` INI key does not select Classic; choose it here.
 
+**Unleashed swing damage:** every stroke that connects lands, but how hard it
+hits depends on your character. Your attack rating against the monster's
+defense scales the damage (the game's own hit chance, 5-95%), and so does your
+rhythm: a stroke before your attack speed has recovered hits much weaker, so
+measured swings beat flailing. Faster attack speed (IAS) shortens the wait.
+One stroke can hit several monsters, each further one a little weaker.
+
+### Shield: block, parry and strain (Unleashed)
+
+- **Block:** hold the shield up in front of your chest, facing the attacker,
+  and stand still. A melee hit that reaches you is blocked by where the shield
+  is, not by your block chance. Walking or running drops the guard.
+- **Parry:** as a melee attack comes in, swing the shield diagonally across
+  your view (lower right to upper left with a left-hand shield) within
+  **Combat > Perfect parry window** (400 ms by default) of the hit. The
+  attacker staggers.
+- **Riposte:** your next weapon hit on the parried monster within 1.5 s is a
+  clean hit: full damage, whatever your attack rating or timing.
+- **Guard strain:** every block (not a parry) strains your guard. A pale light
+  creeps in from the edge of your view and a heartbeat builds; at full strain
+  the guard breaks and the light swells over most of your view. The shield
+  keeps blocking; the cost is sight. Lower the shield to let it fade.
+  **Combat > Guard strain color** switches the light to a black shadow.
+
 **HUD > Loot label size** adjusts dropped-item text and its darker backing from
 20% to 150% in five-point steps. The original size is 45%; Apply saves the choice
 to `[hud] labels_size`. Existing explicit sizes are preserved on update.
+
+**HUD > Companions & effects** (default On) adds summon icons and live counts below
+the left-hand minimap. Necromancers see skeletons, skeletal mages, golem and
+revives as those skills become available; other classes use their own summon
+groups. Item-granted summons also qualify. A hired mercenary has its own count.
+Counts come from your summon roster, including companions outside your view.
+Used/available groups stay visible at zero, with the zero highlighted. The row
+follows **Minimap & Compass** wrist/palm placement and hides with navigation;
+turning off Companions & effects preserves the map and compass. Unknown or stale
+rosters are hidden during loading rather than presented as a lost army.
+
+The same display shows **effects currently on your character**: active buffs,
+auras (including received auras), armor spells, warcries, curses, poison/chill,
+potion effects and shrine bonuses. These come from native active states, not
+learned skills or button assignments. Indicators disappear when the state ends.
+Harmful effects appear first in red, beneficial effects in green, and other
+statuses in gold. Names remain visible when an effect has no cached skill icon.
+Permanent passive skills and internal animation flags are omitted. No duration
+or charge count is inferred; this first version indicates presence only.
+
+The display is bounded to three effect rows. If more than 21 effects overlap,
+the final cell shows how many additional effects are active. Existing
+`[interactions] companion_counts` preferences also control this expanded row.
 
 **HUD > Blood on visor** (default On) splashes blood around the edge of the
 view as life drops below 60%, 40% and 20%; large splats drip slowly, then dry.

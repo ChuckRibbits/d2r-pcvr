@@ -108,7 +108,17 @@ int main(){
         thrust.Click(hit);Check(thrust.Get()[MeleeThrustSpeed]==2.25f,"thrust speed adjusts in quarter steps");
         const auto request=thrust.Click({Kind::Apply});
         Check(request.changed==(ChangeMask{1}<<MeleeThrustSpeed),"thrust edit does not change swing speed or combat rules");
+        Check(RowCount(Page::Combat)==5&&RowKey(Page::Combat,3)==ParryWindow&&s.values[ParryWindow]==400,"parry window is the fourth Combat row, 400 ms by default");
+        Check(Normalize(ParryWindow,-5)==0&&Normalize(ParryWindow,999)==400&&Normalize(ParryWindow,NAN)==400,"parry window: 0 is Off, bounded, invalid restores default");
         Check(Normalize(MeleeThrustSpeed,NAN)==2&&Normalize(MeleeThrustSpeed,0)==.75f&&Normalize(MeleeThrustSpeed,99)==10,"thrust speed has finite usable bounds");
+    }
+    {Model strain;strain.Open(s);strain.Click({Kind::Tab,int(Page::Combat)});
+        Check(RowKey(Page::Combat,4)==StrainDark&&s.values[StrainDark]==0,"guard strain colour is the fifth Combat row, White by default");
+        Check(ValueBox(4).y+ValueBox(4).h<570,"the fifth Combat row stays above the page notes");
+        strain.Click(At(Page::Combat,ValueBox(4)));
+        Check(strain.Get()[StrainDark]==1,"clicking the value switches the strain to Black");
+        const auto request=strain.Click({Kind::Apply});
+        Check(request.changed==(ChangeMask{1}<<StrainDark),"strain colour saves only its own setting");
     }
     Check(s.values[MenuDistance]==1&&s.values[TooltipTiming]==0,"comfortable Medium distance and Instant hover defaults");
     for(auto key:{MenuDistance,TooltipTiming}) {
@@ -159,7 +169,7 @@ int main(){
     Check(Normalize(NavigationLocation,99)==0&&Normalize(NavigationLocation,1.5f)==0,"invalid navigation location falls back to Wrist");
     {Model navigation;navigation.Open(s);navigation.Click(At(Page::Controls,Tabs[int(Page::HUD)]));
         const int row=3;
-        Check(RowCount(Page::HUD)==9&&RowKey(Page::HUD,row)==NavigationLocation,"one navigation row replaces separate map/compass switches");
+        Check(RowCount(Page::HUD)==10&&RowKey(Page::HUD,row)==NavigationLocation,"one navigation row replaces separate map/compass switches");
         for(int location=1;location<=3;++location){
             navigation.Click(At(Page::HUD,Increase(row)));
             Check(navigation.Get()[NavigationLocation]==location,"navigation offers Palm, Either and Off");
@@ -298,5 +308,10 @@ int main(){
     gate.Step(false,true,1,true);e=gate.Step(true,true,1,true);
     Check(!e.chord&&!e.click&&!e.cancel,"tracking return cannot replay held inputs");
     gate.Step(true,false,0,false);Check(gate.Step(true,false,0,true).cancel,"fresh B cancels");
+    Check(Defaults()[CompanionCounts]==1&&RowKey(Page::HUD,9)==CompanionCounts,"companion counts default on in HUD");
+    s.ready=true;s.values=Defaults();m.Open(s);m.Click({Kind::Tab,int(Page::HUD)});
+    m.Click(At(Page::HUD,ValueBox(9)));
+    Check(m.Get()[CompanionCounts]==0&&m.Get()[NavigationLocation]==0,"companion toggle is independent of map placement");
+    Check(m.Click({Kind::Apply}).changed==(ChangeMask{1}<<CompanionCounts),"companion toggle uses its own high change-mask bit");
     std::puts("VR settings draft, persistence requests, conflicts, hit regions and input-gating tests passed");
 }

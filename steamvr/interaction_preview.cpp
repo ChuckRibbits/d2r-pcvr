@@ -30,6 +30,54 @@ static bool SavePng(const char* path,const std::vector<uint8_t>& rgba,UINT width
 int main(int argc,char** argv) {
     using namespace framevr::interaction;
     struct Cleanup {~Cleanup(){icons::Shutdown();}} cleanup;
+    if(argc>2&&!std::strcmp(argv[2],"--effects-check")) {
+        using namespace framevr;
+        if(argc>3){wchar_t path[32768]{};MultiByteToWideChar(CP_UTF8,0,argv[3],-1,path,32768);icons::Directory(path);}
+        Snapshot s;s.effects.known=true;s.companions.known=true;
+        for(int t:{4,5,3,6,7}){s.companions.relevant|=companions::Bit(t);s.companions.alive[t]=t==4?8:1;}
+        for(int state:{2,11,14,32,33,101,137})s.effects.Set(state);
+        icons::Prefetch(s);if(!icons::Wait(10000))return 100;
+        const auto pixels=PaintWristStatus(s.companions,s.effects);
+        if(pixels.size()!=wriststatus::Width*wriststatus::Height*4)return 101;
+        const int height=wriststatus::UsedHeight(s.companions,s.effects);
+        if(height!=companions::RowHeight*2)return 102;
+        for(int i=0;i<wriststatus::Width*height;++i)if(pixels[i*4+3]!=255)return 103;
+        for(size_t i=wriststatus::Width*height*4;i<pixels.size();++i)if(pixels[i])return 104;
+        // Effect-only characters, no-effect companions, and an unavailable sample.
+        auto solo=PaintWristStatus({},s.effects);if(solo.empty()||solo[3]!=255)return 105;
+        const auto old=PaintCompanions(s.companions),pets=PaintWristStatus(s.companions,{});
+        if(!std::equal(old.begin(),old.end(),pets.begin()))return 106;
+        for(auto b:PaintWristStatus({},{}))if(b)return 107;
+        effects::Status all;all.known=true;for(const auto& d:effects::Definitions)all.Set(d.state);
+        if(PaintWristStatus(s.companions,all).size()!=pixels.size())return 108;
+        // Save only used rows for easy visual review; the runtime uses the full atlas.
+        std::vector<uint8_t> crop(pixels.begin(),pixels.begin()+wriststatus::Width*height*4);
+        if(!SavePng(argv[1],crop,wriststatus::Width,height))return 109;
+        std::puts("Active effect art: pets + buffs + debuffs, no pets, unchanged companion art and transparent unused rows passed");return 0;
+    }
+    if(argc>2&&!std::strcmp(argv[2],"--companions-check")) {
+        using namespace framevr;
+        if(argc>3){wchar_t path[32768]{};MultiByteToWideChar(CP_UTF8,0,argv[3],-1,path,32768);icons::Directory(path);}
+        companions::Roster necro;necro.known=true;
+        for(int t:{4,5,3,6,7})necro.relevant|=companions::Bit(t);
+        necro.alive[4]=8;necro.alive[5]=5;necro.alive[3]=1;necro.alive[6]=12;necro.alive[7]=1;
+        Snapshot prefetch;prefetch.companions=necro;icons::Prefetch(prefetch);if(!icons::Wait(10000))return 90;
+        constexpr int rows=4;std::vector<uint8_t> gallery(companions::Width*companions::RowHeight*rows*4);
+        for(int r=0;r<rows;++r) {
+            auto state=necro;
+            if(r==1){state.alive[4]=5;state.alive[5]=0;state.alive[3]=0;state.alive[7]=0;}
+            if(r==2){state={};state.known=true;for(int t:{10,11,12,13,14,15,7}){state.relevant|=companions::Bit(t);state.alive[t]=t==10?5:t==11?5:t==12?3:1;}}
+            if(r==3){state={};state.known=true;for(int t:{2,16,17,19,20,21}){state.relevant|=companions::Bit(t);state.alive[t]=t==17?5:1;}}
+            prefetch.companions=state;icons::Prefetch(prefetch);if(!icons::Wait(10000))return 91;
+            auto pixels=PaintCompanions(state);if(pixels.size()!=companions::Width*companions::Height*4)return 92;
+            for(int i=0;i<companions::Width*companions::RowHeight;++i)if(pixels[i*4+3]!=255)return 93;
+            for(size_t i=companions::Width*companions::RowHeight*4;i<pixels.size();++i)if(pixels[i])return 94;
+            std::memcpy(gallery.data()+r*companions::Width*companions::RowHeight*4,pixels.data(),companions::Width*companions::RowHeight*4);
+        }
+        const auto blank=PaintCompanions({});for(auto b:blank)if(b)return 95;
+        if(!SavePng(argv[1],gallery,companions::Width,companions::RowHeight*rows))return 96;
+        std::puts("Companion art: Necromancer deaths, Druid, other summons, hidden unknown and transparent unused rows passed");return 0;
+    }
     if(argc>2&&!std::strcmp(argv[2],"--compass-check")) {
         using namespace framevr;
         const auto atlas=compass::Paint();if(atlas.size()!=compass::Width*compass::Height*4)return 60;

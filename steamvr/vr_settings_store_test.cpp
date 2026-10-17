@@ -263,6 +263,12 @@ int main(){
         const auto& definition=Definitions[key];
         Check(vrsettings::Read().values[key]==choice&&Int(path,definition.section,definition.key)==choice&&Int(path,L"custom",L"keep")==12345,"all comfort presets survive INI round trip and preserve unrelated settings");
     }
+    Check(vrsettings::Read().values[CompanionCounts]==1,"old profiles enable companion counts by default");
+    for(int enabled:{0,1}) {
+        model.Open(vrsettings::Read());model.Click({Kind::Change,CompanionCounts,enabled?1:-1});request=model.Click({Kind::Apply});
+        Check(vrsettings::Submit(request)&&vrsettings::Poll(name),"save companion count preference");
+        Check(vrsettings::Read().values[CompanionCounts]==enabled&&Int(path,L"interactions",L"companion_counts")==enabled&&Int(path,L"custom",L"keep")==12345,"companion preference survives reload without touching other settings");
+    }
     model.Open(vrsettings::Read());model.Click({Kind::Change,Motion,-1});request=model.Click({Kind::Apply});
     Check(DeleteFileW(name)&&vrsettings::Submit(request)&&!vrsettings::Poll(name),"missing file fails safely");
     Check(!vrsettings::Read().ready&&vrsettings::Read().result==Result::Failed,"failure status published");
