@@ -41,8 +41,14 @@ The upstream `cleanroom/tests/pools_test.cpp` is compiled as
 CTest then enables seven additional native allocator cases. The image is not
 distributed or attached to the PR. Without it these cases are not claimed run.
 
-Headset verification is pending: launch with an offline character, confirm
-`memory pools: renderer 12 -> 64 MB, entity 70 -> 280 MB` in the plugin log,
-then revisit Spider Forest and the jungle at the previously failing distances
-for longer than the reported 30-minute sessions. Capture the new session logs
-if a crash occurs. One successful launch alone does not establish crash recovery.
+On 2026-10-16, the owner confirmed that Act III loads and works in the combined
+developer preview on Steam D2R 3.3.93787 through SteamVR/OpenXR. The log confirms
+`memory pools: renderer 12 -> 64 MB, entity 70 -> 280 MB`; the recorded travel
+command selected Kurast Bazaar (level 80). The test configuration used terrain
+2 and objects 510. The headset model and character class were not separately
+reported. The owner accepted the fix provisionally and declined a long session.
+
+This verifies pool activation and basic Act III gameplay, not extended crash
+stability. If the allocation crash recurs, capture the new session logs. A future
+longer test should revisit Spider Forest and new jungle rooms at the previously
+failing distances for longer than the reported 30-minute sessions.

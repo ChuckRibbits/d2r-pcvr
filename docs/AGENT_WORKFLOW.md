@@ -242,10 +242,13 @@ Known diagnostic lessons:
   The reported Act III sessions used 2 / 510: terrain was default, objects were
   above default. 1 / 150 plus a full restart is an unverified mitigation/test,
   not a confirmed crash fix or a promised performance gain.
-- The two Act III reports matched a renderer-allocation failure. Room unloading
-  remained a hypothesis. Upstream pool-growth integration referenced missing
-  implementation files; wait for the requested source/response before claiming
-  it has been ported. Pool-related INI keys alone do not mean the code reads them.
+- The two Act III reports matched a renderer-allocation failure. Sergious later
+  supplied the missing source and clarified that there is no separate room-
+  unloading fix. PCVR now ports the guarded native pool expansion; startup logs
+  confirm renderer 12 -> 64 MB and entity 70 -> 280 MB. The owner verified basic
+  Act III gameplay in Kurast and accepted the fix provisionally without a long
+  session. Extended crash stability remains unverified. See
+  [the pool notes](ACT3_RENDERER_POOLS.md) for the evidence and future test scope.
 - Tyrael's dark pillar silhouettes disappeared with added indoor fog disabled.
   The indoor toggle is hidden, defaults off, and the owner's test INI has
   `[fog] caves=0`. Explicit saved `caves=1` is preserved by upgrades.
