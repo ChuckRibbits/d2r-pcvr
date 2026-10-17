@@ -108,6 +108,8 @@ add_executable(melee-contact-test melee_contact_test.cpp)
 add_executable(attack-speed-test attack_speed_test.cpp)
 add_executable(world-coordinates-test world_coordinates_test.cpp)
 add_executable(bow-flight-test bow_flight_test.cpp)
+add_executable(quiver-test quiver_test.cpp)
+add_test(NAME quiver-test COMMAND quiver-test) # Check() exits on failure; needs no -UNDEBUG
 target_sources(d2rl-pcvr PRIVATE ${ROOT}/vr/spells.cpp)
 add_executable(spell-cast-test spell_cast_test.cpp)
 add_executable(spell-aim-assist-test spell_aim_assist_test.cpp)
