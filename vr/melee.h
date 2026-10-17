@@ -22,6 +22,21 @@ void ConfigureAttackRating(bool native); // [gameplay] melee_rules=1 (Classic)
 // from its session/id rather than passing a native pointer across threads.
 bool LocalServer(uintptr_t& game,uintptr_t& player);
 uintptr_t ServerUnit(uintptr_t game,int type,uint32_t id); // owning game thread only
+// Perfect parry: native hit recovery for this monster on a LATER game update,
+// never inside its own attack. Thread-safe. False when unavailable/not queued.
+// durability: the shield's before the parried hit, refunded; -2 = read it now.
+bool QueueParry(uint32_t monster,int durability=-2);
+// When this monster's current attack began (GetTickCount64), from the native
+// mode setter on the server; 0 when not seen in the last 3 s. Thread-safe.
+uint64_t AttackStart(uint32_t monster);
+// The block sound at the hero ([gameplay] block_sound). Thread-safe.
+void QueueBlockSound();
+// [gameplay] block_sound: sounds.txt row played at the hero on every physical
+// block (default 398 block_weapon_1); 0 is silent. A change plays it once.
+void ConfigureBlockSound(int sound);
+// [gameplay] parry_sound: sounds.txt row played at the hero on a parry; 0 is
+// silent. Changing it while in game plays the new sound once (audition).
+void ConfigureParrySound(int sound);
 // Owning game thread only. The live, non-hostile hireling nearest a thrown
 // bottle's landing point (world metres, with the rendered player and scale of
 // that frame); true when it landed at the hireling's feet. distance<0: none.

@@ -652,7 +652,7 @@ Smite against that creature. A stationary shield cannot bash; one continuous
 stroke requests at most one bash, and a deliberate reversal/settle rearms it.
 Native reach, walls, resources, animation/cadence, damage, stun and knockback
 remain authoritative. Left-hand haptics acknowledge native acceptance, not proof
-of positive damage. Physical blocking/parrying is still pending.
+of positive damage. Physical blocking and parrying are described under melee rules below.
 
 Contact casting activates only when the native Smite implementation is identified
 from the audited attack/throw dispatch table, an exact bounded entry in the game
@@ -771,8 +771,8 @@ weapon category determines length/radius on the final attachment; native monster
 footprint and legacy artwork height determine its body capsule. Generic class
 support is implemented, but specific weapon axes, small creatures, bosses and
 sloped ground need headset checks. Basic contacts use the main hand; the candidate
-adds selected Smite shield contacts. Other off-hand strikes, physical shield blocks
-and parries remain future work.
+adds selected Smite shield contacts. Physical shield blocks and parries are below;
+other off-hand strikes remain future work.
 
 Only a confirmed physical contact overrides legacy melee grid reach. Native
 line-of-sight, hostile relationship, creature life state, damage, elemental
@@ -816,6 +816,49 @@ reports the cycle inputs (`Frame melee attack speed:`) and refused contacts
 (`too_soon`, `extra_targets` in `Frame melee:`). `[debug] melee_trace=1` adds one
 `Frame melee trace:` line per native attack and per refused stroke, with the
 time since the previous landed hit; landed hits are never closer than `cycle`.
+
+### Physical shield blocking, parry and riposte (Unleashed)
+
+With **Unleashed** melee rules and a shield on, blocking is decided by where the
+shield is held, not by the block-chance roll. A monster still has to pass its
+native to-hit roll; then its native block roll (44B930) takes the physical verdict
+instead of a random one. Classic keeps the native roll.
+
+- **Block**: the shield hand up in front of the chest (measured from the head in its
+  turn: forward -0.20 to 0.85 m, up -0.62 to 0.30 m, out to 0.65 m on the shield's
+  side or 0.50 m across; held guards get 5 cm more), facing the attacker within
+  60 degrees of where the headset looks. Walking or running (PlrMode WL/RN/TW)
+  drops the guard. Every block plays `[gameplay] block_sound` (default 398,
+  block_weapon_1) and taps the left controller.
+- **Parry**: a diagonal shield swing across the view, lower right to upper left for
+  a left-hand shield (at least 15 cm within 120 ms, within ~35 degrees of the
+  diagonal), after the attacker's attack began (its mode change, 34E5F0) and at
+  most `[gameplay] parry_ms` (VR Settings > Combat, default 400 ms, 0 = off) before
+  the hit, from a melee attacker within 3 m. One parry per swing. The attacker is
+  put into native hit recovery (445E60) on a later game update, the shield's wear
+  from that hit is refunded, and `parry_sound` plays (default 236, the Archon Plate
+  equip sound).
+- **Riposte**: the next physical weapon hit on the parried monster within
+  `riposte_ms` (1500) deals `riposte_bonus` % more damage (50) and plays a built-in
+  impact sound (`steamvr/assets/riposte-impact.wav`; `riposte_sound_file` replaces
+  it with a WAV next to the ini). Its volume follows the game's own Master x Combat
+  sliders (re-read from Settings.json when the game saves it), times
+  `riposte_volume` (100).
+- **Shield up, swing light**: physical weapon hits with the guard raised deal
+  `guard_swing_damage` % (50) of their damage, `guard_swing_step` % (25) less on each
+  further hit while it stays raised, down to nothing. Lowering the shield restores
+  full swings; a riposte overrides it.
+
+Damage is scaled at the native damage application's final life write (44CE80,
+whose `Set(defender, life, ...)` returns to 44D098), so resistances, criticals and
+leech have already run; only the local player's physical swings are scaled - not
+spells, missiles or thorns. `[gameplay] enemies_always_hit=1` is a test aid that
+makes every enemy to-hit roll succeed so each attack reaches the shield.
+`[debug] guard_trace=1` logs every judged hit (`Frame guard trace:`) with the hand
+position, cover angle, swing and attack timing. Hard swings (a riposte straight
+after a parry) are tracked up to 20 m/s and 100 rad/s; `Frame melee resets:` and
+`Frame melee stale:` report any swing the tracker discarded, and
+`Frame riposte: window expired unused` any parry whose riposte never landed.
 
 Physical **basic-arrow** release queues one direct native basic attack on the authoritative
 game thread. The attack creates its normal damage-bearing missile and handles

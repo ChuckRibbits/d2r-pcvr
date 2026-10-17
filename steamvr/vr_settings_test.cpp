@@ -88,6 +88,8 @@ int main(){
         thrust.Click(hit);Check(thrust.Get()[MeleeThrustSpeed]==2.25f,"thrust speed adjusts in quarter steps");
         const auto request=thrust.Click({Kind::Apply});
         Check(request.changed==(ChangeMask{1}<<MeleeThrustSpeed),"thrust edit does not change swing speed or combat rules");
+        Check(RowCount(Page::Combat)==4&&RowKey(Page::Combat,3)==ParryWindow&&s.values[ParryWindow]==400,"parry window is the fourth Combat row, 400 ms by default");
+        Check(Normalize(ParryWindow,-5)==0&&Normalize(ParryWindow,999)==400&&Normalize(ParryWindow,NAN)==400,"parry window: 0 is Off, bounded, invalid restores default");
         Check(Normalize(MeleeThrustSpeed,NAN)==2&&Normalize(MeleeThrustSpeed,0)==.75f&&Normalize(MeleeThrustSpeed,99)==10,"thrust speed has finite usable bounds");
     }
     Check(s.values[MenuDistance]==1&&s.values[TooltipTiming]==0,"comfortable Medium distance and Instant hover defaults");

@@ -62,6 +62,14 @@ Run `interaction-preview.exe <output.png> --hands-check` to preview both hand
 layouts. Runtime hover masks use the same five-sector `WheelCell` geometry as
 the laser hit testing.
 
+## Riposte sound
+
+`riposte-impact.wav` (16-bit PCM, 48 kHz stereo, 1.08 s) is the impact played when
+a riposte lands. It is "Combat Impact" by Universfield on Pixabay (item 352458),
+supplied by the contributor (ChuckRibbits) as an MP3 and converted to WAV without
+other changes. It is embedded by `interaction_assets.rc` and played from memory at
+the game's Master x Combat volume; `[gameplay] riposte_sound_file` replaces it.
+
 ## Visor blood
 
 `blood-splatters.png` packs eight transparent blood-splatter images supplied by

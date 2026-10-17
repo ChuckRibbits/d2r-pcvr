@@ -14,6 +14,16 @@ int main() {
     assert(!PlayerContact(42,0,42,0)); // PvP
     assert(!PlayerContact(42,3,42,1)); // projectile must resolve its native owner
     assert(!PlayerContact(42,0,42,2)); // scenery is not a damage target
+    assert(IncomingContact(42,1,0,42));
+    assert(IncomingContact(0,1,0,0));
+    assert(!IncomingContact(42,1,0,41)); // another player is struck
+    assert(!IncomingContact(42,0,0,42)); // PvP is not a guard
+    assert(!IncomingContact(UINT32_MAX,1,0,UINT32_MAX));
+    assert(!IncomingContact(42,3,0,42)); // missiles resolve their native owner first
+    for(int rate=1;rate<=75;++rate) {
+        assert(AdvanceSeed(GuardRoll(true)).low%100<uint32_t(rate));
+        assert(!(AdvanceSeed(GuardRoll(false)).low%100<uint32_t(rate)));
+    }
     // The native stream after the intercepted roll must be identical, so the
     // following damage/proc roll is unchanged. Exercise carries and overflow.
     Seed seed{0xffffffffu,0xffffffffu};

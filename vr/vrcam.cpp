@@ -828,6 +828,23 @@ void LoadSettings() {
     const bool classicMelee=IniF(L"gameplay",L"melee_rules",0)>.5f;
     melee::ConfigureAttackSpeed(classicMelee,IniB(L"debug",L"melee_trace",false));
     melee::ConfigureAttackRating(classicMelee);
+    // Unleashed only: a raised shield blocks instead of the block stat.
+    // [gameplay] parry_ms (VR Settings > Combat), 0 disables perfect parry.
+    melee::ConfigureParrySound((int)IniF(L"gameplay",L"parry_sound",236));
+    melee::ConfigureBlockSound((int)IniF(L"gameplay",L"block_sound",398));
+    combat::ConfigureEnemiesAlwaysHit(IniB(L"gameplay",L"enemies_always_hit",false));
+    {   // Riposte: a parry's reward. Its sound is built in; riposte_sound_file
+        // (a WAV, next to this ini unless a full path) replaces it.
+        wchar_t file[MAX_PATH];GetPrivateProfileStringW(L"gameplay",L"riposte_sound_file",L"",file,MAX_PATH,g_iniPath);
+        std::wstring path=file;
+        if(!path.empty()&&path.find(L':')==std::wstring::npos){std::wstring dir=g_iniPath;dir.resize(dir.size()-wcslen(L"d2r_vr.ini"));path=dir+path;}
+        combat::ConfigureRiposte(std::clamp(IniF(L"gameplay",L"riposte_bonus",50),0.f,400.f)/100.f,
+                                 (uint32_t)std::clamp(IniF(L"gameplay",L"riposte_ms",1500),0.f,10000.f),
+                                 std::clamp(IniF(L"gameplay",L"guard_swing_damage",50),0.f,100.f)/100.f,
+                                 std::clamp(IniF(L"gameplay",L"guard_swing_step",25),0.f,100.f)/100.f,
+                                 std::clamp(IniF(L"gameplay",L"riposte_volume",100),0.f,400.f)/100.f,path.c_str());
+    }
+    combat::ConfigureGuard(!classicMelee,(uint32_t)std::clamp(IniF(L"gameplay",L"parry_ms",400),0.f,400.f),IniB(L"debug",L"guard_trace",false));
 #endif
 #ifdef D2RVR_NATIVE_OPENXR
     framevr::foveation::Configure(IniB(L"render",L"fixed_foveation",true),IniF(L"render",L"foveation_inner",0.55f),IniF(L"render",L"gaze_foveation_inner",0.35f));
@@ -6005,6 +6022,23 @@ void ShieldContactTick() {
     sample.blade={center-axis*.20f,center+axis*.20f,.15f};
     melee::Submit(sample);
 }
+// Unleashed physical guard: independent of Smite. Not eligible (first person,
+// menus, no shield) keeps the native block roll; eligible but lowered = hit.
+void ShieldGuardTick() {
+    skel::MeleeWeaponPose pose;
+    const bool eligible=g_enabled.load()&&g_inWorld.load()&&!ThirdPerson()&&!Overhead()&&g_eyeOk.load()&&
+        !gamestate::MenuOpen()&&gamestate::LeftShield();
+    const bool posed=eligible&&skel::ShieldWeapon(pose)&&pose.worldEpoch==g_meleeTurnEpoch.load();
+    const float eye=UserEyeHeightM(),upm=std::max(1.f,ViewHeight())/eye;
+    // The shield hand from the head, in the view's turn. D2R only equips a shield
+    // in the left hand; the guard takes the side so a right-hand shield would mirror.
+    const D2RVR_Shared* sh=g_shared;float hand[3]{};
+    const bool handOk=sh&&sh->version==D2RVR_SHARED_VERSION&&sh->headValid&&(sh->handsValid&2u);
+    if(handOk)memcpy(hand,sh->leftHand,sizeof hand);
+    // the way the guard faces: where the headset looks, on the ground (the hand's own frame)
+    AcquireSRWLockShared(&g_stickLock);const StickFrame view=g_stickFrame;ReleaseSRWLockShared(&g_stickLock);
+    combat::PublishGuard(gamestate::LocalPlayer(),eligible,posed&&view.valid,view.camF,upm,hand,handOk,true);
+}
 #endif
 
 void PushArms() {
@@ -8177,6 +8211,7 @@ DWORD WINAPI UpdateThread(void*) {
 #ifdef D2RVR_NATIVE_OPENXR
         MeleeContactTick();
         ShieldContactTick();
+        ShieldGuardTick();
         BowTick();
 #endif
 #if D2RVR_FIRST_PERSON

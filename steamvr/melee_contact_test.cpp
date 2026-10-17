@@ -298,8 +298,14 @@ int main(){
             }
             Check(powered>16,"strong swings survive input and contact gates after area loads at every headset rate");
             Check(input.Selection()==(area?2:-1),"free swings preserve the selected trigger skill across area loads");
-            // A real tracking jump must still drop this frame's geometry.
-            in.hand[0].q=math::Multiply(math::Yaw(65*float(dt)),in.hand[0].q);
+            // The hardest real swings (a riposte straight after a parry) turn the
+            // wrist faster than the old 60 rad/s limit: 90 rad/s must survive...
+            {   gameplay::Engine fastIn;Engine fastContact;bool alive=true;auto q=in.hand[0].q;
+                for(int i=0;i<12&&alive;++i){q=math::Multiply(math::Yaw(90*float(dt)),q);auto f=in;f.time+=dt*(i+1);f.hand[0].q=q;
+                    const auto out=fastIn.Step(f);if(i>2&&!out.meleeContact)alive=false;}
+                Check(alive,"a 90 rad/s riposte swing is not cancelled as a tracking jump"); }
+            // ...but a real tracking jump (over 100 rad/s) must still drop this frame's geometry.
+            in.hand[0].q=math::Multiply(math::Yaw(std::min(3.1f,105*float(dt))),in.hand[0].q);
             Check(!step(),"angular tracking jump cannot damage through the full pipeline");
         }
     }

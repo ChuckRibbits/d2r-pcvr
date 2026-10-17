@@ -470,6 +470,7 @@ void Publish() {
     g_state->counter++;
 }
 
+std::atomic<int32_t> g_leftDurability{-1}; // active-set left hand; -1 none/indestructible (UI thread)
 std::atomic<uint64_t> g_player{0};   // the local player's handle, as the SDK gives it (vrcam tries it as the hero unit)
 void CalibrateObjectLights();   // the Objects table's light fields, below
 extern int g_objLitOffset;
@@ -516,6 +517,7 @@ void __cdecl ReadItems(const PluginContext* ctx, void* token) noexcept {
     int32_t ownLoc[2] = {-1, -1}; // the items' own body location
     uint32_t id[4] = {};          // runtime ids at 4, 5, 11, 12
     std::string other[2];
+    int32_t leftDurability = -1;
     for (int i = 0; i < 4; ++i) {
         const int loc = i < 2 ? 4 + i : 9 + i;
         ItemHandle item = InvalidItemHandle;
@@ -526,7 +528,9 @@ void __cdecl ReadItems(const PluginContext* ctx, void* token) noexcept {
         id[i] = info.runtimeId ? info.runtimeId : info.code;
         if (i < 2) { code[i] = CodeText(info.code); ownLoc[i] = info.bodyLocation; }
         else other[i - 2] = CodeText(info.code);
+        if (i == 1) leftDurability = info.maximumDurability > 0 ? info.durability : -1;
     }
+    g_leftDurability.store(leftDurability);
     static uint32_t lastHands[2] = {}, lastOther[2] = {};
     static bool seen = false;
     static PlayerHandle lastPlayer=InvalidPlayerHandle;
@@ -828,6 +832,25 @@ int AttackWsm() { return g_attackWsm.load(); }
 bool MenuOpen() { return g_menu.load() != 0; }
 uint32_t MenuEpoch() { return g_menuEpoch.load(); }
 uint64_t LocalPlayer() { return g_player.load(); }
+int32_t LeftDurability() { return g_leftDurability.load(); }
+// D2RLoader game-thread callback only: raise the active-set left-hand item's
+// durability back to `value` through the SDK's validated edit. Never lowers it,
+// never exceeds its maximum, ignores indestructible items.
+bool RestoreLeftDurability(const PluginContext* ctx, int32_t value) {
+    const PlayerHandle player = g_player.load();
+    ItemHandle item = InvalidItemHandle;
+    if (!ctx || !g_inventory || !g_items || player == InvalidPlayerHandle || value <= 0 ||
+        g_inventory->getEquippedItem(ctx, player, 5, &item) != Inventory::Result::Success || item == InvalidItemHandle) return false;
+    Items::ItemInfo info{};
+    info.structSize = sizeof info;
+    if (g_items->getItemInfo(ctx, item, &info) != Items::Result::Success || info.maximumDurability <= 0 ||
+        info.durability >= value || value > info.maximumDurability) return false;
+    Items::ItemEdit edit{};
+    edit.structSize = sizeof edit;
+    edit.fields = Items::EditFieldBit(Items::EditField::Durability);
+    edit.durability = static_cast<uint32_t>(value);
+    return g_items->editItem(ctx, player, item, &edit) == Items::Result::Success;
+}
 uint32_t DataBank() {return uint32_t(g_bank);} // UI-thread-only table bank
 void MenuMap(bool wanted) {g_menuMapAt.store(wanted?GetTickCount64():0);}
 // An object's light in a mode: its radius (Objects.txt Lit, 0 = none) and colour 0..1.
