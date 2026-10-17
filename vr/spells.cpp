@@ -192,7 +192,7 @@ bool FinishVisual(uintptr_t client,const Flight& flight) {
     if(!ready.load())return false;
     uintptr_t path=0;
     if(!Read(client+0x38,path)||!path)return false;
-    const auto point=GridPoint(flight.shot,flight.Point())*flight.shot.unitsPerMetre;
+    const auto point=GridPoint(flight.shot,flight.ImpactPoint())*flight.shot.unitsPerMetre;
     const int x=int(point.x*.5f),y=int(point.z*.5f);
     auto room=reinterpret_cast<uintptr_t(*)(uintptr_t)>(d2rsig::Addr(bowvr::native::RoomRva))(client);
     room=reinterpret_cast<uintptr_t(*)(uintptr_t,int,int)>(d2rsig::Addr(bowvr::native::RoomPointRva))(room,x,y);

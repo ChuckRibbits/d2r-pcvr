@@ -190,6 +190,12 @@ struct Flight {
         updatedAt=now;
     }
     Vec Point() const {return NativePath()?nativePoint:PointAt(distance);}
+    // Retain the actual swept contact. On the first tick the tip can already
+    // reach a surface before the tail has moved, so distance alone loses it.
+    Vec contact{};
+    bool contacted=false;
+    void Contact(Vec p){contact=p;contacted=true;}
+    Vec ImpactPoint() const {return contacted?contact:NativePath()?nativePoint:TipAt(distance);}
     std::array<uint32_t,64> hit{};
     size_t hits=0;
     bool Seen(uint32_t id) const {return std::find(hit.begin(),hit.begin()+hits,id)!=hit.begin()+hits;}

@@ -22,6 +22,8 @@
 #include "../shared/d2r_vr_state.h"
 #include "../steamvr/transport.h"
 #include "../steamvr/callback_ticket.h"
+#include "../steamvr/client_retirement.h"
+#include "../steamvr/quiver_impact.h"
 #include "../steamvr/spell_aim_assist.h"
 namespace gamestate {uint64_t LocalPlayer();bool MenuOpen();uint32_t HandsKey();uint32_t WeaponSet();uint32_t WeaponType();}
 namespace bowvr {
@@ -77,6 +79,9 @@ PreviewRenderPose previewRenderPose;
 std::atomic<bool> previewClient{false};
 std::atomic<uint64_t> previewReadyAt{0};
 PreviewRecovery previewRecovery;
+ClientRetirements clientRetirements; // mutex; UI requests, native client hooks retire
+ImpactVisuals impactVisuals; // visual placement only; native effects own lifetime
+std::atomic<bool> impactClients{false};
 Gate current{};uintptr_t clientHero=0;
 Once once;
 Once crossbowOnce;
@@ -114,6 +119,8 @@ thread_local int creatingVisual=-1;
 thread_local uint64_t visualSession=0,visualSequence=0;
 thread_local uint64_t previewCreatingSession=0;
 thread_local uint32_t previewCreatingMissile=0;
+thread_local const Flight* finishingImpact=nullptr;
+thread_local uint64_t creatingImpact=0;
 int MissileSound(int sound,uintptr_t unit,int a,int b,bool c) {
     // The nocked model is not a fired projectile. Suppress only its creation
     // scope's travel sound; genuine releases and other game audio pass through.
@@ -150,13 +157,14 @@ void Store(size_t slot,const Arrow& a) {
     }
 }
 void Recount() { // mutex held
-    unsigned r=preview.binding.Bound()?1:0,s=0,c=0;
+    impactClients=impactVisuals.Pending();
+    unsigned r=(preview.binding.Bound()?1:0)+(impactClients.load()?1:0),s=0,c=0;
     auto size=usedSlots.load(std::memory_order_relaxed);
     while(size&&!arrows[size-1].flight.alive&&!arrows[size-1].client&&!arrows[size-1].creating&&!arrows[size-1].reserved)--size;
     usedSlots.store(size,std::memory_order_relaxed);
     for(const auto& a:UsedArrows()){if(a.visualBinding.Bound())++r;if(a.flight.alive)++s;if(a.client)++c;}
     renderCount=r;serverCount=s;clientCount=c;
-    previewClient=preview.client!=0;
+    previewClient=preview.client!=0||clientRetirements.Pending();
 }
 int End(size_t slot,Arrow& a,uintptr_t game,uintptr_t unit) {
     a.flight.alive=false;a.flight.updatedAt=GetTickCount64();Store(slot,a);
@@ -301,10 +309,12 @@ int Collision(uintptr_t game,uintptr_t unit) {
         ++contacts;framevr::MeleeImpact();
         if(result==2) {
             a.flight.distance=advance(t.fraction);a.flight.alive=false;
+            a.flight.Contact(from+(to-from)*t.fraction);
             a.flight.updatedAt=GetTickCount64();Store(slot,a);return 2;
         }
     }
     a.flight.distance=advance(stop);a.flight.updatedAt=GetTickCount64();
+    if(stop<1)a.flight.Contact(from+(to-from)*stop);
     if(!MoveSpell(a,from+(to-from)*std::max(0.f,stop-(stop<1?.0001f:0.f))))return End(slot,a,game,unit);
     if(stop<1){++walls;return End(slot,a,game,unit);}
     Store(slot,a);return 1;
@@ -450,28 +460,34 @@ void PresentPreview(uintptr_t hero,uint64_t session) {
     {
         std::lock_guard lock(mutex);
         const auto now=GetTickCount64();ObservePreview(now);
-        // A quiver change swaps the held model at once: retire the old client
-        // now, create the new missile on the next UI pass.
+        // ClientTick owns destruction. Wait for it to finish before creating
+        // the latest selection; quick changes coalesce into that one model.
+        if(clientRetirements.Pending())return;
         swap=preview.client&&preview.missile!=MissileId(preview.pose);
         const bool recreate=!preview.client&&preview.recreate;
         if(enabled.load()) {
             if(!hero||!session||preview.pose.session!=session||(!swap&&!recreate&&!previewRecovery.Due(preview.client!=0,now)))return;
             recover=preview.client!=0&&!swap;
         } else if(!preview.client)return;
+        if(!preview.client&&(!preview.active||!preview.visible||!Allowed(preview.pose,current,now)))return;
         snapshot=preview;lastRendered=previewReadyAt.load();
         if(!swap&&!recreate)previewRecovery.Attempt(now);
-        if(snapshot.client){ClearPreviewClient();Recount();}
+        if(snapshot.client) {
+            clientRetirements.Request(snapshot.client,snapshot.clientId,snapshot.missile);
+            previewReadyAt=0;
+        }
         preview.recreate=swap&&enabled.load();
+        Recount();
     }
     if(snapshot.client) {
-        uint32_t header[3]{};
-        const bool owned=Read(snapshot.client,header)&&header[0]==3&&header[1]==0&&header[2]==snapshot.clientId;
-        if(owned)originalClientKill(snapshot.client);
+        char request[160];snprintf(request,sizeof request,"Frame bow preview: retire queued missile=%u id=%u reason=%s",
+            snapshot.missile,snapshot.clientId,swap?"selection":recover?"recovery":"disabled");
+        framevr::logging::Write(request);
         if(recover) {
             ++previewRecovered;
             char line[224];const auto now=GetTickCount64();
-            snprintf(line,sizeof line,"Frame bow preview recovery: client_valid=%d mesh_bound=%d rendered_before=%d last_render_age_ms=%llu",
-                int(owned),int(snapshot.binding.Bound()),int(lastRendered!=0),static_cast<unsigned long long>(lastRendered&&now>=lastRendered?now-lastRendered:0));
+            snprintf(line,sizeof line,"Frame bow preview recovery: retirement queued mesh_bound=%d rendered_before=%d last_render_age_ms=%llu",
+                int(snapshot.binding.Bound()),int(lastRendered!=0),static_cast<unsigned long long>(lastRendered&&now>=lastRendered?now-lastRendered:0));
             framevr::logging::Write(line);
         }
         // Let native cleanup finish; the next attempt creates at the current
@@ -487,20 +503,25 @@ void PresentPreview(uintptr_t hero,uint64_t session) {
     previewCreatingSession=saved;previewCreatingMissile=savedMissile;
     uint32_t header[3]{};
     const bool readable=client&&Read(client,header);
-    bool orphan=false;
+    bool orphan=false,kept=false;
     {
         std::lock_guard lock(mutex);
         const bool wanted=current.session==session&&preview.active&&(!preview.client||preview.client==client);
         const auto use=CreatedClient(readable,header,missile,wanted);
         if(use==ClientUse::Keep) {
             preview.client=client;preview.clientId=header[2];preview.missile=missile;preview.recreate=false;++previewCreated;
+            kept=true;
         } else {
             orphan=use==ClientUse::Destroy;++previewRefused;
             if(client&&preview.client==client)ClearPreviewClient();
         }
+        if(orphan)clientRetirements.Request(client,header[2],header[1]);
         Recount();
     }
-    if(orphan)originalClientKill(client);
+    if(kept) {
+        char line[144];snprintf(line,sizeof line,"Frame bow preview: created missile=%u id=%u",header[1],header[2]);
+        framevr::logging::Write(line);
+    }
 }
 void __cdecl Present(const D2RL::PluginContext*,void* token) noexcept {
     uintptr_t hero=0;uint64_t session=0;
@@ -542,8 +563,9 @@ void __cdecl Present(const D2RL::PluginContext*,void* token) noexcept {
                 else {++refused;orphan=CreatedClient(readable,header,0,false)==ClientUse::Destroy;}
             } else orphan=CreatedClient(readable,header,0,false)==ClientUse::Destroy;
         }
-        if(orphan)originalClientKill(client);
-        else if(validClient&&a.flight.shot.kind==Kind::Spell&&a.flight.shot.castSound>0&&
+        if(orphan) {
+            std::lock_guard lock(mutex);clientRetirements.Request(client,header[2],header[1]);Recount();
+        } else if(validClient&&a.flight.shot.kind==Kind::Spell&&a.flight.shot.castSound>0&&
                 castCue.Take(session,a.flight.shot.hand,a.flight.shot.sequence,a.flight.shot.at,GetTickCount64())) {
             // Direct casting deliberately skips the character animation that
             // normally plays stsound. Restore that cue once at native volume,
@@ -555,14 +577,20 @@ void __cdecl Present(const D2RL::PluginContext*,void* token) noexcept {
 void ClientTick(uintptr_t unit,float dt) {
     if(!clientCount.load(std::memory_order_relaxed)&&!previewClient.load(std::memory_order_relaxed)){originalClientTick(unit,dt);return;}
     uint32_t header[3]{};size_t slot=arrows.size();bool alive=false;
-    bool held=false,spellEnd=false;Flight ended;
+    bool held=false,spellEnd=false,retiring=false;Flight ended;uint64_t retirement=0;
     if(Read(unit,header)&&header[0]==3) {
         std::lock_guard lock(mutex);
-        if(preview.client==unit&&preview.clientId==header[2]) {
+        if(preview.client==unit&&preview.clientId==header[2]&&preview.missile==header[1]) {
             held=true;alive=preview.pose.session==current.session&&enabled.load();
-            if(!alive){ClearPreviewClient();Recount();}
+            if(!alive)clientRetirements.Request(unit,header[2],header[1]);
         }
-        for(size_t i=0;i<usedSlots.load(std::memory_order_relaxed);++i)if(arrows[i].client==unit&&arrows[i].clientId==header[2]) {
+        retiring=clientRetirements.Contains(unit,header[2],header[1]);
+        retirement=clientRetirements.Begin(unit,header);
+        if(retirement) {
+            if(preview.client==unit)ClearPreviewClient();
+            Recount();
+        }
+        for(size_t i=0;!retirement&&i<usedSlots.load(std::memory_order_relaxed);++i)if(arrows[i].client==unit&&arrows[i].clientId==header[2]) {
             slot=i;alive=arrows[i].flight.alive&&arrows[i].flight.shot.session==current.session&&enabled.load();
             spellEnd=!alive&&(arrows[i].flight.shot.kind==Kind::Spell||SkillArrow(arrows[i].flight.shot))&&
                 arrows[i].flight.shot.session==current.session&&enabled.load();
@@ -570,21 +598,43 @@ void ClientTick(uintptr_t unit,float dt) {
             if(!alive){arrows[i].client=0;arrows[i].visualBinding.Clear();Recount();}break;
         }
     }
-    if(held){if(!alive)originalClientKill(unit);return;}
+    if(retirement) {
+        originalClientKill(unit); // the same native phase that retires fired arrows
+        {std::lock_guard lock(mutex);clientRetirements.Finish(retirement);Recount();}
+        char line[144];snprintf(line,sizeof line,"Frame bow preview: client-tick retirement finished missile=%u id=%u",header[1],header[2]);
+        framevr::logging::Write(line);
+        return;
+    }
+    if(held||retiring)return;
     if(slot==arrows.size()){originalClientTick(unit,dt);return;}
-    if(!alive&&(!spellEnd||!spellvr::FinishVisual(unit,ended)))originalClientKill(unit);
+    if(!alive) {
+        const auto saved=finishingImpact;
+        finishingImpact=spellEnd&&SkillArrow(ended.shot)?&ended:nullptr;
+        const bool finished=spellEnd&&spellvr::FinishVisual(unit,ended);
+        finishingImpact=saved;
+        if(!finished)originalClientKill(unit);
+    }
     // Server owns lifetime/collision; the HD transform owns full 3D movement.
     // Running native client prediction here would resurrect flat-grid hits.
 }
 void ClientKill(uintptr_t unit) {
-    if(!clientCount.load(std::memory_order_relaxed)&&!previewClient.load(std::memory_order_relaxed)){originalClientKill(unit);return;}
+    if(!clientCount.load(std::memory_order_relaxed)&&!previewClient.load(std::memory_order_relaxed)&&
+       !impactClients.load(std::memory_order_relaxed)){originalClientKill(unit);return;}
+    uint64_t retirement=0;
     {
         std::lock_guard lock(mutex);
-        if(preview.client==unit)ClearPreviewClient();
+        if(preview.client==unit) {
+            clientRetirements.Request(unit,preview.clientId,preview.missile);
+            ClearPreviewClient();
+        }
+        uint32_t header[3]{};
+        if(Read(unit,header))retirement=clientRetirements.Begin(unit,header);
         for(auto& a:UsedArrows())if(a.client==unit){a.client=0;a.visualBinding.Clear();}
+        impactVisuals.Forget(unit);
         Recount();
     }
     originalClientKill(unit);
+    if(retirement){std::lock_guard lock(mutex);clientRetirements.Finish(retirement);Recount();}
 }
 uintptr_t Transform(uintptr_t out,uint32_t entity,uintptr_t component) {
     const auto result=originalTransform(out,entity,component);
@@ -597,7 +647,8 @@ uintptr_t Transform(uintptr_t out,uint32_t entity,uintptr_t component) {
         std::lock_guard lock(mutex);
         if(preview.binding.Matches(entity)&&preview.pose.session==current.session) {
             Shot pose=preview.pose;bool visible=false;
-            const bool active=enabled.load()&&previewRenderPose.Read(current.session,at,GetTickCount64(),pose,visible);
+            const bool active=enabled.load()&&!clientRetirements.Contains(preview.client,preview.clientId,preview.missile)&&
+                previewRenderPose.Read(current.session,at,GetTickCount64(),pose,visible);
             if(preview.renderAt!=at) {
                 preview.previous=preview.rendered;
                 preview.renderAt=at;
@@ -622,6 +673,10 @@ uintptr_t Transform(uintptr_t out,uint32_t entity,uintptr_t component) {
                 a.renderAt=at;
             }
             matrix=a.rendered;previous=a.previous;found=true;break;
+        }
+        if(!found&&enabled.load()&&impactVisuals.Pending()&&Read(out,matrix)&&
+           impactVisuals.Matrix(entity,current.session,matrix.data())) {
+            previous=matrix;found=true;
         }
     }
     if(!found)return result;
@@ -674,7 +729,7 @@ void Update(const Gate& gate,uintptr_t hero) {
         std::lock_guard lock(mutex);
         if(current.session!=gate.session) {
             for(auto& a:UsedArrows())a={};
-            usedSlots=0;preview={};previewReadyAt=0;previewRecovery={};
+            usedSlots=0;preview={};previewReadyAt=0;previewRecovery={};clientRetirements.Reset();impactVisuals.Reset();
             pendingCount=0;gameCallback.Cancel();uiCallback.Cancel();Recount();
         }
         current=gate;clientHero=hero;
@@ -682,11 +737,12 @@ void Update(const Gate& gate,uintptr_t hero) {
         if(held)preview.pose=pose;
         if(!held||!visible)previewReadyAt=0;
         const auto now=GetTickCount64();
+        if(impactVisuals.Pending()){impactVisuals.Expire(gate.session,now);Recount();}
         ObservePreview(now);
         if(gameCallback.Expired(now,500)){gameCallback.Cancel();pendingCount=0;++gameRecovered;}
         if(uiCallback.Expired(now,500)){uiCallback.Cancel();++uiRecovered;}
-        const bool needsPreview=(!enabled.load()&&preview.client)||previewRecovery.Due(preview.client!=0,now)||
-            (enabled.load()&&preview.active&&(preview.recreate||(preview.client&&preview.missile!=MissileId(preview.pose))));
+        const bool needsPreview=!clientRetirements.Pending()&&((!enabled.load()&&preview.client)||previewRecovery.Due(preview.client!=0,now)||
+            (enabled.load()&&preview.active&&(preview.recreate||(preview.client&&preview.missile!=MissileId(preview.pose)))));
         bool needsVisual=false;
         if(ready.load())for(const auto& a:UsedArrows())if(a.flight.alive&&!a.visualDone){needsVisual=true;break;}
         if(ready.load()&&(needsPreview||needsVisual)) {
@@ -851,11 +907,36 @@ int SpellParams(uintptr_t game,uintptr_t params,std::array<uint8_t,0x98>& adjust
     Param(adjusted,0x24,x);Param(adjusted,0x28,y);Param(adjusted,0x2c,tx);Param(adjusted,0x30,ty);
     return 1; // preserve native init selector/ordinal, count, level and owner
 }
+uintptr_t ImpactVisual(uintptr_t params,int flags,uintptr_t(*create)(uintptr_t,int)) {
+    const auto saved=creatingImpact;creatingImpact=0;
+    uint64_t ticket=0;int missile=-1;
+    if(finishingImpact&&enabled.load()&&Read(params+0x20,missile)) {
+        std::lock_guard lock(mutex);
+        if(finishingImpact->shot.session==current.session)
+            ticket=impactVisuals.Reserve(*finishingImpact,missile,GetTickCount64());
+        Recount();
+    }
+    creatingImpact=ticket;
+    const auto unit=create(params,flags);
+    if(ticket) {
+        uint32_t h[3]{};Read(unit,h);Vec grid{};const bool positioned=unit&&Position(unit,grid);
+        {std::lock_guard lock(mutex);impactVisuals.Complete(ticket,unit,h,positioned?&grid:nullptr);Recount();}
+        char line[176];snprintf(line,sizeof line,"Frame quiver impact: source=%d effect=%d contact=%.3f,%.3f,%.3f client=%s",
+            finishingImpact->shot.missile,missile,finishingImpact->ImpactPoint().x,finishingImpact->ImpactPoint().y,
+            finishingImpact->ImpactPoint().z,unit?"yes":"no");
+        framevr::logging::Write(line);
+    }
+    creatingImpact=saved;return unit;
+}
 bool Visual(uint32_t entity,uintptr_t unit,bool hasReleasePoint,bool isRoot) {
     uint32_t header[3]{};
     if(!Read(unit,header)||header[0]!=3)return false;
     const auto* crossbow=crossbowvr::Creating();
     std::lock_guard lock(mutex);
+    if(impactVisuals.Owns(creatingImpact,unit,header)) {
+        Vec grid{};const bool positioned=isRoot&&Position(unit,grid);
+        impactVisuals.Bind(creatingImpact,unit,header,entity,isRoot,positioned?&grid:nullptr);Recount();return true;
+    }
     const bool creatingPreview=preview.active&&previewCreatingSession&&previewCreatingSession==current.session;
     const uint32_t heldMissile=creatingPreview?previewCreatingMissile:preview.missile;
     if(header[1]==heldMissile&&preview.pose.session==current.session&&(creatingPreview||
@@ -864,7 +945,7 @@ bool Visual(uint32_t entity,uintptr_t unit,bool hasReleasePoint,bool isRoot) {
         // and those descendants drop the hero release-bone blend.
         const bool rooted=heldMissile!=0;
         if(!(rooted?preview.binding.BindRoot(entity,isRoot):preview.binding.Bind(entity,hasReleasePoint)))return rooted;
-        preview.client=unit;preview.clientId=header[2];Recount();return true;
+        preview.client=unit;preview.clientId=header[2];preview.missile=heldMissile;Recount();return true;
     }
     for(size_t i=0;i<usedSlots.load(std::memory_order_relaxed);++i) {
         auto& a=arrows[i];
@@ -886,6 +967,7 @@ bool Visual(uint32_t entity,uintptr_t unit,bool hasReleasePoint,bool isRoot) {
 bool OwnsVisual(uintptr_t unit) {
     uint32_t h[3]{};if(!Read(unit,h)||h[0]!=3)return false;
     std::lock_guard lock(mutex);
+    if(impactVisuals.Owns(creatingImpact,unit,h))return true;
     if(h[1]&&preview.pose.session==current.session&&((preview.missile==h[1]&&preview.client==unit&&preview.clientId==h[2])||
        (preview.active&&previewCreatingSession==current.session&&previewCreatingMissile==h[1])))return true;
     for(size_t i=0;i<usedSlots.load(std::memory_order_relaxed);++i) {

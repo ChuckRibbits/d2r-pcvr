@@ -1,6 +1,8 @@
 #include "bow_flight.h"
 #include "gameplay.h"
 #include "hand_controls.h"
+#include "client_retirement.h"
+#include "quiver_impact.h"
 #include <array>
 #include <cstdio>
 #include <cstdlib>
@@ -22,6 +24,71 @@ static void Child(const float* parent,Vec offset,float out[16]) {
 }
 int main() {
     using weaponskills::Quiver;
+    {
+        // Low shots hit with the tip. On the first sweep the tail may not
+        // have moved at all; reconstructing from tail distance loses contact.
+        for(float floor:{0.f,6.f,-3.f}) {
+            Flight f;f.shot=Release();f.shot.skill=6;f.shot.missile=27;
+            f.shot.player.y=floor;f.shot.origin.y=floor+.3f;f.shot.direction={0,-1,0};
+            f.Contact({100,floor+.015f,100});
+            Check(Near(f.ImpactPoint().y,floor+.015f)&&f.distance==0,"first-sweep contact survives zero tail travel");
+            Check(!Near(f.TipAt(0).y,f.ImpactPoint().y),"negative control: reconstructed first-tick tip is below ground");
+            f.shot.direction={.6f,-.8f,0};f.distance=2;
+            const auto ground=f.TipAt(f.distance);f.Contact(ground);
+            Check(Near(f.Point().y-f.ImpactPoint().y,.6f),"negative control: arrow tail floats 60 cm above its tip");
+            for(const auto pair:{std::pair{27,204},std::pair{12,29},std::pair{28,30},std::pair{40,30},std::pair{41,42},std::pair{41,265},std::pair{87,88}}) {
+                f.shot.missile=pair.first;
+                Check(QuiverImpactMissile(pair.first,pair.second),"native arrow explosion is eligible");
+                const auto grid=GridPoint(f.shot,f.ImpactPoint())*f.shot.unitsPerMetre;
+                const int x=int(grid.x*.5f),y=int(grid.z*.5f);
+                const auto impact=ImpactOrigin(f,x,y);
+                Check(Length(impact-f.ImpactPoint()*f.shot.unitsPerMetre)<.0005f,"impact retains floor height and sub-cell contact");
+                Check(Length(ImpactOrigin(f,x+1,y-2)-impact-Vec{2,0,-4})<.0005f,"native splash spreads around contact instead of collapsing to center");
+                // Nonidentity native orientation and scale, with stale translation.
+                float m[16]{0,0,-2,0, 0,3,0,0, 4,0,0,0, 10,20,30,1};
+                ImpactMatrix(impact,pair.second,m);
+                Check(Length(Point(m,QuiverImpactOffset(pair.second))-impact)<.0005f,"authored emitter height/forward offset cancel at contact");
+                Check(m[2]==-2&&m[5]==3&&m[8]==4,"impact keeps native effect size and orientation");
+            }
+        }
+        Check(!QuiverImpactMissile(0,204)&&!QuiverImpactMissile(27,30)&&!QuiverImpactMissile(85,67),"basic arrows, unrelated effects and persistent fire stay native");
+        Flight spell;spell.shot=Release();spell.shot.kind=Kind::Spell;spell.distance=3;
+        Check(Length(spell.ImpactPoint()-spell.Point())<.0005f,"zero-length straight spell fallback is unchanged");
+        spell.shot.skill=38;spell.nativePoint={12,3,14};
+        Check(Length(spell.ImpactPoint()-spell.nativePoint)<.0005f,"native ground spell fallback is unchanged");
+    }
+    {
+        // Native child creation can bind HD entities before it returns, or
+        // after asynchronous asset loading. Full unit/entity generations and
+        // monotonic tickets prevent reuse from moving a different effect.
+        ImpactVisuals effects;Flight f;f.shot=Release();f.shot.skill=6;f.shot.missile=27;
+        f.Contact({100.1f,.015f,100.2f});
+        const auto grid=GridPoint(f.shot,f.ImpactPoint())*f.shot.unitsPerMetre;
+        const uint32_t magic[3]{3,204,700},reused[3]{3,204,701},other[3]{3,30,700};
+        auto ticket=effects.Reserve(f,204,1000);
+        Check(ticket&&effects.Owns(ticket,0x1000,magic),"synchronous creation owns only its expected native effect");
+        Check(!effects.Owns(0,0x1000,magic)&&!effects.Owns(ticket,0x1000,other),"nested unrelated allocation cannot inherit effect binding");
+        Check(!effects.Bind(ticket,0x1000,magic,42,false,&grid),"child emitter does not become effect root");
+        Check(effects.Bind(ticket,0x1000,magic,42,true,&grid),"early native root binds");
+        effects.Complete(ticket,0x1000,magic,&grid);
+        Check(effects.Owns(0,0x1000,magic)&&!effects.Owns(0,0x1000,reused),"returned unit keeps exact identity");
+        float m[16]{1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1};
+        Check(effects.Matrix(42,11,m)&&Length(Point(m,{0,4.75f,1})-f.ImpactPoint()*4)<.0005f,"native emitter appears at low impact");
+        Check(!effects.Matrix(42+(1u<<20),11,m)&&!effects.Matrix(42,12,m),"recycled renderer generation and different session are untouched");
+        effects.Forget(0x1000);Check(!effects.Matrix(42,11,m),"native destruction clears placement");
+        effects.Expire(11,1001);
+        ticket=effects.Reserve(f,204,1002);effects.Complete(ticket,0x2000,magic,&grid);
+        Check(effects.Bind(0,0x2000,magic,43,true,&grid),"delayed native HD initialization binds completed client");
+        effects.Reset();const auto fresh=effects.Reserve(f,204,1003);
+        effects.Complete(ticket,0,magic);Check(effects.Owns(fresh,0x3000,magic),"old completion cannot clear new session reservation");
+        effects.Complete(fresh,0,magic);effects.Expire(11,1004);
+        Check(!effects.Pending(),"failed native allocation releases reservation");
+        for(int i=0;i<128;++i)Check(effects.Reserve(f,204,2000)!=0,"bounded tracker accepts available effects");
+        Check(!effects.Reserve(f,204,2000),"tracking saturation falls back without affecting native creation");
+        effects.Expire(11,7000);Check(!effects.Pending(),"missed native deletion cannot retain placement forever");
+        Check(effects.Reserve(f,204,7001)!=0,"expired slots are reusable");
+        effects.Expire(12,7002);Check(!effects.Pending(),"session change drops old visual records");
+    }
     {
         // Skills.txt srvdofunc 0 arrow skills and their Missiles.txt ids only.
         for(int id:{6,7,11,16,21,27,31})Check(weaponskills::QuiverSkill(id)&&weaponskills::Bow(id),"single-missile arrow skill loads");
@@ -138,6 +205,47 @@ int main() {
         Check(out.bowCharged,"draw charges");
         in.trigger=0;step();
         Check(out.bowRelease&&!out.nativeBowRelease&&out.skill<0,"quiver release is physical");
+    }
+    {
+        // Regression: selecting/unloading a skill deleted the old preview
+        // immediately from the UI callback, while HD entity mutation could be
+        // forbidden. Requests must keep ownership until the native client
+        // tick destroys the exact object and returns, including skill arrows.
+        ClientRetirements retire;
+        unsigned destroys=0;
+        for(uint32_t missile:{0u,12u,27u,28u,40u,41u,85u,87u}) {
+            const uintptr_t unit=0x1000+missile;
+            const uint32_t header[3]{3,missile,500+missile};
+            retire.Request(unit,header[2],missile); // UI: schedule only
+            retire.Request(unit,header[2],missile); // repeated UI callback
+            Check(retire.Pending()&&retire.Contains(unit,header[2],missile),"swap keeps exact old preview owned until native cleanup");
+            Check(!retire.Begin(unit+1000,header),"unrelated missile is not retired");
+            const auto ticket=retire.Begin(unit,header); // native client update
+            Check(ticket!=0,"native tick retires basic AND skill previews");
+            Check(retire.Pending()&&!retire.Begin(unit,header),"reentrant update neither destroys twice nor allows replacement");
+            ++destroys;
+            retire.Finish(ticket+1000);
+            Check(retire.Pending(),"unrelated completion cannot release the creation barrier");
+            retire.Finish(ticket); // after native destruction returns
+            Check(!retire.Pending(),"replacement can now be created for latest selection");
+        }
+        Check(destroys==8,"one retirement per old model, including unloading to basic");
+        for(const std::array<uint32_t,3> recycled: {std::array<uint32_t,3>{3,12,902},{3,40,901},{1,12,901}}) {
+            retire.Request(0x2000,901,12);
+            Check(!retire.Begin(0x2000,recycled.data())&&!retire.Pending(),"reused address/id/type is discarded without deleting another unit");
+        }
+        const uint32_t fire[3]{3,12,901},ice[3]{3,40,902};
+        retire.Request(0x2000,901,12);const auto stale=retire.Begin(0x2000,fire);
+        retire.Reset(); // area/character teardown owns the old objects
+        retire.Request(0x3000,902,40);const auto current=retire.Begin(0x3000,ice);
+        retire.Finish(stale);
+        Check(retire.Pending()&&current!=stale,"old-session completion cannot clear new preview retirement");
+        retire.Finish(current);
+        retire.Request(0x2000,901,12);retire.Request(0x3000,902,40);
+        const auto first=retire.Begin(0x2000,fire);retire.Finish(first);
+        Check(retire.Pending(),"unwanted creation and old preview can both wait for native cleanup");
+        retire.Finish(retire.Begin(0x3000,ice));
+        Check(!retire.Pending(),"all queued native objects are retired");
     }
     std::puts("quiver tests passed");
 }
