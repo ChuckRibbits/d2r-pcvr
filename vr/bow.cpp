@@ -620,6 +620,12 @@ void SetCrossbowCycle(uint64_t session,uint32_t equipment,uint32_t milliseconds)
     std::lock_guard lock(mutex);crossbowRate={session,GetTickCount64(),equipment,milliseconds};
 }
 bool SpellReady(){return enabled.load()&&ready.load()&&spellvr::Ready();}
+bool PlayHeroSound(int sound) {
+    uintptr_t hero=0;uint32_t h[3]{},id=0;
+    if(!soundIn||!originalMissileSound||sound<=0||!combat::LocalPlayerUnit(hero)||!combat::LocalPlayerId(id)||
+       !Read(hero,h)||h[0]!=0||h[2]!=id)return false;
+    originalMissileSound(sound,hero,0,0,false);return true;
+}
 void Update(const Gate& gate,uintptr_t hero) {
     bool visible=false;
     Shot pose;const bool held=gate.active&&enabled.load()&&framevr::BowPreviewPose(pose,visible)&&Allowed(pose,gate,GetTickCount64());

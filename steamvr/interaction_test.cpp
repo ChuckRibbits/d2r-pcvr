@@ -14,6 +14,7 @@ struct Sim {
         in.hand[0].p={.25f,1.3f,-.4f};in.hand[1].p={-.25f,1.3f,-.4f};
         in.snapshot.session=10;in.snapshot.equipmentKnown=in.snapshot.beltKnown=true;in.snapshot.activeSet=1;
         auto& b=in.snapshot.belt[0];b.known=true;b.count=2;b.revision=4;b.items[0]={42,1,Code('h','p','1')};b.items[1]={43,2,Code('m','p','1')};
+        in.stage.known=true; // identity room-to-world frame
         Step(3);}
     Output Step(int count=1){while(count--){in.time+=.02;in.at=1000000+uint64_t(in.time*1000);in.snapshot.at=in.at;out=e.Step(in);}return out;}
 };
@@ -551,6 +552,173 @@ int main(){
         Check(s.Step().cancelPending&&s.out.bottle<0,"non-finite pose discards a held bottle and pending native work");
         s.in.hand[0].p={0,1.6f,-.08f};s.in.hand[0].q={0,0,1,0};
         for(int i=0;i<30;++i)Check(s.Step().request.action==Action::None,"tracking recovery with grip held cannot drink");
+    }
+    {
+        // Thrown bottle: grab, swing away from the belt, release mid-swing.
+        auto toss=[](Sim& s,Vec velocity,int frames=5) {
+            s.in.floorKnown=true;s.in.floor=0;
+            s.in.hand[0].p=s.out.belt[0].p;s.in.grip[0]=1;s.Step();
+            for(int i=0;i<frames;++i){s.in.hand[0].p=s.in.hand[0].p+velocity*.02f;s.Step();}
+            s.in.grip[0]=0;return s.Step();
+        };
+        auto land=[](Sim& s,int& requests,Request& request) {
+            // Up to the 2 s flight cap, then a few frames to prove there is no
+            // repeat, well inside the engine's 1.5 s reply window.
+            for(int i=0,after=-1;i<110&&after<10;++i){auto o=s.Step();if(o.request.action==Action::FeedMerc){++requests;request=o.request;}if(requests)++after;}
+        };
+        {
+            Sim s;const auto belt=s.out.belt[0].p;const auto o=toss(s,{0,1.f,-3.f});
+            Check(o.flying&&o.bottle<0&&o.flightItem.handle==42&&o.flightColumn==0&&o.request.action==Action::None,
+                "a fast release launches the exact bottle without a native request");
+            const auto scene=framevr::potions::MakeScene(s.in,o);
+            Check(scene.count==1&&scene.items[0].code==Code('h','p','1')&&scene.items[0].pose.p.y>1.f,
+                "the flying bottle replaces its belt column instead of duplicating it");
+            int requests=0;Request request;land(s,requests,request);
+            Check(requests==1&&request.item.handle==42&&request.index==0&&request.revision==4,
+                "landing requests the hireling feed once for the exact thrown item");
+            Check(std::fabs(request.point.y)<1e-3f&&request.point.z<belt.z-1.f,"landing point lies on the floor ahead");
+            Check(!s.out.flying&&s.in.snapshot.belt[0].count==2,"landing never edits the belt locally");
+            s.in.reply={request.sequence,s.in.session,Result::Refused};
+            Check(s.Step().feedback==3&&s.out.feedbackHand==0,"a miss or refusal is felt by the throwing hand");
+            Check(framevr::potions::MakeScene(s.in,s.out).count==1,"refused bottle reappears on the belt");
+            s.in.hand[0].p=s.out.belt[0].p;s.in.grip[0]=1;
+            Check(s.Step().bottle==0,"the belt can be used again after a miss");
+        }
+        {
+            Sim s;toss(s,{0,1.f,-3.f});int requests=0;Request request;land(s,requests,request);
+            s.in.reply={request.sequence,s.in.session,Result::Applied};
+            Check(s.Step().feedback==2,"confirmed hireling feed is a success pulse");
+        }
+        {
+            Sim s;const auto o=toss(s,{0,.2f,-.6f},20);int requests=0;Request request;land(s,requests,request);
+            Check(!o.flying&&requests==0,"a slow release still returns the bottle to the belt");
+        }
+        for(const auto code:{Code('m','p','1'),Code('v','p','s')}) {
+            Sim s;s.in.snapshot.belt[0].items[0].code=code;
+            const auto o=toss(s,{0,1.f,-3.f});int requests=0;Request request;land(s,requests,request);
+            Check(!o.flying&&requests==0,"mana and stamina bottles are not thrown");
+        }
+        for(const auto code:{Code('r','v','l'),Code('y','p','s'),Code('w','m','s')}) {
+            Sim s;s.in.snapshot.belt[0].items[0].code=code;
+            const auto o=toss(s,{0,1.f,-3.f});int requests=0;Request request;land(s,requests,request);
+            Check(o.flying&&requests==1&&request.item.code==code,"rejuvenation, antidote and thawing bottles can be thrown");
+        }
+        {
+            Sim s;s.in.hand[0].p=s.out.belt[0].p;s.in.grip[0]=1;s.Step();
+            for(int i=0;i<5;++i){s.in.hand[0].p=s.in.hand[0].p+Vec{0,1.f,-3.f}*.02f;s.Step();}
+            s.in.grip[0]=0;Check(!s.Step().flying,"no throw without a known world floor");
+        }
+        {
+            // A fast flick that ends back at the belt is a re-holster, not a throw.
+            Sim s;s.in.floorKnown=true;s.in.floor=0;
+            s.in.hand[0].p=s.out.belt[0].p;s.in.grip[0]=1;s.Step();
+            s.in.hand[0].p=s.in.hand[0].p+Vec{0,0,-.1f};s.Step();
+            s.in.hand[0].p=s.in.hand[0].p+Vec{0,0,.06f};s.Step();
+            s.in.grip[0]=0;Check(!s.Step().flying,"a release beside its belt slot is never a throw");
+        }
+        {
+            Sim s;toss(s,{0,1.f,-3.f});s.Step(5);
+            auto& b=s.in.snapshot.belt[0];b.items[0]=b.items[1];b.items[1]={};b.count=1;++b.revision;
+            int requests=0;Request request;land(s,requests,request);
+            Check(requests==0,"a bottle used elsewhere mid-flight cannot be fed on landing");
+        }
+        {
+            Sim s;toss(s,{0,1.f,-3.f});s.Step(5);s.in.cancel=true;
+            const auto o=s.Step();s.in.cancel=false;
+            int requests=0;Request request;land(s,requests,request);
+            Check(!o.flying&&requests==0,"cancel discards a bottle in flight");
+        }
+        {
+            Sim s;toss(s,{0,1.f,-3.f});s.in.hand[1].p=s.out.belt[0].p;s.in.grip[1]=1;
+            Check(s.Step().bottle<0,"the belt cannot be grabbed while a bottle is in the air");
+        }
+        // Launch speed follows the real hand: horizontal flight speed measured
+        // from two flying frames (gravity only changes the vertical part).
+        auto launched=[](Sim& s){
+            const auto a=s.out.flight.p;s.Step();const auto b=s.out.flight.p;
+            return std::hypot(b.x-a.x,b.z-a.z)/.02f;
+        };
+        {
+            // A hard throw that slows before the grip opens keeps its peak.
+            Sim s;s.in.floorKnown=true;s.in.floor=0;
+            s.in.hand[0].p=s.out.belt[0].p;s.in.grip[0]=1;s.Step();
+            for(int i=0;i<4;++i){s.in.hand[0].p=s.in.hand[0].p+Vec{0,0,-6.f}*.02f;s.Step();}
+            for(int i=0;i<2;++i){s.in.hand[0].p=s.in.hand[0].p+Vec{0,0,-1.f}*.02f;s.Step();}
+            s.in.grip[0]=0;Check(s.Step().flying,"decelerating release still throws");
+            Check(std::fabs(launched(s)-6.f)<.05f,"launch uses the peak hand speed, not the slowing last frame");
+        }
+        {
+            Sim s;s.in.floorKnown=true;s.in.floor=0;
+            s.in.hand[0].p=s.out.belt[0].p;s.in.grip[0]=1;s.Step();
+            for(int i=0;i<3;++i){s.in.hand[0].p=s.in.hand[0].p+Vec{0,.4f,-16.f}*.02f;s.Step();}
+            s.in.grip[0]=0;Check(s.Step().flying,"a very hard throw is not discarded");
+            Check(std::fabs(launched(s)-16.f)<.1f,"hand speeds above the old 12 m/s limit are kept 1:1");
+        }
+        {
+            Sim s;s.in.floorKnown=true;s.in.floor=0;
+            s.in.hand[0].p=s.out.belt[0].p;s.in.grip[0]=1;s.Step();
+            for(int i=0;i<3;++i){s.in.hand[0].p=s.in.hand[0].p+Vec{0,0,-24.f}*.02f;s.Step();}
+            s.in.grip[0]=0;s.Step();
+            Check(std::fabs(launched(s)-ThrowMaxSpeed)<.1f,"implausible hand speed is capped, keeping its direction");
+        }
+        {
+            // Once released, the bottle is in the world: walking or turning
+            // moves the room under it, never the bottle's world path.
+            auto landing=[&](bool walk,bool turn){
+                Sim s;toss(s,{0,1.f,-3.f});
+                const auto before=s.out.flight.p;
+                if(walk)s.in.stage.anchor=s.in.stage.anchor+Vec{1.5f,0,-2.f};
+                if(turn)s.in.stage.base=math::Yaw(.8f);
+                s.Step();
+                int requests=0;Request request;land(s,requests,request);
+                Check(requests==1,"moving player still lands one request");
+                return std::pair{before,request};
+            };
+            const auto still=landing(false,false),walked=landing(true,false),turned=landing(true,true);
+            for(const auto* moved:{&walked,&turned})
+                Check(std::hypot(moved->second.world.x-still.second.world.x,moved->second.world.z-still.second.world.z)<1e-4f&&
+                      std::fabs(moved->second.world.y-still.second.world.y)<1e-4f,"walking or turning after release never moves the world landing point");
+            Check(std::fabs(walked.second.point.x-(still.second.point.x-1.5f))<1e-3f&&std::fabs(walked.second.point.z-(still.second.point.z+2.f))<1e-3f,
+                "the drawn bottle stays put in the world while the player walks away from it");
+            // Releasing while already turned: room velocity is turned into the world.
+            Sim s;s.in.stage.base=math::Yaw(1.5707963f);toss(s,{0,1.f,-3.f});
+            int requests=0;Request request;land(s,requests,request);
+            const auto expected=math::Rotate(math::Yaw(1.5707963f),still.second.world);
+            Check(requests==1&&std::hypot(request.world.x-expected.x,request.world.z-expected.z)<1e-3f,
+                "room throw direction is mapped by the frame at release");
+        }
+        {
+            Sim s;s.in.stage.known=false;s.in.floorKnown=true;
+            s.in.hand[0].p=s.out.belt[0].p;s.in.grip[0]=1;s.Step();
+            for(int i=0;i<5;++i){s.in.hand[0].p=s.in.hand[0].p+Vec{0,1.f,-3.f}*.02f;s.Step();}
+            s.in.grip[0]=0;Check(!s.Step().flying,"no throw without the room-to-world frame");
+        }
+        {
+            // The runtime's reported controller velocity wins over pose noise.
+            Sim s;s.in.floorKnown=true;s.in.floor=0;
+            s.in.hand[0].p=s.out.belt[0].p;s.in.grip[0]=1;s.Step();
+            s.in.velocityKnown[0]=true;s.in.handVelocity[0]={0,1.f,-8.f};
+            for(int i=0;i<5;++i){s.in.hand[0].p=s.in.hand[0].p+Vec{0,0,-3.f}*.02f;s.Step();} // clear of the belt
+            s.in.grip[0]=0;Check(s.Step().flying,"runtime-velocity throw launches");
+            Check(std::fabs(launched(s)-8.f)<.05f,"runtime controller velocity drives the launch");
+            Sim t;t.in.floorKnown=true;t.in.floor=0;
+            t.in.hand[0].p=t.out.belt[0].p;t.in.grip[0]=1;t.Step();
+            t.in.velocityKnown[0]=true;t.in.handVelocity[0]={0,0,-40.f};
+            for(int i=0;i<5;++i){t.in.hand[0].p=t.in.hand[0].p+Vec{0,0,-.06f};t.Step();} // clear of the belt
+            t.in.grip[0]=0;Check(!t.Step().flying,"a tracking glitch alone never launches a bottle");
+        }
+    }
+    {
+        // Merc low-life cue: only a known, living merc below 50% life.
+        Mercenary m;m.known=true;m.maxHealth=400;
+        m.health=199;Check(MercLow(m),"49.75% life is low");
+        m.health=200;Check(!MercLow(m),"50% life is not low");
+        m.health=0;Check(!MercLow(m),"a dead merc is not low");
+        m.health=50;m.known=false;Check(!MercLow(m),"no cue without a sampled merc");
+        // World points round-trip through the stage frame.
+        Stage st{true,{.3f,1.6f,-.2f},{12.f,1.7f,-40.f},math::Yaw(2.1f)};
+        const Vec world{15.f,.4f,-37.f};const auto back=st.World(st.Room(world));
+        Check(std::fabs(back.x-world.x)<1e-4f&&std::fabs(back.y-world.y)<1e-4f&&std::fabs(back.z-world.z)<1e-4f,"stage room/world mapping is invertible");
     }
     std::puts("Interaction ownership, wheel, holster, item identity and confirmation tests passed");
 }

@@ -118,6 +118,38 @@ inline const char* PotionName(Potion type) {
     constexpr const char* names[]={"Unknown", "Health", "Mana", "Rejuvenation", "Antidote", "Thawing", "Stamina"};
     return names[unsigned(type)<=unsigned(Potion::Stamina)?unsigned(type):0];
 }
+// A released Health/Rejuvenation/Antidote/Thawing bottle flies in room metres and lands on the
+// world floor. Only its landing point leaves the engine; the game thread
+// decides whether it fell at the hireling's feet, and the native belt key's
+// mercenary use (not an item edit) gives the potion to the mercenary.
+// Launch speed is the PEAK hand speed in the last ThrowWindow before the grip
+// opens (the hand is already slowing by then), 1:1 with the real hand. Fast
+// samples are capped at ThrowMaxSpeed, never discarded; only tracking jumps
+// above ThrowGlitchSpeed are ignored.
+constexpr float ThrowGravity=9.81f,ThrowMinSpeed=1.4f,ThrowMaxSpeed=20.f,ThrowGlitchSpeed=30.f,ThrowClearOfBelt=.15f;
+constexpr double ThrowWindow=.12,ThrowMaxFlight=3.;
+// Potions the game itself lets a mercenary take from the belt with Shift.
+inline bool Throwable(Potion type) {
+    return type==Potion::Health||type==Potion::Rejuvenation||type==Potion::Antidote||type==Potion::Thawing;
+}
+inline double LandingTime(Vec p,Vec v,float floor) {
+    const double drop=double(p.y)-floor;
+    if(!std::isfinite(drop)||drop<=0||!std::isfinite(v.y))return -1;
+    const double t=(v.y+std::sqrt(double(v.y)*v.y+2*ThrowGravity*drop))/ThrowGravity;
+    return t>0&&t<=ThrowMaxFlight?t:-1;
+}
+inline Vec Ballistic(Vec p,Vec v,float t) {return p+v*t+Vec{0,-.5f*ThrowGravity*t*t,0};}
+// Stage-to-world frame of the current view (yaw only): world metres =
+// anchor + base * (room - origin). Walking, turning and recentering change it.
+// A thrown bottle lives in the world once released, so it is integrated in
+// world metres and only mapped back to room space for drawing.
+struct Stage {
+    bool known=false;
+    Vec origin{},anchor{};Quat base{0,0,0,1};
+    Vec World(Vec room) const {return anchor+math::Rotate(base,room-origin);}
+    Vec Room(Vec world) const {return origin+math::Rotate(math::Conjugate(base),world-anchor);}
+    bool operator==(const Stage&) const=default;
+};
 struct Belt {
     std::array<Item,4> items{}; // bottom first; native belt action uses bottom
     uint32_t revision=0;
@@ -133,6 +165,15 @@ struct Skill {
     char name[64]{};
     bool operator==(const Skill&) const = default;
 };
+// The local hireling, sampled on the game thread during VR gameplay.
+struct Mercenary {
+    bool known=false;
+    float health=0,maxHealth=0;
+    uint32_t classId=0,unitId=0;
+    bool operator==(const Mercenary&) const=default;
+};
+constexpr float MercLowHealth=.5f; // cue threshold: below 50% life
+inline bool MercLow(const Mercenary& m) {return m.known&&m.maxHealth>0&&m.health>0&&m.health<m.maxHealth*MercLowHealth;}
 struct Snapshot {
     uint64_t session=0,at=0;
     uint32_t revision=0,activeSet=0;
@@ -150,6 +191,7 @@ struct Snapshot {
     navigation::Location location;
     bool actionKnown=false;
     uint32_t actionMode=0;
+    Mercenary merc;
 };
 struct SkillCue {
     int slot=-1,id=-1,owner=-1;
@@ -161,7 +203,7 @@ struct SkillCue {
 inline bool Fresh(const Snapshot& s,uint64_t session,uint64_t now) {
     return session&&s.session==session&&now>=s.at&&now-s.at<=650;
 }
-enum class Action { None, Potion, Equip, Quest, Map, Character, Skills, BindSkill };
+enum class Action { None, Potion, Equip, Quest, Map, Character, Skills, BindSkill, FeedMerc };
 enum class Result { None, Pending, Applied, Refused, Cancelled };
 struct Request {
     Action action=Action::None;
@@ -170,6 +212,10 @@ struct Request {
     Item item{};
     uint32_t revision=0;
     int skill=-1,skillOwner=-1,bank=-1,previousSkill=-1,previousOwner=-1;
+    // FeedMerc: the landing point in world metres (and room metres for
+    // diagnostics). The transport adds the rendered player and scale.
+    Vec point{},world{},player{};
+    float unitsPerMetre=0;
 };
 inline bool CanBind(const Snapshot& s,const Request& r,uint64_t now) {
     if(!Fresh(s,r.session,now)||!s.bindingsEditable||r.index<0||r.index>=skills::Count||
@@ -248,7 +294,10 @@ struct Input {
     vitals::Location vitalsLocation=vitals::Location::Wrist;
     float vitalsTilt=0;
     bool criticalAlerts=false,leftCasting=false;
+    bool floorKnown=false; float floor=0; // room-space height of the world ground under the player
+    Stage stage{};
     Pose head{},hand[2]{};
+    Vec handVelocity[2]{}; bool velocityKnown[2]{}; // runtime-reported room-space m/s at the pose time
     float trigger=0,leftTrigger=0,grip[2]{};
     int hover=-1,wheelHand=-1;
     Snapshot snapshot{};
@@ -266,6 +315,7 @@ struct Output {
     Result result=Result::None;
     Item bottleItem{};
     bool bottleEmpty=false,beltReady=false;
+    bool flying=false; Pose flight{}; Item flightItem{}; int flightColumn=-1; // thrown bottle, model pose
     Pose body{},belt[4]{},holster[2]{};
     Request request{};
     int editor=0,editSlot=-1,editPage=0,editPages=1,editCount=0;
@@ -301,10 +351,48 @@ class Engine {
     shoulder::Gesture shoulderSwap;
     vitals::PalmReveal palmReveal;
     std::array<Skill,128> choices{};
-    void Drop() {bottle=bottleHand=holster=holsterHand=-1;drinkStart=0;spent=consumed=false;held={};owner[0]=owner[1]=Owner::Combat;}
+    // p, v and q are in WORLD metres/orientation; stage is the latest frame
+    // used to draw it, kept through a brief loss of the view frame.
+    struct Flight {bool active=false;double start=0,land=0;Vec p{},v{};Quat q{0,0,0,1};int column=-1,hand=-1;Item item{};uint32_t revision=0;Stage stage{};} flight;
+    struct Motion {double at=0;Vec v{};};
+    std::array<Motion,32> motion{};unsigned motionNext=0;
+    Vec bottleWas{};bool bottleTracked=false;
+    void Drop() {bottle=bottleHand=holster=holsterHand=-1;drinkStart=0;spent=consumed=false;held={};owner[0]=owner[1]=Owner::Combat;
+        bottleTracked=false;motion={};motionNext=0;}
+    // Fastest recent sample, capped in magnitude, keeping its direction.
+    bool PeakVelocity(double now,Vec& out) const {
+        float best=0;
+        for(const auto& m:motion) {
+            if(!m.at||now-m.at>ThrowWindow||m.at>now)continue;
+            const float s=std::sqrt(math::Dot(m.v,m.v));
+            if(s>best){best=s;out=m.v;}
+        }
+        if(best<ThrowMinSpeed)return false;
+        if(best>ThrowMaxSpeed)out=out*(ThrowMaxSpeed/best);
+        return true;
+    }
+    // Grip released with recent deliberate motion, away from the belt: launch.
+    // A slow or still release keeps the original behaviour (back to the belt).
+    bool Throw(const Input& in,bool fresh,Vec slot) {
+        Vec throwVelocity{};
+        if(spent||!in.floorKnown||!in.stage.known||!fresh||!SameBelt(in.snapshot,held)||!Throwable(PotionType(held.item.code))||
+           !PeakVelocity(in.time,throwVelocity))return false;
+        const auto& hand=in.hand[bottleHand];
+        const Vec p=potions::Center(hand.p,hand.q);
+        if(math::Dot(p-slot,p-slot)<ThrowClearOfBelt*ThrowClearOfBelt)return false;
+        // Release: freeze the bottle into the world. The floor under the
+        // player at release is the landing plane (yaw-only frame: heights map 1:1).
+        const auto& stage=in.stage;
+        const Vec worldP=stage.World(p),worldV=math::Rotate(stage.base,throwVelocity);
+        const double land=LandingTime(worldP,worldV,stage.anchor.y+(in.floor-stage.origin.y));
+        if(land<=0)return false;
+        flight={true,in.time,in.time+land,worldP,worldV,math::Multiply(stage.base,potions::HeldRotation(hand.q)),
+            bottle,bottleHand,held.item,held.revision,stage};
+        return true;
+    }
 public:
     void Configure(Config c) {config=c;Reset();}
-    void Reset() {primed=false;rearm=true;wheelLatch=true;Drop();pending={};result=Result::None;criticalUntil=criticalAgain=0;editor=0;map=false;editSlot=-1;shoulderSwap.Reset();}
+    void Reset() {primed=false;rearm=true;wheelLatch=true;Drop();flight={};pending={};result=Result::None;criticalUntil=criticalAgain=0;editor=0;map=false;editSlot=-1;shoulderSwap.Reset();}
     MenuPage Page() const {return editor==2?MenuPage::EditSkills:editor?MenuPage::EditSlots:map?MenuPage::Map:utility?MenuPage::Equipment:MenuPage::Spells;}
     bool WheelVisible(bool heldButton) const {return heldButton&&!wheelLatch;}
     Output Step(const Input& in) {
@@ -343,7 +431,7 @@ public:
         triggerWas=trigger;gripWas[0]=grips[0];gripWas[1]=grips[1];
         if(!in.wheel){wheelLatch=false;editor=0;map=false;editSlot=-1;}
         if(!trigger&&!grips[0]&&!grips[1])rearm=false;
-        if(in.cancel) {Drop();rearm=true;wheelLatch=true;pending={};out.cancelPending=true;editor=0;map=false;editSlot=-1;}
+        if(in.cancel) {Drop();flight={};rearm=true;wheelLatch=true;pending={};out.cancelPending=true;editor=0;map=false;editSlot=-1;}
         if(pending.action!=Action::None) {
             if(in.reply.sequence==pending.sequence&&in.reply.session==session&&in.reply.result!=Result::Pending) {
                 result=in.reply.result;resultAt=in.time;out.feedback=result==Result::Applied?2:3;
@@ -440,7 +528,7 @@ public:
                 }
             }
             const int pointerHand=in.wheelHand>=0?1-in.wheelHand:0;
-            if(!editor&&!map&&utility&&!rearm&&edges[pointerHand]&&in.hover>=4&&in.hover<8) {
+            if(!editor&&!map&&utility&&!rearm&&!flight.active&&edges[pointerHand]&&in.hover>=4&&in.hover<8) {
                 const auto& b=in.snapshot.belt[in.hover-4];
                 if(fresh&&b.known&&b.count&&b.Next().handle) {
                     bottle=in.hover-4;bottleHand=pointerHand;held={Action::Potion,0,session,now,bottle,b.Next(),b.revision};
@@ -448,7 +536,7 @@ public:
                 }
             }
         } else if(bottle<0&&holster<0)owner[0]=owner[1]=Owner::Combat;
-        if(!wheel&&!in.quickCast&&!rearm&&bottle<0&&holster<0&&pending.action==Action::None&&fresh) {
+        if(!wheel&&!in.quickCast&&!rearm&&bottle<0&&holster<0&&!flight.active&&pending.action==Action::None&&fresh) {
             float nearestHand=.095f;
             for(int h=0;h<2;++h) {
                 if(h==1&&in.reservedLeft)continue;
@@ -490,13 +578,41 @@ public:
         if(bottle>=0) {
             out.block=true;
             held.at=now;
-            if(!grips[bottleHand]||(!spent&&(!fresh||!SameBelt(in.snapshot,held)))) {Drop();rearm=true;}
+            // Prefer the runtime's own controller velocity; fall back to the
+            // pose difference when the runtime does not report one.
+            const Vec handNow=in.hand[bottleHand].p;
+            if(in.velocityKnown[bottleHand]||bottleTracked) {
+                const Vec v=in.velocityKnown[bottleHand]?in.handVelocity[bottleHand]:(handNow-bottleWas)*(1/float(dt));
+                if(math::Dot(v,v)<=ThrowGlitchSpeed*ThrowGlitchSpeed){motion[motionNext]={in.time,v};motionNext=(motionNext+1)%motion.size();}
+            }
+            bottleWas=handNow;bottleTracked=true;
+            if(!grips[bottleHand]&&Throw(in,fresh,out.belt[bottle].p)) {Drop();rearm=true;out.feedback=1;out.feedbackHand=flight.hand;}
+            else if(!grips[bottleHand]||(!spent&&(!fresh||!SameBelt(in.snapshot,held)))) {Drop();rearm=true;}
             else {
                 out.bottle=bottle;out.bottleHand=bottleHand;out.bottleItem=held.item;out.bottleEmpty=consumed;owner[bottleHand]=Owner::Bottle;
                 if(!spent&&potions::AtMouth(in.hand[bottleHand].p,in.hand[bottleHand].q,in.head.p,in.head.q,drinkStart!=0)) {
                     if(!drinkStart)drinkStart=in.time;
                     if(in.time-drinkStart>=.25&&request(Action::Potion,bottle,held.item,held.revision)){spent=true;pendingHand=bottleHand;}
                 } else drinkStart=0;
+            }
+        }
+        if(flight.active) {
+            if(in.stage.known)flight.stage=in.stage; // follow walking/turning for drawing only
+            if(in.time>=flight.land) {
+                // Landed: one exact-item request. A miss or a dead/absent
+                // hireling is refused natively-side and the bottle stays belted.
+                const float t=float(flight.land-flight.start);
+                const Request landed{Action::FeedMerc,0,session,now,flight.column,flight.item,flight.revision};
+                if(fresh&&SameBelt(in.snapshot,landed)&&request(Action::FeedMerc,flight.column,flight.item,flight.revision)) {
+                    pending.world=Ballistic(flight.p,flight.v,t);pending.point=flight.stage.Room(pending.world);
+                    out.request=pending;pendingHand=flight.hand;
+                } else out.feedback=3;
+                out.feedbackHand=flight.hand;flight={};
+            } else {
+                const float t=float(in.time-flight.start),spin=t*9.f; // tumble end over end
+                out.flying=true;out.flightColumn=flight.column;out.flightItem=flight.item;
+                const Quat world=math::Multiply(flight.q,{std::sin(spin*.5f),0,0,std::cos(spin*.5f)});
+                out.flight={flight.stage.Room(Ballistic(flight.p,flight.v,t)),math::Multiply(math::Conjugate(flight.stage.base),world)};
             }
         }
         out.stowed=stowed;out.result=result;

@@ -1,4 +1,5 @@
 #include "native_belt.h"
+#include <intrin.h>
 #include "combat.h"
 #include "sigscan.h"
 #include "memory.h"
@@ -45,8 +46,39 @@ bool Prepare(uint64_t session) {
     framevr::logging::Write(line);
     return true;
 }
+// 3.3.93787: the belt shortcut asks 0x160ac0 "give this potion to the
+// mercenary?" and passes the answer to Belt::Use. The query reads the physical
+// Shift key (KB/M) or controller button 0x400 (pad), never a game command, and
+// returns false first while the UI gate 0x8d3b0 is set. Answer true only for
+// our own thrown-potion press, only at the belt shortcut's call site.
+constexpr uint64_t MercQueryRva=0x160ac0,MercGateRva=0x8d3b0,BeltCallRva=0x228d7e;
+constexpr uint8_t MercQuerySig[]={0x48,0x83,0xec,0x28,0xe8,0xe7,0xc8,0xf2,0xff,0x84,0xc0,0x75,0x26,0xe8,0x3e,0x73,0xf1,0xff,
+    0x84,0xc0,0x74,0x09,0x48,0x83,0xc4,0x28,0xe9,0x61,0xc4,0xfe,0xff,0xb9,0x10,0x00,0x00,0x00,0xe8,0x17,0x96,0x0a,0x01,
+    0x85,0xc0,0x0f,0x95,0xc0,0x48,0x83,0xc4,0x28,0xc3};
+constexpr uint8_t MercGateSig[]={0x48,0x8b,0x05,0x29,0x63,0x99,0x02,0x48,0x85,0xc0,0x74,0x08,0x80,0x78,0x5c,0x01,0x0f,0x94,0xc0,0xc3};
+constexpr uint8_t BeltCallSig[]={0xe8,0x3d,0x7d,0xf3,0xff,0x44,0x0f,0xb6,0xc0,0x8b,0xd6,0x48,0x8b,0xcf};
+using MercQuery=bool(*)();
+MercQuery originalMercQuery=nullptr;
+bool mercHookIn=false;
+uintptr_t beltCallReturn=0;
+thread_local bool feeding=false;
+thread_local int answered=0;
+bool OnMercQuery() {
+    if(feeding&&reinterpret_cast<uintptr_t>(_ReturnAddress())==beltCallReturn){++answered;return true;}
+    return originalMercQuery();
 }
-bool Drink(int column,uint64_t session) {
+bool MercGate() {return reinterpret_cast<bool(*)()>(d2rsig::Addr(MercGateRva))();}
+}
+void Install() {
+    if(mercHookIn)return;
+    if(!d2rsig::Check(MercQueryRva,MercQuerySig,sizeof MercQuerySig)||!d2rsig::Check(MercGateRva,MercGateSig,sizeof MercGateSig)||
+       !d2rsig::Check(BeltCallRva,BeltCallSig,sizeof BeltCallSig))return;
+    beltCallReturn=d2rsig::Addr(BeltCallRva)+5;
+    mercHookIn=d2rsig::Hook(MercQueryRva,MercQuerySig,sizeof MercQuerySig,reinterpret_cast<void*>(&OnMercQuery),reinterpret_cast<void**>(&originalMercQuery));
+    if(mercHookIn)framevr::logging::Write("Frame potion toss: native belt mercenary query hooked at the belt shortcut only");
+}
+namespace {
+bool Use(int column,uint64_t session,bool mercenary) {
     if(column<0||column>=4||!session||session!=gamestate::LocalPlayer()||gamestate::MenuOpen())return false;
     if(hud::NativeToolbarHidden()&&!Prepare(session)) {
         framevr::logging::Write("Frame potion sip: native belt owner unavailable; request discarded");
@@ -54,6 +86,20 @@ bool Drink(int column,uint64_t session) {
     }
     // Exactly one command, still subject to native item/potion rules and the
     // caller's consumption confirmation. Never retry an unconfirmed drink.
-    return gamecmd::ExecuteUiCommand(0x17+column);
+    if(!mercenary)return gamecmd::ExecuteUiCommand(0x17+column);
+    // A thrown potion must never become the player's drink: without the hook,
+    // or while the native gate would refuse the mercenary, press nothing.
+    if(!mercHookIn||MercGate()) {
+        framevr::logging::Write("Frame potion toss: native mercenary belt use unavailable; nothing pressed");
+        return false;
+    }
+    feeding=true;answered=0;
+    const bool handled=gamecmd::ExecuteUiCommand(0x17+column);
+    feeding=false;
+    if(handled&&answered!=1)framevr::logging::Write("Frame potion toss: belt shortcut did not consult the mercenary query");
+    return handled&&answered==1;
 }
+}
+bool Drink(int column,uint64_t session) {return Use(column,session,false);}
+bool FeedMerc(int column,uint64_t session) {return Use(column,session,true);}
 }

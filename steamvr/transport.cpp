@@ -101,6 +101,9 @@ std::atomic<bool> deferredWait{false};
 std::atomic<bool> symmetricProjection{true};
 std::atomic<bool> eyeTracking{false};
 std::atomic<bool> motionControls{false};
+// Stamped each focused XR input while motion controls are on (menus included).
+// Lock-free for other threads; desktop and flat play never stamp it.
+std::atomic<uint64_t> vrGameplayAt{0};
 gameplay::Engine motion;
 skills::HandControls handControls;
 skills::HandOutput handOutput;
@@ -198,6 +201,10 @@ uint64_t bowSequence=0;
 bowflight::Shot bowPending{},bowReadyShot{},bowPreviewPose{};
 bool bowPreviewVisible=false;
 bool bowNeedsWorld=false,bowHasShot=false;
+// The latest centre-view stage-to-world frame (View, eye<0). Input reads it
+// for the room height of the world floor and to place a thrown bottle's
+// landing point in world metres; both run under the transport mutex.
+struct StageWorld {bool valid=false;math::Vec origin{},hero{};math::Quat base{0,0,0,1};float upm=0,eyeHeight=0;uint64_t at=0;} stageWorld;
 bool crossbowFire=false;
 uint64_t crossbowActivation=0,crossbowTakenAt=0;
 bowflight::Shot spellReadyShot[2]{};
@@ -323,6 +330,7 @@ haptics::RumbleLease controllerRumbleLease;
 XrAction primary=XR_NULL_HANDLE, secondary=XR_NULL_HANDLE, stickClick=XR_NULL_HANDLE, menu=XR_NULL_HANDLE;
 XrPath hands[2]{}; // right, left, matching the existing wire format.
 XrSpace handSpaces[2]{};
+math::Vec handVelocity[2]{};bool handVelocityKnown[2]{};
 XrSpace aimSpace=XR_NULL_HANDLE,leftAimSpace=XR_NULL_HANDLE;
 XrPosef menuPose{};
 bool menuPlaced=false;
@@ -1227,6 +1235,7 @@ void Input() {
     gazeValid=false;
     if(!tracking.data) return;
     if(!valid||state!=XR_SESSION_STATE_FOCUSED) {gazeStability.Reset();ClearInput();return; }
+    if(motionControls.load())vrGameplayAt.store(GetTickCount64());
     hapticPulses.Configure(settings::HapticLevels(vrsettings::Read().values));
     XrActiveActionSet active{actionSet,XR_NULL_PATH};
     XrActionsSyncInfo si{XR_TYPE_ACTIONS_SYNC_INFO};si.countActiveActionSets=1;si.activeActionSets=&active;
@@ -1324,12 +1333,17 @@ void Input() {
     motionInput.equipment=gamestate::HandsKey()^(gamestate::WeaponSet()<<30);
     const auto undo=math::Conjugate(math::Yaw(heading));
     for(int i=0;i<2;++i) {
-        XrSpaceLocation loc{XR_TYPE_SPACE_LOCATION};
+        XrSpaceVelocity velocity{XR_TYPE_SPACE_VELOCITY};
+        XrSpaceLocation loc{XR_TYPE_SPACE_LOCATION,&velocity};
         const XrSpaceLocationFlags required=XR_SPACE_LOCATION_POSITION_VALID_BIT|XR_SPACE_LOCATION_ORIENTATION_VALID_BIT;
+        handVelocityKnown[i]=false;
         if(XR_SUCCEEDED(pLocateSpace(handSpaces[i],space,frameState.predictedDisplayTime,&loc))&&(loc.locationFlags&required)==required) {
             const auto tracked=XR_SPACE_LOCATION_POSITION_TRACKED_BIT|XR_SPACE_LOCATION_ORIENTATION_TRACKED_BIT;
             motionInput.tracked[i]=(loc.locationFlags&tracked)==tracked;
             motionInput.hand[i]=MotionPose(loc.pose);
+            // The runtime's own linear velocity, in the same reference space.
+            handVelocityKnown[i]=(velocity.velocityFlags&XR_SPACE_VELOCITY_LINEAR_VALID_BIT)!=0;
+            if(handVelocityKnown[i])handVelocity[i]=V(velocity.linearVelocity);
             s.handsValid|=1u<<i;
             const auto p=math::Rotate(undo,V(loc.pose.position)-V(head.position));
             const auto rot=math::Multiply(undo,Q(loc.pose.orientation));
@@ -1403,10 +1417,23 @@ void Input() {
     interactionInput.criticalAlerts=hudSettings.values[settings::CriticalAlerts]>.5f;
     interactionInput.leftCasting=handOutput.spells[1]>=0||(handOutput.slot>=0&&handOutput.hand==1);
     interactionInput.leftTrigger=controls.lt/255.f;
+    // A thrown bottle lands on the world floor in room space. Without a recent
+    // view frame (menus, loading) throwing is off; a release re-belts as before.
+    {
+        const auto age=interactionInput.at>=stageWorld.at?interactionInput.at-stageWorld.at:0;
+        interactionInput.floorKnown=stageWorld.valid&&stageWorld.upm>0&&age<=250;
+        if(interactionInput.floorKnown) {
+            const auto& w=stageWorld;
+            interactionInput.floor=w.origin.y-w.eyeHeight/w.upm;
+            // Same mapping as resolveBow in View: room metres to world metres.
+            interactionInput.stage={true,w.origin,{w.hero.x/w.upm,(w.hero.y+w.eyeHeight)/w.upm,w.hero.z/w.upm},w.base};
+        }
+    }
     if(!interactionPaintValid||interactionPaintContext!=interaction::Context(interactionInput.snapshot,interactionOutput,
         interaction::Fresh(interactionInput.snapshot,interactionInput.session,interactionInput.at),controllerLabels))interactionInput.hover=-1;
     for(int i=0;i<2;++i){interactionInput.tracked[i]=motionInput.tracked[i];interactionInput.grip[i]=motionInput.grip[i];
-        interactionInput.hand[i]={motionInput.hand[i].p,motionInput.hand[i].q};}
+        interactionInput.hand[i]={motionInput.hand[i].p,motionInput.hand[i].q};
+        interactionInput.handVelocity[i]=handVelocity[i];interactionInput.velocityKnown[i]=handVelocityKnown[i];}
     interactionOutput=interactions.Step(interactionInput);
     // Blood on the visor follows life bands; a side-to-side scrub at the face
     // wipes what healing has uncovered. A scrubbing hand is not a weapon.
@@ -1464,6 +1491,12 @@ void Input() {
     if(interactionOutput.inventory&&toggleMenus)toggleMenus();
     if(handOutput.wheel>=0&&!interactionOutput.wheel){handControls.Close();handOutput={};}
     if(interactionOutput.cancelPending)interactionstate::Cancel();
+    if(interactionOutput.request.action==interaction::Action::FeedMerc&&stageWorld.valid&&stageWorld.upm>0) {
+        // The engine already landed the bottle in world metres; add the
+        // rendered player and scale for the game thread's grid conversion.
+        auto& r=interactionOutput.request;const auto& w=stageWorld;
+        r.player=w.hero*(1/w.upm);r.unitsPerMetre=w.upm;
+    }
     if(interactionOutput.request.action!=interaction::Action::None)interactionstate::Request(interactionOutput.request);
     if(interactionOutput.feedback)MotionPulse(interactionOutput.feedbackHand,interactionOutput.feedback==4?haptics::Category::Alert:haptics::Category::Interaction,
         interactionOutput.feedback==2?.65f:.25f,interactionOutput.feedback>=3?100000000:35000000);
@@ -2034,6 +2067,7 @@ void Register(LogFn log,PanelFn panel,PanelFn world,PanelFn toggle) {
 }
 bool SpatialMenu(){return uiSupported.load()&&uiworld::Ready()&&hud::LayerFound()&&inWorld&&inWorld()&&wantsPanel&&wantsPanel();}
 bool Active() {std::lock_guard lock(mutex);return frame&&valid&&render&&!failed&&!panelMode;}
+bool VrGameplay(uint64_t now) {const auto at=vrGameplayAt.load();return at&&now>=at&&now-at<=1500;}
 void ConfigureDeferredWait(bool on) {
     if(deferredWait.exchange(on)!=on)Say(on?"Frame OpenXR: GPU wait deferred until copy allocator reuse":"Frame OpenXR: conservative GPU wait before image release");
 }
@@ -2548,6 +2582,7 @@ bool View(float out[16],const float hero[3],float eyeHeight,float userEyeHeight,
     const auto base=math::Yaw(bodyHeading-recenterYaw);
     if(eye<0)compassFrame=wristHeading.Update(gamestate::LocalPlayer(),motionHeadTracked,
         Q(head.orientation),bodyHeading-recenterYaw,mapNorth);
+    if(eye<0)stageWorld={true,origin,{hero[0],hero[1],hero[2]},base,upm,eyeHeight,GetTickCount64()};
     const auto resolveBow=[&](bowflight::Shot shot) {
         const auto offset=math::Rotate(base,shot.origin-origin);
         shot.origin={hero[0]/upm+offset.x,(hero[1]+eyeHeight)/upm+offset.y,hero[2]/upm+offset.z};
