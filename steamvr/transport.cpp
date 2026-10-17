@@ -72,7 +72,7 @@
 namespace gamestate {uint32_t WeaponType();uint32_t HandsKey();uint32_t WeaponSet();uint32_t WeaponClass();uint32_t TwoHanded();uint64_t LocalPlayer();uint32_t MenuEpoch();}
 namespace gamecmd {void RequestPotion(int slot);void CancelPotion();}
 namespace gamestate {void MenuMap(bool wanted);}
-namespace gamestate {bool LeftShield();}
+namespace gamestate {bool LeftShield();framevr::dualwield::Equipment MeleeEquipment();}
 namespace combat {float GameVolume();}
 
 namespace framevr {
@@ -279,7 +279,7 @@ struct AtlasUpload {
 };
 std::vector<AtlasUpload> atlasUploads;
 
-melee::PoseHistory meleePoses;
+melee::PoseHistory meleePoses,offhandPoses;
 melee::PoseHistory shieldPoses;
 struct ShieldCast {
     weaponskills::ContactContext context{};uint64_t at=0;uint32_t target=0;
@@ -312,7 +312,7 @@ uint64_t crossbowActivation=0,crossbowTakenAt=0;
 bowflight::Shot spellReadyShot[2]{};
 bool spellHasShot[2]{};
 uint64_t spellResolvedAt[2]{};
-std::atomic<ULONGLONG> meleeImpactAt{0},shieldImpactAt{0};
+std::atomic<ULONGLONG> meleeImpactAt[2]{},shieldImpactAt{0};
 XrSwapchain gameplayChain=XR_NULL_HANDLE;
 XrPosef palettePose{};
 constexpr float paletteWidth=.45f,paletteHeight=.45f;
@@ -568,7 +568,7 @@ void ClearInput() {
     spellHaptics.Clear();
     lootlabels::display.Clear();
     lootLabelShortcut.Suspend();
-    meleeImpactAt=shieldImpactAt=0;
+    meleeImpactAt[0]=meleeImpactAt[1]=shieldImpactAt=0;
     wristHeading.Reset();compassFrame=false;
     panelinput::WorldInput(false);
     gamestate::MenuMap(false);
@@ -580,7 +580,7 @@ void ClearInput() {
     interactions.Reset();interactionOutput={};interactionstate::Cancel();skel::SetInteractionHidden(0);
     potionScene={};
     journalPlacement.LoseTracking();
-    meleePoses.Clear();CancelShieldCast();
+    meleePoses.Clear();offhandPoses.Clear();CancelShieldCast();
     bowNeedsWorld=bowHasShot=false;
     skel::SetMotionBow(false,false,0);
     ReleaseUiKey();
@@ -1223,7 +1223,7 @@ void ResetSettingsInput() {
     panelinput::WorldInput(false);
     gamestate::MenuMap(false);
     motion.Cancel();motionOutput={};interactions.Reset();interactionstate::Cancel();
-    meleePoses.Clear();CancelShieldCast();++meleeEpoch;bowNeedsWorld=bowHasShot=false;
+    meleePoses.Clear();offhandPoses.Clear();CancelShieldCast();++meleeEpoch;bowNeedsWorld=bowHasShot=false;
     skel::SetMotionBow(false,false,0);gamecmd::CancelPotion();menuTriggerGate.consumed=true;
     settingsInputGate.Consume();ReleaseUiKey();
     ReleasePanelInput();
@@ -1867,7 +1867,14 @@ void Input() {
         sample.equipment=motionInput.equipment;sample.active=motionInput.active&&motionOutput.meleeContact;
         sample.minWeaponSpeed=gestureSettings[settings::MeleeHitSpeed];
         sample.minThrustSpeed=gestureSettings[settings::MeleeThrustSpeed];
+        const auto weapons=gamestate::MeleeEquipment();
+        const bool dual=dualwield::Eligible(skel::HeroClass(),weapons);
+        if(dual)sample.weapons=weapons;
         meleePoses.Push(s.sampleStamp,sample);
+        sample.hand=motionInput.hand[1];sample.handIndex=1;
+        sample.active=sample.active&&dual&&controls.lt<51&&controls.rt<51;
+        offhandPoses.Push(s.sampleStamp,sample);
+        sample.weapons={};
         sample.hand=motionInput.hand[1];sample.shield=true;sample.active=motionInput.active&&motionOutput.shieldContact;
         sample.skillSlot=shieldSlot;sample.skillOwner=shieldSkill.owner;sample.skillContext=motionInput.skillContext;
         shieldPoses.Push(s.sampleStamp,sample);
@@ -1895,19 +1902,19 @@ void Input() {
     MotionFeedback(motionOutput);
     // One sharp tap per confirmed impact. Consume the event once; do not
     // sustain or refresh it while the weapon remains inside the creature.
-    auto impactPulse=[&](int hand){
-        const auto impact=settings::HapticSample(gestureSettings,haptics::Category::Melee,hand);
+    auto impactPulse=[&](int hand,bool shield=false){
+        const auto impact=settings::HapticSample(gestureSettings,haptics::Category::Melee,shield?1:0);
         const bool sent=MotionPulse(hand,haptics::Category::Melee,impact.amplitude,XrDuration(impact.milliseconds)*1000000,impact.frequency);
         static ULONGLONG reportAt[2]{};const auto now=GetTickCount64();
         if(now>=reportAt[hand]) {
             char line[160];std::snprintf(line,sizeof line,"Frame melee haptics: source=%s output=%s duration_ms=%d frequency=%.0f sent=%d",
-                hand==0?"weapon":"shield",hand==0?"right":"left",impact.milliseconds,impact.frequency,sent);Say(line);reportAt[hand]=now+1000;
+                shield?"shield":"weapon",hand==0?"right":"left",impact.milliseconds,impact.frequency,sent);Say(line);reportAt[hand]=now+1000;
         }
     };
-    if(const auto at=meleeImpactAt.exchange(0);at&&motionInput.active&&GetTickCount64()-at<150)
-        impactPulse(0);
+    for(int hand=0;hand<2;++hand)if(const auto at=meleeImpactAt[hand].exchange(0);at&&motionInput.active&&GetTickCount64()-at<150)
+        impactPulse(hand);
     if(const auto at=shieldImpactAt.exchange(0);at&&motionInput.active&&GetTickCount64()-at<150)
-        impactPulse(1);
+        impactPulse(1,true);
     for(int hand=0;hand<2;++hand)if(spellHaptics.Take(hand,gamestate::LocalPlayer(),GetTickCount64(),motionInput.active)) {
         const auto sample=haptics::Samples[int(haptics::Category::Spell)];
         MotionPulse(hand,haptics::Category::Spell,sample.amplitude,XrDuration(sample.milliseconds)*1000000,sample.frequency);
@@ -2329,7 +2336,7 @@ void BeginEye(int eye) {
 void ResetHeight() {
     std::lock_guard lock(mutex);
     ++meleeEpoch;motion.Cancel();motionOutput={};gamecmd::CancelPotion();
-    meleePoses.Clear();CancelShieldCast();
+    meleePoses.Clear();offhandPoses.Clear();CancelShieldCast();
     bowNeedsWorld=bowHasShot=false;
     skel::SetMotionBow(false,false,0);
     if(!valid||!haveOrigin)return;
@@ -2339,7 +2346,7 @@ void ResetHeight() {
 void Recenter() {
     std::lock_guard lock(mutex);
     ++meleeEpoch;motion.Cancel();motionOutput={};gamecmd::CancelPotion();
-    meleePoses.Clear();CancelShieldCast();
+    meleePoses.Clear();offhandPoses.Clear();CancelShieldCast();
     bowNeedsWorld=bowHasShot=false;
     skel::SetMotionBow(false,false,0);
     if(!valid)return;
@@ -2765,10 +2772,11 @@ bool GameplayRay(float outOrigin[3],float outDirection[3]) {
     outDirection[0]=d.x;outDirection[1]=d.y;outDirection[2]=d.z;
     return true;
 }
-bool MeleeSample(uint32_t poseStamp,melee::Sample& sample) {
+bool MeleeSample(uint32_t poseStamp,melee::Sample& sample,int hand) {
     std::lock_guard lock(mutex);
     if(!motionControls.load()||!motionInput.active||!motionOutput.meleeContact||GetTickCount64()-motionAt>100)return false;
-    if(!meleePoses.Find(poseStamp,Milliseconds()/1000.,sample))return false;
+    if(hand<0||hand>1||!(hand?offhandPoses:meleePoses).Find(poseStamp,Milliseconds()/1000.,sample))return false;
+    if(hand==1&&!dualwield::Eligible(skel::HeroClass(),gamestate::MeleeEquipment()))return false;
     return sample.epoch==meleeEpoch&&sample.equipment==motionInput.equipment;
 }
 bool ShieldSample(uint32_t poseStamp,melee::Sample& sample) {
@@ -2804,7 +2812,7 @@ void FinishShieldSkill(bool accepted) {
     shieldFeedbackAt=GetTickCount64();shieldRefused=!accepted;
     if(accepted)shieldImpactAt=shieldFeedbackAt;
 }
-void MeleeImpact() {meleeImpactAt=GetTickCount64();}
+void MeleeImpact(int hand) {if(hand>=0&&hand<2)meleeImpactAt[hand]=GetTickCount64();}
 void ShieldGuardImpact(bool parry) {shieldImpactAt=GetTickCount64();(parry?guardParryEvents:guardBlockEvents).fetch_add(1);}
 void ShieldGuardState(bool eligible,bool raised) {guardStateAt=GetTickCount64();guardEligible=eligible;guardRaised=raised;}
 void ConfigureGuardStrain(float perBlock,float resetSeconds,float clear,float breatheSeconds,float softness,float brightness,uint32_t color) {

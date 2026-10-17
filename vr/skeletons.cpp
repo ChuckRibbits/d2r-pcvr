@@ -36,6 +36,7 @@
 
 #include "skeletons.h"
 #include "../steamvr/body_tracking.h"
+#include "../steamvr/dual_wield.h"
 #include "../steamvr/crossbow_pose.h"
 #include "../steamvr/profile.h"
 #include "sigscan.h"
@@ -45,7 +46,7 @@
 #include "hero_selection.h"
 #include "bow_pose.h"
 #include "shield_pose.h"
-namespace gamestate {uint64_t LocalPlayer();uint32_t HandsKey();uint32_t WeaponSet();}
+namespace gamestate {framevr::dualwield::Equipment MeleeEquipment();uint64_t LocalPlayer();uint32_t HandsKey();uint32_t WeaponSet();}
 #endif
 
 namespace skel {
@@ -327,7 +328,7 @@ struct GunBoneOut { float o[3], ax[3][3]; ULONGLONG at; Mat leftToHead; uintptr_
 SRWLOCK g_gunBoneLock = SRWLOCK_INIT;
 GunBoneOut g_gunBone{};
 #ifdef D2RVR_NATIVE_OPENXR
-MeleeWeaponPose g_shieldPose{};ULONGLONG g_shieldAt=0;
+MeleeWeaponPose g_shieldPose{},g_offhandPose{};ULONGLONG g_shieldAt=0,g_offhandAt=0;
 struct CrossbowGeometry {Mat boltToAttach{};uintptr_t hero=0;uint32_t generation=0,key=0;ULONGLONG at=0;};
 CrossbowGeometry g_crossbowGeometry;
 framevr::crossbow::Pose g_crossbowPose;
@@ -1949,6 +1950,8 @@ void PoseBody(uintptr_t self, const Hero& h, const Input& in) {
             const V3 origin=Pos(world),axis=Norm({world.m[4],world.m[5],world.m[6]}),player=Pos(model);
             g.melee={{origin.x,origin.y,origin.z},{axis.x,axis.y,axis.z},{player.x,player.y,player.z},in.poseStamp,in.worldEpoch,HeroGen()};
             g.melee.weaponType=in.weaponType;
+            const auto equipment=gamestate::MeleeEquipment();
+            if(framevr::dualwield::Eligible(h.cls,equipment))g.melee.weaponType=equipment.Type(0);
             const V3 headAxis=back(Norm({attachment.m[4],attachment.m[5],attachment.m[6]}));
             const framevr::math::Quat grip{in.rot[0][0],in.rot[0][1],in.rot[0][2],in.rot[0][3]};
             const auto gripAxis=framevr::math::Rotate(framevr::math::Conjugate(grip),{headAxis.x,headAxis.y,headAxis.z});
@@ -1965,6 +1968,27 @@ void PoseBody(uintptr_t self, const Hero& h, const Input& in) {
 
 #ifdef D2RVR_NATIVE_OPENXR
     {
+        MeleeWeaponPose offhand{};ULONGLONG offAt=0;
+        const auto weapons=gamestate::MeleeEquipment();
+        HeroXform offHx;Mat offModel;
+        if(in.mode==2&&!freeStaff&&in.havePoseStamp&&(in.handsValid&2u)&&h.weapon[1]>=0&&
+           framevr::dualwield::Eligible(h.cls,weapons)&&HeroTransform(&offHx)&&offHx.self==self&&
+           (offHx.parent&0xFFFFFu)==0xFFFFFu&&SafeCopy(offModel.m,reinterpret_cast<const void*>(offHx.comp),sizeof offModel)) {
+            const Mat& attachment=newW[h.weapon[1]];const Mat world=Mul(attachment,offModel);
+            const V3 origin=Pos(world),axis=Norm({world.m[4],world.m[5],world.m[6]}),player=Pos(offModel);
+            if(Len({world.m[4],world.m[5],world.m[6]})>.001f&&
+               std::isfinite(origin.x+origin.y+origin.z+axis.x+axis.y+axis.z+player.x+player.y+player.z)) {
+                offhand={{origin.x,origin.y,origin.z},{axis.x,axis.y,axis.z},{player.x,player.y,player.z},in.poseStamp,in.worldEpoch,HeroGen()};
+                offhand.weaponType=weapons.Type(1);
+                const V3 d=Norm({attachment.m[4],attachment.m[5],attachment.m[6]});
+                const V3 headAxis={-(d.x*c-d.z*s),d.y,-(d.x*s+d.z*c)};
+                const framevr::math::Quat grip{in.rot[1][0],in.rot[1][1],in.rot[1][2],in.rot[1][3]};
+                const auto axisInGrip=framevr::math::Rotate(framevr::math::Conjugate(grip),{headAxis.x,headAxis.y,headAxis.z});
+                offhand.gripAxis[0]=axisInGrip.x;offhand.gripAxis[1]=axisInGrip.y;offhand.gripAxis[2]=axisInGrip.z;
+                offAt=GetTickCount64();
+            }
+        }
+        AcquireSRWLockExclusive(&g_gunBoneLock);g_offhandPose=offhand;g_offhandAt=offAt;ReleaseSRWLockExclusive(&g_gunBoneLock);
         MeleeWeaponPose shieldPose{};ULONGLONG at=0;HeroXform hx;Mat model;
         const int shieldBone=h.shieldAttach>=0?h.shieldAttach:h.weapon[1];
         if(shieldFollowed&&in.havePoseStamp&&shieldBone>=0&&
@@ -2505,7 +2529,13 @@ bool GunBone(float origin[3], float axes[3][3], unsigned maxAgeMs) {
     return true;
 }
 #ifdef D2RVR_NATIVE_OPENXR
-bool MeleeWeapon(MeleeWeaponPose& out) {
+bool MeleeWeapon(MeleeWeaponPose& out,int hand) {
+    if(hand==1) {
+        AcquireSRWLockShared(&g_gunBoneLock);const auto pose=g_offhandPose;const auto at=g_offhandAt;ReleaseSRWLockShared(&g_gunBoneLock);
+        if(!at||GetTickCount64()-at>100||pose.heroGeneration!=HeroGen())return false;
+        out=pose;return true;
+    }
+    if(hand!=0)return false;
     AcquireSRWLockShared(&g_gunBoneLock);const auto g=g_gunBone;ReleaseSRWLockShared(&g_gunBoneLock);
     if(!g.haveMelee||!g.at||GetTickCount64()-g.at>100||g.melee.heroGeneration!=HeroGen())return false;
     out=g.melee;return true;

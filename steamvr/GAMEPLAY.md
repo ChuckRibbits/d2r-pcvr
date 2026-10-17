@@ -771,8 +771,10 @@ weapon category determines length/radius on the final attachment; native monster
 footprint and legacy artwork height determine its body capsule. Generic class
 support is implemented, but specific weapon axes, small creatures, bosses and
 sloped ground need headset checks. Basic contacts use the main hand; the candidate
-adds selected Smite shield contacts. Physical shield blocks and parries are below;
-other off-hand strikes remain future work.
+adds selected Smite shield contacts. Barbarians with two melee weapons also
+support independent left/right physical swings and thrusts; see
+[physical dual wield](../docs/BARBARIAN_DUAL_WIELD.md). Physical shield blocks
+and parries are below; other classes' off-hand weapon strikes remain future work.
 
 Only a confirmed physical contact overrides legacy melee grid reach. Native
 line-of-sight, hostile relationship, creature life state, damage, elemental
