@@ -16,6 +16,9 @@ bool MotionReady();
 bool DirectCrossbow(); // current game-thread launch already owns this bolt
 void SetCrossbowCycle(uint64_t session,uint32_t equipment,uint32_t milliseconds);
 bool SpellReady();
+// UI thread: one native sound (sounds.txt row) at the local client player,
+// through the game's own mixer and volume. False when unavailable.
+bool PlayHeroSound(int sound);
 bool SpellTarget(uintptr_t game,uintptr_t player,int* x,int* y);
 // 0: unrelated request; 1: copied/adjusted; -1: reject before native creation.
 int SpellParams(uintptr_t game,uintptr_t params,std::array<uint8_t,0x98>& adjusted);
