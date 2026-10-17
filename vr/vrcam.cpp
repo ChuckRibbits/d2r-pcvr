@@ -832,6 +832,64 @@ void LoadSettings() {
     const bool classicMelee=IniF(L"gameplay",L"melee_rules",0)>.5f;
     melee::ConfigureAttackSpeed(classicMelee,IniB(L"debug",L"melee_trace",false));
     melee::ConfigureAttackRating(classicMelee);
+    // Unleashed only: a raised shield blocks instead of the block stat.
+    // [gameplay] parry_ms (VR Settings > Combat), 0 disables perfect parry.
+    melee::ConfigureParrySound((int)IniF(L"gameplay",L"parry_sound",236));
+    melee::ConfigureBlockSound((int)IniF(L"gameplay",L"block_sound",398));
+    // Unleashed only, like the guard below: Classic keeps the native monster to-hit roll.
+    combat::ConfigureEnemiesAlwaysHit(!classicMelee&&IniB(L"gameplay",L"enemies_always_hit",false));
+    // Unleashed swing damage (applied live): attack rating and attack speed scale
+    // a physical swing instead of deciding whether it lands. [gameplay] ar_damage
+    // (1): damage x the native to-hit chance; ar_damage_floor (% kept at zero
+    // chance, 0 = the raw chance). swing_recovery_damage (1): damage x the share
+    // of the attack cycle since the previous stroke, to the power
+    // swing_recovery_curve (2: flailing loses damage per second), full from
+    // swing_recovery_grace % of the cycle (100 = none). A riposte ignores both.
+    combat::ConfigureArDamage(!classicMelee&&IniB(L"gameplay",L"ar_damage",true),
+                              std::clamp(IniF(L"gameplay",L"ar_damage_floor",0),0.f,100.f)/100.f);
+    melee::ConfigureSwingRecovery(!classicMelee&&IniB(L"gameplay",L"swing_recovery_damage",true),
+                                  std::clamp(IniF(L"gameplay",L"swing_recovery_curve",2),1.f,4.f),
+                                  std::clamp(IniF(L"gameplay",L"swing_recovery_grace",100),10.f,100.f)/100.f);
+    // [gameplay] cleave_falloff (25): % less damage for each further creature one
+    // stroke lands on, never below cleave_min (25) %. 0 = off. Unleashed only.
+    melee::ConfigureCleave(classicMelee?0.f:std::clamp(IniF(L"gameplay",L"cleave_falloff",25),0.f,100.f)/100.f,
+                           std::clamp(IniF(L"gameplay",L"cleave_min",25),0.f,100.f)/100.f);
+    {   // Riposte: a parry's reward. Its sound is built in; riposte_sound_file
+        // (a WAV, next to this ini unless a full path) replaces it.
+        wchar_t file[MAX_PATH];GetPrivateProfileStringW(L"gameplay",L"riposte_sound_file",L"",file,MAX_PATH,g_iniPath);
+        std::wstring path=file;
+        if(!path.empty()&&path.find(L':')==std::wstring::npos){std::wstring dir=g_iniPath;dir.resize(dir.find_last_of(L"\\/")+1);path=dir+path;}   // the ini's own folder
+        combat::ConfigureRiposte(std::clamp(IniF(L"gameplay",L"riposte_bonus",0),0.f,400.f)/100.f,
+                                 (uint32_t)std::clamp(IniF(L"gameplay",L"riposte_ms",1500),0.f,10000.f),
+                                 std::clamp(IniF(L"gameplay",L"riposte_volume",100),0.f,400.f)/100.f,path.c_str());
+    }
+    combat::ConfigureGuard(!classicMelee,(uint32_t)std::clamp(IniF(L"gameplay",L"parry_ms",400),0.f,400.f),IniB(L"debug",L"guard_trace",false));
+    // Guard strain light: % of the guard each block strains, lowered reset time,
+    // % of the view left clear at full swell, the broken guard's breathing period,
+    // the width of the light's inner blend (% of the visor radius), opacity (% peak;
+    // 0 = none, strain and the heartbeat still run), and colour as RRGGBB hex
+    // (FFF7EA, the pale white light, by default). guard_strain_dark (VR Settings >
+    // Combat > Guard strain color: Black) darkens the rim instead.
+    framevr::ConfigureGuardStrain(IniF(L"gameplay",L"guard_strain_per_block",10)/100.f,
+                                  IniF(L"gameplay",L"guard_strain_reset_ms",3000)/1000.f,
+                                  IniF(L"gameplay",L"guard_strain_clear",10)/100.f,
+                                  IniF(L"gameplay",L"guard_strain_breathe_ms",1600)/1000.f,
+                                  IniF(L"gameplay",L"guard_strain_softness",45)/100.f,
+                                  IniF(L"gameplay",L"guard_strain_light",100)/100.f,
+                                  IniB(L"gameplay",L"guard_strain_dark",false)?0u:
+                                  [] {wchar_t hex[16];GetPrivateProfileStringW(L"gameplay",L"guard_strain_color",L"FFF7EA",hex,16,g_iniPath);
+                                      wchar_t* end=nullptr;const unsigned long v=wcstoul(hex[0]==L'#'?hex+1:hex,&end,16);
+                                      return end&&end!=hex&&!*end&&v<=0xFFFFFFul?uint32_t(v):0xFFF7EAu;}());
+    {   // Guard strain heartbeat: % on top of the game's Master x Combat volume (0 = off),
+        // tempo range, wind-down time from full, and an optional one-beat 16-bit PCM WAV (next to this ini unless a full path).
+        wchar_t file[MAX_PATH];GetPrivateProfileStringW(L"gameplay",L"guard_strain_heart_file",L"",file,MAX_PATH,g_iniPath);
+        std::wstring path=file;
+        if(!path.empty()&&path.find(L':')==std::wstring::npos){std::wstring dir=g_iniPath;dir.resize(dir.find_last_of(L"\\/")+1);path=dir+path;}   // the ini's own folder
+        framevr::ConfigureHeartbeat(IniF(L"gameplay",L"guard_strain_heartbeat",200)/100.f,
+                                    IniF(L"gameplay",L"guard_strain_heart_bpm_min",70),
+                                    IniF(L"gameplay",L"guard_strain_heart_bpm_max",115),
+                                    IniF(L"gameplay",L"guard_strain_heart_fade_ms",4000)/1000.f,path.c_str());
+    }
 #endif
 #ifdef D2RVR_NATIVE_OPENXR
     framevr::foveation::Configure(IniB(L"render",L"fixed_foveation",true),IniF(L"render",L"foveation_inner",0.55f),IniF(L"render",L"gaze_foveation_inner",0.35f));
@@ -6009,6 +6067,23 @@ void ShieldContactTick() {
     sample.blade={center-axis*.20f,center+axis*.20f,.15f};
     melee::Submit(sample);
 }
+// Unleashed physical guard: independent of Smite. Not eligible (first person,
+// menus, no shield) keeps the native block roll; eligible but lowered = hit.
+void ShieldGuardTick() {
+    skel::MeleeWeaponPose pose;
+    const bool eligible=g_enabled.load()&&g_inWorld.load()&&!ThirdPerson()&&!Overhead()&&g_eyeOk.load()&&
+        !gamestate::MenuOpen()&&gamestate::LeftShield();
+    const bool posed=eligible&&skel::ShieldWeapon(pose)&&pose.worldEpoch==g_meleeTurnEpoch.load();
+    const float eye=UserEyeHeightM(),upm=std::max(1.f,ViewHeight())/eye;
+    // The shield hand from the head, in the view's turn. D2R only equips a shield
+    // in the left hand; the guard takes the side so a right-hand shield would mirror.
+    const D2RVR_Shared* sh=g_shared;float hand[3]{};
+    const bool handOk=sh&&sh->version==D2RVR_SHARED_VERSION&&sh->headValid&&(sh->handsValid&2u);
+    if(handOk)memcpy(hand,sh->leftHand,sizeof hand);
+    // the way the guard faces: where the headset looks, on the ground (the hand's own frame)
+    AcquireSRWLockShared(&g_stickLock);const StickFrame view=g_stickFrame;ReleaseSRWLockShared(&g_stickLock);
+    combat::PublishGuard(gamestate::LocalPlayer(),eligible,posed&&view.valid,view.camF,upm,hand,handOk,true);
+}
 #endif
 
 void PushArms() {
@@ -8200,6 +8275,7 @@ DWORD WINAPI UpdateThread(void*) {
 #ifdef D2RVR_NATIVE_OPENXR
         MeleeContactTick();
         ShieldContactTick();
+        ShieldGuardTick();
         BowTick();
 #endif
 #if D2RVR_FIRST_PERSON

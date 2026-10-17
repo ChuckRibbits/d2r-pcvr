@@ -266,6 +266,9 @@ struct Hero {
     // two_hand_weapon_attach (the barbarian's rig, under the body, not a wrist): the game hangs a
     // two-handed weapon on it in some animations - walking with a great axe (2026-10-06).
     int twoHand = -1;
+    // shield_attach, under the left FOREARM (not the wrist): where the game
+    // actually hangs a shield. Posed from the tracked hand so it bends with the wrist.
+    int shieldAttach = -1;
     std::vector<char> upper;    // spine_01 and everything under it: the body above the pelvis
     int upr[2] = {-1, -1}, lwr[2] = {-1, -1}, hand[2] = {-1, -1};   // [0] right, [1] left
     // first knuckles: index, middle, pinky - they give the hand's own axes
@@ -569,6 +572,7 @@ bool Learn(uintptr_t self, Hero* h) {
             {&h->weapon[0], {"R_weapon_attach", "R_weapon_attach", "R_weapon_attach"}},
             {&h->weapon[1], {"L_weapon_attach", "L_weapon_attach", "L_weapon_attach"}},
             {&h->twoHand, {"two_hand_weapon_attach", "two_hand_weapon_attach", "two_hand_weapon_attach"}},
+            {&h->shieldAttach, {"shield_attach", "shield_attach", "shield_attach"}},
         };
         for (const Alias& a : kAliases) {
             if (*a.slot >= 0) continue;
@@ -820,6 +824,41 @@ void ApplyWrist(Mat& hand, const Wrist& r) {
         for (int j = 0; j < 3; ++j) hand.m[i*4+j] = R[i*3+j] * len;
     }
 }
+
+#ifdef D2RVR_NATIVE_OPENXR
+// The shield wrist's stop. The hand bending toward the shield's side of the
+// forearm (back of the hand up) swings the shield's elbow edge into the arm:
+// that bend eases into where the shield sat rigid on the forearm before it
+// followed the hand. Bending the other way, twisting and side to side stay free.
+// Returns how much bend the controller asked that the wrist held back, degrees (0: none).
+float StopShieldWrist(const Hero& h,std::vector<Mat>& newW) {
+    const int k=h.hand[1],sa=h.shieldAttach,l=h.lwr[1],i=h.ind[1],m=h.mid[1],p=h.pnk[1];
+    if(k<0||sa<0||l<0||i<0||m<0||p<0)return 0;
+    // the back of the hand in the hand bone's frame (Fist's left palm, reversed)
+    const V3 back=RotOnly(Cross(Sub(Pos(h.bind[i]),Pos(h.bind[p])),Sub(Pos(h.bind[m]),Pos(h.bind[k]))),InvAffine(h.bind[k]));
+    // the hand as it would be, holding the shield where it sat on the forearm
+    const Mat rigid=Mul(Mul(h.bind[k],InvAffine(h.bind[sa])),newW[sa]);
+    const V3 f=Norm(Sub(Pos(newW[k]),Pos(newW[l])));   // elbow -> wrist
+    V3 now=Norm(RotOnly(back,newW[k])),stop=Norm(RotOnly(back,rigid));
+    // the shield's side of the forearm: the back of the hand's, unless its bone says otherwise
+    const V3 off=Sub(Pos(newW[sa]),Pos(newW[l])),side=Sub(off,Scale(f,Dot(off,f)));
+    if(Len(side)>1e-3f&&Dot(side,stop)<0){now=Scale(now,-1);stop=Scale(stop,-1);}
+    // Bend as the angle off the forearm: easing starts kEase short of the stop
+    // and only approaches it, so the shield slows into place and never reaches the arm.
+    constexpr float kEase=15.0f/57.2958f;
+    const float asked=acosf(std::clamp(Dot(now,f),-1.f,1.f)),at=acosf(std::clamp(Dot(stop,f),-1.f,1.f));
+    const float knee=at-kEase;
+    if(asked<=knee)return 0;   // short of the easing
+    const float given=knee+kEase*(1-expf(-(asked-knee)/kEase));
+    const V3 w=Sub(now,Scale(f,Dot(now,f)));
+    if(Len(w)<1e-4f)return 0;
+    const V3 target=Add(Scale(f,cosf(given)),Scale(Norm(w),sinf(given)));
+    const auto before=newW;
+    TurnAboutSelf(newW[k],RotBetween(now,target));
+    std::vector<char> fromK(h.count,0);fromK[k]=1;Propagate(h,before,newW,fromK,k);   // fingers, L_weapon_attach
+    return (asked-given)*57.2958f;
+}
+#endif
 
 // Where the controller puts that hand's grip point (the middle of the palm), in
 // model space. The hands hang off the eye we see through, so they land where
@@ -1708,6 +1747,7 @@ void PoseBody(uintptr_t self, const Hero& h, const Input& in) {
     bool shieldFollowed=false;
     if(in.mode==2&&in.leftShield&&(in.handsValid&2u)&&h.bindOk&&h.weapon[1]>=0&&h.hand[1]>=0) {
         const int wb=h.weapon[1],hand=h.hand[1];
+        StopShieldWrist(h,newW);   // before the shield takes the hand's turn
         bow::Mat wristBind,shieldBind,wristNow,result;
         memcpy(&wristBind,&h.bind[hand],sizeof wristBind);
         memcpy(&shieldBind,&h.bind[wb],sizeof shieldBind);
@@ -1718,6 +1758,16 @@ void PoseBody(uintptr_t self, const Hero& h, const Input& in) {
             const auto before=newW;memcpy(&newW[wb],&result,sizeof result);
             std::vector<char> moved(n,0);moved[wb]=1;Propagate(h,before,newW,moved,wb);
             shieldFollowed=true;
+            // The visible shield hangs on shield_attach, a FOREARM child: give it
+            // the same bind relationship to the tracked hand, so it bends with the wrist.
+            const int sa=h.shieldAttach;bow::Mat attachBind,attachNow;
+            if(sa>=0&&sa!=wb) {
+                memcpy(&attachBind,&h.bind[sa],sizeof attachBind);
+                if(shield::Follow(wristBind,attachBind,wristNow,attachNow)) {
+                    const auto beforeAttach=newW;memcpy(&newW[sa],&attachNow,sizeof attachNow);
+                    std::vector<char> movedAttach(n,0);movedAttach[sa]=1;Propagate(h,beforeAttach,newW,movedAttach,sa);
+                }
+            }
         }
     }
 #endif
@@ -1916,10 +1966,11 @@ void PoseBody(uintptr_t self, const Hero& h, const Input& in) {
 #ifdef D2RVR_NATIVE_OPENXR
     {
         MeleeWeaponPose shieldPose{};ULONGLONG at=0;HeroXform hx;Mat model;
-        if(shieldFollowed&&in.havePoseStamp&&h.weapon[1]>=0&&
+        const int shieldBone=h.shieldAttach>=0?h.shieldAttach:h.weapon[1];
+        if(shieldFollowed&&in.havePoseStamp&&shieldBone>=0&&
            HeroTransform(&hx)&&hx.self==self&&(hx.parent&0xFFFFFu)==0xFFFFFu&&
            SafeCopy(model.m,reinterpret_cast<const void*>(hx.comp),sizeof model)) {
-            const Mat world=Mul(newW[h.weapon[1]],model);
+            const Mat world=Mul(newW[shieldBone],model);
             const V3 origin=Pos(world),axis=Norm({world.m[4],world.m[5],world.m[6]}),player=Pos(model);
             if(Len({world.m[4],world.m[5],world.m[6]})>.3f&&
                std::isfinite(origin.x+origin.y+origin.z+axis.x+axis.y+axis.z+player.x+player.y+player.z)) {

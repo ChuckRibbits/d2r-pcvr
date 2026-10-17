@@ -13,7 +13,9 @@
 #include "bow_signatures.h"
 #include "native_ui_signatures.h"
 #include "melee.h"
+#include "bow.h"
 #include "combat.h"
+#include "combat_rules.h"
 #include "sigscan.h"
 #include "memory.h"
 #include "logging.h"
@@ -21,7 +23,8 @@
 #include "../steamvr/callback_ticket.h"
 #include "../steamvr/world_coordinates.h"
 #include "../steamvr/attack_speed.h"
-namespace gamestate {uint64_t LocalPlayer();bool MenuOpen();uint32_t HandsKey();uint32_t WeaponSet();}
+namespace gamestate {uint64_t LocalPlayer();bool MenuOpen();uint32_t HandsKey();uint32_t WeaponSet();
+    int32_t LeftDurability();bool RestoreLeftDurability(const D2RL::PluginContext*,int32_t);}
 namespace melee {
 namespace {
 using namespace framevr::melee;
@@ -58,12 +61,42 @@ std::atomic<bool> attackSpeed{false},trace{false},attackRating{true};
 std::atomic<uint64_t> cycleSession{0};std::atomic<uint32_t> cycleMs{0};
 std::atomic<unsigned> tooSoon{0},extraTargets{0},missed{0},buttonAttacks{0};
 framevr::attackspeed::Cadence cadence;HitSet landed,felt;
+// Unleashed recovery: the stroke whose first landed contact set the factor
+// that its other creatures share (game thread, Apply, only).
+std::atomic<bool> swingRecovery{false};std::atomic<float> recoveryCurve{2},recoveryGrace{1};
+uint64_t strokeSession=0,strokeId=0;float strokeRecovery=1;
+// Unleashed cleave falloff: creatures the current stroke has landed on (Apply only).
+std::atomic<float> cleaveStep{0},cleaveFloor{.25f};
+uint64_t cleaveSession=0,cleaveStroke=0;unsigned cleaveLanded=0;
 std::mutex queueMutex;std::array<Engine,2> engines;HitSet hits,shieldHits;
 struct Request {Sweep sweep;Sample sample;uint64_t session=0,at=0;};
 std::array<Request,24> requests;size_t count=0;
 std::array<Sample,2> current;uint64_t inputSession=0;framevr::CallbackTicket callback;
 using SmiteFn=int(*)(uintptr_t,uintptr_t,int,int);
 SmiteFn originalSmite=nullptr;std::atomic<bool> smiteReady{false};
+// Perfect parry -> the game's own GetHit event handler 445E60(game, event),
+// reached natively through an event table with the monster at event+8. It
+// refuses dying/dead monsters (34AB60 mode 0/12) and monsters whose MonStats2
+// row (975B0) lacks a GetHit mode (+0xF0 & mask), then calls the server
+// set-mode wrapper 491130(game, unit, 3). Returns 1 when applied. Identified
+// by call-stack probing (every server GetHit returns to 445EF7).
+constexpr uint64_t HitRecoveryRva=0x445e60;
+constexpr uint8_t HitRecoverySig[]={0x48,0x89,0x5c,0x24,0x08,0x57,0x48,0x83,0xec,0x20,0x48,0x8b,0x5a,0x08,0x48,0x8b,0xf9,0x48};
+using HitRecoveryFn=int(*)(uintptr_t game,const uintptr_t* event);
+std::atomic<bool> parryReady{false};std::atomic<unsigned> parried{0},parryRefused{0},parryRepaired{0};
+std::atomic<int> parrySound{236}; // item_platearmor: Archon Plate's equip sound (HD redirect)
+std::atomic<int> blockSound{398};  // block_weapon_1; [gameplay] block_sound
+// 34E5F0(unit, mode) is the unit animation-mode setter, the only writer of
+// unit+0xC seen while probing. Hooked with the parry to time monster attack starts.
+constexpr uint64_t SetModeRva=0x34e5f0;
+constexpr uint8_t SetModeSig[]={0x48,0x89,0x5c,0x24,0x18,0x57,0x48,0x83,0xec,0x20,0x8b,0xfa,0x48,0x8b,0xd9,0x48,0x85,0xc9};
+using SetModeFn=int(*)(uintptr_t,int);
+SetModeFn originalSetMode=nullptr;bool setModeIn=false;
+// Monster attacks as they begin (server units), for the parry: a swing while
+// the attack is incoming. MonMode A1 4, A2 5, S1-S4 8-11.
+struct AttackSeen {uint32_t id=0;uint64_t at=0;};
+std::mutex attackMutex;std::array<AttackSeen,64> attacks{};std::atomic<unsigned> attackStarts{0};
+bool AttackMode(int mode){return mode==4||mode==5||(mode>=8&&mode<=11);}
 template<class T> bool Read(uintptr_t p,T& out) {
     return p>0x10000&&framevr::ReadMemory(&out,reinterpret_cast<const void*>(p),sizeof out);
 }
@@ -106,14 +139,23 @@ bool Position(uintptr_t unit,Vec& out) {
     if(!Read(unit+0x38,path)||!Read(path,p))return false;
     out={2*(p[1]+p[0]/65536.f),0,2*(p[3]+p[2]/65536.f)};return true;
 }
+// Why a queued sweep was dropped as stale (diagnostics).
+enum StaleReason {StaleInactive,StaleEpoch,StaleEquipment,StaleSkill,StaleAge,StaleMenu,StaleHands,StaleReasons};
+std::array<std::atomic<unsigned>,StaleReasons> staleWhy{};std::atomic<unsigned> staleOldestMs{0};
 bool Allowed(const Request& r) {
     std::lock_guard lock(queueMutex);
     const auto& now=current[r.sample.shield?1:0];
-    return now.active&&r.session==inputSession&&r.sample.epoch==now.epoch&&r.sample.equipment==now.equipment&&
-        r.sample.minWeaponSpeed==now.minWeaponSpeed&&
-        r.sample.skillSlot==now.skillSlot&&r.sample.skillOwner==now.skillOwner&&r.sample.skillContext==now.skillContext&&
-        GetTickCount64()-r.at<=150&&r.session==gamestate::LocalPlayer()&&!gamestate::MenuOpen()&&
-        r.sample.equipment==(gamestate::HandsKey()^(gamestate::WeaponSet()<<30));
+    const auto age=GetTickCount64()-r.at;
+    int why=-1;
+    if(!now.active||r.session!=inputSession||r.session!=gamestate::LocalPlayer())why=StaleInactive;
+    else if(r.sample.epoch!=now.epoch)why=StaleEpoch;
+    else if(r.sample.equipment!=now.equipment||r.sample.minWeaponSpeed!=now.minWeaponSpeed)why=StaleEquipment;
+    else if(r.sample.skillSlot!=now.skillSlot||r.sample.skillOwner!=now.skillOwner||r.sample.skillContext!=now.skillContext)why=StaleSkill;
+    else if(age>150)why=StaleAge;
+    else if(gamestate::MenuOpen())why=StaleMenu;
+    else if(r.sample.equipment!=(gamestate::HandsKey()^(gamestate::WeaponSet()<<30)))why=StaleHands;
+    if(why>=0){++staleWhy[why];if(why==StaleAge&&age>staleOldestMs.load())staleOldestMs=unsigned(age);}
+    return why<0;
 }
 
 int Smite(uintptr_t game,uintptr_t player,int skill,int level) {
@@ -303,6 +345,17 @@ void __cdecl Apply(const D2RL::PluginContext*,void* token) noexcept {
                             cycle=cycleSession.load()==r.session?cycleMs.load():0;
                         }
                         const auto since=cadence.Since(r.session,r.at);
+                        // Unleashed: the stroke's first landed contact measures how
+                        // recovered it is; every creature that stroke reaches shares it.
+                        float recovery=1;bool strokeStart=false;
+                        if(swingRecovery.load(std::memory_order_relaxed)&&!attackSpeed.load()) {
+                            if(strokeSession==r.session&&strokeId==r.sweep.stroke)recovery=strokeRecovery;
+                            else {
+                                cycle=cycleSession.load()==r.session?cycleMs.load():0;
+                                recovery=combat::RecoveryFactor(since,cycle,recoveryCurve.load(std::memory_order_relaxed),
+                                                                recoveryGrace.load(std::memory_order_relaxed));strokeStart=true;
+                            }
+                        }
                         if(!hits.Insert(r.session,r.sweep.stroke,header[2]))continue;
                         ++contacts;
                         const auto saved=contact;contact={local.game,player,unit,false};
@@ -310,10 +363,22 @@ void __cdecl Apply(const D2RL::PluginContext*,void* token) noexcept {
                         // proc events, criticals, resistances, leech, XP and item
                         // durability. TLS redirects only THIS invocation's target.
                         const bool rolls=combat::NativeRolls(attackRating.load());
+                        const uint32_t swing=combat::PhysicalSwing(header[2]);   // its damage may be scaled (riposte, attack rating, recovery)
+                        // Unleashed: each further creature this stroke lands on takes less.
+                        float cleave=1;bool cleaveTracked=false;
+                        if(const float step=cleaveStep.load(std::memory_order_relaxed);step>0&&!attackSpeed.load()) {
+                            if(cleaveSession!=r.session||cleaveStroke!=r.sweep.stroke){cleaveSession=r.session;cleaveStroke=r.sweep.stroke;cleaveLanded=0;}
+                            cleave=combat::CleaveFactor(cleaveLanded,step,cleaveFloor.load(std::memory_order_relaxed));cleaveTracked=true;
+                        }
+                        const float swingRecoverySaved=combat::SwingRecovery(recovery*cleave);
                         reinterpret_cast<int(*)(uintptr_t,uintptr_t,int,int)>(d2rsig::Addr(AttackRva))(local.game,player,0,1);
+                        combat::SwingRecovery(swingRecoverySaved);
+                        combat::PhysicalSwing(swing);
                         combat::NativeRolls(rolls);
                         if(contact.accepted)++accepted;else if(contact.resolved)++missed;else ++rejected;
                         if(contact.resolved&&attackSpeed.load()){cadence.Landed(r.session,r.at,cycle);landed.Insert(r.session,r.sweep.stroke,0);}
+                        if(contact.resolved&&strokeStart){cadence.Landed(r.session,r.at,cycle);strokeSession=r.session;strokeId=r.sweep.stroke;strokeRecovery=recovery;}
+                        if(contact.resolved&&cleaveTracked)++cleaveLanded;
                         TraceHit(r,header[2],contact.accepted?"LANDED":contact.resolved?"MISSED (roll)":"native rejected",since,cycle);
                         contact=saved;
                         break;
@@ -328,6 +393,56 @@ void __cdecl Apply(const D2RL::PluginContext*,void* token) noexcept {
 void Init(const D2RL::PluginContext* ctx) {
     context=ctx;
     if(ctx->QueryService(&threads)!=D2RL::ServiceQueryResult::Success)threads=nullptr;
+}
+int SetMode(uintptr_t unit,int mode) {
+    if(AttackMode(mode)) {
+        uint32_t header[3]{};uintptr_t back=0;
+        if(Read(unit,header)&&header[0]==1&&Read(unit+0xd8,back)&&back>0x10000) { // a server monster starting an attack
+            const auto now=GetTickCount64();
+            std::lock_guard lock(attackMutex);
+            AttackSeen* slot=&attacks[0];
+            for(auto& a:attacks){if(a.id==header[2]){slot=&a;break;}if(a.at<slot->at)slot=&a;}
+            slot->id=header[2];slot->at=now;++attackStarts;
+        }
+    }
+    return originalSetMode(unit,mode);
+}
+// UI thread: the game's own mixer at the client hero (bow.cpp's verified hook).
+void __cdecl ParrySound(const D2RL::PluginContext*,void*) noexcept {bowvr::PlayHeroSound(parrySound.load());}
+// One sound for every block, so the player learns it: [gameplay] block_sound.
+void __cdecl BlockSound(const D2RL::PluginContext*,void*) noexcept {bowvr::PlayHeroSound(blockSound.load());}
+void QueueParrySound() {
+    if(parrySound.load()>0&&context&&threads&&threads->runOnUiThread)threads->runOnUiThread(context,&ParrySound,nullptr);
+}
+void __cdecl Parry(const D2RL::PluginContext*,void* token) noexcept {
+    const auto packed=reinterpret_cast<uintptr_t>(token);
+    const auto monster=uint32_t(packed);
+    // Free parry: the parried hit has been processed by now; undo any shield
+    // wear it caused (durability as cached just before it, +1 so 0 = unknown).
+    if(const int32_t before=int32_t(packed>>32)-1;before>0&&gamestate::RestoreLeftDurability(context,before))++parryRepaired;
+    uintptr_t game=0,player=0;
+    if(!parryReady.load()||!LocalServer(game,player)){++parryRefused;return;}
+    const auto unit=originalLookup(game,1,monster);uint32_t mode=0;
+    // Already recovering: nothing to interrupt. Native gates the rest.
+    if(!unit||!Read(unit+0xc,mode)||mode==3){++parryRefused;return;}
+    const uintptr_t event[2]{0,unit};
+    if(reinterpret_cast<HitRecoveryFn>(d2rsig::Addr(HitRecoveryRva))(game,event)){++parried;QueueParrySound();combat::NoteRiposte(monster);}
+    else ++parryRefused;
+}
+void QueueBlockSound() {
+    if(blockSound.load()>0&&context&&threads&&threads->runOnUiThread)threads->runOnUiThread(context,&BlockSound,nullptr);
+}
+uint64_t AttackStart(uint32_t monster) {
+    const auto now=GetTickCount64();
+    std::lock_guard lock(attackMutex);
+    for(const auto& a:attacks)if(a.id==monster&&a.at&&now>=a.at&&now-a.at<=3000)return a.at;
+    return 0;
+}
+bool QueueParry(uint32_t monster,int before) {
+    if(!parryReady.load()||!threads||!threads->runOnGameThread)return false;
+    const int32_t durability=before==-2?gamestate::LeftDurability():int32_t(before);
+    const uintptr_t token=(uintptr_t(uint32_t(durability+1))<<32)|monster;
+    return threads->runOnGameThread(context,&Parry,reinterpret_cast<void*>(token))==D2RL::Threads::Result::Success;
 }
 bool LocalServer(uintptr_t& game,uintptr_t& player) {
     Server local;{std::lock_guard lock(serverMutex);local=server;}
@@ -485,7 +600,19 @@ bool HirelingOverlay(uint32_t unitId,int overlay) {
 }
 void Install() {
     InstallTint();
-    if(ready.load()){InstallSmite();return;}
+    if(ready.load()) {
+        InstallSmite();
+        if(!parryReady.load()&&HitRecoveryRva&&d2rsig::Check(HitRecoveryRva,HitRecoverySig,sizeof HitRecoverySig)) {
+            parryReady=true;framevr::logging::Write("Frame guard: native hit recovery verified; perfect parry ready");
+        }
+        // The mode setter: monster attack starts (the parry).
+        if(parryReady.load()&&!setModeIn) {
+            setModeIn=d2rsig::Hook(SetModeRva,SetModeSig,sizeof SetModeSig,reinterpret_cast<void*>(&SetMode),reinterpret_cast<void**>(&originalSetMode));
+            framevr::logging::Write(setModeIn?"Frame guard: unit mode setter hooked; monster attack starts timed for the parry":
+                                              "Frame guard: mode setter signature mismatch; parry falls back to its window alone");
+        }
+        return;
+    }
     if(!context||!threads||!threads->runOnGameThread)return;
     if(!d2rsig::Check(AttackRva,AttackSig,sizeof AttackSig)||!d2rsig::Check(RelationRva,RelationSig,sizeof RelationSig)||
        !d2rsig::Check(LineRva,LineSig,sizeof LineSig)||!d2rsig::Check(StatsRva,StatsSig,sizeof StatsSig)||
@@ -506,7 +633,21 @@ void CancelShield() {std::lock_guard lock(queueMutex);current[1].active=false;en
 void CancelWeapon() {std::lock_guard lock(queueMutex);current[0].active=false;engines[0].Reset();}
 bool ShieldReady(){return smiteReady.load();}
 void ConfigureAttackSpeed(bool enabled,bool traceHits){attackSpeed=enabled;trace=traceHits;}
+void ConfigureSwingRecovery(bool on,float curve,float grace){swingRecovery=on;recoveryCurve=curve;recoveryGrace=grace;}
+void ConfigureCleave(float step,float floor){cleaveStep=step;cleaveFloor=floor;}
 void ConfigureAttackRating(bool native){attackRating=native;combat::ConfigureMeleeRolls(native);}
+void ConfigureBlockSound(int sound) {
+    static bool loaded=false; // settings thread only
+    const int previous=blockSound.exchange(sound);
+    if(loaded&&previous!=sound)QueueBlockSound(); // audition a change live
+    loaded=true;
+}
+void ConfigureParrySound(int sound) {
+    static bool loaded=false; // settings thread only
+    const int previous=parrySound.exchange(sound);
+    if(loaded&&previous!=sound)QueueParrySound();
+    loaded=true;
+}
 void SetAttackCycle(uint64_t session,uint32_t milliseconds){cycleMs=milliseconds;cycleSession=session;}
 void Submit(const Sample& sample) {
     uintptr_t token=0;
@@ -530,6 +671,10 @@ void Submit(const Sample& sample) {
     }
 }
 void Report() {
+    if(const auto pd=parried.exchange(0),pr=parryRefused.exchange(0),pf=parryRepaired.exchange(0),as=attackStarts.exchange(0);pd||pr||pf) {
+        char line[200];snprintf(line,sizeof line,"Frame guard: parry hit recovery applied=%u refused=%u shield_wear_refunded=%u monster_attack_starts=%u",pd,pr,pf,as);
+        framevr::logging::Write(line);
+    }
     const auto ss=shieldSweeps.exchange(0),sr=shieldRequests.exchange(0),sa=shieldAccepted.exchange(0),sf=shieldRejected.exchange(0);
     if(ss||sr||sa||sf) {
         char line[180];snprintf(line,sizeof line,"Frame shield: energetic sweeps=%u cast requests=%u native completed=%u refused=%u",ss,sr,sa,sf);
@@ -539,7 +684,23 @@ void Report() {
     const auto i=intersections.exchange(0),x=stale.exchange(0),w=walls.exchange(0);
     const auto callbacks=applied.exchange(0),retries=recovered.exchange(0),missing=playerMissing.exchange(0);
     const auto mismatch=positionMismatch.exchange(0),monsters=nearby.exchange(0),bodies=bodyMissing.exchange(0);
-    Diagnostics d;uint64_t age=0;{std::lock_guard lock(queueMutex);for(auto& e:engines){const auto one=e.TakeDiagnostics();d.discontinuities+=one.discontinuities;d.recovering+=one.recovering;}age=callback.Age(GetTickCount64());}
+    Diagnostics d,side[2];uint64_t age=0;
+    {std::lock_guard lock(queueMutex);for(int k=0;k<2;++k){side[k]=engines[k].TakeDiagnostics();d.discontinuities+=side[k].discontinuities;d.recovering+=side[k].recovering;}age=callback.Age(GetTickCount64());}
+    // Why the swing paths restarted, per hand, and why sweeps were dropped as stale.
+    for(int k=0;k<2;++k)if(side[k].discontinuities) {
+        const auto& q=side[k];char why[260];
+        snprintf(why,sizeof why,"Frame melee resets: hand=%s resets=%u state=%u timing=%u hand_travel=%u hand_turn=%u player_jump=%u blade_jump=%u fastest_hand=%.1f m/s fastest_turn=%.1f rad/s",
+            k?"shield":"weapon",q.discontinuities,q.reasons[ResetState],q.reasons[ResetTiming],q.reasons[ResetHandTravel],q.reasons[ResetHandTurn],q.reasons[ResetPlayer],q.reasons[ResetBlade],q.fastestHand,q.fastestTurn);
+        framevr::logging::Write(why);
+    }
+    {
+        unsigned w[StaleReasons];bool any=false;for(int k=0;k<StaleReasons;++k){w[k]=staleWhy[k].exchange(0);any|=w[k]!=0;}
+        if(any) {
+            char why[220];snprintf(why,sizeof why,"Frame melee stale: inactive=%u epoch=%u equipment=%u skill=%u age=%u (oldest %u ms) menu=%u hands_key=%u",
+                w[0],w[1],w[2],w[3],w[4],staleOldestMs.exchange(0),w[5],w[6]);
+            framevr::logging::Write(why);
+        }
+    }
     const auto early=tooSoon.exchange(0),extra=extraTargets.exchange(0),m=missed.exchange(0),button=buttonAttacks.exchange(0);
     if(!s&&!c&&!g&&!d.discontinuities&&!d.recovering&&!retries&&!early&&!extra&&!m&&!button)return;
     char line[760];snprintf(line,sizeof line,"Frame melee: sweep samples=%u physical contacts=%u native accepted=%u missed=%u rejected=%u missing server=%u intersections=%u stale=%u walls=%u pose resets=%u recovering=%u callbacks=%u abandoned=%u pending_ms=%llu missing_player=%u position_mismatch=%u nearby=%u missing_body=%u attack_speed=%d cycle_ms=%u too_soon=%u extra_targets=%u button_cycles=%u",s,c,a,m,r,g,i,x,w,d.discontinuities,d.recovering,callbacks,retries,(unsigned long long)age,missing,mismatch,monsters,bodies,

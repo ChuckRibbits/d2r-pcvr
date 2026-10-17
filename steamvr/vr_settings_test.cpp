@@ -88,7 +88,17 @@ int main(){
         thrust.Click(hit);Check(thrust.Get()[MeleeThrustSpeed]==2.25f,"thrust speed adjusts in quarter steps");
         const auto request=thrust.Click({Kind::Apply});
         Check(request.changed==(ChangeMask{1}<<MeleeThrustSpeed),"thrust edit does not change swing speed or combat rules");
+        Check(RowCount(Page::Combat)==5&&RowKey(Page::Combat,3)==ParryWindow&&s.values[ParryWindow]==400,"parry window is the fourth Combat row, 400 ms by default");
+        Check(Normalize(ParryWindow,-5)==0&&Normalize(ParryWindow,999)==400&&Normalize(ParryWindow,NAN)==400,"parry window: 0 is Off, bounded, invalid restores default");
         Check(Normalize(MeleeThrustSpeed,NAN)==2&&Normalize(MeleeThrustSpeed,0)==.75f&&Normalize(MeleeThrustSpeed,99)==10,"thrust speed has finite usable bounds");
+    }
+    {Model strain;strain.Open(s);strain.Click({Kind::Tab,int(Page::Combat)});
+        Check(RowKey(Page::Combat,4)==StrainDark&&s.values[StrainDark]==0,"guard strain colour is the fifth Combat row, White by default");
+        Check(ValueBox(4).y+ValueBox(4).h<570,"the fifth Combat row stays above the page notes");
+        strain.Click(At(Page::Combat,ValueBox(4)));
+        Check(strain.Get()[StrainDark]==1,"clicking the value switches the strain to Black");
+        const auto request=strain.Click({Kind::Apply});
+        Check(request.changed==(ChangeMask{1}<<StrainDark),"strain colour saves only its own setting");
     }
     Check(s.values[MenuDistance]==1&&s.values[TooltipTiming]==0,"comfortable Medium distance and Instant hover defaults");
     for(auto key:{MenuDistance,TooltipTiming}) {
