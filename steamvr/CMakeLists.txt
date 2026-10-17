@@ -161,6 +161,7 @@ add_executable(vr-settings-preview vr_settings_preview.cpp vr_settings_ui.cpp)
 target_link_libraries(vr-settings-preview PRIVATE user32 gdi32 framevr-runtime)
 
 add_executable(math-test math_test.cpp)
+add_executable(environment-cutaway-test environment_cutaway_test.cpp)
 add_executable(deferred-draw-test deferred_draw_test.cpp)
 add_executable(monster-bars-test monster_bars_test.cpp)
 add_executable(gaze-test gaze_test.cpp)
@@ -197,7 +198,7 @@ add_test(NAME light-bounds-test COMMAND light-bounds-test)
 set_tests_properties(light-bounds-test PROPERTIES TIMEOUT 30)
 foreach(test_target IN ITEMS memory-test hook-metrics-test active-keys-test resource-descriptions-test latest-worker-test haptic-pulse-test thread-stats-test
     gameplay-test weapon-skills-test quick-cast-test hand-controls-test skill-pad-test interact-press-test mod-layout-test spell-aim-test bow-pose-test crossbow-pose-test body-tracking-test body-calibration-test shoulder-swap-test blood-screen-test
-    portal-billboard-test composition-layers-test projectile-rules-test
+    portal-billboard-test composition-layers-test projectile-rules-test environment-cutaway-test
     combat-rules-test logging-test melee-contact-test attack-speed-test world-coordinates-test bow-flight-test spell-cast-test spell-aim-assist-test
     interaction-test native-belt-test wrist-hud-test navigation-info-test dropped-item-labels-test show-items-command-test native-hud-test render-resolution-test render-pointer-test scene-depth-test game-device-only-test controller-bindings-test journal-test native-panels-test
     vr-settings-test vr-settings-store-test controller-labels-test math-test deferred-draw-test monster-bars-test gaze-test window-focus-test callback-ticket-test local-player-test)
