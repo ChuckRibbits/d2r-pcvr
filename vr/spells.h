@@ -8,6 +8,8 @@ void Report();
 void Feedback(uint64_t session,uintptr_t player,uint32_t id,bool active);
 bool Prepare(framevr::bowflight::Shot& shot,uintptr_t game,uintptr_t player);
 bool Cast(const framevr::bowflight::Shot& shot,uintptr_t game,uintptr_t player);
+// Quiver arrow: confirm the player's own single-missile arrow skill and level.
+bool PrepareArrow(framevr::bowflight::Shot& shot,uintptr_t game,uintptr_t player);
 void Fired(const framevr::bowflight::Shot& shot,uintptr_t game,uintptr_t player);
 bool Position(uintptr_t game,uintptr_t missile,uintptr_t room,int x,int y);
 bool FinishVisual(uintptr_t client,const framevr::bowflight::Flight& flight);

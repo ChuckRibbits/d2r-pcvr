@@ -2,6 +2,7 @@
 #include "frame_math.h"
 #include "world_coordinates.h"
 #include "spell_cast.h"
+#include "weapon_skills.h"
 #include <array>
 #include <cstdint>
 #include <limits>
@@ -29,8 +30,20 @@ struct Shot {
     float boltLength=0; // authored held-bolt size, metres
 };
 inline float ProjectileLength(const Shot& s) {return s.kind==Kind::Spell?0:s.kind==Kind::Crossbow?s.boltLength:s.kind==Kind::Javelin?JavelinLength:ArrowLength;}
-inline uint32_t MissileId(const Shot& s){return s.kind==Kind::Spell?uint32_t(s.missile):uint32_t(s.kind);}
+// A quiver arrow: a physical bow release that carries a single-missile arrow
+// skill. It keeps the arrow's draw, length and flight; the skill supplies the
+// native missile, its costs, damage and hit effects.
+inline bool SkillArrow(const Shot& s){return s.kind==Kind::Arrow&&s.skill>=0;}
+inline uint32_t MissileId(const Shot& s){return s.kind==Kind::Spell||SkillArrow(s)?uint32_t(s.missile):uint32_t(s.kind);}
 inline bool BasicMissile(uint32_t id){return id<=1||id==31;}
+// What the client allocator returned for one of our visual requests. Only the
+// requested missile is kept; any other live missile unit we created is still a
+// native unit that would fly and must be destroyed, never dropped.
+enum class ClientUse {Unreadable,Keep,Destroy};
+inline ClientUse CreatedClient(bool readable,const uint32_t header[3],uint32_t missile,bool wanted) {
+    if(!readable||header[0]!=3)return ClientUse::Unreadable;
+    return wanted&&header[1]==missile?ClientUse::Keep:ClientUse::Destroy;
+}
 // Flight stays in rendered metres. Native paths/rooms use the unsheared grid.
 // Remove only the launch FLOOR's shear, never the arrow's airborne height or
 // the current player's floor after an area transition.
@@ -41,7 +54,8 @@ inline Vec RenderGround(const Shot& shot,Vec gridWorld) {
     return coordinates::RenderGround(gridWorld*(1/shot.unitsPerMetre),shot.player.y);
 }
 inline bool Valid(const Shot& s) {
-    const bool kind=BasicMissile(uint32_t(s.kind))||(s.kind==Kind::Spell&&spellcast::Supported(s.skill)&&s.hand>=0&&s.hand<2&&s.slot>=0&&s.slot<10);
+    const bool kind=(BasicMissile(uint32_t(s.kind))&&(!SkillArrow(s)||(weaponskills::QuiverSkill(s.skill)&&weaponskills::QuiverMissile(s.missile))))||
+        (s.kind==Kind::Spell&&spellcast::Supported(s.skill)&&s.hand>=0&&s.hand<2&&s.slot>=0&&s.slot<10);
     return kind&&s.session&&s.sequence&&Finite(s.origin)&&Finite(s.direction)&&Finite(s.player)&&
         std::isfinite(s.unitsPerMetre)&&s.unitsPerMetre>=1&&s.unitsPerMetre<=12&&
         std::isfinite(s.draw)&&s.draw>=0&&s.draw<=1&&
@@ -283,10 +297,25 @@ inline void SpellMatrix(const Flight& f,uint64_t now,float out[16]) {
     out[13]=p.y-out[5]*height-out[9]*ahead;
     out[14]=p.z-out[6]*height-out[10]*ahead;out[15]=1;
 }
+// Quiver arrows bind their unit root: fire_arrow, ice_arrow and safe_arrow
+// hang arrow.model (scale 1, identity orientation) and their particles 5 units
+// above it, the fire model also .35 behind. Place the root so the model lands
+// exactly where ArrowMatrix puts a basic arrow; particles keep their offsets.
+// Values read from the owned HD definitions; no assets ship.
+inline float QuiverModelAhead(int missile) {return missile==12||missile==41||missile==85?-.35f:0.f;}
+inline constexpr float QuiverModelHeight=5;
+inline void QuiverMatrix(const Flight& f,uint64_t now,float out[16]) {
+    ArrowMatrix(f,now,out);
+    const float ahead=QuiverModelAhead(f.shot.missile);
+    for(int i=0;i<3;++i)out[12+i]-=out[4+i]*QuiverModelHeight+out[8+i]*ahead;
+}
 // A nocked game mesh uses the guide's exact tail, direction and length, without
 // native bow animation or prediction. Hidden preview geometry cannot occlude.
-inline void PreviewMatrix(const Shot& pose,bool visible,float out[16]) {
-    Flight held;held.shot=pose;ArrowMatrix(held,0,out);
+// missile is the held client's native id, which can lag a quiver change.
+inline void PreviewMatrix(const Shot& pose,bool visible,float out[16],uint32_t missile=0) {
+    Flight held;held.shot=pose;held.shot.missile=int(missile);
+    if(weaponskills::QuiverMissile(int(missile)))QuiverMatrix(held,0,out);
+    else ArrowMatrix(held,0,out);
     if(!visible)for(int row=0;row<3;++row)for(int col=0;col<3;++col)out[row*4+col]*=.001f;
 }
 }
