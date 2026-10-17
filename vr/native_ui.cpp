@@ -1,3 +1,4 @@
+#include "melee_weapon.h"
 #include <windows.h>
 #include <D2RLPlugin/api.h>
 #include <cstdio>
@@ -22,8 +23,8 @@
 #include "spells.h"
 #include "bow.h"
 #include "../steamvr/attack_speed.h"
-namespace gamestate {uint32_t DataBank();bool MenuOpen();int AttackWeapon();int AttackWsm();uint32_t HandsKey();uint32_t WeaponSet();}
-namespace melee {void SetAttackCycle(uint64_t session,uint32_t milliseconds);}
+namespace gamestate {framevr::dualwield::Equipment MeleeEquipment();void SetMeleeOrder(uint32_t,uint32_t);uint32_t DataBank();bool MenuOpen();int AttackWeapon(int hand=0);int AttackWsm(int hand=0);uint32_t HandsKey();uint32_t WeaponSet();}
+namespace melee {void SetAttackCycle(uint64_t session,uint32_t milliseconds,int hand=0);}
 namespace nativeui {
 namespace {
 const D2RL::PluginContext* context=nullptr;
@@ -174,9 +175,18 @@ void Capture(framevr::interaction::Snapshot& s) {
     // hand. Skill speed (Fanaticism, Frenzy, Burst of Speed) and slows are not
     // read yet. An unknown class or weapon gives cycle 0, which never gates.
     {
+        const auto equipment=gamestate::MeleeEquipment();
+        if(framevr::dualwield::Eligible(int(h[1]),equipment)&&meleeweapon::Ready()) {
+            const auto right=meleeweapon::Select(player,0,equipment),left=meleeweapon::Select(player,1,equipment);
+            uint32_t rightId=0,leftId=0;
+            if(right&&left&&Read(right+8,rightId)&&Read(left+8,leftId))gamestate::SetMeleeOrder(rightId,leftId);
+        }
         const int weapon=gamestate::AttackWeapon(),wsm=gamestate::AttackWsm(),ias=stat(player,93,0);
         const int frames=weapon>=0?framevr::attackspeed::Frames(int(h[1]),framevr::attackspeed::Weapon(weapon),ias,wsm):0;
         melee::SetAttackCycle(s.session,framevr::attackspeed::Milliseconds(frames));
+        const int offWeapon=gamestate::AttackWeapon(1),offWsm=gamestate::AttackWsm(1);
+        const int offFrames=offWeapon>=0?framevr::attackspeed::Frames(int(h[1]),framevr::attackspeed::Weapon(offWeapon),ias,offWsm):0;
+        melee::SetAttackCycle(s.session,framevr::attackspeed::Milliseconds(offFrames),1);
         bowvr::SetCrossbowCycle(s.session,gamestate::HandsKey()^(gamestate::WeaponSet()<<30),
             weapon==int(framevr::attackspeed::Weapon::Crossbow)?framevr::attackspeed::Milliseconds(frames):0);
         static int told[5]={-2,-2,-2,-2,-2};

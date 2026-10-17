@@ -13,6 +13,8 @@
 #include "bow_signatures.h"
 #include "native_ui_signatures.h"
 #include "melee.h"
+#include "melee_weapon.h"
+#include "../steamvr/melee_hand_state.h"
 #include "bow.h"
 #include "combat.h"
 #include "combat_rules.h"
@@ -55,23 +57,20 @@ thread_local Contact contact;
 std::atomic<unsigned> samples{0},contacts{0},accepted{0},rejected{0},noServer{0},intersections{0},stale{0},walls{0};
 std::atomic<unsigned> applied{0},recovered{0},playerMissing{0},positionMismatch{0},nearby{0},bodyMissing{0};
 std::atomic<unsigned> shieldSweeps{0},shieldRequests{0},shieldAccepted{0},shieldRejected{0};
+std::atomic<unsigned> dualLanded[2]{},dualRefused{0};
 // Attack speed: settings/cycle cross threads; the cadence and the strokes that
 // already landed live on the game thread (Apply) only.
 std::atomic<bool> attackSpeed{false},trace{false},attackRating{true};
-std::atomic<uint64_t> cycleSession{0};std::atomic<uint32_t> cycleMs{0};
+std::atomic<uint64_t> cycleSession{0};std::atomic<uint32_t> cycleMs{0},offCycleMs{0};
 std::atomic<unsigned> tooSoon{0},extraTargets{0},missed{0},buttonAttacks{0};
-framevr::attackspeed::Cadence cadence;HitSet landed,felt;
-// Unleashed recovery: the stroke whose first landed contact set the factor
-// that its other creatures share (game thread, Apply, only).
+framevr::attackspeed::Cadence cadence; // Classic shares one native attack cycle across hands/buttons.
 std::atomic<bool> swingRecovery{false};std::atomic<float> recoveryCurve{2},recoveryGrace{1};
-uint64_t strokeSession=0,strokeId=0;float strokeRecovery=1;
-// Unleashed cleave falloff: creatures the current stroke has landed on (Apply only).
 std::atomic<float> cleaveStep{0},cleaveFloor{.25f};
-uint64_t cleaveSession=0,cleaveStroke=0;unsigned cleaveLanded=0;
-std::mutex queueMutex;std::array<Engine,2> engines;HitSet hits,shieldHits;
+std::array<HandCombat,2> hands;
+std::mutex queueMutex;std::array<Engine,3> engines;HitSet shieldHits;
 struct Request {Sweep sweep;Sample sample;uint64_t session=0,at=0;};
 std::array<Request,24> requests;size_t count=0;
-std::array<Sample,2> current;uint64_t inputSession=0;framevr::CallbackTicket callback;
+std::array<Sample,3> current;uint64_t inputSession=0;framevr::CallbackTicket callback;
 using SmiteFn=int(*)(uintptr_t,uintptr_t,int,int);
 SmiteFn originalSmite=nullptr;std::atomic<bool> smiteReady{false};
 // Perfect parry -> the game's own GetHit event handler 445E60(game, event),
@@ -144,12 +143,12 @@ enum StaleReason {StaleInactive,StaleEpoch,StaleEquipment,StaleSkill,StaleAge,St
 std::array<std::atomic<unsigned>,StaleReasons> staleWhy{};std::atomic<unsigned> staleOldestMs{0};
 bool Allowed(const Request& r) {
     std::lock_guard lock(queueMutex);
-    const auto& now=current[r.sample.shield?1:0];
+    const auto& now=current[Lane(r.sample)];
     const auto age=GetTickCount64()-r.at;
     int why=-1;
     if(!now.active||r.session!=inputSession||r.session!=gamestate::LocalPlayer())why=StaleInactive;
     else if(r.sample.epoch!=now.epoch)why=StaleEpoch;
-    else if(r.sample.equipment!=now.equipment||r.sample.minWeaponSpeed!=now.minWeaponSpeed)why=StaleEquipment;
+    else if(r.sample.equipment!=now.equipment||r.sample.minWeaponSpeed!=now.minWeaponSpeed||r.sample.weapons.id[0]!=now.weapons.id[0]||r.sample.weapons.id[1]!=now.weapons.id[1])why=StaleEquipment;
     else if(r.sample.skillSlot!=now.skillSlot||r.sample.skillOwner!=now.skillOwner||r.sample.skillContext!=now.skillContext)why=StaleSkill;
     else if(age>150)why=StaleAge;
     else if(gamestate::MenuOpen())why=StaleMenu;
@@ -249,26 +248,26 @@ bool BodyFor(uintptr_t unit,uint32_t classId,float upm,float floor,Body& body) {
 // [debug] melee_trace=1: one line per native attack and per refused stroke,
 // on the game thread, with the time since the previous landed hit. Landed
 // hits should never be closer together than cycle_ms.
-uint64_t tracedStroke[2]{};   // last stroke logged per refusal kind (game thread)
+uint64_t tracedStroke[2][2]{};   // last stroke logged per refusal kind (game thread)
 void TraceRefusal(int kind,const Request& r,uint32_t target) {
-    if(!trace.load()||tracedStroke[kind]==r.sweep.stroke)return;
-    tracedStroke[kind]=r.sweep.stroke;
+    if(!trace.load()||tracedStroke[r.sample.handIndex][kind]==r.sweep.stroke)return;
+    tracedStroke[r.sample.handIndex][kind]=r.sweep.stroke;
     const auto since=cadence.Since(r.session,r.at);
-    char line[240];snprintf(line,sizeof line,"Frame melee trace: stroke=%llu target=%u REFUSED (%s) since_last_landed=%lld ms remaining=%llu ms cycle=%u ms",
-        (unsigned long long)r.sweep.stroke,target,kind?"one creature per stroke":"too soon",since==UINT64_MAX?-1LL:(long long)since,
+    char line[240];snprintf(line,sizeof line,"Frame melee trace: hand=%s stroke=%llu target=%u REFUSED (%s) since_last_landed=%lld ms remaining=%llu ms cycle=%u ms",
+        r.sample.handIndex?"left":"right",(unsigned long long)r.sweep.stroke,target,kind?"one creature per stroke":"too soon",since==UINT64_MAX?-1LL:(long long)since,
         (unsigned long long)cadence.Remaining(r.session,r.at),cycleMs.load());
     framevr::logging::Write(line);
 }
 void TraceHit(const Request& r,uint32_t target,const char* outcome,uint64_t since,uint32_t cycle) {
     if(!trace.load())return;
-    char line[260];snprintf(line,sizeof line,"Frame melee trace: stroke=%llu target=%u %s since_last_landed=%lld ms cycle=%u ms %s=%.1f m/s",
-        (unsigned long long)r.sweep.stroke,target,outcome,since==UINT64_MAX?-1LL:(long long)since,cycle,r.sweep.thrust?"thrust":"swing",r.sweep.speed);
+    char line[260];snprintf(line,sizeof line,"Frame melee trace: hand=%s stroke=%llu target=%u %s since_last_landed=%lld ms cycle=%u ms %s=%.1f m/s",
+        r.sample.handIndex?"left":"right",(unsigned long long)r.sweep.stroke,target,outcome,since==UINT64_MAX?-1LL:(long long)since,cycle,r.sweep.thrust?"thrust":"swing",r.sweep.speed);
     framevr::logging::Write(line);
 }
 // Every weapon contact with a hostile creature feels struck: one tap per
 // stroke and creature, whether native then lands, misses or refuses it.
 void Feel(const Request& r,uint32_t target) {
-    if(felt.Insert(r.session,r.sweep.stroke,target))framevr::MeleeImpact();
+    if(hands[r.sample.handIndex].felt.Insert(r.session,r.sweep.stroke,target))framevr::MeleeImpact(r.sample.handIndex);
 }
 void __cdecl Apply(const D2RL::PluginContext*,void* token) noexcept {
     std::array<Request,24> batch;size_t n=0;
@@ -332,6 +331,16 @@ void __cdecl Apply(const D2RL::PluginContext*,void* token) noexcept {
                             }
                             break;
                         }
+                        const int hand=r.sample.handIndex;
+                        auto& state=hands[hand];
+                        auto& hits=state.hits;auto& landed=state.landed;
+                        auto& recoveryClock=attackSpeed.load()?cadence:state.recovery;
+                        const bool dual=r.sample.weapons.id[0]&&r.sample.weapons.id[1];
+                        const uintptr_t weapon=dual?meleeweapon::Select(player,hand,r.sample.weapons):0;
+                        const int speedHand=dual?r.sample.weapons.BodyHand(hand):0;
+                        if((dual&&(!weapon||speedHand<0))||(hand==1&&!dual)){++dualRefused;continue;}
+                        uint32_t selectedId=0;
+                        if(dual&&(!Read(weapon+8,selectedId)||selectedId!=r.sample.weapons.displayed[hand])){++dualRefused;continue;}
                         Feel(r,header[2]);
                         if(hits.Contains(r.session,r.sweep.stroke,header[2]))continue;
                         // Attack speed: a basic attack strikes one creature, and
@@ -340,18 +349,22 @@ void __cdecl Apply(const D2RL::PluginContext*,void* token) noexcept {
                         // as a native swing would; a geometric whiff never does.
                         uint32_t cycle=0;
                         if(attackSpeed.load()) {
-                            if(landed.Contains(r.session,r.sweep.stroke,0)){++extraTargets;TraceRefusal(1,r,header[2]);break;}
-                            if(!cadence.Ready(r.session,r.at)){++tooSoon;TraceRefusal(0,r,header[2]);break;}
-                            cycle=cycleSession.load()==r.session?cycleMs.load():0;
+                            if(landed.Contains(r.session,r.sweep.stroke,0)){
+                                ++extraTargets;TraceRefusal(1,r,header[2]);if(dual)continue;break;
+                            }
+                            if(!cadence.Ready(r.session,r.at)){
+                                ++tooSoon;TraceRefusal(0,r,header[2]);if(dual)continue;break;
+                            }
+                            cycle=cycleSession.load()==r.session?(speedHand?offCycleMs.load():cycleMs.load()):0;
                         }
-                        const auto since=cadence.Since(r.session,r.at);
+                        const auto since=recoveryClock.Since(r.session,r.at);
                         // Unleashed: the stroke's first landed contact measures how
                         // recovered it is; every creature that stroke reaches shares it.
                         float recovery=1;bool strokeStart=false;
                         if(swingRecovery.load(std::memory_order_relaxed)&&!attackSpeed.load()) {
-                            if(strokeSession==r.session&&strokeId==r.sweep.stroke)recovery=strokeRecovery;
+                            if(state.strokeSession==r.session&&state.strokeId==r.sweep.stroke)recovery=state.strokeRecovery;
                             else {
-                                cycle=cycleSession.load()==r.session?cycleMs.load():0;
+                                cycle=cycleSession.load()==r.session?(speedHand?offCycleMs.load():cycleMs.load()):0;
                                 recovery=combat::RecoveryFactor(since,cycle,recoveryCurve.load(std::memory_order_relaxed),
                                                                 recoveryGrace.load(std::memory_order_relaxed));strokeStart=true;
                             }
@@ -367,21 +380,25 @@ void __cdecl Apply(const D2RL::PluginContext*,void* token) noexcept {
                         // Unleashed: each further creature this stroke lands on takes less.
                         float cleave=1;bool cleaveTracked=false;
                         if(const float step=cleaveStep.load(std::memory_order_relaxed);step>0&&!attackSpeed.load()) {
-                            if(cleaveSession!=r.session||cleaveStroke!=r.sweep.stroke){cleaveSession=r.session;cleaveStroke=r.sweep.stroke;cleaveLanded=0;}
-                            cleave=combat::CleaveFactor(cleaveLanded,step,cleaveFloor.load(std::memory_order_relaxed));cleaveTracked=true;
+                            if(state.cleaveSession!=r.session||state.cleaveStroke!=r.sweep.stroke){state.cleaveSession=r.session;state.cleaveStroke=r.sweep.stroke;state.cleaveLanded=0;}
+                            cleave=combat::CleaveFactor(state.cleaveLanded,step,cleaveFloor.load(std::memory_order_relaxed));cleaveTracked=true;
                         }
                         const float swingRecoverySaved=combat::SwingRecovery(recovery*cleave);
-                        reinterpret_cast<int(*)(uintptr_t,uintptr_t,int,int)>(d2rsig::Addr(AttackRva))(local.game,player,0,1);
+                        {
+                            meleeweapon::Scope selected(player,weapon);
+                            reinterpret_cast<int(*)(uintptr_t,uintptr_t,int,int)>(d2rsig::Addr(AttackRva))(local.game,player,0,1);
+                        }
                         combat::SwingRecovery(swingRecoverySaved);
                         combat::PhysicalSwing(swing);
                         combat::NativeRolls(rolls);
                         if(contact.accepted)++accepted;else if(contact.resolved)++missed;else ++rejected;
+                        if(dual&&contact.accepted)++dualLanded[hand];
                         if(contact.resolved&&attackSpeed.load()){cadence.Landed(r.session,r.at,cycle);landed.Insert(r.session,r.sweep.stroke,0);}
-                        if(contact.resolved&&strokeStart){cadence.Landed(r.session,r.at,cycle);strokeSession=r.session;strokeId=r.sweep.stroke;strokeRecovery=recovery;}
-                        if(contact.resolved&&cleaveTracked)++cleaveLanded;
+                        if(contact.resolved&&strokeStart){state.recovery.Landed(r.session,r.at,cycle);state.strokeSession=r.session;state.strokeId=r.sweep.stroke;state.strokeRecovery=recovery;}
+                        if(contact.resolved&&cleaveTracked)++state.cleaveLanded;
                         TraceHit(r,header[2],contact.accepted?"LANDED":contact.resolved?"MISSED (roll)":"native rejected",since,cycle);
                         contact=saved;
-                        break;
+                        if(!dual)break; // Both blades may strike this creature in the same batch.
                     }
                 }
             }
@@ -599,6 +616,7 @@ bool HirelingOverlay(uint32_t unitId,int overlay) {
     return true;
 }
 void Install() {
+    meleeweapon::Install();
     InstallTint();
     if(ready.load()) {
         InstallSmite();
@@ -630,7 +648,7 @@ void Cancel() {
     std::lock_guard lock(queueMutex);for(auto& s:current)s.active=false;count=0;for(auto& e:engines)e.Reset();callback.Cancel();
 }
 void CancelShield() {std::lock_guard lock(queueMutex);current[1].active=false;engines[1].Reset();}
-void CancelWeapon() {std::lock_guard lock(queueMutex);current[0].active=false;engines[0].Reset();}
+void CancelWeapon(int hand) {std::lock_guard lock(queueMutex);const int lane=hand==1?2:0;current[lane].active=false;engines[lane].Reset();}
 bool ShieldReady(){return smiteReady.load();}
 void ConfigureAttackSpeed(bool enabled,bool traceHits){attackSpeed=enabled;trace=traceHits;}
 void ConfigureSwingRecovery(bool on,float curve,float grace){swingRecovery=on;recoveryCurve=curve;recoveryGrace=grace;}
@@ -648,17 +666,18 @@ void ConfigureParrySound(int sound) {
     if(loaded&&previous!=sound)QueueParrySound();
     loaded=true;
 }
-void SetAttackCycle(uint64_t session,uint32_t milliseconds){cycleMs=milliseconds;cycleSession=session;}
+void SetAttackCycle(uint64_t session,uint32_t milliseconds,int hand){if(hand==1)offCycleMs=milliseconds;else cycleMs=milliseconds;cycleSession=session;}
 void Submit(const Sample& sample) {
+    if(sample.handIndex<0||sample.handIndex>1)return;
     uintptr_t token=0;
     {
         std::lock_guard lock(queueMutex);
-        current[sample.shield?1:0]=sample;auto& engine=engines[sample.shield?1:0];
+        current[Lane(sample)]=sample;auto& engine=engines[Lane(sample)];
         const auto session=gamestate::LocalPlayer();
         if(session!=inputSession){inputSession=session;for(auto& e:engines)e.Reset();count=0;callback.Cancel();}
         if(callback.Expired(GetTickCount64(),500)){callback.Cancel();count=0;for(auto& e:engines)e.Reset();++recovered;}
         Sweep sweep;
-        if(!session||!ready.load()||!sample.active){current[sample.shield?1:0].active=false;engine.Reset();return;}
+        if(!session||!ready.load()||!sample.active){current[Lane(sample)].active=false;engine.Reset();return;}
         if(engine.Step(sample,sweep)) {
             if(count==requests.size()){count=0;engine.Reset();return;} // never replay a backlog
             requests[count++]={sweep,sample,session,GetTickCount64()};++samples;
@@ -671,6 +690,11 @@ void Submit(const Sample& sample) {
     }
 }
 void Report() {
+    const auto right=dualLanded[0].exchange(0),left=dualLanded[1].exchange(0),invalid=dualRefused.exchange(0);
+    if(right||left||invalid) {
+        char line[180];snprintf(line,sizeof line,"Frame dual wield: right landed=%u left landed=%u stale/unavailable weapon=%u",right,left,invalid);
+        framevr::logging::Write(line);
+    }
     if(const auto pd=parried.exchange(0),pr=parryRefused.exchange(0),pf=parryRepaired.exchange(0),as=attackStarts.exchange(0);pd||pr||pf) {
         char line[200];snprintf(line,sizeof line,"Frame guard: parry hit recovery applied=%u refused=%u shield_wear_refunded=%u monster_attack_starts=%u",pd,pr,pf,as);
         framevr::logging::Write(line);
@@ -684,13 +708,13 @@ void Report() {
     const auto i=intersections.exchange(0),x=stale.exchange(0),w=walls.exchange(0);
     const auto callbacks=applied.exchange(0),retries=recovered.exchange(0),missing=playerMissing.exchange(0);
     const auto mismatch=positionMismatch.exchange(0),monsters=nearby.exchange(0),bodies=bodyMissing.exchange(0);
-    Diagnostics d,side[2];uint64_t age=0;
-    {std::lock_guard lock(queueMutex);for(int k=0;k<2;++k){side[k]=engines[k].TakeDiagnostics();d.discontinuities+=side[k].discontinuities;d.recovering+=side[k].recovering;}age=callback.Age(GetTickCount64());}
+    Diagnostics d,side[3];uint64_t age=0;
+    {std::lock_guard lock(queueMutex);for(int k=0;k<3;++k){side[k]=engines[k].TakeDiagnostics();d.discontinuities+=side[k].discontinuities;d.recovering+=side[k].recovering;}age=callback.Age(GetTickCount64());}
     // Why the swing paths restarted, per hand, and why sweeps were dropped as stale.
-    for(int k=0;k<2;++k)if(side[k].discontinuities) {
+    for(int k=0;k<3;++k)if(side[k].discontinuities) {
         const auto& q=side[k];char why[260];
         snprintf(why,sizeof why,"Frame melee resets: hand=%s resets=%u state=%u timing=%u hand_travel=%u hand_turn=%u player_jump=%u blade_jump=%u fastest_hand=%.1f m/s fastest_turn=%.1f rad/s",
-            k?"shield":"weapon",q.discontinuities,q.reasons[ResetState],q.reasons[ResetTiming],q.reasons[ResetHandTravel],q.reasons[ResetHandTurn],q.reasons[ResetPlayer],q.reasons[ResetBlade],q.fastestHand,q.fastestTurn);
+            k==2?"left weapon":k==1?"shield":"right weapon",q.discontinuities,q.reasons[ResetState],q.reasons[ResetTiming],q.reasons[ResetHandTravel],q.reasons[ResetHandTurn],q.reasons[ResetPlayer],q.reasons[ResetBlade],q.fastestHand,q.fastestTurn);
         framevr::logging::Write(why);
     }
     {

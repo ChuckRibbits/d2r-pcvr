@@ -1,4 +1,5 @@
 #include "melee_contact.h"
+#include "melee_hand_state.h"
 #include <cstdio>
 #include <cstdlib>
 #include <limits>
@@ -12,6 +13,34 @@ struct Sim {
     bool Move(Vec d){sample.hand.p=sample.hand.p+d;sample.blade.base=sample.blade.base+d;sample.blade.tip=sample.blade.tip+d;return Step();}
 };
 int main(){
+    {
+        Sim right,left;left.sample.handIndex=1;left.Step(8);
+        Check(Lane(right.sample)==0&&Lane(left.sample)==2,"weapons use separate pose engines");
+        Sample shield=left.sample;shield.shield=true;
+        Check(Lane(shield)==1,"shield contact retains its own engine");
+        bool r=false,l=false;
+        for(int i=0;i<6;++i){r|=right.Move({.08f,0,0});l|=left.Move({-.08f,0,0});}
+        Check(r&&l,"simultaneous mirrored swings both generate contacts");
+        std::array<HandCombat,2> state;
+        for(auto& hand:state) {
+            Check(hand.hits.Insert(1,1,7),"each blade can hit the same target once");
+            Check(!hand.hits.Insert(1,1,7),"one blade cannot repeat its contact");
+            Check(hand.felt.Insert(1,1,7),"each controller receives its own impact");
+        }
+        state[0].recovery.Landed(1,1000,600);
+        Check(state[1].recovery.Since(1,1000)==UINT64_MAX,"right swing does not weaken first left swing");
+        state[1].recovery.Landed(1,1100,400);
+        Check(state[0].recovery.Since(1,1200)==200&&state[1].recovery.Since(1,1200)==100,"alternating strokes keep independent recovery");
+        ++state[0].cleaveLanded;
+        Check(state[1].cleaveLanded==0,"right cleave never consumes the left stroke's first target");
+        auto changed=left.sample;changed.weapons={{41,42},{D2RVR_TYPE_SWORD,D2RVR_TYPE_AXE},{41,42}};
+        changed.time+=.02;Sweep sweep;
+        Check(!left.engine.Step(changed,sweep),"equipping a second weapon cancels the old stroke");
+        changed.weapons.id[1]=43;changed.time+=.02;
+        Check(!left.engine.Step(changed,sweep),"same-type replacement weapon cannot inherit a stroke");
+        changed.active=false;changed.time+=.02;
+        Check(!left.engine.Step(changed,sweep),"menu/stow cancellation disables the left stroke");
+    }
     {
         Sim s;s.sample.minWeaponSpeed=12;s.Step(8);
         bool thrust=false;
@@ -331,6 +360,12 @@ int main(){
         history.Clear();Check(!history.Find(14,s.sample.time,matched),"tracking loss clears history");
         s.sample.active=true;history.Push(0,s.sample);
         Check(history.Find(0,s.sample.time,matched),"wrapped zero input stamp remains valid");
+        s.sample.weapons={{41,42},{D2RVR_TYPE_SWORD,D2RVR_TYPE_AXE},{41,42}};
+        s.sample.time+=.02;history.Push(1,s.sample);
+        Check(!history.Find(0,s.sample.time,matched),"same-code equipment identity change invalidates older poses");
+        std::swap(s.sample.weapons.displayed[0],s.sample.weapons.displayed[1]);
+        s.sample.time+=.02;history.Push(2,s.sample);
+        Check(!history.Find(1,s.sample.time,matched),"reversed native primary order invalidates older poses");
     }
     {
         // A quick slash ends between input update and the weapon pose. Pairing

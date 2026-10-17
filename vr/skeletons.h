@@ -174,9 +174,9 @@ struct MeleeWeaponPose {
     uint32_t poseStamp=0,worldEpoch=0,heroGeneration=0;
     uint32_t weaponType=0;
     float castingAxis[3]{}; // final visible shaft, including staff's chosen axis/sign
-    float gripAxis[3]{}; // collision blade direction relative to its driving right grip
+    float gripAxis[3]{}; // collision blade direction relative to its driving controller grip
 };
-bool MeleeWeapon(MeleeWeaponPose& out);
+bool MeleeWeapon(MeleeWeaponPose& out,int hand=0);
 bool ShieldWeapon(MeleeWeaponPose& out);
 bool CrossbowPose(framevr::crossbow::Pose& out);
 // Called after the game's complete attachment/world transform is evaluated.

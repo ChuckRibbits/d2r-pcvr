@@ -1,5 +1,6 @@
 #pragma once
 #include "gameplay.h"
+#include "dual_wield.h"
 #include <array>
 
 namespace framevr::melee {
@@ -56,12 +57,15 @@ struct Sample {
     Blade blade{}; // world metres (game coordinates divided by unitsPerMetre)
     Vec player{};float unitsPerMetre=1;
     bool shield=false;
+    int handIndex=0;
+    dualwield::Equipment weapons{}; // populated only for physical dual wield
     float minWeaponSpeed=12.f;
     float minThrustSpeed=2.f;
     Vec thrustAxis{}; // posed base-to-tip axis in absolute tracking space
     int skillSlot=-1,skillOwner=-1;
     uint64_t skillContext=0;
 };
+inline int Lane(const Sample& s){return s.shield?1:s.handIndex==1?2:0;}
 // The renderer may finish posing an older input after a newer XR sample has
 // arrived. Match the blade to the hand that actually posed it, never to the
 // latest hand velocity. Calls are serialized by the transport's input mutex.
@@ -82,7 +86,10 @@ public:
             const auto& e=entries[(next+entries.size()-1-age)%entries.size()];
             if(e.stamp!=stamp)continue;
             if(!e.sample.active||e.sample.epoch!=current.epoch||e.sample.equipment!=current.equipment||
-               e.sample.shield!=current.shield||e.sample.skillSlot!=current.skillSlot||e.sample.skillOwner!=current.skillOwner||e.sample.skillContext!=current.skillContext||
+               e.sample.shield!=current.shield||e.sample.handIndex!=current.handIndex||
+               e.sample.weapons.id[0]!=current.weapons.id[0]||e.sample.weapons.id[1]!=current.weapons.id[1]||
+               e.sample.weapons.displayed[0]!=current.weapons.displayed[0]||e.sample.weapons.displayed[1]!=current.weapons.displayed[1]||
+               e.sample.skillSlot!=current.skillSlot||e.sample.skillOwner!=current.skillOwner||e.sample.skillContext!=current.skillContext||
                now<e.sample.time||now-e.sample.time>.1)return false;
             out=e.sample;return true;
         }
@@ -179,7 +186,9 @@ public:
         const float handTravel=Length(in.hand.p-previous.hand.p),playerTravel=Length(in.player-previous.player);
         const float bladeTravel=std::max(Length(in.blade.base-previous.blade.base),Length(in.blade.tip-previous.blade.tip));
         const bool stateChanged=in.epoch!=previous.epoch||in.equipment!=previous.equipment||
-           in.shield!=previous.shield||in.minWeaponSpeed!=previous.minWeaponSpeed||in.minThrustSpeed!=previous.minThrustSpeed||in.skillSlot!=previous.skillSlot||in.skillOwner!=previous.skillOwner||in.skillContext!=previous.skillContext||
+           in.shield!=previous.shield||in.handIndex!=previous.handIndex||in.weapons.id[0]!=previous.weapons.id[0]||in.weapons.id[1]!=previous.weapons.id[1]||
+           in.weapons.displayed[0]!=previous.weapons.displayed[0]||in.weapons.displayed[1]!=previous.weapons.displayed[1]||
+           in.minWeaponSpeed!=previous.minWeaponSpeed||in.minThrustSpeed!=previous.minThrustSpeed||in.skillSlot!=previous.skillSlot||in.skillOwner!=previous.skillOwner||in.skillContext!=previous.skillContext||
            std::fabs(in.unitsPerMetre-previous.unitsPerMetre)>.05f;
         const bool badTiming=dt<=0||dt>.1,fastHand=handTravel>std::max(.12f,gameplay::MeleeHandTrackingLimit*float(dt)),fastTurn=angle>gameplay::MeleeAngularTrackingLimit*dt;
         const bool jumped=playerTravel>.5f,bladeJump=bladeTravel>std::max(1.2f,handTravel+angle*lever+playerTravel+.1f);
