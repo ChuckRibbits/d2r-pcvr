@@ -137,7 +137,7 @@ std::vector<uint8_t> Paint(const Model& m,Hit hover,const char* runtimeStatus,co
             text("Headset uses the runtime recommendation, capped at 4096 per side. DLSS: game Options.",{40,795,1200,65},false,false,quiet);
         }
         if(m.page==Page::HUD){
-            text("Palm: raise left hand palm up; release grip/trigger. Companions follow the minimap.",{58,854,1160,22},false,false,quiet);
+            text("Palm: raise left hand palm up; release grip/trigger. Status follows the minimap.",{58,854,1160,22},false,false,quiet);
         }
         if(m.page==Page::Combat){
             text("Unleashed: each deliberate stroke can hit multiple creatures. Classic: attack rating, defense and block decide each hit; attack speed paces them and misses spend the attack.",{58,450,1160,76},false,false,quiet);

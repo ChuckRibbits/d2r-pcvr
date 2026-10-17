@@ -33,8 +33,10 @@ target_sources(d2rl-pcvr PRIVATE interaction_assets.rc interaction_icons.cpp ui_
 target_sources(d2rl-pcvr PRIVATE potion_models.cpp)
 target_sources(d2rl-pcvr PRIVATE ${ROOT}/vr/settings_menu.cpp ${CMAKE_CURRENT_SOURCE_DIR}/vr_settings_ui.cpp ${ROOT}/vr/native_ui.cpp ${CMAKE_CURRENT_SOURCE_DIR}/interaction_ui.cpp ${ROOT}/vr/interactionstate.cpp ${ROOT}/vr/bow.cpp ${ROOT}/vr/projectiles.cpp ${ROOT}/vr/combat.cpp ${ROOT}/vr/melee.cpp ${CMAKE_CURRENT_SOURCE_DIR}/transport.cpp ${CMAKE_CURRENT_SOURCE_DIR}/foveation.cpp ${CMAKE_CURRENT_SOURCE_DIR}/logging.cpp ${CMAKE_CURRENT_SOURCE_DIR}/profile.cpp)
 target_sources(d2rl-pcvr PRIVATE ${ROOT}/vr/native_belt.cpp)
-target_sources(d2rl-pcvr PRIVATE ${ROOT}/vr/companions.cpp companion_ui.cpp)
+target_sources(d2rl-pcvr PRIVATE ${ROOT}/vr/companions.cpp ${ROOT}/vr/active_effects.cpp companion_ui.cpp)
 add_executable(companions-test companions_test.cpp)
+add_executable(active-effects-test active_effects_test.cpp)
+target_link_libraries(active-effects-test PRIVATE framevr-runtime)
 target_link_libraries(companions-test PRIVATE framevr-runtime)
 target_include_directories(d2rl-pcvr PRIVATE ${ROOT}/shared ${ROOT}/external/flatvr ${ROOT}/external/bodywalk ${ROOT}/external/reshade/include ${CMAKE_CURRENT_SOURCE_DIR} ${OPENXR_SDK}/include)
 target_link_libraries(d2rl-pcvr PRIVATE d2rcam minhook user32 gdi32 framevr-runtime)
@@ -210,7 +212,7 @@ foreach(test_target IN ITEMS memory-test hook-metrics-test active-keys-test reso
     gameplay-test weapon-skills-test quick-cast-test hand-controls-test skill-pad-test interact-press-test mod-layout-test spell-aim-test bow-pose-test crossbow-pose-test body-tracking-test body-calibration-test shoulder-swap-test blood-screen-test
     portal-billboard-test composition-layers-test projectile-rules-test environment-cutaway-test stereo-prop-physics-test
     combat-rules-test logging-test melee-contact-test attack-speed-test world-coordinates-test bow-flight-test spell-cast-test spell-aim-assist-test
-    interaction-test native-belt-test wrist-hud-test navigation-info-test companions-test dropped-item-labels-test show-items-command-test native-hud-test render-resolution-test render-pointer-test scene-depth-test game-device-only-test controller-bindings-test journal-test native-panels-test
+    interaction-test native-belt-test wrist-hud-test navigation-info-test companions-test active-effects-test dropped-item-labels-test show-items-command-test native-hud-test render-resolution-test render-pointer-test scene-depth-test game-device-only-test controller-bindings-test journal-test native-panels-test
     vr-settings-test vr-settings-store-test controller-labels-test math-test deferred-draw-test monster-bars-test gaze-test window-focus-test callback-ticket-test local-player-test)
   # These fixtures use assert for their checks, including in Release builds.
   if(MSVC)
@@ -235,3 +237,5 @@ add_test(NAME interaction-hand-wheels-test COMMAND interaction-preview "${CMAKE_
 add_test(NAME wrist-compass-art-test COMMAND interaction-preview "${CMAKE_CURRENT_BINARY_DIR}/wrist-compass-preview.png" --compass-check)
 add_test(NAME navigation-info-art-test COMMAND interaction-preview "${CMAKE_CURRENT_BINARY_DIR}/navigation-info-preview.png" --navigation-check)
 add_test(NAME companions-art-test COMMAND interaction-preview "${CMAKE_CURRENT_BINARY_DIR}/companions-preview.png" --companions-check)
+
+add_test(NAME active-effects-art-test COMMAND interaction-preview "${CMAKE_CURRENT_BINARY_DIR}/active-effects-preview.png" --effects-check)

@@ -96,6 +96,7 @@ void Prefetch(const Snapshot& s) {
     for(unsigned i=0;i<s.skillCount&&i<s.catalog.size();++i)if(s.catalog[i].id>=0)Get("s"+std::to_string(s.catalog[i].id));
     if(s.equipmentKnown)for(const auto& set:s.sets)for(const auto& item:set)Get(item);
     for(const auto& belt:s.belt)if(belt.known&&belt.count)Get(belt.Next());
+    for(const auto& d:effects::Definitions)if(d.skill>=0&&s.effects.Has(d.state))Get("s"+std::to_string(d.skill));
     Get("journal");
 }
 void Shutdown() {

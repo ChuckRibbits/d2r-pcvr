@@ -30,6 +30,31 @@ static bool SavePng(const char* path,const std::vector<uint8_t>& rgba,UINT width
 int main(int argc,char** argv) {
     using namespace framevr::interaction;
     struct Cleanup {~Cleanup(){icons::Shutdown();}} cleanup;
+    if(argc>2&&!std::strcmp(argv[2],"--effects-check")) {
+        using namespace framevr;
+        if(argc>3){wchar_t path[32768]{};MultiByteToWideChar(CP_UTF8,0,argv[3],-1,path,32768);icons::Directory(path);}
+        Snapshot s;s.effects.known=true;s.companions.known=true;
+        for(int t:{4,5,3,6,7}){s.companions.relevant|=companions::Bit(t);s.companions.alive[t]=t==4?8:1;}
+        for(int state:{2,11,14,32,33,101,137})s.effects.Set(state);
+        icons::Prefetch(s);if(!icons::Wait(10000))return 100;
+        const auto pixels=PaintWristStatus(s.companions,s.effects);
+        if(pixels.size()!=wriststatus::Width*wriststatus::Height*4)return 101;
+        const int height=wriststatus::UsedHeight(s.companions,s.effects);
+        if(height!=companions::RowHeight*2)return 102;
+        for(int i=0;i<wriststatus::Width*height;++i)if(pixels[i*4+3]!=255)return 103;
+        for(size_t i=wriststatus::Width*height*4;i<pixels.size();++i)if(pixels[i])return 104;
+        // Effect-only characters, no-effect companions, and an unavailable sample.
+        auto solo=PaintWristStatus({},s.effects);if(solo.empty()||solo[3]!=255)return 105;
+        const auto old=PaintCompanions(s.companions),pets=PaintWristStatus(s.companions,{});
+        if(!std::equal(old.begin(),old.end(),pets.begin()))return 106;
+        for(auto b:PaintWristStatus({},{}))if(b)return 107;
+        effects::Status all;all.known=true;for(const auto& d:effects::Definitions)all.Set(d.state);
+        if(PaintWristStatus(s.companions,all).size()!=pixels.size())return 108;
+        // Save only used rows for easy visual review; the runtime uses the full atlas.
+        std::vector<uint8_t> crop(pixels.begin(),pixels.begin()+wriststatus::Width*height*4);
+        if(!SavePng(argv[1],crop,wriststatus::Width,height))return 109;
+        std::puts("Active effect art: pets + buffs + debuffs, no pets, unchanged companion art and transparent unused rows passed");return 0;
+    }
     if(argc>2&&!std::strcmp(argv[2],"--companions-check")) {
         using namespace framevr;
         if(argc>3){wchar_t path[32768]{};MultiByteToWideChar(CP_UTF8,0,argv[3],-1,path,32768);icons::Directory(path);}

@@ -7,6 +7,7 @@
 #include "hand_vitals.h"
 #include "navigation_info.h"
 #include "companions.h"
+#include "active_effects.h"
 #include <array>
 #include <cstdint>
 #include <cstring>
@@ -203,6 +204,7 @@ struct Snapshot {
     uint32_t actionMode=0;
     Mercenary merc;
     companions::Roster companions;
+    effects::Status effects;
 };
 struct SkillCue {
     int slot=-1,id=-1,owner=-1;

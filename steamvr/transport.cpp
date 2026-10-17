@@ -171,7 +171,7 @@ bool interactionPaintValid=false;
 LatestWorker<interaction::PaintJob,interaction::PaintedAtlas> interactionPainter([](const interaction::PaintJob& job) {
     const auto start=hookmetrics::Nanos();
     auto pixels=interaction::Paint(job.snapshot,job.output,job.selection,job.labels);
-    auto companionPixels=companions::Count(job.snapshot.companions)?interaction::PaintCompanions(job.snapshot.companions):std::vector<uint8_t>{};
+    auto companionPixels=wriststatus::Rows(job.snapshot.companions,job.snapshot.effects)?interaction::PaintWristStatus(job.snapshot.companions,job.snapshot.effects):std::vector<uint8_t>{};
     return interaction::PaintedAtlas{std::move(pixels),double(hookmetrics::Nanos()-start)/1e6,std::move(companionPixels)};
 });
 uint64_t interactionPrefetchSession=0;
@@ -1682,7 +1682,7 @@ void Input() {
         const bool visible=motionInput.active||interactionOutput.wheel||interactionOutput.wrist||interactionOutput.vitals||interactionOutput.critical||interactionOutput.bottle>=0||
             interactionOutput.nearBelt>=0||interactionOutput.nearHolster>=0||math::Rotate(Q(head.orientation),{0,0,-1}).y<-.60f;
         const auto context=interaction::Context(interactionInput.snapshot,interactionOutput,snapshotFresh,controllerLabels);
-        const bool missingCompanions=snapshotFresh&&companions::Count(context.companions)&&!companionPaintValid;
+        const bool missingCompanions=snapshotFresh&&wriststatus::Rows(context.companions,context.effects)&&!companionPaintValid;
         if(visible&&(!interactionPaintValid||missingCompanions||key!=interactionPaintKey||context!=interactionPaintContext)) {
             if(now>=interactionPaintAt&&(!interactionPaintRequest||key!=interactionRequestedKey||context!=interactionRequestedContext)) {
                 interactionPaintRequest=interactionPainter.Submit({snapshotFresh?interactionInput.snapshot:interaction::Snapshot{},interactionOutput,motion.Selection(),controllerLabels});
@@ -1695,7 +1695,7 @@ void Input() {
                 if(!painted.pixels.empty()&&UploadAtlas(interactionChain,atlasFormat,1024,1024,painted.pixels,true)) {
                     interactionPaintKey=key;interactionPaintContext=context;interactionPaintValid=true;
                     companionPaintValid=!painted.companions.empty()&&UploadAtlas(companionChain,atlasFormat,
-                        companions::Width,companions::Height,painted.companions,true,&companionAtlasPending);
+                        wriststatus::Width,wriststatus::Height,painted.companions,true,&companionAtlasPending);
                     if(companionPaintValid)companionPaintContext=context;
                 }
                 interactionPaintRequest=0;
@@ -2345,7 +2345,7 @@ void EndPair() {
             const bool companionsReady=vrsettings::Read().values[settings::CompanionCounts]>.5f&&companionPaintValid&&
                 companionChain&&count+navigationLayers+uint32_t(locationReady)+1<=contentLimit&&
                 interaction::CompanionImageCurrent(companionPaintContext,interactionInput.snapshot);
-            const int companionRows=companionsReady?companions::Rows(interactionInput.snapshot.companions):0;
+            const int companionRows=companionsReady?wriststatus::Rows(interactionInput.snapshot.companions,interactionInput.snapshot.effects):0;
             const float footer=interaction::CompanionSpace(companionRows);
             if(mapEye.copied)motionQuad(wristMap,interactionPose(interaction::NavigationMapPanel(interactionInput.hand[1],interactionInput.head,palm,withVitals,footer)),
                 interaction::WristMapSize,interaction::WristMapSize,{{0,0},{int32_t(mapSide),int32_t(mapSide)}},mapEye.chain);
@@ -2362,7 +2362,7 @@ void EndPair() {
                 {{navigation::AtlasX,navigation::AtlasY},{navigation::Width,navigation::Height}},interactionChain);
             if(companionRows)motionQuad(companionRow,interactionPose(interaction::NavigationCompanionsPanel(
                 interactionInput.hand[1],interactionInput.head,palm,withVitals,companionRows)),interaction::WristMapSize,interaction::CompanionHeight(companionRows),
-                {{0,0},{companions::Width,companions::UsedHeight(interactionInput.snapshot.companions)}},companionChain);
+                {{0,0},{companions::Width,wriststatus::UsedHeight(interactionInput.snapshot.companions,interactionInput.snapshot.effects)}},companionChain);
         }
     }
     const bool weaponSkillIndicators=vrsettings::Read().values[settings::WeaponSkillIndicators]>.5f;
