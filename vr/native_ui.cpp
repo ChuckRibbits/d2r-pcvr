@@ -75,11 +75,117 @@ const char* SkillKey(int id,char key[80]) {
     if(id>372)return nullptr; // table/localization adapter needed; no fabricated name
     std::snprintf(key,80,"d2r:skillname%d",id+(id>=221&&id<=280?1:0));return key;
 }
+bool Lookup(const char* key,char* text,uint32_t size) {
+    return key&&strings&&strings->getStringByKey&&
+        strings->getStringByKey(context,key,text,size,nullptr)==D2RL::Localization::Result::Success&&text[0];
+}
+// A name lookup that found nothing: retried after 10 s, three times at most.
+std::map<int,ULONGLONG> nameMissAt;
+std::map<int,int> nameMisses;
+// The first of these keys the game knows (spellings differ across the
+// expansion); shift: try id+shift before id. Which key answered is logged once.
+std::string FirstKnown(int id,std::initializer_list<const char*> patterns,int shift) {
+    const ULONGLONG now=GetTickCount64();
+    if(auto m=nameMissAt.find(id);m!=nameMissAt.end()&&(now-m->second<10000||nameMisses[id]>=3))return {};
+    char key[80]{},text[256]{};
+    for(const char* pattern:patterns)for(int s:{shift,0}) {
+        std::snprintf(key,sizeof key,pattern,id+s);
+        if(Lookup(key,text,sizeof text)) {
+            char line[160];std::snprintf(line,sizeof line,"Frame skill names: skill %d from key %s",id,key);
+            framevr::logging::Write(line);
+            return text;
+        }
+        if(!shift)break;
+    }
+    nameMissAt[id]=now;++nameMisses[id];
+    char line[120];std::snprintf(line,sizeof line,"Frame skill names: no name found for skill %d",id);
+    framevr::logging::Write(line);
+    return {};
+}
+// The skill tables' own text: skills.txt row -> its skilldesc row -> the name's
+// string ID. The binary row layouts are not documented in the loader SDK, so
+// where those two fields sit is found once, by matching against the names the
+// string keys already give for the original classes. The Warlock's skills
+// (373-402, new in D2R) have no regular keys and are named this way.
+struct SkillTextLayout { bool tried=false,ok=false; uint32_t descIndex=0,name=0; } layout;
+std::string ById(uint32_t stringId) {
+    char text[256]{};
+    if(!strings||!strings->getStringById||!stringId||stringId>=0xFFFF)return {};
+    if(strings->getStringById(context,stringId,text,sizeof text,nullptr)!=D2RL::Localization::Result::Success||!text[0])return {};
+    return text;
+}
+// The original classes' names from their keys, quietly.
+std::string KnownName(int id) {
+    char key[80]{},text[256]{};
+    if(Lookup(SkillKey(id,key),text,sizeof text))return text;
+    const int shift=id>=221&&id<=280?1:0;
+    for(const char* p:{"d2r:skillname%d","d2r:Skillname%d"})for(int s:{shift,0}){std::snprintf(key,sizeof key,p,id+s);if(Lookup(key,text,sizeof text))return text;}
+    return {};
+}
+bool Tables(D2RL::DataTables::TableId id,D2RL::DataTables::TableView& view) {
+    view={};view.structSize=sizeof view;
+    return tables&&tables->getTable&&tables->getTable(context,D2RL::DataTables::Bank(gamestate::DataBank()),id,&view)==D2RL::DataTables::Result::Success&&
+        view.rows&&view.rowCount&&view.rowSize>=4;
+}
+uint16_t U16(const void* rows,uint32_t rowSize,uint32_t row,uint32_t offset) {
+    uint16_t v=0;Read(reinterpret_cast<uintptr_t>(rows)+uintptr_t(row)*rowSize+offset,v);return v;
+}
+bool DiscoverLayout() {
+    if(layout.tried)return layout.ok;
+    using D2RL::DataTables::TableId;
+    D2RL::DataTables::TableView skills,desc;
+    if(!Tables(TableId::Skills,skills)||!Tables(TableId::SkillDesc,desc))return false;   // tried again later
+    layout.tried=true;
+    std::map<int,std::string> known;   // id -> name, the original classes
+    for(int id=0;id<=280&&id<int(skills.rowCount);++id)if(auto n=KnownName(id);!n.empty())known[id]=n;
+    if(known.size()<30){framevr::logging::Write("Frame skill names: too few known names to read the skill tables");return false;}
+    std::map<std::string,int> byName;for(auto& [id,n]:known)byName[n]=id;
+    // skilldesc: the field whose string is a known skill name in the most rows
+    uint32_t bestName=0;int bestNameHits=0;
+    for(uint32_t o=0;o+2<=desc.rowSize;o+=2) {
+        int hits=0;
+        for(uint32_t r=0;r<desc.rowCount;++r)if(byName.count(ById(U16(desc.rows,desc.rowSize,r,o))))++hits;
+        if(hits>bestNameHits){bestNameHits=hits;bestName=o;}
+    }
+    // skills: the field indexing a skilldesc row that carries the skill's own name
+    uint32_t bestIndex=0;int bestIndexHits=0;
+    for(uint32_t p=0;p+2<=skills.rowSize;p+=2) {
+        int hits=0;
+        for(auto& [id,n]:known) {
+            const uint16_t d=U16(skills.rows,skills.rowSize,uint32_t(id),p);
+            if(d&&d<desc.rowCount&&ById(U16(desc.rows,desc.rowSize,d,bestName))==n)++hits;
+        }
+        if(hits>bestIndexHits){bestIndexHits=hits;bestIndex=p;}
+    }
+    layout.ok=bestNameHits>=20&&bestIndexHits>=int(known.size())*3/4;
+    layout.descIndex=bestIndex;layout.name=bestName;
+    char line[260];std::snprintf(line,sizeof line,
+        "Frame skill names: skill tables %s - skills row %u bytes x %u, desc index at +0x%X (%d/%zu); skilldesc row %u bytes x %u, name at +0x%X (%d)",
+        layout.ok?"read":"NOT read",skills.rowSize,skills.rowCount,bestIndex,bestIndexHits,known.size(),desc.rowSize,desc.rowCount,bestName,bestNameHits);
+    framevr::logging::Write(line);
+    return layout.ok;
+}
+// A skill's name from the tables, or empty.
+std::string FromTables(int id) {
+    if(!DiscoverLayout())return {};
+    using D2RL::DataTables::TableId;
+    D2RL::DataTables::TableView skills,desc;
+    if(!Tables(TableId::Skills,skills)||!Tables(TableId::SkillDesc,desc)||id<0||uint32_t(id)>=skills.rowCount)return {};
+    const uint16_t d=U16(skills.rows,skills.rowSize,uint32_t(id),layout.descIndex);
+    if(!d||d>=desc.rowCount)return {};
+    return ById(U16(desc.rows,desc.rowSize,d,layout.name));
+}
 std::string Name(int id) {
     if(auto i=names.find(id);i!=names.end())return i->second;
-    char key[80]{},text[256]{};const char* k=SkillKey(id,key);
-    if(k&&strings&&strings->getStringByKey(context,k,text,sizeof text,nullptr)==D2RL::Localization::Result::Success)
-        return names.emplace(id,text).first->second;
+    char key[80]{},text[256]{};
+    if(Lookup(SkillKey(id,key),text,sizeof text))return names.emplace(id,text).first->second;
+    if(auto t=FromTables(id);!t.empty())return names.emplace(id,t).first->second;   // the Warlock's, and any key miss
+    // Item-granted Druid skills such as 221 and 225 showed as "Skill 221": the
+    // shifted key is not every skill's. Try the other spellings.
+    if(id>=0&&id<=511) {   // to the end of the class trees, the Warlock's included
+        auto found=FirstKnown(id,{"d2r:skillname%d","d2r:Skillname%d","d2r:skillsname%d","d2r:SkillName%d"},id>=221&&id<=280?1:0);
+        if(!found.empty())return names.emplace(id,found).first->second;
+    }
     std::snprintf(text,sizeof text,"Skill %d",id);return text;
 }
 }
