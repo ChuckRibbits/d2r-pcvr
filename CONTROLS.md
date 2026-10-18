@@ -256,6 +256,12 @@ indicators, open **VR Settings > Controls > Weapon skill indicators**, turn it
 assigned spells and weapon skill gestures keep working. The saved preference
 is `[interactions] weapon_skill_indicators=0` (hidden) or `1` (shown).
 
+**VR Settings > Combat > Shield bash speed** adjusts physical bash/Smite
+independently of weapon swings: default 2 m/s, range 0.75-10 m/s in 0.25 m/s
+steps. Move the hand at least 12 cm in a deliberate stroke. Wrist rotation alone
+does not attack, and contact still requires the selected speed. Blocking, parries
+and button-triggered attacks use their existing rules.
+
 The trigger skill is the persistent gesture skill for its hand. Optional
 hand-side icons show the assignments. Left-trigger Smite supports physical shield swings
 and thrusts when a shield and its native hook are available. Supported arrow

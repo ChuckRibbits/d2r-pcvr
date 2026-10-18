@@ -1873,6 +1873,7 @@ void Input() {
         sample.equipment=motionInput.equipment;sample.active=motionInput.active&&motionOutput.meleeContact;
         sample.minWeaponSpeed=gestureSettings[settings::MeleeHitSpeed];
         sample.minThrustSpeed=gestureSettings[settings::MeleeThrustSpeed];
+        sample.minShieldBashSpeed=gestureSettings[settings::ShieldBashSpeed];
         const auto weapons=gamestate::MeleeEquipment();
         const bool dual=dualwield::Eligible(skel::HeroClass(),weapons);
         if(dual)sample.weapons=weapons;
