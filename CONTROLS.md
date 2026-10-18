@@ -142,6 +142,9 @@ One stroke can hit several monsters, each further one a little weaker.
   the guard breaks and the light swells over most of your view. The shield
   keeps blocking; the cost is sight. Lower the shield to let it fade.
   **Combat > Guard strain color** switches the light to a black shadow.
+  **Guard strain buildup** selects Slow / Medium / Fast: about 20 / 10 / 5
+  blocks to full strain with default tuning. Medium keeps the original rate.
+  This changes how quickly it builds, not how much of your view it covers.
 
 **HUD > Loot label size** adjusts dropped-item text and its darker backing from
 20% to 150% in five-point steps. The original size is 45%; Apply saves the choice
