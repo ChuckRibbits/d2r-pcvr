@@ -312,7 +312,7 @@ uint64_t crossbowActivation=0,crossbowTakenAt=0;
 bowflight::Shot spellReadyShot[2]{};
 bool spellHasShot[2]{};
 uint64_t spellResolvedAt[2]{};
-std::atomic<ULONGLONG> meleeImpactAt[2]{},shieldImpactAt{0};
+std::atomic<ULONGLONG> meleeImpactAt[2]{},shieldImpactAt{0},parryMissAt{0};
 XrSwapchain gameplayChain=XR_NULL_HANDLE;
 XrPosef palettePose{};
 constexpr float paletteWidth=.45f,paletteHeight=.45f;
@@ -568,7 +568,7 @@ void ClearInput() {
     spellHaptics.Clear();
     lootlabels::display.Clear();
     lootLabelShortcut.Suspend();
-    meleeImpactAt[0]=meleeImpactAt[1]=shieldImpactAt=0;
+    meleeImpactAt[0]=meleeImpactAt[1]=shieldImpactAt=parryMissAt=0;
     wristHeading.Reset();compassFrame=false;
     panelinput::WorldInput(false);
     gamestate::MenuMap(false);
@@ -1922,6 +1922,10 @@ void Input() {
         impactPulse(hand);
     if(const auto at=shieldImpactAt.exchange(0);at&&motionInput.active&&GetTickCount64()-at<150)
         impactPulse(1,true);
+    // A parry swing that missed: a soft, dull buzz on the shield hand, unlike a
+    // block's sharp tap. Scaled by the Melee haptic strength setting.
+    if(const auto at=parryMissAt.exchange(0);at&&motionInput.active&&GetTickCount64()-at<150)
+        MotionPulse(1,haptics::Category::Melee,.3f,70000000,60);
     for(int hand=0;hand<2;++hand)if(spellHaptics.Take(hand,gamestate::LocalPlayer(),GetTickCount64(),motionInput.active)) {
         const auto sample=haptics::Samples[int(haptics::Category::Spell)];
         MotionPulse(hand,haptics::Category::Spell,sample.amplitude,XrDuration(sample.milliseconds)*1000000,sample.frequency);
@@ -2821,6 +2825,7 @@ void FinishShieldSkill(bool accepted) {
 }
 void MeleeImpact(int hand) {if(hand>=0&&hand<2)meleeImpactAt[hand]=GetTickCount64();}
 void ShieldGuardImpact(bool parry) {shieldImpactAt=GetTickCount64();(parry?guardParryEvents:guardBlockEvents).fetch_add(1);}
+void ShieldParryMiss() {parryMissAt=GetTickCount64();}
 void ShieldGuardState(bool eligible,bool raised) {guardStateAt=GetTickCount64();guardEligible=eligible;guardRaised=raised;}
 void ConfigureGuardStrain(float perBlock,float resetSeconds,float clear,float breatheSeconds,float softness,float brightness,uint32_t color,float density) {
     strain::Tuning t;

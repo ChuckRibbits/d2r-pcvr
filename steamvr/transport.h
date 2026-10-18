@@ -35,6 +35,7 @@ bool ShieldAim(float& x,float& y);
 void FinishShieldSkill(bool accepted);
 void MeleeImpact(int hand=0); // thread-safe; haptic delivered by XR input update
 void ShieldGuardImpact(bool parry=false); // thread-safe; a physical block taps the left controller and strains the guard (a parry does not)
+void ShieldParryMiss(); // thread-safe; a parry swing that missed buzzes the left controller softly
 // Thread-safe, every guard tick: shield eligible (first person, shield, no menu) and raised.
 void ShieldGuardState(bool eligible,bool raised);
 // [gameplay] guard_strain_*: strain per block (1 = broken), lowered reset time,

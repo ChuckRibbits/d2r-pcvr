@@ -837,11 +837,13 @@ void LoadSettings() {
     melee::ConfigureAttackSpeed(classicMelee,IniB(L"debug",L"melee_trace",false));
     melee::ConfigureAttackRating(classicMelee);
     // Unleashed only: a raised shield blocks instead of the block stat.
-    // The perfect parry window is fixed at 400 ms (no longer a setting).
+    // The perfect parry window is fixed at 450 ms with no lead (no longer a setting).
     melee::ConfigureParrySound((int)IniF(L"gameplay",L"parry_sound",236));
     melee::ConfigureBlockSound((int)IniF(L"gameplay",L"block_sound",398));
     // Unleashed only, like the guard below: Classic keeps the native monster to-hit roll.
-    combat::ConfigureEnemiesAlwaysHit(!classicMelee&&IniB(L"gameplay",L"enemies_always_hit",false));
+    // On by default (2026-10-18): every enemy physical attack and projectile lands,
+    // so the shield, not the monster's to-hit roll, decides. enemies_always_hit=0 opts out.
+    combat::ConfigureEnemiesAlwaysHit(!classicMelee&&IniB(L"gameplay",L"enemies_always_hit",true));
     // Unleashed swing damage (applied live): attack rating and attack speed scale
     // a physical swing instead of deciding whether it lands. [gameplay] ar_damage
     // (1): damage x the native to-hit chance; ar_damage_floor (% kept at zero
@@ -872,7 +874,7 @@ void LoadSettings() {
 #else
     constexpr bool guardTraceDefault=false;
 #endif
-    combat::ConfigureGuard(!classicMelee,750,IniB(L"debug",L"guard_trace",guardTraceDefault));
+    combat::ConfigureGuard(!classicMelee,450,IniB(L"debug",L"guard_trace",guardTraceDefault));
     // Guard strain light: % of the guard each block strains, lowered reset time,
     // % of the view left clear at full swell, the broken guard's breathing period,
     // the width of the light's inner blend (% of the visor radius), opacity (% peak;
