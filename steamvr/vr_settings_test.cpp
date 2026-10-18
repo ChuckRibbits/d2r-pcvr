@@ -141,6 +141,18 @@ int main(){
         speed.Click(At(Page::Combat,Increase(5)));Check(speed.Get()[StrainSpeed]==2,"Fast is the upper bound");
         Check(speed.Click({Kind::Apply}).changed==(ChangeMask{1}<<StrainSpeed),"buildup edits preserve combat rules, difficulty and colour");
     }
+    {Model shield;shield.Open(s);shield.Click({Kind::Tab,int(Page::Shield)});
+        Check(RowCount(Page::Shield)==3&&RowKey(Page::Shield,0)==ShieldGrip&&RowKey(Page::Shield,1)==ShieldOut&&RowKey(Page::Shield,2)==ShieldUp,"the Shield page holds grip, out and up");
+        Check(s.values[ShieldGrip]==3&&s.values[ShieldOut]==2&&s.values[ShieldUp]==2,"the shield defaults to 3 / 2 / 2 cm (tuned on a buckler)");
+        Check(HelpAt(Page::Shield,(ValueBox(1).x+5.f)/Width,(ValueBox(1).y+5.f)/Height)==ShieldOut,"each Shield row explains itself");
+        shield.Click(At(Page::Shield,Increase(0)));
+        for(int i=0;i<3;++i)shield.Click(At(Page::Shield,Decrease(1)));
+        Check(shield.Get()[ShieldGrip]==4&&shield.Get()[ShieldOut]==-1,"grip steps up by a centimeter; out goes below zero");
+        for(int i=0;i<30;++i)shield.Click(At(Page::Shield,Increase(0)));
+        Check(shield.Get()[ShieldGrip]==20,"grip stops at 20 cm");
+        const auto request=shield.Click({Kind::Apply});
+        Check(request.changed==((ChangeMask{1}<<ShieldGrip)|(ChangeMask{1}<<ShieldOut)),"shield edits change nothing else");
+    }
     {Model difficulty;difficulty.Open(s);difficulty.Click({Kind::Tab,int(Page::Combat)});
         Check(s.values[OfflinePlayers]==0&&RowKey(Page::Combat,6)==OfflinePlayers,"difficulty preserves native settings by default");
         Check(ValueBox(6).y+ValueBox(6).h<698,"difficulty avoids Combat notes");

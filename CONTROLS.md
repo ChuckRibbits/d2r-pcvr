@@ -73,6 +73,7 @@ Quest left X/Y correspond to Index left A/B; right A/B labels are the same.
 | Free melee swing / thrust | Move the equipped weapon through an enemy |
 | Break pots / barrels | Swing a held melee weapon through them with its trigger released. Either Barbarian weapon works; ordinary button interaction/kicking remains available |
 | Choose melee rules / motion thresholds | **VR Settings > Combat**: Unleashed or Classic, Melee hit speed, and Melee thrust speed |
+| Seat a held shield on your arm | **VR Settings > Shield**: Grip offset slides the shield up the forearm so your fingers reach its grip strap ; Out and Up move it away from and across the forearm. In centimeters, by default 3 / 2 / 2 (tuned on a buckler; all 0 restores the original position); the shield still turns with your wrist |
 | Increase offline difficulty | **VR Settings > Combat > Offline difficulty**: Game default or Players 1-8; higher counts make monsters tougher and increase rewards |
 | Bow draw | Right trigger near the left-hand bow string; draw and release |
 | Fire a crossbow | Equip bolts and assign **Attack** to Right Trigger; aim and fire while moving. Release Right Grip so the loot-label combo does not consume the trigger |

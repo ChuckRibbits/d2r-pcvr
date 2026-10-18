@@ -1761,6 +1761,64 @@ void PoseBody(uintptr_t self, const Hero& h, const Input& in) {
         }
     }
 
+    // Forearm twist: the hand alone turned with the controller, so a turned
+    // wrist left the sleeve, bracer and shield facing the old way. The forearm
+    // takes a share of the twist the hand has about it - measured against the
+    // hand as the animation holds it on that forearm - turned about its own
+    // length at the elbow. The hand and all it holds keep exactly the pose the
+    // controller gave them.
+    if (in.mode == 2 && in.forearmTwist) {
+        // One hand axis can lie nearly along the forearm and then swings wildly
+        // (the arm twisted ~90 degrees and pinched the elbow): instead two
+        // directions square to the forearm are carried from the held hand to
+        // the real one, and their mean turn about the forearm is the twist.
+        constexpr float kShare = 0.6f, kMaxTurn = 1.0f;   // radians the forearm may turn
+        for (int side = 0; side < 2; ++side) {
+            const int l = h.lwr[side], k = h.hand[side];
+            if (l < 0 || k < 0 || !(in.handsValid & (1u << side))) continue;
+            const V3 axis = Norm(Sub(Pos(newW[k]), Pos(newW[l])));
+            const Mat held = Mul(Mul(baseW[k], InvAffine(baseW[l])), newW[l]);   // the hand untwisted on this forearm
+            V3 heldAx[3], nowAx[3];
+            for (int r = 0; r < 3; ++r) {
+                heldAx[r] = Norm({held.m[r * 4], held.m[r * 4 + 1], held.m[r * 4 + 2]});
+                nowAx[r] = Norm({newW[k].m[r * 4], newW[k].m[r * 4 + 1], newW[k].m[r * 4 + 2]});
+            }
+            const V3 p = Norm(Cross(axis, fabsf(axis.y) < 0.9f ? V3{0, 1, 0} : V3{1, 0, 0}));
+            const V3 q = Cross(axis, p);
+            auto carry = [&](V3 v) {   // v as the held hand has it, where the real hand has it
+                V3 out{0, 0, 0};
+                for (int r = 0; r < 3; ++r) out = Add(out, Scale(nowAx[r], Dot(v, heldAx[r])));
+                return out;
+            };
+            const V3 p2 = carry(p), q2 = carry(q);
+            float twist = atan2f(Dot(Add(Cross(p, p2), Cross(q, q2)), axis), Dot(p, p2) + Dot(q, q2));
+            if (!std::isfinite(twist)) continue;
+            // Near half a turn (the wrist turned up to read the map) the reading
+            // wraps from +180 to -180 degrees and the forearm flipped between its limits.
+            // Keep the reading continuous with the last frame's, and ease into
+            // the limit instead of stopping hard at it.
+            static float lastTwist[2] = {0.0f, 0.0f};
+            constexpr float kTau = 6.2831853f;
+            while (twist - lastTwist[side] > kTau * 0.5f) twist -= kTau;
+            while (twist - lastTwist[side] < -kTau * 0.5f) twist += kTau;
+            twist = std::clamp(twist, -kTau * 0.75f, kTau * 0.75f);   // a real wrist goes no further
+            lastTwist[side] = twist;
+            if (fabsf(twist) < 0.01f) continue;
+            const float t = kMaxTurn * tanhf(kShare * twist / kMaxTurn);
+            const V3 a = p;
+            const Mat R = RotBetween(a, Add(Scale(a, cosf(t)), Scale(Cross(axis, a), sinf(t))));
+            // keep the hand's whole subtree as posed; turn the forearm and re-derive
+            // only its other children (twist helpers, armour pieces)
+            std::vector<char> handTree(n, 0); handTree[k] = 1;
+            for (int i = k + 1; i < n; ++i) if (h.parent[i] >= 0 && handTree[h.parent[i]]) handTree[i] = 1;
+            const auto before = newW;
+            TurnAboutSelf(newW[l], R);
+            std::vector<char> fromL(n, 0); fromL[l] = 1;
+            Propagate(h, before, newW, fromL, l);
+            for (int i = 0; i < n; ++i) if (handTree[i]) newW[i] = before[i];
+        }
+    }
+
 #ifdef D2RVR_NATIVE_OPENXR
     // A shield has its own left-wrist attachment. Taking it from a random
     // combat animation or applying the sword/bow adjustment makes it orbit
@@ -1786,6 +1844,27 @@ void PoseBody(uintptr_t self, const Hero& h, const Input& in) {
                 memcpy(&attachBind,&h.bind[sa],sizeof attachBind);
                 if(shield::Follow(wristBind,attachBind,wristNow,attachNow)) {
                     const auto beforeAttach=newW;memcpy(&newW[sa],&attachNow,sizeof attachNow);
+                    // Following the hand, a shield's near strap can sit over the
+                    // wrist with the fingers short of the grip strap. Shield
+                    // position: slide it up the forearm toward the elbow, out and
+                    // across by the set amounts, scaled by this model's forearm
+                    // (~0.26 m on an adult), still turning with the wrist.
+                    const int l=h.lwr[1];
+                    if(l>=0&&(in.shieldGripM!=0||in.shieldOutM!=0||in.shieldUpM!=0)) {
+                        const V3 along=Sub(Pos(newW[hand]),Pos(newW[l]));
+                        const float units=Len(along);   // this model's forearm, ~0.26 m on an adult
+                        if(units>1e-4f) {
+                            const V3 f=Scale(along,1/units);
+                            // out: from the forearm's line toward where the shield hangs; up: square to both
+                            const V3 off=Sub(Pos(newW[sa]),Pos(newW[l]));
+                            V3 out=Sub(off,Scale(f,Dot(off,f)));
+                            if(Len(out)<1e-4f)out=Norm(Cross(f,{0,1,0}));else out=Norm(out);
+                            const V3 up=Norm(Cross(f,out));
+                            const float perMetre=units/0.26f;
+                            const V3 move=Add(Add(Scale(f,-in.shieldGripM*perMetre),Scale(out,in.shieldOutM*perMetre)),Scale(up,in.shieldUpM*perMetre));
+                            newW[sa].m[12]+=move.x;newW[sa].m[13]+=move.y;newW[sa].m[14]+=move.z;
+                        }
+                    }
                     std::vector<char> movedAttach(n,0);movedAttach[sa]=1;Propagate(h,beforeAttach,newW,movedAttach,sa);
                 }
             }
