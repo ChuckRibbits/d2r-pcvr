@@ -57,7 +57,7 @@ target_sources(d2rl-pcvr PRIVATE ${ROOT}/vr/panel_input.cpp)
 target_sources(d2rl-pcvr PRIVATE interaction_assets.rc interaction_icons.cpp ui_blit.cpp ui_world.cpp)
 target_sources(d2rl-pcvr PRIVATE potion_models.cpp)
 target_sources(d2rl-pcvr PRIVATE ${ROOT}/vr/settings_menu.cpp ${CMAKE_CURRENT_SOURCE_DIR}/vr_settings_ui.cpp ${ROOT}/vr/native_ui.cpp ${CMAKE_CURRENT_SOURCE_DIR}/interaction_ui.cpp ${ROOT}/vr/interactionstate.cpp ${ROOT}/vr/bow.cpp ${ROOT}/vr/projectiles.cpp ${ROOT}/vr/combat.cpp ${ROOT}/vr/melee.cpp ${CMAKE_CURRENT_SOURCE_DIR}/transport.cpp ${CMAKE_CURRENT_SOURCE_DIR}/foveation.cpp ${CMAKE_CURRENT_SOURCE_DIR}/logging.cpp ${CMAKE_CURRENT_SOURCE_DIR}/profile.cpp)
-target_sources(d2rl-pcvr PRIVATE ${ROOT}/vr/native_belt.cpp ${ROOT}/vr/melee_weapon.cpp)
+target_sources(d2rl-pcvr PRIVATE ${ROOT}/vr/native_belt.cpp ${ROOT}/vr/quick_items.cpp ${ROOT}/vr/melee_weapon.cpp)
 target_sources(d2rl-pcvr PRIVATE ${ROOT}/vr/breakables.cpp)
 target_sources(d2rl-pcvr PRIVATE ${ROOT}/vr/companions.cpp ${ROOT}/vr/active_effects.cpp companion_ui.cpp)
 add_executable(companions-test companions_test.cpp)
@@ -285,3 +285,13 @@ add_test(NAME vr-settings-help-art-test COMMAND vr-settings-preview "${CMAKE_CUR
 add_test(NAME companions-art-test COMMAND interaction-preview "${CMAKE_CURRENT_BINARY_DIR}/companions-preview.png" --companions-check)
 
 add_test(NAME active-effects-art-test COMMAND interaction-preview "${CMAKE_CURRENT_BINARY_DIR}/active-effects-preview.png" --effects-check)
+
+add_test(NAME quick-use-art-test COMMAND interaction-preview "${CMAKE_CURRENT_BINARY_DIR}/quick-use-preview.png" --quick-use-check)
+
+add_executable(quick-items-test quick_items_test.cpp ${ROOT}/vr/quick_items.cpp)
+target_include_directories(quick-items-test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} ${ROOT}/cleanroom/sigscan ${D2RL_SDK}/include)
+target_link_libraries(quick-items-test PRIVATE framevr-runtime)
+add_test(NAME quick-items-test COMMAND quick-items-test)
+add_test(NAME quick-items-signature-test COMMAND quick-items-test --mismatch)
+
+target_compile_options(quick-items-test PRIVATE -UNDEBUG)

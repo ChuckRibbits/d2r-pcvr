@@ -8,6 +8,7 @@
 #include "logging.h"
 #include "native_ui.h"
 #include "native_belt.h"
+#include "quick_items.h"
 #include "dev_scenarios.h"
 #include "melee.h"
 #include "bow.h"
@@ -86,6 +87,7 @@ Snapshot Collect() {
     s.beltKnown=inventory->forEachInventoryItem(context,player,&filter,&BeltItem,&belt)==Inventory::Result::Success&&!belt.invalid;
     for(auto& b:s.belt)b.known=s.beltKnown;
     nativeui::Capture(s);
+    quickitems::Capture(s);
     devscenarios::Capture(s);
     {std::lock_guard lock(mutex);if(mercSession==s.session&&s.at>=mercAt&&s.at-mercAt<=MercMaxAge){s.merc=merc;s.companions=companions;s.effects=effects;}}
     if(s.companions.known)for(unsigned i=0;i<s.skillCount&&i<s.catalog.size();++i)
@@ -129,7 +131,7 @@ void Publish(Snapshot s) {
                  s.catalog!=snapshot.catalog||s.skillCount!=snapshot.skillCount||s.bindingBank!=snapshot.bindingBank||s.bindingsEditable!=snapshot.bindingsEditable||
                  s.vitalsKnown!=snapshot.vitalsKnown||int(s.health)!=int(snapshot.health)||int(s.mana)!=int(snapshot.mana)||
                  s.maxHealth!=snapshot.maxHealth||s.maxMana!=snapshot.maxMana||s.experience!=snapshot.experience||s.location!=snapshot.location||
-                 s.actionKnown!=snapshot.actionKnown||s.actionMode!=snapshot.actionMode||s.companions!=snapshot.companions||s.effects!=snapshot.effects;
+                 s.actionKnown!=snapshot.actionKnown||s.actionMode!=snapshot.actionMode||s.companions!=snapshot.companions||s.effects!=snapshot.effects||s.quick!=snapshot.quick;
     for(int i=0;i<4;++i) {
         auto& b=s.belt[i];const auto& before=snapshot.belt[i];
         const bool change=s.session!=snapshot.session||b.items!=before.items||b.known!=before.known||b.count!=before.count;
@@ -182,6 +184,15 @@ void __cdecl Apply(const PluginContext*,void*) noexcept {
         Publish(Collect()); // refresh wheel and any duplicates cleared by D2R
         return;
     }
+    if(r.action==Action::BindItem||r.action==Action::UseItem||r.action==Action::RunWalk) {
+        {std::lock_guard lock(mutex);valid=valid&&epoch==cancelEpoch;}
+        // Native item use may open/pump UI. Never hold the snapshot lock here.
+        const bool accepted=valid&&(r.action==Action::RunWalk?gamecmd::ExecuteUiCommand(0x23):
+            r.action==Action::BindItem?quickitems::Assign(r,s):quickitems::Use(r,s));
+        {std::lock_guard lock(mutex);if(epoch==cancelEpoch)
+            reply={r.sequence,r.session,accepted?(r.action==Action::UseItem?Result::Dispatched:Result::Applied):Result::Refused};}
+        Publish(Collect());return;
+    }
     uint32_t command=0;
     switch(r.action) {
         case Action::Potion:{auto current=r;current.at=now;valid=valid&&SameBelt(s,current);command=0x17+r.index;break;}
@@ -231,6 +242,7 @@ void Init(const D2RL::PluginContext* ctx) {
     companionstate::Init(ctx);
     effectstate::Init(ctx);
     nativeui::Init(ctx);
+    quickitems::Init(ctx);
     context=ctx;inventory=Service<D2RL::InventoryService>(ctx);items=Service<D2RL::ItemService>(ctx);threads=Service<D2RL::ThreadService>(ctx);
 }
 void Capture(){

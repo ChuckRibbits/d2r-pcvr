@@ -58,6 +58,9 @@ Quest left X/Y correspond to Index left A/B; right A/B labels are the same.
 | Open or close a hand wheel | Click that hand's thumbstick; it stays open without holding |
 | Switch to the other wheel | Click the other thumbstick |
 | Assign a button | Opposite hand's laser + trigger: select a wedge, then a skill |
+| Use an inventory item | Either wheel > **QUICK USE**: point with the opposite hand and briefly click its trigger; use happens on release |
+| Assign / change quick-use item | Hold the trigger over **QUICK USE** for 0.65 seconds, then select a carried scroll, tome or other usable item. An empty slot also opens the picker on a short click. **CLEAR SLOT** removes the assignment |
+| Toggle running / walking | Either wheel > **RUN / WALK**, using the opposite hand's laser + trigger |
 | Finish editing | Click the wheel hand's stick again, or select CLOSE in its center |
 | Inventory / character / skills / journal | Left Grip + left stick click; or either wheel > INVENTORY; native tabs retain their controls |
 | VR settings / body calibration | Either wheel → VR SETTINGS |
@@ -340,3 +343,16 @@ input cannot also act in the next screen or in gameplay.
 The mod's own settings and calibration panels use their VR laser controls:
 right laser + trigger to select, Right B to close/cancel. Native gamepad input
 does not pass through those panels.
+
+### Quick-use inventory slot
+
+Both wheels share one assignment, remembered by item type across restocks and
+sessions. The displayed count includes carried inventory items or tome charges;
+belt items keep their existing potion controls. Stash and cube contents are not
+included. Use follows the native game's restrictions. Identify opens inventory
+for target selection. A long press edits without spending an item. Move the
+pointer away before releasing to cancel a short press. If the item changed,
+ran out, or tracking was lost, the use is discarded rather than retried.
+
+The minimap has a narrow bronze bevel and inset corner details. The full native
+map is fitted inside the frame so edge markers remain visible.

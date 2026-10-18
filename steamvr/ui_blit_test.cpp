@@ -70,8 +70,12 @@ int main(int argc,char** argv){try {
         if(!squareMap)std::memcpy(want,expected[y*sourceWidth+x],sizeof want);
         else {
             const float edge=std::min({x+.5f,y+.5f,31.5f-x,31.5f-y});
-            if(edge<2){want[0]=.24f;want[1]=.16f;want[2]=.065f;}
-            else if(edge<4){want[0]=.018f;want[1]=.012f;want[2]=.008f;}
+            const float cx=std::min(x+.5f,31.5f-x)*4,cy=std::min(y+.5f,31.5f-y)*4;
+            if(edge*4<1){want[0]=.012f;want[1]=.009f;want[2]=.006f;}
+            else if(edge*4<3){want[0]=.24f;want[1]=.16f;want[2]=.065f;}
+            else if(edge*4<5){want[0]=.055f;want[1]=.033f;want[2]=.015f;}
+            else if(edge*4<7){want[0]=.012f;want[1]=.009f;want[2]=.006f;}
+            else if(std::max(cx,cy)<20&&std::abs(cx+cy-26)<1.4f){want[0]=.34f;want[1]=.24f;want[2]=.11f;}
             else {
                 // A 4:2 source occupies 24x12 pixels (or 12x24 when tall).
                 const int left=portrait?10:4,top=portrait?4:10;

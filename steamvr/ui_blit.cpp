@@ -28,12 +28,20 @@ float4 PS(float4 position:SV_Position):SV_Target {
     if(mapSide) {
         // Fit the entire corner map in a square without stretching, clipping
         // exits or reading it back to the CPU. Empty margins stay dark.
-        float edge=min(min(pixel.x,pixel.y),min(mapSide-pixel.x,mapSide-pixel.y));
-        if(edge<2)return float4(.24,.16,.065,1);
-        if(edge<4)return float4(.018,.012,.008,1);
+        float bevel=min(1.0,mapSide/128.0);
+        float edge=min(min(pixel.x,pixel.y),min(mapSide-pixel.x,mapSide-pixel.y))/bevel;
+        // A narrow aged-bronze bevel and inset corner cuts. The entire native
+        // map fits inside the frame, including markers at its outer edges.
+        float2 corner=min(pixel,float(mapSide)-pixel)/bevel;
+        if(edge<1)return float4(.012,.009,.006,1);
+        if(edge<3)return float4(.24,.16,.065,1);
+        if(edge<5)return float4(.055,.033,.015,1);
+        if(edge<7)return float4(.012,.009,.006,1);
+        if(max(corner.x,corner.y)<20&&abs(corner.x+corner.y-26)<1.4)
+            return float4(.34,.24,.11,1);
         uint w,h;nativeUi.GetDimensions(w,h);
         mapSize=float2(w,h);
-        float scale=(mapSide-8)/float(max(w,h));
+        float scale=(mapSide-2*min(20.0,mapSide/8.0))/float(max(w,h));
         pixel=(pixel-mapSide*.5)/scale+float2(w,h)*.5;
         if(any(pixel<0)||pixel.x>=w||pixel.y>=h)return float4(.006,.006,.006,1);
     }
