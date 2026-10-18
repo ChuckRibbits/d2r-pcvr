@@ -779,14 +779,17 @@ weapon category determines length/radius on the final attachment; native monster
 footprint and legacy artwork height determine its body capsule. Generic class
 support is implemented, but specific weapon axes, small creatures, bosses and
 sloped ground need headset checks. Basic contacts use the main hand; the candidate
-adds selected Smite shield contacts. Barbarians with two melee weapons also
-support independent left/right physical swings and thrusts; see
+adds selected Smite shield contacts. Barbarians with two melee weapons and
+Assassins with two claws also support independent left/right physical swings
+and thrusts; see
 [physical dual wield](../docs/BARBARIAN_DUAL_WIELD.md). Physical shield blocks
 and parries are below; other classes' off-hand weapon strikes remain future work.
+Dual-claw contacts are basic attacks, not automatic Dragon Claw or charge-up
+skill casts. Release both triggers for independent left/right physical contacts.
 
 Physical weapon contacts also break attackable pots, urns, baskets and barrels
-in either melee mode, including with either Barbarian weapon. The game handles
-loot, traps and explosions; ordinary button interaction/kicking remains
+in either melee mode, including with either Barbarian weapon or Assassin claw.
+The game handles loot, traps and explosions; ordinary button interaction/kicking remains
 available. These contacts do not consume creature hit/recovery/cleave state.
 See [physical breakables](../docs/PHYSICAL_BREAKABLES.md) for scope and validation.
 
