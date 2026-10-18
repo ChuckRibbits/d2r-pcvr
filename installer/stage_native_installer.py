@@ -35,7 +35,7 @@ def allowed(name, source):
                 and (source / name).is_file()))
 
 
-def stage(package, python_archive, destination, source):
+def stage(package, python_archive, destination, source, expected_version=None):
     if hashlib.sha256(python_archive.read_bytes()).hexdigest() != PYTHON_SHA256:
         raise ValueError('Private Python archive checksum mismatch.')
     if destination.exists():
@@ -52,6 +52,8 @@ def stage(package, python_archive, destination, source):
         manifest = json.loads(archive.read(prefix + 'release-manifest.json'))
         if manifest.get('platform') != 'native-windows':
             raise ValueError('The graphical installer requires a native Windows package.')
+        if expected_version is not None and manifest.get('release_tag') != f'v{expected_version}-windows-preview':
+            raise ValueError('Installer version does not match the package release tag.')
         hashes = manifest['sha256']
         if not {'steamvr/setup_native.py', 'steamvr/mod_identity.py', 'bin/d2rl-pcvr.dll', 'bin/openxr_loader.dll'} <= set(hashes):
             raise ValueError('Repackage the current source; the native setup backend is missing.')
@@ -94,9 +96,10 @@ def main():
     parser.add_argument('--package', type=Path, required=True)
     parser.add_argument('--python-archive', type=Path, required=True)
     parser.add_argument('--staging-parent', type=Path, required=True)
+    parser.add_argument('--version', help='Require this installer version to match the packaged release tag')
     args = parser.parse_args()
     destination = args.staging_parent.resolve() / ('payload-' + uuid.uuid4().hex)
-    manifest = stage(args.package, args.python_archive, destination, Path(__file__).resolve().parent.parent)
+    manifest = stage(args.package, args.python_archive, destination, Path(__file__).resolve().parent.parent, args.version)
     print(json.dumps({'payload': str(destination), 'source_commit': manifest['source_commit'],
                       'plugin_source_commit': manifest.get('plugin_source_commit'),
                       'plugin_sha256': manifest['sha256']['bin/d2rl-pcvr.dll']}))

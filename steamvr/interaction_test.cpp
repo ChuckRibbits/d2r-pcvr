@@ -19,6 +19,59 @@ struct Sim {
     Output Step(int count=1){while(count--){in.time+=.02;in.at=1000000+uint64_t(in.time*1000);in.snapshot.at=in.at;out=e.Step(in);}return out;}
 };
 int main(){
+    auto quick=[](Sim& s) {
+        s.in.wheel=true;s.in.wheelHand=1;s.in.hover=QuickUseCell;
+        s.in.snapshot.quick.known=true;s.in.snapshot.quick.assigned=Code('t','b','k');
+        s.in.snapshot.quick.count=1;
+        s.in.snapshot.quick.items[0]={{91,4,Code('t','b','k')},7,"Tome of Town Portal"};s.Step(3);
+    };
+    {
+        Sim s;quick(s);s.in.trigger=1;s.Step();
+        Check(s.out.request.action==Action::None,"quick use never consumes on initial press");
+        s.Step(5);s.in.trigger=0;s.Step();
+        Check(s.out.request.action==Action::UseItem&&s.out.request.item.handle==91&&!s.out.wheel,"short click dispatches exact carried item once on release");
+        Check(s.Step(3).request.action==Action::None,"released quick use does not repeat");
+    }
+    {
+        Sim s;quick(s);s.in.trigger=1;s.Step(35);
+        Check(s.out.editor==3&&Page(s.out)==MenuPage::EditItems&&s.e.Page()==MenuPage::EditItems,"hold opens item picker");
+        Check(s.out.request.action==Action::None&&s.out.itemOptions[0].quantity==7,"hold exposes actual inventory without use");
+        s.in.trigger=0;s.Step();Check(s.out.request.action==Action::None,"release after hold cannot consume");
+        s.in.hover=0;s.in.trigger=1;s.Step();
+        Check(s.out.request.action==Action::BindItem&&s.out.request.revision==Code('t','b','k'),"picker saves assignment with prior-value guard");
+        s.in.reply={s.out.request.sequence,s.in.session,Result::Applied};s.in.trigger=0;s.Step();
+        Check(s.out.editor==0,"confirmed assignment returns to wheel");
+    }
+    for(int change=0;change<7;++change) {
+        Sim s;quick(s);s.in.trigger=1;s.Step();
+        if(change==0)s.in.hover=-1;
+        if(change==1)s.in.snapshot.quick.known=false;
+        if(change==2)s.in.snapshot.quick.items[0].item.handle++;
+        if(change==3)s.in.snapshot.quick.items[0].quantity=0;
+        if(change==4)s.in.tracked[0]=false;
+        if(change==5)s.in.session++;
+        if(change==6)s.in.wheelHand=0;
+        s.in.trigger=0;s.Step();Check(s.out.request.action==Action::None,"lost pointer/tracking/session or changed/empty item cancels use");
+    }
+    {
+        Sim s;quick(s);s.in.snapshot.quick.assigned=0;s.in.trigger=1;s.Step();s.in.trigger=0;s.Step();
+        Check(s.out.editor==3&&s.out.request.action==Action::None,"empty slot short click opens assignment");
+        s.Step();s.in.hover=8;s.in.trigger=1;s.Step();Check(s.out.request.action==Action::BindItem&&!s.out.request.index&&!s.out.request.item.handle,"clear slot uses explicit empty assignment");
+    }
+    {
+        Sim s;quick(s);s.in.hover=RunWalkCell;s.in.trigger=1;s.Step();
+        Check(s.out.request.action==Action::RunWalk&&!s.out.wheel,"run/walk dispatches native toggle");
+        Check(s.Step(40).request.action==Action::None,"holding run/walk never toggles repeatedly");
+        auto c=Context(s.in.snapshot,s.out,true);s.in.snapshot.quick.items[0].quantity--;
+        Check(c!=Context(s.in.snapshot,s.out,true),"count changes invalidate paint and old click eligibility");
+        for(auto page:{MenuPage::Spells,MenuPage::Equipment}) {
+            Check(WheelCell(.1f,.1f,-1,page,1)==QuickUseCell,"quick slot shares hit and paint bounds");
+            Check(WheelCell(.85f,.07f,-1,page,1)==RunWalkCell,"run/walk shares hit and paint bounds");
+        }
+        for(auto page:{MenuPage::Map,MenuPage::Developer,MenuPage::EditSlots,MenuPage::EditSkills,MenuPage::EditItems})
+            Check(WheelCell(.1f,.1f,-1,page,1)!=QuickUseCell,"hidden quick control never intercepts another page");
+    }
+
     {
         Sim s;s.in.wheel=true;s.Step(3);s.in.hover=13;s.in.trigger=1;s.Step();
         Check(!s.out.developer&&s.out.request.action==Action::None,"retail snapshot cannot open developer page");

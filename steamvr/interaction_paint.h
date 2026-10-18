@@ -17,6 +17,8 @@ struct PaintContext {
     std::array<Belt,4> belt{};
     SkillCue cue{},leftCue{};
     controllers::Labels labels{};
+    QuickInventory quick;
+    std::array<QuickItem,8> itemOptions{};
     navigation::Location location;
     companions::Roster companions;
     effects::Status effects;
@@ -27,7 +29,7 @@ inline PaintContext Context(const Snapshot& s,const Output& o,bool fresh,const c
     c.developer=o.developer;c.devVisible=s.developer;c.devClass=s.devClass;c.devPage=o.devPage;
     c.page=o.editPage;c.count=o.editCount;c.bank=s.bindingBank;c.utility=o.utility;c.map=o.map;c.fresh=fresh;
     c.editable=s.bindingsEditable;c.equipmentKnown=s.equipmentKnown;c.beltKnown=s.beltKnown;
-    c.skills=s.skills;c.options=o.editOptions;c.sets=s.sets;c.belt=s.belt;c.cue=o.cue;c.leftCue=o.leftCue;c.location=s.location;c.companions=s.companions;c.effects=s.effects;return c;
+    c.quick=s.quick;c.itemOptions=o.itemOptions;c.skills=s.skills;c.options=o.editOptions;c.sets=s.sets;c.belt=s.belt;c.cue=o.cue;c.leftCue=o.leftCue;c.location=s.location;c.companions=s.companions;c.effects=s.effects;return c;
 }
 inline bool LocationImageCurrent(const PaintContext& painted,const Snapshot& snapshot) {
     return painted.fresh&&painted.session==snapshot.session&&painted.location==snapshot.location;

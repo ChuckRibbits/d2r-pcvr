@@ -18,6 +18,10 @@ attached decorations. It does not identify roofs by filename, repair missing
 undersides, or manufacture ceilings. Retained geometry may expose lighting or
 model defects that need a separate fix.
 
+The [two-sided roof material candidate](ROOF_UNDERSIDES.md) addresses selected
+single-sided surfaces exposed by first-person views, including the upper floor
+of Atma's tavern. It complements this cutaway hook; headset verification is pending.
+
 Evidence from the local Steam D2R 3.3.93787 executable:
 
 - `FadeTargetComponent` has type hash `0xD94BE0C2`, size `0x58`, and storage
