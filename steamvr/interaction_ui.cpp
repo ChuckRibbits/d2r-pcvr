@@ -280,7 +280,7 @@ std::vector<uint8_t> Paint(const Snapshot& s,const Output& o,int selection,const
              o.result==Result::Dispatched?"Commands sent. Check character stats / destination in game.":
              o.result==Result::KitRefused?"Kit could not be added. Check inventory space and the development log.":
              o.result==Result::Refused?"Action unavailable. Close native menus and retry; see the development log.":
-             "Release reference: VR SETTINGS > DEV. Gear grants keep existing items.",{38,628,730,677});
+             "Release reference: VR SETTINGS > RELEASE NOTES. Gear grants keep existing items.",{38,628,730,677});
         SelectObject(dc,font);
     } else if(o.map) {
         frame({20,18,748,680});

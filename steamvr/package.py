@@ -7,6 +7,7 @@ import json
 from pathlib import Path
 import subprocess
 import zipfile
+from release_notes import read_notes, validate_package
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -63,10 +64,18 @@ def main():
             raise SystemExit('Experimental Battle.net packaging currently requires native Windows')
         files['bin/CascLib.dll'] = args.casclib
         files['Install-BattleNet-Preview.cmd'] = ROOT / 'Install-BattleNet-Preview.cmd'
+    release_summary = None
+    if args.platform == 'native-windows' and args.variant == 'current-source':
+        try:
+            release_summary = validate_package(read_notes(ROOT / 'RELEASE_NOTES.md', ROOT / 'vr/pcvr_identity.h'),
+                                               args.release_tag, files['bin/d2rl-pcvr.dll'])
+        except ValueError as error:
+            raise SystemExit(str(error))
     hashes = {name: hashlib.sha256(path.read_bytes()).hexdigest() for name, path in files.items()}
     manifest = {'source_commit': commit, 'game_version': '3.3.93787',
                 'created_utc': datetime.now(timezone.utc).isoformat(),
                 'release_tag': args.release_tag,
+                'release_notes': release_summary,
                 'platform': args.platform,
                 'storefronts': {'steam': {'version': '3.3.93787', 'status': 'verified'},
                                **({'battlenet': {'version': '3.3.93847', 'status': 'experimental'}} if args.casclib else {})},
