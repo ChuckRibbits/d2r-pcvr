@@ -113,7 +113,7 @@ std::vector<uint8_t> Paint(const Model& m,Hit hover,const char* runtimeStatus,co
             fill(ControllerBox,hover.kind==Kind::ControllerMenu?RGB(63,103,112):RGB(31,48,56));
             const std::string selected=std::string(controllers::Choices[int(m.Get()[ControllerLabels])])+"  \xe2\x96\xbc";
             text(selected.c_str(),{ControllerBox.x,ControllerBox.y+10,ControllerBox.w,37},true,true,RGB(116,220,219));
-        }else text(m.page==Page::Haptics?"Tune vibration for your headset and controllers.":m.page==Page::Combat?"Tune physical combat and offline difficulty.":m.page==Page::Aim?"Choose how the monster you aim at is shown.":m.page==Page::HUD?"Adjust your HUD and dropped-item labels.":runtimeStatus,{40,197,1200,42},false,false,quiet);
+        }else text(m.page==Page::Haptics?"Tune vibration for your headset and controllers.":m.page==Page::Combat?"Tune physical combat and offline difficulty.":m.page==Page::Aim?"Choose how your target is picked, shown and used by spells.":m.page==Page::HUD?"Adjust your HUD and dropped-item labels.":runtimeStatus,{40,197,1200,42},false,false,quiet);
         for(int row=0;row<RowCount(m.page);++row){
             const Key key=RowKey(m.page,row);const auto& d=Definitions[key];const float value=m.Get()[key];const int y=RowY+row*RowStep;
             fill({40,y-4,1200,RowStep},row%2?RGB(19,31,39):RGB(22,36,44));

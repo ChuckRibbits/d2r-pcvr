@@ -142,7 +142,9 @@ int main(){
         Check(speed.Click({Kind::Apply}).changed==(ChangeMask{1}<<StrainSpeed),"buildup edits preserve combat rules, difficulty and colour");
     }
     {Model aim;aim.Open(s);aim.Click({Kind::Tab,int(Page::Aim)});
-        Check(s.values[TargetHighlight]==1&&RowCount(Page::Aim)==1&&RowKey(Page::Aim,0)==TargetHighlight,"target highlight is On by default, alone on the Aim page");
+        Check(s.values[TargetHighlight]==1&&RowCount(Page::Aim)==3&&RowKey(Page::Aim,0)==TargetHighlight,"target highlight is On by default, first on the Aim page");
+        Check(RowKey(Page::Aim,1)==SpellLock&&RowKey(Page::Aim,2)==StaffPoint&&s.values[SpellLock]==1&&s.values[StaffPoint]==1,"spell lock and staff aim follow, On by default");
+        Check(HelpAt(Page::Aim,(ValueBox(2).x+5.f)/Width,(ValueBox(2).y+5.f)/Height)==StaffPoint,"the staff row explains itself");
         Check(HelpAt(Page::Aim,(ValueBox(0).x+5.f)/Width,(ValueBox(0).y+5.f)/Height)==TargetHighlight,"the Aim row explains the highlight");
         aim.Click(At(Page::Aim,ValueBox(0)));Check(aim.Get()[TargetHighlight]==0,"the value toggles the highlight off");
         const auto request=aim.Click({Kind::Apply});
