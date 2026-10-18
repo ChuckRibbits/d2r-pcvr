@@ -835,7 +835,7 @@ void LoadSettings() {
     melee::ConfigureAttackSpeed(classicMelee,IniB(L"debug",L"melee_trace",false));
     melee::ConfigureAttackRating(classicMelee);
     // Unleashed only: a raised shield blocks instead of the block stat.
-    // [gameplay] parry_ms (VR Settings > Combat), 0 disables perfect parry.
+    // The perfect parry window is fixed at 400 ms (no longer a setting).
     melee::ConfigureParrySound((int)IniF(L"gameplay",L"parry_sound",236));
     melee::ConfigureBlockSound((int)IniF(L"gameplay",L"block_sound",398));
     // Unleashed only, like the guard below: Classic keeps the native monster to-hit roll.
@@ -865,13 +865,15 @@ void LoadSettings() {
                                  (uint32_t)std::clamp(IniF(L"gameplay",L"riposte_ms",1500),0.f,10000.f),
                                  std::clamp(IniF(L"gameplay",L"riposte_volume",100),0.f,400.f)/100.f,path.c_str());
     }
-    combat::ConfigureGuard(!classicMelee,(uint32_t)std::clamp(IniF(L"gameplay",L"parry_ms",400),0.f,400.f),IniB(L"debug",L"guard_trace",false));
+    combat::ConfigureGuard(!classicMelee,400,IniB(L"debug",L"guard_trace",false));
     // Guard strain light: % of the guard each block strains, lowered reset time,
     // % of the view left clear at full swell, the broken guard's breathing period,
     // the width of the light's inner blend (% of the visor radius), opacity (% peak;
     // 0 = none, strain and the heartbeat still run), and colour as RRGGBB hex
     // (FFF7EA, the pale white light, by default). guard_strain_dark (VR Settings >
-    // Combat > Guard strain color: Black) darkens the rim instead.
+    // Combat > Guard strain color: Black) darkens the rim instead, denser by
+    // guard_strain_dark_density (2.5; 1 = the same curve as the light): at equal
+    // opacity a dark rim over D2's dark scenes hides far less than a pale one.
     framevr::ConfigureGuardStrain(IniF(L"gameplay",L"guard_strain_per_block",10)/100.f,
                                   IniF(L"gameplay",L"guard_strain_reset_ms",3000)/1000.f,
                                   IniF(L"gameplay",L"guard_strain_clear",10)/100.f,
@@ -881,7 +883,9 @@ void LoadSettings() {
                                   IniB(L"gameplay",L"guard_strain_dark",false)?0u:
                                   [] {wchar_t hex[16];GetPrivateProfileStringW(L"gameplay",L"guard_strain_color",L"FFF7EA",hex,16,g_iniPath);
                                       wchar_t* end=nullptr;const unsigned long v=wcstoul(hex[0]==L'#'?hex+1:hex,&end,16);
-                                      return end&&end!=hex&&!*end&&v<=0xFFFFFFul?uint32_t(v):0xFFF7EAu;}());
+                                      return end&&end!=hex&&!*end&&v<=0xFFFFFFul?uint32_t(v):0xFFF7EAu;}(),
+                                  IniB(L"gameplay",L"guard_strain_dark",false)?
+                                      std::clamp(IniF(L"gameplay",L"guard_strain_dark_density",2.5f),1.f,6.f):1.f);
     {   // Guard strain heartbeat: % on top of the game's Master x Combat volume (0 = off),
         // tempo range, wind-down time from full, and an optional one-beat 16-bit PCM WAV (next to this ini unless a full path).
         wchar_t file[MAX_PATH];GetPrivateProfileStringW(L"gameplay",L"guard_strain_heart_file",L"",file,MAX_PATH,g_iniPath);

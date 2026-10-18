@@ -860,7 +860,7 @@ instead of a random one. Classic keeps the native roll.
 - **Parry**: a diagonal shield swing across the view, lower right to upper left for
   a left-hand shield (at least 15 cm within 120 ms, within ~35 degrees of the
   diagonal), after the attacker's attack began (its mode change, 34E5F0) and at
-  most `[gameplay] parry_ms` (VR Settings > Combat, default 400 ms, 0 = off) before
+  most 400 ms (fixed) before
   the hit, from a melee attacker within 3 m. One parry per swing. The attacker is
   put into native hit recovery (445E60) on a later game update, any shield wear
   the game applied for that hit is restored (`shield_wear_refunded` in `Frame
@@ -877,7 +877,8 @@ instead of a random one. Classic keeps the native roll.
 - **Guard strain light**: every blocked hit (not a parry) strains the guard by
   `guard_strain_per_block` % (10). Strain shows as a soft vignette at the rim of the
   view (a pale white light by default; VR Settings > Combat > **Guard strain
-  color** switches it to a black shadow, `guard_strain_dark`, and
+  color** switches it to a black shadow, `guard_strain_dark`, drawn denser by
+  `guard_strain_dark_density` (2.5) so it hides as much as the light, and
   `guard_strain_color` takes any RRGGBB hex, default FFF7EA), beneath the blood on
   the visor, creeping inward as it builds;
   each block sends one smooth pulse in from the edge. At full strain the guard
