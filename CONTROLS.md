@@ -71,7 +71,8 @@ Quest left X/Y correspond to Index left A/B; right A/B labels are the same.
 | Hold to show all nearby loot labels (Alt) | Hold **Right Grip + Right Trigger** during gameplay, grip first. Labels stay shown while both are held; release either to restore normal drop/hover labels. Uses the native Alt range, independently of where you aim. No cast or shot accompanies the combo. Also listed in **VR Settings > Controls** |
 | Interact / pick up / talk | Right A by default; requires an aimed interactable. One press acts on one target: press again for each item, including loot a chest just dropped |
 | Free melee swing / thrust | Move the equipped weapon through an enemy |
-| Break pots / barrels | Swing a held melee weapon through them with its trigger released. Either Barbarian weapon works; ordinary button interaction/kicking remains available |
+| Physical dual wield | Equip two supported melee weapons on a Barbarian or two claws on an Assassin; release both triggers and swing or thrust with either hand. Active skills retain their button bindings |
+| Break pots / barrels | Swing a held melee weapon through them with its trigger released. Either Barbarian weapon or Assassin claw works; ordinary button interaction/kicking remains available |
 | Choose melee rules / motion thresholds | **VR Settings > Combat**: Unleashed or Classic, Melee hit speed, and Melee thrust speed |
 | Increase offline difficulty | **VR Settings > Combat > Offline difficulty**: Game default or Players 1-8; higher counts make monsters tougher and increase rewards |
 | Bow draw | Right trigger near the left-hand bow string; draw and release |

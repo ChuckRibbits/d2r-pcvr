@@ -1,10 +1,12 @@
-# Barbarian physical dual wield
+# Physical dual wield: Barbarian weapons and Assassin claws
 
-Equip two supported melee weapons on a Barbarian and release both triggers.
+Equip two supported melee weapons on a Barbarian, or two claws on an Assassin,
+and release both triggers.
 Each tracked weapon supports deliberate swings and thrusts using the existing
 VR Settings > Combat thresholds. No extra grip or Attack binding is needed
 for physical contacts. This adds native basic attacks from the second weapon;
-Double Swing, Frenzy and other active skills retain their button casting.
+Double Swing, Frenzy, Dragon Claw and other active skills retain their button
+casting.
 
 - Unleashed tracks contacts, recovery and cleave independently for each hand.
   Both blades can strike the same creature, including in the same input batch.
@@ -14,7 +16,8 @@ Double Swing, Frenzy and other active skills retain their button casting.
   profile, including the existing strength and short-pulse preferences.
 - Shield Smite, shield blocking and two-handed support grips keep their own
   paths. Bows, crossbows, shields, empty off-hands and unknown item types do not
-  qualify as a second melee weapon. Assassin dual claws are outside this change.
+  qualify as a second melee weapon. Assassins require a claw in each hand;
+  mixed claw/weapon pairs and other classes do not gain physical dual wield.
 
 ## Implementation and validation
 
@@ -51,12 +54,23 @@ functions, rejected classes/items/stale IDs, reversed equip order, nested
 scopes, thread isolation and stat restoration. Contact tests cover simultaneous
 strokes, independent damage bookkeeping, weapon changes and cancellation.
 
-Headset verification is pending. Test left-only/right-only hits, alternating
+For headset testing, check left-only/right-only hits, alternating
 and simultaneous strokes, thrusts, different weapon types and reversed equip
 order. Compare both melee rules and verify shield/single-weapon swaps and menus.
-The developer branch's **Prepare Barbarian** and **Dual-wield gear** supply a
-unique Phase Blade, Berserker Axe and combat armor; equip the items manually.
+With a Barbarian, **DEV > Character > Level 90** and **DEV > Equipment >
+Dual-wield gear** supply test attributes and a unique Phase Blade, Berserker
+Axe and combat armor; equip the items manually.
 Use **Blood Moor** with an isolated offline `pcvr-dev` character.
+
+For Assassin verification, load an Assassin in `pcvr-dev`, select
+**DEV > Character > Level 90**, then
+**DEV > Equipment > Claw gear** (Bartuc's and Jade Talon), and equip both claws.
+Check each hand separately, alternating/simultaneous swings and forward jabs,
+then reverse equip order and compare Unleashed with Classic. Both triggers
+must be released. Single-claw/shield swaps should retain their existing paths.
+The selector fixture covers both class restrictions, both attachment orders,
+each claw's stat selection/restoration, stale IDs and thread isolation. Assassin
+headset verification remains pending.
 
 Logs report `Frame dual wield: ... selection ready`, then per-hand landed hits
 and stale/unavailable weapon refusals. Ready alone is not gameplay verification.
