@@ -20,7 +20,10 @@
 // re-triggers without dropping, so rapid blocks hold a swell rather than
 // strobing; breathing is well under 1 Hz; opacity never exceeds brightness.
 namespace framevr::strain {
+enum class BuildSpeed { Slow, Medium, Fast };
+inline float BuildMultiplier(BuildSpeed speed){return speed==BuildSpeed::Slow?.5f:speed==BuildSpeed::Fast?2.f:1.f;}
 struct Tuning {
+    BuildSpeed speed=BuildSpeed::Medium; // changes strain per block, never ring size or reset time
     float perBlock=.10f;     // strain per blocked hit (1 = broken)
     float resetSeconds=3.f;  // lowered: full strain clears in this long
     float clear=.10f;        // radius left clear at full swell (1 = visor image edge)
@@ -73,7 +76,7 @@ public:
         last=in.time;
         const bool up=in.eligible&&in.raised;
         if(up&&in.blocks) {
-            strain=std::min(1.f,strain+float(in.blocks)*std::max(0.f,t.perBlock));
+            strain=std::min(1.f,strain+float(in.blocks)*std::max(0.f,t.perBlock)*BuildMultiplier(t.speed));
             attacking=true;pulseAt=in.time;
             if(strain>=1&&!broken){broken=true;out.brokeNow=true;}
         }

@@ -1,4 +1,7 @@
 #include "guard_strain.h"
+#include "guard_strain_paint.h"
+#include <chrono>
+#include <thread>
 #include <cstdio>
 #include <cstdlib>
 using namespace framevr;
@@ -21,7 +24,60 @@ struct Run {
 };
 }
 
+template<class F> void Until(F predicate){
+    const auto end=std::chrono::steady_clock::now()+std::chrono::seconds(3);
+    while(!predicate()){
+        Check(std::chrono::steady_clock::now()<end,"bounded painter completion");
+        std::this_thread::yield();
+    }
+}
 int main() {
+    {   // Rate changes block count, not geometry at equal strain, recovery or parries.
+        Run slow,medium,fast;
+        slow.tuning.speed=strain::BuildSpeed::Slow;fast.tuning.speed=strain::BuildSpeed::Fast;
+        for(Run* r:{&slow,&medium,&fast})r->Step(true);
+        strain::Output a,b,c;
+        for(int i=0;i<4;++i)a=slow.Step(true,1);
+        for(int i=0;i<2;++i)b=medium.Step(true,1);
+        c=fast.Step(true,1);
+        a=slow.Hold(true,1);b=medium.Hold(true,1);c=fast.Hold(true,1);
+        Check(std::fabs(a.strain-b.strain)<1e-5f&&std::fabs(b.strain-c.strain)<1e-5f,"Slow takes twice and Fast half as many blocks");
+        Check(std::fabs(a.edge-b.edge)<1e-5f&&std::fabs(b.edge-c.edge)<1e-5f&&std::fabs(a.alpha-c.alpha)<1e-5f,"equal strain has identical size and opacity at every speed");
+        for(auto speed:{strain::BuildSpeed::Slow,strain::BuildSpeed::Medium,strain::BuildSpeed::Fast}){
+            Run r;r.tuning.speed=speed;r.Step(true);
+            const int blocks=speed==strain::BuildSpeed::Slow?20:speed==strain::BuildSpeed::Fast?5:10;
+            for(int i=0;i<blocks-1;++i)Check(!r.Step(true,1).broken,"guard does not reach full strain early");
+            Check(r.Step(true,1).broken,"full strain after the expected block count");
+            Check(r.Hold(false,3.1).strain==0,"every speed clears fully in three seconds");
+            Check(r.Step(true,0,1).strain==0,"parries stay free at every speed");
+        }
+    }
+    {   // A slow frame/worker or full upload queue must not discard every image.
+        strain::Painter painter;
+        Check(painter.Start(),"start strain painter");
+        for(double frame:{1/90.,1/45.,1/25.,1/20.,1/10.}){
+            Run r;r.Step(true);
+            for(int i=0;i<12;++i){
+                const auto out=r.Step(true,1,0,frame);
+                strain::PaintJob job{out.edge,out.alpha,.45f,strain::White,1};
+                const auto key=strain::PaintKey(job.edge,job.alpha,job.feather,job.color,job.density);
+                Check(painter.Submit(job),"schedule one image for a changing vignette");
+                // Delay consumption through several new wanted states (as when the GPU is busy).
+                job.alpha*=.5f;
+                for(int k=0;k<4;++k)Check(!painter.Submit(job),"new frames cannot supersede an unconsumed image");
+                strain::PaintImage image;Until([&]{return painter.Take(image);});
+                Check(image.key==key&&image.pixels.size()==strain::Size*strain::Size*4,"original completed image survives at every frame rate with its own key");
+            }
+        }
+        Check(painter.Submit({.2f,1,.45f,0,2.5f}),"old full-strain image in flight");
+        painter.Discard();strain::PaintImage image;
+        Check(!painter.Take(image),"hidden vignette cannot return an old image");
+        strain::PaintJob fresh{.9f,.1f,.45f,strain::White,1};
+        Check(painter.Submit(fresh),"new character can request its own image");
+        Until([&]{return painter.Take(image);});
+        Check(image.key==strain::PaintKey(fresh.edge,fresh.alpha,fresh.feather,fresh.color,fresh.density),"previous character's heavy vignette cannot flash on a new block");
+        painter.Stop();Check(!painter.Busy()&&!painter.Submit(fresh),"shutdown clears pending images");
+    }
     {   // Nothing shows until a block lands; a parry adds no strain.
         Run r;
         auto o=r.Hold(true,1);

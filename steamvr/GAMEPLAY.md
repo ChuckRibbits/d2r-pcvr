@@ -875,8 +875,13 @@ instead of a random one. Classic keeps the native roll.
   sliders (re-read from Settings.json when the game saves it), times
   `riposte_volume` (100).
 - **Guard strain light**: every blocked hit (not a parry) strains the guard by
-  `guard_strain_per_block` % (10). Strain shows as a soft vignette at the rim of the
-  view (a pale white light by default; VR Settings > Combat > **Guard strain
+  `guard_strain_per_block` % (10). **VR Settings > Combat > Guard strain buildup**
+  selects Slow / Medium / Fast (`guard_strain_speed` 0 / 1 / 2, default Medium).
+  Slow halves strain per block; Fast doubles it. With default tuning, full
+  strain takes about 20 / 10 / 5 blocks without lowering the shield. The
+  vignette size, lowering/reset time and blocking rules stay the same. Existing
+  custom `guard_strain_per_block` tuning is multiplied, not overwritten. Strain shows as a soft vignette at the
+  rim of the view (a pale white light by default; VR Settings > Combat > **Guard strain
   color** switches it to a black shadow, `guard_strain_dark`, drawn denser by
   `guard_strain_dark_density` (2.5) so it hides as much as the light, and
   `guard_strain_color` takes any RRGGBB hex, default FFF7EA), beneath the blood on
