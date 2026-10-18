@@ -374,24 +374,11 @@ Eye mapEye;
 bool mapSupported=false;
 constexpr uint32_t mapSide=512;
 // Desktop mirror: in stereo the game window presents alternating eye frames,
-// so the monitor flickers between both eyes (double vision). The left frame is
-// kept and copied back over each right frame after the headset has taken it,
-// so the monitor shows only the left eye.
-ComPtr<ID3D12Resource> mirrorImage;
-bool mirrorMono=false,mirrorFresh=false;
-bool EnsureMirror(ID3D12Resource* src) {
-    const auto want=src->GetDesc();
-    if(mirrorImage) {
-        const auto have=mirrorImage->GetDesc();
-        if(have.Width==want.Width&&have.Height==want.Height&&have.Format==want.Format)return true;
-        return false; // a resize rebuilds the session (Shutdown) and releases it first
-    }
-    D3D12_HEAP_PROPERTIES heap{D3D12_HEAP_TYPE_DEFAULT};
-    if(FAILED(device->CreateCommittedResource(&heap,D3D12_HEAP_FLAG_NONE,&want,D3D12_RESOURCE_STATE_COPY_SOURCE,nullptr,IID_PPV_ARGS(&mirrorImage)))) {
-        mirrorImage.Reset();return false;
-    }
-    return true;
-}
+// so the monitor flickers between both eyes (double vision). After the headset
+// takes each right frame, the left eye image (still acquired until EndPair) is
+// copied back over it, so the monitor shows only the left eye. [render]
+// desktop_one_eye turns it off; eye images need TRANSFER_SRC for it.
+bool mirrorSupported=false,mirrorMono=false;
 std::atomic<bool> uiSupported{false};
 bool journalMode=false,spatialMode=false,workspacePlaced=false,opaqueMenuMode=false,upperBandMenuMode=false;
 bool npcChoicesMode=false;
@@ -944,10 +931,18 @@ bool Initialize(reshade::api::command_queue* rq,reshade::api::swapchain* swap) {
     {char message[128];std::snprintf(message,sizeof message,"Frame OpenXR: game format %d, eye format %d",int(format),int(eyeFormat));Say(message);}
     uiSupported=std::find(formats.begin(),formats.end(),int64_t(DXGI_FORMAT_R16G16B16A16_FLOAT))!=formats.end()&&uiBlit.Initialize(device.Get(),&Say);
     mapSupported=std::find(formats.begin(),formats.end(),int64_t(DXGI_FORMAT_R16G16B16A16_FLOAT))!=formats.end()&&mapBlit.Initialize(device.Get(),&Say);
+    mirrorSupported=true;
     for(auto& e:eyes) {
         XrSwapchainCreateInfo c{XR_TYPE_SWAPCHAIN_CREATE_INFO};c.usageFlags=XR_SWAPCHAIN_USAGE_COLOR_ATTACHMENT_BIT|XR_SWAPCHAIN_USAGE_TRANSFER_DST_BIT;
         c.format=eyeFormat;c.width=width;c.height=height;c.sampleCount=1;c.faceCount=1;c.arraySize=1;c.mipCount=1;
-        if(!Check(pCreateSwapchain(session,&c,&e.chain),"create eye swapchain")) return false;
+        if(&e==&eyes[0]) {
+            c.usageFlags|=XR_SWAPCHAIN_USAGE_TRANSFER_SRC_BIT; // desktop mirror source
+            if(XR_FAILED(pCreateSwapchain(session,&c,&e.chain))) {
+                e.chain=XR_NULL_HANDLE;mirrorSupported=false;c.usageFlags&=~XrSwapchainUsageFlags(XR_SWAPCHAIN_USAGE_TRANSFER_SRC_BIT);
+                Say("Frame OpenXR: eye image cannot be a copy source; desktop shows both eyes");
+            }
+        }
+        if(!e.chain&&!Check(pCreateSwapchain(session,&c,&e.chain),"create eye swapchain")) return false;
         n=0;pEnumerateSwapchainImages(e.chain,0,&n,nullptr);e.images.resize(n,{XR_TYPE_SWAPCHAIN_IMAGE_D3D12_KHR});
         if(!Check(pEnumerateSwapchainImages(e.chain,n,&n,reinterpret_cast<XrSwapchainImageBaseHeader*>(e.images.data())),"enumerate eye textures")) return false;
         if(!Hr(device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT,IID_PPV_ARGS(&e.allocator)),"create eye copy allocator")||
@@ -2160,21 +2155,17 @@ bool Copy(ID3D12Resource* src,Eye& e,reshade::api::command_queue* rq) {
     barriers[1].Transition.pResource=dest;barriers[1].Transition.StateBefore=D3D12_RESOURCE_STATE_RENDER_TARGET;barriers[1].Transition.StateAfter=D3D12_RESOURCE_STATE_COPY_DEST;
     if(gpu)e.commands->EndQuery(gpuProfile.heap.Get(),D3D12_QUERY_TYPE_TIMESTAMP,eye*5+3);
     e.commands->ResourceBarrier(2,barriers);e.commands->CopyResource(dest,src);
-    for(auto& b:barriers)std::swap(b.Transition.StateBefore,b.Transition.StateAfter);
-    if(!mirrorMono)mirrorFresh=false;
-    else if(eye==0&&EnsureMirror(src)) {
-        D3D12_RESOURCE_BARRIER m{};m.Type=D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;m.Transition.Subresource=D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
-        m.Transition.pResource=mirrorImage.Get();m.Transition.StateBefore=D3D12_RESOURCE_STATE_COPY_SOURCE;m.Transition.StateAfter=D3D12_RESOURCE_STATE_COPY_DEST;
-        e.commands->ResourceBarrier(1,&m);e.commands->CopyResource(mirrorImage.Get(),src);
-        std::swap(m.Transition.StateBefore,m.Transition.StateAfter);e.commands->ResourceBarrier(1,&m);
-        mirrorFresh=true;
-    } else if(eye==1&&mirrorFresh&&mirrorImage) {
-        // The headset already has this right frame; the window gets the left one back.
-        D3D12_RESOURCE_BARRIER b=barriers[0];
-        b.Transition.StateBefore=D3D12_RESOURCE_STATE_COPY_SOURCE;b.Transition.StateAfter=D3D12_RESOURCE_STATE_COPY_DEST;
-        e.commands->ResourceBarrier(1,&b);e.commands->CopyResource(src,mirrorImage.Get());
-        barriers[0].Transition.StateBefore=D3D12_RESOURCE_STATE_COPY_DEST;
+    if(eye==1&&mirrorMono&&mirrorSupported&&eyes[0].acquired&&eyes[0].copied) {
+        // The headset already has this right frame; the window gets this pair's
+        // left image back. It stays acquired until EndPair releases both eyes.
+        D3D12_RESOURCE_BARRIER m[2]{barriers[0],barriers[1]};
+        m[0].Transition.StateBefore=D3D12_RESOURCE_STATE_COPY_SOURCE;m[0].Transition.StateAfter=D3D12_RESOURCE_STATE_COPY_DEST;
+        m[1].Transition.pResource=eyes[0].images[eyes[0].index].texture;m[1].Transition.StateAfter=D3D12_RESOURCE_STATE_COPY_SOURCE;
+        e.commands->ResourceBarrier(2,m);e.commands->CopyResource(src,m[1].Transition.pResource);
+        std::swap(m[1].Transition.StateBefore,m[1].Transition.StateAfter);e.commands->ResourceBarrier(1,&m[1]);
+        barriers[0].Transition.StateAfter=D3D12_RESOURCE_STATE_COPY_DEST;
     }
+    for(auto& b:barriers)std::swap(b.Transition.StateBefore,b.Transition.StateAfter);
     e.commands->ResourceBarrier(2,barriers);
     if(!panelMode&&interactionInput.active&&potionModels.Ready()) {
         const auto& v=views[eye];
@@ -2286,7 +2277,7 @@ void Capture(reshade::api::command_queue* rq,reshade::api::swapchain* swap) {
     const bool stereo=afr&&afr->version==FLATVR_AFR_EYE_VERSION&&afr->enabled&&(!(wantsPanel&&wantsPanel())||SpatialMenu());
     if(!Begin()||!render||!valid) {if(!stereo)EndPair();return;}
     const uint32_t eye=stereo?((afr->eye^afr->swap)&1u):0u;
-    mirrorMono=stereo; // the desktop window shows the left eye only, never the alternating pair
+    mirrorMono=stereo&&vrsettings::Read().values[settings::DesktopOneEye]>.5f;
     if(eye==0&&!CopyMap(rq)) {mapSupported=false;mapEye.copied=false;Say("Frame menu map: copy unavailable; optional map suspended");}
     if((eye==0&&!CopyUi(rq))||!Copy(src,eyes[eye],rq)){failed=true;EndPair();ClearInput();return;}
     if(!stereo) {
@@ -3063,7 +3054,7 @@ void Shutdown(bool preserveResolution) {
     gazeAction=XR_NULL_HANDLE;gazeReady=gazeValid=gazeExtension=gazeSupported=false;gazeStability.Reset();
     detectedControllers={};controllerLabels={};controllerProfilesDirty=true;frameControllerExtension=false;
     for(auto& e:eyes){if(e.chain&&pDestroySwapchain)pDestroySwapchain(e.chain);e={};}
-    mirrorImage.Reset();mirrorFresh=mirrorMono=false;
+    mirrorSupported=mirrorMono=false;
     for(auto& s:handSpaces){if(s&&pDestroySpace)pDestroySpace(s);s=XR_NULL_HANDLE;}
     if(headSpace&&pDestroySpace)pDestroySpace(headSpace);if(space&&pDestroySpace)pDestroySpace(space);
     if(session&&pDestroySession)pDestroySession(session);if(actionSet&&pDestroyActionSet)pDestroyActionSet(actionSet);
