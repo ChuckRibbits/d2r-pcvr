@@ -73,7 +73,7 @@ inline constexpr std::array<Definition,Count> Definitions{{
     {"Loot label size", "Dropped-item names; 45% is the original size", L"hud",L"labels_size",45,20,150,5},
     {"Companions & effects", "Companion counts and current buffs, auras and harmful effects", L"interactions",L"companion_counts",1,0,1,1},
     {"Guard strain color", "Blocking strain at the rim of the view: pale white light or black shadow", L"gameplay",L"guard_strain_dark",0,0,1,1},
-    {"Offline difficulty", "Native Players 1-8 scaling; tougher monsters and increased rewards", L"gameplay",L"offline_players",0,0,8,1},
+    {"Offline difficulty", "Players 1-8 scaling for newly spawned monsters", L"gameplay",L"offline_players",0,0,8,1},
     {"Guard strain buildup", "How quickly repeated blocks build the vignette; same size", L"gameplay",L"guard_strain_speed",1,0,2,1},
 }};
 using Values=std::array<float,Count>;
