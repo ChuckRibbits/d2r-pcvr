@@ -18,7 +18,8 @@ bool TakeButtonMelee(uint64_t& session,uint64_t& at);
 // parryMs 0 disables perfect parry. Outside first person, menus or without a
 // shield (eligible=false) the native block roll is kept.
 void ConfigureGuard(bool enabled,uint32_t parryMs,bool trace=false); // trace: [debug] guard_trace
-// [gameplay] enemies_always_hit (default 1, Unleashed only): monsters' to-hit rolls against the local player always connect.
+// [gameplay] enemies_always_hit (Unleashed, default on): monsters' to-hit rolls against
+// the local player always connect; the native chance scales the landed attack's damage.
 void ConfigureEnemiesAlwaysHit(bool on);
 // The game's Master x Combat volume (Settings.json, 0..1), re-read at most every
 // 2 s and only when the game saved it. Any thread.

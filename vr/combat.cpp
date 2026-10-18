@@ -183,14 +183,44 @@ void PlayRiposteSound() {
 }
 // [gameplay] enemies_always_hit: monsters' to-hit rolls against the local
 // player always connect (same scratch-seed path as the player's own hits), so
-// only the physical shield decides. The ini default is on in Unleashed
-// (Classic keeps the native roll); applied live.
+// only the physical shield decides whether they land. Default on in Unleashed;
+// applied live.
 std::atomic<bool> enemiesAlwaysHit{false};std::atomic<unsigned> forcedHits{0};
+// Incoming defense: the native to-hit chance of a forced incoming hit (read at
+// 427EA0 like a swing's) scales that attack's life damage - DefenseFactor. The
+// hit check, block and damage application run synchronously on the game
+// thread, so the landed hit waits here for its life write, consumed once.
+// IncomingWindowMs only bounds a hit whose damage never arrived (blocked).
+constexpr uint64_t IncomingWindowMs=50;
+struct IncomingHit {uintptr_t attacker=0,defender=0;int chance=-1;uint64_t at=0;};
+thread_local IncomingHit incomingHit;thread_local bool incomingCheck=false;thread_local int incomingChance=-1;
+thread_local uintptr_t damageAttacker=0;
+std::atomic<unsigned> defenseScaled{0},defenseUnseen{0};std::atomic<int> lastDefenseChance{-1};
 framevr::guard::Tuning GuardTuning() {framevr::guard::Tuning t;t.parryMs=guardParryMs.load(std::memory_order_relaxed);return t;}
 template<class T> bool Read(uintptr_t p,T& out) {
     return p>0x10000&&framevr::ReadMemory(&out,reinterpret_cast<const void*>(p),sizeof out);
 }
 void SetStat(uintptr_t unit,int stat,int value,int layer) {
+    // The life write of a forced monster hit on the local player: its native
+    // to-hit chance against the player's Defense decides how hard it lands.
+    if(stat==6&&layer==0&&incomingHit.attacker&&unit==incomingHit.defender&&damageRecord&&
+       damageScaleReady.load(std::memory_order_relaxed)&&
+       reinterpret_cast<uintptr_t>(_ReturnAddress())==d2rsig::Addr(LifeWriteReturn)) {
+        const IncomingHit hit=incomingHit;incomingHit={};
+        uint32_t source=~0u;Read(damageAttacker,source);
+        // The striking monster, or its missile (type 3) when the record names it.
+        int damage=0;
+        if(GetTickCount64()-hit.at<=IncomingWindowMs&&(damageAttacker==hit.attacker||source==3)&&
+           Read(damageRecord+0x134,damage)&&damage>0) {
+            if(hit.chance<0)++defenseUnseen;
+            else {
+                const int before=reinterpret_cast<GetStatFn>(d2rsig::Addr(GetStatRva))(unit,6,0);
+                const int64_t life=int64_t(before)-int64_t(double(damage)*DefenseFactor(hit.chance));
+                value=life>=0x100?int(life):0;   // native: under one point of life is death
+                ++defenseScaled;lastDefenseChance=hit.chance;
+            }
+        }
+    }
     // The life write of a physical swing's damage: a riposte on the parried
     // monster is stronger, once.
     if(stat==6&&layer==0&&swingTarget!=NoSwing&&damageRecord&&damageScaleReady.load(std::memory_order_relaxed)&&
@@ -226,12 +256,13 @@ uint64_t HitChance(uintptr_t game,uintptr_t attacker,uintptr_t defender,int chan
         uint32_t a=~0u,d[3]{};
         if(Read(attacker,a)&&a==0&&Read(defender,d)&&d[0]==1&&d[2]==swingTarget)swingChance=chance;
     }
+    if(incomingCheck)incomingChance=chance;   // the forced incoming hit check running on this thread
     return originalHitChance(game,attacker,defender,chance,roll);
 }
 uint64_t ApplyDamage(uintptr_t game,uintptr_t attacker,uintptr_t defender,int flag,uintptr_t damage) {
-    const auto saved=damageRecord;damageRecord=damage;
+    const auto saved=damageRecord;const auto savedAttacker=damageAttacker;damageRecord=damage;damageAttacker=attacker;
     const auto result=originalApplyDamage(game,attacker,defender,flag,damage);
-    damageRecord=saved;return result;
+    damageRecord=saved;damageAttacker=savedAttacker;return result;
 }
 // Set only by melee.cpp around ONE physical swing's native basic attack
 // (synchronous, game thread). Missiles and button attacks never set it.
@@ -265,9 +296,15 @@ int Hit(uintptr_t attacker,uintptr_t defender,int accuracy,int missile) {
         uint32_t id=0,a[3]{},d[3]{};
         if(LocalPlayerId(id)&&Read(attacker,a)&&Read(defender,d)&&IncomingContact(id,a[0],d[0],d[2])) {
             roll={attacker,missile!=0};forcedHits.fetch_add(1,std::memory_order_relaxed);
+            incomingCheck=true;incomingChance=-1;
         }
     }
+    const bool forcedIncoming=incomingCheck;
     const int result=originalHit(attacker,defender,accuracy,missile);
+    if(forcedIncoming) {   // landed: its damage is scaled at the life write
+        incomingCheck=false;
+        incomingHit=result?IncomingHit{attacker,defender,incomingChance,GetTickCount64()}:IncomingHit{};
+    }
     roll=saved;meleeHit=savedMelee;
     if(!local&&!missile)IncomingRoll(attacker,defender,result!=0);
     return result;
@@ -660,6 +697,11 @@ void Report() {
     if(const auto sh=scaledHits.exchange(0),cu=chanceUnseen.exchange(0);sh||cu) {
         char line[200];snprintf(line,sizeof line,"Frame swing damage: scaled hits=%u last chance=%d%% last recovery x cleave=%.2f last factor=%.2f chance unseen=%u",
             sh,lastChance.load(),lastRecovery.load(),lastFactor.load(),cu);
+        framevr::logging::Write(line);
+    }
+    if(const auto ds=defenseScaled.exchange(0),du=defenseUnseen.exchange(0);ds||du) {
+        char line[200];snprintf(line,sizeof line,"Frame incoming defense: scaled hits=%u last chance=%d%% chance unseen=%u",
+            ds,lastDefenseChance.load(),du);
         framevr::logging::Write(line);
     }
     if(const auto rl=ripostesLanded.exchange(0)) {

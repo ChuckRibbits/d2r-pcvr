@@ -944,11 +944,20 @@ instead of a random one. Classic keeps the native roll.
 Damage is scaled at the native damage application's final life write (44CE80,
 whose `Set(defender, life, ...)` returns to 44D098), so resistances, criticals and
 leech have already run; only the local player's physical swings are scaled - not
-spells, missiles or thorns. `[gameplay] enemies_always_hit` (1, on by default since
-2026-10-18) makes every enemy melee and missile to-hit roll succeed, so each attack
-reaches the shield and the shield, not the roll, decides. It applies in Unleashed
-only; Classic always uses the native monster chance to hit. `enemies_always_hit=0`
-restores the native roll in Unleashed.
+spells, missiles or thorns.
+
+**Incoming defense (Unleashed):** every monster melee attack and projectile aimed at
+the local player lands - its to-hit roll always succeeds, so only the raised shield
+(or the native block roll without one) stops it. Defense still counts: the native
+chance the attack would have had (the monster's attack rating against your
+Defense and level, clamped 5-95%) scales that attack's damage at the same life
+write, so a 5% chance lands 5% of the hit. The whole attack is scaled, elemental
+riders included (Cold/Lightning/Fire Enchanted, cold melee, poison arrows), and
+after damage reduction, resistances and absorb, so expected damage equals native
+without the hit-or-miss variance. Spells never roll to hit and are unchanged.
+`[gameplay] enemies_always_hit` (default 1) turns the rule off with 0, restoring
+native monster misses at full damage. Classic always uses the native monster
+chance to hit. The log's `Frame incoming defense:` line counts scaled hits.
 `[debug] guard_trace=1` logs every judged hit (`Frame guard trace:`) with the hand
 position, cover angle, swing and attack timing. Its `parry=` field names why a
 raised guard did not parry: `no_swing`, `spent`, `early` (more than 450 ms before

@@ -127,6 +127,12 @@ rhythm: a stroke before your attack speed has recovered hits much weaker, so
 measured swings beat flailing. Faster attack speed (IAS) shortens the wait.
 One stroke can hit several monsters, each further one a little weaker.
 
+**Unleashed incoming damage:** monsters' attacks and projectiles always reach
+you; your shield is what stops them. Your Defense decides how hard they land:
+the chance a monster would have had to hit you (5-95%) scales the whole
+attack, elemental damage included. Spells never roll to hit, so Defense
+doesn't reduce them; resistances still matter.
+
 ### Shield: block, parry and strain (Unleashed)
 
 - **Block:** raise the shield and put its broad face between you and the
