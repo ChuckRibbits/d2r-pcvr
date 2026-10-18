@@ -336,6 +336,13 @@ Guard Incoming(uintptr_t attacker,uintptr_t defender,uint32_t& monster,bool& inR
 }
 // Native still runs in full (avoid/dodge, block animation, FBR, sounds); only
 // its block roll is replaced by the physical verdict.
+uint64_t NativeCallerRva(uintptr_t caller) {
+    // Addr(0) means unresolved, not the image base. Subtract the resolved
+    // block offset so diagnostics also work when signatures relocate it.
+    const auto address=d2rsig::Addr(BlockRva),offset=d2rsig::Rva(BlockRva);
+    const auto base=address>offset?address-offset:0;
+    return base&&caller>=base&&caller-base<0x4000000?caller-base:0;
+}
 int GuardedBlock(uintptr_t game,uintptr_t attacker,uintptr_t defender,int avoid,int block,Guard g,uint32_t monster,bool inReach,uint64_t parryAt,uintptr_t caller) {
     const int32_t durability=gamestate::LeftDurability();   // before this block wears the shield
     const auto savedForced=forced;const bool savedServed=forcedServed;
@@ -343,8 +350,7 @@ int GuardedBlock(uintptr_t game,uintptr_t attacker,uintptr_t defender,int avoid,
     const int result=originalBlock(game,attacker,defender,avoid,block);
     const bool served=forcedServed;forced=savedForced;forcedServed=savedServed;
     if(guardTrace.load(std::memory_order_relaxed)) {
-        const auto base=d2rsig::Addr(0);
-        const auto rva=caller>=base&&caller-base<0x4000000?caller-base:0;
+        const auto rva=NativeCallerRva(caller);
         char line[280];snprintf(line,sizeof line,
             "Frame guard native: monster=%u verdict=%s block_flag=%d avoid_flag=%d result=%d roll_served=%d durability=%d caller=0x%llx",
             monster,g==Guard::Parry?"PARRY":g==Guard::Block?"BLOCK":"OPEN",block,avoid,result,int(served),durability,(unsigned long long)rva);

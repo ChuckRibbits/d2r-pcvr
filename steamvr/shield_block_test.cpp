@@ -4,6 +4,8 @@
 #include <cassert>
 
 namespace fixture {
+uintptr_t imageBase=0x140000000;
+uint64_t relocation=0;
 uint64_t session=1;
 unsigned nativeCalls=0,impacts=0;
 bool serve=true;
@@ -27,7 +29,8 @@ int NativeBlock(uintptr_t game,uintptr_t,uintptr_t,int avoid,int block) {
 }
 namespace gamestate {uint64_t LocalPlayer(){return fixture::session;}int32_t LeftDurability(){return -1;}}
 namespace d2rsig {
-uintptr_t Addr(uint64_t){return 0;}
+uint64_t Rva(uint64_t rva){return rva?rva+fixture::relocation:0;}
+uintptr_t Addr(uint64_t rva){return rva?fixture::imageBase+Rva(rva):0;}
 bool Check(uint64_t,const void*,uint32_t){return false;}
 bool Hook(uint64_t,const void*,uint32_t,void*,void**){return false;}
 }
@@ -37,6 +40,11 @@ namespace melee {bool QueueParry(uint32_t,int){return false;}uint64_t AttackStar
 
 int main() {
     using namespace combat;
+    assert(NativeCallerRva(fixture::imageBase+0x462fb0)==0x462fb0);
+    fixture::relocation=0x3000;
+    assert(NativeCallerRva(fixture::imageBase+0x465fb0)==0x465fb0);
+    assert(NativeCallerRva(fixture::imageBase-1)==0&&NativeCallerRva(fixture::imageBase+0x4000000)==0);
+    fixture::relocation=0;
     fixture::Unit player(0,42,100),monster(1,9,99);
     enabled=ready=guardChecked=true;originalBlock=&fixture::NativeBlock;
     ConfigureGuard(true,0,true);
