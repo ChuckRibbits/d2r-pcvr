@@ -1,4 +1,5 @@
 #include "shield_guard.h"
+#include "shield_surface.h"
 #undef NDEBUG
 #include <cassert>
 #include <cmath>
@@ -194,5 +195,59 @@ int main() {
         assert(Judge(g,framevr::math::Rotate(q,ahead+Vec{eye.x,0,eye.z}),p.at,t)==Verdict::Block);
         world[0]=world[1]=world[2]=0;assert(!FromAttachment(world,model,eye*units,chest,units,70000,9,p));
     }
-    std::puts("Shield guard: posed surface direction/placement, independent gaze, calibrated attachment transforms, movement, edge-on/lowered rejection, parries and source-pose expiry passed");
+    // Fully evaluated item geometry: wrist and item attachment may disagree by
+    // 90 degrees. Coverage must use the drawn face, including mirrored transforms.
+    for(float units:{2.f,4.f,8.f})for(float yaw:{0.f,1.5707963f,3.1415926f})for(float mirror:{-1.f,1.f}) {
+        auto context=Surface(chest,{1,0,0},80000);context.unitsPerMetre=units;
+        const auto q=framevr::math::Yaw(yaw);
+        const Vec r=framevr::math::Rotate(q,{1,0,0}),u{0,1,0},z=framevr::math::Rotate(q,{0,0,1});
+        const Vec eye=framevr::math::Rotate(q,{.1f,1.7f,.05f}),center=eye+framevr::math::Rotate(q,{-.1f,-.45f,-.3f});
+        context.eye=eye;context.center=center;
+        const Vec player{12300,24,-11000};const Vec origin=player+center*units;
+        float world[16]={r.x*units*mirror,r.y*units*mirror,r.z*units*mirror,0,
+            u.x*units,u.y*units,u.z*units,0,z.x*units,z.y*units,z.z*units,0,origin.x,origin.y,origin.z,1};
+        Pose p;assert(FromBounds(world,{-.25f,-.5f,-.04f},{.25f,.5f,.04f},player,context,p));
+        assert(Measured(p)&&std::sqrt(framevr::math::Dot(p.center-center,p.center-center))<.002f);
+        assert(std::fabs(framevr::math::Dot(p.normal,z))>.999f);
+        State g;Update(g,p,true,true,p.at,true,t);
+        const auto attack=framevr::math::Rotate(q,{.1f,0,-1.5f});
+        assert(Judge(g,attack,p.at,t)==Verdict::Block);
+        // Physically rotate the item, not the controller/hero attachment.
+        const Vec edge=framevr::math::Rotate(q,{0,0,1});
+        world[0]=edge.x*units;world[1]=edge.y*units;world[2]=edge.z*units;
+        world[8]=r.x*units;world[9]=r.y*units;world[10]=r.z*units;
+        assert(FromBounds(world,{-.25f,-.5f,-.04f},{.25f,.5f,.04f},player,context,p));
+        Update(g,p,true,true,p.at,true,t);assert(Judge(g,attack,p.at,t)==Verdict::Open);
+        world[0]=NAN;assert(!FromBounds(world,{-.25f,-.5f,-.04f},{.25f,.5f,.04f},player,context,p));
+    }
+    {
+        Pose p=Surface({-.1f,-.72f,-.3f},view,90000);
+        p.halfRight={.3f,0,0};p.halfUp={0,.6f,0}; // large face still covers torso
+        State g;Update(g,p,true,true,p.at,true,t);assert(g.raised&&Judge(g,ahead,p.at,t)==Verdict::Block);
+        p.halfRight={.13f,0,0};p.halfUp={0,.13f,0};p.at++;
+        g={};Update(g,p,true,true,p.at,true,t);assert(!g.raised); // low buckler exposes torso
+        p=Surface(chest,view,90002);p.center.x=.39f;p.halfRight={.13f,0,0};p.halfUp={0,.13f,0};
+        g={};Update(g,p,true,true,p.at,true,t);assert(Judge(g,ahead,p.at,t)==Verdict::Open);
+        p.halfRight={.3f,0,0};p.halfUp={0,.6f,0};p.at++;
+        Update(g,p,true,true,p.at,true,t);assert(Judge(g,ahead,p.at,t)==Verdict::Block);
+        // A tilted face that still covers the torso is not discarded at 60 degrees.
+        p.center.x=0;p.normal={.916515f,0,.4f};p.halfRight={.12f,0,-.2749545f};p.at++;
+        Update(g,p,true,true,p.at,true,t);assert(Judge(g,ahead,p.at,t)==Verdict::Block);
+        p.center.z=.6f;p.at++;Update(g,p,true,true,p.at,true,t);assert(Judge(g,ahead,p.at,t)==Verdict::Open);
+        p.center.z=-.3f;p.center.y=.3f;p.at++;Update(g,p,true,true,p.at,true,t);assert(!g.raised);
+        p.center.y=2.6f;p.at++;Update(g,p,true,true,p.at,true,t);assert(!g.raised);
+        assert(ShieldMesh("armor_bucklerShape")&&ShieldMesh("armor_aerin_shield1Shape")&&!ShieldMesh("weapon_swordShape"));
+        const Pose context=Surface(chest,view,91000);Pose out;
+        float world[16]={4,0,0,0,0,4,0,0,0,0,4,0,-.48f,5.4f,-1,1};
+        assert(FromBounds(world,{-.2f,-.4f,-.03f},{.2f,.4f,.03f},{},context,out));
+        assert(!FromBounds(world,{-.2f,-.4f,-.03f},{-.3f,.4f,.03f},{},context,out)); // reversed bounds
+        assert(!FromBounds(world,{-.2f,-.2f,-.2f},{.2f,.2f,.2f},{},context,out)); // no broad face
+        world[0]=world[5]=world[10]=.0001f;
+        assert(!FromBounds(world,{-.2f,-.4f,-.03f},{.2f,.4f,.03f},{},context,out)); // hidden attachment
+        world[0]=world[5]=world[10]=400;
+        assert(!FromBounds(world,{-.2f,-.4f,-.03f},{.2f,.4f,.03f},{},context,out)); // implausible scale
+        world[0]=world[5]=world[10]=4;world[12]=300;
+        assert(!FromBounds(world,{-.2f,-.4f,-.03f},{.2f,.4f,.03f},{},context,out)); // another item/location
+    }
+    std::puts("Shield guard: rendered bounds, wrist/item disagreement, size-aware coverage, calibration, gaze independence, movement, parries and expiry passed");
 }

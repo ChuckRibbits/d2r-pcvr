@@ -851,12 +851,16 @@ shield is held, not by the block-chance roll. A monster still has to pass its
 native to-hit roll; then its native block roll (44B930) takes the physical verdict
 instead of a random one. Classic keeps the native roll.
 
-- **Block**: the shield hand up in front of the chest (measured from the head in its
-  turn: forward -0.20 to 0.85 m, up -0.62 to 0.30 m, out to 0.65 m on the shield's
-  side or 0.50 m across; held guards get 5 cm more), facing the attacker within
-  60 degrees of where the headset looks. Walking or running (PlrMode WL/RN/TW)
-  drops the guard. Every block plays `[gameplay] block_sound` (default 398,
-  block_weapon_1) and taps the left controller.
+- **Block**: raise the shield's broad face between the attacker and your torso.
+  Walking/running and looking away do not cancel a valid guard. Recognized held
+  meshes use their current rendered bone bounds and native item transform, so
+  wrist rotation and shield size change coverage. The projected face width has
+  a 12 cm torso allowance; nearly edge-on faces are rejected. Height uses the
+  visible face, allowing a lower grip on a tall shield. Unsupported meshes use
+  the posed-attachment fallback. This approximates a native 2D incoming hit,
+  not per-triangle projectile collision; see [shield blocking](../docs/SHIELD_BLOCKING.md).
+  Every block plays `[gameplay] block_sound` (default 398, block_weapon_1) and
+  taps the left controller. Native unblockable damage remains unblockable.
 - **Parry**: a diagonal shield swing across the view, lower right to upper left for
   a left-hand shield (at least 15 cm within 120 ms, within ~35 degrees of the
   diagonal), after the attacker's attack began (its mode change, 34E5F0) and at

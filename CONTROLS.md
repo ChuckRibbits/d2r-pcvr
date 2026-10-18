@@ -133,7 +133,8 @@ One stroke can hit several monsters, each further one a little weaker.
   attacker. You can look elsewhere while holding that position, including
   while walking or running. A valid guard replaces the random block-chance
   roll; the game's other block eligibility checks still apply. Coverage uses
-  a forgiving approximation around the posed attachment, not exact mesh size.
+  the rendered shield's orientation and size with a small allowance around the
+  incoming attack line. Unsupported meshes use an attachment-based fallback.
   Lowering it, holding it away from the attack line or turning it edge-on opens
   the guard.
 - **Parry:** as a melee attack comes in, swing the shield diagonally across

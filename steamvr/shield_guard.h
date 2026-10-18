@@ -16,11 +16,15 @@ struct Pose {
     float unitsPerMetre=0;
     uint64_t at=0;
     uint32_t epoch=0;
+    // Rendered mesh bounds, in world-facing metres. Zero means the older
+    // attachment-only fallback. These include the item's own bone/transform.
+    Vec halfRight{},halfUp{};
 };
+inline bool Measured(const Pose& p) {return math::Dot(p.halfRight,p.halfRight)>.0025f&&math::Dot(p.halfUp,p.halfUp)>.0025f;}
 inline bool Finite(Vec v) {return std::isfinite(v.x)&&std::isfinite(v.y)&&std::isfinite(v.z);}
 inline bool Valid(const Pose& p) {
     const float n=math::Dot(p.normal,p.normal);
-    return p.at&&Finite(p.center)&&Finite(p.normal)&&Finite(p.eye)&&Finite(p.hand)&&
+    return p.at&&Finite(p.center)&&Finite(p.normal)&&Finite(p.eye)&&Finite(p.hand)&&Finite(p.halfRight)&&Finite(p.halfUp)&&
         std::isfinite(p.unitsPerMetre)&&p.unitsPerMetre>=1&&p.unitsPerMetre<=32&&n>.99f&&n<1.01f;
 }
 // The coverage proxy uses the shield attachment's XY plane. Cross the final posed
@@ -113,6 +117,18 @@ inline Rejection PositionRejection(Vec hand,bool leftShield,bool raised,const Tu
 }
 inline bool InGuard(Vec hand,bool leftShield,bool raised,const Tuning& t) {return PositionRejection(hand,leftShield,raised,t)==Rejection::None;}
 
+inline Rejection PositionRejection(const Pose& p,bool leftShield,bool raised,const Tuning& t) {
+    if(!Measured(p))return PositionRejection(p.hand,leftShield,raised,t);
+    const float margin=raised?t.hold:0;
+    const float height=std::fabs(p.halfRight.y)+std::fabs(p.halfUp.y);
+    // A tower shield can cover the torso with its grip below the old hand
+    // cutoff. Use the visible surface, still relative to this pose's eyes.
+    if(p.center.y+height<p.eye.y-.50f-margin)return Rejection::TooLow;
+    if(p.center.y-height>p.eye.y+.15f+margin)return Rejection::TooHigh;
+    if(std::hypot(p.hand.x,p.hand.z)>t.reach+margin)return Rejection::TooFar;
+    return Rejection::None;
+}
+
 // A missing render pose may briefly retain the last guard; the original pose
 // timestamp expires it. Re-reading the same pose never makes it newer.
 inline void Update(State& s,const Pose& pose,bool handOk,bool leftShield,uint64_t now,bool posed,const Tuning& t) {
@@ -124,7 +140,7 @@ inline void Update(State& s,const Pose& pose,bool handOk,bool leftShield,uint64_
     if(now-pose.at>t.staleMs){invalidate(Rejection::StalePose);return;}
     const Vec hand=pose.hand;
     s.surface=pose;
-    s.rejection=PositionRejection(hand,leftShield,s.raised,t);
+    s.rejection=PositionRejection(pose,leftShield,s.raised,t);
     const bool up=s.rejection==Rejection::None;
     if(handOk){s.hand=hand;Axes(hand,leftShield,s.forward,s.up,s.side);}
     if(up&&!s.raised)s.raisedAt=now;
@@ -169,18 +185,25 @@ inline Rejection Coverage(const Pose& p,Vec toAttacker,const Tuning& t,float* al
     const Vec fromBody{toAttacker.x-p.eye.x,0,toAttacker.z-p.eye.z};
     const float distance=std::hypot(fromBody.x,fromBody.z);
     const Vec offset{p.center.x-p.eye.x,0,p.center.z-p.eye.z};
+    const bool measured=Measured(p);
     if(distance>.05f) {
         const Vec direction=fromBody*(1/distance);
         const float along=math::Dot(offset,direction);
         const float side=std::fabs(offset.x*direction.z-offset.z*direction.x);
-        if(along < -t.behind||along>distance+t.behind||side>t.lateral)return Rejection::OutsidePlacement;
+        const Vec across{direction.z,0,-direction.x};
+        // Project the actual face onto the incoming attack corridor. Rotation
+        // continuously changes coverage instead of a hard 60-degree cutoff.
+        // 12 cm allows for a native hit targeting the torso rather than its centre.
+        const float width=measured?std::fabs(math::Dot(p.halfRight,across))+std::fabs(math::Dot(p.halfUp,across))+.12f:t.lateral;
+        if(along < -t.behind||along>distance+t.behind||side>width)return Rejection::OutsidePlacement;
     } else if(std::hypot(offset.x,offset.z)>t.lateral)return Rejection::OutsidePlacement;
-    Vec incoming{toAttacker.x-p.center.x,0,toAttacker.z-p.center.z};
+    // The attack travels toward the body, not toward the offset shield grip.
+    Vec incoming=measured?fromBody:Vec{toAttacker.x-p.center.x,0,toAttacker.z-p.center.z};
     if(math::Dot(incoming,incoming)<.0025f)incoming=fromBody;
     if(math::Dot(incoming,incoming)<.0025f)return Rejection::OutsideCoverage;
     const float facing=std::fabs(math::Dot(p.normal,math::Normalized(incoming)));
     if(alignment)*alignment=facing;
-    return facing>=t.coverCos?Rejection::None:Rejection::OutsideCoverage;
+    return facing>=(measured?.15f:t.coverCos)?Rejection::None:Rejection::OutsideCoverage;
 }
 
 // toAttacker: grid-plane vector, player -> attacker, in metres. attackAt: when

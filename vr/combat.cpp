@@ -322,7 +322,7 @@ Guard Incoming(uintptr_t attacker,uintptr_t defender,uint32_t& monster,bool& inR
     if(guardTrace.load(std::memory_order_relaxed)) {
         const float d=std::hypot(to.x,to.z);const auto& s=g.state;
         float cover=0;framevr::guard::Coverage(s.surface,to,GuardTuning(),&cover);
-        char line[720];snprintf(line,sizeof line,
+        char line[840];snprintf(line,sizeof line,
             "Frame guard trace: monster=%u class=%u verdict=%s reason=%s player_mode=%u raised=%d forward=%.2f up=%.2f side=%.2f m cover_cos=%.2f attacker=%.2f m swing=%.2f m swing_cos=%.2f snap_age=%lld ms snap_spent=%d attack_age=%lld ms pose_age=%llu ms center=%.2f,%.2f,%.2f normal=%.2f,%.2f,%.2f eye=%.2f,%.2f,%.2f attacker_xz=%.2f,%.2f upm=%.3f",
             a[2],a[1],v==Verdict::Parry?"PARRY":v==Verdict::Block?"BLOCK":"OPEN",framevr::guard::ReasonName(reason),playerMode,int(s.raised),s.forward,s.up,s.side,cover,d,s.swing,s.swingCos,
             s.snapAt&&now>=s.snapAt?(long long)(now-s.snapAt):-1LL,int(s.snapUsed),
@@ -330,6 +330,9 @@ Guard Incoming(uintptr_t attacker,uintptr_t defender,uint32_t& monster,bool& inR
             (unsigned long long)(s.seenAt&&now>=s.seenAt?now-s.seenAt:0),
             s.surface.center.x,s.surface.center.y,s.surface.center.z,s.surface.normal.x,s.surface.normal.y,s.surface.normal.z,
             s.surface.eye.x,s.surface.eye.y,s.surface.eye.z,to.x,to.z,g.upm);
+        const auto& p=s.surface;
+        snprintf(line+strlen(line),sizeof line-strlen(line)," mesh=%d size=%.3f,%.3f m",
+            int(framevr::guard::Measured(p)),2*std::sqrt(framevr::math::Dot(p.halfRight,p.halfRight)),2*std::sqrt(framevr::math::Dot(p.halfUp,p.halfUp)));
         framevr::logging::Write(line);
     }
     return v==Verdict::Parry?Guard::Parry:v==Verdict::Block?Guard::Block:Guard::Open;

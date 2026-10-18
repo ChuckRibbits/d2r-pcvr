@@ -6,29 +6,39 @@ still runs, and its eligibility checks remain in place.
 
 ## Coverage
 
-Raise the shield and place its broad face toward the attacker. Coverage follows
-the final posed shield attachment, independently of headset yaw. Looking away
-while keeping the shield in place does not turn its blocking direction. Both
-faces can block; an edge-on or horizontally flattened shield cannot intercept
-a horizontal attack. Lowering the hand opens the guard.
+Raise the shield and place its broad face toward the attacker. For recognized
+shield meshes, coverage follows the fully rendered item, including its animated
+bones and native attachment overrides. Looking away while keeping the shield
+in place does not turn its blocking direction. Both faces can block; a nearly
+edge-on or horizontally flattened shield cannot intercept a horizontal attack.
+Lowering the visible shield below the torso opens the guard.
 
 The incoming native check supplies the attacker position, not an exact 3D hit
-point. Coverage is therefore a forgiving horizontal approximation: a 60-degree
-surface-angle limit and a 45 cm allowance around the attacker-to-body line.
-The attachment may sit up to 20 cm behind the body line to accommodate a guard
-held against the chest. These are shared proxy limits, not measured shield mesh
-dimensions. Small and large shields do not yet have individually sized collision
-surfaces. Item-specific attachment overrides and animated shield meshes can
-also differ slightly from the hero attachment used by this approximation.
+point. Coverage is therefore a forgiving horizontal approximation. The actual
+bone-binding bounding box supplies the shield face and dimensions. Its projected
+width plus a 12 cm torso allowance determines coverage around the incoming line.
+Wrist rotation narrows coverage continuously; only nearly edge-on faces (within
+about 9 degrees of edge-on) are rejected outright. The old 60-degree cutoff
+could reject a tilted large shield which still covered the player.
+The face centre may sit up to 20 cm behind the body line to accommodate a guard
+held against the chest. These are rectangular bounds, not per-triangle collision
+or the exact flight/height of an incoming projectile. For meshes with several
+bindings, the largest valid visible face is used. Unsupported meshes retain the
+attachment approximation (60 degrees, 45 cm lateral allowance).
 
-The hand-height limits remain relative to the headset. Horizontal hand reach
-is radial, allowing guards to the side without a gaze-dependent hand box.
-Surface position, normal, eye position, scale and hand input come from the same
-completed skeleton pose, after body calibration and wrist posing. The normal
-comes from the attachment XY plane; its sign does not matter for two-sided
-blocking. Source timestamps expire old poses instead of refreshing them when
+Height uses the visible surface overlapping the torso band relative to the
+same-pose eyes, allowing a lower grip on a tall shield. Horizontal hand reach
+is radial. Surface position, eye position, scale and hand input use the matching
+completed hero pose, after body calibration. The native transform callback
+then applies the held item's own current bone and world transform. The thin
+axis of its bounds determines the face, independently of the wrist axes.
+Source timestamps expire old poses instead of refreshing them when
 the UI polls again. Snap-turn epochs invalidate coverage until the new pose
 arrives; tracking loss opens immediately. Existing calibration is not changed.
+The captured item must belong to the exact local hero entity and match its
+session, equipment and generation. Dropped shields, inventory previews and
+other actors cannot provide coverage. Hidden/invalid/implausibly scaled geometry
+is rejected. No extracted assets or caches are required.
 
 Parries retain their diagonal motion and timing requirements. Guard strain only
 changes the visor effect; it does not turn blocking off. Shield bashes have a
@@ -58,8 +68,9 @@ native unblockable flags or interpret every OPEN verdict as a landed hit.
 A separate confirmed adapter bug spent pending parries even when native handling
 skipped the block roll. Consumption now waits for the native roll. This does
 not change which damage types can be blocked. Remaining visual angle/placement
-disagreements and shield-size differences still need headset investigation;
-calibration has not been demonstrated to cause the failures.
+disagreements led to the rendered-bounds correction described above. It passes
+synthetic tests but still needs owner headset verification; calibration has not
+been demonstrated to cause the failures.
 
 ## Diagnostics and test route
 
@@ -71,6 +82,9 @@ calibration has not been demonstrated to cause the failures.
   it off.
 - Traces include surface center/normal, eye and attacker positions relative to
   the player, calibrated units per metre, movement mode and source-pose age.
+  `mesh=1 size=...` confirms rendered bounds are active; `mesh=0` is the fallback.
+  `Frame shield surface: rendered mesh captured` reports the measured dimensions
+  and difference from the former attachment approximation once per generation.
 - Native traces include block/avoid arguments, return value, roll-served status
   shield durability and native caller RVA. A pre-call BLOCK verdict is not a confirmed native
   block when the native function skips its roll.
