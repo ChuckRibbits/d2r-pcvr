@@ -142,9 +142,11 @@ level's native arena entrance. Prepare and equip before dangerous destinations.
 per feature from the last published
 release, currently [v0.3.17](https://github.com/bearstonem/d2r-pcvr/releases/tag/v0.3.17-windows-preview).
 The reference is built in and works offline. It does not list unreleased PRs
-or automatically fetch GitHub. Update `steamvr/release_notes.h` when
-publishing a release; keep the title/tag/link and one-line summaries in sync.
-The preview check measures every line to prevent wrapping/clipping.
+or automatically fetch GitHub. The build generates this page from the versioned
+`PCVR_IN_HEADSET_NOTES` summary in `RELEASE_NOTES.md`. Follow the
+[release workflow](../docs/RELEASING.md) when publishing; the build and packager
+check the version and bundled summary. The preview check measures text to prevent
+wrapping/clipping.
 
 ## Validation and limits
 

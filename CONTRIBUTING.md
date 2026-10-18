@@ -112,6 +112,10 @@ Test only with offline characters; do not test this injected mod in online play.
 
 ## Review and protected main
 
+Release preparation uses the [release workflow](docs/RELEASING.md) and
+[GitHub release template](.github/RELEASE_TEMPLATE.md). Keep the versioned
+in-headset summary in `RELEASE_NOTES.md` current when preparing a release.
+
 `main` requires pull requests and blocks force pushes and branch deletion.
 Contributor PRs require an approving maintainer review; new commits dismiss
 stale approvals. Review conversations must be resolved before merging.

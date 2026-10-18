@@ -19,8 +19,14 @@ int main(int argc,char** argv){
             SIZE size{};GetTextExtentPoint32A(dc,line,int(std::strlen(line)),&size);
             if(size.cx>1170||size.cy>35){std::fprintf(stderr,"Release line too long: %s\n",line);return 12;}
         }
+        for(const char* line:{framevr::releasenotes::Author,framevr::releasenotes::ProjectUrl,framevr::releasenotes::Credits}){
+            SIZE size{};GetTextExtentPoint32A(dc,line,int(std::strlen(line)),&size);
+            if(size.cx>1100||size.cy>35)return 15;
+        }
         HFONT bold=CreateFontW(32,0,0,0,FW_SEMIBOLD,FALSE,FALSE,FALSE,DEFAULT_CHARSET,OUT_DEFAULT_PRECIS,CLIP_DEFAULT_PRECIS,ANTIALIASED_QUALITY,DEFAULT_PITCH,L"Arial");
         SelectObject(dc,bold);
+        SIZE title{};GetTextExtentPoint32A(dc,framevr::releasenotes::ReleaseTitle,int(std::strlen(framevr::releasenotes::ReleaseTitle)),&title);
+        if(title.cx>1200||title.cy>45)return 16;
         for(int i=0;i<TabCount;++i){
             SIZE size{};GetTextExtentPoint32A(dc,TabNames[i],int(std::strlen(TabNames[i])),&size);
             if(size.cx>TabBox(i).w-12||size.cy>TabBox(i).h-13){std::fprintf(stderr,"Tab label too long: %s\n",TabNames[i]);return 14;}

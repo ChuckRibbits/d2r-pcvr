@@ -15,6 +15,7 @@ class StagingTests(unittest.TestCase):
         files = {'steamvr/setup_native.py': b'backend', 'steamvr/mod_identity.py': b'identity', 'bin/d2rl-pcvr.dll': b'plugin',
                  'bin/openxr_loader.dll': b'loader', **(extra or {})}
         manifest = {'platform': 'native-windows', 'source_commit': 'source',
+                    'release_tag': 'v0.3.17-windows-preview',
                     'sha256': {name: hashlib.sha256(data).hexdigest() for name, data in files.items()}}
         package, runtime = root / 'mod.zip', root / 'python.zip'
         with zipfile.ZipFile(package, 'w') as archive:
@@ -79,6 +80,17 @@ class StagingTests(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, 'new staging directory'):
                     staging.stage(package, runtime, destination, root)
             self.assertEqual(marker.read_bytes(), b'preserve')
+
+    def test_installer_version_must_match_package_before_staging(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            package, runtime, destination = self.fixture(root)
+            with patch.object(staging, 'PYTHON_SHA256', hashlib.sha256(runtime.read_bytes()).hexdigest()):
+                with self.assertRaisesRegex(ValueError, 'Installer version'):
+                    staging.stage(package, runtime, destination, root, '0.3.18')
+                self.assertFalse(destination.exists())
+                manifest = staging.stage(package, runtime, destination, root, '0.3.17')
+                self.assertEqual(manifest['release_tag'], 'v0.3.17-windows-preview')
 
 
 if __name__ == '__main__':
