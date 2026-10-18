@@ -6,8 +6,13 @@
 #include <atomic>
 #include <cmath>
 #include <cstring>
+#if defined(D2RVR_DEVELOPER) && defined(D2RVR_NATIVE_OPENXR)
+#include "shrine_trace.h"
+#include <cstdio>
+#endif
 #ifdef D2RVR_NATIVE_OPENXR
 #include "memory.h"
+#include "shrine_placement.h"
 #endif
 
 namespace billboards {
@@ -59,6 +64,67 @@ bool PortalDefinition(uint64_t definition,bool offsets=false) {
     }
     return offsets?e.offsets:e.portal;
 }
+#ifdef D2RVR_NATIVE_OPENXR
+std::atomic<bool> shrineReported{false};
+bool ShrineDefinition(uint64_t definition) {
+    struct Entry {uint64_t definition=0;ULONGLONG at=0;bool shrine=false;};
+    thread_local Entry cache[32];
+    auto& e=cache[(definition>>6)%32];const auto now=GetTickCount64();
+    if(e.definition!=definition||now-e.at>1000) {
+        char path[160]{};
+        e={definition,now,portal::DefinitionPath(ReadAt,definition,gameBase,path)&&
+            shrine_placement::Asset(path)};
+    }
+    return e.shrine;
+}
+#endif
+#if defined(D2RVR_DEVELOPER) && defined(D2RVR_NATIVE_OPENXR)
+SRWLOCK shrineLock=SRWLOCK_INIT;
+shrine::Budget shrineBudget;
+std::atomic<bool> shrineExhausted{false};
+struct ShrineBatch {shrine::Sample samples[shrine::MaxLanes];uint32_t count=0;};
+void PrepareShrineTrace(ShrineBatch& batch,void* output,const void* input,
+        const void* context,shrine::Kind kind) {
+    portal::Vec head;
+    if(shrineExhausted.load()||!logger||!portalReady.load()||!wanted||!wanted()||!Head(head))return;
+    shrine::Stream out{},in{};portal::Context c{};
+    if(!Read(&out,output,sizeof out)||!Read(&in,input,sizeof in)||
+       !Read(&c,context,sizeof c)||!shrine::Streams(kind,out,in))return;
+    // Diagnostic sampling only: cap per-callback work even in large batches.
+    // Missing samples are not evidence that an effect never used these helpers.
+    for(uint32_t i=0;i<out.count&&i<shrine::MaxLanes;++i) {
+        shrine::Sample s;
+        if(!shrine::Capture(ReadAt,c,gameBase,kind,out,in,i,head,s))continue;
+        if(!TryAcquireSRWLockExclusive(&shrineLock))continue;
+        const bool keep=shrineBudget.Claim(s,GetTickCount64());
+        shrineExhausted.store(shrineBudget.used>=shrine::MaxSamples);
+        ReleaseSRWLockExclusive(&shrineLock);
+        if(keep)batch.samples[batch.count++]=s;
+    }
+}
+void FinishShrineTrace(const ShrineBatch& batch) {
+    for(uint32_t i=0;i<batch.count;++i) {
+        const auto& s=batch.samples[i];portal::Vec value{};
+        const bool valid=ReadAt(&value,s.output,sizeof value)&&portal::Finite(value);
+        const char* kind=s.kind==shrine::Kind::Direction?"direction":
+            s.kind==shrine::Kind::Position?"position":"local19";
+        char line[580];
+        std::snprintf(line,sizeof line,"Frame shrine trace: sample=%u kind=%s layer=%s instance=%llx definition=%llx stream=%llx lane=%u count=%u stride=%u asset=%s",
+            s.serial,kind,s.layer==shrine::Layer::Symbol?"symbol":"environment",static_cast<unsigned long long>(s.instance.address),
+            static_cast<unsigned long long>(s.instance.definition),static_cast<unsigned long long>(s.stream),s.lane,s.count,s.stride,s.path);
+        logger(line);
+        std::snprintf(line,sizeof line,"Frame shrine values: sample=%u view=%d camera_match=%d head=(%.6g,%.6g,%.6g) native_eye=(%.6g,%.6g,%.6g) local=(%.6g,%.6g,%.6g) output_ok=%d output=(%.6g,%.6g,%.6g)",
+            s.serial,s.view,int(s.cameraMatches),s.head.x,s.head.y,s.head.z,s.nativeEye.x,s.nativeEye.y,s.nativeEye.z,
+            s.local.x,s.local.y,s.local.z,int(valid),value.x,value.y,value.z);
+        logger(line);
+        const auto* m=s.matrix;
+        std::snprintf(line,sizeof line,"Frame shrine transform: sample=%u origin=(%.6g,%.6g,%.6g) basis=(%.6g,%.6g,%.6g;%.6g,%.6g,%.6g;%.6g,%.6g,%.6g)",
+            s.serial,m[12],m[13],m[14],m[0],m[1],m[2],m[4],m[5],m[6],m[8],m[9],m[10]);
+        logger(line);
+        if(s.serial==shrine::MaxSamples)logger("Frame shrine trace: sample budget exhausted; restart developer game to capture again");
+    }
+}
+#endif
 void CenterPosition(void* output,const void* input,uint32_t mask,const void* worker) {
 #ifdef D2RVR_NATIVE_OPENXR
     framevr::hookmetrics::Scope measured(framevr::hookmetrics::PortalCenter);
@@ -116,6 +182,9 @@ void CorrectScriptView(void* output,const void* input,const void* context,bool d
     if(!in.stride&&!ReadAt(&constantView,in.data,4))return;
     int32_t lastView=-1;bool cameraMatches=false;
     int32_t lastInstance=-1;portal::Instance instance{};portal::Vec value{};bool valid=false;
+#ifdef D2RVR_NATIVE_OPENXR
+    bool shrineCorrection=false;
+#endif
     for(uint32_t i=0;i<out.count;++i) {
         int32_t view=constantView,id=c.instance;
         if((in.stride&&!ReadAt(&view,in.data+uint64_t(i)*in.stride,4))||view<0||uint32_t(view)>=views.count)continue;
@@ -132,29 +201,80 @@ void CorrectScriptView(void* output,const void* input,const void* context,bool d
         if(id<0)continue;
         if(id!=lastInstance) {
             lastInstance=id;valid=false;
+#ifdef D2RVR_NATIVE_OPENXR
+            shrineCorrection=false;
+#endif
             portal::Vec origin{};
-            if(portal::Resolve(ReadAt,c,i,gameBase,instance)&&PortalDefinition(instance.definition)&&
+            const bool resolved=portal::Resolve(ReadAt,c,i,gameBase,instance);
+            if(resolved&&PortalDefinition(instance.definition)&&
                portal::Origin(ReadAt,instance,origin)&&portal::Direction(head,origin,value)) {
                 if(!direction)value=head;
                 valid=true;
             }
+#ifdef D2RVR_NATIVE_OPENXR
+            else if(resolved&&direction&&ShrineDefinition(instance.definition)) {
+                shrineCorrection=true;valid=true;
+            }
+#endif
         }
         if(!valid)continue;
+#ifdef D2RVR_NATIVE_OPENXR
+        // Read each lane's actual native output. Mixed views/instances must not
+        // inherit another lane's vertical component or a portal's replacement.
+        if(shrineCorrection) {
+            portal::Vec native{};
+            if(!ReadAt(&native,out.data+12ull*i,sizeof native)||
+               !shrine_placement::HorizontalDirection(native,value))continue;
+        }
+#endif
 #ifdef D2RVR_NATIVE_OPENXR
         if(!framevr::WriteMemory(reinterpret_cast<void*>(out.data+12ull*i),&value,sizeof value))continue;
 #else
         __try {std::memcpy(reinterpret_cast<void*>(out.data+12ull*i),&value,sizeof value);}
         __except(EXCEPTION_EXECUTE_HANDLER) {continue;}
 #endif
+#ifdef D2RVR_NATIVE_OPENXR
+        if(shrineCorrection) {
+            if(!shrineReported.exchange(true)&&logger)
+                logger("VR shrines: mana/stamina horizontal direction removed; native vertical component retained");
+            continue;
+        }
+#endif
         if(direction&&!portalReported.exchange(true)&&logger)
             logger("VR portals: native mesh scripts now use shared head position and upright portal-origin facing");
     }
 }
+void TracedLocalPosition(void* out,const void* in,uint32_t mask,const void* worker) {
+#if defined(D2RVR_DEVELOPER) && defined(D2RVR_NATIVE_OPENXR)
+    ShrineBatch trace{};portal::Context c{};
+    if(mask==19&&ReadAt(&c,reinterpret_cast<uint64_t>(worker)+0x58,sizeof c)&&
+       c.worker==reinterpret_cast<uint64_t>(worker))
+        PrepareShrineTrace(trace,out,in,&c,shrine::Kind::LocalPosition);
+#endif
+    CenterPosition(out,in,mask,worker);
+#if defined(D2RVR_DEVELOPER) && defined(D2RVR_NATIVE_OPENXR)
+    FinishShrineTrace(trace);
+#endif
+}
 void ViewDirection(void* out,const void* in,const void* context) {
-    originalDirection(out,in,context);CorrectScriptView(out,in,context,true);
+#if defined(D2RVR_DEVELOPER) && defined(D2RVR_NATIVE_OPENXR)
+    ShrineBatch trace{};PrepareShrineTrace(trace,out,in,context,shrine::Kind::Direction);
+#endif
+    originalDirection(out,in,context);
+#if defined(D2RVR_DEVELOPER) && defined(D2RVR_NATIVE_OPENXR)
+    FinishShrineTrace(trace);
+#endif
+    CorrectScriptView(out,in,context,true);
 }
 void ViewPosition(void* out,const void* in,const void* context) {
-    originalPosition(out,in,context);CorrectScriptView(out,in,context,false);
+#if defined(D2RVR_DEVELOPER) && defined(D2RVR_NATIVE_OPENXR)
+    ShrineBatch trace{};PrepareShrineTrace(trace,out,in,context,shrine::Kind::Position);
+#endif
+    originalPosition(out,in,context);
+#if defined(D2RVR_DEVELOPER) && defined(D2RVR_NATIVE_OPENXR)
+    FinishShrineTrace(trace);
+#endif
+    CorrectScriptView(out,in,context,false);
 }
 void ScreenAlign(void* self,const void* view,void* batch) {
     if(!wanted||!wanted()||!viewAligned||!view||!batch){original(self,view,batch);return;}
@@ -196,8 +316,11 @@ void Install(void (*log)(const char*),bool (*active)()) {
     }
     if(portalReady.load()&&!originalLocalPosition&&
        d2rsig::Check(LocalPositionContextRva,LocalPositionContextSig,sizeof LocalPositionContextSig)&&
-       d2rsig::Hook(LocalPositionRva,LocalPositionSig,sizeof LocalPositionSig,reinterpret_cast<void*>(&CenterPosition),reinterpret_cast<void**>(&originalLocalPosition))) {
+       d2rsig::Hook(LocalPositionRva,LocalPositionSig,sizeof LocalPositionSig,reinterpret_cast<void*>(&TracedLocalPosition),reinterpret_cast<void**>(&originalLocalPosition))) {
         if(logger)logger("VR portals: verified native center-position hook installed; NewStuff center offsets only");
+#if defined(D2RVR_DEVELOPER) && defined(D2RVR_NATIVE_OPENXR)
+        if(logger)logger("Frame shrine trace: read-only native-input capture enabled; floating symbols and environment, view queries and mask19; max1024 samples (128 environment), 8 lanes per callback; mana/stamina correction runs AFTER direction capture");
+#endif
     }
     if(installed)return;
     if(!d2rsig::Check(ScreenRva,ScreenSig,sizeof ScreenSig)||
