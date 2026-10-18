@@ -42,6 +42,26 @@ std::vector<uint8_t> Paint() {
         const int inset=y;
         fill({inset,StripHeight+y,MarkerWidth-inset,StripHeight+y+1},RGB(242,204,120));
     }
+    // The map buttons: a gold-rimmed dark tile per state, its caption over its value.
+    {
+        const char* captions[ButtonTiles]={"VIEW","VIEW","ROTATE MAP","ROTATE MAP"};
+        const char* values[ButtonTiles]={"Isometric","Top-down","Off","On"};
+        HFONT caption=CreateFontW(24,0,0,0,FW_NORMAL,FALSE,FALSE,FALSE,DEFAULT_CHARSET,
+            OUT_DEFAULT_PRECIS,CLIP_DEFAULT_PRECIS,ANTIALIASED_QUALITY,DEFAULT_PITCH,L"Georgia");
+        HFONT value=CreateFontW(38,0,0,0,FW_BOLD,FALSE,FALSE,FALSE,DEFAULT_CHARSET,
+            OUT_DEFAULT_PRECIS,CLIP_DEFAULT_PRECIS,ANTIALIASED_QUALITY,DEFAULT_PITCH,L"Georgia");
+        for(int i=0;i<ButtonTiles;++i) {
+            const int x=i*ButtonTileWidth,y=ButtonsY;
+            const bool on=i==TopDown||i==RotateMap;
+            fill({x,y,x+ButtonTileWidth,y+ButtonTileHeight},on?RGB(170,128,58):RGB(122,94,51));
+            fill({x+4,y+4,x+ButtonTileWidth-4,y+ButtonTileHeight-4},on?RGB(46,36,20):RGB(17,16,14));
+            SelectObject(dc,caption);SetTextColor(dc,RGB(170,157,128));
+            RECT top{x,y+8,x+ButtonTileWidth,y+38};DrawTextA(dc,captions[i],-1,&top,DT_CENTER|DT_VCENTER|DT_SINGLELINE|DT_NOPREFIX);
+            SelectObject(dc,value);SetTextColor(dc,on?RGB(240,209,139):RGB(229,218,191));
+            RECT bottom{x,y+38,x+ButtonTileWidth,y+ButtonTileHeight-6};DrawTextA(dc,values[i],-1,&bottom,DT_CENTER|DT_VCENTER|DT_SINGLELINE|DT_NOPREFIX);
+        }
+        SelectObject(dc,major);DeleteObject(caption);DeleteObject(value);
+    }
     GdiFlush();const auto* b=static_cast<uint8_t*>(bits);std::vector<uint8_t> rgba(Width*Height*4);
     for(int i=0;i<Width*Height;++i){rgba[4*i]=b[4*i+2];rgba[4*i+1]=b[4*i+1];rgba[4*i+2]=b[4*i];rgba[4*i+3]=(b[4*i]||b[4*i+1]||b[4*i+2])?255:0;}
     SelectObject(dc,oldFont);DeleteObject(major);DeleteObject(minor);

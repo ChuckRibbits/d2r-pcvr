@@ -6,7 +6,14 @@
 namespace framevr::compass {
 constexpr float Tau=6.28318530718f;
 constexpr int Period=1024,Window=512,StripHeight=96,MarkerWidth=32,MarkerHeight=16;
-constexpr int Width=Period+Window,Height=StripHeight+MarkerHeight;
+// Below the marker: static button tiles for the map buttons beside the
+// wrist map (wristbuttons), one tile per state - the view (Isometric / Top-down)
+// and, top-down only, North up / Rotate map. The shown state picks the tile;
+// nothing is repainted.
+constexpr int ButtonTileWidth=192,ButtonTileHeight=96,ButtonTiles=4,ButtonsY=StripHeight+MarkerHeight;
+enum ButtonTile {Isometric,TopDown,NorthUp,RotateMap};
+constexpr int Width=Period+Window,Height=StripHeight+MarkerHeight+ButtonTileHeight;
+static_assert(ButtonTileWidth*ButtonTiles<=Width,"button tiles fit the compass atlas");
 // Two overlapping revolutions let an XR sub-image scroll across north without
 // wrapping a texture, repainting text or allocating/uploading every frame.
 inline int Crop(float bearing) {

@@ -33,6 +33,7 @@
 #include "swapchain_format.h"
 #include "input.h"
 #include "dropped_item_labels.h"
+#include "wrist_buttons.h"
 #include "window_focus.h"
 #include "gameplay.h"
 #include "hand_controls.h"
@@ -371,6 +372,14 @@ struct Eye {
 std::array<Eye,2> eyes;
 Eye uiEye;
 Eye mapEye;
+// The wrist map's view: Isometric (the game's) or Top-down, and on the
+// top-down map whether it turns with you. Set by the buttons beside the map.
+bool MapTopDownOn(){return vrsettings::Read().values[settings::MapTopDown]>.5f;}
+bool MapTurnOn(){return vrsettings::Read().values[settings::MapRotate]>.5f;}
+wristbuttons::Poke mapButtonPoke;
+std::array<bool,wristbuttons::Count> mapButtonHover{};
+bool mapButtonAimed=false,mapTriggerWas=false;   // the right laser on a map button; its trigger last frame
+float mapFooter=0;   // the companions row's room under the wrist map, as last drawn
 bool mapSupported=false;
 constexpr uint32_t mapSide=512;
 std::atomic<bool> uiSupported{false};
@@ -1671,6 +1680,56 @@ void Input() {
         Say(line);potionReportAt=GetTickCount64()+2000;
     }
     if(interactionOutput.settings){OpenSettings();settingsOwned=true;interactionInput.active=motionInput.active=false;}
+    // The map buttons beside the wrist map: View (Isometric / Top-down) and,
+    // top-down only, Rotate map (Off: north up). Pressed by pointing the right
+    // hand's laser at one and pulling the trigger, as on the stick-click wheel,
+    // or by poking it with the right controller's tip. Saved like any setting,
+    // with a short pulse. While the laser is on a button the trigger is the
+    // button's, not a skill's.
+    mapButtonAimed=false;
+    if(interactionInput.active&&interactionOutput.navigation&&!interactionOutput.wheel&&interactionInput.tracked[0]) {
+        const bool palm=interactionOutput.navigationPalm;
+        const bool withVitals=interactionOutput.vitals&&interactionOutput.palm==palm;
+        const auto map=interaction::NavigationMapPanel(interactionInput.hand[1],interactionInput.head,palm,withVitals,mapFooter);
+        const auto& right=interactionInput.hand[0];
+        const auto tip=right.p+math::Rotate(right.q,{0,-.01f,-.06f});
+        const bool triggerDown=Float(trigger,0)>.55f;
+        for(int b=0;b<wristbuttons::Count;++b) {
+            math::Vec p{};math::Quat q{};
+            wristbuttons::Place(map.p,map.q,interaction::WristMapSize,b,p,q);
+            if(!wristbuttons::Shown(b,MapTopDownOn())){mapButtonHover[b]=false;mapButtonPoke.Step(b,false,GetTickCount64());continue;}
+            bool aimed=false;
+            if(handAimTracked[0]) {
+                const auto ray=handAim[0].p,direction=math::Rotate(handAim[0].q,{0,0,-1});
+                math::PanelHit hit;
+                aimed=math::IntersectPanel(ray,direction,p,q,wristbuttons::Width+2*wristbuttons::Margin,wristbuttons::Height+2*wristbuttons::Margin,hit)&&hit.distance<1.2f;
+                if(aimed) {
+                    beamLength=hit.distance;
+                    const auto mid=ray+direction*(beamLength*.5f);
+                    beamPose=XrPose({mid,math::BeamOrientation(direction,V(head.position)-mid)});
+                    dotPose=XrPose({hit.point+math::Rotate(q,{0,0,.003f}),q});
+                    pointerVisible=pointerHit=true;mapButtonAimed=true;
+                }
+            }
+            const bool inside=wristbuttons::Inside(tip,p,q),hover=aimed||wristbuttons::Hover(tip,p,q);
+            // hovering lights the button (drawn bigger) with a light tick on arrival
+            if(hover&&!mapButtonHover[b])MotionPulse(0,haptics::Category::Interaction,.15f,15000000);
+            mapButtonHover[b]=hover;
+            const bool clicked=aimed&&triggerDown&&!mapTriggerWas;
+            if(!mapButtonPoke.Step(b,inside,GetTickCount64())&&!clicked)continue;
+            const auto s=vrsettings::Read();
+            if(!s.ready||s.result==settings::Result::Saving)continue;
+            auto values=s.values;
+            const auto key=b==wristbuttons::View?settings::MapTopDown:settings::MapRotate;
+            values[key]=values[key]>.5f?0.f:1.f;
+            if(vrsettings::Submit({s.values,values,settings::Changed(s.values,values),s.sequence+1})) {
+                MotionPulse(0,haptics::Category::Interaction,.5f,40000000);
+                Say(b==wristbuttons::View?(values[key]>.5f?"Frame map buttons: view top-down":"Frame map buttons: view isometric"):
+                    (values[key]>.5f?"Frame map buttons: rotate map on":"Frame map buttons: rotate map off (north up)"));
+            }
+        }
+        mapTriggerWas=triggerDown;
+    } else {mapButtonPoke.Reset();mapButtonHover.fill(false);mapTriggerWas=Float(trigger,0)>.55f;}
     gamestate::MenuMap(mapSupported&&interaction::MapWanted(interactionInput,interactionOutput,interactionInput.at));
     if(interactionOutput.inventory&&toggleMenus)toggleMenus();
     if(handOutput.wheel>=0&&!interactionOutput.wheel){handControls.Close();handOutput={};}
@@ -1685,7 +1744,7 @@ void Input() {
     if(interactionOutput.feedback)MotionPulse(interactionOutput.feedbackHand,interactionOutput.feedback==4?haptics::Category::Alert:haptics::Category::Interaction,
         interactionOutput.feedback==2?.65f:.25f,interactionOutput.feedback>=3?100000000:35000000);
     motionInput.palette=false; // Dedicated interaction owner handles the new wheel/belt.
-    motionInput.active=motionInput.active&&!interactionOutput.block&&!bloodOutput.block[0]&&!bloodOutput.block[1];
+    motionInput.active=motionInput.active&&!interactionOutput.block&&!bloodOutput.block[0]&&!bloodOutput.block[1]&&!mapButtonAimed;
     const auto& quickSnapshot=interactionInput.snapshot;
     const bool quickFresh=interaction::Fresh(quickSnapshot,interactionInput.session,interactionInput.at);
     const auto& rightSkill=quickSnapshot.skills[skills::TriggerSlot(0)];
@@ -2181,7 +2240,10 @@ bool CopyMap(reshade::api::command_queue* rq) {
     if(!Acquire(e)||!WaitGpuValue(e.copyFence))return false;
     rq->flush_immediate_command_list();
     if(FAILED(e.allocator->Reset())||FAILED(e.commands->Reset(e.allocator.Get(),nullptr)))return false;
-    if(!mapBlit.Render(device.Get(),e.commands.Get(),src,e.images[e.index].texture,true,true)) {
+    // The heading arrow over the hero (while the compass knows the heading),
+    // the map turning with you (top-down only), and top-down itself.
+    const uint32_t flags=(compassFrame?1u:0u)|(compassFrame&&MapTurnOn()&&MapTopDownOn()?4u:0u)|(MapTopDownOn()?8u:0u);
+    if(!mapBlit.Render(device.Get(),e.commands.Get(),src,e.images[e.index].texture,true,true,flags,float(wristHeading.bearing),1.f)) {
         e.commands->Close();return false;
     }
     if(FAILED(e.commands->Close()))return false;
@@ -2480,6 +2542,7 @@ void EndPair() {
     XrCompositionLayerQuad wrist{XR_TYPE_COMPOSITION_LAYER_QUAD},wristMap{XR_TYPE_COMPOSITION_LAYER_QUAD};
     XrCompositionLayerQuad wristCompass{XR_TYPE_COMPOSITION_LAYER_QUAD},compassMarker{XR_TYPE_COMPOSITION_LAYER_QUAD};
     XrCompositionLayerQuad navigationInfo{XR_TYPE_COMPOSITION_LAYER_QUAD};
+    std::array<XrCompositionLayerQuad,wristbuttons::Count> mapButtons{{{XR_TYPE_COMPOSITION_LAYER_QUAD},{XR_TYPE_COMPOSITION_LAYER_QUAD}}};
     XrCompositionLayerQuad companionRow{XR_TYPE_COMPOSITION_LAYER_QUAD};
     if(interactionVisible) {
         if(!potionModels.Ready()&&interactionOutput.bottle>=0&&interactionOutput.bottleHand>=0) {
@@ -2522,6 +2585,7 @@ void EndPair() {
             if(mapEye.copied)motionQuad(wristMap,interactionPose(interaction::NavigationMapPanel(interactionInput.hand[1],interactionInput.head,palm,withVitals,footer)),
                 interaction::WristMapSize,interaction::WristMapSize,{{0,0},{int32_t(mapSide),int32_t(mapSide)}},mapEye.chain);
             auto compassPose=interaction::NavigationCompassPanel(interactionInput.hand[1],interactionInput.head,palm,withVitals,footer);
+            mapFooter=footer;   // where the map sits this frame, for the buttons' presses next frame
             motionQuad(wristCompass,interactionPose(compassPose),interaction::WristCompassWidth,interaction::WristCompassHeight,
                 {{compass::Crop(wristHeading.bearing),0},{compass::Window,compass::StripHeight}},compassChain);
             constexpr float markerWidth=interaction::WristCompassWidth*compass::MarkerWidth/compass::Window;
@@ -2535,6 +2599,20 @@ void EndPair() {
             if(companionRows)motionQuad(companionRow,interactionPose(interaction::NavigationCompanionsPanel(
                 interactionInput.hand[1],interactionInput.head,palm,withVitals,companionRows)),interaction::WristMapSize,interaction::CompanionHeight(companionRows),
                 {{0,0},{companions::Width,wriststatus::UsedHeight(interactionInput.snapshot.companions,interactionInput.snapshot.effects)}},companionChain);
+            // the map buttons, after the panels so the location label never loses its slot to them
+            if(mapEye.copied) {
+                const auto mapPanel=interaction::NavigationMapPanel(interactionInput.hand[1],interactionInput.head,palm,withVitals,footer);
+                const bool topDown=MapTopDownOn();
+                for(int b=0;b<wristbuttons::Count;++b) {
+                    if(!wristbuttons::Shown(b,topDown))continue;
+                    const int tile=b==wristbuttons::View?(topDown?compass::TopDown:compass::Isometric):(MapTurnOn()?compass::RotateMap:compass::NorthUp);
+                    math::Vec p{};math::Quat q{};
+                    wristbuttons::Place(mapPanel.p,mapPanel.q,interaction::WristMapSize,b,p,q);
+                    const float grow=mapButtonHover[b]?wristbuttons::HoverScale:1.f;
+                    motionQuad(mapButtons[b],interactionPose({p,q}),wristbuttons::Width*grow,wristbuttons::Height*grow,
+                        {{tile*compass::ButtonTileWidth,compass::ButtonsY},{compass::ButtonTileWidth,compass::ButtonTileHeight}},compassChain);
+                }
+            }
         }
     }
     const bool weaponSkillIndicators=vrsettings::Read().values[settings::WeaponSkillIndicators]>.5f;
@@ -2600,7 +2678,7 @@ void EndPair() {
         motionQuad(settingsPanel,pose,fullWidth,settingsHeight,{{0,0},{pixels,settings::Height}},settingsChain);
     }
     XrCompositionLayerQuad laser{XR_TYPE_COMPOSITION_LAYER_QUAD},dot{XR_TYPE_COMPOSITION_LAYER_QUAD};
-    if(layer&&(settingsModel.open||panelMode||spatialMode||(interactionVisible&&interactionOutput.wheel))&&pointerChain&&pointerVisible) {
+    if(layer&&(settingsModel.open||panelMode||spatialMode||(interactionVisible&&interactionOutput.wheel)||mapButtonAimed)&&pointerChain&&pointerVisible) {
         // The pointer needs the same finite-pose checks and normalization as
         // every other optional layer: one bad laser must not hide the menu.
         motionQuad(laser,beamPose,.003f,beamLength,{{0,0},{64,32}},pointerChain);
