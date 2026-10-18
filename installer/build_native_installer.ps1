@@ -3,7 +3,9 @@ param(
     [string]$Version = '0.3.19',
     [string]$ISCCPath,
     [string]$PythonArchive,
-    [string]$OutputDirectory
+    [string]$OutputDirectory,
+    [string]$LauncherSetup,
+    [string]$LauncherSetupSha256
 )
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
@@ -33,7 +35,23 @@ if (!(Test-Path -LiteralPath $ISCCPath)) {
 }
 $compilerVersion = & $ISCCPath --version
 if ($LASTEXITCODE -ne 0) { throw 'Could not determine the Inno Setup compiler version' }
-$staged = & $python (Join-Path $PSScriptRoot 'stage_native_installer.py') --package $package --python-archive $PythonArchive --staging-parent (Join-Path $repoRoot 'build-frame/installer-staging') --version $Version
+$launcherArguments = @()
+if ($LauncherSetup -or $LauncherSetupSha256) {
+    # The D2R VR Launcher's own Setup, carried unmodified from https://github.com/natpoh/d2r-vr-launcher/releases and installed silently
+    # when it is missing or older. Pin the file's SHA-256 here, from the release's .sha256 file; nothing is downloaded at install time.
+    if (!$LauncherSetup -or $LauncherSetupSha256 -notmatch '^[0-9a-fA-F]{64}$') {
+        throw 'Give both -LauncherSetup <D2R_VR_Launcher_Setup_version.exe> and its 64-digit -LauncherSetupSha256.'
+    }
+    $launcher = (Resolve-Path -LiteralPath $LauncherSetup).Path
+    if ((Split-Path -Leaf $launcher) -notmatch '^D2R_VR_Launcher_Setup_\d+(\.\d+){1,3}\.exe$') {
+        throw 'The launcher Setup must keep its published name, D2R_VR_Launcher_Setup_<version>.exe.'
+    }
+    if ((Get-FileHash -LiteralPath $launcher -Algorithm SHA256).Hash.ToLowerInvariant() -ne $LauncherSetupSha256.ToLowerInvariant()) {
+        throw 'Launcher Setup checksum mismatch'
+    }
+    $launcherArguments = @('--launcher-setup', $launcher, '--launcher-sha256', $LauncherSetupSha256.ToLowerInvariant())
+}
+$staged = & $python (Join-Path $PSScriptRoot 'stage_native_installer.py') --package $package --python-archive $PythonArchive --staging-parent (Join-Path $repoRoot 'build-frame/installer-staging') --version $Version @launcherArguments
 if ($LASTEXITCODE -ne 0) { throw 'Native installer payload validation failed' }
 $stage = $staged | ConvertFrom-Json
 $runtimeExe = Join-Path $stage.payload '.runtime/python/python.exe'
@@ -42,7 +60,12 @@ if ($signature.Status -ne 'Valid' -or $signature.SignerCertificate.Subject -notm
     throw 'Bundled private Python publisher signature validation failed'
 }
 New-Item -ItemType Directory -Force -Path $output | Out-Null
-& $ISCCPath /Qp "/DPayloadDir=$($stage.payload)" "/DModVersion=$Version" "/DInstallerOutput=$output" (Join-Path $PSScriptRoot 'D2R_PCVR_Setup.iss')
+$launcherDefines = @()
+if ($stage.carried_launcher) {
+    $launcherDefines = @("/DLauncherSetupFile=$(Split-Path -Leaf $stage.carried_launcher.file)", "/DLauncherVersion=$($stage.carried_launcher.version)",
+                         "/DLauncherSetupSha256=$($stage.carried_launcher.sha256)")
+}
+& $ISCCPath /Qp "/DPayloadDir=$($stage.payload)" "/DModVersion=$Version" "/DInstallerOutput=$output" @launcherDefines (Join-Path $PSScriptRoot 'D2R_PCVR_Setup.iss')
 if ($LASTEXITCODE -ne 0) { throw 'Inno Setup compilation failed' }
 $installer = Join-Path $output "D2R-PCVR-Setup-$Version.exe"
 $digest = (Get-FileHash -LiteralPath $installer -Algorithm SHA256).Hash.ToLowerInvariant()
@@ -57,6 +80,7 @@ $report = [ordered]@{
     plugin_sha256 = $stage.plugin_sha256
     compiler = ($compilerVersion | Out-String).Trim()
     private_python = '3.12.10 (official x64 embeddable package; SHA-256 and publisher checked)'
+    carried_launcher = $stage.carried_launcher
     signed = $false
 }
 $report | ConvertTo-Json | Set-Content -LiteralPath "$installer.build.json" -Encoding UTF8

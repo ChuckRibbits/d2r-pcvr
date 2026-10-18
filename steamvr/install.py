@@ -369,6 +369,9 @@ def main():
         payload[Path('d2rloader/runtime/d3dcompiler_47.dll')] = compiler.read_bytes()
     if args.openxr_loader:
         payload[mod_identity.OPENXR_LOADER] = args.openxr_loader.read_bytes()
+    # The launcher's descriptor of this mod (the D2R VR Launcher lists mods\*\vrmod-manifest.json). It is journaled like
+    # every other file, so a restore or removal takes it away with the mod.
+    payload[mod_identity.MOD_DIR / 'vrmod-manifest.json'] = (ROOT / 'vrmod-manifest.json').read_bytes()
     # Native artwork is read locally, never downloaded/bundled with the mod.
     # Prepare before mutating the install and journal it with all other files.
     with tempfile.TemporaryDirectory(prefix='d2r-vr-icons-') as temporary:
