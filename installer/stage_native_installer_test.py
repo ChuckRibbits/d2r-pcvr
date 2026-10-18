@@ -44,6 +44,18 @@ class StagingTests(unittest.TestCase):
             for name, digest in manifest['sha256'].items():
                 self.assertEqual(hashlib.sha256((root / 'staged' / name).read_bytes()).hexdigest(), digest)
 
+    def test_stages_launcher_manifest_and_its_icon(self):
+        source = Path(__file__).resolve().parent.parent
+        descriptor = json.loads((source / 'vrmod-manifest.json').read_text(encoding='utf-8'))
+        files = {name: (source / name).read_bytes()
+                 for name in ('vrmod-manifest.json', descriptor['icon'])}
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            manifest = self.stage(root, files)
+            for name, data in files.items():
+                self.assertEqual((root / 'staged' / name).read_bytes(), data)
+                self.assertEqual(manifest['sha256'][name], hashlib.sha256(data).hexdigest())
+
     def test_stages_opt_in_developer_helpers_without_generated_content(self):
         helpers = {'Launch-Dev-SteamVR.cmd': b'launch fixture',
                    'steamvr/DEVELOPMENT_SCENARIOS.md': b'instructions fixture',

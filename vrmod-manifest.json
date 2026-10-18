@@ -8,6 +8,7 @@
   "support": "https://github.com/bearstonem/d2r-pcvr/issues",
   "license": "MIT",
   "description": "Diablo II reimagined for physical, immersive VR.",
+  "icon": "launcher_icon.png",
   "d2rloader_mod": {
     "name": "D2R-PCVR"
   },
@@ -162,7 +163,6 @@
     ]
   },
   "x-unverified": {
-    "icon": "left out because no Unleashed artwork exists. For a picture put a PNG or ICO next to this file and add \"icon\": \"launcher_icon.png\". Without one the launcher shows a neutral placeholder.",
     "game.builds": "a flat list. Steam 3.3.93787 is the build his releases are verified on, Battle.net 3.3.93847 is experimental (his wrapper wants --experimental-battlenet). The manifest cannot say which build belongs to which store (see x-builds-by-store).",
     "launch.options[0].via": "not run. His wrapper always goes through Explorer's desktop for Steam, the launcher does not (it starts from its own desktop process). Whether that is enough against Steam's overlay injection is untested.",
     "launch.options[0]": "his wrapper also passes on whatever else is in Steam's launch command after D2R.exe, and the Steam shortcut has the OpenVR flag set for SteamVR. The launcher passes neither.",

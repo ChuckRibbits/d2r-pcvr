@@ -15,7 +15,7 @@ ROOT_FILES = {
     'Launch-VR-SteamVR.cmd', 'Launch-VR-VDXR.cmd', 'Launch-Dev-SteamVR.cmd', 'Install-Windows.cmd',
     'steamvr/DEVELOPMENT_SCENARIOS.md',
     'Install-BattleNet-Preview.cmd', 'Uninstall-Windows.cmd', 'THIRD_PARTY.md', 'LICENSE', 'd2r_pcvr.ini',
-    'vrmod-manifest.json',
+    'vrmod-manifest.json', 'launcher_icon.png',
     'reshade/D2R_DepthFog.fx', 'third_party/minhook/LICENSE.txt', 'external/reshade/LICENSE.md',
     'bin/d2rl-pcvr.dll', 'bin/openxr_loader.dll', 'bin/CascLib.dll', 'steamvr/vendor/bitknit.py',
 }
