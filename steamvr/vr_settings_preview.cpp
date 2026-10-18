@@ -1,6 +1,6 @@
 // Synthetic UI preview; does not load the game or its configuration.
 #include "vr_settings_ui.h"
-#include "dev_release_notes.h"
+#include "release_notes.h"
 #include <windows.h>
 #include <cstdio>
 #include <cstdlib>
@@ -9,16 +9,29 @@ int main(int argc,char** argv){
     using namespace framevr::settings;
     Snapshot s;s.ready=true;s.values[Motion]=1;s.values[Snap]=30;s.values[Foveation]=2;
     Model m;m.Open(s);const int page=argc>2?std::atoi(argv[2]):0;
-    m.SetDeveloper(argc>3&&std::strcmp(argv[3],"--developer-check")==0);
     m.Click({Kind::Tab,page});
-    if(m.developer){
+    if(argc>3&&std::strcmp(argv[3],"--release-notes-check")==0){
+        if(m.page!=Page::ReleaseNotes||m.Dirty())return 13;
         HDC dc=CreateCompatibleDC(nullptr);
         HFONT font=CreateFontW(27,0,0,0,FW_NORMAL,FALSE,FALSE,FALSE,DEFAULT_CHARSET,OUT_DEFAULT_PRECIS,CLIP_DEFAULT_PRECIS,ANTIALIASED_QUALITY,DEFAULT_PITCH,L"Arial");
         auto old=SelectObject(dc,font);
-        for(const char* line:framevr::dev::ReleaseLines){
+        for(const char* line:framevr::releasenotes::ReleaseLines){
             SIZE size{};GetTextExtentPoint32A(dc,line,int(std::strlen(line)),&size);
             if(size.cx>1170||size.cy>35){std::fprintf(stderr,"Release line too long: %s\n",line);return 12;}
         }
+        for(const char* line:{framevr::releasenotes::Author,framevr::releasenotes::ProjectUrl,framevr::releasenotes::Credits}){
+            SIZE size{};GetTextExtentPoint32A(dc,line,int(std::strlen(line)),&size);
+            if(size.cx>1100||size.cy>35)return 15;
+        }
+        HFONT bold=CreateFontW(32,0,0,0,FW_SEMIBOLD,FALSE,FALSE,FALSE,DEFAULT_CHARSET,OUT_DEFAULT_PRECIS,CLIP_DEFAULT_PRECIS,ANTIALIASED_QUALITY,DEFAULT_PITCH,L"Arial");
+        SelectObject(dc,bold);
+        SIZE title{};GetTextExtentPoint32A(dc,framevr::releasenotes::ReleaseTitle,int(std::strlen(framevr::releasenotes::ReleaseTitle)),&title);
+        if(title.cx>1200||title.cy>45)return 16;
+        for(int i=0;i<TabCount;++i){
+            SIZE size{};GetTextExtentPoint32A(dc,TabNames[i],int(std::strlen(TabNames[i])),&size);
+            if(size.cx>TabBox(i).w-12||size.cy>TabBox(i).h-13){std::fprintf(stderr,"Tab label too long: %s\n",TabNames[i]);return 14;}
+        }
+        SelectObject(dc,font);DeleteObject(bold);
         SelectObject(dc,old);DeleteObject(font);DeleteDC(dc);
     }
     if(argc>3&&std::strcmp(argv[3],"--dropdown")==0)m.Click({Kind::ControllerMenu});
@@ -55,7 +68,7 @@ int main(int argc,char** argv){
         std::puts("All help text fits; help leaves every control pixel unchanged and unused space transparent");
     }
     framevr::calibration::Flow body;body.Begin();body.phase=framevr::calibration::Phase::Hold;body.hint=framevr::calibration::Hint::Pose;body.progress=.55f;
-    const auto pixels=Paint(m,{},page==int(Page::Video)?"VR source: 2560 x 2560 per eye":"Foveated shading available. Eye-tracking samples are active.",page==TabCount+1?&body:nullptr,
+    const auto pixels=Paint(m,{},page==int(Page::Video)?"VR source: 2560 x 2560 per eye":"Foveated shading available. Eye-tracking samples are active.",page==TabCount?&body:nullptr,
         framevr::controllers::Labels{{framevr::controllers::Layout::Touch,framevr::controllers::Layout::Touch}},help);
     if(pixels.size()!=AtlasWidth*Height*4)return 1;
     FILE* file=std::fopen(argc>1?argv[1]:"vr-settings-preview.ppm","wb");if(!file)return 2;

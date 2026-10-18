@@ -189,7 +189,14 @@ Use a new offline expansion character in that separate save list.
 The tools are a **DEV tab on either hand's wheel**, beside VR Settings. Native
 builds include the dormant backend unless `-NoDevTools` is selected; the UI and
 actions require the exact isolated mod metadata. VR Settings has a separate
-DEV tab containing a read-only reference to the last published release.
+Release Notes tab, available in regular and developer builds, containing a
+read-only reference to the last published release. Follow [RELEASING.md](RELEASING.md)
+and the [.github release template](../.github/RELEASE_TEMPLATE.md) when publishing.
+Update the versioned `PCVR_IN_HEADSET_NOTES` summary inside `RELEASE_NOTES.md`;
+the build generates the page and packaging checks its version/content against
+the DLL. Do not edit generated headers. Keep release-tooling/template maintenance
+out of player-facing feature lists. The hand-wheel DEV tools remain limited to
+developer mode.
 The existing owner test character is not permission to alter normal saves.
 
 - Character presets grant level 10/30/60/90 test stats/skills and preserve bindings.
