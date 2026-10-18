@@ -133,6 +133,15 @@ class IdentityTests(unittest.TestCase):
         build = (ROOT / 'installer/build_native_installer.ps1').read_text(encoding='utf-8')
         self.assertIn(f"[string]$Version = '{version}'", build)
 
+    def test_launcher_manifest_agrees_with_the_mod_and_ships(self):
+        # vrmod-manifest.json is what the D2R VR Launcher reads from mods\D2R-PCVR; it must not drift from the release.
+        manifest = json.loads((ROOT / 'vrmod-manifest.json').read_text(encoding='utf-8'))
+        self.assertEqual(manifest['version'], self.header()['D2RPCVR_VERSION'].strip('"'))
+        self.assertEqual((manifest['id'], manifest['d2rloader_mod']['name'], manifest['name']),
+                         (ids.MOD_ID, ids.MOD_NAME, ids.DISPLAY_NAME))
+        for name in ('steamvr/package.py', 'installer/stage_native_installer.py'):
+            self.assertTrue("'vrmod-manifest.json'" in (ROOT / name).read_text(encoding='utf-8'), name)
+
     def test_identity_is_not_d2r_vr_and_keeps_the_credit(self):
         values = self.header()
         self.assertEqual(values['D2RPCVR_MOD_ID'], '"d2r-pcvr"')
