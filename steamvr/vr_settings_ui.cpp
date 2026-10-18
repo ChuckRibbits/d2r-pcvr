@@ -134,12 +134,12 @@ std::vector<uint8_t> Paint(const Model& m,Hit hover,const char* runtimeStatus,co
             else if(key==MeleeRules)std::snprintf(label,sizeof label,"%s",MeleeRulesNames[value>.5f?1:0]);
             else if(key==OfflinePlayers){if(value==0)std::snprintf(label,sizeof label,"Game default");else std::snprintf(label,sizeof label,"Players %.0f",value);}
             else if(key==StrainDark)std::snprintf(label,sizeof label,"%s",StrainColorNames[value>.5f?1:0]);
+            else if(key==StrainSpeed)std::snprintf(label,sizeof label,"%s",StrainSpeedNames[int(value)]);
             else if(d.max==1)std::snprintf(label,sizeof label,"%s",value>.5f?"On":"Off");
             else if(key==Snap)std::snprintf(label,sizeof label,"%.0f deg",value);
             else if(key==VitalsTilt)std::snprintf(label,sizeof label,"%+.6g deg",value);
             else if(key==TurnSpeed)std::snprintf(label,sizeof label,"%.0f deg/s",value);
             else if(key==MeleeHitSpeed||key==MeleeThrustSpeed)std::snprintf(label,sizeof label,"%.2f m/s",value);
-            else if(key==ParryWindow){if(value==0)std::snprintf(label,sizeof label,"Off");else std::snprintf(label,sizeof label,"%.0f ms",value);}
             else if(HapticKey(key)){if(value==0)std::snprintf(label,sizeof label,"Off (0%%)");else std::snprintf(label,sizeof label,"%.0f%%",value);}
             else if(key==LootLabelSize)std::snprintf(label,sizeof label,"%g%%",value);
             else if(key==Waist||key==BeltForward)std::snprintf(label,sizeof label,"%.1f cm",value*100);

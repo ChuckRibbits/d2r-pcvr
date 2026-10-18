@@ -121,17 +121,26 @@ int main(){
         thrust.Click(hit);Check(thrust.Get()[MeleeThrustSpeed]==2.25f,"thrust speed adjusts in quarter steps");
         const auto request=thrust.Click({Kind::Apply});
         Check(request.changed==(ChangeMask{1}<<MeleeThrustSpeed),"thrust edit does not change swing speed or combat rules");
-        Check(RowCount(Page::Combat)==6&&RowKey(Page::Combat,3)==ParryWindow&&s.values[ParryWindow]==400,"parry window is the fourth Combat row, 400 ms by default");
-        Check(Normalize(ParryWindow,-5)==0&&Normalize(ParryWindow,999)==400&&Normalize(ParryWindow,NAN)==400,"parry window: 0 is Off, bounded, invalid restores default");
+        Check(RowCount(Page::Combat)==6,"Combat page: melee rules, swing speed, thrust speed, strain colour, strain speed and offline players (the parry window is fixed)");
         Check(Normalize(MeleeThrustSpeed,NAN)==2&&Normalize(MeleeThrustSpeed,0)==.75f&&Normalize(MeleeThrustSpeed,99)==10,"thrust speed has finite usable bounds");
     }
     {Model strain;strain.Open(s);strain.Click({Kind::Tab,int(Page::Combat)});
-        Check(RowKey(Page::Combat,4)==StrainDark&&s.values[StrainDark]==0,"guard strain colour is the fifth Combat row, White by default");
-        Check(ValueBox(4).y+ValueBox(4).h<570,"the fifth Combat row stays above the page notes");
-        strain.Click(At(Page::Combat,ValueBox(4)));
+        Check(RowKey(Page::Combat,3)==StrainDark&&s.values[StrainDark]==0,"guard strain colour is the fourth Combat row, White by default");
+        Check(ValueBox(3).y+ValueBox(3).h<570,"the Combat rows stay above the page notes");
+        strain.Click(At(Page::Combat,ValueBox(3)));
         Check(strain.Get()[StrainDark]==1,"clicking the value switches the strain to Black");
         const auto request=strain.Click({Kind::Apply});
         Check(request.changed==(ChangeMask{1}<<StrainDark),"strain colour saves only its own setting");
+    }
+    {Model speed;speed.Open(s);speed.Click({Kind::Tab,int(Page::Combat)});
+        Check(s.values[StrainSpeed]==1&&RowKey(Page::Combat,4)==StrainSpeed,"guard strain speed defaults to Medium in its own row");
+        for(float bad:{-1.f,3.f,1.5f,NAN})Check(Normalize(StrainSpeed,bad)==1,"invalid buildup preference uses Medium");
+        speed.Click(At(Page::Combat,Decrease(4)));Check(speed.Get()[StrainSpeed]==0,"minus selects Slow");
+        speed.Click(At(Page::Combat,Decrease(4)));Check(speed.Get()[StrainSpeed]==0,"Slow is the lower bound");
+        speed.Click(At(Page::Combat,Increase(4)));speed.Click(At(Page::Combat,Increase(4)));
+        Check(speed.Get()[StrainSpeed]==2,"plus selects Fast");
+        speed.Click(At(Page::Combat,Increase(4)));Check(speed.Get()[StrainSpeed]==2,"Fast is the upper bound");
+        Check(speed.Click({Kind::Apply}).changed==(ChangeMask{1}<<StrainSpeed),"buildup edits preserve combat rules, difficulty and colour");
     }
     {Model difficulty;difficulty.Open(s);difficulty.Click({Kind::Tab,int(Page::Combat)});
         Check(s.values[OfflinePlayers]==0&&RowKey(Page::Combat,5)==OfflinePlayers,"difficulty preserves native settings by default");

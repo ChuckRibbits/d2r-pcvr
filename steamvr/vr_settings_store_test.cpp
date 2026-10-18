@@ -27,6 +27,15 @@ int main(){
         Check(saved.values[LootLabelSize]==70&&Int(path,L"hud",L"labels_size")==70,"loot size survives INI reload");
         Check(Changed(saved.values,current.values)==(ChangeMask{1}<<LootLabelSize)&&Int(path,L"custom",L"keep")==12345,"loot change preserves all other settings");
     }
+    Check(before.values[StrainSpeed]==1,"existing profiles retain Medium strain buildup");
+    for(int choice:{0,2,1}){
+        const auto current=vrsettings::Read();auto values=current.values;values[StrainSpeed]=float(choice);
+        const Request request{current.values,values,Changed(current.values,values),current.sequence+1};
+        Check(vrsettings::Submit(request)&&vrsettings::Poll(name),"save guard strain buildup");
+        const auto saved=vrsettings::Read();
+        Check(saved.values[StrainSpeed]==choice&&Int(path,L"gameplay",L"guard_strain_speed")==choice,"buildup survives reload");
+        Check(Changed(saved.values,current.values)==request.changed&&Int(path,L"custom",L"keep")==12345,"buildup preserves other settings");
+    }
     Check(before.values[OfflinePlayers]==0,"missing difficulty preserves game default");
     for(int choice:{1,8,3,0}){
         const auto current=vrsettings::Read();auto values=current.values;values[OfflinePlayers]=float(choice);
