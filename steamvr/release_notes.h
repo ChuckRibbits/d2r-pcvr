@@ -1,6 +1,6 @@
 #pragma once
 #include <array>
-namespace framevr::dev {
+namespace framevr::releasenotes {
 // Curated from the last published release, including Windows previews.
 // Update this summary when publishing; never populate it with unreleased PRs.
 inline constexpr const char* ReleaseTitle="v0.3.17 / Last published release";

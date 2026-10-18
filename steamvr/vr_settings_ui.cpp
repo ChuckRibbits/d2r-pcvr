@@ -2,7 +2,7 @@
 #include <cstdio>
 #include <cstring>
 #include "vr_settings_ui.h"
-#include "dev_release_notes.h"
+#include "release_notes.h"
 namespace framevr::settings {
 std::vector<uint8_t> Paint(const Model& m,Hit hover,const char* runtimeStatus,const calibration::Flow* body,const controllers::Labels& detected,int help){
     const bool showHelp=!body&&help!=NoHelp&&HelpText(help)[0];
@@ -64,13 +64,12 @@ std::vector<uint8_t> Paint(const Model& m,Hit hover,const char* runtimeStatus,co
     }else{
     text("DIABLO II / VR SETTINGS",{40,33,960,55},true);
     text("Point for help; trigger to change",{820,44,420,42},false,true,quiet);
-    const char* tabs[]={"Controls","VR","Video","HUD","Combat","Haptics","DEV"};
-    for(int i=0;i<VisibleTabs(m.developer);++i)button(TabBox(i,m.developer),tabs[i],{Kind::Tab,i},int(m.page)==i);
-    if(m.page==Page::Developer&&m.developer){
-        text(dev::ReleaseTitle,{40,195,1200,45},true);
-        text("Published features only. Test tools are on the hand wheel's DEV tab.",{40,241,1200,35},false,false,quiet);
+    for(int i=0;i<TabCount;++i)button(TabBox(i),TabNames[i],{Kind::Tab,i},int(m.page)==i);
+    if(m.page==Page::ReleaseNotes){
+        text(releasenotes::ReleaseTitle,{40,195,1200,45},true);
+        text("Feature summary. Full release notes are available on GitHub.",{40,241,1200,35},false,false,quiet);
         int y=291;
-        for(const char* line:dev::ReleaseLines){
+        for(const char* line:releasenotes::ReleaseLines){
             fill({40,y-3,1200,38},(y/40)%2?RGB(19,31,39):RGB(22,36,44));
             text(line,{54,y,1170,35});y+=40;
         }

@@ -1,7 +1,7 @@
 ﻿# Offline developer mode
 
 Developer mode provides class preparation, gear grants, travel shortcuts and
-an in-headset release reference. Use **new, disposable offline expansion
+a separate offline test environment. Use **new, disposable offline expansion
 characters**. The `pcvr-dev` mod has its own character list and save directory;
 normal characters are not copied or modified. Do not host/join TCP/IP or use
 online play for testing.
@@ -55,7 +55,8 @@ choose local offline Play. Create a new character in the separate character list
 
 Normal native builds include the dormant backend. It only activates when the
 loader's active mod and exact metadata both identify the isolated environment.
-The ordinary game/settings UI has no DEV tabs.
+The hand-wheel DEV tab is hidden in ordinary play. VR Settings > Release Notes
+is available in both regular and developer builds.
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File steamvr/build_windows.ps1 -Developer -Test
@@ -137,10 +138,11 @@ level's native arena entrance. Prepare and equip before dangerous destinations.
 
 ## Release reference in VR
 
-**VR Settings > DEV** shows one line per feature from the last published
+**VR Settings > Release Notes** is available to all players and shows one line
+per feature from the last published
 release, currently [v0.3.17](https://github.com/bearstonem/d2r-pcvr/releases/tag/v0.3.17-windows-preview).
 The reference is built in and works offline. It does not list unreleased PRs
-or automatically fetch GitHub. Update `steamvr/dev_release_notes.h` when
+or automatically fetch GitHub. Update `steamvr/release_notes.h` when
 publishing a release; keep the title/tag/link and one-line summaries in sync.
 The preview check measures every line to prevent wrapping/clipping.
 

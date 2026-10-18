@@ -189,7 +189,9 @@ Use a new offline expansion character in that separate save list.
 The tools are a **DEV tab on either hand's wheel**, beside VR Settings. Native
 builds include the dormant backend unless `-NoDevTools` is selected; the UI and
 actions require the exact isolated mod metadata. VR Settings has a separate
-DEV tab containing a read-only reference to the last published release.
+Release Notes tab, available in regular and developer builds, containing a
+read-only reference to the last published release. Update `steamvr/release_notes.h`
+when publishing. The hand-wheel DEV tools remain limited to developer mode.
 The existing owner test character is not permission to alter normal saves.
 
 - Character presets grant level 10/30/60/90 test stats/skills and preserve bindings.
