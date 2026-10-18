@@ -105,6 +105,7 @@ namespace gamestate {bool OpaqueMenuOpen();}
 #include "skill_pad.h"
 #include "spell_aim_signatures.h"
 #include "settings_menu.h"
+#include "offline_difficulty.h"
 #include "projectiles.h"
 #include "combat.h"
 #include "melee.h"
@@ -910,6 +911,10 @@ void LoadSettings() {
     lastLabelCapture=labelCapture;
 #endif
     g_set.platform.store(IniF(L"mode", L"platform", 1.0f) != 0.0f ? 1 : 0);
+#ifdef D2RVR_NATIVE_OPENXR
+    offlinedifficulty::Configure(int(framevr::settings::Normalize(framevr::settings::OfflinePlayers,
+        IniF(L"gameplay",L"offline_players",0))),g_set.platform.load()==1);
+#endif
 #if D2RVR_FIRST_PERSON
     g_set.flatView.store(std::clamp((int)IniF(L"mode", L"flat_view", 3.0f), 1, 3));
 #else
@@ -8404,6 +8409,8 @@ DWORD WINAPI UpdateThread(void*) {
             billboards::Install(&Log, +[]() { return g_enabled.load() && g_inWorld.load() && !ThirdPerson() && !Overhead() && !gamestate::MenuOpen(); });
             if (!AllHooksIn()) InstallHooks();
 #ifdef D2RVR_NATIVE_OPENXR
+            offlinedifficulty::Install();
+            offlinedifficulty::Report();
             roofcutaway::Tick();
             roofmaterials::Install(&Log, +[]() { return g_set.platform.load() == 1; });
             propphysics::Tick();
