@@ -871,9 +871,26 @@ instead of a random one. Classic keeps the native roll.
   taps the left controller. Native unblockable damage remains unblockable.
 - **Parry**: a diagonal shield swing across the view, lower right to upper left for
   a left-hand shield (at least 15 cm within 120 ms, within ~35 degrees of the
-  diagonal), after the attacker's attack began (its mode change, 34E5F0) and at
-  most 400 ms (fixed) before
-  the hit, from a melee attacker within 3 m. One parry per swing. The attacker is
+  diagonal), starting no more than 450 ms before the attacker's attack began
+  (its mode change, 34E5F0) and at most 750 ms (fixed) before the hit, from a
+  melee attacker within 3 m. Fast attackers land 250-360 ms after starting, so
+  the lead allows an anticipated swing; owner swings landed 400-1300 ms before
+  hits, and the earlier 400 ms window caught almost none. A timed swing is judged before face
+  coverage: the swing itself turns the face edge-on, so it needs only the raised
+  shield out on the attacker's side of the eyes (it may finish up to 10 cm behind
+  them along the attack line, e.g. beside the head after a big swing). A monster
+  melee attack that misses its native to-hit roll never reaches the block check;
+  a timed swing still parries it at that roll (the native miss is unchanged, and
+  there is no shield wear to restore). Low-level monsters miss most attacks
+  against a stronger hero, which made correct swings look ignored (2026-10-18:
+  two Zombies, 7 hits from dozens of attacks). One parry per swing.
+  The parry resolves as soon as the swing and the attacker's melee attack have
+  both begun, on the next game update: at the attack start for a swing made up
+  to 450 ms before it, or at the swing during the wind-up. The attacker is
+  staggered before its hit frame, so the hit never lands. Hit-frame parries
+  had come a median 516 ms after the swing (2026-10-18). An attack whose to-hit
+  roll has already run is never staggered early; otherwise the to-hit roll or
+  block check above still resolves the parry. The attacker is
   put into native hit recovery (445E60) on a later game update, any shield wear
   the game applied for that hit is restored (`shield_wear_refunded` in `Frame
   guard:` counts it; not every block wears a shield, and none has been observed
@@ -930,7 +947,13 @@ spells, missiles or thorns. `[gameplay] enemies_always_hit=1` is a test aid that
 makes every enemy to-hit roll succeed so each attack reaches the shield. It applies
 in Unleashed only; Classic always uses the native monster chance to hit.
 `[debug] guard_trace=1` logs every judged hit (`Frame guard trace:`) with the hand
-position, cover angle, swing and attack timing. Hard swings (a riposte straight
+position, cover angle, swing and attack timing. Its `parry=` field names why a
+raised guard did not parry: `no_swing`, `spent`, `early` (more than 750 ms before
+the hit), `before_attack`, `range` or `side`; `ok` on a parry. `Frame guard swing: armed` marks each new parry swing,
+`Frame guard miss:` each monster melee attack that missed its to-hit roll (and
+whether a swing parried it), `Frame guard early parry:` each parry made before
+the hit (`trigger=attack_start` or `swing`), and `Frame guard:` adds
+`incoming_hits`, `incoming_misses`, `miss_parries` and `early_parries`. Hard swings (a riposte straight
 after a parry) are tracked up to 20 m/s and 100 rad/s; `Frame melee resets:` and
 `Frame melee stale:` report any swing the tracker discarded, and
 `Frame riposte: window expired unused` any parry whose riposte never landed.

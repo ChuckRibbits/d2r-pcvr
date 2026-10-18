@@ -60,13 +60,23 @@ struct Tuning {
     float hold=.05f;                       // a raised guard holds this much past every edge
     float coverCos=.5f;                    // within 60 degrees of either face; edge-on does not cover
     float lateral=.45f,behind=.20f;       // forgiving attachment coverage proxy, not mesh-sized collision
-    uint32_t parryMs=400;                  // 0 disables perfect parry; a swing at most this long before the hit
+    // 0 disables perfect parry; a swing at most this long before the hit.
+    // Owner swings landed 400-1300 ms before hits; 400 ms caught almost none
+    // (logs 2026-10-17).
+    uint32_t parryMs=750;
+    // A swing may begin this long before the attacker's attack starts. Fast
+    // attackers land 250-360 ms after starting (log 2026-10-17), too soon to
+    // react to the wind-up alone.
+    uint32_t parryLeadMs=450;
     // Parry: a swing across the view, low on the far side up to high on the
     // shield's own side, 45 degrees (a left shield: lower right -> upper left).
     float swingMetres=.15f;                // along the diagonal, within swingMs
     uint32_t swingMs=120;
     float swingCos=.82f;                   // ~35 degrees either side of the diagonal
     float parryRange=3.f;                  // metres; ranged attackers are blocked, not parried
+    // A big swing can finish with the shield beside the head, just behind the
+    // eyes along the attack line (~10 cm, log 2026-10-18); behind you is not.
+    float parryBehind=.10f;
     uint32_t staleMs=150;                  // pose older than this cannot block
 };
 enum class Rejection { None, Untracked, InvalidHand, InvalidSurface, TooLow, TooHigh, TooFar, StalePose, OutsideCoverage, OutsidePlacement, Count };
@@ -209,21 +219,56 @@ inline Rejection Coverage(const Pose& p,Vec toAttacker,const Tuning& t,float* al
     return facing>=(measured?.15f:t.coverCos)?Rejection::None:Rejection::OutsideCoverage;
 }
 
+// Why a raised, fresh guard did not parry (diagnostics only).
+enum class ParryMiss { None, Disabled, NoSwing, Spent, Early, BeforeAttack, Range, Side };
+inline const char* ParryMissName(ParryMiss miss) {
+    switch(miss) {
+        case ParryMiss::None:return "ok";
+        case ParryMiss::Disabled:return "disabled";
+        case ParryMiss::NoSwing:return "no_swing";
+        case ParryMiss::Spent:return "spent";
+        case ParryMiss::Early:return "early";
+        case ParryMiss::BeforeAttack:return "before_attack";
+        case ParryMiss::Range:return "range";
+        case ParryMiss::Side:return "side";
+        default:return "unknown";
+    }
+}
+// A parry deflects rather than covers: the diagonal swing itself turns the face
+// edge-on (3 of 6 timed swings on 2026-10-17). It needs only the shield out on
+// the attacker's side of the eyes (within `behind` metres), never behind or
+// across the body from them.
+inline bool ParrySide(const Pose& p,Vec toAttacker,float behind) {
+    if(!Valid(p)||!Finite(toAttacker))return false;
+    const Vec fromBody{toAttacker.x-p.eye.x,0,toAttacker.z-p.eye.z};
+    const float distance=std::hypot(fromBody.x,fromBody.z);
+    const Vec offset{p.center.x-p.eye.x,0,p.center.z-p.eye.z};
+    return distance>.05f&&math::Dot(offset,fromBody)>-behind*distance;
+}
+// A parry is a swing while the attack is incoming: at most parryMs before the
+// hit, and no more than parryLeadMs before the attack began (0 = unknown).
+inline ParryMiss ParryCheck(const State& s,Vec toAttacker,uint64_t now,const Tuning& t,uint64_t attackAt=0) {
+    if(!t.parryMs)return ParryMiss::Disabled;
+    if(!s.snapAt||now<s.snapAt)return ParryMiss::NoSwing;
+    if(s.snapUsed)return ParryMiss::Spent;
+    if(now-s.snapAt>t.parryMs)return ParryMiss::Early;
+    if(attackAt&&s.snapAt+t.parryLeadMs<attackAt)return ParryMiss::BeforeAttack;
+    if(std::hypot(toAttacker.x,toAttacker.z)>t.parryRange)return ParryMiss::Range;
+    if(!ParrySide(s.surface,toAttacker,t.parryBehind))return ParryMiss::Side;
+    return ParryMiss::None;
+}
+
 // toAttacker: grid-plane vector, player -> attacker, in metres. attackAt: when
-// this attacker's attack began (0 = unknown). A parry is a swing while the
-// attack is incoming: after it began, and at most parryMs before the hit.
+// this attacker's attack began (0 = unknown). A timed parry is judged before
+// face coverage; anything else must cover the attack to block.
 inline Verdict Judge(const State& s,Vec toAttacker,uint64_t now,const Tuning& t,uint64_t attackAt=0,Rejection* reason=nullptr) {
     const auto reject=[&](Rejection why){if(reason)*reason=why;return Verdict::Open;};
     if(reason)*reason=Rejection::None;
     if(!s.raised)return reject(s.rejection);
     if(!s.seenAt||now<s.seenAt||now-s.seenAt>t.staleMs)return reject(Rejection::StalePose);
-    const Vec flat{toAttacker.x,0,toAttacker.z};
-    const float distance=std::hypot(flat.x,flat.z);
+    if(ParryCheck(s,toAttacker,now,t,attackAt)==ParryMiss::None)return Verdict::Parry;
     const auto coverage=Coverage(s.surface,toAttacker,t);
     if(coverage!=Rejection::None)return reject(coverage);
-    if(t.parryMs&&!s.snapUsed&&s.snapAt&&now>=s.snapAt&&now-s.snapAt<=t.parryMs&&distance<=t.parryRange&&
-       (!attackAt||s.snapAt>=attackAt))
-        return Verdict::Parry;
     return Verdict::Block;
 }
 // The game thread spends a swing on the parry it produced.
