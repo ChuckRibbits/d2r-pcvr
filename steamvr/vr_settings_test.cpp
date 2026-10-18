@@ -141,6 +141,13 @@ int main(){
         speed.Click(At(Page::Combat,Increase(5)));Check(speed.Get()[StrainSpeed]==2,"Fast is the upper bound");
         Check(speed.Click({Kind::Apply}).changed==(ChangeMask{1}<<StrainSpeed),"buildup edits preserve combat rules, difficulty and colour");
     }
+    {Model aim;aim.Open(s);aim.Click({Kind::Tab,int(Page::Aim)});
+        Check(s.values[TargetHighlight]==1&&RowCount(Page::Aim)==1&&RowKey(Page::Aim,0)==TargetHighlight,"target highlight is On by default, alone on the Aim page");
+        Check(HelpAt(Page::Aim,(ValueBox(0).x+5.f)/Width,(ValueBox(0).y+5.f)/Height)==TargetHighlight,"the Aim row explains the highlight");
+        aim.Click(At(Page::Aim,ValueBox(0)));Check(aim.Get()[TargetHighlight]==0,"the value toggles the highlight off");
+        const auto request=aim.Click({Kind::Apply});
+        Check(request.changed==(ChangeMask{1}<<TargetHighlight),"turning the highlight off changes nothing else");
+    }
     {Model difficulty;difficulty.Open(s);difficulty.Click({Kind::Tab,int(Page::Combat)});
         Check(s.values[OfflinePlayers]==0&&RowKey(Page::Combat,6)==OfflinePlayers,"difficulty preserves native settings by default");
         Check(ValueBox(6).y+ValueBox(6).h<698,"difficulty avoids Combat notes");
