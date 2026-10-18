@@ -131,6 +131,16 @@ int main() {
         Check(alpha(strain::Size/2,2)>alpha(strain::Size/2,strain::Size/4),"brighter toward the rim");
         Check(strain::PaintKey(.6f,.7f)==strain::PaintKey(.6001f,.7001f),"imperceptible changes do not repaint");
         Check(strain::PaintKey(.6f,.7f)!=strain::PaintKey(.62f,.7f)&&strain::PaintKey(.6f,0)==0,"visible changes repaint; nothing to paint keys 0");
+        {   // Density thickens the partly clear band only; the clear centre and full rim stay.
+            const auto dense=strain::Compose(.6f,.7f,strain::Feather,0,2.5f);
+            auto d=[&](int x,int y){return dense[(size_t(y)*strain::Size+x)*4+3];};
+            Check(d(strain::Size/2,strain::Size/2)==0&&d(0,0)==alpha(0,0),"density keeps the centre clear and the rim at full opacity");
+            bool thicker=false,never=true;
+            for(int x=0;x<strain::Size/2;++x){const int a=alpha(x,strain::Size/2),b=d(x,strain::Size/2);thicker=thicker||b>a+20;never=never&&b>=a;}
+            Check(thicker&&never,"density never thins the light and visibly thickens its blend");
+            Check(strain::Dense(0,2.5f)==0&&strain::Dense(1,2.5f)==1&&strain::Dense(.5f,1)==.5f,"density keeps 0 and 1, and 1 is the plain curve");
+            Check(strain::PaintKey(.6f,.7f,strain::Feather,0,1)!=strain::PaintKey(.6f,.7f,strain::Feather,0,2.5f),"a density change repaints");
+        }
         const auto none=strain::Compose(.6f,0);
         bool empty=true;for(size_t i=3;i<none.size();i+=4)empty=empty&&none[i]==0;
         Check(empty,"zero opacity paints nothing");

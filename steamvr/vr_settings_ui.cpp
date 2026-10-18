@@ -139,7 +139,6 @@ std::vector<uint8_t> Paint(const Model& m,Hit hover,const char* runtimeStatus,co
             else if(key==VitalsTilt)std::snprintf(label,sizeof label,"%+.6g deg",value);
             else if(key==TurnSpeed)std::snprintf(label,sizeof label,"%.0f deg/s",value);
             else if(key==MeleeHitSpeed||key==MeleeThrustSpeed)std::snprintf(label,sizeof label,"%.2f m/s",value);
-            else if(key==ParryWindow){if(value==0)std::snprintf(label,sizeof label,"Off");else std::snprintf(label,sizeof label,"%.0f ms",value);}
             else if(HapticKey(key)){if(value==0)std::snprintf(label,sizeof label,"Off (0%%)");else std::snprintf(label,sizeof label,"%.0f%%",value);}
             else if(key==LootLabelSize)std::snprintf(label,sizeof label,"%g%%",value);
             else if(key==Waist||key==BeltForward)std::snprintf(label,sizeof label,"%.1f cm",value*100);

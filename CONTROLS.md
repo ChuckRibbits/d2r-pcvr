@@ -134,8 +134,7 @@ One stroke can hit several monsters, each further one a little weaker.
   is, not by your block chance. Walking or running drops the guard.
 - **Parry:** as a melee attack comes in, swing the shield diagonally across
   your view (lower right to upper left with a left-hand shield) within
-  **Combat > Perfect parry window** (400 ms by default) of the hit. The
-  attacker staggers.
+  400 ms of the hit. The attacker staggers.
 - **Riposte:** your next weapon hit on the parried monster within 1.5 s is a
   clean hit: full damage, whatever your attack rating or timing.
 - **Guard strain:** every block (not a parry) strains your guard. A pale light

@@ -151,8 +151,8 @@ strain::Output strainOutput;
 std::mutex strainTuningMutex;strain::Tuning strainTuning;
 std::atomic<unsigned> guardBlockEvents{0},guardParryEvents{0};
 std::atomic<ULONGLONG> guardStateAt{0};std::atomic<bool> guardEligible{false},guardRaised{false};
-struct StrainJob {float edge=1,alpha=0,feather=strain::Feather;uint32_t color=0;};
-LatestWorker<StrainJob,std::vector<uint8_t>> strainPainter([](const StrainJob& job){return strain::Compose(job.edge,job.alpha,job.feather,job.color);});
+struct StrainJob {float edge=1,alpha=0,feather=strain::Feather;uint32_t color=0;float density=1;};
+LatestWorker<StrainJob,std::vector<uint8_t>> strainPainter([](const StrainJob& job){return strain::Compose(job.edge,job.alpha,job.feather,job.color,job.density);});
 XrSwapchain strainChain=XR_NULL_HANDLE;
 uint64_t strainPaintKey=~0ull,strainRequestedKey=~0ull,strainPaintRequest=0;
 ULONGLONG strainPaintAt=0;
@@ -1623,9 +1623,9 @@ void Input() {
         if(strainOutput.clearedNow)Say("Frame guard strain: cleared");
         // Repaint only on a visible change, at most 25 Hz (a small smooth image).
         if(!strainOutput.visible&&!strainPaintRequest)strainPaintKey=~0ull; // never reshow a stale light
-        const auto key=strain::PaintKey(strainOutput.edge,strainOutput.alpha,tuning.feather,tuning.color);
+        const auto key=strain::PaintKey(strainOutput.edge,strainOutput.alpha,tuning.feather,tuning.color,tuning.density);
         if(strainOutput.visible&&key!=strainPaintKey&&now>=strainPaintAt&&(!strainPaintRequest||key!=strainRequestedKey)) {
-            strainPaintRequest=strainPainter.Submit({strainOutput.edge,strainOutput.alpha,tuning.feather,tuning.color});strainRequestedKey=key;strainPaintAt=now+40;
+            strainPaintRequest=strainPainter.Submit({strainOutput.edge,strainOutput.alpha,tuning.feather,tuning.color,tuning.density});strainRequestedKey=key;strainPaintAt=now+40;
         }
         std::vector<uint8_t> painted;
         if(strainPaintRequest&&!strainAtlasPending&&atlasUploads.size()<3&&strainPainter.Take(strainPaintRequest,painted)) {
@@ -2815,7 +2815,7 @@ void FinishShieldSkill(bool accepted) {
 void MeleeImpact(int hand) {if(hand>=0&&hand<2)meleeImpactAt[hand]=GetTickCount64();}
 void ShieldGuardImpact(bool parry) {shieldImpactAt=GetTickCount64();(parry?guardParryEvents:guardBlockEvents).fetch_add(1);}
 void ShieldGuardState(bool eligible,bool raised) {guardStateAt=GetTickCount64();guardEligible=eligible;guardRaised=raised;}
-void ConfigureGuardStrain(float perBlock,float resetSeconds,float clear,float breatheSeconds,float softness,float brightness,uint32_t color) {
+void ConfigureGuardStrain(float perBlock,float resetSeconds,float clear,float breatheSeconds,float softness,float brightness,uint32_t color,float density) {
     strain::Tuning t;
     t.perBlock=std::isfinite(perBlock)?std::clamp(perBlock,0.f,1.f):t.perBlock;
     t.resetSeconds=std::isfinite(resetSeconds)?std::clamp(resetSeconds,0.f,10.f):t.resetSeconds;
@@ -2824,6 +2824,7 @@ void ConfigureGuardStrain(float perBlock,float resetSeconds,float clear,float br
     t.feather=std::isfinite(softness)?std::clamp(softness,.05f,1.f):t.feather;
     t.brightness=std::isfinite(brightness)?std::clamp(brightness,0.f,1.f):t.brightness;
     t.color=color&0xFFFFFFu;
+    t.density=std::isfinite(density)?std::clamp(density,1.f,6.f):1.f;
     std::lock_guard lock(strainTuningMutex);strainTuning=t;
 }
 void ConfigureHeartbeat(float volume,float bpmMin,float bpmMax,float fadeSeconds,const wchar_t* file) {
