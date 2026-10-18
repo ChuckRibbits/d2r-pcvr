@@ -615,6 +615,30 @@ uintptr_t Hireling(uintptr_t game,uintptr_t self,uint32_t id,bool alive) {
     if(alive&&(header[3]==0||header[3]==12))return 0;
     return reinterpret_cast<int(*)(uintptr_t,uintptr_t,uintptr_t)>(d2rsig::Addr(RelationRva))(game,self,unit)?0:unit;
 }
+// Target lock: the same bounded walk, keeping live monsters the native
+// relation check calls hostile, in grid cells, with whether a wall is between.
+int Hostiles(Hostile* out,int max,float range,float& heroX,float& heroY) {
+    uintptr_t game=0,self=0;Vec selfPos{};
+    if(!out||max<=0||!LocalServer(game,self)||!Position(self,selfPos))return -1;
+    heroX=selfPos.x*.5f;heroY=selfPos.z*.5f;
+    uintptr_t buckets[128]{};
+    if(!Read(game+0x4c6*8,buckets))return -1;
+    int n=0;unsigned visited=0;
+    for(uintptr_t unit:buckets) {
+        for(unsigned chain=0;unit&&chain<256&&visited++<4096&&n<max;++chain) {
+            uintptr_t next=0;uint32_t header[4]{};Vec pos{};
+            if(!Read(unit+0x158,next)||!Read(unit,header))break;
+            if(header[0]==1&&header[3]!=0&&header[3]!=12&&Position(unit,pos)&&
+               std::hypot(pos.x*.5f-heroX,pos.z*.5f-heroY)<=range&&
+               reinterpret_cast<int(*)(uintptr_t,uintptr_t,uintptr_t)>(d2rsig::Addr(RelationRva))(game,self,unit)) {
+                const bool clear=reinterpret_cast<int(*)(uintptr_t,uintptr_t,int)>(d2rsig::Addr(LineRva))(self,unit,0x804)==0;
+                out[n++]={header[2],header[1],pos.x*.5f,pos.z*.5f,clear};
+            }
+            unit=next;
+        }
+    }
+    return n;
+}
 bool HirelingVitals(uint32_t hint,float& health,float& maxHealth,uint32_t& classId,uint32_t& unitId) {
     health=maxHealth=0;classId=unitId=0;
     const bool statReady=d2rsig::Check(nativeui::abi::StatRva,nativeui::abi::StatSig,sizeof nativeui::abi::StatSig);
