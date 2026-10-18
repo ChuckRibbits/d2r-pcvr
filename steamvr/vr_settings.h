@@ -13,7 +13,7 @@ namespace framevr::settings {
 enum class Page { Controls, VR, Video, HUD, Combat, Aim, Haptics, ReleaseNotes };
 enum Key { Motion, Seated, Dominant, Snap, TurnSpeed, Waist, BeltForward,
            Foveation, Sky, Fog, Ceiling, DrawDistance, ObjectDistance,
-           EyeHeight, ArmSpan, BodyCalibration, SkillGestures, WristMap, WristCompass, ControllerLabels, WeaponSkillIndicators, PlanarSpellAim, VitalsLocation, CriticalAlerts, RenderResolution, NavigationLocation, SmoothTurn, OrdinaryMobBars, MenuDistance, TooltipTiming, ProjectileAimAssist, MeleeHitSpeed, VitalsTilt, HapticStrength, HapticMelee, HapticBowDraw, HapticBowRelease, HapticSpell, HapticInteraction, HapticAlert, HapticShortMelee, BloodVisor, BloodWipe, MeleeRules, MeleeThrustSpeed, LootLabelSize, CompanionCounts, StrainDark, OfflinePlayers, ShieldBashSpeed, StrainSpeed, TargetHighlight, SpellLock, StaffPoint, Count };
+           EyeHeight, ArmSpan, BodyCalibration, SkillGestures, WristMap, WristCompass, ControllerLabels, WeaponSkillIndicators, PlanarSpellAim, VitalsLocation, CriticalAlerts, RenderResolution, NavigationLocation, SmoothTurn, OrdinaryMobBars, MenuDistance, TooltipTiming, ProjectileAimAssist, MeleeHitSpeed, VitalsTilt, HapticStrength, HapticMelee, HapticBowDraw, HapticBowRelease, HapticSpell, HapticInteraction, HapticAlert, HapticShortMelee, BloodVisor, BloodWipe, MeleeRules, MeleeThrustSpeed, LootLabelSize, CompanionCounts, StrainDark, OfflinePlayers, ShieldBashSpeed, StrainSpeed, TargetHighlight, SpellLock, StaffPoint, GroundSkills, LandingCircles, Count };
 using ChangeMask=uint64_t;
 static_assert(Count<=64,"settings change mask capacity");
 constexpr ChangeMask SupportedChanges=~ChangeMask{0}>>(64-Count);
@@ -79,6 +79,8 @@ inline constexpr std::array<Definition,Count> Definitions{{
     {"Highlight aimed monster", "Outlines the monster your hand points at, else the one you look at", L"gameplay",L"target_highlight",1,0,1,1},
     {"Spells go to the highlighted monster", "Bolts and Lightning turn to it when it is roughly ahead", L"gameplay",L"spell_lock",1,0,1,1},
     {"Staff aims where your arm points", "Upright: along your arm. Levelled out: from the staff's top", L"gameplay",L"staff_point",1,0,1,1},
+    {"Ground skills land where you aim", "Blizzard, Meteor, traps, bombs: on the highlighted monster, else the floor you point at", L"gameplay",L"ground_skills",1,0,1,1},
+    {"Landing circles", "Where and when a ground skill will hit, in its element's color", L"gameplay",L"landing_circles",1,0,1,1},
 }};
 using Values=std::array<float,Count>;
 inline bool HapticKey(Key key){return key>=HapticStrength&&key<=HapticAlert;}
@@ -135,7 +137,7 @@ inline Rect ControllerOption(int option){return {865,233+option*58,375,58};}
 inline Rect Decrease(int row){return {865,RowY+row*RowStep,64,52};}
 inline Rect Increase(int row){return {1176,RowY+row*RowStep,64,52};}
 inline Rect ValueBox(int row){return {942,RowY+row*RowStep,221,52};}
-inline int RowCount(Page page){return page==Page::Haptics?2+haptics::CategoryCount:page==Page::Combat?7:page==Page::Aim?3:page==Page::VR?10:page==Page::Video?7:page==Page::HUD?10:0;}
+inline int RowCount(Page page){return page==Page::Haptics?2+haptics::CategoryCount:page==Page::Combat?7:page==Page::Aim?5:page==Page::VR?10:page==Page::Video?7:page==Page::HUD?10:0;}
 inline Key RowKey(Page page,int row){
     constexpr Key hapticRows[]={HapticStrength,HapticMelee,HapticShortMelee,HapticBowDraw,HapticBowRelease,HapticSpell,HapticInteraction,HapticAlert};
     if(page==Page::Haptics)return hapticRows[row];

@@ -101,5 +101,40 @@ int main() {
             Check(accepted(int(px)+moveX,int(py)+moveY,int(tx),int(ty)),
                   "all headings pass native validation with client/server movement margin");
     }
+    Check(spellaim::GroundTarget(251)&&spellaim::GroundTarget(261)&&spellaim::GroundTarget(59)&&spellaim::GroundTarget(56)&&
+          !spellaim::GroundTarget(36)&&!spellaim::GroundTarget(64)&&!spellaim::GroundTarget(-1),"traps, Blizzard and Meteor are ground-target skills; bolts and orbs are not");
+    Check(spellaim::ElementOf(59)==spellaim::Cold&&spellaim::ElementOf(251)==spellaim::Fire&&spellaim::ElementOf(261)==spellaim::Lightning,
+          "circle colours: Blizzard cold, Fire Blast fire, Charged Bolt Sentry lightning");
+    // Lobbed skills land where the hand ray meets the floor, not 40 cells out.
+    Check(spellaim::Lobbed(251)&&!spellaim::Lobbed(256)&&!spellaim::Lobbed(36)&&!spellaim::Lobbed(-1),
+          "only Fire Blast is a landing-point skill");
+    {
+        float gx=0,gy=0;
+        const auto down45=math::Normalized(math::Vec{1,-1,0});
+        Check(spellaim::GroundPoint({100,10,100},down45,0,.5f,50,50,gx,gy)&&std::fabs(gx-55)<.001f&&std::fabs(gy-50)<.001f,
+              "45 degree aim lands one hand-height ahead, in native cells");
+        // Elevated floors are sheared in render space; the cell must not be.
+        const float shear=coordinates::GroundShear*20;
+        Check(spellaim::GroundPoint({100+shear,30,100+shear},down45,20,.5f,50,50,gx,gy)&&std::fabs(gx-55)<.001f&&std::fabs(gy-50)<.001f,
+              "raised floor removes render shear before cell conversion");
+        const auto shallow=math::Normalized(math::Vec{0,-.01f,1});
+        Check(spellaim::GroundPoint({100,10,100},shallow,0,.5f,50,50,gx,gy)&&std::fabs(std::hypot(gx-50,gy-50)-spellaim::AimDistance)<.01f&&
+              gx==50&&gy>50,"a near-level aim is limited to the native command range on its heading");
+        const auto steep=math::Normalized(math::Vec{.001f,-1,0});
+        Check(spellaim::GroundPoint({100,10,100},steep,0,.5f,50,50,gx,gy)&&std::fabs(std::hypot(gx-50,gy-50)-spellaim::GroundMinDistance)<.01f&&gx>50,
+              "aiming at your feet still throws a short distance forward");
+        gx=gy=7;
+        Check(!spellaim::GroundPoint({100,10,100},math::Vec{1,0,0},0,.5f,50,50,gx,gy)&&gx==7&&gy==7,"level ray never lands and keeps output");
+        Check(!spellaim::GroundPoint({100,-1,100},down45,0,.5f,50,50,gx,gy),"origin under the floor is refused");
+        Check(!spellaim::GroundPoint({NAN,10,100},down45,0,.5f,50,50,gx,gy),"invalid origin is refused");
+        for(int degree=0;degree<360;degree+=3)for(float pitch:{.05f,.3f,1.2f}) {
+            const float a=degree*3.14159265f/180;
+            const auto d=math::Normalized(math::Vec{std::cos(a),-std::tan(pitch),std::sin(a)});
+            Check(spellaim::GroundPoint({9460,4,9300},d,0,.5f,4730,4650,gx,gy),"every heading lands");
+            Check(std::abs(int(gx)-4730)<=50&&std::abs(int(gy)-4650)<=50,"landing point passes the native command gate");
+            const auto heading=math::Normalized(math::Vec{gx-4730,0,gy-4650});
+            Check(heading.x*std::cos(a)+heading.z*std::sin(a)>.999f,"landing point keeps the hand heading");
+        }
+    }
     std::puts("Spell aiming: native behavior, scoped targeting, movement-independent cast resolution and cell precision passed");
 }

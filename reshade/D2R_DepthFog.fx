@@ -1840,14 +1840,77 @@ float3 OutlineTint(float3 c, float2 uv, int eye, float3 p, float4 o, float3 shap
     const float a = saturate(edge / 3.0) * o.w;
     return saturate(c + colour * a * 1.3);   // added light: a glow, not paint
 }
+// Landing circles: where and when a ground skill will hit, painted on the ground
+// the eye actually sees (the same world point per pixel as the outline), so
+// monsters and walls standing in front hide it. One per cast or bomb in the air:
+// RingPos xyz the centre relative to the hero, w its alpha (0 = none); RingFill
+// how far the fill has closed from the rim inward; RingCol rgb its element's
+// color, w its radius (world units); RingDir a strip instead (Fire Wall): xy its
+// direction on the ground, z its half-length, 0 = a circle.
+uniform bool RingOn < hidden = true; > = false;
+uniform float RingFloorTol < hidden = true; > = 1.0;
+uniform float4 RingPos0 < hidden = true; > = float4(0.0, 0.0, 0.0, 0.0);
+uniform float4 RingPos1 < hidden = true; > = float4(0.0, 0.0, 0.0, 0.0);
+uniform float4 RingPos2 < hidden = true; > = float4(0.0, 0.0, 0.0, 0.0);
+uniform float4 RingPos3 < hidden = true; > = float4(0.0, 0.0, 0.0, 0.0);
+uniform float4 RingPos4 < hidden = true; > = float4(0.0, 0.0, 0.0, 0.0);
+uniform float4 RingPos5 < hidden = true; > = float4(0.0, 0.0, 0.0, 0.0);
+uniform float RingFill0 < hidden = true; > = 0.0;
+uniform float RingFill1 < hidden = true; > = 0.0;
+uniform float RingFill2 < hidden = true; > = 0.0;
+uniform float RingFill3 < hidden = true; > = 0.0;
+uniform float RingFill4 < hidden = true; > = 0.0;
+uniform float RingFill5 < hidden = true; > = 0.0;
+uniform float4 RingCol0 < hidden = true; > = float4(1.0, 0.45, 0.05, 5.0);
+uniform float4 RingCol1 < hidden = true; > = float4(1.0, 0.45, 0.05, 5.0);
+uniform float4 RingCol2 < hidden = true; > = float4(1.0, 0.45, 0.05, 5.0);
+uniform float4 RingCol3 < hidden = true; > = float4(1.0, 0.45, 0.05, 5.0);
+uniform float4 RingCol4 < hidden = true; > = float4(1.0, 0.45, 0.05, 5.0);
+uniform float4 RingCol5 < hidden = true; > = float4(1.0, 0.45, 0.05, 5.0);
+uniform float4 RingDir0 < hidden = true; > = float4(0.0, 0.0, 0.0, 0.0);
+uniform float4 RingDir1 < hidden = true; > = float4(0.0, 0.0, 0.0, 0.0);
+uniform float4 RingDir2 < hidden = true; > = float4(0.0, 0.0, 0.0, 0.0);
+uniform float4 RingDir3 < hidden = true; > = float4(0.0, 0.0, 0.0, 0.0);
+uniform float4 RingDir4 < hidden = true; > = float4(0.0, 0.0, 0.0, 0.0);
+uniform float4 RingDir5 < hidden = true; > = float4(0.0, 0.0, 0.0, 0.0);
+
+// One circle over color c, for the ground point p (relative to the hero). A
+// strip measures from its centre line instead of the centre point, so the same
+// rim and fill draw a rounded band.
+float3 RingTint(float3 c, float3 p, float4 ring, float fill, float4 col, float4 dir)
+{
+    if (ring.w <= 0.0 || abs(p.y - ring.y) > RingFloorTol) return c;
+    float2 q = p.xz - ring.xz;
+    if (dir.z > 0.0) q -= dir.xy * clamp(dot(q, dir.xy), -dir.z, dir.z);
+    const float r = length(q) / max(col.w, 1e-3);
+    if (r > 1.1) return c;
+    const float aa = 0.02;
+    const float rim = 1.0 - smoothstep(0.03, 0.03 + aa, abs(r - 1.0));          // the outline
+    const float inner = 1.0 - smoothstep(1.0 - aa, 1.0, r);                     // inside the circle
+    const float front = 1.0 - fill;                                             // fill edge, moving inward
+    const float filled = inner * smoothstep(front - aa, front, r);              // the band from the rim to it
+    const float glow = inner * exp(-abs(r - front) * 18.0) * step(0.001, fill);
+    const float centre = 1.0 - smoothstep(0.05, 0.05 + aa, r);                  // the exact aim point
+    const float a = saturate(0.12 * inner + 0.35 * filled + 0.6 * glow + 0.9 * rim + 0.9 * centre) * ring.w;
+    return lerp(c, col.rgb + 0.35 * glow, a);
+}
 float3 Outline(float2 uv, int eye)
 {
-    const float3 c = tex2D(FogColorSmp, uv).rgb;
-    if (!OutlineOn) return c;
+    float3 c = tex2D(FogColorSmp, uv).rgb;
+    if (!OutlineOn && !RingOn) return c;
     float ok;
     const float3 p = OutlineWorld(uv, eye, ok);
     if (ok <= 0.0) return c;
-    return OutlineTint(c, uv, eye, p, OutlinePos, OutlineShape, OutlineColor);
+    if (RingOn) {
+        c = RingTint(c, p, RingPos0, RingFill0, RingCol0, RingDir0);
+        c = RingTint(c, p, RingPos1, RingFill1, RingCol1, RingDir1);
+        c = RingTint(c, p, RingPos2, RingFill2, RingCol2, RingDir2);
+        c = RingTint(c, p, RingPos3, RingFill3, RingCol3, RingDir3);
+        c = RingTint(c, p, RingPos4, RingFill4, RingCol4, RingDir4);
+        c = RingTint(c, p, RingPos5, RingFill5, RingCol5, RingDir5);
+    }
+    if (OutlineOn) c = OutlineTint(c, uv, eye, p, OutlinePos, OutlineShape, OutlineColor);
+    return c;
 }
 float3 PS_Outline(float4 pos : SV_Position, float2 uv : TEXCOORD) : SV_Target { return Outline(uv, 0); }
 float3 PS_OutlineR(float4 pos : SV_Position, float2 uv : TEXCOORD) : SV_Target { return Outline(uv, 1); }

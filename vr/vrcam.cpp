@@ -102,6 +102,7 @@ namespace gamestate {bool OpaqueMenuOpen();}
 #include "xinput_rumble.h"
 #include "native_panels.h"
 #include "spell_aim.h"
+#include "telegraph.h"
 #include "skill_pad.h"
 #include "spell_aim_signatures.h"
 #include "settings_menu.h"
@@ -2826,16 +2827,16 @@ bool AimOn(framevr::settings::Key key) {
     using namespace framevr::settings;
     static std::atomic<ULONGLONG> at{0};
     static std::atomic<uint32_t> bits{0};
-    constexpr Key keys[] = {TargetHighlight, SpellLock, StaffPoint};
+    constexpr Key keys[] = {TargetHighlight, SpellLock, StaffPoint, GroundSkills, LandingCircles};
     const ULONGLONG now = GetTickCount64();
     if (now - at.load() > 200) {
         const auto values = vrsettings::Read().values;
         uint32_t b = 0;
-        for (int i = 0; i < 3; ++i) if (values[keys[i]] > .5f) b |= 1u << i;
+        for (int i = 0; i < 5; ++i) if (values[keys[i]] > .5f) b |= 1u << i;
         bits.store(b);
         at.store(now);
     }
-    for (int i = 0; i < 3; ++i) if (keys[i] == key) return (bits.load() >> i) & 1;
+    for (int i = 0; i < 5; ++i) if (keys[i] == key) return (bits.load() >> i) & 1;
     return false;
 }
 #ifdef D2RVR_NATIVE_OPENXR
@@ -3259,7 +3260,7 @@ std::atomic<uint32_t> g_id{0};
 std::atomic<float> g_x{0}, g_y{0}, g_distance{0};
 std::atomic<ULONGLONG> g_at{0};
 bool Wanted() {
-    return g_enabled.load() && g_inWorld.load() && (TargetHighlightOn() || AimOn(framevr::settings::SpellLock));
+    return g_enabled.load() && g_inWorld.load() && (TargetHighlightOn() || AimOn(framevr::settings::SpellLock) || AimOn(framevr::settings::GroundSkills));
 }
 void Tick() {
     const bool wanted = Wanted();
@@ -3300,18 +3301,51 @@ bool DirectedSpellAim(float& gx,float& gy) {
     // walk-learned calibration can confuse a cast vector with the opposite
     // travel direction while backpedaling; it must not rotate spell aim.
     if(!(g_spellAimReady.load()&&g_enabled.load()&&!gamestate::MenuOpen()&&
-        framevr::DirectedSpellActive()&&HandRay(origin,direction)&&
+        (framevr::DirectedSpellActive()||framevr::GroundSpellActive())&&HandRay(origin,direction)&&
         framevr::spellaim::Horizontal({direction[0],direction[1],direction[2]},gx,gy)))return false;
     // Spells go to the highlighted monster: the spells the game aims itself
     // (Lightning, Chain Lightning...) turn toward the locked monster when it is
     // within ~53 degrees of the hand's direction.
     float mx=0,my=0,md=0;
-    if(AimOn(framevr::settings::SpellLock)&&mobaim::Get(mx,my,md)) {
+    if(AimOn(framevr::settings::SpellLock)&&framevr::DirectedSpellActive()&&mobaim::Get(mx,my,md)) {
         const auto s=targetlock::Get();
         const float tx=mx-s.heroX,ty=my-s.heroY,tl=std::hypot(tx,ty),hl=std::hypot(gx,gy);
         if(s.at&&tl>.5f&&hl>1e-4f&&(tx*gx+ty*gy)/(tl*hl)>.6f){gx=tx/tl;gy=ty/tl;}
     }
     return true;
+}
+// Ground skills (Fire Blast's bomb explodes where it lands; Blizzard, Meteor,
+// traps... are cast at a point): the highlighted monster takes them; else the
+// point where the hand ray meets the hero's floor, rather than the native
+// fixed-range heading. HandRay is render-world units; g_lookAt[1] is the hero's feet.
+bool GroundSpellAim(float playerX,float playerY,float& targetX,float& targetY) {
+    float origin[3],direction[3],L[3];
+    if(!g_spellAimReady.load()||!g_enabled.load()||gamestate::MenuOpen()||
+       !framevr::GroundSpellActive())return false;
+    float mx=0,my=0,md=0;
+    if(mobaim::Get(mx,my,md)) {
+        const float dx=mx-playerX,dy=my-playerY,d=std::hypot(dx,dy);
+        if(d>=.01f) {
+            const float scale=std::clamp(d,framevr::spellaim::GroundMinDistance,framevr::spellaim::AimDistance)/d;
+            targetX=playerX+dx*scale;targetY=playerY+dy*scale;
+            static ULONGLONG lastLog=0;
+            if(GetTickCount64()-lastLog>1000){lastLog=GetTickCount64();LogF("Frame target lock: ground skill to the target at %.1f %.1f (%.1f cells)",mx,my,d);}
+            return true;
+        }
+    }
+    if(!HandRay(origin,direction))return false;
+    AcquireSRWLockShared(&g_lookLock);memcpy(L,g_lookAt,sizeof L);ReleaseSRWLockShared(&g_lookLock);
+    return framevr::spellaim::GroundPoint({origin[0],origin[1],origin[2]},{direction[0],direction[1],direction[2]},
+        L[1],.5f,playerX,playerY,targetX,targetY);
+}
+// Integer-cell target for the controller quick-cast paths: the landing point
+// for ground skills, otherwise the existing fixed-range hand heading.
+bool ControllerSpellPoint(float playerX,float playerY,float dx,float dy,int& targetX,int& targetY) {
+    float gx=0,gy=0;
+    if(GroundSpellAim(playerX,playerY,gx,gy)&&gx>=1&&gy>=1&&gx<=65534&&gy<=65534) {
+        targetX=int(gx);targetY=int(gy);return true;
+    }
+    return framevr::spellaim::ControllerPoint(playerX,playerY,{dx,0,dy},targetX,targetY);
 }
 uintptr_t HookSpellControllerTarget(uintptr_t manager,int id) {
     if(g_spellCast.directed&&uintptr_t(_ReturnAddress())==d2rsig::Addr(spellaimabi::ControllerCallRva+5))return 0;
@@ -3337,6 +3371,10 @@ void HookSpellResolve(uintptr_t manager,void* unit,bool assist,float* x,float* y
     float playerX=0,playerY=0;
     const bool local=x&&y&&SpellPlayerPosition(unit,playerX,playerY);
     cast.directed=local&&DirectedSpellAim(cast.x,cast.y);
+    float groundX=0,groundY=0;
+    if(cast.directed&&GroundSpellAim(playerX,playerY,groundX,groundY)) {
+        cast.x=groundX;cast.y=groundY;cast.contactPoint=true;
+    }
     if(local&&g_spellAimReady.load()&&g_enabled.load()&&!gamestate::MenuOpen()&&
        framevr::ShieldAim(cast.x,cast.y))cast.directed=cast.contactPoint=true;
     framevr::spellaim::Scope scope(g_spellCast,cast);
@@ -4114,9 +4152,21 @@ uint64_t HookMapClick(void* unit, int type, int x, int y, uint64_t flags) {
     if(g_spellCommandReady.load()&&framevr::spellaim::ControllerCast(type)&&
        (caller==d2rsig::Addr(spellaimabi::CastClickRva+5)||caller==d2rsig::Addr(spellaimabi::RepeatClickRva+5))&&
        SpellPlayerPosition(unit,px,py)&&DirectedSpellAim(dx,dy)&&
-       framevr::spellaim::ControllerPoint(px,py,{dx,0,dy},tx,ty)) {
+       ControllerSpellPoint(px,py,dx,dy,tx,ty)) {
         g_spellCommand={reinterpret_cast<uintptr_t>(unit),tx,ty};
         x=tx;y=ty;
+        // Ground skills other than Fire Blast (whose circle follows its missile):
+        // a circle at the cast point, in the element's color, for its measured
+        // area and time (telegraph::ForSkill); a strip (Fire Wall) lies square
+        // to the line from the hero to the cast point.
+        const int skill=framevr::GroundSpellSkill();
+        if(skill>=0&&!framevr::spellaim::Lobbed(skill)) {
+            const auto area=framevr::telegraph::ForSkill(skill);
+            const float ax=float(tx)-px,ay=float(ty)-py;
+            if(framevr::telegraph::Current().Place(float(tx),float(ty),GetTickCount64(),area.showMs,framevr::spellaim::ElementOf(skill),
+                                                   area.radius,-ay,ax,area.halfLength))
+                LogF("Frame landing circle: skill %d at %d,%d (element %d)",skill,tx,ty,int(framevr::spellaim::ElementOf(skill)));
+        }
     }
 #endif
     if (unit && (type == 0 || type == 1 || type == 3 || type == 4) && !(flags & 0xFF) &&
@@ -7608,6 +7658,11 @@ bool OutlineWanted() {
     return false;
 #endif
 }
+// Landing circles (same pass): while any ground skill's circle is showing.
+bool RingWanted() {
+    return g_enabled.load() && g_inWorld.load() && !gamestate::MenuOpen() && AimOn(framevr::settings::LandingCircles) &&
+        framevr::telegraph::AnyOn(framevr::telegraph::Current().Get(), GetTickCount64());
+}
 
 // The frame stamp strip (D2R_DepthFog.fx PS_Stamp): whenever the camera turns
 // with the head, so that FlatVR can place its screen at the pose of the frame.
@@ -7699,7 +7754,7 @@ void OnFinishEffects(reshade::api::effect_runtime* rt, reshade::api::command_lis
     if (!g_tech[0].handle) { hud::SetPictureReady(false); return; }
     // Off while a menu is open: the fog lies over the whole picture, the
     // inventory and trade panels included, and darkened them.
-    const bool want = FogWanted() || g_skyPalette.load() >= 0 || g_arcaneSky.load() || CeilWanted() || HudWanted() || StampWanted() || hud::PictureWanted() || TableKeyWanted() || PhantomWanted() || BoneAxesWanted() || ShieldDebugWanted() || OutlineWanted();
+    const bool want = FogWanted() || g_skyPalette.load() >= 0 || g_arcaneSky.load() || CeilWanted() || HudWanted() || StampWanted() || hud::PictureWanted() || TableKeyWanted() || PhantomWanted() || BoneAxesWanted() || ShieldDebugWanted() || OutlineWanted() || RingWanted();
     // The toolbar and the map are taken out of the game's picture to be drawn
     // back at their own size only while this effect runs, and is new enough to.
     {
@@ -7894,7 +7949,7 @@ void OnBeginEffects(reshade::api::effect_runtime* rt, reshade::api::command_list
         renderscale::Frame(rt, s);
 #ifdef D2RVR_NATIVE_OPENXR
         const bool ownDepth=g_enabled.load()&&g_inWorld.load()&&framevr::Active()&&
-            (FogWanted()||g_set.skyOn.load()||g_arcaneSky.load()||CeilWanted()||TableKeyWanted()||OutlineWanted());
+            (FogWanted()||g_set.skyOn.load()||g_arcaneSky.load()||CeilWanted()||TableKeyWanted()||OutlineWanted()||RingWanted());
         framevr::scenedepth::Bind(rt,cl,ownDepth,s);
         SetBool(rt,"OwnDepth",ownDepth);
 #else
@@ -8232,11 +8287,13 @@ void OnBeginEffects(reshade::api::effect_runtime* rt, reshade::api::command_list
         SkyView sv[2];
         AcquireSRWLockShared(&g_skyLock); sv[0] = g_skyView[0]; sv[1] = g_skyView[1]; ReleaseSRWLockShared(&g_skyLock);
         float mx = 0, my = 0, md = 0;
-        const bool on = OutlineWanted() && sv[0].proj_ok && sv[0].axes_ok && mobaim::Get(mx, my, md);
+        const bool view = sv[0].proj_ok && sv[0].axes_ok;
+        const bool on = OutlineWanted() && view && mobaim::Get(mx, my, md);
+        const bool rings = RingWanted() && view;
         SetBool(rt, "OutlineOn", on);
+        SetBool(rt, "RingOn", rings);
         float mob[4] = {0.0f, 0.0f, 0.0f, 0.0f};
-        if (on) {
-            const float upm = std::max(1.0f, ViewHeight()) / UserEyeHeightM();
+        if (on || rings) {
             for (int e = 0; e < 2; ++e) {
                 const SkyView& s = sv[e].axes_ok && sv[e].proj_ok ? sv[e] : sv[0];
                 char n[16];
@@ -8246,6 +8303,37 @@ void OnBeginEffects(reshade::api::effect_runtime* rt, reshade::api::command_list
                 snprintf(n, sizeof n, "CamUp%d", e); SetFloats(rt, n, s.axes + 3, 3);
                 snprintf(n, sizeof n, "CamBack%d", e); SetFloats(rt, n, s.axes + 6, 3);
             }
+        }
+        if (rings) {   // landing circles: each one's cell, put on the floor the hero stood on when it was cast
+            using namespace framevr::telegraph;
+            static uint32_t anchored[MaxMarks] = {};
+            static float floorY[MaxMarks] = {};
+            const auto marks = Current().Get();
+            const auto now = GetTickCount64();
+            const float shear = framevr::coordinates::GroundShear;
+            for (int k = 0; k < MaxMarks; ++k) {
+                const auto& mark = marks[k];
+                const auto draw = Sample(mark, now);
+                if (draw.on && mark.sequence != anchored[k]) { anchored[k] = mark.sequence; floorY[k] = sv[0].hero[1]; }
+                // xyz: centre relative to the hero; w: alpha (0 = not drawn)
+                const float ring[4] = {mark.x * 2.0f + floorY[k] * shear - sv[0].hero[0], floorY[k] - sv[0].hero[1],
+                                       mark.y * 2.0f + floorY[k] * shear - sv[0].hero[2], draw.on ? draw.alpha : 0.0f};
+                char n[16];
+                snprintf(n, sizeof n, "RingPos%d", k); SetFloats(rt, n, ring, 4);
+                snprintf(n, sizeof n, "RingFill%d", k); SetFloat(rt, n, draw.fill);
+                // rgb its element's color (fire orange, cold blue, lightning yellow, other green), w its radius
+                static const float kElement[4][3] = {{1.0f, 0.45f, 0.05f}, {0.3f, 0.7f, 1.0f}, {1.0f, 0.92f, 0.35f}, {0.4f, 1.0f, 0.3f}};
+                const int el = mark.element >= 0 && mark.element < 4 ? mark.element : 0;
+                const float col[4] = {kElement[el][0], kElement[el][1], kElement[el][2], mark.radius * 2.0f};
+                snprintf(n, sizeof n, "RingCol%d", k); SetFloats(rt, n, col, 4);
+                // a strip: its direction (grid x/y are world x/z) and half-length in world units; 0 = a circle
+                const float dir[4] = {mark.dirX, mark.dirY, mark.halfLength * 2.0f, 0.0f};
+                snprintf(n, sizeof n, "RingDir%d", k); SetFloats(rt, n, dir, 4);
+            }
+            SetFloat(rt, "RingFloorTol", 0.5f * std::max(1.0f, ViewHeight()) / UserEyeHeightM());
+        }
+        if (on) {
+            const float upm = std::max(1.0f, ViewHeight()) / UserEyeHeightM();
             const float floor = sv[0].hero[1], shear = framevr::coordinates::GroundShear;
             const float pulse = 0.8f + 0.2f * sinf(float(GetTickCount64() % 100000) * 0.0094f);
             mob[0] = mx * 2.0f + floor * shear - sv[0].hero[0];

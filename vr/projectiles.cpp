@@ -2,6 +2,7 @@
 // release-point handoff. Kept separate from posing the held bow.
 #include <windows.h>
 #include <atomic>
+#include <cmath>
 #include <cstdint>
 #include <cstdio>
 #include "projectiles.h"
@@ -12,6 +13,7 @@
 #include "combat.h"
 #include "bow.h"
 #include "crossbow.h"
+#include "../steamvr/telegraph.h"
 
 namespace gamestate {uint64_t LocalPlayer();}
 
@@ -93,6 +95,28 @@ void ReportSpell(uintptr_t params,int side,uintptr_t created) {
         side?"server":"client",missile,flags,points[0],points[1],points[2],points[3],created?"yes":"no");
     framevr::logging::Write(line);
 }
+// Fire Blast's thrown bomb and its burst, as the server actually created
+// them: the target the bomb was given, and where it came down.
+constexpr uint32_t BombInAir=385,BombOnGround=386;
+void Telegraph(uintptr_t params,uintptr_t unit) {
+    uintptr_t owner=0;uint32_t missile=0;int points[4]{};
+    if(!unit||!enabled.load()||!Read(params+0x20,missile)||(missile!=BombInAir&&missile!=BombOnGround)||
+       !Read(params+8,owner)||!IsLocalOwner(owner)||!Read(params+0x24,points))return;
+    auto& board=framevr::telegraph::Current();
+    const auto now=GetTickCount64();
+    char line[200];
+    if(missile==BombInAir) {
+        board.Cast(float(points[0]),float(points[1]),float(points[2]),float(points[3]),now);
+        snprintf(line,sizeof line,"Frame landing circle: bomb from %d,%d to %d,%d (%.1f cells)",points[0],points[1],points[2],points[3],
+            std::hypot(float(points[2]-points[0]),float(points[3]-points[1])));
+    } else {
+        const auto mark=board.Landed(float(points[0]),float(points[1]),now);
+        if(mark.cast)snprintf(line,sizeof line,"Frame landing circle: burst at %d,%d, %.1f cells from its circle %.0f,%.0f, %llu ms after the throw",
+            points[0],points[1],std::hypot(points[0]-mark.x,points[1]-mark.y),mark.x,mark.y,(unsigned long long)(now-mark.cast));
+        else snprintf(line,sizeof line,"Frame landing circle: burst at %d,%d with no circle showing",points[0],points[1]);
+    }
+    framevr::logging::Write(line);
+}
 uintptr_t Client(uintptr_t params,int flags) {
     std::array<uint8_t,0x98> adjusted{};framevr::crossbow::Launch bolt;
     const bool crossbow=enabled.load()&&crossbowvr::Prepare(params,adjusted,bolt);
@@ -113,6 +137,7 @@ uintptr_t Server(uintptr_t game,uintptr_t params) {
     Scope scope(params,1);const auto unit=originalServer(game,params);
     if(crossbow)crossbowvr::ServerDone(bolt,unit&&bowvr::AdoptCrossbow(game,unit,bolt.flight));
     ReportSpell(params,1,unit);
+    Telegraph(params,unit);
     if(unit)bowvr::Created(game,params,unit);
     return unit;
 }
