@@ -138,7 +138,7 @@ std::vector<uint8_t> Paint(const Model& m,Hit hover,const char* runtimeStatus,co
             else if(key==Snap)std::snprintf(label,sizeof label,"%.0f deg",value);
             else if(key==VitalsTilt)std::snprintf(label,sizeof label,"%+.6g deg",value);
             else if(key==TurnSpeed)std::snprintf(label,sizeof label,"%.0f deg/s",value);
-            else if(key==MeleeHitSpeed||key==MeleeThrustSpeed)std::snprintf(label,sizeof label,"%.2f m/s",value);
+            else if(key==MeleeHitSpeed||key==MeleeThrustSpeed||key==ShieldBashSpeed)std::snprintf(label,sizeof label,"%.2f m/s",value);
             else if(key==ParryWindow){if(value==0)std::snprintf(label,sizeof label,"Off");else std::snprintf(label,sizeof label,"%.0f ms",value);}
             else if(HapticKey(key)){if(value==0)std::snprintf(label,sizeof label,"Off (0%%)");else std::snprintf(label,sizeof label,"%.0f%%",value);}
             else if(key==LootLabelSize)std::snprintf(label,sizeof label,"%g%%",value);
@@ -157,8 +157,7 @@ std::vector<uint8_t> Paint(const Model& m,Hit hover,const char* runtimeStatus,co
             text("Palm: raise left hand palm up; release grip/trigger. Status follows the minimap.",{58,854,1160,22},false,false,quiet);
         }
         if(m.page==Page::Combat){
-            text("Unleashed: each deliberate stroke can hit multiple creatures. Classic: attack rating, defense and block decide each hit; attack speed paces them and misses spend the attack.",{58,626,1160,66},false,false,quiet);
-            text("Swings: 12.00 m/s by default and 18 cm of travel. Thrusts: 2.00 m/s by default and 12 cm toward the weapon tip. Pull back before stabbing again.",{58,698,1160,66},false,false,quiet);
+            text("Defaults: swings 12 m/s with 18 cm travel; thrusts and shield bashes 2 m/s with 12 cm travel. Wrist twisting alone cannot bash. Hover each setting for details.",{58,698,1160,66},false,false,quiet);
             text("Speed settings apply in either melee mode. Difficulty scaling applies to newly spawned monsters; start a fresh game for a consistent test.",{58,770,1160,66},false,false,quiet);
         }
         if(m.page==Page::Combat&&!m.offlineDifficultyAvailable)

@@ -650,6 +650,14 @@ With **Smite** selected, an energetic
 left-arm swing or thrust that intersects an eligible creature requests one native
 Smite against that creature. A stationary shield cannot bash; one continuous
 stroke requests at most one bash, and a deliberate reversal/settle rearms it.
+**VR Settings > Combat > Shield bash speed** controls this gesture in both melee
+modes (default 2 m/s; 0.75-10 m/s in 0.25 steps; `[gameplay] shield_bash_speed`).
+A bash needs 12 cm of net tracked hand travel within 200 ms and must meet the
+selected speed at contact. Wrist rotation alone cannot arm, power or rearm a bash;
+shield size therefore cannot amplify wrist twisting into an attack. The contact
+sweep covers only the current fast interval, not earlier slow approaches.
+Applying a new bash speed invalidates old queued/posed contacts. Native skill
+selection, mana costs, trigger casts, blocking and parries are unchanged.
 Native reach, walls, resources, animation/cadence, damage, stun and knockback
 remain authoritative. Left-hand haptics acknowledge native acceptance, not proof
 of positive damage. Physical blocking and parrying are described under melee rules below.
@@ -713,7 +721,7 @@ estimated motion at contact, including follow-through. The estimate combines han
 translation with blade-axis rotation, capped by tracked hand rotation; twisting a
 shaft in place does not power a hit. The sweep follows the rotating blade’s arc
 between the latest poses without replaying earlier unpowered brushes when a
-stroke arms. Shield/Smite gesture thresholds remain unchanged. Swing speed
+stroke arms. Shield/Smite uses its separate hand-travel threshold below. Swing speed
 is adjustable under **VR Settings > Combat > Melee hit speed**
 (minimum 1.5 m/s, no upper cap, 0.25 steps, default 12.0). Apply saves
 `[gameplay] melee_hit_speed` and updates the detector live; changing it clears
