@@ -129,9 +129,14 @@ One stroke can hit several monsters, each further one a little weaker.
 
 ### Shield: block, parry and strain (Unleashed)
 
-- **Block:** hold the shield up in front of your chest, facing the attacker,
-  and stand still. A melee hit that reaches you is blocked by where the shield
-  is, not by your block chance. Walking or running drops the guard.
+- **Block:** raise the shield and put its broad face between you and the
+  attacker. You can look elsewhere while holding that position, including
+  while walking or running. A valid guard replaces the random block-chance
+  roll; the game's other block eligibility checks still apply. Coverage uses
+  the rendered shield's orientation and size with a small allowance around the
+  incoming attack line. Unsupported meshes use an attachment-based fallback.
+  Lowering it, holding it away from the attack line or turning it edge-on opens
+  the guard.
 - **Parry:** as a melee attack comes in, swing the shield diagonally across
   your view (lower right to upper left with a left-hand shield) within
   400 ms of the hit. The attacker staggers.
