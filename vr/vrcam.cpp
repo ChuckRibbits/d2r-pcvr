@@ -840,9 +840,9 @@ void LoadSettings() {
     // The perfect parry window is fixed at 450 ms with no lead (no longer a setting).
     melee::ConfigureParrySound((int)IniF(L"gameplay",L"parry_sound",236));
     melee::ConfigureBlockSound((int)IniF(L"gameplay",L"block_sound",398));
-    // Unleashed only, like the guard below: Classic keeps the native monster to-hit roll.
-    // On by default (2026-10-18): every enemy physical attack and projectile lands,
-    // so the shield, not the monster's to-hit roll, decides. enemies_always_hit=0 opts out.
+    // Unleashed rule (on by default): every monster attack and projectile lands, and
+    // its native to-hit chance against your Defense scales the damage instead.
+    // Classic keeps the native monster to-hit roll.
     combat::ConfigureEnemiesAlwaysHit(!classicMelee&&IniB(L"gameplay",L"enemies_always_hit",true));
     // Unleashed swing damage (applied live): attack rating and attack speed scale
     // a physical swing instead of deciding whether it lands. [gameplay] ar_damage
