@@ -373,6 +373,25 @@ Eye uiEye;
 Eye mapEye;
 bool mapSupported=false;
 constexpr uint32_t mapSide=512;
+// Desktop mirror: in stereo the game window presents alternating eye frames,
+// so the monitor flickers between both eyes (double vision). The left frame is
+// kept and copied back over each right frame after the headset has taken it,
+// so the monitor shows only the left eye.
+ComPtr<ID3D12Resource> mirrorImage;
+bool mirrorMono=false,mirrorFresh=false;
+bool EnsureMirror(ID3D12Resource* src) {
+    const auto want=src->GetDesc();
+    if(mirrorImage) {
+        const auto have=mirrorImage->GetDesc();
+        if(have.Width==want.Width&&have.Height==want.Height&&have.Format==want.Format)return true;
+        return false; // a resize rebuilds the session (Shutdown) and releases it first
+    }
+    D3D12_HEAP_PROPERTIES heap{D3D12_HEAP_TYPE_DEFAULT};
+    if(FAILED(device->CreateCommittedResource(&heap,D3D12_HEAP_FLAG_NONE,&want,D3D12_RESOURCE_STATE_COPY_SOURCE,nullptr,IID_PPV_ARGS(&mirrorImage)))) {
+        mirrorImage.Reset();return false;
+    }
+    return true;
+}
 std::atomic<bool> uiSupported{false};
 bool journalMode=false,spatialMode=false,workspacePlaced=false,opaqueMenuMode=false,upperBandMenuMode=false;
 bool npcChoicesMode=false;
@@ -2142,6 +2161,20 @@ bool Copy(ID3D12Resource* src,Eye& e,reshade::api::command_queue* rq) {
     if(gpu)e.commands->EndQuery(gpuProfile.heap.Get(),D3D12_QUERY_TYPE_TIMESTAMP,eye*5+3);
     e.commands->ResourceBarrier(2,barriers);e.commands->CopyResource(dest,src);
     for(auto& b:barriers)std::swap(b.Transition.StateBefore,b.Transition.StateAfter);
+    if(!mirrorMono)mirrorFresh=false;
+    else if(eye==0&&EnsureMirror(src)) {
+        D3D12_RESOURCE_BARRIER m{};m.Type=D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;m.Transition.Subresource=D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
+        m.Transition.pResource=mirrorImage.Get();m.Transition.StateBefore=D3D12_RESOURCE_STATE_COPY_SOURCE;m.Transition.StateAfter=D3D12_RESOURCE_STATE_COPY_DEST;
+        e.commands->ResourceBarrier(1,&m);e.commands->CopyResource(mirrorImage.Get(),src);
+        std::swap(m.Transition.StateBefore,m.Transition.StateAfter);e.commands->ResourceBarrier(1,&m);
+        mirrorFresh=true;
+    } else if(eye==1&&mirrorFresh&&mirrorImage) {
+        // The headset already has this right frame; the window gets the left one back.
+        D3D12_RESOURCE_BARRIER b=barriers[0];
+        b.Transition.StateBefore=D3D12_RESOURCE_STATE_COPY_SOURCE;b.Transition.StateAfter=D3D12_RESOURCE_STATE_COPY_DEST;
+        e.commands->ResourceBarrier(1,&b);e.commands->CopyResource(src,mirrorImage.Get());
+        barriers[0].Transition.StateBefore=D3D12_RESOURCE_STATE_COPY_DEST;
+    }
     e.commands->ResourceBarrier(2,barriers);
     if(!panelMode&&interactionInput.active&&potionModels.Ready()) {
         const auto& v=views[eye];
@@ -2253,6 +2286,7 @@ void Capture(reshade::api::command_queue* rq,reshade::api::swapchain* swap) {
     const bool stereo=afr&&afr->version==FLATVR_AFR_EYE_VERSION&&afr->enabled&&(!(wantsPanel&&wantsPanel())||SpatialMenu());
     if(!Begin()||!render||!valid) {if(!stereo)EndPair();return;}
     const uint32_t eye=stereo?((afr->eye^afr->swap)&1u):0u;
+    mirrorMono=stereo; // the desktop window shows the left eye only, never the alternating pair
     if(eye==0&&!CopyMap(rq)) {mapSupported=false;mapEye.copied=false;Say("Frame menu map: copy unavailable; optional map suspended");}
     if((eye==0&&!CopyUi(rq))||!Copy(src,eyes[eye],rq)){failed=true;EndPair();ClearInput();return;}
     if(!stereo) {
@@ -3029,6 +3063,7 @@ void Shutdown(bool preserveResolution) {
     gazeAction=XR_NULL_HANDLE;gazeReady=gazeValid=gazeExtension=gazeSupported=false;gazeStability.Reset();
     detectedControllers={};controllerLabels={};controllerProfilesDirty=true;frameControllerExtension=false;
     for(auto& e:eyes){if(e.chain&&pDestroySwapchain)pDestroySwapchain(e.chain);e={};}
+    mirrorImage.Reset();mirrorFresh=mirrorMono=false;
     for(auto& s:handSpaces){if(s&&pDestroySpace)pDestroySpace(s);s=XR_NULL_HANDLE;}
     if(headSpace&&pDestroySpace)pDestroySpace(headSpace);if(space&&pDestroySpace)pDestroySpace(space);
     if(session&&pDestroySession)pDestroySession(session);if(actionSet&&pDestroyActionSet)pDestroyActionSet(actionSet);
