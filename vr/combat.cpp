@@ -295,7 +295,8 @@ bool GridPosition(uintptr_t unit,float& x,float& z) {
 }
 // A monster (or its missile's owner) whose native to-hit roll already passed
 // against the local player. Native = keep the stat block roll.
-Guard Incoming(uintptr_t attacker,uintptr_t defender,uint32_t& monster,bool& inReach) {
+Guard Incoming(uintptr_t attacker,uintptr_t defender,uint32_t& monster,bool& inReach,uint64_t& parryAt) {
+    parryAt=0;
     if(!guardChecked||!guardEnabled.load(std::memory_order_relaxed)||!enabled.load(std::memory_order_relaxed)||!ready.load(std::memory_order_relaxed))return Guard::Native;
     uint32_t id=0,a[3]{},d[3]{};
     if(!LocalPlayerId(id)||!Read(attacker,a)||!Read(defender,d)||!IncomingContact(id,a[0],d[0],d[2]))return Guard::Native;
@@ -317,7 +318,7 @@ Guard Incoming(uintptr_t attacker,uintptr_t defender,uint32_t& monster,bool& inR
     uint32_t playerMode=UINT32_MAX;
     Read(defender+0xc,playerMode);
     inReach=std::hypot(to.x,to.z)<=GuardTuning().parryRange;   // melee range (for the late-swing diagnostic)
-    if(v==Verdict::Parry){std::lock_guard lock(guardMutex);framevr::guard::SpendParry(guard.state,g.state.snapAt);}
+    if(v==Verdict::Parry)parryAt=g.state.snapAt;
     if(guardTrace.load(std::memory_order_relaxed)) {
         const float d=std::hypot(to.x,to.z);const auto& s=g.state;
         float cover=0;framevr::guard::Coverage(s.surface,to,GuardTuning(),&cover);
@@ -335,22 +336,27 @@ Guard Incoming(uintptr_t attacker,uintptr_t defender,uint32_t& monster,bool& inR
 }
 // Native still runs in full (avoid/dodge, block animation, FBR, sounds); only
 // its block roll is replaced by the physical verdict.
-int GuardedBlock(uintptr_t game,uintptr_t attacker,uintptr_t defender,int avoid,int block,Guard g,uint32_t monster,bool inReach) {
+int GuardedBlock(uintptr_t game,uintptr_t attacker,uintptr_t defender,int avoid,int block,Guard g,uint32_t monster,bool inReach,uint64_t parryAt,uintptr_t caller) {
     const int32_t durability=gamestate::LeftDurability();   // before this block wears the shield
     const auto savedForced=forced;const bool savedServed=forcedServed;
     forced=g==Guard::Open?Forced::Open:Forced::Block;forcedServed=false;
     const int result=originalBlock(game,attacker,defender,avoid,block);
     const bool served=forcedServed;forced=savedForced;forcedServed=savedServed;
     if(guardTrace.load(std::memory_order_relaxed)) {
-        char line[256];snprintf(line,sizeof line,
-            "Frame guard native: monster=%u verdict=%s block_flag=%d avoid_flag=%d result=%d roll_served=%d durability=%d",
-            monster,g==Guard::Parry?"PARRY":g==Guard::Block?"BLOCK":"OPEN",block,avoid,result,int(served),durability);
+        const auto base=d2rsig::Addr(0);
+        const auto rva=caller>=base&&caller-base<0x4000000?caller-base:0;
+        char line[280];snprintf(line,sizeof line,
+            "Frame guard native: monster=%u verdict=%s block_flag=%d avoid_flag=%d result=%d roll_served=%d durability=%d caller=0x%llx",
+            monster,g==Guard::Parry?"PARRY":g==Guard::Block?"BLOCK":"OPEN",block,avoid,result,int(served),durability,(unsigned long long)rva);
         framevr::logging::Write(line);
     }
     if(!served)++guardUnserved; // native never reached its block roll (dodged/avoided first, or cannot block)
     else if(g==Guard::Open)++guardOpen;
     else {
         ++guardBlocks;
+        // Unblockable damage can visit this adapter too. Do not consume the
+        // pending parry unless the native shield roll actually took place.
+        if(g==Guard::Parry){std::lock_guard lock(guardMutex);framevr::guard::SpendParry(guard.state,parryAt);}
         const bool parried=g==Guard::Parry&&melee::QueueParry(monster,durability);
         framevr::ShieldGuardImpact(parried);   // a block strains the guard; a parry does not
         if(parried)++guardParries;
@@ -369,9 +375,9 @@ int Block(uintptr_t game,uintptr_t attacker,uintptr_t defender,int avoid,int blo
     if(meleeHit)++nativeGuards;
     else if(Qualifies(attacker,defender)) {++blocks;return 0;}
     else {
-        uint32_t monster=0;bool inReach=false;
-        if(const auto g=Incoming(attacker,defender,monster,inReach);g!=Guard::Native)
-            return GuardedBlock(game,attacker,defender,avoid,block,g,monster,inReach);
+        uint32_t monster=0;bool inReach=false;uint64_t parryAt=0;
+        if(const auto g=Incoming(attacker,defender,monster,inReach,parryAt);g!=Guard::Native)
+            return GuardedBlock(game,attacker,defender,avoid,block,g,monster,inReach,parryAt,reinterpret_cast<uintptr_t>(_ReturnAddress()));
     }
     return originalBlock(game,attacker,defender,avoid,block);
 }

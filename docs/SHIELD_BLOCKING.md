@@ -45,9 +45,21 @@ shields, but more apparent misses with the large shield. All 22 rejected guard
 decisions were outside the old headset-facing cone, with the hand raised and a
 current pose. The large-shield section also had nine native checks which never
 reached the block roll. These are not proven landed hits: native flags, block
-eligibility or other handling can skip that roll. The new surface coverage has
-not yet been verified in a headset. Calibration was not demonstrated to cause
-the remaining failures in either captured session.
+eligibility or other handling can skip that roll. The owner subsequently tested surface coverage and still reported many misses.
+In that run, 44 decisions contained 22 covered guards, 16 surface-angle
+rejections, three hand-height rejections and three placement rejections. Of the
+22 covered guards, 17 reached the native roll and blocked. The other five, plus
+six open guards, had native `block=0`; all eleven came from scarab class 91.
+The audited missile caller only enables shielding for nonzero physical damage,
+so scarab lightning is a strong lead, not a confirmed per-hit classification.
+The trace now records the caller RVA to distinguish this path. Do not bypass
+native unblockable flags or interpret every OPEN verdict as a landed hit.
+
+A separate confirmed adapter bug spent pending parries even when native handling
+skipped the block roll. Consumption now waits for the native roll. This does
+not change which damage types can be blocked. Remaining visual angle/placement
+disagreements and shield-size differences still need headset investigation;
+calibration has not been demonstrated to cause the failures.
 
 ## Diagnostics and test route
 
@@ -60,7 +72,7 @@ the remaining failures in either captured session.
 - Traces include surface center/normal, eye and attacker positions relative to
   the player, calibrated units per metre, movement mode and source-pose age.
 - Native traces include block/avoid arguments, return value, roll-served status
-  and shield durability. A pre-call BLOCK verdict is not a confirmed native
+  shield durability and native caller RVA. A pre-call BLOCK verdict is not a confirmed native
   block when the native function skips its roll.
 
 Use an offline Paladin with each shield. Hold it toward one attacker while

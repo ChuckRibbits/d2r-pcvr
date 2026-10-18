@@ -79,6 +79,13 @@ int main() {
     prime();fixture::serve=true;
     assert(Block(123,monster.Address(),player.Address(),7,0)==9&&fixture::impacts==impacts&&guardUnserved==2);
     assert(fixture::log.find("block_flag=0 avoid_flag=7 result=9 roll_served=0")!=std::string::npos);
+    // Elemental/otherwise unblockable damage must not steal a timed parry
+    // from the next blockable hit. An actual shield roll consumes it once.
+    ConfigureGuard(true,400,true);prime();
+    guard.state.snapAt=guard.at;guard.state.snapUsed=false;
+    assert(Block(123,monster.Address(),player.Address(),7,0)==9&&!guard.state.snapUsed);
+    fixture::serve=false;assert(block()==9&&!guard.state.snapUsed);
+    fixture::serve=true;assert(block()==1&&guard.state.snapUsed);
     // A snap turn invalidates the previous world frame until a new pose lands.
     prime();auto changed=guard.state.surface;changed.epoch++;
     PublishGuard(fixture::session,true,false,changed,true,true);assert(block()==0);
