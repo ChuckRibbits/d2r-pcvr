@@ -27,6 +27,17 @@ int main(){
         Check(saved.values[LootLabelSize]==70&&Int(path,L"hud",L"labels_size")==70,"loot size survives INI reload");
         Check(Changed(saved.values,current.values)==(ChangeMask{1}<<LootLabelSize)&&Int(path,L"custom",L"keep")==12345,"loot change preserves all other settings");
     }
+    Check(before.values[OfflinePlayers]==0,"missing difficulty preserves game default");
+    for(int choice:{1,8,3,0}){
+        const auto current=vrsettings::Read();auto values=current.values;values[OfflinePlayers]=float(choice);
+        const Request request{current.values,values,Changed(current.values,values),current.sequence+1};
+        Check(vrsettings::Submit(request)&&vrsettings::Poll(name),"save native difficulty preference");
+        const auto saved=vrsettings::Read();
+        Check(saved.values[OfflinePlayers]==choice&&Int(path,L"gameplay",L"offline_players")==choice,"difficulty survives reload");
+        Check(Changed(saved.values,current.values)==request.changed&&Int(path,L"custom",L"keep")==12345,"difficulty preserves other settings");
+    }
+    {const auto current=vrsettings::Read();vrsettings::SetOfflineDifficultyAvailable(true);const auto live=vrsettings::Read();
+        Check(live.offlineDifficultyAvailable&&live.revision>current.revision&&live.values==current.values,"runtime capability is separate from saved preferences");}
     Check(before.values[HapticShortMelee]==0,"missing short-melee preference selects the compatible longer pulse");
     for(int choice:{1,0}){
         const auto current=vrsettings::Read();Model h;h.Open(current);h.Click({Kind::Change,HapticShortMelee,1});

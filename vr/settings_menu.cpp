@@ -78,6 +78,10 @@ Result Save(const wchar_t* path,const Request& r){
 }
 }
 framevr::settings::Snapshot Read(){std::lock_guard lock(mutex);return published;}
+void SetOfflineDifficultyAvailable(bool available){
+    std::lock_guard lock(mutex);
+    if(published.offlineDifficultyAvailable!=available){published.offlineDifficultyAvailable=available;++published.revision;}
+}
 bool Submit(const framevr::settings::Request& r){
     using namespace framevr::settings;
     if(!r.sequence||!r.changed||(r.changed&~SupportedChanges)||r.changed!=Changed(r.base,r.values))return false;

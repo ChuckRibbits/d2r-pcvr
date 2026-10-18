@@ -123,7 +123,7 @@ int main(){
         thrust.Click(hit);Check(thrust.Get()[MeleeThrustSpeed]==2.25f,"thrust speed adjusts in quarter steps");
         const auto request=thrust.Click({Kind::Apply});
         Check(request.changed==(ChangeMask{1}<<MeleeThrustSpeed),"thrust edit does not change swing speed or combat rules");
-        Check(RowCount(Page::Combat)==5&&RowKey(Page::Combat,3)==ParryWindow&&s.values[ParryWindow]==400,"parry window is the fourth Combat row, 400 ms by default");
+        Check(RowCount(Page::Combat)==6&&RowKey(Page::Combat,3)==ParryWindow&&s.values[ParryWindow]==400,"parry window is the fourth Combat row, 400 ms by default");
         Check(Normalize(ParryWindow,-5)==0&&Normalize(ParryWindow,999)==400&&Normalize(ParryWindow,NAN)==400,"parry window: 0 is Off, bounded, invalid restores default");
         Check(Normalize(MeleeThrustSpeed,NAN)==2&&Normalize(MeleeThrustSpeed,0)==.75f&&Normalize(MeleeThrustSpeed,99)==10,"thrust speed has finite usable bounds");
     }
@@ -134,6 +134,21 @@ int main(){
         Check(strain.Get()[StrainDark]==1,"clicking the value switches the strain to Black");
         const auto request=strain.Click({Kind::Apply});
         Check(request.changed==(ChangeMask{1}<<StrainDark),"strain colour saves only its own setting");
+    }
+    {Model difficulty;difficulty.Open(s);difficulty.Click({Kind::Tab,int(Page::Combat)});
+        Check(s.values[OfflinePlayers]==0&&RowKey(Page::Combat,5)==OfflinePlayers,"difficulty preserves native settings by default");
+        Check(ValueBox(5).y+ValueBox(5).h<626,"difficulty avoids Combat notes");
+        Check(Normalize(OfflinePlayers,NAN)==0&&Normalize(OfflinePlayers,9)==0&&Normalize(OfflinePlayers,2.5f)==0,"invalid offline counts fail back to native");
+        for(int i=1;i<=8;++i){difficulty.Click(At(Page::Combat,Increase(5)));Check(difficulty.Get()[OfflinePlayers]==i,"increase difficulty through every native count");}
+        difficulty.Click(At(Page::Combat,Increase(5)));Check(difficulty.Get()[OfflinePlayers]==8,"upper bound does not wrap");
+        const auto request=difficulty.Click({Kind::Apply});
+        Check(request.changed==(ChangeMask{1}<<OfflinePlayers),"difficulty does not alter melee rules or speeds");
+        auto saved=s;saved.sequence=request.sequence;saved.result=Result::Saved;saved.values=request.values;
+        difficulty.Observe(saved);
+        for(int i=7;i>=0;--i){difficulty.Click(At(Page::Combat,Decrease(5)));Check(difficulty.Get()[OfflinePlayers]==i,"decrease through native default");}
+        difficulty.Click(At(Page::Combat,Decrease(5)));Check(difficulty.Get()[OfflinePlayers]==0,"native default is lower bound");
+        const auto draft=difficulty.Get();saved.offlineDifficultyAvailable=true;difficulty.Observe(saved);
+        Check(difficulty.offlineDifficultyAvailable&&difficulty.Get()==draft,"capability updates preserve unsaved edits");
     }
     Check(s.values[MenuDistance]==1&&s.values[TooltipTiming]==0,"comfortable Medium distance and Instant hover defaults");
     for(auto key:{MenuDistance,TooltipTiming}) {

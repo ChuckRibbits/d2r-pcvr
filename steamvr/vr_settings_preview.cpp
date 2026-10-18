@@ -7,7 +7,7 @@
 #include <cstring>
 int main(int argc,char** argv){
     using namespace framevr::settings;
-    Snapshot s;s.ready=true;s.values[Motion]=1;s.values[Snap]=30;s.values[Foveation]=2;
+    Snapshot s;s.ready=true;s.offlineDifficultyAvailable=true;s.values[Motion]=1;s.values[Snap]=30;s.values[Foveation]=2;
     Model m;m.Open(s);const int page=argc>2?std::atoi(argv[2]):0;
     m.SetDeveloper(argc>3&&std::strcmp(argv[3],"--developer-check")==0);
     m.Click({Kind::Tab,page});
