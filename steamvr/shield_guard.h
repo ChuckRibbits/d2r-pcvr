@@ -197,9 +197,10 @@ inline Rejection Coverage(const Pose& p,Vec toAttacker,const Tuning& t,float* al
         const float width=measured?std::fabs(math::Dot(p.halfRight,across))+std::fabs(math::Dot(p.halfUp,across))+.12f:t.lateral;
         if(along < -t.behind||along>distance+t.behind||side>width)return Rejection::OutsidePlacement;
     } else if(std::hypot(offset.x,offset.z)>t.lateral)return Rejection::OutsidePlacement;
-    // The attack travels toward the body, not toward the offset shield grip.
-    Vec incoming=measured?fromBody:Vec{toAttacker.x-p.center.x,0,toAttacker.z-p.center.z};
-    if(math::Dot(incoming,incoming)<.0025f)incoming=fromBody;
+    // Native damage targets the body, not the offset shield grip. Use the same
+    // corridor for both measured and fallback poses: moving a shield within
+    // that corridor must not rotate the incoming direction or its facing test.
+    const Vec incoming=fromBody;
     if(math::Dot(incoming,incoming)<.0025f)return Rejection::OutsideCoverage;
     const float facing=std::fabs(math::Dot(p.normal,math::Normalized(incoming)));
     if(alignment)*alignment=facing;

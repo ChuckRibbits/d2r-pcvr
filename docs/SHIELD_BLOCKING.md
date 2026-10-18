@@ -25,6 +25,11 @@ held against the chest. These are rectangular bounds, not per-triangle collision
 or the exact flight/height of an incoming projectile. For meshes with several
 bindings, the largest valid visible face is used. Unsupported meshes retain the
 attachment approximation (60 degrees, 45 cm lateral allowance).
+Both paths evaluate facing against the enemy-to-body direction. The fallback
+previously aimed that direction at the shield grip instead, so moving the grip
+could change the angle verdict without rotating the shield. Inward/outward
+movement still must pass the same placement and height limits; there is no
+minimum arm-extension requirement.
 
 Height uses the visible surface overlapping the torso band relative to the
 same-pose eyes, allowing a lower grip on a tall shield. Horizontal hand reach
@@ -71,6 +76,23 @@ not change which damage types can be blocked. Remaining visual angle/placement
 disagreements led to the rendered-bounds correction described above. It passes
 synthetic tests but still needs owner headset verification; calibration has not
 been demonstrated to cause the failures.
+
+The owner subsequently verified the debug overlay and reported that apparent
+misses during Act II testing were likely enemy hit-roll misses against the
+level-90 developer preset. The native adapter runs after the enemy hit check;
+absence of block feedback alone does not demonstrate a guard failure. That
+21:17–21:24 session contained 55 block checks: all 29 covered guards blocked,
+while 25 failed the fallback angle and one failed hand height. None failed
+placement. The owner also reported a close-body guard facing the enemy in the
+overlay. A reproduced fallback direction mismatch is corrected above; that
+follow-up still requires headset testing. These logs cannot count attacks that
+missed before the block function, so they do not prove the preset was the sole
+cause of the earlier reports.
+
+All 55 checks still used `mesh=0`. Developer discovery stages stopped at `0x1F`
+(skeleton read, before mesh metadata). Visual verification of the overlay is
+not verification of runtime mesh-size capture. Keep the measured capture issue
+open separately; the fallback correction does not repair that discovery path.
 
 ## Diagnostics and test route
 

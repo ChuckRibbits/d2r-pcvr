@@ -73,6 +73,36 @@ int main() {
      assert(Judge(g,{1.5f,0,0},n,t)==Verdict::Block&&Judge(g,ahead,n,t)==Verdict::Open);}
     assert(std::fabs(s.forward-.25f)<1e-4f&&std::fabs(s.up+.35f)<1e-4f&&std::fabs(s.side-.12f)<1e-4f); // trace inputs
 
+    // Facing describes the incoming attack corridor, not a ray redirected
+    // toward an offset shield grip. Pulling a tilted guard against the torso
+    // must not change its angle; translation still has placement limits.
+    for(float yaw:{0.f,1.5707963f,3.1415926f})for(float face:{-1.f,1.f})for(float depth:{-.4f,-.14f,0.f,.14f}) {
+        const auto q=framevr::math::Yaw(yaw);
+        Pose p=Surface(chest,view,6000);p.eye=framevr::math::Rotate(q,{.2f,1.63f,-.09f});
+        p.center=p.eye+framevr::math::Rotate(q,{-.2f,-.45f,depth});
+        p.hand={-.2f,-.45f,depth};p.normal=framevr::math::Rotate(q,Vec{-.8f,0,-.6f}*face);
+        const Vec attack=Vec{p.eye.x,0,p.eye.z}+framevr::math::Rotate(q,{0,0,-1.2f});
+        State g;Update(g,p,true,true,p.at,true,t);Rejection why;
+        assert(Judge(g,attack,p.at,t,0,&why)==Verdict::Block&&why==Rejection::None);
+        p.center=p.eye+framevr::math::Rotate(q,{-.6f,-.45f,depth});
+        Update(g,p,true,true,p.at,true,t);
+        assert(Judge(g,attack,p.at,t,0,&why)==Verdict::Open&&why==Rejection::OutsidePlacement);
+    }
+    {
+        // Rounded pose from the owner's 21:21:53.403 trace. It passed placement
+        // but the grip-directed ray rejected an otherwise valid facing angle.
+        Pose p=Surface(chest,view,6100);
+        p.normal=framevr::math::Normalized(Vec{-.67f,-.20f,-.72f});
+        p.eye={-.11f,1.57f,-.02f};p.center={-.26f,1.1f,-.13f};p.hand={-.15f,-.54f,-.18f};
+        const Vec attack{.17f,0,-1.12f};State g;Update(g,p,true,true,p.at,true,t);
+        assert(Judge(g,attack,p.at,t)==Verdict::Block);
+        // Conversely, pointing at the grip cannot rescue a face edge-on to the
+        // actual incoming corridor, even with a nearby enemy.
+        p.normal=framevr::math::Normalized(Vec{.98f,0,-.2f});
+        p.eye={0,1.7f,0};p.center={-.3f,1.25f,-.1f};Update(g,p,true,true,p.at,true,t);
+        Rejection why;assert(Judge(g,{0,0,-.5f},p.at,t,0,&why)==Verdict::Open&&why==Rejection::OutsideCoverage);
+    }
+
     // The diagonal: lower right to upper left in 90 ms parries...
     Hold(s,swingFrom,true,now,200,t);
     Move(s,swingFrom,swingTo,true,now,90,t);
