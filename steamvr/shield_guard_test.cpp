@@ -1,5 +1,6 @@
 #include "shield_guard.h"
 #include "shield_surface.h"
+#include "shield_debug.h"
 #undef NDEBUG
 #include <cassert>
 #include <cmath>
@@ -249,5 +250,29 @@ int main() {
         world[0]=world[5]=world[10]=4;world[12]=300;
         assert(!FromBounds(world,{-.2f,-.4f,-.03f},{.2f,.4f,.03f},{},context,out)); // another item/location
     }
-    std::puts("Shield guard: rendered bounds, wrist/item disagreement, size-aware coverage, calibration, gaze independence, movement, parries and expiry passed");
+    {
+        Debug d;d.pose=Surface(chest,view,100000);d.raised=true;
+        d.pose.player={10000,20,-20000};d.pose.halfRight={.3f,0,0};d.pose.halfUp={0,.6f,0};
+        const Vec camera=d.pose.player+d.pose.eye*d.pose.unitsPerMetre;
+        DebugDraw a,b;assert(DrawDebug(d,camera,100001,a));
+        assert(std::abs(a.center.y-(d.pose.center.y-d.pose.eye.y)*4)<.001f&&std::abs(a.right.x-1.2f)<.001f);
+        assert(a.color.y==1&&a.color.z==1&&!a.hit);
+        // Translation of both player and camera cannot make the wireframe drift.
+        d.pose.player=d.pose.player+Vec{3000,100,-2000};
+        assert(DrawDebug(d,camera+Vec{3000,100,-2000},100001,b));
+        assert(std::sqrt(framevr::math::Dot(a.center-b.center,a.center-b.center))<.003f);
+        d.pose.halfRight=d.pose.halfUp={};assert(DrawDebug(d,camera,100001,b));
+        assert(b.color.x==1&&b.color.y<1&&std::abs(framevr::math::Dot(b.right,d.pose.normal))<.001f);
+        d.raised=false;assert(DrawDebug(d,camera,100001,b)&&b.color.x==.5f&&b.color.y==.5f);
+        d.hitAt=100000;d.hitFrom=camera+Vec{0,0,-2};d.hitTo=camera;
+        for(int hit:{1,2,3}) {
+            d.hit=hit;assert(DrawDebug(d,camera,100100,b)&&b.hit&&b.hitFrom.z==-2);
+            assert(hit==1?b.color.y==1:hit==2?b.color.x==1&&b.color.z==.1f:b.color.z==1);
+        }
+        d.pose.at=100700;assert(DrawDebug(d,camera,100700,b)&&!b.hit);
+        assert(!DrawDebug(d,camera,100699,b)&&!DrawDebug(d,camera,100851,b));
+        assert(!DrawDebug(d,{NAN,0,0},100700,b));
+        d.pose.player.x=NAN;assert(!DrawDebug(d,camera,100700,b));
+    }
+    std::puts("Shield guard: rendered bounds, coverage, calibration, movement, parries, debug placement and expiry passed");
 }
