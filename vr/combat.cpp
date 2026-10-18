@@ -69,7 +69,8 @@ enum class Forced:uint8_t {None,Block,Open};
 enum class Guard:uint8_t {Native,Open,Block,Parry};
 thread_local Forced forced=Forced::None;thread_local bool forcedServed=false;thread_local Seed forcedRoll;
 std::atomic<unsigned> guardBlocks{0},guardOpen{0},guardParries{0},guardUnserved{0},guardFallback{0},guardLate{0};
-std::atomic<unsigned> guardAttackKnown{0},guardMoving{0};
+std::atomic<unsigned> guardAttackKnown{0};
+std::array<std::atomic<unsigned>,size_t(framevr::guard::Rejection::Count)> guardRejections{};
 // Unit stats Get/Set (D2Common GetUnitStat / SetUnitStat) are jump stubs
 // through the game's own table; Set is a set, not an add (native fills life
 // with Set(u,6,Get(u,7))).
@@ -308,12 +309,13 @@ Guard Incoming(uintptr_t attacker,uintptr_t defender,uint32_t& monster,bool& inR
     const framevr::math::Vec to{(ax-px)/g.upm,0,(az-pz)/g.upm};
     // when this attacker's attack began (melee.cpp's mode hook; 0 = not seen)
     const uint64_t attackAt=melee::AttackStart(monster);if(attackAt)++guardAttackKnown;
-    auto v=framevr::guard::Judge(g.state,to,now,GuardTuning(),attackAt);
-    // A shield only guards a player standing still: walking or running (PlrMode
-    // WL 2, RN 3, TW 6 - the unit's mode at +0xC, as for monsters) it does not.
+    framevr::guard::Rejection reason;
+    const auto v=framevr::guard::Judge(g.state,to,now,GuardTuning(),attackAt,&reason);
+    if(v==Verdict::Open)++guardRejections[size_t(reason)];
+    // Walking/running does not invalidate a raised physical guard. Native
+    // block/dodge handling still runs below; keep the mode for diagnostics.
     uint32_t playerMode=UINT32_MAX;
-    const bool moving=Read(defender+0xc,playerMode)&&(playerMode==2||playerMode==3||playerMode==6);
-    if(moving&&v!=Verdict::Open){v=Verdict::Open;++guardMoving;}
+    Read(defender+0xc,playerMode);
     inReach=std::hypot(to.x,to.z)<=GuardTuning().parryRange;   // melee range (for the late-swing diagnostic)
     if(v==Verdict::Parry){std::lock_guard lock(guardMutex);framevr::guard::SpendParry(guard.state,g.state.snapAt);}
     if(guardTrace.load(std::memory_order_relaxed)) {
@@ -321,9 +323,9 @@ Guard Incoming(uintptr_t attacker,uintptr_t defender,uint32_t& monster,bool& inR
         // Tuning): forward -.20-.85 m, up -.62-.30 m, side -.50-.65 m (+5 cm held), cover cos>=.50 about the view.
         const float d=std::hypot(to.x,to.z);const auto& s=g.state;
         const float cover=d>.05f?(s.facing.x*to.x+s.facing.z*to.z)/d:1.f;
-        char line[360];snprintf(line,sizeof line,
-            "Frame guard trace: monster=%u class=%u verdict=%s%s player_mode=%u raised=%d forward=%.2f up=%.2f side=%.2f m cover_cos=%.2f attacker=%.2f m swing=%.2f m swing_cos=%.2f snap_age=%lld ms snap_spent=%d attack_age=%lld ms pose_age=%llu ms",
-            a[2],a[1],v==Verdict::Parry?"PARRY":v==Verdict::Block?"BLOCK":"OPEN",moving?" (moving)":"",playerMode,int(s.raised),s.forward,s.up,s.side,cover,d,s.swing,s.swingCos,
+        char line[512];snprintf(line,sizeof line,
+            "Frame guard trace: monster=%u class=%u verdict=%s reason=%s player_mode=%u raised=%d forward=%.2f up=%.2f side=%.2f m cover_cos=%.2f attacker=%.2f m swing=%.2f m swing_cos=%.2f snap_age=%lld ms snap_spent=%d attack_age=%lld ms pose_age=%llu ms",
+            a[2],a[1],v==Verdict::Parry?"PARRY":v==Verdict::Block?"BLOCK":"OPEN",framevr::guard::ReasonName(reason),playerMode,int(s.raised),s.forward,s.up,s.side,cover,d,s.swing,s.swingCos,
             s.snapAt&&now>=s.snapAt?(long long)(now-s.snapAt):-1LL,int(s.snapUsed),
             attackAt&&now>=attackAt?(long long)(now-attackAt):-1LL,
             (unsigned long long)(s.seenAt&&now>=s.seenAt?now-s.seenAt:0));
@@ -468,8 +470,8 @@ void PublishGuard(uint64_t session,bool eligible,bool posed,const float view[3],
     static uint64_t traceAt=0;
     if(guardTrace.load(std::memory_order_relaxed)&&now>=traceAt) {
         traceAt=now+2000;const auto& s=guard.state;
-        char line[260];snprintf(line,sizeof line,"Frame guard pose: eligible=%d posed=%d hand=%d raised=%d forward=%.2f up=%.2f side=%.2f m swing=%.2f m swing_cos=%.2f",
-            int(eligible),int(posed),int(handOk),int(s.raised),s.forward,s.up,s.side,s.swing,s.swingCos);
+        char line[300];snprintf(line,sizeof line,"Frame guard pose: eligible=%d posed=%d hand=%d raised=%d reason=%s forward=%.2f up=%.2f side=%.2f m swing=%.2f m swing_cos=%.2f",
+            int(eligible),int(posed),int(handOk),int(s.raised),framevr::guard::ReasonName(s.rejection),s.forward,s.up,s.side,s.swing,s.swingCos);
         framevr::logging::Write(line);
     }
     }
@@ -515,7 +517,13 @@ void Install() {
 }
 void Report() {
     const auto gb=guardBlocks.exchange(0),go=guardOpen.exchange(0),gp=guardParries.exchange(0),gu=guardUnserved.exchange(0),gf=guardFallback.exchange(0),gl=guardLate.exchange(0);
-    const auto ga=guardAttackKnown.exchange(0),gm=guardMoving.exchange(0);
+    const auto ga=guardAttackKnown.exchange(0);
+    std::string rejected;
+    for(size_t i=1;i<guardRejections.size();++i)if(const auto n=guardRejections[i].exchange(0)) {
+        if(rejected.empty())rejected="Frame guard rejected:";
+        rejected+=" ";rejected+=framevr::guard::ReasonName(framevr::guard::Rejection(i));rejected+="=";rejected+=std::to_string(n);
+    }
+    if(!rejected.empty())framevr::logging::Write(rejected.c_str());
     const auto fh=forcedHits.exchange(0);
     if(uint32_t m=riposteMonster.load(),seen=m;m!=NoSwing&&GetTickCount64()>riposteUntil.load()&&riposteMonster.compare_exchange_strong(m,NoSwing)) {
         char line[120];snprintf(line,sizeof line,"Frame riposte: window expired unused (monster=%u)",seen);framevr::logging::Write(line);
@@ -529,8 +537,8 @@ void Report() {
         char line[160];snprintf(line,sizeof line,"Frame riposte: landed=%u",rl);
         framevr::logging::Write(line);
     }
-    if(gb||go||gp||gu||gf||fh||gl||gm) {
-        char guardLine[260];snprintf(guardLine,sizeof guardLine,"Frame guard: blocked=%u open=%u (moving=%u) parries=%u swings_too_late=%u attack_start_known=%u no_block_roll=%u position_fallback=%u enemy_forced_hits=%u",gb,go,gm,gp,gl,ga,gu,gf,fh);
+    if(gb||go||gp||gu||gf||fh||gl) {
+        char guardLine[260];snprintf(guardLine,sizeof guardLine,"Frame guard: blocked=%u open=%u parries=%u swings_too_late=%u attack_start_known=%u no_block_roll=%u position_fallback=%u enemy_forced_hits=%u",gb,go,gp,gl,ga,gu,gf,fh);
         framevr::logging::Write(guardLine);
     }
     const auto m=meleeChecks.exchange(0),p=missileChecks.exchange(0),r=rolls.exchange(0),b=blocks.exchange(0),d=dodges.exchange(0),f=failed.exchange(0);

@@ -28,8 +28,26 @@ struct Tuning {
     float parryRange=3.f;                  // metres; ranged attackers are blocked, not parried
     uint32_t staleMs=150;                  // pose older than this cannot block
 };
+enum class Rejection { None, Untracked, InvalidHand, TooLow, TooHigh, TooClose, TooFar, TooWide, AcrossBody, StalePose, OutsideCoverage, Count };
+inline const char* ReasonName(Rejection reason) {
+    switch(reason) {
+        case Rejection::None:return "covered";
+        case Rejection::Untracked:return "untracked";
+        case Rejection::InvalidHand:return "invalid_hand";
+        case Rejection::TooLow:return "hand_low";
+        case Rejection::TooHigh:return "hand_high";
+        case Rejection::TooClose:return "hand_behind";
+        case Rejection::TooFar:return "hand_far";
+        case Rejection::TooWide:return "hand_wide";
+        case Rejection::AcrossBody:return "hand_across";
+        case Rejection::StalePose:return "stale_pose";
+        case Rejection::OutsideCoverage:return "view_direction";
+        default:return "unknown";
+    }
+}
 struct State {
     bool raised=false,snapUsed=true;
+    Rejection rejection=Rejection::Untracked;
     uint64_t raisedAt=0,loweredAt=0,seenAt=0;
     // Parry: the last diagonal swing that ended in guard; one parry per swing.
     uint64_t snapAt=0,swingSeen=0;
@@ -50,12 +68,19 @@ enum class Verdict { Open, Block, Parry };
 inline void Axes(Vec hand,bool leftShield,float& forward,float& up,float& side) {
     forward=-hand.z;up=hand.y;side=leftShield?-hand.x:hand.x;
 }
-inline bool InGuard(Vec hand,bool leftShield,bool raised,const Tuning& t) {
+inline Rejection PositionRejection(Vec hand,bool leftShield,bool raised,const Tuning& t) {
     float f,u,s;Axes(hand,leftShield,f,u,s);
     const float m=raised?t.hold:0;
-    return std::isfinite(f+u+s)&&f>=t.minForward-m&&f<=t.maxForward+m&&u>=t.minUp-m&&u<=t.maxUp+m&&
-           s<=t.outward+m&&s>=-(t.across+m);
+    if(!std::isfinite(f+u+s))return Rejection::InvalidHand;
+    if(u<t.minUp-m)return Rejection::TooLow;
+    if(u>t.maxUp+m)return Rejection::TooHigh;
+    if(f<t.minForward-m)return Rejection::TooClose;
+    if(f>t.maxForward+m)return Rejection::TooFar;
+    if(s>t.outward+m)return Rejection::TooWide;
+    if(s<-(t.across+m))return Rejection::AcrossBody;
+    return Rejection::None;
 }
+inline bool InGuard(Vec hand,bool leftShield,bool raised,const Tuning& t) {return PositionRejection(hand,leftShield,raised,t)==Rejection::None;}
 
 // hand: the shield hand from the head (view frame, metres); handOk false while
 // it is not tracked. view: where the headset looks, on the ground, render X/Z
@@ -64,7 +89,8 @@ inline bool InGuard(Vec hand,bool leftShield,bool raised,const Tuning& t) {
 // hero's feet to the shield was noise for a guard held close: 2026-10-16.)
 inline void Update(State& s,Vec hand,bool handOk,bool leftShield,Vec view,uint64_t now,bool posed,const Tuning& t) {
     if(!posed)return; // keep the last guard; Judge() expires it after staleMs
-    const bool up=handOk&&InGuard(hand,leftShield,s.raised,t);
+    s.rejection=handOk?PositionRejection(hand,leftShield,s.raised,t):Rejection::Untracked;
+    const bool up=s.rejection==Rejection::None;
     if(handOk){s.hand=hand;Axes(hand,leftShield,s.forward,s.up,s.side);}
     if(up&&!s.raised)s.raisedAt=now;
     if(handOk&&std::isfinite(hand.x+hand.y+hand.z)) {
@@ -103,12 +129,15 @@ inline void Update(State& s,Vec hand,bool handOk,bool leftShield,Vec view,uint64
 // toAttacker: grid-plane vector, player -> attacker, in metres. attackAt: when
 // this attacker's attack began (0 = unknown). A parry is a swing while the
 // attack is incoming: after it began, and at most parryMs before the hit.
-inline Verdict Judge(const State& s,Vec toAttacker,uint64_t now,const Tuning& t,uint64_t attackAt=0) {
-    if(!s.raised||!s.seenAt||now<s.seenAt||now-s.seenAt>t.staleMs)return Verdict::Open;
+inline Verdict Judge(const State& s,Vec toAttacker,uint64_t now,const Tuning& t,uint64_t attackAt=0,Rejection* reason=nullptr) {
+    const auto reject=[&](Rejection why){if(reason)*reason=why;return Verdict::Open;};
+    if(reason)*reason=Rejection::None;
+    if(!s.raised)return reject(s.rejection);
+    if(!s.seenAt||now<s.seenAt||now-s.seenAt>t.staleMs)return reject(Rejection::StalePose);
     const Vec flat{toAttacker.x,0,toAttacker.z};
     const float distance=std::hypot(flat.x,flat.z);
     // Standing on the attacker: any raised guard covers.
-    if(distance>.05f&&math::Dot(s.facing,flat*(1/distance))<t.coverCos)return Verdict::Open;
+    if(distance>.05f&&math::Dot(s.facing,flat*(1/distance))<t.coverCos)return reject(Rejection::OutsideCoverage);
     if(t.parryMs&&!s.snapUsed&&s.snapAt&&now>=s.snapAt&&now-s.snapAt<=t.parryMs&&distance<=t.parryRange&&
        (!attackAt||s.snapAt>=attackAt))
         return Verdict::Parry;

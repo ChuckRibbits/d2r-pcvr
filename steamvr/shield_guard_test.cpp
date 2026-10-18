@@ -129,5 +129,20 @@ int main() {
     assert(s.raised&&Judge(s,ahead,now+50,t)!=Verdict::Open);
     assert(Judge(s,ahead,now+t.staleMs+1,t)==Verdict::Open);
 
+    // Report the actual rejection without changing the guard thresholds.
+    {const struct {Vec hand;Rejection why;} cases[]={
+        {hanging,Rejection::TooLow},{{-.1f,.4f,-.2f},Rejection::TooHigh},
+        {{-.1f,-.3f,.3f},Rejection::TooClose},{{-.1f,-.3f,-1.f},Rejection::TooFar},
+        {wide,Rejection::TooWide},{{.6f,-.3f,-.2f},Rejection::AcrossBody},
+        {{NAN,0,0},Rejection::InvalidHand}};
+     for(const auto& c:cases){State g;Update(g,c.hand,true,true,view,1000,true,t);Rejection why;
+         assert(Judge(g,ahead,1000,t,0,&why)==Verdict::Open&&why==c.why);}
+     State g;Update(g,chest,true,true,view,1000,true,t);Rejection why;
+     assert(Judge(g,ahead,1000,t,0,&why)==Verdict::Block&&why==Rejection::None);
+     assert(Judge(g,{0,0,1},1000,t,0,&why)==Verdict::Open&&why==Rejection::OutsideCoverage);
+     assert(Judge(g,ahead,1151,t,0,&why)==Verdict::Open&&why==Rejection::StalePose);
+     Update(g,chest,false,true,view,1001,true,t);
+     assert(Judge(g,ahead,1001,t,0,&why)==Verdict::Open&&why==Rejection::Untracked);}
+
     std::puts("Shield guard: chest zone (incl. flat on the chest), view-facing cover, hold margin, coverage cone, diagonal parry while the attack is incoming (attack start, direction, speed, length, one per swing, expiry, mirror), tracking and stale pose tests passed");
 }

@@ -1,0 +1,76 @@
+// Exercise the real incoming-hit adapter with owned unit/path memory.
+#include "../vr/combat.cpp"
+#undef NDEBUG
+#include <cassert>
+
+namespace fixture {
+uint64_t session=1;
+unsigned nativeCalls=0,impacts=0;
+bool serve=true;
+std::string log;
+struct Unit {
+    std::array<uint8_t,128> bytes{};
+    uint16_t path[4]{};
+    uintptr_t Address(){return reinterpret_cast<uintptr_t>(bytes.data());}
+    template<class T> void Put(size_t offset,T value){memcpy(bytes.data()+offset,&value,sizeof value);}
+    Unit(uint32_t type,uint32_t id,uint16_t z) {
+        Put(0,type);Put(8,id);Put(0x38,reinterpret_cast<uintptr_t>(path));
+        path[1]=100;path[3]=z;
+    }
+};
+int NativeBlock(uintptr_t game,uintptr_t,uintptr_t,int avoid,int block) {
+    assert(game==123&&avoid==7&&block==1);++nativeCalls;
+    if(!serve||combat::forced==combat::Forced::None)return 9;
+    combat::forcedServed=true;
+    return combat::forced==combat::Forced::Block?1:0;
+}
+}
+namespace gamestate {uint64_t LocalPlayer(){return fixture::session;}int32_t LeftDurability(){return -1;}}
+namespace d2rsig {
+uintptr_t Addr(uint64_t){return 0;}
+bool Check(uint64_t,const void*,uint32_t){return false;}
+bool Hook(uint64_t,const void*,uint32_t,void*,void**){return false;}
+}
+namespace framevr::logging {void Write(const char* line){fixture::log+=line;fixture::log+='\n';}}
+namespace framevr {void ShieldGuardImpact(bool){++fixture::impacts;}void ShieldGuardState(bool,bool){}}
+namespace melee {bool QueueParry(uint32_t,int){return false;}uint64_t AttackStart(uint32_t){return 0;}void QueueBlockSound(){}}
+
+int main() {
+    using namespace combat;
+    fixture::Unit player(0,42,100),monster(1,9,99);
+    enabled=ready=guardChecked=true;originalBlock=&fixture::NativeBlock;
+    ConfigureGuard(true,0,true);
+    const auto prime=[&] {
+        assert(ObserveUiPlayer(player.Address(),fixture::session));
+        guard={};guard.session=fixture::session;guard.eligible=true;guard.upm=2;guard.at=GetTickCount64();
+        framevr::guard::Update(guard.state,{-.12f,-.35f,-.25f},true,true,{0,0,-1},guard.at,true,GuardTuning());
+    };
+    const auto block=[&] {
+        const auto calls=fixture::nativeCalls;
+        const int result=Block(123,monster.Address(),player.Address(),7,1);
+        assert(fixture::nativeCalls==calls+1&&forced==Forced::None&&!forcedServed);
+        return result;
+    };
+    // Regression: the old adapter overrode these valid guards to OPEN in
+    // walking(2), running(3), and town walking(6). Native dispatch still runs.
+    for(uint32_t mode:{1u,2u,3u,6u}) {
+        player.Put(0xc,mode);prime();const auto impacts=fixture::impacts;
+        assert(block()==1&&fixture::impacts==impacts+1);
+    }
+    // Movement never grants a guard by itself; hand and view rules still apply.
+    player.Put(0xc,3u);prime();
+    framevr::guard::Update(guard.state,{-.2f,-.8f,0},true,true,{0,0,-1},guard.at+1,true,GuardTuning());
+    assert(block()==0&&guardRejections[size_t(framevr::guard::Rejection::TooLow)]==1);
+    assert(fixture::log.find("reason=hand_low")!=std::string::npos);
+    prime();guard.state.facing={0,0,1};assert(block()==0);
+    prime();guard.state.seenAt=GetTickCount64()-200;assert(block()==0);
+    // Classic, missing shield/menu eligibility, wrong session and other players
+    // keep native behavior. An unavailable native roll causes no fake feedback.
+    prime();ConfigureGuard(false,0);assert(block()==9);
+    ConfigureGuard(true,0);prime();guard.eligible=false;assert(block()==9);
+    prime();guard.session=2;assert(block()==9);
+    prime();player.Put(8,43u);assert(block()==9);player.Put(8,42u);
+    prime();fixture::serve=false;const auto impacts=fixture::impacts;
+    assert(block()==9&&fixture::impacts==impacts&&guardUnserved==1);
+    std::puts("Physical shield adapter: walking/running guards, rejection reasons, native dispatch, Classic and eligibility checks passed");
+}

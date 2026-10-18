@@ -865,7 +865,12 @@ void LoadSettings() {
                                  (uint32_t)std::clamp(IniF(L"gameplay",L"riposte_ms",1500),0.f,10000.f),
                                  std::clamp(IniF(L"gameplay",L"riposte_volume",100),0.f,400.f)/100.f,path.c_str());
     }
-    combat::ConfigureGuard(!classicMelee,(uint32_t)std::clamp(IniF(L"gameplay",L"parry_ms",400),0.f,400.f),IniB(L"debug",L"guard_trace",false));
+#ifdef D2RVR_DEVELOPER
+    constexpr bool guardTraceDefault=true;
+#else
+    constexpr bool guardTraceDefault=false;
+#endif
+    combat::ConfigureGuard(!classicMelee,(uint32_t)std::clamp(IniF(L"gameplay",L"parry_ms",400),0.f,400.f),IniB(L"debug",L"guard_trace",guardTraceDefault));
     // Guard strain light: % of the guard each block strains, lowered reset time,
     // % of the view left clear at full swell, the broken guard's breathing period,
     // the width of the light's inner blend (% of the visor radius), opacity (% peak;
