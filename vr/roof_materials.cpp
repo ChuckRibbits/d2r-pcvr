@@ -26,6 +26,7 @@ void (*logger)(const char*)=nullptr;
 bool (*wanted)()=nullptr;
 std::atomic<bool> ready{false};
 std::atomic<unsigned> reports{0};
+std::atomic<unsigned> sewerReports{0};
 thread_local Context* current=nullptr;
 constexpr int32_t enabledValue=1;
 
@@ -88,7 +89,8 @@ void* Build(const char* model,void* file,void* mesh,const Material* material,uin
     // Nested non-roof material builds must not inherit an outer roof's scope.
     Scope guard(current,selected?&scope:nullptr);
     void* result=call(model,file,mesh,material,flags,pass);
-    if (selected && reports.fetch_add(1)<96 && logger) {
+    const bool sewer=selected&&(std::strstr(path,"/sewer_entrance02")||std::strstr(path,"/stairs_sewers01"));
+    if (selected && (sewer?sewerReports:reports).fetch_add(1)<(sewer?32u:96u) && logger) {
         char line[832]; std::snprintf(line,sizeof line,
             "roof undersides: %s material=%s double-sided overrides=%u build=%s",
             path,name,scope.changes,result?"ok":"failed");

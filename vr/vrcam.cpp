@@ -3669,6 +3669,29 @@ uintptr_t HookInteractTarget(uintptr_t mgr, uint32_t player) {
     }
     g_interactTarget.store(t);
     g_interactTargetAt.store(GetTickCount64());
+#if defined(D2RVR_DEV_TOOLS) && defined(D2RVR_NATIVE_OPENXR)
+    // Read-only trace while inspecting an entrance in isolated DEV mode.
+    // Do not substitute a guessed warp or change native target priority.
+    if(devscenarios::DebugDraws()&&g_enabled.load()&&g_inWorld.load()&&!gamestate::MenuOpen()) {
+        static thread_local ULONGLONG last=0;
+        const auto now=GetTickCount64();
+        if(now-last>=1000) {
+            last=now;uint32_t header[3]={UINT32_MAX,0,0};
+            if(t&&!SafeRead(header,reinterpret_cast<const void*>(t),sizeof header))header[0]=UINT32_MAX;
+            float eyeHeight=NAN,forwardY=NAN,yaw=NAN;
+            AcquireSRWLockShared(&g_skyLock);
+            const auto& view=g_skyView[g_eye.load()&1];
+            if(view.axes_ok) {
+                eyeHeight=view.eyeRel[1];forwardY=-view.axes[7];
+                yaw=atan2f(-view.axes[6],-view.axes[8])*57.2957795f;
+            }
+            ReleaseSRWLockShared(&g_skyLock);
+            LogF("Frame entrance targeting: native=%p queried=%p type=%u class=%u id=%u eye_h=%.2fwu fwd_y=%.3f yaw=%.1f",
+                reinterpret_cast<void*>(r),reinterpret_cast<void*>(t),header[0],header[1],header[2],
+                eyeHeight,forwardY,yaw);
+        }
+    }
+#endif
     return r;
 }
 

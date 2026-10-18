@@ -58,6 +58,19 @@ bool Hook(uint64_t rva,const void*,uint32_t,void* detour,void** original) {
 }
 }
 int main() {
+    for(int lod=-1;lod<5;++lod) {
+        const auto suffix=(lod<0?std::string():"_lod"+std::to_string(lod))+".model";
+        const auto entrance=std::string("data/hd/env/model/act3/kurast/act3_kurast_architecture/sewer_entrance02")+suffix;
+        const auto stairs=std::string("data/hd/env/model/act3/kurast/act3_kurast_stairs/stairs_sewers01")+suffix;
+        for(const char* mat:{"roof_lip_corner01","elevation_walls_a"})assert(Selected(entrance,mat));
+        for(const char* mat:{"kurast_stairs_a","kurast_stairs_b","elevation_walls_a",
+                            "pasted__sewer_column_corner","pasted__sewer_wall05"})assert(Selected(stairs,mat));
+        for(const char* mat:{"water","foliage","roof_lip_corner01_extra","med_props04"})
+            assert(!Selected(entrance,mat)&&!Selected(stairs,mat));
+    }
+    assert(!Selected("data/hd/env/model/act3/kurast/act3_kurast_stairs/stairs01_lod0.model","kurast_stairs_a"));
+    assert(!Selected("data/hd/env/model/act3/kurast/act3_kurast_architecture/sewer_entrance02_lod5.model","elevation_walls_a"));
+    assert(!Selected("data/hd/env/model/act3/kurast/act3_kurast_architecture/sewer_entrance02_extra.model","elevation_walls_a"));
     for (const char* path : {tavern,"data/hd/env/model/act2/town/act2_town_building_tavern/level02.model"})
         for (const char* mat : {"ext_floor","ext_roof_tile01","ext_roof_tile02","ext_half_circle_roof","ext_twig_roof","ext_roof_trim","ext_awning01"})
             assert(Selected(path,mat));
@@ -93,6 +106,8 @@ int main() {
         assert(!Selected(path,"ext_floor"));
     assert(!Selected("data/hd/env/model/act2/roof.model","water"));
     char normalized[256]{};
+    assert(String("kurast_stairs_A",normalized,true));
+    assert(Selected("data/hd/env/model/act3/kurast/act3_kurast_stairs/stairs_sewers01_lod0.model",normalized));
     assert(String("DATA:HD\\ENV\\MODEL\\ACT2\\TOWN\\ACT2_TOWN_BUILDING_TAVERN\\LEVEL02.MODEL",normalized,true));
     assert(Selected(normalized,"ext_floor"));
     assert(!String(reinterpret_cast<const char*>(1),normalized));

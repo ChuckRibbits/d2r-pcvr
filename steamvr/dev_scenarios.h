@@ -17,8 +17,9 @@ inline constexpr int SmallShieldChoice=13;
 inline constexpr int Level10Choice=28,Level30Choice=29,Level60Choice=30,HealChoice=31;
 inline constexpr int StarterPrimaryChoice=32,StarterAlternateChoice=33;
 inline constexpr int DebugDrawsChoice=34;
+inline constexpr int KurastSewersChoice=35,UpperKurastChoice=36;
 inline constexpr int PageSize=14;
-inline constexpr std::array<Choice,35> Choices{{
+inline constexpr std::array<Choice,37> Choices{{
     {"Level 90", "All class skills rank 20 / test attributes", nullptr},
     {"Primary gear", "Class-specific unique equipment", nullptr},
     {"Alternate gear", "Equipment for the other class abilities", nullptr},
@@ -61,20 +62,24 @@ inline constexpr std::array<Choice,35> Choices{{
     {"Starter primary gear", "Normal base gear / suitable for level 10", nullptr},
     {"Starter alternate gear", "Alternate weapon type / suitable for level 10", nullptr},
     {"Render debug draws", "Toggle shield block outline and hit feedback", nullptr},
+    {"Kurast Sewers", "Level 1 / take stairs back out to inspect entrances", "goto 92"},
+    {"Upper Kurast", "Act III / second sewer-entrance region", "goto 81"},
 }};
 // Stable action IDs are independent of their presentation order.
-inline constexpr int PageCount=4;
-inline constexpr const char* PageNames[]={"CHARACTER","EQUIPMENT","ACT I - III","ACT IV - V"};
+inline constexpr int PageCount=5;
+inline constexpr const char* PageNames[]={"CHARACTER","EQUIPMENT","ACT I - II","ACT III","ACT IV - V"};
 inline constexpr const char* PageHelp[]={
     "Test presets replace stats and skills; gear and button bindings stay as they are.",
     "Starter kits work at low levels; unique kits are for level 90. Equip in Inventory.",
     "Area entrances and inspection spots. Bosses depend on this test character's save.",
+    "Kurast Sewers: take the stairs back outside to inspect the entrance and interaction.",
     "Area entrances. Travel does not complete quests, reset bosses or change difficulty."
 };
 inline constexpr std::array<std::array<int,PageSize>,PageCount> Pages{{
     {{Level10Choice,Level30Choice,Level60Choice,0,HealChoice,-1,-1,-1,-1,-1,-1,-1,-1,-1}},
     {{StarterPrimaryChoice,StarterAlternateChoice,1,2,CrossbowChoice,BowChoice,SmallShieldChoice,DebugDrawsChoice,-1,-1,-1,-1,-1,-1}},
-    {{4,11,14,15,16,5,3,8,9,17,18,19,26,27}},
+    {{4,11,14,15,16,5,3,8,9,-1,-1,-1,-1,-1}},
+    {{17,UpperKurastChoice,KurastSewersChoice,18,19,26,27,-1,-1,-1,-1,-1,-1,-1}},
     {{6,7,20,21,22,23,24,25,-1,-1,-1,-1,-1,-1}}
 }};
 inline int PageFor(int choice){for(int p=0;p<PageCount;++p)for(int id:Pages[p])if(id==choice&&id>=0)return p;return -1;}
