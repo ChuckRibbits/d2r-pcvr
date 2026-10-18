@@ -70,6 +70,7 @@
 #include "d2rcam.h"
 #include "profile.h"
 #include "../vr/skeletons.h"
+#include "spell_aim.h"
 
 namespace gamestate {uint32_t WeaponType();uint32_t HandsKey();uint32_t WeaponSet();uint32_t WeaponClass();uint32_t TwoHanded();uint64_t LocalPlayer();uint32_t MenuEpoch();}
 namespace gamecmd {void RequestPotion(int slot);void CancelPotion();}
@@ -2830,6 +2831,20 @@ bool DirectedSpellActive() {
     return skill.known&&skill.available&&skill.id>=0&&(skill.directed||
         (motionOutput.bowReady&&weaponskills::Bow(skill.id)&&skill.id!=weaponskills::Strafe));
 }
+int GroundSpellSkill() {
+    // VR Settings > Aim > Ground skills land where you aim, read before our lock.
+    if(vrsettings::Read().values[settings::GroundSkills]<=.5f)return -1;
+    std::lock_guard lock(mutex);
+    const int slot=motionOutput.skill;
+    const auto now=GetTickCount64();
+    if(!motionControls.load()||!gameplay::CastingSkill(motionInput,motionOutput,now-motionAt)||
+       !interaction::Fresh(interactionInput.snapshot,gamestate::LocalPlayer(),now))return -1;
+    const auto& skill=interactionInput.snapshot.skills[slot];
+    if(!skill.known||!skill.available)return -1;
+    if(spellaim::Lobbed(skill.id))return skill.directed?skill.id:-1;
+    return spellaim::GroundTarget(skill.id)?skill.id:-1;
+}
+bool GroundSpellActive(){return GroundSpellSkill()>=0;}
 bool GameplayRay(float outOrigin[3],float outDirection[3]) {
     std::lock_guard lock(mutex);
     if(!motionControls.load()||!motionOutput.rayValid||!motionInput.active||GetTickCount64()-motionAt>150)return false;
