@@ -172,7 +172,9 @@ int main(){
     }
     {Model aim;aim.Open(s);aim.Click({Kind::Tab,int(Page::Aim)});
         Check(s.values[TargetHighlight]==0&&RowKey(Page::Aim,0)==TargetHighlight,"the monster outline is Off by default, first on the Aim page");
-        Check(RowCount(Page::Aim)==3&&RowKey(Page::Aim,1)==TargetOutlineColour&&RowKey(Page::Aim,2)==TargetOutlineHue,"strength, colors, then the static color");
+        Check(RowKey(Page::Aim,1)==TargetOutlineColour&&RowKey(Page::Aim,2)==TargetOutlineHue,"strength, colors, then the static color");
+        Check(RowCount(Page::Aim)==5&&RowKey(Page::Aim,3)==SpellLock&&RowKey(Page::Aim,4)==StaffPoint&&s.values[SpellLock]==1&&s.values[StaffPoint]==1,"spell lock and staff aim follow, On by default");
+        Check(HelpAt(Page::Aim,(ValueBox(4).x+5.f)/Width,(ValueBox(4).y+5.f)/Height)==StaffPoint,"the staff row explains itself");
         Check(s.values[TargetOutlineColour]==0&&s.values[TargetOutlineHue]==45,"static gold (45 degrees) by default");
         {Model colors;colors.Open(s);colors.Click({Kind::Tab,int(Page::Aim)});
             colors.Click(At(Page::Aim,ValueBox(1)));Check(colors.Get()[TargetOutlineColour]==1,"selecting the colors value switches to By range");

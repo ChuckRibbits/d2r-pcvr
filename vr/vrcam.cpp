@@ -2824,13 +2824,47 @@ bool ShooterActive();
 #ifdef D2RVR_NATIVE_OPENXR
 extern std::atomic<uint32_t> g_meleeTurnEpoch;
 #endif
+// The Aim switches, read by the update, render and game threads: one settings
+// snapshot every 200 ms, not one per call (HandRay runs several times a frame).
+bool AimOn(framevr::settings::Key key) {
+    using namespace framevr::settings;
+    static std::atomic<ULONGLONG> at{0};
+    static std::atomic<uint32_t> bits{0};
+    constexpr Key keys[] = {TargetHighlight, SpellLock, StaffPoint};
+    const ULONGLONG now = GetTickCount64();
+    if (now - at.load() > 200) {
+        const auto values = vrsettings::Read().values;
+        uint32_t b = 0;
+        for (int i = 0; i < 3; ++i) if (values[keys[i]] > .5f) b |= 1u << i;
+        bits.store(b);
+        at.store(now);
+    }
+    for (int i = 0; i < 3; ++i) if (keys[i] == key) return (bits.load() >> i) & 1;
+    return false;
+}
+#ifdef D2RVR_NATIVE_OPENXR
+// Staff aim: a staff levelled out like a wand (its shaft within ~35 degrees of
+// flat) fires out of its top; held upright (the usual way) up its shaft is up,
+// so with Staff aims where your hand points it fires where the arm points.
+bool StaffLevelled() {
+    skel::MeleeWeaponPose pose;
+    if(!skel::MeleeWeapon(pose)||pose.weaponType!=D2RVR_TYPE_STAFF||pose.worldEpoch!=g_meleeTurnEpoch.load())return false;
+    const float* a=pose.castingAxis;
+    const float len=std::sqrt(a[0]*a[0]+a[1]*a[1]+a[2]*a[2]);
+    return len>1e-4f&&std::fabs(a[1])/len<0.57f;
+}
+bool StaffByHand() {
+    return gamestate::WeaponType()==D2RVR_TYPE_STAFF&&AimOn(framevr::settings::StaffPoint)&&!StaffLevelled();
+}
+#endif
 bool HandRay(float* o, float* d) {
 #ifdef D2RVR_NATIVE_OPENXR
     // The menu aim pose can differ greatly from the weapon's shaft. Use the
     // final posed weapon in its captured WORLD frame, not a bone from one
     // frame combined with a newer headset yaw from another.
     const auto castingType=gamestate::WeaponType();
-    if(g_eyeOk.load()&&!framevr::LeftHandAiming()&&framevr::SpellSelected()&&
+    const bool staffByHand=StaffByHand();
+    if(g_eyeOk.load()&&!framevr::LeftHandAiming()&&framevr::SpellSelected()&&!staffByHand&&
        (castingType==D2RVR_TYPE_WAND||castingType==D2RVR_TYPE_STAFF||castingType==D2RVR_TYPE_SCEPTER||castingType==D2RVR_TYPE_ORB)) {
         skel::MeleeWeaponPose pose;
         if(skel::MeleeWeapon(pose)&&pose.weaponType==castingType&&pose.worldEpoch==g_meleeTurnEpoch.load()) {
@@ -2852,6 +2886,15 @@ bool HandRay(float* o, float* d) {
     }
     float motionOrigin[3],motionDirection[3];
     if(g_eyeOk.load()&&framevr::GameplayRay(motionOrigin,motionDirection)) {
+        // An upright staff: along the arm, from the shoulder through the hand,
+        // so a bent wrist, knuckles to the side or a hand overhead all aim where
+        // the arm reaches. The right shoulder sits about 17 cm right of and
+        // 22 cm below the eyes.
+        if(staffByHand&&framevr::SpellSelected()&&!framevr::LeftHandAiming()) {
+            const float a[3]={motionOrigin[0]-.17f,motionOrigin[1]+.22f,motionOrigin[2]};
+            const float al=std::sqrt(a[0]*a[0]+a[1]*a[1]+a[2]*a[2]);
+            if(al>.15f)for(int i=0;i<3;++i)motionDirection[i]=a[i]/al;
+        }
         AcquireSRWLockShared(&g_stickLock);const StickFrame f=g_stickFrame;ReleaseSRWLockShared(&g_stickLock);
         if(!f.valid)return false;
         const float scale=std::max(1.0f,ViewHeight())/UserEyeHeightM();
@@ -3232,7 +3275,7 @@ std::atomic<uint32_t> g_id{0};
 std::atomic<float> g_x{0}, g_y{0}, g_distance{0};
 std::atomic<ULONGLONG> g_at{0};
 bool Wanted() {
-    return g_enabled.load() && g_inWorld.load() && TargetHighlightOn();
+    return g_enabled.load() && g_inWorld.load() && (TargetHighlightOn() || AimOn(framevr::settings::SpellLock));
 }
 void Tick() {
     const bool wanted = Wanted();
@@ -3272,9 +3315,19 @@ bool DirectedSpellAim(float& gx,float& gy) {
     // Native OpenXR poses already use world X/Z == grid X/Y. The legacy
     // walk-learned calibration can confuse a cast vector with the opposite
     // travel direction while backpedaling; it must not rotate spell aim.
-    return g_spellAimReady.load()&&g_enabled.load()&&!gamestate::MenuOpen()&&
+    if(!(g_spellAimReady.load()&&g_enabled.load()&&!gamestate::MenuOpen()&&
         framevr::DirectedSpellActive()&&HandRay(origin,direction)&&
-        framevr::spellaim::Horizontal({direction[0],direction[1],direction[2]},gx,gy);
+        framevr::spellaim::Horizontal({direction[0],direction[1],direction[2]},gx,gy)))return false;
+    // Spells go to the highlighted monster: the spells the game aims itself
+    // (Lightning, Chain Lightning...) turn toward the locked monster when it is
+    // within ~53 degrees of the hand's direction.
+    float mx=0,my=0,md=0;
+    if(AimOn(framevr::settings::SpellLock)&&mobaim::Get(mx,my,md)) {
+        const auto s=targetlock::Get();
+        const float tx=mx-s.heroX,ty=my-s.heroY,tl=std::hypot(tx,ty),hl=std::hypot(gx,gy);
+        if(s.at&&tl>.5f&&hl>1e-4f&&(tx*gx+ty*gy)/(tl*hl)>.6f){gx=tx/tl;gy=ty/tl;}
+    }
+    return true;
 }
 uintptr_t NearbySewerInteraction();
 uintptr_t HookSpellControllerTarget(uintptr_t manager,int id) {
@@ -6212,7 +6265,8 @@ void BowTick() {
         // Free-hand casting uses its own complete tracked aim pose instead.
         skel::MeleeWeaponPose pose;
         const auto type=gamestate::WeaponType();
-        if(hand==0&&(type==D2RVR_TYPE_STAFF||type==D2RVR_TYPE_WAND||type==D2RVR_TYPE_SCEPTER||type==D2RVR_TYPE_ORB)&&
+        const bool staffByHand=hand==0&&StaffByHand();
+        if(hand==0&&!staffByHand&&(type==D2RVR_TYPE_STAFF||type==D2RVR_TYPE_WAND||type==D2RVR_TYPE_SCEPTER||type==D2RVR_TYPE_ORB)&&
            skel::MeleeWeapon(pose)&&pose.worldEpoch==g_meleeTurnEpoch.load()) {
             using framevr::math::Vec;
             const Vec p={pose.origin[0]/shot.unitsPerMetre,pose.origin[1]/shot.unitsPerMetre,pose.origin[2]/shot.unitsPerMetre};
@@ -6226,6 +6280,37 @@ void BowTick() {
         shot.planar=planar||framevr::spellcast::NativePath(shot.skill);
         shot.aimAssist=int(spellSettings.values[framevr::settings::ProjectileAimAssist]);
         shot.direction=spellAim[hand].Update(shot.session,shot.epoch,shot.direction,trackedDirection,shot.planar);
+        // An upright staff: along the arm, from the right shoulder (17 cm right
+        // of and 22 cm below the eyes) through the hand, as HandRay.
+        if(staffByHand) {
+            AcquireSRWLockShared(&g_stickLock);const StickFrame f=g_stickFrame;ReleaseSRWLockShared(&g_stickLock);
+            if(f.valid) {
+                using framevr::math::Vec;
+                const float m=1/shot.unitsPerMetre;
+                const Vec shoulder{g_eyeWorld[0].load()*m+.17f*f.camR[0],g_eyeWorld[1].load()*m-.22f,g_eyeWorld[2].load()*m+.17f*f.camR[2]};
+                Vec a=shot.origin-shoulder;
+                if(shot.planar)a.y=0;   // flat when spells are planar
+                const float al=framevr::bowflight::Length(a);
+                if(al>.15f)shot.direction=a*(1/al);
+            }
+        }
+        // Spells go to the highlighted monster: with a monster locked and
+        // roughly ahead of the cast (within ~53 degrees), fly at its chest -
+        // flat when spells are planar. The lock already follows the hand.
+        float mx=0,my=0,md=0;
+        if(AimOn(framevr::settings::SpellLock)&&mobaim::Get(mx,my,md)) {
+            using framevr::math::Vec;
+            const Vec target=framevr::bowflight::RenderGround(shot,Vec{mx*2.0f,0.0f,my*2.0f})+Vec{0.0f,1.0f,0.0f};
+            Vec to=target-shot.origin;
+            if(shot.planar)to.y=0;
+            const float len=framevr::bowflight::Length(to);
+            const float ahead=std::hypot(shot.direction.x,shot.direction.z);
+            if(len>.3f&&ahead>1e-3f&&(to.x*shot.direction.x+to.z*shot.direction.z)/(std::hypot(to.x,to.z)*ahead)>.6f) {
+                shot.direction=to*(1/len);
+                static ULONGLONG told=0;
+                if(GetTickCount64()-told>2000){told=GetTickCount64();LogF("Frame spell lock: skill %d to the locked monster, %.1f cells",shot.skill,md);}
+            }
+        }
         bowvr::Submit(shot);
     }
 }
@@ -7632,7 +7717,7 @@ bool ShieldDebugWanted() {
 bool OutlineWanted() {
 #ifdef D2RVR_NATIVE_OPENXR
     float x, y, d;
-    return g_enabled.load() && g_inWorld.load() && !gamestate::MenuOpen() && mobaim::Get(x, y, d);
+    return g_enabled.load() && g_inWorld.load() && !gamestate::MenuOpen() && TargetHighlightOn() && mobaim::Get(x, y, d);
 #else
     return false;
 #endif
