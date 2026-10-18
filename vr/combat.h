@@ -1,6 +1,6 @@
 #pragma once
 #include <cstdint>
-namespace framevr::guard {struct Pose;}
+namespace framevr::guard {struct Pose;struct Debug;}
 
 namespace combat {
 void Configure(bool enabled);
@@ -44,6 +44,7 @@ void ConfigureRiposte(float bonus,uint32_t windowMs,float volume,const wchar_t* 
 // timestamp. Latest tracking can invalidate it; coverage never follows gaze.
 void PublishGuard(uint64_t session,bool eligible,bool posed,const framevr::guard::Pose& pose,
                   bool handOk,bool leftShield);
+bool ReadGuardDebug(framevr::guard::Debug& out);
 void Install();
 void Report();
 // The UI-thread local-player accessor is authoritative across area changes;

@@ -32,6 +32,7 @@ inline bool FromBounds(const float* world,Vec low,Vec high,Vec player,const Pose
     if(length[thin]>.5f*std::min(length[a],length[b]))return false;
     const float scale=1/context.unitsPerMetre;
     Pose p=context;
+    p.player=player;
     p.center=(Vector(world,(low+high)*.5f)+Vec{world[12],world[13],world[14]}-player)*scale;
     p.halfRight=axes[a]*scale;p.halfUp=axes[b]*scale;
     const float r=math::Dot(p.halfRight,p.halfRight),u=math::Dot(p.halfUp,p.halfUp);

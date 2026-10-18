@@ -108,6 +108,8 @@ namespace gamestate {bool OpaqueMenuOpen();}
 #include "offline_difficulty.h"
 #include "projectiles.h"
 #include "combat.h"
+#include "dev_scenarios.h"
+#include "../steamvr/shield_debug.h"
 #include "melee.h"
 #include "bow.h"
 #include "crossbow.h"
@@ -7414,6 +7416,14 @@ bool BoneAxesWanted() { return g_set.boneAxes.load() && g_enabled.load() && g_in
 bool PhantomWanted() { return false; }
 bool BoneAxesWanted() { return false; }
 #endif
+bool ShieldDebugWanted() {
+#if defined(D2RVR_NATIVE_OPENXR) && D2RVR_FIRST_PERSON
+    return devscenarios::DebugDraws() && g_enabled.load() && g_inWorld.load() &&
+        !ThirdPerson() && !Overhead() && !gamestate::MenuOpen();
+#else
+    return false;
+#endif
+}
 
 // The frame stamp strip (D2R_DepthFog.fx PS_Stamp): whenever the camera turns
 // with the head, so that FlatVR can place its screen at the pose of the frame.
@@ -7505,7 +7515,7 @@ void OnFinishEffects(reshade::api::effect_runtime* rt, reshade::api::command_lis
     if (!g_tech[0].handle) { hud::SetPictureReady(false); return; }
     // Off while a menu is open: the fog lies over the whole picture, the
     // inventory and trade panels included, and darkened them.
-    const bool want = FogWanted() || g_skyPalette.load() >= 0 || g_arcaneSky.load() || CeilWanted() || HudWanted() || StampWanted() || hud::PictureWanted() || TableKeyWanted() || PhantomWanted() || BoneAxesWanted();
+    const bool want = FogWanted() || g_skyPalette.load() >= 0 || g_arcaneSky.load() || CeilWanted() || HudWanted() || StampWanted() || hud::PictureWanted() || TableKeyWanted() || PhantomWanted() || BoneAxesWanted() || ShieldDebugWanted();
     // The toolbar and the map are taken out of the game's picture to be drawn
     // back at their own size only while this effect runs, and is new enough to.
     {
@@ -8027,6 +8037,21 @@ void OnBeginEffects(reshade::api::effect_runtime* rt, reshade::api::command_list
                 for (int k = 0; k < 3; ++k) d[k] = o[k] + d[k] * 0.5f * upm;
                 SetFloats(rt, kNames[i], d, 3);
             }
+        }
+    }
+#endif
+#ifdef D2RVR_NATIVE_OPENXR
+    {
+        framevr::guard::Debug state;framevr::guard::DebugDraw draw;
+        const framevr::guard::Vec camera{g_eyeWorld[0].load(),g_eyeWorld[1].load(),g_eyeWorld[2].load()};
+        const bool on=ShieldDebugWanted()&&combat::ReadGuardDebug(state)&&
+            framevr::guard::DrawDebug(state,camera,GetTickCount64(),draw);
+        SetBool(rt,"ShieldDebugOn",on);SetBool(rt,"ShieldDebugHit",on&&draw.hit);
+        if(on) {
+            const auto vector=[&](const char* name,framevr::guard::Vec v){const float f[]{v.x,v.y,v.z};SetFloats(rt,name,f,3);};
+            vector("ShieldDebugCenter",draw.center);vector("ShieldDebugRight",draw.right);vector("ShieldDebugUp",draw.up);
+            vector("ShieldDebugNormal",draw.normal);vector("ShieldDebugColor",draw.color);
+            vector("ShieldDebugHitFrom",draw.hitFrom);vector("ShieldDebugHitTo",draw.hitTo);
         }
     }
 #endif

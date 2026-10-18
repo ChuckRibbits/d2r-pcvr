@@ -10,6 +10,7 @@
 #include <cstdio>
 #include <mutex>
 #include "combat.h"
+#include "../steamvr/shield_debug.h"
 #include "combat_rules.h"
 #include "sigscan.h"
 #include "memory.h"
@@ -63,7 +64,8 @@ constexpr uint64_t BlockSeedReturn=0x44b9d1,BlockRollAt=0x44b9c9;
 constexpr uint8_t BlockRollSig[]={0x48,0x8b,0xcf,0xe8,0x0f,0xe8,0xef,0xff,0x8b,0x08,0x48,0x69,0xd9,0xc5,0x90,0xc6,0x6a};
 std::atomic<bool> guardEnabled{false},guardTrace{false};std::atomic<uint32_t> guardParryMs{400};
 bool guardChecked=false;
-struct GuardShared {framevr::guard::State state;uint64_t session=0,at=0;float upm=1;bool eligible=false;};
+struct GuardShared {framevr::guard::State state;uint64_t session=0,at=0;float upm=1;bool eligible=false;
+    framevr::guard::Debug debug{};uint32_t debugMonster=UINT32_MAX;};
 std::mutex guardMutex;GuardShared guard;
 enum class Forced:uint8_t {None,Block,Open};
 enum class Guard:uint8_t {Native,Open,Block,Parry};
@@ -312,6 +314,15 @@ Guard Incoming(uintptr_t attacker,uintptr_t defender,uint32_t& monster,bool& inR
     const uint64_t attackAt=melee::AttackStart(monster);if(attackAt)++guardAttackKnown;
     framevr::guard::Rejection reason;
     const auto v=framevr::guard::Judge(g.state,to,now,GuardTuning(),attackAt,&reason);
+    {
+        std::lock_guard lock(guardMutex);
+        if(guard.session==g.session) {
+            const auto& p=g.state.surface;
+            guard.debug.hitFrom=p.player+framevr::math::Vec{to.x,p.center.y,to.z}*g.upm;
+            guard.debug.hitTo=p.player+framevr::math::Vec{p.eye.x,p.center.y,p.eye.z}*g.upm;
+            guard.debug.hitAt=now;guard.debug.hit=0;guard.debugMonster=monster;
+        }
+    }
     if(v==Verdict::Open)++guardRejections[size_t(reason)];
     // Walking/running does not invalidate a raised physical guard. Native
     // block/dodge handling still runs below; keep the mode for diagnostics.
@@ -352,6 +363,11 @@ int GuardedBlock(uintptr_t game,uintptr_t attacker,uintptr_t defender,int avoid,
     forced=g==Guard::Open?Forced::Open:Forced::Block;forcedServed=false;
     const int result=originalBlock(game,attacker,defender,avoid,block);
     const bool served=forcedServed;forced=savedForced;forcedServed=savedServed;
+    {
+        std::lock_guard lock(guardMutex);
+        if(guard.debugMonster==monster&&guard.session==gamestate::LocalPlayer())
+            guard.debug.hit=!served?3:result==1?1:2;
+    }
     if(guardTrace.load(std::memory_order_relaxed)) {
         const auto rva=NativeCallerRva(caller);
         char line[280];snprintf(line,sizeof line,
@@ -479,7 +495,7 @@ void PublishGuard(uint64_t session,bool eligible,bool posed,const framevr::guard
     uint64_t lateAfter=0;bool late=false,raised=false;
     {
     std::lock_guard lock(guardMutex);
-    if(guard.session!=session||!eligible||guard.state.surface.epoch!=pose.epoch)guard.state={};
+    if(guard.session!=session||!eligible||guard.state.surface.epoch!=pose.epoch){guard.state={};guard.debug={};}
     if(eligible)framevr::guard::Update(guard.state,pose,handOk,leftShield,now,posed,t);
     if(eligible&&framevr::guard::SwingAfterBlock(guard.state,now,t,lateAfter)){late=true;++guardLate;}
     guard.session=session;guard.eligible=eligible;guard.upm=std::max(1.f,guard.state.surface.unitsPerMetre);guard.at=now;
@@ -501,6 +517,13 @@ void PublishGuard(uint64_t session,bool eligible,bool posed,const framevr::guard
         char line[160];snprintf(line,sizeof line,"Frame guard swing too late: %llu ms after the blocked hit (no parry)",(unsigned long long)lateAfter);
         framevr::logging::Write(line);
     }
+}
+bool ReadGuardDebug(framevr::guard::Debug& out) {
+    std::lock_guard lock(guardMutex);out={};
+    const auto now=GetTickCount64();
+    if(!guardEnabled.load()||!guard.eligible||guard.session!=gamestate::LocalPlayer()||!guard.state.seenAt||
+       now<guard.state.seenAt||now-guard.state.seenAt>GuardTuning().staleMs)return false;
+    out=guard.debug;out.pose=guard.state.surface;out.raised=guard.state.raised;return framevr::guard::Valid(out.pose);
 }
 void Install() {
     if(!enabled.load()||ready.load())return;

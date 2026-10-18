@@ -60,29 +60,36 @@ int main() {
         assert(fixture::nativeCalls==calls+1&&forced==Forced::None&&!forcedServed);
         return result;
     };
+    framevr::guard::Debug debug;
     // Regression: the old adapter overrode these valid guards to OPEN in
     // walking(2), running(3), and town walking(6). Native dispatch still runs.
     for(uint32_t mode:{1u,2u,3u,6u}) {
         player.Put(0xc,mode);prime();const auto impacts=fixture::impacts;
         assert(block()==1&&fixture::impacts==impacts+1);
+        assert(ReadGuardDebug(debug)&&debug.raised&&debug.hit==1&&debug.hitAt);
     }
     // Movement never grants a guard by itself; hand and view rules still apply.
     player.Put(0xc,3u);prime();
     auto lowered=guard.state.surface;lowered.hand={-.2f,-.8f,0};
     framevr::guard::Update(guard.state,lowered,true,true,guard.at,true,GuardTuning());
     assert(block()==0&&guardRejections[size_t(framevr::guard::Rejection::TooLow)]==1);
+    assert(ReadGuardDebug(debug)&&!debug.raised&&debug.hit==2);
     assert(fixture::log.find("reason=hand_low")!=std::string::npos);
     prime();guard.state.surface.normal={1,0,0};assert(block()==0);
     prime();guard.state.surface.center.x=-.8f;assert(block()==0);
     prime();guard.state.seenAt=GetTickCount64()-200;assert(block()==0);
+    assert(!ReadGuardDebug(debug));
     // Classic, missing shield/menu eligibility, wrong session and other players
     // keep native behavior. An unavailable native roll causes no fake feedback.
     prime();ConfigureGuard(false,0);assert(block()==9);
+    assert(!ReadGuardDebug(debug));
     ConfigureGuard(true,0,true);prime();guard.eligible=false;assert(block()==9);
     prime();guard.session=2;assert(block()==9);
+    assert(!ReadGuardDebug(debug));
     prime();player.Put(8,43u);assert(block()==9);player.Put(8,42u);
     prime();fixture::serve=false;const auto impacts=fixture::impacts;
     assert(block()==9&&fixture::impacts==impacts&&guardUnserved==1);
+    assert(ReadGuardDebug(debug)&&debug.hit==3);
     assert(fixture::log.find("block_flag=1 avoid_flag=7 result=9 roll_served=0")!=std::string::npos);
     prime();fixture::serve=true;
     assert(Block(123,monster.Address(),player.Address(),7,0)==9&&fixture::impacts==impacts&&guardUnserved==2);
@@ -98,5 +105,6 @@ int main() {
     prime();auto changed=guard.state.surface;changed.epoch++;
     PublishGuard(fixture::session,true,false,changed,true,true);assert(block()==0);
     changed.at=GetTickCount64();PublishGuard(fixture::session,true,true,changed,true,true);assert(block()==1);
+    PublishGuard(fixture::session,false,false,changed,false,false);assert(!ReadGuardDebug(debug));
     std::puts("Physical shield adapter: walking/running guards, rejection reasons, native dispatch, Classic and eligibility checks passed");
 }

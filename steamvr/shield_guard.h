@@ -19,6 +19,7 @@ struct Pose {
     // Rendered mesh bounds, in world-facing metres. Zero means the older
     // attachment-only fallback. These include the item's own bone/transform.
     Vec halfRight{},halfUp{};
+    Vec player{}; // render-world origin of this same pose; debug projection only
 };
 inline bool Measured(const Pose& p) {return math::Dot(p.halfRight,p.halfRight)>.0025f&&math::Dot(p.halfUp,p.halfUp)>.0025f;}
 inline bool Finite(Vec v) {return std::isfinite(v.x)&&std::isfinite(v.y)&&std::isfinite(v.z);}
@@ -39,6 +40,7 @@ inline bool FromAttachment(const float* world,const float* model,Vec eyeModel,Ve
     const float upm=modelUnitsPerMetre*scale;
     if(!std::isfinite(upm)||upm<1||upm>32||math::Dot(x,x)<.01f||math::Dot(y,y)<.01f)return false;
     Pose p;
+    p.player={model[12],model[13],model[14]};
     p.center=Vec{world[12]-model[12],world[13]-model[13],world[14]-model[14]}*(1/upm);
     p.eye=Vec{eyeModel.x*model[0]+eyeModel.y*model[4]+eyeModel.z*model[8],
               eyeModel.x*model[1]+eyeModel.y*model[5]+eyeModel.z*model[9],
