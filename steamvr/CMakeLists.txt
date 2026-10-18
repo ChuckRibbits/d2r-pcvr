@@ -181,6 +181,7 @@ target_link_libraries(ui-blit-test PRIVATE d3d12 dxgi framevr-runtime)
 add_executable(swapchain-color-test swapchain_color_test.cpp)
 target_link_libraries(swapchain-color-test PRIVATE d3d12 dxgi d3dcompiler framevr-runtime)
 add_executable(interaction-preview interaction_preview.cpp interaction_ui.cpp companion_ui.cpp interaction_icons.cpp interaction_assets.rc)
+add_executable(skill-categories-test skill_categories_test.cpp)
 target_include_directories(interaction-preview PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(interaction-preview PRIVATE user32 gdi32 framevr-runtime)
 
@@ -265,3 +266,5 @@ add_test(NAME vr-settings-help-art-test COMMAND vr-settings-preview "${CMAKE_CUR
 add_test(NAME companions-art-test COMMAND interaction-preview "${CMAKE_CURRENT_BINARY_DIR}/companions-preview.png" --companions-check)
 
 add_test(NAME active-effects-art-test COMMAND interaction-preview "${CMAKE_CURRENT_BINARY_DIR}/active-effects-preview.png" --effects-check)
+add_test(NAME skill-categories-test COMMAND skill-categories-test)
+add_test(NAME skill-categories-art-test COMMAND interaction-preview "${CMAKE_CURRENT_BINARY_DIR}/skill-categories-preview.png" --categories-check)

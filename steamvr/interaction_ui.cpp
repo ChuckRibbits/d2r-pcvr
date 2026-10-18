@@ -293,18 +293,33 @@ std::vector<uint8_t> Paint(const Snapshot& s,const Output& o,int selection,const
         frame({20,28,748,681});
         char title[120];std::snprintf(title,sizeof title,"CHOOSE SKILL  /  %s",handWheel?labels.Slot(o.editSlot).c_str():skills::NativeLabel(o.editSlot));
         text(title,{38,47,730,88});
-        text(labels.Slot(o.editSlot).c_str(),{38,96,540,143});
+        char pageLabel[100];std::snprintf(pageLabel,sizeof pageLabel,"%s  /  Page %d of %d",
+            skillcategories::Name(o.editClass,o.editCategory),o.editPage+1,o.editPages);
+        SelectObject(dc,skillFont);text(pageLabel,{38,96,552,143});SelectObject(dc,font);
         frame({568,92,730,146},o.hover==8);text("CLEAR SLOT",{574,98,724,140});
+        for(int category=0;category<skillcategories::Count;++category) {
+            const auto b=SkillCategoryBounds(category);
+            RECT r{LONG(768*b.left),LONG(768*b.top),LONG(768*b.right),LONG(768*b.bottom)};
+            const bool available=o.editCategoryCounts[category]>0;
+            frame(r,o.editCategory==category||(available&&o.hover==SkillCategoryCell(category)));
+            SetTextColor(dc,available?RGB(235,218,181):RGB(148,137,117));
+            SelectObject(dc,skillFont);text(skillcategories::Name(o.editClass,category),{r.left+6,r.top+3,r.right-6,r.bottom-20});
+            char count[16];std::snprintf(count,sizeof count,"%d",o.editCategoryCounts[category]);
+            SelectObject(dc,shortcutFont);text(count,{r.left+6,r.bottom-20,r.right-6,r.bottom-3});
+        }
+        SetTextColor(dc,RGB(235,218,181));SelectObject(dc,font);
         for(int i=0;i<8;++i) {
-            const int x=int(768*(.05f+(i%2)*.46f)),y=int(768*(.23f+(i/2)*.145f));
-            frame({x,y,x+337,y+99},o.hover==i&&i<o.editCount);
+            const auto b=SkillOptionBounds(i);
+            const int x=int(768*b.left),y=int(768*b.top),right=int(768*b.right),bottom=int(768*b.bottom);
+            frame({x,y,right,bottom},o.hover==i&&i<o.editCount);
             if(i>=o.editCount)continue;
             const auto& skill=o.editOptions[i];
-            icon(icons::Get("s"+std::to_string(skill.id)),{x+9,y+10,x+88,y+89});
-            text(skill.name,{x+94,y+9,x+329,y+66});
+            icon(icons::Get("s"+std::to_string(skill.id)),{x+9,y+10,x+79,y+80});
+            text(skill.name,{x+85,y+7,right-8,y+60});
             char detail[64];if(skill.owner==-1)std::snprintf(detail,sizeof detail,"Level %d",skill.level);
             else std::snprintf(detail,sizeof detail,"Item-granted skill");
-            SetTextColor(dc,RGB(169,151,118));text(detail,{x+94,y+68,x+329,y+95});SetTextColor(dc,RGB(235,218,181));
+            SelectObject(dc,shortcutFont);SetTextColor(dc,RGB(169,151,118));
+            text(detail,{x+85,y+63,right-8,bottom-4});SetTextColor(dc,RGB(235,218,181));SelectObject(dc,font);
         }
         if(!o.editCount)text("No active skills available",{56,249,712,430});
     } else if(handWheel&&!o.utility) {

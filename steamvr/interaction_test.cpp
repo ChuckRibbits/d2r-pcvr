@@ -233,8 +233,8 @@ int main(){
         Check(click(11).editor==1&&s.out.select==-2,"editor does not select a combat slot");
         Check(click(2).editor==2&&s.out.editSlot==2&&s.out.editCount==8,"unassigned slot opens available skills");
         Check(click(10).editPage==1&&s.out.editCount==2,"skill pagination bounded by actual skills");
-        Check(WheelCell(.1f,.25f,-1,MenuPage::EditSkills)==0&&WheelCell(.8f,.15f,-1,MenuPage::EditSkills)==8,"skill rows and clear button hit regions");
-        Check(WheelCell(.5f,.25f,-1,MenuPage::EditSkills)==-1,"skill column gap cannot assign");
+        Check(WheelCell(.1f,.34f,-1,MenuPage::EditSkills)==0&&WheelCell(.8f,.15f,-1,MenuPage::EditSkills)==8,"skill rows and clear button hit regions");
+        Check(WheelCell(.5f,.34f,-1,MenuPage::EditSkills)==-1,"skill column gap cannot assign");
         // Choices stay fixed while this page is displayed. Native validation
         // checks the chosen identity, never a list index that can be reordered.
         s.in.snapshot.catalog[0].id=200;

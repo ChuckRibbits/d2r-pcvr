@@ -119,6 +119,7 @@ void Capture(framevr::interaction::Snapshot& s) {
     if(!combat::LocalPlayerId(id))return;
     reason=5;if(id!=h[2])return;
     s.devClass=framevr::dev::ExpansionClass(h[1],gamestate::DataBank());
+    s.skillClass=h[1]<framevr::skillcategories::Classes.size()?int(h[1]):-1;
     // The supported loader accessor reads this live, identity-checked UI player.
     // Copy its current table row/name on the UI thread every capture so warps,
     // loading gaps and language changes cannot reuse a previous area's label.
