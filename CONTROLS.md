@@ -222,6 +222,13 @@ Select a wheel wedge to edit its binding directly. **CLEAR SLOT** removes the
 skill; clearing right A restores Interact, and clearing right trigger restores
 basic weapon handling. Interact can also be chosen explicitly from the picker.
 Assigning a spell to right A deliberately replaces its interaction action.
+The skill picker has **All**, the character's three skill-tree categories, and
+**General / Items** tabs. For example, a Sorceress has Fire, Lightning and Cold;
+a Paladin has Combat, Offensive Auras and Defensive Auras. General / Items holds
+Attack, Interact, Town Portal and skills from equipment or another class. Each
+tab shows its available count; empty categories are dimmed. Choose a category,
+then a skill, using **PREVIOUS / NEXT** when needed. Only available active skills
+appear; passive skills cannot be assigned. Existing bindings are preserved.
 Grip changes cannot switch a held face button to another spell: release the
 face button first. Held potions and holsters take priority over spell shortcuts.
 

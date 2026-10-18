@@ -9,7 +9,8 @@ struct PaintContext {
     uint64_t session=0;
     uint32_t activeSet=0;
     int hand=-1;
-    int editor=0,slot=-1,page=0,count=0,bank=-1;
+    int editor=0,slot=-1,page=0,count=0,bank=-1,category=0,skillClass=-1;
+    std::array<int,skillcategories::Count> categoryCounts{};
     bool utility=false,map=false,fresh=false,editable=false,equipmentKnown=false,beltKnown=false;
     std::array<Skill,skills::Count> skills{};
     std::array<Skill,8> options{};
@@ -27,6 +28,7 @@ struct PaintContext {
 inline PaintContext Context(const Snapshot& s,const Output& o,bool fresh,const controllers::Labels& labels={}) {
     PaintContext c;c.labels=labels;c.hand=o.wheelHand;c.session=s.session;c.activeSet=s.activeSet;c.editor=o.editor;c.slot=o.editSlot;
     c.developer=o.developer;c.devVisible=s.developer;c.devClass=s.devClass;c.devPage=o.devPage;
+    c.category=o.editCategory;c.skillClass=o.editClass;c.categoryCounts=o.editCategoryCounts;
     c.page=o.editPage;c.count=o.editCount;c.bank=s.bindingBank;c.utility=o.utility;c.map=o.map;c.fresh=fresh;
     c.editable=s.bindingsEditable;c.equipmentKnown=s.equipmentKnown;c.beltKnown=s.beltKnown;
     c.quick=s.quick;c.itemOptions=o.itemOptions;c.skills=s.skills;c.options=o.editOptions;c.sets=s.sets;c.belt=s.belt;c.cue=o.cue;c.leftCue=o.leftCue;c.location=s.location;c.companions=s.companions;c.effects=s.effects;return c;

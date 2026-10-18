@@ -48,6 +48,41 @@ int main(int argc,char** argv) {
         if(!SavePng(argv[1],gallery,width,height))return 112;
         std::puts("Quick-use wheel and inventory picker painted");return 0;
     }
+    if(argc>2&&!std::strcmp(argv[2],"--categories-check")) {
+        namespace categories=framevr::skillcategories;
+        if(argc>3){wchar_t path[32768]{};MultiByteToWideChar(CP_UTF8,0,argv[3],-1,path,32768);icons::Directory(path);}
+        HDC dc=CreateCompatibleDC(nullptr);
+        HFONT font=CreateFontW(18,0,0,0,FW_SEMIBOLD,FALSE,FALSE,FALSE,DEFAULT_CHARSET,
+            OUT_DEFAULT_PRECIS,CLIP_DEFAULT_PRECIS,ANTIALIASED_QUALITY,DEFAULT_PITCH,L"Georgia");
+        const auto old=SelectObject(dc,font);bool fits=true;
+        for(int cls=0;cls<8;++cls)for(int category=0;category<categories::Count;++category) {
+            const auto b=SkillCategoryBounds(category);const int width=int(768*b.right)-int(768*b.left)-12;
+            RECT r{0,0,width,0};wchar_t name[80]{};
+            MultiByteToWideChar(CP_UTF8,0,categories::Name(cls,category),-1,name,80);
+            DrawTextW(dc,name,-1,&r,DT_CENTER|DT_WORDBREAK|DT_NOPREFIX|DT_CALCRECT);
+            if(r.right>width||r.bottom>int(768*b.bottom)-int(768*b.top)-23)fits=false;
+        }
+        SelectObject(dc,old);DeleteObject(font);DeleteDC(dc);
+        if(!fits){std::fputs("Class category label would be clipped\n",stderr);return 110;}
+        constexpr int width=1536,height=1536;std::vector<uint8_t> gallery(width*height*4);
+        for(int tile=0;tile<4;++tile) {
+            Snapshot s;s.activeSet=1;s.bindingsEditable=true;Output o;o.editor=2;o.editSlot=1;o.wheelHand=0;
+            o.editClass=tile==0?3:tile==1?2:tile==2?1:0;o.editCategory=tile==0?2:tile==1?3:tile==2?1:0;
+            o.editCategoryCounts={13,4,4,2,3};o.editCount=tile==3?8:4;o.editPages=tile==3?2:1;
+            if(tile==1)o.editCategoryCounts={13,3,3,4,3};
+            if(tile==3)o.editCategoryCounts={9,3,0,3,3};
+            const int ids[4][8]={{98,102,114,122},{70,80,85,95},{36,47,51,62},{0,357,6,7,10,16,21,359}};
+            const char* names[4][8]={{"Might","Holy Fire","Holy Freeze","Fanaticism"},{"Raise Skeleton","Raise Skeletal Mage","Blood Golem","Revive"},
+                {"Fire Bolt","Fire Ball","Fire Wall","Hydra"},{"Attack","Interact","Magic Arrow","Fire Arrow","Jab","Power Strike","Charged Strike","Town Portal"}};
+            for(int i=0;i<o.editCount;++i){auto& skill=o.editOptions[i];skill.id=ids[tile][i];skill.level=10;skill.known=skill.available=true;
+                std::snprintf(skill.name,sizeof skill.name,"%s",names[tile][i]);s.catalog[s.skillCount++]=skill;}
+            icons::Prefetch(s);if(!icons::Wait(10000))return 111;
+            const auto pixels=Paint(s,o,-1);if(pixels.size()!=1024*1024*4)return 112;
+            for(int y=0;y<768;++y)std::memcpy(&gallery[(((tile/2)*768+y)*width+(tile%2)*768)*4],&pixels[y*1024*4],768*4);
+        }
+        if(!SavePng(argv[1],gallery,width,height))return 113;
+        std::puts("Skill category art: all eight classes fit; four picker layouts rendered");return 0;
+    }
     if(argc>2&&!std::strcmp(argv[2],"--effects-check")) {
         using namespace framevr;
         if(argc>3){wchar_t path[32768]{};MultiByteToWideChar(CP_UTF8,0,argv[3],-1,path,32768);icons::Directory(path);}
@@ -292,6 +327,7 @@ int main(int argc,char** argv) {
         std::vector<uint8_t> gallery(1536*768*4);
         for(int page=0;page<2;++page) {
             o.utility=false;o.editor=page+1;o.editSlot=1;o.editCount=7;
+            o.editClass=1;o.editCategoryCounts={7,2,1,1,3};
             std::copy_n(s.skills.begin(),o.editOptions.size(),o.editOptions.begin());o.hover=page?3:1;
             const auto atlas=Paint(s,o,2);
             for(int y=0;y<768;++y)std::memcpy(&gallery[(y*1536+page*768)*4],&atlas[y*1024*4],768*4);

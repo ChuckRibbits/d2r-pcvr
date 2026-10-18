@@ -1,6 +1,7 @@
 #pragma once
 #include "shoulder_swap.h"
 #include "skill_slots.h"
+#include "skill_categories.h"
 #include "frame_math.h"
 #include "potion_pose.h"
 #include "wrist_hud.h"
@@ -206,7 +207,7 @@ struct QuickInventory {
 struct Snapshot {
     QuickInventory quick;
     bool developer=false;
-    int devClass=-1;
+    int devClass=-1,skillClass=-1;
     uint64_t session=0,at=0;
     uint32_t revision=0,activeSet=0;
     bool equipmentKnown=false,beltKnown=false;
@@ -285,6 +286,14 @@ constexpr int QuickUseCell=210,RunWalkCell=211;
 constexpr double QuickEditHold=.65;
 constexpr MenuBounds QuickUseBounds{.025f,.025f,.255f,.18f},RunWalkBounds{.76f,.025f,.975f,.13f};
 inline bool QuickControls(MenuPage page){return page==MenuPage::Spells||page==MenuPage::Equipment;}
+constexpr int SkillCategoryCell(int category){return 220+category;}
+inline MenuBounds SkillCategoryBounds(int category){
+    const float x=.05f+category*.184f;return {x,.205f,x+.174f,.29f};
+}
+inline MenuBounds SkillOptionBounds(int index){
+    const float x=.05f+(index%2)*.46f,y=.305f+(index/2)*.13f;
+    return {x,y,x+.44f,y+.118f};
+}
 constexpr MenuBounds MapContent{.14f,.12f,.86f,.84f};
 // Footer cells occupy 9-13. Keep developer actions separate as the list grows.
 constexpr int DeveloperCell(int index) {return 14+index;}
@@ -325,12 +334,19 @@ inline int WheelCell(float u,float v,int previous=-1,MenuPage page=MenuPage::Spe
         }
         return -1;
     }
-    if(page==MenuPage::EditSkills||page==MenuPage::EditItems) {
-        if(u>.74f&&u<.95f&&v>.12f&&v<.19f)return 8; // clear selected slot
+    if(page==MenuPage::EditItems) {
+        if(u>.74f&&u<.95f&&v>.12f&&v<.19f)return 8;
         for(int i=0;i<8;++i) {
             const float x=.05f+(i%2)*.46f,y=.23f+(i/2)*.145f;
             if(u>x&&u<x+.44f&&v>y&&v<y+.13f)return i;
         }
+        return -1;
+    }
+    if(page==MenuPage::EditSkills) {
+        if(u>.74f&&u<.95f&&v>.12f&&v<.19f)return 8; // clear selected slot
+        for(int category=0;category<skillcategories::Count;++category)
+            if(SkillCategoryBounds(category).Contains(u,v))return SkillCategoryCell(category);
+        for(int i=0;i<8;++i)if(SkillOptionBounds(i).Contains(u,v))return i;
         return -1;
     }
     const float x=u-.5f,y=v-.45f,r=std::hypot(x,y);
@@ -384,7 +400,8 @@ struct Output {
     bool flying=false; Pose flight{}; Item flightItem{}; int flightColumn=-1; // thrown bottle, model pose
     Pose body{},belt[4]{},holster[2]{};
     Request request{};
-    int editor=0,editSlot=-1,editPage=0,editPages=1,editCount=0;
+    int editor=0,editSlot=-1,editPage=0,editPages=1,editCount=0,editCategory=0,editClass=-1;
+    std::array<int,skillcategories::Count> editCategoryCounts{};
     std::array<Skill,8> editOptions{};
     std::array<QuickItem,8> itemOptions{};
 };
@@ -430,6 +447,23 @@ class Engine {
     shoulder::Gesture shoulderSwap;
     vitals::PalmReveal palmReveal;
     std::array<Skill,128> choices{};
+    std::array<int,128> choiceIndices{};
+    std::array<int,skillcategories::Count> categoryCounts{};
+    int allCount=0,editCategory=0,editClass=-1;
+    const Skill& Choice(int index)const{return choices[choiceIndices[index]];}
+    void FilterSkills(int category) {
+        editCategory=category;editPage=choiceCount=0;
+        for(int i=0;i<allCount;++i)
+            if(category==skillcategories::All||skillcategories::Category(editClass,choices[i].id,choices[i].owner)==category)
+                choiceIndices[choiceCount++]=i;
+    }
+    void OpenSkills(const Snapshot& s) {
+        // Freeze identities, ordering and class for the whole edit transaction.
+        choices=s.catalog;allCount=std::clamp<int>(s.skillCount,0,choices.size());editClass=s.skillClass;
+        categoryCounts={};categoryCounts[skillcategories::All]=allCount;
+        for(int i=0;i<allCount;++i)++categoryCounts[skillcategories::Category(editClass,choices[i].id,choices[i].owner)];
+        FilterSkills(skillcategories::All);editor=2;
+    }
     // p, v and q are in WORLD metres/orientation; stage is the latest frame
     // used to draw it, kept through a brief loss of the view frame.
     struct Flight {bool active=false;double start=0,land=0;Vec p{},v{};Quat q{0,0,0,1};int column=-1,hand=-1;Item item{};uint32_t revision=0;Stage stage{};} flight;
@@ -612,11 +646,16 @@ public:
                     else out.feedback=3;
                     rearm=true;
                 } else if(editor==2) {
-                    if(in.hover==11){editor=in.wheelHand>=0?0:1;editSlot=-1;}
+                    if(in.hover>=SkillCategoryCell(0)&&in.hover<SkillCategoryCell(skillcategories::Count)) {
+                        const int category=in.hover-SkillCategoryCell(0);
+                        if(fresh&&categoryCounts[category])FilterSkills(category);
+                        else out.feedback=3;
+                    }
+                    else if(in.hover==11){editor=in.wheelHand>=0?0:1;editSlot=-1;}
                     else if(in.hover==9)editPage=std::max(0,editPage-1);
                     else if(in.hover==10)editPage=std::min(std::max(0,(choiceCount-1)/8),editPage+1);
                     else if(in.hover==8||(in.hover>=0&&in.hover<8&&editPage*8+in.hover<choiceCount)) {
-                        const auto skill=in.hover==8?Skill{}:choices[editPage*8+in.hover];
+                        const auto skill=in.hover==8?Skill{}:Choice(editPage*8+in.hover);
                         if(fresh&&in.snapshot.bindingsEditable&&request(Action::BindSkill,editSlot)) {
                             pending.skill=skill.id;pending.skillOwner=skill.owner;pending.bank=editBank;
                             pending.previousSkill=previousBinding.id;pending.previousOwner=previousBinding.owner;
@@ -628,13 +667,13 @@ public:
                     if(in.hover==9||in.hover==11){editor=0;editSlot=-1;}
                     else if(in.hover>=0&&in.hover<8&&fresh&&in.snapshot.bindingsEditable) {
                         editSlot=in.hover;editPage=0;previousBinding=in.snapshot.skills[editSlot];
-                        choices=in.snapshot.catalog;choiceCount=std::min<int>(in.snapshot.skillCount,choices.size());editor=2;
+                        OpenSkills(in.snapshot);
                     } else out.feedback=3;
                     rearm=true;
                 } else if(in.wheelHand>=0&&in.hover==11){developer=false;out.inventory=true;out.wheel=false;wheelLatch=true;rearm=true;}
                 else if(in.wheelHand>=0&&!utility&&!map&&in.hover>=0&&in.hover<5&&fresh&&in.snapshot.bindingsEditable){
                     editSlot=skills::HandSlot(in.wheelHand,in.hover);editPage=0;editBank=in.snapshot.bindingBank;previousBinding=in.snapshot.skills[editSlot];
-                    choices=in.snapshot.catalog;choiceCount=std::min<int>(in.snapshot.skillCount,choices.size());editor=2;rearm=true;
+                    OpenSkills(in.snapshot);rearm=true;
                 }
                 else if(in.hover==11){developer=false;editor=1;editBank=in.snapshot.bindingBank;editSlot=-1;map=false;out.map=false;utility=false;out.utility=false;rearm=true;}
                 else if(in.hover==10){out.settings=true;out.wheel=false;wheelLatch=true;rearm=true;}
@@ -749,7 +788,8 @@ public:
         out.developer=developer;out.devPage=devPage;out.stowed=stowed;out.result=result;
         out.editor=editor;out.editSlot=editSlot;out.editPage=editPage;out.editPages=std::max(1,(choiceCount+7)/8);
         if(editor==3)for(int i=0;i<8&&editPage*8+i<choiceCount;++i){out.itemOptions[i]=itemChoices[editPage*8+i];++out.editCount;}
-        if(editor==2)for(int i=0;i<8&&editPage*8+i<choiceCount;++i){out.editOptions[i]=choices[editPage*8+i];++out.editCount;}
+        out.editCategory=editCategory;out.editClass=editClass;out.editCategoryCounts=categoryCounts;
+        if(editor==2)for(int i=0;i<8&&editPage*8+i<choiceCount;++i){out.editOptions[i]=Choice(editPage*8+i);++out.editCount;}
         out.block=out.block||rearm||stowed||pending.action!=Action::None;
         for(int h=0;h<2;++h)out.owner[h]=rearm?Owner::Rearm:owner[h];
         return out;

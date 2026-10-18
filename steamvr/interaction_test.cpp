@@ -19,6 +19,12 @@ struct Sim {
     Output Step(int count=1){while(count--){in.time+=.02;in.at=1000000+uint64_t(in.time*1000);in.snapshot.at=in.at;out=e.Step(in);}return out;}
 };
 int main(){
+    // Integration: the quick-use inventory has no skill-category strip.
+    for(int i=0;i<8;++i){
+        const float x=.05f+(i%2)*.46f,y=.23f+(i/2)*.145f;
+        Check(WheelCell(x+.22f,y+.065f,-1,MenuPage::EditItems)==i,"quick-use item rows keep their painted hit regions");
+    }
+    Check(WheelCell(.1f,.21f,-1,MenuPage::EditItems)==-1,"no invisible category buttons in the item picker");
     auto quick=[](Sim& s) {
         s.in.wheel=true;s.in.wheelHand=1;s.in.hover=QuickUseCell;
         s.in.snapshot.quick.known=true;s.in.snapshot.quick.assigned=Code('t','b','k');
@@ -286,8 +292,8 @@ int main(){
         Check(click(11).editor==1&&s.out.select==-2,"editor does not select a combat slot");
         Check(click(2).editor==2&&s.out.editSlot==2&&s.out.editCount==8,"unassigned slot opens available skills");
         Check(click(10).editPage==1&&s.out.editCount==2,"skill pagination bounded by actual skills");
-        Check(WheelCell(.1f,.25f,-1,MenuPage::EditSkills)==0&&WheelCell(.8f,.15f,-1,MenuPage::EditSkills)==8,"skill rows and clear button hit regions");
-        Check(WheelCell(.5f,.25f,-1,MenuPage::EditSkills)==-1,"skill column gap cannot assign");
+        Check(WheelCell(.1f,.34f,-1,MenuPage::EditSkills)==0&&WheelCell(.8f,.15f,-1,MenuPage::EditSkills)==8,"skill rows and clear button hit regions");
+        Check(WheelCell(.5f,.34f,-1,MenuPage::EditSkills)==-1,"skill column gap cannot assign");
         // Choices stay fixed while this page is displayed. Native validation
         // checks the chosen identity, never a list index that can be reordered.
         s.in.snapshot.catalog[0].id=200;
