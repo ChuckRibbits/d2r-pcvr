@@ -19,8 +19,8 @@ struct Unit {
     }
 };
 int NativeBlock(uintptr_t game,uintptr_t,uintptr_t,int avoid,int block) {
-    assert(game==123&&avoid==7&&block==1);++nativeCalls;
-    if(!serve||combat::forced==combat::Forced::None)return 9;
+    assert(game==123&&avoid==7);++nativeCalls;
+    if(!serve||!block||combat::forced==combat::Forced::None)return 9;
     combat::forcedServed=true;
     return combat::forced==combat::Forced::Block?1:0;
 }
@@ -43,7 +43,8 @@ int main() {
     const auto prime=[&] {
         assert(ObserveUiPlayer(player.Address(),fixture::session));
         guard={};guard.session=fixture::session;guard.eligible=true;guard.upm=2;guard.at=GetTickCount64();
-        framevr::guard::Update(guard.state,{-.12f,-.35f,-.25f},true,true,{0,0,-1},guard.at,true,GuardTuning());
+        framevr::guard::Pose pose{{-.12f,1.35f,-.25f},{0,0,-1},{0,1.7f,0},{-.12f,-.35f,-.25f},2,guard.at,1};
+        PublishGuard(fixture::session,true,true,pose,true,true);
     };
     const auto block=[&] {
         const auto calls=fixture::nativeCalls;
@@ -59,18 +60,28 @@ int main() {
     }
     // Movement never grants a guard by itself; hand and view rules still apply.
     player.Put(0xc,3u);prime();
-    framevr::guard::Update(guard.state,{-.2f,-.8f,0},true,true,{0,0,-1},guard.at+1,true,GuardTuning());
+    auto lowered=guard.state.surface;lowered.hand={-.2f,-.8f,0};
+    framevr::guard::Update(guard.state,lowered,true,true,guard.at,true,GuardTuning());
     assert(block()==0&&guardRejections[size_t(framevr::guard::Rejection::TooLow)]==1);
     assert(fixture::log.find("reason=hand_low")!=std::string::npos);
-    prime();guard.state.facing={0,0,1};assert(block()==0);
+    prime();guard.state.surface.normal={1,0,0};assert(block()==0);
+    prime();guard.state.surface.center.x=-.8f;assert(block()==0);
     prime();guard.state.seenAt=GetTickCount64()-200;assert(block()==0);
     // Classic, missing shield/menu eligibility, wrong session and other players
     // keep native behavior. An unavailable native roll causes no fake feedback.
     prime();ConfigureGuard(false,0);assert(block()==9);
-    ConfigureGuard(true,0);prime();guard.eligible=false;assert(block()==9);
+    ConfigureGuard(true,0,true);prime();guard.eligible=false;assert(block()==9);
     prime();guard.session=2;assert(block()==9);
     prime();player.Put(8,43u);assert(block()==9);player.Put(8,42u);
     prime();fixture::serve=false;const auto impacts=fixture::impacts;
     assert(block()==9&&fixture::impacts==impacts&&guardUnserved==1);
+    assert(fixture::log.find("block_flag=1 avoid_flag=7 result=9 roll_served=0")!=std::string::npos);
+    prime();fixture::serve=true;
+    assert(Block(123,monster.Address(),player.Address(),7,0)==9&&fixture::impacts==impacts&&guardUnserved==2);
+    assert(fixture::log.find("block_flag=0 avoid_flag=7 result=9 roll_served=0")!=std::string::npos);
+    // A snap turn invalidates the previous world frame until a new pose lands.
+    prime();auto changed=guard.state.surface;changed.epoch++;
+    PublishGuard(fixture::session,true,false,changed,true,true);assert(block()==0);
+    changed.at=GetTickCount64();PublishGuard(fixture::session,true,true,changed,true,true);assert(block()==1);
     std::puts("Physical shield adapter: walking/running guards, rejection reasons, native dispatch, Classic and eligibility checks passed");
 }

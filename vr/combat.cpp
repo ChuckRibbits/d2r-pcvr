@@ -319,16 +319,16 @@ Guard Incoming(uintptr_t attacker,uintptr_t defender,uint32_t& monster,bool& inR
     inReach=std::hypot(to.x,to.z)<=GuardTuning().parryRange;   // melee range (for the late-swing diagnostic)
     if(v==Verdict::Parry){std::lock_guard lock(guardMutex);framevr::guard::SpendParry(guard.state,g.state.snapAt);}
     if(guardTrace.load(std::memory_order_relaxed)) {
-        // Why this hit was judged so: the shield hand from the head (shield_guard.h
-        // Tuning): forward -.20-.85 m, up -.62-.30 m, side -.50-.65 m (+5 cm held), cover cos>=.50 about the view.
         const float d=std::hypot(to.x,to.z);const auto& s=g.state;
-        const float cover=d>.05f?(s.facing.x*to.x+s.facing.z*to.z)/d:1.f;
-        char line[512];snprintf(line,sizeof line,
-            "Frame guard trace: monster=%u class=%u verdict=%s reason=%s player_mode=%u raised=%d forward=%.2f up=%.2f side=%.2f m cover_cos=%.2f attacker=%.2f m swing=%.2f m swing_cos=%.2f snap_age=%lld ms snap_spent=%d attack_age=%lld ms pose_age=%llu ms",
+        float cover=0;framevr::guard::Coverage(s.surface,to,GuardTuning(),&cover);
+        char line[720];snprintf(line,sizeof line,
+            "Frame guard trace: monster=%u class=%u verdict=%s reason=%s player_mode=%u raised=%d forward=%.2f up=%.2f side=%.2f m cover_cos=%.2f attacker=%.2f m swing=%.2f m swing_cos=%.2f snap_age=%lld ms snap_spent=%d attack_age=%lld ms pose_age=%llu ms center=%.2f,%.2f,%.2f normal=%.2f,%.2f,%.2f eye=%.2f,%.2f,%.2f attacker_xz=%.2f,%.2f upm=%.3f",
             a[2],a[1],v==Verdict::Parry?"PARRY":v==Verdict::Block?"BLOCK":"OPEN",framevr::guard::ReasonName(reason),playerMode,int(s.raised),s.forward,s.up,s.side,cover,d,s.swing,s.swingCos,
             s.snapAt&&now>=s.snapAt?(long long)(now-s.snapAt):-1LL,int(s.snapUsed),
             attackAt&&now>=attackAt?(long long)(now-attackAt):-1LL,
-            (unsigned long long)(s.seenAt&&now>=s.seenAt?now-s.seenAt:0));
+            (unsigned long long)(s.seenAt&&now>=s.seenAt?now-s.seenAt:0),
+            s.surface.center.x,s.surface.center.y,s.surface.center.z,s.surface.normal.x,s.surface.normal.y,s.surface.normal.z,
+            s.surface.eye.x,s.surface.eye.y,s.surface.eye.z,to.x,to.z,g.upm);
         framevr::logging::Write(line);
     }
     return v==Verdict::Parry?Guard::Parry:v==Verdict::Block?Guard::Block:Guard::Open;
@@ -341,6 +341,12 @@ int GuardedBlock(uintptr_t game,uintptr_t attacker,uintptr_t defender,int avoid,
     forced=g==Guard::Open?Forced::Open:Forced::Block;forcedServed=false;
     const int result=originalBlock(game,attacker,defender,avoid,block);
     const bool served=forcedServed;forced=savedForced;forcedServed=savedServed;
+    if(guardTrace.load(std::memory_order_relaxed)) {
+        char line[256];snprintf(line,sizeof line,
+            "Frame guard native: monster=%u verdict=%s block_flag=%d avoid_flag=%d result=%d roll_served=%d durability=%d",
+            monster,g==Guard::Parry?"PARRY":g==Guard::Block?"BLOCK":"OPEN",block,avoid,result,int(served),durability);
+        framevr::logging::Write(line);
+    }
     if(!served)++guardUnserved; // native never reached its block roll (dodged/avoided first, or cannot block)
     else if(g==Guard::Open)++guardOpen;
     else {
@@ -452,18 +458,16 @@ void ConfigureRiposte(float bonus,uint32_t windowMs,float volume,const wchar_t* 
         framevr::logging::Write(line);
     }
 }
-void PublishGuard(uint64_t session,bool eligible,bool posed,const float view[3],float upm,
-                  const float hand[3],bool handOk,bool leftShield) {
+void PublishGuard(uint64_t session,bool eligible,bool posed,const framevr::guard::Pose& pose,
+                  bool handOk,bool leftShield) {
     const auto now=GetTickCount64();const auto t=GuardTuning();
-    if(!(upm>=1))upm=1;
     uint64_t lateAfter=0;bool late=false,raised=false;
     {
     std::lock_guard lock(guardMutex);
-    if(guard.session!=session||!eligible)guard.state={};
-    if(eligible)framevr::guard::Update(guard.state,{hand[0],hand[1],hand[2]},handOk,leftShield,
-                                       {view[0],view[1],view[2]},now,posed,t);
+    if(guard.session!=session||!eligible||guard.state.surface.epoch!=pose.epoch)guard.state={};
+    if(eligible)framevr::guard::Update(guard.state,pose,handOk,leftShield,now,posed,t);
     if(eligible&&framevr::guard::SwingAfterBlock(guard.state,now,t,lateAfter)){late=true;++guardLate;}
-    guard.session=session;guard.eligible=eligible;guard.upm=upm;guard.at=now;
+    guard.session=session;guard.eligible=eligible;guard.upm=std::max(1.f,guard.state.surface.unitsPerMetre);guard.at=now;
     raised=eligible&&guard.state.raised;
     // Trace: where the posed shield sits relative to the body, every 2 s, so a
     // held guard can be checked against the thresholds without being hit.

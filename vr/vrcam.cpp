@@ -6082,19 +6082,17 @@ void ShieldContactTick() {
 // Unleashed physical guard: independent of Smite. Not eligible (first person,
 // menus, no shield) keeps the native block roll; eligible but lowered = hit.
 void ShieldGuardTick() {
-    skel::MeleeWeaponPose pose;
+    framevr::guard::Pose pose;
     const bool eligible=g_enabled.load()&&g_inWorld.load()&&!ThirdPerson()&&!Overhead()&&g_eyeOk.load()&&
         !gamestate::MenuOpen()&&gamestate::LeftShield();
-    const bool posed=eligible&&skel::ShieldWeapon(pose)&&pose.worldEpoch==g_meleeTurnEpoch.load();
-    const float eye=UserEyeHeightM(),upm=std::max(1.f,ViewHeight())/eye;
-    // The shield hand from the head, in the view's turn. D2R only equips a shield
-    // in the left hand; the guard takes the side so a right-hand shield would mirror.
-    const D2RVR_Shared* sh=g_shared;float hand[3]{};
+    const auto epoch=g_meleeTurnEpoch.load();
+    const bool posed=eligible&&skel::ShieldGuardPose(pose)&&pose.epoch==epoch;
+    pose.epoch=epoch; // invalidate cached coverage across a snap turn
+    // Coverage, height and scale all come from the completed shield pose.
+    // Latest tracking may invalidate it, but must not replace its input sample.
+    const D2RVR_Shared* sh=g_shared;
     const bool handOk=sh&&sh->version==D2RVR_SHARED_VERSION&&sh->headValid&&(sh->handsValid&2u);
-    if(handOk)memcpy(hand,sh->leftHand,sizeof hand);
-    // the way the guard faces: where the headset looks, on the ground (the hand's own frame)
-    AcquireSRWLockShared(&g_stickLock);const StickFrame view=g_stickFrame;ReleaseSRWLockShared(&g_stickLock);
-    combat::PublishGuard(gamestate::LocalPlayer(),eligible,posed&&view.valid,view.camF,upm,hand,handOk,true);
+    combat::PublishGuard(gamestate::LocalPlayer(),eligible,posed,pose,handOk,true);
 }
 #endif
 

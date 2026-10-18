@@ -8,17 +8,52 @@
 // against the local player.
 namespace framevr::guard {
 using math::Vec;
+// One completed skeleton pose. Positions are relative to the native player
+// origin in world-facing metres. Hand remains head-yaw-relative for the parry.
+// No camera-facing direction is used for coverage.
+struct Pose {
+    Vec center{},normal{},eye{},hand{};
+    float unitsPerMetre=0;
+    uint64_t at=0;
+    uint32_t epoch=0;
+};
+inline bool Finite(Vec v) {return std::isfinite(v.x)&&std::isfinite(v.y)&&std::isfinite(v.z);}
+inline bool Valid(const Pose& p) {
+    const float n=math::Dot(p.normal,p.normal);
+    return p.at&&Finite(p.center)&&Finite(p.normal)&&Finite(p.eye)&&Finite(p.hand)&&
+        std::isfinite(p.unitsPerMetre)&&p.unitsPerMetre>=1&&p.unitsPerMetre<=32&&n>.99f&&n<1.01f;
+}
+// The coverage proxy uses the shield attachment's XY plane. Cross the final posed
+// axes so mirrored/nonuniform transforms retain a perpendicular surface normal.
+// Use the same calibrated scale, eye and input sample that posed the arm.
+inline bool FromAttachment(const float* world,const float* model,Vec eyeModel,Vec hand,
+                           float modelUnitsPerMetre,uint64_t at,uint32_t epoch,Pose& out) {
+    out={};
+    for(int i=0;i<16;++i)if(!std::isfinite(world[i])||!std::isfinite(model[i]))return false;
+    const Vec x{world[0],world[1],world[2]},y{world[4],world[5],world[6]};
+    const float scale=std::sqrt(model[0]*model[0]+model[1]*model[1]+model[2]*model[2]);
+    const float upm=modelUnitsPerMetre*scale;
+    if(!std::isfinite(upm)||upm<1||upm>32||math::Dot(x,x)<.01f||math::Dot(y,y)<.01f)return false;
+    Pose p;
+    p.center=Vec{world[12]-model[12],world[13]-model[13],world[14]-model[14]}*(1/upm);
+    p.eye=Vec{eyeModel.x*model[0]+eyeModel.y*model[4]+eyeModel.z*model[8],
+              eyeModel.x*model[1]+eyeModel.y*model[5]+eyeModel.z*model[9],
+              eyeModel.x*model[2]+eyeModel.y*model[6]+eyeModel.z*model[10]}*(1/upm);
+    p.normal=math::Normalized(math::Cross(x,y));p.hand=hand;p.unitsPerMetre=upm;p.at=at;p.epoch=epoch;
+    if(!Valid(p))return false;
+    out=p;return true;
+}
 struct Tuning {
     // Block: the shield hand up in front of the chest. Measured from the head in
     // its turn only (the view, without pitch or roll): metres, x right, y up,
     // z back. The chest is under the eyes, not ahead of them: a shield held
     // against it reads -.16..+.03 forward, -.36..-.56 up (log 2026-10-16). A hand
     // hanging at the side (~0 forward, ~-.7 up) is what it refuses.
-    float minForward=-.20f,maxForward=.85f;
     float minUp=-.62f,maxUp=.30f;          // ~navel to above the eyes; an arm hanging is -.69 and below
-    float outward=.65f,across=.50f;        // to the shield's own side / across the body
+    float reach=1.15f;                    // horizontal reach from the eyes, independent of head yaw
     float hold=.05f;                       // a raised guard holds this much past every edge
-    float coverCos=.5f;                    // 60 degree half-angle about the view, toward the attacker
+    float coverCos=.5f;                    // within 60 degrees of either face; edge-on does not cover
+    float lateral=.45f,behind=.20f;       // forgiving attachment coverage proxy, not mesh-sized collision
     uint32_t parryMs=400;                  // 0 disables perfect parry; a swing at most this long before the hit
     // Parry: a swing across the view, low on the far side up to high on the
     // shield's own side, 45 degrees (a left shield: lower right -> upper left).
@@ -28,20 +63,19 @@ struct Tuning {
     float parryRange=3.f;                  // metres; ranged attackers are blocked, not parried
     uint32_t staleMs=150;                  // pose older than this cannot block
 };
-enum class Rejection { None, Untracked, InvalidHand, TooLow, TooHigh, TooClose, TooFar, TooWide, AcrossBody, StalePose, OutsideCoverage, Count };
+enum class Rejection { None, Untracked, InvalidHand, InvalidSurface, TooLow, TooHigh, TooFar, StalePose, OutsideCoverage, OutsidePlacement, Count };
 inline const char* ReasonName(Rejection reason) {
     switch(reason) {
         case Rejection::None:return "covered";
         case Rejection::Untracked:return "untracked";
         case Rejection::InvalidHand:return "invalid_hand";
+        case Rejection::InvalidSurface:return "invalid_surface";
         case Rejection::TooLow:return "hand_low";
         case Rejection::TooHigh:return "hand_high";
-        case Rejection::TooClose:return "hand_behind";
         case Rejection::TooFar:return "hand_far";
-        case Rejection::TooWide:return "hand_wide";
-        case Rejection::AcrossBody:return "hand_across";
         case Rejection::StalePose:return "stale_pose";
-        case Rejection::OutsideCoverage:return "view_direction";
+        case Rejection::OutsideCoverage:return "shield_angle";
+        case Rejection::OutsidePlacement:return "shield_position";
         default:return "unknown";
     }
 }
@@ -57,7 +91,7 @@ struct State {
     static constexpr int kPath=24;
     Vec path[kPath]{};uint64_t pathAt[kPath]{};int pathNext=0,pathCount=0;
     float swing=0,swingCos=0;  // last measured: metres along the diagonal, alignment
-    Vec facing{}; // horizontal unit vector, where the view looks (render X/Z == grid X/Z axes)
+    Pose surface{};
     Vec hand{};   // last shield hand from the head, for [debug] guard_trace
     float forward=0,up=0,side=0;
 };
@@ -74,22 +108,23 @@ inline Rejection PositionRejection(Vec hand,bool leftShield,bool raised,const Tu
     if(!std::isfinite(f+u+s))return Rejection::InvalidHand;
     if(u<t.minUp-m)return Rejection::TooLow;
     if(u>t.maxUp+m)return Rejection::TooHigh;
-    if(f<t.minForward-m)return Rejection::TooClose;
-    if(f>t.maxForward+m)return Rejection::TooFar;
-    if(s>t.outward+m)return Rejection::TooWide;
-    if(s<-(t.across+m))return Rejection::AcrossBody;
+    if(std::hypot(f,s)>t.reach+m)return Rejection::TooFar;
     return Rejection::None;
 }
 inline bool InGuard(Vec hand,bool leftShield,bool raised,const Tuning& t) {return PositionRejection(hand,leftShield,raised,t)==Rejection::None;}
 
-// hand: the shield hand from the head (view frame, metres); handOk false while
-// it is not tracked. view: where the headset looks, on the ground, render X/Z
-// (== grid X/Z axes): the way the guard faces. The hand is in that same frame,
-// so a guard in front of the chest faces where the player looks. (From the
-// hero's feet to the shield was noise for a guard held close: 2026-10-16.)
-inline void Update(State& s,Vec hand,bool handOk,bool leftShield,Vec view,uint64_t now,bool posed,const Tuning& t) {
+// A missing render pose may briefly retain the last guard; the original pose
+// timestamp expires it. Re-reading the same pose never makes it newer.
+inline void Update(State& s,const Pose& pose,bool handOk,bool leftShield,uint64_t now,bool posed,const Tuning& t) {
+    const auto invalidate=[&](Rejection why){s={};s.rejection=why;};
+    if(!handOk){invalidate(Rejection::Untracked);return;}
     if(!posed)return; // keep the last guard; Judge() expires it after staleMs
-    s.rejection=handOk?PositionRejection(hand,leftShield,s.raised,t):Rejection::Untracked;
+    if(!Finite(pose.hand)){invalidate(Rejection::InvalidHand);return;}
+    if(!Valid(pose)||pose.at>now){invalidate(Rejection::InvalidSurface);return;}
+    if(now-pose.at>t.staleMs){invalidate(Rejection::StalePose);return;}
+    const Vec hand=pose.hand;
+    s.surface=pose;
+    s.rejection=PositionRejection(hand,leftShield,s.raised,t);
     const bool up=s.rejection==Rejection::None;
     if(handOk){s.hand=hand;Axes(hand,leftShield,s.forward,s.up,s.side);}
     if(up&&!s.raised)s.raisedAt=now;
@@ -122,8 +157,30 @@ inline void Update(State& s,Vec hand,bool handOk,bool leftShield,Vec view,uint64
     if(!up&&s.raised)s.loweredAt=now;
     if(!s.loweredAt&&!up)s.loweredAt=now;
     s.raised=up;
-    s.seenAt=now;
-    if(std::isfinite(view.x+view.z)&&std::hypot(view.x,view.z)>.1f)s.facing=math::Normalized(Vec{view.x,0,view.z});
+    s.seenAt=pose.at;
+}
+
+// D2R supplies the attacker location, not a 3D impact. Approximate horizontal
+// coverage around the actual attachment. Both shield faces work; require a
+// broad face toward the attacker and placement near the attacker-to-body line.
+inline Rejection Coverage(const Pose& p,Vec toAttacker,const Tuning& t,float* alignment=nullptr) {
+    if(alignment)*alignment=0;
+    if(!Valid(p)||!Finite(toAttacker))return Rejection::InvalidSurface;
+    const Vec fromBody{toAttacker.x-p.eye.x,0,toAttacker.z-p.eye.z};
+    const float distance=std::hypot(fromBody.x,fromBody.z);
+    const Vec offset{p.center.x-p.eye.x,0,p.center.z-p.eye.z};
+    if(distance>.05f) {
+        const Vec direction=fromBody*(1/distance);
+        const float along=math::Dot(offset,direction);
+        const float side=std::fabs(offset.x*direction.z-offset.z*direction.x);
+        if(along < -t.behind||along>distance+t.behind||side>t.lateral)return Rejection::OutsidePlacement;
+    } else if(std::hypot(offset.x,offset.z)>t.lateral)return Rejection::OutsidePlacement;
+    Vec incoming{toAttacker.x-p.center.x,0,toAttacker.z-p.center.z};
+    if(math::Dot(incoming,incoming)<.0025f)incoming=fromBody;
+    if(math::Dot(incoming,incoming)<.0025f)return Rejection::OutsideCoverage;
+    const float facing=std::fabs(math::Dot(p.normal,math::Normalized(incoming)));
+    if(alignment)*alignment=facing;
+    return facing>=t.coverCos?Rejection::None:Rejection::OutsideCoverage;
 }
 
 // toAttacker: grid-plane vector, player -> attacker, in metres. attackAt: when
@@ -136,8 +193,8 @@ inline Verdict Judge(const State& s,Vec toAttacker,uint64_t now,const Tuning& t,
     if(!s.seenAt||now<s.seenAt||now-s.seenAt>t.staleMs)return reject(Rejection::StalePose);
     const Vec flat{toAttacker.x,0,toAttacker.z};
     const float distance=std::hypot(flat.x,flat.z);
-    // Standing on the attacker: any raised guard covers.
-    if(distance>.05f&&math::Dot(s.facing,flat*(1/distance))<t.coverCos)return reject(Rejection::OutsideCoverage);
+    const auto coverage=Coverage(s.surface,toAttacker,t);
+    if(coverage!=Rejection::None)return reject(coverage);
     if(t.parryMs&&!s.snapUsed&&s.snapAt&&now>=s.snapAt&&now-s.snapAt<=t.parryMs&&distance<=t.parryRange&&
        (!attackAt||s.snapAt>=attackAt))
         return Verdict::Parry;

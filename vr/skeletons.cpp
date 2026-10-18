@@ -329,6 +329,7 @@ SRWLOCK g_gunBoneLock = SRWLOCK_INIT;
 GunBoneOut g_gunBone{};
 #ifdef D2RVR_NATIVE_OPENXR
 MeleeWeaponPose g_shieldPose{},g_offhandPose{};ULONGLONG g_shieldAt=0,g_offhandAt=0;
+framevr::guard::Pose g_shieldGuardPose{};
 struct CrossbowGeometry {Mat boltToAttach{};uintptr_t hero=0;uint32_t generation=0,key=0;ULONGLONG at=0;};
 CrossbowGeometry g_crossbowGeometry;
 framevr::crossbow::Pose g_crossbowPose;
@@ -1989,7 +1990,7 @@ void PoseBody(uintptr_t self, const Hero& h, const Input& in) {
             }
         }
         AcquireSRWLockExclusive(&g_gunBoneLock);g_offhandPose=offhand;g_offhandAt=offAt;ReleaseSRWLockExclusive(&g_gunBoneLock);
-        MeleeWeaponPose shieldPose{};ULONGLONG at=0;HeroXform hx;Mat model;
+        MeleeWeaponPose shieldPose{};framevr::guard::Pose guardPose{};ULONGLONG at=0;HeroXform hx;Mat model;
         const int shieldBone=h.shieldAttach>=0?h.shieldAttach:h.weapon[1];
         if(shieldFollowed&&in.havePoseStamp&&shieldBone>=0&&
            HeroTransform(&hx)&&hx.self==self&&(hx.parent&0xFFFFFu)==0xFFFFFu&&
@@ -2000,9 +2001,15 @@ void PoseBody(uintptr_t self, const Hero& h, const Input& in) {
                std::isfinite(origin.x+origin.y+origin.z+axis.x+axis.y+axis.z+player.x+player.y+player.z)) {
                 shieldPose={{origin.x,origin.y,origin.z},{axis.x,axis.y,axis.z},{player.x,player.y,player.z},in.poseStamp,in.worldEpoch,HeroGen()};
                 at=GetTickCount64();
+                if(in.haveEye) {
+                    const float modelUpm=framevr::body::UnitsPerMetre(h.eyeY>0?h.eyeY:in.eyeModel[1],in.userHeadM,in.scale);
+                    framevr::guard::FromAttachment(world.m,model.m,
+                        {in.eyeModel[0],in.eyeModel[1],in.eyeModel[2]},
+                        {in.hand[1][0],in.hand[1][1],in.hand[1][2]},modelUpm,at,in.worldEpoch,guardPose);
+                }
             }
         }
-        AcquireSRWLockExclusive(&g_gunBoneLock);g_shieldPose=shieldPose;g_shieldAt=at;ReleaseSRWLockExclusive(&g_gunBoneLock);
+        AcquireSRWLockExclusive(&g_gunBoneLock);g_shieldPose=shieldPose;g_shieldAt=at;g_shieldGuardPose=guardPose;ReleaseSRWLockExclusive(&g_gunBoneLock);
     }
 #endif
     // [hands] fist: free hands close and open with the controllers' grips.
@@ -2607,6 +2614,13 @@ bool CrossbowPose(framevr::crossbow::Pose& out) {
 bool ShieldWeapon(MeleeWeaponPose& out) {
     AcquireSRWLockShared(&g_gunBoneLock);const auto pose=g_shieldPose;const auto at=g_shieldAt;ReleaseSRWLockShared(&g_gunBoneLock);
     if(!at||GetTickCount64()-at>100||pose.heroGeneration!=HeroGen())return false;
+    out=pose;return true;
+}
+bool ShieldGuardPose(framevr::guard::Pose& out) {
+    AcquireSRWLockShared(&g_gunBoneLock);const auto pose=g_shieldGuardPose;const auto generation=g_shieldPose.heroGeneration;
+    ReleaseSRWLockShared(&g_gunBoneLock);
+    const auto now=GetTickCount64();
+    if(!pose.at||now<pose.at||now-pose.at>100||generation!=HeroGen())return false;
     out=pose;return true;
 }
 #endif
