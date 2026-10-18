@@ -134,8 +134,7 @@ One stroke can hit several monsters, each further one a little weaker.
   is, not by your block chance. Walking or running drops the guard.
 - **Parry:** as a melee attack comes in, swing the shield diagonally across
   your view (lower right to upper left with a left-hand shield) within
-  **Combat > Perfect parry window** (400 ms by default) of the hit. The
-  attacker staggers.
+  400 ms of the hit. The attacker staggers.
 - **Riposte:** your next weapon hit on the parried monster within 1.5 s is a
   clean hit: full damage, whatever your attack rating or timing.
 - **Guard strain:** every block (not a parry) strains your guard. A pale light
@@ -143,6 +142,9 @@ One stroke can hit several monsters, each further one a little weaker.
   the guard breaks and the light swells over most of your view. The shield
   keeps blocking; the cost is sight. Lower the shield to let it fade.
   **Combat > Guard strain color** switches the light to a black shadow.
+  **Guard strain buildup** selects Slow / Medium / Fast: about 20 / 10 / 5
+  blocks to full strain with default tuning. Medium keeps the original rate.
+  This changes how quickly it builds, not how much of your view it covers.
 
 **HUD > Loot label size** adjusts dropped-item text and its darker backing from
 20% to 150% in five-point steps. The original size is 45%; Apply saves the choice
