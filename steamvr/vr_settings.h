@@ -74,7 +74,7 @@ inline constexpr std::array<Definition,Count> Definitions{{
     {"Companions & effects", "Companion counts and current buffs, auras and harmful effects", L"interactions",L"companion_counts",1,0,1,1},
     {"Perfect parry window", "Unleashed: swing the shield (lower right to upper left) at most this long before a melee hit to stagger the attacker", L"gameplay",L"parry_ms",400,0,400,25},
     {"Guard strain color", "Blocking strain at the rim of the view: pale white light or black shadow", L"gameplay",L"guard_strain_dark",0,0,1,1},
-    {"Offline difficulty", "Native Players 1-8 scaling; tougher monsters and increased rewards", L"gameplay",L"offline_players",0,0,8,1},
+    {"Offline difficulty", "Players 1-8 scaling for newly spawned monsters", L"gameplay",L"offline_players",0,0,8,1},
 }};
 using Values=std::array<float,Count>;
 inline bool HapticKey(Key key){return key>=HapticStrength&&key<=HapticAlert;}
