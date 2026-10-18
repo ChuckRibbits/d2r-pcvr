@@ -10,10 +10,10 @@
 #include "haptic_strength.h"
 
 namespace framevr::settings {
-enum class Page { Controls, VR, Video, HUD, Combat, Haptics, Developer };
+enum class Page { Controls, VR, Video, HUD, Combat, Haptics, ReleaseNotes };
 enum Key { Motion, Seated, Dominant, Snap, TurnSpeed, Waist, BeltForward,
            Foveation, Sky, Fog, Ceiling, DrawDistance, ObjectDistance,
-           EyeHeight, ArmSpan, BodyCalibration, SkillGestures, WristMap, WristCompass, ControllerLabels, WeaponSkillIndicators, PlanarSpellAim, VitalsLocation, CriticalAlerts, RenderResolution, NavigationLocation, SmoothTurn, OrdinaryMobBars, MenuDistance, TooltipTiming, ProjectileAimAssist, MeleeHitSpeed, VitalsTilt, HapticStrength, HapticMelee, HapticBowDraw, HapticBowRelease, HapticSpell, HapticInteraction, HapticAlert, HapticShortMelee, BloodVisor, BloodWipe, MeleeRules, MeleeThrustSpeed, LootLabelSize, CompanionCounts, ParryWindow, StrainDark, Count };
+           EyeHeight, ArmSpan, BodyCalibration, SkillGestures, WristMap, WristCompass, ControllerLabels, WeaponSkillIndicators, PlanarSpellAim, VitalsLocation, CriticalAlerts, RenderResolution, NavigationLocation, SmoothTurn, OrdinaryMobBars, MenuDistance, TooltipTiming, ProjectileAimAssist, MeleeHitSpeed, VitalsTilt, HapticStrength, HapticMelee, HapticBowDraw, HapticBowRelease, HapticSpell, HapticInteraction, HapticAlert, HapticShortMelee, BloodVisor, BloodWipe, MeleeRules, MeleeThrustSpeed, LootLabelSize, CompanionCounts, ParryWindow, StrainDark, OfflinePlayers, Count };
 using ChangeMask=uint64_t;
 static_assert(Count<=64,"settings change mask capacity");
 constexpr ChangeMask SupportedChanges=~ChangeMask{0}>>(64-Count);
@@ -74,6 +74,7 @@ inline constexpr std::array<Definition,Count> Definitions{{
     {"Companions & effects", "Companion counts and current buffs, auras and harmful effects", L"interactions",L"companion_counts",1,0,1,1},
     {"Perfect parry window", "Unleashed: swing the shield (lower right to upper left) at most this long before a melee hit to stagger the attacker", L"gameplay",L"parry_ms",400,0,400,25},
     {"Guard strain color", "Blocking strain at the rim of the view: pale white light or black shadow", L"gameplay",L"guard_strain_dark",0,0,1,1},
+    {"Offline difficulty", "Native Players 1-8 scaling; tougher monsters and increased rewards", L"gameplay",L"offline_players",0,0,8,1},
 }};
 using Values=std::array<float,Count>;
 inline bool HapticKey(Key key){return key>=HapticStrength&&key<=HapticAlert;}
@@ -89,6 +90,7 @@ inline Values Defaults(){Values v{};for(int i=0;i<Count;++i)v[i]=Definitions[i].
 inline float Normalize(Key key,float value){
     const auto& d=Definitions[key];
     if(!std::isfinite(value))return d.defaultValue;
+    if(key==OfflinePlayers&&(value<0||value>8||std::floor(value)!=value))return 0;
     if(key==VitalsTilt)return vitals::NormalizeTilt(value);
     if(HapticKey(key))return haptics::NormalizeStrength(value);
     if((key==ControllerLabels||key==VitalsLocation||key==NavigationLocation||key==RenderResolution||key==MenuDistance||key==TooltipTiming||key==ProjectileAimAssist)&&(value<d.min||value>d.max||value!=std::round(value)))return d.defaultValue;
@@ -103,17 +105,17 @@ inline float EffectiveSnapAngle(float snap,float smooth){return SmoothTurning(sn
 inline ChangeMask Changed(const Values& a,const Values& b){ChangeMask mask=0;for(int i=0;i<Count;++i)if(std::fabs(a[i]-b[i])>.0001f)mask|=ChangeMask{1}<<i;return mask;}
 inline bool Conflict(const Values& current,const Values& base,ChangeMask mask){return (Changed(current,base)&mask)!=0;}
 enum class Result { None, Saving, Saved, Failed, Conflict };
-struct Snapshot {Values values=Defaults();bool ready=false;uint64_t sequence=0,revision=0;Result result=Result::None;};
+struct Snapshot {Values values=Defaults();bool ready=false,offlineDifficultyAvailable=false;uint64_t sequence=0,revision=0;Result result=Result::None;};
 struct Request {Values base{},values{};ChangeMask changed=0;uint64_t sequence=0;};
 struct Rect {
     int x,y,w,h;
     bool Contains(float px,float py)const{return px>=x&&px<x+w&&py>=y&&py<y+h;}
 };
 constexpr int Width=1280,Height=1024;
-constexpr int TabCount=6;
-constexpr Rect Tabs[TabCount]={{40,114,185,60},{243,114,185,60},{446,114,185,60},{649,114,185,60},{852,114,185,60},{1055,114,185,60}};
-inline int VisibleTabs(bool developer){return TabCount+(developer?1:0);}
-inline Rect TabBox(int index,bool developer){return developer?Rect{40+index*173,114,162,60}:Tabs[index];}
+constexpr int TabCount=7;
+inline constexpr const char* TabNames[TabCount]={"Controls","VR","Video","HUD","Combat","Haptics","Release Notes"};
+constexpr Rect Tabs[TabCount]={{40,114,150,60},{203,114,150,60},{366,114,150,60},{529,114,150,60},{692,114,150,60},{855,114,150,60},{1018,114,222,60}};
+inline Rect TabBox(int index){return Tabs[index];}
 constexpr Rect Apply{965,918,275,68},Close{650,918,275,68},Recenter{40,918,270,68},Calibrate{330,918,300,68};
 constexpr int RowY=242,RowStep=62;
 constexpr Rect ControllerBox{865,181,375,52};
@@ -128,11 +130,11 @@ inline Rect ControllerOption(int option){return {865,233+option*58,375,58};}
 inline Rect Decrease(int row){return {865,RowY+row*RowStep,64,52};}
 inline Rect Increase(int row){return {1176,RowY+row*RowStep,64,52};}
 inline Rect ValueBox(int row){return {942,RowY+row*RowStep,221,52};}
-inline int RowCount(Page page){return page==Page::Haptics?2+haptics::CategoryCount:page==Page::Combat?5:page==Page::VR?10:page==Page::Video?7:page==Page::HUD?10:0;}
+inline int RowCount(Page page){return page==Page::Haptics?2+haptics::CategoryCount:page==Page::Combat?6:page==Page::VR?10:page==Page::Video?7:page==Page::HUD?10:0;}
 inline Key RowKey(Page page,int row){
     constexpr Key hapticRows[]={HapticStrength,HapticMelee,HapticShortMelee,HapticBowDraw,HapticBowRelease,HapticSpell,HapticInteraction,HapticAlert};
     if(page==Page::Haptics)return hapticRows[row];
-    if(page==Page::Combat)return row==0?MeleeRules:row==1?MeleeHitSpeed:row==2?MeleeThrustSpeed:row==3?ParryWindow:StrainDark;
+    if(page==Page::Combat)return row==0?MeleeRules:row==1?MeleeHitSpeed:row==2?MeleeThrustSpeed:row==3?ParryWindow:row==4?StrainDark:OfflinePlayers;
     constexpr Key hud[]={VitalsLocation,VitalsTilt,CriticalAlerts,NavigationLocation,MenuDistance,TooltipTiming,BloodVisor,BloodWipe,LootLabelSize,CompanionCounts};
     if(page==Page::HUD)return hud[row];
     if(page==Page::Video&&row==6)return RenderResolution;
@@ -141,7 +143,7 @@ inline Key RowKey(Page page,int row){
 }
 enum class Kind { None, Tab, Change, Apply, Close, Recenter, Calibrate, ControllerMenu, ControllerChoice, DismissMenu, TestHaptics };
 struct Hit {Kind kind=Kind::None;int index=-1,delta=0;};
-inline Hit HitTest(Page page,float u,float v,bool controllerMenu=false,bool developer=false){
+inline Hit HitTest(Page page,float u,float v,bool controllerMenu=false){
     if(!std::isfinite(u)||!std::isfinite(v)||u<0||u>=1||v<0||v>=1)return {};
     const float x=u*Width,y=v*Height;
     if(page==Page::VR){
@@ -152,7 +154,7 @@ inline Hit HitTest(Page page,float u,float v,bool controllerMenu=false,bool deve
             return {Kind::DismissMenu}; // Never click through the dropdown.
         }
     }
-    for(int i=0;i<VisibleTabs(developer);++i)if(TabBox(i,developer).Contains(x,y))return {Kind::Tab,i};
+    for(int i=0;i<TabCount;++i)if(TabBox(i).Contains(x,y))return {Kind::Tab,i};
     if(Apply.Contains(x,y))return {Kind::Apply};
     if(Close.Contains(x,y))return {Kind::Close};
     if(Recenter.Contains(x,y))return {Kind::Recenter};
@@ -177,8 +179,7 @@ class Model {
     Values base=Defaults(),draft=base;
     uint64_t serial=0,pending=0;
 public:
-    bool open=false,ready=false,controllerMenu=false,developer=false;
-    void SetDeveloper(bool enabled){if(enabled==developer)return;developer=enabled;if(!developer&&page==Page::Developer)page=Page::Controls;++revision;}
+    bool open=false,ready=false,controllerMenu=false,offlineDifficultyAvailable=false;
     Page page=Page::Controls;
     Result result=Result::None;
     uint64_t revision=0;
@@ -186,11 +187,12 @@ public:
     bool Dirty()const{return Changed(base,draft)!=0;}
     bool Busy()const{return pending!=0;}
     bool CanTestHaptics(int category)const{return open&&ready&&!Busy()&&page==Page::Haptics&&category>=0&&category<haptics::CategoryCount;}
-    void Open(const Snapshot& s){open=true;controllerMenu=false;page=Page::Controls;base=draft=s.values;ready=s.ready;result=s.result;serial=std::max(serial,s.sequence);pending=s.result==Result::Saving?s.sequence:0;++revision;}
+    void Open(const Snapshot& s){open=true;controllerMenu=false;page=Page::Controls;base=draft=s.values;ready=s.ready;offlineDifficultyAvailable=s.offlineDifficultyAvailable;result=s.result;serial=std::max(serial,s.sequence);pending=s.result==Result::Saving?s.sequence:0;++revision;}
     void Close(){open=false;controllerMenu=false;++revision;}
     bool DismissControllerMenu(){if(!controllerMenu)return false;controllerMenu=false;++revision;return true;}
     void Observe(const Snapshot& s){
         if(!open)return;
+        if(offlineDifficultyAvailable!=s.offlineDifficultyAvailable){offlineDifficultyAvailable=s.offlineDifficultyAvailable;++revision;}
         if(pending){
             if(s.sequence==pending&&s.result!=Result::Saving){
                 pending=0;result=s.result;ready=s.ready;
@@ -205,7 +207,7 @@ public:
         if(!open)return {};
         if(hit.kind==Kind::Close){Close();return {};}
         if(hit.kind==Kind::DismissMenu){DismissControllerMenu();return {};}
-        if(hit.kind==Kind::Tab&&hit.index>=0&&hit.index<VisibleTabs(developer)){controllerMenu=false;page=Page(hit.index);++revision;return {};}
+        if(hit.kind==Kind::Tab&&hit.index>=0&&hit.index<TabCount){controllerMenu=false;page=Page(hit.index);++revision;return {};}
         if(!ready||Busy())return {};
         if(hit.kind==Kind::ControllerMenu&&page==Page::VR){controllerMenu=!controllerMenu;++revision;return {};}
         if(hit.kind==Kind::ControllerChoice&&page==Page::VR&&controllerMenu&&hit.index>=0&&hit.index<int(controllers::Choice::Count)){
@@ -214,6 +216,7 @@ public:
         if(hit.kind==Kind::Change&&hit.index>=0&&hit.index<Count){
             const auto key=Key(hit.index);const auto& d=Definitions[key];
             if(d.max==1)draft[key]=draft[key]>.5f?0.f:1.f;
+            else if(key==OfflinePlayers)draft[key]=std::clamp(draft[key]+float(hit.delta),0.f,8.f);
             else if(key==ProjectileAimAssist)draft[key]=float((int(draft[key])+(hit.delta<0?2:1))%3);
             else draft[key]=Normalize(key,draft[key]+hit.delta*d.step);
             result=Result::None;++revision;

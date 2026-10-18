@@ -2,7 +2,9 @@
 #include <cstdio>
 #include <cstring>
 #include "vr_settings_ui.h"
-#include "dev_release_notes.h"
+#include "release_notes.h"
+// Retain an exact summary fingerprint in the DLL for the release packager.
+extern "C" __declspec(dllexport) const char* D2RPCVR_ReleaseNotesIdentity(){return framevr::releasenotes::ContentMarker;}
 namespace framevr::settings {
 std::vector<uint8_t> Paint(const Model& m,Hit hover,const char* runtimeStatus,const calibration::Flow* body,const controllers::Labels& detected,int help){
     const bool showHelp=!body&&help!=NoHelp&&HelpText(help)[0];
@@ -64,17 +66,18 @@ std::vector<uint8_t> Paint(const Model& m,Hit hover,const char* runtimeStatus,co
     }else{
     text("DIABLO II / VR SETTINGS",{40,33,960,55},true);
     text("Point for help; trigger to change",{820,44,420,42},false,true,quiet);
-    const char* tabs[]={"Controls","VR","Video","HUD","Combat","Haptics","DEV"};
-    for(int i=0;i<VisibleTabs(m.developer);++i)button(TabBox(i,m.developer),tabs[i],{Kind::Tab,i},int(m.page)==i);
-    if(m.page==Page::Developer&&m.developer){
-        text(dev::ReleaseTitle,{40,195,1200,45},true);
-        text("Published features only. Test tools are on the hand wheel's DEV tab.",{40,241,1200,35},false,false,quiet);
-        int y=291;
-        for(const char* line:dev::ReleaseLines){
-            fill({40,y-3,1200,38},(y/40)%2?RGB(19,31,39):RGB(22,36,44));
-            text(line,{54,y,1170,35});y+=40;
+    for(int i=0;i<TabCount;++i)button(TabBox(i),TabNames[i],{Kind::Tab,i},int(m.page)==i);
+    if(m.page==Page::ReleaseNotes){
+        text(releasenotes::ReleaseTitle,{40,195,1200,45},true);
+        text(releasenotes::Author,{40,241,1200,35});
+        text(releasenotes::ProjectUrl,{40,281,1200,35},false,false,RGB(116,220,219));
+        int y=330;
+        for(const char* line:releasenotes::ReleaseLines){
+            fill({40,y-3,1200,35},(y/36)%2?RGB(19,31,39):RGB(22,36,44));
+            text(line,{54,y,1170,35});y+=36;
         }
-        text("Credits: aSuperGod (quiver), ChuckRibbits (mercenary), Sergious / BodyWalkVR.",{40,848,1200,28},false,false,quiet);
+        char credits[160];std::snprintf(credits,sizeof credits,"Credits: %s",releasenotes::Credits);
+        text(credits,{40,848,1200,28},false,false,quiet);
     }else if(m.page==Page::Controls){
         text("Each stick opens its hand's wheel. Use the OTHER hand's laser to assign skills.",{40,180,1200,32},false,false,RGB(116,220,219));
         text("LEFT HAND",{58,215,520,40},true);text("RIGHT HAND",{676,215,520,40},true);
@@ -110,7 +113,7 @@ std::vector<uint8_t> Paint(const Model& m,Hit hover,const char* runtimeStatus,co
             fill(ControllerBox,hover.kind==Kind::ControllerMenu?RGB(63,103,112):RGB(31,48,56));
             const std::string selected=std::string(controllers::Choices[int(m.Get()[ControllerLabels])])+"  \xe2\x96\xbc";
             text(selected.c_str(),{ControllerBox.x,ControllerBox.y+10,ControllerBox.w,37},true,true,RGB(116,220,219));
-        }else text(m.page==Page::Haptics?"Tune vibration for your headset and controllers.":m.page==Page::Combat?"Tune physical weapon combat.":m.page==Page::HUD?"Adjust your HUD and dropped-item labels.":runtimeStatus,{40,197,1200,42},false,false,quiet);
+        }else text(m.page==Page::Haptics?"Tune vibration for your headset and controllers.":m.page==Page::Combat?"Tune physical combat and offline difficulty.":m.page==Page::HUD?"Adjust your HUD and dropped-item labels.":runtimeStatus,{40,197,1200,42},false,false,quiet);
         for(int row=0;row<RowCount(m.page);++row){
             const Key key=RowKey(m.page,row);const auto& d=Definitions[key];const float value=m.Get()[key];const int y=RowY+row*RowStep;
             fill({40,y-4,1200,RowStep},row%2?RGB(19,31,39):RGB(22,36,44));
@@ -129,6 +132,7 @@ std::vector<uint8_t> Paint(const Model& m,Hit hover,const char* runtimeStatus,co
             else if(key==TooltipTiming)std::snprintf(label,sizeof label,"%s",TooltipTimingNames[int(value)]);
             else if(key==Dominant)std::snprintf(label,sizeof label,"%s",value>.5f?"Left":"Right");
             else if(key==MeleeRules)std::snprintf(label,sizeof label,"%s",MeleeRulesNames[value>.5f?1:0]);
+            else if(key==OfflinePlayers){if(value==0)std::snprintf(label,sizeof label,"Game default");else std::snprintf(label,sizeof label,"Players %.0f",value);}
             else if(key==StrainDark)std::snprintf(label,sizeof label,"%s",StrainColorNames[value>.5f?1:0]);
             else if(d.max==1)std::snprintf(label,sizeof label,"%s",value>.5f?"On":"Off");
             else if(key==Snap)std::snprintf(label,sizeof label,"%.0f deg",value);
@@ -153,10 +157,12 @@ std::vector<uint8_t> Paint(const Model& m,Hit hover,const char* runtimeStatus,co
             text("Palm: raise left hand palm up; release grip/trigger. Status follows the minimap.",{58,854,1160,22},false,false,quiet);
         }
         if(m.page==Page::Combat){
-            text("Unleashed: each deliberate stroke can hit multiple creatures. Classic: attack rating, defense and block decide each hit; attack speed paces them and misses spend the attack.",{58,570,1160,76},false,false,quiet);
-            text("Swings: 12.00 m/s by default and 18 cm of travel. Thrusts: 2.00 m/s by default and 12 cm toward the weapon tip. Pull back before stabbing again.",{58,650,1160,76},false,false,quiet);
-            text("Both speed settings apply in either mode. Apply updates them immediately. Shield bash, arrows and spells are unchanged.",{58,730,1160,76},false,false,quiet);
+            text("Unleashed: each deliberate stroke can hit multiple creatures. Classic: attack rating, defense and block decide each hit; attack speed paces them and misses spend the attack.",{58,626,1160,66},false,false,quiet);
+            text("Swings: 12.00 m/s by default and 18 cm of travel. Thrusts: 2.00 m/s by default and 12 cm toward the weapon tip. Pull back before stabbing again.",{58,698,1160,66},false,false,quiet);
+            text("Speed settings apply in either melee mode. Difficulty scaling applies to newly spawned monsters; start a fresh game for a consistent test.",{58,770,1160,66},false,false,quiet);
         }
+        if(m.page==Page::Combat&&!m.offlineDifficultyAvailable)
+            text("Offline scaling adapter unavailable. Game difficulty remains unchanged.",{58,842,1160,30},false,false,quiet);
         if(m.page==Page::Haptics){
             text("0% is Off; 100% is normal. Overall strength scales each category, up to the controller's maximum. Adjust in steps of 10%.",{58,750,1160,56},false,false,quiet);
             text("Tests match the action's hands and use displayed settings. Apply saves; Close discards edits. Alerts also need the HUD option.",{58,810,1160,56},false,false,quiet);

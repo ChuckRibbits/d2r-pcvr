@@ -30,6 +30,24 @@ static bool SavePng(const char* path,const std::vector<uint8_t>& rgba,UINT width
 int main(int argc,char** argv) {
     using namespace framevr::interaction;
     struct Cleanup {~Cleanup(){icons::Shutdown();}} cleanup;
+    if(argc>2&&!std::strcmp(argv[2],"--quick-use-check")) {
+        if(argc>3){wchar_t path[32768]{};MultiByteToWideChar(CP_UTF8,0,argv[3],-1,path,32768);icons::Directory(path);}
+        Snapshot s;s.quick.known=true;s.quick.assigned=Code('t','b','k');s.quick.count=3;
+        s.quick.items[0]={{91,4,Code('t','b','k')},18,"Tome of Town Portal"};
+        s.quick.items[1]={{92,5,Code('i','b','k')},0,"Tome of Identify"};
+        s.quick.items[2]={{93,6,Code('h','p','5')},4,"Super Healing Potion"};
+        for(auto& skill:s.skills){skill.known=skill.available=true;skill.id=0;std::snprintf(skill.name,sizeof skill.name,"Attack");}
+        icons::Prefetch(s);if(!icons::Wait(10000))return 110;
+        Output o;o.wheel=true;o.wheelHand=1;
+        constexpr int width=1536,height=768;std::vector<uint8_t> gallery(width*height*4);
+        for(int page=0;page<2;++page) {
+            o.editor=page?3:0;o.editCount=3;for(int i=0;i<3;++i)o.itemOptions[i]=s.quick.items[i];
+            auto pixels=Paint(s,o,-1);if(pixels.size()!=1024*1024*4)return 111;
+            for(int y=0;y<height;++y)std::memcpy(&gallery[(y*width+page*768)*4],&pixels[y*1024*4],768*4);
+        }
+        if(!SavePng(argv[1],gallery,width,height))return 112;
+        std::puts("Quick-use wheel and inventory picker painted");return 0;
+    }
     if(argc>2&&!std::strcmp(argv[2],"--categories-check")) {
         namespace categories=framevr::skillcategories;
         if(argc>3){wchar_t path[32768]{};MultiByteToWideChar(CP_UTF8,0,argv[3],-1,path,32768);icons::Directory(path);}

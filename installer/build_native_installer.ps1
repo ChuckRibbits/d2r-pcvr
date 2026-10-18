@@ -33,7 +33,7 @@ if (!(Test-Path -LiteralPath $ISCCPath)) {
 }
 $compilerVersion = & $ISCCPath --version
 if ($LASTEXITCODE -ne 0) { throw 'Could not determine the Inno Setup compiler version' }
-$staged = & $python (Join-Path $PSScriptRoot 'stage_native_installer.py') --package $package --python-archive $PythonArchive --staging-parent (Join-Path $repoRoot 'build-frame/installer-staging')
+$staged = & $python (Join-Path $PSScriptRoot 'stage_native_installer.py') --package $package --python-archive $PythonArchive --staging-parent (Join-Path $repoRoot 'build-frame/installer-staging') --version $Version
 if ($LASTEXITCODE -ne 0) { throw 'Native installer payload validation failed' }
 $stage = $staged | ConvertFrom-Json
 $runtimeExe = Join-Path $stage.payload '.runtime/python/python.exe'

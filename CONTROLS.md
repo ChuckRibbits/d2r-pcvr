@@ -3,10 +3,12 @@
 Windows preview for **SteamVR and Virtual Desktop (VDXR)**. These controls
 use two tracked VR controllers; an Xbox controller is not required.
 
+**VR Settings > Release Notes** shows one line per feature from the last
+published release. It is available to everyone and works offline.
+
 In [developer mode](steamvr/DEVELOPMENT_SCENARIOS.md), the hand-wheel **DEV** tab
-provides Character, Equipment and act-grouped travel tools. **VR Settings > DEV**
-shows one line per feature from the last published release. These tabs are hidden
-in ordinary play; launch with `--frame-vr --frame-dev` for isolated offline tests.
+provides Character, Equipment and act-grouped travel tools. These test tools are
+hidden in ordinary play; launch with `--frame-vr --frame-dev` for isolated offline tests.
 
 ## Button names
 
@@ -56,6 +58,9 @@ Quest left X/Y correspond to Index left A/B; right A/B labels are the same.
 | Open or close a hand wheel | Click that hand's thumbstick; it stays open without holding |
 | Switch to the other wheel | Click the other thumbstick |
 | Assign a button | Opposite hand's laser + trigger: select a wedge, then a skill |
+| Use an inventory item | Either wheel > **QUICK USE**: point with the opposite hand and briefly click its trigger; use happens on release |
+| Assign / change quick-use item | Hold the trigger over **QUICK USE** for 0.65 seconds, then select a carried scroll, tome or other usable item. An empty slot also opens the picker on a short click. **CLEAR SLOT** removes the assignment |
+| Toggle running / walking | Either wheel > **RUN / WALK**, using the opposite hand's laser + trigger |
 | Finish editing | Click the wheel hand's stick again, or select CLOSE in its center |
 | Inventory / character / skills / journal | Left Grip + left stick click; or either wheel > INVENTORY; native tabs retain their controls |
 | VR settings / body calibration | Either wheel → VR SETTINGS |
@@ -68,6 +73,7 @@ Quest left X/Y correspond to Index left A/B; right A/B labels are the same.
 | Free melee swing / thrust | Move the equipped weapon through an enemy |
 | Break pots / barrels | Swing a held melee weapon through them with its trigger released. Either Barbarian weapon works; ordinary button interaction/kicking remains available |
 | Choose melee rules / motion thresholds | **VR Settings > Combat**: Unleashed or Classic, Melee hit speed, and Melee thrust speed |
+| Increase offline difficulty | **VR Settings > Combat > Offline difficulty**: Game default or Players 1-8; higher counts make monsters tougher and increase rewards |
 | Bow draw | Right trigger near the left-hand bow string; draw and release |
 | Fire a crossbow | Equip bolts and assign **Attack** to Right Trigger; aim and fire while moving. Release Right Grip so the loot-label combo does not consume the trigger |
 | Support a crossbow | Hold Left Grip near the stock; release to free the hand. After a shoulder swap, release the swap grip before grabbing the stock again |
@@ -345,3 +351,16 @@ input cannot also act in the next screen or in gameplay.
 The mod's own settings and calibration panels use their VR laser controls:
 right laser + trigger to select, Right B to close/cancel. Native gamepad input
 does not pass through those panels.
+
+### Quick-use inventory slot
+
+Both wheels share one assignment, remembered by item type across restocks and
+sessions. The displayed count includes carried inventory items or tome charges;
+belt items keep their existing potion controls. Stash and cube contents are not
+included. Use follows the native game's restrictions. Identify opens inventory
+for target selection. A long press edits without spending an item. Move the
+pointer away before releasing to cancel a short press. If the item changed,
+ran out, or tracking was lost, the use is discarded rather than retried.
+
+The minimap has a narrow bronze bevel and inset corner details. The full native
+map is fitted inside the frame so edge markers remain visible.
