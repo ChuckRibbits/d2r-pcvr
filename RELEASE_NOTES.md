@@ -126,3 +126,22 @@ prototype are excluded from the release.
 See [installation instructions](INSTALL-WINDOWS.md) and [controls](CONTROLS.md).
 
 [Full source comparison](https://github.com/bearstonem/d2r-pcvr/compare/v0.3.16-windows-preview...v0.3.17-windows-preview)
+
+<!-- PCVR_IN_HEADSET_NOTES
+release: v0.3.17-windows-preview
+credits: aSuperGod (quiver), ChuckRibbits (mercenary), Sergious / BodyWalkVR.
+- D2R PCVR is now named D2R VR Unleashed.
+- Bow quiver: select an arrow skill with its assigned face button.
+- Skill arrows use native mana costs, damage and effects.
+- The nocked arrow shows the selected skill's model and particles.
+- Arrow impact bursts follow the contact point on low shots.
+- Toss health, rejuvenation, antidote or thawing potions to your mercenary.
+- Mercenaries turn red below 50% life; the tint clears on recovery.
+- Building roofs remain visible when entering in first person.
+- Hanging fixtures advance physics once per stereo pair.
+- Larger renderer and entity pools target Act III allocation crashes.
+- Unleashed installs separately under mods/D2R-PCVR.
+- Own plugin identity: d2rl-pcvr.dll and d2r_pcvr.ini.
+- Update / repair preserves settings, calibration and normal saves.
+- Setup explains Windows Security blocks and checks for enabled HDR.
+PCVR_IN_HEADSET_NOTES -->

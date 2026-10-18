@@ -76,7 +76,8 @@ run the relevant Python fixture tests, for example:
 
 For isolated gameplay testing, see [developer mode](steamvr/DEVELOPMENT_SCENARIOS.md).
 `--frame-dev` selects a separate offline character list; its DEV tools provide
-level presets, class gear, travel and the last published release reference.
+level presets, class gear and travel. VR Settings > Release Notes is available
+in regular and developer builds.
 `build_windows.ps1 -Developer -Test` stages a candidate separately for this mode.
 Run `prepare_dev_scenarios_test.py` and `launch_windows_test.py` after changing
 developer staging or launch flags. Linux `session_test.py` requires `/proc` and
@@ -110,6 +111,10 @@ Test only with offline characters; do not test this injected mod in online play.
   normal unmodded desktop play available.
 
 ## Review and protected main
+
+Release preparation uses the [release workflow](docs/RELEASING.md) and
+[GitHub release template](.github/RELEASE_TEMPLATE.md). Keep the versioned
+in-headset summary in `RELEASE_NOTES.md` current when preparing a release.
 
 `main` requires pull requests and blocks force pushes and branch deletion.
 Contributor PRs require an approving maintainer review; new commits dismiss
