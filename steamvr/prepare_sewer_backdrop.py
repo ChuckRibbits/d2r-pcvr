@@ -126,8 +126,13 @@ def geometry(assets):
     height = upper - lowest + 1.
     if not 2 < height < 20:
         raise ValueError('Unexpected sewer opening height')
+    # The lowest floor edge is narrower than the visible opening. The first
+    # headset preview left a strip exposed at the right jamb: overlap that
+    # side farther, in stair-local coordinates rather than screen coordinates.
+    left_overlap, right_overlap = 1., 3.
     # Half a world unit behind the open floor end, with edges hidden in stone.
     center = add(middle, mul(normal, -.5))
+    center = add(center, mul(right, (right_overlap-left_overlap)/2))
     center = (center[0], (lowest+upper)/2, center[2])
     bmeshes = black.array(black.root['Meshes'])
     decoded = black.meshes()
@@ -146,7 +151,7 @@ def geometry(assets):
     yaw = -math.atan2(right[2], right[0])
     facing = product((0., math.sin(yaw/2), 0., math.cos(yaw/2)), (half, 0., 0., half))
     return dict(center=center, facing=facing,
-                scale=((width+1.)/(hi[0]-lo[0]), 1., height/(hi[2]-lo[2])),
+                scale=((width+left_overlap+right_overlap)/(hi[0]-lo[0]), 1., height/(hi[2]-lo[2])),
                 quad_center=mul(add(lo, hi), .5),
                 source_sha256={STAIRS: digest(raw_stairs), BLACK: digest(raw_black)})
 

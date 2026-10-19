@@ -50,7 +50,10 @@ stairs in the four native entrance presets. It reuses the game's existing
 files, and follows each preset's stair transform. Two opposite faces cover
 both viewing directions. Existing terrain, entities, physics and warp data
 remain intact. This is a local developer preview; normal setup does not run it.
-Placement and appearance still need a headset check.
+The first headset preview covered most of the opening but left a visible strip
+on the right. The revised preview extends the backdrop farther toward that
+stair-local side and increases the overlap on both sides. Revised placement
+still needs a headset check.
 
 Close the game and its loader, then run from the checkout containing this helper:
 
