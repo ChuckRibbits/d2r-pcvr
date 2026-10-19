@@ -130,20 +130,32 @@ suppressing it safely is an open performance task. Do not minimize the game as
 a workaround: background/focus handling also affects input and frame pacing.
 
 Each game frame normally draws both eyes: the left, then the right with the
-game time held. VR Settings > Video > **Stereo rendering: By turns** draws one
-eye per game frame instead, alternating. The headset gets that eye fresh and
-the other eye's last image turned on the GPU from the pose it was drawn at to
-the current one, head, stick and mouse turns included, so both eyes go at one
-pose as a pair does. This halves the draw work per headset frame. Each eye
-still updates at half the frame rate, and moving monsters are one game frame
-apart between the eyes, which can look doubled. The turn cannot move the
-image, so while the hero moves (and 0.3 s after), on a snap turn, outside first
-person, in open menus, during stereo captures and on any frame without a
-reusable image for both eyes, a full pair is drawn. With **Desktop shows one
-eye**, the kept left image covers the right frames on the monitor. The choice is
-stored as `[stereo] eyes_by_turns` and applies live. Every 10 seconds the log
-reports a `vrcam: eyes by turns` line with frames per second, the time spent in
-each part of a frame and how many frames went as pairs while moving.
+game time held. VR Settings > Video > **Stereo rendering** can instead draw one
+eye per game frame, alternating. The headset gets that eye fresh and the other
+eye's last image turned on the GPU from the pose it was drawn at to the current
+one, head, stick and mouse turns included, so both eyes go at one pose as a
+pair does. This halves the draw work per headset frame. Each eye still updates
+at half the frame rate, and moving monsters are one game frame apart between
+the eyes, which can look doubled.
+
+- **Hybrid** goes by turns while the hero stands. A turn cannot move the image,
+  so from the hero's first step to 0.3 s after the last, a full pair is drawn.
+- **By turns** also moves the other eye with the scene depth it was drawn with:
+  a grid over its image, each point put back at its distance and seen from the
+  current eye, nearer points over farther ones, so walking stays by turns.
+  Edges where something near uncovers what is behind it stretch for that frame;
+  transparent effects and the game's labels move as the scene behind them. The
+  depth is the same copy the added fog reads (DLSS's corner included). Until
+  both eyes have one, it acts as Hybrid.
+
+Both draw a pair on a snap turn, outside first person, in open menus, during
+stereo captures and on any frame without a reusable image for both eyes. With
+**Desktop shows one eye**, the kept left image covers the right frames on the
+monitor. The choice is stored as `[stereo] eyes_by_turns` (0 Both eyes,
+1 Hybrid, 2 By turns) and applies live. Every 10 seconds the log reports a
+`vrcam: eyes by turns` line with frames per second, the time spent in each part
+of a frame, how many other eyes were moved with depth or only turned, and how
+many frames went as pairs while moving.
 
 **Left X** opens inventory through the game's UI service when no menu is open.
 When native menu panels are open, Left X performs the native X action. It

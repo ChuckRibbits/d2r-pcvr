@@ -245,8 +245,10 @@ int main(){
               saved.values[Foveation]==2&&Int(path,L"custom",L"keep")==12345,"foveation strength survives reload without changing the mode");
     }
     Check(saved.values[EyesByTurns]==0,"profiles without the key draw both eyes each frame");
-    for(int turns:{1,0}){
-        model.Open(saved);model.Click({Kind::Change,EyesByTurns,1});request=model.Click({Kind::Apply});
+    for(int turns:{1,2,0}){
+        model.Open(saved);
+        for(int step=int(saved.values[EyesByTurns]);step!=turns;step+=turns>step?1:-1)model.Click({Kind::Change,EyesByTurns,turns>step?1:-1});
+        request=model.Click({Kind::Apply});
         Check(vrsettings::Submit(request)&&vrsettings::Poll(name),"save stereo rendering");
         saved=vrsettings::Read();
         Check(saved.values[EyesByTurns]==turns&&Int(path,L"stereo",L"eyes_by_turns")==turns,"stereo rendering survives reload");

@@ -30,9 +30,20 @@ took 11-14 ms against about 7 ms per eye in the measurement above.
 The second test: head turns were right, but walking left one eye lagging. The
 turned eye still showed the world from where the hero stood a frame earlier,
 10 cm or more at a run, which a rotation cannot correct; that needs the scene's
-depth (a positional reprojection), not attempted here. By turns now draws a
-pair from the hero point's first step to 0.3 s after its last and on a snap
-turn, and only in first person. Stick and mouse turns are part of the GPU turn.
+depth (a positional reprojection). That candidate became **Hybrid**: a pair
+from the hero point's first step to 0.3 s after its last and on a snap turn,
+by turns only in first person, stick and mouse turns part of the GPU turn.
+
+**By turns** then added the positional reprojection. Each eye's scene depth is
+kept with its image (scenedepth's per-present copy, kept even when no effect
+wants it), and where the eye stood in the world (View) and its near plane. The
+eye not drawn is a grid of 4-pixel cells over the old image, each vertex put
+at near / depth along its ray, carried through the world to the current eye
+(TurnMove) and rasterised with a reversed depth test, over the rotation-only
+turn for the edges. GPU tests check a wall, the sky, occlusion by a nearer post
+and DLSS's drawn corner. Not yet measured in the headset: its GPU cost (a 3072
+square eye is about 3.5 million grid vertices) and how the stretched
+disocclusion edges look.
 
 ## Issue 20 investigation, October 12
 

@@ -64,12 +64,18 @@ int main(){
     {
         Model stereo;stereo.Open(s);stereo.Click({Kind::Tab,int(Page::Video)});
         Check(stereo.Get()[EyesByTurns]==0&&RowEnabled(stereo.Get(),EyesByTurns),"both eyes each frame by default");
+        stereo.Click(At(Page::Video,Increase(9)));
+        Check(stereo.Get()[EyesByTurns]==1&&stereo.Dirty(),"one step up is Hybrid");
+        for(int i=0;i<3;++i)stereo.Click(At(Page::Video,Increase(9)));
+        Check(stereo.Get()[EyesByTurns]==2,"By turns is the last choice");
         stereo.Click(At(Page::Video,ValueBox(9)));
-        Check(stereo.Get()[EyesByTurns]==1&&stereo.Dirty(),"the value box switches to eyes by turns");
-        stereo.Click(At(Page::Video,Decrease(9)));
-        Check(stereo.Get()[EyesByTurns]==0,"either arrow switches back to both eyes");
-        Check(std::string(StereoRenderingNames[0])=="Both eyes"&&std::string(StereoRenderingNames[1])=="By turns","stereo rendering names");
-        Check(Normalize(EyesByTurns,NAN)==0&&Normalize(EyesByTurns,-3)==0&&Normalize(EyesByTurns,4)==1,"malformed stereo rendering stays a toggle");
+        Check(stereo.Get()[EyesByTurns]==2,"the value box does not cycle three choices");
+        for(int i=0;i<3;++i)stereo.Click(At(Page::Video,Decrease(9)));
+        Check(stereo.Get()[EyesByTurns]==0,"the arrows step back to both eyes");
+        Check(std::string(StereoRenderingNames[0])=="Both eyes"&&std::string(StereoRenderingNames[1])=="Hybrid"&&
+              std::string(StereoRenderingNames[2])=="By turns","stereo rendering names");
+        Check(Normalize(EyesByTurns,NAN)==0&&Normalize(EyesByTurns,-3)==0&&Normalize(EyesByTurns,4)==0&&Normalize(EyesByTurns,1.5f)==0&&
+              Normalize(EyesByTurns,1)==1&&Normalize(EyesByTurns,2)==2,"malformed stereo rendering draws both eyes");
     }
     {
         Model map;map.Open(s);map.Click({Kind::Tab,int(Page::HUD)});

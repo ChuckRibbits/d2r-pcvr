@@ -61,6 +61,7 @@
 #include "menu_controls.h"
 #include "ui_blit.h"
 #include "turn_warp.h"
+#include "scene_depth.h"
 #include "ui_world.h"
 #include "../vr/interactionstate.h"
 #include "../vr/journal_ui.h"
@@ -393,11 +394,15 @@ bool mirrorSupported=false,mirrorMono=false;
 // pose and FOV it was drawn with (lastEyes). A frame without a stereo layer
 // forgets both, so the next draws a pair.
 bool turnFrame=false;
+// Where an eye stood and how it was turned in the game's world (View), and its
+// near plane (Projection): By turns moves the eye not drawn from there.
+struct EyeWorld {math::Vec at{};math::Quat turn{0,0,0,1};float nearPlane=0;bool ok=false;};
 // base: the body's turn into the world the eye was drawn with (View), so a
 // stick, mouse or recentre turn since is turned out as well as the head's.
-struct LastEye {XrPosef pose{};XrFovf fov{};bool ok=false;math::Quat base{0,0,0,1};};
+struct LastEye {XrPosef pose{};XrFovf fov{};bool ok=false;math::Quat base{0,0,0,1};EyeWorld world{};};
 std::array<LastEye,2> lastEyes{};
 std::array<math::Quat,2> viewBase{{{0,0,0,1},{0,0,0,1}}};   // each eye's, as View last built it
+std::array<EyeWorld,2> viewWorld{};   // each eye's this frame
 // While the option is on, each eye's image as shown, kept by Copy (KeepTurn):
 // a released swapchain image is the runtime's. Also the desktop mirror's left
 // image on the frames that draw the right.
@@ -407,6 +412,11 @@ std::array<bool,2> turnKept{};
 bool turnImagesFailed=false,turnWarpTried=false;
 DXGI_FORMAT turnFormat=DXGI_FORMAT_UNKNOWN;
 TurnWarp turnWarp;
+// By turns: each eye's scene depth as drawn, beside its kept image (KeepDepth).
+bool keepDepth=false;
+struct KeptDepth {ComPtr<ID3D12Resource> texture;DXGI_FORMAT format=DXGI_FORMAT_UNKNOWN;float scale[2]{1,1};bool ok=false;};
+std::array<KeptDepth,2> turnDepths;
+TurnCounts turnCounts;
 std::atomic<bool> uiSupported{false};
 bool journalMode=false,spatialMode=false,workspacePlaced=false,opaqueMenuMode=false,upperBandMenuMode=false;
 bool npcChoicesMode=false;
@@ -2101,6 +2111,7 @@ bool Begin() {
     const bool panel=wantsPanel&&wantsPanel()&&!spatialMode;
     if(panel!=panelMode){ReleasePanelInput();panelMouse.Suspend();panelMode=panel;menuPlaced=false;Say(panel?"Frame OpenXR: flat menu panel active":"Frame OpenXR: stereo gameplay active");}
     for(auto& e:eyes)e.copied=false;
+    for(auto& w:viewWorld)w.ok=false;
     XrViewLocateInfo li{XR_TYPE_VIEW_LOCATE_INFO};li.viewConfigurationType=XR_VIEW_CONFIGURATION_TYPE_PRIMARY_STEREO;li.displayTime=frameState.predictedDisplayTime;li.space=space;
     XrViewState vs{XR_TYPE_VIEW_STATE};uint32_t count=0;
     const double locateStart=Milliseconds();
@@ -2189,6 +2200,40 @@ bool KeepTurn(ID3D12GraphicsCommandList* list,ID3D12Resource* shown,int eye) {
     list->ResourceBarrier(2,b);
     return true;
 }
+// By turns: this present's scene depth (scenedepth's copy, made for it before
+// the effects) kept beside the eye's image, as the depth it was drawn with.
+bool KeepDepth(ID3D12GraphicsCommandList* list,int eye) {
+    scenedepth::Kept latest;
+    if(!scenedepth::Take(latest)) {
+        static bool told=false;
+        if(!told){told=true;Say("Frame OpenXR: by turns - no scene depth for an eye yet; moving draws both eyes until there is");}
+        return false;
+    }
+    constexpr auto readable=D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE|D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE;
+    auto* source=reinterpret_cast<ID3D12Resource*>(latest.resource);
+    auto& kept=turnDepths[eye];
+    const auto desc=source->GetDesc();
+    if(kept.texture) {   // a new DLSS mode: a new size. The last turn may still read the old one.
+        const auto k=kept.texture->GetDesc();
+        if(k.Width!=desc.Width||k.Height!=desc.Height||k.Format!=desc.Format){if(!WaitGpu())return false;kept.texture.Reset();}
+    }
+    if(!kept.texture) {
+        D3D12_HEAP_PROPERTIES heap{};heap.Type=D3D12_HEAP_TYPE_DEFAULT;
+        auto r=desc;r.Alignment=0;r.Flags=D3D12_RESOURCE_FLAG_NONE;
+        if(!Hr(device->CreateCommittedResource(&heap,D3D12_HEAP_FLAG_NONE,&r,readable,nullptr,IID_PPV_ARGS(&kept.texture)),"create kept eye depth"))return false;
+        char line[192];std::snprintf(line,sizeof line,"Frame OpenXR: by turns - each eye's scene depth kept: %llux%u format %u, the scene in %.3f x %.3f of it",
+            (unsigned long long)desc.Width,desc.Height,latest.format,latest.scale[0],latest.scale[1]);Say(line);
+    }
+    D3D12_RESOURCE_BARRIER b[2]{};
+    for(auto& x:b){x.Type=D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;x.Transition.Subresource=D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;}
+    b[0].Transition.pResource=source;b[0].Transition.StateBefore=readable;b[0].Transition.StateAfter=D3D12_RESOURCE_STATE_COPY_SOURCE;
+    b[1].Transition.pResource=kept.texture.Get();b[1].Transition.StateBefore=readable;b[1].Transition.StateAfter=D3D12_RESOURCE_STATE_COPY_DEST;
+    list->ResourceBarrier(2,b);list->CopyResource(kept.texture.Get(),source);
+    for(auto& x:b)std::swap(x.Transition.StateBefore,x.Transition.StateAfter);
+    list->ResourceBarrier(2,b);
+    kept.format=DXGI_FORMAT(latest.format);kept.scale[0]=latest.scale[0];kept.scale[1]=latest.scale[1];
+    return true;
+}
 // The eye not drawn this frame, turned from its kept image to this frame's
 // head into its swapchain. False leaves it unacquired: its last released
 // image goes again at the pose it was drawn with.
@@ -2203,15 +2248,32 @@ bool TurnEye(int i) {
     const auto& was=lastEyes[i];const auto& now=views[i];
     const auto h=TurnHomography(math::Multiply(was.base,Q(was.pose.orientation)),{was.fov.angleLeft,was.fov.angleRight,was.fov.angleDown,was.fov.angleUp},
                                 math::Multiply(viewBase[i^1],Q(now.pose.orientation)),{now.fov.angleLeft,now.fov.angleRight,now.fov.angleDown,now.fov.angleUp});
+    // By turns: moved as well, with the depth it was drawn with, to where View
+    // puts this eye this frame (the hero's step, the head's, the body's turn).
+    TurnDepth depth{};const TurnDepth* moving=nullptr;
+    const auto& w=stageWorld;
+    if(keepDepth&&was.world.ok&&turnDepths[i].ok&&turnWarp.DepthReady()&&w.valid&&w.upm>0&&GetTickCount64()-w.at<250) {
+        const auto offset=math::Rotate(w.base,V(now.pose.position)-w.origin)*w.upm;
+        const math::Vec at={w.hero.x+offset.x,w.hero.y+w.eyeHeight+offset.y,w.hero.z+offset.z};
+        depth.depth=turnDepths[i].texture.Get();depth.format=turnDepths[i].format;
+        depth.scale[0]=turnDepths[i].scale[0];depth.scale[1]=turnDepths[i].scale[1];
+        depth.nearPlane=was.world.nearPlane;
+        depth.move=TurnMove(was.world.at,was.world.turn,at,math::Multiply(w.base,Q(now.pose.orientation)));
+        depth.drawnFov={was.fov.angleLeft,was.fov.angleRight,was.fov.angleDown,was.fov.angleUp};
+        depth.nowFov={now.fov.angleLeft,now.fov.angleRight,now.fov.angleDown,now.fov.angleUp};
+        moving=&depth;
+    }
     D3D12_RESOURCE_BARRIER b{};b.Type=D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
     b.Transition={turnImages[i].Get(),D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES,D3D12_RESOURCE_STATE_COMMON,D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE};
     e.commands->ResourceBarrier(1,&b);
-    const bool turned=turnWarp.Render(device.Get(),e.commands.Get(),turnImages[i].Get(),e.images[e.index].texture,h,i);
+    const bool turned=turnWarp.Render(device.Get(),e.commands.Get(),turnImages[i].Get(),e.images[e.index].texture,h,i,moving);
     std::swap(b.Transition.StateBefore,b.Transition.StateAfter);e.commands->ResourceBarrier(1,&b);
     if(!Hr(e.commands->Close(),"close turn list")||!turned){failed=true;return false;}
     ID3D12CommandList* lists[]={e.commands.Get()};queue->ExecuteCommandLists(1,lists);
     if(!Hr(queue->Signal(fence.Get(),++fenceValue),"signal turn fence")){failed=true;return false;}
-    e.copyFence=fenceValue;return true;
+    e.copyFence=fenceValue;
+    if(moving)++turnCounts.moved;else ++turnCounts.turned;
+    return true;
 }
 bool Copy(ID3D12Resource* src,Eye& e,reshade::api::command_queue* rq) {
     // The runtime orders images on our bound D3D12 queue. Our allocator has a
@@ -2255,6 +2317,7 @@ bool Copy(ID3D12Resource* src,Eye& e,reshade::api::command_queue* rq) {
             {v.fov.angleLeft,v.fov.angleRight,v.fov.angleDown,v.fov.angleUp},potionScene);
     }
     turnKept[eye]=keepTurns&&KeepTurn(e.commands.Get(),dest,int(eye));
+    turnDepths[eye].ok=keepDepth&&turnKept[eye]&&KeepDepth(e.commands.Get(),int(eye));
     if(gpu){
         e.commands->EndQuery(gpuProfile.heap.Get(),D3D12_QUERY_TYPE_TIMESTAMP,eye*5+4);
         e.commands->ResolveQueryData(gpuProfile.heap.Get(),D3D12_QUERY_TYPE_TIMESTAMP,eye*5,5,gpuProfile.readback.Get(),eye*5*sizeof(uint64_t));
@@ -2482,7 +2545,16 @@ bool TakeWorldRecenter() {
     std::lock_guard lock(mutex);const bool take=worldRecenter;worldRecenter=false;return take;
 }
 void RequestStereoCapture(){captureRequested.store(true);}
-bool EyesByTurns() {return vrsettings::Read().values[settings::EyesByTurns]>.5f;}
+int StereoRendering() {return std::clamp(int(std::lround(vrsettings::Read().values[settings::EyesByTurns])),0,2);}
+bool TurnDepthWanted() {return StereoRendering()==2;}
+bool TurnDepthReady() {
+    std::lock_guard lock(mutex);
+    return turnWarp.DepthReady()&&turnDepths[0].ok&&turnDepths[1].ok&&lastEyes[0].world.ok&&lastEyes[1].world.ok;
+}
+TurnCounts TakeTurnCounts() {
+    std::lock_guard lock(mutex);
+    const auto counts=turnCounts;turnCounts={};return counts;
+}
 bool TurnReady() {
     std::lock_guard lock(mutex);
     return lastEyes[0].ok&&lastEyes[1].ok&&!captureRequested.load()&&!d2rcam::LabelCapturePending();
@@ -2491,7 +2563,9 @@ void BeginPair(bool byTurns) {
     std::lock_guard lock(mutex);
     lastTiming={};
     if(session&&!failed){
-        if(frame)EndPair();turnFrame=byTurns;keepTurns=byTurns||EyesByTurns();Begin();pairDrawing=true;
+        if(frame)EndPair();
+        const int mode=StereoRendering();
+        turnFrame=byTurns;keepTurns=byTurns||mode>0;keepDepth=mode==2;Begin();pairDrawing=true;
         gpuProfile.started=gpuProfile.effects=gpuProfile.resolved=0;
         // The profile and stereo captures take both eyes from one game frame.
         if(Active()&&!byTurns)profile::BeginPair();else profile::SkipPair();
@@ -2542,7 +2616,7 @@ void EndPair() {
     const auto drawn=[&](int i){return eyes[i].copied||(turn&&lastEyes[i].ok);};
     if(render&&valid&&!panelMode&&drawn(0)&&drawn(1)&&(eyes[0].copied||eyes[1].copied)) {
         for(int i=0;i<2;++i){
-            if(eyes[i].copied)lastEyes[i]={views[i].pose,views[i].fov,true,viewBase[i]};
+            if(eyes[i].copied)lastEyes[i]={views[i].pose,views[i].fov,true,viewBase[i],viewWorld[i]};
             // drawn or turned this frame: this frame's pose; else as drawn
             const bool now=eyes[i].copied||i==turned;
             pv[i].pose=now?views[i].pose:lastEyes[i].pose;pv[i].fov=now?views[i].fov:lastEyes[i].fov;
@@ -3149,13 +3223,15 @@ bool View(float out[16],const float hero[3],float eyeHeight,float userEyeHeight,
         }
     }
     const auto& pose=eye<0?head:views[eye&1].pose;
-    if(eye>=0)viewBase[eye&1]=base;
     const auto offset=math::Rotate(base,V(pose.position)-origin)*upm;
     const math::Vec position={hero[0]+offset.x,hero[1]+eyeHeight+offset.y,hero[2]+offset.z};
-    math::View(position,math::Multiply(base,Q(pose.orientation)),out);return true;
+    const auto turn=math::Multiply(base,Q(pose.orientation));
+    if(eye>=0){viewBase[eye&1]=base;auto& w=viewWorld[eye&1];w.at=position;w.turn=turn;w.ok=true;}
+    math::View(position,turn,out);return true;
 }
 bool Projection(float out[16],float nearWorld,int eye) {
     std::lock_guard lock(mutex);if(!Active())return false;
+    viewWorld[eye&1].nearPlane=nearWorld;
     const auto& f=views[eye&1].fov;
     math::Projection(f.angleLeft,f.angleRight,f.angleDown,f.angleUp,nearWorld,out);return true;
 }
@@ -3195,7 +3271,7 @@ void Shutdown(bool preserveResolution) {
     detectedControllers={};controllerLabels={};controllerProfilesDirty=true;frameControllerExtension=false;
     for(auto& e:eyes){if(e.chain&&pDestroySwapchain)pDestroySwapchain(e.chain);e={};}
     mirrorSupported=mirrorMono=false;
-    turnFrame=keepTurns=false;lastEyes={};viewBase={{{0,0,0,1},{0,0,0,1}}};turnImages={};turnKept={};turnImagesFailed=turnWarpTried=false;turnWarp={};
+    turnFrame=keepTurns=keepDepth=false;lastEyes={};viewBase={{{0,0,0,1},{0,0,0,1}}};viewWorld={};turnDepths={};turnCounts={};turnImages={};turnKept={};turnImagesFailed=turnWarpTried=false;turnWarp={};
     for(auto& s:handSpaces){if(s&&pDestroySpace)pDestroySpace(s);s=XR_NULL_HANDLE;}
     if(headSpace&&pDestroySpace)pDestroySpace(headSpace);if(space&&pDestroySpace)pDestroySpace(space);
     if(session&&pDestroySession)pDestroySession(session);if(actionSet&&pDestroyActionSet)pDestroyActionSet(actionSet);

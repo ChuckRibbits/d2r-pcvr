@@ -80,7 +80,7 @@ inline constexpr std::array<Definition,Count> Definitions{{
     {"Map view", "Isometric or Top-down wrist minimap", L"interactions",L"map_top_down",0,0,1,1},
     {"Rotate map", "Top-down only: keep your facing direction at the top", L"interactions",L"map_rotate",0,0,1,1},
     {"Foveation strength", "Higher levels shade a larger edge area more coarsely", L"render",L"foveation_strength",1,0,3,1},
-    {"Stereo rendering", "By turns: one eye per frame while you stand; less draw work", L"stereo",L"eyes_by_turns",0,0,1,1},
+    {"Stereo rendering", "One eye per frame: Hybrid while you stand, By turns always", L"stereo",L"eyes_by_turns",0,0,2,1},
 }};
 using Values=std::array<float,Count>;
 inline bool HapticKey(Key key){return key>=HapticStrength&&key<=HapticAlert;}
@@ -99,7 +99,7 @@ inline float Normalize(Key key,float value){
     if(key==OfflinePlayers&&(value<0||value>8||std::floor(value)!=value))return 0;
     if(key==VitalsTilt)return vitals::NormalizeTilt(value);
     if(HapticKey(key))return haptics::NormalizeStrength(value);
-    if((key==ControllerLabels||key==VitalsLocation||key==NavigationLocation||key==RenderResolution||key==MenuDistance||key==TooltipTiming||key==ProjectileAimAssist||key==StrainSpeed||key==FoveationStrength)&&(value<d.min||value>d.max||value!=std::round(value)))return d.defaultValue;
+    if((key==ControllerLabels||key==VitalsLocation||key==NavigationLocation||key==RenderResolution||key==MenuDistance||key==TooltipTiming||key==ProjectileAimAssist||key==StrainSpeed||key==FoveationStrength||key==EyesByTurns)&&(value<d.min||value>d.max||value!=std::round(value)))return d.defaultValue;
     value=std::clamp(value,d.min,d.max);
     return d.step==1?std::round(value):value;
 }
@@ -136,7 +136,7 @@ inline constexpr const char* MeleeRulesNames[]={"Unleashed","Classic"};
 inline constexpr const char* StrainColorNames[]={"White","Black"};
 inline constexpr const char* StrainSpeedNames[]={"Slow","Medium","Fast"};
 inline constexpr const char* FoveationStrengthNames[]={"Low","Medium","High","Maximum"};
-inline constexpr const char* StereoRenderingNames[]={"Both eyes","By turns"};
+inline constexpr const char* StereoRenderingNames[]={"Both eyes","Hybrid","By turns"};
 // Strength only applies while foveated rendering is selected; Off greys it out.
 inline bool RowEnabled(const Values& values,Key key){return key!=FoveationStrength||values[Foveation]>.5f;}
 inline Rect ControllerOption(int option){return {865,233+option*58,375,58};}
@@ -234,7 +234,7 @@ public:
             if(d.max==1)draft[key]=draft[key]>.5f?0.f:1.f;
             else if(key==OfflinePlayers)draft[key]=std::clamp(draft[key]+float(hit.delta),0.f,8.f);
             else if(key==StrainSpeed)draft[key]=std::clamp(draft[key]+float(hit.delta),0.f,2.f);
-            else if(key==FoveationStrength)draft[key]=std::clamp(draft[key]+float(hit.delta),d.min,d.max);
+            else if(key==FoveationStrength||key==EyesByTurns)draft[key]=std::clamp(draft[key]+float(hit.delta),d.min,d.max);
             else if(key==ProjectileAimAssist)draft[key]=float((int(draft[key])+(hit.delta<0?2:1))%3);
             else draft[key]=Normalize(key,draft[key]+hit.delta*d.step);
             result=Result::None;++revision;

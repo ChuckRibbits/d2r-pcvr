@@ -4866,14 +4866,16 @@ void Recenter();
 // game frame apart: the frame time is not held, every pass is a game frame of
 // its own. Open menus, and a frame without both eyes' last images, draw a pair.
 //
-// So does a frame while the hero moves: the eye not drawn would show the world
-// from a frame back, a hand's breadth at a run, and the GPU turn can only turn
-// it, not move it (owner, 2026-10-19: "moving still has the right eye
-// lagging"). From the hero point's first step to 0.3 s after its last, and on
-// a jump of the body's yaw (a snap turn). First person only: in the other
-// views the camera itself moves as the head turns.
+// While the hero moves, the eye not drawn would show the world from a frame
+// back, a hand's breadth at a run, and the turn alone cannot move it (owner,
+// 2026-10-19: "moving still has the right eye lagging"). Hybrid draws a pair
+// from the hero point's first step to 0.3 s after its last; By turns moves
+// that eye with the scene's depth instead (framevr TurnEye), once both eyes'
+// depth is kept. Both draw a pair on a jump of the body's yaw (a snap turn),
+// and only first person goes by turns: in the other views the camera itself
+// moves as the head turns.
 std::atomic<uint32_t> g_movePairs{0};   // frames drawn as pairs for that, for the 10 s line
-bool TurnSafe() {
+bool TurnSafe(bool& moved, bool& snapped) {
     static float last[3] = {};
     static bool had = false;
     static ULONGLONG movedAt = 0;
@@ -4886,14 +4888,17 @@ bool TurnSafe() {
     }
     if (ok) memcpy(last, at, sizeof last);
     had = ok;
-    const bool snapped = std::fabs(WrapDeg(g_mouseYaw.load() + g_turnYaw.load() - g_heldYaw.load())) > 15.0f;
-    return ok && now - movedAt > 300 && !snapped;
+    moved = now - movedAt <= 300;
+    snapped = std::fabs(WrapDeg(g_mouseYaw.load() + g_turnYaw.load() - g_heldYaw.load())) > 15.0f;
+    return ok;
 }
 bool TurnsWanted() {
-    if (!framevr::EyesByTurns()) return false;
-    const bool safe = TurnSafe();   // every frame, so a step is seen from the last one
+    const int mode = framevr::StereoRendering();
+    if (mode == 0) return false;
+    bool moved = false, snapped = false;
+    const bool seen = TurnSafe(moved, snapped);   // every frame, so a step is seen from the last one
     if (ThirdPerson() || Overhead() || gamestate::MenuOpen() || !framevr::TurnReady()) return false;
-    if (!safe) { g_movePairs.fetch_add(1); return false; }
+    if (!seen || snapped || (moved && !(mode == 2 && framevr::TurnDepthReady()))) { g_movePairs.fetch_add(1); return false; }
     return true;
 }
 
@@ -4936,9 +4941,10 @@ uintptr_t DrawTurn(int a, bool continued) {
     // drawn while the hero moved.
     if (const ULONGLONG now = GetTickCount64(); now - since >= 10000) {
         const double k = 0.001 / turns, rate = periods ? periods * 1e6 / sumPeriod : 0.0;
-        LogF("vrcam: eyes by turns - %.1f frames/s (each eye %.1f/s) | a frame, ms: game %.2f | XR begin %.2f (wait %.2f) | pass %.2f | XR end %.2f | longest %.1f | %u frames by turns, %u pairs while moving",
+        const auto how = framevr::TakeTurnCounts();
+        LogF("vrcam: eyes by turns - %.1f frames/s (each eye %.1f/s) | a frame, ms: game %.2f | XR begin %.2f (wait %.2f) | pass %.2f | XR end %.2f | longest %.1f | %u frames by turns (other eye moved with depth %u, turned only %u), %u pairs while moving",
              rate, rate * 0.5, periods ? sumGap * 0.001 / periods : 0.0, sumBegin * k, sumWait / turns, sumPass * k, sumEnd * k, longest * 0.001,
-             turns, g_movePairs.exchange(0));
+             turns, how.moved, how.turned, g_movePairs.exchange(0));
         lastEnd = 0.0; sumGap = sumBegin = sumWait = sumPass = sumEnd = sumPeriod = longest = 0.0;
         since = now; turns = periods = 0;
     }
@@ -7952,7 +7958,8 @@ void OnBeginEffects(reshade::api::effect_runtime* rt, reshade::api::command_list
 #ifdef D2RVR_NATIVE_OPENXR
         const bool ownDepth=g_enabled.load()&&g_inWorld.load()&&framevr::Active()&&
             (FogWanted()||g_set.skyOn.load()||g_arcaneSky.load()||CeilWanted()||TableKeyWanted());
-        framevr::scenedepth::Bind(rt,cl,ownDepth,s);
+        const bool turnDepth=g_enabled.load()&&g_inWorld.load()&&framevr::Active()&&framevr::TurnDepthWanted();
+        framevr::scenedepth::Bind(rt,cl,ownDepth,turnDepth,s);
         SetBool(rt,"OwnDepth",ownDepth);
 #else
         SetBool(rt,"OwnDepth",false);

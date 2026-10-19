@@ -2,6 +2,7 @@
 #include "frame_math.h"
 #include <array>
 #include <cmath>
+#include <cstdint>
 #include <d3d12.h>
 #include <wrl/client.h>
 
@@ -10,8 +11,9 @@ namespace framevr {
 // head it was drawn at to this frame's, and goes to the runtime at this
 // frame's pose, both eyes at one head as from a pair. Handed in at its own
 // older pose instead, it jittered and lost convergence in every head turn on
-// SteamVR (owner's Steam Frame, 2026-10-19). Rotation only, as the runtime's
-// own reprojection: the eyes' few millimetres of travel in a turn stay.
+// SteamVR (owner's Steam Frame, 2026-10-19). The turn alone is rotation only,
+// as the runtime's own reprojection; with the scene's depth (TurnDepth) the
+// eye is also moved, for walking.
 //
 // This frame's image coordinates (u right, v down, 0..1) to the drawn image's,
 // homogeneous and row-major. OpenXR poses and FOVs: -Z ahead, +Y up.
@@ -35,19 +37,50 @@ inline std::array<float,9> TurnHomography(math::Quat drawn,math::Fov drawnFov,ma
     return multiply(pixel,inDrawn.data());
 }
 
+// The drawn view's space to this frame's view's: x_now = R x_drawn + t, rows
+// of [R | t], from where each eye stood and how it was turned in the world.
+inline std::array<float,12> TurnMove(math::Vec drawnAt,math::Quat drawn,math::Vec nowAt,math::Quat now) {
+    const auto back=math::Conjugate(now);
+    const auto turn=math::Multiply(back,drawn);
+    const auto x=math::Rotate(turn,{1,0,0}),y=math::Rotate(turn,{0,1,0}),z=math::Rotate(turn,{0,0,1});
+    const auto t=math::Rotate(back,drawnAt-nowAt);
+    return {x.x,y.x,z.x,t.x, x.y,y.y,z.y,t.y, x.z,y.z,z.z,t.z};
+}
+
+// The scene's depth as the eye was drawn: a grid over the drawn image, each
+// point put back at its distance and seen from this frame's eye, nearer
+// points over farther ones. The drawn eye's projection is infinite reverse-Z:
+// distance = nearPlane / depth, in the world's units as `move`. Where the
+// grid leaves the target uncovered (its edges) the rotation-only turn stays.
+struct TurnDepth {
+    ID3D12Resource* depth=nullptr;   // in a shader-resource state
+    DXGI_FORMAT format=DXGI_FORMAT_UNKNOWN;   // its shader-readable format
+    float scale[2]{1,1};       // the part of it the scene was drawn into: DLSS draws into a corner
+    float nearPlane=0;
+    std::array<float,12> move{};   // TurnMove
+    math::Fov drawnFov{},nowFov{};
+};
+// The grid's spacing in target pixels: an edge in depth stays within a few.
+inline constexpr uint32_t TurnGridStep=4;
+
 class TurnWarp {
-    Microsoft::WRL::ComPtr<ID3D12RootSignature> root;
-    Microsoft::WRL::ComPtr<ID3D12PipelineState> pipeline;
-    Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> sourceHeap,targetHeap;
+    Microsoft::WRL::ComPtr<ID3D12RootSignature> root,depthRoot;
+    Microsoft::WRL::ComPtr<ID3D12PipelineState> pipeline,depthPipeline;
+    Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> sourceHeap,targetHeap,depthHeap;
+    Microsoft::WRL::ComPtr<ID3D12Resource> depthTarget;   // the grid's own depth test, the target's size
     DXGI_FORMAT format=DXGI_FORMAT_UNKNOWN;
 public:
     // format: the eye swapchain's typed format, of the source and the target alike.
     bool Initialize(ID3D12Device*,DXGI_FORMAT format,void (*log)(const char*));
     bool Ready() const {return pipeline!=nullptr;}
+    bool DepthReady() const {return depthPipeline!=nullptr;}
     // Render will take these: checked before a swapchain image is acquired for it.
     bool Fits(ID3D12Resource* source,ID3D12Resource* target) const;
     // source in PIXEL_SHADER_RESOURCE, target in RENDER_TARGET. slot 0 or 1, one
     // per eye: the GPU may still read the other eye's from the frame before.
-    bool Render(ID3D12Device*,ID3D12GraphicsCommandList*,ID3D12Resource* source,ID3D12Resource* target,const std::array<float,9>& homography,int slot);
+    // With depth (and DepthReady) the eye is moved as well; false only when
+    // nothing was drawn.
+    bool Render(ID3D12Device*,ID3D12GraphicsCommandList*,ID3D12Resource* source,ID3D12Resource* target,
+                const std::array<float,9>& homography,int slot,const TurnDepth* depth=nullptr);
 };
 }
