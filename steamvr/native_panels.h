@@ -47,6 +47,11 @@ constexpr float Width=1.9f,Distance=.55f,MainDistance=.70f;
 inline float MenuDistance(int preset,bool main=false) {
     return (main?MainDistance:Distance)+.30f*std::clamp(preset,0,2);
 }
+// A grabbed menu may sit a little inside and beyond the presets (.55-1.30 m).
+constexpr float NearDistance=.40f,FarDistance=1.50f;
+inline float Nudged(float distance,float nudge) {
+    return std::clamp(distance+nudge,NearDistance,FarDistance);
+}
 struct Size {float width,height;};
 struct Placement {math::Vec position;math::Quat orientation;};
 // A valid but untracked startup pose may still be at the reference-space origin.
@@ -93,6 +98,33 @@ struct MouseGate {
         return e;
     }
     void Suspend(){held[0]=held[1]=true;down[0]=down[1]=false;}
+};
+// Right grip on the laser's panel pushes or pulls it along its facing axis by
+// the hand's own travel. Grip-then-trigger stays native Shift-click: moving
+// needs 3 cm of travel before any click, and a click first leaves the grip as
+// Shift. A trigger squeezed while moving is consumed until released.
+struct Grab {
+    enum class State {Idle,Armed,Moving,Held,Spent} state=State::Idle;
+    float origin=0,start=0;
+    static constexpr float Slack=.03f;
+    bool Step(bool grip,bool hit,bool click,float depth,float& distance) {
+        switch(state) {
+        case State::Idle:if(grip){state=hit&&!click?State::Armed:State::Spent;origin=depth;}break;
+        case State::Armed:
+            if(!grip)state=State::Idle;
+            else if(click)state=State::Spent;
+            else if(std::fabs(depth-origin)>Slack){state=State::Moving;origin=depth;start=distance;}
+            break;
+        case State::Moving:
+            if(!grip)state=click?State::Held:State::Idle;
+            else distance=std::clamp(start+depth-origin,NearDistance,FarDistance);
+            break;
+        case State::Held:if(!click)state=grip?State::Spent:State::Idle;break;
+        case State::Spent:if(!grip)state=State::Idle;break;
+        }
+        return state==State::Moving||state==State::Held;
+    }
+    void Suspend(){state=State::Spent;}
 };
 struct ScrollGate {
     double next=0;int direction=0;

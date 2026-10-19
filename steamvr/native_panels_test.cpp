@@ -17,6 +17,33 @@ int main(){
         const auto p=panels::AtEyeLevel({0,1.7f,0},math::Yaw(.8f),distance);
         Check(p.position.y==1.7f,"all distance presets retain eye-level anchor");
     }
+    Check(panels::NearDistance<panels::MenuDistance(0)&&panels::FarDistance>panels::MenuDistance(2,true),
+        "grab limits reach past every preset");
+    Check(panels::Nudged(panels::MenuDistance(1),-.2f)==panels::MenuDistance(1)-.2f&&
+          panels::Nudged(panels::MenuDistance(0),-1)==panels::NearDistance&&panels::Nudged(panels::MenuDistance(2,true),1)==panels::FarDistance,
+          "remembered nudge applies to presets within the limits");
+    {
+        panels::Grab grab;float d=.85f;
+        Check(!grab.Step(true,false,false,0,d)&&!grab.Step(true,true,false,.2f,d)&&d==.85f,"grip started off the panel never grabs");
+        grab.Step(false,true,false,0,d);
+        Check(!grab.Step(true,true,false,.5f,d)&&!grab.Step(true,true,false,.52f,d)&&d==.85f,"slack keeps a still grip as Shift");
+        Check(grab.Step(true,true,false,.54f,d)&&d==.85f,"travel engages without a jump");
+        Check(grab.Step(true,false,false,.64f,d)&&std::fabs(d-.95f)<1e-5f,"push moves the panel by the hand's travel, even off the panel");
+        Check(grab.Step(true,true,false,.34f,d)&&std::fabs(d-.65f)<1e-5f,"pull brings it nearer");
+        grab.Step(true,true,false,-2,d);Check(d==panels::NearDistance,"near limit");
+        grab.Step(true,true,false,4,d);Check(d==panels::FarDistance,"far limit");
+        Check(grab.Step(true,true,true,4,d),"a trigger squeezed while moving is consumed");
+        Check(grab.Step(false,true,true,0,d)&&d==panels::FarDistance,"release keeps the distance; held trigger stays consumed");
+        Check(!grab.Step(false,true,false,0,d),"trigger release ends the grab");
+        d=.85f;grab.Step(true,true,false,0,d);
+        Check(!grab.Step(true,true,true,0,d)&&!grab.Step(true,true,false,.3f,d)&&d==.85f,"grip then click stays Shift-click for the whole hold");
+        grab.Step(false,true,false,0,d);
+        Check(!grab.Step(true,true,true,0,d)&&!grab.Step(true,true,true,.3f,d)&&d==.85f,"grip during a drag or held click never grabs");
+        grab.Step(false,true,false,0,d);grab.Step(true,true,false,0,d);grab.Suspend();
+        Check(!grab.Step(true,true,false,.3f,d)&&d==.85f,"a surface change needs a fresh grip");
+        grab.Step(false,true,false,0,d);grab.Step(true,true,false,0,d);
+        Check(grab.Step(true,true,false,.1f,d),"fresh grip after suspension grabs again");
+    }
     panels::TooltipDwell dwell;
     Check(dwell.Ready(1,2,100,0,1),"instant tooltip on first hover");
     Check(!dwell.Ready(1,2,110,1,1),"short mode starts fresh on setting change");

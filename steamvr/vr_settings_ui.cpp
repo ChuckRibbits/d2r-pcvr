@@ -102,7 +102,7 @@ std::vector<uint8_t> Paint(const Model& m,Hit hover,const char* runtimeStatus,co
         text(Definitions[ProjectileAimAssist].label,{40,784,875,32});
         text(Definitions[ProjectileAimAssist].detail,{40,816,875,29},false,false,quiet);
         button(AimAssistBox,AimAssistNames[int(m.Get()[ProjectileAimAssist])],{Kind::Change,ProjectileAimAssist,1},false,m.ready&&!m.Busy());
-        const auto panelHelp="Panels: Left Trigger = Ctrl; Right Grip = Shift; Right "+labels.Button(0,2)+" = Back.";
+        const auto panelHelp="Panels: Left Trigger = Ctrl; Right Grip = Shift / push-pull; Right "+labels.Button(0,2)+" = Back.";
         text(panelHelp.c_str(),{40,845,1200,29},false,false,quiet);
     }else{
         if(m.page==Page::VR){

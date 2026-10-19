@@ -299,7 +299,18 @@ placement. Title and character-selection screens keep the existing flat panel.
 | Native menu navigation | Sticks or face buttons; triggers and grips map LT/RT/LB/RB in native navigation |
 | Native Ctrl modifier | Hold left trigger while clicking |
 | Native Shift modifier | Hold right grip while clicking |
+| Push / pull the panel | Point at it, hold right grip and move that hand toward or away from you; release to leave it there |
 | Back / close | Right B, or the native close button |
+
+Grabbing moves the panel by the same distance as your hand along the line it
+faces, between 0.40 m and 1.50 m. It starts only when the right laser is on the
+panel and the hand travels 3 cm before any click, so a still grip followed by
+a trigger click stays a native Shift-click; a trigger squeezed while moving
+does nothing until released. The laser and clicks follow the moved panel. The
+chosen distance applies to every in-game and main/title menu the next time one
+opens, until the game is restarted or **VR Settings > HUD > Menu distance** is
+changed. The VR Settings panel can be pushed or pulled the same way and keeps
+its own distance. The handheld quest log keeps its left-grip placement.
 
 Sticks/face buttons select native menu navigation without an idle laser stealing
 focus. Release native controls and deliberately move the ray across the surface
