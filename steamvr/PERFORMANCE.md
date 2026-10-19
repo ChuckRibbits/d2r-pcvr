@@ -9,9 +9,16 @@ with the right eye's camera constants. Upstream reported 127-159 stereo pairs/s
 with it against 108 with two passes on the author's PC, and about 5-6 ms of CPU
 per eye pass as the limit. On the owner's PC a pair took about 16.7 ms of work
 (left 6.86, right 6.95 ms of it), so a CPU-limited session should gain most of
-the right pass; a GPU-limited one (25-28 pairs/s at 3072 square with DLSS on
-October 19) gains little, as the GPU still draws both eyes. Not yet measured
-in the headset.
+the right pass; a GPU-limited one gains little, as the GPU still draws both
+eyes.
+
+First working run (Act 1 camp, 3072 square per eye, DLSS off, the game's
+temporal anti-aliasing on): 446 of 446 pairs from one pass, the game's 35
+lists in its 5 calls (0.08 ms to submit), about 94 camera records folded a
+pair in 46 slots, none overflowed. The right eye's CPU time fell from about
+6.2 to 0.8 ms, but the rate stayed at 44.6 pairs/s: SteamVR paced the game at
+half of 90 Hz, and the end-of-frame wait for the GPU rose from about 4.9 to
+8.9 ms - the GPU, drawing both eyes in full, became the limit.
 
 Differences from upstream: the right eye's camera math is a pure header with
 tests (the fold's V*P_R matches a true right-eye camera's clip coordinates);
