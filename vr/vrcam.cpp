@@ -3318,7 +3318,7 @@ bool DirectedSpellAim(float& gx,float& gy) {
     if(!(g_spellAimReady.load()&&g_enabled.load()&&!gamestate::MenuOpen()&&
         framevr::DirectedSpellActive()&&HandRay(origin,direction)&&
         framevr::spellaim::Horizontal({direction[0],direction[1],direction[2]},gx,gy)))return false;
-    // Spells go to the highlighted monster: the spells the game aims itself
+    // Spells go to the aimed monster: the spells the game aims itself
     // (Lightning, Chain Lightning...) turn toward the locked monster when it is
     // within ~53 degrees of the hand's direction.
     float mx=0,my=0,md=0;
@@ -6294,7 +6294,7 @@ void BowTick() {
                 if(al>.15f)shot.direction=a*(1/al);
             }
         }
-        // Spells go to the highlighted monster: with a monster locked and
+        // Spells go to the aimed monster: with a monster locked and
         // roughly ahead of the cast (within ~53 degrees), fly at its chest -
         // flat when spells are planar. The lock already follows the hand.
         float mx=0,my=0,md=0;
