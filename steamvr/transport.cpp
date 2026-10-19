@@ -2819,6 +2819,14 @@ bool NativeAimOwnership() {
         (handOutput.spells[0]>=0||handOutput.spells[1]>=0);
     return motionControls.load()&&(physical||interactionOutput.wheel||gameplay::CastingSkill(motionInput,motionOutput,GetTickCount64()-motionAt));
 }
+int NativeCastSkill() {
+    std::lock_guard lock(mutex);
+    const auto now=GetTickCount64();
+    if(!motionControls.load()||!gameplay::CastingSkill(motionInput,motionOutput,now-motionAt)||
+       !interaction::Fresh(interactionInput.snapshot,gamestate::LocalPlayer(),now))return -1;
+    const auto& skill=interactionInput.snapshot.skills[motionOutput.skill];
+    return skill.known&&skill.available?skill.id:-1;
+}
 bool DirectedSpellActive() {
     std::lock_guard lock(mutex);
     const int slot=motionOutput.skill;
