@@ -87,7 +87,7 @@ by Universfield, from Pixabay (item 352458), used under the
 [Pixabay Content License](https://pixabay.com/service/license-summary/); it was
 converted from MP3 to WAV and is embedded in the plugin.
 
-The guard strain heartbeat in `steamvr/assets/guard-heartbeat.wav` is one beat cut
+The low-life heartbeat in `steamvr/assets/guard-heartbeat.wav` is one beat cut
 from "Heartbeat" by SoundReality, from Pixabay (item 549797), used under the
 [Pixabay Content License](https://pixabay.com/service/license-summary/); it was
 decoded from MP3, trimmed to a single beat with short fades, peak-normalised and

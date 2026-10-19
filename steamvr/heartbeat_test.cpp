@@ -28,7 +28,7 @@ int main() {
     }
     heartbeat::Tuning t;
     {   // Loudness and tempo follow strain; none means silence.
-        Check(heartbeat::Gain(0,t)==0&&heartbeat::Gain(-1,t)==0&&heartbeat::Gain(NAN,t)==0,"no strain, no heartbeat");
+        Check(heartbeat::Gain(0,t)==0&&heartbeat::Gain(-1,t)==0&&heartbeat::Gain(NAN,t)==0,"level 0, no heartbeat");
         Check(std::fabs(heartbeat::Gain(1e-4f,t)-t.quiet*t.volume)<.02f&&std::fabs(heartbeat::Gain(1,t)-t.volume)<1e-5f,"quiet at first touch, full when broken");
         float last=0;bool rising=true;
         for(float s=.05f;s<=1.0001f;s+=.05f){const float g=heartbeat::Gain(s,t);rising=rising&&g>last;last=g;}
@@ -44,7 +44,7 @@ int main() {
         const auto calm=heartbeat::Beat(src,.01f,t),broken=heartbeat::Beat(src,1,t);
         const size_t calmPeriod=size_t(std::lround(heartbeat::Rate*60.0/heartbeat::Bpm(.01f,t)));
         Check(calm.size()==calmPeriod&&broken.size()==size_t(std::lround(heartbeat::Rate*60.0/115)),"each buffer is one period at the current tempo");
-        Check(heartbeat::Beat(src,0,t).empty(),"no strain queues nothing");
+        Check(heartbeat::Beat(src,0,t).empty(),"level 0 queues nothing");
         int cp=0,bp=0;for(auto v:calm)cp=std::max(cp,std::abs(int(v)));for(auto v:broken)bp=std::max(bp,std::abs(int(v)));
         Check(bp>cp*4,"a broken guard pounds; the first strain is a murmur (limited at the top)");
         Check(calm.back()==0,"a slow beat is padded with silence");
@@ -64,12 +64,12 @@ int main() {
         Check(monotonic&&prev<=1&&prev>.99f&&maxStep<=.0011f,"no clipping corner: rises smoothly, never past full scale");
         Check(heartbeat::Limit(-4)==-heartbeat::Limit(4),"symmetric");
     }
-    {   // The heartbeat winds down slower than the strain that drives it.
+    {   // The heartbeat winds down slower than the life that drives it recovers.
         heartbeat::Level l;
         Check(l.Step(.4f,1/90.,4)==.4f&&l.Step(1,1/90.,4)==1,"rises with strain at once");
         float v=1;double t=0;
         for(;t<1.2;t+=1/90.)v=l.Step(0,1/90.,4);
-        Check(v>.65f&&v<.75f,"strain gone in 1.2 s: the heartbeat is still at ~70%");
+        Check(v>.65f&&v<.75f,"healed in an instant: 1.2 s later the heartbeat is still at ~70%");
         for(;t<4.1;t+=1/90.)v=l.Step(0,1/90.,4);
         Check(v==0,"silent by the fade time");
         l.Step(1,1/90.,4);v=l.Step(.2f,3,4);
@@ -88,5 +88,18 @@ int main() {
         Check(!heartbeat::ParseWav(Wav(1,1,44100,8,{1,2}),p),"8-bit WAV refused");
         Check(!heartbeat::ParseWav({'n','o','p','e'},p),"not a WAV refused");
     }
-    std::puts("Guard heartbeat: synthesized lub-dub, loudness and tempo follow strain, silent without strain, one-period beats (padded, cut, stereo, saturation) and WAV loading passed");
+    {   // Low life drives it: silent above lifeStart, full at lifeFull and below.
+        Check(t.lifeStart==.5f&&t.lifeFull==.2f,"begins below 50% life, fullest at 20%");
+        Check(heartbeat::LifeStrain(100,100,t)==0&&heartbeat::LifeStrain(50,100,t)==0,"healthy: silent");
+        Check(heartbeat::LifeStrain(49,100,t)>0&&heartbeat::LifeStrain(49,100,t)<.05f,"just below the start: barely");
+        Check(std::fabs(heartbeat::LifeStrain(35,100,t)-.5f)<1e-5f,"halfway between start and full");
+        Check(heartbeat::LifeStrain(20,100,t)==1&&heartbeat::LifeStrain(3,100,t)==1,"full at lifeFull and below");
+        Check(heartbeat::LifeStrain(0,100,t)==0&&heartbeat::LifeStrain(50,0,t)==0&&heartbeat::LifeStrain(NAN,100,t)==0,"dead or unknown: winds down");
+        float last=-1;bool rising=true;
+        for(float h=60;h>=1;h-=1){const float s=heartbeat::LifeStrain(h,100,t);rising=rising&&s>=last;last=s;}
+        Check(rising,"never eases as life falls");
+        heartbeat::Tuning odd=t;odd.lifeStart=.3f;odd.lifeFull=.6f;
+        Check(heartbeat::LifeStrain(10,100,odd)==1&&heartbeat::LifeStrain(30,100,odd)==0,"full above start is clamped below it");
+    }
+    std::puts("Low-life heartbeat: synthesized lub-dub, loudness and tempo follow life, silent when healthy or dead, one-period beats (padded, cut, stereo, saturation) and WAV loading passed");
 }

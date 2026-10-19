@@ -5,16 +5,17 @@
 #include <cstring>
 #include <vector>
 
-// Guard strain heartbeat. Value-only: the strain level comes from the guard
-// strain light (guard_strain.h); the transport plays it on its own waveOut
-// stream (PlaySound plays one sound per process and would cut off the riposte).
+// Low-life heartbeat. Value-only: the transport supplies the published life
+// (LifeStrain) and plays it on its own waveOut stream (PlaySound plays one
+// sound per process and would cut off the riposte).
 //
-// While the guard is strained a heartbeat plays, louder and faster as strain
-// builds. When strain drains it winds down more slowly than the light (Level):
-// quieter and slower beat by beat, then silent. The built-in beat is a recording
-// embedded in the plugin (steamvr/assets/guard-heartbeat.wav); Synthesize() is
-// the fallback when that resource is missing. [gameplay] guard_strain_heart_file
-// replaces it with a 16-bit PCM WAV of one beat (any rate, mono or stereo).
+// Below lifeStart of max life a heartbeat plays, louder and faster as life
+// falls, at its loudest and fastest from lifeFull down. Healing winds it down
+// more slowly than the life rises (Level): quieter and slower beat by beat,
+// then silent. The built-in beat is a recording embedded in the plugin
+// (steamvr/assets/guard-heartbeat.wav); Synthesize() is the fallback when that
+// resource is missing. [gameplay] low_life_heart_file replaces it with a 16-bit
+// PCM WAV of one beat (any rate, mono or stereo).
 namespace framevr::heartbeat {
 constexpr int Rate=44100;
 constexpr double Pi=3.14159265358979;
@@ -76,13 +77,24 @@ inline bool ParseWav(const std::vector<uint8_t>& w,Pcm& out) {
 }
 struct Tuning {
     float volume=2;              // heartbeat % x the game's Master x Combat volume; 0 = off
-    float bpmMin=70,bpmMax=115;  // first strain .. a broken guard
-    float quiet=.12f;            // loudness at the first touch of strain (of full)
+    float bpmMin=70,bpmMax=115;  // just below lifeStart .. at lifeFull and below
+    float quiet=.12f;            // loudness just below lifeStart (of full)
     float fadeSeconds=4;         // winding down from full to silent, at the slowest
+    float lifeStart=.50f;        // life fraction where the heartbeat begins
+    float lifeFull=.20f;         // life fraction where it is loudest and fastest
 };
-// The heartbeat's own level: rises with strain at once, but falls no faster
+// How hard the heart works at this life: 0 at or above lifeStart of max life,
+// rising linearly to 1 at lifeFull and below. Unknown or dead: 0, so it winds down.
+inline float LifeStrain(float health,float maxHealth,const Tuning& t) {
+    if(!std::isfinite(health)||!std::isfinite(maxHealth)||health<=0||maxHealth<=0)return 0;
+    const float start=std::clamp(std::isfinite(t.lifeStart)?t.lifeStart:.5f,.01f,1.f);
+    const float full=std::clamp(std::isfinite(t.lifeFull)?t.lifeFull:.2f,0.f,start-.01f);
+    const float fraction=health/maxHealth;
+    return fraction>=start?0.f:std::clamp((start-fraction)/(start-full),0.f,1.f);
+}
+// The heartbeat's own level: rises with LifeStrain at once, but falls no faster
 // than 1/fadeSeconds per second, so it keeps beating, quieter and slower, after
-// the guard light has cleared. A hitch over .25 s (a load) snaps it to strain.
+// a heal. A hitch over .25 s (a load) snaps it to the target.
 class Level {
     float level=0;
 public:
@@ -94,7 +106,7 @@ public:
         return level;
     }
 };
-// Loudness for this much strain: quiet at first, full when broken. 0 = silent.
+// Loudness for this LifeStrain level: quiet at first, full at lifeFull. 0 = silent.
 inline float Gain(float strain,const Tuning& t) {
     if(!std::isfinite(strain)||strain<=0||!std::isfinite(t.volume)||!(t.volume>0))return 0;
     strain=std::min(strain,1.f);
@@ -115,10 +127,10 @@ inline float Limit(float x) {
     const float y=Knee+(1-Knee)*std::tanh((a-Knee)/(1-Knee));
     return x<0?-y:y;
 }
-// Exactly one beat period at this strain's tempo: the beat at this strain's
+// Exactly one beat period at this level's tempo: the beat at this level's
 // loudness, then silence. A beat longer than the period is cut with a 10 ms
 // fade. Queued back to back, the audio clock itself keeps the rhythm, and
-// loudness and tempo follow strain from one beat to the next. No strain: empty.
+// loudness and tempo follow life from one beat to the next. Level 0: empty.
 inline std::vector<int16_t> Beat(const Pcm& source,float strain,const Tuning& t) {
     const float gain=Gain(strain,t);
     if(gain<=0||source.rate<=0||source.channels<1||source.samples.size()<size_t(source.channels))return {};

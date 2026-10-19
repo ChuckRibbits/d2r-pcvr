@@ -926,23 +926,26 @@ instead of a random one. Classic keeps the native roll.
   Strain never drains while the shield stays up. Lowering it (or a menu, or losing
   the shield) drains full strain in `guard_strain_reset_ms` (3000); a broken guard
   stays broken until the light has fully faded, and raising the shield again part
-  way keeps what is left. Opacity is `guard_strain_light` (100 %, 0 = none; strain and
-  the heartbeat still run). The light's inner blend is
+  way keeps what is left. Opacity is `guard_strain_light` (100 %, 0 = none; strain
+  still runs). The light's inner blend is
   `guard_strain_softness` % of the visor radius (45) about a fixed midpoint, so it
   fades toward the centre with no visible inner rim. Pulses re-trigger without
   dropping, so rapid blocks hold a swell rather than flashing.
-- **Guard strain heartbeat**: while the guard is strained a heartbeat plays, quiet at
-  the first block and louder and faster as strain builds (`guard_strain_heart_bpm_min`
-  70 to `guard_strain_heart_bpm_max` 115 when broken). The beat itself keeps its
-  natural speed and pitch; only the time between beats shortens. When strain drains
-  the heartbeat winds down more slowly than the light, no faster than
-  `guard_strain_heart_fade_ms` (4000) from full: quieter and slower beat by beat, then
-  silent. Loudness is `guard_strain_heartbeat` % (200, 0 = off) on top of the game's
+- **Low-life heartbeat** (Classic and Unleashed; guard strain no longer drives it):
+  below `low_life_heart_start` % of max life (50) a heartbeat plays, quiet at first and
+  louder and faster as life falls, fullest at `low_life_heart_full` % (20) and below
+  (`low_life_heart_bpm_min` 70 to `low_life_heart_bpm_max` 115). The beat itself keeps
+  its natural speed and pitch; only the time between beats shortens. A heal winds it
+  down no faster than `low_life_heart_fade_ms` (4000) from full: quieter and slower beat
+  by beat, then silent; so does death or a loading screen. Loudness is
+  `low_life_heartbeat` % (200, 0 = off) on top of the game's
   Master x Combat volume; above 70 % of full scale the beat bends smoothly toward
   full scale (a soft limiter) rather than clipping. The built-in beat is a recording embedded in the plugin
-  (`steamvr/assets/guard-heartbeat.wav`); `guard_strain_heart_file` replaces it with a
+  (`steamvr/assets/guard-heartbeat.wav`); `low_life_heart_file` replaces it with a
   one-beat 16-bit PCM WAV, next to the ini unless a full path. It plays on its own
-  audio stream, so it never cuts off the riposte or block sounds.
+  audio stream, so it never cuts off the riposte or block sounds. The old
+  `guard_strain_heart*` keys are still read when the matching `low_life_heart*` key
+  is absent. The log's `Frame low-life heartbeat: started life=N%` line marks each start.
 
 Damage is scaled at the native damage application's final life write (44CE80,
 whose `Set(defender, life, ...)` returns to 44D098), so resistances, criticals and

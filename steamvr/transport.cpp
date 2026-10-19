@@ -158,10 +158,10 @@ XrSwapchain strainChain=XR_NULL_HANDLE;
 uint64_t strainPaintKey=~0ull,strainPaintSession=0;
 ULONGLONG strainPaintAt=0;
 bool strainAtlasPending=false,strainImageReady=false,strainSlotReported=false;
-// Guard strain heartbeat: its own waveOut stream, since PlaySound plays one sound
+// Low-life heartbeat: its own waveOut stream, since PlaySound plays one sound
 // per process and would cut off the riposte. Frame thread only. Each buffer is
 // one beat period; the next is queued just before the current one ends, so
-// loudness and tempo follow strain beat by beat and stop with it.
+// loudness and tempo follow life beat by beat and stop with it.
 std::mutex heartMutex;heartbeat::Tuning heartTuning;
 std::shared_ptr<const heartbeat::Pcm> heartSource=std::make_shared<heartbeat::Pcm>(heartbeat::BuiltIn());
 std::wstring heartFile=L"?";   // never a real path: the first configure loads the built-in beat
@@ -188,7 +188,7 @@ class HeartStream {
             position=reinterpret_cast<PositionFn>(GetProcAddress(m,"waveOutGetPosition"));
             reset=reinterpret_cast<HandleFn>(GetProcAddress(m,"waveOutReset"));close=reinterpret_cast<HandleFn>(GetProcAddress(m,"waveOutClose"));
         }
-        if(!(open&&prepare&&unprepare&&write&&position&&reset&&close)){open=nullptr;Say("Frame guard heartbeat: winmm waveOut unavailable; heartbeat silent");}
+        if(!(open&&prepare&&unprepare&&write&&position&&reset&&close)){open=nullptr;Say("Frame low-life heartbeat: winmm waveOut unavailable; heartbeat silent");}
         return open!=nullptr;
     }
     uint64_t Played() {
@@ -1660,13 +1660,19 @@ void Input() {
             if(key!=strainPaintKey&&now>=strainPaintAt&&!strainPainter.Busy()&&
                strainPainter.Submit({strainOutput.edge,strainOutput.alpha,tuning.feather,tuning.color,tuning.density}))strainPaintAt=now+40;
         }
-        // Heartbeat: queue the next beat ~80 ms before the current one ends, at the
-        // strain's loudness and tempo now. No strain: the last beat finishes, then silence.
+    }
+    // Low-life heartbeat (Classic and Unleashed): queue the next beat ~80 ms before
+    // the current one ends, at the loudness and tempo of the life left now. Above
+    // the start fraction, dead or stale vitals: the last beat finishes, then silence.
+    {
         heartStream.Reap();
         heartbeat::Tuning heart;std::shared_ptr<const heartbeat::Pcm> source;const char* sourceName=nullptr;
         {std::lock_guard lock(heartMutex);heart=heartTuning;source=heartSource;sourceName=heartSourceName;}
-        // Its own level: winds down slower than the light, quieter and slower beat by beat.
-        const float level=heartLevel.Step(strainOutput.strain,heartAt>0?interactionInput.time-heartAt:0,heart.fadeSeconds);
+        const auto& vitals=interactionInput.snapshot;
+        const bool lifeKnown=vitals.vitalsKnown&&interaction::Fresh(vitals,interactionInput.session,interactionInput.at);
+        const float target=lifeKnown?heartbeat::LifeStrain(vitals.health,vitals.maxHealth,heart):0.f;
+        // Its own level: winds down slower than a heal, quieter and slower beat by beat.
+        const float level=heartLevel.Step(target,heartAt>0?interactionInput.time-heartAt:0,heart.fadeSeconds);
         heartAt=interactionInput.time;
         if(level>0&&heart.volume>0&&source) {
             if(heartStream.Remaining()<uint64_t(std::max(1,source->rate)*8/100)) {
@@ -1675,11 +1681,14 @@ void Input() {
                 if(!beat.empty()&&heartStream.Queue(source->rate,source->channels,std::move(beat))&&!heartPlaying) {
                     heartPlaying=true;
                     static bool namedSource=false;   // the first start says which beat is playing
-                    if(!namedSource){namedSource=true;char line[120];snprintf(line,sizeof line,"Frame guard heartbeat: started (%s)",sourceName?sourceName:"?");Say(line);}
-                    else Say("Frame guard heartbeat: started");
+                    char line[120];
+                    if(!namedSource){namedSource=true;snprintf(line,sizeof line,"Frame low-life heartbeat: started life=%.0f%% (%s)",
+                        vitals.maxHealth>0?100*vitals.health/vitals.maxHealth:-1.f,sourceName?sourceName:"?");}
+                    else snprintf(line,sizeof line,"Frame low-life heartbeat: started life=%.0f%%",vitals.maxHealth>0?100*vitals.health/vitals.maxHealth:-1.f);
+                    Say(line);
                 }
             }
-        } else if(heartPlaying&&!heartStream.Remaining()){heartPlaying=false;Say("Frame guard heartbeat: stopped");}
+        } else if(heartPlaying&&!heartStream.Remaining()){heartPlaying=false;Say("Frame low-life heartbeat: stopped");}
     }
     // Bounded diagnostics distinguish gesture misses from native refusal.
     static ULONGLONG potionReportAt=0;
@@ -2904,8 +2913,10 @@ void ConfigureGuardStrain(float perBlock,float resetSeconds,float clear,float br
     t.density=std::isfinite(density)?std::clamp(density,1.f,6.f):1.f;
     std::lock_guard lock(strainTuningMutex);strainTuning=t;
 }
-void ConfigureHeartbeat(float volume,float bpmMin,float bpmMax,float fadeSeconds,const wchar_t* file) {
+void ConfigureHeartbeat(float volume,float bpmMin,float bpmMax,float fadeSeconds,float lifeStart,float lifeFull,const wchar_t* file) {
     heartbeat::Tuning t;
+    t.lifeStart=std::isfinite(lifeStart)?std::clamp(lifeStart,.01f,1.f):t.lifeStart;
+    t.lifeFull=std::isfinite(lifeFull)?std::clamp(lifeFull,0.f,t.lifeStart-.01f):std::min(t.lifeFull,t.lifeStart-.01f);
     t.fadeSeconds=std::isfinite(fadeSeconds)?std::clamp(fadeSeconds,0.f,30.f):t.fadeSeconds;
     t.volume=std::isfinite(volume)?std::clamp(volume,0.f,4.f):t.volume;
     t.bpmMin=std::isfinite(bpmMin)?std::clamp(bpmMin,30.f,200.f):t.bpmMin;
@@ -2933,10 +2944,10 @@ void ConfigureHeartbeat(float volume,float bpmMin,float bpmMax,float fadeSeconds
         if(!embedded)*pcm=heartbeat::BuiltIn();
     }
     {std::lock_guard lock(heartMutex);heartSource=pcm;heartSourceName=fromFile?"ini WAV":embedded?"built-in recording":"synthesized beat";}
-    Say(fromFile?"Frame guard heartbeat: ini WAV loaded":
-        !path.empty()?(embedded?"Frame guard heartbeat: ini WAV missing or not 16-bit PCM; built-in recording":
-                                "Frame guard heartbeat: ini WAV missing or not 16-bit PCM; synthesized beat"):
-        embedded?"Frame guard heartbeat: built-in recording":"Frame guard heartbeat: recording missing; synthesized beat");
+    Say(fromFile?"Frame low-life heartbeat: ini WAV loaded":
+        !path.empty()?(embedded?"Frame low-life heartbeat: ini WAV missing or not 16-bit PCM; built-in recording":
+                                "Frame low-life heartbeat: ini WAV missing or not 16-bit PCM; synthesized beat"):
+        embedded?"Frame low-life heartbeat: built-in recording":"Frame low-life heartbeat: recording missing; synthesized beat");
 }
 bool OwnsControllerRumble() {return motionControls.load()&&controllerRumbleLease.Owns(GetTickCount64());}
 void SpellCast(int hand,uint64_t session) {spellHaptics.Publish(hand,session,GetTickCount64());}

@@ -881,7 +881,7 @@ void LoadSettings() {
     // Guard strain light: % of the guard each block strains, lowered reset time,
     // % of the view left clear at full swell, the broken guard's breathing period,
     // the width of the light's inner blend (% of the visor radius), opacity (% peak;
-    // 0 = none, strain and the heartbeat still run), and colour as RRGGBB hex
+    // 0 = none, strain still runs), and colour as RRGGBB hex
     // (FFF7EA, the pale white light, by default). guard_strain_dark (VR Settings >
     // Combat > Guard strain color: Black) darkens the rim instead, denser by
     // guard_strain_dark_density (2.5; 1 = the same curve as the light): at equal
@@ -898,15 +898,22 @@ void LoadSettings() {
                                       return end&&end!=hex&&!*end&&v<=0xFFFFFFul?uint32_t(v):0xFFF7EAu;}(),
                                   IniB(L"gameplay",L"guard_strain_dark",false)?
                                       std::clamp(IniF(L"gameplay",L"guard_strain_dark_density",2.5f),1.f,6.f):1.f);
-    {   // Guard strain heartbeat: % on top of the game's Master x Combat volume (0 = off),
-        // tempo range, wind-down time from full, and an optional one-beat 16-bit PCM WAV (next to this ini unless a full path).
+    {   // Low-life heartbeat: % on top of the game's Master x Combat volume (0 = off), tempo
+        // range, wind-down time from full, life % where it begins and where it is fullest, and an
+        // optional one-beat 16-bit PCM WAV (next to this ini unless a full path). The old
+        // guard_strain_heart* keys are still read when the low_life_heart* key is absent.
+        auto heartF=[](const wchar_t* key,const wchar_t* old,float def){return IniF(L"gameplay",key,IniF(L"gameplay",old,def));};
         wchar_t file[MAX_PATH];GetPrivateProfileStringW(L"gameplay",L"guard_strain_heart_file",L"",file,MAX_PATH,g_iniPath);
+        std::wstring fallback=file;
+        GetPrivateProfileStringW(L"gameplay",L"low_life_heart_file",fallback.c_str(),file,MAX_PATH,g_iniPath);
         std::wstring path=file;
         if(!path.empty()&&path.find(L':')==std::wstring::npos){std::wstring dir=g_iniPath;dir.resize(dir.find_last_of(L"\\/")+1);path=dir+path;}   // the ini's own folder
-        framevr::ConfigureHeartbeat(IniF(L"gameplay",L"guard_strain_heartbeat",200)/100.f,
-                                    IniF(L"gameplay",L"guard_strain_heart_bpm_min",70),
-                                    IniF(L"gameplay",L"guard_strain_heart_bpm_max",115),
-                                    IniF(L"gameplay",L"guard_strain_heart_fade_ms",4000)/1000.f,path.c_str());
+        framevr::ConfigureHeartbeat(heartF(L"low_life_heartbeat",L"guard_strain_heartbeat",200)/100.f,
+                                    heartF(L"low_life_heart_bpm_min",L"guard_strain_heart_bpm_min",70),
+                                    heartF(L"low_life_heart_bpm_max",L"guard_strain_heart_bpm_max",115),
+                                    heartF(L"low_life_heart_fade_ms",L"guard_strain_heart_fade_ms",4000)/1000.f,
+                                    IniF(L"gameplay",L"low_life_heart_start",50)/100.f,
+                                    IniF(L"gameplay",L"low_life_heart_full",20)/100.f,path.c_str());
     }
 #endif
 #ifdef D2RVR_NATIVE_OPENXR

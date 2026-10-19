@@ -157,7 +157,7 @@ doesn't reduce them; resistances still matter.
 - **Riposte:** your next weapon hit on the parried monster within 1.5 s is a
   clean hit: full damage, whatever your attack rating or timing.
 - **Guard strain:** every block (not a parry) strains your guard. A pale light
-  creeps in from the edge of your view and a heartbeat builds; at full strain
+  creeps in from the edge of your view; at full strain
   the guard breaks and the light swells over most of your view. The shield
   keeps blocking; the cost is sight. Lower the shield to let it fade.
   **Combat > Guard strain color** switches the light to a black shadow.
@@ -203,6 +203,12 @@ you are still hurt, the visor then stays clean until the next hit splashes it
 again. The centre of the view always stays clear. While a hand is scrubbing it
 does not attack; a held potion, squeezed trigger or bow draw never counts as
 wiping.
+
+**Low-life heartbeat:** below half your life a heartbeat plays, quiet at first,
+then louder and faster as life falls, fullest at 20% and below. Healing winds it
+down beat by beat. It plays in Classic and Unleashed; `[gameplay]
+low_life_heartbeat` sets its loudness (200%, 0 = off) and `low_life_heart_start` /
+`low_life_heart_full` the life % where it begins and peaks.
 
 ## Hand skill layouts
 
