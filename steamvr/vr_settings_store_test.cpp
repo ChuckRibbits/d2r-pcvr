@@ -244,6 +244,13 @@ int main(){
         Check(saved.values[FoveationStrength]==level&&Int(path,L"render",L"foveation_strength")==level&&
               saved.values[Foveation]==2&&Int(path,L"custom",L"keep")==12345,"foveation strength survives reload without changing the mode");
     }
+    Check(saved.values[EyesByTurns]==0,"profiles without the key draw both eyes each frame");
+    for(int turns:{1,0}){
+        model.Open(saved);model.Click({Kind::Change,EyesByTurns,1});request=model.Click({Kind::Apply});
+        Check(vrsettings::Submit(request)&&vrsettings::Poll(name),"save stereo rendering");
+        saved=vrsettings::Read();
+        Check(saved.values[EyesByTurns]==turns&&Int(path,L"stereo",L"eyes_by_turns")==turns,"stereo rendering survives reload");
+    }
     Check(Int(path,L"custom",L"keep")==12345&&Int(path,L"render",L"rings")==6,"Apply preserves unrelated keys");
     Check(Int(backup,L"custom",L"keep")==12345&&Int(backup,L"gameplay",L"motion_controls")==-999,"first Apply preserves original config backup");
     model.Open(saved);model.Click({Kind::Change,SkillGestures,-1});request=model.Click({Kind::Apply});

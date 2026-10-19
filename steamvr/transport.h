@@ -68,8 +68,14 @@ struct FrameTiming {
 };
 FrameTiming LastTiming();
 void Shutdown(bool preserveResolution=false);
-void BeginPair();
+// byTurns: this frame draws one eye; EndPair submits the other eye's last
+// image again at the pose and FOV it was drawn with.
+void BeginPair(bool byTurns=false);
 void BeginEye(int eye);
+// VR Settings > Video > Stereo rendering is By turns.
+bool EyesByTurns();
+// Both eyes have a submitted image to reuse and no capture waits for a pair.
+bool TurnReady();
 // Diagnostic only: F8 saves the next complete gameplay pair via ReShade.
 void RequestStereoCapture();
 void EndPair();

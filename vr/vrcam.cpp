@@ -1447,11 +1447,14 @@ double NowSeconds() {
 // head as sent, never carried on - the second eye is drawn later, and would
 // otherwise get a head a few milliseconds further along than the first.
 std::atomic<bool> g_pairNow{false};
+// The head is held for the whole pass: both eyes of a pair, or the one eye a
+// frame draws by turns. g_pairNow alone means both eyes share one game frame.
+std::atomic<bool> g_headHeld{false};
 
 // yaw, pitch, roll as sent (degrees), advanced to now.
 void PredictHead(const D2RVR_Shared* s, float out[3]) {
     const float raw[3] = {s->headYawDeg, s->pitchValid ? s->headPitchDeg : 0.0f, s->rollValid ? s->headRollDeg : 0.0f};
-    if (!g_set.headPredict.load() || g_pairNow.load()) { memcpy(out, raw, sizeof raw); return; }
+    if (!g_set.headPredict.load() || g_headHeld.load()) { memcpy(out, raw, sizeof raw); return; }
     const double now = NowSeconds();
     AcquireSRWLockExclusive(&g_headLock);
     HeadTrack& h = g_head;
@@ -1472,7 +1475,7 @@ void PredictHead(const D2RVR_Shared* s, float out[3]) {
 
 // The yaw the camera should have now: head (if on) plus the mouse's extra.
 float TargetYaw() {
-    float yaw = g_pairNow.load() ? g_heldYaw.load() : g_mouseYaw.load() + g_turnYaw.load(), head = 0.0f;
+    float yaw = g_headHeld.load() ? g_heldYaw.load() : g_mouseYaw.load() + g_turnYaw.load(), head = 0.0f;
     if (g_set.headYaw.load() && HeadYaw(&head)) {
         float p[3]; PredictHead(g_shared, p);
         yaw += g_set.yawSign.load() * g_set.yawScale.load() * WrapDeg(p[0] - g_recenter.load());
@@ -1493,7 +1496,7 @@ float TargetRoll() {
 // extra, and the head looking up (more negative) or down. Kept short of the
 // vertical, where the rotation would flip.
 float TargetPitch() {
-    float pitch = g_set.pitch.load() + (g_pairNow.load() ? g_heldPitch.load() : g_mousePitch.load());
+    float pitch = g_set.pitch.load() + (g_headHeld.load() ? g_heldPitch.load() : g_mousePitch.load());
     const D2RVR_Shared* sh = g_shared;
     if (g_set.headPitch.load() && sh && sh->version == D2RVR_SHARED_VERSION && sh->headValid && sh->pitchValid && std::isfinite(sh->headPitchDeg))
     {
@@ -2526,7 +2529,7 @@ bool VrViewInner(const d2rcam::WorldView& in, float out[16]) {
         const V3 gf = {-G[2], -G[6], -G[10]};
         const float mapNorth = atan2f(-gf.x, -gf.z);
         const float baseHeading = mapNorth -
-            (g_pairNow.load() ? g_heldYaw.load() : g_mouseYaw.load() + g_turnYaw.load()) * 0.0174532925f;
+            (g_headHeld.load() ? g_heldYaw.load() : g_mouseYaw.load() + g_turnYaw.load()) * 0.0174532925f;
         const float recenter = g_recenter.load() * 0.0174532925f;
         float center[16];
         framevr::View(center, L, ViewHeight() + JumpLift(), UserEyeHeightM(), baseHeading, recenter, -1, mapNorth);
@@ -4855,6 +4858,64 @@ std::string BusyThreads(double spanUs) {
 }  // namespace pairtime
 
 void Recenter();
+#ifdef D2RVR_NATIVE_OPENXR
+// Eyes by turns (VR Settings > Video > Stereo rendering): one pass a game frame,
+// the eyes in turn. The headset gets this eye fresh and the other as it was
+// last drawn, at the pose it was drawn with - the runtime turns it to the head.
+// Half the CPU work a headset frame, each eye at half the rate, and the eyes a
+// game frame apart: the frame time is not held, every pass is a game frame of
+// its own. Open menus, and a frame without both eyes' last images, draw a pair.
+bool TurnsWanted() { return framevr::EyesByTurns() && !gamestate::MenuOpen() && framevr::TurnReady(); }
+
+uintptr_t DrawTurn(int a, bool continued) {
+    static bool told = false;
+    static double lastEnd = 0.0, sumGap = 0.0, sumBegin = 0.0, sumWait = 0.0, sumPass = 0.0, sumEnd = 0.0, longest = 0.0;
+    static ULONGLONG since = GetTickCount64();
+    static uint32_t turns = 0;
+    if (!continued) {   // after pairs or menus: a new run of turns, a new 10 s window
+        lastEnd = sumGap = sumBegin = sumWait = sumPass = sumEnd = longest = 0.0;
+        since = GetTickCount64(); turns = 0;
+    }
+    const double entered = pairtime::UsNow();
+    framevr::BeginPair(true);
+    if (framevr::TakeWorldRecenter()) Recenter();
+    static D2RVR_Shared held;
+    const D2RVR_Shared* live = g_shared;
+    if (live) { memcpy(&held, live, sizeof held); g_shared = &held; }
+    TurnTick();
+    g_heldYaw.store(g_mouseYaw.load() + g_turnYaw.load());
+    g_heldPitch.store(g_mousePitch.load());
+    g_headHeld.store(true);
+    pairtime::g_drawThread.store(GetCurrentThreadId());
+    const int eye = (g_eye.load() & 1) ^ 1;   // after a pair, whose right eye was last, the left
+    const double t0 = pairtime::UsNow();
+    SetEye(eye);
+    framevr::BeginEye(eye);
+    d2rcam::Refresh();
+    const uintptr_t r = OrigDrawGameScreen(a);
+    const double t1 = pairtime::UsNow();
+    framevr::EndPair();
+    const double ended = pairtime::UsNow();
+    g_headHeld.store(false);
+    if (live) g_shared = live;
+
+    const auto xr = framevr::LastTiming();
+    if (lastEnd > 0.0) { sumGap += entered - lastEnd; longest = std::max(longest, ended - lastEnd); }
+    sumBegin += t0 - entered; sumWait += xr.waitFrameMs; sumPass += t1 - t0; sumEnd += ended - t1;
+    lastEnd = ended;
+    ++turns;
+    if (!told) { told = true; Log("vrcam: eyes by turns ON - one pass a game frame, the other eye as last drawn"); }
+    if (const ULONGLONG now = GetTickCount64(); now - since >= 10000) {
+        const double k = 0.001 / turns, rate = turns * 1000.0 / (double)(now - since);
+        LogF("vrcam: eyes by turns - %.1f frames/s (each eye %.1f/s) | a frame, ms: game %.2f | XR begin %.2f (wait %.2f) | pass %.2f | XR end %.2f | longest %.1f",
+             rate, rate * 0.5, sumGap * k, sumBegin * k, sumWait / turns, sumPass * k, sumEnd * k, longest * 0.001);
+        lastEnd = 0.0; sumGap = sumBegin = sumWait = sumPass = sumEnd = longest = 0.0;
+        since = now; turns = 0;
+    }
+    return r;
+}
+#endif
+
 uintptr_t HookDrawGameScreen(int a) {
     static thread_local int depth = 0;
     static bool told = false, toldWhy = false;
@@ -4866,7 +4927,13 @@ uintptr_t HookDrawGameScreen(int a) {
     static ULONGLONG since = GetTickCount64(), lastHitch = 0;
     static uint32_t pairs = 0,cpuPairs=0;
     const double entered=pairtime::UsNow();
-    if (depth || !PairWanted()) {
+    static bool turned = false;   // the last frame went by turns
+#ifdef D2RVR_NATIVE_OPENXR
+    const bool turn = !depth && PairWanted() && TurnsWanted();
+#else
+    const bool turn = false;
+#endif
+    if (depth || !PairWanted() || turn) {
         if(!depth) {
 #ifdef D2RVR_NATIVE_OPENXR
             framevr::profile::SkipPair();
@@ -4879,12 +4946,23 @@ uintptr_t HookDrawGameScreen(int a) {
             for(int e=0;e<2;++e)sumPass[e]=sumPresent[e]=sumEff[e]=0;
             since=GetTickCount64();pairs=cpuPairs=0;
         }
+#ifdef D2RVR_NATIVE_OPENXR
+        if (turn) {
+            ++depth;
+            const uintptr_t r = DrawTurn(a, turned);
+            --depth;
+            turned = true;
+            return r;
+        }
+#endif
+        if (!depth) turned = false;
         if (!toldWhy && g_h.blit && AfrOn() && g_set.pairPerTick.load() && !FrameTimeFound()) {
             toldWhy = true;
             Log("vrcam: pair per game frame NOT possible - the frame time was not where expected (another build?); eyes go by turns");
         }
         return OrigDrawGameScreen(a);
     }
+    turned = false;
     ++depth;
     static bool toldTry = false;   // before the first pair: if the game dies on it, the log says where
     if (!toldTry) { toldTry = true; Log("vrcam: pair per game frame - drawing the first pair"); }
@@ -4900,6 +4978,7 @@ uintptr_t HookDrawGameScreen(int a) {
     g_heldYaw.store(g_mouseYaw.load() + g_turnYaw.load());
     g_heldPitch.store(g_mousePitch.load());
     g_pairNow.store(true);
+    g_headHeld.store(true);
     if (const D2RVR_Shared* hs = g_shared)
         flog::Line("S,%u,%.4f,%.3f,%.3f,%.3f,%.3f,%u", flog::Pass(), flog::Dt(), g_heldYaw.load(), hs->headYawDeg, hs->headPitchDeg, hs->headRollDeg, hs->sampleStamp);
 
@@ -4975,6 +5054,7 @@ uintptr_t HookDrawGameScreen(int a) {
     }
     lastEnd=ended;
     g_pairNow.store(false);
+    g_headHeld.store(false);
     if (live) g_shared = live;
     --depth;
 

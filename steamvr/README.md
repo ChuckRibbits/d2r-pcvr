@@ -129,6 +129,20 @@ a third scene for the monitor. Desktop presentation still has overhead;
 suppressing it safely is an open performance task. Do not minimize the game as
 a workaround: background/focus handling also affects input and frame pacing.
 
+Each game frame normally draws both eyes: the left, then the right with the
+game time held. VR Settings > Video > **Stereo rendering: By turns** draws one
+eye per game frame instead, alternating. The headset gets that eye fresh and
+the other eye's last image again, at the pose it was drawn with, which the
+runtime turns to the current head pose. This halves the CPU draw work per
+headset frame, so a CPU-limited PC may reach the headset's full rate. Each eye
+still updates at half that rate, and moving content is one game frame apart
+between the eyes, which can look doubled. Open menus, stereo captures and any
+frame without a reusable image for both eyes draw a full pair. With **Desktop
+shows one eye**, a copy of each left image covers the next right frame on the
+monitor. The choice is stored as `[stereo] eyes_by_turns` and applies live.
+Every 10 seconds the log reports a `vrcam: eyes by turns` line with frames per
+second and the time spent in each part of a frame.
+
 **Left X** opens inventory through the game's UI service when no menu is open.
 When native menu panels are open, Left X performs the native X action. It
 preserves the HUD and map. The native inventory action requires headset focus, so another active

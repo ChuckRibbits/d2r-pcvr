@@ -133,6 +133,7 @@ std::vector<uint8_t> Paint(const Model& m,Hit hover,const char* runtimeStatus,co
             char label[96];
             if(key==Foveation){const char* modes[]={"Off","Fixed","Eye tracked"};std::snprintf(label,sizeof label,"%s",modes[int(value)]);}
             else if(key==FoveationStrength)std::snprintf(label,sizeof label,"%s",FoveationStrengthNames[int(value)]);
+            else if(key==EyesByTurns)std::snprintf(label,sizeof label,"%s",StereoRenderingNames[value>.5f?1:0]);
             else if(key==VitalsLocation||key==NavigationLocation)std::snprintf(label,sizeof label,"%s",vitals::LocationNames[int(value)]);
             else if(key==RenderResolution)std::snprintf(label,sizeof label,"%s",resolution::Choices[int(value)]);
             else if(key==MenuDistance)std::snprintf(label,sizeof label,"%s",MenuDistanceNames[int(value)]);
@@ -155,10 +156,6 @@ std::vector<uint8_t> Paint(const Model& m,Hit hover,const char* runtimeStatus,co
             button(Decrease(row),"-",{Kind::Change,key,-1},false,enabled);
             button(Increase(row),"+",{Kind::Change,key,1},false,enabled);
             button(ValueBox(row),label,{d.max==1?Kind::Change:Kind::None,key,1},false,enabled);
-        }
-        if(m.page==Page::Video){
-            text("Applying resolution changes rebuilds the VR view. Desktop restores the game's window size.",{40,806,1200,34},false,false,quiet);
-            text("Headset uses the runtime recommendation, capped at 4096 per side. DLSS: game Options.",{40,839,1200,34},false,false,quiet);
         }
         if(m.page==Page::HUD){
             text("Palm: raise left hand palm up; release grip/trigger. Status follows the minimap.",{58,854,1160,22},false,false,quiet);

@@ -1,5 +1,21 @@
 # VR performance investigations
 
+## Eyes by turns, October 19
+
+On the owner's Windows PC a stereo pair took about 16.7 ms of work: game 0.90,
+left draw 6.86, right draw 6.95 and OpenXR submission 1.95 ms. That is over the
+11.1 ms budget at 90 Hz, so the runtime paced the game at about 44 pairs/s.
+These are one session's 10-second averages, not a controlled benchmark.
+
+VR Settings > Video > **Stereo rendering: By turns** (`[stereo] eyes_by_turns`)
+draws one eye per game frame and resubmits the other eye's last image at its
+own pose, following upstream's "Native OpenXR - eyes by turns" mode. It removes
+the second CPU draw from every headset frame without replaying command lists,
+so culling, labels, effects, foveation and DLSS stay per eye. Each eye still
+updates at half the headset rate, and the eyes are one game frame apart. The
+right-eye replay described below would keep both eyes from one frame but
+remains unported. Both eyes each frame stays the default.
+
 ## Issue 20 investigation, October 12
 
 [#20](https://github.com/bearstonem/d2r-pcvr/issues/20) reports roughly 60 FPS

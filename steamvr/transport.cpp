@@ -386,6 +386,16 @@ constexpr uint32_t mapSide=512;
 // copied back over it, so the monitor shows only the left eye. [render]
 // desktop_one_eye turns it off; eye images need TRANSFER_SRC for it.
 bool mirrorSupported=false,mirrorMono=false;
+// Eyes by turns: a frame draws one eye and submits the other again from its
+// swapchain's last released image, at the pose and FOV that image was drawn
+// with. A frame without a stereo layer forgets both, so the next draws a pair.
+bool turnFrame=false;
+struct LastEye {XrPosef pose{};XrFovf fov{};bool ok=false;};
+std::array<LastEye,2> lastEyes{};
+// The desktop mirror by turns: a right frame has no left image acquired, so
+// each left frame keeps a copy of the window image for the next right frame.
+ComPtr<ID3D12Resource> mirrorLeft;
+bool mirrorLeftValid=false,mirrorLeftFailed=false;
 std::atomic<bool> uiSupported{false};
 bool journalMode=false,spatialMode=false,workspacePlaced=false,opaqueMenuMode=false,upperBandMenuMode=false;
 bool npcChoicesMode=false;
@@ -2146,6 +2156,14 @@ bool WaitGpuValue(uint64_t value) {
     if(result!=WAIT_OBJECT_0) {Say("Frame D3D12: GPU copy fence timed out");return false;}
     return true;
 }
+bool MirrorLeft(ID3D12Resource* src) {
+    if(mirrorLeft)return true;
+    if(mirrorLeftFailed)return false;
+    D3D12_HEAP_PROPERTIES heap{};heap.Type=D3D12_HEAP_TYPE_DEFAULT;
+    auto r=src->GetDesc();r.Alignment=0;r.Flags=D3D12_RESOURCE_FLAG_NONE;
+    mirrorLeftFailed=!Hr(device->CreateCommittedResource(&heap,D3D12_HEAP_FLAG_NONE,&r,D3D12_RESOURCE_STATE_COMMON,nullptr,IID_PPV_ARGS(&mirrorLeft)),"create desktop left-eye copy");
+    return !mirrorLeftFailed;
+}
 bool Copy(ID3D12Resource* src,Eye& e,reshade::api::command_queue* rq) {
     // The runtime orders images on our bound D3D12 queue. Our allocator has a
     // separate lifetime: never reset it until its own previous copy completed.
@@ -2167,12 +2185,22 @@ bool Copy(ID3D12Resource* src,Eye& e,reshade::api::command_queue* rq) {
     barriers[1].Transition.pResource=dest;barriers[1].Transition.StateBefore=D3D12_RESOURCE_STATE_RENDER_TARGET;barriers[1].Transition.StateAfter=D3D12_RESOURCE_STATE_COPY_DEST;
     if(gpu)e.commands->EndQuery(gpuProfile.heap.Get(),D3D12_QUERY_TYPE_TIMESTAMP,eye*5+3);
     e.commands->ResourceBarrier(2,barriers);e.commands->CopyResource(dest,src);
-    if(eye==1&&mirrorMono&&mirrorSupported&&eyes[0].acquired&&eyes[0].copied) {
-        // The headset already has this right frame; the window gets this pair's
-        // left image back. It stays acquired until EndPair releases both eyes.
+    const bool keepLeft=turnFrame&&eye==0&&mirrorMono&&MirrorLeft(src);
+    if(keepLeft) {
+        D3D12_RESOURCE_BARRIER k=barriers[1];k.Transition.pResource=mirrorLeft.Get();
+        k.Transition.StateBefore=D3D12_RESOURCE_STATE_COMMON;k.Transition.StateAfter=D3D12_RESOURCE_STATE_COPY_DEST;
+        e.commands->ResourceBarrier(1,&k);e.commands->CopyResource(mirrorLeft.Get(),src);
+        std::swap(k.Transition.StateBefore,k.Transition.StateAfter);e.commands->ResourceBarrier(1,&k);
+    }
+    const bool pairLeft=!turnFrame&&mirrorSupported&&eyes[0].acquired&&eyes[0].copied;
+    if(eye==1&&mirrorMono&&(pairLeft||(turnFrame&&mirrorLeftValid))) {
+        // The headset already has this right frame; the window gets the left
+        // image back: this pair's, still acquired until EndPair releases both
+        // eyes, or by turns the copy kept from the last left frame.
         D3D12_RESOURCE_BARRIER m[2]{barriers[0],barriers[1]};
         m[0].Transition.StateBefore=D3D12_RESOURCE_STATE_COPY_SOURCE;m[0].Transition.StateAfter=D3D12_RESOURCE_STATE_COPY_DEST;
-        m[1].Transition.pResource=eyes[0].images[eyes[0].index].texture;m[1].Transition.StateAfter=D3D12_RESOURCE_STATE_COPY_SOURCE;
+        m[1].Transition.pResource=pairLeft?eyes[0].images[eyes[0].index].texture:mirrorLeft.Get();m[1].Transition.StateAfter=D3D12_RESOURCE_STATE_COPY_SOURCE;
+        if(!pairLeft)m[1].Transition.StateBefore=D3D12_RESOURCE_STATE_COMMON;
         e.commands->ResourceBarrier(2,m);e.commands->CopyResource(src,m[1].Transition.pResource);
         std::swap(m[1].Transition.StateBefore,m[1].Transition.StateAfter);e.commands->ResourceBarrier(1,&m[1]);
         barriers[0].Transition.StateAfter=D3D12_RESOURCE_STATE_COPY_DEST;
@@ -2194,6 +2222,7 @@ bool Copy(ID3D12Resource* src,Eye& e,reshade::api::command_queue* rq) {
     if(!Hr(queue->Signal(fence.Get(),++fenceValue),"signal copy fence"))return false;
     e.copyFence=fenceValue;
     timing.copySubmitMs[eye]+=Milliseconds()-copyStart;
+    if(keepLeft)mirrorLeftValid=true;
     e.copied=true;return true;
 }
 bool CopyMap(reshade::api::command_queue* rq) {
@@ -2293,14 +2322,17 @@ void Capture(reshade::api::command_queue* rq,reshade::api::swapchain* swap) {
     if(!Begin()||!render||!valid) {if(!stereo)EndPair();return;}
     const uint32_t eye=stereo?((afr->eye^afr->swap)&1u):0u;
     mirrorMono=stereo&&vrsettings::Read().values[settings::DesktopOneEye]>.5f;
-    if(eye==0&&!CopyMap(rq)) {mapSupported=false;mapEye.copied=false;Say("Frame menu map: copy unavailable; optional map suspended");}
-    if((eye==0&&!CopyUi(rq))||!Copy(src,eyes[eye],rq)){failed=true;EndPair();ClearInput();return;}
+    // The map and menu surfaces are copied once a frame: from the left eye's
+    // pass, or by turns from whichever eye this frame draws.
+    const bool shared=eye==0||(pairDrawing&&turnFrame);
+    if(shared&&!CopyMap(rq)) {mapSupported=false;mapEye.copied=false;Say("Frame menu map: copy unavailable; optional map suspended");}
+    if((shared&&!CopyUi(rq))||!Copy(src,eyes[eye],rq)){failed=true;EndPair();ClearInput();return;}
     if(!stereo) {
         PlaceMainMenu();
         EndPair();
     } else if(!pairDrawing&&eyes[0].copied&&eyes[1].copied) {
         EndPair();
-    } else if(eye==1&&!eyes[0].copied) {
+    } else if(eye==1&&!eyes[0].copied&&!turnFrame) {
         // Missed left eye: submit zero layers, never present an old/mono image as stereo.
         EndPair();
     }
@@ -2408,14 +2440,20 @@ bool TakeWorldRecenter() {
     std::lock_guard lock(mutex);const bool take=worldRecenter;worldRecenter=false;return take;
 }
 void RequestStereoCapture(){captureRequested.store(true);}
-void BeginPair() {
+bool EyesByTurns() {return vrsettings::Read().values[settings::EyesByTurns]>.5f;}
+bool TurnReady() {
+    std::lock_guard lock(mutex);
+    return lastEyes[0].ok&&lastEyes[1].ok&&!captureRequested.load()&&!d2rcam::LabelCapturePending();
+}
+void BeginPair(bool byTurns) {
     std::lock_guard lock(mutex);
     lastTiming={};
     if(session&&!failed){
-        if(frame)EndPair();Begin();pairDrawing=true;
+        if(frame)EndPair();turnFrame=byTurns;Begin();pairDrawing=true;
         gpuProfile.started=gpuProfile.effects=gpuProfile.resolved=0;
-        if(Active())profile::BeginPair();else profile::SkipPair();
-        if(Active()&&(captureRequested.exchange(false)||d2rcam::TakeLabelCapture())) {
+        // The profile and stereo captures take both eyes from one game frame.
+        if(Active()&&!byTurns)profile::BeginPair();else profile::SkipPair();
+        if(Active()&&!byTurns&&(captureRequested.exchange(false)||d2rcam::TakeLabelCapture())) {
             capturePair=true;captureEyes=0;++captureSerial;
             Say("Frame capture: recording one stereo pair (readback pause is diagnostic, exclude from performance comparison)");
         }
@@ -2426,7 +2464,7 @@ void EndPair() {
     lightbounds::SetActive(false);
     foveation::EndWorld();
     d2rcam::SetStereoUiEye(-1);
-    std::lock_guard lock(mutex);pairDrawing=false;if(!frame||!session)return;
+    std::lock_guard lock(mutex);pairDrawing=false;const bool turn=turnFrame;turnFrame=false;if(!frame||!session)return;
     d2rcam::TraceStereoLabels(-1);
     if(capturePair){Say(captureEyes==3?"Frame capture: both eye screenshots requested":"Frame capture: incomplete pair; do not use for stereo comparison");capturePair=false;}
     // All image writes and state restoration have been submitted on the queue
@@ -2442,6 +2480,7 @@ void EndPair() {
     for(auto& e:eyes)if(e.acquired){
         XrSwapchainImageReleaseInfo ri{XR_TYPE_SWAPCHAIN_IMAGE_RELEASE_INFO};
         if(!Check(pReleaseSwapchainImage(e.chain,&ri),"release copied eye")){failed=true;e.copied=false;}
+        if(!e.copied)lastEyes[size_t(&e-eyes.data())].ok=false;
         e.acquired=false;
     }
     if(uiEye.acquired){XrSwapchainImageReleaseInfo release{XR_TYPE_SWAPCHAIN_IMAGE_RELEASE_INFO};
@@ -2453,10 +2492,15 @@ void EndPair() {
     std::array<XrCompositionLayerProjectionView,2> pv{{{XR_TYPE_COMPOSITION_LAYER_PROJECTION_VIEW},{XR_TYPE_COMPOSITION_LAYER_PROJECTION_VIEW}}};
     XrCompositionLayerQuad quad{XR_TYPE_COMPOSITION_LAYER_QUAD};
     const XrCompositionLayerBaseHeader* layer=nullptr;
-    if(render&&valid&&!panelMode&&eyes[0].copied&&eyes[1].copied) {
-        for(int i=0;i<2;++i){pv[i].pose=views[i].pose;pv[i].fov=views[i].fov;pv[i].subImage.swapchain=eyes[i].chain;pv[i].subImage.imageRect={{0,0},{int32_t(width),int32_t(height)}};}
+    const auto drawn=[&](int i){return eyes[i].copied||(turn&&lastEyes[i].ok);};
+    if(render&&valid&&!panelMode&&drawn(0)&&drawn(1)&&(eyes[0].copied||eyes[1].copied)) {
+        for(int i=0;i<2;++i){
+            if(eyes[i].copied)lastEyes[i]={views[i].pose,views[i].fov,true};
+            pv[i].pose=lastEyes[i].pose;pv[i].fov=lastEyes[i].fov;pv[i].subImage.swapchain=eyes[i].chain;pv[i].subImage.imageRect={{0,0},{int32_t(width),int32_t(height)}};
+        }
         projection.space=space;projection.viewCount=2;projection.views=pv.data();layer=reinterpret_cast<const XrCompositionLayerBaseHeader*>(&projection);menuPlaced=false;
-    } else if(render&&valid&&eyes[0].copied&&menuPlaced) {
+    } else lastEyes={};
+    if(!layer&&render&&valid&&eyes[0].copied&&menuPlaced) {
         const auto size=panels::Fit(width,height,panelWidth);
         quad.space=space;quad.eyeVisibility=XR_EYE_VISIBILITY_BOTH;quad.pose=menuPose;quad.size={size.width,size.height};
         quad.subImage.swapchain=eyes[0].chain;quad.subImage.imageRect={{0,0},{int32_t(width),int32_t(height)}};layer=reinterpret_cast<const XrCompositionLayerBaseHeader*>(&quad);
@@ -3100,6 +3144,7 @@ void Shutdown(bool preserveResolution) {
     detectedControllers={};controllerLabels={};controllerProfilesDirty=true;frameControllerExtension=false;
     for(auto& e:eyes){if(e.chain&&pDestroySwapchain)pDestroySwapchain(e.chain);e={};}
     mirrorSupported=mirrorMono=false;
+    turnFrame=false;lastEyes={};mirrorLeft.Reset();mirrorLeftValid=mirrorLeftFailed=false;
     for(auto& s:handSpaces){if(s&&pDestroySpace)pDestroySpace(s);s=XR_NULL_HANDLE;}
     if(headSpace&&pDestroySpace)pDestroySpace(headSpace);if(space&&pDestroySpace)pDestroySpace(space);
     if(session&&pDestroySession)pDestroySession(session);if(actionSet&&pDestroyActionSet)pDestroyActionSet(actionSet);

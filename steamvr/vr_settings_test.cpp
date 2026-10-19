@@ -2,6 +2,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <limits>
+#include <string>
 using namespace framevr::settings;
 static void Check(bool b,const char* label){if(!b){std::fprintf(stderr,"FAIL: %s\n",label);std::exit(1);}}
 static Hit At(Page p,Rect r){return HitTest(p,(r.x+r.w*.5f)/Width,(r.y+r.h*.5f)/Height);}
@@ -41,9 +42,11 @@ int main(){
     }
     Snapshot s;s.ready=true;
     {
-        Check(RowCount(Page::Video)==9&&RowKey(Page::Video,0)==Foveation&&RowKey(Page::Video,1)==FoveationStrength&&
+        Check(RowCount(Page::Video)==10&&RowKey(Page::Video,0)==Foveation&&RowKey(Page::Video,1)==FoveationStrength&&
               RowKey(Page::Video,7)==RenderResolution&&RowKey(Page::Video,8)==DesktopOneEye,"strength sits directly under foveated rendering");
-        Check(RowY+RowCount(Page::Video)*RowStep-4<=806,"video rows end above the footer notes");
+        Check(RowKey(Page::Video,9)==EyesByTurns,"stereo rendering is the last video row");
+        const auto last=Increase(RowCount(Page::Video)-1);
+        Check(last.y+last.h<876,"video rows end above the save status");
         Model strength;strength.Open(s);strength.Click({Kind::Tab,int(Page::Video)});
         Check(strength.Get()[Foveation]==1&&strength.Get()[FoveationStrength]==1,"fixed foveation at Medium strength by default");
         strength.Click(At(Page::Video,Increase(1)));
@@ -57,6 +60,16 @@ int main(){
         strength.Click(At(Page::Video,Increase(0)));strength.Click(At(Page::Video,Decrease(1)));
         Check(strength.Get()[FoveationStrength]==2,"strength edits resume when foveation is selected again");
         Check(Normalize(FoveationStrength,1.5f)==1&&Normalize(FoveationStrength,7)==1&&Normalize(FoveationStrength,-1)==1,"malformed strength shows Medium");
+    }
+    {
+        Model stereo;stereo.Open(s);stereo.Click({Kind::Tab,int(Page::Video)});
+        Check(stereo.Get()[EyesByTurns]==0&&RowEnabled(stereo.Get(),EyesByTurns),"both eyes each frame by default");
+        stereo.Click(At(Page::Video,ValueBox(9)));
+        Check(stereo.Get()[EyesByTurns]==1&&stereo.Dirty(),"the value box switches to eyes by turns");
+        stereo.Click(At(Page::Video,Decrease(9)));
+        Check(stereo.Get()[EyesByTurns]==0,"either arrow switches back to both eyes");
+        Check(std::string(StereoRenderingNames[0])=="Both eyes"&&std::string(StereoRenderingNames[1])=="By turns","stereo rendering names");
+        Check(Normalize(EyesByTurns,NAN)==0&&Normalize(EyesByTurns,-3)==0&&Normalize(EyesByTurns,4)==1,"malformed stereo rendering stays a toggle");
     }
     {
         Model map;map.Open(s);map.Click({Kind::Tab,int(Page::HUD)});
