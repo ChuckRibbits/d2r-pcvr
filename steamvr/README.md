@@ -132,17 +132,18 @@ a workaround: background/focus handling also affects input and frame pacing.
 Each game frame normally draws both eyes: the left, then the right with the
 game time held. VR Settings > Video > **Stereo rendering: By turns** draws one
 eye per game frame instead, alternating. The headset gets that eye fresh and
-the other eye's last image turned on the GPU from the head pose it was drawn
-at to the current one, so both eyes go at one pose as a pair does. The turn is
-rotation only, like the runtime's own reprojection. This halves the CPU draw work per
-headset frame, so a CPU-limited PC may reach the headset's full rate. Each eye
-still updates at half that rate, and moving content is one game frame apart
-between the eyes, which can look doubled. Open menus, stereo captures and any
-frame without a reusable image for both eyes draw a full pair. With **Desktop
-shows one eye**, a copy of each left image covers the next right frame on the
-monitor. The choice is stored as `[stereo] eyes_by_turns` and applies live.
-Every 10 seconds the log reports a `vrcam: eyes by turns` line with frames per
-second and the time spent in each part of a frame.
+the other eye's last image turned on the GPU from the pose it was drawn at to
+the current one, head, stick and mouse turns included, so both eyes go at one
+pose as a pair does. This halves the draw work per headset frame. Each eye
+still updates at half the frame rate, and moving monsters are one game frame
+apart between the eyes, which can look doubled. The turn cannot move the
+image, so while the hero moves (and 0.3 s after), on a snap turn, outside first
+person, in open menus, during stereo captures and on any frame without a
+reusable image for both eyes, a full pair is drawn. With **Desktop shows one
+eye**, the kept left image covers the right frames on the monitor. The choice is
+stored as `[stereo] eyes_by_turns` and applies live. Every 10 seconds the log
+reports a `vrcam: eyes by turns` line with frames per second, the time spent in
+each part of a frame and how many frames went as pairs while moving.
 
 **Left X** opens inventory through the game's UI service when no menu is open.
 When native menu panels are open, Left X performs the native X action. It

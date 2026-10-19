@@ -27,6 +27,13 @@ a pair. In that session the GPU, not the CPU, limited the rate: both eyes ran
 at 25-28 pairs/s, by turns at 42 frames/s (21 per eye), and one eye's pass
 took 11-14 ms against about 7 ms per eye in the measurement above.
 
+The second test: head turns were right, but walking left one eye lagging. The
+turned eye still showed the world from where the hero stood a frame earlier,
+10 cm or more at a run, which a rotation cannot correct; that needs the scene's
+depth (a positional reprojection), not attempted here. By turns now draws a
+pair from the hero point's first step to 0.3 s after its last and on a snap
+turn, and only in first person. Stick and mouse turns are part of the GPU turn.
+
 ## Issue 20 investigation, October 12
 
 [#20](https://github.com/bearstonem/d2r-pcvr/issues/20) reports roughly 60 FPS

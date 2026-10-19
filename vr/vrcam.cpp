@@ -4865,17 +4865,44 @@ void Recenter();
 // Half the CPU work a headset frame, each eye at half the rate, and the eyes a
 // game frame apart: the frame time is not held, every pass is a game frame of
 // its own. Open menus, and a frame without both eyes' last images, draw a pair.
-bool TurnsWanted() { return framevr::EyesByTurns() && !gamestate::MenuOpen() && framevr::TurnReady(); }
+//
+// So does a frame while the hero moves: the eye not drawn would show the world
+// from a frame back, a hand's breadth at a run, and the GPU turn can only turn
+// it, not move it (owner, 2026-10-19: "moving still has the right eye
+// lagging"). From the hero point's first step to 0.3 s after its last, and on
+// a jump of the body's yaw (a snap turn). First person only: in the other
+// views the camera itself moves as the head turns.
+std::atomic<uint32_t> g_movePairs{0};   // frames drawn as pairs for that, for the 10 s line
+bool TurnSafe() {
+    static float last[3] = {};
+    static bool had = false;
+    static ULONGLONG movedAt = 0;
+    const ULONGLONG now = GetTickCount64();
+    float at[3];
+    const bool ok = LookAtNow(at);
+    if (ok && had) {
+        const float dx = at[0] - last[0], dy = at[1] - last[1], dz = at[2] - last[2];
+        if (dx * dx + dy * dy + dz * dz > 1e-4f) movedAt = now;   // 0.01 world units, 2-3 mm
+    }
+    if (ok) memcpy(last, at, sizeof last);
+    had = ok;
+    const bool snapped = std::fabs(WrapDeg(g_mouseYaw.load() + g_turnYaw.load() - g_heldYaw.load())) > 15.0f;
+    return ok && now - movedAt > 300 && !snapped;
+}
+bool TurnsWanted() {
+    if (!framevr::EyesByTurns()) return false;
+    const bool safe = TurnSafe();   // every frame, so a step is seen from the last one
+    if (ThirdPerson() || Overhead() || gamestate::MenuOpen() || !framevr::TurnReady()) return false;
+    if (!safe) { g_movePairs.fetch_add(1); return false; }
+    return true;
+}
 
 uintptr_t DrawTurn(int a, bool continued) {
     static bool told = false;
-    static double lastEnd = 0.0, sumGap = 0.0, sumBegin = 0.0, sumWait = 0.0, sumPass = 0.0, sumEnd = 0.0, longest = 0.0;
+    static double lastEnd = 0.0, sumGap = 0.0, sumBegin = 0.0, sumWait = 0.0, sumPass = 0.0, sumEnd = 0.0, sumPeriod = 0.0, longest = 0.0;
     static ULONGLONG since = GetTickCount64();
-    static uint32_t turns = 0;
-    if (!continued) {   // after pairs or menus: a new run of turns, a new 10 s window
-        lastEnd = sumGap = sumBegin = sumWait = sumPass = sumEnd = longest = 0.0;
-        since = GetTickCount64(); turns = 0;
-    }
+    static uint32_t turns = 0, periods = 0;
+    if (!continued) lastEnd = 0.0;   // after pairs or menus: no frame period across them
     const double entered = pairtime::UsNow();
     framevr::BeginPair(true);
     if (framevr::TakeWorldRecenter()) Recenter();
@@ -4900,17 +4927,20 @@ uintptr_t DrawTurn(int a, bool continued) {
     if (live) g_shared = live;
 
     const auto xr = framevr::LastTiming();
-    if (lastEnd > 0.0) { sumGap += entered - lastEnd; longest = std::max(longest, ended - lastEnd); }
+    if (lastEnd > 0.0) { sumGap += entered - lastEnd; sumPeriod += ended - lastEnd; ++periods; longest = std::max(longest, ended - lastEnd); }
     sumBegin += t0 - entered; sumWait += xr.waitFrameMs; sumPass += t1 - t0; sumEnd += ended - t1;
     lastEnd = ended;
     ++turns;
     if (!told) { told = true; Log("vrcam: eyes by turns ON - one pass a game frame, the other eye as last drawn"); }
+    // The rate from consecutive turns only: the window also holds the pairs
+    // drawn while the hero moved.
     if (const ULONGLONG now = GetTickCount64(); now - since >= 10000) {
-        const double k = 0.001 / turns, rate = turns * 1000.0 / (double)(now - since);
-        LogF("vrcam: eyes by turns - %.1f frames/s (each eye %.1f/s) | a frame, ms: game %.2f | XR begin %.2f (wait %.2f) | pass %.2f | XR end %.2f | longest %.1f",
-             rate, rate * 0.5, sumGap * k, sumBegin * k, sumWait / turns, sumPass * k, sumEnd * k, longest * 0.001);
-        lastEnd = 0.0; sumGap = sumBegin = sumWait = sumPass = sumEnd = longest = 0.0;
-        since = now; turns = 0;
+        const double k = 0.001 / turns, rate = periods ? periods * 1e6 / sumPeriod : 0.0;
+        LogF("vrcam: eyes by turns - %.1f frames/s (each eye %.1f/s) | a frame, ms: game %.2f | XR begin %.2f (wait %.2f) | pass %.2f | XR end %.2f | longest %.1f | %u frames by turns, %u pairs while moving",
+             rate, rate * 0.5, periods ? sumGap * 0.001 / periods : 0.0, sumBegin * k, sumWait / turns, sumPass * k, sumEnd * k, longest * 0.001,
+             turns, g_movePairs.exchange(0));
+        lastEnd = 0.0; sumGap = sumBegin = sumWait = sumPass = sumEnd = sumPeriod = longest = 0.0;
+        since = now; turns = periods = 0;
     }
     return r;
 }

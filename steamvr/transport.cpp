@@ -393,8 +393,11 @@ bool mirrorSupported=false,mirrorMono=false;
 // pose and FOV it was drawn with (lastEyes). A frame without a stereo layer
 // forgets both, so the next draws a pair.
 bool turnFrame=false;
-struct LastEye {XrPosef pose{};XrFovf fov{};bool ok=false;};
+// base: the body's turn into the world the eye was drawn with (View), so a
+// stick, mouse or recentre turn since is turned out as well as the head's.
+struct LastEye {XrPosef pose{};XrFovf fov{};bool ok=false;math::Quat base{0,0,0,1};};
 std::array<LastEye,2> lastEyes{};
+std::array<math::Quat,2> viewBase{{{0,0,0,1},{0,0,0,1}}};   // each eye's, as View last built it
 // While the option is on, each eye's image as shown, kept by Copy (KeepTurn):
 // a released swapchain image is the runtime's. Also the desktop mirror's left
 // image on the frames that draw the right.
@@ -2196,9 +2199,10 @@ bool TurnEye(int i) {
     if(!turnKept[i]||!lastEyes[i].ok||e.acquired||e.images.empty()||!turnWarp.Fits(turnImages[i].Get(),e.images[0].texture))return false;
     if(!Acquire(e)||!WaitGpuValue(e.copyFence)||
        !Hr(e.allocator->Reset(),"reset turn allocator")||!Hr(e.commands->Reset(e.allocator.Get(),nullptr),"reset turn list")){failed=true;return false;}
+    // In the world: the body's turn then the head's, now the drawn eye's body turn.
     const auto& was=lastEyes[i];const auto& now=views[i];
-    const auto h=TurnHomography(Q(was.pose.orientation),{was.fov.angleLeft,was.fov.angleRight,was.fov.angleDown,was.fov.angleUp},
-                                Q(now.pose.orientation),{now.fov.angleLeft,now.fov.angleRight,now.fov.angleDown,now.fov.angleUp});
+    const auto h=TurnHomography(math::Multiply(was.base,Q(was.pose.orientation)),{was.fov.angleLeft,was.fov.angleRight,was.fov.angleDown,was.fov.angleUp},
+                                math::Multiply(viewBase[i^1],Q(now.pose.orientation)),{now.fov.angleLeft,now.fov.angleRight,now.fov.angleDown,now.fov.angleUp});
     D3D12_RESOURCE_BARRIER b{};b.Type=D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
     b.Transition={turnImages[i].Get(),D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES,D3D12_RESOURCE_STATE_COMMON,D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE};
     e.commands->ResourceBarrier(1,&b);
@@ -2538,7 +2542,7 @@ void EndPair() {
     const auto drawn=[&](int i){return eyes[i].copied||(turn&&lastEyes[i].ok);};
     if(render&&valid&&!panelMode&&drawn(0)&&drawn(1)&&(eyes[0].copied||eyes[1].copied)) {
         for(int i=0;i<2;++i){
-            if(eyes[i].copied)lastEyes[i]={views[i].pose,views[i].fov,true};
+            if(eyes[i].copied)lastEyes[i]={views[i].pose,views[i].fov,true,viewBase[i]};
             // drawn or turned this frame: this frame's pose; else as drawn
             const bool now=eyes[i].copied||i==turned;
             pv[i].pose=now?views[i].pose:lastEyes[i].pose;pv[i].fov=now?views[i].fov:lastEyes[i].fov;
@@ -3145,6 +3149,7 @@ bool View(float out[16],const float hero[3],float eyeHeight,float userEyeHeight,
         }
     }
     const auto& pose=eye<0?head:views[eye&1].pose;
+    if(eye>=0)viewBase[eye&1]=base;
     const auto offset=math::Rotate(base,V(pose.position)-origin)*upm;
     const math::Vec position={hero[0]+offset.x,hero[1]+eyeHeight+offset.y,hero[2]+offset.z};
     math::View(position,math::Multiply(base,Q(pose.orientation)),out);return true;
@@ -3190,7 +3195,7 @@ void Shutdown(bool preserveResolution) {
     detectedControllers={};controllerLabels={};controllerProfilesDirty=true;frameControllerExtension=false;
     for(auto& e:eyes){if(e.chain&&pDestroySwapchain)pDestroySwapchain(e.chain);e={};}
     mirrorSupported=mirrorMono=false;
-    turnFrame=keepTurns=false;lastEyes={};turnImages={};turnKept={};turnImagesFailed=turnWarpTried=false;turnWarp={};
+    turnFrame=keepTurns=false;lastEyes={};viewBase={{{0,0,0,1},{0,0,0,1}}};turnImages={};turnKept={};turnImagesFailed=turnWarpTried=false;turnWarp={};
     for(auto& s:handSpaces){if(s&&pDestroySpace)pDestroySpace(s);s=XR_NULL_HANDLE;}
     if(headSpace&&pDestroySpace)pDestroySpace(headSpace);if(space&&pDestroySpace)pDestroySpace(space);
     if(session&&pDestroySession)pDestroySession(session);if(actionSet&&pDestroyActionSet)pDestroyActionSet(actionSet);

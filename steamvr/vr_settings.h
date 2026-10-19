@@ -80,7 +80,7 @@ inline constexpr std::array<Definition,Count> Definitions{{
     {"Map view", "Isometric or Top-down wrist minimap", L"interactions",L"map_top_down",0,0,1,1},
     {"Rotate map", "Top-down only: keep your facing direction at the top", L"interactions",L"map_rotate",0,0,1,1},
     {"Foveation strength", "Higher levels shade a larger edge area more coarsely", L"render",L"foveation_strength",1,0,3,1},
-    {"Stereo rendering", "By turns: one eye per frame, less CPU; moving things may ghost", L"stereo",L"eyes_by_turns",0,0,1,1},
+    {"Stereo rendering", "By turns: one eye per frame while you stand; less draw work", L"stereo",L"eyes_by_turns",0,0,1,1},
 }};
 using Values=std::array<float,Count>;
 inline bool HapticKey(Key key){return key>=HapticStrength&&key<=HapticAlert;}
