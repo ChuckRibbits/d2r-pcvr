@@ -3168,18 +3168,19 @@ int HookSpellCommand(framevr::spellaim::NativeCommand* command) {
     return result;
 }
 
-// Target highlight switch, read by the update and render threads: one settings
-// snapshot every 200 ms, not one per frame.
-bool TargetHighlightOn() {
+// Monster outline strength (VR Settings > Aim, 0 = Off), read by the update and
+// render threads: one settings snapshot every 200 ms, not one per frame.
+float TargetOutlineStrength() {
     static std::atomic<ULONGLONG> at{0};
-    static std::atomic<bool> on{false};
+    static std::atomic<float> strength{0.0f};
     const ULONGLONG now = GetTickCount64();
     if (now - at.load() > 200) {
-        on.store(vrsettings::Read().values[framevr::settings::TargetHighlight] > .5f);
+        strength.store(std::clamp(vrsettings::Read().values[framevr::settings::TargetHighlight] * 0.01f, 0.0f, 1.0f));
         at.store(now);
     }
-    return on.load();
+    return strength.load();
 }
+bool TargetHighlightOn() { return TargetOutlineStrength() > 0.0f; }
 // Aim source: deliberate pointing beats looking. The aiming hand counts as
 // pointing while held out from the body (horizontal reach from the head, in
 // metres, with hysteresis); a hand resting in the lap does not.
@@ -8275,10 +8276,9 @@ void OnBeginEffects(reshade::api::effect_runtime* rt, reshade::api::command_list
                 snprintf(n, sizeof n, "CamBack%d", e); SetFloats(rt, n, s.axes + 6, 3);
             }
             const float floor = sv[0].hero[1], shear = framevr::coordinates::GroundShear;
-            const float pulse = 0.8f + 0.2f * sinf(float(GetTickCount64() % 100000) * 0.0094f);
             mob[0] = mx * 2.0f + floor * shear - sv[0].hero[0];
             mob[2] = my * 2.0f + floor * shear - sv[0].hero[2];
-            mob[3] = pulse;
+            mob[3] = TargetOutlineStrength();   // steady, no pulse
             // by range: near red, mid orange, far yellow
             static const float kBands[3][3] = {{1.0f, 0.2f, 0.12f}, {1.0f, 0.55f, 0.1f}, {1.0f, 0.92f, 0.25f}};
             SetFloats(rt, "OutlineColor", kBands[framevr::targetcone::Band(md)], 3);

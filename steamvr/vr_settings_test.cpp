@@ -171,11 +171,13 @@ int main(){
         Check(speed.Click({Kind::Apply}).changed==(ChangeMask{1}<<StrainSpeed),"buildup edits preserve combat rules, difficulty and colour");
     }
     {Model aim;aim.Open(s);aim.Click({Kind::Tab,int(Page::Aim)});
-        Check(s.values[TargetHighlight]==1&&RowCount(Page::Aim)==1&&RowKey(Page::Aim,0)==TargetHighlight,"target highlight is On by default, alone on the Aim page");
-        Check(HelpAt(Page::Aim,(ValueBox(0).x+5.f)/Width,(ValueBox(0).y+5.f)/Height)==TargetHighlight,"the Aim row explains the highlight");
-        aim.Click(At(Page::Aim,ValueBox(0)));Check(aim.Get()[TargetHighlight]==0,"the value toggles the highlight off");
+        Check(s.values[TargetHighlight]==0&&RowCount(Page::Aim)==1&&RowKey(Page::Aim,0)==TargetHighlight,"the monster outline is Off by default, alone on the Aim page");
+        Check(HelpAt(Page::Aim,(ValueBox(0).x+5.f)/Width,(ValueBox(0).y+5.f)/Height)==TargetHighlight,"the Aim row explains the outline");
+        aim.Click(At(Page::Aim,Increase(0)));Check(aim.Get()[TargetHighlight]==10,"plus turns the outline on at 10%");
+        aim.Click(At(Page::Aim,Decrease(0)));aim.Click(At(Page::Aim,Decrease(0)));Check(aim.Get()[TargetHighlight]==0,"Off is the lower bound");
+        aim.Click(At(Page::Aim,Increase(0)));aim.Click(At(Page::Aim,Increase(0)));
         const auto request=aim.Click({Kind::Apply});
-        Check(request.changed==(ChangeMask{1}<<TargetHighlight),"turning the highlight off changes nothing else");
+        Check(request.changed==(ChangeMask{1}<<TargetHighlight)&&request.values[TargetHighlight]==20,"the outline strength changes nothing else");
     }
     {Model difficulty;difficulty.Open(s);difficulty.Click({Kind::Tab,int(Page::Combat)});
         Check(s.values[OfflinePlayers]==0&&RowKey(Page::Combat,6)==OfflinePlayers,"difficulty preserves native settings by default");

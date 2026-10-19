@@ -1791,6 +1791,7 @@ uniform float3 OutlineEye1 < hidden = true; > = float3(0.0, 0.0, 0.0);
 uniform float4 OutlinePos < hidden = true; > = float4(0.0, 0.0, 0.0, 0.0);
 uniform float3 OutlineShape < hidden = true; > = float3(2.6, 0.15, 4.0);
 uniform float3 OutlineColor < hidden = true; > = float3(1.0, 0.2, 0.12);
+uniform float OutlineWidth < hidden = true; > = 1.5;   // how far out a neighbour is looked for, in pixels: the edge's thickness
 
 // The world point (relative to the hero) the eye sees at uv; ok = 0 for the sky.
 float3 OutlineWorld(float2 uv, int eye, out float ok)
@@ -1829,13 +1830,11 @@ float3 OutlineTint(float3 c, float2 uv, int eye, float3 p, float4 o, float3 shap
     // away (a depth jump), so its silhouette edges glow, not just its feet.
     const float jump = shape.x * 0.5;
     float edge = 0.0;
-    [unroll] for (int k = 0; k < 8; ++k) {
-        [unroll] for (int s = 0; s < 2; ++s) {
-            float ok;
-            const float3 q = OutlineWorld(uv + kOutlineDirs[k] * float2(BUFFER_RCP_WIDTH, BUFFER_RCP_HEIGHT) * (s == 0 ? 2.0 : 5.0), eye, ok);
-            const float model = ok * Raised(q, o, shape) * max(Near(q, ok, o, shape), step(length(q - p), jump));
-            edge += (1.0 - model) * (s == 0 ? 1.0 : 0.5);
-        }
+    [unroll] for (int k = 0; k < 8; ++k) {   // one ring of neighbours: a thin line
+        float ok;
+        const float3 q = OutlineWorld(uv + kOutlineDirs[k] * float2(BUFFER_RCP_WIDTH, BUFFER_RCP_HEIGHT) * OutlineWidth, eye, ok);
+        const float model = ok * Raised(q, o, shape) * max(Near(q, ok, o, shape), step(length(q - p), jump));
+        edge += 1.0 - model;
     }
     const float a = saturate(edge / 3.0) * o.w;
     return saturate(c + colour * a * 1.3);   // added light: a glow, not paint
