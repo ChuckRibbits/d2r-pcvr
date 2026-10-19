@@ -924,10 +924,10 @@ instead of a random one. Classic keeps the native roll.
   clear and breathes slowly (`guard_strain_breathe_ms`, 1600), with one alert tap on
   the left controller. The shield keeps blocking throughout; the cost is sight.
   Strain holds while hits keep reaching the shield. Once no hit (block or parry)
-  has reached it for `guard_strain_recover_ms` (3000; 0 = only lowering drains), it
+  has reached it for `guard_strain_recover_ms` (1500; 0 = only lowering drains), it
   drains with the shield still up; the next hit stops the drain and restarts the
   wait. Lowering it (or a menu, or losing the shield) drains at once, without the
-  wait. Either way full strain drains in `guard_strain_reset_ms` (3000); a broken guard
+  wait. Either way full strain drains in `guard_strain_reset_ms` (1500), so a broken guard left alone clears 3 s after the last hit; a broken guard
   stays broken until the light has fully faded, and raising the shield again part
   way keeps what is left. Opacity is `guard_strain_light` (100 %, 0 = none; strain
   still runs). The light's inner blend is

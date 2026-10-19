@@ -160,7 +160,8 @@ doesn't reduce them; resistances still matter.
   creeps in from the edge of your view; at full strain
   the guard breaks and the light swells over most of your view. The shield
   keeps blocking; the cost is sight. It fades once no hit has reached your
-  shield for about 3 seconds, even held up, or at once if you lower it.
+  shield for a moment, even held up, and is gone about 3 seconds after the
+  last hit; lowering the shield starts the fade at once.
   **Combat > Guard strain color** switches the light to a black shadow.
   **Guard strain buildup** selects Slow / Medium / Fast: about 20 / 10 / 5
   blocks to full strain with default tuning. Medium keeps the original rate.

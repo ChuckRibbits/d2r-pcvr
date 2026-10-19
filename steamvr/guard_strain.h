@@ -27,8 +27,9 @@ inline float BuildMultiplier(BuildSpeed speed){return speed==BuildSpeed::Slow?.5
 struct Tuning {
     BuildSpeed speed=BuildSpeed::Medium; // changes strain per block, never ring size or reset time
     float perBlock=.10f;     // strain per blocked hit (1 = broken)
-    float resetSeconds=3.f;  // lowered: full strain clears in this long
-    float recoverSeconds=3.f; // raised, no hit on the shield this long: drains as if lowered (0 = only lowering drains)
+    float resetSeconds=1.5f; // draining: full strain clears in this long
+    float recoverSeconds=1.5f; // raised, no hit on the shield this long: drains as if lowered (0 = only lowering drains)
+                             // 1.5 s bridges most gaps between blocks in a fight (median 0.8 s); hold + fade = 3 s from full
     float clear=.10f;        // radius left clear at full swell (1 = visor image edge)
     float brightness=1.f;    // peak opacity, 0 = off ([gameplay] guard_strain_light)
     float breatheSeconds=1.6f; // one slow swell while broken

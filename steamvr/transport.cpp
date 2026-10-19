@@ -151,7 +151,7 @@ bool bloodAtlasPending=false,bloodImageReady=false;
 strain::Engine guardStrain;
 strain::Output strainOutput;
 std::mutex strainTuningMutex;strain::Tuning strainTuning;
-std::atomic<float> strainRecoverSeconds{3.f};   // [gameplay] guard_strain_recover_ms; 0 = only lowering drains
+std::atomic<float> strainRecoverSeconds{1.5f};   // [gameplay] guard_strain_recover_ms; 0 = only lowering drains
 std::atomic<unsigned> guardBlockEvents{0},guardParryEvents{0};
 std::atomic<ULONGLONG> guardStateAt{0};std::atomic<bool> guardEligible{false},guardRaised{false};
 strain::Painter strainPainter;
@@ -2926,7 +2926,7 @@ void ConfigureGuardStrain(float perBlock,float resetSeconds,float clear,float br
     std::lock_guard lock(strainTuningMutex);strainTuning=t;
 }
 void ConfigureGuardStrainRecover(float seconds) {
-    strainRecoverSeconds=std::isfinite(seconds)?std::clamp(seconds,0.f,30.f):3.f;
+    strainRecoverSeconds=std::isfinite(seconds)?std::clamp(seconds,0.f,30.f):1.5f;
 }
 void ConfigureHeartbeat(float volume,float bpmMin,float bpmMax,float fadeSeconds,const wchar_t* file) {
     heartbeat::Tuning t;

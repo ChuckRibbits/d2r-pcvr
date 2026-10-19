@@ -887,7 +887,7 @@ void LoadSettings() {
     // guard_strain_dark_density (2.5; 1 = the same curve as the light): at equal
     // opacity a dark rim over D2's dark scenes hides far less than a pale one.
     framevr::ConfigureGuardStrain(IniF(L"gameplay",L"guard_strain_per_block",10)/100.f,
-                                  IniF(L"gameplay",L"guard_strain_reset_ms",3000)/1000.f,
+                                  IniF(L"gameplay",L"guard_strain_reset_ms",1500)/1000.f,
                                   IniF(L"gameplay",L"guard_strain_clear",10)/100.f,
                                   IniF(L"gameplay",L"guard_strain_breathe_ms",1600)/1000.f,
                                   IniF(L"gameplay",L"guard_strain_softness",45)/100.f,
@@ -899,8 +899,9 @@ void LoadSettings() {
                                   IniB(L"gameplay",L"guard_strain_dark",false)?
                                       std::clamp(IniF(L"gameplay",L"guard_strain_dark_density",2.5f),1.f,6.f):1.f);
     // Strain also recedes with the shield still up once no hit has reached it for
-    // guard_strain_recover_ms (3000), at the guard_strain_reset_ms rate. 0 = only lowering clears it.
-    framevr::ConfigureGuardStrainRecover(IniF(L"gameplay",L"guard_strain_recover_ms",3000)/1000.f);
+    // guard_strain_recover_ms (1500), at the guard_strain_reset_ms rate (1500): clear 3 s after the
+    // last hit from full. 0 = only lowering clears it.
+    framevr::ConfigureGuardStrainRecover(IniF(L"gameplay",L"guard_strain_recover_ms",1500)/1000.f);
     {   // Low-life heartbeat (start: VR Settings > Combat, [gameplay] low_life_heart_start): % on top of
         // the game's Master x Combat volume (0 = off), tempo range, wind-down time from full, and
         // an optional one-beat 16-bit PCM WAV (next to this ini unless a full path). The old
