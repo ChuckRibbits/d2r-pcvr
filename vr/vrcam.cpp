@@ -28,6 +28,7 @@
 #include "../steamvr/resource_descriptions.h"
 #include "../steamvr/vr_settings.h"
 #include "../steamvr/interact_press.h"
+#include "../steamvr/sewer_interaction.h"
 #include "../steamvr/dropped_item_labels.h"
 #include <tlhelp32.h>
 #include <intrin.h>
@@ -108,6 +109,7 @@ namespace gamestate {bool OpaqueMenuOpen();}
 #include "offline_difficulty.h"
 #include "projectiles.h"
 #include "combat.h"
+#include "interactionstate.h"
 #include "dev_scenarios.h"
 #include "../steamvr/shield_debug.h"
 #include "melee.h"
@@ -3173,9 +3175,13 @@ bool DirectedSpellAim(float& gx,float& gy) {
         framevr::DirectedSpellActive()&&HandRay(origin,direction)&&
         framevr::spellaim::Horizontal({direction[0],direction[1],direction[2]},gx,gy);
 }
+uintptr_t NearbySewerInteraction();
 uintptr_t HookSpellControllerTarget(uintptr_t manager,int id) {
     if(g_spellCast.directed&&uintptr_t(_ReturnAddress())==d2rsig::Addr(spellaimabi::ControllerCallRva+5))return 0;
-    return OrigSpellControllerTarget(manager,id);
+    const auto target=OrigSpellControllerTarget(manager,id);
+    // Interact's common query feeds BOTH the native prompt and its action.
+    // Other skills and every target already selected by the game keep priority.
+    return !target&&id==357?NearbySewerInteraction():target;
 }
 uintptr_t HookSpellHoverTarget(int player) {
     if(g_spellCast.directed&&uintptr_t(_ReturnAddress())==d2rsig::Addr(spellaimabi::HoverCallRva+5))return 0;
@@ -3652,6 +3658,60 @@ void ApplyActions(XINPUT_STATE* s) {
         if (want != told) { told = want; LogF("vrcam: pad A %s", want ? "picks up / interacts on a target" : "only attacks"); }
     }
 }
+
+#ifdef D2RVR_NATIVE_OPENXR
+bool SewerInteractionLayoutReady() {
+    static std::atomic<bool> ready{false};
+    if(ready.load())return true;
+    static thread_local ULONGLONG tried=0;
+    const auto now=GetTickCount64();if(now-tried<1000)return false;tried=now;
+    // Audit the actual room-list link, static/dynamic paths and native range
+    // implementation. Its prologue is already hooked by physical melee, so
+    // check untouched instructions inside that function instead.
+    constexpr uint8_t first[]={0x48,0x8b,0x81,0xa8,0,0,0,0xc3};
+    constexpr uint8_t next[]={0x48,0x8b,0x81,0x60,0x01,0,0};
+    constexpr uint8_t neighbors[]={0x8b,0x41,0x40,0x41,0x89,0,0x48,0x8b,0x01,0x48,0x89,0x02,0xc3};
+    constexpr uint8_t dynamic[]={0x48,0x8b,0x41,0x20,0xc3};
+    constexpr uint8_t sy[]={0x48,0x8b,0x46,0x38,0x8b,0x58,0x14};
+    constexpr uint8_t sx[]={0x48,0x8b,0x46,0x38,0x8b,0x40,0x10};
+    constexpr uint8_t range[]={0x4d,0x8b,0xf1,0x45,0x8b,0xf8,0x48,0x8b,0xf2,0x48,0x8b,0xf9};
+    constexpr uint8_t line[]={0x41,0xb8,0x04,0x08,0,0,0x48,0x8b,0xd6,0x48,0x8b,0xcf,0xe8,0x5b,0x7b,0,0};
+    const bool found=Matches(0x2efd90,first,sizeof first)&&Matches(0x34b4ce,next,sizeof next)&&
+        Matches(0x2efde0,neighbors,sizeof neighbors)&&Matches(0x341c30,dynamic,sizeof dynamic)&&
+        Matches(0x18a88d,sy,sizeof sy)&&Matches(0x18a8b8,sx,sizeof sx)&&
+        Matches(0x348668,range,sizeof range)&&Matches(0x348734,line,sizeof line);
+    static std::atomic<bool> told{false};
+    if(found){ready=true;Log("Frame sewer interaction: native room paths and range/line checks verified");}
+    else if(!told.exchange(true))Log("Frame sewer interaction: layout unavailable; keeping native selection");
+    return found;
+}
+uintptr_t NearbySewerInteraction() {
+    if(!g_enabled.load()||!g_inWorld.load()||!g_eyeOk.load()||!FullBody()||gamestate::MenuOpen())return 0;
+    const auto now=GetTickCount64(),session=gamestate::LocalPlayer();
+    const int level=interactionstate::CurrentLevel(session,now);
+    if(level!=80&&level!=81)return 0;
+    uintptr_t player=0;if(!combat::LocalPlayerUnit(player)||!SewerInteractionLayoutReady())return 0;
+    float fx=0,fy=0;
+    AcquireSRWLockShared(&g_skyLock);
+    const auto& view=g_skyView[g_eye.load()&1];
+    if(view.axes_ok){fx=-view.axes[6];fy=-view.axes[8];}
+    ReleaseSRWLockShared(&g_skyLock);
+    const auto result=framevr::sewerinteraction::Find(player,level,fx,fy,
+        [](uintptr_t at,auto& value){return at>=0x10000&&at<=UINTPTR_MAX-sizeof value&&SafeRead(&value,reinterpret_cast<const void*>(at),sizeof value);},
+        [](uintptr_t local,uintptr_t tile){
+            // Existing native reach AND collision line test. Do not select
+            // stairs through walls, enlarge interaction reach or issue travel.
+            return reinterpret_cast<int(*)(uintptr_t,uintptr_t,int,void*)>(d2rsig::Addr(0x348650))(local,tile,0,nullptr)!=0;
+        });
+    static thread_local ULONGLONG reported=0;
+    if(now-reported>=1000) {
+        reported=now;
+        LogF("Frame sewer interaction: level=%d nearby=%u facing=%u selected=%p id=%u range=%.2f cells visited=%u tiles=%u first_class=%u",
+            level,result.warps,result.facing,reinterpret_cast<void*>(result.unit),result.id,result.distance,result.visited,result.tiles,result.firstTileClass);
+    }
+    return result.unit;
+}
+#endif
 
 uintptr_t HookInteractTarget(uintptr_t mgr, uint32_t player) {
     static thread_local bool inside = false;

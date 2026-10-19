@@ -18,20 +18,35 @@ stairs materials (`kurast_stairs_A/B`, `elevation_walls_a`,
 allows only these exact model families/materials through the existing scoped
 two-sided material override, including their normal LOD0-4 variants. Names are
 canonicalized before selection. Unrelated stairs, foliage, water, collision,
-opacity and native interaction behavior are unchanged. No assets are shipped.
+opacity and collision are unchanged. No assets are shipped.
 This can restore culled backs; it cannot manufacture missing geometry. In the
 owner's outside-entrance test, all seven LOD0 overrides were active, but sky
 remained visible through the end of the stairwell. Inspection of the original
 LOD0, 1 and 4 meshes found an open floor-end boundary without a closing wall.
-The owner exited from inside and inspected the outside; standing re-entry was
-not tested.
+The owner verified the revised dark backdrop covers the opening. Standing
+re-entry remains untested: no A prompt appeared, but A was not pressed there.
 
 Warp 57 retains its native 120-by-90 selection rectangle. The existing Interact
 guard depends on the native controller target. That makes native targeting a
 candidate for the standing/crouching difference, not a confirmed diagnosis.
+The interaction candidate adds a fallback to the native Interact (357) target
+query, shared by the prompt and action. It keeps any existing native target;
+when no target exists, first-person VR in Bazaar/Upper Kurast (80/81) can select
+the real nearby sewer warp (type 5, class 57) while facing the stairs. Vertical
+head tilt is ignored. Native interaction reach and the collision line check
+must still pass; travel, quest rules and the one-target-per-press guard stay
+native. Other skills, exits, areas, menus and desktop play keep native selection.
+
+The reader validates the live local player and a fresh location, audits native
+layout signatures and bounds the neighboring-room scan. Room units use the
+native `+0x160` link (audited in the room iterator); the hash-list link is
+`+0x158` and must not be used here. New once-per-second diagnostics report
+nearby/facing warps and native-range acceptance. Headset entry verification is
+pending; a missing prompt alone does not establish that pressing A failed.
+
 The read-only DEV trace records native and queried target pointers, type,
-class/ID, eye height above the player and view pitch. It never substitutes a
-target or bypasses native travel. The diagnostic uses existing
+class/ID, eye height above the player and view pitch. The trace itself does not
+alter selection or travel. The diagnostic uses existing
 **Equipment > Render debug draws** and starts Off each session.
 
 DEV travel is grouped into Act I-II, Act III and Act IV-V. **Act III > Kurast
@@ -52,8 +67,8 @@ both viewing directions. Existing terrain, entities, physics and warp data
 remain intact. This is a local developer preview; normal setup does not run it.
 The first headset preview covered most of the opening but left a visible strip
 on the right. The revised preview extends the backdrop farther toward that
-stair-local side and increases the overlap on both sides. Revised placement
-still needs a headset check.
+stair-local side and increases the overlap on both sides. The owner verified
+the revised placement in the headset.
 
 Close the game and its loader, then run from the checkout containing this helper:
 
