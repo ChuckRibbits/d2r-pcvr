@@ -12,9 +12,11 @@
 // the rim of the view that creeps inward; each block sends one pulse in from
 // the edge. Full strain breaks the guard: the light swells toward the centre
 // and breathes slowly. The shield still blocks throughout; what the player
-// loses is sight of the fight. Lowering the shield is the only reset: strain
-// drains while it is down, and a broken guard stays broken until it has fully
-// faded. Raising it again part way keeps what is left. Parries add nothing.
+// loses is sight of the fight. Strain drains while the shield is down, and
+// also while it stays up once no hit has reached it (block or parry) for
+// recoverSeconds; the next hit stops the drain and restarts that wait. A broken
+// guard stays broken until it has fully faded. Raising it again part way keeps
+// what is left. Parries add nothing.
 //
 // Comfort: no hard flashes. Pulses are a smooth attack/release envelope that
 // re-triggers without dropping, so rapid blocks hold a swell rather than
@@ -26,6 +28,7 @@ struct Tuning {
     BuildSpeed speed=BuildSpeed::Medium; // changes strain per block, never ring size or reset time
     float perBlock=.10f;     // strain per blocked hit (1 = broken)
     float resetSeconds=3.f;  // lowered: full strain clears in this long
+    float recoverSeconds=3.f; // raised, no hit on the shield this long: drains as if lowered (0 = only lowering drains)
     float clear=.10f;        // radius left clear at full swell (1 = visor image edge)
     float brightness=1.f;    // peak opacity, 0 = off ([gameplay] guard_strain_light)
     float breatheSeconds=1.6f; // one slow swell while broken
@@ -62,7 +65,7 @@ struct Output {
 };
 class Engine {
     uint64_t session=0;
-    double last=0,pulseAt=-1;
+    double last=0,pulseAt=-1,hitAt=-1; // hitAt: the last block or parry on the raised shield
     float strain=0,swell=0,pulse=0;
     bool broken=false,attacking=false;
 public:
@@ -75,18 +78,21 @@ public:
         const float dt=raw>0&&raw<=.25?float(raw):0; // hitches and loads do not drain or swell
         last=in.time;
         const bool up=in.eligible&&in.raised;
+        if(up&&(in.blocks||in.parries))hitAt=in.time;   // any hit on the shield restarts the recovery wait
         if(up&&in.blocks) {
             strain=std::min(1.f,strain+float(in.blocks)*std::max(0.f,t.perBlock)*BuildMultiplier(t.speed));
             attacking=true;pulseAt=in.time;
             if(strain>=1&&!broken){broken=true;out.brokeNow=true;}
         }
-        if(!up&&strain>0) {
+        // Raised but left alone: after recoverSeconds without a hit it drains like lowering.
+        const bool idle=up&&t.recoverSeconds>0&&(hitAt<0||in.time-hitAt>=t.recoverSeconds);
+        if((!up||idle)&&strain>0) {
             strain=t.resetSeconds>0?std::max(0.f,strain-dt/t.resetSeconds):0;
             if(strain<=0&&broken){broken=false;out.clearedNow=true;}
         }
         if(strain<=0)broken=false;
-        // Swell: grows while broken, never outlasts the strain it came from.
-        if(broken&&up)swell=std::min(1.f,swell+dt/SwellSeconds);
+        // Swell: grows while broken and under attack, never outlasts the strain it came from.
+        if(broken&&up&&!idle)swell=std::min(1.f,swell+dt/SwellSeconds);
         swell=std::min(swell,strain);
         // Pulse envelope: re-triggered blocks keep rising instead of dropping.
         if(attacking) {

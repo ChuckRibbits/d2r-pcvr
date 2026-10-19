@@ -46,6 +46,9 @@ void ShieldGuardState(bool eligible,bool raised);
 // opacity (0 = none; strain still runs), colour (0xRRGGBB) and
 // density (1 = as drawn; higher thickens the partly clear band, for the black rim).
 void ConfigureGuardStrain(float perBlock,float resetSeconds,float clear,float breatheSeconds,float softness,float brightness,uint32_t color,float density=1);
+// [gameplay] guard_strain_recover_ms: with the shield still raised, strain drains once no
+// hit (block or parry) has reached it this long. 0 = only lowering drains. Any thread.
+void ConfigureGuardStrainRecover(float seconds);
 // [gameplay] low_life_heartbeat (x the game's Master x Combat volume, 0 = off), tempo
 // at the first 10 % step and below 10 % life, wind-down time from full, and an optional
 // one-beat 16-bit PCM WAV (empty: the built-in beat). Reloads the WAV only when the path changes.

@@ -911,7 +911,7 @@ instead of a random one. Classic keeps the native roll.
   `guard_strain_per_block` % (10). **VR Settings > Combat > Guard strain buildup**
   selects Slow / Medium / Fast (`guard_strain_speed` 0 / 1 / 2, default Medium).
   Slow halves strain per block; Fast doubles it. With default tuning, full
-  strain takes about 20 / 10 / 5 blocks without lowering the shield. The
+  strain takes about 20 / 10 / 5 blocks in a row. The
   vignette size, lowering/reset time and blocking rules stay the same. Existing
   custom `guard_strain_per_block` tuning is multiplied, not overwritten. Strain shows as a soft vignette at the
   rim of the view (a pale white light by default; VR Settings > Combat > **Guard strain
@@ -923,8 +923,11 @@ instead of a random one. Classic keeps the native roll.
   breaks: the light swells until only `guard_strain_clear` % (10) of the view is
   clear and breathes slowly (`guard_strain_breathe_ms`, 1600), with one alert tap on
   the left controller. The shield keeps blocking throughout; the cost is sight.
-  Strain never drains while the shield stays up. Lowering it (or a menu, or losing
-  the shield) drains full strain in `guard_strain_reset_ms` (3000); a broken guard
+  Strain holds while hits keep reaching the shield. Once no hit (block or parry)
+  has reached it for `guard_strain_recover_ms` (3000; 0 = only lowering drains), it
+  drains with the shield still up; the next hit stops the drain and restarts the
+  wait. Lowering it (or a menu, or losing the shield) drains at once, without the
+  wait. Either way full strain drains in `guard_strain_reset_ms` (3000); a broken guard
   stays broken until the light has fully faded, and raising the shield again part
   way keeps what is left. Opacity is `guard_strain_light` (100 %, 0 = none; strain
   still runs). The light's inner blend is
