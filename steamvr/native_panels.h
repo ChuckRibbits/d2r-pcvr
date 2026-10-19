@@ -115,8 +115,8 @@ struct MouseGate {
     void Suspend(){held[0]=held[1]=true;down[0]=down[1]=false;}
 };
 // Right grip on the laser's panel grabs it like a window: it follows the
-// hand's room-space travel 1:1 and its heading/pitch changes; hand roll is
-// ignored. Grip-then-trigger stays native Shift-click: moving needs 3 cm of
+// hand's room-space travel 1:1, and the hand's heading/pitch changes turn it
+// about the hand; hand roll is ignored. Grip-then-trigger stays native Shift-click: moving needs 3 cm of
 // travel before any click, and a click first leaves the grip as Shift. Once
 // moving, the panel catches up with the travel since the press. A trigger
 // squeezed while moving is consumed until released.
@@ -145,10 +145,21 @@ struct Grab {
                 const float distance=std::clamp(pushOnly-start.position.z-travel.z,NearDistance,FarDistance);
                 offset={{0,0,pushOnly-distance},0,0};break;
             }
-            offset.position=start.position+travel;
-            offset.yaw=std::remainder(start.yaw+math::Heading(hand.orientation)-math::Heading(from.orientation),6.2831853f);
-            offset.pitch=std::clamp(start.pitch+HandPitch(hand.orientation)-HandPitch(from.orientation),-MaxTilt,MaxTilt);
-            offset=Limit(base,offset,head);
+            {
+                // Jeff, 2026-10-19: turning the panel about its own centre made an
+                // arm sweep (which turns the controller too) swing it around a
+                // point in front of it. The grabbed point now stays fixed in the
+                // hand's roll-free frame, like holding a real window.
+                const float heading=math::Heading(from.orientation),pitch=HandPitch(from.orientation);
+                const float yaw=math::Heading(hand.orientation)-heading;
+                offset.pitch=std::clamp(start.pitch+HandPitch(hand.orientation)-pitch,-MaxTilt,MaxTilt);
+                const auto before=math::Multiply(math::Yaw(heading),Pitch(pitch));
+                const auto after=math::Multiply(math::Yaw(heading+yaw),Pitch(pitch+offset.pitch-start.pitch));
+                const auto held=math::Rotate(math::Conjugate(before),Apply(base,start).position-from.position);
+                offset.position=math::Rotate(math::Conjugate(base.orientation),hand.position+math::Rotate(after,held)-base.position);
+                offset.yaw=std::remainder(start.yaw+yaw,6.2831853f);
+                offset=Limit(base,offset,head);
+            }
             break;
         case State::Held:if(!click)state=grip?State::Spent:State::Idle;break;
         case State::Spent:if(!grip)state=State::Idle;break;

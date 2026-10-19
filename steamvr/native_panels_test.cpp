@@ -40,6 +40,12 @@ int main(){
         Check(grab.Step(true,false,false,at(travel),base,head,o)&&same(where(o).position,base.position+travel),
               "diagonal travel moves the panel 1:1 in room space, even off the panel");
         Check(std::fabs(o.yaw)<1e-6f&&std::fabs(o.pitch)<1e-6f,"translation alone does not tilt");
+        for(const math::Vec slide:{math::Vec{.6f,0,0},math::Vec{-.6f,0,0},math::Vec{0,.45f,0},math::Vec{0,-.45f,0},math::Vec{.5f,.3f,0}}){
+            const auto moved=travel+slide;
+            Check(grab.Step(true,true,false,at(moved),base,head,o)&&same(where(o).position,base.position+moved)&&
+                  std::fabs(o.yaw)<1e-6f&&std::fabs(o.pitch)<1e-6f,"sideways and vertical hand travel slides the panel exactly, with no turn");
+        }
+        grab.Step(true,true,false,at(travel),base,head,o);
         const auto tilted=math::Multiply(math::Yaw(1.3f),panels::Pitch(.2f));
         grab.Step(true,true,false,at(travel,tilted),base,head,o);
         Check(std::fabs(o.yaw-.3f)<1e-4f&&std::fabs(o.pitch-.2f)<1e-4f,"heading and pitch follow the hand's change");
@@ -74,6 +80,14 @@ int main(){
         Check(!grab.Step(true,true,false,at({.3f,0,0}),base,head,o)&&same(where(o).position,base.position),"a surface change needs a fresh grip");
         grab.Step(false,true,false,at({}),base,head,o);grab.Step(true,true,false,at({}),base,head,o);
         Check(grab.Step(true,true,false,at({.1f,0,0}),base,head,o),"fresh grip after suspension grabs again");
+        {
+            panels::Grab hold;panels::Offset g;const auto press=at({});
+            hold.Step(true,true,false,press,base,head,g);
+            const auto turned=at({.04f,0,0},math::Yaw(1.3f));
+            Check(hold.Step(true,true,false,turned,base,head,g)&&
+                  same(where(g).position,turned.position+math::Rotate(math::Yaw(.3f),base.position-press.position))&&std::fabs(g.yaw-.3f)<1e-5f,
+                  "turning the hand swings the panel about the hand, keeping the grabbed point on the laser");
+        }
         // Game menus: push/pull only.
         const float d0=panels::MenuDistance(1);
         auto distance=[&](panels::Offset p){return len(where(p).position-head);};

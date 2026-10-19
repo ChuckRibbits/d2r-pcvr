@@ -312,10 +312,12 @@ clicks follow the moved panel. Every in-game and main/title menu reopens at
 that distance until the game is restarted or **VR Settings > HUD > Menu
 distance** is changed. The handheld quest log keeps its left-grip placement.
 
-The VR Settings panel is grabbed like a window with the same right grip: it
-follows the hand's movement 1:1 (up, down, left, right, nearer, farther) and
-tilts up/down or turns left/right as much as the hand does, but never rolls.
-Tilt stops at 60 degrees and the panel stays 0.40 m to 1.50 m from your head.
+The VR Settings panel is grabbed like a real window with the same right grip:
+the point you grabbed stays on the end of the laser. Moving the hand without
+turning it slides the panel 1:1 (up, down, left, right, nearer, farther);
+tilting the controller up/down or turning it left/right swings the panel
+around your hand by the same angle, but it never rolls. Tilt stops at 60
+degrees and the panel stays 0.40 m to 1.50 m from your head.
 It reopens in the same place relative to where you face until restart.
 
 Sticks/face buttons select native menu navigation without an idle laser stealing
