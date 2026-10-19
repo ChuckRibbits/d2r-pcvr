@@ -16,6 +16,17 @@ updates at half the headset rate, and the eyes are one game frame apart. The
 right-eye replay described below would keep both eyes from one frame but
 remains unported. Both eyes each frame stays the default.
 
+The first headset test (SteamVR, Steam Frame, 3072x3072 eyes, DLSS) looked
+right with the head still but jittered and lost convergence in every head
+turn. Then the other eye went to the runtime at its own older pose, which
+SteamVR should reproject per eye. The candidate now turns that eye itself:
+each eye's image as shown is kept (`KeepTurn`), and on the frames that draw
+the other eye a full-screen GPU pass rotates it to this frame's view
+(`TurnEye`, `turn_warp.h`). Both views then carry one frame's poses, as from
+a pair. In that session the GPU, not the CPU, limited the rate: both eyes ran
+at 25-28 pairs/s, by turns at 42 frames/s (21 per eye), and one eye's pass
+took 11-14 ms against about 7 ms per eye in the measurement above.
+
 ## Issue 20 investigation, October 12
 
 [#20](https://github.com/bearstonem/d2r-pcvr/issues/20) reports roughly 60 FPS

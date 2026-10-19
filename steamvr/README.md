@@ -132,8 +132,9 @@ a workaround: background/focus handling also affects input and frame pacing.
 Each game frame normally draws both eyes: the left, then the right with the
 game time held. VR Settings > Video > **Stereo rendering: By turns** draws one
 eye per game frame instead, alternating. The headset gets that eye fresh and
-the other eye's last image again, at the pose it was drawn with, which the
-runtime turns to the current head pose. This halves the CPU draw work per
+the other eye's last image turned on the GPU from the head pose it was drawn
+at to the current one, so both eyes go at one pose as a pair does. The turn is
+rotation only, like the runtime's own reprojection. This halves the CPU draw work per
 headset frame, so a CPU-limited PC may reach the headset's full rate. Each eye
 still updates at half that rate, and moving content is one game frame apart
 between the eyes, which can look doubled. Open menus, stereo captures and any

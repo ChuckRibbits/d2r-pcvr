@@ -60,6 +60,7 @@
 #include "render_resolution.h"
 #include "menu_controls.h"
 #include "ui_blit.h"
+#include "turn_warp.h"
 #include "ui_world.h"
 #include "../vr/interactionstate.h"
 #include "../vr/journal_ui.h"
@@ -386,16 +387,23 @@ constexpr uint32_t mapSide=512;
 // copied back over it, so the monitor shows only the left eye. [render]
 // desktop_one_eye turns it off; eye images need TRANSFER_SRC for it.
 bool mirrorSupported=false,mirrorMono=false;
-// Eyes by turns: a frame draws one eye and submits the other again from its
-// swapchain's last released image, at the pose and FOV that image was drawn
-// with. A frame without a stereo layer forgets both, so the next draws a pair.
+// Eyes by turns: a frame draws one eye. The other is turned from its kept
+// image to this frame's head (TurnEye) and goes at this frame's pose, as from
+// a pair; without the GPU pass, its last released image goes again at the
+// pose and FOV it was drawn with (lastEyes). A frame without a stereo layer
+// forgets both, so the next draws a pair.
 bool turnFrame=false;
 struct LastEye {XrPosef pose{};XrFovf fov{};bool ok=false;};
 std::array<LastEye,2> lastEyes{};
-// The desktop mirror by turns: a right frame has no left image acquired, so
-// each left frame keeps a copy of the window image for the next right frame.
-ComPtr<ID3D12Resource> mirrorLeft;
-bool mirrorLeftValid=false,mirrorLeftFailed=false;
+// While the option is on, each eye's image as shown, kept by Copy (KeepTurn):
+// a released swapchain image is the runtime's. Also the desktop mirror's left
+// image on the frames that draw the right.
+bool keepTurns=false;
+std::array<ComPtr<ID3D12Resource>,2> turnImages;
+std::array<bool,2> turnKept{};
+bool turnImagesFailed=false,turnWarpTried=false;
+DXGI_FORMAT turnFormat=DXGI_FORMAT_UNKNOWN;
+TurnWarp turnWarp;
 std::atomic<bool> uiSupported{false};
 bool journalMode=false,spatialMode=false,workspacePlaced=false,opaqueMenuMode=false,upperBandMenuMode=false;
 bool npcChoicesMode=false;
@@ -974,6 +982,7 @@ bool Initialize(reshade::api::command_queue* rq,reshade::api::swapchain* swap) {
     atlasFormat=eyeFormat;
     if(!SetupGameplay(eyeFormat))Say("Frame gameplay: palette atlas unavailable; motion controls remain disabled");
     potionModels.Initialize(device.Get(),queue.Get(),eyeFormat,width,height,&Say);
+    turnFormat=eyeFormat;
     if(!tracking.Open(D2RVR_SHARED_NAME)||!pad.Open(BW_PAD_MIRROR_NAME)||!actions.Open(D2RVR_ACTIONS_NAME)) return false;
     tracking.data->version=D2RVR_SHARED_VERSION;pad.data->version=BW_PAD_MIRROR_VERSION;actions.data->version=D2RVR_ACTIONS_VERSION;
     gameSwapchain=swap;
@@ -2156,13 +2165,49 @@ bool WaitGpuValue(uint64_t value) {
     if(result!=WAIT_OBJECT_0) {Say("Frame D3D12: GPU copy fence timed out");return false;}
     return true;
 }
-bool MirrorLeft(ID3D12Resource* src) {
-    if(mirrorLeft)return true;
-    if(mirrorLeftFailed)return false;
-    D3D12_HEAP_PROPERTIES heap{};heap.Type=D3D12_HEAP_TYPE_DEFAULT;
-    auto r=src->GetDesc();r.Alignment=0;r.Flags=D3D12_RESOURCE_FLAG_NONE;
-    mirrorLeftFailed=!Hr(device->CreateCommittedResource(&heap,D3D12_HEAP_FLAG_NONE,&r,D3D12_RESOURCE_STATE_COMMON,nullptr,IID_PPV_ARGS(&mirrorLeft)),"create desktop left-eye copy");
-    return !mirrorLeftFailed;
+bool KeepTurn(ID3D12GraphicsCommandList* list,ID3D12Resource* shown,int eye) {
+    if(turnImagesFailed)return false;
+    if(!turnWarpTried){turnWarpTried=true;turnWarp.Initialize(device.Get(),turnFormat,&Say);}
+    // The eyes' size is the session's: a new size comes with a new session.
+    auto& kept=turnImages[eye];
+    if(!kept) {
+        D3D12_HEAP_PROPERTIES heap{};heap.Type=D3D12_HEAP_TYPE_DEFAULT;
+        auto r=shown->GetDesc();r.Alignment=0;r.Flags=D3D12_RESOURCE_FLAG_NONE;r.Format=turnFormat;
+        if(!Hr(device->CreateCommittedResource(&heap,D3D12_HEAP_FLAG_NONE,&r,D3D12_RESOURCE_STATE_COMMON,nullptr,IID_PPV_ARGS(&kept)),"create kept eye image")) {
+            turnImagesFailed=true;turnKept={};return false;   // the other may still be read on the GPU: kept to Shutdown
+        }
+    }
+    D3D12_RESOURCE_BARRIER b[2]{};
+    for(auto& x:b){x.Type=D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;x.Transition.Subresource=D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;}
+    b[0].Transition.pResource=shown;b[0].Transition.StateBefore=D3D12_RESOURCE_STATE_RENDER_TARGET;b[0].Transition.StateAfter=D3D12_RESOURCE_STATE_COPY_SOURCE;
+    b[1].Transition.pResource=kept.Get();b[1].Transition.StateBefore=D3D12_RESOURCE_STATE_COMMON;b[1].Transition.StateAfter=D3D12_RESOURCE_STATE_COPY_DEST;
+    list->ResourceBarrier(2,b);list->CopyResource(kept.Get(),shown);
+    for(auto& x:b)std::swap(x.Transition.StateBefore,x.Transition.StateAfter);
+    list->ResourceBarrier(2,b);
+    return true;
+}
+// The eye not drawn this frame, turned from its kept image to this frame's
+// head into its swapchain. False leaves it unacquired: its last released
+// image goes again at the pose it was drawn with.
+bool TurnEye(int i) {
+    auto& e=eyes[i];
+    // All of a swapchain's images are alike: checked before one is acquired,
+    // as an acquired image nothing was written to must never be released.
+    if(!turnKept[i]||!lastEyes[i].ok||e.acquired||e.images.empty()||!turnWarp.Fits(turnImages[i].Get(),e.images[0].texture))return false;
+    if(!Acquire(e)||!WaitGpuValue(e.copyFence)||
+       !Hr(e.allocator->Reset(),"reset turn allocator")||!Hr(e.commands->Reset(e.allocator.Get(),nullptr),"reset turn list")){failed=true;return false;}
+    const auto& was=lastEyes[i];const auto& now=views[i];
+    const auto h=TurnHomography(Q(was.pose.orientation),{was.fov.angleLeft,was.fov.angleRight,was.fov.angleDown,was.fov.angleUp},
+                                Q(now.pose.orientation),{now.fov.angleLeft,now.fov.angleRight,now.fov.angleDown,now.fov.angleUp});
+    D3D12_RESOURCE_BARRIER b{};b.Type=D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+    b.Transition={turnImages[i].Get(),D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES,D3D12_RESOURCE_STATE_COMMON,D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE};
+    e.commands->ResourceBarrier(1,&b);
+    const bool turned=turnWarp.Render(device.Get(),e.commands.Get(),turnImages[i].Get(),e.images[e.index].texture,h,i);
+    std::swap(b.Transition.StateBefore,b.Transition.StateAfter);e.commands->ResourceBarrier(1,&b);
+    if(!Hr(e.commands->Close(),"close turn list")||!turned){failed=true;return false;}
+    ID3D12CommandList* lists[]={e.commands.Get()};queue->ExecuteCommandLists(1,lists);
+    if(!Hr(queue->Signal(fence.Get(),++fenceValue),"signal turn fence")){failed=true;return false;}
+    e.copyFence=fenceValue;return true;
 }
 bool Copy(ID3D12Resource* src,Eye& e,reshade::api::command_queue* rq) {
     // The runtime orders images on our bound D3D12 queue. Our allocator has a
@@ -2185,21 +2230,14 @@ bool Copy(ID3D12Resource* src,Eye& e,reshade::api::command_queue* rq) {
     barriers[1].Transition.pResource=dest;barriers[1].Transition.StateBefore=D3D12_RESOURCE_STATE_RENDER_TARGET;barriers[1].Transition.StateAfter=D3D12_RESOURCE_STATE_COPY_DEST;
     if(gpu)e.commands->EndQuery(gpuProfile.heap.Get(),D3D12_QUERY_TYPE_TIMESTAMP,eye*5+3);
     e.commands->ResourceBarrier(2,barriers);e.commands->CopyResource(dest,src);
-    const bool keepLeft=turnFrame&&eye==0&&mirrorMono&&MirrorLeft(src);
-    if(keepLeft) {
-        D3D12_RESOURCE_BARRIER k=barriers[1];k.Transition.pResource=mirrorLeft.Get();
-        k.Transition.StateBefore=D3D12_RESOURCE_STATE_COMMON;k.Transition.StateAfter=D3D12_RESOURCE_STATE_COPY_DEST;
-        e.commands->ResourceBarrier(1,&k);e.commands->CopyResource(mirrorLeft.Get(),src);
-        std::swap(k.Transition.StateBefore,k.Transition.StateAfter);e.commands->ResourceBarrier(1,&k);
-    }
     const bool pairLeft=!turnFrame&&mirrorSupported&&eyes[0].acquired&&eyes[0].copied;
-    if(eye==1&&mirrorMono&&(pairLeft||(turnFrame&&mirrorLeftValid))) {
+    if(eye==1&&mirrorMono&&(pairLeft||(turnFrame&&turnKept[0]))) {
         // The headset already has this right frame; the window gets the left
         // image back: this pair's, still acquired until EndPair releases both
-        // eyes, or by turns the copy kept from the last left frame.
+        // eyes, or by turns the image kept from the last left frame.
         D3D12_RESOURCE_BARRIER m[2]{barriers[0],barriers[1]};
         m[0].Transition.StateBefore=D3D12_RESOURCE_STATE_COPY_SOURCE;m[0].Transition.StateAfter=D3D12_RESOURCE_STATE_COPY_DEST;
-        m[1].Transition.pResource=pairLeft?eyes[0].images[eyes[0].index].texture:mirrorLeft.Get();m[1].Transition.StateAfter=D3D12_RESOURCE_STATE_COPY_SOURCE;
+        m[1].Transition.pResource=pairLeft?eyes[0].images[eyes[0].index].texture:turnImages[0].Get();m[1].Transition.StateAfter=D3D12_RESOURCE_STATE_COPY_SOURCE;
         if(!pairLeft)m[1].Transition.StateBefore=D3D12_RESOURCE_STATE_COMMON;
         e.commands->ResourceBarrier(2,m);e.commands->CopyResource(src,m[1].Transition.pResource);
         std::swap(m[1].Transition.StateBefore,m[1].Transition.StateAfter);e.commands->ResourceBarrier(1,&m[1]);
@@ -2212,6 +2250,7 @@ bool Copy(ID3D12Resource* src,Eye& e,reshade::api::command_queue* rq) {
         potionModels.Render(e.commands.Get(),dest,eye,{V(v.pose.position),Q(v.pose.orientation)},
             {v.fov.angleLeft,v.fov.angleRight,v.fov.angleDown,v.fov.angleUp},potionScene);
     }
+    turnKept[eye]=keepTurns&&KeepTurn(e.commands.Get(),dest,int(eye));
     if(gpu){
         e.commands->EndQuery(gpuProfile.heap.Get(),D3D12_QUERY_TYPE_TIMESTAMP,eye*5+4);
         e.commands->ResolveQueryData(gpuProfile.heap.Get(),D3D12_QUERY_TYPE_TIMESTAMP,eye*5,5,gpuProfile.readback.Get(),eye*5*sizeof(uint64_t));
@@ -2222,7 +2261,6 @@ bool Copy(ID3D12Resource* src,Eye& e,reshade::api::command_queue* rq) {
     if(!Hr(queue->Signal(fence.Get(),++fenceValue),"signal copy fence"))return false;
     e.copyFence=fenceValue;
     timing.copySubmitMs[eye]+=Milliseconds()-copyStart;
-    if(keepLeft)mirrorLeftValid=true;
     e.copied=true;return true;
 }
 bool CopyMap(reshade::api::command_queue* rq) {
@@ -2449,7 +2487,7 @@ void BeginPair(bool byTurns) {
     std::lock_guard lock(mutex);
     lastTiming={};
     if(session&&!failed){
-        if(frame)EndPair();turnFrame=byTurns;Begin();pairDrawing=true;
+        if(frame)EndPair();turnFrame=byTurns;keepTurns=byTurns||EyesByTurns();Begin();pairDrawing=true;
         gpuProfile.started=gpuProfile.effects=gpuProfile.resolved=0;
         // The profile and stereo captures take both eyes from one game frame.
         if(Active()&&!byTurns)profile::BeginPair();else profile::SkipPair();
@@ -2467,20 +2505,25 @@ void EndPair() {
     std::lock_guard lock(mutex);pairDrawing=false;const bool turn=turnFrame;turnFrame=false;if(!frame||!session)return;
     d2rcam::TraceStereoLabels(-1);
     if(capturePair){Say(captureEyes==3?"Frame capture: both eye screenshots requested":"Frame capture: incomplete pair; do not use for stereo comparison");capturePair=false;}
+    // By turns: the eye not drawn, turned to this frame's head.
+    int turned=-1;
+    if(turn&&render&&valid&&!panelMode&&!failed)
+        for(int i=0;i<2;++i)if(!eyes[i].copied&&eyes[i^1].copied&&TurnEye(i))turned=i;
     // All image writes and state restoration have been submitted on the queue
     // bound to xrCreateSession. OpenXR orders its work after those commands;
     // it does not require a CPU completion wait before xrReleaseSwapchainImage.
     // WineOpenXR also drains that queue before its release/layout commands.
     // Keep the old path for A/B, and for synchronous diagnostic query readback.
     const bool waitNow=!deferredWait.load()||gpuProfile.started!=0;
-    if(waitNow&&fence&&!WaitGpu()){failed=true;for(auto& e:eyes)e.copied=false;}
+    if(waitNow&&fence&&!WaitGpu()){failed=true;for(auto& e:eyes)e.copied=false;turned=-1;}
     if(!failed)ReadGpuProfile();
     gpuProfile.started=gpuProfile.effects=gpuProfile.resolved=0;
     const double releaseStart=Milliseconds();
     for(auto& e:eyes)if(e.acquired){
+        const int i=int(&e-eyes.data());
         XrSwapchainImageReleaseInfo ri{XR_TYPE_SWAPCHAIN_IMAGE_RELEASE_INFO};
-        if(!Check(pReleaseSwapchainImage(e.chain,&ri),"release copied eye")){failed=true;e.copied=false;}
-        if(!e.copied)lastEyes[size_t(&e-eyes.data())].ok=false;
+        if(!Check(pReleaseSwapchainImage(e.chain,&ri),"release copied eye")){failed=true;e.copied=false;if(i==turned)turned=-1;}
+        if(!e.copied&&i!=turned)lastEyes[i].ok=false;
         e.acquired=false;
     }
     if(uiEye.acquired){XrSwapchainImageReleaseInfo release{XR_TYPE_SWAPCHAIN_IMAGE_RELEASE_INFO};
@@ -2496,7 +2539,10 @@ void EndPair() {
     if(render&&valid&&!panelMode&&drawn(0)&&drawn(1)&&(eyes[0].copied||eyes[1].copied)) {
         for(int i=0;i<2;++i){
             if(eyes[i].copied)lastEyes[i]={views[i].pose,views[i].fov,true};
-            pv[i].pose=lastEyes[i].pose;pv[i].fov=lastEyes[i].fov;pv[i].subImage.swapchain=eyes[i].chain;pv[i].subImage.imageRect={{0,0},{int32_t(width),int32_t(height)}};
+            // drawn or turned this frame: this frame's pose; else as drawn
+            const bool now=eyes[i].copied||i==turned;
+            pv[i].pose=now?views[i].pose:lastEyes[i].pose;pv[i].fov=now?views[i].fov:lastEyes[i].fov;
+            pv[i].subImage.swapchain=eyes[i].chain;pv[i].subImage.imageRect={{0,0},{int32_t(width),int32_t(height)}};
         }
         projection.space=space;projection.viewCount=2;projection.views=pv.data();layer=reinterpret_cast<const XrCompositionLayerBaseHeader*>(&projection);menuPlaced=false;
     } else lastEyes={};
@@ -3144,7 +3190,7 @@ void Shutdown(bool preserveResolution) {
     detectedControllers={};controllerLabels={};controllerProfilesDirty=true;frameControllerExtension=false;
     for(auto& e:eyes){if(e.chain&&pDestroySwapchain)pDestroySwapchain(e.chain);e={};}
     mirrorSupported=mirrorMono=false;
-    turnFrame=false;lastEyes={};mirrorLeft.Reset();mirrorLeftValid=mirrorLeftFailed=false;
+    turnFrame=keepTurns=false;lastEyes={};turnImages={};turnKept={};turnImagesFailed=turnWarpTried=false;turnWarp={};
     for(auto& s:handSpaces){if(s&&pDestroySpace)pDestroySpace(s);s=XR_NULL_HANDLE;}
     if(headSpace&&pDestroySpace)pDestroySpace(headSpace);if(space&&pDestroySpace)pDestroySpace(space);
     if(session&&pDestroySession)pDestroySession(session);if(actionSet&&pDestroyActionSet)pDestroyActionSet(actionSet);
