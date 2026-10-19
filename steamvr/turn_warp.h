@@ -47,11 +47,27 @@ inline std::array<float,12> TurnMove(math::Vec drawnAt,math::Quat drawn,math::Ve
     return {x.x,y.x,z.x,t.x, x.y,y.y,z.y,t.y, x.z,y.z,z.z,t.z};
 }
 
+// TurnMove for what the hero carries: the drawn eye taken along by the hero's
+// step (heroWas to heroNow) and the body's turn (baseWas to baseNow), then to
+// where this frame's eye is. With the head still on the body, no move at all.
+inline std::array<float,12> TurnCarry(math::Vec drawnAt,math::Quat drawn,math::Vec heroWas,math::Quat baseWas,
+                                      math::Vec heroNow,math::Quat baseNow,math::Vec nowAt,math::Quat now) {
+    const auto body=math::Multiply(baseNow,math::Conjugate(baseWas));
+    return TurnMove(heroNow+math::Rotate(body,drawnAt-heroWas),math::Multiply(body,drawn),nowAt,now);
+}
+
 // The scene's depth as the eye was drawn: a grid over the drawn image, each
 // point put back at its distance and seen from this frame's eye, nearer
 // points over farther ones. The drawn eye's projection is infinite reverse-Z:
 // distance = nearPlane / depth, in the world's units as `move`. Where the
 // grid leaves the target uncovered (its edges) the rotation-only turn stays.
+//
+// What the hero carries (the hands, the weapon, the body) is not fixed in the
+// world: moved as the world, it trailed a frame of the hero's run behind the
+// eye drawn fresh and smeared (owner, 2026-10-19). Points nearer than
+// reach[0] (their distance along the view, as nearPlane) move by `carry`
+// instead, the world as the hero's step and the body's turn took it; farther
+// than reach[1] by `move`; blended between. reach {0,0}: all by `move`.
 struct TurnDepth {
     ID3D12Resource* depth=nullptr;   // in a shader-resource state
     DXGI_FORMAT format=DXGI_FORMAT_UNKNOWN;   // its shader-readable format
@@ -59,6 +75,8 @@ struct TurnDepth {
     float nearPlane=0;
     std::array<float,12> move{};   // TurnMove
     math::Fov drawnFov{},nowFov{};
+    std::array<float,12> carry{};   // TurnMove of the carried
+    float reach[2]{0,0};
 };
 // The grid's spacing in target pixels: an edge in depth stays within a few.
 inline constexpr uint32_t TurnGridStep=4;

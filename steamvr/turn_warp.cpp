@@ -36,6 +36,8 @@ cbuffer Move : register(b0) {
     float4 nowTan;     // this frame's
     float4 depthInfo;  // near plane, the depth's drawn part x, y
     uint4 grid;        // cells across, down
+    float4 carry0;float4 carry1;float4 carry2;   // the carried's rows (TurnDepth::carry)
+    float4 reach;      // nearer than x: carried; farther than y: the world's
 };
 struct Pixel {float4 position:SV_Position;float2 uv:TEXCOORD0;};
 static const float2 Corner[6]={float2(0,0),float2(1,0),float2(0,1),float2(0,1),float2(1,0),float2(1,1)};
@@ -47,8 +49,11 @@ Pixel VS(uint id:SV_VertexID) {
     // an edge stays with what is in front; the sky (0) far, not infinite.
     const float4 d4=drawnDepth.GatherRed(edge,uv*depthInfo.yz);
     const float d=max(max(max(d4.x,d4.y),max(d4.z,d4.w)),1e-6);
-    const float3 p=float3(lerp(drawnTan.x,drawnTan.y,uv.x),lerp(drawnTan.w,drawnTan.z,uv.y),-1)*(depthInfo.x/d);
-    const float3 q=float3(dot(move0.xyz,p)+move0.w,dot(move1.xyz,p)+move1.w,dot(move2.xyz,p)+move2.w);
+    const float away=depthInfo.x/d;
+    const float3 p=float3(lerp(drawnTan.x,drawnTan.y,uv.x),lerp(drawnTan.w,drawnTan.z,uv.y),-1)*away;
+    const float3 world=float3(dot(move0.xyz,p)+move0.w,dot(move1.xyz,p)+move1.w,dot(move2.xyz,p)+move2.w);
+    const float3 carried=float3(dot(carry0.xyz,p)+carry0.w,dot(carry1.xyz,p)+carry1.w,dot(carry2.xyz,p)+carry2.w);
+    const float3 q=lerp(carried,world,saturate((away-reach.x)/max(reach.y-reach.x,1e-6)));
     // this frame's projection, its depth reversed: nearer is larger
     const float w=-q.z;
     Pixel o;o.uv=uv;
@@ -57,7 +62,7 @@ Pixel VS(uint id:SV_VertexID) {
 }
 float4 PS(Pixel p):SV_Target {return drawn.SampleLevel(edge,p.uv,0);}
 )";
-constexpr UINT DepthConstants=28;
+constexpr UINT DepthConstants=44;
 }
 bool TurnWarp::Initialize(ID3D12Device* device,DXGI_FORMAT targetFormat,void (*log)(const char*)) {
     if(pipeline)return true;
@@ -187,6 +192,11 @@ bool TurnWarp::Render(ID3D12Device* device,ID3D12GraphicsCommandList* list,ID3D1
     tangents(depth->drawnFov,values+12);tangents(depth->nowFov,values+16);
     values[20]=depth->nearPlane;values[21]=depth->scale[0];values[22]=depth->scale[1];
     std::memcpy(constants,values,sizeof values);constants[24]=across;constants[25]=down;
+    const bool carries=depth->reach[1]>depth->reach[0]&&depth->reach[0]>0;
+    float carried[16]{};
+    std::memcpy(carried,carries?depth->carry.data():depth->move.data(),sizeof(float)*12);
+    if(carries){carried[12]=depth->reach[0];carried[13]=depth->reach[1];}
+    std::memcpy(constants+28,carried,sizeof carried);
     list->SetGraphicsRoot32BitConstants(1,DepthConstants,constants,0);
     list->SetPipelineState(depthPipeline.Get());
     list->DrawInstanced(6*across*down,1,0,0);

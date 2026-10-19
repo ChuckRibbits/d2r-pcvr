@@ -437,7 +437,7 @@ bool replayPair=false;
 float replayGap=0,replayShift=0;
 // Where an eye stood and how it was turned in the game's world (View), and its
 // near plane (Projection): By turns moves the eye not drawn from there.
-struct EyeWorld {math::Vec at{};math::Quat turn{0,0,0,1};float nearPlane=0;bool ok=false;};
+struct EyeWorld {math::Vec at{};math::Quat turn{0,0,0,1};float nearPlane=0;bool ok=false;math::Vec hero{};};
 // base: the body's turn into the world the eye was drawn with (View), so a
 // stick, mouse or recentre turn since is turned out as well as the head's.
 struct LastEye {XrPosef pose{};XrFovf fov{};bool ok=false;math::Quat base{0,0,0,1};EyeWorld world{};};
@@ -2301,6 +2301,11 @@ bool KeepDepth(ID3D12GraphicsCommandList* list,int eye) {
 // The eye not drawn this frame, turned from its kept image to this frame's
 // head into its swapchain. False leaves it unacquired: its last released
 // image goes again at the pose it was drawn with.
+// By turns: nearer than CarriedNear metres along the view the eye not drawn
+// moves with the hero (TurnDepth::carry), farther than CarriedFar with the
+// world. Hands and weapons sit within the first; the ground at the feet,
+// even looking straight down, past the second.
+constexpr float CarriedNear=1.0f,CarriedFar=1.6f;
 bool TurnEye(int i) {
     auto& e=eyes[i];
     // All of a swapchain's images are alike: checked before one is acquired,
@@ -2325,6 +2330,10 @@ bool TurnEye(int i) {
         depth.move=TurnMove(was.world.at,was.world.turn,at,math::Multiply(w.base,Q(now.pose.orientation)));
         depth.drawnFov={was.fov.angleLeft,was.fov.angleRight,was.fov.angleDown,was.fov.angleUp};
         depth.nowFov={now.fov.angleLeft,now.fov.angleRight,now.fov.angleDown,now.fov.angleUp};
+        // Within reach (the hands, the weapon, the body): taken along by the
+        // hero's step and the body's turn since the eye was drawn.
+        depth.carry=TurnCarry(was.world.at,was.world.turn,was.world.hero,was.base,w.hero,w.base,at,math::Multiply(w.base,Q(now.pose.orientation)));
+        depth.reach[0]=CarriedNear*w.upm;depth.reach[1]=CarriedFar*w.upm;
         moving=&depth;
     }
     D3D12_RESOURCE_BARRIER b{};b.Type=D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
@@ -3305,7 +3314,7 @@ bool View(float out[16],const float hero[3],float eyeHeight,float userEyeHeight,
     const auto offset=math::Rotate(base,V(pose.position)-origin)*upm;
     const math::Vec position={hero[0]+offset.x,hero[1]+eyeHeight+offset.y,hero[2]+offset.z};
     const auto turn=math::Multiply(base,Q(pose.orientation));
-    if(eye>=0){viewBase[eye&1]=base;auto& w=viewWorld[eye&1];w.at=position;w.turn=turn;w.ok=true;}
+    if(eye>=0){viewBase[eye&1]=base;auto& w=viewWorld[eye&1];w.at=position;w.turn=turn;w.ok=true;w.hero={hero[0],hero[1],hero[2]};}
     if(eye==0){   // the replay's eye gap in this view's units: along the left eye's x
         const auto apart=math::Rotate(math::Conjugate(Q(views[0].pose.orientation)),V(views[1].pose.position)-V(views[0].pose.position));
         replayShift=apart.x*upm;

@@ -63,7 +63,24 @@ static void Math() {
     const Vec world=framevr::math::Rotate(drawn,p)+at,want=framevr::math::Rotate(framevr::math::Conjugate(now),world-there);
     const Vec got{m[0]*p.x+m[1]*p.y+m[2]*p.z+m[3],m[4]*p.x+m[5]*p.y+m[6]*p.z+m[7],m[8]*p.x+m[9]*p.y+m[10]*p.z+m[11]};
     Check(Near(got.x,want.x,1e-4f)&&Near(got.y,want.y,1e-4f)&&Near(got.z,want.z,1e-4f),"the move goes through the world");
-    std::puts("Turn homography and move passed: identity, yaw, pitch, relative turns, FOVs, world move");
+    {   // TurnCarry: the hero walked and the body turned, the head still on it
+        const Vec heroWas{10,0,20},heroNow{13,.5f,17},head{.1f,6.2f,-.3f};
+        const Quat baseWas=framevr::math::Yaw(.3f),baseNow=framevr::math::Yaw(.9f),look=framevr::math::Multiply(framevr::math::Yaw(-.2f),Pitch(-.4f));
+        const auto eye=[&](Vec hero,Quat base){return hero+framevr::math::Rotate(base,head);};
+        const auto c=framevr::TurnCarry(eye(heroWas,baseWas),framevr::math::Multiply(baseWas,look),heroWas,baseWas,
+                                        heroNow,baseNow,eye(heroNow,baseNow),framevr::math::Multiply(baseNow,look));
+        const float identity[12]={1,0,0,0, 0,1,0,0, 0,0,1,0};
+        bool still=true;for(int k=0;k<12;++k)still=still&&Near(c[k],identity[k],1e-4f);
+        Check(still,"what the hero carries does not move while only the hero does");
+        // the head turned on the body as well: the carried move is that turn alone
+        const Quat lookNow=framevr::math::Multiply(framevr::math::Yaw(.1f),Pitch(-.4f));
+        const auto t=framevr::TurnCarry(eye(heroWas,baseWas),framevr::math::Multiply(baseWas,look),heroWas,baseWas,
+                                        heroNow,baseNow,eye(heroNow,baseNow),framevr::math::Multiply(baseNow,lookNow));
+        const auto h=framevr::TurnMove(head,look,head,lookNow);   // the same head turn with no hero
+        bool same=true;for(int k=0;k<12;++k)same=same&&Near(t[k],h[k],1e-4f);
+        Check(same,"only the head's own move on the body is left");
+    }
+    std::puts("Turn homography and move passed: identity, yaw, pitch, relative turns, FOVs, world move, carried move");
 }
 
 // A device, a queue and one list to record on, run and wait for.
@@ -223,6 +240,18 @@ static void Move(Gpu& gpu,bool typeless) {
         expect(out,2,14,2,"the wall left of it moves 2 px");
         expect(out,46,56,2,"the wall right of it moves 2 px");
     }
+    {   // carried: the hero took the eye half a unit right. A hand 2 units away
+        // (columns 24-39) went along and stays; the wall at 8 still moves 2 px
+        framevr::TurnDepth carried=moved;carried.carry=framevr::TurnMove({0,0,0},{0,0,0,1},{0,0,0},{0,0,0,1});
+        carried.reach[0]=3;carried.reach[1]=3.5f;
+        const auto depth=distances([](UINT x){return x>=24&&x<40?2.f:8.f;});carried.depth=depth.Get();
+        const auto out=gpu.Warp(warp,source.Get(),target.Get(),Identity,slot^=1,&carried);
+        expect(out,26,38,0,"what the hero carries stays with the eye");
+        expect(out,2,18,2,"the wall left of it still moves 2 px");
+        expect(out,46,56,2,"the wall right of it still moves 2 px");
+        carried.reach[0]=carried.reach[1]=0;
+        expect(gpu.Warp(warp,source.Get(),target.Get(),Identity,slot^=1,&carried),18,30,8,"no reach: all moves with the world");
+    }
     {   // DLSS: the scene drawn into the top-left quarter of a depth twice the size
         auto big=gpu.Texture(side*2,side*2,DXGI_FORMAT_R32_FLOAT,D3D12_RESOURCE_FLAG_NONE,D3D12_RESOURCE_STATE_COPY_DEST);
         std::vector<uint32_t> d(side*side*4,0);const float v=nearPlane/4;
@@ -231,7 +260,7 @@ static void Move(Gpu& gpu,bool typeless) {
         framevr::TurnDepth corner=moved;corner.depth=big.Get();corner.scale[0]=corner.scale[1]=.5f;
         expect(gpu.Warp(warp,source.Get(),target.Get(),Identity,slot^=1,&corner),0,56,4,"the depth read from its drawn corner");
     }
-    std::printf("Turn depth GPU pass passed (%s target): wall, sky, occlusion, edge, drawn corner\n",typeless?"typeless":"typed");
+    std::printf("Turn depth GPU pass passed (%s target): wall, sky, occlusion, edge, carried, drawn corner\n",typeless?"typeless":"typed");
 }
 
 int main(int argc,char** argv) {try {

@@ -145,9 +145,13 @@ headset frame are drawn:
   rate, and moving monsters are one game frame apart between the eyes, which
   can look doubled. Edges where something near uncovers what is behind it
   stretch for that frame; transparent effects and the game's labels move as
-  the scene behind them. The depth is the same copy the added fog reads
-  (DLSS's corner included). Until both eyes have one, a pair is drawn from the
-  hero's first step to 0.3 s after the last.
+  the scene behind them. Within arm's reach (nearer than 1.0 m along the
+  view, blended out by 1.6 m) points move with the hero instead of the world:
+  the hands, the weapon and the body stay with the eye while running, where
+  moved as the world they trailed a frame behind and smeared; a monster that
+  close moves with the hero for that frame. The depth is the same copy the
+  added fog reads (DLSS's corner included). Until both eyes have one, a pair
+  is drawn from the hero's first step to 0.3 s after the last.
 
 By turns draws a pair on a snap turn, outside first person, in open menus,
 during stereo captures and on any frame without a reusable image for both eyes.
