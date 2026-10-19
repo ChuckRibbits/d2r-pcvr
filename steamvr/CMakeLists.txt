@@ -55,6 +55,7 @@ if(D2RVR_DEVELOPER)
 endif()
 target_sources(d2rl-pcvr PRIVATE ${ROOT}/vr/dlss_depth.cpp ${ROOT}/vr/crossbow.cpp)
 target_sources(d2rl-pcvr PRIVATE ${ROOT}/vr/billboards.cpp)
+target_sources(d2rl-pcvr PRIVATE ${ROOT}/vr/spatial_audio.cpp)   # head-relative sound
 target_sources(d2rl-pcvr PRIVATE ${ROOT}/vr/roof_materials.cpp)
 target_sources(d2rl-pcvr PRIVATE ${ROOT}/vr/panel_input.cpp)
 target_sources(d2rl-pcvr PRIVATE interaction_assets.rc interaction_icons.cpp ui_blit.cpp ui_world.cpp)
