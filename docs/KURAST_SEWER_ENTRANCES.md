@@ -17,8 +17,8 @@ stairs materials (`kurast_stairs_A/B`, `elevation_walls_a`,
 `IsDoubleSided=0` in the inspected LOD0, 1, 3 and 4 files. The rendering candidate
 allows only these exact model families/materials through the existing scoped
 two-sided material override, including their normal LOD0-4 variants. Names are
-canonicalized before selection. Unrelated stairs, foliage, water, collision,
-opacity and collision are unchanged. No assets are shipped.
+canonicalized before selection. Unrelated stairs, foliage, water, collision
+and opacity are unchanged. No assets are shipped.
 This can restore culled backs; it cannot manufacture missing geometry. In the
 owner's outside-entrance test, all seven LOD0 overrides were active, but sky
 remained visible through the end of the stairwell. Inspection of the original
@@ -42,8 +42,8 @@ The reader validates the live local player and a fresh location, audits native
 layout signatures and bounds the neighboring-room scan. Room units use the
 native `+0x160` link (audited in the room iterator); the hash-list link is
 `+0x158` and must not be used here. New once-per-second diagnostics report
-nearby/facing warps and native-range acceptance. Headset entry verification is
-verified for A entry; the replacement VR prompt still needs a headset check.
+nearby/facing warps and native-range acceptance. The owner verified both Right A
+entry and the replacement VR prompt in the headset, alongside the backdrop.
 
 The native target-label path also uses a separate legacy screen projection
 outside the existing stereo unit-anchor hook. The VR replacement shows
@@ -93,7 +93,8 @@ conflicting preset overrides. Generated presets stay inside
 generated files. After restarting **pcvr-dev**, use **DEV > Act III > Kurast
 Sewers**, exit outside, inspect the opening from several angles, then try
 entering while standing normally. Compare entrances in Bazaar and Upper Kurast.
-The visual preview does not establish that the reported entry problem is fixed.
+The visual preview alone does not change entry behavior; the native interaction
+fallback and VR prompt are separate DLL changes, also verified by the owner.
 
 With the game closed, remove only unchanged preview files using:
 
