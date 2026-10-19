@@ -1791,7 +1791,9 @@ uniform float3 OutlineEye1 < hidden = true; > = float3(0.0, 0.0, 0.0);
 uniform float4 OutlinePos < hidden = true; > = float4(0.0, 0.0, 0.0, 0.0);
 uniform float3 OutlineShape < hidden = true; > = float3(2.6, 0.15, 4.0);
 uniform float3 OutlineColor < hidden = true; > = float3(1.0, 0.2, 0.12);
-uniform float OutlineWidth < hidden = true; > = 1.5;   // how far out a neighbour is looked for, in pixels: the edge's thickness
+uniform float OutlineWidth < hidden = true; > = 1.0;   // how far out a neighbour is looked for, in pixels: the edge's thickness
+uniform float OutlineJump < hidden = true; > = 6.0;    // a neighbour this close in 3D still belongs to the body (world units)
+uniform float OutlineInner < hidden = true; > = 0.05;  // a faint tint over the whole body, a share of the strength
 
 // The world point (relative to the hero) the eye sees at uv; ok = 0 for the sky.
 float3 OutlineWorld(float2 uv, int eye, out float ok)
@@ -1828,7 +1830,7 @@ float3 OutlineTint(float3 c, float2 uv, int eye, float3 p, float4 o, float3 shap
     // model when it is raised too and either inside the cylinder or right next
     // to this pixel in the world; the background behind a monster's head is far
     // away (a depth jump), so its silhouette edges glow, not just its feet.
-    const float jump = shape.x * 0.5;
+    const float jump = OutlineJump;
     float edge = 0.0;
     [unroll] for (int k = 0; k < 8; ++k) {   // one ring of neighbours: a thin line
         float ok;
@@ -1836,8 +1838,8 @@ float3 OutlineTint(float3 c, float2 uv, int eye, float3 p, float4 o, float3 shap
         const float model = ok * Raised(q, o, shape) * max(Near(q, ok, o, shape), step(length(q - p), jump));
         edge += 1.0 - model;
     }
-    const float a = saturate(edge / 3.0) * o.w;
-    return saturate(c + colour * a * 1.3);   // added light: a glow, not paint
+    const float a = max(saturate(edge / 3.0), OutlineInner) * o.w;
+    return lerp(c, colour, saturate(a));   // painted over the picture: subtle at low strength
 }
 float3 Outline(float2 uv, int eye)
 {
