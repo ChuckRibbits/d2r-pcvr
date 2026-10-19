@@ -457,7 +457,7 @@ constexpr float panelWidth=2.0f,panelDistance=panels::MainDistance;
 XrSwapchain pointerChain=XR_NULL_HANDLE;
 XrPosef beamPose{},dotPose{};
 float beamLength=0;
-// Jeff, 2026-10-19: one remembered push/pull for every game menu, kept as an
+// 2026-10-19: one remembered push/pull for every game menu, kept as an
 // offset on each default placement (the main menu sits 15 cm beyond the
 // workspace). Choosing another Menu distance preset clears it. VR Settings
 // keeps its own free grab, relative to where you face when it opens.

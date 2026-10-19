@@ -120,7 +120,7 @@ struct MouseGate {
 // travel before any click, and a click first leaves the grip as Shift. Once
 // moving, the panel catches up with the travel since the press. A trigger
 // squeezed while moving is consumed until released.
-// Jeff, 2026-10-19: the game's own menus have black backgrounds, so they only
+// 2026-10-19: the game's own menus have black backgrounds, so they only
 // push/pull: pass their default distance and only travel along the facing
 // axis counts, keeping that distance within the limits. 0 grabs freely.
 struct Grab {
@@ -146,7 +146,7 @@ struct Grab {
                 offset={{0,0,pushOnly-distance},0,0};break;
             }
             {
-                // Jeff, 2026-10-19: turning the panel about its own centre made an
+                // 2026-10-19: turning the panel about its own centre made an
                 // arm sweep (which turns the controller too) swing it around a
                 // point in front of it. The grabbed point now stays fixed in the
                 // hand's roll-free frame, like holding a real window.
