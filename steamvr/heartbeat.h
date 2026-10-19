@@ -5,14 +5,14 @@
 #include <cstring>
 #include <vector>
 
-// Low-life heartbeat. Value-only: the transport supplies the published life
-// (LifeStrain) and plays it on its own waveOut stream (PlaySound plays one
-// sound per process and would cut off the riposte).
+// Low-life heartbeat. Value-only: the transport supplies the blood visor's life
+// band (blood::Target, 60/40/20 % of max life) and plays it on its own waveOut
+// stream (PlaySound plays one sound per process and would cut off the riposte).
 //
-// Below lifeStart of max life a heartbeat plays, louder and faster as life
-// falls, at its loudest and fastest from lifeFull down. Healing winds it down
-// more slowly than the life rises (Level): quieter and slower beat by beat,
-// then silent. The built-in beat is a recording embedded in the plugin
+// Each band the blood splashes steps the heartbeat up, louder and faster,
+// loudest and fastest below 20 %. Healing back above a band winds it down more
+// slowly than the blood fades (Level): quieter and slower beat by beat, then
+// silent. The built-in beat is a recording embedded in the plugin
 // (steamvr/assets/guard-heartbeat.wav); Synthesize() is the fallback when that
 // resource is missing. [gameplay] low_life_heart_file replaces it with a 16-bit
 // PCM WAV of one beat (any rate, mono or stereo).
@@ -77,22 +77,11 @@ inline bool ParseWav(const std::vector<uint8_t>& w,Pcm& out) {
 }
 struct Tuning {
     float volume=2;              // heartbeat % x the game's Master x Combat volume; 0 = off
-    float bpmMin=70,bpmMax=115;  // just below lifeStart .. at lifeFull and below
-    float quiet=.12f;            // loudness just below lifeStart (of full)
+    float bpmMin=70,bpmMax=115;  // first touch .. the worst band (below 20 % life)
+    float quiet=.12f;            // loudness at the first touch (of full)
     float fadeSeconds=4;         // winding down from full to silent, at the slowest
-    float lifeStart=.50f;        // life fraction where the heartbeat begins
-    float lifeFull=.20f;         // life fraction where it is loudest and fastest
 };
-// How hard the heart works at this life: 0 at or above lifeStart of max life,
-// rising linearly to 1 at lifeFull and below. Unknown or dead: 0, so it winds down.
-inline float LifeStrain(float health,float maxHealth,const Tuning& t) {
-    if(!std::isfinite(health)||!std::isfinite(maxHealth)||health<=0||maxHealth<=0)return 0;
-    const float start=std::clamp(std::isfinite(t.lifeStart)?t.lifeStart:.5f,.01f,1.f);
-    const float full=std::clamp(std::isfinite(t.lifeFull)?t.lifeFull:.2f,0.f,start-.01f);
-    const float fraction=health/maxHealth;
-    return fraction>=start?0.f:std::clamp((start-fraction)/(start-full),0.f,1.f);
-}
-// The heartbeat's own level: rises with LifeStrain at once, but falls no faster
+// The heartbeat's own level: rises with the life band at once, but falls no faster
 // than 1/fadeSeconds per second, so it keeps beating, quieter and slower, after
 // a heal. A hitch over .25 s (a load) snaps it to the target.
 class Level {
@@ -106,7 +95,7 @@ public:
         return level;
     }
 };
-// Loudness for this LifeStrain level: quiet at first, full at lifeFull. 0 = silent.
+// Loudness for this level: quiet at first, full in the worst band. 0 = silent.
 inline float Gain(float strain,const Tuning& t) {
     if(!std::isfinite(strain)||strain<=0||!std::isfinite(t.volume)||!(t.volume>0))return 0;
     strain=std::min(strain,1.f);

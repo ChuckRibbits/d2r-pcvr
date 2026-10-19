@@ -932,9 +932,11 @@ instead of a random one. Classic keeps the native roll.
   fades toward the centre with no visible inner rim. Pulses re-trigger without
   dropping, so rapid blocks hold a swell rather than flashing.
 - **Low-life heartbeat** (Classic and Unleashed; guard strain no longer drives it):
-  below `low_life_heart_start` % of max life (50) a heartbeat plays, quiet at first and
-  louder and faster as life falls, fullest at `low_life_heart_full` % (20) and below
-  (`low_life_heart_bpm_min` 70 to `low_life_heart_bpm_max` 115). The beat itself keeps
+  it steps with the blood visor's life bands. Below 60 % of max life a quiet, slow
+  heartbeat starts; below 40 % it is louder and faster; below 20 % it is at full
+  loudness and `low_life_heart_bpm_max` (115; the tempo runs from
+  `low_life_heart_bpm_min` 70 at the first touch). It follows the bands whether or not
+  the blood itself is shown. The beat itself keeps
   its natural speed and pitch; only the time between beats shortens. A heal winds it
   down no faster than `low_life_heart_fade_ms` (4000) from full: quieter and slower beat
   by beat, then silent; so does death or a loading screen. Loudness is

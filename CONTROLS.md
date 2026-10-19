@@ -204,11 +204,10 @@ again. The centre of the view always stays clear. While a hand is scrubbing it
 does not attack; a held potion, squeezed trigger or bow draw never counts as
 wiping.
 
-**Low-life heartbeat:** below half your life a heartbeat plays, quiet at first,
-then louder and faster as life falls, fullest at 20% and below. Healing winds it
-down beat by beat. It plays in Classic and Unleashed; `[gameplay]
-low_life_heartbeat` sets its loudness (200%, 0 = off) and `low_life_heart_start` /
-`low_life_heart_full` the life % where it begins and peaks.
+**Low-life heartbeat:** a heartbeat steps up with the same bands as the blood:
+quiet below 60% life, louder and faster below 40%, full below 20%. Healing winds
+it down beat by beat. It plays in Classic and Unleashed, with or without the
+blood shown; `[gameplay] low_life_heartbeat` sets its loudness (200%, 0 = off).
 
 ## Hand skill layouts
 

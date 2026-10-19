@@ -1,4 +1,5 @@
 #include "heartbeat.h"
+#include "blood_screen.h"
 #include <cstdio>
 #include <cstdlib>
 using namespace framevr;
@@ -88,18 +89,14 @@ int main() {
         Check(!heartbeat::ParseWav(Wav(1,1,44100,8,{1,2}),p),"8-bit WAV refused");
         Check(!heartbeat::ParseWav({'n','o','p','e'},p),"not a WAV refused");
     }
-    {   // Low life drives it: silent above lifeStart, full at lifeFull and below.
-        Check(t.lifeStart==.5f&&t.lifeFull==.2f,"begins below 50% life, fullest at 20%");
-        Check(heartbeat::LifeStrain(100,100,t)==0&&heartbeat::LifeStrain(50,100,t)==0,"healthy: silent");
-        Check(heartbeat::LifeStrain(49,100,t)>0&&heartbeat::LifeStrain(49,100,t)<.05f,"just below the start: barely");
-        Check(std::fabs(heartbeat::LifeStrain(35,100,t)-.5f)<1e-5f,"halfway between start and full");
-        Check(heartbeat::LifeStrain(20,100,t)==1&&heartbeat::LifeStrain(3,100,t)==1,"full at lifeFull and below");
-        Check(heartbeat::LifeStrain(0,100,t)==0&&heartbeat::LifeStrain(50,0,t)==0&&heartbeat::LifeStrain(NAN,100,t)==0,"dead or unknown: winds down");
-        float last=-1;bool rising=true;
-        for(float h=60;h>=1;h-=1){const float s=heartbeat::LifeStrain(h,100,t);rising=rising&&s>=last;last=s;}
-        Check(rising,"never eases as life falls");
-        heartbeat::Tuning odd=t;odd.lifeStart=.3f;odd.lifeFull=.6f;
-        Check(heartbeat::LifeStrain(10,100,odd)==1&&heartbeat::LifeStrain(30,100,odd)==0,"full above start is clamped below it");
+    {   // It steps with the blood visor's life bands: 60 / 40 / 20 % of max life.
+        auto level=[](float h){return std::max(0.f,blood::Target(h,100));};
+        Check(level(100)==0&&level(60)==0,"no blood, no heartbeat");
+        Check(level(59)>0&&level(59)==level(41),"below 60 %: the first band, one level throughout");
+        Check(level(39)>level(59)&&level(19)>level(39)&&level(19)==1,"louder each band, full below 20 %");
+        Check(heartbeat::Gain(level(59),t)>0&&heartbeat::Gain(level(39),t)>heartbeat::Gain(level(59),t)&&
+              heartbeat::Bpm(level(19),t)==115&&heartbeat::Bpm(level(39),t)>heartbeat::Bpm(level(59),t),"each band is louder and faster");
+        Check(level(0)==0&&std::max(0.f,blood::Target(50,0))==0,"dead or unknown: winds down");
     }
-    std::puts("Low-life heartbeat: synthesized lub-dub, loudness and tempo follow life, silent when healthy or dead, one-period beats (padded, cut, stereo, saturation) and WAV loading passed");
+    std::puts("Low-life heartbeat: synthesized lub-dub, loudness and tempo follow life, stepping with the blood bands, silent when healthy or dead, one-period beats (padded, cut, stereo, saturation) and WAV loading passed");
 }

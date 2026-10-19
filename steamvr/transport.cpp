@@ -1662,15 +1662,15 @@ void Input() {
         }
     }
     // Low-life heartbeat (Classic and Unleashed): queue the next beat ~80 ms before
-    // the current one ends, at the loudness and tempo of the life left now. Above
-    // the start fraction, dead or stale vitals: the last beat finishes, then silence.
+    // the current one ends, at the loudness and tempo of the blood visor's life band
+    // (60/40/20 %). Above 60 %, dead or stale vitals: the last beat finishes, then silence.
     {
         heartStream.Reap();
         heartbeat::Tuning heart;std::shared_ptr<const heartbeat::Pcm> source;const char* sourceName=nullptr;
         {std::lock_guard lock(heartMutex);heart=heartTuning;source=heartSource;sourceName=heartSourceName;}
         const auto& vitals=interactionInput.snapshot;
         const bool lifeKnown=vitals.vitalsKnown&&interaction::Fresh(vitals,interactionInput.session,interactionInput.at);
-        const float target=lifeKnown?heartbeat::LifeStrain(vitals.health,vitals.maxHealth,heart):0.f;
+        const float target=lifeKnown?std::max(0.f,blood::Target(vitals.health,vitals.maxHealth)):0.f;   // dead (-1): 0
         // Its own level: winds down slower than a heal, quieter and slower beat by beat.
         const float level=heartLevel.Step(target,heartAt>0?interactionInput.time-heartAt:0,heart.fadeSeconds);
         heartAt=interactionInput.time;
@@ -2913,10 +2913,8 @@ void ConfigureGuardStrain(float perBlock,float resetSeconds,float clear,float br
     t.density=std::isfinite(density)?std::clamp(density,1.f,6.f):1.f;
     std::lock_guard lock(strainTuningMutex);strainTuning=t;
 }
-void ConfigureHeartbeat(float volume,float bpmMin,float bpmMax,float fadeSeconds,float lifeStart,float lifeFull,const wchar_t* file) {
+void ConfigureHeartbeat(float volume,float bpmMin,float bpmMax,float fadeSeconds,const wchar_t* file) {
     heartbeat::Tuning t;
-    t.lifeStart=std::isfinite(lifeStart)?std::clamp(lifeStart,.01f,1.f):t.lifeStart;
-    t.lifeFull=std::isfinite(lifeFull)?std::clamp(lifeFull,0.f,t.lifeStart-.01f):std::min(t.lifeFull,t.lifeStart-.01f);
     t.fadeSeconds=std::isfinite(fadeSeconds)?std::clamp(fadeSeconds,0.f,30.f):t.fadeSeconds;
     t.volume=std::isfinite(volume)?std::clamp(volume,0.f,4.f):t.volume;
     t.bpmMin=std::isfinite(bpmMin)?std::clamp(bpmMin,30.f,200.f):t.bpmMin;
