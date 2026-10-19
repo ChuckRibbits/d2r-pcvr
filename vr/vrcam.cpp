@@ -827,6 +827,7 @@ void LoadSettings() {
     framevr::profile::ConfigureHooks(IniB(L"debug",L"profile_hooks",true));
     framevr::ConfigureDeferredWait(IniB(L"render",L"defer_gpu_wait",false));
     framevr::ConfigureSymmetricProjection(IniB(L"render",L"symmetric_projection",true));
+    framevr::ConfigureTurnsFromDrawnEye(IniB(L"stereo",L"turns_from_drawn_eye",true));
     framevr::ConfigureEyeTracking(IniB(L"render",L"eye_tracked_foveation",false));
     framevr::ConfigureGameplay(IniB(L"gameplay",L"motion_controls",false));
     framevr::ConfigureQuiver(IniB(L"bow",L"quiver",true),IniB(L"bow",L"quiver_preview",true));
@@ -4982,6 +4983,8 @@ uintptr_t DrawTurn(int a, bool continued) {
         LogF("vrcam: eyes by turns - %.1f frames/s (each eye %.1f/s) | a frame, ms: game %.2f | XR begin %.2f (wait %.2f) | pass %.2f | XR end %.2f | longest %.1f | %u frames by turns (other eye moved with depth %u, turned only %u), %u pairs while moving",
              rate, rate * 0.5, periods ? sumGap * 0.001 / periods : 0.0, sumBegin * k, sumWait / turns, sumPass * k, sumEnd * k, longest * 0.001,
              turns, how.moved, how.turned, g_movePairs.exchange(0));
+        // (a line of its own: LogF keeps 255 characters)
+        LogF("vrcam: eyes by turns - the other eye: the drawn eye's picture laid over it in %u of %u", how.drawn, how.moved + how.turned);
         lastEnd = 0.0; sumGap = sumBegin = sumWait = sumPass = sumEnd = sumPeriod = longest = 0.0;
         since = now; turns = periods = 0;
     }

@@ -110,6 +110,7 @@ std::atomic<uint32_t> pipelineCreates{0};
 std::atomic<double> maxPipelineMs{0};
 std::atomic<bool> deferredWait{false};
 std::atomic<bool> symmetricProjection{true};
+std::atomic<bool> turnsFromDrawnEye{true};
 std::atomic<bool> eyeTracking{false};
 std::atomic<bool> motionControls{false};
 // Stamped each focused XR input while motion controls are on (menus included).
@@ -2319,11 +2320,27 @@ bool TurnEye(int i) {
                                 math::Multiply(viewBase[i^1],Q(now.pose.orientation)),{now.fov.angleLeft,now.fov.angleRight,now.fov.angleDown,now.fov.angleUp});
     // By turns: moved as well, with the depth it was drawn with, to where View
     // puts this eye this frame (the hero's step, the head's, the body's turn).
-    TurnDepth depth{};const TurnDepth* moving=nullptr;
+    TurnDepth depth{},other{};const TurnDepth* moving=nullptr;const TurnDepth* fromDrawn=nullptr;
     const auto& w=stageWorld;
-    if(keepDepth&&was.world.ok&&turnDepths[i].ok&&turnWarp.DepthReady()&&w.valid&&w.upm>0&&GetTickCount64()-w.at<250) {
-        const auto offset=math::Rotate(w.base,V(now.pose.position)-w.origin)*w.upm;
-        const math::Vec at={w.hero.x+offset.x,w.hero.y+w.eyeHeight+offset.y,w.hero.z+offset.z};
+    const bool placed=keepDepth&&turnWarp.DepthReady()&&w.valid&&w.upm>0&&GetTickCount64()-w.at<250;
+    const auto offset=math::Rotate(w.base,V(now.pose.position)-w.origin)*w.upm;
+    const math::Vec at={w.hero.x+offset.x,w.hero.y+w.eyeHeight+offset.y,w.hero.z+offset.z};
+    // The drawn eye's picture of this frame (kept by Copy, before this on the
+    // queue), moved across with its depth from where View put it.
+    const auto& drawnAt=viewWorld[i^1];
+    if(placed&&turnsFromDrawnEye.load()&&eyes[i^1].copied&&turnKept[i^1]&&turnDepths[i^1].ok&&drawnAt.ok&&drawnAt.nearPlane>0) {
+        const auto& f=views[i^1].fov;
+        other.image=turnImages[i^1].Get();
+        other.depth=turnDepths[i^1].texture.Get();other.format=turnDepths[i^1].format;
+        other.scale[0]=turnDepths[i^1].scale[0];other.scale[1]=turnDepths[i^1].scale[1];
+        other.nearPlane=drawnAt.nearPlane;
+        other.move=TurnMove(drawnAt.at,drawnAt.turn,at,math::Multiply(w.base,Q(now.pose.orientation)));
+        other.drawnFov={f.angleLeft,f.angleRight,f.angleDown,f.angleUp};
+        other.nowFov={now.fov.angleLeft,now.fov.angleRight,now.fov.angleDown,now.fov.angleUp};
+        const auto gap=drawnAt.at-at;other.apart=std::sqrt(gap.x*gap.x+gap.y*gap.y+gap.z*gap.z);
+        fromDrawn=&other;
+    }
+    if(placed&&was.world.ok&&turnDepths[i].ok) {
         depth.depth=turnDepths[i].texture.Get();depth.format=turnDepths[i].format;
         depth.scale[0]=turnDepths[i].scale[0];depth.scale[1]=turnDepths[i].scale[1];
         depth.nearPlane=was.world.nearPlane;
@@ -2336,16 +2353,19 @@ bool TurnEye(int i) {
         depth.reach[0]=CarriedNear*w.upm;depth.reach[1]=CarriedFar*w.upm;
         moving=&depth;
     }
-    D3D12_RESOURCE_BARRIER b{};b.Type=D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
-    b.Transition={turnImages[i].Get(),D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES,D3D12_RESOURCE_STATE_COMMON,D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE};
-    e.commands->ResourceBarrier(1,&b);
-    const bool turned=turnWarp.Render(device.Get(),e.commands.Get(),turnImages[i].Get(),e.images[e.index].texture,h,i,moving);
-    std::swap(b.Transition.StateBefore,b.Transition.StateAfter);e.commands->ResourceBarrier(1,&b);
+    D3D12_RESOURCE_BARRIER b[2]{};const UINT kept=fromDrawn?2:1;
+    for(UINT k=0;k<kept;++k){b[k].Type=D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+        b[k].Transition={turnImages[i^k].Get(),D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES,D3D12_RESOURCE_STATE_COMMON,D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE};}
+    e.commands->ResourceBarrier(kept,b);
+    const bool turned=turnWarp.Render(device.Get(),e.commands.Get(),turnImages[i].Get(),e.images[e.index].texture,h,i,moving,fromDrawn);
+    for(UINT k=0;k<kept;++k)std::swap(b[k].Transition.StateBefore,b[k].Transition.StateAfter);
+    e.commands->ResourceBarrier(kept,b);
     if(!Hr(e.commands->Close(),"close turn list")||!turned){failed=true;return false;}
     ID3D12CommandList* lists[]={e.commands.Get()};queue->ExecuteCommandLists(1,lists);
     if(!Hr(queue->Signal(fence.Get(),++fenceValue),"signal turn fence")){failed=true;return false;}
     e.copyFence=fenceValue;
     if(moving)++turnCounts.moved;else ++turnCounts.turned;
+    if(fromDrawn)++turnCounts.drawn;
     return true;
 }
 bool Copy(ID3D12Resource* src,Eye& e,reshade::api::command_queue* rq) {
@@ -2576,6 +2596,9 @@ void ConfigureDeferredWait(bool on) {
     if(deferredWait.exchange(on)!=on)Say(on?"Frame OpenXR: GPU wait deferred until copy allocator reuse":"Frame OpenXR: conservative GPU wait before image release");
 }
 void ConfigureSymmetricProjection(bool on) {symmetricProjection.store(on);}
+void ConfigureTurnsFromDrawnEye(bool on) {
+    if(turnsFromDrawnEye.exchange(on)!=on)Say(on?"Frame OpenXR: by turns - the eye not drawn mostly from the drawn eye's picture":"Frame OpenXR: by turns - the eye not drawn from its own image alone");
+}
 void ConfigureEyeTracking(bool on) {eyeTracking.store(on);}
 void BeginEye(int eye) {
     hud::UiFrame(spatialMode,!journalMode,eye);

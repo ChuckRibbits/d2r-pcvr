@@ -15,6 +15,9 @@ void Register(LogFn log, PanelFn wantsPanel, PanelFn inWorld, PanelFn toggleMenu
 bool HandleWindowFocusMessage(void* window,uint32_t message,uint64_t token,int64_t deadline);
 void ConfigureDeferredWait(bool enabled);
 void ConfigureSymmetricProjection(bool enabled);
+// [stereo] turns_from_drawn_eye (1): by turns, the eye not drawn mostly from
+// the drawn eye's picture of this frame (TurnDepth); 0: its own image alone.
+void ConfigureTurnsFromDrawnEye(bool enabled);
 void ConfigureEyeTracking(bool enabled);
 void ConfigureGameplay(bool enabled);
 void ConfigureQuiver(bool enabled,bool preview); // [bow] quiver, quiver_preview
@@ -100,7 +103,9 @@ bool TurnDepthWanted();
 // Both eyes' last images have their depth and place kept: walking can go by turns.
 bool TurnDepthReady();
 // How the eyes not drawn went since the last call: moved with depth, or turned only.
-struct TurnCounts {uint32_t moved=0,turned=0;};
+// By turns, the eye not drawn: its own image moved with its depth, or turned
+// only; and of those, how many had the drawn eye's picture laid over them.
+struct TurnCounts {uint32_t moved=0,turned=0,drawn=0;};
 TurnCounts TakeTurnCounts();
 // Diagnostic only: F8 saves the next complete gameplay pair via ReShade.
 void RequestStereoCapture();

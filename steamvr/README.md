@@ -141,9 +141,15 @@ headset frame are drawn:
   moved with the scene depth it was drawn with: a grid over its image, each
   point put back at its distance and seen from the current eye, nearer points
   over farther ones, so both eyes go at one pose as a pair does. This halves
-  the draw work per headset frame. Each eye still updates at half the frame
-  rate, and moving monsters are one game frame apart between the eyes, which
-  can look doubled. Edges where something near uncovers what is behind it
+  the draw work per headset frame. Each eye is still drawn at half the frame
+  rate, so over that the drawn eye's picture of the same frame is laid,
+  moved across with its own depth: monsters and missiles stand where the
+  drawn eye shows them instead of a game frame back. Only what the drawn eye
+  could not see (beside the edges of near things, past the outer edge of its
+  view) keeps the other eye's own older image, and transparent effects and
+  the game's labels, without depth of their own, look as deep as what is
+  behind them. `[stereo] turns_from_drawn_eye=0` (live) keeps the other
+  eye's own image alone. Edges where something near uncovers what is behind it
   stretch for that frame; transparent effects and the game's labels move as
   the scene behind them. Within arm's reach (nearer than 1.0 m along the
   view, blended out by 1.6 m) points move with the hero instead of the world:

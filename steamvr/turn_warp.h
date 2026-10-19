@@ -68,6 +68,13 @@ inline std::array<float,12> TurnCarry(math::Vec drawnAt,math::Quat drawn,math::V
 // reach[0] (their distance along the view, as nearPlane) move by `carry`
 // instead, the world as the hero's step and the body's turn took it; farther
 // than reach[1] by `move`; blended between. reach {0,0}: all by `move`.
+//
+// The other eye, drawn this frame (Render's `drawn`): its picture moved
+// across to this eye with its own depth, over this eye's older one, so what
+// moves by itself - monsters, missiles - stands where the drawn eye shows it
+// (owner, 2026-10-19: moving monsters). A cell whose corners' depths part by
+// more than TurnEdgePixels as seen from `apart` away held what that eye could
+// not see behind an edge: it is cut, and the older picture stays there.
 struct TurnDepth {
     ID3D12Resource* depth=nullptr;   // in a shader-resource state
     DXGI_FORMAT format=DXGI_FORMAT_UNKNOWN;   // its shader-readable format
@@ -77,7 +84,10 @@ struct TurnDepth {
     math::Fov drawnFov{},nowFov{};
     std::array<float,12> carry{};   // TurnMove of the carried
     float reach[2]{0,0};
+    ID3D12Resource* image=nullptr;   // the drawn eye's picture (PIXEL_SHADER_RESOURCE); null: the source's
+    float apart=0;   // the drawn eye: how far it stood from this one, in the world's units
 };
+inline constexpr float TurnEdgePixels=2;
 // The grid's spacing in target pixels: an edge in depth stays within a few.
 inline constexpr uint32_t TurnGridStep=4;
 
@@ -96,9 +106,9 @@ public:
     bool Fits(ID3D12Resource* source,ID3D12Resource* target) const;
     // source in PIXEL_SHADER_RESOURCE, target in RENDER_TARGET. slot 0 or 1, one
     // per eye: the GPU may still read the other eye's from the frame before.
-    // With depth (and DepthReady) the eye is moved as well; false only when
-    // nothing was drawn.
+    // With depth (and DepthReady) the eye is moved as well, and with `drawn`
+    // the drawn eye's picture laid over it; false only when nothing was drawn.
     bool Render(ID3D12Device*,ID3D12GraphicsCommandList*,ID3D12Resource* source,ID3D12Resource* target,
-                const std::array<float,9>& homography,int slot,const TurnDepth* depth=nullptr);
+                const std::array<float,9>& homography,int slot,const TurnDepth* depth=nullptr,const TurnDepth* drawn=nullptr);
 };
 }

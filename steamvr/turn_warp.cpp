@@ -37,18 +37,23 @@ cbuffer Move : register(b0) {
     float4 depthInfo;  // near plane, the depth's drawn part x, y
     uint4 grid;        // cells across, down
     float4 carry0;float4 carry1;float4 carry2;   // the carried's rows (TurnDepth::carry)
-    float4 reach;      // nearer than x: carried; farther than y: the world's
+    float4 reach;      // nearer than x: carried; farther than y: the world's; z: the drawn eye's edge scale
 };
 struct Pixel {float4 position:SV_Position;float2 uv:TEXCOORD0;};
 static const float2 Corner[6]={float2(0,0),float2(1,0),float2(0,1),float2(0,1),float2(1,0),float2(1,1)};
 static const float Ahead=1e-3;   // nearer than this to this frame's eye: cut off
+static const float EdgePixels=2;   // TurnEdgePixels
+// The nearest of the texels round a point (reverse-Z: the largest), so an
+// edge stays with what is in front; the sky (0) far, not infinite.
+float Nearest(float2 uv) {
+    const float4 d4=drawnDepth.GatherRed(edge,uv*depthInfo.yz);
+    return max(max(max(d4.x,d4.y),max(d4.z,d4.w)),1e-6);
+}
 Pixel VS(uint id:SV_VertexID) {
     const uint cell=id/6;
-    const float2 uv=(float2(cell%grid.x,cell/grid.x)+Corner[id%6])/float2(grid.xy);
-    // The nearest of the texels round the point (reverse-Z: the largest), so
-    // an edge stays with what is in front; the sky (0) far, not infinite.
-    const float4 d4=drawnDepth.GatherRed(edge,uv*depthInfo.yz);
-    const float d=max(max(max(d4.x,d4.y),max(d4.z,d4.w)),1e-6);
+    const float2 at=float2(cell%grid.x,cell/grid.x),size=float2(grid.xy);
+    const float2 uv=(at+Corner[id%6])/size;
+    const float d=Nearest(uv);
     const float away=depthInfo.x/d;
     const float3 p=float3(lerp(drawnTan.x,drawnTan.y,uv.x),lerp(drawnTan.w,drawnTan.z,uv.y),-1)*away;
     const float3 world=float3(dot(move0.xyz,p)+move0.w,dot(move1.xyz,p)+move1.w,dot(move2.xyz,p)+move2.w);
@@ -58,6 +63,10 @@ Pixel VS(uint id:SV_VertexID) {
     const float w=-q.z;
     Pixel o;o.uv=uv;
     o.position=float4(2*(q.x-nowTan.x*w)/(nowTan.y-nowTan.x)-w,w-2*(nowTan.w*w-q.y)/(nowTan.w-nowTan.z),Ahead,w);
+    if(reach.z>0) {   // the drawn eye's picture: a cell across an edge in its depth is cut (outside the clip volume)
+        const float a=Nearest(at/size),b=Nearest((at+float2(1,0))/size),c=Nearest((at+float2(0,1))/size),f=Nearest((at+1)/size);
+        if((max(max(a,b),max(c,f))-min(min(a,b),min(c,f)))*reach.z>EdgePixels)o.position=float4(0,0,0,-1);
+    }
     return o;
 }
 float4 PS(Pixel p):SV_Target {return drawn.SampleLevel(edge,p.uv,0);}
@@ -98,8 +107,8 @@ bool TurnWarp::Initialize(ID3D12Device* device,DXGI_FORMAT targetFormat,void (*l
     state.PrimitiveTopologyType=D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
     state.NumRenderTargets=1;state.RTVFormats[0]=targetFormat;state.SampleDesc.Count=1;
     if(FAILED(device->CreateGraphicsPipelineState(&state,IID_PPV_ARGS(&pipeline))))return fail("no pipeline for the eye format");
-    // Each eye's slot: its image, then its depth (the depth pass reads both).
-    D3D12_DESCRIPTOR_HEAP_DESC heap{};heap.Type=D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;heap.NumDescriptors=4;heap.Flags=D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
+    // Each eye's slot: its image and depth, then the drawn eye's (Render's `drawn`).
+    D3D12_DESCRIPTOR_HEAP_DESC heap{};heap.Type=D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;heap.NumDescriptors=8;heap.Flags=D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
     if(FAILED(device->CreateDescriptorHeap(&heap,IID_PPV_ARGS(&sourceHeap))))return fail("no descriptor heap");
     heap.Type=D3D12_DESCRIPTOR_HEAP_TYPE_RTV;heap.NumDescriptors=1;heap.Flags=D3D12_DESCRIPTOR_HEAP_FLAG_NONE;
     if(FAILED(device->CreateDescriptorHeap(&heap,IID_PPV_ARGS(&targetHeap))))return fail("no target heap");
@@ -141,7 +150,7 @@ bool TurnWarp::Fits(ID3D12Resource* source,ID3D12Resource* target) const {
     return RenderTargetCompatible(s.Format,format)&&RenderTargetCompatible(t.Format,format)&&s.SampleDesc.Count==1&&t.SampleDesc.Count==1;
 }
 bool TurnWarp::Render(ID3D12Device* device,ID3D12GraphicsCommandList* list,ID3D12Resource* source,ID3D12Resource* target,
-                      const std::array<float,9>& homography,int slot,const TurnDepth* depth) {
+                      const std::array<float,9>& homography,int slot,const TurnDepth* depth,const TurnDepth* drawn) {
     if(slot<0||slot>1||!Fits(source,target))return false;
     const auto t=target->GetDesc();
     D3D12_SHADER_RESOURCE_VIEW_DESC srv{};srv.Format=format;srv.ViewDimension=D3D12_SRV_DIMENSION_TEXTURE2D;
@@ -149,7 +158,7 @@ bool TurnWarp::Render(ID3D12Device* device,ID3D12GraphicsCommandList* list,ID3D1
     auto source0=sourceHeap->GetCPUDescriptorHandleForHeapStart();
     auto sourceGpu=sourceHeap->GetGPUDescriptorHandleForHeapStart();
     const UINT step=device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
-    source0.ptr+=SIZE_T(step)*2*slot;sourceGpu.ptr+=UINT64(step)*2*slot;
+    source0.ptr+=SIZE_T(step)*4*slot;sourceGpu.ptr+=UINT64(step)*4*slot;
     device->CreateShaderResourceView(source,&srv,source0);
     D3D12_RENDER_TARGET_VIEW_DESC rtv{};rtv.Format=format;rtv.ViewDimension=D3D12_RTV_DIMENSION_TEXTURE2D;
     const auto rtvHandle=targetHeap->GetCPUDescriptorHandleForHeapStart();
@@ -165,8 +174,10 @@ bool TurnWarp::Render(ID3D12Device* device,ID3D12GraphicsCommandList* list,ID3D1
     list->RSSetViewports(1,&viewport);list->RSSetScissorRects(1,&rect);
     list->SetPipelineState(pipeline.Get());
     list->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);list->DrawInstanced(3,1,0,0);
-    if(!depth||!depth->depth||!depthPipeline||depth->nearPlane<=0)return true;
-    // The grid over what the turn drew.
+    const auto usable=[](const TurnDepth* d){return d&&d->depth&&d->nearPlane>0;};
+    const bool other=usable(drawn)&&drawn->image&&Fits(drawn->image,target);
+    if(!depthPipeline||(!usable(depth)&&!other))return true;
+    // The grids over what the turn drew.
     if(depthTarget){const auto d=depthTarget->GetDesc();if(d.Width!=t.Width||d.Height!=t.Height)return true;}   // one size a session
     else {
         D3D12_HEAP_PROPERTIES heapProps{};heapProps.Type=D3D12_HEAP_TYPE_DEFAULT;
@@ -177,29 +188,38 @@ bool TurnWarp::Render(ID3D12Device* device,ID3D12GraphicsCommandList* list,ID3D1
         D3D12_DEPTH_STENCIL_VIEW_DESC dsv{};dsv.Format=DXGI_FORMAT_D32_FLOAT;dsv.ViewDimension=D3D12_DSV_DIMENSION_TEXTURE2D;
         device->CreateDepthStencilView(depthTarget.Get(),&dsv,depthHeap->GetCPUDescriptorHandleForHeapStart());
     }
-    D3D12_SHADER_RESOURCE_VIEW_DESC depthView=srv;depthView.Format=depth->format;
-    auto depth0=source0;depth0.ptr+=step;
-    device->CreateShaderResourceView(depth->depth,&depthView,depth0);
     const auto dsvHandle=depthHeap->GetCPUDescriptorHandleForHeapStart();
-    list->ClearDepthStencilView(dsvHandle,D3D12_CLEAR_FLAG_DEPTH,0,0,0,nullptr);
     list->OMSetRenderTargets(1,&rtvHandle,FALSE,&dsvHandle);
     list->SetGraphicsRootSignature(depthRoot.Get());
-    list->SetGraphicsRootDescriptorTable(0,sourceGpu);
+    list->SetPipelineState(depthPipeline.Get());
     const auto tangents=[](const math::Fov& f,float* out){out[0]=std::tan(f.left);out[1]=std::tan(f.right);out[2]=std::tan(f.down);out[3]=std::tan(f.up);};
     const uint32_t across=(uint32_t(t.Width)+TurnGridStep-1)/TurnGridStep,down=(t.Height+TurnGridStep-1)/TurnGridStep;
-    uint32_t constants[DepthConstants]{};float values[24]{};
-    std::memcpy(values,depth->move.data(),sizeof(float)*12);
-    tangents(depth->drawnFov,values+12);tangents(depth->nowFov,values+16);
-    values[20]=depth->nearPlane;values[21]=depth->scale[0];values[22]=depth->scale[1];
-    std::memcpy(constants,values,sizeof values);constants[24]=across;constants[25]=down;
-    const bool carries=depth->reach[1]>depth->reach[0]&&depth->reach[0]>0;
-    float carried[16]{};
-    std::memcpy(carried,carries?depth->carry.data():depth->move.data(),sizeof(float)*12);
-    if(carries){carried[12]=depth->reach[0];carried[13]=depth->reach[1];}
-    std::memcpy(constants+28,carried,sizeof carried);
-    list->SetGraphicsRoot32BitConstants(1,DepthConstants,constants,0);
-    list->SetPipelineState(depthPipeline.Get());
-    list->DrawInstanced(6*across*down,1,0,0);
+    // One grid: its picture and depth into the table at `at` (0 this eye's, 2 the drawn eye's).
+    const auto grid=[&](const TurnDepth& d,ID3D12Resource* image,int at) {
+        auto view=source0;view.ptr+=SIZE_T(step)*at;
+        if(at)device->CreateShaderResourceView(image,&srv,view);
+        D3D12_SHADER_RESOURCE_VIEW_DESC depthView=srv;depthView.Format=d.format;
+        view.ptr+=step;device->CreateShaderResourceView(d.depth,&depthView,view);
+        auto table=sourceGpu;table.ptr+=UINT64(step)*at;
+        list->SetGraphicsRootDescriptorTable(0,table);
+        list->ClearDepthStencilView(dsvHandle,D3D12_CLEAR_FLAG_DEPTH,0,0,0,nullptr);   // each grid over the last whole
+        uint32_t constants[DepthConstants]{};float values[24]{};
+        std::memcpy(values,d.move.data(),sizeof(float)*12);
+        tangents(d.drawnFov,values+12);tangents(d.nowFov,values+16);
+        values[20]=d.nearPlane;values[21]=d.scale[0];values[22]=d.scale[1];
+        std::memcpy(constants,values,sizeof values);constants[24]=across;constants[25]=down;
+        const bool carries=d.reach[1]>d.reach[0]&&d.reach[0]>0;
+        float carried[16]{};
+        std::memcpy(carried,carries?d.carry.data():d.move.data(),sizeof(float)*12);
+        if(carries){carried[12]=d.reach[0];carried[13]=d.reach[1];}
+        // the drawn eye's: how many target pixels a step in its depth parts by, seen from `apart` away
+        if(at&&d.apart>0)carried[14]=float(t.Width)/(std::tan(d.nowFov.right)-std::tan(d.nowFov.left))*d.apart/d.nearPlane;
+        std::memcpy(constants+28,carried,sizeof carried);
+        list->SetGraphicsRoot32BitConstants(1,DepthConstants,constants,0);
+        list->DrawInstanced(6*across*down,1,0,0);
+    };
+    if(usable(depth))grid(*depth,source,0);
+    if(other)grid(*drawn,drawn->image,2);
     return true;
 }
 }

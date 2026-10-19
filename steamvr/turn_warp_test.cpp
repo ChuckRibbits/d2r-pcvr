@@ -133,12 +133,12 @@ struct Gpu {
         });
     }
     // The warp into `target` (RENDER_TARGET), read back.
-    std::vector<uint32_t> Warp(framevr::TurnWarp& warp,ID3D12Resource* source,ID3D12Resource* target,const std::array<float,9>& h,int slot,const framevr::TurnDepth* depth=nullptr) {
+    std::vector<uint32_t> Warp(framevr::TurnWarp& warp,ID3D12Resource* source,ID3D12Resource* target,const std::array<float,9>& h,int slot,const framevr::TurnDepth* depth=nullptr,const framevr::TurnDepth* drawn=nullptr) {
         const auto desc=target->GetDesc();D3D12_PLACED_SUBRESOURCE_FOOTPRINT f{};UINT64 bytes=0;
         device->GetCopyableFootprints(&desc,0,1,0,&f,nullptr,nullptr,&bytes);
         auto readback=Buffer(bytes,D3D12_HEAP_TYPE_READBACK,D3D12_RESOURCE_STATE_COPY_DEST);
         Record([&]{
-            Check(warp.Render(device.Get(),list.Get(),source,target,h,slot,depth),"render");
+            Check(warp.Render(device.Get(),list.Get(),source,target,h,slot,depth,drawn),"render");
             D3D12_RESOURCE_BARRIER b{};b.Type=D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
             b.Transition={target,D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES,D3D12_RESOURCE_STATE_RENDER_TARGET,D3D12_RESOURCE_STATE_COPY_SOURCE};list->ResourceBarrier(1,&b);
             D3D12_TEXTURE_COPY_LOCATION from{},to{};from.pResource=target;from.Type=D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX;
@@ -252,6 +252,33 @@ static void Move(Gpu& gpu,bool typeless) {
         carried.reach[0]=carried.reach[1]=0;
         expect(gpu.Warp(warp,source.Get(),target.Get(),Identity,slot^=1,&carried),18,30,8,"no reach: all moves with the world");
     }
+    {   // the drawn eye's picture over this eye's own (turned only, unmoved): a
+        // post 2 units away (columns 24-39) before a wall at 4, seen from half a
+        // unit to the left. The post goes 8 px, the wall 4; the 4 px the post
+        // uncovers on its right, hidden from the drawn eye, keep this eye's own
+        const auto other=[](UINT x,UINT y){return uint32_t(x*4)|uint32_t(y*4)<<8|0x30u<<16|0xffu<<24;};
+        std::vector<uint32_t> pixels(side*side);for(UINT y=0;y<side;++y)for(UINT x=0;x<side;++x)pixels[y*side+x]=other(x,y);
+        auto picture=gpu.Texture(side,side,DXGI_FORMAT_R8G8B8A8_UNORM_SRGB,D3D12_RESOURCE_FLAG_NONE,D3D12_RESOURCE_STATE_COPY_DEST);
+        gpu.Upload(picture.Get(),pixels,D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+        const auto depth=distances([](UINT x){return x>=24&&x<40?2.f:4.f;});
+        framevr::TurnDepth drawn=moved;drawn.depth=depth.Get();drawn.image=picture.Get();drawn.apart=.5f;
+        const auto out=gpu.Warp(warp,source.Get(),target.Get(),Identity,slot^=1,nullptr,&drawn);
+        const auto from=[&](UINT a,UINT b,int shift,bool drawnEye,const char* what) {
+            bool same=true;
+            for(UINT y=0;y<side;++y)for(UINT x=a;x<b;++x) {
+                const uint32_t want=drawnEye?other(x+shift,y):texel(x,y);
+                if(!Same(out[y*side+x],want)){if(same)std::printf("%s: pixel %u,%u = %08x, expected %08x\n",what,x,y,out[y*side+x],want);same=false;}
+            }
+            Check(same,what);
+        };
+        from(2,11,4,true,"the wall from the drawn eye, moved 4 px");
+        from(18,28,8,true,"the post from the drawn eye, moved 8 px");
+        from(33,39,0,false,"what the post hid from the drawn eye keeps this eye's own");
+        from(44,56,4,true,"the wall past it from the drawn eye again");
+        drawn.apart=0;   // no edge test: the post's edge drawn out over the gap instead
+        const auto stretched=gpu.Warp(warp,source.Get(),target.Get(),Identity,slot^=1,nullptr,&drawn);
+        Check(!Same(stretched[10*side+35],texel(35,10)),"without the cut the gap is the drawn eye's, drawn out");
+    }
     {   // DLSS: the scene drawn into the top-left quarter of a depth twice the size
         auto big=gpu.Texture(side*2,side*2,DXGI_FORMAT_R32_FLOAT,D3D12_RESOURCE_FLAG_NONE,D3D12_RESOURCE_STATE_COPY_DEST);
         std::vector<uint32_t> d(side*side*4,0);const float v=nearPlane/4;
@@ -260,7 +287,7 @@ static void Move(Gpu& gpu,bool typeless) {
         framevr::TurnDepth corner=moved;corner.depth=big.Get();corner.scale[0]=corner.scale[1]=.5f;
         expect(gpu.Warp(warp,source.Get(),target.Get(),Identity,slot^=1,&corner),0,56,4,"the depth read from its drawn corner");
     }
-    std::printf("Turn depth GPU pass passed (%s target): wall, sky, occlusion, edge, carried, drawn corner\n",typeless?"typeless":"typed");
+    std::printf("Turn depth GPU pass passed (%s target): wall, sky, occlusion, edge, carried, the drawn eye's picture, drawn corner\n",typeless?"typeless":"typed");
 }
 
 int main(int argc,char** argv) {try {
