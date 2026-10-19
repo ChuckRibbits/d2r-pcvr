@@ -236,6 +236,14 @@ int main(){
     saved=vrsettings::Read();
     Check(saved.values[ControllerLabels]==2&&Int(path,L"interactions",L"controller_labels")==2,"controller selection survives reload");
     Check(Int(path,L"render",L"fixed_foveation")==1&&Int(path,L"render",L"eye_tracked_foveation")==1,"eye-tracked mode writes both keys");
+    Check(saved.values[FoveationStrength]==1,"profiles without a saved strength show Medium");
+    for(int level:{3,0}){
+        model.Open(saved);for(int i=0;i<3;++i)model.Click({Kind::Change,FoveationStrength,level?1:-1});request=model.Click({Kind::Apply});
+        Check(vrsettings::Submit(request)&&vrsettings::Poll(name),"save foveation strength");
+        saved=vrsettings::Read();
+        Check(saved.values[FoveationStrength]==level&&Int(path,L"render",L"foveation_strength")==level&&
+              saved.values[Foveation]==2&&Int(path,L"custom",L"keep")==12345,"foveation strength survives reload without changing the mode");
+    }
     Check(Int(path,L"custom",L"keep")==12345&&Int(path,L"render",L"rings")==6,"Apply preserves unrelated keys");
     Check(Int(backup,L"custom",L"keep")==12345&&Int(backup,L"gameplay",L"motion_controls")==-999,"first Apply preserves original config backup");
     model.Open(saved);model.Click({Kind::Change,SkillGestures,-1});request=model.Click({Kind::Apply});

@@ -41,6 +41,24 @@ int main(){
     }
     Snapshot s;s.ready=true;
     {
+        Check(RowCount(Page::Video)==9&&RowKey(Page::Video,0)==Foveation&&RowKey(Page::Video,1)==FoveationStrength&&
+              RowKey(Page::Video,7)==RenderResolution&&RowKey(Page::Video,8)==DesktopOneEye,"strength sits directly under foveated rendering");
+        Check(RowY+RowCount(Page::Video)*RowStep-4<=806,"video rows end above the footer notes");
+        Model strength;strength.Open(s);strength.Click({Kind::Tab,int(Page::Video)});
+        Check(strength.Get()[Foveation]==1&&strength.Get()[FoveationStrength]==1,"fixed foveation at Medium strength by default");
+        strength.Click(At(Page::Video,Increase(1)));
+        Check(strength.Get()[FoveationStrength]==2&&strength.Dirty(),"strength adjusts while foveation is selected");
+        for(int i=0;i<5;++i)strength.Click(At(Page::Video,Increase(1)));
+        Check(strength.Get()[FoveationStrength]==3,"Maximum is the strongest level");
+        strength.Click(At(Page::Video,Decrease(0)));Check(strength.Get()[Foveation]==0,"foveation can be turned off");
+        Check(!RowEnabled(strength.Get(),FoveationStrength)&&RowEnabled(strength.Get(),Foveation),"Off disables only the strength row");
+        strength.Click(At(Page::Video,Decrease(1)));strength.Click(At(Page::Video,Decrease(1)));
+        Check(strength.Get()[FoveationStrength]==3,"strength ignores edits while foveation is off");
+        strength.Click(At(Page::Video,Increase(0)));strength.Click(At(Page::Video,Decrease(1)));
+        Check(strength.Get()[FoveationStrength]==2,"strength edits resume when foveation is selected again");
+        Check(Normalize(FoveationStrength,1.5f)==1&&Normalize(FoveationStrength,7)==1&&Normalize(FoveationStrength,-1)==1,"malformed strength shows Medium");
+    }
+    {
         Model map;map.Open(s);map.Click({Kind::Tab,int(Page::HUD)});
         const auto view=At(Page::HUD,HudMapViewBox),rotate=At(Page::HUD,HudMapRotateBox);
         Check(view.kind==Kind::Change&&view.index==MapTopDown&&rotate.kind==Kind::Change&&rotate.index==MapRotate,"HUD map controls target separate preferences");

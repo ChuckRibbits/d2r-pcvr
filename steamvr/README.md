@@ -186,16 +186,42 @@ profiler: work deferred until a draw or performed outside ReShade callbacks may
 not appear in those creation measurements.
 
 Fixed foveation uses D3D12 Tier 2 VRS with a separate mask for each eye's
-asymmetric optical center: 1x1 in the protected center, 2x2 in the periphery.
-It applies to single-sample opaque world geometry with scene depth, leaving
-transparent passes, menus, labels, post effects and shadow-only passes at full
-quality. Unsupported devices/command lists fall back to full quality. Immutable
-masks are uploaded once per viewport; routine draws do not upload or wait for
-them. `[render] fixed_foveation=0` disables it for comparison; `foveation_inner`
-sets the protected ellipse radius (default 0.55, range 0.35–0.85). Settings reload
-live. Logs report mask creation and reduced-shading draw counts. The user reported
-similar perceived performance in the first walking test; this is not a measured
-GPU speedup.
+asymmetric optical center: 1x1 in the protected center, coarser shading in the
+periphery. It applies to single-sample opaque world draws that test scene depth,
+leaving transparent passes, menus, labels, post effects and shadow-only passes
+at full quality. D2R draws each opaque object twice: a pass that writes depth,
+then the pass that shades the visible color with depth testing and no depth
+writes. Earlier builds required depth writes, so only the first pass was
+reduced and foveation had no visible or GPU effect. Unsupported devices/command
+lists fall back to full quality. Immutable masks are uploaded once per viewport;
+routine draws do not upload or wait for them.
+
+VR Settings > Video > **Foveation strength** (available when foveated rendering
+is Fixed or Eye tracked) chooses how much detail is reduced:
+
+| Strength | Fixed protected radius | Gaze protected radius | Periphery |
+| --- | --- | --- | --- |
+| Low | 0.70 | 0.45 | 2x2 |
+| Medium (default) | 0.55 | 0.35 | 2x2 |
+| High | 0.55 | 0.35 | 4x4 |
+| Maximum | 0.35 | 0.30 | 4x4 |
+
+4x4 falls back to 2x2 on GPUs without additional shading rates. A saved
+`[render] foveation_strength` (0–3) selects these presets. Profiles without it
+keep their `foveation_inner` (default 0.55, range 0.35–0.85) and
+`gaze_foveation_inner` radii at 2x2 until a strength is chosen. `[render]
+fixed_foveation=0` disables foveation for comparison. Settings reload live.
+Logs report mask creation, reduced-shading draw counts and a `Frame foveation
+coverage` line that counts full-size scene draws by the reason they stayed at
+full quality.
+
+Foveation reduces GPU shading only; it does not reduce the game's CPU work.
+On a CPU-limited system the frame rate does not change. Steam Frame's own
+eye-tracked foveated streaming already lowers peripheral detail in the stream,
+which hides most of this effect in that headset. Compare captured eye images
+(`[debug] capture_pair`) or a headset without streaming foveation when judging
+visual impact. In the owner's Quest 3 / Virtual Desktop test, Maximum was
+visible at the edges and Medium was not noticeable.
 
 ### Eye-tracked foveation prototype
 
