@@ -2,6 +2,9 @@
 #include "../steamvr/bow_flight.h"
 namespace D2RL {struct PluginContext;}
 namespace bowvr {
+// Optional Holy Bolt adapter: native collision-filter layout and SDK available.
+bool HolyReady();
+bool PrepareHoly(uintptr_t game);
 // Game-thread launch scope only; never changes projectiles already in flight.
 void AssistSpell(uintptr_t game,uintptr_t player);
 void Init(const D2RL::PluginContext* context);
