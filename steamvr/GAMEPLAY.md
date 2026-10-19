@@ -883,7 +883,10 @@ instead of a random one. Classic keeps the native roll.
   coverage: the swing itself turns the face edge-on, so it needs only the raised
   shield out on the attacker's side of the eyes (it may finish up to 10 cm behind
   them along the attack line, e.g. beside the head after a big swing). A monster
-  melee attack that misses its native to-hit roll never reaches the block check;
+  melee attack always lands (`enemies_always_hit`, default 1), so every attack is
+  judged at its hit frame: parry, else block or hit by the shield's position. Only
+  with `enemies_always_hit=0` can a monster attack miss its native to-hit roll; it
+  then never reaches the block check;
   a timed swing still parries it at that roll (the native miss is unchanged, and
   there is no shield wear to restore). Low-level monsters miss most attacks
   against a stronger hero, which made correct swings look ignored (2026-10-18:
@@ -896,8 +899,14 @@ instead of a random one. Classic keeps the native roll.
   passed (default 60; 0 = anywhere after the attack began, the old rule). An
   earlier swing is a `windup` miss and only blocks. Until a type's wind-up has
   been measured once this session, its attacks are not staggered early and the
-  parry is judged at the hit as below. A downstroke swing resolves on the next
-  game update; the attacker is staggered before its hit frame, so the hit never lands. Hit-frame parries
+  parry is judged at the hit as below. **Parry at hit** (`[gameplay] parry_at_hit`,
+  default 1, 2026-10-19): a downstroke swing resolves at the attacker's hit frame,
+  when the blow makes contact: the parry deflects it (no damage, any wear it caused
+  restored) and the attacker staggers. A swing that does not qualify is no parry;
+  the shield's position at that moment alone decides block or hit, as below.
+  Staggering at the swing itself fired 50-90 ms before the hit (Zombies: swing at
+  281 ms, hit at 330-375 ms) and cut the blow off before it came down. With 0, a
+  downstroke swing staggers the attacker on the next game update, before its hit frame. Hit-frame parries
   had come a median 516 ms after the swing (2026-10-18). An attack whose to-hit
   roll has already run is never staggered early; otherwise the to-hit roll or
   block check above still resolves the parry. The attacker is

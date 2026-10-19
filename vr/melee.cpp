@@ -104,6 +104,11 @@ bool AttackMode(int mode){return mode==4||mode==5||(mode>=8&&mode<=11);}
 // arms coming down at you, not the first frames of the raise (Cal, 2026-10-19).
 constexpr uint32_t kWindupClasses=1024;
 std::array<uint16_t,kWindupClasses*6> windupMs{};   // attackMutex; 0 = not measured yet
+// [gameplay] parry_at_hit (default on): a downstroke swing parries at the hit
+// frame - the blow lands on the shield, then the attacker staggers. Staggering
+// at the swing itself fired 50-90 ms before the hit (class 5: swing 281 ms,
+// hit 330-375 ms, log 2026-10-19) and cut the blow off mid-air. Off: the old early stagger.
+std::atomic<bool> parryAtHit{true};
 std::atomic<uint32_t> downstrokePct{60};
 int WindupSlot(uint32_t cls,int mode) {
     const int m=mode==4?0:mode==5?1:mode>=8&&mode<=11?mode-6:-1;
@@ -477,7 +482,9 @@ void QueueBlockSound() {
 // Game thread: a parry before the hit frame, once the swing came during this
 // monster's downstroke. Never once its to-hit roll has run, and never for an
 // attack whose wind-up is not measured yet: that one is judged at its hit.
+// Off by default ([gameplay] parry_at_hit): the hit frame resolves the parry.
 bool EarlyStagger(uintptr_t game,uintptr_t player,const AttackSeen& seen,uint64_t opensAt,const char* trigger) {
+    if(parryAtHit.load(std::memory_order_relaxed))return false;
     if(!seen.at||seen.rolled>=seen.at||!opensAt)return false;
     const auto unit=originalLookup(game,1,seen.id);uint32_t mode=0;
     if(!unit||!Read(unit+0xc,mode)||!AttackMode(int(mode)))return false;   // its attack already ended
@@ -536,6 +543,7 @@ uint64_t ParryOpens(uint32_t monster) {
     return 0;
 }
 void ConfigureParryDownstroke(uint32_t percent) {downstrokePct=std::min<uint32_t>(percent,95);}
+void ConfigureParryAtHit(bool on) {parryAtHit=on;}
 bool QueueParry(uint32_t monster,int before) {
     if(!parryReady.load()||!threads||!threads->runOnGameThread)return false;
     const int32_t durability=before==-2?gamestate::LeftDurability():int32_t(before);

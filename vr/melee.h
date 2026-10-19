@@ -44,6 +44,9 @@ uint64_t AttackStart(uint32_t monster);
 // A parry swing must begin at or after it. Thread-safe.
 uint64_t ParryOpens(uint32_t monster);
 void ConfigureParryDownstroke(uint32_t percent);   // 0..95, default 60
+// On (default): a parry resolves at the attacker's hit frame, after the blow
+// comes down; off: it staggers the attacker the moment the swing is made.
+void ConfigureParryAtHit(bool on);
 // This monster's current attack reached its to-hit roll (hit or miss): too
 // late to stagger it before the hit; its first roll times the wind-up. Game thread.
 void NoteAttackRolled(uint32_t monster);

@@ -882,6 +882,9 @@ void LoadSettings() {
     // wind-up (start to hit frame) has passed - as the blow comes down, not as
     // the arms first rise. 0 = anywhere in the wind-up (the old rule).
     melee::ConfigureParryDownstroke((uint32_t)std::clamp(IniF(L"gameplay",L"parry_downstroke",60),0.f,95.f));
+    // Parry at hit: the stagger waits for the blow to land on the shield (1),
+    // or fires the moment the downstroke swing is made (0, cuts the blow off).
+    melee::ConfigureParryAtHit(IniB(L"gameplay",L"parry_at_hit",true));
     // Guard strain light: % of the guard each block strains, lowered reset time,
     // % of the view left clear at full swell, the broken guard's breathing period,
     // the width of the light's inner blend (% of the visor radius), opacity (% peak;
