@@ -390,12 +390,12 @@ The minimap has a narrow bronze bevel and inset corner details. The full native
 map is fitted inside the frame so edge markers remain visible.
 
 A gold arrow sits on the game's blue hero marker and points the way you face.
-Two buttons beside the wrist map change its view. Point the right laser at one
-and pull the trigger, or poke it with the right controller's tip:
-- **VIEW: Isometric / Top-down.** Top-down flattens the game's slanted map into
+Change its view under **VR Settings > HUD**, then press **Apply**:
+
+- **Map view: Isometric / Top-down.** Top-down flattens the game's slanted map into
   a plan, so rooms are square and the arrow matches your real turns. Map names
   are left out in top-down, since they would turn 45 degrees with the floor.
-- **ROTATE MAP: Off / On** (top-down only). On turns the map so the way you face
+- **Rotate map: Off / On** (top-down only). On turns the map so the way you face
   is up; Off keeps north up.
 
 Both are saved like any setting. Isometric with north up is the default.
