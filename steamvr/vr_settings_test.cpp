@@ -44,7 +44,7 @@ int main(){
     {
         Check(RowCount(Page::Video)==10&&RowKey(Page::Video,0)==Foveation&&RowKey(Page::Video,1)==FoveationStrength&&
               RowKey(Page::Video,7)==RenderResolution&&RowKey(Page::Video,8)==DesktopOneEye,"strength sits directly under foveated rendering");
-        Check(RowKey(Page::Video,9)==EyesByTurns,"stereo rendering is the last video row");
+        Check(RowKey(Page::Video,9)==StereoRendering,"stereo rendering is the last video row");
         const auto last=Increase(RowCount(Page::Video)-1);
         Check(last.y+last.h<876,"video rows end above the save status");
         Model strength;strength.Open(s);strength.Click({Kind::Tab,int(Page::Video)});
@@ -63,28 +63,52 @@ int main(){
     }
     {
         Model stereo;stereo.Open(s);stereo.Click({Kind::Tab,int(Page::Video)});
-        Check(stereo.Get()[EyesByTurns]==0&&RowEnabled(stereo.Get(),EyesByTurns),"both eyes each frame by default");
-        stereo.Click(At(Page::Video,Increase(9)));
-        Check(stereo.Get()[EyesByTurns]==1&&stereo.Dirty(),"one step up is Hybrid");
-        stereo.Click(At(Page::Video,Increase(9)));
-        Check(stereo.Get()[EyesByTurns]==2,"then By turns");
-        for(int i=0;i<3;++i)stereo.Click(At(Page::Video,Increase(9)));
-        Check(stereo.Get()[EyesByTurns]==3,"Replay is the last choice");
+        Check(stereo.Get()[StereoRendering]==2&&RowEnabled(stereo.Get(),StereoRendering),"Replay by default");
+        stereo.Click(At(Page::Video,Decrease(9)));
+        Check(stereo.Get()[StereoRendering]==1&&stereo.Dirty(),"one step down is By turns");
+        for(int i=0;i<3;++i)stereo.Click(At(Page::Video,Decrease(9)));
+        Check(stereo.Get()[StereoRendering]==0,"Both eyes is the first choice");
         stereo.Click(At(Page::Video,ValueBox(9)));
-        Check(stereo.Get()[EyesByTurns]==3,"the value box does not cycle the choices");
-        for(int i=0;i<4;++i)stereo.Click(At(Page::Video,Decrease(9)));
-        Check(stereo.Get()[EyesByTurns]==0,"the arrows step back to both eyes");
-        Check(std::string(StereoRenderingNames[0])=="Both eyes"&&std::string(StereoRenderingNames[1])=="Hybrid"&&
-              std::string(StereoRenderingNames[2])=="By turns"&&std::string(StereoRenderingNames[3])=="Replay","stereo rendering names");
-        Check(Normalize(EyesByTurns,NAN)==0&&Normalize(EyesByTurns,-3)==0&&Normalize(EyesByTurns,4)==0&&Normalize(EyesByTurns,1.5f)==0&&
-              Normalize(EyesByTurns,1)==1&&Normalize(EyesByTurns,2)==2&&Normalize(EyesByTurns,3)==3,"malformed stereo rendering draws both eyes");
+        Check(stereo.Get()[StereoRendering]==0,"the value box does not cycle the choices");
+        for(int i=0;i<3;++i)stereo.Click(At(Page::Video,Increase(9)));
+        Check(stereo.Get()[StereoRendering]==2,"the arrows step back to Replay");
+        Check(std::string(StereoRenderingNames[0])=="Both eyes"&&std::string(StereoRenderingNames[1])=="By turns"&&
+              std::string(StereoRenderingNames[2])=="Replay","stereo rendering names");
+        Check(Normalize(StereoRendering,NAN)==2&&Normalize(StereoRendering,-3)==2&&Normalize(StereoRendering,3)==2&&Normalize(StereoRendering,1.5f)==2&&
+              Normalize(StereoRendering,0)==0&&Normalize(StereoRendering,1)==1,"malformed stereo rendering uses Replay");
+    }
+    {   // Replay without the deferred GPU wait: the Video page's button turns it on, once
+        Model defer;defer.Open(s);defer.Click({Kind::Tab,int(Page::Video)});
+        const auto box=[&]{return At(Page::Video,VideoDeferBox);};
+        Check(DeferOffered(defer.Get())&&defer.Get()[DeferGpuWait]==0,"Replay offers the deferred GPU wait while it is off");
+        Check(HelpAt(Page::Video,(VideoDeferBox.x+10.f)/Width,(VideoDeferBox.y+10.f)/Height,false,&defer.Get())==DeferGpuWait,"the button has help");
+        defer.Click(box());
+        Check(defer.Get()[DeferGpuWait]==1&&defer.Dirty()&&!DeferOffered(defer.Get()),"the button turns it on; Apply saves it");
+        defer.Click(box());
+        Check(defer.Get()[DeferGpuWait]==1,"the button never turns it off");
+        Model both;both.Open(s);both.Click({Kind::Tab,int(Page::Video)});
+        for(int i=0;i<2;++i)both.Click(At(Page::Video,Decrease(9)));
+        both.Click(box());
+        Check(both.Get()[StereoRendering]==0&&both.Get()[DeferGpuWait]==0&&!DeferOffered(both.Get()),"no button and no change outside Replay");
+        Check(HelpAt(Page::Video,(VideoDeferBox.x+10.f)/Width,(VideoDeferBox.y+10.f)/Height,false,&both.Get())==NoHelp,"no help for a hidden button");
+    }
+    {   // The game's own video options (its Settings.json): Vertical Sync off, FXAA
+        const auto code=[](const char* json){return ParseGameVideo(json).Code();};
+        Check(code("{\n    \"Anti Aliasing\": 1,\n    \"VSync\": 0\n}")==0&&!GameVideoWarning(ParseGameVideo("{\"Anti Aliasing\": 1, \"VSync\": 0}")),"FXAA without VSync is fine");
+        Check(code("{\"Anti Aliasing\": 1, \"VSync\": 1}")==1,"VSync on is warned about");
+        Check(code("{\"Anti Aliasing\": 3, \"VSync\": 0}")==2&&code("{\"Anti Aliasing\": 2}")==2&&code("{\"Anti Aliasing\":0}")==2,"every anti-aliasing but FXAA is warned about");
+        Check(code("{\"Anti Aliasing\" :\r\n 2,\"VSync\"\t: 1}")==3,"spacing around the colon");
+        Check(code("{}")==0&&code("")==0&&code("{\"VSync Mode\": 1, \"My Anti Aliasing\": 3, \"VSync\": \"x\"}")==0,"missing, other or malformed keys are not warned about");
+        Check(std::string(GameVideoWarning({true,true}))=="Game Options > Video: turn Vertical Sync off and set Anti-Aliasing to FXAA"&&
+              std::string(GameVideoWarning({true,false})).find("Vertical Sync off")!=std::string::npos&&
+              std::string(GameVideoWarning({false,true})).find("FXAA")!=std::string::npos,"each warning names the game's option");
     }
     {
         for(int id=0;id<Count;++id)if(const int n=HelpChoices(id)) {
             Check(n==int(Definitions[id].max-Definitions[id].min)+1,"every choice of a row is explained");
             for(int c=0;c<n;++c){const auto h=HelpChoice(id,Definitions[id].min+c);Check(h.name&&h.name[0]&&h.text&&h.text[0]&&std::string(h.text)!=HelpText(id),"each choice has a name and its own text");}
         }
-        Check(std::string(HelpChoice(EyesByTurns,1).name)=="Hybrid"&&std::string(HelpChoice(Foveation,2).name)=="Eye tracked"&&
+        Check(std::string(HelpChoice(StereoRendering,1).name)=="By turns"&&std::string(HelpChoice(Foveation,2).name)=="Eye tracked"&&
               std::string(HelpChoice(Dominant,1).name)=="Left"&&std::string(HelpChoice(RenderResolution,4).name)=="2560 x 2560","the help names the choice the row shows");
         Check(!HelpChoice(Motion,1).name&&!HelpChoice(Snap,30).name&&!HelpChoice(HelpApply,0).name&&!HelpChoice(Foveation,NAN).name,"toggles, numbers and buttons keep their general help");
     }

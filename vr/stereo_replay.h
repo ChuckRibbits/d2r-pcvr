@@ -47,7 +47,11 @@ bool RightFromLeft();
 bool Capturing();     // inside a left pass that will be replayed
 bool RightEffects();  // the right eye's effects are being rendered now
 
-struct Stats { uint32_t replayed = 0, fallbacks = 0, slots = 0, overflow = 0, lateSlots = 0, lists = 0, calls = 0, folded = 0, positions = 0; double submitMs = 0.0; };
+// biomeSets: the game's biome sets; restartArea/restartLong/outOfWorld: pairs
+// that started the settle again for a biome set, a game frame of over 150 ms,
+// or no world; settling: the settle's pairs so far (of 240).
+struct Stats { uint32_t replayed = 0, fallbacks = 0, slots = 0, overflow = 0, lateSlots = 0, lists = 0, calls = 0, folded = 0, positions = 0;
+               uint32_t biomeSets = 0, restartArea = 0, restartLong = 0, outOfWorld = 0; int settling = 0, settleOf = 0; double submitMs = 0.0; };
 Stats TakeStats();    // since the last call
 
 }  // namespace stereoreplay

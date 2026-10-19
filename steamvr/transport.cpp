@@ -2,6 +2,7 @@
 #define XR_USE_GRAPHICS_API_D3D12
 #define XR_NO_PROTOTYPES
 #include <windows.h>
+#include <shlobj.h>
 #include <d3d12.h>
 #include <dxgi1_4.h>
 #include <wrl/client.h>
@@ -252,9 +253,29 @@ settings::Hit settingsHover;
 std::atomic<bool> settingsOpen{false};
 bool settingsAtlasPending=false,settingsImageReady=false;
 uint64_t settingsPaintRevision=~0ull,settingsSession=0;
-int settingsPaintHover=-1,settingsPaintStatus=-1;
+int settingsPaintHover=-1,settingsPaintStatus=-1,settingsPaintGame=-1;
 settings::HoverHelp settingsHelp;
 int settingsPaintHelp=settings::NoHelp,settingsHelpVisible=settings::NoHelp;
+// The game's own video options for the Video page's warnings, re-read at most
+// every 2 s while VR Settings is open and only when the game has saved them.
+settings::GameVideo GameVideoOptions(ULONGLONG now) {
+    static const std::wstring path=[]{
+        PWSTR dir=nullptr;std::wstring p;
+        if(SUCCEEDED(SHGetKnownFolderPath(FOLDERID_SavedGames,0,nullptr,&dir)))p=std::wstring(dir)+L"\\Diablo II Resurrected\\Settings.json";
+        if(dir)CoTaskMemFree(dir);return p;
+    }();
+    static settings::GameVideo seen{};static ULONGLONG checkAt=0;static FILETIME written{};
+    if(now<checkAt||path.empty())return seen;
+    checkAt=now+2000;
+    WIN32_FILE_ATTRIBUTE_DATA a{};
+    if(!GetFileAttributesExW(path.c_str(),GetFileExInfoStandard,&a)){written={};return seen={};}
+    if(!CompareFileTime(&a.ftLastWriteTime,&written))return seen;
+    std::string json;
+    if(FILE* f=_wfopen(path.c_str(),L"rb")){char buf[4096];size_t n;while((n=fread(buf,1,sizeof buf,f))>0&&json.size()<256*1024)json.append(buf,n);fclose(f);}
+    else return seen;
+    written=a.ftLastWriteTime;seen=settings::ParseGameVideo(json);
+    return seen;
+}
 ULONGLONG settingsPaintAt=0;
 XrPosef settingsPose{};
 constexpr float settingsWidth=.95f,settingsHeight=settingsWidth*settings::Height/settings::Width;
@@ -1363,7 +1384,7 @@ void SettingsPointer(const settings::InputGate::Edges& edges) {
         beamLength=pointerHit?hit.distance:1.5f;const auto mid=ray+direction*(beamLength*.5f);
         beamPose=XrPose({mid,math::BeamOrientation(direction,V(head.position)-mid)});pointerVisible=true;
         if(pointerHit){settingsHover=settings::HitTest(settingsModel.page,hit.u,hit.v,settingsModel.controllerMenu);dotPose=settingsPose;
-            helpTarget=settings::HelpAt(settingsModel.page,hit.u,hit.v,settingsModel.controllerMenu);
+            helpTarget=settings::HelpAt(settingsModel.page,hit.u,hit.v,settingsModel.controllerMenu,&settingsModel.Get());
             const auto p=hit.point+math::Rotate(Q(settingsPose.orientation),{0,0,.004f});dotPose.position={p.x,p.y,p.z};}
     }
     if(edges.click&&pointerHit&&settingsImageReady&&settingsPaintRevision==settingsModel.revision){
@@ -1392,12 +1413,13 @@ void SettingsPointer(const settings::InputGate::Edges& edges) {
     const auto now=GetTickCount64();
     if(previousPage!=settingsModel.page||previousMenu!=settingsModel.controllerMenu)helpTarget=settings::NoHelp;
     const int help=settingsHelpVisible=settingsHelp.Step(helpTarget,now);
+    const auto game=GameVideoOptions(now);
     if(now>=settingsPaintAt&&!settingsAtlasPending&&atlasUploads.size()<3&&
-       (settingsPaintRevision!=settingsModel.revision||settingsPaintHover!=hover||settingsPaintStatus!=status||settingsPaintHelp!=help)){
+       (settingsPaintRevision!=settingsModel.revision||settingsPaintHover!=hover||settingsPaintStatus!=status||settingsPaintHelp!=help||settingsPaintGame!=game.Code())){
         char resolutionStatus[160];resolution::Describe(resolutionStatus,sizeof resolutionStatus,{width,height});
-        auto pixels=settings::Paint(settingsModel,settingsHover,settingsModel.page==settings::Page::Video?resolutionStatus:descriptions[status],nullptr,detectedControllers,help);
+        auto pixels=settings::Paint(settingsModel,settingsHover,settingsModel.page==settings::Page::Video?resolutionStatus:descriptions[status],nullptr,detectedControllers,help,game);
         if(!pixels.empty()&&UploadAtlas(settingsChain,atlasFormat,settings::AtlasWidth,settings::Height,pixels,true,&settingsAtlasPending)){
-            settingsPaintRevision=settingsModel.revision;settingsPaintHover=hover;settingsPaintStatus=status;settingsPaintHelp=help;
+            settingsPaintRevision=settingsModel.revision;settingsPaintHover=hover;settingsPaintStatus=status;settingsPaintHelp=help;settingsPaintGame=game.Code();
         }
         settingsPaintAt=now+100;
     }
@@ -2574,7 +2596,8 @@ bool TakeWorldRecenter() {
     std::lock_guard lock(mutex);const bool take=worldRecenter;worldRecenter=false;return take;
 }
 void RequestStereoCapture(){captureRequested.store(true);}
-int StereoRendering() {return std::clamp(int(std::lround(vrsettings::Read().values[settings::EyesByTurns])),0,3);}
+int StereoRendering() {return std::clamp(int(std::lround(vrsettings::Read().values[settings::StereoRendering])),0,2);}
+bool GpuWaitDeferred() {return deferredWait.load();}
 bool ReplayReady() {
     std::lock_guard lock(mutex);
     return !captureRequested.load()&&!d2rcam::LabelCapturePending();
@@ -2586,7 +2609,7 @@ float ReplayProjShift() {
     const auto off=[](const XrFovf& f){const float l=std::tan(f.angleLeft),r=std::tan(f.angleRight);return (r+l)/(r-l);};
     return .5f*(off(views[0].fov)-off(views[1].fov));
 }
-bool TurnDepthWanted() {return StereoRendering()==2;}
+bool TurnDepthWanted() {return StereoRendering()==1;}
 bool TurnDepthReady() {
     std::lock_guard lock(mutex);
     return turnWarp.DepthReady()&&turnDepths[0].ok&&turnDepths[1].ok&&lastEyes[0].world.ok&&lastEyes[1].world.ok;
@@ -2606,7 +2629,7 @@ void BeginPair(bool byTurns,bool replay) {
         if(frame)EndPair();
         const int mode=StereoRendering();
         turnFrame=byTurns;replayPair=replay&&!byTurns;
-        keepTurns=byTurns||mode==1||mode==2;keepDepth=mode==2;Begin();pairDrawing=true;
+        keepTurns=byTurns||mode==1;keepDepth=mode==1;Begin();pairDrawing=true;
         if(replayPair&&!(frame&&valid&&render&&!panelMode))replayPair=false;
         gpuProfile.started=gpuProfile.effects=gpuProfile.resolved=0;
         // The profile and stereo captures take both eyes from two passes.

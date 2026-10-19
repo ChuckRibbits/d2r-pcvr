@@ -75,10 +75,12 @@ void Shutdown(bool preserveResolution=false);
 // its own x, and placed so.
 void BeginPair(bool byTurns=false,bool replay=false);
 void BeginEye(int eye);
-// VR Settings > Video > Stereo rendering: 0 both eyes, 1 Hybrid (by turns while
-// the hero stands), 2 By turns (the eye not drawn also moved with the scene's
-// depth), 3 Replay (one CPU pass, the right eye replayed from it).
+// VR Settings > Video > Stereo rendering: 0 both eyes, 1 By turns (the eye not
+// drawn turned and moved with the scene's depth), 2 Replay (one CPU pass, the
+// right eye replayed from it; the default).
 int StereoRendering();
+// [render] defer_gpu_wait: frames end without waiting for the GPU.
+bool GpuWaitDeferred();
 // Replay: no capture waits for a pair of two passes.
 bool ReplayReady();
 // After BeginPair(...,true): the frame begun is a stereo one the replay can

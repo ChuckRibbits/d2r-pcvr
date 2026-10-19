@@ -4,6 +4,7 @@
 #include <cmath>
 #include <cstdint>
 #include <limits>
+#include <string_view>
 #include "controller_labels.h"
 #include "hand_vitals.h"
 #include "vr_resolution.h"
@@ -13,7 +14,7 @@ namespace framevr::settings {
 enum class Page { Controls, VR, Video, HUD, Combat, Haptics, ReleaseNotes };
 enum Key { Motion, Seated, Dominant, Snap, TurnSpeed, Waist, BeltForward,
            Foveation, Sky, Fog, Ceiling, DrawDistance, ObjectDistance,
-           EyeHeight, ArmSpan, BodyCalibration, SkillGestures, WristMap, WristCompass, ControllerLabels, WeaponSkillIndicators, PlanarSpellAim, VitalsLocation, CriticalAlerts, RenderResolution, NavigationLocation, SmoothTurn, OrdinaryMobBars, MenuDistance, TooltipTiming, ProjectileAimAssist, MeleeHitSpeed, VitalsTilt, HapticStrength, HapticMelee, HapticBowDraw, HapticBowRelease, HapticSpell, HapticInteraction, HapticAlert, HapticShortMelee, BloodVisor, BloodWipe, MeleeRules, MeleeThrustSpeed, LootLabelSize, CompanionCounts, StrainDark, OfflinePlayers, ShieldBashSpeed, StrainSpeed, DesktopOneEye, MapTopDown, MapRotate, FoveationStrength, EyesByTurns, Count };
+           EyeHeight, ArmSpan, BodyCalibration, SkillGestures, WristMap, WristCompass, ControllerLabels, WeaponSkillIndicators, PlanarSpellAim, VitalsLocation, CriticalAlerts, RenderResolution, NavigationLocation, SmoothTurn, OrdinaryMobBars, MenuDistance, TooltipTiming, ProjectileAimAssist, MeleeHitSpeed, VitalsTilt, HapticStrength, HapticMelee, HapticBowDraw, HapticBowRelease, HapticSpell, HapticInteraction, HapticAlert, HapticShortMelee, BloodVisor, BloodWipe, MeleeRules, MeleeThrustSpeed, LootLabelSize, CompanionCounts, StrainDark, OfflinePlayers, ShieldBashSpeed, StrainSpeed, DesktopOneEye, MapTopDown, MapRotate, FoveationStrength, StereoRendering, DeferGpuWait, Count };
 using ChangeMask=uint64_t;
 static_assert(Count<=64,"settings change mask capacity");
 constexpr ChangeMask SupportedChanges=~ChangeMask{0}>>(64-Count);
@@ -49,7 +50,7 @@ inline constexpr std::array<Definition,Count> Definitions{{
     {"Planar spell aiming", "Keep straight projectiles level; Off allows aiming up/down", L"gameplay",L"planar_spell_aim",0,0,1,1},
     {"Health / mana location", "Wrist, palm-up, either gesture, or hidden", L"interactions",L"vitals_location",0,0,3,1},
     {"Low health / mana alerts", "Brief popup and vibration when resources are low", L"interactions",L"critical_alerts",0,0,1,1},
-    {"VR render resolution", "Independent of monitor; higher values cost GPU time", L"render",L"vr_resolution",0,0,6,1},
+    {"VR render resolution", "Independent of monitor; higher values cost GPU time", L"render",L"vr_resolution",1,0,6,1},
     {"Minimap & Compass", "Wrist / Palm / Either / Off; independent of health and mana", L"interactions",L"navigation_location",0,0,3,1},
     {"Smooth turning", "Continuous right-stick turning; Off uses snap turning", L"turn",L"smooth",0,0,1,1},
     {"Ordinary mob bars", "Weak mobs' health and names; bosses and elites stay visible", L"hud",L"ordinary_mob_bars",0,0,1,1},
@@ -80,7 +81,8 @@ inline constexpr std::array<Definition,Count> Definitions{{
     {"Map view", "Isometric or Top-down wrist minimap", L"interactions",L"map_top_down",0,0,1,1},
     {"Rotate map", "Top-down only: keep your facing direction at the top", L"interactions",L"map_rotate",0,0,1,1},
     {"Foveation strength", "Higher levels shade a larger edge area more coarsely", L"render",L"foveation_strength",1,0,3,1},
-    {"Stereo rendering", "Less work: one eye a frame, or Replay's single CPU pass", L"stereo",L"eyes_by_turns",0,0,3,1},
+    {"Stereo rendering", "Replay: one CPU pass for both eyes; By turns: one eye a frame", L"stereo",L"rendering",2,0,2,1},
+    {"Defer GPU wait", "Start the next frame while the GPU finishes the last", L"render",L"defer_gpu_wait",0,0,1,1},
 }};
 using Values=std::array<float,Count>;
 inline bool HapticKey(Key key){return key>=HapticStrength&&key<=HapticAlert;}
@@ -99,7 +101,7 @@ inline float Normalize(Key key,float value){
     if(key==OfflinePlayers&&(value<0||value>8||std::floor(value)!=value))return 0;
     if(key==VitalsTilt)return vitals::NormalizeTilt(value);
     if(HapticKey(key))return haptics::NormalizeStrength(value);
-    if((key==ControllerLabels||key==VitalsLocation||key==NavigationLocation||key==RenderResolution||key==MenuDistance||key==TooltipTiming||key==ProjectileAimAssist||key==StrainSpeed||key==FoveationStrength||key==EyesByTurns)&&(value<d.min||value>d.max||value!=std::round(value)))return d.defaultValue;
+    if((key==ControllerLabels||key==VitalsLocation||key==NavigationLocation||key==RenderResolution||key==MenuDistance||key==TooltipTiming||key==ProjectileAimAssist||key==StrainSpeed||key==FoveationStrength||key==StereoRendering)&&(value<d.min||value>d.max||value!=std::round(value)))return d.defaultValue;
     value=std::clamp(value,d.min,d.max);
     return d.step==1?std::round(value):value;
 }
@@ -136,9 +138,51 @@ inline constexpr const char* MeleeRulesNames[]={"Unleashed","Classic"};
 inline constexpr const char* StrainColorNames[]={"White","Black"};
 inline constexpr const char* StrainSpeedNames[]={"Slow","Medium","Fast"};
 inline constexpr const char* FoveationStrengthNames[]={"Low","Medium","High","Maximum"};
-inline constexpr const char* StereoRenderingNames[]={"Both eyes","Hybrid","By turns","Replay"};
+inline constexpr const char* StereoRenderingNames[]={"Both eyes","By turns","Replay"};
+// Replay ends each frame waiting for the GPU unless the wait is deferred
+// ([render] defer_gpu_wait): then about half the frame rate. While Replay is
+// selected and the wait is not deferred, the Video page warns and offers a
+// button that turns it on (Apply saves it).
+constexpr Rect VideoDeferBox{940,181,300,52};
+inline bool DeferOffered(const Values& values){return values[StereoRendering]>1.5f&&values[DeferGpuWait]<.5f;}
+inline constexpr const char* DeferWarning="Replay waits for the GPU each frame: about half the frame rate";
+// The game's own video options that cost the headset frames, from its
+// Settings.json (Saved Games\Diablo II Resurrected, written when its options
+// close): Vertical Sync holds each frame to the monitor's refresh, and
+// anti-aliasing other than FXAA ("Anti Aliasing": 1) blurs (TAA builds each
+// frame from the ones before it) or costs more. The Video page warns about
+// each; a key the file lacks is not warned about.
+struct GameVideo {bool vsync=false,antiAliasing=false;int Code()const{return int(vsync)|int(antiAliasing)<<1;}};
+// "key": integer in the game's JSON; -1 if absent or not a number.
+inline int GameSetting(std::string_view json,std::string_view key) {
+    for(size_t at=json.find(key);at!=std::string_view::npos;at=json.find(key,at+1)){
+        size_t i=at+key.size();
+        if(at==0||json[at-1]!='"'||i>=json.size()||json[i]!='"')continue;
+        const auto blank=[&]{while(i<json.size()&&(json[i]==' '||json[i]=='\t'||json[i]=='\r'||json[i]=='\n'))++i;};
+        ++i;blank();
+        if(i>=json.size()||json[i]!=':')continue;
+        ++i;blank();
+        if(i>=json.size()||json[i]<'0'||json[i]>'9')return -1;
+        int value=0;
+        while(i<json.size()&&json[i]>='0'&&json[i]<='9'&&value<100000)value=value*10+(json[i++]-'0');
+        return value;
+    }
+    return -1;
+}
+inline GameVideo ParseGameVideo(std::string_view json) {
+    const int antiAliasing=GameSetting(json,"Anti Aliasing");
+    return {GameSetting(json,"VSync")>0,antiAliasing>=0&&antiAliasing!=1};
+}
+inline const char* GameVideoWarning(GameVideo game) {
+    return game.vsync&&game.antiAliasing?"Game Options > Video: turn Vertical Sync off and set Anti-Aliasing to FXAA":
+           game.vsync?"Game Options > Video: turn Vertical Sync off":
+           game.antiAliasing?"Game Options > Video: set Anti-Aliasing to FXAA":nullptr;
+}
 // Strength only applies while foveated rendering is selected; Off greys it out.
-inline bool RowEnabled(const Values& values,Key key){return key!=FoveationStrength||values[Foveation]>.5f;}
+inline bool RowEnabled(const Values& values,Key key){
+    if(key==DeferGpuWait)return DeferOffered(values);   // the button only turns it on
+    return key!=FoveationStrength||values[Foveation]>.5f;
+}
 inline Rect ControllerOption(int option){return {865,233+option*58,375,58};}
 inline Rect Decrease(int row){return {865,RowY+row*RowStep,64,52};}
 inline Rect Increase(int row){return {1176,RowY+row*RowStep,64,52};}
@@ -150,7 +194,7 @@ inline Key RowKey(Page page,int row){
     if(page==Page::Combat)return row==0?MeleeRules:row==1?MeleeHitSpeed:row==2?MeleeThrustSpeed:row==3?ShieldBashSpeed:row==4?StrainDark:row==5?StrainSpeed:OfflinePlayers;
     constexpr Key hud[]={VitalsLocation,VitalsTilt,CriticalAlerts,NavigationLocation,MenuDistance,TooltipTiming,BloodVisor,BloodWipe,LootLabelSize,CompanionCounts};
     if(page==Page::HUD)return hud[row];
-    constexpr Key video[]={Foveation,FoveationStrength,Sky,Fog,Ceiling,DrawDistance,ObjectDistance,RenderResolution,DesktopOneEye,EyesByTurns};
+    constexpr Key video[]={Foveation,FoveationStrength,Sky,Fog,Ceiling,DrawDistance,ObjectDistance,RenderResolution,DesktopOneEye,StereoRendering};
     if(page==Page::Video)return video[row];
     constexpr Key vrRows[]={Motion,Seated,Dominant,SmoothTurn,Snap,TurnSpeed,Waist,BeltForward,SkillGestures,OrdinaryMobBars};
     return vrRows[row];
@@ -178,6 +222,7 @@ inline Hit HitTest(Page page,float u,float v,bool controllerMenu=false){
     if(page==Page::Controls&&AimAssistBox.Contains(x,y))return {Kind::Change,ProjectileAimAssist,1};
     if(page==Page::HUD&&HudMapViewBox.Contains(x,y))return {Kind::Change,MapTopDown,1};
     if(page==Page::HUD&&HudMapRotateBox.Contains(x,y))return {Kind::Change,MapRotate,1};
+    if(page==Page::Video&&VideoDeferBox.Contains(x,y))return {Kind::Change,DeferGpuWait,1};
     for(int r=0;r<RowCount(page);++r){
         const auto key=RowKey(page,r);
         if(page==Page::Haptics&&HapticCategory(key)>=0){
@@ -234,7 +279,7 @@ public:
             if(d.max==1)draft[key]=draft[key]>.5f?0.f:1.f;
             else if(key==OfflinePlayers)draft[key]=std::clamp(draft[key]+float(hit.delta),0.f,8.f);
             else if(key==StrainSpeed)draft[key]=std::clamp(draft[key]+float(hit.delta),0.f,2.f);
-            else if(key==FoveationStrength||key==EyesByTurns)draft[key]=std::clamp(draft[key]+float(hit.delta),d.min,d.max);
+            else if(key==FoveationStrength||key==StereoRendering)draft[key]=std::clamp(draft[key]+float(hit.delta),d.min,d.max);
             else if(key==ProjectileAimAssist)draft[key]=float((int(draft[key])+(hit.delta<0?2:1))%3);
             else draft[key]=Normalize(key,draft[key]+hit.delta*d.step);
             result=Result::None;++revision;

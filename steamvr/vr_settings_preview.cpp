@@ -78,12 +78,22 @@ int main(int argc,char** argv){
             }
             if(!content)return 11;
         }
+        // The Video page's warning lines: one line each, left of the Defer GPU wait button.
+        SelectObject(dc,normal);
+        for(const char* line:{DeferWarning,GameVideoWarning({true,true}),GameVideoWarning({true,false}),GameVideoWarning({false,true})}){
+            wchar_t wide[512]{};MultiByteToWideChar(CP_UTF8,0,line,-1,wide,512);RECT bounds{0,0,VideoDeferBox.x-50,0};
+            DrawTextW(dc,wide,-1,&bounds,DT_CALCRECT|DT_WORDBREAK|DT_NOPREFIX);
+            if(bounds.bottom>29||bounds.right>VideoDeferBox.x-50){std::fprintf(stderr,"Video warning too long: %s\n",line);return 17;}
+        }
         SelectObject(dc,old);DeleteObject(normal);DeleteObject(bold);DeleteDC(dc);
         std::puts("All help text fits; help leaves every control pixel unchanged and unused space transparent");
     }
     framevr::calibration::Flow body;body.Begin();body.phase=framevr::calibration::Phase::Hold;body.hint=framevr::calibration::Hint::Pose;body.progress=.55f;
+    // --game-video: the Video page as with Vertical Sync on and TAA; --deferred: the GPU wait already deferred.
+    if(argc>3&&std::strcmp(argv[3],"--deferred")==0){Snapshot d=s;d.values[DeferGpuWait]=1;m.Open(d);m.Click({Kind::Tab,page});}
+    const GameVideo game=argc>3&&std::strcmp(argv[3],"--game-video")==0?GameVideo{true,true}:GameVideo{};
     const auto pixels=Paint(m,{},page==int(Page::Video)?"VR source: 2560 x 2560 per eye":"Foveated shading available. Eye-tracking samples are active.",page==TabCount?&body:nullptr,
-        framevr::controllers::Labels{{framevr::controllers::Layout::Touch,framevr::controllers::Layout::Touch}},help);
+        framevr::controllers::Labels{{framevr::controllers::Layout::Touch,framevr::controllers::Layout::Touch}},help,game);
     if(pixels.size()!=AtlasWidth*Height*4)return 1;
     FILE* file=std::fopen(argc>1?argv[1]:"vr-settings-preview.ppm","wb");if(!file)return 2;
     const char* name=argc>1?argv[1]:"";

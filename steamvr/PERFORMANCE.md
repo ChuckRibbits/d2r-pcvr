@@ -20,6 +20,17 @@ pair in 46 slots, none overflowed. The right eye's CPU time fell from about
 half of 90 Hz, and the end-of-frame wait for the GPU rose from about 4.9 to
 8.9 ms - the GPU, drawing both eyes in full, became the limit.
 
+The limit was the end-of-frame wait, not the GPU's speed: with the
+conservative wait the CPU and GPU take turns, so a frame costs the CPU's time
+plus the GPU's. With `defer_gpu_wait=1`, the game's FXAA and Vertical Sync
+off (3128 square per eye, Headset; Act 1 camp, standing), Replay drew 889 of
+889 pairs from one pass: 88.9 pairs/s with the runtime predicting 88.9 Hz,
+against 44-45 before. Leaving the camp, a biome set paused it and it took
+about a minute to settle again, at 40-48 pairs/s in two passes meanwhile; the
+10-second line now counts what starts the settle again. Replay became the
+default stereo rendering, and the Video page offers the deferred wait while
+Replay is selected without it.
+
 Differences from upstream: the right eye's camera math is a pure header with
 tests (the fold's V*P_R matches a true right-eye camera's clip coordinates);
 camera positions inside a found record's matrices are not taken for stand-alone
@@ -35,14 +46,15 @@ left draw 6.86, right draw 6.95 and OpenXR submission 1.95 ms. That is over the
 11.1 ms budget at 90 Hz, so the runtime paced the game at about 44 pairs/s.
 These are one session's 10-second averages, not a controlled benchmark.
 
-VR Settings > Video > **Stereo rendering: By turns** (`[stereo] eyes_by_turns`)
+VR Settings > Video > **Stereo rendering: By turns** (now `[stereo] rendering` 1)
 draws one eye per game frame and resubmits the other eye's last image at its
 own pose, following upstream's "Native OpenXR - eyes by turns" mode. It removes
 the second CPU draw from every headset frame without replaying command lists,
 so culling, labels, effects, foveation and DLSS stay per eye. Each eye still
 updates at half the headset rate, and the eyes are one game frame apart. The
 right-eye replay described below would keep both eyes from one frame but
-remains unported. Both eyes each frame stays the default.
+was then unported (it is now Replay, above). Both eyes each frame was then the
+default.
 
 The first headset test (SteamVR, Steam Frame, 3072x3072 eyes; DLSS off - the
 game creates a DLSS instance at start but never evaluates it - and the game's
@@ -60,7 +72,8 @@ took 11-14 ms against about 7 ms per eye in the measurement above.
 The second test: head turns were right, but walking left one eye lagging. The
 turned eye still showed the world from where the hero stood a frame earlier,
 10 cm or more at a run, which a rotation cannot correct; that needs the scene's
-depth (a positional reprojection). That candidate became **Hybrid**: a pair
+depth (a positional reprojection). That candidate became **Hybrid** (since
+removed; By turns keeps its rule until both eyes have depth): a pair
 from the hero point's first step to 0.3 s after its last and on a snap turn,
 by turns only in first person, stick and mouse turns part of the GPU turn.
 

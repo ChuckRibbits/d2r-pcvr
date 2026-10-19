@@ -12,7 +12,7 @@ static int HelpTextHeight(HDC dc,HFONT font,const char* value,int width) {
     DrawTextW(dc,wide,-1,&bounds,DT_CALCRECT|DT_WORDBREAK|DT_NOPREFIX);
     SelectObject(dc,old);return int(bounds.bottom);
 }
-std::vector<uint8_t> Paint(const Model& m,Hit hover,const char* runtimeStatus,const calibration::Flow* body,const controllers::Labels& detected,int help){
+std::vector<uint8_t> Paint(const Model& m,Hit hover,const char* runtimeStatus,const calibration::Flow* body,const controllers::Labels& detected,int help,GameVideo game){
     const bool showHelp=!body&&help!=NoHelp&&HelpText(help)[0];
     BITMAPINFO info{};info.bmiHeader.biSize=sizeof(BITMAPINFOHEADER);info.bmiHeader.biWidth=AtlasWidth;
     info.bmiHeader.biHeight=-Height;info.bmiHeader.biPlanes=1;info.bmiHeader.biBitCount=32;
@@ -125,6 +125,15 @@ std::vector<uint8_t> Paint(const Model& m,Hit hover,const char* runtimeStatus,co
             const bool enabled=m.ready&&!m.Busy();
             button(HudMapViewBox,MapViewNames[m.Get()[MapTopDown]>.5f?1:0],{Kind::Change,MapTopDown,1},false,enabled);
             button(HudMapRotateBox,m.Get()[MapRotate]>.5f?"On":"Off",{Kind::Change,MapRotate,1},false,enabled);
+        }else if(m.page==Page::Video&&(DeferOffered(m.Get())||GameVideoWarning(game))){
+            // Warnings in amber under the status, two lines at most: Replay
+            // without the deferred GPU wait (and the button that turns it on),
+            // then the game's own video options; both push the status out.
+            const bool defer=DeferOffered(m.Get());const char* gameWarning=GameVideoWarning(game);
+            const COLORREF warn=RGB(236,186,96);const int width=defer?VideoDeferBox.x-50:1200;
+            text(defer&&gameWarning?DeferWarning:runtimeStatus,{40,181,width,29},false,false,defer&&gameWarning?warn:quiet);
+            text(gameWarning?gameWarning:DeferWarning,{40,209,width,29},false,false,warn);
+            if(defer)button(VideoDeferBox,"Defer GPU wait",{Kind::Change,DeferGpuWait,1},false,m.ready&&!m.Busy());
         }else text(m.page==Page::Haptics?"Tune vibration for your headset and controllers.":m.page==Page::Combat?"Tune physical combat and offline difficulty.":runtimeStatus,{40,197,1200,42},false,false,quiet);
         for(int row=0;row<RowCount(m.page);++row){
             const Key key=RowKey(m.page,row);const auto& d=Definitions[key];const float value=m.Get()[key];const int y=RowY+row*RowStep;
@@ -139,7 +148,7 @@ std::vector<uint8_t> Paint(const Model& m,Hit hover,const char* runtimeStatus,co
             char label[96];
             if(key==Foveation){const char* modes[]={"Off","Fixed","Eye tracked"};std::snprintf(label,sizeof label,"%s",modes[int(value)]);}
             else if(key==FoveationStrength)std::snprintf(label,sizeof label,"%s",FoveationStrengthNames[int(value)]);
-            else if(key==EyesByTurns)std::snprintf(label,sizeof label,"%s",StereoRenderingNames[std::clamp(int(value),0,3)]);
+            else if(key==StereoRendering)std::snprintf(label,sizeof label,"%s",StereoRenderingNames[std::clamp(int(value),0,2)]);
             else if(key==VitalsLocation||key==NavigationLocation)std::snprintf(label,sizeof label,"%s",vitals::LocationNames[int(value)]);
             else if(key==RenderResolution)std::snprintf(label,sizeof label,"%s",resolution::Choices[int(value)]);
             else if(key==MenuDistance)std::snprintf(label,sizeof label,"%s",MenuDistanceNames[int(value)]);

@@ -129,29 +129,30 @@ a third scene for the monitor. Desktop presentation still has overhead;
 suppressing it safely is an open performance task. Do not minimize the game as
 a workaround: background/focus handling also affects input and frame pacing.
 
-Each game frame normally draws both eyes: the left, then the right with the
-game time held. VR Settings > Video > **Stereo rendering** can instead draw one
-eye per game frame, alternating. The headset gets that eye fresh and the other
-eye's last image turned on the GPU from the pose it was drawn at to the current
-one, head, stick and mouse turns included, so both eyes go at one pose as a
-pair does. This halves the draw work per headset frame. Each eye still updates
-at half the frame rate, and moving monsters are one game frame apart between
-the eyes, which can look doubled.
+VR Settings > Video > **Stereo rendering** chooses how the two eyes of each
+headset frame are drawn:
 
-- **Hybrid** goes by turns while the hero stands. A turn cannot move the image,
-  so from the hero's first step to 0.3 s after the last, a full pair is drawn.
-- **By turns** also moves the other eye with the scene depth it was drawn with:
-  a grid over its image, each point put back at its distance and seen from the
-  current eye, nearer points over farther ones, so walking stays by turns.
-  Edges where something near uncovers what is behind it stretch for that frame;
-  transparent effects and the game's labels move as the scene behind them. The
-  depth is the same copy the added fog reads (DLSS's corner included). Until
-  both eyes have one, it acts as Hybrid.
+- **Replay**, the default, draws both eyes from one game frame for about one
+  eye's CPU work (below).
+- **Both eyes** draws the left eye, then the right with the game time held.
+- **By turns** draws one eye per game frame, alternating. The headset gets that
+  eye fresh and the other eye's last image turned on the GPU from the pose it
+  was drawn at to the current one, head, stick and mouse turns included, and
+  moved with the scene depth it was drawn with: a grid over its image, each
+  point put back at its distance and seen from the current eye, nearer points
+  over farther ones, so both eyes go at one pose as a pair does. This halves
+  the draw work per headset frame. Each eye still updates at half the frame
+  rate, and moving monsters are one game frame apart between the eyes, which
+  can look doubled. Edges where something near uncovers what is behind it
+  stretch for that frame; transparent effects and the game's labels move as
+  the scene behind them. The depth is the same copy the added fog reads
+  (DLSS's corner included). Until both eyes have one, a pair is drawn from the
+  hero's first step to 0.3 s after the last.
 
-Both draw a pair on a snap turn, outside first person, in open menus, during
-stereo captures and on any frame without a reusable image for both eyes. With
-**Desktop shows one eye**, the kept left image covers the right frames on the
-monitor.
+By turns draws a pair on a snap turn, outside first person, in open menus,
+during stereo captures and on any frame without a reusable image for both eyes.
+With **Desktop shows one eye**, the kept left image covers the right frames on
+the monitor.
 
 **Replay** (adapted from upstream's "one pass, two pictures") draws both eyes
 from one game frame for about one eye's CPU work. The game draws the left eye
@@ -172,11 +173,21 @@ along its own x. `[stereo] replay_marks` (3: the game's calls; 1: one list a
 call with a signal after each), `replay_ahead`, `replay_positions` and
 `replay_prev` tune it. Every 10 seconds the log reports how many pairs were
 replayed, the lists and calls a replayed pair submitted, and the camera
-records folded; a watchdog logs each queue's fences if no present comes for
-3 seconds while replaying.
+records folded, and what started the settle again (biome sets, frames over
+150 ms, pairs out of the world); a watchdog logs each queue's fences if no
+present comes for 3 seconds while replaying.
 
-The choice is stored as `[stereo] eyes_by_turns` (0 Both eyes, 1 Hybrid,
-2 By turns, 3 Replay) and applies live. Every 10 seconds the log reports a
+Replay needs `[render] defer_gpu_wait=1` for its full rate. With the
+conservative wait each frame takes the CPU's time plus the GPU's, and at 90 Hz
+SteamVR then paces the game at half. While Replay is selected and the wait is
+not deferred, the Video page shows a warning and a **Defer GPU wait** button
+that turns it on (Apply saves it; it applies live), and the console says so
+once when Replay first runs without it. The Video page also warns, from the
+game's own `Settings.json`, while the game's Vertical Sync is on or its
+anti-aliasing is anything but FXAA (the game's Options > Video).
+
+The choice is stored as `[stereo] rendering` (0 Both eyes, 1 By turns,
+2 Replay; missing or invalid is Replay) and applies live. Every 10 seconds the log reports a
 `vrcam: eyes by turns` line with frames per second, the time spent in each part
 of a frame, how many other eyes were moved with depth or only turned, and how
 many frames went as pairs while moving.
@@ -562,7 +573,8 @@ on Steam Frame, with a softer image; other scenes/headsets remain unverified.
 Set 0 to restore runtime-recommended projections. See the
 [OpenXR projection-view contract](https://registry.khronos.org/OpenXR/specs/1.0/man/html/XrCompositionLayerProjectionView.html).
 
-`[render] defer_gpu_wait=1` is an experimental live comparison switch. Image
+`[render] defer_gpu_wait=1` is off by default; VR Settings > Video offers it
+while Replay is selected (see Stereo rendering above). Image
 copies and state restoration are submitted on the D3D12 queue bound to OpenXR;
 completion is checked before each eye's copy allocator is reused and before
 shutdown, instead of blocking the CPU before every image release. Set it to 0

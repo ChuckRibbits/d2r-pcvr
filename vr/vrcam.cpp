@@ -4885,12 +4885,12 @@ void Recenter();
 //
 // While the hero moves, the eye not drawn would show the world from a frame
 // back, a hand's breadth at a run, and the turn alone cannot move it (owner,
-// 2026-10-19: "moving still has the right eye lagging"). Hybrid draws a pair
-// from the hero point's first step to 0.3 s after its last; By turns moves
-// that eye with the scene's depth instead (framevr TurnEye), once both eyes'
-// depth is kept. Both draw a pair on a jump of the body's yaw (a snap turn),
-// and only first person goes by turns: in the other views the camera itself
-// moves as the head turns.
+// 2026-10-19: "moving still has the right eye lagging"). By turns moves that
+// eye with the scene's depth (framevr TurnEye); until both eyes' depth is
+// kept it draws a pair from the hero point's first step to 0.3 s after its
+// last. A jump of the body's yaw (a snap turn) draws a pair too, and only
+// first person goes by turns: in the other views the camera itself moves as
+// the head turns.
 std::atomic<uint32_t> g_movePairs{0};   // frames drawn as pairs for that, for the 10 s line
 bool TurnSafe(bool& moved, bool& snapped) {
     static float last[3] = {};
@@ -4913,21 +4913,28 @@ bool TurnSafe(bool& moved, bool& snapped) {
 // from its lists - first person in the world, no capture waiting for a pair of
 // two passes. The settle counts every pair, replayed or not.
 bool ReplayWanted() {
-    if (framevr::StereoRendering() != 3) return false;
+    if (framevr::StereoRendering() != 2) return false;
     static bool told = false;   // once a ready stretch: what else holds it back
     if (!stereoreplay::Wanted(g_inWorld.load() && d2rcam::InWorld())) { told = false; return false; }
     const char* why = ThirdPerson() ? "third person" : Overhead() ? "an overhead view" : gamestate::MenuOpen() ? "a menu is open" :
                       !framevr::ReplayReady() ? "a stereo capture waits" : nullptr;
     if (why && !told) { told = true; LogF("vrcam: replay - ready, but two passes: %s", why); }
+    // Replayed without the deferred GPU wait, each frame is the CPU's time plus
+    // the GPU's: about half the rate. Told once each time it is found off.
+    static bool toldWait = false;
+    if (framevr::GpuWaitDeferred()) toldWait = false;
+    else if (!why && !toldWait) {
+        toldWait = true;
+        Say("Replay: each frame still waits for the GPU ([render] defer_gpu_wait=0), about half the frame rate - VR Settings > Video > Defer GPU wait turns it on");
+    }
     return !why;
 }
 bool TurnsWanted() {
-    const int mode = framevr::StereoRendering();
-    if (mode != 1 && mode != 2) return false;
+    if (framevr::StereoRendering() != 1) return false;
     bool moved = false, snapped = false;
     const bool seen = TurnSafe(moved, snapped);   // every frame, so a step is seen from the last one
     if (ThirdPerson() || Overhead() || gamestate::MenuOpen() || !framevr::TurnReady()) return false;
-    if (!seen || snapped || (moved && !(mode == 2 && framevr::TurnDepthReady()))) { g_movePairs.fetch_add(1); return false; }
+    if (!seen || snapped || (moved && !framevr::TurnDepthReady())) { g_movePairs.fetch_add(1); return false; }
     return true;
 }
 
@@ -5144,12 +5151,14 @@ uintptr_t HookDrawGameScreen(int a) {
     if (const ULONGLONG now = GetTickCount64(); now - since >= 10000) {
         LogF("vrcam: %.1f pairs/s from one game frame each", pairs * 1000.0 / (double)(now - since));
 #ifdef D2RVR_NATIVE_OPENXR
-        if (framevr::StereoRendering() == 3) {
+        if (framevr::StereoRendering() == 2) {
             const auto rs = stereoreplay::TakeStats();
             const double n = rs.replayed ? 1.0 / rs.replayed : 0.0;
             LogF("vrcam: replay - %u of %u pairs from one pass (%u fell back to two) | a replayed pair: %.1f lists in %.1f calls, %.3f ms to submit, "
-                 "camera %.1f records folded, %.1f positions moved, %u slots (%u overflowed, %.1f late)",
-                 rs.replayed, pairs, rs.fallbacks, rs.lists * n, rs.calls * n, rs.submitMs * n, rs.folded * n, rs.positions * n, rs.slots, rs.overflow, rs.lateSlots * n);
+                 "camera %.1f records folded, %.1f positions moved, %u slots (%u overflowed, %.1f late) | settle %d/%d, started again by %u biome sets "
+                 "(of %u), %u frames over 150 ms, %u pairs out of the world",
+                 rs.replayed, pairs, rs.fallbacks, rs.lists * n, rs.calls * n, rs.submitMs * n, rs.folded * n, rs.positions * n, rs.slots, rs.overflow, rs.lateSlots * n,
+                 rs.settling, rs.settleOf, rs.restartArea, rs.biomeSets, rs.restartLong, rs.outOfWorld);
         }
 #endif
         if (pairs) {

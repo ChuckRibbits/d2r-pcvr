@@ -402,7 +402,7 @@ uint64_t g_rtvRes[8] = {};
 resource_view g_rtv[8] = {};
 std::atomic<uint32_t> g_replays{0}, g_presents{0};   // (the watchdog's)
 // For the 10 s line, since the last TakeStats (the pairs' thread alone writes them).
-uint32_t g_statReplayed = 0, g_statFails = 0, g_statLists = 0, g_statCalls = 0;
+uint32_t g_statReplayed = 0, g_statFails = 0, g_statLists = 0, g_statCalls = 0, g_statHeld[4] = {}, g_statAreaSeen = 0;
 double g_statSubmitUs = 0.0;
 replaypause::Settle g_settle;
 std::atomic<uint32_t> g_areaChanges{0};
@@ -668,6 +668,7 @@ bool Wanted(bool inWorld) {
     const bool was = g_settle.Settled();
     replaypause::Why stopped;
     const bool settled = g_settle.Step(g_areaChanges.load(), UsNow(), inWorld, &stopped);
+    ++g_statHeld[int(g_settle.held)];
     if (stopped == replaypause::Why::kNoWorld) Log("vrcam: replay - paused (no world: a menu or an area change)");
     else if (stopped == replaypause::Why::kArea) Log("vrcam: replay - paused (the game set a biome: an area loads) - two passes until it has settled");
     else if (stopped == replaypause::Why::kLongFrame) Log("vrcam: replay - paused (a game frame of over 150 ms: a load) - two passes until the area has settled");
@@ -809,7 +810,12 @@ Stats TakeStats() {
     s.replayed = g_statReplayed; s.fallbacks = g_statFails; s.lists = g_statLists; s.calls = g_statCalls; s.submitMs = g_statSubmitUs / 1000.0;
     s.slots = (uint32_t)g_nSlots.load(); s.overflow = g_overflow.exchange(0); s.lateSlots = g_lateSlots.exchange(0);
     s.folded = g_folded.exchange(0); s.positions = g_positionsMoved.exchange(0);
+    const uint32_t areas = g_areaChanges.load();
+    s.biomeSets = areas - g_statAreaSeen; g_statAreaSeen = areas;
+    s.restartArea = g_statHeld[int(replaypause::Why::kArea)]; s.restartLong = g_statHeld[int(replaypause::Why::kLongFrame)];
+    s.outOfWorld = g_statHeld[int(replaypause::Why::kNoWorld)]; s.settling = g_settle.pairs; s.settleOf = replaypause::Settle::kPairs;
     g_statReplayed = g_statFails = g_statLists = g_statCalls = 0; g_statSubmitUs = 0.0;
+    for (uint32_t& n : g_statHeld) n = 0;
     return s;
 }
 

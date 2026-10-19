@@ -31,7 +31,8 @@ inline const char* HelpText(int id) {
         case DrawDistance:return "Controls how many surrounding map tiles remain drawn. Higher values reveal more terrain but use more rendering resources. Lower this first if large outdoor areas run poorly.";
         case ObjectDistance:return "How far away scenery objects remain visible. Higher values retain more distant buildings and props, with a performance and memory cost. Lower values can help crowded areas such as Act III.";
         case RenderResolution:return "The image size drawn for each eye, independent of your monitor. Higher is sharper but costs GPU time. Apply rebuilds the VR view; DLSS is set in the game's own Options.";
-        case EyesByTurns:return "How the two eye images of each headset frame are drawn. Menus, and views other than first person, always draw both eyes.";
+        case StereoRendering:return "How the two eye images of each headset frame are drawn. Menus, and views other than first person, always draw both eyes.";
+        case DeferGpuWait:return "Lets the CPU begin the next frame while the graphics card finishes the last one, instead of waiting for it at the end of every frame. Replay needs it for its full frame rate: without it each frame takes the CPU's time plus the GPU's. Shown while Replay is selected and it is off; Apply saves it as [render] defer_gpu_wait.";
         case DesktopOneEye:return "In stereo the game window alternates between both eyes, which looks doubled on the monitor. On copies the left eye back over each right frame after the headset has it, so the monitor shows one steady image. The headset view is the same either way. Off saves one full-frame GPU copy per frame.";
         case EyeHeight:return "Your standing eye height above the tracked floor. Body calibration measures this to set the world's scale. Use Calibrate body to measure it again.";
         case ArmSpan:return "The distance between your controller grips with your arms extended in a T-pose. Body calibration uses it to fit the character's arms to yours.";
@@ -90,7 +91,7 @@ inline int HelpChoices(int id) {
     switch(id) {
         case Foveation:case MenuDistance:case TooltipTiming:case StrainSpeed:case ProjectileAimAssist:return 3;
         case FoveationStrength:case VitalsLocation:case NavigationLocation:return 4;
-        case EyesByTurns:return int(std::size(StereoRenderingNames));
+        case StereoRendering:return int(std::size(StereoRenderingNames));
         case RenderResolution:return int(std::size(resolution::Choices));
         case ControllerLabels:return int(controllers::Choice::Count);
         case Dominant:case MeleeRules:case StrainDark:case MapTopDown:return 2;
@@ -116,12 +117,11 @@ inline ChoiceHelp HelpChoice(int id,float value) {
                 "The same edge area as Medium, shaded more coarsely.",
                 "The coarsest edges and a smaller full-quality centre. The largest saving, and the most visible."};
             return {FoveationStrengthNames[c],text[c]};}
-        case EyesByTurns:{
+        case StereoRendering:{
             static constexpr const char* text[]={
-                "The game draws each frame twice, once per eye, from the same moment. The most accurate 3D, and the most CPU and GPU work per frame.",
-                "While you stand, one eye is drawn per frame, alternating, and the other eye's last image is turned to your head: about half the drawing work. Each eye updates at half the frame rate and moving monsters can look doubled. While you move, both eyes are drawn.",
-                "One eye per frame all the time. The other eye's last image is turned to your head and moved with the scene's depth, so walking keeps the higher frame rate. Moving monsters can look doubled, and the edges of nearby things may smear for a frame.",
-                "The game draws each frame once, for the left eye, and the graphics card draws it again for the right eye: both eyes from one moment for about one eye's CPU work. The GPU work stays. It starts a few seconds into an area; labels and DLSS are shared by the eyes."};
+                "The game draws each frame twice, once per eye, from the same moment. Accurate 3D, and the most CPU and GPU work per frame.",
+                "One eye per frame, alternating; the other eye's last image is turned to your head and moved with the scene's depth. About half the drawing work, but moving monsters can look doubled and the edges of nearby things may smear.",
+                "The game draws each frame once, for the left eye, and the graphics card draws it again for the right eye: both eyes from one moment for about one eye's CPU work. Needs Defer GPU wait for its full rate. Starts a few seconds into an area."};
             return {StereoRenderingNames[c],text[c]};}
         case RenderResolution:{
             static constexpr const char* text[]={
@@ -199,7 +199,7 @@ inline ChoiceHelp HelpChoice(int id,float value) {
         default:return {};
     }
 }
-inline int HelpAt(Page page,float u,float v,bool controllerMenu=false) {
+inline int HelpAt(Page page,float u,float v,bool controllerMenu=false,const Values* values=nullptr) {
     if(!std::isfinite(u)||!std::isfinite(v)||u<0||u>=1||v<0||v>=1)return NoHelp;
     // Do not explain controls hidden behind an open dropdown.
     if(page==Page::VR&&controllerMenu)return NoHelp;
@@ -209,6 +209,7 @@ inline int HelpAt(Page page,float u,float v,bool controllerMenu=false) {
     if(Recenter.Contains(x,y))return HelpRecenter;
     if(Calibrate.Contains(x,y))return HelpCalibrate;
     if(page==Page::VR&&ControllerBox.Contains(x,y))return ControllerLabels;
+    if(page==Page::Video&&VideoDeferBox.Contains(x,y)&&(!values||DeferOffered(*values)))return DeferGpuWait;
     if(page==Page::HUD){
         if(Rect{40,181,570,52}.Contains(x,y))return MapTopDown;
         if(Rect{650,181,590,52}.Contains(x,y))return MapRotate;

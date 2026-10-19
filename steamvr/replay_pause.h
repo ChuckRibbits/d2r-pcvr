@@ -24,6 +24,7 @@ struct Settle {
     uint32_t seenArea = 0;
     double lastUs = 0.0;
     int pairs = 0;
+    Why held = Why::kNone;   // why the last Step started the settle again, settled or not
 
     // Once a pair, at its start. areaChanges: the game's biome sets so far;
     // nowUs: a steady clock; inWorld: the world flags. True: the replay may run
@@ -38,6 +39,7 @@ struct Settle {
         if (!inWorld) why = Why::kNoWorld;
         else if (newArea) why = Why::kArea;
         else if (gapMs > kLongFrameMs) why = Why::kLongFrame;
+        held = why;
         if (why != Why::kNone) {
             if (pairs >= kPairs) *stopped = why;
             pairs = 0;

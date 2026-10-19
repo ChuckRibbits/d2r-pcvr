@@ -100,7 +100,7 @@ bool TurnWarp::Initialize(ID3D12Device* device,DXGI_FORMAT targetFormat,void (*l
     if(FAILED(device->CreateDescriptorHeap(&heap,IID_PPV_ARGS(&targetHeap))))return fail("no target heap");
     format=targetFormat;
     if(log)log("Frame OpenXR: eyes by turns - the eye not drawn is turned to each frame's head on the GPU");
-    // The depth pass is optional: without it By turns acts as Hybrid.
+    // The depth pass is optional: without it By turns draws pairs while the hero moves.
     const auto depthFail=[&](const char* why){
         depthRoot.Reset();depthPipeline.Reset();depthHeap.Reset();
         if(log){char b[160];std::snprintf(b,sizeof b,"Frame OpenXR: by turns - moving the eye with the scene depth unavailable (%s)",why);log(b);}

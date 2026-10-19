@@ -43,6 +43,8 @@ static void Pause() {
     for(int i=0;i<replaypause::Settle::kPairs;++i)s.Step(1,t+=11000,true,&why);
     Check(!s.Step(1,t+=11000,false,&why)&&why==replaypause::Why::kNoWorld,"no world stops it");
     Check(!s.Step(1,t+=11000,false,&why)&&why==replaypause::Why::kNone,"stopped is told once");
+    Check(s.held==replaypause::Why::kNoWorld,"each restart of the settle has its reason, settled or not");
+    Check(!s.Step(2,t+=11000,true,&why)&&s.held==replaypause::Why::kArea&&!s.Step(2,t+=11000,true,&why)&&s.held==replaypause::Why::kNone,"a pair that keeps settling has none");
 }
 
 // A camera record as D2R lays it out: V, V^-1, P, P^-1, V*P, (V*P)^-1, last V*P.
