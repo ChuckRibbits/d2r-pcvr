@@ -357,8 +357,9 @@ Guard Incoming(uintptr_t attacker,uintptr_t defender,uint32_t& monster,bool& inR
     const framevr::math::Vec to{(ax-px)/g.upm,0,(az-pz)/g.upm};
     // when this attacker's attack began (melee.cpp's mode hook; 0 = not seen)
     const uint64_t attackAt=melee::AttackStart(monster);if(attackAt)++guardAttackKnown;
+    const uint64_t opensAt=melee::ParryOpens(monster);   // its downstroke (0 = wind-up not measured yet)
     framevr::guard::Rejection reason;
-    const auto v=framevr::guard::Judge(g.state,to,now,GuardTuning(),attackAt,&reason);
+    const auto v=framevr::guard::Judge(g.state,to,now,GuardTuning(),attackAt,&reason,opensAt);
     {
         std::lock_guard lock(guardMutex);
         if(guard.session==g.session) {
@@ -378,12 +379,13 @@ Guard Incoming(uintptr_t attacker,uintptr_t defender,uint32_t& monster,bool& inR
     if(guardTrace.load(std::memory_order_relaxed)) {
         const float d=std::hypot(to.x,to.z);const auto& s=g.state;
         float cover=0;framevr::guard::Coverage(s.surface,to,GuardTuning(),&cover);
-        const auto parry=framevr::guard::ParryCheck(s,to,now,GuardTuning(),attackAt);   // why a raised guard did not parry
-        char line[860];snprintf(line,sizeof line,
-            "Frame guard trace: monster=%u class=%u verdict=%s reason=%s parry=%s player_mode=%u raised=%d forward=%.2f up=%.2f side=%.2f m cover_cos=%.2f attacker=%.2f m swing=%.2f m swing_cos=%.2f snap_age=%lld ms snap_spent=%d attack_age=%lld ms pose_age=%llu ms center=%.2f,%.2f,%.2f normal=%.2f,%.2f,%.2f eye=%.2f,%.2f,%.2f attacker_xz=%.2f,%.2f upm=%.3f",
+        const auto parry=framevr::guard::ParryCheck(s,to,now,GuardTuning(),attackAt,opensAt);   // why a raised guard did not parry
+        char line[900];snprintf(line,sizeof line,
+            "Frame guard trace: monster=%u class=%u verdict=%s reason=%s parry=%s player_mode=%u raised=%d forward=%.2f up=%.2f side=%.2f m cover_cos=%.2f attacker=%.2f m swing=%.2f m swing_cos=%.2f snap_age=%lld ms snap_spent=%d attack_age=%lld ms downstroke_at=%lld ms pose_age=%llu ms center=%.2f,%.2f,%.2f normal=%.2f,%.2f,%.2f eye=%.2f,%.2f,%.2f attacker_xz=%.2f,%.2f upm=%.3f",
             a[2],a[1],v==Verdict::Parry?"PARRY":v==Verdict::Block?"BLOCK":"OPEN",framevr::guard::ReasonName(reason),framevr::guard::ParryMissName(parry),playerMode,int(s.raised),s.forward,s.up,s.side,cover,d,s.swing,s.swingCos,
             s.snapAt&&now>=s.snapAt?(long long)(now-s.snapAt):-1LL,int(s.snapUsed),
             attackAt&&now>=attackAt?(long long)(now-attackAt):-1LL,
+            attackAt&&opensAt>=attackAt?(long long)(opensAt-attackAt):-1LL,
             (unsigned long long)(s.seenAt&&now>=s.seenAt?now-s.seenAt:0),
             s.surface.center.x,s.surface.center.y,s.surface.center.z,s.surface.normal.x,s.surface.normal.y,s.surface.normal.z,
             s.surface.eye.x,s.surface.eye.y,s.surface.eye.z,to.x,to.z,g.upm);
@@ -458,14 +460,15 @@ void IncomingRoll(uintptr_t attacker,uintptr_t defender,bool hit) {
     if(!GridPosition(attacker,ax,az)||!GridPosition(defender,px,pz))return;
     const framevr::math::Vec to{(ax-px)/g.upm,0,(az-pz)/g.upm};
     const uint64_t attackAt=melee::AttackStart(a[2]);const auto t=GuardTuning();
-    const auto v=framevr::guard::Judge(g.state,to,now,t,attackAt);
+    const uint64_t opensAt=melee::ParryOpens(a[2]);
+    const auto v=framevr::guard::Judge(g.state,to,now,t,attackAt,nullptr,opensAt);
     if(guardTrace.load(std::memory_order_relaxed)) {
         const auto& s=g.state;
-        char line[300];snprintf(line,sizeof line,
-            "Frame guard miss: monster=%u class=%u verdict=%s parry=%s raised=%d attacker=%.2f m snap_age=%lld ms snap_spent=%d attack_age=%lld ms",
-            a[2],a[1],v==framevr::guard::Verdict::Parry?"PARRY":"MISSED",framevr::guard::ParryMissName(framevr::guard::ParryCheck(s,to,now,t,attackAt)),
+        char line[340];snprintf(line,sizeof line,
+            "Frame guard miss: monster=%u class=%u verdict=%s parry=%s raised=%d attacker=%.2f m snap_age=%lld ms snap_spent=%d attack_age=%lld ms downstroke_at=%lld ms",
+            a[2],a[1],v==framevr::guard::Verdict::Parry?"PARRY":"MISSED",framevr::guard::ParryMissName(framevr::guard::ParryCheck(s,to,now,t,attackAt,opensAt)),
             int(s.raised),std::hypot(to.x,to.z),s.snapAt&&now>=s.snapAt?(long long)(now-s.snapAt):-1LL,int(s.snapUsed),
-            attackAt&&now>=attackAt?(long long)(now-attackAt):-1LL);
+            attackAt&&now>=attackAt?(long long)(now-attackAt):-1LL,attackAt&&opensAt>=attackAt?(long long)(opensAt-attackAt):-1LL);
         framevr::logging::Write(line);
     }
     if(v!=framevr::guard::Verdict::Parry)return;
@@ -569,14 +572,16 @@ void ConfigureRiposte(float bonus,uint32_t windowMs,float volume,const wchar_t* 
 }
 // Owner parries resolved at the hit frame landed 63-657 ms after the swing
 // (median 516, 2026-10-18): most swings came before the attack even began.
-// Resolving as soon as both have begun staggers the attacker before its hit.
+// Resolving as soon as both had begun staggered monsters that had barely
+// raised their arms (2026-10-19); now the swing must come in the downstroke
+// (melee::ParryOpens), and then it staggers the attacker before its hit.
 bool ParryArmed() {
     if(!guardEnabled.load(std::memory_order_relaxed))return false;
     const auto now=GetTickCount64();
     std::lock_guard lock(guardMutex);const auto& s=guard.state;
     return guard.eligible&&!s.snapUsed&&s.snapAt&&now>=s.snapAt&&now-s.snapAt<=GuardTuning().parryMs;
 }
-uint64_t EarlyParry(uintptr_t monster,uintptr_t player,uint64_t attackAt,const char* trigger) {
+uint64_t EarlyParry(uintptr_t monster,uintptr_t player,uint64_t attackAt,uint64_t opensAt,const char* trigger) {
     if(!guardChecked||!guardEnabled.load(std::memory_order_relaxed)||!enabled.load(std::memory_order_relaxed)||!ready.load(std::memory_order_relaxed))return 0;
     uint32_t id=0,a[3]{},d[3]{};
     if(!LocalPlayerId(id)||!Read(monster,a)||!Read(player,d)||!IncomingContact(id,a[0],d[0],d[2]))return 0;
@@ -586,11 +591,12 @@ uint64_t EarlyParry(uintptr_t monster,uintptr_t player,uint64_t attackAt,const c
     float ax=0,az=0,px=0,pz=0;
     if(!GridPosition(monster,ax,az)||!GridPosition(player,px,pz))return 0;
     const framevr::math::Vec to{(ax-px)/g.upm,0,(az-pz)/g.upm};
-    if(framevr::guard::Judge(g.state,to,now,GuardTuning(),attackAt)!=framevr::guard::Verdict::Parry)return 0;
+    if(framevr::guard::Judge(g.state,to,now,GuardTuning(),attackAt,nullptr,opensAt)!=framevr::guard::Verdict::Parry)return 0;
     if(guardTrace.load(std::memory_order_relaxed)) {
         const auto& s=g.state;
-        char line[240];snprintf(line,sizeof line,"Frame guard early parry: monster=%u class=%u trigger=%s swing_age=%lld ms attack_age=%lld ms attacker=%.2f m",
-            a[2],a[1],trigger,now>=s.snapAt?(long long)(now-s.snapAt):-1LL,attackAt&&now>=attackAt?(long long)(now-attackAt):-1LL,std::hypot(to.x,to.z));
+        char line[280];snprintf(line,sizeof line,"Frame guard early parry: monster=%u class=%u trigger=%s swing_age=%lld ms attack_age=%lld ms downstroke_at=%lld ms attacker=%.2f m",
+            a[2],a[1],trigger,now>=s.snapAt?(long long)(now-s.snapAt):-1LL,attackAt&&now>=attackAt?(long long)(now-attackAt):-1LL,
+            attackAt&&opensAt>=attackAt?(long long)(opensAt-attackAt):-1LL,std::hypot(to.x,to.z));
         framevr::logging::Write(line);
     }
     return g.state.snapAt;

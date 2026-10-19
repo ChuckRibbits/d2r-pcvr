@@ -878,6 +878,10 @@ void LoadSettings() {
     constexpr bool guardTraceDefault=false;
 #endif
     combat::ConfigureGuard(!classicMelee,450,IniB(L"debug",L"guard_trace",guardTraceDefault));
+    // Parry downstroke: a parry swing must start once this % of the attacker's
+    // wind-up (start to hit frame) has passed - as the blow comes down, not as
+    // the arms first rise. 0 = anywhere in the wind-up (the old rule).
+    melee::ConfigureParryDownstroke((uint32_t)std::clamp(IniF(L"gameplay",L"parry_downstroke",60),0.f,95.f));
     // Guard strain light: % of the guard each block strains, lowered reset time,
     // % of the view left clear at full swell, the broken guard's breathing period,
     // the width of the light's inner blend (% of the visor radius), opacity (% peak;

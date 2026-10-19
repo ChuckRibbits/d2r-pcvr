@@ -147,7 +147,14 @@ int main() {
     {State g;uint64_t n=40000;Hold(g,swingFrom,true,n,300,t);
      const uint64_t attack=n;Hold(g,swingFrom,true,n,150,t);              // the attack winds up
      Move(g,swingFrom,swingTo,true,n,90,t);
-     assert(Judge(g,ahead,n+30,t,attack)==Verdict::Parry);}
+     assert(Judge(g,ahead,n+30,t,attack)==Verdict::Parry);
+     // ...once the attack is coming down: a swing before the downstroke opens
+     // is a windup miss (2026-10-19), at or after it a parry.
+     const uint64_t snap=g.snapAt;
+     assert(Judge(g,ahead,n+30,t,attack,nullptr,snap+1)==Verdict::Block);
+     assert(ParryCheck(g,ahead,n+30,t,attack,snap+1)==ParryMiss::Windup);
+     assert(Judge(g,ahead,n+30,t,attack,nullptr,snap)==Verdict::Parry);
+     assert(!strcmp(ParryMissName(ParryMiss::Windup),"windup"));}
     // ...but not with a swing that began before the attack did (parryLeadMs
     // is 0: no lead, 2026-10-18)...
     {State g;uint64_t n=42000;Hold(g,swingFrom,true,n,300,t);Move(g,swingFrom,swingTo,true,n,90,t);

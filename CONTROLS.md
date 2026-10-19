@@ -148,8 +148,9 @@ doesn't reduce them; resistances still matter.
   Lowering it, holding it away from the attack line or turning it edge-on opens
   the guard.
 - **Parry:** as a melee attack comes in, swing the shield diagonally across
-  your view (lower right to upper left with a left-hand shield) up to
-  0.75 seconds before the hit. You can start before the enemy's wind-up. The swing
+  your view (lower right to upper left with a left-hand shield) as the blow
+  comes down at you, at most 0.45 seconds before the hit. A swing while the
+  enemy is still raising its arms is too early and only blocks. The swing
   only needs to finish with the shield raised on the attacker's side, even if
   it ends edge-on. It also works on attacks that would have missed you. The
   attacker staggers as soon as your swing meets its attack, before the blow
