@@ -18,7 +18,7 @@ bool TakeButtonMelee(uint64_t& session,uint64_t& at);
 // parryMs 0 disables perfect parry. Outside first person, menus or without a
 // shield (eligible=false) the native block roll is kept.
 void ConfigureGuard(bool enabled,uint32_t parryMs,bool trace=false); // trace: [debug] guard_trace
-// [gameplay] parry_late_ms (default 150, max 400, 0 = off): a parry swing up to
+// [gameplay] parry_late_ms (default 200, max 400, 0 = off): a parry swing up to
 // this long after a blocked melee hit still parries it (the blow lands on screen
 // after the game's hit frame). It staggers that attacker and refunds the wear.
 void ConfigureLateParry(uint32_t ms);

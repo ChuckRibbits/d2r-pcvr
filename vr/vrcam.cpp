@@ -881,10 +881,10 @@ void LoadSettings() {
     // Parry downstroke: a parry swing must start once this % of the attacker's
     // wind-up (start to hit frame) has passed - as the blow comes down, not as
     // the arms first rise. 0 = anywhere in the wind-up (the old rule).
-    melee::ConfigureParryDownstroke((uint32_t)std::clamp(IniF(L"gameplay",L"parry_downstroke",80),0.f,95.f));
+    melee::ConfigureParryDownstroke((uint32_t)std::clamp(IniF(L"gameplay",L"parry_downstroke",90),0.f,95.f));
     // Late parry: a swing up to this many ms after a blocked hit still parries
     // it - the game's hit frame comes before the blow lands on screen. 0 = off.
-    combat::ConfigureLateParry((uint32_t)std::clamp(IniF(L"gameplay",L"parry_late_ms",150),0.f,400.f));
+    combat::ConfigureLateParry((uint32_t)std::clamp(IniF(L"gameplay",L"parry_late_ms",200),0.f,400.f));
     // Parry at hit: the stagger waits for the blow to land on the shield (1),
     // or fires the moment the downstroke swing is made (0, cuts the blow off).
     melee::ConfigureParryAtHit(IniB(L"gameplay",L"parry_at_hit",true));

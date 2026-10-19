@@ -896,7 +896,8 @@ instead of a random one. Classic keeps the native roll.
   start (mode change, 34E5F0) to its to-hit roll (the hit frame) is that
   monster type's wind-up, measured per class and attack mode from its last
   attack; the swing must start once `[gameplay] parry_downstroke` % of it has
-  passed (default 80, from 60 after parries came as the arms still rose; 0 = anywhere
+  passed (default 90, from 60 then 80: parries still came before the blow visibly
+  landed - swings centred 55 ms after the hit frame, 2026-10-19; 0 = anywhere
   after the attack began, the old rule). An
   earlier swing is a `windup` miss and only blocks. Until a type's wind-up has
   been measured once this session, its attacks are not staggered early and the
@@ -908,7 +909,7 @@ instead of a random one. Classic keeps the native roll.
   Staggering at the swing itself fired 50-90 ms before the hit (Zombies: swing at
   281 ms, hit at 330-375 ms) and cut the blow off before it came down. With 0, a
   downstroke swing staggers the attacker on the next game update, before its hit frame.
-  **Late parry** (`[gameplay] parry_late_ms`, default 150, max 400, 0 = off): the
+  **Late parry** (`[gameplay] parry_late_ms`, default 200, max 400, 0 = off): the
   game's hit frame comes before the blow lands on screen - 15 of 24 swings
   (2026-10-19) started 0-156 ms after a blocked hit, timed to the animation. A
   parry swing within this long after a blocked melee hit (within 3 m) still parries

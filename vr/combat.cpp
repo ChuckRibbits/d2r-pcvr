@@ -67,7 +67,9 @@ std::atomic<bool> guardEnabled{false},guardTrace{false};std::atomic<uint32_t> gu
 // parries it. The server's hit frame comes before the blow visibly lands: 15
 // of 24 swings (log 2026-10-19 14:29-14:55) started 0-156 ms after a blocked
 // hit, timed to the animation, against 6 parries before it. 0 = none.
-std::atomic<uint32_t> guardLateMs{150};
+// 15:00-15:18: parry swings centred 55 ms after the hit frame (-62..+188 ms);
+// the window is about -33..+200 ms around it (with parry_downstroke 90).
+std::atomic<uint32_t> guardLateMs{200};
 std::atomic<unsigned> lateParries{0};
 bool guardChecked=false;
 struct GuardShared {framevr::guard::State state;uint64_t session=0,at=0;float upm=1;bool eligible=false;
