@@ -43,7 +43,7 @@ uint64_t AttackStart(uint32_t monster);
 // to to-hit roll, per attack mode). 0 = not seen, or wind-up not measured yet.
 // A parry swing must begin at or after it. Thread-safe.
 uint64_t ParryOpens(uint32_t monster);
-void ConfigureParryDownstroke(uint32_t percent);   // 0..95, default 60
+void ConfigureParryDownstroke(uint32_t percent);   // 0..95, default 80
 // On (default): a parry resolves at the attacker's hit frame, after the blow
 // comes down; off: it staggers the attacker the moment the swing is made.
 void ConfigureParryAtHit(bool on);

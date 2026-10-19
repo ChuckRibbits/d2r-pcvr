@@ -63,9 +63,16 @@ std::atomic<uint64_t> buttonMeleeAt{0},buttonMeleeSession{0};
 constexpr uint64_t BlockSeedReturn=0x44b9d1,BlockRollAt=0x44b9c9;
 constexpr uint8_t BlockRollSig[]={0x48,0x8b,0xcf,0xe8,0x0f,0xe8,0xef,0xff,0x8b,0x08,0x48,0x69,0xd9,0xc5,0x90,0xc6,0x6a};
 std::atomic<bool> guardEnabled{false},guardTrace{false};std::atomic<uint32_t> guardParryMs{450};
+// [gameplay] parry_late_ms: a swing this long after a blocked melee hit still
+// parries it. The server's hit frame comes before the blow visibly lands: 15
+// of 24 swings (log 2026-10-19 14:29-14:55) started 0-156 ms after a blocked
+// hit, timed to the animation, against 6 parries before it. 0 = none.
+std::atomic<uint32_t> guardLateMs{150};
+std::atomic<unsigned> lateParries{0};
 bool guardChecked=false;
 struct GuardShared {framevr::guard::State state;uint64_t session=0,at=0;float upm=1;bool eligible=false;
-    framevr::guard::Debug debug{};uint32_t debugMonster=UINT32_MAX;};
+    framevr::guard::Debug debug{};uint32_t debugMonster=UINT32_MAX;
+    uint32_t blockMonster=UINT32_MAX;int32_t blockDurability=-1;};   // the last blocked melee hit, for a late parry
 std::mutex guardMutex;GuardShared guard;
 enum class Forced:uint8_t {None,Block,Open};
 enum class Guard:uint8_t {Native,Open,Block,Parry};
@@ -437,7 +444,10 @@ int GuardedBlock(uintptr_t game,uintptr_t attacker,uintptr_t defender,int avoid,
             // The native block's own sound never plays in first person (only the
             // haptics did, 2026-10-16): the game's block sound at the hero.
             melee::QueueBlockSound();
-            if(g==Guard::Block&&inReach){std::lock_guard lock(guardMutex);framevr::guard::NoteBlock(guard.state,GetTickCount64());}
+            if(g==Guard::Block&&inReach) {
+                std::lock_guard lock(guardMutex);framevr::guard::NoteBlock(guard.state,GetTickCount64());
+                guard.blockMonster=monster;guard.blockDurability=durability;   // durability before this hit, for a late parry's refund
+            }
         }
     }
     return result;
@@ -525,6 +535,7 @@ bool TakeButtonMelee(uint64_t& session,uint64_t& at) {
     return at!=0;
 }
 void ConfigureGuard(bool on,uint32_t parryMs,bool trace) {guardEnabled=on;guardParryMs=parryMs;guardTrace=trace;}
+void ConfigureLateParry(uint32_t ms) {guardLateMs=std::min<uint32_t>(ms,400);}   // SwingAfterBlock looks 400 ms back
 void ConfigureEnemiesAlwaysHit(bool on) {enemiesAlwaysHit=on;}
 float GameVolume() {
     static std::mutex m;static ULONGLONG checkAt=0;static FILETIME seen{};static float volume=-1;
@@ -609,6 +620,7 @@ void PublishGuard(uint64_t session,bool eligible,bool posed,const framevr::guard
                   bool handOk,bool leftShield) {
     const auto now=GetTickCount64();const auto t=GuardTuning();
     uint64_t lateAfter=0;bool late=false,raised=false,newSwing=false,missed=false;
+    uint32_t lateMonster=UINT32_MAX;int32_t lateDurability=-1;   // a late parry to queue (UINT32_MAX = none)
     {
     std::lock_guard lock(guardMutex);
     if(guard.session!=session||!eligible||guard.state.surface.epoch!=pose.epoch){guard.state={};guard.debug={};}
@@ -622,7 +634,16 @@ void PublishGuard(uint64_t session,bool eligible,bool posed,const framevr::guard
             s.swing,s.swingCos,s.forward,s.up,s.side);
         framevr::logging::Write(line);
     }
-    if(eligible&&framevr::guard::SwingAfterBlock(guard.state,now,t,lateAfter)){late=true;++guardLate;}
+    if(eligible&&framevr::guard::SwingAfterBlock(guard.state,now,t,lateAfter)) {
+        // Within parry_late_ms of the blocked hit: the blow was still coming
+        // down on screen, so the swing parries it. Later than that is too late.
+        const uint32_t grace=guardLateMs.load(std::memory_order_relaxed);
+        if(grace&&lateAfter<=grace&&!guard.state.snapUsed&&guard.blockMonster!=UINT32_MAX&&guardEnabled.load(std::memory_order_relaxed)) {
+            framevr::guard::SpendParry(guard.state,guard.state.snapAt);
+            lateMonster=guard.blockMonster;lateDurability=guard.blockDurability;
+        } else {late=true;++guardLate;}
+        guard.blockMonster=UINT32_MAX;
+    }
     // A parry swing whose window ran out unspent: tell the shield hand, once.
     if(eligible&&guardEnabled.load(std::memory_order_relaxed)&&framevr::guard::ParryMissed(guard.state,now,t)){missed=true;++parryMisses;}
     guard.session=session;guard.eligible=eligible;guard.upm=std::max(1.f,guard.state.surface.unitsPerMetre);guard.at=now;
@@ -640,6 +661,15 @@ void PublishGuard(uint64_t session,bool eligible,bool posed,const framevr::guard
     // A swing during an attacker's wind-up parries now, not at its hit frame.
     if(newSwing&&guardEnabled.load(std::memory_order_relaxed))melee::QueueParrySwing();
     if(missed)framevr::ShieldParryMiss();
+    // A late parry: stagger the attacker whose hit was just blocked, refund the
+    // wear that block caused. The block's strain has already been applied.
+    if(lateMonster!=UINT32_MAX&&melee::QueueParry(lateMonster,lateDurability)) {
+        ++guardParries;++lateParries;framevr::ShieldGuardImpact(true);
+        if(guardTrace.load(std::memory_order_relaxed)) {
+            char line[160];snprintf(line,sizeof line,"Frame guard late parry: monster=%u %llu ms after the blocked hit",lateMonster,(unsigned long long)lateAfter);
+            framevr::logging::Write(line);
+        }
+    }
     framevr::ShieldGuardState(eligible,raised);   // the strain light drains only while the shield is down
     FollowGameVolume();
     // A parry swing that came after the hit it was meant for: how late (no parry).
@@ -714,9 +744,9 @@ void Report() {
         char line[160];snprintf(line,sizeof line,"Frame riposte: landed=%u",rl);
         framevr::logging::Write(line);
     }
-    const auto ih=incomingHits.exchange(0),im=incomingMisses.exchange(0),mp=missParries.exchange(0),ep=earlyParries.exchange(0),pm=parryMisses.exchange(0);
+    const auto ih=incomingHits.exchange(0),im=incomingMisses.exchange(0),mp=missParries.exchange(0),ep=earlyParries.exchange(0),pm=parryMisses.exchange(0),lp=lateParries.exchange(0);
     if(gb||go||gp||gu||gf||fh||gl||ih||im||ep||pm) {
-        char guardLine[384];snprintf(guardLine,sizeof guardLine,"Frame guard: blocked=%u open=%u parries=%u swings_too_late=%u attack_start_known=%u no_block_roll=%u position_fallback=%u enemy_forced_hits=%u incoming_hits=%u incoming_misses=%u miss_parries=%u early_parries=%u parry_misses=%u",gb,go,gp,gl,ga,gu,gf,fh,ih,im,mp,ep,pm);
+        char guardLine[448];snprintf(guardLine,sizeof guardLine,"Frame guard: blocked=%u open=%u parries=%u swings_too_late=%u attack_start_known=%u no_block_roll=%u position_fallback=%u enemy_forced_hits=%u incoming_hits=%u incoming_misses=%u miss_parries=%u early_parries=%u late_parries=%u parry_misses=%u",gb,go,gp,gl,ga,gu,gf,fh,ih,im,mp,ep,lp,pm);
         framevr::logging::Write(guardLine);
     }
     const auto m=meleeChecks.exchange(0),p=missileChecks.exchange(0),r=rolls.exchange(0),b=blocks.exchange(0),d=dodges.exchange(0),f=failed.exchange(0);

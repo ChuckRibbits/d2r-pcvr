@@ -109,7 +109,7 @@ std::array<uint16_t,kWindupClasses*6> windupMs{};   // attackMutex; 0 = not meas
 // at the swing itself fired 50-90 ms before the hit (class 5: swing 281 ms,
 // hit 330-375 ms, log 2026-10-19) and cut the blow off mid-air. Off: the old early stagger.
 std::atomic<bool> parryAtHit{true};
-std::atomic<uint32_t> downstrokePct{60};
+std::atomic<uint32_t> downstrokePct{80};   // 60 parried as the arms still rose (2026-10-19 14:55)
 int WindupSlot(uint32_t cls,int mode) {
     const int m=mode==4?0:mode==5?1:mode>=8&&mode<=11?mode-6:-1;
     return cls<kWindupClasses&&m>=0?int(cls*6+m):-1;

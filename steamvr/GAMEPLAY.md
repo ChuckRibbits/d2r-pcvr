@@ -896,7 +896,8 @@ instead of a random one. Classic keeps the native roll.
   start (mode change, 34E5F0) to its to-hit roll (the hit frame) is that
   monster type's wind-up, measured per class and attack mode from its last
   attack; the swing must start once `[gameplay] parry_downstroke` % of it has
-  passed (default 60; 0 = anywhere after the attack began, the old rule). An
+  passed (default 80, from 60 after parries came as the arms still rose; 0 = anywhere
+  after the attack began, the old rule). An
   earlier swing is a `windup` miss and only blocks. Until a type's wind-up has
   been measured once this session, its attacks are not staggered early and the
   parry is judged at the hit as below. **Parry at hit** (`[gameplay] parry_at_hit`,
@@ -906,7 +907,14 @@ instead of a random one. Classic keeps the native roll.
   the shield's position at that moment alone decides block or hit, as below.
   Staggering at the swing itself fired 50-90 ms before the hit (Zombies: swing at
   281 ms, hit at 330-375 ms) and cut the blow off before it came down. With 0, a
-  downstroke swing staggers the attacker on the next game update, before its hit frame. Hit-frame parries
+  downstroke swing staggers the attacker on the next game update, before its hit frame.
+  **Late parry** (`[gameplay] parry_late_ms`, default 150, max 400, 0 = off): the
+  game's hit frame comes before the blow lands on screen - 15 of 24 swings
+  (2026-10-19) started 0-156 ms after a blocked hit, timed to the animation. A
+  parry swing within this long after a blocked melee hit (within 3 m) still parries
+  it: the attacker staggers and the block's wear is restored; the block's strain
+  stands. A hit that landed on you is not undone. Logged as `Frame guard late parry:`
+  and `late_parries` in `Frame guard:`; later swings stay `swing too late`. Hit-frame parries
   had come a median 516 ms after the swing (2026-10-18). An attack whose to-hit
   roll has already run is never staggered early; otherwise the to-hit roll or
   block check above still resolves the parry. The attacker is
