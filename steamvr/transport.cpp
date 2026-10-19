@@ -457,10 +457,10 @@ constexpr float panelWidth=2.0f,panelDistance=panels::MainDistance;
 XrSwapchain pointerChain=XR_NULL_HANDLE;
 XrPosef beamPose{},dotPose{};
 float beamLength=0;
-// Jeff, 2026-10-19: one remembered grab for every game menu, kept relative to
-// each default placement (the main menu sits 15 cm beyond the workspace), so
-// a menu reopens in the same spot relative to where you face. Choosing another
-// Menu distance preset clears it. VR Settings keeps its own.
+// Jeff, 2026-10-19: one remembered push/pull for every game menu, kept as an
+// offset on each default placement (the main menu sits 15 cm beyond the
+// workspace). Choosing another Menu distance preset clears it. VR Settings
+// keeps its own free grab, relative to where you face when it opens.
 panels::Grab panelGrab;
 panels::Offset menuOffset,settingsOffset;
 panels::Placement uiBase{},menuBase{},settingsBase{};
@@ -474,8 +474,8 @@ XrPosef Placed(panels::Placement base,panels::Offset offset) {
     return PanelPose(panels::Apply(base,panels::Limit(base,offset,V(head.position))));
 }
 // The grabbing hand is the laser's own pose; hit tests read the moved pose.
-bool GrabPanel(XrPosef& pose,panels::Placement base,panels::Offset& offset,bool grip,bool hit,bool click,const XrPosef& hand) {
-    const bool owned=panelGrab.Step(grip,hit,click,{V(hand.position),Q(hand.orientation)},base,V(head.position),offset);
+bool GrabPanel(XrPosef& pose,panels::Placement base,panels::Offset& offset,bool grip,bool hit,bool click,const XrPosef& hand,float pushOnly=0) {
+    const bool owned=panelGrab.Step(grip,hit,click,{V(hand.position),Q(hand.orientation)},base,V(head.position),offset,pushOnly);
     if(owned)pose=PanelPose(panels::Apply(base,offset));
     return owned;
 }
@@ -1084,7 +1084,8 @@ void MenuPointer(const menus::Pad& controls) {
     // The handheld journal has its own left-grip placement.
     const bool grip=aimTracked&&laser&&!journalMode&&(controls.buttons&menus::RightBumper);
     const bool grabbing=GrabPanel(spatialMode?uiPose:menuPose,spatialMode?uiBase:menuBase,menuOffset,
-        grip,pointerHit,pressed||mouseDown||rightMouseDown,aim.pose);
+        grip,pointerHit,pressed||mouseDown||rightMouseDown,aim.pose,
+        panels::MenuDistance(int(vrsettings::Read().values[settings::MenuDistance]),!spatialMode));
     const bool active=uiActive&&focused&&aimTracked&&laser;
     if(active)panelinput::OwnPointer();
     if(active&&pointerHit) {

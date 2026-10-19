@@ -120,13 +120,17 @@ struct MouseGate {
 // travel before any click, and a click first leaves the grip as Shift. Once
 // moving, the panel catches up with the travel since the press. A trigger
 // squeezed while moving is consumed until released.
+// Jeff, 2026-10-19: the game's own menus have black backgrounds, so they only
+// push/pull: pass their default distance and only travel along the facing
+// axis counts, keeping that distance within the limits. 0 grabs freely.
 struct Grab {
     enum class State {Idle,Armed,Moving,Held,Spent} state=State::Idle;
     Placement from{};Offset start{};
     static constexpr float Slack=.03f;
     static float HandPitch(math::Quat q){return std::asin(std::clamp(math::Rotate(q,{0,0,-1}).y,-1.f,1.f));}
-    bool Step(bool grip,bool hit,bool click,Placement hand,Placement base,math::Vec head,Offset& offset) {
-        const auto travel=hand.position-from.position;
+    bool Step(bool grip,bool hit,bool click,Placement hand,Placement base,math::Vec head,Offset& offset,float pushOnly=0) {
+        auto travel=math::Rotate(math::Conjugate(base.orientation),hand.position-from.position);
+        if(pushOnly>0)travel={0,0,travel.z};
         switch(state) {
         case State::Idle:if(grip){state=hit&&!click?State::Armed:State::Spent;from=hand;start=offset;}break;
         case State::Armed:
@@ -137,7 +141,11 @@ struct Grab {
             [[fallthrough]];
         case State::Moving:
             if(!grip){state=click?State::Held:State::Idle;break;}
-            offset.position=start.position+math::Rotate(math::Conjugate(base.orientation),travel);
+            if(pushOnly>0){
+                const float distance=std::clamp(pushOnly-start.position.z-travel.z,NearDistance,FarDistance);
+                offset={{0,0,pushOnly-distance},0,0};break;
+            }
+            offset.position=start.position+travel;
             offset.yaw=std::remainder(start.yaw+math::Heading(hand.orientation)-math::Heading(from.orientation),6.2831853f);
             offset.pitch=std::clamp(start.pitch+HandPitch(hand.orientation)-HandPitch(from.orientation),-MaxTilt,MaxTilt);
             offset=Limit(base,offset,head);

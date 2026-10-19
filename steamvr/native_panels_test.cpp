@@ -74,6 +74,30 @@ int main(){
         Check(!grab.Step(true,true,false,at({.3f,0,0}),base,head,o)&&same(where(o).position,base.position),"a surface change needs a fresh grip");
         grab.Step(false,true,false,at({}),base,head,o);grab.Step(true,true,false,at({}),base,head,o);
         Check(grab.Step(true,true,false,at({.1f,0,0}),base,head,o),"fresh grip after suspension grabs again");
+        // Game menus: push/pull only.
+        const float d0=panels::MenuDistance(1);
+        auto distance=[&](panels::Offset p){return len(where(p).position-head);};
+        const auto right=math::Rotate(base.orientation,{1,0,0});
+        panels::Grab push;o={};
+        Check(!push.Step(true,true,false,at({}),base,head,o,d0)&&!push.Step(true,true,false,at(right*.2f+math::Vec{0,.2f,0}),base,head,o,d0)&&
+              same(where(o).position,base.position),"sideways or vertical travel never moves a game menu or ends Shift");
+        Check(push.Step(true,true,false,at(right*.2f+math::Vec{0,.2f,0}+forward*.04f),base,head,o,d0)&&std::fabs(distance(o)-(d0+.04f))<1e-4f,
+              "push catches up with all travel along the axis since the press");
+        push.Step(true,true,false,at(right*-.3f+forward*.25f,tilted),base,head,o,d0);
+        Check(std::fabs(distance(o)-(d0+.25f))<1e-4f&&o.position.x==0&&o.position.y==0&&o.yaw==0&&o.pitch==0,
+              "diagonal travel pushes by its depth only and never tilts");
+        push.Step(true,true,false,at(forward*-.2f),base,head,o,d0);
+        Check(std::fabs(distance(o)-(d0-.2f))<1e-4f,"pull brings it nearer 1:1");
+        push.Step(true,true,false,at(forward*3),base,head,o,d0);
+        Check(std::fabs(distance(o)-panels::FarDistance)<1e-4f,"push stops at the far limit");
+        push.Step(true,true,false,at(forward*-3),base,head,o,d0);
+        Check(std::fabs(distance(o)-panels::NearDistance)<1e-4f,"pull stops at the near limit, still in front");
+        push.Step(false,true,false,at({}),base,head,o,d0);
+        const auto title=panels::AtEyeLevel(head,math::Yaw(.5f),panels::MenuDistance(1,true));
+        Check(std::fabs(len(panels::Apply(title,o).position-head)-(panels::MenuDistance(1,true)-d0+panels::NearDistance))<1e-4f,
+              "the same push/pull carries to the title menu");
+        Check(!push.Step(true,true,false,at({}),base,head,o,d0)&&!push.Step(true,true,true,at({}),base,head,o,d0)&&
+              !push.Step(true,true,false,at(forward*.3f),base,head,o,d0),"grip then click stays Shift-click");
     }
     panels::TooltipDwell dwell;
     Check(dwell.Ready(1,2,100,0,1),"instant tooltip on first hover");
