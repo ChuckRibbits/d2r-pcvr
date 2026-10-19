@@ -4,6 +4,7 @@
 #include <cmath>
 #include <cstdint>
 #include <limits>
+#include <string>
 #include <string_view>
 #include "controller_labels.h"
 #include "hand_vitals.h"
@@ -172,6 +173,19 @@ inline int GameSetting(std::string_view json,std::string_view key) {
 inline GameVideo ParseGameVideo(std::string_view json) {
     const int antiAliasing=GameSetting(json,"Anti Aliasing");
     return {GameSetting(json,"VSync")>0,antiAliasing>=0&&antiAliasing!=1};
+}
+// Launched with -mod <mod>, the game keeps that mod's own Settings.json in
+// Saved Games\Diablo II Resurrected\mods\<mod>, not the unmodded game's one
+// two levels up. <mod> is the folder the plugin loads from
+// (<game>\mods\<mod>\d2rloader\plugins\); empty when the plugin is elsewhere.
+inline std::wstring ModSettingsFile(std::wstring_view savedGames,std::wstring_view plugin) {
+    std::wstring lower(plugin);
+    for(auto& c:lower)if(c==L'/')c=L'\\';else if(c>=L'A'&&c<=L'Z')c=wchar_t(c-L'A'+L'a');
+    const size_t at=lower.rfind(L"\\mods\\");
+    if(at==std::wstring::npos||savedGames.empty())return {};
+    const size_t start=at+6,end=lower.find(L'\\',start);
+    if(end==std::wstring::npos||end==start||lower.compare(end,19,L"\\d2rloader\\plugins\\")!=0)return {};
+    return std::wstring(savedGames)+L"\\Diablo II Resurrected\\mods\\"+std::wstring(plugin.substr(start,end-start))+L"\\Settings.json";
 }
 inline const char* GameVideoWarning(GameVideo game) {
     return game.vsync&&game.antiAliasing?"Game Options > Video: turn Vertical Sync off and set Anti-Aliasing to FXAA":

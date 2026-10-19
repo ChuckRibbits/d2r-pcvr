@@ -183,9 +183,11 @@ conservative wait each frame takes the CPU's time plus the GPU's, and at 90 Hz
 SteamVR then paces the game at half. While Replay is selected and the wait is
 not deferred, the Video page shows a warning and a **Defer GPU wait** button
 that turns it on (Apply saves it; it applies live), and the console says so
-once when Replay first runs without it. The Video page also warns, from the
-game's own `Settings.json`, while the game's Vertical Sync is on or its
-anti-aliasing is anything but FXAA (the game's Options > Video).
+once when Replay first runs without it. The Video page also warns while the
+game's Vertical Sync is on or its anti-aliasing is anything but FXAA (the
+game's Options > Video). It reads the mod's own game settings,
+`Saved Games\Diablo II Resurrected\mods\<mod>\Settings.json`, which the game
+keeps apart from the unmodded game's file one folder up.
 
 The choice is stored as `[stereo] rendering` (0 Both eyes, 1 By turns,
 2 Replay; missing or invalid is Replay) and applies live. Every 10 seconds the log reports a

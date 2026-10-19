@@ -257,16 +257,30 @@ int settingsPaintHover=-1,settingsPaintStatus=-1,settingsPaintGame=-1;
 settings::HoverHelp settingsHelp;
 int settingsPaintHelp=settings::NoHelp,settingsHelpVisible=settings::NoHelp;
 // The game's own video options for the Video page's warnings, re-read at most
-// every 2 s while VR Settings is open and only when the game has saved them.
+// every 2 s while VR Settings is open and only when the game has saved them:
+// the mod's own Settings.json (settings::ModSettingsFile), or the unmodded
+// game's while the mod has none yet.
 settings::GameVideo GameVideoOptions(ULONGLONG now) {
-    static const std::wstring path=[]{
-        PWSTR dir=nullptr;std::wstring p;
-        if(SUCCEEDED(SHGetKnownFolderPath(FOLDERID_SavedGames,0,nullptr,&dir)))p=std::wstring(dir)+L"\\Diablo II Resurrected\\Settings.json";
-        if(dir)CoTaskMemFree(dir);return p;
+    static std::wstring modded,unmodded;
+    static const bool found=[]{
+        PWSTR dir=nullptr;std::wstring savedGames;
+        if(SUCCEEDED(SHGetKnownFolderPath(FOLDERID_SavedGames,0,nullptr,&dir)))savedGames=dir;
+        if(dir)CoTaskMemFree(dir);
+        if(savedGames.empty())return false;
+        wchar_t plugin[MAX_PATH]{};HMODULE self=nullptr;
+        if(GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS|GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                              reinterpret_cast<LPCWSTR>(&GameVideoOptions),&self))GetModuleFileNameW(self,plugin,MAX_PATH);
+        unmodded=savedGames+L"\\Diablo II Resurrected\\Settings.json";
+        modded=settings::ModSettingsFile(savedGames,plugin);
+        if(modded.empty())modded=unmodded;
+        char line[400];std::snprintf(line,sizeof line,"Frame VR settings: the game's video options from %ls",modded.c_str());
+        Say(line);
+        return true;
     }();
     static settings::GameVideo seen{};static ULONGLONG checkAt=0;static FILETIME written{};
-    if(now<checkAt||path.empty())return seen;
+    if(now<checkAt||!found)return seen;
     checkAt=now+2000;
+    const std::wstring& path=GetFileAttributesW(modded.c_str())!=INVALID_FILE_ATTRIBUTES?modded:unmodded;
     WIN32_FILE_ATTRIBUTE_DATA a{};
     if(!GetFileAttributesExW(path.c_str(),GetFileExInfoStandard,&a)){written={};return seen={};}
     if(!CompareFileTime(&a.ftLastWriteTime,&written))return seen;
