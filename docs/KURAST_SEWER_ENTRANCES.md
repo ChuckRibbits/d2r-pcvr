@@ -23,8 +23,9 @@ This can restore culled backs; it cannot manufacture missing geometry. In the
 owner's outside-entrance test, all seven LOD0 overrides were active, but sky
 remained visible through the end of the stairwell. Inspection of the original
 LOD0, 1 and 4 meshes found an open floor-end boundary without a closing wall.
-The owner verified the revised dark backdrop covers the opening. Standing
-re-entry remains untested: no A prompt appeared, but A was not pressed there.
+The owner verified the revised dark backdrop covers the opening and that
+pressing Right A enters the sewers. The missing prompt remained after entry
+was working; matching logs show repeated Bazaar -> Sewers Level 1 travel.
 
 Warp 57 retains its native 120-by-90 selection rectangle. The existing Interact
 guard depends on the native controller target. That makes native targeting a
@@ -42,7 +43,16 @@ layout signatures and bounds the neighboring-room scan. Room units use the
 native `+0x160` link (audited in the room iterator); the hash-list link is
 `+0x158` and must not be used here. New once-per-second diagnostics report
 nearby/facing warps and native-range acceptance. Headset entry verification is
-pending; a missing prompt alone does not establish that pressing A failed.
+verified for A entry; the replacement VR prompt still needs a headset check.
+
+The native target-label path also uses a separate legacy screen projection
+outside the existing stereo unit-anchor hook. The VR replacement shows
+**ENTER SEWERS / Right A** while that actual exit is selected. It preserves the
+entrance bearing, stays readable when directly on the stair trigger and uses
+the existing static gameplay atlas (no per-frame text repaint or new swapchain).
+Only session/area/ID/coordinates cross to the XR thread; native pointers do not.
+The prompt clears on target loss, stale updates, travel, menus or tracking loss.
+This presentation change does not issue actions or change the working A input.
 
 The read-only DEV trace records native and queried target pointers, type,
 class/ID, eye height above the player and view pitch. The trace itself does not
@@ -96,3 +106,8 @@ Synthetic checks (no game assets required):
 ```powershell
 .\deps\python\python.exe -m unittest discover -s steamvr -p prepare_sewer_backdrop_test.py
 ```
+
+Native checks include prompt expiry, area/session transitions, elevated-ground
+shear, snap-turn placement, invalid frames and close-range readability. The
+standalone `interaction-preview ... --sewer-prompt-check` verifies both text
+lines fit and produces a preview without game data.

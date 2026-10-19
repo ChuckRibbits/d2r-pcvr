@@ -3711,6 +3711,20 @@ uintptr_t NearbySewerInteraction() {
     }
     return result.unit;
 }
+void UpdateSewerPrompt(uintptr_t target) {
+    framevr::sewerprompt::Target prompt;
+    const auto now=GetTickCount64(),session=gamestate::LocalPlayer();
+    if(target&&g_enabled.load()&&g_inWorld.load()&&g_eyeOk.load()&&FullBody()&&!gamestate::MenuOpen()) {
+        const int level=interactionstate::CurrentLevel(session,now);
+        uint32_t h[3]{},xy[2]{};uintptr_t path=0;
+        if((level==80||level==81)&&SewerInteractionLayoutReady()&&
+           SafeRead(h,reinterpret_cast<const void*>(target),sizeof h)&&h[0]==5&&h[1]==57&&
+           SafeRead(&path,reinterpret_cast<const void*>(target+0x38),sizeof path)&&path>=0x10000&&path<=UINTPTR_MAX-0x18&&
+           SafeRead(xy,reinterpret_cast<const void*>(path+0x10),sizeof xy))
+            prompt={session,now,level,h[2],float(xy[0]),float(xy[1])};
+    }
+    framevr::PublishSewerPrompt(prompt);
+}
 #endif
 
 uintptr_t HookInteractTarget(uintptr_t mgr, uint32_t player) {
@@ -3729,6 +3743,9 @@ uintptr_t HookInteractTarget(uintptr_t mgr, uint32_t player) {
     }
     g_interactTarget.store(t);
     g_interactTargetAt.store(GetTickCount64());
+#ifdef D2RVR_NATIVE_OPENXR
+    UpdateSewerPrompt(t);
+#endif
 #if defined(D2RVR_DEV_TOOLS) && defined(D2RVR_NATIVE_OPENXR)
     // Read-only trace while inspecting an entrance in isolated DEV mode.
     // Do not substitute a guessed warp or change native target priority.

@@ -2,6 +2,7 @@
 #include <cstdint>
 #include "melee_contact.h"
 #include "bow_flight.h"
+#include "sewer_prompt.h"
 
 // Called by the existing game-side stereo draw hook and ReShade integration.
 // The OpenXR session uses the game's D3D12 device/queue.
@@ -17,6 +18,7 @@ void ConfigureEyeTracking(bool enabled);
 void ConfigureGameplay(bool enabled);
 void ConfigureQuiver(bool enabled,bool preview); // [bow] quiver, quiver_preview
 void ConfigureInteractions(bool seated,float waistBelowEyes,float beltForward,int dominantHand);
+void PublishSewerPrompt(const sewerprompt::Target&); // Values only; XR follows no game pointers.
 // Current motion-combat aim in the existing head-yaw-relative hand frame.
 bool SettingsOpen();
 bool OwnsControllerRumble(); // lock-free; VR input owns feedback instead of gamepad motors

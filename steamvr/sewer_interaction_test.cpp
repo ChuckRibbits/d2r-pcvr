@@ -1,5 +1,6 @@
 #include "sewer_interaction.h"
 #include "interact_press.h"
+#include "sewer_prompt.h"
 #include <cassert>
 #include <cstring>
 #include <limits>
@@ -77,4 +78,32 @@ int main() {
     assert(!press.Poll(true,OtherExit,true,true,1,0).down);
     press.Poll(false,OtherExit,true,true,1,0);
     assert(press.Poll(true,OtherExit,true,true,1,0).down);
+    // Prompt lifetime is independent of the native unit pointer: travel,
+    // loading, stale updates and session changes must hide the instruction.
+    namespace prompt=framevr::sewerprompt;
+    prompt::Target t{1,1000,80,20,103,100};
+    assert(prompt::Fresh(t,1,1200,80));
+    assert(!prompt::Fresh(t,1,1201,80));
+    assert(!prompt::Fresh(t,1,999,80));
+    assert(!prompt::Fresh(t,2,1000,80));
+    assert(!prompt::Fresh(t,1,1000,92));
+    assert(!prompt::Fresh({},1,1000,80));
+    auto invalid=t;invalid.x=std::numeric_limits<float>::quiet_NaN();
+    assert(!prompt::Fresh(invalid,1,1000,80));
+    // Elevated ground has shear on BOTH horizontal axes. A quarter-turn must
+    // rotate the entrance into room coordinates, including after a snap turn.
+    namespace math=framevr::math;
+    namespace coordinates=framevr::coordinates;
+    const auto ground=coordinates::RenderGround({50,0,50},2);
+    const math::Vec hero=ground*4,origin{1,1.6f,2},head{1,1.6f,2};
+    math::Vec at{};
+    assert(prompt::Position(t,origin,hero,{0,0,0,1},4,6.4f,head,{0,0,0,1},at));
+    assert(std::abs(at.x-2.5f)<.001f&&std::abs(at.z-2)<.001f&&std::abs(at.y-1.38f)<.001f);
+    assert(prompt::Position(t,origin,hero,math::Yaw(1.57079633f),4,6.4f,head,{0,0,0,1},at));
+    assert(std::abs(at.x-1)<.001f&&std::abs(at.z-3.5f)<.001f);
+    auto close=t;close.x=100;close.y=100;
+    assert(prompt::Position(close,origin,hero,{0,0,0,1},4,6.4f,head,{0,0,0,1},at));
+    assert(std::abs(at.z-1.1f)<.001f); // Readable even directly on the trigger.
+    assert(!prompt::Position(t,origin,hero,{0,0,0,1},0,6.4f,head,{0,0,0,1},at));
+    assert(!prompt::Position(t,origin,hero,{0,0,0,0},4,6.4f,head,{0,0,0,1},at));
 }

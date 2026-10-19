@@ -37,6 +37,7 @@
 #include "gameplay.h"
 #include "hand_controls.h"
 #include "interaction_ui.h"
+#include "sewer_prompt_art.h"
 #include "blood_screen.h"
 #include "guard_strain.h"
 #include "guard_strain_paint.h"
@@ -314,6 +315,8 @@ bool spellHasShot[2]{};
 uint64_t spellResolvedAt[2]{};
 std::atomic<ULONGLONG> meleeImpactAt[2]{},shieldImpactAt{0},parryMissAt{0};
 XrSwapchain gameplayChain=XR_NULL_HANDLE;
+std::mutex sewerPromptMutex;
+sewerprompt::Target sewerPrompt;
 XrPosef palettePose{};
 constexpr float paletteWidth=.45f,paletteHeight=.45f;
 ULONGLONG motionAt=0;
@@ -859,6 +862,7 @@ bool SetupGameplay(DXGI_FORMAT eyeFormat) {
     label(L"Trigger: nock",{576,768,1024,853});
     label(L"Pull back",{576,853,1024,938});
     label(L"Release to shoot",{576,938,1024,1024});
+    sewerprompt::Paint(dc,sewerprompt::AtlasX,sewerprompt::AtlasY);
     GdiFlush();
     std::vector<uint8_t> rgba(1024*1024*4);const auto* b=static_cast<const uint8_t*>(bits);
     for(int i=0;i<1024*1024;++i) {
@@ -2347,6 +2351,9 @@ void Register(LogFn log,PanelFn panel,PanelFn world,PanelFn toggle) {
 bool SpatialMenu(){return uiSupported.load()&&uiworld::Ready()&&hud::LayerFound()&&inWorld&&inWorld()&&wantsPanel&&wantsPanel();}
 bool Active() {std::lock_guard lock(mutex);return frame&&valid&&render&&!failed&&!panelMode;}
 bool VrGameplay(uint64_t now) {const auto at=vrGameplayAt.load();return at&&now>=at&&now-at<=1500;}
+void PublishSewerPrompt(const sewerprompt::Target& target) {
+    std::lock_guard lock(sewerPromptMutex);sewerPrompt=target;
+}
 void ConfigureDeferredWait(bool on) {
     if(deferredWait.exchange(on)!=on)Say(on?"Frame OpenXR: GPU wait deferred until copy allocator reuse":"Frame OpenXR: conservative GPU wait before image release");
 }
@@ -2587,6 +2594,24 @@ void EndPair() {
             else motionQuad(leftActiveSkill,pose,.075f,.075f,{{768,200},{96,96}},interactionChain);
         }
     }
+    XrCompositionLayerQuad sewerHint{XR_TYPE_COMPOSITION_LAYER_QUAD};
+    bool sewerHintShown=false;
+    if(interactionVisible&&!interactionOutput.wheel&&!settingsModel.open&&!bodyCalibration.Active()&&gameplayChain) {
+        sewerprompt::Target target;
+        {std::lock_guard lock(sewerPromptMutex);target=sewerPrompt;}
+        const auto now=GetTickCount64();math::Vec at{};
+        const bool spaceFresh=stageWorld.valid&&now>=stageWorld.at&&now-stageWorld.at<=250;
+        if(spaceFresh&&sewerprompt::Fresh(target,gamestate::LocalPlayer(),now,interactionInput.snapshot.location.level)&&
+           sewerprompt::Position(target,stageWorld.origin,stageWorld.hero,stageWorld.base,stageWorld.upm,
+                                 stageWorld.eyeHeight,V(head.position),Q(head.orientation),at)) {
+            const auto before=count;
+            motionQuad(sewerHint,XrPose({at,Q(head.orientation)}),sewerprompt::PanelWidth,sewerprompt::PanelHeight,
+                {{sewerprompt::AtlasX,sewerprompt::AtlasY},{sewerprompt::Width,sewerprompt::Height}},gameplayChain);
+            sewerHintShown=count>before;
+        }
+    }
+    static bool sewerHintWasShown=false;
+    if(sewerHintShown!=sewerHintWasShown){Say(sewerHintShown?"Frame sewer prompt: shown":"Frame sewer prompt: hidden");sewerHintWasShown=sewerHintShown;}
     if(gameplayVisible&&motionOutput.bowReady) {
         const auto bow=motionInput.hand[1];
         const auto center=motionOutput.bowDrawing?motionInput.hand[0].p:motionOutput.nockPoint;
