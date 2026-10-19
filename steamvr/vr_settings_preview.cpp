@@ -8,6 +8,7 @@
 int main(int argc,char** argv){
     using namespace framevr::settings;
     Snapshot s;s.ready=true;s.offlineDifficultyAvailable=true;s.values[Motion]=1;s.values[Snap]=30;s.values[Foveation]=2;
+    if(argc>3&&std::strcmp(argv[3],"--foveation-off")==0)s.values[Foveation]=0; // greyed Foveation strength row
     Model m;m.Open(s);const int page=argc>2?std::atoi(argv[2]):0;
     m.Click({Kind::Tab,page});
     if(argc>3&&std::strcmp(argv[3],"--release-notes-check")==0){

@@ -123,8 +123,8 @@ std::vector<uint8_t> Paint(const Model& m,Hit hover,const char* runtimeStatus,co
         for(int row=0;row<RowCount(m.page);++row){
             const Key key=RowKey(m.page,row);const auto& d=Definitions[key];const float value=m.Get()[key];const int y=RowY+row*RowStep;
             fill({40,y-4,1200,RowStep},row%2?RGB(19,31,39):RGB(22,36,44));
-            const int textWidth=m.page==Page::Haptics?520:780;
-            text(d.label,{58,y+1,textWidth,29},true);text(d.detail,{58,y+30,textWidth,28},false,false,quiet);
+            const int textWidth=m.page==Page::Haptics?520:780;const bool applies=RowEnabled(m.Get(),key);
+            text(d.label,{58,y+1,textWidth,29},true,false,applies?RGB(229,234,235):quiet);text(d.detail,{58,y+30,textWidth,28},false,false,quiet);
             if(m.page==Page::Haptics&&HapticCategory(key)>=0){
                 const auto category=haptics::Category(HapticCategory(key));
                 for(int choice=0;choice<haptics::PreviewCount(category);++choice)
@@ -132,6 +132,7 @@ std::vector<uint8_t> Paint(const Model& m,Hit hover,const char* runtimeStatus,co
             }
             char label[96];
             if(key==Foveation){const char* modes[]={"Off","Fixed","Eye tracked"};std::snprintf(label,sizeof label,"%s",modes[int(value)]);}
+            else if(key==FoveationStrength)std::snprintf(label,sizeof label,"%s",FoveationStrengthNames[int(value)]);
             else if(key==VitalsLocation||key==NavigationLocation)std::snprintf(label,sizeof label,"%s",vitals::LocationNames[int(value)]);
             else if(key==RenderResolution)std::snprintf(label,sizeof label,"%s",resolution::Choices[int(value)]);
             else if(key==MenuDistance)std::snprintf(label,sizeof label,"%s",MenuDistanceNames[int(value)]);
@@ -150,14 +151,14 @@ std::vector<uint8_t> Paint(const Model& m,Hit hover,const char* runtimeStatus,co
             else if(key==LootLabelSize)std::snprintf(label,sizeof label,"%g%%",value);
             else if(key==Waist||key==BeltForward)std::snprintf(label,sizeof label,"%.1f cm",value*100);
             else std::snprintf(label,sizeof label,"%.0f",value);
-            const bool enabled=m.ready&&!m.Busy();
+            const bool enabled=m.ready&&!m.Busy()&&applies;
             button(Decrease(row),"-",{Kind::Change,key,-1},false,enabled);
             button(Increase(row),"+",{Kind::Change,key,1},false,enabled);
             button(ValueBox(row),label,{d.max==1?Kind::Change:Kind::None,key,1},false,enabled);
         }
         if(m.page==Page::Video){
-            text("Applying resolution changes rebuilds the VR view. Desktop restores the game's window size.",{40,744,1200,60},false,false,quiet);
-            text("Headset uses the runtime recommendation, capped at 4096 per side. DLSS: game Options.",{40,808,1200,60},false,false,quiet);
+            text("Applying resolution changes rebuilds the VR view. Desktop restores the game's window size.",{40,806,1200,34},false,false,quiet);
+            text("Headset uses the runtime recommendation, capped at 4096 per side. DLSS: game Options.",{40,839,1200,34},false,false,quiet);
         }
         if(m.page==Page::HUD){
             text("Palm: raise left hand palm up; release grip/trigger. Status follows the minimap.",{58,854,1160,22},false,false,quiet);

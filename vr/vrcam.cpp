@@ -76,6 +76,7 @@ namespace hud { void Register(); void SetHide(int mode); void SetInterfaceScale(
 #include "d2rcam.h"
 #ifdef D2RVR_NATIVE_OPENXR
 #include "foveation.h"
+#include "foveation_math.h"
 #include "logging.h"
 #include "thread_stats.h"
 #endif
@@ -909,7 +910,13 @@ void LoadSettings() {
     }
 #endif
 #ifdef D2RVR_NATIVE_OPENXR
-    framevr::foveation::Configure(IniB(L"render",L"fixed_foveation",true),IniF(L"render",L"foveation_inner",0.55f),IniF(L"render",L"gaze_foveation_inner",0.35f));
+    {   // A strength saved from VR Settings selects a preset (invalid values use Medium,
+        // as the menu shows). Profiles without one keep their saved radii at 2x2.
+        const float strength=IniF(L"render",L"foveation_strength",-1);
+        framevr::FoveationPreset preset{IniF(L"render",L"foveation_inner",0.55f),IniF(L"render",L"gaze_foveation_inner",0.35f),2};
+        if(strength>=0)preset=framevr::FoveationStrengthPreset(strength==std::floor(strength)?int(strength):-1);
+        framevr::foveation::Configure(IniB(L"render",L"fixed_foveation",true),preset.fixedRadius,preset.gazeRadius,preset.peripheralRate);
+    }
     d2rcam::SetStereoLabels(IniB(L"hud",L"stereo_labels",true));
     d2rcam::SetOrdinaryMobBars(IniB(L"hud",L"ordinary_mob_bars",false));
     d2rcam::SetMonsterDrawOrder(IniB(L"hud",L"monster_draw_order",true));
@@ -7806,6 +7813,13 @@ void OnReshadePresent(reshade::api::effect_runtime*) {
 #ifdef D2RVR_NATIVE_OPENXR
         const auto f=framevr::foveation::TakeStats();
         LogF("Frame foveation: %u reduced-shading draws, %u full-quality draws in sample",f.shadedDraws,f.fullDraws);
+        namespace fv=framevr::foveation;
+        uint64_t worldDraws=0;for(const auto n:f.world)worldDraws+=n;
+        if(worldDraws)
+            LogF("Frame foveation coverage: full-size colour+depth draws during eyes: covered %u | full quality: blended %u, "
+                 "no depth test %u, no pixel shader %u, unknown pipeline %u, multisample %u, target mismatch %u, eligible but unmasked %u",
+                 f.world[fv::Covered],f.world[fv::Blended],f.world[fv::NoDepthTest],f.world[fv::NoPixelShader],
+                 f.world[fv::UnknownPipeline],f.world[fv::Multisample],f.world[fv::TargetMismatch],f.world[fv::ViewportOther]);
 #endif
         if (!pairtime::g_drawThread.load()) pairtime::g_drawThread.store(GetCurrentThreadId());
 #ifdef D2RVR_NATIVE_OPENXR
