@@ -272,13 +272,24 @@ uint64_t interactionPrefetchSession=0;
 uint32_t interactionPrefetchRevision=~0u;
 ULONGLONG interactionPaintAt=0;
 bool interactionAtlasPending=false;
-struct AtlasUpload {
-    ComPtr<ID3D12Resource> upload;
+// An atlas upload's buffer (kept mapped) and command list, reused once the GPU
+// is past them: making a 4 MB upload heap and a command list on each refresh,
+// and clearing the buffer first, held the frame thread 5.4-7 ms a refresh
+// (Frame UI refresh, 2026-10-19).
+struct AtlasStaging {
+    ComPtr<ID3D12Resource> upload;uint8_t* data=nullptr;UINT64 bytes=0;
     ComPtr<ID3D12CommandAllocator> allocator;
     ComPtr<ID3D12GraphicsCommandList> commands;
+};
+struct AtlasUpload {
+    AtlasStaging staging;
     uint64_t fence=0;
 };
 std::vector<AtlasUpload> atlasUploads;
+std::vector<AtlasStaging> atlasStagingFree;   // the GPU is done with these
+constexpr size_t AtlasStagingKept=6;
+// Where an upload's frame-thread time went; UploadAtlas adds to it.
+struct AtlasTiming {double image=0,buffers=0,copy=0,record=0,submit=0;int made=0;} atlasTiming;
 
 melee::PoseHistory meleePoses,offhandPoses;
 melee::PoseHistory shieldPoses;
@@ -763,21 +774,40 @@ bool UploadAtlas(XrSwapchain& chain,DXGI_FORMAT eyeFormat,int atlasWidth,int atl
     if(!Check(pEnumerateSwapchainImages(chain,0,&count,nullptr),"count static atlas images"))return false;
     std::vector<XrSwapchainImageD3D12KHR> images(count,{XR_TYPE_SWAPCHAIN_IMAGE_D3D12_KHR});
     if(!Check(pEnumerateSwapchainImages(chain,count,&count,reinterpret_cast<XrSwapchainImageBaseHeader*>(images.data())),"get static atlas images"))return false;
+    double at=Milliseconds();
+    const auto stage=[&](double& into){const double t=Milliseconds();into+=t-at;at=t;};
     uint32_t index=0;XrSwapchainImageAcquireInfo ai{XR_TYPE_SWAPCHAIN_IMAGE_ACQUIRE_INFO};
     if(!Check(pAcquireSwapchainImage(chain,&ai,&index),"acquire static atlas atlas"))return false;
     XrSwapchainImageWaitInfo wi{XR_TYPE_SWAPCHAIN_IMAGE_WAIT_INFO};wi.timeout=XR_INFINITE_DURATION;
     if(!Check(pWaitSwapchainImage(chain,&wi),"wait static atlas atlas"))return false;
+    stage(atlasTiming.image);
     auto* dest=images[index].texture;const auto desc=dest->GetDesc();
     D3D12_PLACED_SUBRESOURCE_FOOTPRINT footprint{};UINT64 bytes=0;
     device->GetCopyableFootprints(&desc,0,1,0,&footprint,nullptr,nullptr,&bytes);
-    D3D12_HEAP_PROPERTIES heap{};heap.Type=D3D12_HEAP_TYPE_UPLOAD;
-    D3D12_RESOURCE_DESC uploadDesc{};uploadDesc.Dimension=D3D12_RESOURCE_DIMENSION_BUFFER;uploadDesc.Width=bytes;
-    uploadDesc.Height=uploadDesc.DepthOrArraySize=uploadDesc.MipLevels=uploadDesc.SampleDesc.Count=1;uploadDesc.Layout=D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
-    ComPtr<ID3D12Resource> upload;
-    if(!Hr(device->CreateCommittedResource(&heap,D3D12_HEAP_FLAG_NONE,&uploadDesc,D3D12_RESOURCE_STATE_GENERIC_READ,nullptr,IID_PPV_ARGS(&upload)),"create static atlas upload"))return false;
-    uint8_t* data=nullptr;D3D12_RANGE readRange{};
-    if(!Hr(upload->Map(0,&readRange,reinterpret_cast<void**>(&data)),"map static atlas upload"))return false;
-    std::memset(data,0,size_t(bytes));
+    // The smallest kept buffer that fits, else a new one, mapped for good.
+    AtlasStaging staging;
+    {
+        auto best=atlasStagingFree.end();
+        for(auto it=atlasStagingFree.begin();it!=atlasStagingFree.end();++it)
+            if(it->bytes>=bytes&&(best==atlasStagingFree.end()||it->bytes<best->bytes))best=it;
+        if(best!=atlasStagingFree.end()){staging=std::move(*best);atlasStagingFree.erase(best);}
+    }
+    if(!staging.upload) {
+        D3D12_HEAP_PROPERTIES heap{};heap.Type=D3D12_HEAP_TYPE_UPLOAD;
+        D3D12_RESOURCE_DESC uploadDesc{};uploadDesc.Dimension=D3D12_RESOURCE_DIMENSION_BUFFER;uploadDesc.Width=bytes;
+        uploadDesc.Height=uploadDesc.DepthOrArraySize=uploadDesc.MipLevels=uploadDesc.SampleDesc.Count=1;uploadDesc.Layout=D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
+        if(!Hr(device->CreateCommittedResource(&heap,D3D12_HEAP_FLAG_NONE,&uploadDesc,D3D12_RESOURCE_STATE_GENERIC_READ,nullptr,IID_PPV_ARGS(&staging.upload)),"create static atlas upload"))return false;
+        D3D12_RANGE readRange{};
+        if(!Hr(staging.upload->Map(0,&readRange,reinterpret_cast<void**>(&staging.data)),"map static atlas upload"))return false;
+        staging.bytes=bytes;
+        if(!Hr(device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT,IID_PPV_ARGS(&staging.allocator)),"create static atlas allocator")||
+           !Hr(device->CreateCommandList(0,D3D12_COMMAND_LIST_TYPE_DIRECT,staging.allocator.Get(),nullptr,IID_PPV_ARGS(&staging.commands)),"create static atlas list")||
+           !Hr(staging.commands->Close(),"close new static atlas list"))return false;
+        ++atlasTiming.made;
+    }
+    stage(atlasTiming.buffers);
+    // Only the footprint's rows are copied, so the rest of the buffer need not be cleared.
+    uint8_t* const data=staging.data;
     const bool bgra=eyeFormat==DXGI_FORMAT_B8G8R8A8_UNORM_SRGB||eyeFormat==DXGI_FORMAT_B8G8R8A8_UNORM;
     for(int y=0;y<atlasHeight;++y) {
       if(!bgra) {std::memcpy(data+footprint.Offset+y*footprint.Footprint.RowPitch,pixels.data()+y*atlasWidth*4,atlasWidth*4);continue;}
@@ -787,26 +817,28 @@ bool UploadAtlas(XrSwapchain& chain,DXGI_FORMAT eyeFormat,int atlasWidth,int atl
         pixel[0]=rgba[bgra?2:0];pixel[1]=rgba[1];pixel[2]=rgba[bgra?0:2];pixel[3]=rgba[3];
       }
     }
-    upload->Unmap(0,nullptr);
-    ComPtr<ID3D12CommandAllocator> alloc;ComPtr<ID3D12GraphicsCommandList> list;
-    if(!Hr(device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT,IID_PPV_ARGS(&alloc)),"create static atlas allocator")||
-       !Hr(device->CreateCommandList(0,D3D12_COMMAND_LIST_TYPE_DIRECT,alloc.Get(),nullptr,IID_PPV_ARGS(&list)),"create static atlas list"))return false;
+    stage(atlasTiming.copy);
+    auto* list=staging.commands.Get();
+    if(!Hr(staging.allocator->Reset(),"reset static atlas allocator")||!Hr(list->Reset(staging.allocator.Get(),nullptr),"reset static atlas list"))return false;
     D3D12_RESOURCE_BARRIER barrier{};barrier.Type=D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
     barrier.Transition={dest,D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES,D3D12_RESOURCE_STATE_RENDER_TARGET,D3D12_RESOURCE_STATE_COPY_DEST};
     list->ResourceBarrier(1,&barrier);
-    D3D12_TEXTURE_COPY_LOCATION src{};src.pResource=upload.Get();src.Type=D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT;src.PlacedFootprint=footprint;
+    D3D12_TEXTURE_COPY_LOCATION src{};src.pResource=staging.upload.Get();src.Type=D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT;src.PlacedFootprint=footprint;
     D3D12_TEXTURE_COPY_LOCATION dst{};dst.pResource=dest;dst.Type=D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX;
     list->CopyTextureRegion(&dst,0,0,0,&src,nullptr);
     std::swap(barrier.Transition.StateBefore,barrier.Transition.StateAfter);list->ResourceBarrier(1,&barrier);
     if(!Hr(list->Close(),"close static atlas list"))return false;
-    ID3D12CommandList* lists[]={list.Get()};queue->ExecuteCommandLists(1,lists);
+    stage(atlasTiming.record);
+    ID3D12CommandList* lists[]={list};queue->ExecuteCommandLists(1,lists);
     if(!Hr(queue->Signal(fence.Get(),++fenceValue),"signal atlas fence"))return false;
+    stage(atlasTiming.submit);
     if(dynamic) {
-        atlasUploads.push_back({upload,alloc,list,fenceValue});
+        atlasUploads.push_back({std::move(staging),fenceValue});
         if(pending)*pending=true;else interactionAtlasPending=true;
         return true; // Released at EndPair, after the pair's existing GPU fence.
     }
     if(!WaitGpu())return false;
+    if(atlasStagingFree.size()<AtlasStagingKept)atlasStagingFree.push_back(std::move(staging));
     XrSwapchainImageReleaseInfo ri{XR_TYPE_SWAPCHAIN_IMAGE_RELEASE_INFO};
     return Check(pReleaseSwapchainImage(chain,&ri),"release static atlas atlas");
 }
@@ -1396,7 +1428,11 @@ void Input() {
     const bool modUi=settingsModel.open||bodyCalibration.Active()||calibrationRelease.blocked;
     auto controls=menuControls.Step(modUi?menus::Mode::Blocked:nativeUi?menus::Mode::Native:menus::Mode::World,inputEpoch,physical);
     SampleGaze();
-    atlasUploads.erase(std::remove_if(atlasUploads.begin(),atlasUploads.end(),[](const auto& a){return fence->GetCompletedValue()>=a.fence;}),atlasUploads.end());
+    for(auto upload=atlasUploads.begin();upload!=atlasUploads.end();) {
+        if(fence->GetCompletedValue()<upload->fence){++upload;continue;}
+        if(atlasStagingFree.size()<AtlasStagingKept)atlasStagingFree.push_back(std::move(upload->staging));
+        upload=atlasUploads.erase(upload);
+    }
     if(!calibrationPrompted&&!settingsModel.open&&!panelMode&&!spatialMode&&inWorld&&inWorld()){
         const auto config=vrsettings::Read();
         if(config.ready&&config.result!=settings::Result::Saving){calibrationPrompted=true;if(!calibration::Stored(config.values))OpenBodyCalibration();}
@@ -1873,7 +1909,7 @@ void Input() {
             interaction::PaintedAtlas painted;
             if(key==interactionRequestedKey&&context==interactionRequestedContext&&atlasUploads.size()<2&&!interactionAtlasPending&&
                !companionAtlasPending&&interactionPainter.Take(interactionPaintRequest,painted)) {
-                const auto uploadStart=Milliseconds();
+                const auto uploadStart=Milliseconds();atlasTiming={};
                 if(!painted.pixels.empty()&&UploadAtlas(interactionChain,atlasFormat,1024,1024,painted.pixels,true)) {
                     interactionPaintKey=key;interactionPaintContext=context;interactionPaintValid=true;
                     companionPaintValid=!painted.companions.empty()&&UploadAtlas(companionChain,atlasFormat,
@@ -1882,9 +1918,24 @@ void Input() {
                 }
                 interactionPaintRequest=0;
                 const auto uploadMs=Milliseconds()-uploadStart;
+                const auto& t=atlasTiming;
                 static ULONGLONG reportAt=0;
                 if((profile::Active()||uploadMs>4)&&now>=reportAt) {
-                    char message[180];std::snprintf(message,sizeof message,"Frame UI refresh: background paint %.2f ms, frame-thread upload %.2f ms",painted.paintMs,uploadMs);Say(message);reportAt=now+1000;
+                    char message[300];std::snprintf(message,sizeof message,"Frame UI refresh: background paint %.2f ms, frame-thread upload %.2f ms "
+                        "(image wait %.2f, buffers %.2f%s, copy %.2f, commands %.2f, submit %.2f)",
+                        painted.paintMs,uploadMs,t.image,t.buffers,t.made?" new":"",t.copy,t.record,t.submit);Say(message);reportAt=now+1000;
+                }
+                // Every 10 s, all refreshes: the spikes above alone do not show the usual cost.
+                static ULONGLONG summaryFrom=0;static int refreshes=0,made=0;static double sumMs=0,maxMs=0;static AtlasTiming sum{};
+                if(!summaryFrom)summaryFrom=now;
+                ++refreshes;sumMs+=uploadMs;maxMs=std::max(maxMs,uploadMs);made+=t.made;
+                sum.image+=t.image;sum.buffers+=t.buffers;sum.copy+=t.copy;sum.record+=t.record;sum.submit+=t.submit;
+                if(now-summaryFrom>=10000) {
+                    const double n=1.0/refreshes;char message[300];
+                    std::snprintf(message,sizeof message,"Frame UI refresh: %d in %.0f s, frame-thread upload mean %.2f ms, max %.2f ms | a refresh: "
+                        "image wait %.2f, buffers %.2f (%d new), copy %.2f, commands %.2f, submit %.2f ms",
+                        refreshes,(now-summaryFrom)/1000.0,sumMs*n,maxMs,sum.image*n,sum.buffers*n,made,sum.copy*n,sum.record*n,sum.submit*n);
+                    Say(message);summaryFrom=now;refreshes=made=0;sumMs=maxMs=0;sum={};
                 }
             }
         }
@@ -3080,7 +3131,7 @@ void Shutdown(bool preserveResolution) {
     settingsModel.Close();settingsOpen=false;settingsInputGate.Suspend();settingsPaintRevision=~0ull;settingsAtlasPending=settingsImageReady=false;
     bodyCalibration.Cancel();calibrationRelease={};calibrationPrompted=floorSpace=false;calibrationSession=0;calibrationPaintKey=-1;
     if(settingsChain&&pDestroySwapchain)pDestroySwapchain(settingsChain);settingsChain=XR_NULL_HANDLE;
-    atlasUploads.clear();interactionPaintKey=~0ull;interactionPrefetchSession=0;interactionPrefetchRevision=~0u;interactions.Reset();interactionstate::Cancel();
+    atlasUploads.clear();atlasStagingFree.clear();interactionPaintKey=~0ull;interactionPrefetchSession=0;interactionPrefetchRevision=~0u;interactions.Reset();interactionstate::Cancel();
     interactionPaintRequest=0;interactionRequestedKey=~0ull;interactionPaintValid=false;interactionPaintContext={};interactionRequestedContext={};interactionPaintAt=0;
     if(interactionChain&&pDestroySwapchain)pDestroySwapchain(interactionChain);interactionChain=XR_NULL_HANDLE;
     if(companionChain&&pDestroySwapchain)pDestroySwapchain(companionChain);companionChain=XR_NULL_HANDLE;
