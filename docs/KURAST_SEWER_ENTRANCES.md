@@ -19,8 +19,12 @@ allows only these exact model families/materials through the existing scoped
 two-sided material override, including their normal LOD0-4 variants. Names are
 canonicalized before selection. Unrelated stairs, foliage, water, collision,
 opacity and native interaction behavior are unchanged. No assets are shipped.
-This may restore culled backs; it cannot manufacture missing geometry and has
-not yet been visually verified at an entrance.
+This can restore culled backs; it cannot manufacture missing geometry. In the
+owner's outside-entrance test, all seven LOD0 overrides were active, but sky
+remained visible through the end of the stairwell. Inspection of the original
+LOD0, 1 and 4 meshes found an open floor-end boundary without a closing wall.
+The owner exited from inside and inspected the outside; standing re-entry was
+not tested.
 
 Warp 57 retains its native 120-by-90 selection rectangle. The existing Interact
 guard depends on the native controller target. That makes native targeting a
@@ -37,3 +41,40 @@ Sewers** goes to level 92; take a stair exit outside to inspect its counterpart.
 inside/outside travel, and whether missing stairwell faces remain. Capture the
 active mod's frame log after testing; hook installation alone is insufficient
 to claim the materials were overridden or the interaction bug was fixed.
+
+## Local dark-backdrop preview
+
+`steamvr/prepare_sewer_backdrop.py` adds a render-only dark end behind the
+stairs in the four native entrance presets. It reuses the game's existing
+`black_square01` rectangle, measures the opening from the player's own model
+files, and follows each preset's stair transform. Two opposite faces cover
+both viewing directions. Existing terrain, entities, physics and warp data
+remain intact. This is a local developer preview; normal setup does not run it.
+Placement and appearance still need a headset check.
+
+Close the game and its loader, then run from the checkout containing this helper:
+
+```powershell
+.\deps\python\python.exe steamvr/prepare_sewer_backdrop.py --game "YOUR GAME DIRECTORY"
+```
+
+It requires the existing isolated `pcvr-dev` metadata/save path and refuses
+conflicting preset overrides. Generated presets stay inside
+`mods/pcvr-dev/pcvr-dev.mpq`; the ownership receipt is
+`pcvr-sewer-backdrop-preview.json` there. Do not commit or distribute these
+generated files. After restarting **pcvr-dev**, use **DEV > Act III > Kurast
+Sewers**, exit outside, inspect the opening from several angles, then try
+entering while standing normally. Compare entrances in Bazaar and Upper Kurast.
+The visual preview does not establish that the reported entry problem is fixed.
+
+With the game closed, remove only unchanged preview files using:
+
+```powershell
+.\deps\python\python.exe steamvr/prepare_sewer_backdrop.py --game "YOUR GAME DIRECTORY" --remove
+```
+
+Synthetic checks (no game assets required):
+
+```powershell
+.\deps\python\python.exe -m unittest discover -s steamvr -p prepare_sewer_backdrop_test.py
+```
