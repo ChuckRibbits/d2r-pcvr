@@ -4914,8 +4914,12 @@ bool TurnSafe(bool& moved, bool& snapped) {
 // two passes. The settle counts every pair, replayed or not.
 bool ReplayWanted() {
     if (framevr::StereoRendering() != 3) return false;
-    const bool settled = stereoreplay::Wanted(g_inWorld.load() && d2rcam::InWorld());
-    return settled && !ThirdPerson() && !Overhead() && !gamestate::MenuOpen() && framevr::Active() && framevr::ReplayReady();
+    static bool told = false;   // once a ready stretch: what else holds it back
+    if (!stereoreplay::Wanted(g_inWorld.load() && d2rcam::InWorld())) { told = false; return false; }
+    const char* why = ThirdPerson() ? "third person" : Overhead() ? "an overhead view" : gamestate::MenuOpen() ? "a menu is open" :
+                      !framevr::Active() ? "the headset session is not active" : !framevr::ReplayReady() ? "a stereo capture waits" : nullptr;
+    if (why && !told) { told = true; LogF("vrcam: replay - ready, but two passes: %s", why); }
+    return !why;
 }
 bool TurnsWanted() {
     const int mode = framevr::StereoRendering();

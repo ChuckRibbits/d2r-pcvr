@@ -580,7 +580,9 @@ constexpr uint64_t RVA_GAME_PRESENT = 0x109F4C0;
 const uint8_t kSigGamePresent[16] = {0x48,0x89,0x5C,0x24,0x18,0x48,0x89,0x54,0x24,0x10,0x57,0x48,0x83,0xEC,0x40,0x4D};
 using GamePresentFn = void* (*)(void*, void*, void*);
 GamePresentFn OrigGamePresent = nullptr;
+std::atomic<uint32_t> g_presentHookCalls{0};   // (why the replay is not ready, in the log)
 void* HookGamePresent(void* dev, void* result, void* wrap) {
+    g_presentHookCalls.fetch_add(1, std::memory_order_relaxed);
     if (wrap) {
         __try {   // and the flags it presents with: tearing allowed (0x200) as the game decides it
             const uint8_t* w = (const uint8_t*)wrap;
@@ -685,7 +687,18 @@ bool Wanted(bool inWorld) {
         LogF("vrcam: replay - the game's present %s", hooked ? "hooked" : "NOT where expected - no replay");
     }
     replaycam::Eyes eyes;
-    return hooked == 1 && g_proxy && g_native && g_rt && g_rightTech.handle && EyesNow(&eyes);
+    const bool eyesOk = EyesNow(&eyes);
+    const bool ready = hooked == 1 && g_proxy && g_native && g_rt && g_rightTech.handle && eyesOk;
+    static bool told = false;   // once a settled stretch: what is missing
+    if (!was) told = false;
+    if (!ready && !told) {
+        told = true;
+        LogF("vrcam: replay - settled but NOT ready: the game's present %s (%u calls), its swap chain %s, the real one %s, effects %s, "
+             "right technique %s, eyes %s (gap %.3f world units, projection x %.3f)",
+             hooked == 1 ? "hooked" : "not hooked", g_presentHookCalls.load(), g_proxy ? "seen" : "NOT seen", g_native ? "seen" : "NOT seen",
+             g_rt ? "seen" : "NOT seen", g_rightTech.handle ? "found" : "NOT found", eyesOk ? "known" : "NOT known", eyes.shift, eyes.projSx);
+    }
+    return ready;
 }
 void AreaChanged() {
     g_areaChanges.fetch_add(1);
@@ -728,7 +741,13 @@ bool RightFromLeft() {
     // The right pass, if there is one, binds the game's buffers again.
     g_capture.store(false);
     const bool slots = g_redirect.exchange(false) && g_slotsBuf;
-    if (!held || !slots || !g_direct) { ++g_statFails; return false; }
+    if (!held || !slots || !g_direct) {
+        ++g_statFails;
+        static uint32_t told = 0;   // why, the first few times
+        if (told++ < 5) LogF("vrcam: replay - this pair fell back to two passes: left present %s, camera slots %s, direct queue %s",
+                             held ? "held" : "NOT held", slots ? "in use" : "NOT in use", g_direct ? "known" : "NOT known");
+        return false;
+    }
     std::unique_lock gpu(g_gpuMx);
     CopySlots(1);   // the right eye's camera into the slots, before the replay
     if (marks >= replaygroups::kGame)   // the game's calls seen from the next pair on (each queue once)
@@ -779,7 +798,7 @@ bool RightFromLeft() {
     gpu.unlock();
     // The game asked for its next back buffer right after its (held) present.
     if (g_wrap) SetGameBackBuffer(g_wrap, g_native->GetCurrentBackBufferIndex());
-    g_replays.fetch_add(1);
+    if (g_replays.fetch_add(1) == 0) LogF("vrcam: replay - the first pair from one pass: %zu lists in %u calls, %d camera slots", subs.size(), calls, g_nSlots.load());
     ++g_statReplayed;
     return true;
 }
