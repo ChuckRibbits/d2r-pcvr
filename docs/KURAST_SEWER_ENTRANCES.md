@@ -67,20 +67,27 @@ inside/outside travel, and whether missing stairwell faces remain. Capture the
 active mod's frame log after testing; hook installation alone is insufficient
 to claim the materials were overridden or the interaction bug was fixed.
 
-## Local dark-backdrop preview
+## Installation and local developer preparation
 
 `steamvr/prepare_sewer_backdrop.py` adds a render-only dark end behind the
 stairs in the four native entrance presets. It reuses the game's existing
 `black_square01` rectangle, measures the opening from the player's own model
 files, and follows each preset's stair transform. Two opposite faces cover
 both viewing directions. Existing terrain, entities, physics and warp data
-remain intact. This is a local developer preview; normal setup does not run it.
+remain intact. Full install and Update / repair run this preparation automatically
+for `D2R-PCVR`, on both Steam and Battle.net archive paths. Generated presets and
+their `pcvr-sewer-backdrop.json` ownership receipt are included in the existing
+installer backup transaction, so restoration and removal cover these files too.
+Repeat updates replace only unchanged owned presets or identical files. Edited
+or untracked overrides are retained, with a preparation warning in the setup log.
+Only the preparation code is packaged; game assets remain local.
 The first headset preview covered most of the opening but left a visible strip
 on the right. The revised preview extends the backdrop farther toward that
 stair-local side and increases the overlap on both sides. The owner verified
 the revised placement in the headset.
 
-Close the game and its loader, then run from the checkout containing this helper:
+For an already prepared isolated developer environment, the manual preview
+command remains available. Close the game and its loader, then run:
 
 ```powershell
 .\deps\python\python.exe steamvr/prepare_sewer_backdrop.py --game "YOUR GAME DIRECTORY"

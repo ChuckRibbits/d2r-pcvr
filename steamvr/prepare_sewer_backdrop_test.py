@@ -8,6 +8,7 @@ import unittest
 from unittest.mock import patch
 
 import prepare_sewer_backdrop as preview
+from prepare_dev_scenarios import MOD_INFO
 
 
 def measurements():
@@ -117,7 +118,7 @@ class BackdropLifecycleTests(unittest.TestCase):
         self.game = Path(self.temp.name).resolve()
         self.root = self.game/'mods/pcvr-dev/pcvr-dev.mpq'
         self.root.mkdir(parents=True)
-        (self.root/'modinfo.json').write_text(preview.MOD_INFO, encoding='utf-8')
+        (self.root/'modinfo.json').write_text(MOD_INFO, encoding='utf-8')
         self.payload = {name: b'{"synthetic":true}\n' for name in preview.PRESETS}
 
     def test_round_trip_keeps_other_files(self):
@@ -185,6 +186,86 @@ class BackdropLifecycleTests(unittest.TestCase):
         (self.root/'modinfo.json').write_text('{"name":"pcvr-dev","savepath":"../"}')
         with self.assertRaises(ValueError):
             preview.checked_root(self.game)
+
+
+class InstallerBackdropTests(unittest.TestCase):
+    def payload(self, mod='D2R-PCVR', data=b'synthetic preset'):
+        payload = {name: data for name in preview.install_names(mod)}
+        payload[preview.INSTALL_RECEIPT] = json.dumps(dict(version=1, sha256={
+            name: preview.digest(value) for name, value in payload.items()})).encode()
+        return payload
+
+    def test_preparation_maps_both_mods_without_writing_or_changing_geometry(self):
+        class Assets:
+            build_hash = 'synthetic build'
+
+            def __enter__(self): return self
+            def __exit__(self, *args): pass
+
+        original = {name: b'synthetic local preset' for name in preview.PRESETS}
+        for mod in ('D2R-PCVR', 'pcvr-dev'):
+            with self.subTest(mod=mod), patch.object(preview, 'open_assets', return_value=Assets()) as opened, \
+                    patch.object(preview, 'generate', return_value=(original, measurements())):
+                payload = preview.prepare(Path('synthetic game'), mod, casclib=Path('synthetic CascLib'))
+            opened.assert_called_once_with(Path('synthetic game'), Path('synthetic CascLib'))
+            self.assertEqual(set(payload), set(preview.install_names(mod)) | {preview.INSTALL_RECEIPT})
+            for name in preview.PRESETS:
+                self.assertEqual(payload[f'{mod}.mpq/{name}'], original[name])
+            record = json.loads(payload[preview.INSTALL_RECEIPT])
+            self.assertEqual(record['build'], Assets.build_hash)
+            self.assertEqual(record['geometry']['center'], list(measurements()['center']))
+            self.assertEqual(record['sha256'], {name: preview.digest(payload[name]) for name in preview.install_names(mod)})
+
+    def test_owned_updates_and_identical_repairs_are_read_only(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            mod = Path(tmp).resolve()
+            previous, updated = self.payload(), self.payload(data=b'updated synthetic preset')
+            preview.check_existing(mod, previous)
+            for name, data in previous.items():
+                path = mod/name
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_bytes(data)
+            unrelated = mod/'unrelated.txt'
+            unrelated.write_bytes(b'keep')
+            before = {p: p.read_bytes() for p in mod.rglob('*') if p.is_file()}
+            preview.check_existing(mod, previous)
+            preview.check_existing(mod, updated)
+            self.assertEqual(before, {p: p.read_bytes() for p in mod.rglob('*') if p.is_file()})
+
+    def test_custom_and_untracked_presets_refuse_the_entire_payload(self):
+        for tracked in (False, True):
+            with self.subTest(tracked=tracked), tempfile.TemporaryDirectory() as tmp:
+                mod = Path(tmp).resolve()
+                payload = self.payload()
+                path = mod/preview.install_names('D2R-PCVR')[-1]
+                path.parent.mkdir(parents=True)
+                path.write_bytes(b'player edit')
+                if tracked:
+                    (mod/preview.INSTALL_RECEIPT).write_bytes(payload[preview.INSTALL_RECEIPT])
+                before = {p: p.read_bytes() for p in mod.rglob('*') if p.is_file()}
+                with self.assertRaisesRegex(ValueError, 'left unchanged'):
+                    preview.check_existing(mod, payload)
+                self.assertEqual(before, {p: p.read_bytes() for p in mod.rglob('*') if p.is_file()})
+
+    def test_unknown_mod_and_incomplete_payloads_refused(self):
+        with self.assertRaises(ValueError):
+            preview.prepare(None, '../D2R-VR')
+        with tempfile.TemporaryDirectory() as tmp:
+            mod = Path(tmp).resolve()
+            payload = self.payload()
+            for altered in ({}, {**payload, '../elsewhere': b'bad'}, self.payload('pcvr-dev')):
+                with self.assertRaises(ValueError):
+                    preview.check_existing(mod, altered)
+            self.assertFalse(list(mod.rglob('*')))
+
+    def test_invalid_ownership_receipt_refuses_updates(self):
+        records = [[], dict(version=2, sha256={}), dict(version=1, sha256={'../elsewhere': 'bad'})]
+        with tempfile.TemporaryDirectory() as tmp:
+            mod = Path(tmp).resolve()
+            for record in records:
+                (mod/preview.INSTALL_RECEIPT).write_text(json.dumps(record))
+                with self.assertRaisesRegex(ValueError, 'Unknown sewer'):
+                    preview.check_existing(mod, self.payload())
 
 
 if __name__ == '__main__':

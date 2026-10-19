@@ -16,6 +16,7 @@ import zipfile
 from prepare_icons import prepare as prepare_icons
 from prepare_potions import prepare as prepare_potions, CODES as POTION_CODES
 import prepare_arcane_sky
+import prepare_sewer_backdrop
 from game_install import validate_game
 import mod_identity
 
@@ -397,6 +398,14 @@ def main():
     else:
         payload.update({mod_identity.MOD_DIR / name: data for name, data in arcane.items()})
         print('Prepared surrounding Arcane Sanctuary sky from your installed game.')
+    try:
+        sewers = prepare_sewer_backdrop.prepare(game, casclib=args.casclib)
+        prepare_sewer_backdrop.check_existing(game / mod_identity.MOD_DIR, sewers)
+    except (OSError, ValueError, KeyError, IndexError) as error:
+        print(f'Kurast sewer backdrop preparation unavailable; existing surfaces retained: {error}')
+    else:
+        payload.update({mod_identity.MOD_DIR / name: data for name, data in sewers.items()})
+        print('Prepared dark Kurast sewer entrances from your installed game.')
     require_game_closed()
     snapshot = args.backup_dir / datetime.now().strftime('%Y%m%d-%H%M%S-%f')
     snapshot.mkdir(parents=True)
