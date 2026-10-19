@@ -5,14 +5,14 @@
 #include <cstring>
 #include <vector>
 
-// Low-life heartbeat. Value-only: the transport supplies the blood visor's life
-// band (blood::Target, 60/40/20 % of max life) and plays it on its own waveOut
-// stream (PlaySound plays one sound per process and would cut off the riposte).
+// Low-life heartbeat. Value-only: the transport supplies the published life and
+// the player's VR Settings > Combat > Heartbeat starts at (LifeLevel), and plays
+// it on its own waveOut stream (PlaySound plays one sound per process and would
+// cut off the riposte).
 //
-// Each band the blood splashes steps the heartbeat up, louder and faster,
-// loudest and fastest below 20 %. Healing back above a band winds it down more
-// slowly than the blood fades (Level): quieter and slower beat by beat, then
-// silent. The built-in beat is a recording embedded in the plugin
+// Below the start the heartbeat steps up every 10 % of life lost, louder and
+// faster, loudest and fastest below 10 %. Healing back above a step winds it
+// down slowly (Level): quieter and slower beat by beat, then silent. The built-in beat is a recording embedded in the plugin
 // (steamvr/assets/guard-heartbeat.wav); Synthesize() is the fallback when that
 // resource is missing. [gameplay] low_life_heart_file replaces it with a 16-bit
 // PCM WAV of one beat (any rate, mono or stereo).
@@ -77,11 +77,23 @@ inline bool ParseWav(const std::vector<uint8_t>& w,Pcm& out) {
 }
 struct Tuning {
     float volume=2;              // heartbeat % x the game's Master x Combat volume; 0 = off
-    float bpmMin=70,bpmMax=115;  // first touch .. the worst band (below 20 % life)
+    float bpmMin=70,bpmMax=115;  // the first step .. below 10 % life
     float quiet=.12f;            // loudness at the first touch (of full)
     float fadeSeconds=4;         // winding down from full to silent, at the slowest
 };
-// The heartbeat's own level: rises with the life band at once, but falls no faster
+// How hard the heart works: start (10..90 %, a multiple of 10; 0 = off) and each
+// 10 % below it is one step, and life under k of those steps is k of them all,
+// so start 50 gives 1/5 below 50 %, 2/5 below 40 % ... full below 10 %.
+// Unknown, dead or off: 0, so it winds down.
+inline float LifeLevel(float health,float maxHealth,int startPercent) {
+    const int steps=std::clamp(startPercent,0,90)/10;
+    if(steps<1||!std::isfinite(health)||!std::isfinite(maxHealth)||health<=0||maxHealth<=0)return 0;
+    const float percent=100*health/maxHealth;
+    int below=0;
+    for(int k=0;k<steps;++k)if(percent<float(steps*10-k*10))++below;
+    return float(below)/float(steps);
+}
+// The heartbeat's own level: rises with LifeLevel at once, but falls no faster
 // than 1/fadeSeconds per second, so it keeps beating, quieter and slower, after
 // a heal. A hitch over .25 s (a load) snaps it to the target.
 class Level {

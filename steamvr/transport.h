@@ -47,7 +47,7 @@ void ShieldGuardState(bool eligible,bool raised);
 // density (1 = as drawn; higher thickens the partly clear band, for the black rim).
 void ConfigureGuardStrain(float perBlock,float resetSeconds,float clear,float breatheSeconds,float softness,float brightness,uint32_t color,float density=1);
 // [gameplay] low_life_heartbeat (x the game's Master x Combat volume, 0 = off), tempo
-// at the first blood band and the worst, wind-down time from full, and an optional
+// at the first 10 % step and below 10 % life, wind-down time from full, and an optional
 // one-beat 16-bit PCM WAV (empty: the built-in beat). Reloads the WAV only when the path changes.
 void ConfigureHeartbeat(float volume,float bpmMin,float bpmMax,float fadeSeconds,const wchar_t* file);
 void SpellCast(int hand,uint64_t session); // one successful hand spell, not each projectile

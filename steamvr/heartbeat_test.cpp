@@ -1,5 +1,4 @@
 #include "heartbeat.h"
-#include "blood_screen.h"
 #include <cstdio>
 #include <cstdlib>
 using namespace framevr;
@@ -89,14 +88,17 @@ int main() {
         Check(!heartbeat::ParseWav(Wav(1,1,44100,8,{1,2}),p),"8-bit WAV refused");
         Check(!heartbeat::ParseWav({'n','o','p','e'},p),"not a WAV refused");
     }
-    {   // It steps with the blood visor's life bands: 60 / 40 / 20 % of max life.
-        auto level=[](float h){return std::max(0.f,blood::Target(h,100));};
-        Check(level(100)==0&&level(60)==0,"no blood, no heartbeat");
-        Check(level(59)>0&&level(59)==level(41),"below 60 %: the first band, one level throughout");
-        Check(level(39)>level(59)&&level(19)>level(39)&&level(19)==1,"louder each band, full below 20 %");
-        Check(heartbeat::Gain(level(59),t)>0&&heartbeat::Gain(level(39),t)>heartbeat::Gain(level(59),t)&&
-              heartbeat::Bpm(level(19),t)==115&&heartbeat::Bpm(level(39),t)>heartbeat::Bpm(level(59),t),"each band is louder and faster");
-        Check(level(0)==0&&std::max(0.f,blood::Target(50,0))==0,"dead or unknown: winds down");
+    {   // VR Settings > Combat > Heartbeat starts at: one step per 10 % of life below it.
+        auto level=[](float h,int start){return heartbeat::LifeLevel(h,100,start);};
+        Check(level(100,50)==0&&level(50,50)==0,"silent at and above the start");
+        Check(level(49,50)==.2f&&level(41,50)==.2f,"start 50: the first of five steps from 49 % to 40 %");
+        Check(level(39,50)==.4f&&level(29,50)==.6f&&level(19,50)==.8f&&level(9,50)==1,"a step every 10 % lower, full below 10 %");
+        Check(level(59,60)>0&&std::fabs(level(59,60)-1/6.f)<1e-6f&&level(90,90)==0&&level(89,90)>0,"60 (default) and 90 starts");
+        Check(level(15,10)==0&&level(9,10)==1,"start 10: full at once below 10 %");
+        Check(level(5,0)==0,"Off is silent");
+        Check(level(0,50)==0&&heartbeat::LifeLevel(50,0,50)==0&&level(NAN,50)==0,"dead or unknown: winds down");
+        Check(heartbeat::Gain(level(39,50),t)>heartbeat::Gain(level(49,50),t)&&heartbeat::Bpm(level(39,50),t)>heartbeat::Bpm(level(49,50),t)&&
+              heartbeat::Bpm(level(9,50),t)==115,"each step is louder and faster");
     }
-    std::puts("Low-life heartbeat: synthesized lub-dub, loudness and tempo follow life, stepping with the blood bands, silent when healthy or dead, one-period beats (padded, cut, stereo, saturation) and WAV loading passed");
+    std::puts("Low-life heartbeat: synthesized lub-dub, loudness and tempo follow life, stepping every 10 % below the chosen start, silent when healthy or dead, one-period beats (padded, cut, stereo, saturation) and WAV loading passed");
 }

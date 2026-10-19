@@ -898,7 +898,7 @@ void LoadSettings() {
                                       return end&&end!=hex&&!*end&&v<=0xFFFFFFul?uint32_t(v):0xFFF7EAu;}(),
                                   IniB(L"gameplay",L"guard_strain_dark",false)?
                                       std::clamp(IniF(L"gameplay",L"guard_strain_dark_density",2.5f),1.f,6.f):1.f);
-    {   // Low-life heartbeat (steps with the blood visor's 60/40/20 % life bands): % on top of
+    {   // Low-life heartbeat (start: VR Settings > Combat, [gameplay] low_life_heart_start): % on top of
         // the game's Master x Combat volume (0 = off), tempo range, wind-down time from full, and
         // an optional one-beat 16-bit PCM WAV (next to this ini unless a full path). The old
         // guard_strain_heart* keys are still read when the low_life_heart* key is absent.

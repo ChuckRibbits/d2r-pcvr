@@ -1662,15 +1662,16 @@ void Input() {
         }
     }
     // Low-life heartbeat (Classic and Unleashed): queue the next beat ~80 ms before
-    // the current one ends, at the loudness and tempo of the blood visor's life band
-    // (60/40/20 %). Above 60 %, dead or stale vitals: the last beat finishes, then silence.
+    // the current one ends, at the loudness and tempo of the 10 % step of life below
+    // VR Settings > Combat > Heartbeat starts at. Above it, Off, dead or stale vitals:
+    // the last beat finishes, then silence.
     {
         heartStream.Reap();
         heartbeat::Tuning heart;std::shared_ptr<const heartbeat::Pcm> source;const char* sourceName=nullptr;
         {std::lock_guard lock(heartMutex);heart=heartTuning;source=heartSource;sourceName=heartSourceName;}
         const auto& vitals=interactionInput.snapshot;
         const bool lifeKnown=vitals.vitalsKnown&&interaction::Fresh(vitals,interactionInput.session,interactionInput.at);
-        const float target=lifeKnown?std::max(0.f,blood::Target(vitals.health,vitals.maxHealth)):0.f;   // dead (-1): 0
+        const float target=lifeKnown?heartbeat::LifeLevel(vitals.health,vitals.maxHealth,int(hudSettings.values[settings::HeartbeatStart])):0.f;
         // Its own level: winds down slower than a heal, quieter and slower beat by beat.
         const float level=heartLevel.Step(target,heartAt>0?interactionInput.time-heartAt:0,heart.fadeSeconds);
         heartAt=interactionInput.time;
