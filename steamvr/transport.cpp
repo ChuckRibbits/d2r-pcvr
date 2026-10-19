@@ -394,6 +394,12 @@ bool mirrorSupported=false,mirrorMono=false;
 // pose and FOV it was drawn with (lastEyes). A frame without a stereo layer
 // forgets both, so the next draws a pair.
 bool turnFrame=false;
+// Replay (Stereo rendering 3): this pair's right eye is the left one moved by
+// replayGap (metres) along the left eye's x - ReplayRight puts views[1] there,
+// so the camera, the potions and the layer all have it. replayShift: that gap
+// in the world's units, from View.
+bool replayPair=false;
+float replayGap=0,replayShift=0;
 // Where an eye stood and how it was turned in the game's world (View), and its
 // near plane (Projection): By turns moves the eye not drawn from there.
 struct EyeWorld {math::Vec at{};math::Quat turn{0,0,0,1};float nearPlane=0;bool ok=false;};
@@ -2075,6 +2081,27 @@ void Events() {
         event={XR_TYPE_EVENT_DATA_BUFFER};
     }
 }
+// Replay: the right eye drawn as the left one moved along the left view's own
+// x (the camera fold folds that move into its projection) - and submitted so:
+// the left eye's turn, its place moved by the eyes' gap along that x. A
+// headset whose eyes are turned apart or set off along y or z is shown the
+// right image reprojected from there.
+void ReplayRight() {
+    const auto q0=Q(views[0].pose.orientation),q1=Q(views[1].pose.orientation);
+    const auto apart=math::Rotate(math::Conjugate(q0),V(views[1].pose.position)-V(views[0].pose.position));
+    static bool told=false;
+    if(!told){
+        told=true;
+        const float dot=std::min(1.f,std::fabs(q0.x*q1.x+q0.y*q1.y+q0.z*q1.z+q0.w*q1.w));
+        char b[224];std::snprintf(b,sizeof b,"Frame OpenXR: replay - right eye %.1f mm along the left eye's x (%.1f mm up, %.1f mm back), the eyes turned %.2f degrees apart",
+            apart.x*1000,apart.y*1000,apart.z*1000,2*std::acos(dot)*57.2957795f);
+        Say(b);
+    }
+    replayGap=apart.x;
+    const auto at=V(views[0].pose.position)+math::Rotate(q0,{apart.x,0,0});
+    views[1].pose.orientation=views[0].pose.orientation;
+    views[1].pose.position={at.x,at.y,at.z};
+}
 bool Begin() {
     if(!session||frame) return frame;
     Events();if(!running)return false;
@@ -2134,6 +2161,7 @@ bool Begin() {
                 {r.angleLeft,r.angleRight,r.angleDown,r.angleUp});
             for(auto& view:views)view.fov={f.left,f.right,f.up,f.down};
         }
+        if(replayPair)ReplayRight();
         static int lastProjectionMode=-1;
         if(lastProjectionMode!=int(centered)) {
             const auto& f=views[0].fov;char b[192];
@@ -2476,6 +2504,7 @@ void DestroySwap(reshade::api::swapchain* swap,bool resize) {
 }
 } // namespace
 
+void CaptureEffects(reshade::api::effect_runtime* rt){AfterEffects(rt);}
 bool HandleWindowFocusMessage(void* window,uint32_t message,uint64_t token,int64_t deadline) {
     return windowFocus.Handle(static_cast<HWND>(window),message,WPARAM(token),LPARAM(deadline));
 }
@@ -2545,7 +2574,17 @@ bool TakeWorldRecenter() {
     std::lock_guard lock(mutex);const bool take=worldRecenter;worldRecenter=false;return take;
 }
 void RequestStereoCapture(){captureRequested.store(true);}
-int StereoRendering() {return std::clamp(int(std::lround(vrsettings::Read().values[settings::EyesByTurns])),0,2);}
+int StereoRendering() {return std::clamp(int(std::lround(vrsettings::Read().values[settings::EyesByTurns])),0,3);}
+bool ReplayReady() {
+    std::lock_guard lock(mutex);
+    return !captureRequested.load()&&!d2rcam::LabelCapturePending();
+}
+float ReplayShift() {std::lock_guard lock(mutex);return replayShift;}
+float ReplayProjShift() {
+    std::lock_guard lock(mutex);
+    const auto off=[](const XrFovf& f){const float l=std::tan(f.angleLeft),r=std::tan(f.angleRight);return (r+l)/(r-l);};
+    return .5f*(off(views[0].fov)-off(views[1].fov));
+}
 bool TurnDepthWanted() {return StereoRendering()==2;}
 bool TurnDepthReady() {
     std::lock_guard lock(mutex);
@@ -2559,17 +2598,18 @@ bool TurnReady() {
     std::lock_guard lock(mutex);
     return lastEyes[0].ok&&lastEyes[1].ok&&!captureRequested.load()&&!d2rcam::LabelCapturePending();
 }
-void BeginPair(bool byTurns) {
+void BeginPair(bool byTurns,bool replay) {
     std::lock_guard lock(mutex);
     lastTiming={};
     if(session&&!failed){
         if(frame)EndPair();
         const int mode=StereoRendering();
-        turnFrame=byTurns;keepTurns=byTurns||mode>0;keepDepth=mode==2;Begin();pairDrawing=true;
+        turnFrame=byTurns;replayPair=replay&&!byTurns;
+        keepTurns=byTurns||mode==1||mode==2;keepDepth=mode==2;Begin();pairDrawing=true;
         gpuProfile.started=gpuProfile.effects=gpuProfile.resolved=0;
-        // The profile and stereo captures take both eyes from one game frame.
-        if(Active()&&!byTurns)profile::BeginPair();else profile::SkipPair();
-        if(Active()&&!byTurns&&(captureRequested.exchange(false)||d2rcam::TakeLabelCapture())) {
+        // The profile and stereo captures take both eyes from two passes.
+        if(Active()&&!byTurns&&!replayPair)profile::BeginPair();else profile::SkipPair();
+        if(Active()&&!byTurns&&!replayPair&&(captureRequested.exchange(false)||d2rcam::TakeLabelCapture())) {
             capturePair=true;captureEyes=0;++captureSerial;
             Say("Frame capture: recording one stereo pair (readback pause is diagnostic, exclude from performance comparison)");
         }
@@ -2580,7 +2620,7 @@ void EndPair() {
     lightbounds::SetActive(false);
     foveation::EndWorld();
     d2rcam::SetStereoUiEye(-1);
-    std::lock_guard lock(mutex);pairDrawing=false;const bool turn=turnFrame;turnFrame=false;if(!frame||!session)return;
+    std::lock_guard lock(mutex);pairDrawing=false;const bool turn=turnFrame;turnFrame=false;replayPair=false;if(!frame||!session)return;
     d2rcam::TraceStereoLabels(-1);
     if(capturePair){Say(captureEyes==3?"Frame capture: both eye screenshots requested":"Frame capture: incomplete pair; do not use for stereo comparison");capturePair=false;}
     // By turns: the eye not drawn, turned to this frame's head.
@@ -3227,6 +3267,10 @@ bool View(float out[16],const float hero[3],float eyeHeight,float userEyeHeight,
     const math::Vec position={hero[0]+offset.x,hero[1]+eyeHeight+offset.y,hero[2]+offset.z};
     const auto turn=math::Multiply(base,Q(pose.orientation));
     if(eye>=0){viewBase[eye&1]=base;auto& w=viewWorld[eye&1];w.at=position;w.turn=turn;w.ok=true;}
+    if(eye==0){   // the replay's eye gap in this view's units: along the left eye's x
+        const auto apart=math::Rotate(math::Conjugate(Q(views[0].pose.orientation)),V(views[1].pose.position)-V(views[0].pose.position));
+        replayShift=apart.x*upm;
+    }
     math::View(position,turn,out);return true;
 }
 bool Projection(float out[16],float nearWorld,int eye) {

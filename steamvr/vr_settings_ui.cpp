@@ -139,7 +139,7 @@ std::vector<uint8_t> Paint(const Model& m,Hit hover,const char* runtimeStatus,co
             char label[96];
             if(key==Foveation){const char* modes[]={"Off","Fixed","Eye tracked"};std::snprintf(label,sizeof label,"%s",modes[int(value)]);}
             else if(key==FoveationStrength)std::snprintf(label,sizeof label,"%s",FoveationStrengthNames[int(value)]);
-            else if(key==EyesByTurns)std::snprintf(label,sizeof label,"%s",StereoRenderingNames[std::clamp(int(value),0,2)]);
+            else if(key==EyesByTurns)std::snprintf(label,sizeof label,"%s",StereoRenderingNames[std::clamp(int(value),0,3)]);
             else if(key==VitalsLocation||key==NavigationLocation)std::snprintf(label,sizeof label,"%s",vitals::LocationNames[int(value)]);
             else if(key==RenderResolution)std::snprintf(label,sizeof label,"%s",resolution::Choices[int(value)]);
             else if(key==MenuDistance)std::snprintf(label,sizeof label,"%s",MenuDistanceNames[int(value)]);

@@ -151,8 +151,32 @@ the eyes, which can look doubled.
 Both draw a pair on a snap turn, outside first person, in open menus, during
 stereo captures and on any frame without a reusable image for both eyes. With
 **Desktop shows one eye**, the kept left image covers the right frames on the
-monitor. The choice is stored as `[stereo] eyes_by_turns` (0 Both eyes,
-1 Hybrid, 2 By turns) and applies live. Every 10 seconds the log reports a
+monitor.
+
+**Replay** (adapted from upstream's "one pass, two pictures") draws both eyes
+from one game frame for about one eye's CPU work. The game draws the left eye
+as usual while every list it submits is noted, and the camera constant buffers
+those lists bind come from slots of the mod's own instead: the left eye's
+values for the left pass, the right eye's for the replay (the eye gap folded
+into the projection, `steamvr/replay_camera.h`). The game's present at the end
+of the left pass is held: the left eye's effects run and it goes to the
+headset. The noted lists then run again on the same queues, in the game's own
+submissions, the right eye's effects run, and one real present takes it to
+the headset. The GPU still draws both eyes, shadow maps included, so it helps
+when the CPU limits the frame rate. It starts after 240 pairs in a settled
+area and pauses for every area change, menu, long frame or stereo capture,
+drawing two passes until it can run again. The eyes share the game's labels,
+the gaze-driven foveation centre and one DLSS instance (its history alternates
+eyes, so DLSS may smear); the right eye is submitted as the left eye moved
+along its own x. `[stereo] replay_marks` (3: the game's calls; 1: one list a
+call with a signal after each), `replay_ahead`, `replay_positions` and
+`replay_prev` tune it. Every 10 seconds the log reports how many pairs were
+replayed, the lists and calls a replayed pair submitted, and the camera
+records folded; a watchdog logs each queue's fences if no present comes for
+3 seconds while replaying.
+
+The choice is stored as `[stereo] eyes_by_turns` (0 Both eyes, 1 Hybrid,
+2 By turns, 3 Replay) and applies live. Every 10 seconds the log reports a
 `vrcam: eyes by turns` line with frames per second, the time spent in each part
 of a frame, how many other eyes were moved with depth or only turned, and how
 many frames went as pairs while moving.

@@ -122,6 +122,7 @@ namespace gamestate {bool OpaqueMenuOpen();}
 #include "stereo_prop_physics.h"
 #endif
 #include "dlss_mv.h"
+#include "stereo_replay.h"
 #include "dlss_depth.h"
 #include "billboards.h"
 #ifdef D2RVR_NATIVE_OPENXR
@@ -421,6 +422,8 @@ struct Settings {
     std::atomic<float> uiShift{0.0f};       // AFR: the HUD moved apart per eye in the shader, % of the half screen; more = nearer
     std::atomic<float> hudTop{0.70f};       // the HUD is looked for below this height (0 top .. 1 bottom)
 } g_set;
+// [stereo] replay_*: Stereo rendering: Replay's settings (LoadSettings), handed over at TryRegister.
+stereoreplay::Settings g_replaySettings;
 
 wchar_t g_iniPath[MAX_PATH];
 FILETIME g_iniTime{};
@@ -1246,6 +1249,15 @@ void LoadSettings() {
     dlssmv::SetLag((int)IniF(L"render", L"dlss_mv_lag", 0.0f));
     dlssmv::SetFarTurn(IniF(L"render", L"dlss_mv_far_turn", 1.0f));
     dlssmv::SetFixes(IniB(L"render", L"dlss_mv_near", false), IniB(L"render", L"dlss_mv_jitter", true));
+    {   // Stereo rendering: Replay (vr/stereo_replay.h)
+        stereoreplay::Settings r;
+        r.marks = (int)IniF(L"stereo", L"replay_marks", 3.0f);       // how the lists go again: 3 the game's calls, 1 one a call with a signal
+        r.ahead = (int)IniF(L"stereo", L"replay_ahead", 2.0f);       // replays the CPU may run ahead of
+        r.positions = (int)IniF(L"stereo", L"replay_positions", 2.0f);
+        r.prev = IniB(L"stereo", L"replay_prev", true);
+        g_replaySettings = r;
+        stereoreplay::Configure(r);
+    }
     g_set.phantomRay.store(IniB(L"debug", L"phantom_ray", false));
     g_set.boneAxes.store(IniB(L"debug", L"bone_axes", false));
     g_set.weaponDiag.store(IniB(L"debug", L"weapon_diag", false));
@@ -2540,6 +2552,7 @@ bool VrViewInner(const d2rcam::WorldView& in, float out[16]) {
         const float centerPosition[3]={eye.x,eye.y,eye.z};
         billboards::SetCenter(centerPosition);
         framevr::View(view, L, ViewHeight() + JumpLift(), UserEyeHeightM(), baseHeading, recenter, g_eye.load(), mapNorth);
+        if ((g_eye.load() & 1) == 0) stereoreplay::SetLeftView(view, framevr::ReplayShift());   // the replay's right eye: this one moved along its x
         fwd = {-center[2], -center[6], -center[10]};
         const float horizontal = std::hypot(fwd.x, fwd.z);
         if (horizontal > 1e-5f) {
@@ -2666,7 +2679,8 @@ bool VrProjInner(const d2rcam::WorldView& in, float M[16]) {
         M[8] += g_eye.load() == 0 ? shift : -shift;
     }
 #ifdef D2RVR_NATIVE_OPENXR
-    if (!ThirdPerson() && !Overhead()) framevr::Projection(M, nearZ, g_eye.load());
+    if (!ThirdPerson() && !Overhead() && framevr::Projection(M, nearZ, g_eye.load()) && (g_eye.load() & 1) == 0)
+        stereoreplay::SetProjection(M[0], framevr::ReplayProjShift());
     g_projSx.store(M[0]); g_projSy.store(M[5]);
 #endif
     AcquireSRWLockExclusive(&g_skyLock);
@@ -4694,6 +4708,9 @@ uintptr_t HookSetBiome(const char* name) {
     for (size_t i = 0; b[i] && b[i] != '.' && i + 1 < sizeof bare; ++i) bare[i] = (char)tolower((unsigned char)b[i]);
     AcquireSRWLockExclusive(&g_biomeLock); memcpy(g_biome, bare, sizeof bare); ReleaseSRWLockExclusive(&g_biomeLock);
     g_biomeGen.fetch_add(1);
+#ifdef D2RVR_NATIVE_OPENXR
+    stereoreplay::AreaChanged();   // an area loads: the last replay done on the GPU first, then two passes until it settles
+#endif
     return OrigSetBiome(name);
 }
 
@@ -4892,9 +4909,17 @@ bool TurnSafe(bool& moved, bool& snapped) {
     snapped = std::fabs(WrapDeg(g_mouseYaw.load() + g_turnYaw.load() - g_heldYaw.load())) > 15.0f;
     return ok;
 }
+// Stereo rendering: Replay (vr/stereo_replay.h): one CPU pass, the right eye
+// from its lists - first person in the world, no capture waiting for a pair of
+// two passes. The settle counts every pair, replayed or not.
+bool ReplayWanted() {
+    if (framevr::StereoRendering() != 3) return false;
+    const bool settled = stereoreplay::Wanted(g_inWorld.load() && d2rcam::InWorld());
+    return settled && !ThirdPerson() && !Overhead() && !gamestate::MenuOpen() && framevr::Active() && framevr::ReplayReady();
+}
 bool TurnsWanted() {
     const int mode = framevr::StereoRendering();
-    if (mode == 0) return false;
+    if (mode != 1 && mode != 2) return false;
     bool moved = false, snapped = false;
     const bool seen = TurnSafe(moved, snapped);   // every frame, so a step is seen from the last one
     if (ThirdPerson() || Overhead() || gamestate::MenuOpen() || !framevr::TurnReady()) return false;
@@ -5003,8 +5028,11 @@ uintptr_t HookDrawGameScreen(int a) {
     static bool toldTry = false;   // before the first pair: if the game dies on it, the log says where
     if (!toldTry) { toldTry = true; Log("vrcam: pair per game frame - drawing the first pair"); }
 #ifdef D2RVR_NATIVE_OPENXR
-    framevr::BeginPair();
+    const bool replay = ReplayWanted();
+    framevr::BeginPair(false, replay);
     if(framevr::TakeWorldRecenter())Recenter();
+#else
+    const bool replay = false;
 #endif
     // One head for the pair: BodyWalk's block may change between the passes.
     static D2RVR_Shared held;
@@ -5032,8 +5060,11 @@ uintptr_t HookDrawGameScreen(int a) {
 #ifdef D2RVR_NATIVE_OPENXR
     framevr::BeginEye(0);
 #endif
+#ifdef D2RVR_NATIVE_OPENXR
+    if (replay) stereoreplay::BeginLeft();
+#endif
     d2rcam::Refresh();
-    OrigDrawGameScreen(a);
+    const uintptr_t leftR = OrigDrawGameScreen(a);
     const double t1 = pairtime::UsNow();
 #ifdef D2RVR_NATIVE_OPENXR
     const double c1 = measureCpu?pairtime::CpuUs():0;
@@ -5055,7 +5086,14 @@ uintptr_t HookDrawGameScreen(int a) {
     framevr::BeginEye(1);
 #endif
     d2rcam::Refresh();
-    const uintptr_t r = OrigDrawGameScreen(a);
+#ifdef D2RVR_NATIVE_OPENXR
+    // Replay: the right eye from the left pass's lists, no second CPU pass;
+    // false (the left present was not held, no slots yet) draws it as before.
+    const bool replayed = replay && stereoreplay::RightFromLeft();
+#else
+    const bool replayed = false;
+#endif
+    const uintptr_t r = replayed ? leftR : OrigDrawGameScreen(a);
     *dt = keep; *rawDt = keepRaw;
     const double t2 = pairtime::UsNow();
     sumPass[1] += t2 - t1;
@@ -5098,6 +5136,15 @@ uintptr_t HookDrawGameScreen(int a) {
     if (!told) { told = true; Log("vrcam: pair per game frame ON - left eye, then right eye with the frame time held"); }
     if (const ULONGLONG now = GetTickCount64(); now - since >= 10000) {
         LogF("vrcam: %.1f pairs/s from one game frame each", pairs * 1000.0 / (double)(now - since));
+#ifdef D2RVR_NATIVE_OPENXR
+        if (framevr::StereoRendering() == 3) {
+            const auto rs = stereoreplay::TakeStats();
+            const double n = rs.replayed ? 1.0 / rs.replayed : 0.0;
+            LogF("vrcam: replay - %u of %u pairs from one pass (%u fell back to two) | a replayed pair: %.1f lists in %.1f calls, %.3f ms to submit, "
+                 "camera %.1f records folded, %.1f positions moved, %u slots (%u overflowed, %.1f late)",
+                 rs.replayed, pairs, rs.fallbacks, rs.lists * n, rs.calls * n, rs.submitMs * n, rs.folded * n, rs.positions * n, rs.slots, rs.overflow, rs.lateSlots * n);
+        }
+#endif
         if (pairs) {
             const double k = 0.001 / pairs;   // us summed -> ms a pair
             LogF("vrcam: a pair, ms: game %.2f | left %.2f (effects %.2f, Present %.2f) | right %.2f (effects %.2f, Present %.2f) | longest %.1f",
@@ -7524,6 +7571,11 @@ int g_fxEye = 0;
 // second SuperSampling feature is made beside the game's, and the right eye's
 // frames are evaluated on it. The motion vectors are still the game's, made
 // against the previous frame - the other eye's (see the plan, next step).
+#ifdef D2RVR_NATIVE_OPENXR
+bool ReplayCapturing() { return stereoreplay::Capturing(); }
+#else
+bool ReplayCapturing() { return false; }
+#endif
 namespace dlsseyes {
 struct NgxHandle { unsigned int Id; };
 using CreateFn = int(__cdecl*)(void* cmdList, int feature, void* params, NgxHandle** out);
@@ -7582,14 +7634,16 @@ int __cdecl HookEval(void* cmdList, const NgxHandle* h, const void* params, void
             NgxHandle* twin = TwinOf(h);
             if (!twin && !TriedBefore(h)) twin = MakeTwin(cmdList, h, const_cast<void*>(params), "at the first evaluation");
             if (twin) {
-                void* restore = g_inWorld.load() ? dlssmv::BeforeEvaluate(cmdList, params, eye) : nullptr;
+                void* restore = g_inWorld.load() && !ReplayCapturing() ? dlssmv::BeforeEvaluate(cmdList, params, eye) : nullptr;
                 const int r = OrigEval(cmdList, twin, params, callback);
                 dlssmv::AfterEvaluate(params, restore);
                 return r;
             }
         }
         if (TwinOf(h)) {   // the left eye on the game's own instance
-            void* restore = g_inWorld.load() ? dlssmv::BeforeEvaluate(cmdList, params, eye) : nullptr;
+            // The replay evaluates the left pass's DLSS again for the right eye on the same
+            // instance: its history alternates eyes, and the same-eye vectors would be wrong.
+            void* restore = g_inWorld.load() && !ReplayCapturing() ? dlssmv::BeforeEvaluate(cmdList, params, eye) : nullptr;
             const int r = OrigEval(cmdList, h, params, callback);
             dlssmv::AfterEvaluate(params, restore);
             return r;
@@ -7752,6 +7806,9 @@ void OnFinishEffects(reshade::api::effect_runtime* rt, reshade::api::command_lis
     if (ApplySkyPictures(rt)) return;   // the effect reloads with the new pictures
     if (!g_tech[0].handle) g_tech[0] = rt->find_technique("D2R_DepthFog.fx", "D2R_DepthFog");
     if (!g_tech[1].handle) g_tech[1] = rt->find_technique("D2R_DepthFog.fx", "D2R_DepthFog_R");
+#ifdef D2RVR_NATIVE_OPENXR
+    stereoreplay::SetEffects(rt, g_tech[1]);
+#endif
     if (!g_tech[0].handle) { hud::SetPictureReady(false); return; }
     // Off while a menu is open: the fog lies over the whole picture, the
     // inventory and trade panels included, and darkened them.
@@ -7959,7 +8016,7 @@ void OnBeginEffects(reshade::api::effect_runtime* rt, reshade::api::command_list
         const bool ownDepth=g_enabled.load()&&g_inWorld.load()&&framevr::Active()&&
             (FogWanted()||g_set.skyOn.load()||g_arcaneSky.load()||CeilWanted()||TableKeyWanted());
         const bool turnDepth=g_enabled.load()&&g_inWorld.load()&&framevr::Active()&&framevr::TurnDepthWanted();
-        framevr::scenedepth::Bind(rt,cl,ownDepth,turnDepth,s);
+        framevr::scenedepth::Bind(rt,cl,ownDepth,turnDepth,stereoreplay::RightEffects(),s);
         SetBool(rt,"OwnDepth",ownDepth);
 #else
         SetBool(rt,"OwnDepth",false);
@@ -8352,6 +8409,8 @@ void TryRegister() {
     if (!reshade::register_addon(g_self)) return;
     framevr::resources::Register();
 #ifdef D2RVR_NATIVE_OPENXR
+    // before the game makes its device: the replay reads its upload buffers from their creation
+    stereoreplay::Register(&Log, g_replaySettings);
     framevr::scenedepth::Register(&Log);
     framevr::lightbounds::Register(&Log);
 #endif

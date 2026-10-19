@@ -22,6 +22,7 @@ resource_view view{};
 resource_desc description{};
 bool bound=false;
 Kept latest;   // this present's copy, until taken
+Candidate lastPick;   // the last eye's, for the replay's right eye
 struct OwnScope {OwnScope(){own=true;}~OwnScope(){own=false;}};
 format SrvFormat(format typeless) {
     switch(typeless) {
@@ -47,10 +48,11 @@ void Release() {
 void Destroyed(device* device,resource resource) {
     if(own)return;
     std::lock_guard lock(mutex);candidates.Destroy(uintptr_t(device),resource.handle);
+    if(lastPick.resource==resource.handle)lastPick={};
 }
 void DeviceDestroyed(device* device) {
     if(own)return;
-    std::lock_guard lock(mutex);candidates.Destroy(uintptr_t(device));
+    std::lock_guard lock(mutex);candidates.Destroy(uintptr_t(device));lastPick={};
 }
 void RuntimeDestroyed(effect_runtime* rt) {
     std::lock_guard lock(mutex);OwnScope scope;
@@ -83,7 +85,7 @@ void Observe(reshade::api::command_list* cl,uint32_t count,const reshade::api::r
     std::lock_guard lock(mutex);
     candidates.Bind(uintptr_t(device),depth.handle,desc.texture.width,desc.texture.height,color);
 }
-void Bind(reshade::api::effect_runtime* rt,reshade::api::command_list* cl,bool wanted,bool keep,float scale[2]) {
+void Bind(reshade::api::effect_runtime* rt,reshade::api::command_list* cl,bool wanted,bool keep,bool reuse,float scale[2]) {
     std::lock_guard lock(mutex);OwnScope scope;
     latest={};
     const bool track=wanted||keep;
@@ -91,8 +93,10 @@ void Bind(reshade::api::effect_runtime* rt,reshade::api::command_list* cl,bool w
     if(runtime&&runtime!=rt)Release();
     runtime=rt;
     auto* device=rt->get_device();uint32_t w=0,h=0;rt->get_screenshot_width_and_height(&w,&h);
-    const auto best=candidates.Select(uintptr_t(device),w,h);
+    auto best=candidates.Select(uintptr_t(device),w,h);
     candidates.EndEye(uintptr_t(device));
+    if(best.resource)lastPick=best;
+    else if(reuse&&lastPick.device==uintptr_t(device))best=lastPick;
     if(!track||!cl||!best.resource) {
         if(bound)rt->update_texture_bindings("D2RVR_DEPTH",{},{});
         bound=false;
@@ -145,5 +149,5 @@ void Register(void (*log)(const char*)) {
     reshade::register_event<reshade::addon_event::destroy_effect_runtime>(&d2rvr::D3D12Only<&RuntimeDestroyed>::Call);
     reshade::register_event<reshade::addon_event::reshade_reloaded_effects>(&d2rvr::D3D12Only<&Reloaded>::Call);
 }
-void Shutdown(){std::lock_guard lock(mutex);OwnScope scope;enabled=false;latest={};Release();candidates={};}
+void Shutdown(){std::lock_guard lock(mutex);OwnScope scope;enabled=false;latest={};lastPick={};Release();candidates={};}
 }

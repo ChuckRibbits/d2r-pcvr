@@ -1,5 +1,6 @@
 #pragma once
 #include <cstdint>
+namespace reshade::api { struct effect_runtime; }
 #include "melee_contact.h"
 #include "bow_flight.h"
 #include "sewer_prompt.h"
@@ -69,12 +70,24 @@ struct FrameTiming {
 FrameTiming LastTiming();
 void Shutdown(bool preserveResolution=false);
 // byTurns: this frame draws one eye; EndPair submits the other eye's last
-// image again at the pose and FOV it was drawn with.
-void BeginPair(bool byTurns=false);
+// image again at the pose and FOV it was drawn with. replay: the right eye is
+// drawn from the left pass (vr/stereo_replay.h) as the left eye moved along
+// its own x, and placed so.
+void BeginPair(bool byTurns=false,bool replay=false);
 void BeginEye(int eye);
 // VR Settings > Video > Stereo rendering: 0 both eyes, 1 Hybrid (by turns while
-// the hero stands), 2 By turns (the eye not drawn also moved with the scene's depth).
+// the hero stands), 2 By turns (the eye not drawn also moved with the scene's
+// depth), 3 Replay (one CPU pass, the right eye replayed from it).
 int StereoRendering();
+// Replay: no capture waits for a pair of two passes.
+bool ReplayReady();
+// The eyes' gap along the left eye's x, in the world's units (View), and half
+// the left minus right eye's off-axis projection term: the replay's camera.
+float ReplayShift();
+float ReplayProjShift();
+// At a held present (the replay's left eye): its picture to the headset as at
+// the present's effects.
+void CaptureEffects(reshade::api::effect_runtime* rt);
 // Both eyes have a submitted image to reuse and no capture waits for a pair.
 bool TurnReady();
 // By turns: scenedepth copies the depth every present for it.

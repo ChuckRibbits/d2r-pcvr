@@ -80,7 +80,7 @@ inline constexpr std::array<Definition,Count> Definitions{{
     {"Map view", "Isometric or Top-down wrist minimap", L"interactions",L"map_top_down",0,0,1,1},
     {"Rotate map", "Top-down only: keep your facing direction at the top", L"interactions",L"map_rotate",0,0,1,1},
     {"Foveation strength", "Higher levels shade a larger edge area more coarsely", L"render",L"foveation_strength",1,0,3,1},
-    {"Stereo rendering", "One eye per frame: Hybrid while you stand, By turns always", L"stereo",L"eyes_by_turns",0,0,2,1},
+    {"Stereo rendering", "Less work: one eye a frame, or Replay's single CPU pass", L"stereo",L"eyes_by_turns",0,0,3,1},
 }};
 using Values=std::array<float,Count>;
 inline bool HapticKey(Key key){return key>=HapticStrength&&key<=HapticAlert;}
@@ -136,7 +136,7 @@ inline constexpr const char* MeleeRulesNames[]={"Unleashed","Classic"};
 inline constexpr const char* StrainColorNames[]={"White","Black"};
 inline constexpr const char* StrainSpeedNames[]={"Slow","Medium","Fast"};
 inline constexpr const char* FoveationStrengthNames[]={"Low","Medium","High","Maximum"};
-inline constexpr const char* StereoRenderingNames[]={"Both eyes","Hybrid","By turns"};
+inline constexpr const char* StereoRenderingNames[]={"Both eyes","Hybrid","By turns","Replay"};
 // Strength only applies while foveated rendering is selected; Off greys it out.
 inline bool RowEnabled(const Values& values,Key key){return key!=FoveationStrength||values[Foveation]>.5f;}
 inline Rect ControllerOption(int option){return {865,233+option*58,375,58};}

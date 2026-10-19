@@ -120,7 +120,8 @@ inline ChoiceHelp HelpChoice(int id,float value) {
             static constexpr const char* text[]={
                 "The game draws each frame twice, once per eye, from the same moment. The most accurate 3D, and the most CPU and GPU work per frame.",
                 "While you stand, one eye is drawn per frame, alternating, and the other eye's last image is turned to your head: about half the drawing work. Each eye updates at half the frame rate and moving monsters can look doubled. While you move, both eyes are drawn.",
-                "One eye per frame all the time. The other eye's last image is turned to your head and moved with the scene's depth, so walking keeps the higher frame rate. Moving monsters can look doubled, and the edges of nearby things may smear for a frame."};
+                "One eye per frame all the time. The other eye's last image is turned to your head and moved with the scene's depth, so walking keeps the higher frame rate. Moving monsters can look doubled, and the edges of nearby things may smear for a frame.",
+                "The game draws each frame once, for the left eye, and the graphics card draws it again for the right eye: both eyes from one moment for about one eye's CPU work. The GPU work stays. It starts a few seconds into an area; labels and DLSS are shared by the eyes."};
             return {StereoRenderingNames[c],text[c]};}
         case RenderResolution:{
             static constexpr const char* text[]={

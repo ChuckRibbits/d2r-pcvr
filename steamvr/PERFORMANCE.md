@@ -1,5 +1,26 @@
 # VR performance investigations
 
+## Replay, October 19
+
+**Replay** ports upstream's right-eye command-list replay (see the Issue 20
+notes below, where it was first identified as the main architectural
+difference). One CPU pass draws the left eye; its lists run again on the GPU
+with the right eye's camera constants. Upstream reported 127-159 stereo pairs/s
+with it against 108 with two passes on the author's PC, and about 5-6 ms of CPU
+per eye pass as the limit. On the owner's PC a pair took about 16.7 ms of work
+(left 6.86, right 6.95 ms of it), so a CPU-limited session should gain most of
+the right pass; a GPU-limited one (25-28 pairs/s at 3072 square with DLSS on
+October 19) gains little, as the GPU still draws both eyes. Not yet measured
+in the headset.
+
+Differences from upstream: the right eye's camera math is a pure header with
+tests (the fold's V*P_R matches a true right-eye camera's clip coordinates);
+camera positions inside a found record's matrices are not taken for stand-alone
+ones; the native command-list hooks and the upload-buffer mappings are made
+only once Replay is first wanted; the left eye reaches the headset through the
+transport's normal capture at the held present, and the right eye's pose is
+the left one moved along its x, so the layer matches what was drawn.
+
 ## Eyes by turns, October 19
 
 On the owner's Windows PC a stereo pair took about 16.7 ms of work: game 0.90,
