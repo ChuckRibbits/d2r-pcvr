@@ -4919,15 +4919,16 @@ bool ReplayWanted() {
     const char* why = ThirdPerson() ? "third person" : Overhead() ? "an overhead view" : gamestate::MenuOpen() ? "a menu is open" :
                       !framevr::ReplayReady() ? "a stereo capture waits" : nullptr;
     if (why && !told) { told = true; LogF("vrcam: replay - ready, but two passes: %s", why); }
-    // Replayed without the deferred GPU wait, each frame is the CPU's time plus
-    // the GPU's: about half the rate. Told once each time it is found off.
-    static bool toldWait = false;
-    if (framevr::GpuWaitDeferred()) toldWait = false;
-    else if (!why && !toldWait) {
-        toldWait = true;
-        Say("Replay: each frame still waits for the GPU ([render] defer_gpu_wait=0), about half the frame rate - VR Settings > Video > Defer GPU wait turns it on");
-    }
     return !why;
+}
+// Without the deferred GPU wait each frame is the CPU's time plus the GPU's:
+// about half the rate in every stereo mode. Told once each time it is found off.
+void WarnGpuWait() {
+    static bool told = false;
+    if (framevr::GpuWaitDeferred()) { told = false; return; }
+    if (told) return;
+    told = true;
+    Say("Each frame waits for the GPU ([render] defer_gpu_wait=0), about half the frame rate - VR Settings > Video > Defer GPU wait turns it on");
 }
 bool TurnsWanted() {
     if (framevr::StereoRendering() != 1) return false;
@@ -5001,7 +5002,9 @@ uintptr_t HookDrawGameScreen(int a) {
     const double entered=pairtime::UsNow();
     static bool turned = false;   // the last frame went by turns
 #ifdef D2RVR_NATIVE_OPENXR
-    const bool turn = !depth && PairWanted() && TurnsWanted();
+    const bool wanted = !depth && PairWanted();
+    if (wanted) WarnGpuWait();
+    const bool turn = wanted && TurnsWanted();
 #else
     const bool turn = false;
 #endif

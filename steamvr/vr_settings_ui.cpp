@@ -126,9 +126,9 @@ std::vector<uint8_t> Paint(const Model& m,Hit hover,const char* runtimeStatus,co
             button(HudMapViewBox,MapViewNames[m.Get()[MapTopDown]>.5f?1:0],{Kind::Change,MapTopDown,1},false,enabled);
             button(HudMapRotateBox,m.Get()[MapRotate]>.5f?"On":"Off",{Kind::Change,MapRotate,1},false,enabled);
         }else if(m.page==Page::Video&&(DeferOffered(m.Get())||GameVideoWarning(game))){
-            // Warnings in amber under the status, two lines at most: Replay
-            // without the deferred GPU wait (and the button that turns it on),
-            // then the game's own video options; both push the status out.
+            // Warnings in amber under the status, two lines at most: the GPU
+            // wait not deferred (and the button that turns it on), then the
+            // game's own video options; both push the status out.
             const bool defer=DeferOffered(m.Get());const char* gameWarning=GameVideoWarning(game);
             const COLORREF warn=RGB(236,186,96);const int width=defer?VideoDeferBox.x-50:1200;
             text(defer&&gameWarning?DeferWarning:runtimeStatus,{40,181,width,29},false,false,defer&&gameWarning?warn:quiet);

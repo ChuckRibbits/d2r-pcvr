@@ -82,7 +82,7 @@ inline constexpr std::array<Definition,Count> Definitions{{
     {"Map view", "Isometric or Top-down wrist minimap", L"interactions",L"map_top_down",0,0,1,1},
     {"Rotate map", "Top-down only: keep your facing direction at the top", L"interactions",L"map_rotate",0,0,1,1},
     {"Foveation strength", "Higher levels shade a larger edge area more coarsely", L"render",L"foveation_strength",1,0,3,1},
-    {"Stereo rendering", "Replay: one CPU pass for both eyes; By turns: one eye a frame", L"stereo",L"rendering",2,0,2,1},
+    {"Stereo rendering", "By turns: one eye a frame; Replay: one CPU pass for both eyes", L"stereo",L"rendering",1,0,2,1},
     {"Defer GPU wait", "Start the next frame while the GPU finishes the last", L"render",L"defer_gpu_wait",0,0,1,1},
 }};
 using Values=std::array<float,Count>;
@@ -140,13 +140,13 @@ inline constexpr const char* StrainColorNames[]={"White","Black"};
 inline constexpr const char* StrainSpeedNames[]={"Slow","Medium","Fast"};
 inline constexpr const char* FoveationStrengthNames[]={"Low","Medium","High","Maximum"};
 inline constexpr const char* StereoRenderingNames[]={"Both eyes","By turns","Replay"};
-// Replay ends each frame waiting for the GPU unless the wait is deferred
-// ([render] defer_gpu_wait): then about half the frame rate. While Replay is
-// selected and the wait is not deferred, the Video page warns and offers a
-// button that turns it on (Apply saves it).
+// Every stereo rendering choice ends each frame waiting for the GPU unless
+// the wait is deferred ([render] defer_gpu_wait): then about half the frame
+// rate. While it is not deferred, the Video page warns and offers a button
+// that turns it on (Apply saves it).
 constexpr Rect VideoDeferBox{940,181,300,52};
-inline bool DeferOffered(const Values& values){return values[StereoRendering]>1.5f&&values[DeferGpuWait]<.5f;}
-inline constexpr const char* DeferWarning="Replay waits for the GPU each frame: about half the frame rate";
+inline bool DeferOffered(const Values& values){return values[DeferGpuWait]<.5f;}
+inline constexpr const char* DeferWarning="Each frame waits for the GPU: about half the frame rate";
 // The game's own video options that cost the headset frames, from its
 // Settings.json (Saved Games\Diablo II Resurrected, written when its options
 // close): Vertical Sync holds each frame to the monitor's refresh, and

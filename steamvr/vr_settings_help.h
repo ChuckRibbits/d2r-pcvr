@@ -32,7 +32,7 @@ inline const char* HelpText(int id) {
         case ObjectDistance:return "How far away scenery objects remain visible. Higher values retain more distant buildings and props, with a performance and memory cost. Lower values can help crowded areas such as Act III.";
         case RenderResolution:return "The image size drawn for each eye, independent of your monitor. Higher is sharper but costs GPU time. Apply rebuilds the VR view; DLSS is set in the game's own Options.";
         case StereoRendering:return "How the two eye images of each headset frame are drawn. Menus, and views other than first person, always draw both eyes.";
-        case DeferGpuWait:return "Lets the CPU begin the next frame while the graphics card finishes the last one, instead of waiting for it at the end of every frame. Replay needs it for its full frame rate: without it each frame takes the CPU's time plus the GPU's. Shown while Replay is selected and it is off; Apply saves it as [render] defer_gpu_wait.";
+        case DeferGpuWait:return "Lets the CPU begin the next frame while the graphics card finishes the last one, instead of waiting for it at the end of every frame. Without it each frame takes the CPU's time plus the GPU's, and every stereo rendering choice runs at about half its frame rate. Shown while it is off; Apply saves it as [render] defer_gpu_wait.";
         case DesktopOneEye:return "In stereo the game window alternates between both eyes, which looks doubled on the monitor. On copies the left eye back over each right frame after the headset has it, so the monitor shows one steady image. The headset view is the same either way. Off saves one full-frame GPU copy per frame.";
         case EyeHeight:return "Your standing eye height above the tracked floor. Body calibration measures this to set the world's scale. Use Calibrate body to measure it again.";
         case ArmSpan:return "The distance between your controller grips with your arms extended in a T-pose. Body calibration uses it to fit the character's arms to yours.";
@@ -121,7 +121,7 @@ inline ChoiceHelp HelpChoice(int id,float value) {
             static constexpr const char* text[]={
                 "The game draws each frame twice, once per eye, from the same moment. Accurate 3D, and the most CPU and GPU work per frame.",
                 "One eye per frame, alternating; the other eye's last image is turned to your head and moved with the scene's depth. About half the drawing work, but moving monsters can look doubled and the edges of nearby things may smear.",
-                "The game draws each frame once, for the left eye, and the graphics card draws it again for the right eye: both eyes from one moment for about one eye's CPU work. Needs Defer GPU wait for its full rate. Starts a few seconds into an area."};
+                "The game draws each frame once, for the left eye, and the graphics card draws it again for the right eye: both eyes from one moment for about one eye's CPU work. Starts a few seconds into an area and pauses while an area loads."};
             return {StereoRenderingNames[c],text[c]};}
         case RenderResolution:{
             static constexpr const char* text[]={

@@ -132,10 +132,10 @@ a workaround: background/focus handling also affects input and frame pacing.
 VR Settings > Video > **Stereo rendering** chooses how the two eyes of each
 headset frame are drawn:
 
-- **Replay**, the default, draws both eyes from one game frame for about one
-  eye's CPU work (below).
+- **Replay** draws both eyes from one game frame for about one eye's CPU
+  work (below).
 - **Both eyes** draws the left eye, then the right with the game time held.
-- **By turns** draws one eye per game frame, alternating. The headset gets that
+- **By turns**, the default, draws one eye per game frame, alternating. The headset gets that
   eye fresh and the other eye's last image turned on the GPU from the pose it
   was drawn at to the current one, head, stick and mouse turns included, and
   moved with the scene depth it was drawn with: a grid over its image, each
@@ -177,20 +177,21 @@ records folded, and what started the settle again (biome sets, frames over
 150 ms, pairs out of the world); a watchdog logs each queue's fences if no
 present comes for 3 seconds while replaying.
 
-Replay needs `[render] defer_gpu_wait=1` for its full rate; the installer sets
-it for new installs, and an upgrade keeps the existing value. With the
-conservative wait each frame takes the CPU's time plus the GPU's, and at 90 Hz
-SteamVR then paces the game at half. While Replay is selected and the wait is
-not deferred, the Video page shows a warning and a **Defer GPU wait** button
-that turns it on (Apply saves it; it applies live), and the console says so
-once when Replay first runs without it. The Video page also warns while the
-game's Vertical Sync is on or its anti-aliasing is anything but FXAA (the
-game's Options > Video). It reads the mod's own game settings,
-`Saved Games\Diablo II Resurrected\mods\<mod>\Settings.json`, which the game
-keeps apart from the unmodded game's file one folder up.
+Every choice needs `[render] defer_gpu_wait=1` for its full rate; the
+installer sets it for new installs, and an upgrade keeps the existing value.
+With the conservative wait each frame takes the CPU's time plus the GPU's,
+and at 90 Hz SteamVR then paces the game at half (By turns at 3128 square:
+43-46 frames/s, against 86-88 with the wait deferred). While the wait is not
+deferred, the Video page shows a warning and a **Defer GPU wait** button that
+turns it on (Apply saves it; it applies live), and the console says so once.
+The Video page also warns while the game's Vertical Sync is on or its
+anti-aliasing is anything but FXAA (the game's Options > Video). It reads the
+mod's own game settings, `Saved Games\Diablo II Resurrected\mods\<mod>\Settings.json`,
+which the game keeps apart from the unmodded game's
+`Saved Games\Diablo II Resurrected\Settings.json`.
 
 The choice is stored as `[stereo] rendering` (0 Both eyes, 1 By turns,
-2 Replay; missing or invalid is Replay) and applies live. Every 10 seconds the log reports a
+2 Replay; missing or invalid is By turns) and applies live. Every 10 seconds the log reports a
 `vrcam: eyes by turns` line with frames per second, the time spent in each part
 of a frame, how many other eyes were moved with depth or only turned, and how
 many frames went as pairs while moving.
@@ -577,8 +578,7 @@ Set 0 to restore runtime-recommended projections. See the
 [OpenXR projection-view contract](https://registry.khronos.org/OpenXR/specs/1.0/man/html/XrCompositionLayerProjectionView.html).
 
 `[render] defer_gpu_wait=1` is set by the installer; a missing key means 0, and
-VR Settings > Video offers it while Replay is selected (see Stereo rendering
-above). Image
+VR Settings > Video offers it while it is off (see Stereo rendering above). Image
 copies and state restoration are submitted on the D3D12 queue bound to OpenXR;
 completion is checked before each eye's copy allocator is reused and before
 shutdown, instead of blocking the CPU before every image release. Set it to 0

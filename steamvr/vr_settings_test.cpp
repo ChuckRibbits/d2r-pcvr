@@ -63,34 +63,40 @@ int main(){
     }
     {
         Model stereo;stereo.Open(s);stereo.Click({Kind::Tab,int(Page::Video)});
-        Check(stereo.Get()[StereoRendering]==2&&RowEnabled(stereo.Get(),StereoRendering),"Replay by default");
-        stereo.Click(At(Page::Video,Decrease(9)));
-        Check(stereo.Get()[StereoRendering]==1&&stereo.Dirty(),"one step down is By turns");
+        Check(stereo.Get()[StereoRendering]==1&&RowEnabled(stereo.Get(),StereoRendering),"By turns by default");
+        for(int i=0;i<2;++i)stereo.Click(At(Page::Video,Increase(9)));
+        Check(stereo.Get()[StereoRendering]==2&&stereo.Dirty(),"Replay is the last choice");
         for(int i=0;i<3;++i)stereo.Click(At(Page::Video,Decrease(9)));
         Check(stereo.Get()[StereoRendering]==0,"Both eyes is the first choice");
         stereo.Click(At(Page::Video,ValueBox(9)));
         Check(stereo.Get()[StereoRendering]==0,"the value box does not cycle the choices");
-        for(int i=0;i<3;++i)stereo.Click(At(Page::Video,Increase(9)));
-        Check(stereo.Get()[StereoRendering]==2,"the arrows step back to Replay");
+        stereo.Click(At(Page::Video,Increase(9)));
+        Check(stereo.Get()[StereoRendering]==1&&!stereo.Dirty(),"the arrows step back to By turns");
         Check(std::string(StereoRenderingNames[0])=="Both eyes"&&std::string(StereoRenderingNames[1])=="By turns"&&
               std::string(StereoRenderingNames[2])=="Replay","stereo rendering names");
-        Check(Normalize(StereoRendering,NAN)==2&&Normalize(StereoRendering,-3)==2&&Normalize(StereoRendering,3)==2&&Normalize(StereoRendering,1.5f)==2&&
-              Normalize(StereoRendering,0)==0&&Normalize(StereoRendering,1)==1,"malformed stereo rendering uses Replay");
+        Check(Normalize(StereoRendering,NAN)==1&&Normalize(StereoRendering,-3)==1&&Normalize(StereoRendering,3)==1&&Normalize(StereoRendering,1.5f)==1&&
+              Normalize(StereoRendering,0)==0&&Normalize(StereoRendering,2)==2,"malformed stereo rendering goes by turns");
     }
-    {   // Replay without the deferred GPU wait: the Video page's button turns it on, once
+    {   // The GPU wait not deferred: the Video page's button turns it on, once, in every mode
         Model defer;defer.Open(s);defer.Click({Kind::Tab,int(Page::Video)});
         const auto box=[&]{return At(Page::Video,VideoDeferBox);};
-        Check(DeferOffered(defer.Get())&&defer.Get()[DeferGpuWait]==0,"Replay offers the deferred GPU wait while it is off");
+        Check(DeferOffered(defer.Get())&&defer.Get()[DeferGpuWait]==0,"the deferred GPU wait is offered while it is off");
         Check(HelpAt(Page::Video,(VideoDeferBox.x+10.f)/Width,(VideoDeferBox.y+10.f)/Height,false,&defer.Get())==DeferGpuWait,"the button has help");
         defer.Click(box());
         Check(defer.Get()[DeferGpuWait]==1&&defer.Dirty()&&!DeferOffered(defer.Get()),"the button turns it on; Apply saves it");
         defer.Click(box());
         Check(defer.Get()[DeferGpuWait]==1,"the button never turns it off");
-        Model both;both.Open(s);both.Click({Kind::Tab,int(Page::Video)});
-        for(int i=0;i<2;++i)both.Click(At(Page::Video,Decrease(9)));
-        both.Click(box());
-        Check(both.Get()[StereoRendering]==0&&both.Get()[DeferGpuWait]==0&&!DeferOffered(both.Get()),"no button and no change outside Replay");
-        Check(HelpAt(Page::Video,(VideoDeferBox.x+10.f)/Width,(VideoDeferBox.y+10.f)/Height,false,&both.Get())==NoHelp,"no help for a hidden button");
+        for(int mode:{0,2}){
+            Model other;other.Open(s);other.Click({Kind::Tab,int(Page::Video)});
+            other.Click(At(Page::Video,mode?Increase(9):Decrease(9)));
+            Check(other.Get()[StereoRendering]==mode&&DeferOffered(other.Get()),"offered with Both eyes and Replay too");
+            other.Click(box());
+            Check(other.Get()[DeferGpuWait]==1,"the button turns it on in every mode");
+        }
+        Snapshot on=s;on.values[DeferGpuWait]=1;
+        Model deferred;deferred.Open(on);deferred.Click({Kind::Tab,int(Page::Video)});deferred.Click(box());
+        Check(!DeferOffered(deferred.Get())&&deferred.Get()[DeferGpuWait]==1&&!deferred.Dirty(),"no button and no change once deferred");
+        Check(HelpAt(Page::Video,(VideoDeferBox.x+10.f)/Width,(VideoDeferBox.y+10.f)/Height,false,&deferred.Get())==NoHelp,"no help for a hidden button");
     }
     {   // The game's own video options (its Settings.json): Vertical Sync off, FXAA
         const auto code=[](const char* json){return ParseGameVideo(json).Code();};

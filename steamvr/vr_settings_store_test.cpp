@@ -244,8 +244,8 @@ int main(){
         Check(saved.values[FoveationStrength]==level&&Int(path,L"render",L"foveation_strength")==level&&
               saved.values[Foveation]==2&&Int(path,L"custom",L"keep")==12345,"foveation strength survives reload without changing the mode");
     }
-    Check(saved.values[StereoRendering]==2,"profiles without the key use Replay");
-    for(int turns:{1,0,2}){
+    Check(saved.values[StereoRendering]==1,"profiles without the key go by turns");
+    for(int turns:{2,0,1}){
         model.Open(saved);
         for(int step=int(saved.values[StereoRendering]);step!=turns;step+=turns>step?1:-1)model.Click({Kind::Change,StereoRendering,turns>step?1:-1});
         request=model.Click({Kind::Apply});

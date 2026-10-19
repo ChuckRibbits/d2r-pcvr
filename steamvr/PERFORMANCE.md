@@ -27,9 +27,29 @@ off (3128 square per eye, Headset; Act 1 camp, standing), Replay drew 889 of
 889 pairs from one pass: 88.9 pairs/s with the runtime predicting 88.9 Hz,
 against 44-45 before. Leaving the camp, a biome set paused it and it took
 about a minute to settle again, at 40-48 pairs/s in two passes meanwhile; the
-10-second line now counts what starts the settle again. Replay became the
-default stereo rendering, the installer now sets `defer_gpu_wait=1`, and the
-Video page offers it while Replay is selected without it.
+10-second line now counts what starts the settle again. Replay briefly became
+the default stereo rendering, and the installer now sets `defer_gpu_wait=1`.
+
+A later session (3128 square, the deferred wait on, switching modes with
+fpsVR running; the owner found By turns best) measured:
+
+| Stereo rendering | Headset frames/s | CPU per frame |
+| --- | ---: | --- |
+| By turns | 86-88 (each eye drawn 43-44) | game pass 5.7-7.4 ms |
+| Replay, replaying | 57-67 | left 7.9-8.3 + right 0.75 ms |
+| Replay, paused | about 45 | two passes |
+| Both eyes | 44.7 | 6.7 + 6.4 ms |
+
+Outside the camp the game set the same biome 1-13 times in 10 seconds, each
+restarting Replay's 240-pair settle, so it drew two passes much of the time.
+Noting the left pass's lists costs about 1.5 ms, which left a replayed pair
+just over the 11.1 ms budget. By turns needs the deferred wait as much as
+Replay: an earlier run at 3072 square without it went 43-46 frames/s, the
+frame's end waiting 5.4-6.3 ms for the GPU (1.2-1.4 ms deferred). By turns
+became the default, and the Video page offers the deferred wait in every mode.
+At 2048 square every mode's pass took 12-14 ms, against 6-7 ms at 3128, for
+reasons not yet known; the interaction atlas upload took 5.4-7 ms on the
+frame thread, up to once a second (1.2 ms on October 10).
 
 Differences from upstream: the right eye's camera math is a pure header with
 tests (the fold's V*P_R matches a true right-eye camera's clip coordinates);
