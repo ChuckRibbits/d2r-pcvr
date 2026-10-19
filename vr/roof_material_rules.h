@@ -43,6 +43,25 @@ inline bool Selected(std::string_view model, std::string_view material) {
     if (!model.starts_with(prefix) || model.size()<=prefix.size()+2 ||
         model[prefix.size()]<'1' || model[prefix.size()]>'5' || model[prefix.size()+1]!='/' ||
         model.find("..")!=model.npos || !model.ends_with(".model")) return false;
+    // Both orientations of the Kurast sewer entrance use these single-sided
+    // shell/stair meshes. Select the exact families and audited materials;
+    // retaining roofs cannot restore their backs at a standing VR viewpoint.
+    constexpr std::string_view kurast="data/hd/env/model/act3/kurast/";
+    if(model.starts_with(kurast)) {
+        const auto relative=model.substr(kurast.size());
+        const auto matches=[&](std::string_view stem) {
+            if(!relative.starts_with(stem))return false;
+            const auto suffix=relative.substr(stem.size());
+            return suffix==".model"||(suffix.size()==11&&suffix.starts_with("_lod")&&
+                suffix[4]>='0'&&suffix[4]<='4'&&suffix.substr(5)==".model");
+        };
+        if(matches("act3_kurast_architecture/sewer_entrance02"))
+            return material=="roof_lip_corner01"||material=="elevation_walls_a";
+        if(matches("act3_kurast_stairs/stairs_sewers01"))
+            return material=="kurast_stairs_a"||material=="kurast_stairs_b"||
+                material=="elevation_walls_a"||material=="pasted__sewer_column_corner"||
+                material=="pasted__sewer_wall05";
+    }
     constexpr std::string_view tavern="data/hd/env/model/act2/town/act2_town_building_tavern/";
     if (model.starts_with(tavern)) {
         const auto file=model.substr(tavern.size());

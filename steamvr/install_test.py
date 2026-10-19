@@ -98,11 +98,15 @@ class InstallationTests(unittest.TestCase):
                       'reshade/reshade-shaders/Textures/PCVR_Arcane/stars.png': b'local star fixture'}
             arcane['pcvr-arcane-sky.json'] = json.dumps({'version': 1, 'sha256': {
                 name: hashlib.sha256(data).hexdigest() for name, data in arcane.items()}}).encode()
+            sewers = {name: b'local sewer fixture' for name in install.prepare_sewer_backdrop.install_names('D2R-PCVR')}
+            sewers[install.prepare_sewer_backdrop.INSTALL_RECEIPT] = json.dumps({'version': 1, 'sha256': {
+                name: hashlib.sha256(data).hexdigest() for name, data in sewers.items()}}).encode()
             with patch.object(install, 'require_game_closed'), contextlib.redirect_stdout(io.StringIO()), \
                     patch.object(install, 'COMPILER_HASH', hashlib.sha256(compiler.read_bytes()).hexdigest()), \
                     patch.object(install, 'prepare_icons', side_effect=icons), \
                     patch.object(install, 'prepare_potions', side_effect=potions), \
-                    patch.object(install.prepare_arcane_sky, 'prepare', return_value=arcane):
+                    patch.object(install.prepare_arcane_sky, 'prepare', return_value=arcane), \
+                    patch.object(install.prepare_sewer_backdrop, 'prepare', return_value=sewers):
                 unapproved_hashes = ('0' * 64, '1' * 64)
                 with patch.object(sys, 'argv', common), patch.object(install, 'LOADER_HASHES', unapproved_hashes):
                     with self.assertRaises(SystemExit) as caught:
@@ -140,12 +144,19 @@ class InstallationTests(unittest.TestCase):
                 self.assertTrue((potion_dir / 'rvl.pvr').is_file())
                 for name, data in arcane.items():
                     self.assertEqual((mod / name).read_bytes(), data)
+                for name, data in sewers.items():
+                    self.assertEqual((mod / name).read_bytes(), data)
+                journal = json.loads((snapshot / 'manifest.json').read_text())
+                for name in sewers:
+                    self.assertIn(str(mod_identity.MOD_DIR / name), journal['installed'])
                 self.assertEqual((game / 'd2rloader/runtime/d3dcompiler_47.dll').read_bytes(), compiler.read_bytes())
                 self.assertFalse((game / 'd3dcompiler_47.dll').exists())
                 # Everything of the mod in mods\D2R-PCVR; nothing of it in the game folder or D2RLoader's global plugins.
                 self.assertEqual(json.loads((mod / 'D2R-PCVR.mpq/modinfo.json').read_text())['name'], 'D2R-PCVR')
                 self.assertEqual(json.loads((mod / 'D2R-PCVR.mpq/modinfo.json').read_text())['savepath'], '../')
                 self.assertIn('D2R VR Unleashed', json.loads((mod / 'D2R-PCVR.mpq/modinfo.json').read_text())['description'])
+                self.assertEqual(json.loads((mod / 'vrmod-manifest.json').read_text())['d2rloader_mod']['name'], 'D2R-PCVR')
+                self.assertEqual((mod / 'launcher_icon.png').read_bytes(), (install.ROOT / 'launcher_icon.png').read_bytes())
                 self.assertEqual((mod / 'reshade/ReShade64.dll').read_bytes(), b'fixture reshade')
                 self.assertTrue((mod / 'reshade/ReShade.ini').is_file())
                 self.assertTrue((mod / 'reshade/D2R_Frame_ReShade.ini').is_file())
@@ -193,6 +204,8 @@ class InstallationTests(unittest.TestCase):
                 self.assertEqual((mod / 'reshade/ReShade.ini').read_bytes(), b'custom reshade settings')
                 self.assertEqual((game / 'd2rloader/config/d2rloader.toml').read_text(), 'default_mod = "D2R-VR"')
                 self.assertEqual((mod_plugins / 'd2rl-pcvr.dll').read_bytes(), b'updated fixture plugin')
+                for name, data in sewers.items():
+                    self.assertEqual((mod / name).read_bytes(), data)
                 self.assertFalse((game / 'd2rloader/plugins/d2rl-vrcam.dll').exists())
                 self.assertFalse((game / 'd2rloader/plugins/d2r_vr.ini').exists())
                 record = install.read_record(game)
@@ -214,7 +227,11 @@ class InstallationTests(unittest.TestCase):
                 self.assertFalse((mod_plugins / 'd2rl-pcvr.dll').exists())
                 self.assertFalse((mod / 'reshade/ReShade64.dll').exists())
                 self.assertFalse((mod / 'D2R-PCVR.mpq/modinfo.json').exists())
+                self.assertFalse((mod / 'vrmod-manifest.json').exists())
+                self.assertFalse((mod / 'launcher_icon.png').exists())
                 for name in arcane:
+                    self.assertFalse((mod / name).exists(), name)
+                for name in sewers:
                     self.assertFalse((mod / name).exists(), name)
                 self.assertFalse((game / 'd2rloader/runtime/d3dcompiler_47.dll').exists())
                 self.assertEqual(json.loads((saves / 'Settings.json').read_text())['Resolution Scale'], 80)
@@ -378,6 +395,7 @@ class RenameMigrationTests(unittest.TestCase):
                 patch.object(install, 'prepare_icons', side_effect=ValueError('fixture: no game archives')), \
                 patch.object(install, 'prepare_potions', side_effect=ValueError('fixture: no game archives')), \
                 patch.object(install.prepare_arcane_sky, 'prepare', side_effect=ValueError('fixture: no game archives')), \
+                patch.object(install.prepare_sewer_backdrop, 'prepare', side_effect=ValueError('fixture: no game archives')), \
                 patch.object(sys, 'argv', self.argv + list(extra)), contextlib.redirect_stdout(output):
             install.main()
         return output.getvalue()

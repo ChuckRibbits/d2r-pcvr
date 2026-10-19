@@ -70,4 +70,47 @@ int main() {
     assert(merges.size()==4);
     // No unit identity or inventory data was rewritten by scoping attacks.
     assert(player[1]==4&&right[2]==41&&left[2]==42&&inventory==0x01020304);
+
+    // Assassin dual claws use the same rendered-hand selection, independently
+    // of inventory/equip order. Each hit refreshes that claw's native stats
+    // and restores normal selection on exit.
+    player[1]=6;
+    e={{41,42},{D2RVR_TYPE_CLAW,D2RVR_TYPE_CLAW},{41,42}};
+    assert(framevr::dualwield::Eligible(6,e));
+    for(bool reversed:{false,true}) {
+        if(reversed)std::swap(right[2],left[2]);
+        e.displayed[0]=right[2];e.displayed[1]=left[2];
+        assert(Select(P(),0,e)==R()&&Select(P(),1,e)==L());
+        assert(e.BodyHand(0)==int(reversed)&&e.BodyHand(1)==int(!reversed));
+        merges.clear();
+        for(int hand=0;hand<2;++hand) {
+            Scope selected(P(),Select(P(),hand,e));
+            assert(CurrentWeapon(P())==(hand?L():R()));
+            std::thread separate([]{assert(CurrentWeapon(P())==R());});separate.join();
+        }
+        assert(CurrentWeapon(P())==R());
+        assert((merges==std::vector<uintptr_t>{R(),R(),L(),R()}));
+    }
+    std::swap(right[2],left[2]);e.displayed[0]=41;e.displayed[1]=42;
+    usable=false;assert(!Select(P(),0,e)&&!Select(P(),1,e));usable=true;
+    e.id[1]=99;assert(!Select(P(),0,e)&&!Select(P(),1,e));e.id[1]=42;
+    e.id[1]=41;assert(!framevr::dualwield::Eligible(6,e));e.id[1]=42;
+    e.id[1]=0;assert(!framevr::dualwield::Eligible(6,e));e.id[1]=42;
+    for(int hero:{-1,0,1,2,3,4,5,7}) {
+        player[1]=uint32_t(hero);
+        assert(!Select(P(),0,e)&&!Select(P(),1,e));
+    }
+    player[1]=6;
+    // Only a pair of claws qualifies: no claw/shield, mixed melee pair,
+    // empty off-hand, ranged weapon, unknown type or Barbarian weapon pair.
+    for(uint32_t type:{D2RVR_TYPE_UNKNOWN,D2RVR_TYPE_UNARMED,D2RVR_TYPE_BOW,
+                       D2RVR_TYPE_CROSSBOW,D2RVR_TYPE_SWORD,D2RVR_TYPE_AXE,D2RVR_TYPE_OTHER}) {
+        e.type[0]=type;assert(!Select(P(),0,e)&&!Select(P(),1,e));e.type[0]=D2RVR_TYPE_CLAW;
+        e.type[1]=type;assert(!Select(P(),0,e)&&!Select(P(),1,e));e.type[1]=D2RVR_TYPE_CLAW;
+    }
+    e.type[0]=D2RVR_TYPE_SWORD;e.type[1]=D2RVR_TYPE_AXE;
+    assert(!Select(P(),0,e)&&!Select(P(),1,e));
+    player[1]=4;
+    assert(Select(P(),0,e)==R()&&Select(P(),1,e)==L()); // Barbarian regression
+    assert(right[2]==41&&left[2]==42&&inventory==0x01020304);
 }

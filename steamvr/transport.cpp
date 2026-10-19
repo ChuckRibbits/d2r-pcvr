@@ -38,6 +38,7 @@
 #include "gameplay.h"
 #include "hand_controls.h"
 #include "interaction_ui.h"
+#include "sewer_prompt_art.h"
 #include "blood_screen.h"
 #include "guard_strain.h"
 #include "guard_strain_paint.h"
@@ -313,8 +314,10 @@ uint64_t crossbowActivation=0,crossbowTakenAt=0;
 bowflight::Shot spellReadyShot[2]{};
 bool spellHasShot[2]{};
 uint64_t spellResolvedAt[2]{};
-std::atomic<ULONGLONG> meleeImpactAt[2]{},shieldImpactAt{0};
+std::atomic<ULONGLONG> meleeImpactAt[2]{},shieldImpactAt{0},parryMissAt{0};
 XrSwapchain gameplayChain=XR_NULL_HANDLE;
+std::mutex sewerPromptMutex;
+sewerprompt::Target sewerPrompt;
 XrPosef palettePose{};
 constexpr float paletteWidth=.45f,paletteHeight=.45f;
 ULONGLONG motionAt=0;
@@ -382,6 +385,12 @@ bool mapButtonAimed=false,mapTriggerWas=false;   // the right laser on a map but
 float mapFooter=0;   // the companions row's room under the wrist map, as last drawn
 bool mapSupported=false;
 constexpr uint32_t mapSide=512;
+// Desktop mirror: in stereo the game window presents alternating eye frames,
+// so the monitor flickers between both eyes (double vision). After the headset
+// takes each right frame, the left eye image (still acquired until EndPair) is
+// copied back over it, so the monitor shows only the left eye. [render]
+// desktop_one_eye turns it off; eye images need TRANSFER_SRC for it.
+bool mirrorSupported=false,mirrorMono=false;
 std::atomic<bool> uiSupported{false};
 bool journalMode=false,spatialMode=false,workspacePlaced=false,opaqueMenuMode=false,upperBandMenuMode=false;
 bool npcChoicesMode=false;
@@ -577,7 +586,7 @@ void ClearInput() {
     spellHaptics.Clear();
     lootlabels::display.Clear();
     lootLabelShortcut.Suspend();
-    meleeImpactAt[0]=meleeImpactAt[1]=shieldImpactAt=0;
+    meleeImpactAt[0]=meleeImpactAt[1]=shieldImpactAt=parryMissAt=0;
     wristHeading.Reset();compassFrame=false;
     panelinput::WorldInput(false);
     gamestate::MenuMap(false);
@@ -862,6 +871,7 @@ bool SetupGameplay(DXGI_FORMAT eyeFormat) {
     label(L"Trigger: nock",{576,768,1024,853});
     label(L"Pull back",{576,853,1024,938});
     label(L"Release to shoot",{576,938,1024,1024});
+    sewerprompt::Paint(dc,sewerprompt::AtlasX,sewerprompt::AtlasY);
     GdiFlush();
     std::vector<uint8_t> rgba(1024*1024*4);const auto* b=static_cast<const uint8_t*>(bits);
     for(int i=0;i<1024*1024;++i) {
@@ -934,10 +944,18 @@ bool Initialize(reshade::api::command_queue* rq,reshade::api::swapchain* swap) {
     {char message[128];std::snprintf(message,sizeof message,"Frame OpenXR: game format %d, eye format %d",int(format),int(eyeFormat));Say(message);}
     uiSupported=std::find(formats.begin(),formats.end(),int64_t(DXGI_FORMAT_R16G16B16A16_FLOAT))!=formats.end()&&uiBlit.Initialize(device.Get(),&Say);
     mapSupported=std::find(formats.begin(),formats.end(),int64_t(DXGI_FORMAT_R16G16B16A16_FLOAT))!=formats.end()&&mapBlit.Initialize(device.Get(),&Say);
+    mirrorSupported=true;
     for(auto& e:eyes) {
         XrSwapchainCreateInfo c{XR_TYPE_SWAPCHAIN_CREATE_INFO};c.usageFlags=XR_SWAPCHAIN_USAGE_COLOR_ATTACHMENT_BIT|XR_SWAPCHAIN_USAGE_TRANSFER_DST_BIT;
         c.format=eyeFormat;c.width=width;c.height=height;c.sampleCount=1;c.faceCount=1;c.arraySize=1;c.mipCount=1;
-        if(!Check(pCreateSwapchain(session,&c,&e.chain),"create eye swapchain")) return false;
+        if(&e==&eyes[0]) {
+            c.usageFlags|=XR_SWAPCHAIN_USAGE_TRANSFER_SRC_BIT; // desktop mirror source
+            if(XR_FAILED(pCreateSwapchain(session,&c,&e.chain))) {
+                e.chain=XR_NULL_HANDLE;mirrorSupported=false;c.usageFlags&=~XrSwapchainUsageFlags(XR_SWAPCHAIN_USAGE_TRANSFER_SRC_BIT);
+                Say("Frame OpenXR: eye image cannot be a copy source; desktop shows both eyes");
+            }
+        }
+        if(!e.chain&&!Check(pCreateSwapchain(session,&c,&e.chain),"create eye swapchain")) return false;
         n=0;pEnumerateSwapchainImages(e.chain,0,&n,nullptr);e.images.resize(n,{XR_TYPE_SWAPCHAIN_IMAGE_D3D12_KHR});
         if(!Check(pEnumerateSwapchainImages(e.chain,n,&n,reinterpret_cast<XrSwapchainImageBaseHeader*>(e.images.data())),"enumerate eye textures")) return false;
         if(!Hr(device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT,IID_PPV_ARGS(&e.allocator)),"create eye copy allocator")||
@@ -1981,6 +1999,10 @@ void Input() {
         impactPulse(hand);
     if(const auto at=shieldImpactAt.exchange(0);at&&motionInput.active&&GetTickCount64()-at<150)
         impactPulse(1,true);
+    // A parry swing that missed: a soft, dull buzz on the shield hand, unlike a
+    // block's sharp tap. Scaled by the Melee haptic strength setting.
+    if(const auto at=parryMissAt.exchange(0);at&&motionInput.active&&GetTickCount64()-at<150)
+        MotionPulse(1,haptics::Category::Melee,.3f,70000000,60);
     for(int hand=0;hand<2;++hand)if(spellHaptics.Take(hand,gamestate::LocalPlayer(),GetTickCount64(),motionInput.active)) {
         const auto sample=haptics::Samples[int(haptics::Category::Spell)];
         MotionPulse(hand,haptics::Category::Spell,sample.amplitude,XrDuration(sample.milliseconds)*1000000,sample.frequency);
@@ -2200,6 +2222,16 @@ bool Copy(ID3D12Resource* src,Eye& e,reshade::api::command_queue* rq) {
     barriers[1].Transition.pResource=dest;barriers[1].Transition.StateBefore=D3D12_RESOURCE_STATE_RENDER_TARGET;barriers[1].Transition.StateAfter=D3D12_RESOURCE_STATE_COPY_DEST;
     if(gpu)e.commands->EndQuery(gpuProfile.heap.Get(),D3D12_QUERY_TYPE_TIMESTAMP,eye*5+3);
     e.commands->ResourceBarrier(2,barriers);e.commands->CopyResource(dest,src);
+    if(eye==1&&mirrorMono&&mirrorSupported&&eyes[0].acquired&&eyes[0].copied) {
+        // The headset already has this right frame; the window gets this pair's
+        // left image back. It stays acquired until EndPair releases both eyes.
+        D3D12_RESOURCE_BARRIER m[2]{barriers[0],barriers[1]};
+        m[0].Transition.StateBefore=D3D12_RESOURCE_STATE_COPY_SOURCE;m[0].Transition.StateAfter=D3D12_RESOURCE_STATE_COPY_DEST;
+        m[1].Transition.pResource=eyes[0].images[eyes[0].index].texture;m[1].Transition.StateAfter=D3D12_RESOURCE_STATE_COPY_SOURCE;
+        e.commands->ResourceBarrier(2,m);e.commands->CopyResource(src,m[1].Transition.pResource);
+        std::swap(m[1].Transition.StateBefore,m[1].Transition.StateAfter);e.commands->ResourceBarrier(1,&m[1]);
+        barriers[0].Transition.StateAfter=D3D12_RESOURCE_STATE_COPY_DEST;
+    }
     for(auto& b:barriers)std::swap(b.Transition.StateBefore,b.Transition.StateAfter);
     e.commands->ResourceBarrier(2,barriers);
     if(!panelMode&&interactionInput.active&&potionModels.Ready()) {
@@ -2315,6 +2347,7 @@ void Capture(reshade::api::command_queue* rq,reshade::api::swapchain* swap) {
     const bool stereo=afr&&afr->version==FLATVR_AFR_EYE_VERSION&&afr->enabled&&(!(wantsPanel&&wantsPanel())||SpatialMenu());
     if(!Begin()||!render||!valid) {if(!stereo)EndPair();return;}
     const uint32_t eye=stereo?((afr->eye^afr->swap)&1u):0u;
+    mirrorMono=stereo&&vrsettings::Read().values[settings::DesktopOneEye]>.5f;
     if(eye==0&&!CopyMap(rq)) {mapSupported=false;mapEye.copied=false;Say("Frame menu map: copy unavailable; optional map suspended");}
     if((eye==0&&!CopyUi(rq))||!Copy(src,eyes[eye],rq)){failed=true;EndPair();ClearInput();return;}
     if(!stereo) {
@@ -2380,6 +2413,9 @@ void Register(LogFn log,PanelFn panel,PanelFn world,PanelFn toggle) {
 bool SpatialMenu(){return uiSupported.load()&&uiworld::Ready()&&hud::LayerFound()&&inWorld&&inWorld()&&wantsPanel&&wantsPanel();}
 bool Active() {std::lock_guard lock(mutex);return frame&&valid&&render&&!failed&&!panelMode;}
 bool VrGameplay(uint64_t now) {const auto at=vrGameplayAt.load();return at&&now>=at&&now-at<=1500;}
+void PublishSewerPrompt(const sewerprompt::Target& target) {
+    std::lock_guard lock(sewerPromptMutex);sewerPrompt=target;
+}
 void ConfigureDeferredWait(bool on) {
     if(deferredWait.exchange(on)!=on)Say(on?"Frame OpenXR: GPU wait deferred until copy allocator reuse":"Frame OpenXR: conservative GPU wait before image release");
 }
@@ -2636,6 +2672,24 @@ void EndPair() {
             else motionQuad(leftActiveSkill,pose,.075f,.075f,{{768,200},{96,96}},interactionChain);
         }
     }
+    XrCompositionLayerQuad sewerHint{XR_TYPE_COMPOSITION_LAYER_QUAD};
+    bool sewerHintShown=false;
+    if(interactionVisible&&!interactionOutput.wheel&&!settingsModel.open&&!bodyCalibration.Active()&&gameplayChain) {
+        sewerprompt::Target target;
+        {std::lock_guard lock(sewerPromptMutex);target=sewerPrompt;}
+        const auto now=GetTickCount64();math::Vec at{};
+        const bool spaceFresh=stageWorld.valid&&now>=stageWorld.at&&now-stageWorld.at<=250;
+        if(spaceFresh&&sewerprompt::Fresh(target,gamestate::LocalPlayer(),now,interactionInput.snapshot.location.level)&&
+           sewerprompt::Position(target,stageWorld.origin,stageWorld.hero,stageWorld.base,stageWorld.upm,
+                                 stageWorld.eyeHeight,V(head.position),Q(head.orientation),at)) {
+            const auto before=count;
+            motionQuad(sewerHint,XrPose({at,Q(head.orientation)}),sewerprompt::PanelWidth,sewerprompt::PanelHeight,
+                {{sewerprompt::AtlasX,sewerprompt::AtlasY},{sewerprompt::Width,sewerprompt::Height}},gameplayChain);
+            sewerHintShown=count>before;
+        }
+    }
+    static bool sewerHintWasShown=false;
+    if(sewerHintShown!=sewerHintWasShown){Say(sewerHintShown?"Frame sewer prompt: shown":"Frame sewer prompt: hidden");sewerHintWasShown=sewerHintShown;}
     if(gameplayVisible&&motionOutput.bowReady) {
         const auto bow=motionInput.hand[1];
         const auto center=motionOutput.bowDrawing?motionInput.hand[0].p:motionOutput.nockPoint;
@@ -2899,6 +2953,7 @@ void FinishShieldSkill(bool accepted) {
 }
 void MeleeImpact(int hand) {if(hand>=0&&hand<2)meleeImpactAt[hand]=GetTickCount64();}
 void ShieldGuardImpact(bool parry) {shieldImpactAt=GetTickCount64();(parry?guardParryEvents:guardBlockEvents).fetch_add(1);}
+void ShieldParryMiss() {parryMissAt=GetTickCount64();}
 void ShieldGuardState(bool eligible,bool raised) {guardStateAt=GetTickCount64();guardEligible=eligible;guardRaised=raised;}
 void ConfigureGuardStrain(float perBlock,float resetSeconds,float clear,float breatheSeconds,float softness,float brightness,uint32_t color,float density) {
     strain::Tuning t;
@@ -3107,6 +3162,7 @@ void Shutdown(bool preserveResolution) {
     gazeAction=XR_NULL_HANDLE;gazeReady=gazeValid=gazeExtension=gazeSupported=false;gazeStability.Reset();
     detectedControllers={};controllerLabels={};controllerProfilesDirty=true;frameControllerExtension=false;
     for(auto& e:eyes){if(e.chain&&pDestroySwapchain)pDestroySwapchain(e.chain);e={};}
+    mirrorSupported=mirrorMono=false;
     for(auto& s:handSpaces){if(s&&pDestroySpace)pDestroySpace(s);s=XR_NULL_HANDLE;}
     if(headSpace&&pDestroySpace)pDestroySpace(headSpace);if(space&&pDestroySpace)pDestroySpace(space);
     if(session&&pDestroySession)pDestroySession(session);if(actionSet&&pDestroyActionSet)pDestroyActionSet(actionSet);

@@ -61,13 +61,12 @@ struct Tuning {
     float coverCos=.5f;                    // within 60 degrees of either face; edge-on does not cover
     float lateral=.45f,behind=.20f;       // forgiving attachment coverage proxy, not mesh-sized collision
     // 0 disables perfect parry; a swing at most this long before the hit.
-    // Owner swings landed 400-1300 ms before hits; 400 ms caught almost none
-    // (logs 2026-10-17).
-    uint32_t parryMs=750;
-    // A swing may begin this long before the attacker's attack starts. Fast
-    // attackers land 250-360 ms after starting (log 2026-10-17), too soon to
-    // react to the wind-up alone.
-    uint32_t parryLeadMs=450;
+    // 450 ms (dev meeting 2026-10-18): tighter than the old 750 ms so a parry
+    // is a timed answer, not a held-up guess.
+    uint32_t parryMs=450;
+    // A swing may begin this long before the attacker's attack starts. 0: no
+    // lead - the swing must come during the attacker's wind-up (2026-10-18).
+    uint32_t parryLeadMs=0;
     // Parry: a swing across the view, low on the far side up to high on the
     // shield's own side, 45 degrees (a left shield: lower right -> upper left).
     float swingMetres=.15f;                // along the diagonal, within swingMs
@@ -101,6 +100,8 @@ struct State {
     uint64_t raisedAt=0,loweredAt=0,seenAt=0;
     // Parry: the last diagonal swing that ended in guard; one parry per swing.
     uint64_t snapAt=0,swingSeen=0;
+    // The parry swing already reported as missed (ParryMissed), so it buzzes once.
+    uint64_t missNoted=0;
     // Diagnostic: the last melee hit blocked, to log a swing that came just after it.
     uint64_t blockAt=0;
     // the hand's recent path, one sample per >= 8 ms (render poses repeat between ticks)
@@ -273,6 +274,13 @@ inline Verdict Judge(const State& s,Vec toAttacker,uint64_t now,const Tuning& t,
 }
 // The game thread spends a swing on the parry it produced.
 inline void SpendParry(State& s,uint64_t snapAt) {if(s.snapAt==snapAt)s.snapUsed=true;}
+// UI thread, after Update: an armed parry swing whose window has run out
+// unspent missed - once per swing. graceMs covers a game-thread parry judged
+// inside the window but spent a moment later.
+inline bool ParryMissed(State& s,uint64_t now,const Tuning& t,uint64_t graceMs=50) {
+    if(!t.parryMs||!s.snapAt||s.snapUsed||s.missNoted==s.snapAt||now<s.snapAt||now-s.snapAt<=t.parryMs+graceMs)return false;
+    s.missNoted=s.snapAt;return true;
+}
 
 // Diagnostic only (a parry is never after the hit): a melee hit was just blocked.
 inline void NoteBlock(State& s,uint64_t now) {s.blockAt=now;}

@@ -2,6 +2,7 @@
 #include <cstdint>
 #include "melee_contact.h"
 #include "bow_flight.h"
+#include "sewer_prompt.h"
 
 // Called by the existing game-side stereo draw hook and ReShade integration.
 // The OpenXR session uses the game's D3D12 device/queue.
@@ -17,6 +18,7 @@ void ConfigureEyeTracking(bool enabled);
 void ConfigureGameplay(bool enabled);
 void ConfigureQuiver(bool enabled,bool preview); // [bow] quiver, quiver_preview
 void ConfigureInteractions(bool seated,float waistBelowEyes,float beltForward,int dominantHand);
+void PublishSewerPrompt(const sewerprompt::Target&); // Values only; XR follows no game pointers.
 // Current motion-combat aim in the existing head-yaw-relative hand frame.
 bool SettingsOpen();
 bool OwnsControllerRumble(); // lock-free; VR input owns feedback instead of gamepad motors
@@ -35,6 +37,7 @@ bool ShieldAim(float& x,float& y);
 void FinishShieldSkill(bool accepted);
 void MeleeImpact(int hand=0); // thread-safe; haptic delivered by XR input update
 void ShieldGuardImpact(bool parry=false); // thread-safe; a physical block taps the left controller and strains the guard (a parry does not)
+void ShieldParryMiss(); // thread-safe; a parry swing that missed buzzes the left controller softly
 // Thread-safe, every guard tick: shield eligible (first person, shield, no menu) and raised.
 void ShieldGuardState(bool eligible,bool raised);
 // [gameplay] guard_strain_*: strain per block (1 = broken), lowered reset time,

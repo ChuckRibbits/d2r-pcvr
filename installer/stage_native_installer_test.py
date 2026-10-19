@@ -44,6 +44,18 @@ class StagingTests(unittest.TestCase):
             for name, digest in manifest['sha256'].items():
                 self.assertEqual(hashlib.sha256((root / 'staged' / name).read_bytes()).hexdigest(), digest)
 
+    def test_stages_launcher_manifest_and_its_icon(self):
+        source = Path(__file__).resolve().parent.parent
+        descriptor = json.loads((source / 'vrmod-manifest.json').read_text(encoding='utf-8'))
+        files = {name: (source / name).read_bytes()
+                 for name in ('vrmod-manifest.json', descriptor['icon'])}
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            manifest = self.stage(root, files)
+            for name, data in files.items():
+                self.assertEqual((root / 'staged' / name).read_bytes(), data)
+                self.assertEqual(manifest['sha256'][name], hashlib.sha256(data).hexdigest())
+
     def test_stages_opt_in_developer_helpers_without_generated_content(self):
         helpers = {'Launch-Dev-SteamVR.cmd': b'launch fixture',
                    'steamvr/DEVELOPMENT_SCENARIOS.md': b'instructions fixture',
@@ -64,12 +76,21 @@ class StagingTests(unittest.TestCase):
 
     def test_rejects_game_assets_saves_logs_and_path_traversal(self):
         for name in ('D2R.exe', 'Character.d2s', 'game.log', 'steamvr/d2r_vr_icons/cache.json',
-                     '../outside.txt', 'bin/C:escape.dll', 'bin\\escape.dll'):
+                     '../outside.txt', 'bin/C:escape.dll', 'bin\\escape.dll',
+                     'mods/D2R-PCVR/D2R-PCVR.mpq/data/hd/env/preset/act3/kurast/burbssewer0.json'):
             with self.subTest(name=name), tempfile.TemporaryDirectory() as directory:
                 root = Path(directory)
                 with self.assertRaises(ValueError):
                     self.stage(root, {name: b'forbidden fixture'})
                 self.assertFalse((root / 'staged').exists())
+
+    def test_stages_sewer_preparation_code_only(self):
+        name = 'steamvr/prepare_sewer_backdrop.py'
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            manifest = self.stage(root, {name: b'local archive preparation fixture'})
+            self.assertIn(name, manifest['sha256'])
+            self.assertEqual((root/'staged'/name).read_bytes(), b'local archive preparation fixture')
 
     def test_rejects_changed_manifest_payload_and_unmanifested_files(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -109,6 +130,27 @@ class StagingTests(unittest.TestCase):
                 self.assertFalse(destination.exists())
                 manifest = staging.stage(package, runtime, destination, root, '0.3.17')
                 self.assertEqual(manifest['release_tag'], 'v0.3.17-windows-preview')
+
+    def test_carries_only_the_pinned_launcher_setup_unmodified(self):
+        name, data = 'D2R_VR_Launcher_Setup_0.2.0.exe', b'launcher setup fixture'
+        digest = hashlib.sha256(data).hexdigest()
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            package, runtime, destination = self.fixture(root)
+            launcher = root / name
+            launcher.write_bytes(data)
+            with patch.object(staging, 'PYTHON_SHA256', hashlib.sha256(runtime.read_bytes()).hexdigest()):
+                for path, pin, message in ((launcher, '0' * 64, 'Launcher Setup checksum'), (launcher, None, 'published name'),
+                                           (root / 'Setup.exe', digest, 'published name')):
+                    (root / 'Setup.exe').write_bytes(data)
+                    with self.subTest(pin=pin, path=path.name), self.assertRaisesRegex(ValueError, message):
+                        staging.stage(package, runtime, destination, root, None, path, pin)
+                    self.assertFalse(destination.exists())
+                manifest = staging.stage(package, runtime, destination, root, None, launcher, digest)
+            self.assertEqual((destination / 'launcher' / name).read_bytes(), data)
+            self.assertEqual(manifest['sha256']['launcher/' + name], digest)
+            self.assertEqual(manifest['carried_launcher'], {'file': 'launcher/' + name, 'version': '0.2.0', 'sha256': digest})
+            self.assertEqual(json.loads((destination / 'release-manifest.json').read_text())['sha256']['launcher/' + name], digest)
 
 
 if __name__ == '__main__':
