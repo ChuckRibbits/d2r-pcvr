@@ -41,6 +41,35 @@ int main(){
     }
     Snapshot s;s.ready=true;
     {
+        Model map;map.Open(s);map.Click({Kind::Tab,int(Page::HUD)});
+        const auto view=At(Page::HUD,HudMapViewBox),rotate=At(Page::HUD,HudMapRotateBox);
+        Check(view.kind==Kind::Change&&view.index==MapTopDown&&rotate.kind==Kind::Change&&rotate.index==MapRotate,"HUD map controls target separate preferences");
+        Check(s.values[MapTopDown]==0&&s.values[MapRotate]==0,"map defaults remain isometric and north-up");
+        for(const auto box:{HudMapViewBox,HudMapRotateBox}){
+            Check(box.y>TabBox(TabCount-1).y+TabBox(TabCount-1).h&&box.y+box.h<RowY-4,"map controls fit between tabs and existing HUD rows");
+            for(int page=0;page<TabCount;++page)if(Page(page)!=Page::HUD){
+                const auto hit=At(Page(page),box);
+                Check(hit.kind!=Kind::Change||(hit.index!=MapTopDown&&hit.index!=MapRotate),"other pages have no invisible map controls");
+            }
+        }
+        Check(HelpAt(Page::HUD,100.f/Width,205.f/Height)==MapTopDown&&
+              HelpAt(Page::HUD,700.f/Width,205.f/Height)==MapRotate,"map labels explain their own settings");
+        Check(HelpAt(Page::HUD,400.f/Width,205.f/Height)==MapTopDown&&
+              HelpAt(Page::HUD,1050.f/Width,205.f/Height)==MapRotate,"map values have the same help as their labels");
+        map.Click(view);map.Click(rotate);
+        Check(map.Dirty()&&map.Get()[MapTopDown]==1&&map.Get()[MapRotate]==1&&s.values[MapTopDown]==0,"map changes remain drafts");
+        map.Click({Kind::Close});map.Open(s);map.Click({Kind::Tab,int(Page::HUD)});
+        Check(!map.Dirty()&&map.Get()[MapTopDown]==0&&map.Get()[MapRotate]==0,"Close discards unapplied map changes");
+        map.Click(rotate);map.Click(view);
+        const auto request=map.Click({Kind::Apply});
+        Check(request.changed==((ChangeMask{1}<<MapTopDown)|(ChangeMask{1}<<MapRotate))&&
+              request.values[MapTopDown]==1&&request.values[MapRotate]==1,"Apply saves both map choices without changing other settings");
+        map.Click(view);Check(map.Get()[MapTopDown]==1,"map cannot change while saving");
+        auto saved=s;saved.values=request.values;saved.sequence=request.sequence;saved.result=Result::Saved;
+        map.Observe(saved);map.Close();map.Open(saved);
+        Check(!map.Dirty()&&map.Get()[MapTopDown]==1&&map.Get()[MapRotate]==1,"reopening retains saved map choices");
+    }
+    {
         Check(s.values[LootLabelSize]==45,"loot labels retain original shipped size by default");
         Check(Normalize(LootLabelSize,0)==20&&Normalize(LootLabelSize,200)==150&&
               Normalize(LootLabelSize,NAN)==45&&Normalize(LootLabelSize,47.5f)==47.5f,"loot scale bounds, invalid default and custom values");

@@ -14,6 +14,22 @@ int main(){
     Check(WritePrivateProfileStringW(L"custom",L"keep",L"12345",name),"write unrelated key");
     Check(WritePrivateProfileStringW(L"render",L"rings",L"6",name),"write existing setting");
     vrsettings::Poll(name);auto before=vrsettings::Read();
+    Check(before.values[MapTopDown]==0&&before.values[MapRotate]==0,"missing map preferences retain the existing view");
+    Check(WritePrivateProfileStringW(L"interactions",L"map_top_down",L"1",name)&&
+          WritePrivateProfileStringW(L"interactions",L"map_rotate",L"1",name),"write existing wrist-map choices");
+    vrsettings::Poll(name);
+    Check(vrsettings::Read().values[MapTopDown]==1&&vrsettings::Read().values[MapRotate]==1,"HUD uses the existing wrist-map saved keys");
+    for(int choice:{0,1}){
+        const auto current=vrsettings::Read();Model map;map.Open(current);map.Click({Kind::Tab,int(Page::HUD)});
+        auto click=[&](Rect box){return HitTest(Page::HUD,(box.x+box.w*.5f)/Width,(box.y+box.h*.5f)/Height);};
+        map.Click(click(HudMapViewBox));map.Click(click(HudMapRotateBox));
+        const auto request=map.Click({Kind::Apply});
+        Check(vrsettings::Submit(request)&&vrsettings::Poll(name),"save HUD map choices through the normal transaction");
+        const auto saved=vrsettings::Read();
+        Check(saved.values[MapTopDown]==choice&&saved.values[MapRotate]==choice&&
+              Int(path,L"interactions",L"map_top_down")==choice&&Int(path,L"interactions",L"map_rotate")==choice,"both HUD map choices survive INI reload");
+        Check(Changed(saved.values,current.values)==request.changed&&Int(path,L"custom",L"keep")==12345,"map saves preserve unrelated settings");
+    }
     Check(before.values[LootLabelSize]==45,"missing loot size uses original shipped percentage");
     Check(WritePrivateProfileStringW(L"hud",L"labels_size",L"65",name),"existing player loot size");
     vrsettings::Poll(name);

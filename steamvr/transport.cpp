@@ -374,6 +374,10 @@ struct Eye {
 std::array<Eye,2> eyes;
 Eye uiEye;
 Eye mapEye;
+// The wrist map's view: Isometric (the game's) or Top-down, and on the
+// top-down map whether it turns with you. Configured under VR Settings > HUD.
+bool MapTopDownOn(){return vrsettings::Read().values[settings::MapTopDown]>.5f;}
+bool MapTurnOn(){return vrsettings::Read().values[settings::MapRotate]>.5f;}
 bool mapSupported=false;
 constexpr uint32_t mapSide=512;
 // Desktop mirror: in stereo the game window presents alternating eye frames,
@@ -2213,7 +2217,10 @@ bool CopyMap(reshade::api::command_queue* rq) {
     if(!Acquire(e)||!WaitGpuValue(e.copyFence))return false;
     rq->flush_immediate_command_list();
     if(FAILED(e.allocator->Reset())||FAILED(e.commands->Reset(e.allocator.Get(),nullptr)))return false;
-    if(!mapBlit.Render(device.Get(),e.commands.Get(),src,e.images[e.index].texture,true,true)) {
+    // The heading arrow over the hero (while the compass knows the heading),
+    // the map turning with you (top-down only), and top-down itself.
+    const uint32_t flags=(compassFrame?1u:0u)|(compassFrame&&MapTurnOn()&&MapTopDownOn()?4u:0u)|(MapTopDownOn()?8u:0u);
+    if(!mapBlit.Render(device.Get(),e.commands.Get(),src,e.images[e.index].texture,true,true,flags,float(wristHeading.bearing),1.f)) {
         e.commands->Close();return false;
     }
     if(FAILED(e.commands->Close()))return false;
