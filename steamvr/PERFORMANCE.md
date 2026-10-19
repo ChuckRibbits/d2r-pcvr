@@ -16,7 +16,9 @@ updates at half the headset rate, and the eyes are one game frame apart. The
 right-eye replay described below would keep both eyes from one frame but
 remains unported. Both eyes each frame stays the default.
 
-The first headset test (SteamVR, Steam Frame, 3072x3072 eyes, DLSS) looked
+The first headset test (SteamVR, Steam Frame, 3072x3072 eyes; DLSS off - the
+game creates a DLSS instance at start but never evaluates it - and the game's
+temporal anti-aliasing, `Anti Aliasing` 3, on) looked
 right with the head still but jittered and lost convergence in every head
 turn. Then the other eye went to the runtime at its own older pose, which
 SteamVR should reproject per eye. The candidate now turns that eye itself:
