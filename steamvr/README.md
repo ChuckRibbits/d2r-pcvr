@@ -262,7 +262,14 @@ movement and creature labels. A stationary gaze/full/gaze trial (360 pairs each)
 averaged 22.566 / 23.240 / 22.619 ms per stereo cycle, a small ~2.8% preliminary
 reduction versus full shading. GPU scene spans were similar (16.042 / 16.309 /
 16.340 ms, including queue starvation), so no large GPU speedup is established.
-Fixed-versus-gaze and heavier scenes still need comparison.
+Fixed-versus-gaze and heavier scenes still need comparison. These October 8
+results predate the coverage fix: foveation then reduced only D2R's depth pass,
+not the visible shading pass, so they do not measure real foveated shading.
+
+Windows Steam Frame / SteamVR (October 18, after the coverage fix, strength
+Maximum): with the sharing setting enabled, every stereo pair had usable gaze
+and all eligible scene draws followed it. The owner confirmed it in the headset.
+With sharing off, or under Virtual Desktop, Eye tracked uses full quality.
 
 Host-side geometry/fallback tests:
 `g++ -std=c++20 -O2 -Wall -Wextra -Werror steamvr/gaze_test.cpp -o build-frame/gaze-test-host && build-frame/gaze-test-host`.
