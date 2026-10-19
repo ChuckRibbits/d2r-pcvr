@@ -47,13 +47,28 @@ constexpr float Width=1.9f,Distance=.55f,MainDistance=.70f;
 inline float MenuDistance(int preset,bool main=false) {
     return (main?MainDistance:Distance)+.30f*std::clamp(preset,0,2);
 }
-// A grabbed menu may sit a little inside and beyond the presets (.55-1.30 m).
-constexpr float NearDistance=.40f,FarDistance=1.50f;
-inline float Nudged(float distance,float nudge) {
-    return std::clamp(distance+nudge,NearDistance,FarDistance);
-}
 struct Size {float width,height;};
 struct Placement {math::Vec position;math::Quat orientation;};
+// A grabbed panel, kept in its default placement's own frame so it reopens in
+// the same spot relative to where you face. Yaw then pitch: it never rolls.
+struct Offset {math::Vec position{};float yaw=0,pitch=0;};
+// A grabbed menu may sit a little inside and beyond the presets (.55-1.30 m).
+constexpr float NearDistance=.40f,FarDistance=1.50f,MaxTilt=1.0471976f;
+inline math::Quat Pitch(float angle) {return {std::sin(angle*.5f),0,0,std::cos(angle*.5f)};}
+inline Placement Apply(Placement base,Offset o) {
+    return {base.position+math::Rotate(base.orientation,o.position),
+        math::Multiply(base.orientation,math::Multiply(math::Yaw(o.yaw),Pitch(o.pitch)))};
+}
+// Moves only the offset's position, along the line from the head, so a panel
+// can never be pushed out of reach or into the face.
+inline Offset Limit(Placement base,Offset o,math::Vec head) {
+    const auto v=Apply(base,o).position-head;
+    const float n=std::sqrt(math::Dot(v,v)),d=std::clamp(n,NearDistance,FarDistance);
+    if(n==d)return o;
+    const auto direction=n>1e-4f?v*(1/n):math::Rotate(base.orientation,{0,0,-1});
+    o.position=math::Rotate(math::Conjugate(base.orientation),head+direction*d-base.position);
+    return o;
+}
 // A valid but untracked startup pose may still be at the reference-space origin.
 // Never latch that pose into a persistent menu. Once placed, keep it world-fixed.
 inline bool CanAnchor(bool placed,bool rendering,bool focused,bool tracked) {
@@ -99,25 +114,33 @@ struct MouseGate {
     }
     void Suspend(){held[0]=held[1]=true;down[0]=down[1]=false;}
 };
-// Right grip on the laser's panel pushes or pulls it along its facing axis by
-// the hand's own travel. Grip-then-trigger stays native Shift-click: moving
-// needs 3 cm of travel before any click, and a click first leaves the grip as
-// Shift. A trigger squeezed while moving is consumed until released.
+// Right grip on the laser's panel grabs it like a window: it follows the
+// hand's room-space travel 1:1 and its heading/pitch changes; hand roll is
+// ignored. Grip-then-trigger stays native Shift-click: moving needs 3 cm of
+// travel before any click, and a click first leaves the grip as Shift. Once
+// moving, the panel catches up with the travel since the press. A trigger
+// squeezed while moving is consumed until released.
 struct Grab {
     enum class State {Idle,Armed,Moving,Held,Spent} state=State::Idle;
-    float origin=0,start=0;
+    Placement from{};Offset start{};
     static constexpr float Slack=.03f;
-    bool Step(bool grip,bool hit,bool click,float depth,float& distance) {
+    static float HandPitch(math::Quat q){return std::asin(std::clamp(math::Rotate(q,{0,0,-1}).y,-1.f,1.f));}
+    bool Step(bool grip,bool hit,bool click,Placement hand,Placement base,math::Vec head,Offset& offset) {
+        const auto travel=hand.position-from.position;
         switch(state) {
-        case State::Idle:if(grip){state=hit&&!click?State::Armed:State::Spent;origin=depth;}break;
+        case State::Idle:if(grip){state=hit&&!click?State::Armed:State::Spent;from=hand;start=offset;}break;
         case State::Armed:
             if(!grip)state=State::Idle;
             else if(click)state=State::Spent;
-            else if(std::fabs(depth-origin)>Slack){state=State::Moving;origin=depth;start=distance;}
-            break;
+            else if(math::Dot(travel,travel)>Slack*Slack)state=State::Moving;
+            if(state!=State::Moving)break;
+            [[fallthrough]];
         case State::Moving:
-            if(!grip)state=click?State::Held:State::Idle;
-            else distance=std::clamp(start+depth-origin,NearDistance,FarDistance);
+            if(!grip){state=click?State::Held:State::Idle;break;}
+            offset.position=start.position+math::Rotate(math::Conjugate(base.orientation),travel);
+            offset.yaw=std::remainder(start.yaw+math::Heading(hand.orientation)-math::Heading(from.orientation),6.2831853f);
+            offset.pitch=std::clamp(start.pitch+HandPitch(hand.orientation)-HandPitch(from.orientation),-MaxTilt,MaxTilt);
+            offset=Limit(base,offset,head);
             break;
         case State::Held:if(!click)state=grip?State::Spent:State::Idle;break;
         case State::Spent:if(!grip)state=State::Idle;break;

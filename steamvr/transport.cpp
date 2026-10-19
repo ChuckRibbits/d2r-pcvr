@@ -457,19 +457,26 @@ constexpr float panelWidth=2.0f,panelDistance=panels::MainDistance;
 XrSwapchain pointerChain=XR_NULL_HANDLE;
 XrPosef beamPose{},dotPose{};
 float beamLength=0;
-// Jeff, 2026-10-19: one remembered push/pull for every game menu, kept as an
-// offset because the main menu sits 15 cm beyond the in-game workspace.
-// Choosing another Menu distance preset clears it. VR Settings keeps its own.
+// Jeff, 2026-10-19: one remembered grab for every game menu, kept relative to
+// each default placement (the main menu sits 15 cm beyond the workspace), so
+// a menu reopens in the same spot relative to where you face. Choosing another
+// Menu distance preset clears it. VR Settings keeps its own.
 panels::Grab panelGrab;
-float menuNudge=0,settingsDistance=1.05f;
+panels::Offset menuOffset,settingsOffset;
+panels::Placement uiBase{},menuBase{},settingsBase{};
 
 math::Quat Q(XrQuaternionf q) { return {q.x,q.y,q.z,q.w}; }
 math::Vec V(XrVector3f p) { return {p.x,p.y,p.z}; }
-// Moves a world-fixed panel along its facing axis; hit tests read the same pose.
-bool GrabPanel(XrPosef& pose,float& distance,bool grip,bool hit,bool click,math::Vec hand) {
-    const auto axis=math::Rotate(Q(pose.orientation),{0,0,-1});const float before=distance;
-    const bool owned=panelGrab.Step(grip,hit,click,math::Dot(hand,axis),distance);
-    const auto p=V(pose.position)+axis*(distance-before);pose.position={p.x,p.y,p.z};
+XrPosef PanelPose(panels::Placement p) {
+    return {{p.orientation.x,p.orientation.y,p.orientation.z,p.orientation.w},{p.position.x,p.position.y,p.position.z}};
+}
+XrPosef Placed(panels::Placement base,panels::Offset offset) {
+    return PanelPose(panels::Apply(base,panels::Limit(base,offset,V(head.position))));
+}
+// The grabbing hand is the laser's own pose; hit tests read the moved pose.
+bool GrabPanel(XrPosef& pose,panels::Placement base,panels::Offset& offset,bool grip,bool hit,bool click,const XrPosef& hand) {
+    const bool owned=panelGrab.Step(grip,hit,click,{V(hand.position),Q(hand.orientation)},base,V(head.position),offset);
+    if(owned)pose=PanelPose(panels::Apply(base,offset));
     return owned;
 }
 void Say(const char* msg) { if(logger) logger(msg); }
@@ -1075,11 +1082,9 @@ void MenuPointer(const menus::Pad& controls) {
     const bool laser=!menuNavigation.Native();
     if(!laser){panelinput::UseController();pointerVisible=pointerHit=false;}
     // The handheld journal has its own left-grip placement.
-    const bool main=!spatialMode,grip=aimTracked&&laser&&!journalMode&&(controls.buttons&menus::RightBumper);
-    const float base=panels::MenuDistance(int(vrsettings::Read().values[settings::MenuDistance]),main);
-    float distance=panels::Nudged(base,menuNudge);
-    const bool grabbing=GrabPanel(main?menuPose:uiPose,distance,grip,pointerHit,pressed||mouseDown||rightMouseDown,V(aim.pose.position));
-    if(grabbing)menuNudge=distance-base;
+    const bool grip=aimTracked&&laser&&!journalMode&&(controls.buttons&menus::RightBumper);
+    const bool grabbing=GrabPanel(spatialMode?uiPose:menuPose,spatialMode?uiBase:menuBase,menuOffset,
+        grip,pointerHit,pressed||mouseDown||rightMouseDown,aim.pose);
     const bool active=uiActive&&focused&&aimTracked&&laser;
     if(active)panelinput::OwnPointer();
     if(active&&pointerHit) {
@@ -1272,8 +1277,8 @@ void OpenSettings() {
     settingsImageReady=false;settingsPaintRevision=~0ull;settingsPaintAt=0;
     settingsModel.Open(vrsettings::Read());settingsOpen=true;settingsSession=gamestate::LocalPlayer();
     const auto q=math::Yaw(math::Heading(Q(head.orientation)));
-    const auto p=V(head.position)+math::Rotate(q,{0,-.06f,-settingsDistance});
-    settingsPose=XrPose({p,q});settingsHover={};ResetSettingsInput();
+    settingsBase={V(head.position)+math::Rotate(q,{0,-.06f,-1.05f}),q};
+    settingsPose=Placed(settingsBase,settingsOffset);settingsHover={};ResetSettingsInput();
     Say("Frame VR settings: panel opened");
 }
 void CloseSettings() {
@@ -1346,7 +1351,7 @@ void SettingsPointer(const settings::InputGate::Edges& edges,bool grip) {
             helpTarget=settings::HelpAt(settingsModel.page,hit.u,hit.v,settingsModel.controllerMenu);
             const auto p=hit.point+math::Rotate(Q(settingsPose.orientation),{0,0,.004f});dotPose.position={p.x,p.y,p.z};}
     }
-    const bool grabbing=GrabPanel(settingsPose,settingsDistance,grip&&pointerVisible,pointerHit,Float(trigger,0)>.2f,V(aim.pose.position));
+    const bool grabbing=GrabPanel(settingsPose,settingsBase,settingsOffset,grip&&pointerVisible,pointerHit,Float(trigger,0)>.2f,aim.pose);
     if(edges.click&&!grabbing&&pointerHit&&settingsImageReady&&settingsPaintRevision==settingsModel.revision){
         if(settingsHover.kind==settings::Kind::Close)CloseSettings();
         else if(settingsHover.kind==settings::Kind::Recenter){ResetHeight();MotionPulse(1,haptics::Category::Interaction,.4f,35000000);}
@@ -2037,9 +2042,9 @@ void Input() {
 }
 void PlaceMainMenu() {
     if(!panels::CanAnchor(menuPlaced,render&&valid,state==XR_SESSION_STATE_FOCUSED,motionHeadTracked))return;
-    const auto placed=panels::AtEyeLevel(V(head.position),Q(head.orientation),
-        panels::Nudged(panels::MenuDistance(int(vrsettings::Read().values[settings::MenuDistance]),true),menuNudge));
-    menuPose=XrPose({placed.position,placed.orientation});menuPlaced=true;
+    menuBase=panels::AtEyeLevel(V(head.position),Q(head.orientation),
+        panels::MenuDistance(int(vrsettings::Read().values[settings::MenuDistance]),true));
+    menuPose=Placed(menuBase,menuOffset);menuPlaced=true;
     char b[160];std::snprintf(b,sizeof b,"Frame panels: main menu anchored from tracked head at eye height %.3f m",head.position.y);Say(b);
 }
 void Events() {
@@ -2134,10 +2139,10 @@ bool Begin() {
         }
         const int distancePreset=int(vrsettings::Read().values[settings::MenuDistance]);
         static int previousDistance=-1;
-        if(distancePreset!=previousDistance){workspacePlaced=menuPlaced=false;previousDistance=distancePreset;menuNudge=0;}
+        if(distancePreset!=previousDistance){workspacePlaced=menuPlaced=false;previousDistance=distancePreset;menuOffset={};}
         if(spatialMode&&!journalMode&&panels::CanAnchor(workspacePlaced,render,state==XR_SESSION_STATE_FOCUSED,motionHeadTracked)) {
-            const auto placed=panels::AtEyeLevel(V(head.position),Q(head.orientation),panels::Nudged(panels::MenuDistance(distancePreset),menuNudge));
-            uiPose=XrPose({placed.position,placed.orientation});
+            uiBase=panels::AtEyeLevel(V(head.position),Q(head.orientation),panels::MenuDistance(distancePreset));
+            uiPose=Placed(uiBase,menuOffset);
             uiSize=panels::Width;workspacePlaced=true;
         }
         if(panelMode)PlaceMainMenu();
