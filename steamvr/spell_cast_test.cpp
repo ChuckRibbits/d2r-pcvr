@@ -77,12 +77,32 @@ int main() {
     assert(!spellcast::Candidate(1,47,0,8,56,0));
     assert(!spellcast::Candidate(1,47,0,0,56,2));
     assert(!spellcast::Supported(219)&&!spellcast::Supported(53)&&!spellcast::Supported(64));
+    assert(spellcast::Candidate(2,84,0,0,192,0xc0020400u));
+    for(unsigned character:{0u,1u,3u,4u,5u,6u})assert(!spellcast::Candidate(character,84,0,0,192,0xc0020400u));
+    assert(!spellcast::Candidate(2,84,0,0,58,0)&&!spellcast::Candidate(2,84,0,8,192,0));
+    assert(!spellcast::Candidate(2,47,0,0,62,0));
+    assert(!spellcast::Supported(78)&&!spellcast::Supported(88)&&!spellcast::Supported(101)); // placement and healing retain native casting
     constexpr int breaks[]={0,9,20,37,63,105,200};
     for(unsigned i=0;i<7;++i){
         assert(spellcast::CastFrames(breaks[i])==13-i);
         if(i)assert(spellcast::CastFrames(breaks[i]-1)==14-i);
     }
     assert(spellcast::CastFrames(-1)==13&&spellcast::CastFrames(100000)==7);
+    constexpr int necroBreaks[]={0,9,18,30,48,75,125};
+    for(unsigned i=0;i<7;++i){
+        assert(spellcast::CastFrames(necroBreaks[i],2)==15-i);
+        if(i)assert(spellcast::CastFrames(necroBreaks[i]-1,2)==16-i);
+    }
+    {
+        bowflight::Flight spear;spear.shot.kind=bowflight::Kind::Spell;spear.shot.skill=84;
+        spear.shot.origin={10,1.4f,10};spear.shot.player={10,0,10};spear.shot.direction={0,0,1};
+        spear.shot.unitsPerMetre=4;spear.shot.session=spear.shot.sequence=1;spear.shot.slot=0;
+        assert(bowflight::Valid(spear.shot)&&!spear.NativePath());
+        float matrix[16]={1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1};
+        bowflight::SpellMatrix(spear,0,matrix);
+        const math::Vec emitter={matrix[12]+4*matrix[4]-3*matrix[8],matrix[13]+4*matrix[5]-3*matrix[9],matrix[14]+4*matrix[6]-3*matrix[10]};
+        assert(bowflight::Length(emitter-spear.shot.origin*spear.shot.unitsPerMetre)<.0001f);
+    }
     spellcast::Cadence cadence;
     assert(cadence.Ready(1,0,0)&&cadence.Ready(1,1,0));
     cadence.Fired(1,0,100,13);

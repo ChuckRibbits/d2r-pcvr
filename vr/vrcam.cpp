@@ -2823,13 +2823,13 @@ bool ShooterActive();
 #ifdef D2RVR_NATIVE_OPENXR
 extern std::atomic<uint32_t> g_meleeTurnEpoch;
 #endif
-bool HandRay(float* o, float* d) {
+bool HandRay(float* o, float* d,bool forceGround=true) {
 #ifdef D2RVR_NATIVE_OPENXR
     // The menu aim pose can differ greatly from the weapon's shaft. Use the
     // final posed weapon in its captured WORLD frame, not a bone from one
     // frame combined with a newer headset yaw from another.
     const auto castingType=gamestate::WeaponType();
-    if(g_eyeOk.load()&&!framevr::LeftHandAiming()&&framevr::SpellSelected()&&
+    if(g_eyeOk.load()&&!framevr::spellaim::TrackedAim(framevr::NativeCastSkill())&&!framevr::LeftHandAiming()&&framevr::SpellSelected()&&
        (castingType==D2RVR_TYPE_WAND||castingType==D2RVR_TYPE_STAFF||castingType==D2RVR_TYPE_SCEPTER||castingType==D2RVR_TYPE_ORB)) {
         skel::MeleeWeaponPose pose;
         if(skel::MeleeWeapon(pose)&&pose.weaponType==castingType&&pose.worldEpoch==g_meleeTurnEpoch.load()) {
@@ -2862,9 +2862,10 @@ bool HandRay(float* o, float* d) {
         // Native combat is ground-targeted. Keep its existing ray-to-ground
         // convention; the gesture does not invent free-flying 3D projectiles.
         const float horizontal=std::hypot(d[0],d[2]);
-        if(horizontal<1e-3f)return false;
-        d[1]=std::min(d[1],-.08f*horizontal);
+        if(forceGround&&horizontal<1e-3f)return false;
+        if(forceGround)d[1]=std::min(d[1],-.08f*horizontal);
         const float length=std::sqrt(d[0]*d[0]+d[1]*d[1]+d[2]*d[2]);
+        if(!std::isfinite(length)||length<1e-3f)return false;
         for(int i=0;i<3;++i)d[i]/=length;
         return true;
     }
@@ -3175,6 +3176,19 @@ bool DirectedSpellAim(float& gx,float& gy) {
         framevr::DirectedSpellActive()&&HandRay(origin,direction)&&
         framevr::spellaim::Horizontal({direction[0],direction[1],direction[2]},gx,gy);
 }
+bool NativeSpellAim(float playerX,float playerY,framevr::spellaim::Cast& cast) {
+    if(framevr::spellaim::BonePlacement(framevr::NativeCastSkill())) {
+        if(!g_spellAimReady.load()||!g_enabled.load()||gamestate::MenuOpen()||!g_eyeOk.load())return false;
+        float o[3],d[3];
+        if(!HandRay(o,d,false))return false;
+        AcquireSRWLockShared(&g_skyLock);const auto view=g_skyView[0];ReleaseSRWLockShared(&g_skyLock);
+        if(!view.axes_ok||!view.proj_ok||!framevr::spellaim::GroundPoint(playerX,playerY,
+           {o[0]-view.hero[0],o[1]-view.hero[1],o[2]-view.hero[2]},
+           {d[0],d[1],d[2]},cast.x,cast.y))return false;
+        cast.directed=cast.contactPoint=true;return true;
+    }
+    cast.directed=DirectedSpellAim(cast.x,cast.y);return cast.directed;
+}
 uintptr_t NearbySewerInteraction();
 uintptr_t HookSpellControllerTarget(uintptr_t manager,int id) {
     if(g_spellCast.directed&&uintptr_t(_ReturnAddress())==d2rsig::Addr(spellaimabi::ControllerCallRva+5))return 0;
@@ -3202,7 +3216,7 @@ void HookSpellResolve(uintptr_t manager,void* unit,bool assist,float* x,float* y
     framevr::spellaim::Cast cast;
     float playerX=0,playerY=0;
     const bool local=x&&y&&SpellPlayerPosition(unit,playerX,playerY);
-    cast.directed=local&&DirectedSpellAim(cast.x,cast.y);
+    if(local)NativeSpellAim(playerX,playerY,cast);
     if(local&&g_spellAimReady.load()&&g_enabled.load()&&!gamestate::MenuOpen()&&
        framevr::ShieldAim(cast.x,cast.y))cast.directed=cast.contactPoint=true;
     framevr::spellaim::Scope scope(g_spellCast,cast);
@@ -3216,7 +3230,8 @@ void HookSpellResolve(uintptr_t manager,void* unit,bool assist,float* x,float* y
         static std::atomic<ULONGLONG> reported{0};
         const auto now=GetTickCount64();auto before=reported.load();
         if(now-before>2000&&reported.compare_exchange_strong(before,now))
-            LogF("Frame spell aim: resolver direction %.3f %.3f, point %.2f %.2f",cast.x,cast.y,*x,*y);
+            LogF("Frame spell aim: skill %d resolver %s %.3f %.3f, point %.2f %.2f",framevr::NativeCastSkill(),
+                 cast.contactPoint?"ground point":"direction",cast.x,cast.y,*x,*y);
     }
 }
 #endif
@@ -3395,13 +3410,13 @@ uint64_t HookAttackTarget(void* self, void* unit, float* dir, int* outX, int* ou
     // without entering 0x190440. Correct only that aim call: the other callers
     // are locomotion and must keep their movement destinations.
     if(outX&&outY&&caller==d2rsig::Rva(RVA_ATTACK_POINT_RET)) {
-        float px=0,py=0,dx=0,dy=0;
-        if(SpellPlayerPosition(unit,px,py)&&DirectedSpellAim(dx,dy)&&
-           framevr::spellaim::ControllerPoint(px,py,{dx,0,dy},*outX,*outY)) {
+        float px=0,py=0;framevr::spellaim::Cast cast;
+        if(SpellPlayerPosition(unit,px,py)&&NativeSpellAim(px,py,cast)&&
+           framevr::spellaim::ControllerPoint(cast,px,py,*outX,*outY)) {
             static ULONGLONG told=0;
             if(GetTickCount64()-told>2000) {
                 told=GetTickCount64();
-                LogF("Frame spell aim: controller cast follows hand %.3f %.3f",dx,dy);
+                LogF("Frame spell aim: controller cast %s %.3f %.3f",cast.contactPoint?"point":"direction",cast.x,cast.y);
             }
         }
     }
@@ -4070,11 +4085,11 @@ uint64_t HookMapClick(void* unit, int type, int x, int y, uint64_t flags) {
         ~CommandScope(){g_spellCommand=previous;}
     } scope;
     const auto caller=uintptr_t(_ReturnAddress());
-    float px=0,py=0,dx=0,dy=0;int tx=0,ty=0;
+    float px=0,py=0;int tx=0,ty=0;framevr::spellaim::Cast cast;
     if(g_spellCommandReady.load()&&framevr::spellaim::ControllerCast(type)&&
        (caller==d2rsig::Addr(spellaimabi::CastClickRva+5)||caller==d2rsig::Addr(spellaimabi::RepeatClickRva+5))&&
-       SpellPlayerPosition(unit,px,py)&&DirectedSpellAim(dx,dy)&&
-       framevr::spellaim::ControllerPoint(px,py,{dx,0,dy},tx,ty)) {
+       SpellPlayerPosition(unit,px,py)&&NativeSpellAim(px,py,cast)&&
+       framevr::spellaim::ControllerPoint(cast,px,py,tx,ty)) {
         g_spellCommand={reinterpret_cast<uintptr_t>(unit),tx,ty};
         x=tx;y=ty;
     }
@@ -6111,7 +6126,7 @@ void BowTick() {
         // Free-hand casting uses its own complete tracked aim pose instead.
         skel::MeleeWeaponPose pose;
         const auto type=gamestate::WeaponType();
-        if(hand==0&&(type==D2RVR_TYPE_STAFF||type==D2RVR_TYPE_WAND||type==D2RVR_TYPE_SCEPTER||type==D2RVR_TYPE_ORB)&&
+        if(hand==0&&!framevr::spellaim::TrackedAim(shot.skill)&&(type==D2RVR_TYPE_STAFF||type==D2RVR_TYPE_WAND||type==D2RVR_TYPE_SCEPTER||type==D2RVR_TYPE_ORB)&&
            skel::MeleeWeapon(pose)&&pose.worldEpoch==g_meleeTurnEpoch.load()) {
             using framevr::math::Vec;
             const Vec p={pose.origin[0]/shot.unitsPerMetre,pose.origin[1]/shot.unitsPerMetre,pose.origin[2]/shot.unitsPerMetre};

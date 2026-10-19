@@ -4,6 +4,10 @@
 #include <cstddef>
 
 namespace framevr::spellaim {
+// These skills are aimed with the casting controller, not the decorative
+// shaft of a wand/scepter or the hero's animated facing.
+inline bool TrackedAim(int skill){return skill==78||skill==84||skill==88||skill==101;}
+inline bool BonePlacement(int skill){return skill==78||skill==88;}
 struct Cast {bool directed=false;float x=0,y=0;bool contactPoint=false;};
 struct Scope {
     Cast& current;Cast previous;
@@ -40,6 +44,32 @@ inline bool Horizontal(math::Vec direction,float& x,float& y) {
 // square with margin for movement between client resolution and server use.
 // This point encodes heading; it does not change native missile lifetime/range.
 inline constexpr float AimDistance=40.f;
+// Place a wall/prison where the tracked ray reaches the hero's floor. All
+// offsets are render-world units relative to that same hero; world X/Z are
+// doubled grid cells. A level/upward ray means six cells ahead, not an old
+// sticky target or a point at the far edge of the native targeting square.
+inline bool GroundPoint(float x,float y,math::Vec offset,math::Vec direction,float& targetX,float& targetY) {
+    if(!std::isfinite(x)||!std::isfinite(y)||!std::isfinite(offset.x)||!std::isfinite(offset.y)||!std::isfinite(offset.z)||
+       !std::isfinite(direction.x)||!std::isfinite(direction.y)||!std::isfinite(direction.z))return false;
+    const float length=std::sqrt(math::Dot(direction,direction));
+    if(!std::isfinite(length)||length<.001f||offset.y<0)return false;
+    direction=direction*(1/length);
+    float dx=offset.x*.5f,dy=offset.z*.5f;
+    const float horizontal=std::hypot(direction.x,direction.z);
+    if(direction.y<-.05f) {
+        const float t=-offset.y/direction.y;
+        dx+=direction.x*t*.5f;dy+=direction.z*t*.5f;
+    }else {
+        if(horizontal<.001f)return false;
+        dx=direction.x*6/horizontal;dy=direction.z*6/horizontal;
+    }
+    const float distance=std::hypot(dx,dy);
+    if(distance<.001f)return false;
+    const float scale=std::clamp(distance,2.f,AimDistance)/distance;
+    const float tx=x+dx*scale,ty=y+dy*scale;
+    if(!std::isfinite(tx)||!std::isfinite(ty)||tx<1||ty<1||tx>65534||ty>65534)return false;
+    targetX=tx;targetY=ty;return true;
+}
 inline bool Point(float x,float y,math::Vec direction,float& targetX,float& targetY) {
     float dx=0,dy=0;
     if(!std::isfinite(x+y)||!Horizontal(direction,dx,dy))return false;
@@ -78,5 +108,10 @@ inline bool Resolve(const Cast& cast,float playerX,float playerY,float& targetX,
         targetX=cast.x;targetY=cast.y;return true;
     }
     return Point(playerX,playerY,{cast.x,0,cast.y},targetX,targetY);
+}
+inline bool ControllerPoint(const Cast& cast,float playerX,float playerY,int& targetX,int& targetY) {
+    float x=0,y=0;
+    if(!Resolve(cast,playerX,playerY,x,y)||x<1||y<1||x>65534||y>65534)return false;
+    targetX=int(x);targetY=int(y);return true;
 }
 }
