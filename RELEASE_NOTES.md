@@ -3,8 +3,6 @@
 This update focuses on hand-aimed spells, physical combat, wrist navigation,
 foveated rendering and clearer recording and launcher options.
 
-**Draft recording candidate. Public release assets are not published yet.**
-
 ## Gameplay and combat
 
 - **Defense that reduces incoming damage - contributed by ChuckRibbits:**
@@ -64,30 +62,36 @@ foveated rendering and clearer recording and launcher options.
 
 ## Updating
 
-When published, use **D2R-PCVR-Setup-0.3.20.exe** for graphical installation or
+Download **D2R-PCVR-Setup-0.3.20.exe** for graphical installation, or
 **d2r-pcvr-windows.zip** for portable setup. Existing users should choose
 **Update / repair and keep calibration and video settings**.
 
-Existing settings, calibration and saves are preserved. The recording candidate
-is installed separately as **pcvr-dev**; it does not replace the normal mod.
+Existing settings, calibration and saves are preserved. The shared launcher is
+optional; the installer, portable setup and standalone launch options work
+without it.
 
 ## Verification and known issues
 
-The recording candidate passed **110 native checks** and **34 Python checks**
-covering release-note generation, version identity and installer staging.
-The in-headset page was rendered and visually inspected for readable feature
-lines, version, author, project link and credits.
+The release build passed **110 native checks** and **217 Python checks** covering
+installation, launching, migrations, local asset preparation, release metadata
+and package staging. One additional Python symlink test was skipped because this
+Windows session cannot create symbolic links. The compiled installer lifecycle
+fixture passed installation, registration, failed-removal recovery and successful
+removal with an isolated stub backend. The compiled installer payload and package
+hashes were checked separately. The in-headset release page was rendered and
+visually inspected for readable feature lines, version, author, project link
+and credits.
 
 The gameplay changes were checked during development in the offline developer
 environment. Foveation was checked on Quest 3 through Virtual Desktop and
 Steam Frame through SteamVR, including usable eye-tracking input on Steam Frame.
-The corrected Holy Bolt candidate was verified before merging. The rebuilt
-v0.3.20 recording candidate still needs its own in-headset release-page check.
+The corrected Holy Bolt candidate was verified before merging. The packaged
+release has not had a fresh headset pass; these are feature-level development
+checks.
 
-Final release packaging and acceptance checks remain pending. Spell collision
-and ground placement retain the existing launch-floor approximation; assistance
-does not guarantee a hit. Battle.net remains experimental. The trial forearm /
-shield-position changes and Sorceress elemental-hands prototype are excluded.
+Spell collision and ground placement retain the existing launch-floor
+approximation; assistance does not guarantee a hit. Battle.net remains
+experimental. The Sorceress elemental-hands prototype is excluded.
 
 ## Special thanks
 
@@ -100,10 +104,10 @@ by **Sergious / BodyWalkVR**, with contributions from the community.
 
 ## Downloads and links
 
-- [Release page when published](https://github.com/bearstonem/d2r-pcvr/releases/tag/v0.3.20-windows-preview)
-- [Installation instructions](https://github.com/bearstonem/d2r-pcvr/blob/main/INSTALL-WINDOWS.md)
-- [Controls](https://github.com/bearstonem/d2r-pcvr/blob/main/CONTROLS.md)
-- [Changes since v0.3.19](https://github.com/bearstonem/d2r-pcvr/compare/v0.3.19-windows-preview...main)
+- [Windows installer, portable ZIP and checksums](https://github.com/bearstonem/d2r-pcvr/releases/tag/v0.3.20-windows-preview)
+- [Installation instructions](https://github.com/bearstonem/d2r-pcvr/blob/v0.3.20-windows-preview/INSTALL-WINDOWS.md)
+- [Controls](https://github.com/bearstonem/d2r-pcvr/blob/v0.3.20-windows-preview/CONTROLS.md)
+- [Full source comparison](https://github.com/bearstonem/d2r-pcvr/compare/v0.3.19-windows-preview...v0.3.20-windows-preview)
 - [Project on GitHub](https://github.com/bearstonem/d2r-pcvr)
 
 <!-- PCVR_IN_HEADSET_NOTES
