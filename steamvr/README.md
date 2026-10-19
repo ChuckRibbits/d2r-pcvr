@@ -177,7 +177,8 @@ records folded, and what started the settle again (biome sets, frames over
 150 ms, pairs out of the world); a watchdog logs each queue's fences if no
 present comes for 3 seconds while replaying.
 
-Replay needs `[render] defer_gpu_wait=1` for its full rate. With the
+Replay needs `[render] defer_gpu_wait=1` for its full rate; the installer sets
+it for new installs, and an upgrade keeps the existing value. With the
 conservative wait each frame takes the CPU's time plus the GPU's, and at 90 Hz
 SteamVR then paces the game at half. While Replay is selected and the wait is
 not deferred, the Video page shows a warning and a **Defer GPU wait** button
@@ -573,8 +574,9 @@ on Steam Frame, with a softer image; other scenes/headsets remain unverified.
 Set 0 to restore runtime-recommended projections. See the
 [OpenXR projection-view contract](https://registry.khronos.org/OpenXR/specs/1.0/man/html/XrCompositionLayerProjectionView.html).
 
-`[render] defer_gpu_wait=1` is off by default; VR Settings > Video offers it
-while Replay is selected (see Stereo rendering above). Image
+`[render] defer_gpu_wait=1` is set by the installer; a missing key means 0, and
+VR Settings > Video offers it while Replay is selected (see Stereo rendering
+above). Image
 copies and state restoration are submitted on the D3D12 queue bound to OpenXR;
 completion is checked before each eye's copy allocator is reused and before
 shutdown, instead of blocking the CPU before every image release. Set it to 0

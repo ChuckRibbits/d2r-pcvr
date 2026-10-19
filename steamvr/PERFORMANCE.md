@@ -28,8 +28,8 @@ off (3128 square per eye, Headset; Act 1 camp, standing), Replay drew 889 of
 against 44-45 before. Leaving the camp, a biome set paused it and it took
 about a minute to settle again, at 40-48 pairs/s in two passes meanwhile; the
 10-second line now counts what starts the settle again. Replay became the
-default stereo rendering, and the Video page offers the deferred wait while
-Replay is selected without it.
+default stereo rendering, the installer now sets `defer_gpu_wait=1`, and the
+Video page offers it while Replay is selected without it.
 
 Differences from upstream: the right eye's camera math is a pure header with
 tests (the fold's V*P_R matches a true right-eye camera's clip coordinates);
