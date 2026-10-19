@@ -2579,6 +2579,7 @@ bool ReplayReady() {
     std::lock_guard lock(mutex);
     return !captureRequested.load()&&!d2rcam::LabelCapturePending();
 }
+bool ReplayPair() {std::lock_guard lock(mutex);return replayPair&&!failed;}
 float ReplayShift() {std::lock_guard lock(mutex);return replayShift;}
 float ReplayProjShift() {
     std::lock_guard lock(mutex);
@@ -2606,6 +2607,7 @@ void BeginPair(bool byTurns,bool replay) {
         const int mode=StereoRendering();
         turnFrame=byTurns;replayPair=replay&&!byTurns;
         keepTurns=byTurns||mode==1||mode==2;keepDepth=mode==2;Begin();pairDrawing=true;
+        if(replayPair&&!(frame&&valid&&render&&!panelMode))replayPair=false;
         gpuProfile.started=gpuProfile.effects=gpuProfile.resolved=0;
         // The profile and stereo captures take both eyes from two passes.
         if(Active()&&!byTurns&&!replayPair)profile::BeginPair();else profile::SkipPair();

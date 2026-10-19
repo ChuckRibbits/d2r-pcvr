@@ -4917,7 +4917,7 @@ bool ReplayWanted() {
     static bool told = false;   // once a ready stretch: what else holds it back
     if (!stereoreplay::Wanted(g_inWorld.load() && d2rcam::InWorld())) { told = false; return false; }
     const char* why = ThirdPerson() ? "third person" : Overhead() ? "an overhead view" : gamestate::MenuOpen() ? "a menu is open" :
-                      !framevr::Active() ? "the headset session is not active" : !framevr::ReplayReady() ? "a stereo capture waits" : nullptr;
+                      !framevr::ReplayReady() ? "a stereo capture waits" : nullptr;
     if (why && !told) { told = true; LogF("vrcam: replay - ready, but two passes: %s", why); }
     return !why;
 }
@@ -5032,8 +5032,11 @@ uintptr_t HookDrawGameScreen(int a) {
     static bool toldTry = false;   // before the first pair: if the game dies on it, the log says where
     if (!toldTry) { toldTry = true; Log("vrcam: pair per game frame - drawing the first pair"); }
 #ifdef D2RVR_NATIVE_OPENXR
-    const bool replay = ReplayWanted();
-    framevr::BeginPair(false, replay);
+    // The headset frame decides last: a panel, or a frame not rendered, is no
+    // stereo pair to replay (framevr::Active is only true once it has begun).
+    const bool wantReplay = ReplayWanted();
+    framevr::BeginPair(false, wantReplay);
+    const bool replay = wantReplay && framevr::ReplayPair();
     if(framevr::TakeWorldRecenter())Recenter();
 #else
     const bool replay = false;

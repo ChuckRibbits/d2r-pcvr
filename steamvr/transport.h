@@ -81,6 +81,9 @@ void BeginEye(int eye);
 int StereoRendering();
 // Replay: no capture waits for a pair of two passes.
 bool ReplayReady();
+// After BeginPair(...,true): the frame begun is a stereo one the replay can
+// draw (rendering, views located, no flat panel).
+bool ReplayPair();
 // The eyes' gap along the left eye's x, in the world's units (View), and half
 // the left minus right eye's off-axis projection term: the replay's camera.
 float ReplayShift();
