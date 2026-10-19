@@ -266,12 +266,15 @@ inline ParryMiss ParryCheck(const State& s,Vec toAttacker,uint64_t now,const Tun
 // toAttacker: grid-plane vector, player -> attacker, in metres. attackAt: when
 // this attacker's attack began (0 = unknown). A timed parry is judged before
 // face coverage; anything else must cover the attack to block.
-inline Verdict Judge(const State& s,Vec toAttacker,uint64_t now,const Tuning& t,uint64_t attackAt=0,Rejection* reason=nullptr,uint64_t opensAt=0) {
+// opensAt: when this attacker's downstroke opens (0 = not measured); a parry swing
+// before it is a windup miss. parryable=false (an act boss): a parry swing is judged
+// as a plain guard.
+inline Verdict Judge(const State& s,Vec toAttacker,uint64_t now,const Tuning& t,uint64_t attackAt=0,Rejection* reason=nullptr,uint64_t opensAt=0,bool parryable=true) {
     const auto reject=[&](Rejection why){if(reason)*reason=why;return Verdict::Open;};
     if(reason)*reason=Rejection::None;
     if(!s.raised)return reject(s.rejection);
     if(!s.seenAt||now<s.seenAt||now-s.seenAt>t.staleMs)return reject(Rejection::StalePose);
-    if(ParryCheck(s,toAttacker,now,t,attackAt,opensAt)==ParryMiss::None)return Verdict::Parry;
+    if(parryable&&ParryCheck(s,toAttacker,now,t,attackAt,opensAt)==ParryMiss::None)return Verdict::Parry;
     const auto coverage=Coverage(s.surface,toAttacker,t);
     if(coverage!=Rejection::None)return reject(coverage);
     return Verdict::Block;

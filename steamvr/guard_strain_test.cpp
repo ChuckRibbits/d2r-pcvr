@@ -210,6 +210,23 @@ int main() {
         for(int i=0;i<10;++i){o=r.Step(true,1);for(int k=0;k<18;++k){o=r.Step(true);if(i>0)floor=std::min(floor,o.pulse);}}
         Check(floor>.5f,"rapid blocks hold the swell rather than flashing");
     }
+    {   // Rank: rarer attackers strain the guard faster; act bosses break it in 3 at Medium.
+        using strain::Rank;
+        const auto blocksToBreak=[](Rank rank) {
+            Run r;int n=0;
+            for(;n<40;){strain::Input in;r.time+=1/90.;in.time=r.time;in.session=7;in.enabled=in.eligible=in.raised=true;
+                in.blocks=1;in.weight=strain::RankWeight(rank);++n;if(r.engine.Step(in,r.tuning).broken)break;r.Hold(true,.2);}
+            return n;
+        };
+        Check(blocksToBreak(Rank::Normal)==10&&blocksToBreak(Rank::Minion)==8&&blocksToBreak(Rank::Champion)==5&&
+              blocksToBreak(Rank::Unique)==4&&blocksToBreak(Rank::PrimeEvil)==3,"blocks to break: 10/8/5/4/3 by rank");
+        // A block's weight can land a step before its count (two atomics): it still strains, once.
+        Run r;strain::Input in;r.time+=1/90.;in.time=r.time;in.session=7;in.enabled=in.eligible=in.raised=true;in.weight=2;
+        const float early=r.engine.Step(in,r.tuning).strain;
+        in.time=(r.time+=1/90.);in.weight=0;in.blocks=1;
+        const float late=r.engine.Step(in,r.tuning).strain;
+        Check(std::fabs(early-.2f)<1e-5f&&std::fabs(late-early)<1e-5f,"split weight and count strain once");
+    }
     {   // Settings: off, sessions, hitches.
         Run r;r.tuning.brightness=0;
         auto o=r.Step(true,5);

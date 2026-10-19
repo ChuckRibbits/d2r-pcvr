@@ -25,6 +25,14 @@ void ConfigureLateParry(uint32_t ms);
 // [gameplay] enemies_always_hit (Unleashed, default on): monsters' to-hit rolls against
 // the local player always connect; the native chance scales the landed attack's damage.
 void ConfigureEnemiesAlwaysHit(bool on);
+// [gameplay] guard_break_chip (Unleashed, default on) and
+// guard_break_chip_scale (1): through a broken guard a block lands as a chip,
+// its life damage x (1 - chance to block) x scale.
+void ConfigureGuardChip(bool on,float scale);
+// [gameplay] shield_block_wear (22): % of physical blocks and chips that give the
+// shield the game's own 10% when-struck wear roll (22 = its native share, 2.2%);
+// nothing else wears for them. A parry wears nothing.
+void ConfigureShieldWear(int share);
 // The game's Master x Combat volume (Settings.json, 0..1), re-read at most every
 // 2 s and only when the game saved it. Any thread.
 float GameVolume();
@@ -65,5 +73,7 @@ void Report();
 void ObserveLocalPlayer(uintptr_t unit);
 bool ObserveUiPlayer(uintptr_t unit,uint64_t session);
 bool LocalPlayerUnit(uintptr_t& unit);
+// UI thread: a worn item's new durability onto the local player's client item.
+void MirrorClientDurability(uint32_t itemId,int value);
 bool LocalPlayerId(uint32_t& id);
 }

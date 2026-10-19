@@ -152,7 +152,8 @@ strain::Engine guardStrain;
 strain::Output strainOutput;
 std::mutex strainTuningMutex;strain::Tuning strainTuning;
 std::atomic<float> strainRecoverSeconds{1.5f};   // [gameplay] guard_strain_recover_ms; 0 = only lowering drains
-std::atomic<unsigned> guardBlockEvents{0},guardParryEvents{0};
+std::atomic<unsigned> guardBlockEvents{0},guardParryEvents{0},guardBlockWeight{0}; // weight in 1/1000ths
+std::atomic<bool> guardBroken{false};   // the game thread's chip check
 std::atomic<ULONGLONG> guardStateAt{0};std::atomic<bool> guardEligible{false},guardRaised{false};
 strain::Painter strainPainter;
 XrSwapchain strainChain=XR_NULL_HANDLE;
@@ -232,6 +233,23 @@ public:
     ~HeartStream(){Stop();}
 } heartStream;
 bool heartPlaying=false;
+// Guard break: a bone snap on its own stream, so neither the heartbeat nor the
+// riposte (PlaySound) cuts it off. Frame thread only; source under breakMutex.
+HeartStream breakStream;
+std::mutex breakMutex;std::shared_ptr<const heartbeat::Pcm> breakSource;float breakVolume=1;
+std::wstring breakFile=L"?";   // never a real path: the first configure loads the built-in snap
+void PlayGuardBreak() {
+    std::shared_ptr<const heartbeat::Pcm> source;float volume=0;
+    {std::lock_guard lock(breakMutex);source=breakSource;volume=breakVolume;}
+    if(!source||source->samples.empty()||!(volume>0))return;
+    const float gain=volume*combat::GameVolume();   // the game's Master x Combat sliders
+    if(!(gain>0))return;
+    std::vector<int16_t> pcm(source->samples.size());
+    // The heartbeat's soft limiter: guard_break_volume above 100 bends peaks instead of clipping.
+    for(size_t i=0;i<pcm.size();++i)pcm[i]=int16_t(std::lround(heartbeat::Limit(float(source->samples[i])*gain/32768.f)*32767.f));
+    breakStream.Reap();
+    if(!breakStream.Queue(source->rate,source->channels,std::move(pcm)))Say("Frame guard break: sound did not play");
+}
 XrSwapchain interactionChain=XR_NULL_HANDLE;
 XrSwapchain companionChain=XR_NULL_HANDLE;
 bool companionAtlasPending=false,companionPaintValid=false;
@@ -1641,11 +1659,14 @@ void Input() {
         in.eligible=guardEligible.load()&&now-guardStateAt.load()<=250;
         in.raised=guardRaised.load();
         in.blocks=guardBlockEvents.exchange(0);in.parries=guardParryEvents.exchange(0);
+        in.weight=float(guardBlockWeight.exchange(0))/1000.f;   // rank-weighted strain of those blocks
         strainOutput=guardStrain.Step(in,tuning);
+        guardBroken=strainOutput.broken;
         strainOutput.alpha*=std::clamp(lightOn,0.f,1.f);strainOutput.visible=strainOutput.alpha>.004f;
         if(strainOutput.brokeNow) {
             MotionPulse(1,haptics::Category::Alert,.6f,120000000);
             Say("Frame guard strain: guard broken; it clears once hits stop or the shield is lowered");
+            PlayGuardBreak();
         }
         if(strainOutput.clearedNow)Say("Frame guard strain: cleared");
         // Consume completed images before scheduling more work. Never replace an
@@ -1670,7 +1691,7 @@ void Input() {
     // VR Settings > Combat > Heartbeat starts at. Above it, Off, dead or stale vitals:
     // the last beat finishes, then silence.
     {
-        heartStream.Reap();
+        heartStream.Reap();breakStream.Reap();   // breakStream: the guard-break bone snap
         heartbeat::Tuning heart;std::shared_ptr<const heartbeat::Pcm> source;const char* sourceName=nullptr;
         {std::lock_guard lock(heartMutex);heart=heartTuning;source=heartSource;sourceName=heartSourceName;}
         const auto& vitals=interactionInput.snapshot;
@@ -2910,7 +2931,13 @@ void FinishShieldSkill(bool accepted) {
     if(accepted)shieldImpactAt=shieldFeedbackAt;
 }
 void MeleeImpact(int hand) {if(hand>=0&&hand<2)meleeImpactAt[hand]=GetTickCount64();}
-void ShieldGuardImpact(bool parry) {shieldImpactAt=GetTickCount64();(parry?guardParryEvents:guardBlockEvents).fetch_add(1);}
+void ShieldGuardImpact(bool parry,float weight) {
+    shieldImpactAt=GetTickCount64();
+    if(parry){guardParryEvents.fetch_add(1);return;}
+    guardBlockWeight.fetch_add(unsigned(std::clamp(std::isfinite(weight)?weight:1.f,0.f,16.f)*1000.f+.5f));
+    guardBlockEvents.fetch_add(1);
+}
+bool GuardBroken() {return guardBroken.load();}
 void ShieldParryMiss() {parryMissAt=GetTickCount64();}
 void ShieldGuardState(bool eligible,bool raised) {guardStateAt=GetTickCount64();guardEligible=eligible;guardRaised=raised;}
 void ConfigureGuardStrain(float perBlock,float resetSeconds,float clear,float breatheSeconds,float softness,float brightness,uint32_t color,float density) {
@@ -2961,6 +2988,32 @@ void ConfigureHeartbeat(float volume,float bpmMin,float bpmMax,float fadeSeconds
         !path.empty()?(embedded?"Frame low-life heartbeat: ini WAV missing or not 16-bit PCM; built-in recording":
                                 "Frame low-life heartbeat: ini WAV missing or not 16-bit PCM; synthesized beat"):
         embedded?"Frame low-life heartbeat: built-in recording":"Frame low-life heartbeat: recording missing; synthesized beat");
+}
+void ConfigureGuardBreakSound(float volume,const wchar_t* file) {
+    const std::wstring path=file?file:L"";
+    bool reload=false;
+    {std::lock_guard lock(breakMutex);breakVolume=std::isfinite(volume)?std::clamp(volume,0.f,4.f):1.f;reload=path!=breakFile;if(reload)breakFile=path;}
+    if(!reload)return;
+    auto pcm=std::make_shared<heartbeat::Pcm>();
+    bool fromFile=false,embedded=false;
+    if(!path.empty()) {
+        std::vector<uint8_t> bytes;
+        if(FILE* f=_wfopen(path.c_str(),L"rb")){uint8_t buf[65536];size_t n;while((n=fread(buf,1,sizeof buf,f))>0&&bytes.size()<16u<<20)bytes.insert(bytes.end(),buf,buf+n);fclose(f);}
+        fromFile=heartbeat::ParseWav(bytes,*pcm);
+    }
+    if(!fromFile) {   // the recording embedded by interaction_assets.rc
+        HMODULE module=nullptr;std::vector<uint8_t> bytes;
+        GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS|GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                           reinterpret_cast<LPCWSTR>(&ConfigureGuardBreakSound),&module);
+        if(HRSRC res=module?FindResourceW(module,L"D2RVR_GUARD_BREAK_SOUND",MAKEINTRESOURCEW(10)):nullptr)
+            if(HGLOBAL h=LoadResource(module,res))
+                if(const auto* p=static_cast<const uint8_t*>(LockResource(h)))bytes.assign(p,p+SizeofResource(module,res));
+        embedded=heartbeat::ParseWav(bytes,*pcm);
+    }
+    {std::lock_guard lock(breakMutex);breakSource=fromFile||embedded?pcm:nullptr;}
+    Say(fromFile?"Frame guard break: ini WAV loaded":
+        embedded?(path.empty()?"Frame guard break: built-in bone snap":"Frame guard break: ini WAV missing or not 16-bit PCM; built-in bone snap"):
+        "Frame guard break: sound missing; silent");
 }
 bool OwnsControllerRumble() {return motionControls.load()&&controllerRumbleLease.Owns(GetTickCount64());}
 void SpellCast(int hand,uint64_t session) {spellHaptics.Publish(hand,session,GetTickCount64());}

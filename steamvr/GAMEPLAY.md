@@ -979,6 +979,30 @@ instead of a random one. Classic keeps the native roll.
   audio stream, so it never cuts off the riposte or block sounds. The old
   `guard_strain_heart*` keys are still read when the matching `low_life_heart*` key
   is absent. The log's `Frame low-life heartbeat: started life=N%` line marks each start.
+- **Shield wear**: the game wears armor only when its wearer is struck: each
+  landed hit picks one armor piece by body-location weight (head 3, torso 5, left
+  hand 4, belt, feet and gloves 2) and gives it a 10% chance to lose 1 durability
+  (SUnitDmg 4526C0 / 441B10). A block never got there, so a raised shield never
+  wore. A physical block gives the shield alone that native roll, and a chip
+  through a broken guard has its struck wear given to the shield instead of a
+  random piece, for `shield_block_wear` % of contacts (22: the shield's native
+  share, 4 of 18 x 10% = 2.2% a contact; 100 = the full 10%; 0 = off). A parry wears nothing. Unblocked hits are
+  untouched. Indestructible and broken handling are the game's own.
+  In this setup the game updated only the server copy of a worn item, so
+  tooltips showed the old durability until a relaunch (its own armor wear
+  too). After every wear on the local player's gear the new value is copied
+  to the client item, so tooltips follow at once.
+- **Guard break**: the moment the guard breaks a bone snap plays
+  (`steamvr/assets/guard-break-bone.wav`) on its own audio stream, at
+  `guard_break_volume` % (100, 0 = off) of the game's Master x Combat volume, through
+  the heartbeat's soft limiter; `guard_break_sound_file` replaces it with a 16-bit PCM
+  WAV. While the guard is broken, a block lands as a **chip** (`guard_break_chip`, 1 in
+  Unleashed): the hit lands natively (damage reduction, resists and absorb; armor
+  wear; when-struck procs; the hero's hit sound) and its physical part is scaled by
+  (1 - chance to block) x `guard_break_chip_scale` (1), on top of the Defense factor.
+  Chance to block is the native rate, a third while running, capped at 75 %.
+  Elemental damage and its effects (poison, chill...) land as normal. The block
+  pulse, haptic and sound still play.
 
 Damage is scaled at the native damage application's final life write (44CE80,
 whose `Set(defender, life, ...)` returns to 44D098), so resistances, criticals and

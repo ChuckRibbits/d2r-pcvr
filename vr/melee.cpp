@@ -83,7 +83,7 @@ SmiteFn originalSmite=nullptr;std::atomic<bool> smiteReady{false};
 constexpr uint64_t HitRecoveryRva=0x445e60;
 constexpr uint8_t HitRecoverySig[]={0x48,0x89,0x5c,0x24,0x08,0x57,0x48,0x83,0xec,0x20,0x48,0x8b,0x5a,0x08,0x48,0x8b,0xf9,0x48};
 using HitRecoveryFn=int(*)(uintptr_t game,const uintptr_t* event);
-std::atomic<bool> parryReady{false};std::atomic<unsigned> parried{0},parryRefused{0},parryRepaired{0};
+std::atomic<bool> parryReady{false};std::atomic<unsigned> parried{0},parryRefused{0},parryRepaired{0},deflected{0};
 std::atomic<int> parrySound{236}; // item_platearmor: Archon Plate's equip sound (HD redirect)
 std::atomic<int> blockSound{398};  // block_weapon_1; [gameplay] block_sound
 // 34E5F0(unit, mode) is the unit animation-mode setter, the only writer of
@@ -470,14 +470,26 @@ void __cdecl Parry(const D2RL::PluginContext*,void* token) noexcept {
     uintptr_t game=0,player=0;
     if(!parryReady.load()||!LocalServer(game,player)){++parryRefused;return;}
     const auto unit=originalLookup(game,1,monster);uint32_t mode=0;
-    // Already recovering: nothing to interrupt. Native gates the rest.
-    if(!unit||!Read(unit+0xc,mode)||mode==3){++parryRefused;return;}
+    if(!unit||!Read(unit+0xc,mode)||mode==0||mode==12){++parryRefused;return;}   // dying or dead
+    // Deflect: a monster already recovering (mode 3), or one with no GetHit
+    // mode to stagger into (Griswold and the like: native refuses its
+    // MonStats2 row), is still parried - the sound and the riposte, no stagger.
+    // Act bosses never get here: they are not parryable (combat.cpp).
     const uintptr_t event[2]{0,unit};
-    if(reinterpret_cast<HitRecoveryFn>(d2rsig::Addr(HitRecoveryRva))(game,event)){++parried;QueueParrySound();combat::NoteRiposte(monster);}
-    else ++parryRefused;
+    if(mode!=3&&reinterpret_cast<HitRecoveryFn>(d2rsig::Addr(HitRecoveryRva))(game,event))++parried;
+    else ++deflected;
+    QueueParrySound();combat::NoteRiposte(monster);
 }
 void QueueBlockSound() {
     if(blockSound.load()>0&&context&&threads&&threads->runOnUiThread)threads->runOnUiThread(context,&BlockSound,nullptr);
+}
+void __cdecl ClientDurability(const D2RL::PluginContext*,void* token) noexcept {
+    const auto packed=reinterpret_cast<uintptr_t>(token);
+    combat::MirrorClientDurability(uint32_t(packed),int(uint32_t(packed>>32)));
+}
+void QueueClientDurability(uint32_t itemId,int value) {
+    if(value<0||!context||!threads||!threads->runOnUiThread)return;
+    threads->runOnUiThread(context,&ClientDurability,reinterpret_cast<void*>((uintptr_t(uint32_t(value))<<32)|itemId));
 }
 // Game thread: a parry before the hit frame, once the swing came during this
 // monster's downstroke. Never once its to-hit roll has run, and never for an
@@ -491,7 +503,9 @@ bool EarlyStagger(uintptr_t game,uintptr_t player,const AttackSeen& seen,uint64_
     const uint64_t swing=combat::EarlyParry(unit,player,seen.at,opensAt,trigger);
     if(!swing)return false;
     const uintptr_t event[2]{0,unit};
-    if(!reinterpret_cast<HitRecoveryFn>(d2rsig::Addr(HitRecoveryRva))(game,event)){++parryRefused;return false;}
+    // No GetHit mode (Griswold and the like): the swing stays armed and the
+    // hit-frame parry deflects it (Parry above).
+    if(!reinterpret_cast<HitRecoveryFn>(d2rsig::Addr(HitRecoveryRva))(game,event))return false;
     ++parried;combat::ConfirmParry(swing);QueueParrySound();combat::NoteRiposte(seen.id);
     return true;
 }
@@ -786,8 +800,8 @@ void Report() {
         char line[180];snprintf(line,sizeof line,"Frame dual wield: right landed=%u left landed=%u stale/unavailable weapon=%u",right,left,invalid);
         framevr::logging::Write(line);
     }
-    if(const auto pd=parried.exchange(0),pr=parryRefused.exchange(0),pf=parryRepaired.exchange(0),as=attackStarts.exchange(0);pd||pr||pf) {
-        char line[200];snprintf(line,sizeof line,"Frame guard: parry hit recovery applied=%u refused=%u shield_wear_refunded=%u monster_attack_starts=%u",pd,pr,pf,as);
+    if(const auto pd=parried.exchange(0),pr=parryRefused.exchange(0),pf=parryRepaired.exchange(0),as=attackStarts.exchange(0),dv=deflected.exchange(0);pd||pr||pf||dv) {
+        char line[220];snprintf(line,sizeof line,"Frame guard: parry hit recovery applied=%u deflected=%u refused=%u shield_wear_refunded=%u monster_attack_starts=%u",pd,dv,pr,pf,as);
         framevr::logging::Write(line);
     }
     const auto ss=shieldSweeps.exchange(0),sr=shieldRequests.exchange(0),sa=shieldAccepted.exchange(0),sf=shieldRejected.exchange(0);

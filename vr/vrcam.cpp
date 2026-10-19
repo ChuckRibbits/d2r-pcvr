@@ -843,10 +843,16 @@ void LoadSettings() {
     // The perfect parry window is fixed at 450 ms with no lead (no longer a setting).
     melee::ConfigureParrySound((int)IniF(L"gameplay",L"parry_sound",236));
     melee::ConfigureBlockSound((int)IniF(L"gameplay",L"block_sound",398));
+    // % of physical blocks and chips that give the shield the game's own 10% wear roll:
+    // 22 = its native share of struck wear (2.2% a contact). Parries never.
+    combat::ConfigureShieldWear(int(IniF(L"gameplay",L"shield_block_wear",22)));
     // Unleashed rule (on by default): every monster attack and projectile lands, and
     // its native to-hit chance against your Defense scales the damage instead.
     // Classic keeps the native monster to-hit roll.
     combat::ConfigureEnemiesAlwaysHit(!classicMelee&&IniB(L"gameplay",L"enemies_always_hit",true));
+    // Unleashed (on by default): a broken guard leaks a chip of each blocked hit.
+    combat::ConfigureGuardChip(!classicMelee&&IniB(L"gameplay",L"guard_break_chip",true),
+                               IniF(L"gameplay",L"guard_break_chip_scale",1));
     // Unleashed swing damage (applied live): attack rating and attack speed scale
     // a physical swing instead of deciding whether it lands. [gameplay] ar_damage
     // (1): damage x the native to-hit chance; ar_damage_floor (% kept at zero
@@ -926,6 +932,13 @@ void LoadSettings() {
                                     heartF(L"low_life_heart_bpm_min",L"guard_strain_heart_bpm_min",70),
                                     heartF(L"low_life_heart_bpm_max",L"guard_strain_heart_bpm_max",115),
                                     heartF(L"low_life_heart_fade_ms",L"guard_strain_heart_fade_ms",4000)/1000.f,path.c_str());
+    }
+    {   // Guard break: a bone snap at % of the game's Master x Combat volume (0 = off), and an
+        // optional 16-bit PCM WAV in its place (next to this ini unless a full path).
+        wchar_t file[MAX_PATH];GetPrivateProfileStringW(L"gameplay",L"guard_break_sound_file",L"",file,MAX_PATH,g_iniPath);
+        std::wstring path=file;
+        if(!path.empty()&&path.find(L':')==std::wstring::npos){std::wstring dir=g_iniPath;dir.resize(dir.find_last_of(L"\\/")+1);path=dir+path;}
+        framevr::ConfigureGuardBreakSound(IniF(L"gameplay",L"guard_break_volume",100)/100.f,path.c_str());
     }
 #endif
 #ifdef D2RVR_NATIVE_OPENXR

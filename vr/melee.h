@@ -55,6 +55,8 @@ void NoteAttackRolled(uint32_t monster);
 void QueueParrySwing();
 // The block sound at the hero ([gameplay] block_sound). Thread-safe.
 void QueueBlockSound();
+// A worn item's durability onto its client copy, on the UI thread. Thread-safe.
+void QueueClientDurability(uint32_t itemId,int value);
 // [gameplay] block_sound: sounds.txt row played at the hero on every physical
 // block (default 398 block_weapon_1); 0 is silent. A change plays it once.
 void ConfigureBlockSound(int sound);
