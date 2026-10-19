@@ -100,5 +100,15 @@ int main() {
         Check(heartbeat::Gain(level(39,50),t)>heartbeat::Gain(level(49,50),t)&&heartbeat::Bpm(level(39,50),t)>heartbeat::Bpm(level(49,50),t)&&
               heartbeat::Bpm(level(9,50),t)==115,"each step is louder and faster");
     }
-    std::puts("Low-life heartbeat: synthesized lub-dub, loudness and tempo follow life, stepping every 10 % below the chosen start, silent when healthy or dead, one-period beats (padded, cut, stereo, saturation) and WAV loading passed");
+    {   // Wiping the visor clean quiets it until the next hit; healing to silence clears it.
+        heartbeat::Hush h;
+        Check(h.Step(.4f,false,false)==.4f,"beats at its step");
+        Check(h.Step(.4f,true,false)==0&&h.Step(.4f,false,false)==0,"a clean visor quiets it and stays quiet");
+        Check(h.Step(.4f,false,true)==.4f&&!h.On(),"the next hit resumes at its step");
+        h.Step(.6f,true,false);
+        Check(h.Step(0,false,false)==0&&!h.On()&&h.Step(.2f,false,false)==.2f,"healing above the start clears it");
+        Check(h.Step(.2f,true,true)==.2f,"a hit with the last stroke wins");
+        Check(h.Step(0,true,false)==0&&!h.On(),"nothing to quiet: no latch");
+    }
+    std::puts("Low-life heartbeat: synthesized lub-dub, loudness and tempo follow life, stepping every 10 % below the chosen start, silent when healthy or dead, hushed by a wiped visor until the next hit, one-period beats (padded, cut, stereo, saturation) and WAV loading passed");
 }

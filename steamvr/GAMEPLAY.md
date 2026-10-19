@@ -937,7 +937,10 @@ instead of a random one. Classic keeps the native roll.
   every 10 % lost, louder and faster, to full loudness and `low_life_heart_bpm_max`
   (115) below 10 %: a 50 % start gives five steps, at 50, 40, 30, 20 and 10 %. The
   tempo runs from `low_life_heart_bpm_min` (70); loudness starts at 12 % of full and
-  rises with each step. Applied live. The beat itself keeps
+  rises with each step. Applied live. Wiping the visor clean (the last splat) fades
+  the heartbeat out while still hurt; the next hit (the blood visor's own hit size)
+  brings it straight back at its step, and healing to silence clears the wipe. A
+  partial wipe leaves it beating. The beat itself keeps
   its natural speed and pitch; only the time between beats shortens. A heal winds it
   down no faster than `low_life_heart_fade_ms` (4000) from full: quieter and slower beat
   by beat, then silent; so does death or a loading screen. Loudness is

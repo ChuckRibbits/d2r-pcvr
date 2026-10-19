@@ -167,6 +167,7 @@ std::shared_ptr<const heartbeat::Pcm> heartSource=std::make_shared<heartbeat::Pc
 std::wstring heartFile=L"?";   // never a real path: the first configure loads the built-in beat
 const char* heartSourceName="built-in recording"; // for the first "started" line (under heartMutex)
 heartbeat::Level heartLevel;double heartAt=0;
+heartbeat::Hush heartHush;float heartHealth=-1;   // wiped visor; last fresh life, for hits
 void Say(const char* msg);   // logging, defined below
 class HeartStream {
     using OpenFn=MMRESULT(WINAPI*)(LPHWAVEOUT,UINT,LPCWAVEFORMATEX,DWORD_PTR,DWORD_PTR,DWORD);
@@ -1671,7 +1672,14 @@ void Input() {
         {std::lock_guard lock(heartMutex);heart=heartTuning;source=heartSource;sourceName=heartSourceName;}
         const auto& vitals=interactionInput.snapshot;
         const bool lifeKnown=vitals.vitalsKnown&&interaction::Fresh(vitals,interactionInput.session,interactionInput.at);
-        const float target=lifeKnown?heartbeat::LifeLevel(vitals.health,vitals.maxHealth,int(hudSettings.values[settings::HeartbeatStart])):0.f;
+        const float life=lifeKnown?heartbeat::LifeLevel(vitals.health,vitals.maxHealth,int(hudSettings.values[settings::HeartbeatStart])):0.f;
+        // Tied to the blood: a scrub that clears the visor fades it out; the next hit
+        // (the blood visor's own hit size) brings it back at its step.
+        const bool hit=lifeKnown&&heartHealth>=0&&heartHealth-vitals.health>=blood::HitFraction*vitals.maxHealth;
+        if(lifeKnown)heartHealth=vitals.health;
+        const bool wasHushed=heartHush.On();
+        const float target=heartHush.Step(life,bloodOutput.clean,hit);
+        if(heartHush.On()!=wasHushed)Say(heartHush.On()?"Frame low-life heartbeat: visor wiped, fading":"Frame low-life heartbeat: struck again, resuming");
         // Its own level: winds down slower than a heal, quieter and slower beat by beat.
         const float level=heartLevel.Step(target,heartAt>0?interactionInput.time-heartAt:0,heart.fadeSeconds);
         heartAt=interactionInput.time;
@@ -3100,7 +3108,7 @@ void Shutdown(bool preserveResolution) {
     if(bloodChain&&pDestroySwapchain)pDestroySwapchain(bloodChain);bloodChain=XR_NULL_HANDLE;
     bloodScreen.Reset();bloodOutput={};bloodShown=0;bloodPaintKey=bloodRequestedKey=~0ull;bloodPaintRequest=0;bloodPaintAt=0;bloodAtlasPending=bloodImageReady=false;
     if(strainChain&&pDestroySwapchain)pDestroySwapchain(strainChain);strainChain=XR_NULL_HANDLE;
-    heartStream.Stop();heartPlaying=false;heartLevel.Reset();heartAt=0;
+    heartStream.Stop();heartPlaying=false;heartLevel.Reset();heartAt=0;heartHush.Reset();heartHealth=-1;
     guardStrain.Reset();strainOutput={};strainPaintKey=~0ull;strainPaintSession=0;strainPaintAt=0;strainAtlasPending=strainImageReady=strainSlotReported=false;
     if(pointerChain&&pDestroySwapchain)pDestroySwapchain(pointerChain);pointerChain=XR_NULL_HANDLE;
     if(aimSpace&&pDestroySpace)pDestroySpace(aimSpace);aimSpace=XR_NULL_HANDLE;

@@ -207,7 +207,8 @@ wiping.
 **Low-life heartbeat:** **Combat > Heartbeat starts at** (default 60%, or Off)
 picks the life where a quiet heartbeat begins. Every 10% of life you lose below
 that, it gets louder and faster, at full strength below 10%. Healing winds it
-down beat by beat. It plays in Classic and Unleashed; `[gameplay]
+down beat by beat. Wiping the visor clean fades it out too, until the next hit
+brings it back. It plays in Classic and Unleashed; `[gameplay]
 low_life_heartbeat` sets its loudness (200%, 0 = off).
 
 ## Hand skill layouts

@@ -93,6 +93,21 @@ inline float LifeLevel(float health,float maxHealth,int startPercent) {
     for(int k=0;k<steps;++k)if(percent<float(steps*10-k*10))++below;
     return float(below)/float(steps);
 }
+// Wiping the visor clean quiets the heartbeat while still hurt: the target
+// drops to 0 and Level fades it out. The next hit brings it straight back at
+// its step (Level rises at once). Reaching silence anyway (healed above the
+// start, Off, dead) clears it. A hit in the same step as the last wipe stroke wins.
+class Hush {
+    bool on=false;
+public:
+    void Reset(){on=false;}
+    // cleaned: a scrub removed the last blood this step. hit: life fell by a hit.
+    float Step(float level,bool cleaned,bool hit) {
+        on=(on||cleaned)&&!hit&&level>0;
+        return on?0.f:level;
+    }
+    bool On() const {return on;}
+};
 // The heartbeat's own level: rises with LifeLevel at once, but falls no faster
 // than 1/fadeSeconds per second, so it keeps beating, quieter and slower, after
 // a heal. A hitch over .25 s (a load) snaps it to the target.
