@@ -107,7 +107,7 @@ std::string FirstKnown(int id,std::initializer_list<const char*> patterns,int sh
 // where those two fields sit is found once, by matching against the names the
 // string keys already give for the original classes. The Warlock's skills
 // (373-402, new in D2R) have no regular keys and are named this way.
-struct SkillTextLayout { bool tried=false,ok=false; uint32_t descIndex=0,name=0; } layout;
+struct SkillTextLayout { bool ok=false; ULONGLONG retryAt=0; uint32_t descIndex=0,name=0; } layout;
 std::string ById(uint32_t stringId) {
     char text[256]{};
     if(!strings||!strings->getStringById||!stringId||stringId>=0xFFFF)return {};
@@ -131,11 +131,15 @@ uint16_t U16(const void* rows,uint32_t rowSize,uint32_t row,uint32_t offset) {
     uint16_t v=0;Read(reinterpret_cast<uintptr_t>(rows)+uintptr_t(row)*rowSize+offset,v);return v;
 }
 bool DiscoverLayout() {
-    if(layout.tried)return layout.ok;
+    if(layout.ok)return true;
+    const auto now=GetTickCount64();
+    if(now<layout.retryAt)return false;
+    // Tables can load before localization. Retry failed discovery without
+    // repeating the scan on every UI capture; successful layouts stay cached.
+    layout.retryAt=now+10000;
     using D2RL::DataTables::TableId;
     D2RL::DataTables::TableView skills,desc;
     if(!Tables(TableId::Skills,skills)||!Tables(TableId::SkillDesc,desc))return false;   // tried again later
-    layout.tried=true;
     std::map<int,std::string> known;   // id -> name, the original classes
     for(int id=0;id<=280&&id<int(skills.rowCount);++id)if(auto n=KnownName(id);!n.empty())known[id]=n;
     if(known.size()<30){framevr::logging::Write("Frame skill names: too few known names to read the skill tables");return false;}
