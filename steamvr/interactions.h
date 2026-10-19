@@ -375,6 +375,7 @@ struct Input {
     vitals::Location vitalsLocation=vitals::Location::Wrist;
     float vitalsTilt=0;
     bool criticalAlerts=false,leftCasting=false;
+    bool gripZoom=false; // VR Settings > HUD > Grip zoom: a left grip pressed over the palm map zooms it (map_zoom.h)
     bool floorKnown=false; float floor=0; // room-space height of the world ground under the player
     Stage stage{};
     Pose head{},hand[2]{};
@@ -426,7 +427,7 @@ class Engine {
     uint64_t session=0,epoch=0,sequence=0;
     double lastTime=0,drinkStart=0,pendingAt=0,resultAt=0,criticalUntil=0,criticalAgain=0;
     bool primed=false,triggerWas=false,gripWas[2]{},wheelLatch=false,utility=false,map=false,rearm=true,stowed=false;
-    bool spent=false,consumed=false;
+    bool spent=false,consumed=false,palmMapWas=false;
     Owner owner[2]{Owner::Combat,Owner::Combat};
     int bottle=-1,bottleHand=-1,holster=-1,holsterHand=-1,pendingHand=0;
     Pose body{};
@@ -516,14 +517,16 @@ public:
         // still require both hands; a resting/occluded right hand must not hide
         // a correctly presented watch or permit an input through the guard.
         out.wrist=in.active&&in.session&&in.tracked[1]&&std::isfinite(in.time)&&WristPresented(in.hand[1],in.head);
+        // A grip still hides the palm, except one closed over the palm map to zoom it.
         const bool palmAllowed=in.active&&in.tracked[1]&&(vitals::Palm(in.vitalsLocation)||vitals::Palm(in.navigationLocation))&&
-            !in.wheel&&!in.cancel&&!in.leftCasting&&in.leftTrigger<.2f&&in.grip[1]<.6f&&
+            !in.wheel&&!in.cancel&&!in.leftCasting&&in.leftTrigger<.2f&&(in.grip[1]<.6f||(in.gripZoom&&palmMapWas))&&
             !in.reservedLeft&&bottleHand!=1&&holsterHand!=1&&Fresh(in.snapshot,in.session,in.at);
         const bool palm=palmReveal.Step(in.session,in.epoch,in.time,palmAllowed,
             PalmPresented(in.hand[1],in.head),PalmPresented(in.hand[1],in.head,true));
         out.palm=palm&&vitals::Palm(in.vitalsLocation);
         out.vitals=out.palm||(out.wrist&&vitals::Wrist(in.vitalsLocation));
         out.navigationPalm=palm&&vitals::Palm(in.navigationLocation);
+        palmMapWas=out.navigationPalm;
         out.navigation=out.navigationPalm||(out.wrist&&vitals::Wrist(in.navigationLocation));
         const bool trigger=in.trigger>(triggerWas?.2f:.55f);
         const bool grips[2]={in.grip[0]>.6f,in.grip[1]>.6f};

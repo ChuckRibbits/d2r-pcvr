@@ -43,6 +43,7 @@
 #include "guard_strain_paint.h"
 #include "heartbeat.h"
 #include "wrist_compass.h"
+#include "map_zoom.h"
 #include "interaction_paint.h"
 #include "latest_worker.h"
 #include "haptic_pulse.h"
@@ -380,6 +381,10 @@ bool MapTopDownOn(){return vrsettings::Read().values[settings::MapTopDown]>.5f;}
 bool MapTurnOn(){return vrsettings::Read().values[settings::MapRotate]>.5f;}
 bool mapSupported=false;
 constexpr uint32_t mapSide=512;
+// Grip + stick zoom of that map (map_zoom.h). mapShown: a map quad, wrist or
+// wheel, went into the last frame's layers - the one being looked at.
+mapzoom::Gesture mapZoom;
+bool mapShown=false;
 // Desktop mirror: in stereo the game window presents alternating eye frames,
 // so the monitor flickers between both eyes (double vision). After the headset
 // takes each right frame, the left eye image (still acquired until EndPair) is
@@ -582,7 +587,7 @@ void ClearInput() {
     lootlabels::display.Clear();
     lootLabelShortcut.Suspend();
     meleeImpactAt[0]=meleeImpactAt[1]=shieldImpactAt=parryMissAt=0;
-    wristHeading.Reset();compassFrame=false;
+    wristHeading.Reset();compassFrame=false;mapZoom.Reset();
     panelinput::WorldInput(false);
     gamestate::MenuMap(false);
     menuControls.Suspend();menuNavigation.Reset();nativeMenuPad={};laserClick={};panelinput::UseController();
@@ -1565,6 +1570,7 @@ void Input() {
     interactionInput.criticalAlerts=hudSettings.values[settings::CriticalAlerts]>.5f;
     interactionInput.leftCasting=handOutput.spells[1]>=0||(handOutput.slot>=0&&handOutput.hand==1);
     interactionInput.leftTrigger=controls.lt/255.f;
+    interactionInput.gripZoom=hudSettings.values[settings::MapGripZoom]>.5f;
     // A thrown bottle lands on the world floor in room space. Without a recent
     // view frame (menus, loading) throwing is off; a release re-belts as before.
     {
@@ -1693,6 +1699,30 @@ void Input() {
         Say(line);potionReportAt=GetTickCount64()+2000;
     }
     if(interactionOutput.settings){OpenSettings();settingsOwned=true;interactionInput.active=motionInput.active=false;}
+    {
+        // Minimap zoom: while a map is drawn, a grip pressed on the hand showing
+        // it (left for wrist / palm, the wheel's hand for MAP) takes that stick
+        // from walking / turning until the grip opens or the map goes.
+        mapzoom::Input in;in.time=interactionInput.time;in.enabled=interactionInput.gripZoom;in.saved=hudSettings.values[settings::MapZoom];
+        const auto now=interactionInput.at;
+        if(mapShown&&mapSupported)in.hand=interaction::MenuMapWanted(interactionInput,interactionOutput,now)?(interactionInput.wheelHand>=0?interactionInput.wheelHand:1):
+            interaction::NavigationWanted(interactionInput,interactionOutput,now)?1:-1;
+        if(in.hand>=0)in.busy=(interactionOutput.owner[in.hand]!=interaction::Owner::Combat&&interactionOutput.owner[in.hand]!=interaction::Owner::Wheel)||
+            interactionOutput.bottleHand==in.hand||handInput.trigger[in.hand]>.2f||(in.hand==1&&interactionInput.leftCasting);
+        for(int h=0;h<2;++h)in.grip[h]=motionInput.grip[h];
+        in.stick[0]=controls.ry/32767.f;in.stick[1]=controls.ly/32767.f;
+        const auto zoom=mapZoom.Step(in);
+        if(zoom.engaged){if(zoom.hand)controls.lx=controls.ly=0;else controls.rx=controls.ry=0;}
+        if(zoom.tick)MotionPulse(zoom.hand,haptics::Category::Interaction,zoom.tick==2?.35f:.15f,zoom.tick==2?30000000:12000000);
+        // Saved like an Apply, never under an open settings panel or calibration's own save.
+        if(zoom.save&&!settingsModel.open&&!bodyCalibration.Active()) {
+            const auto request=mapzoom::SaveRequest(vrsettings::Read(),zoom.zoom);
+            if(request.changed&&vrsettings::Submit(request)) {
+                mapZoom.Submitted(in.time);
+                char line[80];std::snprintf(line,sizeof line,"Frame minimap: zoom %.2fx saved",zoom.zoom);Say(line);
+            }
+        }
+    }
     gamestate::MenuMap(mapSupported&&interaction::MapWanted(interactionInput,interactionOutput,interactionInput.at));
     if(interactionOutput.inventory&&toggleMenus)toggleMenus();
     if(handOutput.wheel>=0&&!interactionOutput.wheel){handControls.Close();handOutput={};}
@@ -2220,7 +2250,7 @@ bool CopyMap(reshade::api::command_queue* rq) {
     // The heading arrow over the hero (while the compass knows the heading),
     // the map turning with you (top-down only), and top-down itself.
     const uint32_t flags=(compassFrame?1u:0u)|(compassFrame&&MapTurnOn()&&MapTopDownOn()?4u:0u)|(MapTopDownOn()?8u:0u);
-    if(!mapBlit.Render(device.Get(),e.commands.Get(),src,e.images[e.index].texture,true,true,flags,float(wristHeading.bearing),1.f)) {
+    if(!mapBlit.Render(device.Get(),e.commands.Get(),src,e.images[e.index].texture,true,true,flags,float(wristHeading.bearing),1.f,mapZoom.Zoom())) {
         e.commands->Close();return false;
     }
     if(FAILED(e.commands->Close()))return false;
@@ -2510,7 +2540,9 @@ void EndPair() {
         interactionInput.snapshot,interactionOutput,interaction::Fresh(interactionInput.snapshot,interactionInput.session,interactionInput.at),controllerLabels))
         motionQuad(palette,palettePose,paletteWidth,paletteHeight,{{0,0},{768,768}},interactionChain);
     XrCompositionLayerQuad menuMap{XR_TYPE_COMPOSITION_LAYER_QUAD};
+    mapShown=false;
     if(palette.subImage.swapchain&&mapEye.copied&&interaction::MenuMapWanted(interactionInput,interactionOutput,GetTickCount64())) {
+        mapShown=true;
         const auto bounds=interaction::MapContent;
         auto pose=MotionPose(palettePose);
         pose.p=pose.p+math::Rotate(pose.q,{((bounds.left+bounds.right)*.5f-.5f)*paletteWidth,
@@ -2562,8 +2594,8 @@ void EndPair() {
                 interaction::CompanionImageCurrent(companionPaintContext,interactionInput.snapshot);
             const int companionRows=companionsReady?wriststatus::Rows(interactionInput.snapshot.companions,interactionInput.snapshot.effects):0;
             const float footer=interaction::CompanionSpace(companionRows);
-            if(mapEye.copied)motionQuad(wristMap,interactionPose(interaction::NavigationMapPanel(interactionInput.hand[1],interactionInput.head,palm,withVitals,footer)),
-                interaction::WristMapSize,interaction::WristMapSize,{{0,0},{int32_t(mapSide),int32_t(mapSide)}},mapEye.chain);
+            if(mapEye.copied){mapShown=true;motionQuad(wristMap,interactionPose(interaction::NavigationMapPanel(interactionInput.hand[1],interactionInput.head,palm,withVitals,footer)),
+                interaction::WristMapSize,interaction::WristMapSize,{{0,0},{int32_t(mapSide),int32_t(mapSide)}},mapEye.chain);}
             auto compassPose=interaction::NavigationCompassPanel(interactionInput.hand[1],interactionInput.head,palm,withVitals,footer);
             motionQuad(wristCompass,interactionPose(compassPose),interaction::WristCompassWidth,interaction::WristCompassHeight,
                 {{compass::Crop(wristHeading.bearing),0},{compass::Window,compass::StripHeight}},compassChain);

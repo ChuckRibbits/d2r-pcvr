@@ -168,6 +168,7 @@ add_executable(dev-scenarios-test dev_scenarios_test.cpp)
 target_include_directories(dev-scenarios-test PRIVATE ${D2RL_SDK}/include)
 target_link_libraries(dev-scenarios-test PRIVATE framevr-runtime)
 add_executable(wrist-hud-test wrist_hud_test.cpp)
+add_executable(map-zoom-test map_zoom_test.cpp)
 add_executable(navigation-info-test navigation_info_test.cpp)
 add_executable(dropped-item-labels-test dropped_item_labels_test.cpp)
 add_executable(show-items-command-test show_items_command_test.cpp ${ROOT}/vr/gamecmd.cpp)
@@ -271,7 +272,7 @@ foreach(test_target IN ITEMS memory-test hook-metrics-test active-keys-test reso
     gameplay-test weapon-skills-test quick-cast-test hand-controls-test skill-pad-test interact-press-test sewer-interaction-test mod-layout-test spell-aim-test bow-pose-test crossbow-pose-test body-tracking-test body-calibration-test shoulder-swap-test blood-screen-test
     portal-billboard-test shrine-trace-test shrine-placement-test composition-layers-test projectile-rules-test environment-cutaway-test roof-materials-test stereo-prop-physics-test
     combat-rules-test shield-guard-test guard-strain-test heartbeat-test logging-test melee-contact-test melee-weapon-test breakables-test offline-difficulty-test attack-speed-test world-coordinates-test bow-flight-test spell-cast-test spell-aim-assist-test
-    interaction-test dev-scenarios-test native-belt-test wrist-hud-test navigation-info-test companions-test active-effects-test dropped-item-labels-test show-items-command-test native-hud-test render-resolution-test render-pointer-test scene-depth-test game-device-only-test controller-bindings-test journal-test native-panels-test
+    interaction-test dev-scenarios-test native-belt-test wrist-hud-test map-zoom-test navigation-info-test companions-test active-effects-test dropped-item-labels-test show-items-command-test native-hud-test render-resolution-test render-pointer-test scene-depth-test game-device-only-test controller-bindings-test journal-test native-panels-test
     vr-settings-test vr-settings-store-test controller-labels-test math-test deferred-draw-test monster-bars-test gaze-test window-focus-test callback-ticket-test local-player-test shield-block-test)
   # These fixtures use assert for their checks, including in Release builds.
   if(MSVC)

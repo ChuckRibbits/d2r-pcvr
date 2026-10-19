@@ -47,6 +47,7 @@ inline const char* HelpText(int id) {
         case NavigationLocation:return "Chooses Wrist, Palm, Either or Off for the left-hand minimap and compass. Palm requires your palm facing you with grip and trigger released. This placement is independent of health and mana.";
         case MapTopDown:return "Chooses the wrist minimap's view. Isometric keeps the game's slanted map. Top-down straightens rooms into a floor plan; NPC and exit names are hidden so their text is not rotated with the floor. The gold arrow shows your facing direction. Apply saves your choice.";
         case MapRotate:return "In Top-down view, Off keeps north at the top and turns the arrow with you. On rotates the map so your facing direction stays at the top. This has no effect in Isometric view; your choice is kept for the next time you use Top-down. Apply saves it.";
+        case MapGripZoom:return "While a minimap is in view (wrist, palm or the wheel's MAP tab), hold the grip of the hand showing it and push that hand's stick forward to zoom in or back to zoom out. Pull back until it stops to see the whole map again. The zoom is remembered. Releasing grip returns the stick to walking or turning immediately. Off leaves grip and stick unchanged.";
         case OrdinaryMobBars:return "Shows names and health bars for ordinary enemies. Turn it Off to reduce clutter. Boss and elite bars remain visible.";
         case MenuDistance:return "Moves eye-level game panels, such as inventory and merchant menus, nearer or farther away. Choose the distance that is easiest to read and point at. This does not move this VR Settings panel.";
         case TooltipTiming:return "Sets how soon item details appear when you point the laser at an item in a game panel. Instant has no added delay; Short waits 300 ms; Original uses the game's timing. VR Settings help has its own short hover delay.";
@@ -91,8 +92,9 @@ inline int HelpAt(Page page,float u,float v,bool controllerMenu=false) {
     if(Calibrate.Contains(x,y))return HelpCalibrate;
     if(page==Page::VR&&ControllerBox.Contains(x,y))return ControllerLabels;
     if(page==Page::HUD){
-        if(Rect{40,181,570,52}.Contains(x,y))return MapTopDown;
-        if(Rect{650,181,590,52}.Contains(x,y))return MapRotate;
+        if(Rect{40,181,370,52}.Contains(x,y))return MapTopDown;
+        if(Rect{410,181,360,52}.Contains(x,y))return MapRotate;
+        if(Rect{770,181,470,52}.Contains(x,y))return MapGripZoom;
     }
     if(page==Page::Controls) {
         if(Rect{40,666,1200,52}.Contains(x,y))return WeaponSkillIndicators;

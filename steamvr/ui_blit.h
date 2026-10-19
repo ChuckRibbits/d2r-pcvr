@@ -14,6 +14,7 @@ class UiBlit {
 public:
     bool Initialize(ID3D12Device* device,void (*log)(const char*));
     // mapFlags (square map only): 1 heading arrow at bearing (radians, clockwise from map-up), 2 clear background, walls at wallAlpha, 4 the map turns with you
-    bool Render(ID3D12Device*,ID3D12GraphicsCommandList*,ID3D12Resource* source,ID3D12Resource* target,bool blackBackground=false,bool squareMap=false,uint32_t mapFlags=0,float bearing=0,float wallAlpha=1.f);
+    // zoom (square map only, >= 1): the map that much bigger about the hero; 1 fits it whole
+    bool Render(ID3D12Device*,ID3D12GraphicsCommandList*,ID3D12Resource* source,ID3D12Resource* target,bool blackBackground=false,bool squareMap=false,uint32_t mapFlags=0,float bearing=0,float wallAlpha=1.f,float zoom=1.f);
 };
 }

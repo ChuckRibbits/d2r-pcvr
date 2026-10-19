@@ -1,6 +1,7 @@
 #include "vr_settings_help.h"
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <limits>
 using namespace framevr::settings;
 static void Check(bool b,const char* label){if(!b){std::fprintf(stderr,"FAIL: %s\n",label);std::exit(1);}}
@@ -63,17 +64,23 @@ int main(){
         const auto view=At(Page::HUD,HudMapViewBox),rotate=At(Page::HUD,HudMapRotateBox);
         Check(view.kind==Kind::Change&&view.index==MapTopDown&&rotate.kind==Kind::Change&&rotate.index==MapRotate,"HUD map controls target separate preferences");
         Check(s.values[MapTopDown]==0&&s.values[MapRotate]==0,"map defaults remain isometric and north-up");
-        for(const auto box:{HudMapViewBox,HudMapRotateBox}){
+        for(const auto box:{HudMapViewBox,HudMapRotateBox,HudMapZoomBox}){
             Check(box.y>TabBox(TabCount-1).y+TabBox(TabCount-1).h&&box.y+box.h<RowY-4,"map controls fit between tabs and existing HUD rows");
             for(int page=0;page<TabCount;++page)if(Page(page)!=Page::HUD){
                 const auto hit=At(Page(page),box);
-                Check(hit.kind!=Kind::Change||(hit.index!=MapTopDown&&hit.index!=MapRotate),"other pages have no invisible map controls");
+                Check(hit.kind!=Kind::Change||(hit.index!=MapTopDown&&hit.index!=MapRotate&&hit.index!=MapGripZoom),"other pages have no invisible map controls");
             }
         }
-        Check(HelpAt(Page::HUD,100.f/Width,205.f/Height)==MapTopDown&&
-              HelpAt(Page::HUD,700.f/Width,205.f/Height)==MapRotate,"map labels explain their own settings");
-        Check(HelpAt(Page::HUD,400.f/Width,205.f/Height)==MapTopDown&&
-              HelpAt(Page::HUD,1050.f/Width,205.f/Height)==MapRotate,"map values have the same help as their labels");
+        Check(HudMapViewBox.x+HudMapViewBox.w<HudMapRotateBox.x&&HudMapRotateBox.x+HudMapRotateBox.w<HudMapZoomBox.x&&
+              HudMapZoomBox.x+HudMapZoomBox.w<=Width-40,"three map controls side by side on one row");
+        const auto zoom=At(Page::HUD,HudMapZoomBox);
+        Check(zoom.kind==Kind::Change&&zoom.index==MapGripZoom&&s.values[MapGripZoom]==1,"grip zoom has its own toggle, on by default");
+        Check(HelpAt(Page::HUD,100.f/Width,205.f/Height)==MapTopDown&&HelpAt(Page::HUD,450.f/Width,205.f/Height)==MapRotate&&
+              HelpAt(Page::HUD,850.f/Width,205.f/Height)==MapGripZoom,"map labels explain their own settings");
+        auto centre=[](Rect r){return HelpAt(Page::HUD,(r.x+r.w*.5f)/Width,(r.y+r.h*.5f)/Height);};
+        Check(centre(HudMapViewBox)==MapTopDown&&centre(HudMapRotateBox)==MapRotate&&centre(HudMapZoomBox)==MapGripZoom,
+              "map values have the same help as their labels");
+        Check(HelpText(MapGripZoom)[0]&&std::strstr(HelpText(MapGripZoom),"grip"),"grip zoom explains its control");
         map.Click(view);map.Click(rotate);
         Check(map.Dirty()&&map.Get()[MapTopDown]==1&&map.Get()[MapRotate]==1&&s.values[MapTopDown]==0,"map changes remain drafts");
         map.Click({Kind::Close});map.Open(s);map.Click({Kind::Tab,int(Page::HUD)});
@@ -86,6 +93,9 @@ int main(){
         auto saved=s;saved.values=request.values;saved.sequence=request.sequence;saved.result=Result::Saved;
         map.Observe(saved);map.Close();map.Open(saved);
         Check(!map.Dirty()&&map.Get()[MapTopDown]==1&&map.Get()[MapRotate]==1,"reopening retains saved map choices");
+        map.Click({Kind::Tab,int(Page::HUD)});map.Click(zoom);
+        const auto off=map.Click({Kind::Apply});
+        Check(off.changed==(ChangeMask{1}<<MapGripZoom)&&off.values[MapGripZoom]==0&&off.values[MapZoom]==1,"Apply turns grip zoom off alone");
     }
     {
         Check(s.values[LootLabelSize]==45,"loot labels retain original shipped size by default");

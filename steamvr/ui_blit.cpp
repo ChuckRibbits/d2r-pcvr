@@ -18,7 +18,7 @@ bool UiBlit::Initialize(ID3D12Device* device,void (*log)(const char*)) {
     constexpr char shader[]=R"(
 Texture2D<float4> nativeUi : register(t0);
 SamplerState mapSampler : register(s0);
-cbuffer Options : register(b0) {uint blackBackground;uint mapSide;uint mapFlags;float bearing;float wallAlpha;};
+cbuffer Options : register(b0) {uint blackBackground;uint mapSide;uint mapFlags;float bearing;float wallAlpha;float zoom;};
 // mapFlags (square map only):
 //   1 the heading arrow over the map's centre (the hero), turned by bearing
 //     (radians, clockwise from map-up);
@@ -118,7 +118,8 @@ float4 PS(float4 position:SV_Position):SV_Target {
         // inside upstream's bronze frame (v0.3.18)
         const float inner=mapSide-2*min(20.0,mapSide/8.0);
         float scale=inner/float(max(w,h));
-        float2 v=pixel-mapSide*.5;
+        // zoom: the map bigger about the hero (map_zoom.h), the frame and arrow as they are
+        float2 v=(pixel-mapSide*.5)/max(zoom,1.0);
         if(turning)v=float2(v.x*cos(heading)-v.y*sin(heading),v.x*sin(heading)+v.y*cos(heading));
         // top-down to isometric: (x-y, (x+y)/2), sized so the whole slanted map still fits
         if(topDown)v=float2(v.x-v.y,(v.x+v.y)*.5)*((w+2.*h)/(2.*inner))*scale;
@@ -158,7 +159,7 @@ float4 PS(float4 position:SV_Position):SV_Target {
     D3D12_ROOT_PARAMETER parameters[2]{};auto& parameter=parameters[0];parameter.ParameterType=D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
     parameter.DescriptorTable={1,&range};parameter.ShaderVisibility=D3D12_SHADER_VISIBILITY_PIXEL;
     parameters[1].ParameterType=D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS;
-    parameters[1].Constants={0,0,5};parameters[1].ShaderVisibility=D3D12_SHADER_VISIBILITY_PIXEL;
+    parameters[1].Constants={0,0,6};parameters[1].ShaderVisibility=D3D12_SHADER_VISIBILITY_PIXEL;
     D3D12_ROOT_SIGNATURE_DESC desc{};desc.NumParameters=2;desc.pParameters=parameters;
     D3D12_STATIC_SAMPLER_DESC sampler{};sampler.Filter=D3D12_FILTER_MIN_MAG_LINEAR_MIP_POINT;
     sampler.AddressU=sampler.AddressV=sampler.AddressW=D3D12_TEXTURE_ADDRESS_MODE_CLAMP;
@@ -186,7 +187,7 @@ float4 PS(float4 position:SV_Position):SV_Target {
     if(log)log("Frame panels: GPU native UI alpha conversion ready; original artwork retained");
     return true;
 }
-bool UiBlit::Render(ID3D12Device* device,ID3D12GraphicsCommandList* list,ID3D12Resource* source,ID3D12Resource* target,bool blackBackground,bool squareMap,uint32_t mapFlags,float bearing,float wallAlpha) {
+bool UiBlit::Render(ID3D12Device* device,ID3D12GraphicsCommandList* list,ID3D12Resource* source,ID3D12Resource* target,bool blackBackground,bool squareMap,uint32_t mapFlags,float bearing,float wallAlpha,float zoom) {
     if(!pipeline||!source||!target)return false;
     const auto s=source->GetDesc(),t=target->GetDesc();
     if(!RenderTargetCompatible(s.Format,DXGI_FORMAT_R16G16B16A16_FLOAT)||
@@ -242,6 +243,8 @@ bool UiBlit::Render(ID3D12Device* device,ID3D12GraphicsCommandList* list,ID3D12R
     list->SetGraphicsRoot32BitConstant(1,bearingBits,3);
     UINT alphaBits=0;std::memcpy(&alphaBits,&wallAlpha,sizeof alphaBits);
     list->SetGraphicsRoot32BitConstant(1,alphaBits,4);
+    UINT zoomBits=0;std::memcpy(&zoomBits,&zoom,sizeof zoomBits);
+    list->SetGraphicsRoot32BitConstant(1,zoomBits,5);
     list->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);list->DrawInstanced(3,1,0,0);
     if(findHero)barrier(D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE,D3D12_RESOURCE_STATE_RENDER_TARGET);
     return true;

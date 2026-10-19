@@ -13,7 +13,7 @@ namespace framevr::settings {
 enum class Page { Controls, VR, Video, HUD, Combat, Haptics, ReleaseNotes };
 enum Key { Motion, Seated, Dominant, Snap, TurnSpeed, Waist, BeltForward,
            Foveation, Sky, Fog, Ceiling, DrawDistance, ObjectDistance,
-           EyeHeight, ArmSpan, BodyCalibration, SkillGestures, WristMap, WristCompass, ControllerLabels, WeaponSkillIndicators, PlanarSpellAim, VitalsLocation, CriticalAlerts, RenderResolution, NavigationLocation, SmoothTurn, OrdinaryMobBars, MenuDistance, TooltipTiming, ProjectileAimAssist, MeleeHitSpeed, VitalsTilt, HapticStrength, HapticMelee, HapticBowDraw, HapticBowRelease, HapticSpell, HapticInteraction, HapticAlert, HapticShortMelee, BloodVisor, BloodWipe, MeleeRules, MeleeThrustSpeed, LootLabelSize, CompanionCounts, StrainDark, OfflinePlayers, ShieldBashSpeed, StrainSpeed, DesktopOneEye, MapTopDown, MapRotate, FoveationStrength, Count };
+           EyeHeight, ArmSpan, BodyCalibration, SkillGestures, WristMap, WristCompass, ControllerLabels, WeaponSkillIndicators, PlanarSpellAim, VitalsLocation, CriticalAlerts, RenderResolution, NavigationLocation, SmoothTurn, OrdinaryMobBars, MenuDistance, TooltipTiming, ProjectileAimAssist, MeleeHitSpeed, VitalsTilt, HapticStrength, HapticMelee, HapticBowDraw, HapticBowRelease, HapticSpell, HapticInteraction, HapticAlert, HapticShortMelee, BloodVisor, BloodWipe, MeleeRules, MeleeThrustSpeed, LootLabelSize, CompanionCounts, StrainDark, OfflinePlayers, ShieldBashSpeed, StrainSpeed, DesktopOneEye, MapTopDown, MapRotate, FoveationStrength, MapGripZoom, MapZoom, Count };
 using ChangeMask=uint64_t;
 static_assert(Count<=64,"settings change mask capacity");
 constexpr ChangeMask SupportedChanges=~ChangeMask{0}>>(64-Count);
@@ -80,6 +80,9 @@ inline constexpr std::array<Definition,Count> Definitions{{
     {"Map view", "Isometric or Top-down wrist minimap", L"interactions",L"map_top_down",0,0,1,1},
     {"Rotate map", "Top-down only: keep your facing direction at the top", L"interactions",L"map_rotate",0,0,1,1},
     {"Foveation strength", "Higher levels shade a larger edge area more coarsely", L"render",L"foveation_strength",1,0,3,1},
+    {"Grip zoom", "Looking at a minimap, hold that hand's grip and push its stick", L"interactions",L"minimap_grip_zoom",1,0,1,1},
+    // Not a row: grip zoom saves it (map_zoom.h). 1 fits the whole native map, as before.
+    {"Minimap zoom", "Wrist, palm and wheel minimap magnification", L"interactions",L"minimap_zoom",1,1,4,.05f},
 }};
 using Values=std::array<float,Count>;
 inline bool HapticKey(Key key){return key>=HapticStrength&&key<=HapticAlert;}
@@ -124,7 +127,7 @@ inline Rect TabBox(int index){return Tabs[index];}
 constexpr Rect Apply{965,918,275,68},Close{650,918,275,68},Recenter{40,918,270,68},Calibrate{330,918,300,68};
 constexpr int RowY=242,RowStep=62;
 constexpr Rect ControllerBox{865,181,375,52};
-constexpr Rect HudMapViewBox{280,181,275,52},HudMapRotateBox{942,181,221,52};
+constexpr Rect HudMapViewBox{200,181,190,52},HudMapRotateBox{600,181,150,52},HudMapZoomBox{942,181,221,52};
 inline constexpr const char* MapViewNames[]={"Isometric","Top-down"};
 inline constexpr const char* MenuDistanceNames[]={"Close","Medium","Far"};
 inline constexpr const char* TooltipTimingNames[]={"Instant","Short","Original"};
@@ -176,6 +179,7 @@ inline Hit HitTest(Page page,float u,float v,bool controllerMenu=false){
     if(page==Page::Controls&&AimAssistBox.Contains(x,y))return {Kind::Change,ProjectileAimAssist,1};
     if(page==Page::HUD&&HudMapViewBox.Contains(x,y))return {Kind::Change,MapTopDown,1};
     if(page==Page::HUD&&HudMapRotateBox.Contains(x,y))return {Kind::Change,MapRotate,1};
+    if(page==Page::HUD&&HudMapZoomBox.Contains(x,y))return {Kind::Change,MapGripZoom,1};
     for(int r=0;r<RowCount(page);++r){
         const auto key=RowKey(page,r);
         if(page==Page::Haptics&&HapticCategory(key)>=0){

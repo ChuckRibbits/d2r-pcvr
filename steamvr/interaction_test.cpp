@@ -391,6 +391,18 @@ int main(){
     }
     {
         using framevr::vitals::Location;
+        Sim s;s.in.navigationLocation=Location::Palm;s.in.vitalsLocation=Location::Off;
+        s.in.hand[1].p={-.18f,1.35f,-.24f};s.in.hand[1].q={0,0,.70710678f,.70710678f};
+        s.in.grip[1]=1;Check(!s.Step(20).navigationPalm,"a held grip cannot raise the palm map");
+        s.in.grip[1]=0;Check(s.Step(15).navigationPalm,"palm map shows");
+        s.in.grip[1]=1;Check(!s.Step().navigationPalm,"grip zoom off: a grip still hides the palm map");
+        s.in.grip[1]=0;s.Step(15);s.in.gripZoom=true;s.in.grip[1]=1;
+        Check(s.Step(20).navigationPalm&&NavigationWanted(s.in,s.out,s.in.at),"grip zoom on: a grip closed over the palm map keeps it up to zoom");
+        s.in.hand[1].p=s.in.head.p+Vec{0,-.9f,0};Check(!s.Step().navigationPalm,"lowering the hand still hides it");
+        s.in.hand[1].p={-.18f,1.35f,-.24f};Check(!s.Step(20).navigationPalm,"and a held grip cannot bring it back");
+    }
+    {
+        using framevr::vitals::Location;
         for(auto location:{Location::Wrist,Location::Palm,Location::Either,Location::Off}){
             Sim s;s.in.vitalsLocation=location;s.in.hand[1].p={-.18f,1.35f,-.24f};
             s.in.hand[1].q={0,0,-.70710678f,.70710678f};s.Step(20);
