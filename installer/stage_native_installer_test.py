@@ -64,12 +64,21 @@ class StagingTests(unittest.TestCase):
 
     def test_rejects_game_assets_saves_logs_and_path_traversal(self):
         for name in ('D2R.exe', 'Character.d2s', 'game.log', 'steamvr/d2r_vr_icons/cache.json',
-                     '../outside.txt', 'bin/C:escape.dll', 'bin\\escape.dll'):
+                     '../outside.txt', 'bin/C:escape.dll', 'bin\\escape.dll',
+                     'mods/D2R-PCVR/D2R-PCVR.mpq/data/hd/env/preset/act3/kurast/burbssewer0.json'):
             with self.subTest(name=name), tempfile.TemporaryDirectory() as directory:
                 root = Path(directory)
                 with self.assertRaises(ValueError):
                     self.stage(root, {name: b'forbidden fixture'})
                 self.assertFalse((root / 'staged').exists())
+
+    def test_stages_sewer_preparation_code_only(self):
+        name = 'steamvr/prepare_sewer_backdrop.py'
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            manifest = self.stage(root, {name: b'local archive preparation fixture'})
+            self.assertIn(name, manifest['sha256'])
+            self.assertEqual((root/'staged'/name).read_bytes(), b'local archive preparation fixture')
 
     def test_rejects_changed_manifest_payload_and_unmanifested_files(self):
         with tempfile.TemporaryDirectory() as directory:

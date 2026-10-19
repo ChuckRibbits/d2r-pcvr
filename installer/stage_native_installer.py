@@ -18,7 +18,8 @@ ROOT_FILES = {
 SCRIPTS = {'setup_windows.ps1', 'setup_windows.py', 'setup_native.py', 'uninstall_windows.py', 'hdr_check.py',
            'steam_config.py', 'install.py', 'mod_identity.py', 'launch_windows.py', 'prepare_icons.py',
            'steam_assets.py', 'game_assets.py', 'game_install.py', 'casc_assets.py',
-           'prepare_potions.py', 'potion_assets.py', 'prepare_arcane_sky.py', 'prepare_dev_scenarios.py'}
+           'prepare_potions.py', 'potion_assets.py', 'prepare_arcane_sky.py', 'prepare_dev_scenarios.py',
+           'prepare_sewer_backdrop.py'}
 
 
 def safe_name(name):

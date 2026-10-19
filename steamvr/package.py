@@ -50,7 +50,7 @@ def main():
     paths += ['steamvr/prepare_icons.py', 'steamvr/steam_assets.py', 'steamvr/game_assets.py',
               'steamvr/game_install.py', 'steamvr/casc_assets.py']
     paths += ['steamvr/prepare_potions.py', 'steamvr/potion_assets.py', 'steamvr/vendor/bitknit.py',
-              'steamvr/prepare_arcane_sky.py']
+              'steamvr/prepare_arcane_sky.py', 'steamvr/prepare_sewer_backdrop.py']
     files = {path: ROOT / path for path in paths}
     for folder, pattern in [('reshade/sky', '*.png'), ('steamvr/licenses', '*.txt')]:
         for path in sorted((ROOT / folder).glob(pattern)):

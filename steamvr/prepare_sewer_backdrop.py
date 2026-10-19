@@ -1,4 +1,4 @@
-"""Prepare a visual-only Kurast tunnel backdrop in the isolated pcvr-dev mod.
+"""Prepare visual-only Kurast tunnel backdrops from the player's own archives.
 
 Presets and geometry measurements come from the player's own archives. Generated
 overrides stay local. The backdrop references the game's existing black quad;
@@ -14,9 +14,7 @@ import tempfile
 
 from game_assets import open_assets
 from game_install import validate_game
-from install import require_game_closed
 from potion_assets import Granny
-from prepare_dev_scenarios import MOD_INFO
 
 PRESET_DIR = 'data/hd/env/preset/act3/kurast/'
 PRESETS = tuple(PRESET_DIR + name + '.json' for name in
@@ -24,6 +22,7 @@ PRESETS = tuple(PRESET_DIR + name + '.json' for name in
 STAIRS = 'data/hd/env/model/act3/kurast/act3_kurast_stairs/stairs_sewers01'
 BLACK = 'data/hd/env/model/act4/fort/act4_fort_stairs/black_square01'
 RECEIPT = 'pcvr-sewer-backdrop-preview.json'
+INSTALL_RECEIPT = 'pcvr-sewer-backdrop.json'
 PREFIX = 'PCVR_Sewer_Backdrop_'
 
 
@@ -215,6 +214,53 @@ def generate(assets):
     return output, measured
 
 
+def install_names(mod_name):
+    if mod_name not in ('D2R-PCVR', 'pcvr-dev'):
+        raise ValueError('Unsupported sewer backdrop destination')
+    return tuple(f'{mod_name}.mpq/{name}' for name in PRESETS)
+
+
+def prepare(game, mod_name='D2R-PCVR', casclib=None):
+    """Return generated files for the installer's existing backup transaction."""
+    names = install_names(mod_name)
+    with open_assets(Path(game), casclib) as assets:
+        generated, measured = generate(assets)
+        payload = {name: generated[source] for name, source in zip(names, PRESETS)}
+        record = dict(version=1, build=assets.build_hash, geometry=measured,
+                      sha256={name: digest(data) for name, data in payload.items()})
+    payload[INSTALL_RECEIPT] = (json.dumps(record, indent=2)+'\n').encode('utf-8')
+    return payload
+
+
+def check_existing(mod, payload, mod_name='D2R-PCVR'):
+    """Allow repeat updates of owned files; preserve edited/untracked presets."""
+    names = set(install_names(mod_name))
+    if set(payload) != names | {INSTALL_RECEIPT}:
+        raise ValueError('Incomplete sewer backdrop payload')
+    mod = Path(mod)
+    if mod.resolve() != mod:
+        raise ValueError('Sewer mod folder must not redirect to another location')
+    receipt = mod / INSTALL_RECEIPT
+    if receipt.resolve() != receipt:
+        raise ValueError('Sewer preparation receipt must not contain links')
+    previous = {}
+    if receipt.exists():
+        record = json.loads(receipt.read_text(encoding='utf-8'))
+        if (not isinstance(record, dict) or record.get('version') != 1
+                or not isinstance(record.get('sha256'), dict)
+                or set(record['sha256']) != names):
+            raise ValueError('Unknown sewer preparation receipt')
+        previous = record['sha256']
+    for name, data in payload.items():
+        path = mod / name
+        if path.resolve() != path:
+            raise ValueError('Sewer destination must not contain links')
+        if path.exists() and name != INSTALL_RECEIPT:
+            old = path.read_bytes()
+            if old != data and digest(old) != previous.get(name):
+                raise ValueError(f'Existing sewer override left unchanged: {name}')
+
+
 def checked_path(root, name):
     if name not in (*PRESETS, RECEIPT):
         raise ValueError('Unexpected backdrop destination')
@@ -225,6 +271,7 @@ def checked_path(root, name):
 
 
 def checked_root(game):
+    from prepare_dev_scenarios import MOD_INFO
     root = Path(game).resolve() / 'mods/pcvr-dev/pcvr-dev.mpq'
     if root.resolve() != root or (root/'modinfo.json').resolve() != root/'modinfo.json' or (root/'modinfo.json').read_text(encoding='utf-8') != MOD_INFO:
         raise ValueError('Requires the existing isolated pcvr-dev metadata/save path')
@@ -292,6 +339,7 @@ def remove_preview(root):
 
 
 def main():
+    from install import require_game_closed
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--game', type=Path, required=True)
     parser.add_argument('--remove', action='store_true')
