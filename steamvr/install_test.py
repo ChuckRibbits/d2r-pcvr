@@ -155,6 +155,8 @@ class InstallationTests(unittest.TestCase):
                 self.assertEqual(json.loads((mod / 'D2R-PCVR.mpq/modinfo.json').read_text())['name'], 'D2R-PCVR')
                 self.assertEqual(json.loads((mod / 'D2R-PCVR.mpq/modinfo.json').read_text())['savepath'], '../')
                 self.assertIn('D2R VR Unleashed', json.loads((mod / 'D2R-PCVR.mpq/modinfo.json').read_text())['description'])
+                self.assertEqual(json.loads((mod / 'vrmod-manifest.json').read_text())['d2rloader_mod']['name'], 'D2R-PCVR')
+                self.assertEqual((mod / 'launcher_icon.png').read_bytes(), (install.ROOT / 'launcher_icon.png').read_bytes())
                 self.assertEqual((mod / 'reshade/ReShade64.dll').read_bytes(), b'fixture reshade')
                 self.assertTrue((mod / 'reshade/ReShade.ini').is_file())
                 self.assertTrue((mod / 'reshade/D2R_Frame_ReShade.ini').is_file())
@@ -225,6 +227,8 @@ class InstallationTests(unittest.TestCase):
                 self.assertFalse((mod_plugins / 'd2rl-pcvr.dll').exists())
                 self.assertFalse((mod / 'reshade/ReShade64.dll').exists())
                 self.assertFalse((mod / 'D2R-PCVR.mpq/modinfo.json').exists())
+                self.assertFalse((mod / 'vrmod-manifest.json').exists())
+                self.assertFalse((mod / 'launcher_icon.png').exists())
                 for name in arcane:
                     self.assertFalse((mod / name).exists(), name)
                 for name in sewers:
