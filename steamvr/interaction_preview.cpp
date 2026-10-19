@@ -6,6 +6,7 @@
 #include "interaction_paint.h"
 #include "latest_worker.h"
 #include "wrist_compass.h"
+#include "sewer_prompt_art.h"
 #include <cstdio>
 #include <cstring>
 #include <limits>
@@ -30,6 +31,22 @@ static bool SavePng(const char* path,const std::vector<uint8_t>& rgba,UINT width
 int main(int argc,char** argv) {
     using namespace framevr::interaction;
     struct Cleanup {~Cleanup(){icons::Shutdown();}} cleanup;
+    if(argc>2&&!std::strcmp(argv[2],"--sewer-prompt-check")) {
+        namespace prompt=framevr::sewerprompt;
+        BITMAPINFO info{};info.bmiHeader.biSize=sizeof(BITMAPINFOHEADER);
+        info.bmiHeader.biWidth=prompt::Width;info.bmiHeader.biHeight=-prompt::Height;
+        info.bmiHeader.biPlanes=1;info.bmiHeader.biBitCount=32;
+        HDC dc=CreateCompatibleDC(nullptr);void* bits=nullptr;
+        HBITMAP bitmap=CreateDIBSection(dc,&info,DIB_RGB_COLORS,&bits,nullptr,0);
+        if(!dc||!bitmap||!bits){if(bitmap)DeleteObject(bitmap);if(dc)DeleteDC(dc);return 120;}
+        const auto old=SelectObject(dc,bitmap);const bool fits=prompt::Paint(dc);
+        GdiFlush();std::vector<uint8_t> rgba(prompt::Width*prompt::Height*4);
+        const auto* bgra=static_cast<const uint8_t*>(bits);
+        for(size_t i=0;i<rgba.size();i+=4){rgba[i]=bgra[i+2];rgba[i+1]=bgra[i+1];rgba[i+2]=bgra[i];rgba[i+3]=255;}
+        SelectObject(dc,old);DeleteObject(bitmap);DeleteDC(dc);
+        if(!fits||!SavePng(argv[1],rgba,prompt::Width,prompt::Height))return 121;
+        std::puts("Sewer entry prompt painted; both lines fit");return 0;
+    }
     if(argc>2&&!std::strcmp(argv[2],"--quick-use-check")) {
         if(argc>3){wchar_t path[32768]{};MultiByteToWideChar(CP_UTF8,0,argv[3],-1,path,32768);icons::Directory(path);}
         Snapshot s;s.quick.known=true;s.quick.assigned=Code('t','b','k');s.quick.count=3;
