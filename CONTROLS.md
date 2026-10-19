@@ -76,7 +76,7 @@ Quest left X/Y correspond to Index left A/B; right A/B labels are the same.
 | Choose melee rules / motion thresholds | **VR Settings > Combat**: Unleashed or Classic, Melee hit speed, and Melee thrust speed |
 | Bone Spear | Assign either hand's trigger or shortcut; aim with that controller and hold to repeat while moving. **Projectile aim assist** under Controls applies to Bone Spear too; Strong adds gentle homing |
 | Bone Wall / Bone Prison | Aim down at the desired ground location and cast. Level/upward aim places bones six cells ahead; native placement rules still apply |
-| Holy Bolt | Cast along the tracked controller's direction; native flight and healing remain in use |
+| Holy Bolt | Aim with either casting controller, including up/down with Planar spell aiming Off. Light assists at launch; Strong also adds gentle homing toward undead/demons. Directly aim at your mercenary to heal; native damage/healing rules apply |
 | Increase offline difficulty | **VR Settings > Combat > Offline difficulty**: Game default or Players 1-8; higher counts make monsters tougher and increase rewards |
 | Bow draw | Right trigger near the left-hand bow string; draw and release |
 | Fire a crossbow | Equip bolts and assign **Attack** to Right Trigger; aim and fire while moving. Release Right Grip so the loot-label combo does not consume the trigger |

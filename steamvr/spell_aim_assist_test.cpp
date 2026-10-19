@@ -13,8 +13,8 @@ Candidate Enemy(const Shot& s,uint32_t id,float yaw,float distance=6,float radiu
     return Evaluate(s,id,c-Vec{0,.4f,0},c+Vec{0,.4f,0},radius);
 }
 int main() {
-    for(int mode:{0,1,2}) {
-        auto spear=ShotAt(mode,false);spear.skill=84;
+    for(int skill:{84,101})for(int mode:{0,1,2}) {
+        auto spear=ShotAt(mode,false);spear.skill=skill;
         const auto target=Enemy(spear,42,3);
         assert(target.valid==(mode!=0));
         Homing guide;const Vec center=spear.origin+Vec{.3f,0,6};

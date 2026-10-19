@@ -1,4 +1,5 @@
 #include "spell_cast.h"
+#include "holy_bolt.h"
 #include "bow_flight.h"
 #include "hand_controls.h"
 #include <cassert>
@@ -10,7 +11,21 @@ struct Sim {
     Sim(){input.context=input.layout=1;input.active=true;input.independentSlots=(1u<<skills::TriggerSlot(0))|(1u<<skills::TriggerSlot(1));Step(3);}
     void Step(int n=1){while(n--){input.time+=.02;output=controls.Step(input);}}
 };
+// Production invokes the same wrapper: verify all callback arguments land in
+// their proper slots, including the leading bank absent from legacy callbacks.
+unsigned filterCalls=0;
+int NativeFilter(uint8_t bank,uintptr_t target,const holybolt::CollisionArgs* args) {
+    ++filterCalls;
+    assert(bank>=1&&bank<=3&&target==0x50000&&args);
+    assert(args->game==0x10000&&args->missile==0x20000&&args->owner==0x30000&&args->row==0x40000);
+    return bank==2?1:0;
+}
 int main() {
+    const holybolt::CollisionArgs filterArgs{0x10000,0x20000,0x30000,0x40000};
+    for(uint8_t bank:{1,2,3})assert(holybolt::CanCollide(NativeFilter,bank,0x50000,filterArgs)==(bank==2));
+    assert(filterCalls==3);
+    for(uint8_t bank:{0,4})assert(!holybolt::CanCollide(NativeFilter,bank,0x50000,filterArgs));
+    assert(!holybolt::CanCollide(nullptr,2,0x50000,filterArgs)&&filterCalls==3);
     spellcast::CastCue cue;
     assert(cue.Take(1,0,1,100,100));
     for(int member=1;member<24;++member)assert(!cue.Take(1,0,1,100,110));
@@ -81,7 +96,27 @@ int main() {
     for(unsigned character:{0u,1u,3u,4u,5u,6u})assert(!spellcast::Candidate(character,84,0,0,192,0xc0020400u));
     assert(!spellcast::Candidate(2,84,0,0,58,0)&&!spellcast::Candidate(2,84,0,8,192,0));
     assert(!spellcast::Candidate(2,47,0,0,62,0));
-    assert(!spellcast::Supported(78)&&!spellcast::Supported(88)&&!spellcast::Supported(101)); // placement and healing retain native casting
+    assert(!spellcast::Supported(78)&&!spellcast::Supported(88)); // placements retain native casting
+    assert(spellcast::Candidate(3,101,0,0,55,0xc6020400u)&&!spellcast::NativePath(101));
+    for(int hand:{0,1}) {
+        Sim s;s.input.independentSlots=0;
+        if(spellcast::Candidate(3,101,0,0,55,0xc6020400u))s.input.independentSlots|=1u<<skills::TriggerSlot(hand);
+        s.Step(3);s.input.trigger[hand]=1;s.Step();
+        assert(s.output.spells[hand]==skills::TriggerSlot(hand)&&s.output.slot<0);
+        s.input.trigger[hand]=0;s.Step();assert(s.output.spells[hand]<0);
+    }
+    for(unsigned character:{0u,1u,2u,4u,5u,6u})assert(!spellcast::Candidate(character,101,0,0,55,0xc6020400u));
+    assert(!spellcast::Candidate(3,101,0,0,192,0)&&!spellcast::Candidate(3,101,0,7,55,0));
+    // Assist must ignore beasts, NPCs and malformed tables, while retaining
+    // both undead flags, demons and a friendly mercenary's direct healing ray.
+    std::array<uint8_t,508> monster{};
+    for(int flags=0;flags<256;++flags) {
+        monster[0x3d]=uint8_t(flags);
+        const bool attackable=(flags&0x80)&&!(flags&1);
+        assert(holybolt::AssistTarget(monster,true)==(attackable&&(flags&0x38)?holybolt::Target::Enemy:holybolt::Target::Ignore));
+        assert(holybolt::AssistTarget(monster,false)==(attackable?holybolt::Target::Friend:holybolt::Target::Ignore));
+    }
+    assert(holybolt::AssistTarget(std::span(monster).first(507),true)==holybolt::Target::Ignore);
     constexpr int breaks[]={0,9,20,37,63,105,200};
     for(unsigned i=0;i<7;++i){
         assert(spellcast::CastFrames(breaks[i])==13-i);
@@ -91,6 +126,7 @@ int main() {
     constexpr int necroBreaks[]={0,9,18,30,48,75,125};
     for(unsigned i=0;i<7;++i){
         assert(spellcast::CastFrames(necroBreaks[i],2)==15-i);
+        assert(spellcast::CastFrames(necroBreaks[i],3)==15-i);
         if(i)assert(spellcast::CastFrames(necroBreaks[i]-1,2)==16-i);
     }
     {
@@ -168,6 +204,14 @@ int main() {
     assert(bowflight::Valid(shot));
     bowflight::Gate gate{true,1,0,0,0,false};
     assert(bowflight::Allowed(shot,gate,0));
+    for(float pitch:{-.9f,.9f})for(bool planar:{false,true}) {
+        auto holy=shot;holy.skill=101;holy.missile=55;holy.planar=planar;
+        holy.direction=aim[0].Update(4,1,{std::cos(pitch),std::sin(pitch),0},{},planar);
+        assert(bowflight::Valid(holy)&&bowflight::Allowed(holy,gate,0));
+        bowflight::Flight f;f.shot=holy;f.distance=3;
+        assert(!f.NativePath());
+        assert(std::fabs((f.Point().y-holy.origin.y)-(planar?0:3*std::sin(pitch)))<.0001f);
+    }
     auto arrow=shot;arrow.kind=bowflight::Kind::Arrow;
     assert(!bowflight::Allowed(arrow,gate,0)); // widening spell eligibility must not release a canceled arrow
     const auto tip=bowflight::Tip(shot,0);assert(tip.y==shot.origin.y); // no arrow-length offset
@@ -177,11 +221,11 @@ int main() {
     for(int i=0;i<3;++i)assert(std::fabs(bowflight::Length({matrix[i*4],matrix[i*4+1],matrix[i*4+2]})-(i+2))<.001f);
     const math::Vec emitter={matrix[12]+4*matrix[4]+2.3f*matrix[8],matrix[13]+4*matrix[5]+2.3f*matrix[9],matrix[14]+4*matrix[6]+2.3f*matrix[10]};
     assert(std::fabs(emitter.y-18.4f)<.001f&&std::fabs(emitter.x)<.001f&&std::fabs(emitter.z)<.001f);
-    for(int skill:{36,39,45,47})for(int yaw=0;yaw<360;yaw+=5)for(int pitch:{-90,-40,0,40,90}) {
+    for(int skill:{36,39,45,47,84,101})for(int yaw=0;yaw<360;yaw+=5)for(int pitch:{-90,-40,0,40,90}) {
         const float y=yaw*.01745329252f,p=pitch*.01745329252f;
         flight.shot.skill=skill;flight.shot.direction={std::cos(p)*std::sin(y),std::sin(p),std::cos(p)*std::cos(y)};
         float m[16]={1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1};bowflight::SpellMatrix(flight,0,m);
-        const float z=skill==47?2.3f:0;
+        const float z=skill==47?2.3f:skill==84?-3.f:0;
         const math::Vec visible={m[12]+4*m[4]+z*m[8],m[13]+4*m[5]+z*m[9],m[14]+4*m[6]+z*m[10]};
         assert(bowflight::Length(visible-bowflight::Tip(flight.shot,3)*shot.unitsPerMetre)<.0001f);
         assert(math::Dot({m[8],m[9],m[10]},flight.shot.direction)>.9999f);
