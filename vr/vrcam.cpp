@@ -5155,9 +5155,10 @@ uintptr_t HookDrawGameScreen(int a) {
             const auto rs = stereoreplay::TakeStats();
             const double n = rs.replayed ? 1.0 / rs.replayed : 0.0;
             LogF("vrcam: replay - %u of %u pairs from one pass (%u fell back to two) | a replayed pair: %.1f lists in %.1f calls, %.3f ms to submit, "
-                 "camera %.1f records folded, %.1f positions moved, %u slots (%u overflowed, %.1f late) | settle %d/%d, started again by %u biome sets "
-                 "(of %u), %u frames over 150 ms, %u pairs out of the world",
-                 rs.replayed, pairs, rs.fallbacks, rs.lists * n, rs.calls * n, rs.submitMs * n, rs.folded * n, rs.positions * n, rs.slots, rs.overflow, rs.lateSlots * n,
+                 "camera %.1f records folded, %.1f positions moved, %u slots (%u overflowed, %.1f late)",
+                 rs.replayed, pairs, rs.fallbacks, rs.lists * n, rs.calls * n, rs.submitMs * n, rs.folded * n, rs.positions * n, rs.slots, rs.overflow, rs.lateSlots * n);
+            // (a line of its own: LogF keeps 255 characters)
+            LogF("vrcam: replay - settle %d/%d, started again by %u biome sets (of %u), %u frames over 150 ms, %u pairs out of the world",
                  rs.settling, rs.settleOf, rs.restartArea, rs.biomeSets, rs.restartLong, rs.outOfWorld);
         }
 #endif
