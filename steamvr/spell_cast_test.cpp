@@ -11,7 +11,21 @@ struct Sim {
     Sim(){input.context=input.layout=1;input.active=true;input.independentSlots=(1u<<skills::TriggerSlot(0))|(1u<<skills::TriggerSlot(1));Step(3);}
     void Step(int n=1){while(n--){input.time+=.02;output=controls.Step(input);}}
 };
+// Production invokes the same wrapper: verify all callback arguments land in
+// their proper slots, including the leading bank absent from legacy callbacks.
+unsigned filterCalls=0;
+int NativeFilter(uint8_t bank,uintptr_t target,const holybolt::CollisionArgs* args) {
+    ++filterCalls;
+    assert(bank>=1&&bank<=3&&target==0x50000&&args);
+    assert(args->game==0x10000&&args->missile==0x20000&&args->owner==0x30000&&args->row==0x40000);
+    return bank==2?1:0;
+}
 int main() {
+    const holybolt::CollisionArgs filterArgs{0x10000,0x20000,0x30000,0x40000};
+    for(uint8_t bank:{1,2,3})assert(holybolt::CanCollide(NativeFilter,bank,0x50000,filterArgs)==(bank==2));
+    assert(filterCalls==3);
+    for(uint8_t bank:{0,4})assert(!holybolt::CanCollide(NativeFilter,bank,0x50000,filterArgs));
+    assert(!holybolt::CanCollide(nullptr,2,0x50000,filterArgs)&&filterCalls==3);
     spellcast::CastCue cue;
     assert(cue.Take(1,0,1,100,100));
     for(int member=1;member<24;++member)assert(!cue.Take(1,0,1,100,110));

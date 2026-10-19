@@ -19,4 +19,11 @@ inline Target AssistTarget(std::span<const uint8_t> row,bool hostile) {
 // filter (3.3.93787, 0x4632d2). Never retain a borrowed table row across ticks.
 struct CollisionArgs {uintptr_t game,missile,owner,row;};
 static_assert(sizeof(CollisionArgs)==32&&offsetof(CollisionArgs,row)==24);
+// Unlike legacy 32-bit callbacks, the current engine passes the data bank in
+// RCX, target in RDX, and arguments in R8 (0x457d10). A two-argument call puts
+// the argument pointer in the target register and silently rejects contacts.
+using CollisionFilter=int(*)(uint8_t,uintptr_t,const CollisionArgs*);
+inline bool CanCollide(CollisionFilter filter,uint8_t bank,uintptr_t target,const CollisionArgs& args) {
+    return filter&&bank>=1&&bank<=3&&filter(bank,target,&args)!=0;
+}
 }

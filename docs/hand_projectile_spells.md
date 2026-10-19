@@ -143,8 +143,9 @@ friendly creature keeps its direction and disables enemy steering for that
 shot, preserving deliberate mercenary healing.
 
 Swept contacts include friendly monsters/mercenaries through the game's own
-type-3 missile collision filter, with native game/missile/owner/table-row
-arguments. Native hit handling still decides healing eligibility, damage,
+type-3 missile collision filter. Its current signature is `(bank, target, args)`;
+`args` holds native game/missile/owner/table-row pointers. Both the caller and
+actual callback register/row layout are checked. Native hit handling still decides healing eligibility, damage,
 immunity and piercing. It does not add damage to beasts or invent a healing
 calculation. Other players are not scanned; only offline local play is supported.
 The extra adapter is guarded separately: absent SDK services or a changed
@@ -188,6 +189,13 @@ and settings normalization, interaction and INI persistence. Follow-up fixtures
 cover sideways target movement, the wider Strong limit, homing versus straight
 flight, steering bounds, continuous positions through turns, visual heading,
 planar/free/ground behavior, and permanent loss of steering.
+
+Holy Bolt's callback fixture also checks forwarding the leading data bank,
+target and all four argument pointers, accepted/refused results, and rejection
+of absent callbacks or invalid banks. This guards against accidentally using
+the legacy two-argument callback convention. Runtime diagnostics distinguish
+native-filter rejection from accepted contacts, and sample target life before
+and after native hit handling; automated fixtures do not execute those game routines.
 The Windows build and all 57 checks passed; its settings layout was also
 inspected with the synthetic preview. The initial headset test reported
 Fireballs passing beside moving enemies even on Strong. Subsequent runtime
