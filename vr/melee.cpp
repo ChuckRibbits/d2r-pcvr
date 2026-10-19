@@ -618,12 +618,13 @@ uintptr_t Hireling(uintptr_t game,uintptr_t self,uint32_t id,bool alive) {
 // Target lock: the same bounded walk, keeping live monsters the native
 // relation check calls hostile, in grid cells, with whether a wall is between.
 // MonStats flags of a monster (unit +0x10 monster data, whose first field is
-// its MonStats record; the flags dword at +0x0C, as D2MOO lays it out). 0x100
+// its MonStats record; D2R's record, as monstats.bin, has the flags dword at
+// +0x3C, matching every row of monstats.txt). 0x100
 // npc, 0x400 inTown: town residents such as the Rogue camp's cows (class 179),
 // which the relation check still calls attackable. Unread: 0.
 uint32_t MonsterFlags(uintptr_t unit) {
     uintptr_t data=0,stats=0;uint32_t flags=0;
-    if(!Read(unit+0x10,data)||data<0x10000||!Read(data,stats)||stats<0x10000||!Read(stats+0x0c,flags))return 0;
+    if(!Read(unit+0x10,data)||data<0x10000||!Read(data,stats)||stats<0x10000||!Read(stats+0x3c,flags))return 0;
     return flags;
 }
 constexpr uint32_t kMonNpc=0x100,kMonInTown=0x400;

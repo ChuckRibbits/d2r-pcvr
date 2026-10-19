@@ -80,7 +80,7 @@ inline constexpr std::array<Definition,Count> Definitions{{
     {"Map view", "Isometric or Top-down wrist minimap", L"interactions",L"map_top_down",0,0,1,1},
     {"Rotate map", "Top-down only: keep your facing direction at the top", L"interactions",L"map_rotate",0,0,1,1},
     {"Monster outline", "Outline strength for the monster you aim at; Off by default", L"gameplay",L"target_outline_pct",0,0,100,10},
-    {"Monster outline color", "Gold, or by range: red near, orange mid-range, yellow far", L"gameplay",L"target_outline_color",0,0,1,1},
+    {"Monster outline color", "Any color around the wheel, or by range: red near to yellow far", L"gameplay",L"target_outline_hue",45,0,360,15},
 }};
 using Values=std::array<float,Count>;
 inline bool HapticKey(Key key){return key>=HapticStrength&&key<=HapticAlert;}
@@ -132,6 +132,18 @@ inline constexpr const char* TooltipTimingNames[]={"Instant","Short","Original"}
 constexpr Rect WeaponIndicatorsBox{942,666,221,52},PlanarSpellAimBox{942,728,221,52},AimAssistBox{942,790,221,52};
 inline Rect TestHapticsBox(int row,int choice,haptics::Category category){return {haptics::PreviewCount(category)==1?700:590+choice*128,RowY+row*RowStep,haptics::PreviewCount(category)==1?140:122,52};}
 inline constexpr const char* AimAssistNames[]={"Off","Light","Strong"};
+// Monster outline color: a hue in degrees (0-345), 360 = by range.
+constexpr float OutlineByRange=360;
+inline const char* HueName(float hue){
+    constexpr const char* names[]={"Red","Orange","Gold","Lime","Green","Mint","Cyan","Azure","Blue","Violet","Magenta","Pink"};
+    return names[int(hue/30.f+.5f)%12];
+}
+// The outline color for a hue, at full saturation and brightness.
+inline void HueRgb(float hue,float rgb[3]){
+    const float h=std::fmod(std::max(0.f,hue),360.f)/60.f,x=1.f-std::fabs(std::fmod(h,2.f)-1.f);
+    const float table[6][3]={{1,x,0},{x,1,0},{0,1,x},{0,x,1},{x,0,1},{1,0,x}};
+    for(int i=0;i<3;++i)rgb[i]=table[std::min(5,int(h))][i];
+}
 inline constexpr const char* MeleeRulesNames[]={"Unleashed","Classic"};
 inline constexpr const char* StrainColorNames[]={"White","Black"};
 inline constexpr const char* StrainSpeedNames[]={"Slow","Medium","Fast"};

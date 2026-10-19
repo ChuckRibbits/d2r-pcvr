@@ -8280,10 +8280,11 @@ void OnBeginEffects(reshade::api::effect_runtime* rt, reshade::api::command_list
             mob[2] = my * 2.0f + floor * shear - sv[0].hero[2];
             mob[3] = TargetOutlineStrength();   // steady, no pulse
             // gold, or by range: near red, mid orange, far yellow
-            static const float kGold[3] = {1.0f, 0.75f, 0.0f};
             static const float kBands[3][3] = {{1.0f, 0.2f, 0.12f}, {1.0f, 0.55f, 0.1f}, {1.0f, 0.92f, 0.25f}};
-            const bool byRange = vrsettings::Read().values[framevr::settings::TargetOutlineColour] > .5f;
-            SetFloats(rt, "OutlineColor", byRange ? kBands[framevr::targetcone::Band(md)] : kGold, 3);
+            const float hue = vrsettings::Read().values[framevr::settings::TargetOutlineColour];
+            float wheel[3];
+            framevr::settings::HueRgb(hue, wheel);
+            SetFloats(rt, "OutlineColor", hue >= framevr::settings::OutlineByRange ? kBands[framevr::targetcone::Band(md)] : wheel, 3);
             // Tuned in the headset (2026-10-18): a 5 unit search circle (a long monster
             // whole), the body from 0.38 m below the floor level (feet on slopes) to 3 m up.
             const float mobShape[3] = {5.0f, -0.38f * upm, 3.0f * upm};

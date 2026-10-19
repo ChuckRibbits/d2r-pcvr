@@ -172,7 +172,13 @@ int main(){
     }
     {Model aim;aim.Open(s);aim.Click({Kind::Tab,int(Page::Aim)});
         Check(s.values[TargetHighlight]==0&&RowCount(Page::Aim)==2&&RowKey(Page::Aim,0)==TargetHighlight&&RowKey(Page::Aim,1)==TargetOutlineColour,"the monster outline is Off by default, its color below it");
-        Check(s.values[TargetOutlineColour]==0&&At(Page::Aim,ValueBox(1)).index==TargetOutlineColour,"the outline is gold by default; the color row toggles");
+        Check(s.values[TargetOutlineColour]==45&&At(Page::Aim,Increase(1)).index==TargetOutlineColour,"the outline is gold (45 degrees) by default, on its own row");
+        {Model wheel;wheel.Open(s);wheel.Click({Kind::Tab,int(Page::Aim)});
+            for(int i=0;i<21;++i)wheel.Click(At(Page::Aim,Increase(1)));
+            Check(wheel.Get()[TargetOutlineColour]==OutlineByRange,"the wheel ends at By range");
+            for(int i=0;i<30;++i)wheel.Click(At(Page::Aim,Decrease(1)));
+            Check(wheel.Get()[TargetOutlineColour]==0,"and starts at red");
+            float rgb[3];HueRgb(45,rgb);Check(rgb[0]==1&&rgb[1]==.75f&&rgb[2]==0,"45 degrees is gold");}
         Check(HelpAt(Page::Aim,(ValueBox(0).x+5.f)/Width,(ValueBox(0).y+5.f)/Height)==TargetHighlight,"the Aim row explains the outline");
         aim.Click(At(Page::Aim,Increase(0)));Check(aim.Get()[TargetHighlight]==10,"plus turns the outline on at 10%");
         aim.Click(At(Page::Aim,Decrease(0)));aim.Click(At(Page::Aim,Decrease(0)));Check(aim.Get()[TargetHighlight]==0,"Off is the lower bound");
