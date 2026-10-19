@@ -38,8 +38,17 @@ bool QueueParry(uint32_t monster,int durability=-2);
 // When this monster's current attack began (GetTickCount64), from the native
 // mode setter on the server; 0 when not seen in the last 3 s. Thread-safe.
 uint64_t AttackStart(uint32_t monster);
+// When this monster's current attack starts coming down at you: its start plus
+// [gameplay] parry_downstroke % of the wind-up its type took last time (start
+// to to-hit roll, per attack mode). 0 = not seen, or wind-up not measured yet.
+// A parry swing must begin at or after it. Thread-safe.
+uint64_t ParryOpens(uint32_t monster);
+void ConfigureParryDownstroke(uint32_t percent);   // 0..95, default 90
+// On (default): a parry resolves at the attacker's hit frame, after the blow
+// comes down; off: it staggers the attacker the moment the swing is made.
+void ConfigureParryAtHit(bool on);
 // This monster's current attack reached its to-hit roll (hit or miss): too
-// late to stagger it before the hit. Game thread.
+// late to stagger it before the hit; its first roll times the wind-up. Game thread.
 void NoteAttackRolled(uint32_t monster);
 // A new parry swing: on a later game update, stagger the first monster whose
 // melee attack is under way and not yet rolled (combat::EarlyParry). Thread-safe.

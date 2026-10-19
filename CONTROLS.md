@@ -148,12 +148,14 @@ doesn't reduce them; resistances still matter.
   Lowering it, holding it away from the attack line or turning it edge-on opens
   the guard.
 - **Parry:** as a melee attack comes in, swing the shield diagonally across
-  your view (lower right to upper left with a left-hand shield) up to
-  0.75 seconds before the hit. You can start before the enemy's wind-up. The swing
+  your view (lower right to upper left with a left-hand shield) as the blow
+  comes down at you, from late in its wind-up until just after the blow meets
+  your shield (0.2 s). A swing while the
+  enemy is still raising its arms is too early and is no parry. The swing
   only needs to finish with the shield raised on the attacker's side, even if
-  it ends edge-on. It also works on attacks that would have missed you. The
-  attacker staggers as soon as your swing meets its attack, before the blow
-  lands.
+  it ends edge-on. The blow meets your shield and the attacker staggers.
+  Every enemy attack makes contact: without a parry, where your shield is at
+  that moment decides whether it blocks or hits you.
 - **Riposte:** your next weapon hit on the parried monster within 1.5 s is a
   clean hit: full damage, whatever your attack rating or timing.
 - **Guard strain:** every block (not a parry) strains your guard. A pale light

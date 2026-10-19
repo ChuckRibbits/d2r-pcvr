@@ -94,9 +94,32 @@ using SetModeFn=int(*)(uintptr_t,int);
 SetModeFn originalSetMode=nullptr;bool setModeIn=false;
 // Monster attacks as they begin (server units), for the parry: a swing while
 // the attack is incoming. MonMode A1 4, A2 5, S1-S4 8-11.
-struct AttackSeen {uint32_t id=0;uint64_t at=0,rolled=0;};   // rolled: its to-hit roll (hit or miss)
+struct AttackSeen {uint32_t id=0,cls=0;int mode=0;uint64_t at=0,rolled=0;};   // rolled: its to-hit roll (hit or miss)
 std::mutex attackMutex;std::array<AttackSeen,64> attacks{};std::atomic<unsigned> attackStarts{0};
 bool AttackMode(int mode){return mode==4||mode==5||(mode>=8&&mode<=11);}
+// Parry downstroke: a monster's to-hit roll runs at its attack's hit frame, so
+// roll - start is that monster type's wind-up for that attack mode (measured
+// from its last attack, so auras, slows and Fanaticism follow along). A parry
+// swing must start once [gameplay] parry_downstroke % of it has passed: the
+// arms coming down at you, not the first frames of the raise (Cal, 2026-10-19).
+constexpr uint32_t kWindupClasses=1024;
+std::array<uint16_t,kWindupClasses*6> windupMs{};   // attackMutex; 0 = not measured yet
+// [gameplay] parry_at_hit (default on): a downstroke swing parries at the hit
+// frame - the blow lands on the shield, then the attacker staggers. Staggering
+// at the swing itself fired 50-90 ms before the hit (class 5: swing 281 ms,
+// hit 330-375 ms, log 2026-10-19) and cut the blow off mid-air. Off: the old early stagger.
+std::atomic<bool> parryAtHit{true};
+std::atomic<uint32_t> downstrokePct{90};   // 60, then 80, parried as the blow was still coming (2026-10-19 15:18)
+int WindupSlot(uint32_t cls,int mode) {
+    const int m=mode==4?0:mode==5?1:mode>=8&&mode<=11?mode-6:-1;
+    return cls<kWindupClasses&&m>=0?int(cls*6+m):-1;
+}
+uint64_t OpensAt(const AttackSeen& a) {   // attackMutex held
+    const int slot=WindupSlot(a.cls,a.mode);const uint32_t pct=downstrokePct.load(std::memory_order_relaxed);
+    if(a.at&&!pct)return a.at;   // 0: the old rule, anywhere after the attack began
+    if(!a.at||slot<0||!windupMs[slot])return 0;
+    return a.at+uint64_t(windupMs[slot])*pct/100;
+}
 template<class T> bool Read(uintptr_t p,T& out) {
     return p>0x10000&&framevr::ReadMemory(&out,reinterpret_cast<const void*>(p),sizeof out);
 }
@@ -423,7 +446,7 @@ int SetMode(uintptr_t unit,int mode) {
             std::lock_guard lock(attackMutex);
             AttackSeen* slot=&attacks[0];
             for(auto& a:attacks){if(a.id==header[2]){slot=&a;break;}if(a.at<slot->at)slot=&a;}
-            slot->id=header[2];slot->at=now;slot->rolled=0;++attackStarts;
+            slot->id=header[2];slot->cls=header[1];slot->mode=mode;slot->at=now;slot->rolled=0;++attackStarts;
             }
             // A parry swing already made: stagger it as its attack begins.
             if(combat::ParryArmed())QueueAttackParry(header[2]);
@@ -456,13 +479,16 @@ void __cdecl Parry(const D2RL::PluginContext*,void* token) noexcept {
 void QueueBlockSound() {
     if(blockSound.load()>0&&context&&threads&&threads->runOnUiThread)threads->runOnUiThread(context,&BlockSound,nullptr);
 }
-// Game thread: a parry before the hit frame, as soon as the swing and this
-// monster's attack have both begun. Never once its to-hit roll has run.
-bool EarlyStagger(uintptr_t game,uintptr_t player,const AttackSeen& seen,const char* trigger) {
-    if(!seen.at||seen.rolled>=seen.at)return false;
+// Game thread: a parry before the hit frame, once the swing came during this
+// monster's downstroke. Never once its to-hit roll has run, and never for an
+// attack whose wind-up is not measured yet: that one is judged at its hit.
+// Off by default ([gameplay] parry_at_hit): the hit frame resolves the parry.
+bool EarlyStagger(uintptr_t game,uintptr_t player,const AttackSeen& seen,uint64_t opensAt,const char* trigger) {
+    if(parryAtHit.load(std::memory_order_relaxed))return false;
+    if(!seen.at||seen.rolled>=seen.at||!opensAt)return false;
     const auto unit=originalLookup(game,1,seen.id);uint32_t mode=0;
     if(!unit||!Read(unit+0xc,mode)||!AttackMode(int(mode)))return false;   // its attack already ended
-    const uint64_t swing=combat::EarlyParry(unit,player,seen.at,trigger);
+    const uint64_t swing=combat::EarlyParry(unit,player,seen.at,opensAt,trigger);
     if(!swing)return false;
     const uintptr_t event[2]{0,unit};
     if(!reinterpret_cast<HitRecoveryFn>(d2rsig::Addr(HitRecoveryRva))(game,event)){++parryRefused;return false;}
@@ -473,17 +499,20 @@ void __cdecl AttackParry(const D2RL::PluginContext*,void* token) noexcept {
     const auto monster=uint32_t(reinterpret_cast<uintptr_t>(token));
     uintptr_t game=0,player=0;
     if(!parryReady.load()||!LocalServer(game,player))return;
-    AttackSeen seen{};
-    {std::lock_guard lock(attackMutex);for(const auto& a:attacks)if(a.id==monster){seen=a;break;}}
-    EarlyStagger(game,player,seen,"attack_start");
+    AttackSeen seen{};uint64_t opens=0;
+    {std::lock_guard lock(attackMutex);for(const auto& a:attacks)if(a.id==monster){seen=a;opens=OpensAt(a);break;}}
+    EarlyStagger(game,player,seen,opens,"attack_start");
 }
 void __cdecl SwingParry(const D2RL::PluginContext*,void*) noexcept {
     uintptr_t game=0,player=0;
     if(!parryReady.load()||!LocalServer(game,player))return;
-    std::array<AttackSeen,64> seen;{std::lock_guard lock(attackMutex);seen=attacks;}
+    std::array<AttackSeen,64> seen;std::array<uint64_t,64> opens{};
+    {std::lock_guard lock(attackMutex);seen=attacks;for(size_t i=0;i<seen.size();++i)opens[i]=OpensAt(seen[i]);}
     const auto now=GetTickCount64();
-    for(const auto& a:seen)
-        if(a.at&&now>=a.at&&now-a.at<=3000&&EarlyStagger(game,player,a,"swing"))break;   // one parry per swing
+    for(size_t i=0;i<seen.size();++i) {
+        const auto& a=seen[i];
+        if(a.at&&now>=a.at&&now-a.at<=3000&&EarlyStagger(game,player,a,opens[i],"swing"))break;   // one parry per swing
+    }
 }
 void QueueAttackParry(uint32_t monster) {
     if(parryReady.load()&&context&&threads&&threads->runOnGameThread)threads->runOnGameThread(context,&AttackParry,reinterpret_cast<void*>(uintptr_t(monster)));
@@ -494,7 +523,12 @@ void QueueParrySwing() {
 void NoteAttackRolled(uint32_t monster) {
     const auto now=GetTickCount64();
     std::lock_guard lock(attackMutex);
-    for(auto& a:attacks)if(a.id==monster){a.rolled=now;break;}
+    for(auto& a:attacks)if(a.id==monster) {
+        // The first roll of this attack is its hit frame: learn the wind-up.
+        if(const int slot=WindupSlot(a.cls,a.mode);slot>=0&&a.at&&a.rolled<a.at&&now>=a.at&&now-a.at<=3000)
+            windupMs[slot]=uint16_t(std::max<uint64_t>(1,now-a.at));
+        a.rolled=now;break;
+    }
 }
 uint64_t AttackStart(uint32_t monster) {
     const auto now=GetTickCount64();
@@ -502,6 +536,14 @@ uint64_t AttackStart(uint32_t monster) {
     for(const auto& a:attacks)if(a.id==monster&&a.at&&now>=a.at&&now-a.at<=3000)return a.at;
     return 0;
 }
+uint64_t ParryOpens(uint32_t monster) {
+    const auto now=GetTickCount64();
+    std::lock_guard lock(attackMutex);
+    for(const auto& a:attacks)if(a.id==monster&&a.at&&now>=a.at&&now-a.at<=3000)return OpensAt(a);
+    return 0;
+}
+void ConfigureParryDownstroke(uint32_t percent) {downstrokePct=std::min<uint32_t>(percent,95);}
+void ConfigureParryAtHit(bool on) {parryAtHit=on;}
 bool QueueParry(uint32_t monster,int before) {
     if(!parryReady.load()||!threads||!threads->runOnGameThread)return false;
     const int32_t durability=before==-2?gamestate::LeftDurability():int32_t(before);
