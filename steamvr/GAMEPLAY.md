@@ -94,6 +94,9 @@ The build also adds an **in-headset VR settings panel**.
 Hold **Left Grip and press Left Y**, or select **VR SETTINGS** in the wheel.
 The shortcut also works with motion combat disabled. Use the right laser and
 trigger; **Right B**, the shortcut again, or **Close** dismisses the panel.
+Point at a row for a moment to see its help beside the panel. Rows with named
+choices, such as Stereo rendering or Foveated rendering, also explain the
+selected choice, so stepping through them with - and + explains each one.
 The owner verified panel visibility and laser/tab interaction after the
 October 9 Proton layer-conversion fix. Apply/cancel and broader input-ownership
 checks remain pending.

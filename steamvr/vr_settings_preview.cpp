@@ -51,6 +51,19 @@ int main(int argc,char** argv){
                 DrawTextW(dc,wide,-1,&bounds,DT_CALCRECT|DT_WORDBREAK|DT_NOPREFIX);
                 if(bounds.bottom>(title?92:HelpCard.h-152)||bounds.right>HelpCard.w-48){std::fprintf(stderr,"Clipped help: %s\n",HelpTitle(id));return 6;}
             }
+            // Every choice's name on one line, and its text under the general help.
+            for(int c=0;c<HelpChoices(id);++c) {
+                const auto choice=HelpChoice(id,float(c));
+                const auto measure=[&](const char* value,HFONT font){
+                    wchar_t wide[512]{};MultiByteToWideChar(CP_UTF8,0,value,-1,wide,512);
+                    SelectObject(dc,font);RECT bounds{0,0,HelpCard.w-48,0};
+                    DrawTextW(dc,wide,-1,&bounds,DT_CALCRECT|DT_WORDBREAK|DT_NOPREFIX);return bounds;
+                };
+                const auto general=measure(HelpText(id),normal),name=measure(choice.name,bold),text=measure(choice.text,normal);
+                if(name.bottom>HelpChoiceNameHeight||general.bottom+HelpChoiceGap+HelpChoiceNameHeight+text.bottom>HelpCard.h-152||text.right>HelpCard.w-48){
+                    std::fprintf(stderr,"Clipped help: %s, %s\n",HelpTitle(id),choice.name);return 12;
+                }
+            }
             const auto shown=Paint(m,{},"",nullptr,{},id);
             if(shown.size()!=plain.size())return 7;
             bool content=false;

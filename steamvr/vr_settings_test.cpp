@@ -78,6 +78,15 @@ int main(){
               Normalize(EyesByTurns,1)==1&&Normalize(EyesByTurns,2)==2,"malformed stereo rendering draws both eyes");
     }
     {
+        for(int id=0;id<Count;++id)if(const int n=HelpChoices(id)) {
+            Check(n==int(Definitions[id].max-Definitions[id].min)+1,"every choice of a row is explained");
+            for(int c=0;c<n;++c){const auto h=HelpChoice(id,Definitions[id].min+c);Check(h.name&&h.name[0]&&h.text&&h.text[0]&&std::string(h.text)!=HelpText(id),"each choice has a name and its own text");}
+        }
+        Check(std::string(HelpChoice(EyesByTurns,1).name)=="Hybrid"&&std::string(HelpChoice(Foveation,2).name)=="Eye tracked"&&
+              std::string(HelpChoice(Dominant,1).name)=="Left"&&std::string(HelpChoice(RenderResolution,4).name)=="2560 x 2560","the help names the choice the row shows");
+        Check(!HelpChoice(Motion,1).name&&!HelpChoice(Snap,30).name&&!HelpChoice(HelpApply,0).name&&!HelpChoice(Foveation,NAN).name,"toggles, numbers and buttons keep their general help");
+    }
+    {
         Model map;map.Open(s);map.Click({Kind::Tab,int(Page::HUD)});
         const auto view=At(Page::HUD,HudMapViewBox),rotate=At(Page::HUD,HudMapRotateBox);
         Check(view.kind==Kind::Change&&view.index==MapTopDown&&rotate.kind==Kind::Change&&rotate.index==MapRotate,"HUD map controls target separate preferences");

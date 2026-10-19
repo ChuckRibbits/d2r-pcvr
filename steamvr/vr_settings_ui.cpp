@@ -6,6 +6,12 @@
 // Retain an exact summary fingerprint in the DLL for the release packager.
 extern "C" __declspec(dllexport) const char* D2RPCVR_ReleaseNotesIdentity(){return framevr::releasenotes::ContentMarker;}
 namespace framevr::settings {
+static int HelpTextHeight(HDC dc,HFONT font,const char* value,int width) {
+    wchar_t wide[512]{};MultiByteToWideChar(CP_UTF8,0,value,-1,wide,512);
+    const auto old=SelectObject(dc,font);RECT bounds{0,0,width,0};
+    DrawTextW(dc,wide,-1,&bounds,DT_CALCRECT|DT_WORDBREAK|DT_NOPREFIX);
+    SelectObject(dc,old);return int(bounds.bottom);
+}
 std::vector<uint8_t> Paint(const Model& m,Hit hover,const char* runtimeStatus,const calibration::Flow* body,const controllers::Labels& detected,int help){
     const bool showHelp=!body&&help!=NoHelp&&HelpText(help)[0];
     BITMAPINFO info{};info.bmiHeader.biSize=sizeof(BITMAPINFOHEADER);info.bmiHeader.biWidth=AtlasWidth;
@@ -186,7 +192,15 @@ std::vector<uint8_t> Paint(const Model& m,Hit hover,const char* runtimeStatus,co
         fill(HelpCard,RGB(22,36,44));
         fill({HelpCard.x,HelpCard.y,4,HelpCard.h},RGB(116,220,219));
         text(HelpTitle(help),{HelpCard.x+24,HelpCard.y+24,HelpCard.w-48,92},true);
-        text(HelpText(help),{HelpCard.x+24,HelpCard.y+128,HelpCard.w-48,HelpCard.h-152});
+        const int left=HelpCard.x+24,width=HelpCard.w-48,bottom=HelpCard.y+HelpCard.h-24;
+        int y=HelpCard.y+128;
+        text(HelpText(help),{left,y,width,bottom-y});
+        if(const auto choice=HelpChoice(help,help<Count?m.Get()[help]:NAN);choice.name) {
+            y+=HelpTextHeight(dc,normal,HelpText(help),width)+HelpChoiceGap;
+            text(choice.name,{left,y,width,HelpChoiceNameHeight},true,false,RGB(116,220,219));
+            y+=HelpChoiceNameHeight;
+            text(choice.text,{left,y,width,bottom-y});
+        }
     }
     GdiFlush();std::vector<uint8_t> rgba(AtlasWidth*Height*4);const auto* p=static_cast<uint8_t*>(bits);
     for(int y=0;y<Height;++y)for(int x=0;x<AtlasWidth;++x){
