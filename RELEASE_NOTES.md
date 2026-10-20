@@ -1,23 +1,29 @@
-# D2R VR Unleashed v0.3.22 - Windows preview
+# D2R VR Unleashed v0.3.23 - Windows preview
 
-This hotfix resolves installation and repair failures caused by the shared
-launcher holding Unleashed's icon open. It includes the rendering, shield combat,
+This hotfix fixes ground-item names disappearing when you look down at loot,
+including while holding Show Items. It includes the installer repair fix from
+[v0.3.22](https://github.com/bearstonem/d2r-pcvr/releases/tag/v0.3.22-windows-preview)
+and the rendering, shield combat,
 directional sound and interface features from [v0.3.21](https://github.com/bearstonem/d2r-pcvr/releases/tag/v0.3.21-windows-preview).
+
+## Controls and interface
+
+- **Loot labels stay visible when looking down:** Item names can now use the
+  full headset view instead of being cut off at the bottom of the game's menu
+  area. This addresses labels disappearing over the item you are looking at,
+  reported on Valve Index and Quest 3 through SteamVR, especially at the 2K
+  render preset. Ordinary drop/hover labels and held Show Items use the same fix.
 
 ## Updating
 
-- **Installer repair fixed:** Setup keeps an unchanged launcher icon in place
-  instead of trying to overwrite the open file. If a changed icon cannot be
-  replaced, Setup explains how to close the launcher and retry before changing
-  game files. Backups, rollback and player progress remain protected.
-
-Download **D2R-PCVR-Setup-0.3.22.exe** for graphical installation, or
+Download **D2R-PCVR-Setup-0.3.23.exe** for graphical installation, or
 **d2r-pcvr-windows.zip** for portable setup. Existing users should choose
 **Update / repair and keep calibration and video settings**.
 
 Close the game, Steam and D2R VR Launcher before updating. Existing settings,
 calibration and saves are preserved. If an earlier installer stopped on
 **Permission denied: launcher_icon.png**, rerun this version with **Update / repair**.
+The unchanged-icon repair fix from v0.3.22 is included.
 
 The Windows installer includes **D2R VR Launcher 0.3.5**. It installs or updates
 it when needed and preserves newer versions. Direct Steam shortcuts and portable
@@ -28,7 +34,7 @@ setup remain available; Authentic is a separate optional mod.
 1. Install and start the original Diablo II: Resurrected through Steam or
    Battle.net once. Complete its account prompts, create or select an offline
    character, then fully exit the game.
-2. Download **D2R-PCVR-Setup-0.3.22.exe** from the assets below. Fully exit
+2. Download **D2R-PCVR-Setup-0.3.23.exe** from the assets below. Fully exit
    Steam using **Steam > Exit**, then run Setup and choose **Full install with
    recommended settings**. The shared launcher is included; follow the wizard
    to select your game copy, headset and connection.
@@ -67,14 +73,18 @@ releasing the lock, rollback and removal. The compiled installer lifecycle,
 embedded payload, package contents and release checksums were checked separately.
 The in-headset release page was rendered and visually inspected.
 
-The installer correction was tested with temporary installations. No headset
-session was performed for this hotfix. See v0.3.21's notes for the rendering
-tradeoffs and feature-level headset verification. Battle.net remains experimental.
+The loot-label fix was tested in the isolated developer environment on Quest 3
+through SteamVR with Steam D2R 3.3.93787 at 4096 x 4096. A player also tested a
+private build and confirmed the labels were fixed; their headset and resolution
+were not reported back. The 2K preset and Index dimensions are covered by
+automated checks but have not been retested in our own headset runs. VDXR and
+Battle.net have not been tested for this correction. See v0.3.21's notes for
+rendering tradeoffs and earlier feature verification. Battle.net remains experimental.
 Multiplayer and the Sorceress elemental-hands prototype remain excluded.
 
 ## Special thanks
 
-Thanks to everyone reporting installation problems and helping test the fix!
+Thanks to everyone reporting the disappearing labels and helping test the fix!
 Thanks also to **ChuckRibbits**, **beadlebytes** and **Sergious** for the combat,
 audio, interface, rendering and shared launcher contributions included from v0.3.21.
 
@@ -82,19 +92,19 @@ D2R VR Unleashed is a mod by **monkeylashes**, with contributions from the commu
 
 ## Downloads and links
 
-- [Windows installer, portable ZIP and checksums](https://github.com/bearstonem/d2r-pcvr/releases/tag/v0.3.22-windows-preview)
-- [Installation instructions](https://github.com/bearstonem/d2r-pcvr/blob/v0.3.22-windows-preview/INSTALL-WINDOWS.md)
-- [Controls](https://github.com/bearstonem/d2r-pcvr/blob/v0.3.22-windows-preview/CONTROLS.md)
-- [Full source comparison](https://github.com/bearstonem/d2r-pcvr/compare/v0.3.21-windows-preview...v0.3.22-windows-preview)
+- [Windows installer, portable ZIP and checksums](https://github.com/bearstonem/d2r-pcvr/releases/tag/v0.3.23-windows-preview)
+- [Installation instructions](https://github.com/bearstonem/d2r-pcvr/blob/v0.3.23-windows-preview/INSTALL-WINDOWS.md)
+- [Controls](https://github.com/bearstonem/d2r-pcvr/blob/v0.3.23-windows-preview/CONTROLS.md)
+- [Full source comparison](https://github.com/bearstonem/d2r-pcvr/compare/v0.3.22-windows-preview...v0.3.23-windows-preview)
 - [Project on GitHub](https://github.com/bearstonem/d2r-pcvr)
 - [Discord](https://discord.gg/DmbFfJAnnm)
 - [Support](https://ko-fi.com/bearstonem)
 
 <!-- PCVR_IN_HEADSET_NOTES
-release: v0.3.22-windows-preview
+release: v0.3.23-windows-preview
 credits: ChuckRibbits; beadlebytes; Sergious.
-- Hotfix: repair keeps an unchanged launcher icon instead of overwriting the open file.
-- Setup: a locked, changed icon shows close-launcher and retry instructions.
+- Hotfix: loot labels stay visible when looking down, including with Show Items held.
+- Included from v0.3.22: repair keeps an unchanged launcher icon in place.
 - Included from v0.3.21: By turns, Both eyes and Replay rendering under Video.
 - v0.3.21: faster wrist/wheel refreshes and steadier potions and game labels.
 - v0.3.21: guard strain, chip damage, shield wear and improved parry timing.
