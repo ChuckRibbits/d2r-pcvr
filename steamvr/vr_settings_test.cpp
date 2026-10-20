@@ -1,4 +1,5 @@
 #include "vr_settings_help.h"
+#include "../vr/shield_pose.h"
 #include <cstdio>
 #include <cstdlib>
 #include <limits>
@@ -258,14 +259,21 @@ int main(){
     {Model shield;shield.Open(s);shield.Click({Kind::Tab,int(Page::Shield)});
         Check(RowCount(Page::Shield)==3&&RowKey(Page::Shield,0)==ShieldGrip&&RowKey(Page::Shield,1)==ShieldOut&&RowKey(Page::Shield,2)==ShieldUp,"the Shield page holds grip, out and up");
         Check(s.values[ShieldGrip]==3&&s.values[ShieldOut]==2&&s.values[ShieldUp]==2,"the shield defaults to 3 / 2 / 2 cm (tuned on a buckler)");
+        Check(Definitions[ShieldGrip].min==0&&Definitions[ShieldGrip].max==skel::shield::kGripMaxCm&&Definitions[ShieldOut].min==-skel::shield::kSideMaxCm&&
+              Definitions[ShieldOut].max==skel::shield::kSideMaxCm&&Definitions[ShieldUp].min==-skel::shield::kSideMaxCm&&Definitions[ShieldUp].max==skel::shield::kSideMaxCm&&
+              Definitions[ShieldGrip].step==1&&Definitions[ShieldOut].step==1&&Definitions[ShieldUp].step==1,"the Shield rows span what the pose accepts, 1 cm a step");
         Check(HelpAt(Page::Shield,(ValueBox(1).x+5.f)/Width,(ValueBox(1).y+5.f)/Height)==ShieldOut,"each Shield row explains itself");
         shield.Click(At(Page::Shield,Increase(0)));
         for(int i=0;i<3;++i)shield.Click(At(Page::Shield,Decrease(1)));
         Check(shield.Get()[ShieldGrip]==4&&shield.Get()[ShieldOut]==-1,"grip steps up by a centimeter; out goes below zero");
-        for(int i=0;i<30;++i)shield.Click(At(Page::Shield,Increase(0)));
-        Check(shield.Get()[ShieldGrip]==20,"grip stops at 20 cm");
+        for(int i=0;i<60;++i)shield.Click(At(Page::Shield,Increase(0)));
+        Check(shield.Get()[ShieldGrip]==40,"grip stops at 40 cm");
+        for(int i=0;i<60;++i)shield.Click(At(Page::Shield,Decrease(1)));
+        Check(shield.Get()[ShieldOut]==-25,"out stops at -25 cm");
+        for(int i=0;i<60;++i)shield.Click(At(Page::Shield,Increase(2)));
+        Check(shield.Get()[ShieldUp]==25,"up stops at +25 cm");
         const auto request=shield.Click({Kind::Apply});
-        Check(request.changed==((ChangeMask{1}<<ShieldGrip)|(ChangeMask{1}<<ShieldOut)),"shield edits change nothing else");
+        Check(request.changed==((ChangeMask{1}<<ShieldGrip)|(ChangeMask{1}<<ShieldOut)|(ChangeMask{1}<<ShieldUp)),"shield edits change nothing else");
     }
     {Model aim;aim.Open(s);aim.Click({Kind::Tab,int(Page::Aim)});
         Check(s.values[TargetHighlight]==0&&RowKey(Page::Aim,0)==TargetHighlight,"the monster outline is Off by default, first on the Aim page");

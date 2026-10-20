@@ -87,9 +87,9 @@ inline constexpr std::array<Definition,Count> Definitions{{
     {"Monster outline", "Outline strength for the monster you aim at; Off by default", L"gameplay",L"target_outline_pct",0,0,100,10},
     {"Monster outline colors", "Static: one color. By range: red near, orange mid-range, yellow far", L"gameplay",L"target_outline_by_range",0,0,1,1},
     {"Static color", "The outline's color around the color wheel", L"gameplay",L"target_outline_hue",45,0,345,15},
-    {"Shield grip offset", "Slides the shield up the forearm so the hand reaches its grip", L"gameplay",L"shield_grip_cm",3,0,20,1},
-    {"Shield out from the arm", "Moves the shield away from the forearm (+) or into it (-)", L"gameplay",L"shield_out_cm",2,-10,10,1},
-    {"Shield up", "Moves the shield across the forearm, square to Out", L"gameplay",L"shield_up_cm",2,-10,10,1},
+    {"Shield grip offset", "Slides the shield's centre up the forearm toward the elbow", L"gameplay",L"shield_grip_cm",3,0,40,1},
+    {"Shield out from the arm", "Moves the shield away from the forearm (+) or into it (-)", L"gameplay",L"shield_out_cm",2,-25,25,1},
+    {"Shield up", "Moves the shield across the forearm, square to Out", L"gameplay",L"shield_up_cm",2,-25,25,1},
 }};
 using Values=std::array<float,Count>;
 inline bool HapticKey(Key key){return key>=HapticStrength&&key<=HapticAlert;}

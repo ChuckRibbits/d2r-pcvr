@@ -6722,8 +6722,8 @@ void PushArms() {
     in.wrist = g_set.wrist.load();
 #ifdef D2RVR_NATIVE_OPENXR
     in.forearmTwist = in.wrist;   // a hand turned by the controller turns its forearm too
-    {const auto v = vrsettings::Read().values; in.shieldGripM = v[framevr::settings::ShieldGrip] * 0.01f;
-     in.shieldOutM = v[framevr::settings::ShieldOut] * 0.01f; in.shieldUpM = v[framevr::settings::ShieldUp] * 0.01f;}
+    {const auto v = vrsettings::Read().values; in.shieldGripCm = v[framevr::settings::ShieldGrip];
+     in.shieldOutCm = v[framevr::settings::ShieldOut]; in.shieldUpCm = v[framevr::settings::ShieldUp];}
 #endif
     in.wristDeg[0] = g_set.wristPitch.load(); in.wristDeg[1] = g_set.wristYaw.load(); in.wristDeg[2] = g_set.wristRoll.load();
     float yaw = 0.0f;

@@ -649,6 +649,24 @@ back restores normal arm proportions. Extension is bounded at twice the arm's
 current length for extreme tracking/calibration errors. Contact uses the same
 final shield pose. The owner verified this adjustment in the combined developer
 build; individual class/shield combinations were not specified.
+
+**Shield seat and forearm twist (2026-10-20).** The shield still takes the
+tracked hand's turn, but it now turns about its own centre instead of the wrist.
+That centre is read from the held shield's rendered mesh (its bounds around the
+bone it hangs on, logged once as `Frame shield fit`) and stays where the game
+hangs the shield on the forearm. Previously a large shield swung about the wrist
+by a lever as long as its radius: it sat far off the arm and wheeled round as the
+wrist bent, while a buckler barely moved. Until the mesh is read, the attach bone
+is the pivot. The side of the forearm the shield sits on (for the wrist stop and
+Out) comes from the bind pose, so it cannot flip as the arm moves. With the hands
+turning with the controllers, the forearm also takes a share of the hand's twist
+about its own length (sleeves and bracers follow the wrist), measured against the
+bind pose so animations do not shake it.
+**VR Settings > Shield** moves the seat from there: **Grip offset** up the
+forearm toward the elbow (0-40 cm), **Out** away from the forearm and **Up**
+across it (-25 to +25 cm each), in 1 cm steps at your scale; defaults 3 / 2 / 2
+cm (`[gameplay] shield_grip_cm`, `shield_out_cm`, `shield_up_cm`). All 0 puts the
+shield's centre exactly where the game hangs it. No value changes its turn.
 With **Smite** selected, an energetic
 left-arm swing or thrust that intersects an eligible creature requests one native
 Smite against that creature. A stationary shield cannot bash; one continuous

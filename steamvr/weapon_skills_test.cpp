@@ -163,6 +163,60 @@ int main() {
         for(int i=0;i<12;++i)assert(std::fabs(result.m[i]-original.m[i])<.0001f); // no shield growth or rotation from reach
         bindWrist.m[0]=0;assert(!skel::shield::Follow(bindWrist,bindShield,tracked,result));
     }
+    {   // 2026-10-20: the shield turns about its own centre, seated on the forearm
+        using namespace skel::bow;namespace sh=skel::shield;
+        auto turnAbout=[](Vec axis,float deg){   // a turn as a matrix (row vectors)
+            const Vec a=Normalized(axis);const Vec p=Normalized(Cross(a,std::fabs(a.y)<.9f?Vec{0,1,0}:Vec{1,0,0}));
+            const float t=deg*.0174533f;return Rotation(p,p*std::cos(t)+Cross(a,p)*std::sin(t));
+        };
+        // Seat: the centre lands on the target and the turn is the hand's, for a buckler and a big shield alike
+        const Vec target{1,2,3};
+        for(const float radius:{.12f,.45f})for(const float bend:{0.f,25.f,70.f,160.f}) {
+            Mat followed=turnAbout({0,0,1},bend);Position(followed,{4,1,-2});
+            const Vec centre{radius,0,0};Mat seated;
+            assert(sh::Seat(followed,centre,target,seated));
+            assert(Length(sh::Point(seated,centre)-target)<1e-4f);   // no lever: the bend moves it nowhere
+            for(int i=0;i<12;++i)assert(seated.m[i]==followed.m[i]);
+            Mat again;assert(sh::Seat(followed,centre,target,again));for(int i=0;i<16;++i)assert(again.m[i]==seated.m[i]);   // still hand, still shield
+        }
+        {Mat bad=Identity(),out=Identity();bad.m[0]=NAN;
+         assert(!sh::Seat(bad,{},target,out)&&out.m[0]==1);assert(!sh::Seat(Identity(),{NAN,0,0},target,out));}
+        // LearnArm/Axes: forearm along +z, the shield's side +x; orthonormal and continuous
+        Mat bindArm=Identity(),bindWrist=Identity();Position(bindWrist,{0,0,.26f});
+        for(const Vec centre:{Vec{.08f,0,.12f},Vec{0,0,.12f},Vec{.0001f,0,.1f}}) {   // off the arm; on its line; nearly on it
+            const auto arm=sh::LearnArm(bindArm,bindWrist,centre);assert(arm.ok);
+            Vec lastOut{};
+            for(int step=0;step<=720;++step) {   // twist the forearm two whole turns, half a degree a step, and bend it
+                Mat now=Multiply(turnAbout({0,0,1},step*.5f),turnAbout({1,0,0},step*.1f));Position(now,{.3f,1.2f,-.1f});
+                Vec along,out,up;assert(sh::Axes(now,arm,along,out,up));
+                assert(std::fabs(Length(along)-1)<1e-3f&&std::fabs(Length(out)-1)<1e-3f&&std::fabs(Length(up)-1)<1e-3f);
+                assert(std::fabs(Dot(along,out))<1e-3f&&std::fabs(Dot(along,up))<1e-3f&&std::fabs(Dot(out,up))<1e-3f);
+                if(step)assert(Dot(out,lastOut)>std::cos(1.f*.0174533f));   // never a jump, let alone a flip
+                lastOut=out;
+            }
+            if(centre.x>.01f){Vec along,out,up;assert(sh::Axes(Identity(),arm,along,out,up)&&out.x>.99f&&along.z>.99f);}
+        }
+        {Mat noArm=Identity();assert(!sh::LearnArm(noArm,noArm,{1,0,0}).ok);   // no forearm length
+         Mat singular=Identity();singular.m[0]=0;assert(!sh::LearnArm(singular,bindWrist,{1,0,0}).ok);
+         Vec a,o,u;assert(!sh::Axes(Identity(),sh::Arm{},a,o,u));}
+        // Offset: centimetres at the model's scale, clamped to the settings' ranges
+        const Vec x{1,0,0},y{0,1,0},z{0,0,1};
+        assert(Length(sh::Offset(z,x,y,3,2,2,10)-Vec{.2f,.2f,-.3f})<1e-5f);   // grip toward the elbow (-along)
+        assert(Length(sh::Offset(z,x,y,100,-100,100,100)-Vec{-25,25,-40})<1e-4f);
+        assert(Length(sh::Offset(z,x,y,-5,0,0,100))<1e-6f);   // grip never toward the fingers
+        assert(Length(sh::Offset(z,x,y,NAN,INFINITY,-INFINITY,100))<1e-6f);
+        assert(Length(sh::Offset(z,x,y,3,2,2,0))==0&&Length(sh::Offset(z,x,y,3,2,2,NAN))==0);
+        // Learn: three agreeing readings; skewed frames, absurd centres and jitter change nothing
+        sh::Fit fit;const Vec c{0,.3f,.05f};
+        assert(!sh::Learn(fit,c,.4f)&&!sh::Learn(fit,c,.4f)&&sh::Learn(fit,c,.4f)&&fit.ok&&Length(fit.centre-c)<1e-6f);
+        assert(!sh::Learn(fit,c+Vec{.003f,0,0},.4f)&&!sh::Learn(fit,c+Vec{.003f,0,0},.4f)&&!sh::Learn(fit,c+Vec{.003f,0,0},.4f));
+        assert(Length(fit.centre-c)<1e-6f);   // within 2% of its size: kept as it is
+        const Vec skew{.1f,.3f,0};
+        assert(!sh::Learn(fit,skew,.4f)&&!sh::Learn(fit,c,.4f)&&!sh::Learn(fit,skew,.4f)&&Length(fit.centre-c)<1e-6f);
+        assert(!sh::Learn(fit,{2,0,0},.4f)&&!sh::Learn(fit,{NAN,0,0},.4f)&&!sh::Learn(fit,c,0)&&Length(fit.centre-c)<1e-6f);
+        assert(!sh::Learn(fit,skew,.4f)&&!sh::Learn(fit,skew,.4f)&&sh::Learn(fit,skew,.4f)&&Length(fit.centre-skew)<1e-6f);   // a new shield
+        static_assert(sh::kGripMaxCm==40&&sh::kSideMaxCm==25);
+    }
     {
         using ::melee::native::FunctionRange;using ::melee::native::FindFunction;
         const std::array<FunctionRange,3> ranges={FunctionRange{0x100,0x140,0x800},FunctionRange{0x200,0x280,0x810},FunctionRange{0x300,0x380,0x820}};
