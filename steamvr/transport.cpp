@@ -112,7 +112,8 @@ std::atomic<double> maxPipelineMs{0};
 std::atomic<bool> deferredWait{false};
 std::atomic<bool> symmetricProjection{true};
 std::atomic<bool> turnsFromDrawnEye{true};
-std::atomic<bool> turnsKeepOwn{true};   // ConfigureTurnsKeepOwn
+std::atomic<int> turnsKeepOwn{1};   // ConfigureTurnsKeepOwn: 0 off, 1 near things only, 2 everywhere
+std::atomic<float> turnsKeepGap{48},turnsKeepReach{96};   // ConfigureTurnsKeepNear: a 4096-wide eye's pixels
 std::atomic<bool> eyeTracking{false};
 std::atomic<bool> motionControls{false};
 // Stamped each focused XR input while motion controls are on (menus included).
@@ -2512,7 +2513,13 @@ bool TurnEye(int i) {
         other.drawnFov={f.angleLeft,f.angleRight,f.angleDown,f.angleUp};
         other.nowFov={now.fov.angleLeft,now.fov.angleRight,now.fov.angleDown,now.fov.angleUp};
         const auto gap=drawnAt.at-at;other.apart=std::sqrt(gap.x*gap.x+gap.y*gap.y+gap.z*gap.z);
-        if(turnsKeepOwn.load())other.keep=TurnEdgePixels;   // this eye's own picture where it shows the same surface
+        if(const int keep=turnsKeepOwn.load()) {   // this eye's own picture where it shows the same surface
+            other.keep=TurnEdgePixels;
+            if(keep==1) {   // near things only
+                const float wide=float(turnImages[i^1]->GetDesc().Width)/4096;
+                other.keepNear=turnsKeepGap.load()*wide;other.keepReach=turnsKeepReach.load()*wide;
+            }
+        }
         fromDrawn=&other;
     }
     if(placed&&was.world.ok&&turnDepths[i].ok) {
@@ -2529,7 +2536,7 @@ bool TurnEye(int i) {
         moving=&depth;
     }
     static bool keepTold=false;
-    if(moving&&fromDrawn&&other.keep>0&&!keepTold){keepTold=true;Say("Frame OpenXR: by turns - the eye not drawn keeps its own picture where the drawn eye's shows the same surface");}
+    if(moving&&fromDrawn&&other.keep>0&&!keepTold){keepTold=true;Say("Frame OpenXR: by turns - the eye not drawn keeps its own picture where the drawn eye's shows the same surface (first frame doing so)");}
     D3D12_RESOURCE_BARRIER b[2]{};const UINT kept=fromDrawn?2:1;
     for(UINT k=0;k<kept;++k){b[k].Type=D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
         b[k].Transition={turnImages[i^k].Get(),D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES,D3D12_RESOURCE_STATE_COMMON,D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE};}
@@ -2816,17 +2823,22 @@ void ConfigureSymmetricProjection(bool on) {symmetricProjection.store(on);}
 void ConfigureTurnsFromDrawnEye(bool on) {
     if(turnsFromDrawnEye.exchange(on)!=on)Say(on?"Frame OpenXR: by turns - the eye not drawn mostly from the drawn eye's picture":"Frame OpenXR: by turns - the eye not drawn from its own image alone");
 }
-void SetTurnsKeepOwn(bool on) {
-    if(turnsKeepOwn.exchange(on)!=on)Say(on?"Frame OpenXR: by turns - the eye not drawn keeps its own picture where the drawn eye's shows the same surface":
-                                             "Frame OpenXR: by turns - the eye not drawn takes the drawn eye's picture wherever it reaches");
+void SetTurnsKeepOwn(int mode) {
+    static const char* const said[]={"Frame OpenXR: by turns - the eye not drawn takes the drawn eye's picture wherever it reaches",
+        "Frame OpenXR: by turns - the eye not drawn keeps its own picture where it shows the same surface, round near things only",
+        "Frame OpenXR: by turns - the eye not drawn keeps its own picture wherever it shows the same surface"};
+    mode=std::clamp(mode,0,2);
+    if(turnsKeepOwn.exchange(mode)!=mode)Say(said[mode]);
 }
-bool TurnsKeepOwn() {return turnsKeepOwn.load();}
-void ConfigureTurnsKeepOwn(bool on) {
+int TurnsKeepOwn() {return turnsKeepOwn.load();}
+void ConfigureTurnsKeepOwn(int mode) {
     // Every ini reload passes it (VR Settings' Apply too): only a change of
     // the ini's own value overrides the DEV switch.
     static std::atomic<int> read{-1};
-    if(read.exchange(on)!=int(on))SetTurnsKeepOwn(on);
+    mode=std::clamp(mode,0,2);
+    if(read.exchange(mode)!=mode)SetTurnsKeepOwn(mode);
 }
+void ConfigureTurnsKeepNear(float gap,float reach) {turnsKeepGap.store(std::clamp(gap,1.f,1000.f));turnsKeepReach.store(std::clamp(reach,16.f,1024.f));}
 void ConfigureEyeTracking(bool on) {eyeTracking.store(on);}
 void BeginEye(int eye) {
     hud::UiFrame(spatialMode,!journalMode,eye);

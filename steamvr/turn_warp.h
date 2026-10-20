@@ -104,10 +104,19 @@ struct TurnDepth {
     // instead dragged the ground and the grass round everything near along:
     // a heat haze (owner, the same day). 0: the drawn eye's everywhere.
     float keep=0;
+    // Kept everywhere, this eye was a frame behind the other all over - the
+    // grass, flames and monsters' motion - which the owner liked less than
+    // the ghosts. With keepNear only within keepReach target pixels of
+    // something nearer by more than keepNear pixels of parallax, as either
+    // eye sees it: the hands, the weapon, a monster close by, where a ghost
+    // is wide enough to see. 0: everywhere.
+    float keepNear=0,keepReach=0;
 };
 inline constexpr float TurnEdgePixels=2;
 // The grid's spacing in target pixels: an edge in depth stays within a few.
 inline constexpr uint32_t TurnGridStep=4;
+// TurnDepth::keepNear's blocks, target pixels square: the nearest depth in each.
+inline constexpr uint32_t TurnNearBlock=16;
 // The game's interface (labels over monsters, names, chat) has no depth of its
 // own. Moved with the scene behind it into the eye not drawn, each label was
 // misplaced and cut where a monster's edge parts the depth, a clean one every
@@ -126,12 +135,19 @@ class TurnWarp {
     Microsoft::WRL::ComPtr<ID3D12Resource> depthTarget;   // this eye's grid's own depth test, the target's size (R32 typeless: read by the next)
     Microsoft::WRL::ComPtr<ID3D12Resource> drawnDepthTarget;   // the drawn eye's grid's
     Microsoft::WRL::ComPtr<ID3D12Resource> ownTurned;   // the target as this eye's grid left it (TurnDepth::keep)
+    // TurnDepth::keepNear: the nearest depth within reach of each block, the
+    // drawn eye's and this eye's, and one between (R32_FLOAT).
+    Microsoft::WRL::ComPtr<ID3D12RootSignature> nearRoot;
+    Microsoft::WRL::ComPtr<ID3D12PipelineState> reducePipeline,spreadPipeline;
+    Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> nearTargets;
+    std::array<Microsoft::WRL::ComPtr<ID3D12Resource>,3> nears;
     DXGI_FORMAT format=DXGI_FORMAT_UNKNOWN;
 public:
     // format: the eye swapchain's typed format, of the source and the target alike.
     bool Initialize(ID3D12Device*,DXGI_FORMAT format,void (*log)(const char*));
     bool Ready() const {return pipeline!=nullptr;}
     bool DepthReady() const {return depthPipeline!=nullptr;}
+    bool NearReady() const {return spreadPipeline!=nullptr;}
     // Render will take these: checked before a swapchain image is acquired for it.
     bool Fits(ID3D12Resource* source,ID3D12Resource* target) const;
     // source in PIXEL_SHADER_RESOURCE, target in RENDER_TARGET. slot 0 or 1, one

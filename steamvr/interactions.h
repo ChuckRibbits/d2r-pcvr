@@ -208,7 +208,7 @@ struct Snapshot {
     QuickInventory quick;
     bool developer=false;
     bool devDebugDraws=false;
-    bool devTurnsKeepOwn=false;   // [stereo] turns_keep_own as it stands (DEV switch)
+    int devTurnsKeepOwn=0;   // [stereo] turns_keep_own as it stands (DEV switch): 0 off, 1 near things, 2 everywhere
     int devClass=-1,skillClass=-1;
     uint64_t session=0,at=0;
     uint32_t revision=0,activeSet=0;

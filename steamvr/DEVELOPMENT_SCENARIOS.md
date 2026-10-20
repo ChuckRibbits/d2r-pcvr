@@ -160,16 +160,19 @@ every stage. `mesh=1` confirms the current check actually uses measured bounds.
 
 ## By turns own picture
 
-Select **DEV > Equipment > By turns own picture** to switch, for the session,
+Select **DEV > Equipment > By turns own picture** to step, for the session,
 where the eye not drawn takes its picture with Stereo rendering: By turns.
-**ON** (the default, `[stereo] turns_keep_own=1`): it keeps its own picture
-from a frame back wherever that shows the same surface as the eye just drawn,
-so the glow round a bright blade and a monster's hair stand where that eye
-sees them. **OFF**: it takes the drawn eye's picture wherever it reaches, as
-v0.3.23 does. The button shows the current state and the frame log records
-each switch. It changes nothing else and no saved setting; editing the ini's
-value applies that value again. Compare the sword against the sky, monsters'
-heads close up and walking monsters with the same view in both states.
+**NEAR** (the default, `[stereo] turns_keep_own=1`): round near things - the
+hands, the weapon, a monster close by - it keeps its own picture from a frame
+back where that shows the same surface as the eye just drawn, so the glow round
+a bright blade and a monster's hair stand where that eye sees them; elsewhere
+it takes the drawn eye's picture. **ALL** (2): its own picture wherever it
+shows the same surface, so the whole eye is a frame behind the other. **OFF**
+(0): the drawn eye's picture wherever it reaches, as v0.3.23 does. The button
+shows the current state and the frame log records each step. It changes
+nothing else and no saved setting; editing the ini's value applies that value
+again. Compare the sword against the sky, monsters' heads close up and walking
+monsters with the same view in each state.
 
 ## Locations
 

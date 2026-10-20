@@ -18,7 +18,7 @@ inline constexpr int Level10Choice=28,Level30Choice=29,Level60Choice=30,HealChoi
 inline constexpr int StarterPrimaryChoice=32,StarterAlternateChoice=33;
 inline constexpr int DebugDrawsChoice=34;
 inline constexpr int KurastSewersChoice=35,UpperKurastChoice=36;
-// A session switch, like the debug draws: [stereo] turns_keep_own for A/B.
+// A session switch, like the debug draws: [stereo] turns_keep_own (off, near things, all) for A/B.
 inline constexpr int TurnsKeepOwnChoice=37;
 inline constexpr int PageSize=14;
 inline constexpr std::array<Choice,38> Choices{{
@@ -66,7 +66,7 @@ inline constexpr std::array<Choice,38> Choices{{
     {"Render debug draws", "Toggle shield block outline and hit feedback", nullptr},
     {"Kurast Sewers", "Level 1 / take stairs back out to inspect entrances", "goto 92"},
     {"Upper Kurast", "Act III / second sewer-entrance region", "goto 81"},
-    {"By turns own picture", "Eye not drawn: own picture where the same", nullptr},
+    {"By turns own picture", "Eye not drawn: off / near things / all", nullptr},
 }};
 // Stable action IDs are independent of their presentation order.
 inline constexpr int PageCount=5;
