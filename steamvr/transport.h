@@ -21,8 +21,11 @@ void ConfigureTurnsFromDrawnEye(bool enabled);
 // [stereo] turns_keep_own (1): with it, the eye not drawn keeps its own older
 // picture wherever that shows the same surface as the drawn eye's, so glows
 // and hair stand where this eye sees them (TurnDepth::keep); 0: the drawn
-// eye's picture wherever it reaches.
+// eye's picture wherever it reaches. Applied when the ini's value changes;
+// DEV > Equipment switches it for the session (Set), and reads it back.
 void ConfigureTurnsKeepOwn(bool enabled);
+void SetTurnsKeepOwn(bool enabled);
+bool TurnsKeepOwn();
 void ConfigureEyeTracking(bool enabled);
 void ConfigureGameplay(bool enabled);
 void ConfigureQuiver(bool enabled,bool preview); // [bow] quiver, quiver_preview

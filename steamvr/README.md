@@ -154,9 +154,9 @@ headset frame are drawn:
   old. The drawn eye's picture goes where the two part (what moved since)
   and where the own image has nothing (beside the edges of near things);
   inside a moving monster the surface can be a frame old.
-  `[stereo] turns_keep_own=0` (live) takes the drawn eye's picture wherever
-  it reaches; `turns_from_drawn_eye=0` (live) keeps the other eye's own
-  image alone. The belt's potion models, drawn by the mod over the game's picture,
+  `[stereo] turns_keep_own=0` (live; in developer mode also DEV > Equipment >
+  By turns own picture) takes the drawn eye's picture wherever it reaches;
+  `turns_from_drawn_eye=0` (live) keeps the other eye's own image alone. The belt's potion models, drawn by the mod over the game's picture,
   are drawn fresh in that eye at its own pose. The game's interface (labels
   and health bars over monsters, names, chat) is taken out of each eye's
   picture before it is kept and laid back over it as the game lays it; the

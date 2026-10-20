@@ -21,6 +21,8 @@ static std::vector<Task> tasks;
 namespace gamestate {uint64_t LocalPlayer(){return local;}bool MenuOpen(){return menu;}}
 namespace interactionstate {Snapshot Read(){return state;}}
 namespace framevr::logging {void Write(const char*){}}
+static bool keepOwn=true;
+namespace framevr {void SetTurnsKeepOwn(bool on){keepOwn=on;}bool TurnsKeepOwn(){return keepOwn;}}
 static Threads::Result Queue(Threads::Callback callback,void* data,bool game) {
     assert(devscenarios::Status().result==Result::Pending);
     if(failQueue)return Threads::Result::Unavailable;
@@ -255,6 +257,15 @@ int main(){
     assert(!devscenarios::DebugDraws());
     devscenarios::Request(Make(DebugDrawsChoice));++local;Run(tasks.size()-1);--local;
     assert(!devscenarios::DebugDraws()&&devscenarios::Status().result==Result::Refused);
+    // The By turns switch flips the transport's [stereo] turns_keep_own for
+    // the session, also with no console/item operations; a stale one does not.
+    for(bool expected:{false,true}) {
+        devscenarios::Request(Make(TurnsKeepOwnChoice));assert(!tasks.back().game);Run(tasks.size()-1);
+        assert(devscenarios::Status().result==Result::TurnsUpdated&&keepOwn==expected);
+        Snapshot snapshot;devscenarios::Capture(snapshot);assert(snapshot.devTurnsKeepOwn==expected);
+    }
+    devscenarios::Request(Make(TurnsKeepOwnChoice));++local;Run(tasks.size()-1);--local;
+    assert(keepOwn&&devscenarios::Status().result==Result::Refused);
     assert(commands.size()==debugCommands&&itemCalls==debugItems);
     devscenarios::execute=Execute;
     inlineQueue=true;devscenarios::Request(Make(3,100));

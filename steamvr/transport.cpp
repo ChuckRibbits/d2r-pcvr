@@ -2816,9 +2816,16 @@ void ConfigureSymmetricProjection(bool on) {symmetricProjection.store(on);}
 void ConfigureTurnsFromDrawnEye(bool on) {
     if(turnsFromDrawnEye.exchange(on)!=on)Say(on?"Frame OpenXR: by turns - the eye not drawn mostly from the drawn eye's picture":"Frame OpenXR: by turns - the eye not drawn from its own image alone");
 }
-void ConfigureTurnsKeepOwn(bool on) {
+void SetTurnsKeepOwn(bool on) {
     if(turnsKeepOwn.exchange(on)!=on)Say(on?"Frame OpenXR: by turns - the eye not drawn keeps its own picture where the drawn eye's shows the same surface":
                                              "Frame OpenXR: by turns - the eye not drawn takes the drawn eye's picture wherever it reaches");
+}
+bool TurnsKeepOwn() {return turnsKeepOwn.load();}
+void ConfigureTurnsKeepOwn(bool on) {
+    // Every ini reload passes it (VR Settings' Apply too): only a change of
+    // the ini's own value overrides the DEV switch.
+    static std::atomic<int> read{-1};
+    if(read.exchange(on)!=int(on))SetTurnsKeepOwn(on);
 }
 void ConfigureEyeTracking(bool on) {eyeTracking.store(on);}
 void BeginEye(int eye) {
