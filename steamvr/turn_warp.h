@@ -90,10 +90,20 @@ struct TurnDepth {
 inline constexpr float TurnEdgePixels=2;
 // The grid's spacing in target pixels: an edge in depth stays within a few.
 inline constexpr uint32_t TurnGridStep=4;
+// The game's interface (labels over monsters, names, chat) has no depth of its
+// own. Moved with the scene behind it into the eye not drawn, each label was
+// misplaced and cut where a monster's edge parts the depth, a clean one every
+// other frame: nameplates flickered (a player, through the owner, 2026-10-19).
+// By turns it is taken out of the game's picture (hud::TakeInterface) and laid
+// back over each eye (Interface): premultiplied colour, alpha the world showing
+// through, as the game's own last pass lays it - so in the picture's UNORM
+// encoding (UnormView), never through an sRGB view, which blends in linear
+// light and lightens the label boxes.
+inline constexpr std::array<float,9> TurnIdentity{1,0,0, 0,1,0, 0,0,1};
 
 class TurnWarp {
     Microsoft::WRL::ComPtr<ID3D12RootSignature> root,depthRoot;
-    Microsoft::WRL::ComPtr<ID3D12PipelineState> pipeline,depthPipeline;
+    Microsoft::WRL::ComPtr<ID3D12PipelineState> pipeline,depthPipeline,layerPipeline;
     Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> sourceHeap,targetHeap,depthHeap;
     Microsoft::WRL::ComPtr<ID3D12Resource> depthTarget;   // the grid's own depth test, the target's size
     DXGI_FORMAT format=DXGI_FORMAT_UNKNOWN;
@@ -110,5 +120,13 @@ public:
     // the drawn eye's picture laid over it; false only when nothing was drawn.
     bool Render(ID3D12Device*,ID3D12GraphicsCommandList*,ID3D12Resource* source,ID3D12Resource* target,
                 const std::array<float,9>& homography,int slot,const TurnDepth* depth=nullptr,const TurnDepth* drawn=nullptr);
+    bool InterfaceReady() const {return layerPipeline!=nullptr;}
+    // The interface layer (R16G16B16A16_FLOAT, PIXEL_SHADER_RESOURCE) over target
+    // (RENDER_TARGET; the eye format's UnormView, or typeless), each pixel from
+    // `homography` (this frame's image coordinates to the layer's; TurnIdentity
+    // where it was drawn). Nothing is laid where the layer is not. at 0-3: its
+    // own descriptor, two an eye, as the GPU may still read the others'.
+    bool Interface(ID3D12Device*,ID3D12GraphicsCommandList*,ID3D12Resource* layer,ID3D12Resource* target,
+                   const std::array<float,9>& homography,int at);
 };
 }

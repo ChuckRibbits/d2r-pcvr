@@ -24,6 +24,15 @@ float4 PS(Pixel p):SV_Target {
     if(h.z<=1e-6)return float4(0,0,0,1);   // behind the drawn eye: nothing it saw
     return drawn.SampleLevel(edge,h.xy/h.z,0);   // past its edge: the edge drawn out
 }
+// The game's interface laid over (Interface): blended as dest * a + rgb.
+float4 Layer(Pixel p):SV_Target {
+    const float3 at=float3(p.uv,1);
+    const float3 h=float3(dot(row0.xyz,at),dot(row1.xyz,at),dot(row2.xyz,at));
+    const float2 uv=h.xy/max(h.z,1e-6);
+    if(h.z<=1e-6||any(uv<0)||any(uv>1))return float4(0,0,0,1);   // none of the layer here: the picture as it is
+    const float4 l=drawn.SampleLevel(edge,uv,0);
+    return float4(l.rgb,saturate(l.a));
+}
 )";
 // The grid with the scene's depth (TurnDepth).
 constexpr char DepthShader[]=R"(
@@ -81,7 +90,7 @@ bool TurnWarp::Initialize(ID3D12Device* device,DXGI_FORMAT targetFormat,void (*l
     const auto d12=GetModuleHandleW(L"d3d12.dll");
     const auto serialize=d12?reinterpret_cast<decltype(&D3D12SerializeRootSignature)>(GetProcAddress(d12,"D3D12SerializeRootSignature")):nullptr;
     if(!compile||!serialize)return fail("no shader compiler or root serializer");
-    ComPtr<ID3DBlob> vs,ps,errors,signature;
+    ComPtr<ID3DBlob> vs,ps,lps,errors,signature;
     const auto v=compile(Shader,sizeof(Shader)-1,"turn-warp",nullptr,nullptr,"VS","vs_5_0",D3DCOMPILE_OPTIMIZATION_LEVEL3,0,&vs,&errors);
     const auto p=compile(Shader,sizeof(Shader)-1,"turn-warp",nullptr,nullptr,"PS","ps_5_0",D3DCOMPILE_OPTIMIZATION_LEVEL3,0,&ps,&errors);
     if(FAILED(v)||FAILED(p)){if(log&&errors)log(static_cast<const char*>(errors->GetBufferPointer()));return fail("shader compile failed");}
@@ -107,8 +116,20 @@ bool TurnWarp::Initialize(ID3D12Device* device,DXGI_FORMAT targetFormat,void (*l
     state.PrimitiveTopologyType=D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
     state.NumRenderTargets=1;state.RTVFormats[0]=targetFormat;state.SampleDesc.Count=1;
     if(FAILED(device->CreateGraphicsPipelineState(&state,IID_PPV_ARGS(&pipeline))))return fail("no pipeline for the eye format");
-    // Each eye's slot: its image and depth, then the drawn eye's (Render's `drawn`).
-    D3D12_DESCRIPTOR_HEAP_DESC heap{};heap.Type=D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;heap.NumDescriptors=8;heap.Flags=D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
+    // The interface pass is optional: without it By turns leaves the interface in the picture.
+    if(SUCCEEDED(compile(Shader,sizeof(Shader)-1,"turn-warp",nullptr,nullptr,"Layer","ps_5_0",D3DCOMPILE_OPTIMIZATION_LEVEL3,0,&lps,nullptr))) {
+        D3D12_GRAPHICS_PIPELINE_STATE_DESC layer=state;layer.PS={lps->GetBufferPointer(),lps->GetBufferSize()};
+        auto& blend=layer.BlendState.RenderTarget[0];
+        blend.BlendEnable=TRUE;blend.SrcBlend=D3D12_BLEND_ONE;blend.DestBlend=D3D12_BLEND_SRC_ALPHA;blend.BlendOp=D3D12_BLEND_OP_ADD;
+        blend.SrcBlendAlpha=D3D12_BLEND_ZERO;blend.DestBlendAlpha=D3D12_BLEND_ONE;blend.BlendOpAlpha=D3D12_BLEND_OP_ADD;
+        blend.RenderTargetWriteMask=D3D12_COLOR_WRITE_ENABLE_RED|D3D12_COLOR_WRITE_ENABLE_GREEN|D3D12_COLOR_WRITE_ENABLE_BLUE;
+        layer.RTVFormats[0]=UnormView(targetFormat);
+        if(FAILED(device->CreateGraphicsPipelineState(&layer,IID_PPV_ARGS(&layerPipeline))))layerPipeline.Reset();
+    }
+    if(!layerPipeline&&log)log("Frame OpenXR: by turns - laying the game's interface over each eye unavailable; it stays in the picture");
+    // Each eye's slot: its image and depth, then the drawn eye's (Render's `drawn`);
+    // after both, two an eye for the interface (Interface's `at`).
+    D3D12_DESCRIPTOR_HEAP_DESC heap{};heap.Type=D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;heap.NumDescriptors=12;heap.Flags=D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
     if(FAILED(device->CreateDescriptorHeap(&heap,IID_PPV_ARGS(&sourceHeap))))return fail("no descriptor heap");
     heap.Type=D3D12_DESCRIPTOR_HEAP_TYPE_RTV;heap.NumDescriptors=1;heap.Flags=D3D12_DESCRIPTOR_HEAP_FLAG_NONE;
     if(FAILED(device->CreateDescriptorHeap(&heap,IID_PPV_ARGS(&targetHeap))))return fail("no target heap");
@@ -220,6 +241,34 @@ bool TurnWarp::Render(ID3D12Device* device,ID3D12GraphicsCommandList* list,ID3D1
     };
     if(usable(depth))grid(*depth,source,0);
     if(other)grid(*drawn,drawn->image,2);
+    return true;
+}
+bool TurnWarp::Interface(ID3D12Device* device,ID3D12GraphicsCommandList* list,ID3D12Resource* layer,ID3D12Resource* target,
+                         const std::array<float,9>& homography,int at) {
+    if(!layerPipeline||!layer||!target||at<0||at>3)return false;
+    const auto l=layer->GetDesc(),t=target->GetDesc();const auto view=UnormView(format);
+    if(!RenderTargetCompatible(l.Format,DXGI_FORMAT_R16G16B16A16_FLOAT)||!RenderTargetCompatible(t.Format,view)||
+       l.SampleDesc.Count!=1||t.SampleDesc.Count!=1)return false;
+    D3D12_SHADER_RESOURCE_VIEW_DESC srv{};srv.Format=DXGI_FORMAT_R16G16B16A16_FLOAT;srv.ViewDimension=D3D12_SRV_DIMENSION_TEXTURE2D;
+    srv.Shader4ComponentMapping=D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;srv.Texture2D.MipLevels=1;
+    const UINT step=device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+    auto cpu=sourceHeap->GetCPUDescriptorHandleForHeapStart();auto gpu=sourceHeap->GetGPUDescriptorHandleForHeapStart();
+    cpu.ptr+=SIZE_T(step)*(8+at);gpu.ptr+=UINT64(step)*(8+at);
+    device->CreateShaderResourceView(layer,&srv,cpu);
+    D3D12_RENDER_TARGET_VIEW_DESC rtv{};rtv.Format=view;rtv.ViewDimension=D3D12_RTV_DIMENSION_TEXTURE2D;
+    const auto rtvHandle=targetHeap->GetCPUDescriptorHandleForHeapStart();
+    device->CreateRenderTargetView(target,&rtv,rtvHandle);
+    list->SetGraphicsRootSignature(root.Get());
+    ID3D12DescriptorHeap* heaps[]={sourceHeap.Get()};list->SetDescriptorHeaps(1,heaps);
+    list->SetGraphicsRootDescriptorTable(0,gpu);
+    float rows[12]{};
+    for(int r=0;r<3;++r)for(int c=0;c<3;++c)rows[r*4+c]=homography[r*3+c];
+    list->SetGraphicsRoot32BitConstants(1,12,rows,0);
+    list->OMSetRenderTargets(1,&rtvHandle,FALSE,nullptr);
+    const D3D12_VIEWPORT viewport{0,0,float(t.Width),float(t.Height),0,1};const D3D12_RECT rect{0,0,LONG(t.Width),LONG(t.Height)};
+    list->RSSetViewports(1,&viewport);list->RSSetScissorRects(1,&rect);
+    list->SetPipelineState(layerPipeline.Get());
+    list->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);list->DrawInstanced(3,1,0,0);
     return true;
 }
 }

@@ -1,4 +1,5 @@
 #include "turn_warp.h"
+#include "dxgi_views.h"
 #include <windows.h>
 #include <algorithm>
 #include <cmath>
@@ -117,13 +118,13 @@ struct Gpu {
         Check(device->CreateCommittedResource(&hp,D3D12_HEAP_FLAG_NONE,&b,state,nullptr,IID_PPV_ARGS(&r)),"buffer",0);
         return r;
     }
-    // 4-byte texels, row by row, into a texture left in `after`
-    void Upload(ID3D12Resource* texture,const std::vector<uint32_t>& texels,D3D12_RESOURCE_STATES after) {
+    // texels, row by row, into a texture left in `after`
+    template<class Texel> void Upload(ID3D12Resource* texture,const std::vector<Texel>& texels,D3D12_RESOURCE_STATES after) {
         const auto desc=texture->GetDesc();D3D12_PLACED_SUBRESOURCE_FOOTPRINT f{};UINT64 bytes=0;
         device->GetCopyableFootprints(&desc,0,1,0,&f,nullptr,nullptr,&bytes);
         auto upload=Buffer(bytes,D3D12_HEAP_TYPE_UPLOAD,D3D12_RESOURCE_STATE_GENERIC_READ);
         void* data=nullptr;D3D12_RANGE none{0,0};Check(upload->Map(0,&none,&data),"map upload",0);
-        for(UINT y=0;y<desc.Height;++y)std::memcpy(static_cast<char*>(data)+y*f.Footprint.RowPitch,&texels[y*desc.Width],desc.Width*4);
+        for(UINT y=0;y<desc.Height;++y)std::memcpy(static_cast<char*>(data)+y*f.Footprint.RowPitch,&texels[y*desc.Width],desc.Width*sizeof(Texel));
         upload->Unmap(0,nullptr);
         Record([&]{
             D3D12_TEXTURE_COPY_LOCATION from{},to{};from.pResource=upload.Get();from.Type=D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT;from.PlacedFootprint=f;
@@ -134,11 +135,15 @@ struct Gpu {
     }
     // The warp into `target` (RENDER_TARGET), read back.
     std::vector<uint32_t> Warp(framevr::TurnWarp& warp,ID3D12Resource* source,ID3D12Resource* target,const std::array<float,9>& h,int slot,const framevr::TurnDepth* depth=nullptr,const framevr::TurnDepth* drawn=nullptr) {
+        return Drawn(target,[&]{Check(warp.Render(device.Get(),list.Get(),source,target,h,slot,depth,drawn),"render");});
+    }
+    // What `draw` recorded into `target` (RENDER_TARGET), read back.
+    std::vector<uint32_t> Drawn(ID3D12Resource* target,const std::function<void()>& draw) {
         const auto desc=target->GetDesc();D3D12_PLACED_SUBRESOURCE_FOOTPRINT f{};UINT64 bytes=0;
         device->GetCopyableFootprints(&desc,0,1,0,&f,nullptr,nullptr,&bytes);
         auto readback=Buffer(bytes,D3D12_HEAP_TYPE_READBACK,D3D12_RESOURCE_STATE_COPY_DEST);
         Record([&]{
-            Check(warp.Render(device.Get(),list.Get(),source,target,h,slot,depth,drawn),"render");
+            draw();
             D3D12_RESOURCE_BARRIER b{};b.Type=D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
             b.Transition={target,D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES,D3D12_RESOURCE_STATE_RENDER_TARGET,D3D12_RESOURCE_STATE_COPY_SOURCE};list->ResourceBarrier(1,&b);
             D3D12_TEXTURE_COPY_LOCATION from{},to{};from.pResource=target;from.Type=D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX;
@@ -290,7 +295,62 @@ static void Move(Gpu& gpu,bool typeless) {
     std::printf("Turn depth GPU pass passed (%s target): wall, sky, occlusion, edge, carried, the drawn eye's picture, drawn corner\n",typeless?"typeless":"typed");
 }
 
+// IEEE half for the interface's texels: 0 and normal values only.
+static uint16_t Half(float f) {
+    if(f==0)return 0;
+    uint32_t b;std::memcpy(&b,&f,4);
+    return uint16_t(((b>>16)&0x8000u)|((((b>>23)&0xffu)-112u)<<10)|((b>>13)&0x3ffu));
+}
+// The game's interface laid back over a picture (TurnWarp::Interface), as the
+// game's last pass lays it: picture * alpha + colour, in the picture's UNORM
+// encoding, its alpha kept; nothing laid where the layer is not.
+static void Lay(Gpu& gpu,bool typeless) {
+    framevr::TurnWarp warp;
+    Check(warp.Initialize(gpu.device.Get(),DXGI_FORMAT_R8G8B8A8_UNORM_SRGB,nullptr)&&warp.InterfaceReady(),"the interface pass is built");
+    Check(framevr::UnormView(DXGI_FORMAT_R8G8B8A8_UNORM_SRGB)==DXGI_FORMAT_R8G8B8A8_UNORM&&
+          framevr::TypelessFamily(DXGI_FORMAT_B8G8R8A8_UNORM_SRGB)==DXGI_FORMAT_B8G8R8A8_TYPELESS&&
+          framevr::TypelessFamily(DXGI_FORMAT_R16G16B16A16_FLOAT)==DXGI_FORMAT_UNKNOWN,"the interface's views");
+    constexpr UINT side=16;
+    const uint32_t scene=0x80c06030u;   // r 0x30, g 0x60, b 0xc0; alpha 0x80, a marker the pass keeps
+    using Texel=std::array<uint16_t,4>;
+    std::vector<Texel> texels(side*side,Texel{0,0,0,Half(1)});   // the world through everywhere
+    for(UINT x=4;x<8;++x)texels[6*side+x]=Texel{Half(.5f),Half(.25f),0,Half(.5f)};   // a label: premultiplied, half the world through
+    auto layer=gpu.Texture(side,side,DXGI_FORMAT_R16G16B16A16_FLOAT,D3D12_RESOURCE_FLAG_NONE,D3D12_RESOURCE_STATE_COPY_DEST);
+    gpu.Upload(layer.Get(),texels,D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+    const auto lane=[](uint32_t c,int k){return float((c>>k*8)&255)/255;};
+    const uint32_t label=[&]{
+        const float rgb[3]={.5f,.25f,0};uint32_t c=scene&0xff000000u;
+        for(int k=0;k<3;++k)c|=uint32_t(std::lround((lane(scene,k)*.5f+rgb[k])*255))<<k*8;
+        return c;
+    }();
+    int at=0;
+    const auto lay=[&](const std::array<float,9>& h) {
+        auto target=gpu.Texture(side,side,typeless?DXGI_FORMAT_R8G8B8A8_TYPELESS:DXGI_FORMAT_R8G8B8A8_UNORM,D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET,D3D12_RESOURCE_STATE_COPY_DEST);
+        gpu.Upload(target.Get(),std::vector<uint32_t>(side*side,scene),D3D12_RESOURCE_STATE_RENDER_TARGET);
+        const int slot=at;at=(at+1)%4;
+        return gpu.Drawn(target.Get(),[&]{Check(warp.Interface(gpu.device.Get(),gpu.list.Get(),layer.Get(),target.Get(),h,slot),"interface");});
+    };
+    const auto expect=[&](const std::vector<uint32_t>& out,int from,int to,const char* what) {
+        bool same=true;
+        for(UINT y=0;y<side;++y)for(UINT x=0;x<side;++x) {
+            const uint32_t want=y==6&&int(x)>=from&&int(x)<to?label:scene;
+            if(!Same(out[y*side+x],want)||(out[y*side+x]>>24)!=(scene>>24)) {
+                if(same)std::printf("%s: pixel %u,%u = %08x, expected %08x\n",what,x,y,out[y*side+x],want);same=false;
+            }
+        }
+        Check(same,what);
+    };
+    expect(lay(framevr::TurnIdentity),4,8,"the label over the picture as the game lays it; the rest and the alpha as they were");
+    expect(lay({1,0,2.f/side, 0,1,0, 0,0,1}),2,6,"turned: each pixel from where the homography reads the layer");
+    expect(lay({1,0,.5f, 0,1,0, 0,0,1}),0,0,"nothing laid where the layer is not");
+    // An sRGB view would blend in linear light: never taken.
+    auto srgb=gpu.Texture(side,side,DXGI_FORMAT_R8G8B8A8_UNORM_SRGB,D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET,D3D12_RESOURCE_STATE_RENDER_TARGET);
+    bool laid=true;gpu.Record([&]{laid=warp.Interface(gpu.device.Get(),gpu.list.Get(),layer.Get(),srgb.Get(),framevr::TurnIdentity,0);});
+    Check(!laid,"an sRGB-typed target is refused");
+    std::printf("Interface GPU pass passed (%s target): blend, turned, outside the layer, sRGB refused\n",typeless?"typeless":"typed");
+}
+
 int main(int argc,char** argv) {try {
     const bool typeless=argc>1&&!std::strcmp(argv[1],"--typeless");
-    Math();Gpu gpu;Turn(gpu,typeless);Move(gpu,typeless);return 0;
+    Math();Gpu gpu;Turn(gpu,typeless);Move(gpu,typeless);Lay(gpu,typeless);return 0;
 }catch(const std::exception& e){std::fprintf(stderr,"%s\n",e.what());return 1;}}
