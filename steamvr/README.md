@@ -149,7 +149,8 @@ headset frame are drawn:
   view) keeps the other eye's own older image, and transparent effects and
   the game's labels, without depth of their own, look as deep as what is
   behind them. `[stereo] turns_from_drawn_eye=0` (live) keeps the other
-  eye's own image alone. Edges where something near uncovers what is behind it
+  eye's own image alone. The belt's potion models, drawn by the mod over the
+  game's picture, are drawn fresh in that eye at its own pose. Edges where something near uncovers what is behind it
   stretch for that frame; transparent effects and the game's labels move as
   the scene behind them. Within arm's reach (nearer than 1.0 m along the
   view, blended out by 1.6 m) points move with the hero instead of the world:
