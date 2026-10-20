@@ -106,8 +106,8 @@ void Shutdown(bool preserveResolution=false);
 void BeginPair(bool byTurns=false,bool replay=false);
 void BeginEye(int eye);
 // VR Settings > Video > Stereo rendering: 0 both eyes, 1 By turns (the eye not
-// drawn turned and moved with the scene's depth; the default), 2 Replay (one
-// CPU pass, the right eye replayed from it).
+// drawn turned and moved with the scene's depth; the default). Replay (2) is
+// no longer a choice (vr_settings.h).
 int StereoRendering();
 // [render] defer_gpu_wait: frames end without waiting for the GPU.
 bool GpuWaitDeferred();

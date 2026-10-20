@@ -132,8 +132,6 @@ a workaround: background/focus handling also affects input and frame pacing.
 VR Settings > Video > **Stereo rendering** chooses how the two eyes of each
 headset frame are drawn:
 
-- **Replay** draws both eyes from one game frame for about one eye's CPU
-  work (below).
 - **Both eyes** draws the left eye, then the right with the game time held.
 - **By turns**, the default, draws one eye per game frame, alternating. The headset gets that
   eye fresh and the other eye's last image turned on the GPU from the pose it
@@ -188,28 +186,12 @@ during stereo captures and on any frame without a reusable image for both eyes.
 With **Desktop shows one eye**, the kept left image covers the right frames on
 the monitor.
 
-**Replay** (adapted from upstream's "one pass, two pictures") draws both eyes
-from one game frame for about one eye's CPU work. The game draws the left eye
-as usual while every list it submits is noted, and the camera constant buffers
-those lists bind come from slots of the mod's own instead: the left eye's
-values for the left pass, the right eye's for the replay (the eye gap folded
-into the projection, `steamvr/replay_camera.h`). The game's present at the end
-of the left pass is held: the left eye's effects run and it goes to the
-headset. The noted lists then run again on the same queues, in the game's own
-submissions, the right eye's effects run, and one real present takes it to
-the headset. The GPU still draws both eyes, shadow maps included, so it helps
-when the CPU limits the frame rate. It starts after 240 pairs in a settled
-area and pauses for every area change, menu, long frame or stereo capture,
-drawing two passes until it can run again. The eyes share the game's labels,
-the gaze-driven foveation centre and one DLSS instance (its history alternates
-eyes, so DLSS may smear); the right eye is submitted as the left eye moved
-along its own x. `[stereo] replay_marks` (3: the game's calls; 1: one list a
-call with a signal after each), `replay_ahead`, `replay_positions` and
-`replay_prev` tune it. Every 10 seconds the log reports how many pairs were
-replayed, the lists and calls a replayed pair submitted, and the camera
-records folded, and what started the settle again (biome sets, frames over
-150 ms, pairs out of the world); a watchdog logs each queue's fences if no
-present comes for 3 seconds while replaying.
+Replay (both eyes from one CPU pass, adapted from upstream) was a third
+choice until 2026-10-20. On the owner's PC it halved the CPU work a frame but
+not the frame time, as the right eye's GPU work waits for the whole left pass,
+and it ran at 45 Hz like Both eyes while By turns ran 74-90
+(`PERFORMANCE.md`). A profile saved with it now goes by turns; its code
+(`vr/stereo_replay.cpp`) is no longer registered.
 
 Every choice needs `[render] defer_gpu_wait=1` for its full rate; the
 installer sets it for new installs, and an upgrade keeps the existing value.

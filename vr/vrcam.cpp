@@ -5049,7 +5049,8 @@ bool TurnSafe(bool& moved, bool& snapped) {
 }
 // Stereo rendering: Replay (vr/stereo_replay.h): one CPU pass, the right eye
 // from its lists - first person in the world, no capture waiting for a pair of
-// two passes. The settle counts every pair, replayed or not.
+// two passes. The settle counts every pair, replayed or not. No longer a
+// choice (vr_settings.h): StereoRendering is never 2 and this never wanted.
 bool ReplayWanted() {
     if (framevr::StereoRendering() != 2) return false;
     static bool told = false;   // once a ready stretch: what else holds it back
@@ -8666,8 +8667,8 @@ void TryRegister() {
     if (!reshade::register_addon(g_self)) return;
     framevr::resources::Register();
 #ifdef D2RVR_NATIVE_OPENXR
-    // before the game makes its device: the replay reads its upload buffers from their creation
-    stereoreplay::Register(&Log, g_replaySettings);
+    // (Stereo rendering: Replay is no longer a choice, so the replay is not
+    // registered: its resource, list and present hooks ran in every mode.)
     framevr::scenedepth::Register(&Log);
     framevr::lightbounds::Register(&Log);
 #endif
