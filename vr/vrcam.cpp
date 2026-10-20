@@ -86,7 +86,7 @@ namespace hud { void Register(); void SetHide(int mode); void SetInterfaceScale(
 namespace gamecmd { void Init(const D2RL::PluginContext* ctx); void Tick(); }   // the game's key commands from BodyWalk (gamecmd.cpp)
 namespace gamestate { bool ToggleMenus(); }
 namespace gamestate { uint32_t MenuEpoch(); }
-namespace gamestate { void Init(const D2RL::PluginContext* ctx); void Tick(); uint32_t WeaponClass(); uint32_t WeaponSet(); uint32_t WeaponType(); uint32_t HandsHeld(); uint32_t TwoHanded(); uint32_t WeaponHand(); uint32_t HandsKey(); bool MenuOpen(); int ObjectLight(uint32_t txt, uint32_t mode, float rgb[3]); uint64_t LocalPlayer(); void SetViewMode(uint32_t mode); bool AutoMapOpen(); bool SetAutoMap(bool open); void PollPlate(); bool PlateRect(int32_t out[4]); }
+namespace gamestate { void Init(const D2RL::PluginContext* ctx); void Tick(); uint32_t WeaponClass(); uint32_t WeaponSet(); uint32_t WeaponType(); uint32_t HandsHeld(); uint32_t TwoHanded(); uint32_t WeaponHand(); uint32_t HandsKey(); uint32_t ShieldCode(); bool MenuOpen(); int ObjectLight(uint32_t txt, uint32_t mode, float rgb[3]); uint64_t LocalPlayer(); void SetViewMode(uint32_t mode); bool AutoMapOpen(); bool SetAutoMap(bool open); void PollPlate(); bool PlateRect(int32_t out[4]); }
 namespace gamestate {bool LeftShield();}
 namespace gamestate {bool OpaqueMenuOpen();}
 #include "d2r_vr_state.h"
@@ -393,6 +393,7 @@ struct Settings {
     std::atomic<int>   bodyTurn{2};         // 0 game facing, 1 above the pelvis, 2 whole body turns to where the camera looks
     std::atomic<bool>  wrist{true};         // arms mode 2: the hands turn with the controllers
     std::atomic<bool>  shieldTrace{false};  // [debug] shield_trace
+    std::atomic<float> shieldRollDeg{90.0f};  // [gameplay] shield_roll_deg: resting roll about the forearm (skel::shield::Roll)
     std::atomic<float> wristPitch{0.0f}, wristYaw{0.0f}, wristRoll{0.0f};   // degrees on top, controller axes
     std::atomic<float> convergence{15.0f};  // distance (world units) that sits ON the screen; 0 = parallel eyes
     std::atomic<float> thirdDistance{7.0f}; // third person: camera this far behind the eye point
@@ -1393,6 +1394,7 @@ void LoadSettings() {
 #else
     g_set.shieldTrace.store(IniB(L"debug", L"shield_trace", false));
 #endif
+    g_set.shieldRollDeg.store(std::clamp(IniF(L"gameplay", L"shield_roll_deg", 90.0f), -180.0f, 180.0f));
     g_set.wristPitch.store(std::clamp(IniF(L"hands", L"pitch", 0.0f), -180.0f, 180.0f));
     g_set.wristYaw.store(std::clamp(IniF(L"hands", L"yaw", 0.0f), -180.0f, 180.0f));
     g_set.wristRoll.store(std::clamp(IniF(L"hands", L"roll", 0.0f), -180.0f, 180.0f));
@@ -6740,7 +6742,10 @@ void PushArms() {
     in.forearmTwist = in.wrist;   // a hand turned by the controller turns its forearm too
     in.shieldTrace = g_set.shieldTrace.load();
     {const auto v = vrsettings::Read().values; in.shieldGripCm = v[framevr::settings::ShieldGrip];
-     in.shieldOutCm = v[framevr::settings::ShieldOut]; in.shieldUpCm = v[framevr::settings::ShieldUp];}
+     in.shieldOutCm = v[framevr::settings::ShieldOut]; in.shieldUpCm = v[framevr::settings::ShieldUp];
+     in.shieldFollowPct = v[framevr::settings::ShieldFollow];}
+    in.shieldRollDeg = g_set.shieldRollDeg.load();
+    in.shieldCode = gamestate::ShieldCode();
 #endif
     in.wristDeg[0] = g_set.wristPitch.load(); in.wristDeg[1] = g_set.wristYaw.load(); in.wristDeg[2] = g_set.wristRoll.load();
     float yaw = 0.0f;

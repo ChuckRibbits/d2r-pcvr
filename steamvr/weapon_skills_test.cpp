@@ -163,37 +163,86 @@ int main() {
         for(int i=0;i<12;++i)assert(std::fabs(result.m[i]-original.m[i])<.0001f); // no shield growth or rotation from reach
         bindWrist.m[0]=0;assert(!skel::shield::Follow(bindWrist,bindShield,tracked,result));
     }
-    {   // 2026-10-20: the shield's wrist offsets: from the bind pose, rigid with the hand, never a flip
+    {   // 2026-10-21: the shield's frame is the arm's, from joint positions: the same directions on every class
         using namespace skel::bow;namespace sh=skel::shield;
         auto turnAbout=[](Vec axis,float deg){   // a turn as a matrix (row vectors)
             const Vec a=Normalized(axis);const Vec p=Normalized(Cross(a,std::fabs(a.y)<.9f?Vec{0,1,0}:Vec{1,0,0}));
             const float t=deg*.0174533f;return Rotation(p,p*std::cos(t)+Cross(a,p)*std::sin(t));
         };
-        // forearm along +z, the wrist 26 cm on (its bone turned and scaled); the shield's bone off the arm, on its line, nearly on it
-        Mat bindArm=Identity(),bindHand=turnAbout({1,1,0},40);for(int i=0;i<12;++i)bindHand.m[i]*=1.3f;Position(bindHand,{0,0,.26f});
-        for(const Vec bone:{Vec{.08f,0,.12f},Vec{0,0,.12f},Vec{.0001f,0,.2f}}) {
-            const auto arm=sh::LearnArm(bindArm,bindHand,bone);assert(arm.ok);
-            {Vec along,out,up;assert(sh::Axes(bindHand,arm,along,out,up)&&along.z>.99f&&out.x>.99f);}
-            Mat inverse;assert(Inverse(bindHand,inverse));
-            const Vec rest=Vector(inverse,sh::Offset({0,0,1},{1,0,0},{0,1,0},12,-7,20,4));   // the offset in the hand's axes at rest
-            Vec lastOut{};
-            for(int step=0;step<=720;++step) {   // the hand turns every way, half a degree a step
-                Mat hand=Multiply(Multiply(bindHand,turnAbout({0,0,1},step*.5f)),turnAbout({1,0,0},20*std::sin(step*.05f)));
-                Position(hand,{.3f,1.2f,-.1f});
-                Vec along,out,up;assert(sh::Axes(hand,arm,along,out,up));
-                assert(std::fabs(Length(along)-1)<1e-3f&&std::fabs(Length(out)-1)<1e-3f&&std::fabs(Length(up)-1)<1e-3f);
-                assert(std::fabs(Dot(along,out))<1e-3f&&std::fabs(Dot(along,up))<1e-3f&&std::fabs(Dot(out,up))<1e-3f);
-                if(step)assert(Dot(out,lastOut)>std::cos(2.f*.0174533f));   // never a jump, let alone a flip
-                lastOut=out;
-                // rigid with the hand: the same offset in its axes whatever its turn, so the shield turns about the wrist
-                Mat now;assert(Inverse(hand,now));
-                assert(Length(Vector(now,sh::Offset(along,out,up,12,-7,20,4))-rest)<1e-4f);
-            }
+        auto close=[](Vec a,Vec b,float e=1e-3f){return Length(a-b)<e;};
+        auto same=[&](const sh::Frame& a,const sh::Frame& b,float e=1e-3f){return a.ok&&b.ok&&close(a.along,b.along,e)&&close(a.out,b.out,e)&&close(a.up,b.up,e);};
+        // a left forearm along +z, the thumb's (index) knuckle toward +x: the back of the hand faces -y
+        const Vec elbow{0,0,0},wrist{0,0,.26f},index{.03f,0,.34f},pinky{-.03f,0,.34f},middle{0,0,.345f};
+        const float handed=sh::Handed(elbow,wrist,index,pinky,middle,1);assert(handed!=0);
+        const sh::Frame bind=sh::ArmFrame(elbow,wrist,index,pinky,handed);
+        assert(bind.ok&&close(bind.along,{0,0,1})&&close(bind.out,{0,-1,0})&&close(bind.up,{1,0,0}));   // grip, out (the back of the hand), up (the thumb)
+        {const sh::Frame palm=sh::ArmFrame(elbow,wrist,index,pinky,sh::Handed(elbow,wrist,index,pinky,middle,-1));
+         assert(palm.ok&&close(palm.out,{0,1,0})&&close(palm.up,{1,0,0}));}   // a shield hung on the palm's side: out turns, up stays
+        // Two classes' bind poses: the same joints, the hand bones laid along different axes (the
+        // Paladin's "up" moved the shield off the arm). The same wrist bend and twist for both:
+        Mat handA=Identity(),handB=turnAbout({1,1,0},40);for(int i=0;i<12;++i)handB.m[i]*=1.3f;
+        Position(handA,wrist);Position(handB,wrist);
+        const Mat bendTwist=Multiply(turnAbout({1,0,0},35),turnAbout({0,0,1},70));   // about the wrist, in model space
+        auto moved=[&](const Mat& bone,const Mat& turn){Mat m=bone;Position(m,{});m=Multiply(m,turn);Position(m,wrist);return m;};
+        const sh::Frame wristA=sh::Carry(bind,handA,moved(handA,bendTwist)),wristB=sh::Carry(bind,handB,moved(handB,bendTwist));
+        assert(same(wristA,wristB)&&!same(wristA,bind));
+        assert(close(sh::Offset(wristA.along,wristA.out,wristA.up,3,2,2,4),sh::Offset(wristB.along,wristB.out,wristB.up,3,2,2,4),1e-4f));
+        for(const auto* f:{&wristA,&wristB}) {   // orthonormal, with the bind frame's handedness
+            assert(std::fabs(Length(f->along)-1)<1e-3f&&std::fabs(Length(f->out)-1)<1e-3f&&std::fabs(Length(f->up)-1)<1e-3f);
+            assert(std::fabs(Dot(f->along,f->out))<1e-3f&&std::fabs(Dot(f->along,f->up))<1e-3f&&std::fabs(Dot(f->out,f->up))<1e-3f);
+            assert(Dot(Cross(f->along,f->out),f->up)*Dot(Cross(bind.along,bind.out),bind.up)>0);
         }
-        {Mat noArm=Identity();assert(!sh::LearnArm(noArm,noArm,{1,0,0}).ok);   // no forearm length
-         Mat singular=Identity();singular.m[0]=0;assert(!sh::LearnArm(bindArm,singular,{1,0,0}).ok);
-         Vec a,o,u;assert(!sh::Axes(Identity(),sh::Arm{},a,o,u));
-         Mat bad=Identity();bad.m[5]=NAN;assert(!sh::Axes(bad,sh::LearnArm(bindArm,bindHand,{.1f,0,.1f}),a,o,u));}
+        // Strapped to the forearm: a wrist bend (about the knuckle line) leaves it alone; a twist turns it
+        auto about=[&](Vec p,const Mat& r){return wrist+Vector(r,p-wrist);};
+        {const Mat flex=turnAbout({1,0,0},50);
+         assert(same(sh::ArmFrame(elbow,wrist,about(index,flex),about(pinky,flex),handed),bind));
+         const Mat twist=turnAbout({0,0,1},90);
+         const sh::Frame t=sh::ArmFrame(elbow,wrist,about(index,twist),about(pinky,twist),handed);
+         assert(t.ok&&close(t.along,bind.along)&&close(t.up,Vector(twist,bind.up))&&close(t.out,Vector(twist,bind.out)));}
+        // Shield follows: 0% strapped, 100% the wrist, a slerp between - half the bend at 50%, smooth all the way
+        {const Mat flex=turnAbout({1,0,0},60);
+         const sh::Frame strapped=sh::ArmFrame(elbow,wrist,about(index,flex),about(pinky,flex),handed),w=sh::Carry(bind,handB,moved(handB,flex));
+         Vec axis;float angle;assert(sh::TurnBetween(strapped,w,axis,angle)&&std::fabs(angle*57.2958f-60)<.1f);
+         assert(same(sh::Blend(strapped,w,0),strapped)&&same(sh::Blend(strapped,w,1),w));
+         assert(same(sh::Blend(strapped,w,-3),strapped)&&same(sh::Blend(strapped,w,NAN),w));   // clamped; not finite: the wrist
+         assert(sh::TurnBetween(strapped,sh::Blend(strapped,w,.5f),axis,angle)&&std::fabs(angle*57.2958f-30)<.1f);
+         sh::Frame last=strapped;
+         for(int i=1;i<=100;++i){const sh::Frame b=sh::Blend(strapped,w,i*.01f);assert(b.ok&&sh::TurnBetween(last,b,axis,angle)&&angle*57.2958f<.7f);last=b;}
+         assert(same(sh::Blend(sh::Frame{},w,.5f),w)&&same(sh::Blend(strapped,sh::Frame{},.5f),strapped));
+         // the wrist end without roll is the original wrist attach exactly (Follow), for either class's hand bone
+         for(const Mat& handBind:{handA,handB}) {
+             Mat now=moved(handBind,flex);Position(now,wrist+Vec{.1f,.2f,.3f});
+             Mat attach=turnAbout({0,1,0},-30);attach.m[0]*=-1;Position(attach,{.02f,-.05f,.2f});   // mirrored, off the arm
+             Mat followed,placed;assert(sh::Follow(handBind,attach,now,followed));
+             const float bs=Length({handBind.m[0],handBind.m[1],handBind.m[2]}),ns=Length({now.m[0],now.m[1],now.m[2]});
+             assert(sh::Place(attach,bind,wrist,bs,sh::Carry(bind,handBind,now),Position(now),ns,placed));
+             for(int i=0;i<16;++i)assert(std::fabs(placed.m[i]-followed.m[i])<1e-4f);
+         }}
+        // The resting roll: + turns the face from out toward the little finger. Palm down, a left arm ahead
+        // (+z; the hero's left is +x): the back of the hand faces the sky and the thumb points in (-x);
+        // +90 turns the tray-flat shield to face out to the left.
+        {sh::Frame palmDown;palmDown.along={0,0,1};palmDown.out={0,1,0};palmDown.up={-1,0,0};palmDown.ok=true;
+         const sh::Frame r=sh::Roll(palmDown,90);assert(close(r.out,{1,0,0})&&close(r.up,{0,1,0})&&close(r.along,palmDown.along));
+         assert(same(sh::Roll(palmDown,0),palmDown)&&same(sh::Roll(palmDown,NAN),palmDown));
+         assert(same(sh::Roll(palmDown,500),sh::Roll(palmDown,180)));   // clamped to the setting's range
+         assert(same(sh::Roll(sh::Roll(palmDown,40),-40),palmDown));
+         // the roll turns the shield about the forearm through the wrist, the same for either class's bones
+         Mat placedA,placedB,attach=Identity();Position(attach,{0,-.04f,.24f});   // on the back of the hand at bind
+         assert(sh::Place(attach,bind,wrist,1,sh::Roll(wristA,90),wrist,1,placedA)&&sh::Place(attach,bind,wrist,1,sh::Roll(wristB,90),wrist,1,placedB));
+         for(int i=0;i<16;++i)assert(std::fabs(placedA.m[i]-placedB.m[i])<1e-4f);
+         Mat flat;assert(sh::Place(attach,bind,wrist,1,sh::Roll(bind,90),wrist,1,flat));
+         assert(close(Position(flat),wrist+Vec{-.04f,0,-.02f}));}   // off the back of the hand (-y) round to the little finger (-x)
+        // nothing to read: no frame
+        assert(sh::Handed(elbow,elbow,index,pinky,middle,1)==0&&sh::Handed(elbow,wrist,index,index,middle,1)==0);
+        assert(!sh::ArmFrame(elbow,wrist,index,pinky,0).ok&&!sh::ArmFrame(elbow,elbow,index,pinky,1).ok);
+        assert(!sh::ArmFrame(elbow,wrist,{0,0,.4f},{0,0,.3f},1).ok);   // knuckles along the forearm
+        assert(!sh::ArmFrame({NAN,0,0},wrist,index,pinky,1).ok&&!sh::Carry(sh::Frame{},handA,handA).ok);
+        {Mat out;assert(!sh::Place(Identity(),sh::Frame{},wrist,1,bind,wrist,1,out)&&!sh::Place(Identity(),bind,wrist,0,bind,wrist,1,out));}
+        // one table of per-shield tweaks, keyed by the item code as the game packs it
+        auto code=[](const char* c){uint32_t v=0;for(int i=0;i<4&&c[i];++i)v|=uint32_t(uint8_t(c[i]))<<(8*i);return v;};
+        assert(sh::TweakFor(code("bsh ")).scale==.8f&&sh::TweakFor(code("bsh")).scale==.8f);
+        assert(sh::TweakFor(code("buc ")).scale==1&&sh::TweakFor(code("bs  ")).scale==1&&sh::TweakFor(code("bshx")).scale==1&&sh::TweakFor(0).scale==1);
+        for(const auto& t:sh::kTweaks)assert(t.scale>=.3f&&t.scale<=3.f);
         // Offset: cm at the model's scale, clamped to the settings' ranges
         const Vec x{1,0,0},y{0,1,0},z{0,0,1};
         assert(Length(sh::Offset(z,x,y,3,2,2,10)-Vec{.2f,.2f,-.3f})<1e-5f);   // grip toward the elbow (-along)

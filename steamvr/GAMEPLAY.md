@@ -650,43 +650,66 @@ current length for extreme tracking/calibration errors. Contact uses the same
 final shield pose. The owner verified this adjustment in the combined developer
 build; individual class/shield combinations were not specified.
 
-**Forearm twist and shield position (2026-10-20).** With the hands turning
+**Forearm twist and shield position (2026-10-21).** With the hands turning
 with the controllers, the forearm takes a share of the hand's twist about its
-own length, so sleeves and bracers follow the wrist. The shield still hangs from
-the tracked hand and moves and turns with the wrist. **VR Settings > Shield**
-moves the point of the shield that hangs at the wrist - for a big shield, its
-straps are far from its attach bone: **Grip offset** slides the shield up toward
-the elbow (0-40 cm), **Out** away from the forearm and **Up** across it (-25 to
-+25 cm each), in 1 cm steps scaled by the model's forearm; defaults 3 / 2 / 2
-cm, tuned on a buckler (large shields may need much more; all 0 is the original
-position; `[gameplay] shield_grip_cm`, `shield_out_cm`, `shield_up_cm`). The
-offsets are carried in the hand's own axes, so the shield stays rigid with the
-hand and still turns about the wrist. The side of the forearm the shield is on -
-for the wrist stop and for Out - is decided once from the bind pose: read each
-frame, it flipped when the shield's bone sat near the forearm's line, and the
-shield jumped across the wrist.
+own length, so sleeves and bracers follow the wrist. The shield is placed in the
+arm's own frame, built from joint positions only (elbow, wrist and the index and
+little-finger knuckles), never from a bone's axes, which each class's bind pose
+lays differently: on the Paladin the old "Up" moved the shield sideways off the
+arm. **VR Settings > Shield** now means the same directions on every class:
+**Grip offset** slides the shield back along the forearm toward the elbow
+(0-40 cm), **Out** moves it away from the arm on the shield's side (the back of
+the hand, or the palm if the bind pose hangs it there) and **Up** toward the
+thumb (-25 to +25 cm each), in 1 cm steps scaled by the model's forearm;
+defaults 3 / 2 / 2 cm, tuned on a buckler (large shields may need much more;
+`[gameplay] shield_grip_cm`, `shield_out_cm`, `shield_up_cm`). **Shield
+follows** (0-100% in 10% steps, default 50%; `[gameplay] shield_follow_pct`)
+blends how the shield turns: 0% (Forearm) is strapped to the forearm, so a wrist
+bend leaves it still; 100% (Wrist) turns it with the hand, the original wrist
+attach. The blend is a slerp between the two, so it is smooth at every value.
+Twisting the forearm turns the shield at every value.
+
+A resting roll then turns the shield about the forearm, so a controller held
+palm down (common in VR) shows the shield's face outward, not lying on top of
+the forearm like a tray: `[gameplay] shield_roll_deg`, default 90, -180 to +180;
+positive turns the face from the back of the hand toward the little finger. With
+the thumb up the default faces the shield down; 0 restores the shield's bind-pose
+facing. It is an INI value only, because VR Settings has no key left (64 of 64).
+
+Per-shield adjustments are one table in `vr/shield_pose.h` (`kTweaks`), keyed by
+the equipped shield's item code read live from the game. The Bone Shield (`bsh`)
+is drawn at 80% of its size: its skull dome and spikes spread wide beside the
+wrist. Add a row to adjust another shield's scale or Grip / Out / Up.
+
+The side of the forearm the shield is on - for the wrist stop and for Out - is
+decided once from the bind pose: read each frame, it flipped when the shield's
+bone sat near the forearm's line, and the shield jumped across the wrist.
 
 `[debug] shield_trace=1` (on by default in developer builds, off for players)
-logs the held shield's pose chain at 5 Hz, and at once when something jumps:
+logs the held shield's pose chain at 5 Hz, and at once when it jumps:
 
-`Frame shield trace: t=1234567 hand=(-21.0,-38.5,-30.2|12,-35,80) wrist=(-19.8,-41.0,-27.5|10,-33,78) elbow=(-24.1,-48.7,-3.0|5,-20,70) snap=(4.1,-2.3,-6.0) shield=(-15.9,-43.1,-31.8|-80,10,15) side=back stop=0 dev hand=0.4cm snap=0.0cm turn=3.2deg`
+`Frame shield trace: t=1234567 face=35 hand=(-21.0,-38.5,-30.2|12,-35,80) wrist=(-19.8,-41.0,-27.5|10,-33,78) elbow=(-24.1,-48.7,-3.0|5,-20,70) seat=(-3.0,6.1,2.0) shield=(-15.9,-43.1,-31.8|-80,10,15) side=back stop=0 follow=50% roll=90 bend=24 scale=1.00 turn=3.2deg`
+
+Everything is in model space from the eye, so a body turn or a level load no
+longer reads as a flip; a new world placement (snap turn, recenter, level)
+restarts the jump check.
 
 - `t`: milliseconds (GetTickCount64); ` JUMP` after it marks a line written
-  early because the shield turned over 20 degrees in one frame, the hand's error
-  changed by over 3 cm, or the snap error passed 1 cm.
-- `hand`: the tracked left controller, room space relative to the head, cm,
-  then its heading, pitch and roll in degrees.
-- `wrist`, `elbow`: the model's hand and forearm bones, model space from the
-  eye, cm (at the user's scale), and their heading, pitch and roll.
-- `snap`: the shield's attach point in the hand's own axes, cm - the point that
-  hangs at the wrist. It stays put while the wrist turns; it moves only with the
-  Shield settings.
+  early because the shield turned over 20 degrees in one frame.
+- `face`: the yaw the controllers are placed with in model space, degrees.
+- `hand`: the tracked left controller's grip point, model space from the eye,
+  cm (at the user's scale), then its heading, pitch and roll in degrees.
+- `wrist`, `elbow`: the model's hand and forearm bones, the same way.
+- `seat`: the shield's attach bone from the wrist in the arm's frame (along,
+  out, up), cm. It moves with the Shield settings and the roll, not the wrist.
 - `shield`: the shield's attach bone, model space from the eye, and its angles.
 - `side`: the side of the forearm the shield is on (`back` of the hand or
   `palm`); `stop`: degrees of wrist bend the shield stop held back.
-- `dev hand`: tracked wrist target to the model's wrist, cm (-1 without
-  tracking); `dev snap`: the attach point's distance from where it should hang,
-  cm; `turn`: the shield's turn since the previous line, degrees - a flip shows as
+- `follow`, `roll`: the settings in use; `bend`: degrees between the forearm and
+  wrist frames (the bend Shield follows splits); `scale`: the per-shield scale;
+  ` (wrist attach)` when the hand has no knuckle bones and the original wrist
+  attach is used unmoved.
+- `turn`: the shield's turn since the previous line, degrees - a flip shows as
   a jump toward 180.
 
 With **Smite** selected, an energetic

@@ -257,7 +257,8 @@ int main(){
         Check(speed.Click({Kind::Apply}).changed==(ChangeMask{1}<<StrainSpeed),"buildup edits preserve combat rules, difficulty and colour");
     }
     {Model shield;shield.Open(s);shield.Click({Kind::Tab,int(Page::Shield)});
-        Check(RowCount(Page::Shield)==3&&RowKey(Page::Shield,0)==ShieldGrip&&RowKey(Page::Shield,1)==ShieldOut&&RowKey(Page::Shield,2)==ShieldUp,"the Shield page holds grip, out and up");
+        Check(RowCount(Page::Shield)==4&&RowKey(Page::Shield,0)==ShieldGrip&&RowKey(Page::Shield,1)==ShieldOut&&RowKey(Page::Shield,2)==ShieldUp&&RowKey(Page::Shield,3)==ShieldFollow,"the Shield page holds grip, out, up and follows");
+        Check(s.values[ShieldFollow]==50&&Definitions[ShieldFollow].min==0&&Definitions[ShieldFollow].max==skel::shield::kFollowMaxPct&&Definitions[ShieldFollow].step==10,"the shield follows the wrist halfway by default, 0-100% in tens");
         Check(s.values[ShieldGrip]==3&&s.values[ShieldOut]==2&&s.values[ShieldUp]==2,"the shield defaults to 3 / 2 / 2 cm (tuned on a buckler)");
         Check(Definitions[ShieldGrip].min==0&&Definitions[ShieldGrip].max==skel::shield::kGripMaxCm&&Definitions[ShieldOut].min==-skel::shield::kSideMaxCm&&
               Definitions[ShieldOut].max==skel::shield::kSideMaxCm&&Definitions[ShieldUp].min==-skel::shield::kSideMaxCm&&Definitions[ShieldUp].max==skel::shield::kSideMaxCm&&
@@ -272,8 +273,11 @@ int main(){
         Check(shield.Get()[ShieldOut]==-25,"out stops at -25 cm");
         for(int i=0;i<60;++i)shield.Click(At(Page::Shield,Increase(2)));
         Check(shield.Get()[ShieldUp]==25,"up stops at +25 cm");
+        for(int i=0;i<20;++i)shield.Click(At(Page::Shield,Decrease(3)));
+        Check(shield.Get()[ShieldFollow]==0,"follows stops at 0% (strapped to the forearm)");
+        Check(HelpAt(Page::Shield,(ValueBox(3).x+5.f)/Width,(ValueBox(3).y+5.f)/Height)==ShieldFollow,"follows explains itself");
         const auto request=shield.Click({Kind::Apply});
-        Check(request.changed==((ChangeMask{1}<<ShieldGrip)|(ChangeMask{1}<<ShieldOut)|(ChangeMask{1}<<ShieldUp)),"shield edits change nothing else");
+        Check(request.changed==((ChangeMask{1}<<ShieldGrip)|(ChangeMask{1}<<ShieldOut)|(ChangeMask{1}<<ShieldUp)|(ChangeMask{1}<<ShieldFollow)),"shield edits change nothing else");
     }
     {Model aim;aim.Open(s);aim.Click({Kind::Tab,int(Page::Aim)});
         Check(s.values[TargetHighlight]==0&&RowKey(Page::Aim,0)==TargetHighlight,"the monster outline is Off by default, first on the Aim page");
