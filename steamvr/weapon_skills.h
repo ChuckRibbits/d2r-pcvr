@@ -4,7 +4,7 @@
 #include <cstdint>
 
 namespace framevr::weaponskills {
-inline constexpr int Smite=97,Strafe=26;
+inline constexpr int Attack=0,Throw=2,Smite=97,Strafe=26;
 enum class Action { Native, Arrow, Volley, Shield };
 inline Action Classify(int skill) {
     switch(skill) {

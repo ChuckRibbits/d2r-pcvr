@@ -194,7 +194,12 @@ public:
             drawing=nativeBowTrigger=false;skillPulse.Cancel();blockedTrigger=true;out.block=true;return out;
         }
 
-        if(in.weapon==Weapon::Javelin&&selection<0) {
+        // 2026-10-19: under hand bindings the right trigger always holds a slot.
+        // Nothing, Attack or Throw there leaves it to the hand's own throw;
+        // any other skill keeps the trigger (it was unreachable with javelins).
+        const bool handThrow=selection<0||(in.handBindings&&(in.selectedSkill<0||
+            in.selectedSkill==weaponskills::Attack||in.selectedSkill==weaponskills::Throw));
+        if(in.weapon==Weapon::Javelin&&handThrow) {
             out.javelinReady=true;
             if(triggerEdge) {
                 throwing=true;throwAt=in.time;throwStart=in.hand[0].p;
