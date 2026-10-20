@@ -12,6 +12,8 @@
 #include "crossbow.h"
 #include "skeletons.h"
 #include "bow_signatures.h"
+#include "holy_bolt_signatures.h"
+#include "native_ui_signatures.h"
 #include "spells.h"
 #include "melee.h"
 #include "combat.h"
@@ -25,6 +27,7 @@
 #include "../steamvr/client_retirement.h"
 #include "../steamvr/quiver_impact.h"
 #include "../steamvr/spell_aim_assist.h"
+#include "../steamvr/holy_bolt.h"
 namespace gamestate {uint64_t LocalPlayer();bool MenuOpen();uint32_t HandsKey();uint32_t WeaponSet();uint32_t WeaponType();}
 namespace bowvr {
 namespace {
@@ -32,6 +35,7 @@ using namespace framevr::bowflight;
 using namespace native;
 const D2RL::PluginContext* context=nullptr;
 const D2RL::ThreadService* threads=nullptr;
+const D2RL::DataTableService* tables=nullptr;
 std::atomic<bool> enabled{false},ready{false};
 using ShootFn=uintptr_t(*)(uintptr_t,int,uintptr_t,int,int,int,int,int,int,int,int);
 using CollisionFn=int(*)(uintptr_t,uintptr_t);
@@ -105,6 +109,7 @@ std::atomic<unsigned> renderCount{0},serverCount{0},clientCount{0},submitted{0},
 std::atomic<unsigned> lastLatency{0},lastSpeedCm{0};
 std::atomic<unsigned> boundMeshes{0},ignoredEntities{0};
 std::atomic<unsigned> positionMismatch{0};
+std::atomic<unsigned> holyAllowed{0},holyRejected{0};
 std::atomic<unsigned> previewCreated{0},previewRefused{0},previewRecovered{0},uiRecovered{0};
 std::atomic<unsigned> gameRecovered{0};
 std::atomic<unsigned> quiverShots{0},quiverFallbacks{0},quiverRefused{0};
@@ -129,6 +134,34 @@ int MissileSound(int sound,uintptr_t unit,int a,int b,bool c) {
 }
 template<class T> bool Read(uintptr_t p,T& out) {
     return p>0x10000&&framevr::ReadMemory(&out,reinterpret_cast<const void*>(p),sizeof out);
+}
+using HolyFilter=framevr::holybolt::CollisionFilter;
+HolyFilter CollisionFilter() {
+    uintptr_t filter=0;
+    // Type 3 selects the native player/monster filter. Its table is initialized
+    // by the game; verify the consumer's table stride and argument ABI below.
+    if(!Read(d2rsig::Addr(holyabi::TableRva+3*16),filter)||filter!=d2rsig::Addr(holyabi::FilterRva))return nullptr;
+    return reinterpret_cast<HolyFilter>(filter);
+}
+bool TableRow(uintptr_t game,D2RL::DataTables::TableId table,uint32_t id,uint32_t size,D2RL::DataTables::RowView& row) {
+    uint8_t bank=0;row={};row.structSize=sizeof row;
+    return tables&&tables->getRow&&Read(game+0x106,bank)&&bank>=1&&bank<=3&&
+        tables->getRow(context,D2RL::DataTables::Bank(bank),table,id,&row)==D2RL::DataTables::Result::Success&&
+        row.row&&row.rowSize==size;
+}
+bool HolyRow(uintptr_t game,D2RL::DataTables::RowView& row) {
+    int16_t hit=-1;uint8_t collision=0,friendly=0;
+    return TableRow(game,D2RL::DataTables::TableId::Missiles,55,460,row)&&
+        Read(reinterpret_cast<uintptr_t>(row.row)+0x2e,hit)&&hit==7&&
+        Read(reinterpret_cast<uintptr_t>(row.row)+0x1ab,collision)&&collision==3&&
+        Read(reinterpret_cast<uintptr_t>(row.row)+0x1af,friendly)&&friendly==1;
+}
+framevr::holybolt::Target HolyTarget(uintptr_t game,uint32_t id,bool hostile) {
+    D2RL::DataTables::RowView row{};
+    if(!TableRow(game,D2RL::DataTables::TableId::MonStats,id,508,row))return framevr::holybolt::Target::Ignore;
+    std::array<uint8_t,508> copy{};
+    if(!Read(reinterpret_cast<uintptr_t>(row.row),copy))return framevr::holybolt::Target::Ignore;
+    return framevr::holybolt::AssistTarget(copy,hostile);
 }
 template<class T> void Param(std::array<uint8_t,0x98>& p,size_t offset,T value) {
     std::memcpy(p.data()+offset,&value,sizeof value);
@@ -197,7 +230,8 @@ void Guide(Arrow& a,uintptr_t game,uintptr_t player) {
     uint32_t h[4]{};Vec bottom{},top{};float radius=0;
     bool visible=target&&Read(target,h)&&h[0]==1&&h[1]==a.homing.classId&&h[2]==a.homing.target&&h[3]!=0&&h[3]!=12&&
         !a.flight.Seen(h[2])&&Body(target,h[1],a.flight.shot,bottom,top,radius)&&
-        reinterpret_cast<int(*)(uintptr_t,uintptr_t,uintptr_t)>(d2rsig::Addr(RelationRva))(game,player,target);
+        reinterpret_cast<int(*)(uintptr_t,uintptr_t,uintptr_t)>(d2rsig::Addr(RelationRva))(game,player,target)&&
+        (!framevr::holybolt::Skill(a.flight.shot.skill)||HolyTarget(game,h[1],true)==framevr::holybolt::Target::Enemy);
     if(visible) {
         auto room=a.room;
         const auto end=(bottom+top)*.5f;
@@ -269,6 +303,17 @@ int Collision(uintptr_t game,uintptr_t unit) {
     else if(to.y<=floor)stop=std::min(stop,(from.y-floor)/(from.y-to.y));
     struct Touch {float fraction;uintptr_t unit;uint32_t id;};
     std::array<Touch,64> touches{};size_t n=0;
+    const bool holy=a.flight.shot.kind==Kind::Spell&&framevr::holybolt::Skill(a.flight.shot.skill);
+    D2RL::DataTables::RowView holyRow{};const auto filter=holy?CollisionFilter():nullptr;
+    uint8_t bank=0;
+    if(holy&&(!filter||!HolyRow(game,holyRow)||!Read(game+0x106,bank)))return End(slot,a,game,unit);
+    const framevr::holybolt::CollisionArgs holyArgs{game,unit,player,reinterpret_cast<uintptr_t>(holyRow.row)};
+    const auto canTouch=[&](uintptr_t target) {
+        if(!holy)return reinterpret_cast<int(*)(uintptr_t,uintptr_t,uintptr_t)>(d2rsig::Addr(RelationRva))(game,player,target)!=0;
+        const bool allowed=framevr::holybolt::CanCollide(filter,bank,target,holyArgs);
+        if(allowed)++holyAllowed;else ++holyRejected;
+        return allowed;
+    };
     uintptr_t buckets[128]{};unsigned visited=0;
     if(!Read(game+0x4c6*8,buckets))return End(slot,a,game,unit);
     for(auto target:buckets)for(unsigned chain=0;target&&chain<256&&visited++<4096;++chain) {
@@ -284,7 +329,7 @@ int Collision(uintptr_t game,uintptr_t unit) {
             const bool nearby=positioned&&ground.x>=std::min(from.x,to.x)-2&&
                 ground.x<=std::max(from.x,to.x)+2&&ground.z>=std::min(from.z,to.z)-2&&ground.z<=std::max(from.z,to.z)+2;
             if(nearby&&Body(target,h[1],a.flight.shot,bottom,top,radius)&&CapsuleEntry(from,to,bottom,top,radius,fraction)&&
-               fraction<stop&&reinterpret_cast<int(*)(uintptr_t,uintptr_t,uintptr_t)>(d2rsig::Addr(RelationRva))(game,player,target)) {
+               fraction<stop&&canTouch(target)) {
                 const Touch touch{fraction,target,h[2]};
                 if(n<touches.size())touches[n++]=touch;
                 else {
@@ -305,7 +350,19 @@ int Collision(uintptr_t game,uintptr_t unit) {
         if(!MoveSpell(a,from+(to-from)*t.fraction))return End(slot,a,game,unit);
         // Native missile owns weapon damage, costs, criticals, leech, procs,
         // immunities and pierce. It does not get a second ground-grid hit.
+        static uint64_t logSession=0;static unsigned hitSamples=0;
+        if(logSession!=a.flight.shot.session){logSession=a.flight.shot.session;hitSamples=0;}
+        const bool logHit=holy&&hitSamples<32;
+        using StatFn=int(*)(uintptr_t,int,int);
+        const auto stat=reinterpret_cast<StatFn>(d2rsig::Addr(nativeui::abi::StatRva));
+        const int before=logHit?stat(t.unit,6,0):0;
         const int result=reinterpret_cast<int(*)(uintptr_t,uintptr_t,uintptr_t,int)>(d2rsig::Addr(HitRva))(game,unit,t.unit,0);
+        if(logHit) {
+            ++hitSamples;
+            const int after=melee::ServerUnit(game,1,t.id)==t.unit?stat(t.unit,6,0):-1;
+            char line[208];snprintf(line,sizeof line,"Frame Holy Bolt contact: target=%u native_result=%d life_fixed=%d -> %d (-1 means removed)",t.id,result,before,after);
+            framevr::logging::Write(line);
+        }
         ++contacts;framevr::MeleeImpact();
         if(result==2) {
             a.flight.distance=advance(t.fraction);a.flight.alive=false;
@@ -697,10 +754,23 @@ uintptr_t Transform(uintptr_t out,uint32_t entity,uintptr_t component) {
 }
 void Init(const D2RL::PluginContext* ctx) {
     context=ctx;
+    if(ctx->QueryService(&tables)!=D2RL::ServiceQueryResult::Success||
+       !D2RL::HasDataTableServiceField(tables,D2RL::DataTableServiceRequiredSize))tables=nullptr;
     if(ctx->QueryService(&threads)!=D2RL::ServiceQueryResult::Success||
        !D2RL::HasThreadServiceField(threads,D2RL::ThreadServiceRequiredSize))threads=nullptr;
 }
 void Configure(bool on){enabled=on;}
+bool HolyReady() {
+    // Optional: a changed layout must not disable the other physical spells.
+    return tables&&tables->getRow&&d2rsig::Check(holyabi::ConsumerRva,holyabi::ConsumerSig,sizeof holyabi::ConsumerSig)&&
+        d2rsig::Check(holyabi::ArgsRva,holyabi::ArgsSig,sizeof holyabi::ArgsSig)&&
+        d2rsig::Check(holyabi::FilterRva,holyabi::FilterSig,sizeof holyabi::FilterSig)&&
+        d2rsig::Check(holyabi::FilterArgsRva,holyabi::FilterArgsSig,sizeof holyabi::FilterArgsSig)&&CollisionFilter();
+}
+bool PrepareHoly(uintptr_t game) {
+    D2RL::DataTables::RowView row{};
+    return HolyReady()&&HolyRow(game,row);
+}
 void PublishPreviewPose(const Shot& pose,const Gate& gate,bool visible,uint64_t frame) {
     std::lock_guard lock(mutex);
     previewRenderPose.Publish(pose,gate,visible,frame);
@@ -800,6 +870,16 @@ void Created(uintptr_t game,uintptr_t params,uintptr_t unit) {
         reserved=a;Recount();
     }
     ++launch.created;++spawned;
+    if(launch.shot.kind==Kind::Spell&&framevr::holybolt::Skill(launch.shot.skill)) {
+        static uint64_t session=0;static unsigned samples=0;
+        if(session!=launch.shot.session){session=launch.shot.session;samples=0;}
+        if(samples++<16) {
+            char line[272];const auto& s=launch.shot;
+            snprintf(line,sizeof line,"Frame Holy Bolt: hand=%d planar=%d assist=%d origin=%.3f,%.3f,%.3f direction=%.3f,%.3f,%.3f homing=%d native friendly collision enabled",
+                s.hand,int(s.planar),s.aimAssist,s.origin.x,s.origin.y,s.origin.z,s.direction.x,s.direction.y,s.direction.z,int(a.homing.active));
+            framevr::logging::Write(line);
+        }
+    }
     lastLatency=unsigned(GetTickCount64()-launch.shot.at);lastSpeedCm=unsigned(a.flight.speed*100);
 }
 bool AdoptCrossbow(uintptr_t game,uintptr_t unit,const Shot& shot) {
@@ -841,7 +921,7 @@ void AssistSpell(uintptr_t game,uintptr_t player) {
     const auto originRoom=reinterpret_cast<uintptr_t(*)(uintptr_t)>(d2rsig::Addr(RoomRva))(player);
     uintptr_t buckets[128]{};unsigned visited=0;
     if(!originRoom||!Read(game+0x4c6*8,buckets))return;
-    uint32_t selectedClass=0;Vec selectedBody{};
+    uint32_t selectedClass=0;Vec selectedBody{};bool healingRay=false;
     for(auto target:buckets)for(unsigned chain=0;target&&chain<256&&visited++<4096;++chain) {
         uintptr_t next=0;uint32_t h[4]{};
         if(!Read(target+0x158,next)||!Read(target,h))break;
@@ -856,11 +936,23 @@ void AssistSpell(uintptr_t game,uintptr_t player) {
                     Vec bottom{},top{};float radius=0;
                     if(Body(target,h[1],shot,bottom,top,radius)) {
                         ++stats.bodies;
+                        const bool holy=framevr::holybolt::Skill(shot.skill);
+                        const bool hostile=holy&&reinterpret_cast<int(*)(uintptr_t,uintptr_t,uintptr_t)>(d2rsig::Addr(RelationRva))(game,player,target)!=0;
+                        if(holy) {
+                            const auto kind=HolyTarget(game,h[1],hostile);
+                            if(kind==framevr::holybolt::Target::Friend) {
+                                float entry=0;
+                                // Preserve a healing ray instead of pulling it
+                                // toward an enemy beside/behind the mercenary.
+                                if(CapsuleEntry(shot.origin,shot.origin+shot.direction*framevr::aimassist::Range,bottom,top,radius,entry))healingRay=true;
+                            }
+                            if(kind!=framevr::holybolt::Target::Enemy){target=next;continue;}
+                        }
                         if(shot.planar&&!framevr::spellcast::NativePath(shot.skill)&&
                            (shot.origin.y<=bottom.y-radius||shot.origin.y>=top.y+radius))++stats.heightMisses;
                         const auto candidate=framevr::aimassist::Evaluate(shot,h[2],bottom,top,radius);
-                        if(selection.Better(candidate)&&
-                           reinterpret_cast<int(*)(uintptr_t,uintptr_t,uintptr_t)>(d2rsig::Addr(RelationRva))(game,player,target)) {
+                        if(selection.Better(candidate)&&(holy?hostile:
+                           reinterpret_cast<int(*)(uintptr_t,uintptr_t,uintptr_t)>(d2rsig::Addr(RelationRva))(game,player,target)!=0)) {
                             ++stats.eligible;
                             auto room=originRoom;
                             const auto end=shot.origin+candidate.direction*candidate.distance;
@@ -878,6 +970,7 @@ void AssistSpell(uintptr_t game,uintptr_t player) {
         }
         target=next;
     }
+    if(healingRay){history.Finish({});return;}
     const auto& best=selection.Best();history.Finish(best);
     launch.homing.Arm(shot,best,selectedClass,selectedBody);
     if(best.valid) {
@@ -1001,6 +1094,11 @@ void Install() {
         framevr::logging::Write("Frame physical projectiles: tracked native-arrow preview and frozen 6DoF arrow/javelin flight; terrain-correct grid/room queries; mesh-only transforms; native basic attack/throw costs");
 }
 void Report() {
+    const auto accepted=holyAllowed.exchange(0),rejected=holyRejected.exchange(0);
+    if(accepted||rejected) {
+        char line[144];snprintf(line,sizeof line,"Frame Holy Bolt collision: native filter accepted=%u rejected=%u",accepted,rejected);
+        framevr::logging::Write(line);
+    }
     crossbowvr::Report();
     if(const auto count=crossbowFired.exchange(0)) {
         char line[128];snprintf(line,sizeof line,"Frame crossbow free fire: native shots=%u, last cycle=%u ms",count,crossbowCycleMs.load());

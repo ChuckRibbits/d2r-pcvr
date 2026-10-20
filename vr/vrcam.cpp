@@ -76,6 +76,7 @@ namespace hud { void Register(); void SetHide(int mode); void SetInterfaceScale(
 #include "d2rcam.h"
 #ifdef D2RVR_NATIVE_OPENXR
 #include "foveation.h"
+#include "foveation_math.h"
 #include "logging.h"
 #include "thread_stats.h"
 #endif
@@ -122,6 +123,7 @@ namespace gamestate {bool OpaqueMenuOpen();}
 #include "stereo_prop_physics.h"
 #endif
 #include "dlss_mv.h"
+#include "stereo_replay.h"
 #include "dlss_depth.h"
 #include "billboards.h"
 #ifdef D2RVR_NATIVE_OPENXR
@@ -421,6 +423,8 @@ struct Settings {
     std::atomic<float> uiShift{0.0f};       // AFR: the HUD moved apart per eye in the shader, % of the half screen; more = nearer
     std::atomic<float> hudTop{0.70f};       // the HUD is looked for below this height (0 top .. 1 bottom)
 } g_set;
+// [stereo] replay_*: Stereo rendering: Replay's settings (LoadSettings), handed over at TryRegister.
+stereoreplay::Settings g_replaySettings;
 
 wchar_t g_iniPath[MAX_PATH];
 FILETIME g_iniTime{};
@@ -824,6 +828,7 @@ void LoadSettings() {
     framevr::profile::ConfigureHooks(IniB(L"debug",L"profile_hooks",true));
     framevr::ConfigureDeferredWait(IniB(L"render",L"defer_gpu_wait",false));
     framevr::ConfigureSymmetricProjection(IniB(L"render",L"symmetric_projection",true));
+    framevr::ConfigureTurnsFromDrawnEye(IniB(L"stereo",L"turns_from_drawn_eye",true));
     framevr::ConfigureEyeTracking(IniB(L"render",L"eye_tracked_foveation",false));
     framevr::ConfigureGameplay(IniB(L"gameplay",L"motion_controls",false));
     framevr::ConfigureQuiver(IniB(L"bow",L"quiver",true),IniB(L"bow",L"quiver_preview",true));
@@ -910,7 +915,13 @@ void LoadSettings() {
     }
 #endif
 #ifdef D2RVR_NATIVE_OPENXR
-    framevr::foveation::Configure(IniB(L"render",L"fixed_foveation",true),IniF(L"render",L"foveation_inner",0.55f),IniF(L"render",L"gaze_foveation_inner",0.35f));
+    {   // A strength saved from VR Settings selects a preset (invalid values use Medium,
+        // as the menu shows). Profiles without one keep their saved radii at 2x2.
+        const float strength=IniF(L"render",L"foveation_strength",-1);
+        framevr::FoveationPreset preset{IniF(L"render",L"foveation_inner",0.55f),IniF(L"render",L"gaze_foveation_inner",0.35f),2};
+        if(strength>=0)preset=framevr::FoveationStrengthPreset(strength==std::floor(strength)?int(strength):-1);
+        framevr::foveation::Configure(IniB(L"render",L"fixed_foveation",true),preset.fixedRadius,preset.gazeRadius,preset.peripheralRate);
+    }
     d2rcam::SetStereoLabels(IniB(L"hud",L"stereo_labels",true));
     d2rcam::SetOrdinaryMobBars(IniB(L"hud",L"ordinary_mob_bars",false));
     d2rcam::SetMonsterDrawOrder(IniB(L"hud",L"monster_draw_order",true));
@@ -1240,6 +1251,15 @@ void LoadSettings() {
     dlssmv::SetLag((int)IniF(L"render", L"dlss_mv_lag", 0.0f));
     dlssmv::SetFarTurn(IniF(L"render", L"dlss_mv_far_turn", 1.0f));
     dlssmv::SetFixes(IniB(L"render", L"dlss_mv_near", false), IniB(L"render", L"dlss_mv_jitter", true));
+    {   // Stereo rendering: Replay (vr/stereo_replay.h)
+        stereoreplay::Settings r;
+        r.marks = (int)IniF(L"stereo", L"replay_marks", 3.0f);       // how the lists go again: 3 the game's calls, 1 one a call with a signal
+        r.ahead = (int)IniF(L"stereo", L"replay_ahead", 2.0f);       // replays the CPU may run ahead of
+        r.positions = (int)IniF(L"stereo", L"replay_positions", 2.0f);
+        r.prev = IniB(L"stereo", L"replay_prev", true);
+        g_replaySettings = r;
+        stereoreplay::Configure(r);
+    }
     g_set.phantomRay.store(IniB(L"debug", L"phantom_ray", false));
     g_set.boneAxes.store(IniB(L"debug", L"bone_axes", false));
     g_set.weaponDiag.store(IniB(L"debug", L"weapon_diag", false));
@@ -1441,11 +1461,14 @@ double NowSeconds() {
 // head as sent, never carried on - the second eye is drawn later, and would
 // otherwise get a head a few milliseconds further along than the first.
 std::atomic<bool> g_pairNow{false};
+// The head is held for the whole pass: both eyes of a pair, or the one eye a
+// frame draws by turns. g_pairNow alone means both eyes share one game frame.
+std::atomic<bool> g_headHeld{false};
 
 // yaw, pitch, roll as sent (degrees), advanced to now.
 void PredictHead(const D2RVR_Shared* s, float out[3]) {
     const float raw[3] = {s->headYawDeg, s->pitchValid ? s->headPitchDeg : 0.0f, s->rollValid ? s->headRollDeg : 0.0f};
-    if (!g_set.headPredict.load() || g_pairNow.load()) { memcpy(out, raw, sizeof raw); return; }
+    if (!g_set.headPredict.load() || g_headHeld.load()) { memcpy(out, raw, sizeof raw); return; }
     const double now = NowSeconds();
     AcquireSRWLockExclusive(&g_headLock);
     HeadTrack& h = g_head;
@@ -1466,7 +1489,7 @@ void PredictHead(const D2RVR_Shared* s, float out[3]) {
 
 // The yaw the camera should have now: head (if on) plus the mouse's extra.
 float TargetYaw() {
-    float yaw = g_pairNow.load() ? g_heldYaw.load() : g_mouseYaw.load() + g_turnYaw.load(), head = 0.0f;
+    float yaw = g_headHeld.load() ? g_heldYaw.load() : g_mouseYaw.load() + g_turnYaw.load(), head = 0.0f;
     if (g_set.headYaw.load() && HeadYaw(&head)) {
         float p[3]; PredictHead(g_shared, p);
         yaw += g_set.yawSign.load() * g_set.yawScale.load() * WrapDeg(p[0] - g_recenter.load());
@@ -1487,7 +1510,7 @@ float TargetRoll() {
 // extra, and the head looking up (more negative) or down. Kept short of the
 // vertical, where the rotation would flip.
 float TargetPitch() {
-    float pitch = g_set.pitch.load() + (g_pairNow.load() ? g_heldPitch.load() : g_mousePitch.load());
+    float pitch = g_set.pitch.load() + (g_headHeld.load() ? g_heldPitch.load() : g_mousePitch.load());
     const D2RVR_Shared* sh = g_shared;
     if (g_set.headPitch.load() && sh && sh->version == D2RVR_SHARED_VERSION && sh->headValid && sh->pitchValid && std::isfinite(sh->headPitchDeg))
     {
@@ -2520,7 +2543,7 @@ bool VrViewInner(const d2rcam::WorldView& in, float out[16]) {
         const V3 gf = {-G[2], -G[6], -G[10]};
         const float mapNorth = atan2f(-gf.x, -gf.z);
         const float baseHeading = mapNorth -
-            (g_pairNow.load() ? g_heldYaw.load() : g_mouseYaw.load() + g_turnYaw.load()) * 0.0174532925f;
+            (g_headHeld.load() ? g_heldYaw.load() : g_mouseYaw.load() + g_turnYaw.load()) * 0.0174532925f;
         const float recenter = g_recenter.load() * 0.0174532925f;
         float center[16];
         framevr::View(center, L, ViewHeight() + JumpLift(), UserEyeHeightM(), baseHeading, recenter, -1, mapNorth);
@@ -2531,6 +2554,7 @@ bool VrViewInner(const d2rcam::WorldView& in, float out[16]) {
         const float centerPosition[3]={eye.x,eye.y,eye.z};
         billboards::SetCenter(centerPosition);
         framevr::View(view, L, ViewHeight() + JumpLift(), UserEyeHeightM(), baseHeading, recenter, g_eye.load(), mapNorth);
+        if ((g_eye.load() & 1) == 0) stereoreplay::SetLeftView(view, framevr::ReplayShift());   // the replay's right eye: this one moved along its x
         fwd = {-center[2], -center[6], -center[10]};
         const float horizontal = std::hypot(fwd.x, fwd.z);
         if (horizontal > 1e-5f) {
@@ -2657,7 +2681,8 @@ bool VrProjInner(const d2rcam::WorldView& in, float M[16]) {
         M[8] += g_eye.load() == 0 ? shift : -shift;
     }
 #ifdef D2RVR_NATIVE_OPENXR
-    if (!ThirdPerson() && !Overhead()) framevr::Projection(M, nearZ, g_eye.load());
+    if (!ThirdPerson() && !Overhead() && framevr::Projection(M, nearZ, g_eye.load()) && (g_eye.load() & 1) == 0)
+        stereoreplay::SetProjection(M[0], framevr::ReplayProjShift());
     g_projSx.store(M[0]); g_projSy.store(M[5]);
 #endif
     AcquireSRWLockExclusive(&g_skyLock);
@@ -2824,13 +2849,13 @@ bool ShooterActive();
 #ifdef D2RVR_NATIVE_OPENXR
 extern std::atomic<uint32_t> g_meleeTurnEpoch;
 #endif
-bool HandRay(float* o, float* d) {
+bool HandRay(float* o, float* d,bool forceGround=true) {
 #ifdef D2RVR_NATIVE_OPENXR
     // The menu aim pose can differ greatly from the weapon's shaft. Use the
     // final posed weapon in its captured WORLD frame, not a bone from one
     // frame combined with a newer headset yaw from another.
     const auto castingType=gamestate::WeaponType();
-    if(g_eyeOk.load()&&!framevr::LeftHandAiming()&&framevr::SpellSelected()&&
+    if(g_eyeOk.load()&&!framevr::spellaim::TrackedAim(framevr::NativeCastSkill())&&!framevr::LeftHandAiming()&&framevr::SpellSelected()&&
        (castingType==D2RVR_TYPE_WAND||castingType==D2RVR_TYPE_STAFF||castingType==D2RVR_TYPE_SCEPTER||castingType==D2RVR_TYPE_ORB)) {
         skel::MeleeWeaponPose pose;
         if(skel::MeleeWeapon(pose)&&pose.weaponType==castingType&&pose.worldEpoch==g_meleeTurnEpoch.load()) {
@@ -2863,9 +2888,10 @@ bool HandRay(float* o, float* d) {
         // Native combat is ground-targeted. Keep its existing ray-to-ground
         // convention; the gesture does not invent free-flying 3D projectiles.
         const float horizontal=std::hypot(d[0],d[2]);
-        if(horizontal<1e-3f)return false;
-        d[1]=std::min(d[1],-.08f*horizontal);
+        if(forceGround&&horizontal<1e-3f)return false;
+        if(forceGround)d[1]=std::min(d[1],-.08f*horizontal);
         const float length=std::sqrt(d[0]*d[0]+d[1]*d[1]+d[2]*d[2]);
+        if(!std::isfinite(length)||length<1e-3f)return false;
         for(int i=0;i<3;++i)d[i]/=length;
         return true;
     }
@@ -3276,6 +3302,19 @@ bool DirectedSpellAim(float& gx,float& gy) {
         framevr::DirectedSpellActive()&&HandRay(origin,direction)&&
         framevr::spellaim::Horizontal({direction[0],direction[1],direction[2]},gx,gy);
 }
+bool NativeSpellAim(float playerX,float playerY,framevr::spellaim::Cast& cast) {
+    if(framevr::spellaim::BonePlacement(framevr::NativeCastSkill())) {
+        if(!g_spellAimReady.load()||!g_enabled.load()||gamestate::MenuOpen()||!g_eyeOk.load())return false;
+        float o[3],d[3];
+        if(!HandRay(o,d,false))return false;
+        AcquireSRWLockShared(&g_skyLock);const auto view=g_skyView[0];ReleaseSRWLockShared(&g_skyLock);
+        if(!view.axes_ok||!view.proj_ok||!framevr::spellaim::GroundPoint(playerX,playerY,
+           {o[0]-view.hero[0],o[1]-view.hero[1],o[2]-view.hero[2]},
+           {d[0],d[1],d[2]},cast.x,cast.y))return false;
+        cast.directed=cast.contactPoint=true;return true;
+    }
+    cast.directed=DirectedSpellAim(cast.x,cast.y);return cast.directed;
+}
 uintptr_t NearbySewerInteraction();
 uintptr_t HookSpellControllerTarget(uintptr_t manager,int id) {
     if(g_spellCast.directed&&uintptr_t(_ReturnAddress())==d2rsig::Addr(spellaimabi::ControllerCallRva+5))return 0;
@@ -3303,7 +3342,7 @@ void HookSpellResolve(uintptr_t manager,void* unit,bool assist,float* x,float* y
     framevr::spellaim::Cast cast;
     float playerX=0,playerY=0;
     const bool local=x&&y&&SpellPlayerPosition(unit,playerX,playerY);
-    cast.directed=local&&DirectedSpellAim(cast.x,cast.y);
+    if(local)NativeSpellAim(playerX,playerY,cast);
     if(local&&g_spellAimReady.load()&&g_enabled.load()&&!gamestate::MenuOpen()&&
        framevr::ShieldAim(cast.x,cast.y))cast.directed=cast.contactPoint=true;
     framevr::spellaim::Scope scope(g_spellCast,cast);
@@ -3317,7 +3356,8 @@ void HookSpellResolve(uintptr_t manager,void* unit,bool assist,float* x,float* y
         static std::atomic<ULONGLONG> reported{0};
         const auto now=GetTickCount64();auto before=reported.load();
         if(now-before>2000&&reported.compare_exchange_strong(before,now))
-            LogF("Frame spell aim: resolver direction %.3f %.3f, point %.2f %.2f",cast.x,cast.y,*x,*y);
+            LogF("Frame spell aim: skill %d resolver %s %.3f %.3f, point %.2f %.2f",framevr::NativeCastSkill(),
+                 cast.contactPoint?"ground point":"direction",cast.x,cast.y,*x,*y);
     }
 }
 #endif
@@ -3496,13 +3536,13 @@ uint64_t HookAttackTarget(void* self, void* unit, float* dir, int* outX, int* ou
     // without entering 0x190440. Correct only that aim call: the other callers
     // are locomotion and must keep their movement destinations.
     if(outX&&outY&&caller==d2rsig::Rva(RVA_ATTACK_POINT_RET)) {
-        float px=0,py=0,dx=0,dy=0;
-        if(SpellPlayerPosition(unit,px,py)&&DirectedSpellAim(dx,dy)&&
-           framevr::spellaim::ControllerPoint(px,py,{dx,0,dy},*outX,*outY)) {
+        float px=0,py=0;framevr::spellaim::Cast cast;
+        if(SpellPlayerPosition(unit,px,py)&&NativeSpellAim(px,py,cast)&&
+           framevr::spellaim::ControllerPoint(cast,px,py,*outX,*outY)) {
             static ULONGLONG told=0;
             if(GetTickCount64()-told>2000) {
                 told=GetTickCount64();
-                LogF("Frame spell aim: controller cast follows hand %.3f %.3f",dx,dy);
+                LogF("Frame spell aim: controller cast %s %.3f %.3f",cast.contactPoint?"point":"direction",cast.x,cast.y);
             }
         }
     }
@@ -4171,11 +4211,11 @@ uint64_t HookMapClick(void* unit, int type, int x, int y, uint64_t flags) {
         ~CommandScope(){g_spellCommand=previous;}
     } scope;
     const auto caller=uintptr_t(_ReturnAddress());
-    float px=0,py=0,dx=0,dy=0;int tx=0,ty=0;
+    float px=0,py=0;int tx=0,ty=0;framevr::spellaim::Cast cast;
     if(g_spellCommandReady.load()&&framevr::spellaim::ControllerCast(type)&&
        (caller==d2rsig::Addr(spellaimabi::CastClickRva+5)||caller==d2rsig::Addr(spellaimabi::RepeatClickRva+5))&&
-       SpellPlayerPosition(unit,px,py)&&DirectedSpellAim(dx,dy)&&
-       framevr::spellaim::ControllerPoint(px,py,{dx,0,dy},tx,ty)) {
+       SpellPlayerPosition(unit,px,py)&&NativeSpellAim(px,py,cast)&&
+       framevr::spellaim::ControllerPoint(cast,px,py,tx,ty)) {
         g_spellCommand={reinterpret_cast<uintptr_t>(unit),tx,ty};
         x=tx;y=ty;
     }
@@ -4770,6 +4810,9 @@ uintptr_t HookSetBiome(const char* name) {
     for (size_t i = 0; b[i] && b[i] != '.' && i + 1 < sizeof bare; ++i) bare[i] = (char)tolower((unsigned char)b[i]);
     AcquireSRWLockExclusive(&g_biomeLock); memcpy(g_biome, bare, sizeof bare); ReleaseSRWLockExclusive(&g_biomeLock);
     g_biomeGen.fetch_add(1);
+#ifdef D2RVR_NATIVE_OPENXR
+    stereoreplay::AreaChanged();   // an area loads: the last replay done on the GPU first, then two passes until it settles
+#endif
     return OrigSetBiome(name);
 }
 
@@ -4934,6 +4977,122 @@ std::string BusyThreads(double spanUs) {
 }  // namespace pairtime
 
 void Recenter();
+#ifdef D2RVR_NATIVE_OPENXR
+// Eyes by turns (VR Settings > Video > Stereo rendering): one pass a game frame,
+// the eyes in turn. The headset gets this eye fresh and the other as it was
+// last drawn, at the pose it was drawn with - the runtime turns it to the head.
+// Half the CPU work a headset frame, each eye at half the rate, and the eyes a
+// game frame apart: the frame time is not held, every pass is a game frame of
+// its own. Open menus, and a frame without both eyes' last images, draw a pair.
+//
+// While the hero moves, the eye not drawn would show the world from a frame
+// back, a hand's breadth at a run, and the turn alone cannot move it (owner,
+// 2026-10-19: "moving still has the right eye lagging"). By turns moves that
+// eye with the scene's depth (framevr TurnEye); until both eyes' depth is
+// kept it draws a pair from the hero point's first step to 0.3 s after its
+// last. A jump of the body's yaw (a snap turn) draws a pair too, and only
+// first person goes by turns: in the other views the camera itself moves as
+// the head turns.
+std::atomic<uint32_t> g_movePairs{0};   // frames drawn as pairs for that, for the 10 s line
+bool TurnSafe(bool& moved, bool& snapped) {
+    static float last[3] = {};
+    static bool had = false;
+    static ULONGLONG movedAt = 0;
+    const ULONGLONG now = GetTickCount64();
+    float at[3];
+    const bool ok = LookAtNow(at);
+    if (ok && had) {
+        const float dx = at[0] - last[0], dy = at[1] - last[1], dz = at[2] - last[2];
+        if (dx * dx + dy * dy + dz * dz > 1e-4f) movedAt = now;   // 0.01 world units, 2-3 mm
+    }
+    if (ok) memcpy(last, at, sizeof last);
+    had = ok;
+    moved = now - movedAt <= 300;
+    snapped = std::fabs(WrapDeg(g_mouseYaw.load() + g_turnYaw.load() - g_heldYaw.load())) > 15.0f;
+    return ok;
+}
+// Stereo rendering: Replay (vr/stereo_replay.h): one CPU pass, the right eye
+// from its lists - first person in the world, no capture waiting for a pair of
+// two passes. The settle counts every pair, replayed or not.
+bool ReplayWanted() {
+    if (framevr::StereoRendering() != 2) return false;
+    static bool told = false;   // once a ready stretch: what else holds it back
+    if (!stereoreplay::Wanted(g_inWorld.load() && d2rcam::InWorld())) { told = false; return false; }
+    const char* why = ThirdPerson() ? "third person" : Overhead() ? "an overhead view" : gamestate::MenuOpen() ? "a menu is open" :
+                      !framevr::ReplayReady() ? "a stereo capture waits" : nullptr;
+    if (why && !told) { told = true; LogF("vrcam: replay - ready, but two passes: %s", why); }
+    return !why;
+}
+// Without the deferred GPU wait each frame is the CPU's time plus the GPU's:
+// about half the rate in every stereo mode. Told once each time it is found off.
+void WarnGpuWait() {
+    static bool told = false;
+    if (framevr::GpuWaitDeferred()) { told = false; return; }
+    if (told) return;
+    told = true;
+    Say("Each frame waits for the GPU ([render] defer_gpu_wait=0), about half the frame rate - VR Settings > Video > Defer GPU wait turns it on");
+}
+bool TurnsWanted() {
+    if (framevr::StereoRendering() != 1) return false;
+    bool moved = false, snapped = false;
+    const bool seen = TurnSafe(moved, snapped);   // every frame, so a step is seen from the last one
+    if (ThirdPerson() || Overhead() || gamestate::MenuOpen() || !framevr::TurnReady()) return false;
+    if (!seen || snapped || (moved && !framevr::TurnDepthReady())) { g_movePairs.fetch_add(1); return false; }
+    return true;
+}
+
+uintptr_t DrawTurn(int a, bool continued) {
+    static bool told = false;
+    static double lastEnd = 0.0, sumGap = 0.0, sumBegin = 0.0, sumWait = 0.0, sumPass = 0.0, sumEnd = 0.0, sumPeriod = 0.0, longest = 0.0;
+    static ULONGLONG since = GetTickCount64();
+    static uint32_t turns = 0, periods = 0;
+    if (!continued) lastEnd = 0.0;   // after pairs or menus: no frame period across them
+    const double entered = pairtime::UsNow();
+    framevr::BeginPair(true);
+    if (framevr::TakeWorldRecenter()) Recenter();
+    static D2RVR_Shared held;
+    const D2RVR_Shared* live = g_shared;
+    if (live) { memcpy(&held, live, sizeof held); g_shared = &held; }
+    TurnTick();
+    g_heldYaw.store(g_mouseYaw.load() + g_turnYaw.load());
+    g_heldPitch.store(g_mousePitch.load());
+    g_headHeld.store(true);
+    pairtime::g_drawThread.store(GetCurrentThreadId());
+    const int eye = (g_eye.load() & 1) ^ 1;   // after a pair, whose right eye was last, the left
+    const double t0 = pairtime::UsNow();
+    SetEye(eye);
+    framevr::BeginEye(eye);
+    d2rcam::Refresh();
+    const uintptr_t r = OrigDrawGameScreen(a);
+    const double t1 = pairtime::UsNow();
+    framevr::EndPair();
+    const double ended = pairtime::UsNow();
+    g_headHeld.store(false);
+    if (live) g_shared = live;
+
+    const auto xr = framevr::LastTiming();
+    if (lastEnd > 0.0) { sumGap += entered - lastEnd; sumPeriod += ended - lastEnd; ++periods; longest = std::max(longest, ended - lastEnd); }
+    sumBegin += t0 - entered; sumWait += xr.waitFrameMs; sumPass += t1 - t0; sumEnd += ended - t1;
+    lastEnd = ended;
+    ++turns;
+    if (!told) { told = true; Log("vrcam: eyes by turns ON - one pass a game frame, the other eye as last drawn"); }
+    // The rate from consecutive turns only: the window also holds the pairs
+    // drawn while the hero moved.
+    if (const ULONGLONG now = GetTickCount64(); now - since >= 10000) {
+        const double k = 0.001 / turns, rate = periods ? periods * 1e6 / sumPeriod : 0.0;
+        const auto how = framevr::TakeTurnCounts();
+        LogF("vrcam: eyes by turns - %.1f frames/s (each eye %.1f/s) | a frame, ms: game %.2f | XR begin %.2f (wait %.2f) | pass %.2f | XR end %.2f | longest %.1f | %u frames by turns (other eye moved with depth %u, turned only %u), %u pairs while moving",
+             rate, rate * 0.5, periods ? sumGap * 0.001 / periods : 0.0, sumBegin * k, sumWait / turns, sumPass * k, sumEnd * k, longest * 0.001,
+             turns, how.moved, how.turned, g_movePairs.exchange(0));
+        // (a line of its own: LogF keeps 255 characters)
+        LogF("vrcam: eyes by turns - the other eye: the drawn eye's picture laid over it in %u of %u", how.drawn, how.moved + how.turned);
+        lastEnd = 0.0; sumGap = sumBegin = sumWait = sumPass = sumEnd = sumPeriod = longest = 0.0;
+        since = now; turns = periods = 0;
+    }
+    return r;
+}
+#endif
+
 uintptr_t HookDrawGameScreen(int a) {
     static thread_local int depth = 0;
     static bool told = false, toldWhy = false;
@@ -4945,7 +5104,15 @@ uintptr_t HookDrawGameScreen(int a) {
     static ULONGLONG since = GetTickCount64(), lastHitch = 0;
     static uint32_t pairs = 0,cpuPairs=0;
     const double entered=pairtime::UsNow();
-    if (depth || !PairWanted()) {
+    static bool turned = false;   // the last frame went by turns
+#ifdef D2RVR_NATIVE_OPENXR
+    const bool wanted = !depth && PairWanted();
+    if (wanted) WarnGpuWait();
+    const bool turn = wanted && TurnsWanted();
+#else
+    const bool turn = false;
+#endif
+    if (depth || !PairWanted() || turn) {
         if(!depth) {
 #ifdef D2RVR_NATIVE_OPENXR
             framevr::profile::SkipPair();
@@ -4958,18 +5125,35 @@ uintptr_t HookDrawGameScreen(int a) {
             for(int e=0;e<2;++e)sumPass[e]=sumPresent[e]=sumEff[e]=0;
             since=GetTickCount64();pairs=cpuPairs=0;
         }
+#ifdef D2RVR_NATIVE_OPENXR
+        if (turn) {
+            ++depth;
+            const uintptr_t r = DrawTurn(a, turned);
+            --depth;
+            turned = true;
+            return r;
+        }
+#endif
+        if (!depth) turned = false;
         if (!toldWhy && g_h.blit && AfrOn() && g_set.pairPerTick.load() && !FrameTimeFound()) {
             toldWhy = true;
             Log("vrcam: pair per game frame NOT possible - the frame time was not where expected (another build?); eyes go by turns");
         }
         return OrigDrawGameScreen(a);
     }
+    turned = false;
     ++depth;
     static bool toldTry = false;   // before the first pair: if the game dies on it, the log says where
     if (!toldTry) { toldTry = true; Log("vrcam: pair per game frame - drawing the first pair"); }
 #ifdef D2RVR_NATIVE_OPENXR
-    framevr::BeginPair();
+    // The headset frame decides last: a panel, or a frame not rendered, is no
+    // stereo pair to replay (framevr::Active is only true once it has begun).
+    const bool wantReplay = ReplayWanted();
+    framevr::BeginPair(false, wantReplay);
+    const bool replay = wantReplay && framevr::ReplayPair();
     if(framevr::TakeWorldRecenter())Recenter();
+#else
+    const bool replay = false;
 #endif
     // One head for the pair: BodyWalk's block may change between the passes.
     static D2RVR_Shared held;
@@ -4979,6 +5163,7 @@ uintptr_t HookDrawGameScreen(int a) {
     g_heldYaw.store(g_mouseYaw.load() + g_turnYaw.load());
     g_heldPitch.store(g_mousePitch.load());
     g_pairNow.store(true);
+    g_headHeld.store(true);
     if (const D2RVR_Shared* hs = g_shared)
         flog::Line("S,%u,%.4f,%.3f,%.3f,%.3f,%.3f,%u", flog::Pass(), flog::Dt(), g_heldYaw.load(), hs->headYawDeg, hs->headPitchDeg, hs->headRollDeg, hs->sampleStamp);
 
@@ -4996,8 +5181,11 @@ uintptr_t HookDrawGameScreen(int a) {
 #ifdef D2RVR_NATIVE_OPENXR
     framevr::BeginEye(0);
 #endif
+#ifdef D2RVR_NATIVE_OPENXR
+    if (replay) stereoreplay::BeginLeft();
+#endif
     d2rcam::Refresh();
-    OrigDrawGameScreen(a);
+    const uintptr_t leftR = OrigDrawGameScreen(a);
     const double t1 = pairtime::UsNow();
 #ifdef D2RVR_NATIVE_OPENXR
     const double c1 = measureCpu?pairtime::CpuUs():0;
@@ -5019,7 +5207,14 @@ uintptr_t HookDrawGameScreen(int a) {
     framevr::BeginEye(1);
 #endif
     d2rcam::Refresh();
-    const uintptr_t r = OrigDrawGameScreen(a);
+#ifdef D2RVR_NATIVE_OPENXR
+    // Replay: the right eye from the left pass's lists, no second CPU pass;
+    // false (the left present was not held, no slots yet) draws it as before.
+    const bool replayed = replay && stereoreplay::RightFromLeft();
+#else
+    const bool replayed = false;
+#endif
+    const uintptr_t r = replayed ? leftR : OrigDrawGameScreen(a);
     *dt = keep; *rawDt = keepRaw;
     const double t2 = pairtime::UsNow();
     sumPass[1] += t2 - t1;
@@ -5054,6 +5249,7 @@ uintptr_t HookDrawGameScreen(int a) {
     }
     lastEnd=ended;
     g_pairNow.store(false);
+    g_headHeld.store(false);
     if (live) g_shared = live;
     --depth;
 
@@ -5061,6 +5257,18 @@ uintptr_t HookDrawGameScreen(int a) {
     if (!told) { told = true; Log("vrcam: pair per game frame ON - left eye, then right eye with the frame time held"); }
     if (const ULONGLONG now = GetTickCount64(); now - since >= 10000) {
         LogF("vrcam: %.1f pairs/s from one game frame each", pairs * 1000.0 / (double)(now - since));
+#ifdef D2RVR_NATIVE_OPENXR
+        if (framevr::StereoRendering() == 2) {
+            const auto rs = stereoreplay::TakeStats();
+            const double n = rs.replayed ? 1.0 / rs.replayed : 0.0;
+            LogF("vrcam: replay - %u of %u pairs from one pass (%u fell back to two) | a replayed pair: %.1f lists in %.1f calls, %.3f ms to submit, "
+                 "camera %.1f records folded, %.1f positions moved, %u slots (%u overflowed, %.1f late)",
+                 rs.replayed, pairs, rs.fallbacks, rs.lists * n, rs.calls * n, rs.submitMs * n, rs.folded * n, rs.positions * n, rs.slots, rs.overflow, rs.lateSlots * n);
+            // (a line of its own: LogF keeps 255 characters)
+            LogF("vrcam: replay - settle %d/%d, started again by %u biome sets (of %u), %u frames over 150 ms, %u pairs out of the world",
+                 rs.settling, rs.settleOf, rs.restartArea, rs.biomeSets, rs.restartLong, rs.outOfWorld);
+        }
+#endif
         if (pairs) {
             const double k = 0.001 / pairs;   // us summed -> ms a pair
             LogF("vrcam: a pair, ms: game %.2f | left %.2f (effects %.2f, Present %.2f) | right %.2f (effects %.2f, Present %.2f) | longest %.1f",
@@ -6212,7 +6420,7 @@ void BowTick() {
         // Free-hand casting uses its own complete tracked aim pose instead.
         skel::MeleeWeaponPose pose;
         const auto type=gamestate::WeaponType();
-        if(hand==0&&(type==D2RVR_TYPE_STAFF||type==D2RVR_TYPE_WAND||type==D2RVR_TYPE_SCEPTER||type==D2RVR_TYPE_ORB)&&
+        if(hand==0&&!framevr::spellaim::TrackedAim(shot.skill)&&(type==D2RVR_TYPE_STAFF||type==D2RVR_TYPE_WAND||type==D2RVR_TYPE_SCEPTER||type==D2RVR_TYPE_ORB)&&
            skel::MeleeWeapon(pose)&&pose.worldEpoch==g_meleeTurnEpoch.load()) {
             using framevr::math::Vec;
             const Vec p={pose.origin[0]/shot.unitsPerMetre,pose.origin[1]/shot.unitsPerMetre,pose.origin[2]/shot.unitsPerMetre};
@@ -7487,6 +7695,11 @@ int g_fxEye = 0;
 // second SuperSampling feature is made beside the game's, and the right eye's
 // frames are evaluated on it. The motion vectors are still the game's, made
 // against the previous frame - the other eye's (see the plan, next step).
+#ifdef D2RVR_NATIVE_OPENXR
+bool ReplayCapturing() { return stereoreplay::Capturing(); }
+#else
+bool ReplayCapturing() { return false; }
+#endif
 namespace dlsseyes {
 struct NgxHandle { unsigned int Id; };
 using CreateFn = int(__cdecl*)(void* cmdList, int feature, void* params, NgxHandle** out);
@@ -7545,14 +7758,16 @@ int __cdecl HookEval(void* cmdList, const NgxHandle* h, const void* params, void
             NgxHandle* twin = TwinOf(h);
             if (!twin && !TriedBefore(h)) twin = MakeTwin(cmdList, h, const_cast<void*>(params), "at the first evaluation");
             if (twin) {
-                void* restore = g_inWorld.load() ? dlssmv::BeforeEvaluate(cmdList, params, eye) : nullptr;
+                void* restore = g_inWorld.load() && !ReplayCapturing() ? dlssmv::BeforeEvaluate(cmdList, params, eye) : nullptr;
                 const int r = OrigEval(cmdList, twin, params, callback);
                 dlssmv::AfterEvaluate(params, restore);
                 return r;
             }
         }
         if (TwinOf(h)) {   // the left eye on the game's own instance
-            void* restore = g_inWorld.load() ? dlssmv::BeforeEvaluate(cmdList, params, eye) : nullptr;
+            // The replay evaluates the left pass's DLSS again for the right eye on the same
+            // instance: its history alternates eyes, and the same-eye vectors would be wrong.
+            void* restore = g_inWorld.load() && !ReplayCapturing() ? dlssmv::BeforeEvaluate(cmdList, params, eye) : nullptr;
             const int r = OrigEval(cmdList, h, params, callback);
             dlssmv::AfterEvaluate(params, restore);
             return r;
@@ -7725,6 +7940,9 @@ void OnFinishEffects(reshade::api::effect_runtime* rt, reshade::api::command_lis
     if (ApplySkyPictures(rt)) return;   // the effect reloads with the new pictures
     if (!g_tech[0].handle) g_tech[0] = rt->find_technique("D2R_DepthFog.fx", "D2R_DepthFog");
     if (!g_tech[1].handle) g_tech[1] = rt->find_technique("D2R_DepthFog.fx", "D2R_DepthFog_R");
+#ifdef D2RVR_NATIVE_OPENXR
+    stereoreplay::SetEffects(rt, g_tech[1]);
+#endif
     if (!g_tech[0].handle) { hud::SetPictureReady(false); return; }
     // Off while a menu is open: the fog lies over the whole picture, the
     // inventory and trade panels included, and darkened them.
@@ -7902,6 +8120,13 @@ void OnReshadePresent(reshade::api::effect_runtime*) {
 #ifdef D2RVR_NATIVE_OPENXR
         const auto f=framevr::foveation::TakeStats();
         LogF("Frame foveation: %u reduced-shading draws, %u full-quality draws in sample",f.shadedDraws,f.fullDraws);
+        namespace fv=framevr::foveation;
+        uint64_t worldDraws=0;for(const auto n:f.world)worldDraws+=n;
+        if(worldDraws)
+            LogF("Frame foveation coverage: full-size colour+depth draws during eyes: covered %u | full quality: blended %u, "
+                 "no depth test %u, no pixel shader %u, unknown pipeline %u, multisample %u, target mismatch %u, eligible but unmasked %u",
+                 f.world[fv::Covered],f.world[fv::Blended],f.world[fv::NoDepthTest],f.world[fv::NoPixelShader],
+                 f.world[fv::UnknownPipeline],f.world[fv::Multisample],f.world[fv::TargetMismatch],f.world[fv::ViewportOther]);
 #endif
         if (!pairtime::g_drawThread.load()) pairtime::g_drawThread.store(GetCurrentThreadId());
 #ifdef D2RVR_NATIVE_OPENXR
@@ -7924,7 +8149,8 @@ void OnBeginEffects(reshade::api::effect_runtime* rt, reshade::api::command_list
 #ifdef D2RVR_NATIVE_OPENXR
         const bool ownDepth=g_enabled.load()&&g_inWorld.load()&&framevr::Active()&&
             (FogWanted()||g_set.skyOn.load()||g_arcaneSky.load()||CeilWanted()||TableKeyWanted()||OutlineWanted());
-        framevr::scenedepth::Bind(rt,cl,ownDepth,s);
+        const bool turnDepth=g_enabled.load()&&g_inWorld.load()&&framevr::Active()&&framevr::TurnDepthWanted();
+        framevr::scenedepth::Bind(rt,cl,ownDepth,turnDepth,stereoreplay::RightEffects(),s);
         SetBool(rt,"OwnDepth",ownDepth);
 #else
         SetBool(rt,"OwnDepth",false);
@@ -8357,6 +8583,8 @@ void TryRegister() {
     if (!reshade::register_addon(g_self)) return;
     framevr::resources::Register();
 #ifdef D2RVR_NATIVE_OPENXR
+    // before the game makes its device: the replay reads its upload buffers from their creation
+    stereoreplay::Register(&Log, g_replaySettings);
     framevr::scenedepth::Register(&Log);
     framevr::lightbounds::Register(&Log);
 #endif

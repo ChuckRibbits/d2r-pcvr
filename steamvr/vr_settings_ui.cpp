@@ -6,7 +6,13 @@
 // Retain an exact summary fingerprint in the DLL for the release packager.
 extern "C" __declspec(dllexport) const char* D2RPCVR_ReleaseNotesIdentity(){return framevr::releasenotes::ContentMarker;}
 namespace framevr::settings {
-std::vector<uint8_t> Paint(const Model& m,Hit hover,const char* runtimeStatus,const calibration::Flow* body,const controllers::Labels& detected,int help){
+static int HelpTextHeight(HDC dc,HFONT font,const char* value,int width) {
+    wchar_t wide[512]{};MultiByteToWideChar(CP_UTF8,0,value,-1,wide,512);
+    const auto old=SelectObject(dc,font);RECT bounds{0,0,width,0};
+    DrawTextW(dc,wide,-1,&bounds,DT_CALCRECT|DT_WORDBREAK|DT_NOPREFIX);
+    SelectObject(dc,old);return int(bounds.bottom);
+}
+std::vector<uint8_t> Paint(const Model& m,Hit hover,const char* runtimeStatus,const calibration::Flow* body,const controllers::Labels& detected,int help,GameVideo game){
     const bool showHelp=!body&&help!=NoHelp&&HelpText(help)[0];
     BITMAPINFO info{};info.bmiHeader.biSize=sizeof(BITMAPINFOHEADER);info.bmiHeader.biWidth=AtlasWidth;
     info.bmiHeader.biHeight=-Height;info.bmiHeader.biPlanes=1;info.bmiHeader.biBitCount=32;
@@ -119,12 +125,21 @@ std::vector<uint8_t> Paint(const Model& m,Hit hover,const char* runtimeStatus,co
             const bool enabled=m.ready&&!m.Busy();
             button(HudMapViewBox,MapViewNames[m.Get()[MapTopDown]>.5f?1:0],{Kind::Change,MapTopDown,1},false,enabled);
             button(HudMapRotateBox,m.Get()[MapRotate]>.5f?"On":"Off",{Kind::Change,MapRotate,1},false,enabled);
+        }else if(m.page==Page::Video&&(DeferOffered(m.Get())||GameVideoWarning(game))){
+            // Warnings in amber under the status, two lines at most: the GPU
+            // wait not deferred (and the button that turns it on), then the
+            // game's own video options; both push the status out.
+            const bool defer=DeferOffered(m.Get());const char* gameWarning=GameVideoWarning(game);
+            const COLORREF warn=RGB(236,186,96);const int width=defer?VideoDeferBox.x-50:1200;
+            text(defer&&gameWarning?DeferWarning:runtimeStatus,{40,181,width,29},false,false,defer&&gameWarning?warn:quiet);
+            text(gameWarning?gameWarning:DeferWarning,{40,209,width,29},false,false,warn);
+            if(defer)button(VideoDeferBox,"Defer GPU wait",{Kind::Change,DeferGpuWait,1},false,m.ready&&!m.Busy());
         }else text(m.page==Page::Haptics?"Tune vibration for your headset and controllers.":m.page==Page::Combat?"Tune physical combat and offline difficulty.":m.page==Page::Aim?"Choose how the monster you aim at is shown.":runtimeStatus,{40,197,1200,42},false,false,quiet);
         for(int row=0;row<RowCount(m.page);++row){
             const Key key=RowKey(m.page,row);const auto& d=Definitions[key];const float value=m.Get()[key];const int y=RowY+row*RowStep;
             fill({40,y-4,1200,RowStep},row%2?RGB(19,31,39):RGB(22,36,44));
-            const int textWidth=m.page==Page::Haptics?520:780;
-            text(d.label,{58,y+1,textWidth,29},true);text(d.detail,{58,y+30,textWidth,28},false,false,quiet);
+            const int textWidth=m.page==Page::Haptics?520:780;const bool applies=RowEnabled(m.Get(),key);
+            text(d.label,{58,y+1,textWidth,29},true,false,applies?RGB(229,234,235):quiet);text(d.detail,{58,y+30,textWidth,28},false,false,quiet);
             if(m.page==Page::Haptics&&HapticCategory(key)>=0){
                 const auto category=haptics::Category(HapticCategory(key));
                 for(int choice=0;choice<haptics::PreviewCount(category);++choice)
@@ -132,6 +147,8 @@ std::vector<uint8_t> Paint(const Model& m,Hit hover,const char* runtimeStatus,co
             }
             char label[96];
             if(key==Foveation){const char* modes[]={"Off","Fixed","Eye tracked"};std::snprintf(label,sizeof label,"%s",modes[int(value)]);}
+            else if(key==FoveationStrength)std::snprintf(label,sizeof label,"%s",FoveationStrengthNames[int(value)]);
+            else if(key==StereoRendering)std::snprintf(label,sizeof label,"%s",StereoRenderingNames[std::clamp(int(value),0,2)]);
             else if(key==VitalsLocation||key==NavigationLocation)std::snprintf(label,sizeof label,"%s",vitals::LocationNames[int(value)]);
             else if(key==RenderResolution)std::snprintf(label,sizeof label,"%s",resolution::Choices[int(value)]);
             else if(key==MenuDistance)std::snprintf(label,sizeof label,"%s",MenuDistanceNames[int(value)]);
@@ -153,14 +170,10 @@ std::vector<uint8_t> Paint(const Model& m,Hit hover,const char* runtimeStatus,co
             else if(key==LootLabelSize)std::snprintf(label,sizeof label,"%g%%",value);
             else if(key==Waist||key==BeltForward)std::snprintf(label,sizeof label,"%.1f cm",value*100);
             else std::snprintf(label,sizeof label,"%.0f",value);
-            const bool enabled=m.ready&&!m.Busy();
+            const bool enabled=m.ready&&!m.Busy()&&applies;
             button(Decrease(row),"-",{Kind::Change,key,-1},false,enabled);
             button(Increase(row),"+",{Kind::Change,key,1},false,enabled);
             button(ValueBox(row),label,{d.max==1?Kind::Change:Kind::None,key,1},false,enabled);
-        }
-        if(m.page==Page::Video){
-            text("Applying resolution changes rebuilds the VR view. Desktop restores the game's window size.",{40,744,1200,60},false,false,quiet);
-            text("Headset uses the runtime recommendation, capped at 4096 per side. DLSS: game Options.",{40,808,1200,60},false,false,quiet);
         }
         if(m.page==Page::HUD){
             text("Palm: raise left hand palm up; release grip/trigger. Status follows the minimap.",{58,854,1160,22},false,false,quiet);
@@ -191,7 +204,15 @@ std::vector<uint8_t> Paint(const Model& m,Hit hover,const char* runtimeStatus,co
         fill(HelpCard,RGB(22,36,44));
         fill({HelpCard.x,HelpCard.y,4,HelpCard.h},RGB(116,220,219));
         text(HelpTitle(help),{HelpCard.x+24,HelpCard.y+24,HelpCard.w-48,92},true);
-        text(HelpText(help),{HelpCard.x+24,HelpCard.y+128,HelpCard.w-48,HelpCard.h-152});
+        const int left=HelpCard.x+24,width=HelpCard.w-48,bottom=HelpCard.y+HelpCard.h-24;
+        int y=HelpCard.y+128;
+        text(HelpText(help),{left,y,width,bottom-y});
+        if(const auto choice=HelpChoice(help,help<Count?m.Get()[help]:NAN);choice.name) {
+            y+=HelpTextHeight(dc,normal,HelpText(help),width)+HelpChoiceGap;
+            text(choice.name,{left,y,width,HelpChoiceNameHeight},true,false,RGB(116,220,219));
+            y+=HelpChoiceNameHeight;
+            text(choice.text,{left,y,width,bottom-y});
+        }
     }
     GdiFlush();std::vector<uint8_t> rgba(AtlasWidth*Height*4);const auto* p=static_cast<uint8_t*>(bits);
     for(int y=0;y<Height;++y)for(int x=0;x<AtlasWidth;++x){
