@@ -160,7 +160,7 @@ std::vector<uint8_t> Paint(const Model& m,Hit hover,const char* runtimeStatus,co
             else if(key==Dominant)std::snprintf(label,sizeof label,"%s",value>.5f?"Left":"Right");
             else if(key==MeleeRules)std::snprintf(label,sizeof label,"%s",MeleeRulesNames[value>.5f?1:0]);
             else if(key==OfflinePlayers){if(value==0)std::snprintf(label,sizeof label,"Game default");else std::snprintf(label,sizeof label,"Players %.0f",value);}
-            else if(key==StrainDark)std::snprintf(label,sizeof label,"%s",StrainColorNames[value>.5f?1:0]);
+            else if(key==StrainDark)std::snprintf(label,sizeof label,"%s",StrainColorNames[std::clamp(int(std::lround(value)),0,2)]);
             else if(key==StrainSpeed)std::snprintf(label,sizeof label,"%s",StrainSpeedNames[int(value)]);
             else if(key==HeartbeatStart){if(value==0)std::snprintf(label,sizeof label,"Off");else std::snprintf(label,sizeof label,"%.0f%% life",value);}
             else if(d.max==1)std::snprintf(label,sizeof label,"%s",value>.5f?"On":"Off");
@@ -175,7 +175,7 @@ std::vector<uint8_t> Paint(const Model& m,Hit hover,const char* runtimeStatus,co
             const bool enabled=m.ready&&!m.Busy()&&applies;
             button(Decrease(row),"-",{Kind::Change,key,-1},false,enabled);
             button(Increase(row),"+",{Kind::Change,key,1},false,enabled);
-            button(ValueBox(row),label,{d.max==1?Kind::Change:Kind::None,key,1},false,enabled);
+            button(ValueBox(row),label,{d.max==1||key==StrainDark?Kind::Change:Kind::None,key,1},false,enabled);
         }
         if(m.page==Page::HUD){
             text("Palm: raise left hand palm up; release grip/trigger. Status follows the minimap.",{58,854,1160,22},false,false,quiet);

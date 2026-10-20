@@ -58,7 +58,7 @@ inline const char* HelpText(int id) {
         case CompanionCounts:return "Shows companion counts and effects currently affecting your character below the left-hand minimap. This includes received buffs, auras and harmful effects, not just assigned skills. It follows Minimap & Compass placement.";
         case OfflinePlayers:return "Uses native offline Players 1-8 scaling for tougher monsters and increased experience and loot. Apply affects newly spawned monsters; existing monsters keep their current stats. For all monsters to use the new value, Save and Exit, then start a new game with the same character. Game default follows the game's own setting. Works with every class and either melee mode. Does not change Normal, Nightmare or Hell, or your desktop preference.";
         case StrainSpeed:return "How quickly blocked hits build the shield strain vignette in Unleashed. Strain starts fading a moment after hits stop, or as soon as you lower the shield; full strain is gone about 3 seconds after the last hit.";
-        case StrainDark:return "The color of the edge effect as repeated blocks strain your guard in Unleashed. It clears when hits stop for a few seconds or you lower your shield.";
+        case StrainDark:return "The color of the edge effect as repeated blocks strain your guard in Unleashed, or Off to hide it. It clears when hits stop for a few seconds or you lower your shield. Off hides only the effect: strain, guard breaks and chip damage still apply.";
         case TargetOutlineColour:return "Static: every outline in the Static color below. By range: red near, orange mid-range, yellow far, so you can tell at a glance how close the monster you aim at is. Select the value to switch.";
         case TargetOutlineHue:return "The Static color, around the color wheel 15 degrees at a time; gold by default. A color unlike the monster's own reads best: red is hard to see on red monsters.";
         case TargetHighlight:return "A thin, steady outline round the monster you are aiming at. Off by default; the percentage sets how strongly it shows. Monster outline color chooses gold or a color by distance. While your arm is held out, the monster your hand points at is chosen; when your hand points at none, the monster you look at is. Only monsters in your line of sight count. The outline is a guide only: it does not change how attacks or spells aim.";
@@ -95,12 +95,12 @@ struct ChoiceHelp {const char* name=nullptr;const char* text=nullptr;};
 constexpr int HelpChoiceGap=18,HelpChoiceNameHeight=40;   // on the card: above the name, the name's line
 inline int HelpChoices(int id) {
     switch(id) {
-        case Foveation:case MenuDistance:case TooltipTiming:case StrainSpeed:case ProjectileAimAssist:return 3;
+        case Foveation:case MenuDistance:case TooltipTiming:case StrainSpeed:case ProjectileAimAssist:case StrainDark:return 3;
         case FoveationStrength:case VitalsLocation:case NavigationLocation:return 4;
         case StereoRendering:return int(std::size(StereoRenderingNames));
         case RenderResolution:return int(std::size(resolution::Choices));
         case ControllerLabels:return int(controllers::Choice::Count);
-        case Dominant:case MeleeRules:case StrainDark:case MapTopDown:return 2;
+        case Dominant:case MeleeRules:case MapTopDown:return 2;
         default:return 0;
     }
 }
@@ -200,7 +200,8 @@ inline ChoiceHelp HelpChoice(int id,float value) {
         case StrainDark:{
             static constexpr const char* text[]={
                 "A pale glow at the edges of your view.",
-                "A dark vignette at the edges of your view."};
+                "A dark vignette at the edges of your view.",
+                "No vignette. Strain still builds and can break your guard; you just do not see it."};
             return {StrainColorNames[c],text[c]};}
         default:return {};
     }

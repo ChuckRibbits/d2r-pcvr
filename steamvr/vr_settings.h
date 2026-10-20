@@ -74,7 +74,7 @@ inline constexpr std::array<Definition,Count> Definitions{{
     {"Melee thrust speed", "Forward stabs along the blade; independent of swing speed", L"gameplay",L"melee_thrust_speed",2,.75f,10,.25f},
     {"Loot label size", "Dropped-item names; 45% is the original size", L"hud",L"labels_size",45,20,150,5},
     {"Companions & effects", "Companion counts and current buffs, auras and harmful effects", L"interactions",L"companion_counts",1,0,1,1},
-    {"Guard strain color", "Blocking strain at the rim of the view: pale white light or black shadow", L"gameplay",L"guard_strain_dark",0,0,1,1},
+    {"Guard strain color", "Blocking strain at the rim of the view: pale white light, black shadow or off", L"gameplay",L"guard_strain_dark",0,0,2,1},
     {"Offline difficulty", "Players 1-8 scaling for newly spawned monsters", L"gameplay",L"offline_players",0,0,8,1},
     {"Shield bash speed", "Hand speed for bash / Smite; wrist twisting never attacks", L"gameplay",L"shield_bash_speed",2,.75f,10,.25f},
     {"Guard strain buildup", "How quickly repeated blocks build the vignette; same size", L"gameplay",L"guard_strain_speed",1,0,2,1},
@@ -107,7 +107,7 @@ inline float Normalize(Key key,float value){
     if(key==HeartbeatStart)return std::clamp(std::round(value/10)*10,d.min,d.max);   // 0 = Off, else a 10% step
     if(key==VitalsTilt)return vitals::NormalizeTilt(value);
     if(HapticKey(key))return haptics::NormalizeStrength(value);
-    if((key==ControllerLabels||key==VitalsLocation||key==NavigationLocation||key==RenderResolution||key==MenuDistance||key==TooltipTiming||key==ProjectileAimAssist||key==StrainSpeed||key==FoveationStrength||key==StereoRendering)&&(value<d.min||value>d.max||value!=std::round(value)))return d.defaultValue;
+    if((key==ControllerLabels||key==VitalsLocation||key==NavigationLocation||key==RenderResolution||key==MenuDistance||key==TooltipTiming||key==ProjectileAimAssist||key==StrainSpeed||key==StrainDark||key==FoveationStrength||key==StereoRendering)&&(value<d.min||value>d.max||value!=std::round(value)))return d.defaultValue;
     value=std::clamp(value,d.min,d.max);
     return d.step==1?std::round(value):value;
 }
@@ -151,7 +151,7 @@ inline void HueRgb(float hue,float rgb[3]){
     for(int i=0;i<3;++i)rgb[i]=table[std::min(5,int(h))][i];
 }
 inline constexpr const char* MeleeRulesNames[]={"Unleashed","Classic"};
-inline constexpr const char* StrainColorNames[]={"White","Black"};
+inline constexpr const char* StrainColorNames[]={"White","Black","Off"};   // guard_strain_dark 0 / 1 / 2
 inline constexpr const char* StrainSpeedNames[]={"Slow","Medium","Fast"};
 inline constexpr const char* FoveationStrengthNames[]={"Low","Medium","High","Maximum"};
 inline constexpr const char* StereoRenderingNames[]={"Both eyes","By turns","Replay"};
@@ -267,7 +267,7 @@ inline Hit HitTest(Page page,float u,float v,bool controllerMenu=false){
         }
         if(Decrease(r).Contains(x,y))return {Kind::Change,key,-1};
         if(Increase(r).Contains(x,y))return {Kind::Change,key,1};
-        if(Definitions[key].max==1&&ValueBox(r).Contains(x,y))return {Kind::Change,key,1};
+        if((Definitions[key].max==1||key==StrainDark)&&ValueBox(r).Contains(x,y))return {Kind::Change,key,1};
     }
     return {};
 }
@@ -315,7 +315,7 @@ public:
             else if(key==OfflinePlayers)draft[key]=std::clamp(draft[key]+float(hit.delta),0.f,8.f);
             else if(key==StrainSpeed)draft[key]=std::clamp(draft[key]+float(hit.delta),0.f,2.f);
             else if(key==FoveationStrength||key==StereoRendering)draft[key]=std::clamp(draft[key]+float(hit.delta),d.min,d.max);
-            else if(key==ProjectileAimAssist)draft[key]=float((int(draft[key])+(hit.delta<0?2:1))%3);
+            else if(key==ProjectileAimAssist||key==StrainDark)draft[key]=float((int(draft[key])+(hit.delta<0?2:1))%3);   // cycles
             else draft[key]=Normalize(key,draft[key]+hit.delta*d.step);
             result=Result::None;++revision;
         }
