@@ -2453,6 +2453,12 @@ bool TurnEye(int i) {
     const bool turned=turnWarp.Render(device.Get(),e.commands.Get(),turnImages[i].Get(),e.images[e.index].texture,h,i,moving,fromDrawn);
     for(UINT k=0;k<kept;++k)std::swap(b[k].Transition.StateBefore,b[k].Transition.StateAfter);
     e.commands->ResourceBarrier(kept,b);
+    // The belt's potion models, left out of the kept images (Copy), drawn fresh
+    // at this eye's pose: moved with the depth behind them they flickered and
+    // smeared (owner, 2026-10-19). The eye's copy fence was waited above.
+    if(turned&&interactionInput.active&&potionModels.Ready())
+        potionModels.Render(e.commands.Get(),e.images[e.index].texture,unsigned(i),{V(now.pose.position),Q(now.pose.orientation)},
+            {now.fov.angleLeft,now.fov.angleRight,now.fov.angleDown,now.fov.angleUp},potionScene);
     if(!Hr(e.commands->Close(),"close turn list")||!turned){failed=true;return false;}
     ID3D12CommandList* lists[]={e.commands.Get()};queue->ExecuteCommandLists(1,lists);
     if(!Hr(queue->Signal(fence.Get(),++fenceValue),"signal turn fence")){failed=true;return false;}
@@ -2497,13 +2503,16 @@ bool Copy(ID3D12Resource* src,Eye& e,reshade::api::command_queue* rq) {
     }
     for(auto& b:barriers)std::swap(b.Transition.StateBefore,b.Transition.StateAfter);
     e.commands->ResourceBarrier(2,barriers);
+    // Kept before the belt's potion models go over the picture: they are not
+    // in the scene's depth, so by turns the eye not drawn draws its own
+    // (TurnEye) instead of moving these with the depth behind them.
+    turnKept[eye]=keepTurns&&KeepTurn(e.commands.Get(),dest,int(eye));
+    turnDepths[eye].ok=keepDepth&&turnKept[eye]&&KeepDepth(e.commands.Get(),int(eye));
     if(!panelMode&&interactionInput.active&&potionModels.Ready()) {
         const auto& v=views[eye];
         potionModels.Render(e.commands.Get(),dest,eye,{V(v.pose.position),Q(v.pose.orientation)},
             {v.fov.angleLeft,v.fov.angleRight,v.fov.angleDown,v.fov.angleUp},potionScene);
     }
-    turnKept[eye]=keepTurns&&KeepTurn(e.commands.Get(),dest,int(eye));
-    turnDepths[eye].ok=keepDepth&&turnKept[eye]&&KeepDepth(e.commands.Get(),int(eye));
     if(gpu){
         e.commands->EndQuery(gpuProfile.heap.Get(),D3D12_QUERY_TYPE_TIMESTAMP,eye*5+4);
         e.commands->ResolveQueryData(gpuProfile.heap.Get(),D3D12_QUERY_TYPE_TIMESTAMP,eye*5,5,gpuProfile.readback.Get(),eye*5*sizeof(uint64_t));
