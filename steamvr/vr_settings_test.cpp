@@ -235,7 +235,7 @@ int main(){
         thrust.Click(hit);Check(thrust.Get()[MeleeThrustSpeed]==2.25f,"thrust speed adjusts in quarter steps");
         const auto request=thrust.Click({Kind::Apply});
         Check(request.changed==(ChangeMask{1}<<MeleeThrustSpeed),"thrust edit does not change swing speed or combat rules");
-        Check(RowCount(Page::Combat)==7&&RowKey(Page::Combat,3)==ShieldBashSpeed,"seven Combat rows retain independent bash speed; parry window is fixed");
+        Check(RowCount(Page::Combat)==8&&RowKey(Page::Combat,3)==ShieldBashSpeed,"eight Combat rows retain independent bash speed; parry window is fixed");
         Check(Normalize(MeleeThrustSpeed,NAN)==2&&Normalize(MeleeThrustSpeed,0)==.75f&&Normalize(MeleeThrustSpeed,99)==10,"thrust speed has finite usable bounds");
     }
     {Model strain;strain.Open(s);strain.Click({Kind::Tab,int(Page::Combat)});
@@ -273,6 +273,17 @@ int main(){
         aim.Click(At(Page::Aim,Increase(0)));aim.Click(At(Page::Aim,Increase(0)));
         const auto request=aim.Click({Kind::Apply});
         Check(request.changed==(ChangeMask{1}<<TargetHighlight)&&request.values[TargetHighlight]==20,"the outline strength changes nothing else");
+    }
+    {Model heart;heart.Open(s);heart.Click({Kind::Tab,int(Page::Combat)});
+        Check(s.values[HeartbeatStart]==60&&RowKey(Page::Combat,7)==HeartbeatStart,"heartbeat start is the last Combat row, 60% by default");
+        Check(ValueBox(7).y+ValueBox(7).h<744,"heartbeat row avoids Combat notes");
+        Check(Normalize(HeartbeatStart,NAN)==60&&Normalize(HeartbeatStart,45)==50&&Normalize(HeartbeatStart,-5)==0&&Normalize(HeartbeatStart,100)==90,"heartbeat start snaps to 10% steps, 0-90");
+        heart.Click(At(Page::Combat,Decrease(7)));Check(heart.Get()[HeartbeatStart]==50,"minus lowers the start by 10%");
+        for(int i=0;i<6;++i)heart.Click(At(Page::Combat,Decrease(7)));
+        Check(heart.Get()[HeartbeatStart]==0,"Off is the lower bound");
+        for(int i=0;i<10;++i)heart.Click(At(Page::Combat,Increase(7)));
+        Check(heart.Get()[HeartbeatStart]==90,"90% is the upper bound");
+        Check(heart.Click({Kind::Apply}).changed==(ChangeMask{1}<<HeartbeatStart),"heartbeat start saves only its own setting");
     }
     {Model difficulty;difficulty.Open(s);difficulty.Click({Kind::Tab,int(Page::Combat)});
         Check(s.values[OfflinePlayers]==0&&RowKey(Page::Combat,6)==OfflinePlayers,"difficulty preserves native settings by default");

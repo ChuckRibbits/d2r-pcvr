@@ -848,10 +848,16 @@ void LoadSettings() {
     // The perfect parry window is fixed at 450 ms with no lead (no longer a setting).
     melee::ConfigureParrySound((int)IniF(L"gameplay",L"parry_sound",236));
     melee::ConfigureBlockSound((int)IniF(L"gameplay",L"block_sound",398));
+    // % of physical blocks and chips that give the shield the game's own 10% wear roll:
+    // 22 = its native share of struck wear (2.2% a contact). Parries never.
+    combat::ConfigureShieldWear(int(IniF(L"gameplay",L"shield_block_wear",22)));
     // Unleashed rule (on by default): every monster attack and projectile lands, and
     // its native to-hit chance against your Defense scales the damage instead.
     // Classic keeps the native monster to-hit roll.
     combat::ConfigureEnemiesAlwaysHit(!classicMelee&&IniB(L"gameplay",L"enemies_always_hit",true));
+    // Unleashed (on by default): a broken guard leaks a chip of each blocked hit.
+    combat::ConfigureGuardChip(!classicMelee&&IniB(L"gameplay",L"guard_break_chip",true),
+                               IniF(L"gameplay",L"guard_break_chip_scale",1));
     // Unleashed swing damage (applied live): attack rating and attack speed scale
     // a physical swing instead of deciding whether it lands. [gameplay] ar_damage
     // (1): damage x the native to-hit chance; ar_damage_floor (% kept at zero
@@ -883,16 +889,26 @@ void LoadSettings() {
     constexpr bool guardTraceDefault=false;
 #endif
     combat::ConfigureGuard(!classicMelee,450,IniB(L"debug",L"guard_trace",guardTraceDefault));
+    // Parry downstroke: a parry swing must start once this % of the attacker's
+    // wind-up (start to hit frame) has passed - as the blow comes down, not as
+    // the arms first rise. 0 = anywhere in the wind-up (the old rule).
+    melee::ConfigureParryDownstroke((uint32_t)std::clamp(IniF(L"gameplay",L"parry_downstroke",90),0.f,95.f));
+    // Late parry: a swing up to this many ms after a blocked hit still parries
+    // it - the game's hit frame comes before the blow lands on screen. 0 = off.
+    combat::ConfigureLateParry((uint32_t)std::clamp(IniF(L"gameplay",L"parry_late_ms",200),0.f,400.f));
+    // Parry at hit: the stagger waits for the blow to land on the shield (1),
+    // or fires the moment the downstroke swing is made (0, cuts the blow off).
+    melee::ConfigureParryAtHit(IniB(L"gameplay",L"parry_at_hit",true));
     // Guard strain light: % of the guard each block strains, lowered reset time,
     // % of the view left clear at full swell, the broken guard's breathing period,
     // the width of the light's inner blend (% of the visor radius), opacity (% peak;
-    // 0 = none, strain and the heartbeat still run), and colour as RRGGBB hex
+    // 0 = none, strain still runs), and colour as RRGGBB hex
     // (FFF7EA, the pale white light, by default). guard_strain_dark (VR Settings >
     // Combat > Guard strain color: Black) darkens the rim instead, denser by
     // guard_strain_dark_density (2.5; 1 = the same curve as the light): at equal
     // opacity a dark rim over D2's dark scenes hides far less than a pale one.
     framevr::ConfigureGuardStrain(IniF(L"gameplay",L"guard_strain_per_block",10)/100.f,
-                                  IniF(L"gameplay",L"guard_strain_reset_ms",3000)/1000.f,
+                                  IniF(L"gameplay",L"guard_strain_reset_ms",1500)/1000.f,
                                   IniF(L"gameplay",L"guard_strain_clear",10)/100.f,
                                   IniF(L"gameplay",L"guard_strain_breathe_ms",1600)/1000.f,
                                   IniF(L"gameplay",L"guard_strain_softness",45)/100.f,
@@ -903,15 +919,31 @@ void LoadSettings() {
                                       return end&&end!=hex&&!*end&&v<=0xFFFFFFul?uint32_t(v):0xFFF7EAu;}(),
                                   IniB(L"gameplay",L"guard_strain_dark",false)?
                                       std::clamp(IniF(L"gameplay",L"guard_strain_dark_density",2.5f),1.f,6.f):1.f);
-    {   // Guard strain heartbeat: % on top of the game's Master x Combat volume (0 = off),
-        // tempo range, wind-down time from full, and an optional one-beat 16-bit PCM WAV (next to this ini unless a full path).
+    // Strain also recedes with the shield still up once no hit has reached it for
+    // guard_strain_recover_ms (1500), at the guard_strain_reset_ms rate (1500): clear 3 s after the
+    // last hit from full. 0 = only lowering clears it.
+    framevr::ConfigureGuardStrainRecover(IniF(L"gameplay",L"guard_strain_recover_ms",1500)/1000.f);
+    {   // Low-life heartbeat (start: VR Settings > Combat, [gameplay] low_life_heart_start): % on top of
+        // the game's Master x Combat volume (0 = off), tempo range, wind-down time from full, and
+        // an optional one-beat 16-bit PCM WAV (next to this ini unless a full path). The old
+        // guard_strain_heart* keys are still read when the low_life_heart* key is absent.
+        auto heartF=[](const wchar_t* key,const wchar_t* old,float def){return IniF(L"gameplay",key,IniF(L"gameplay",old,def));};
         wchar_t file[MAX_PATH];GetPrivateProfileStringW(L"gameplay",L"guard_strain_heart_file",L"",file,MAX_PATH,g_iniPath);
+        std::wstring fallback=file;
+        GetPrivateProfileStringW(L"gameplay",L"low_life_heart_file",fallback.c_str(),file,MAX_PATH,g_iniPath);
         std::wstring path=file;
         if(!path.empty()&&path.find(L':')==std::wstring::npos){std::wstring dir=g_iniPath;dir.resize(dir.find_last_of(L"\\/")+1);path=dir+path;}   // the ini's own folder
-        framevr::ConfigureHeartbeat(IniF(L"gameplay",L"guard_strain_heartbeat",200)/100.f,
-                                    IniF(L"gameplay",L"guard_strain_heart_bpm_min",70),
-                                    IniF(L"gameplay",L"guard_strain_heart_bpm_max",115),
-                                    IniF(L"gameplay",L"guard_strain_heart_fade_ms",4000)/1000.f,path.c_str());
+        framevr::ConfigureHeartbeat(heartF(L"low_life_heartbeat",L"guard_strain_heartbeat",200)/100.f,
+                                    heartF(L"low_life_heart_bpm_min",L"guard_strain_heart_bpm_min",70),
+                                    heartF(L"low_life_heart_bpm_max",L"guard_strain_heart_bpm_max",115),
+                                    heartF(L"low_life_heart_fade_ms",L"guard_strain_heart_fade_ms",4000)/1000.f,path.c_str());
+    }
+    {   // Guard break: a bone snap at % of the game's Master x Combat volume (0 = off), and an
+        // optional 16-bit PCM WAV in its place (next to this ini unless a full path).
+        wchar_t file[MAX_PATH];GetPrivateProfileStringW(L"gameplay",L"guard_break_sound_file",L"",file,MAX_PATH,g_iniPath);
+        std::wstring path=file;
+        if(!path.empty()&&path.find(L':')==std::wstring::npos){std::wstring dir=g_iniPath;dir.resize(dir.find_last_of(L"\\/")+1);path=dir+path;}
+        framevr::ConfigureGuardBreakSound(IniF(L"gameplay",L"guard_break_volume",100)/100.f,path.c_str());
     }
 #endif
 #ifdef D2RVR_NATIVE_OPENXR
