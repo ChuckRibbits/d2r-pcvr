@@ -866,9 +866,6 @@ float StopShieldWrist(const Hero& h,std::vector<Mat>& newW) {
     const Mat rigid=Mul(Mul(h.bind[k],InvAffine(h.bind[sa])),newW[sa]);
     const V3 f=Norm(Sub(Pos(newW[k]),Pos(newW[l])));   // elbow -> wrist
     const V3 now=Norm(RotOnly(back,newW[k])),stop=Norm(RotOnly(back,rigid));
-    // [diag] the side the old rule went by, for the log only: 1 = it would have turned the stop round
-    const V3 off=Sub(Pos(newW[sa]),Pos(newW[l])),side=Sub(off,Scale(f,Dot(off,f)));
-    const int oldFlip=Len(side)>1e-3f&&Dot(side,stop)<0?1:0;
     // Bend as the angle off the forearm: easing starts kEase short of the stop
     // and only approaches it, so the shield slows into place and never reaches the arm.
     constexpr float kEase=15.0f/57.2958f;
@@ -885,13 +882,20 @@ float StopShieldWrist(const Hero& h,std::vector<Mat>& newW) {
             std::vector<char> fromK(h.count,0);fromK[k]=1;Propagate(h,before,newW,fromK,k);   // fingers, L_weapon_attach
         }
     }
-    // 90 = hand straight, above 90 = bent back (back of the hand up), below = bent toward the palm
+#ifdef D2RVR_DEVELOPER
+    // [diag] developer builds only. 90 = hand straight, above 90 = bent back (back of the
+    // hand up), below = bent toward the palm. old_flip: the side the old rule went by
+    // (shield_attach's offset from the forearm, untouched by the turn above); 1 = it
+    // would have turned the stop round.
     static ULONGLONG reportAt=0;const auto nowMs=GetTickCount64();
     if(nowMs>=reportAt) {
+        const V3 off=Sub(Pos(newW[sa]),Pos(newW[l])),side=Sub(off,Scale(f,Dot(off,f)));
+        const int oldFlip=Len(side)>1e-3f&&Dot(side,stop)<0?1:0;
         char line[200];snprintf(line,sizeof line,"Frame shield wrist stop: class=%d asked=%.1f stop=%.1f given=%.1f held=%.1f deg old_flip=%d",
             h.cls,asked*57.2958f,at*57.2958f,given*57.2958f,(asked-given)*57.2958f,oldFlip);
         framevr::logging::Write(line);reportAt=nowMs+1000;
     }
+#endif
     return (asked-given)*57.2958f;
 }
 #endif
