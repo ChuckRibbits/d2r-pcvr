@@ -669,12 +669,14 @@ bend leaves it still; 100% (Wrist) turns it with the hand, the original wrist
 attach. The blend is a slerp between the two, so it is smooth at every value.
 Twisting the forearm turns the shield at every value.
 
-A resting roll then turns the shield about the forearm, so a controller held
-palm down (common in VR) shows the shield's face outward, not lying on top of
-the forearm like a tray: `[gameplay] shield_roll_deg`, default 90, -180 to +180;
-positive turns the face from the back of the hand toward the little finger. With
-the thumb up the default faces the shield down; 0 restores the shield's bind-pose
-facing. It is an INI value only, because VR Settings has no key left (64 of 64).
+A resting roll then turns the shield about the forearm: `[gameplay]
+shield_roll_deg`, default 0 (the attach's own facing), -180 to +180, snapped to
+5-degree steps; positive turns the face from the back of the hand toward the
+little finger. With the usual near thumb-up grip, 0 seats every class's shield
+on the outside of the forearm; +90 suits a controller held palm down (the face
+outward instead of lying on the forearm like a tray), while with the thumb up it
+lays the shield flat under the wrist. It is an INI value only, because VR
+Settings has no key left (64 of 64).
 
 Per-shield adjustments are one table in `vr/shield_pose.h` (`kTweaks`), keyed by
 the equipped shield's item code read live from the game. The Bone Shield (`bsh`)
@@ -688,11 +690,13 @@ bone sat near the forearm's line, and the shield jumped across the wrist.
 `[debug] shield_trace=1` (on by default in developer builds, off for players)
 logs the held shield's pose chain at 5 Hz, and at once when it jumps:
 
-`Frame shield trace: t=1234567 face=35 hand=(-21.0,-38.5,-30.2|12,-35,80) wrist=(-19.8,-41.0,-27.5|10,-33,78) elbow=(-24.1,-48.7,-3.0|5,-20,70) seat=(-3.0,6.1,2.0) shield=(-15.9,-43.1,-31.8|-80,10,15) side=back stop=0 follow=50% roll=90 bend=24 scale=1.00 turn=3.2deg`
+`Frame shield trace: t=1234567 face=35 hand=(-21.0,-38.5,-30.2|12,-35,80) wrist=(-19.8,-41.0,-27.5|10,-33,78) elbow=(-24.1,-48.7,-3.0|5,-20,70) seat=(-3.0,6.1,2.0) shield=(-15.9,-43.1,-31.8|-80,10,15) side=back stop=0 follow=50% roll=0 bend=24 scale=1.00 turn=3.2deg`
 
 Everything is in model space from the eye, so a body turn or a level load no
-longer reads as a flip; a new world placement (snap turn, recenter, level)
-restarts the jump check.
+longer reads as a flip. A new world placement (snap turn, recenter, level), the
+first trace frame after the shield or arm appears (or its bone or skeleton
+changes), and a gap of over 0.5 s with no trace frame (a level loading) each
+restart the jump check, so spawning never prints a JUMP.
 
 - `t`: milliseconds (GetTickCount64); ` JUMP` after it marks a line written
   early because the shield turned over 20 degrees in one frame.

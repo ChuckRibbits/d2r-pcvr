@@ -226,6 +226,16 @@ int main() {
          assert(same(sh::Roll(palmDown,0),palmDown)&&same(sh::Roll(palmDown,NAN),palmDown));
          assert(same(sh::Roll(palmDown,500),sh::Roll(palmDown,180)));   // clamped to the setting's range
          assert(same(sh::Roll(sh::Roll(palmDown,40),-40),palmDown));
+         // the INI value: -180..+180 snapped to 5-degree steps; 0 (the attach's own facing) when unreadable
+         assert(sh::RollSetting(0)==0&&sh::RollSetting(NAN)==0&&sh::RollSetting(INFINITY)==0);
+         assert(sh::RollSetting(92)==90&&sh::RollSetting(93)==95&&sh::RollSetting(-7)==-5&&sh::RollSetting(-8)==-10);
+         assert(sh::RollSetting(500)==180&&sh::RollSetting(-500)==-180&&sh::RollSetting(-1)==0&&!std::signbit(sh::RollSetting(-1)));
+         // the trace's jump check starts over on its first frame, a new shield or arm, and after a gap (a level load)
+         assert(sh::TraceFresh(false,1000,1011,true));                       // first frame
+         assert(!sh::TraceFresh(true,1000,1011,true)&&!sh::TraceFresh(true,1000,1500,true));
+         assert(sh::TraceFresh(true,1000,1501,true));                        // no trace frame for over 0.5 s
+         assert(sh::TraceFresh(true,1000,1011,false));                       // another shield bone or skeleton
+         assert(sh::TraceFresh(true,1000,999,true));                         // clock went back
          // the roll turns the shield about the forearm through the wrist, the same for either class's bones
          Mat placedA,placedB,attach=Identity();Position(attach,{0,-.04f,.24f});   // on the back of the hand at bind
          assert(sh::Place(attach,bind,wrist,1,sh::Roll(wristA,90),wrist,1,placedA)&&sh::Place(attach,bind,wrist,1,sh::Roll(wristB,90),wrist,1,placedB));

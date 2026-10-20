@@ -126,6 +126,13 @@ inline Frame Roll(Frame f,float deg) {
     const bow::Vec out=f.out*c-f.up*s,up=f.up*c+f.out*s;
     f.out=out;f.up=up;return f;
 }
+// [gameplay] shield_roll_deg as read from the INI: -180..+180 in 5-degree steps,
+// 0 (the attach's own facing) when it is not a number.
+constexpr float kRollStepDeg=5;
+inline float RollSetting(float deg) {
+    if(!std::isfinite(deg))return 0;
+    return std::round(std::clamp(deg,-kRollMaxDeg,kRollMaxDeg)/kRollStepDeg)*kRollStepDeg+0.f;
+}
 // The frame as a bone matrix (row vectors): its axes scaled, at origin.
 inline bow::Mat Matrix(const Frame& f,bow::Vec origin,float scale) {
     bow::Mat m=bow::Identity();
@@ -178,6 +185,13 @@ inline float TurnDeg(const bow::Mat& a,const bow::Mat& b) {
     float trace=0;
     for(int r=0;r<3;++r)trace+=bow::Dot(bow::Normalized({a.m[r*4],a.m[r*4+1],a.m[r*4+2]}),bow::Normalized({b.m[r*4],b.m[r*4+1],b.m[r*4+2]}));
     return std::acos(std::clamp((trace-1)*.5f,-1.f,1.f))*57.29578f;
+}
+// The trace's jump check starts over (no JUMP, turn 0) on its first frame and
+// after a gap: no trace frame for over kTraceGapMs (no shield or arm drawn, a
+// level loading), or the shield's bone or skeleton changed since the last frame.
+constexpr unsigned long long kTraceGapMs=500;
+inline bool TraceFresh(bool haveFrame,unsigned long long lastMs,unsigned long long nowMs,bool sameShield) {
+    return !haveFrame||!sameShield||nowMs<lastMs||nowMs-lastMs>kTraceGapMs;
 }
 inline bow::Vec Angles(const bow::Mat& m) {
     using namespace bow;

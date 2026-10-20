@@ -64,6 +64,7 @@ void FindHero(const float hero[3], const wchar_t* outPath, const char* tag);
 int FindHeroMatrices(const float hero[3], uintptr_t* out, int max);
 }
 #include "skeletons.h"
+#include "shield_pose.h"
 namespace effectstate { bool HolyShield(uint64_t session); }   // active_effects.cpp: the last game-thread sample
 #include "writewatch.h"
 namespace uitrace { void Register(bool diagnostic); bool Enabled(); bool Arm(const std::wstring& path); void SetSkip(uint64_t pipe); void SetSkipShaders(const uint64_t* hashes, int n); }
@@ -393,7 +394,7 @@ struct Settings {
     std::atomic<int>   bodyTurn{2};         // 0 game facing, 1 above the pelvis, 2 whole body turns to where the camera looks
     std::atomic<bool>  wrist{true};         // arms mode 2: the hands turn with the controllers
     std::atomic<bool>  shieldTrace{false};  // [debug] shield_trace
-    std::atomic<float> shieldRollDeg{90.0f};  // [gameplay] shield_roll_deg: resting roll about the forearm (skel::shield::Roll)
+    std::atomic<float> shieldRollDeg{0.0f};   // [gameplay] shield_roll_deg: resting roll about the forearm (skel::shield::Roll), 0 = the attach's own facing
     std::atomic<float> wristPitch{0.0f}, wristYaw{0.0f}, wristRoll{0.0f};   // degrees on top, controller axes
     std::atomic<float> convergence{15.0f};  // distance (world units) that sits ON the screen; 0 = parallel eyes
     std::atomic<float> thirdDistance{7.0f}; // third person: camera this far behind the eye point
@@ -1394,7 +1395,7 @@ void LoadSettings() {
 #else
     g_set.shieldTrace.store(IniB(L"debug", L"shield_trace", false));
 #endif
-    g_set.shieldRollDeg.store(std::clamp(IniF(L"gameplay", L"shield_roll_deg", 90.0f), -180.0f, 180.0f));
+    g_set.shieldRollDeg.store(skel::shield::RollSetting(IniF(L"gameplay", L"shield_roll_deg", 0.0f)));   // -180..+180 in 5-degree steps
     g_set.wristPitch.store(std::clamp(IniF(L"hands", L"pitch", 0.0f), -180.0f, 180.0f));
     g_set.wristYaw.store(std::clamp(IniF(L"hands", L"yaw", 0.0f), -180.0f, 180.0f));
     g_set.wristRoll.store(std::clamp(IniF(L"hands", L"roll", 0.0f), -180.0f, 180.0f));

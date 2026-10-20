@@ -2206,10 +2206,16 @@ void PoseBody(uintptr_t self, const Hero& h, const Input& in) {
         bow::Mat hand, elbow, shieldNow;
         memcpy(&hand, &newW[k], sizeof hand); memcpy(&elbow, &newW[l], sizeof elbow); memcpy(&shieldNow, &newW[sb], sizeof shieldNow);
         const float cm = upm > 0 ? 100 / upm : 0;
-        static bow::Mat lastFrame{}, lastLine{}; static bool haveFrame = false; static ULONGLONG nextLine = 0; static uint32_t lastEpoch = 0;
-        if (in.worldEpoch != lastEpoch) { haveFrame = false; lastEpoch = in.worldEpoch; }
-        const float jump = haveFrame ? shield::TurnDeg(lastFrame, shieldNow) : 0;
+        static bow::Mat lastFrame{}, lastLine{}; static bool haveFrame = false; static ULONGLONG nextLine = 0, lastSeen = 0; static uint32_t lastEpoch = 0;
+        static uintptr_t lastSkel = 0; static int lastBone = -1;
         const ULONGLONG now = GetTickCount64();
+        // a new world placement, the first frame after the shield or arm appears, or a gap
+        // (a level loading) starts the jump check over, so spawning never prints a JUMP
+        if (in.worldEpoch != lastEpoch || shield::TraceFresh(haveFrame, lastSeen, now, lastSkel == h.skel && lastBone == sb)) {
+            haveFrame = false; lastEpoch = in.worldEpoch;
+        }
+        lastSeen = now; lastSkel = h.skel; lastBone = sb;
+        const float jump = haveFrame ? shield::TurnDeg(lastFrame, shieldNow) : 0;
         const bool sudden = jump > 20;
         if (now >= nextLine || sudden) {
             nextLine = now + 200;
