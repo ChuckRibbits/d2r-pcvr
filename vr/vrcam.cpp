@@ -392,6 +392,7 @@ struct Settings {
     std::atomic<bool>  thirdTurn{true};     // [body] turn_third: from behind too the whole hero faces where the camera looks (the right stick turns him)
     std::atomic<int>   bodyTurn{2};         // 0 game facing, 1 above the pelvis, 2 whole body turns to where the camera looks
     std::atomic<bool>  wrist{true};         // arms mode 2: the hands turn with the controllers
+    std::atomic<bool>  shieldTrace{false};  // [debug] shield_trace
     std::atomic<float> wristPitch{0.0f}, wristYaw{0.0f}, wristRoll{0.0f};   // degrees on top, controller axes
     std::atomic<float> convergence{15.0f};  // distance (world units) that sits ON the screen; 0 = parallel eyes
     std::atomic<float> thirdDistance{7.0f}; // third person: camera this far behind the eye point
@@ -1387,6 +1388,11 @@ void LoadSettings() {
     g_set.spearShaftAxis.store(std::clamp((int)IniF(L"hands", L"spear_shaft_axis", -2.0f), -3, 3));
     g_set.bodyYawDeg.store(std::clamp(IniF(L"body", L"yaw", 0.0f), -180.0f, 180.0f));
     g_set.wrist.store(IniB(L"hands", L"wrist", true));
+#ifdef D2RVR_DEVELOPER
+    g_set.shieldTrace.store(IniB(L"debug", L"shield_trace", true));   // off for players unless asked for
+#else
+    g_set.shieldTrace.store(IniB(L"debug", L"shield_trace", false));
+#endif
     g_set.wristPitch.store(std::clamp(IniF(L"hands", L"pitch", 0.0f), -180.0f, 180.0f));
     g_set.wristYaw.store(std::clamp(IniF(L"hands", L"yaw", 0.0f), -180.0f, 180.0f));
     g_set.wristRoll.store(std::clamp(IniF(L"hands", L"roll", 0.0f), -180.0f, 180.0f));
@@ -6732,6 +6738,7 @@ void PushArms() {
     in.wrist = g_set.wrist.load();
 #ifdef D2RVR_NATIVE_OPENXR
     in.forearmTwist = in.wrist;   // a hand turned by the controller turns its forearm too
+    in.shieldTrace = g_set.shieldTrace.load();
     {const auto v = vrsettings::Read().values; in.shieldGripCm = v[framevr::settings::ShieldGrip];
      in.shieldOutCm = v[framevr::settings::ShieldOut]; in.shieldUpCm = v[framevr::settings::ShieldUp];}
 #endif

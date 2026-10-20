@@ -19,8 +19,9 @@ struct Input {
     bool legsUnder = false;     // with lockUpper: pelvis and legs kept under that body - no lunge ahead, no hip turn
     bool wrist = false;         // mode 2: the hands turn with the controllers, not only follow the forearm
     bool forearmTwist = false;  // the forearm takes a share of the wrist's twist about its own axis (sleeves, bracers)
-    float shieldGripCm = 0.0f;  // VR Settings > Shield: the shield's centre moved up the forearm toward the elbow
-    float shieldOutCm = 0.0f, shieldUpCm = 0.0f;  // and out from the forearm, and across it (cm, at the user's scale)
+    float shieldGripCm = 0.0f;  // VR Settings > Shield: the shield moved up the forearm toward the elbow, so the hand reaches its grip
+    float shieldOutCm = 0.0f, shieldUpCm = 0.0f;  // and out from the forearm, and across it (cm, scaled by the model's forearm)
+    bool shieldTrace = false;   // [debug] shield_trace: log the held shield's pose chain (5 Hz, and at once on a jump)
     float wristDeg[3] = {};     // pitch, yaw, roll on top, in the controller's own axes (mirrored for the left)
     float scale = 1.0f;         // arm reach on top of the hero/user height ratio
     float userHeadM = 1.7f;     // the user's head above the floor

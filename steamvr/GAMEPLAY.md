@@ -650,29 +650,45 @@ current length for extreme tracking/calibration errors. Contact uses the same
 final shield pose. The owner verified this adjustment in the combined developer
 build; individual class/shield combinations were not specified.
 
-**Shield seat and forearm twist (2026-10-20).** The shield still takes the
-tracked hand's turn, but it now turns about its own centre instead of the wrist.
-That centre is read from the held shield's rendered mesh (its bounds around the
-bone it hangs on, logged once as `Frame shield fit`) and stays where the game
-hangs the shield on the forearm. Previously a large shield swung about the wrist
-by a lever as long as its radius: it sat far off the arm and wheeled round as the
-wrist bent, while a buckler barely moved. Until the mesh is read, the attach bone
-is the pivot. The side of the forearm the shield sits on (for the wrist stop and
-Out) comes from the bind pose, so it cannot flip as the arm moves. With the hands
-turning with the controllers, the forearm also takes a share of the hand's twist
-about its own length (sleeves and bracers follow the wrist), measured against the
-bind pose so animations do not shake it.
-**VR Settings > Shield** moves the seat from there: **Grip offset** up the
-forearm toward the elbow (0-40 cm), **Out** away from the forearm and **Up**
-across it (-25 to +25 cm each), in 1 cm steps at your scale; defaults 3 / 2 / 2
-cm (`[gameplay] shield_grip_cm`, `shield_out_cm`, `shield_up_cm`). All 0 puts the
-shield's centre exactly where the game hangs it. No value changes its turn.
-While a shield is held, `Frame shield seat:` is logged once a second: the pivot
-in use (`mesh centre` or the `attach bone` fallback) and its offset from the bone,
-the seated centre from the elbow (along the forearm, out, up, cm), the face's
-normal in the same axes, how far the hand has turned it from the game's hold,
-the last mesh reading and its fate, the last reason a rendered frame gave none,
-and the discovery stages (see [shield blocking](../docs/SHIELD_BLOCKING.md)).
+**Forearm twist and shield position (2026-10-20).** With the hands turning
+with the controllers, the forearm takes a share of the hand's twist about its
+own length, so sleeves and bracers follow the wrist. The shield still hangs from
+the tracked hand and moves and turns with the wrist. **VR Settings > Shield**
+moves the point of the shield that hangs at the wrist - for a big shield, its
+straps are far from its attach bone: **Grip offset** slides the shield up toward
+the elbow (0-40 cm), **Out** away from the forearm and **Up** across it (-25 to
++25 cm each), in 1 cm steps scaled by the model's forearm; defaults 3 / 2 / 2
+cm, tuned on a buckler (large shields may need much more; all 0 is the original
+position; `[gameplay] shield_grip_cm`, `shield_out_cm`, `shield_up_cm`). The
+offsets are carried in the hand's own axes, so the shield stays rigid with the
+hand and still turns about the wrist. The side of the forearm the shield is on -
+for the wrist stop and for Out - is decided once from the bind pose: read each
+frame, it flipped when the shield's bone sat near the forearm's line, and the
+shield jumped across the wrist.
+
+`[debug] shield_trace=1` (on by default in developer builds, off for players)
+logs the held shield's pose chain at 5 Hz, and at once when something jumps:
+
+`Frame shield trace: t=1234567 hand=(-21.0,-38.5,-30.2|12,-35,80) wrist=(-19.8,-41.0,-27.5|10,-33,78) elbow=(-24.1,-48.7,-3.0|5,-20,70) snap=(4.1,-2.3,-6.0) shield=(-15.9,-43.1,-31.8|-80,10,15) side=back stop=0 dev hand=0.4cm snap=0.0cm turn=3.2deg`
+
+- `t`: milliseconds (GetTickCount64); ` JUMP` after it marks a line written
+  early because the shield turned over 20 degrees in one frame, the hand's error
+  changed by over 3 cm, or the snap error passed 1 cm.
+- `hand`: the tracked left controller, room space relative to the head, cm,
+  then its heading, pitch and roll in degrees.
+- `wrist`, `elbow`: the model's hand and forearm bones, model space from the
+  eye, cm (at the user's scale), and their heading, pitch and roll.
+- `snap`: the shield's attach point in the hand's own axes, cm - the point that
+  hangs at the wrist. It stays put while the wrist turns; it moves only with the
+  Shield settings.
+- `shield`: the shield's attach bone, model space from the eye, and its angles.
+- `side`: the side of the forearm the shield is on (`back` of the hand or
+  `palm`); `stop`: degrees of wrist bend the shield stop held back.
+- `dev hand`: tracked wrist target to the model's wrist, cm (-1 without
+  tracking); `dev snap`: the attach point's distance from where it should hang,
+  cm; `turn`: the shield's turn since the previous line, degrees - a flip shows as
+  a jump toward 180.
+
 With **Smite** selected, an energetic
 left-arm swing or thrust that intersects an eligible creature requests one native
 Smite against that creature. A stationary shield cannot bash; one continuous

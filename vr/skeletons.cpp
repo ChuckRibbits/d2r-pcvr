@@ -335,16 +335,8 @@ framevr::guard::Pose g_shieldGuardPose{};
 struct ShieldContext {
     framevr::guard::Pose pose{};V3 player{};uintptr_t hero=0;
     uint32_t generation=0,equipment=0;uint64_t session=0;
-    Mat attach{};   // the bone the shield hangs on, as posed (world)
 };
 ShieldContext g_shieldContext{},g_renderedShieldContext{};
-// The held shield's mesh centre in its attach bone's axes (ShieldRendered),
-// for this hero and these hands only: PoseBody turns the shield about it.
-struct ShieldFitFor {
-    shield::Fit fit;uintptr_t hero=0;uint32_t generation=0,equipment=0;uint64_t session=0;
-    bow::Vec reading{},normal{};float half=0;   // the last reading, the face's normal and half its diagonal (bone axes)
-};
-ShieldFitFor g_shieldFit;
 struct ShieldBound {int bone=-1;framevr::math::Vec low{},high{};};
 struct ShieldRenderSource {
     uintptr_t self=0,model=0,skeleton=0,bones=0,hero=0;
@@ -354,17 +346,9 @@ struct ShieldRenderSource {
 };
 ShieldRenderSource g_shieldRenderSource;
 std::atomic<uint32_t> g_shieldEntity{UINT32_MAX};
-// Cumulative milestones (2026-10-20: always kept - the shield seat log shows them too).
+// Cumulative milestones collected while the developer overlay is enabled.
 std::atomic<unsigned> g_shieldStages{0};
-void ShieldStage(unsigned bit){g_shieldStages.fetch_or(bit,std::memory_order_relaxed);}
-// Why the last rendered shield frame gave no mesh centre (the shield seat log).
-enum ShieldMiss {MissNone,MissStale,MissOther,MissOwner,MissMatrices,MissFace,MissAttach,MissPoseMoved};
-std::atomic<int> g_shieldMiss{MissNone};
-const char* ShieldMissName(int miss) {
-    constexpr const char* names[]={"none","pose older than 100 ms","another item, hero or hand","skeleton not the shield's",
-        "item matrices unreadable","no shield face in the mesh bounds","attach bone not invertible","pose replaced during the frame"};
-    return miss>=0&&miss<8?names[miss]:"?";
-}
+void ShieldStage(unsigned bit){if(devscenarios::DebugDraws())g_shieldStages.fetch_or(bit,std::memory_order_relaxed);}
 struct CrossbowGeometry {Mat boltToAttach{};uintptr_t hero=0;uint32_t generation=0,key=0;ULONGLONG at=0;};
 CrossbowGeometry g_crossbowGeometry;
 framevr::crossbow::Pose g_crossbowPose;
@@ -867,8 +851,9 @@ void ApplyWrist(Mat& hand, const Wrist& r) {
 // forearm (back of the hand up) swings the shield's elbow edge into the arm:
 // that bend eases into where the shield sat rigid on the forearm before it
 // followed the hand. Bending the other way, twisting and side to side stay free.
-// Returns how much bend the controller asked that the wrist held back, degrees (0: none).
-float StopShieldWrist(const Hero& h,std::vector<Mat>& newW) {
+// Returns how much bend the controller asked that the wrist held back, degrees (0: none);
+// side (if given): -1 when the shield's bone puts it on the palm's side, else +1.
+float StopShieldWrist(const Hero& h,std::vector<Mat>& newW,int* side=nullptr) {
     const int k=h.hand[1],sa=h.shieldAttach,l=h.lwr[1],i=h.ind[1],m=h.mid[1],p=h.pnk[1];
     if(k<0||sa<0||l<0||i<0||m<0||p<0)return 0;
     // the back of the hand in the hand bone's frame (Fist's left palm, reversed)
@@ -878,12 +863,14 @@ float StopShieldWrist(const Hero& h,std::vector<Mat>& newW) {
     const V3 f=Norm(Sub(Pos(newW[k]),Pos(newW[l])));   // elbow -> wrist
     V3 now=Norm(RotOnly(back,newW[k])),stop=Norm(RotOnly(back,rigid));
     // the shield's side of the forearm: the back of the hand's, unless its bone says otherwise.
-    // 2026-10-20: read from the bind pose, once per model. Read each frame, an
-    // attach bone close to the forearm's line flipped the side as the arm moved,
-    // and the stop - and the shield - jumped to the other side of the wrist.
-    const V3 fb=Sub(Pos(h.bind[k]),Pos(h.bind[l])),ob=Sub(Pos(h.bind[sa]),Pos(h.bind[l]));
-    const V3 side=Sub(ob,Scale(Norm(fb),Dot(ob,Norm(fb))));
-    if(Len(side)>.05f*Len(fb)&&Dot(side,RotOnly(back,h.bind[k]))<0){now=Scale(now,-1);stop=Scale(stop,-1);}
+    // 2026-10-20: decided from the bind pose, once per model. Read each frame, an
+    // attach bone near the forearm's line flipped the side as the arm moved, and
+    // the stop - and the shield following the hand - jumped across the wrist.
+    const V3 fb=Norm(Sub(Pos(h.bind[k]),Pos(h.bind[l]))),ob=Sub(Pos(h.bind[sa]),Pos(h.bind[l]));
+    const V3 off=Sub(ob,Scale(fb,Dot(ob,fb)));
+    const bool palm=Len(off)>.05f*Len(Sub(Pos(h.bind[k]),Pos(h.bind[l])))&&Dot(off,RotOnly(back,h.bind[k]))<0;
+    if(side)*side=palm?-1:1;
+    if(palm){now=Scale(now,-1);stop=Scale(stop,-1);}
     // Bend as the angle off the forearm: easing starts kEase short of the stop
     // and only approaches it, so the shield slows into place and never reaches the arm.
     constexpr float kEase=15.0f/57.2958f;
@@ -1257,6 +1244,7 @@ void PoseBody(uintptr_t self, const Hero& h, const Input& in) {
     }
     // The animation after the turn and proportion fit: the IK's local offsets.
     const std::vector<Mat> baseW = newW;
+    V3 leftWristWanted{};bool leftWristAsked=false;   // where the IK was asked to put the left wrist ([debug] shield_trace)
 
     // Model space: y up, faces +z, its left is +x. The two arms' subtrees are
     // disjoint, and each pass re-derives only its own side.
@@ -1273,6 +1261,7 @@ void PoseBody(uintptr_t self, const Hero& h, const Input& in) {
             const Wrist wr = PlanWrist(h, side, baseW, in, c, s);
             // The grip point is the middle of the palm; the wrist bone is half a hand behind it.
             if (wr.ok) T = Sub(T, Scale(wr.point, 0.5f * wr.reach));
+            if (side == 1) { leftWristWanted = T; leftWristAsked = true; }
             Reach(h, side, T, turn, c, s, baseW, newW, side==1&&in.leftShield);
             if (wr.ok) {
                 ApplyWrist(newW[k], wr);
@@ -1797,10 +1786,7 @@ void PoseBody(uintptr_t self, const Hero& h, const Input& in) {
             const int l = h.lwr[side], k = h.hand[side];
             if (l < 0 || k < 0 || !(in.handsValid & (1u << side))) continue;
             const V3 axis = Norm(Sub(Pos(newW[k]), Pos(newW[l])));
-            // the hand untwisted on this forearm: the bind pose's (the animation's
-            // wrist moved every frame of a walk or a swing, and the forearm with it)
-            const Mat held = h.bindOk ? Mul(Mul(h.bind[k], InvAffine(h.bind[l])), newW[l])
-                                      : Mul(Mul(baseW[k], InvAffine(baseW[l])), newW[l]);
+            const Mat held = Mul(Mul(baseW[k], InvAffine(baseW[l])), newW[l]);   // the hand untwisted on this forearm
             V3 heldAx[3], nowAx[3];
             for (int r = 0; r < 3; ++r) {
                 heldAx[r] = Norm({held.m[r * 4], held.m[r * 4 + 1], held.m[r * 4 + 2]});
@@ -1847,9 +1833,10 @@ void PoseBody(uintptr_t self, const Hero& h, const Input& in) {
     // combat animation or applying the sword/bow adjustment makes it orbit
     // the forearm. The bind relationship follows the final tracked wrist.
     bool shieldFollowed=false;
+    struct {V3 snapWanted{};int bone=-1,side=1;float heldBack=0;} seatTrace;   // for [debug] shield_trace
     if(in.mode==2&&in.leftShield&&(in.handsValid&2u)&&h.bindOk&&h.weapon[1]>=0&&h.hand[1]>=0) {
         const int wb=h.weapon[1],hand=h.hand[1];
-        StopShieldWrist(h,newW);   // before the shield takes the hand's turn
+        int side=1;const float heldBack=StopShieldWrist(h,newW,&side);   // before the shield takes the hand's turn
         bow::Mat wristBind,shieldBind,wristNow,result;
         memcpy(&wristBind,&h.bind[hand],sizeof wristBind);
         memcpy(&shieldBind,&h.bind[wb],sizeof shieldBind);
@@ -1860,76 +1847,38 @@ void PoseBody(uintptr_t self, const Hero& h, const Input& in) {
             const auto before=newW;memcpy(&newW[wb],&result,sizeof result);
             std::vector<char> moved(n,0);moved[wb]=1;Propagate(h,before,newW,moved,wb);
             shieldFollowed=true;
-            // Seat the shield (the bone it hangs on, followed): it keeps the hand's
-            // turn, but turns about its own centre - the rendered mesh's, once
-            // learned, else the bone - which stays where the game hangs it on the
-            // forearm (the bind pose's place on this frame's forearm, twist and
-            // all), then VR Settings > Shield moves it up, out and across.
-            // 2026-10-20: hung from the hand, a big shield swung a radius off the
-            // arm about the wrist; a buckler barely moved, so 3 cm hid it.
-            const int l=h.lwr[1];
-            auto seat=[&](int bone,bow::Mat& followed) {
-                if(l<0)return;
-                shield::Fit fit;
-                AcquireSRWLockShared(&g_gunBoneLock);const auto learned=g_shieldFit;ReleaseSRWLockShared(&g_gunBoneLock);
-                if(learned.fit.ok&&learned.hero==self&&learned.generation==HeroGen()&&
-                   learned.equipment==gamestate::HandsKey()&&learned.session==gamestate::LocalPlayer())fit=learned.fit;
-                const bow::Vec centre=fit.ok?fit.centre:bow::Vec{};
-                bow::Mat bindBone,bindArm,bindWrist,arm,rigid;
-                memcpy(&bindBone,&h.bind[bone],sizeof bindBone);memcpy(&bindArm,&h.bind[l],sizeof bindArm);
-                memcpy(&bindWrist,&h.bind[hand],sizeof bindWrist);memcpy(&arm,&newW[l],sizeof arm);
-                const Mat onArm=Mul(Mul(h.bind[bone],InvAffine(h.bind[l])),newW[l]);memcpy(&rigid,&onArm,sizeof rigid);
-                bow::Vec target=shield::Point(rigid,centre),along,out,up;
-                const auto sides=shield::LearnArm(bindArm,bindWrist,shield::Point(bindBone,centre));
-                const float headY=in.haveEye?in.eyeModel[1]:Pos(newW[h.head>=0?h.head:hand]).y;
-                const float upm=framevr::body::UnitsPerMetre(h.eyeY>0?h.eyeY:headY,in.userHeadM,in.scale);
-                const bool axes=shield::Axes(arm,sides,along,out,up);
-                if(axes)target=target+shield::Offset(along,out,up,in.shieldGripCm,in.shieldOutCm,in.shieldUpCm,upm);
-                shield::Seat(followed,centre,target,followed);
-                // Once a second while a shield is held: what it is doing, for headset tests.
-                static ULONGLONG nextSeatLog=0;const ULONGLONG now=GetTickCount64();
-                if(axes&&upm>0&&now>=nextSeatLog) {
-                    nextSeatLog=now+1000;
-                    const float cm=100/upm;
-                    auto in3=[&](bow::Vec v,float k){return bow::Vec{bow::Dot(v,along)*k,bow::Dot(v,out)*k,bow::Dot(v,up)*k};};
-                    const bow::Vec seatAt=in3(target-bow::Position(arm),cm),pivot=in3(bow::Vector(followed,centre),cm);
-                    // the turn the hand gave it, away from where the game holds it on this forearm
-                    float trace=0;
-                    for(int r=0;r<3;++r)trace+=bow::Dot(bow::Normalized({followed.m[r*4],followed.m[r*4+1],followed.m[r*4+2]}),
-                                                        bow::Normalized({rigid.m[r*4],rigid.m[r*4+1],rigid.m[r*4+2]}));
-                    const float turned=acosf(std::clamp((trace-1)*.5f,-1.f,1.f))*57.2958f;
-                    const bool sameShield=learned.hero==self&&learned.generation==HeroGen()&&learned.equipment==gamestate::HandsKey();
-                    char face[64]="unknown (no mesh)";
-                    if(sameShield&&bow::Length(learned.normal)>.5f) {
-                        const bow::Vec f=in3(bow::Normalized(bow::Vector(followed,learned.normal)),1);
-                        std::snprintf(face,sizeof face,"along %.2f out %.2f up %.2f",f.x,f.y,f.z);
-                    }
-                    char reading[96]="none";
-                    if(sameShield&&learned.half>0)std::snprintf(reading,sizeof reading,"%.1f cm from the bone, %s",
-                        bow::Length(bow::Vector(followed,learned.reading))*cm,shield::WhyName(learned.fit.why));
-                    const uint32_t entity=g_shieldEntity.load();
-                    char line[640];std::snprintf(line,sizeof line,
-                        "Frame shield seat: pivot=%s (%.1f along, %.1f out, %.1f up cm from the bone); centre from the elbow: %.1f along, %.1f out, %.1f up cm; "
-                        "face normal: %s; turned %.0f deg from the game's hold; last reading: %s; last miss: %s; discovery stages=0x%X entity=%s",
-                        fit.ok?"mesh centre":"attach bone",pivot.x,pivot.y,pivot.z,seatAt.x,seatAt.y,seatAt.z,face,turned,reading,
-                        ShieldMissName(g_shieldMiss.load()),g_shieldStages.load(),entity==UINT32_MAX?"not found":"found");
-                    framevr::logging::Write(line);
-                }
-            };
             // The visible shield hangs on shield_attach, a FOREARM child: give it
-            // the same bind relationship to the tracked hand, so it turns with the wrist.
+            // the same bind relationship to the tracked hand, so it bends with the wrist.
             const int sa=h.shieldAttach;bow::Mat attachBind,attachNow;
             if(sa>=0&&sa!=wb) {
                 memcpy(&attachBind,&h.bind[sa],sizeof attachBind);
                 if(shield::Follow(wristBind,attachBind,wristNow,attachNow)) {
-                    seat(sa,attachNow);
                     const auto beforeAttach=newW;memcpy(&newW[sa],&attachNow,sizeof attachNow);
+                    // Following the hand, a shield's near strap can sit over the
+                    // wrist with the fingers short of the grip strap (a big shield's
+                    // straps far from its attach bone). VR Settings > Shield moves
+                    // the point that hangs at the wrist: up the forearm toward the
+                    // elbow, out and across, in the hand's own axes - the shield stays
+                    // rigid with the hand and turns about the wrist - scaled by this
+                    // model's forearm (~0.26 m on an adult).
+                    const int l=h.lwr[1];
+                    const float units=l>=0?Len(Sub(Pos(newW[hand]),Pos(newW[l]))):0;   // this model's forearm, ~0.26 m on an adult
+                    bow::Vec move{};
+                    if(units>1e-4f) {
+                        bow::Mat bindArm;memcpy(&bindArm,&h.bind[l],sizeof bindArm);
+                        const V3 bs=Pos(h.bind[sa]);
+                        // out: from the forearm's line toward where the shield hangs (bind pose); up: square to both
+                        const auto sides=shield::LearnArm(bindArm,wristBind,{bs.x,bs.y,bs.z});
+                        bow::Vec along,out,up;
+                        if(shield::Axes(wristNow,sides,along,out,up))
+                            move=shield::Offset(along,out,up,in.shieldGripCm,in.shieldOutCm,in.shieldUpCm,units/0.26f);
+                    }
+                    newW[sa].m[12]+=move.x;newW[sa].m[13]+=move.y;newW[sa].m[14]+=move.z;
+                    // the snap point the trace checks: the attach bone in the hand's axes, as it should be
+                    {const Mat rel=Mul(h.bind[sa],InvAffine(h.bind[hand]));const V3 m=RotOnly({move.x,move.y,move.z},InvAffine(newW[hand]));
+                     seatTrace.snapWanted=Add(Pos(rel),m);seatTrace.bone=sa;seatTrace.side=side;seatTrace.heldBack=heldBack;}
                     std::vector<char> movedAttach(n,0);movedAttach[sa]=1;Propagate(h,beforeAttach,newW,movedAttach,sa);
                 }
-            } else if(sa<0) {   // no shield_attach: the shield hangs on the wrist's own attach bone
-                bow::Mat seated;memcpy(&seated,&newW[wb],sizeof seated);seat(wb,seated);
-                const auto beforeSeat=newW;memcpy(&newW[wb],&seated,sizeof seated);
-                std::vector<char> movedSeat(n,0);movedSeat[wb]=1;Propagate(h,beforeSeat,newW,movedSeat,wb);
             }
         }
     }
@@ -2171,8 +2120,7 @@ void PoseBody(uintptr_t self, const Hero& h, const Input& in) {
             }
         }
         AcquireSRWLockExclusive(&g_gunBoneLock);g_shieldPose=shieldPose;g_shieldAt=at;g_shieldGuardPose=guardPose;
-        g_shieldContext={guardPose,{shieldPose.player[0],shieldPose.player[1],shieldPose.player[2]},self,HeroGen(),gamestate::HandsKey(),gamestate::LocalPlayer(),
-            at&&shieldBone>=0?Mul(newW[shieldBone],model):Mat{}};
+        g_shieldContext={guardPose,{shieldPose.player[0],shieldPose.player[1],shieldPose.player[2]},self,HeroGen(),gamestate::HandsKey(),gamestate::LocalPlayer()};
         ReleaseSRWLockExclusive(&g_gunBoneLock);
     }
 #endif
@@ -2239,6 +2187,52 @@ void PoseBody(uintptr_t self, const Hero& h, const Input& in) {
                     (","+ std::string(in.shrinkBone) + ",").find("," + nm + ",") != std::string::npos)   // a comma list
                     for (int r = 0; r < 3; ++r) for (int c2 = 0; c2 < 3; ++c2) newW[i].m[r * 4 + c2] *= 0.001f;
         ReleaseSRWLockShared(&g_namesLock);
+    }
+#endif
+#ifdef D2RVR_NATIVE_OPENXR
+    // [debug] shield_trace: the held shield's pose chain at 5 Hz, and at once when
+    // it jumps (a flip, the hand leaving its target, the shield leaving the wrist).
+    if (in.shieldTrace && shieldFollowed && seatTrace.bone >= 0 && h.hand[1] >= 0 && h.lwr[1] >= 0 && h.head >= 0) {
+        const int k = h.hand[1], l = h.lwr[1], sb = seatTrace.bone;
+        const V3 head = in.haveEye ? V3{in.eyeModel[0], in.eyeModel[1], in.eyeModel[2]} : Pos(newW[h.head]);
+        const float upm = framevr::body::UnitsPerMetre(h.eyeY > 0 ? h.eyeY : head.y, in.userHeadM, in.scale);
+        bow::Mat hand, elbow, shieldNow;
+        memcpy(&hand, &newW[k], sizeof hand); memcpy(&elbow, &newW[l], sizeof elbow); memcpy(&shieldNow, &newW[sb], sizeof shieldNow);
+        const float cm = upm > 0 ? 100 / upm : 0;
+        const V3 snap = RotOnly(Sub(Pos(newW[sb]), Pos(newW[k])), InvAffine(newW[k]));   // the attach bone in the hand's axes
+        const float devHand = leftWristAsked ? Len(Sub(Pos(newW[k]), leftWristWanted)) * cm : -1;
+        // the snap point's error, in the hand's axes scaled back to model units
+        const float handScale = Len({newW[k].m[0], newW[k].m[1], newW[k].m[2]});
+        const float devSnap = Len(Sub(snap, seatTrace.snapWanted)) * handScale * cm;
+        static bow::Mat lastFrame{}, lastLine{}; static bool haveFrame = false; static ULONGLONG nextLine = 0; static float lastDevHand = 0;
+        const float jump = haveFrame ? shield::TurnDeg(lastFrame, shieldNow) : 0;
+        const ULONGLONG now = GetTickCount64();
+        const bool sudden = jump > 20 || (devHand >= 0 && fabsf(devHand - lastDevHand) > 3) || devSnap > 1;
+        if (now >= nextLine || sudden) {
+            nextLine = now + 200;
+            bow::Mat tracked = bow::Identity();
+            const float* q = in.rot[1];
+            const Q4 qq = {q[0], q[1], q[2], q[3]};
+            const V3 rx = QRot(qq, {1, 0, 0}), ry = QRot(qq, {0, 1, 0}), rz = QRot(qq, {0, 0, 1});
+            tracked.m[0] = rx.x; tracked.m[1] = rx.y; tracked.m[2] = rx.z; tracked.m[4] = ry.x; tracked.m[5] = ry.y; tracked.m[6] = ry.z;
+            tracked.m[8] = rz.x; tracked.m[9] = rz.y; tracked.m[10] = rz.z;
+            const auto ta = shield::Angles(tracked), wa = shield::Angles(hand), ea = shield::Angles(elbow), sa = shield::Angles(shieldNow);
+            auto at = [&](const Mat& m) { const V3 p = Sub(Pos(m), head); return V3{p.x * cm, p.y * cm, p.z * cm}; };
+            const V3 w = at(newW[k]), e = at(newW[l]), s2 = at(newW[sb]);
+            const V3 sc = {snap.x * handScale * cm, snap.y * handScale * cm, snap.z * handScale * cm};
+            char line[600]; std::snprintf(line, sizeof line,
+                "Frame shield trace: t=%llu%s hand=(%.1f,%.1f,%.1f|%.0f,%.0f,%.0f) wrist=(%.1f,%.1f,%.1f|%.0f,%.0f,%.0f) "
+                "elbow=(%.1f,%.1f,%.1f|%.0f,%.0f,%.0f) snap=(%.1f,%.1f,%.1f) shield=(%.1f,%.1f,%.1f|%.0f,%.0f,%.0f) side=%s stop=%.0f "
+                "dev hand=%.1fcm snap=%.1fcm turn=%.1fdeg",
+                (unsigned long long)now, sudden ? " JUMP" : "",
+                in.hand[1][0] * 100, in.hand[1][1] * 100, in.hand[1][2] * 100, ta.x, ta.y, ta.z,
+                w.x, w.y, w.z, wa.x, wa.y, wa.z, e.x, e.y, e.z, ea.x, ea.y, ea.z, sc.x, sc.y, sc.z,
+                s2.x, s2.y, s2.z, sa.x, sa.y, sa.z, seatTrace.side < 0 ? "palm" : "back", seatTrace.heldBack,
+                devHand, devSnap, haveFrame ? shield::TurnDeg(lastLine, shieldNow) : 0.f);
+            framevr::logging::Write(line);
+            lastLine = shieldNow;
+        }
+        lastFrame = shieldNow; haveFrame = true; lastDevHand = devHand;
     }
 #endif
     const bool written = SafeWrite((void*)mats, newW.data(), sizeof(Mat) * n);
@@ -2387,15 +2381,8 @@ bool CaptureShield(uintptr_t self,const ShieldContext& context,const HeroXform& 
        !Get(source.skeleton+8,&source.count)||source.count<1||source.count>64||
        !Get(source.skeleton+0xC,&source.bones)||!source.bones)return false;
     ShieldStage(16);
-    // 2026-10-20: discovery never got past this point (stages 0x1F in every log):
-    // self+8 is the model INSTANCE - granny_model_instance starts with its Model,
-    // then the skeleton, which is why +8 read the skeleton fine. The mesh
-    // bindings are on the granny_model it points at; it must name the same
-    // skeleton. A granny_model itself (Name first) cannot pass that test.
-    uintptr_t granny=source.model,named=0,skeleton=0;
-    if(Get(source.model,&named)&&named&&Get(named+8,&skeleton)&&skeleton==source.skeleton)granny=named;
     int meshes=0;uintptr_t bindings=0;
-    if(!Get(granny+0x54,&meshes)||meshes<1||meshes>64||!Get(granny+0x58,&bindings)||!bindings)return false;
+    if(!Get(source.model+0x54,&meshes)||meshes<1||meshes>16||!Get(source.model+0x58,&bindings)||!bindings)return false;
     ShieldStage(32);
     uintptr_t nameObject=0,pathPointer=0;Get(self,&nameObject);Get(nameObject+8,&pathPointer);
     const auto path=Str(pathPointer);
@@ -2873,18 +2860,18 @@ void ShieldRendered(uint32_t entity,uintptr_t component,uintptr_t matrix) {
     const auto now=GetTickCount64();uint32_t parent=0;
     if(!context.pose.at||now<context.pose.at||now-context.pose.at>100||source.entity!=entity||source.hero!=context.hero||
        source.generation!=context.generation||source.generation!=HeroGen()||source.equipment!=context.equipment||source.session!=context.session||
-       !Get(component+0xC0,&parent)||parent!=source.parent){g_shieldMiss=now-context.pose.at>100||!context.pose.at?MissStale:MissOther;return;}
+       !Get(component+0xC0,&parent)||parent!=source.parent)return;
     {
         AcquireSRWLockExclusive(&ecs::g_lock);uintptr_t existing=0;
         const bool owned=ecs::SkeletonOf(entity,&existing)&&existing==source.self;
-        ReleaseSRWLockExclusive(&ecs::g_lock);if(!owned){g_shieldMiss=MissOwner;return;}
+        ReleaseSRWLockExclusive(&ecs::g_lock);if(!owned)return;
     }
     uintptr_t model=0,world=0,matrices=0;int count=0;Mat itemWorld;
     if(!Get(source.self+8,&model)||model!=source.model||!Get(source.self+0x20,&world)||
        !Get(world,&count)||count!=source.count||!Get(world+4,&matrices)||!matrices||
-       !SafeCopy(&itemWorld,reinterpret_cast<void*>(matrix),sizeof itemWorld)){g_shieldMiss=MissMatrices;return;}
+       !SafeCopy(&itemWorld,reinterpret_cast<void*>(matrix),sizeof itemWorld))return;
     ShieldStage(2048);
-    framevr::guard::Pose best;float largest=0;Mat bestFinal{};ShieldBound bestBound;
+    framevr::guard::Pose best;float largest=0;
     for(int i=0;i<source.boundCount;++i) {
         const auto& bound=source.bounds[i];Mat bone;
         if(bound.bone<0||bound.bone>=count||!SafeCopy(&bone,reinterpret_cast<void*>(matrices+uintptr_t(bound.bone)*sizeof(Mat)),sizeof bone))continue;
@@ -2893,35 +2880,9 @@ void ShieldRendered(uint32_t entity,uintptr_t component,uintptr_t matrix) {
             {context.player.x,context.player.y,context.player.z},context.pose,pose))continue;
         const auto area=framevr::math::Cross(pose.halfRight,pose.halfUp);
         const float size=framevr::math::Dot(area,area);
-        if(size>largest){best=pose;largest=size;bestFinal=final;bestBound=bound;}
+        if(size>largest){best=pose;largest=size;}
     }
-    if(!largest){g_shieldMiss=MissFace;return;} // hidden/unsupported mesh keeps the attachment fallback
-    {   // The mesh's centre in the axes of the bone it hangs on, as that bone was
-        // posed: where PoseBody turns the shield about (the straps, not the bone).
-        bow::Mat final,attach,inverse;memcpy(&final,&bestFinal,sizeof final);memcpy(&attach,&context.attach,sizeof attach);
-        if(!bow::Inverse(attach,inverse))g_shieldMiss=MissAttach;
-        else {
-            const bow::Vec midWorld=shield::Point(final,(bestBound.low+bestBound.high)*.5f),cornerWorld=shield::Point(final,bestBound.high);
-            const bow::Vec mid=shield::Point(inverse,midWorld),corner=shield::Point(inverse,cornerWorld);
-            const bow::Vec face=bow::Normalized(bow::Vector(inverse,best.normal));   // the face's normal, in the bone's axes
-            AcquireSRWLockExclusive(&g_gunBoneLock);
-            auto& fit=g_shieldFit;
-            if(fit.hero!=context.hero||fit.generation!=context.generation||fit.equipment!=context.equipment||fit.session!=context.session)
-                fit={{},context.hero,context.generation,context.equipment,context.session};
-            const bool same=g_shieldContext.pose.at==context.pose.at;
-            const bool learned=same&&shield::Learn(fit.fit,mid,bow::Length(corner-mid));
-            if(same){fit.reading=mid;fit.half=bow::Length(corner-mid);if(learned||!fit.fit.ok)fit.normal=face;}
-            ReleaseSRWLockExclusive(&g_gunBoneLock);
-            g_shieldMiss=same?MissNone:MissPoseMoved;
-            if(learned) {
-                char line[200];std::snprintf(line,sizeof line,
-                    "Frame shield fit: mesh centre %.1f cm from its attach bone, %.1f cm corner to corner; the shield turns about it (generation %u)",
-                    bow::Length(midWorld-bow::Position(attach))*100/context.pose.unitsPerMetre,
-                    bow::Length(cornerWorld-midWorld)*200/context.pose.unitsPerMetre,context.generation);
-                framevr::logging::Write(line);
-            }
-        }
-    }
+    if(!largest)return; // hidden/unsupported mesh keeps the attachment fallback
     ShieldStage(4096);
     AcquireSRWLockExclusive(&g_gunBoneLock);
     const bool current=g_shieldContext.pose.at==context.pose.at&&g_shieldContext.generation==context.generation&&
