@@ -72,9 +72,15 @@ inline std::array<float,12> TurnCarry(math::Vec drawnAt,math::Quat drawn,math::V
 // The other eye, drawn this frame (Render's `drawn`): its picture moved
 // across to this eye with its own depth, over this eye's older one, so what
 // moves by itself - monsters, missiles - stands where the drawn eye shows it
-// (owner, 2026-10-19: moving monsters). A cell whose corners' depths part by
-// more than TurnEdgePixels as seen from `apart` away held what that eye could
-// not see behind an edge: it is cut, and the older picture stays there.
+// (owner, 2026-10-19: moving monsters). A cell whose texels' depths part by
+// more than TurnEdgePixels as seen from `apart` away lies across an edge: it
+// goes as two flat layers, at its nearest depth and its farthest, each pixel
+// in the one its own depth is nearer. What that eye could not see behind the
+// edge, between them, keeps the older picture. Cut whole instead, such cells
+// left 4-pixel steps of the older picture along every edge, stale where a
+// head, a hand or a sword had moved since, and a blade thinner than a cell
+// went as the ground behind it: ghosting on heads and swords (owner,
+// 2026-10-20).
 struct TurnDepth {
     ID3D12Resource* depth=nullptr;   // in a shader-resource state
     DXGI_FORMAT format=DXGI_FORMAT_UNKNOWN;   // its shader-readable format

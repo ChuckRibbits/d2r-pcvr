@@ -48,7 +48,9 @@ cbuffer Move : register(b0) {
     float4 carry0;float4 carry1;float4 carry2;   // the carried's rows (TurnDepth::carry)
     float4 reach;      // nearer than x: carried; farther than y: the world's; z: the drawn eye's edge scale
 };
-struct Pixel {float4 position:SV_Position;float2 uv:TEXCOORD0;};
+// split: 0 the whole cell; a cell across an edge as two layers, each keeping
+// its own pixels: > 0 the nearer, those nearer than it; < 0 the rest.
+struct Pixel {float4 position:SV_Position;float2 uv:TEXCOORD0;nointerpolation float split:TEXCOORD1;};
 static const float2 Corner[6]={float2(0,0),float2(1,0),float2(0,1),float2(0,1),float2(1,0),float2(1,1)};
 static const float Ahead=1e-3;   // nearer than this to this frame's eye: cut off
 static const float EdgePixels=2;   // TurnEdgePixels
@@ -58,11 +60,30 @@ float Nearest(float2 uv) {
     const float4 d4=drawnDepth.GatherRed(edge,uv*depthInfo.yz);
     return max(max(max(d4.x,d4.y),max(d4.z,d4.w)),1e-6);
 }
-Pixel VS(uint id:SV_VertexID) {
+// The farthest and the nearest of them.
+float2 Range(float2 uv) {
+    const float4 d4=drawnDepth.GatherRed(edge,uv*depthInfo.yz);
+    return max(float2(min(min(d4.x,d4.y),min(d4.z,d4.w)),max(max(d4.x,d4.y),max(d4.z,d4.w))),1e-6);
+}
+// layer (the instance): 0 every cell; 1 only the farther part of a cell across an edge.
+Pixel VS(uint id:SV_VertexID,uint layer:SV_InstanceID) {
     const uint cell=id/6;
-    const float2 at=float2(cell%grid.x,cell/grid.x),size=float2(grid.xy);
-    const float2 uv=(at+Corner[id%6])/size;
-    const float d=Nearest(uv);
+    const float2 at=float2(cell%grid.x,cell/grid.x),size=float2(grid.xy),corner=Corner[id%6];
+    const float2 uv=(at+corner)/size;
+    float d,split=0;
+    if(reach.z>0) {
+        // The drawn eye's picture: its texels at the cell's corners and middle.
+        // Across an edge in depth the cell goes as two flat layers, the nearest
+        // depth's and the farthest's, and each pixel in the one its own depth is
+        // nearer: none is lost and none drawn out over the edge.
+        const float2 a=Range(at/size),b=Range((at+float2(1,0))/size),c=Range((at+float2(0,1))/size),f=Range((at+1)/size),m=Range((at+.5)/size);
+        const float back=min(min(min(a.x,b.x),min(c.x,f.x)),m.x),front=max(max(max(a.y,b.y),max(c.y,f.y)),m.y);
+        d=corner.y>0?(corner.x>0?f.y:c.y):(corner.x>0?b.y:a.y);   // Nearest(uv)
+        if((front-back)*reach.z>EdgePixels){split=(front+back)*.5;d=layer?back:front;if(layer)split=-split;}
+    }
+    else d=Nearest(uv);
+    Pixel o;o.uv=uv;o.split=split;
+    if(layer&&split==0){o.position=float4(0,0,0,-1);return o;}   // no farther part: outside the clip volume
     const float away=depthInfo.x/d;
     const float3 p=float3(lerp(drawnTan.x,drawnTan.y,uv.x),lerp(drawnTan.w,drawnTan.z,uv.y),-1)*away;
     const float3 world=float3(dot(move0.xyz,p)+move0.w,dot(move1.xyz,p)+move1.w,dot(move2.xyz,p)+move2.w);
@@ -70,15 +91,13 @@ Pixel VS(uint id:SV_VertexID) {
     const float3 q=lerp(carried,world,saturate((away-reach.x)/max(reach.y-reach.x,1e-6)));
     // this frame's projection, its depth reversed: nearer is larger
     const float w=-q.z;
-    Pixel o;o.uv=uv;
     o.position=float4(2*(q.x-nowTan.x*w)/(nowTan.y-nowTan.x)-w,w-2*(nowTan.w*w-q.y)/(nowTan.w-nowTan.z),Ahead,w);
-    if(reach.z>0) {   // the drawn eye's picture: a cell across an edge in its depth is cut (outside the clip volume)
-        const float a=Nearest(at/size),b=Nearest((at+float2(1,0))/size),c=Nearest((at+float2(0,1))/size),f=Nearest((at+1)/size);
-        if((max(max(a,b),max(c,f))-min(min(a,b),min(c,f)))*reach.z>EdgePixels)o.position=float4(0,0,0,-1);
-    }
     return o;
 }
-float4 PS(Pixel p):SV_Target {return drawn.SampleLevel(edge,p.uv,0);}
+float4 PS(Pixel p):SV_Target {
+    if(p.split!=0&&(Nearest(p.uv)>abs(p.split))!=(p.split>0))discard;   // the other layer's pixel
+    return drawn.SampleLevel(edge,p.uv,0);
+}
 )";
 constexpr UINT DepthConstants=44;
 }
@@ -237,7 +256,7 @@ bool TurnWarp::Render(ID3D12Device* device,ID3D12GraphicsCommandList* list,ID3D1
         if(at&&d.apart>0)carried[14]=float(t.Width)/(std::tan(d.nowFov.right)-std::tan(d.nowFov.left))*d.apart/d.nearPlane;
         std::memcpy(constants+28,carried,sizeof carried);
         list->SetGraphicsRoot32BitConstants(1,DepthConstants,constants,0);
-        list->DrawInstanced(6*across*down,1,0,0);
+        list->DrawInstanced(6*across*down,carried[14]>0?2:1,0,0);   // the drawn eye's: the farther layers too
     };
     if(usable(depth))grid(*depth,source,0);
     if(other)grid(*drawn,drawn->image,2);

@@ -267,7 +267,7 @@ static void Move(Gpu& gpu,bool typeless) {
         gpu.Upload(picture.Get(),pixels,D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
         const auto depth=distances([](UINT x){return x>=24&&x<40?2.f:4.f;});
         framevr::TurnDepth drawn=moved;drawn.depth=depth.Get();drawn.image=picture.Get();drawn.apart=.5f;
-        const auto out=gpu.Warp(warp,source.Get(),target.Get(),Identity,slot^=1,nullptr,&drawn);
+        auto out=gpu.Warp(warp,source.Get(),target.Get(),Identity,slot^=1,nullptr,&drawn);
         const auto from=[&](UINT a,UINT b,int shift,bool drawnEye,const char* what) {
             bool same=true;
             for(UINT y=0;y<side;++y)for(UINT x=a;x<b;++x) {
@@ -276,13 +276,24 @@ static void Move(Gpu& gpu,bool typeless) {
             }
             Check(same,what);
         };
-        from(2,11,4,true,"the wall from the drawn eye, moved 4 px");
-        from(18,28,8,true,"the post from the drawn eye, moved 8 px");
-        from(33,39,0,false,"what the post hid from the drawn eye keeps this eye's own");
-        from(44,56,4,true,"the wall past it from the drawn eye again");
+        // each pixel by its own depth, the cells across the post's edges too:
+        // the post whole to its edges, this eye's own exactly where it hid the wall
+        from(2,15,4,true,"the wall from the drawn eye, moved 4 px");
+        from(16,32,8,true,"the post from the drawn eye, moved 8 px to both its edges");
+        from(32,36,0,false,"what the post hid from the drawn eye keeps this eye's own");
+        from(36,56,4,true,"the wall past it from the drawn eye again, from its edge on");
         drawn.apart=0;   // no edge test: the post's edge drawn out over the gap instead
         const auto stretched=gpu.Warp(warp,source.Get(),target.Get(),Identity,slot^=1,nullptr,&drawn);
         Check(!Same(stretched[10*side+35],texel(35,10)),"without the cut the gap is the drawn eye's, drawn out");
+        // a blade two texels wide (columns 33-34) inside one cell, 2 units away
+        // before the wall at 4: it moves 8 px, not with the wall behind it
+        const auto blade=distances([](UINT x){return x==33||x==34?2.f:4.f;});
+        drawn.depth=blade.Get();drawn.apart=.5f;
+        out=gpu.Warp(warp,source.Get(),target.Get(),Identity,slot^=1,nullptr,&drawn);
+        from(2,24,4,true,"the wall left of the blade moved 4 px");
+        from(25,27,8,true,"the blade inside one cell moved 8 px");
+        from(29,31,0,false,"what the blade hid from the drawn eye keeps this eye's own");
+        from(31,56,4,true,"the wall right of the blade moved 4 px");
     }
     {   // DLSS: the scene drawn into the top-left quarter of a depth twice the size
         auto big=gpu.Texture(side*2,side*2,DXGI_FORMAT_R32_FLOAT,D3D12_RESOURCE_FLAG_NONE,D3D12_RESOURCE_STATE_COPY_DEST);
@@ -292,7 +303,7 @@ static void Move(Gpu& gpu,bool typeless) {
         framevr::TurnDepth corner=moved;corner.depth=big.Get();corner.scale[0]=corner.scale[1]=.5f;
         expect(gpu.Warp(warp,source.Get(),target.Get(),Identity,slot^=1,&corner),0,56,4,"the depth read from its drawn corner");
     }
-    std::printf("Turn depth GPU pass passed (%s target): wall, sky, occlusion, edge, carried, the drawn eye's picture, drawn corner\n",typeless?"typeless":"typed");
+    std::printf("Turn depth GPU pass passed (%s target): wall, sky, occlusion, edge, carried, the drawn eye's picture to the pixel, a thin blade, drawn corner\n",typeless?"typeless":"typed");
 }
 
 // IEEE half for the interface's texels: 0 and normal values only.

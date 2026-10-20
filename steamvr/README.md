@@ -144,10 +144,12 @@ headset frame are drawn:
   the draw work per headset frame. Each eye is still drawn at half the frame
   rate, so over that the drawn eye's picture of the same frame is laid,
   moved across with its own depth: monsters and missiles stand where the
-  drawn eye shows them instead of a game frame back. Only what the drawn eye
-  could not see (beside the edges of near things, past the outer edge of its
-  view) keeps the other eye's own older image, and transparent effects,
-  without depth of their own, look as deep as what is behind them.
+  drawn eye shows them instead of a game frame back. Along an edge each pixel
+  goes with its own depth, so a head's outline or a thin blade stays whole;
+  only what the drawn eye could not see (beside the edges of near things,
+  past the outer edge of its view) keeps the other eye's own older image,
+  and transparent effects, without depth of their own, look as deep as what
+  is behind them.
   `[stereo] turns_from_drawn_eye=0` (live) keeps the other eye's own image
   alone. The belt's potion models, drawn by the mod over the game's picture,
   are drawn fresh in that eye at its own pose. The game's interface (labels
