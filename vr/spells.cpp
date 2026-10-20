@@ -79,7 +79,7 @@ void Install() {
     if(!originalTarget&&!d2rsig::Hook(TargetRva,TargetSig,sizeof TargetSig,reinterpret_cast<void*>(&Target),reinterpret_cast<void**>(&originalTarget)))return;
     castSoundReady=d2rsig::Check(CastSoundRva,CastSoundSig,sizeof CastSoundSig);
     ready=true;
-    framevr::logging::Write("Frame hand spells: independent planar Sorceress bolts/balls and native Charged Bolt volleys ready");
+    framevr::logging::Write("Frame hand spells: Sorceress bolts/balls, Necromancer Bone Spear, Paladin Holy Bolt and native Charged Bolt volleys ready");
 }
 bool Prepare(Shot& shot,uintptr_t game,uintptr_t player) {
     if(!ready.load()||!framevr::SpellHeld(shot))return false;
@@ -99,6 +99,7 @@ bool Prepare(Shot& shot,uintptr_t game,uintptr_t player) {
         missile=secondary;
     }
     shot.level=reinterpret_cast<int(*)(uintptr_t,uintptr_t,int,int)>(d2rsig::Addr(SkillLevelRva))(player,node,1,0);
+    if(id==101&&!bowvr::PrepareHoly(game))return false;
     shot.missile=missile;
     int16_t sound=0;
     shot.castSound=castSoundReady&&Read(row+0x152,sound)&&sound>0?sound:0;
@@ -171,7 +172,8 @@ void Fired(const Shot& shot,uintptr_t game,uintptr_t player) {
     framevr::SpellCast(shot.hand,shot.session);
     uint32_t tick=0;if(!Read(game+0x170,tick))return;
     const int fcr=reinterpret_cast<int(*)(uintptr_t,int,int)>(d2rsig::Addr(nativeui::abi::StatRva))(player,105,0);
-    cadence.Fired(shot.session,shot.hand,tick,framevr::spellcast::CastFrames(fcr));
+    uint32_t character=~0u;if(!Read(player+4,character))return;
+    cadence.Fired(shot.session,shot.hand,tick,framevr::spellcast::CastFrames(fcr,character));
 }
 void Report() {
     const auto right=casts[0].exchange(0),left=casts[1].exchange(0),refused=denied.exchange(0);

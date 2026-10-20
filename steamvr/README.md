@@ -129,6 +129,91 @@ a third scene for the monitor. Desktop presentation still has overhead;
 suppressing it safely is an open performance task. Do not minimize the game as
 a workaround: background/focus handling also affects input and frame pacing.
 
+VR Settings > Video > **Stereo rendering** chooses how the two eyes of each
+headset frame are drawn:
+
+- **Replay** draws both eyes from one game frame for about one eye's CPU
+  work (below).
+- **Both eyes** draws the left eye, then the right with the game time held.
+- **By turns**, the default, draws one eye per game frame, alternating. The headset gets that
+  eye fresh and the other eye's last image turned on the GPU from the pose it
+  was drawn at to the current one, head, stick and mouse turns included, and
+  moved with the scene depth it was drawn with: a grid over its image, each
+  point put back at its distance and seen from the current eye, nearer points
+  over farther ones, so both eyes go at one pose as a pair does. This halves
+  the draw work per headset frame. Each eye is still drawn at half the frame
+  rate, so over that the drawn eye's picture of the same frame is laid,
+  moved across with its own depth: monsters and missiles stand where the
+  drawn eye shows them instead of a game frame back. Only what the drawn eye
+  could not see (beside the edges of near things, past the outer edge of its
+  view) keeps the other eye's own older image, and transparent effects,
+  without depth of their own, look as deep as what is behind them.
+  `[stereo] turns_from_drawn_eye=0` (live) keeps the other eye's own image
+  alone. The belt's potion models, drawn by the mod over the game's picture,
+  are drawn fresh in that eye at its own pose. The game's interface (labels
+  and health bars over monsters, names, chat) is taken out of each eye's
+  picture before it is kept and laid back over it as the game lays it; the
+  eye not drawn gets its own interface from its last pass, turned to the
+  current head, so each label stays at its own depth instead of moving with
+  the scene behind it (moved with it, nameplates were cut along the
+  monster's edge and flickered). A label over a monster that moves, or
+  while the hero runs, is a pass old in that eye. Edges where something
+  near uncovers what is behind it stretch for that frame; transparent
+  effects move as the scene behind them. Within arm's reach (nearer than 1.0 m along the
+  view, blended out by 1.6 m) points move with the hero instead of the world:
+  the hands, the weapon and the body stay with the eye while running, where
+  moved as the world they trailed a frame behind and smeared; a monster that
+  close moves with the hero for that frame. The depth is the same copy the
+  added fog reads (DLSS's corner included). Until both eyes have one, a pair
+  is drawn from the hero's first step to 0.3 s after the last.
+
+By turns draws a pair on a snap turn, outside first person, in open menus,
+during stereo captures and on any frame without a reusable image for both eyes.
+With **Desktop shows one eye**, the kept left image covers the right frames on
+the monitor.
+
+**Replay** (adapted from upstream's "one pass, two pictures") draws both eyes
+from one game frame for about one eye's CPU work. The game draws the left eye
+as usual while every list it submits is noted, and the camera constant buffers
+those lists bind come from slots of the mod's own instead: the left eye's
+values for the left pass, the right eye's for the replay (the eye gap folded
+into the projection, `steamvr/replay_camera.h`). The game's present at the end
+of the left pass is held: the left eye's effects run and it goes to the
+headset. The noted lists then run again on the same queues, in the game's own
+submissions, the right eye's effects run, and one real present takes it to
+the headset. The GPU still draws both eyes, shadow maps included, so it helps
+when the CPU limits the frame rate. It starts after 240 pairs in a settled
+area and pauses for every area change, menu, long frame or stereo capture,
+drawing two passes until it can run again. The eyes share the game's labels,
+the gaze-driven foveation centre and one DLSS instance (its history alternates
+eyes, so DLSS may smear); the right eye is submitted as the left eye moved
+along its own x. `[stereo] replay_marks` (3: the game's calls; 1: one list a
+call with a signal after each), `replay_ahead`, `replay_positions` and
+`replay_prev` tune it. Every 10 seconds the log reports how many pairs were
+replayed, the lists and calls a replayed pair submitted, and the camera
+records folded, and what started the settle again (biome sets, frames over
+150 ms, pairs out of the world); a watchdog logs each queue's fences if no
+present comes for 3 seconds while replaying.
+
+Every choice needs `[render] defer_gpu_wait=1` for its full rate; the
+installer sets it for new installs, and an upgrade keeps the existing value.
+With the conservative wait each frame takes the CPU's time plus the GPU's,
+and at 90 Hz SteamVR then paces the game at half (By turns at 3128 square:
+43-46 frames/s, against 86-88 with the wait deferred). While the wait is not
+deferred, the Video page shows a warning and a **Defer GPU wait** button that
+turns it on (Apply saves it; it applies live), and the console says so once.
+The Video page also warns while the game's Vertical Sync is on or its
+anti-aliasing is anything but FXAA (the game's Options > Video). It reads the
+mod's own game settings, `Saved Games\Diablo II Resurrected\mods\<mod>\Settings.json`,
+which the game keeps apart from the unmodded game's
+`Saved Games\Diablo II Resurrected\Settings.json`.
+
+The choice is stored as `[stereo] rendering` (0 Both eyes, 1 By turns,
+2 Replay; missing or invalid is By turns) and applies live. Every 10 seconds the log reports a
+`vrcam: eyes by turns` line with frames per second, the time spent in each part
+of a frame, how many other eyes were moved with depth or only turned, and how
+many frames went as pairs while moving.
+
 **Left X** opens inventory through the game's UI service when no menu is open.
 When native menu panels are open, Left X performs the native X action. It
 preserves the HUD and map. The native inventory action requires headset focus, so another active
@@ -186,16 +271,42 @@ profiler: work deferred until a draw or performed outside ReShade callbacks may
 not appear in those creation measurements.
 
 Fixed foveation uses D3D12 Tier 2 VRS with a separate mask for each eye's
-asymmetric optical center: 1x1 in the protected center, 2x2 in the periphery.
-It applies to single-sample opaque world geometry with scene depth, leaving
-transparent passes, menus, labels, post effects and shadow-only passes at full
-quality. Unsupported devices/command lists fall back to full quality. Immutable
-masks are uploaded once per viewport; routine draws do not upload or wait for
-them. `[render] fixed_foveation=0` disables it for comparison; `foveation_inner`
-sets the protected ellipse radius (default 0.55, range 0.35–0.85). Settings reload
-live. Logs report mask creation and reduced-shading draw counts. The user reported
-similar perceived performance in the first walking test; this is not a measured
-GPU speedup.
+asymmetric optical center: 1x1 in the protected center, coarser shading in the
+periphery. It applies to single-sample opaque world draws that test scene depth,
+leaving transparent passes, menus, labels, post effects and shadow-only passes
+at full quality. D2R draws each opaque object twice: a pass that writes depth,
+then the pass that shades the visible color with depth testing and no depth
+writes. Earlier builds required depth writes, so only the first pass was
+reduced and foveation had no visible or GPU effect. Unsupported devices/command
+lists fall back to full quality. Immutable masks are uploaded once per viewport;
+routine draws do not upload or wait for them.
+
+VR Settings > Video > **Foveation strength** (available when foveated rendering
+is Fixed or Eye tracked) chooses how much detail is reduced:
+
+| Strength | Fixed protected radius | Gaze protected radius | Periphery |
+| --- | --- | --- | --- |
+| Low | 0.70 | 0.45 | 2x2 |
+| Medium (default) | 0.55 | 0.35 | 2x2 |
+| High | 0.55 | 0.35 | 4x4 |
+| Maximum | 0.35 | 0.30 | 4x4 |
+
+4x4 falls back to 2x2 on GPUs without additional shading rates. A saved
+`[render] foveation_strength` (0–3) selects these presets. Profiles without it
+keep their `foveation_inner` (default 0.55, range 0.35–0.85) and
+`gaze_foveation_inner` radii at 2x2 until a strength is chosen. `[render]
+fixed_foveation=0` disables foveation for comparison. Settings reload live.
+Logs report mask creation, reduced-shading draw counts and a `Frame foveation
+coverage` line that counts full-size scene draws by the reason they stayed at
+full quality.
+
+Foveation reduces GPU shading only; it does not reduce the game's CPU work.
+On a CPU-limited system the frame rate does not change. Steam Frame's own
+eye-tracked foveated streaming already lowers peripheral detail in the stream,
+which hides most of this effect in that headset. Compare captured eye images
+(`[debug] capture_pair`) or a headset without streaming foveation when judging
+visual impact. In the owner's Quest 3 / Virtual Desktop test, Maximum was
+visible at the edges and Medium was not noticeable.
 
 ### Eye-tracked foveation prototype
 
@@ -236,7 +347,14 @@ movement and creature labels. A stationary gaze/full/gaze trial (360 pairs each)
 averaged 22.566 / 23.240 / 22.619 ms per stereo cycle, a small ~2.8% preliminary
 reduction versus full shading. GPU scene spans were similar (16.042 / 16.309 /
 16.340 ms, including queue starvation), so no large GPU speedup is established.
-Fixed-versus-gaze and heavier scenes still need comparison.
+Fixed-versus-gaze and heavier scenes still need comparison. These October 8
+results predate the coverage fix: foveation then reduced only D2R's depth pass,
+not the visible shading pass, so they do not measure real foveated shading.
+
+Windows Steam Frame / SteamVR (October 18, after the coverage fix, strength
+Maximum): with the sharing setting enabled, every stereo pair had usable gaze
+and all eligible scene draws followed it. The owner confirmed it in the headset.
+With sharing off, or under Virtual Desktop, Eye tracked uses full quality.
 
 Host-side geometry/fallback tests:
 `g++ -std=c++20 -O2 -Wall -Wextra -Werror steamvr/gaze_test.cpp -o build-frame/gaze-test-host && build-frame/gaze-test-host`.
@@ -392,7 +510,7 @@ graphics settings for comparisons. Set the counter to zero after testing so
 the request does not repeat on the next launch.
 
 ```sh
-python3 steamvr/profile_report.py "/path/to/game/d2rloader/logs/d2r-vr-frame.log" \
+python3 steamvr/profile_report.py "/path/to/game/mods/D2R-PCVR/d2rloader/logs/d2r-vr-frame.log" \
   --sequence 1 --csv build-frame/profile-stationary.csv
 ```
 
@@ -477,7 +595,8 @@ on Steam Frame, with a softer image; other scenes/headsets remain unverified.
 Set 0 to restore runtime-recommended projections. See the
 [OpenXR projection-view contract](https://registry.khronos.org/OpenXR/specs/1.0/man/html/XrCompositionLayerProjectionView.html).
 
-`[render] defer_gpu_wait=1` is an experimental live comparison switch. Image
+`[render] defer_gpu_wait=1` is set by the installer; a missing key means 0, and
+VR Settings > Video offers it while it is off (see Stereo rendering above). Image
 copies and state restoration are submitted on the D3D12 queue bound to OpenXR;
 completion is checked before each eye's copy allocator is reused and before
 shutdown, instead of blocking the CPU before every image release. Set it to 0
@@ -509,7 +628,8 @@ fault-triggered snapshots, not a session FPS or loss-rate benchmark, and contain
 no image-resolution/bitrate measurement. `--since`/`--until` accept ISO timestamps;
 include a UTC offset when analyzing logs away from the capture machine's timezone.
 
-- Runtime log: `d2rloader/logs/d2r-vr-frame.log` in the game folder. A bounded
+- Runtime log: `mods/D2R-PCVR/d2rloader/logs/d2r-vr-frame.log` in the game folder
+  (`mods/pcvr-dev/d2rloader/logs/d2r-vr-frame.log` for developer mode). A bounded
   queue writes batches on a worker without forced disk flushes. The old SDK log,
   `d2r-pcvr-vrcam.log` (`d2r-vr-vrcam.log` up to 0.3.15), remains for loader/startup messages. Live syscall sampling
   identified repeated main-thread `fsync()` waits on that old file during hitches.

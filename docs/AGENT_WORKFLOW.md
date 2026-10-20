@@ -303,6 +303,15 @@ Known diagnostic lessons:
   mode never opts into the legacy solver. Grip caches match the equipment key
   and hero generation. The crossbow support latch needs a fresh release after
   a swap/tracking loss; unknown grip input must not mean permanently held.
+- Foveation draw counts prove only that a rate image was bound. D2R shades the
+  visible color in an opaque depth-read-only pass after a depth-writing pass;
+  check the `Frame foveation coverage` line. Judge visual impact from
+  `[debug] capture_pair` eye images or a Quest/VDXR session: Steam Frame's
+  foveated streaming hides peripheral shading changes. The game is usually
+  CPU-limited, so unchanged frame rate does not mean VRS is inactive.
+- VDXR hands the game to SteamVR while SteamVR is running, leaving a Quest on
+  the flat desktop. Close SteamVR first; `Frame OpenXR: runtime` names the
+  runtime actually used.
 - Melee settings are motion speed in m/s, not acceleration. Classic/Unleashed
   are game-rule choices; they do not remove the physical motion threshold.
 - The shield follows the final posed left wrist. Arm IK used to clamp that

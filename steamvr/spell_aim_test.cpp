@@ -5,6 +5,34 @@
 using namespace framevr;
 static void Check(bool b,const char* why){if(!b){std::fprintf(stderr,"FAIL: %s\n",why);std::exit(1);}}
 int main() {
+    Check(spellaim::TrackedAim(84)&&spellaim::TrackedAim(101)&&spellaim::TrackedAim(78)&&spellaim::TrackedAim(88),"bone skills and Holy Bolt use the tracked casting hand");
+    Check(!spellaim::TrackedAim(47)&&!spellaim::BonePlacement(84)&&!spellaim::BonePlacement(101),"Sorceress aim and projectile flight are separate from bone placement");
+    for(int yaw=0;yaw<360;yaw+=5)for(float floor:{-5.f,0.f,8.f}) {
+        const float angle=yaw*.01745329252f;
+        const math::Vec direction{std::cos(angle),-1,std::sin(angle)};
+        // Identical relative hand poses on elevated/sheared floors must pick
+        // the same native cell delta; world elevation is removed by caller.
+        const math::Vec hero{200+floor*1.22474487f,floor,400+floor*1.22474487f};
+        const math::Vec hand=hero+math::Vec{0,8,0};float x=0,y=0;
+        Check(spellaim::GroundPoint(1000,2000,hand-hero,direction,x,y),"ground ray resolves at any heading/floor");
+        Check(std::fabs(x-1000-4*std::cos(angle))<.001f&&std::fabs(y-2000-4*std::sin(angle))<.001f,"pitched hand sets distance and heading");
+        framevr::spellaim::Cast cast{true,x,y,true};int tx=0,ty=0;
+        Check(spellaim::ControllerPoint(cast,1000,2000,tx,ty)&&tx==int(x)&&ty==int(y),"the final ground command keeps placement instead of extending it 40 cells");
+        Check(spellaim::GroundPoint(1000,2000,{0,8,0},{direction.x,0,direction.z},x,y)&&
+              std::fabs(std::hypot(x-1000,y-2000)-6)<.001f,"level hand places bones six cells ahead");
+        Check(spellaim::GroundPoint(1000,2000,{0,8,0},{direction.x,1,direction.z},x,y)&&
+              std::fabs(std::hypot(x-1000,y-2000)-6)<.001f,"upward hand has a stable nearby fallback");
+    }
+    {
+        float x=1,y=2;
+        Check(spellaim::GroundPoint(100,200,{0,500,0},{1,-.1f,0},x,y)&&x==140&&y==200,"far floor intersection stays inside the native command range");
+        Check(spellaim::GroundPoint(100,200,{.2f,.2f,0},{0,-1,0},x,y)&&x==102&&y==200,"near placement keeps two cells of clearance");
+        x=1;y=2;
+        for(const auto bad:{math::Vec{NAN,1,0},math::Vec{0,INFINITY,0},math::Vec{0,-1,0}})
+            Check(!spellaim::GroundPoint(100,200,bad,{1,-1,0},x,y)&&x==1&&y==2,"invalid hand height cannot replace a ground target");
+        Check(!spellaim::GroundPoint(100,200,{0,1,0},{},x,y),"zero aim is refused");
+        Check(!spellaim::GroundPoint(65530,200,{0,8,0},{1,0,0},x,y),"world-edge placement is refused before integer conversion");
+    }
     Check(spellaim::Directed(0,-1,8),"Teeth fan is directional without a primary missile field");
     Check(spellaim::Directed(0,36,0)&&spellaim::Directed(0,395,0),"primary missile behavior is independent of class/skill id");
     Check(spellaim::Directed(0,-1,19)&&spellaim::Directed(0,-1,10),"streams and initially aimed homing casts retain hand direction");
