@@ -225,6 +225,15 @@ uses a direct call; width tail-calls the query, so both the caller and tail
 jump are signature-checked. UI layout/font callers still receive only the
 widescreen band. Desktop mode retains the native bounds.
 
+Ground-item labels are placed over the whole eye, but the game's label layout
+drops a label whose bottom passes the UI safe area's height, which is the
+widescreen band. Items lower in the view lost their labels. At a 2048 square or
+an Index eye that line is about the middle of the view, so the item a player
+looked at had no label, with Show Items on as well. The label layout's single
+safe-area size query (`0x8462E0`, called at `0x1FAC2A`, both signature-checked
+once the label code is decrypted) now receives the full source height. Its
+width, every other caller and Desktop mode are unchanged.
+
 The real-window fixture reproduces the desktop-height truncation and verifies
 bottom-row coordinates survive the corrected clamp after each live size
 change, with desktop restoration. The three added branch guards match the

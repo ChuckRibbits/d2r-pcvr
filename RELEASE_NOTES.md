@@ -1,141 +1,114 @@
-# D2R VR Unleashed v0.3.21 - Windows preview
+# D2R VR Unleashed v0.3.23 - Windows preview
 
-This update focuses on smoother VR rendering, shield combat, directional sound
-and easier installation with the shared launcher.
-
-## Gameplay and combat
-
-- **More demanding shield combat (Unleashed) - contributed by ChuckRibbits:** Champions,
-  uniques and act bosses build guard strain faster than ordinary monsters.
-  A broken guard allows chip damage through, with native resistances and damage
-  reduction still applying. Physical blocks can wear down your shield, and a
-  bone-snap sound signals a guard break. Act bosses can be blocked but not parried.
-- **Parries that meet the visible blow - contributed by ChuckRibbits:** Parry
-  timing now follows the enemy's downstroke and resolves at contact. A short
-  grace period after a blocked hit helps account for the difference between
-  the game's damage timing and the animation. Successful parries retain the
-  riposte opportunity; they do not undo damage already taken.
-- **Guard recovery between attacks - contributed by ChuckRibbits:** Strain
-  fades after attacks stop, even while your shield stays raised. Lowering the
-  shield starts recovery immediately. Broken guards recover once fully cleared.
-- **Low-life heartbeat - contributed by ChuckRibbits:** The heartbeat follows
-  your health in both melee modes, growing faster and louder as life falls.
-  **VR Settings > Combat > Heartbeat starts at** offers Off or 10-90%, default
-  60%. Healing quiets it; wiping the blood visor clean hushes it until another hit.
+This hotfix fixes ground-item names disappearing when you look down at loot,
+including while holding Show Items. It includes the installer repair fix from
+[v0.3.22](https://github.com/bearstonem/d2r-pcvr/releases/tag/v0.3.22-windows-preview)
+and the rendering, shield combat,
+directional sound and interface features from [v0.3.21](https://github.com/bearstonem/d2r-pcvr/releases/tag/v0.3.21-windows-preview).
 
 ## Controls and interface
 
-- **Optional enemy outlines - contributed by beadlebytes:** Under
-  **VR Settings > Aim**, enable a subtle outline around the hostile monster
-  you are pointing at. Choose strength, a static color or colors by range.
-  **Off by default.** Town residents, including camp cows, are excluded.
-  The outline is a visual guide and does not change attack aiming.
-- **Clearer settings help:** Hover help explains individual rendering and other
-  named choices. Video warnings identify game VSync, anti-aliasing settings and
-  disabled deferred GPU waits that can interfere with the recommended setup.
-  A separate warning explains where to turn off Windows Mono audio when it
-  would prevent directional sound.
-
-## Visuals and stability
-
-- **New stereo rendering modes:** **VR Settings > Video > Stereo rendering**
-  offers **By turns** (the new default), **Both eyes** and **Replay**. By turns
-  draws one eye each frame and reprojects the other using head motion and scene
-  depth, reducing the game's CPU rendering work. Both eyes retains the previous
-  rendering method. Replay reuses one game draw for both eyes once an area
-  settles, returning to two passes when needed.
-- **Smoother hand displays:** Wrist and wheel image updates reuse upload
-  resources, reducing refresh stalls. By turns keeps belt potions and game
-  labels out of the world reprojection so they remain more stable in the headset.
-- **Rendering defaults for VR:** Render resolution defaults to the headset's
-  recommendation. Fresh installs enable deferred GPU waits. Existing installs
-  retain their setting; if it is disabled, **VR Settings > Video > Defer GPU
-  wait**, then **Apply**, enables it without restarting.
-- **Head-relative directional sound - contributed by ChuckRibbits:** Native
-  3D sounds such as nearby monsters, NPCs and streams pan as you turn your head
-  or use stick turning. Music, UI and other native 2D sounds remain centered.
+- **Loot labels stay visible when looking down:** Item names can now use the
+  full headset view instead of being cut off at the bottom of the game's menu
+  area. This addresses labels disappearing over the item you are looking at,
+  reported on Valve Index and Quest 3 through SteamVR, especially at the 2K
+  render preset. Ordinary drop/hover labels and held Show Items use the same fix.
 
 ## Updating
 
-Download **D2R-PCVR-Setup-0.3.21.exe** for graphical installation, or
+Download **D2R-PCVR-Setup-0.3.23.exe** for graphical installation, or
 **d2r-pcvr-windows.zip** for portable setup. Existing users should choose
 **Update / repair and keep calibration and video settings**.
 
-The Windows installer now includes **D2R VR Launcher 0.3.5**, with thanks to
-**Sergious**. It installs or updates the launcher when needed and preserves a
-newer installed version. Choose Unleashed and an OpenXR runtime in the launcher;
-Authentic remains a separate optional installation. Direct Steam shortcuts and
-portable setup remain available, and a launcher installation failure does not
-prevent installing Unleashed.
+Close the game, Steam and D2R VR Launcher before updating. Existing settings,
+calibration and saves are preserved. If an earlier installer stopped on
+**Permission denied: launcher_icon.png**, rerun this version with **Update / repair**.
+The unchanged-icon repair fix from v0.3.22 is included.
 
-Close the game, Steam and the shared launcher before updating. Existing settings,
-calibration and saves are preserved. Stereo rendering starts on **By turns**;
-choose **Both eyes** to return to the previous rendering method.
+The Windows installer includes **D2R VR Launcher 0.3.5**. It installs or updates
+it when needed and preserves newer versions. Direct Steam shortcuts and portable
+setup remain available; Authentic is a separate optional mod.
+
+### First-time setup and using the launcher
+
+1. Install and start the original Diablo II: Resurrected through Steam or
+   Battle.net once. Complete its account prompts, create or select an offline
+   character, then fully exit the game.
+2. Download **D2R-PCVR-Setup-0.3.23.exe** from the assets below. Fully exit
+   Steam using **Steam > Exit**, then run Setup and choose **Full install with
+   recommended settings**. The shared launcher is included; follow the wizard
+   to select your game copy, headset and connection.
+3. After Setup finishes, reopen Steam and reconnect your headset.
+4. Open **Start > D2R VR Launcher**. Confirm the **Game folder** at the top
+   (use **Browse** if needed) and select **D2R VR Unleashed**.
+5. Choose **SteamVR** for Steam Frame or Quest through Steam Link/SteamVR.
+   Choose **Virtual Desktop (VDXR)** for Quest through Virtual Desktop; its
+   Quest app and Windows Streamer are required, with SteamVR closed. This choice
+   applies to this launch without changing your Windows-wide OpenXR setting.
+6. Click **Play**, select a **local offline character** and complete body
+   calibration when prompted.
+
+### Current log location
+
+For support, reproduce the problem and send the current gameplay log from
+inside your game folder:
+
+```text
+mods\D2R-PCVR\d2rloader\logs\d2r-vr-frame.log
+```
+
+Developer mode uses `mods\pcvr-dev\d2rloader\logs\d2r-vr-frame.log`.
+An older log under the game's root `d2rloader\logs` folder may remain from
+before the mod-folder migration and will not contain current Unleashed sessions.
+Installer failures are recorded separately in
+`%LOCALAPPDATA%\Programs\D2R PCVR\setup-install.log`.
 
 ## Verification and known issues
 
-The production build passed **114 native checks** and **217 Python checks**.
+The production build passed **114 native checks** and **223 Python checks**.
 One additional Python symlink check was skipped because this Windows session
-cannot create symbolic links. The compiled installer lifecycle passed with an
-isolated stub backend, including registration and failed-removal recovery.
-The in-headset release page was rendered and visually checked for the version,
-author, project link, credits and readable feature lines.
+cannot create symbolic links. Installer regressions cover actual Windows
+file-sharing locks, unchanged-icon repair, changed-icon preflight, retry after
+releasing the lock, rollback and removal. The compiled installer lifecycle,
+embedded payload, package contents and release checksums were checked separately.
+The in-headset release page was rendered and visually inspected.
 
-Launcher 0.3.5 source passed **22 checks**, including its GUI and install view.
-The compiled Unleashed installer was also checked with an isolated launcher
-fixture for fresh installation, upgrade, equal/newer-version preservation,
-nonblocking launcher failure and leaving the launcher after mod removal.
-
-Feature testing during development used Steam Frame through SteamVR on Windows,
-Steam D2R 3.3.93787 and offline developer characters. Rendering, revised shield
-combat, directional audio and the optional outline were checked in that
-environment. The contributor also checked the outline on Quest 2 through SteamVR
-with the Battle.net edition. This is feature-level testing, not a fresh headset
-pass of the final release package.
-
-By turns draws each eye at half the headset submission rate. Transparency,
-fast hand motion and moving labels can still show reprojection artifacts.
-Use Both eyes if you prefer its image consistency. Replay can pause frequently
-while areas stream, and DLSS history can smear between eyes; FXAA is recommended.
-Performance varies by hardware, runtime and scene. The new rendering paths have
-not been verified on Quest 3 through Virtual Desktop or under Linux/Proton.
-Battle.net remains experimental. Multiplayer and the Sorceress elemental-hands
-prototype are excluded.
+The loot-label fix was tested in the isolated developer environment on Quest 3
+through SteamVR with Steam D2R 3.3.93787 at 4096 x 4096. A player also tested a
+private build and confirmed the labels were fixed; their headset and resolution
+were not reported back. The 2K preset and Index dimensions are covered by
+automated checks but have not been retested in our own headset runs. VDXR and
+Battle.net have not been tested for this correction. See v0.3.21's notes for
+rendering tradeoffs and earlier feature verification. Battle.net remains experimental.
+Multiplayer and the Sorceress elemental-hands prototype remain excluded.
 
 ## Special thanks
 
-Thanks to **ChuckRibbits** for shield combat, the low-life heartbeat and
-directional audio, **beadlebytes** for enemy outlines, **Sergious** for the
-shared launcher and shared rendering work, and everyone testing and reporting
-issues!
+Thanks to everyone reporting the disappearing labels and helping test the fix!
+Thanks also to **ChuckRibbits**, **beadlebytes** and **Sergious** for the combat,
+audio, interface, rendering and shared launcher contributions included from v0.3.21.
 
 D2R VR Unleashed is a mod by **monkeylashes**, with contributions from the community.
 
 ## Downloads and links
 
-- [Windows installer, portable ZIP and checksums](https://github.com/bearstonem/d2r-pcvr/releases/tag/v0.3.21-windows-preview)
-- [Installation instructions](https://github.com/bearstonem/d2r-pcvr/blob/v0.3.21-windows-preview/INSTALL-WINDOWS.md)
-- [Controls](https://github.com/bearstonem/d2r-pcvr/blob/v0.3.21-windows-preview/CONTROLS.md)
-- [Full source comparison](https://github.com/bearstonem/d2r-pcvr/compare/v0.3.20-windows-preview...v0.3.21-windows-preview)
+- [Windows installer, portable ZIP and checksums](https://github.com/bearstonem/d2r-pcvr/releases/tag/v0.3.23-windows-preview)
+- [Installation instructions](https://github.com/bearstonem/d2r-pcvr/blob/v0.3.23-windows-preview/INSTALL-WINDOWS.md)
+- [Controls](https://github.com/bearstonem/d2r-pcvr/blob/v0.3.23-windows-preview/CONTROLS.md)
+- [Full source comparison](https://github.com/bearstonem/d2r-pcvr/compare/v0.3.22-windows-preview...v0.3.23-windows-preview)
 - [Project on GitHub](https://github.com/bearstonem/d2r-pcvr)
 - [Discord](https://discord.gg/DmbFfJAnnm)
 - [Support](https://ko-fi.com/bearstonem)
 
 <!-- PCVR_IN_HEADSET_NOTES
-release: v0.3.21-windows-preview
+release: v0.3.23-windows-preview
 credits: ChuckRibbits; beadlebytes; Sergious.
-- Stereo rendering: By turns (default), Both eyes or Replay under Video.
-- By turns: depth and head-motion reprojection, with steadier potions and game labels.
-- Faster wrist and wheel refreshes reduce display update stalls.
-- VR resolution defaults to Headset; fresh installs enable deferred GPU waits.
-- Video: Defer GPU wait button and warnings for game VSync and anti-aliasing.
-- Shield combat: stronger enemies strain guards faster; breaks allow chip damage.
-- Shields wear on physical blocks; a bone-snap sound signals a guard break.
-- Parries follow the visible downstroke; act bosses can be blocked, not parried.
-- Guard strain recovers when attacks stop, even while the shield stays raised.
-- Low-life heartbeat: choose its starting health percentage under Combat.
-- Directional 3D sound follows head and stick turns; Windows Mono audio warning.
-- Aim: optional subtle hostile-monster outlines, strength and colors; default Off.
-- Settings help explains individual named choices.
+- Hotfix: loot labels stay visible when looking down, including with Show Items held.
+- Included from v0.3.22: repair keeps an unchanged launcher icon in place.
+- Included from v0.3.21: By turns, Both eyes and Replay rendering under Video.
+- v0.3.21: faster wrist/wheel refreshes and steadier potions and game labels.
+- v0.3.21: guard strain, chip damage, shield wear and improved parry timing.
+- v0.3.21: adjustable low-life heartbeat and head-relative 3D sound.
+- v0.3.21: optional enemy outlines under Aim, with strength and colors; default Off.
 - Windows Setup includes the shared D2R VR Launcher 0.3.5.
 PCVR_IN_HEADSET_NOTES -->

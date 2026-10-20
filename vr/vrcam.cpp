@@ -5392,6 +5392,50 @@ LabelPaintFn OrigLabelPaint;
 TextDrawFn OrigTextDraw;
 thread_local float t_labelScale = 0.0f;   // inside LabelPaint: the name drawn at its scale times this (0 = not inside)
 
+#ifdef D2RVR_NATIVE_OPENXR
+// LabelLayout keeps a label while its bottom is above the interface's origin y
+// (0x8462A0) plus its size (InterfaceSize 0x8462E0, the root's rectangle times
+// its scale), asked at 0x1FAC2A. In native VR that is the widescreen band of
+// the eye (lootlabels::LabelArea): to that one call the whole eye's height.
+constexpr uint64_t RVA_INTERFACE_SIZE = 0x8462E0, RVA_LABEL_AREA_CALL = 0x1FAC2A;
+// push rbx; sub rsp, 0x40; mov rbx, [rip + 0x2BF9E83] (the interface's root); test rbx, rbx; je +0x6E
+const uint8_t kSigInterfaceSize[18] = {0x40,0x53,0x48,0x83,0xEC,0x40,0x48,0x8B,0x1D,0x83,0x9E,0xBF,0x02,0x48,0x85,0xDB,0x74,0x6E};
+using InterfaceSizeFn = uint64_t (*)();
+InterfaceSizeFn OrigInterfaceSize;
+std::atomic<bool> g_labelAreaIn{false};
+
+uint64_t HookInterfaceSize() {
+    const uint64_t size = OrigInterfaceSize();
+    if (reinterpret_cast<uintptr_t>(_ReturnAddress()) != d2rsig::Addr(RVA_LABEL_AREA_CALL + 5)) return size;
+    const uint64_t area = framevr::lootlabels::LabelArea(size, framevr::resolution::CursorSize(0));
+    static std::atomic<bool> told{false};
+    if (area != size && !told.exchange(true))
+        LogF("vrcam: item labels kept down to the eye's bottom (%u px), not the interface's %u px band",
+             unsigned(area >> 32), unsigned(size >> 32));
+    return area;
+}
+
+// The call is checked as well: LabelLayout's page is encrypted until a label is first laid out.
+void InstallLabelArea() {
+    static bool failed = false;
+    if (g_labelAreaIn.load() || failed) return;
+    uint8_t call[5] = {0xE8};
+    const int32_t delta = int32_t(RVA_INTERFACE_SIZE - (RVA_LABEL_AREA_CALL + 5));
+    memcpy(call + 1, &delta, sizeof delta);
+    if (!Matches(RVA_LABEL_AREA_CALL, call, sizeof call)) {
+        if (!g_labelSizeIn.load() && !Matches(RVA_LABEL_LAYOUT, kSigLabelLayout, sizeof kSigLabelLayout)) return;   // not decrypted yet
+        failed = true;
+        Log("vrcam: item-label area NOT possible - the game's label code is not as expected (another build?); items low in the view keep no label");
+        return;
+    }
+    const bool in = d2rsig::Hook(RVA_INTERFACE_SIZE, kSigInterfaceSize, sizeof kSigInterfaceSize, (void*)&HookInterfaceSize, (void**)&OrigInterfaceSize);
+    failed = !in;
+    g_labelAreaIn.store(in);
+    Log(in ? "vrcam: item-label area hook in - labels kept over the whole eye, not only the interface's widescreen band"
+           : "vrcam: item-label area hook FAILED - items low in the view keep no label");
+}
+#endif
+
 // [hud_floor] labels_size now, 1 = the game's own.
 float LabelSizeNow() {
     float alpha, size;
@@ -5472,6 +5516,9 @@ void InstallLabelHooks() {
                : "vrcam: item-label hook FAILED - [hud_floor] labels_alpha fades them as a picture, labels_size does nothing");
         if (!in) return;
     }
+#ifdef D2RVR_NATIVE_OPENXR
+    if (native) InstallLabelArea();
+#endif
     if (!wantSize || g_labelSizeIn.load() || sizeFailed) return;
     if (!Matches(RVA_LABEL_LAYOUT, kSigLabelLayout, sizeof kSigLabelLayout) || !Matches(RVA_TEXT_DRAW, kSigTextDraw, sizeof kSigTextDraw))
         return;   // not decrypted yet

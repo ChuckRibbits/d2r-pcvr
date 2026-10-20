@@ -7,7 +7,24 @@
 using namespace framevr::settings;
 static void Check(bool b,const char* label){if(!b){std::fprintf(stderr,"FAIL: %s\n",label);std::exit(1);}}
 static Hit At(Page p,Rect r){return HitTest(p,(r.x+r.w*.5f)/Width,(r.y+r.h*.5f)/Height);}
+static_assert((ChangeMask{1}<<64)==ChangeMask(0,1)&&(ChangeMask{1}<<127)==ChangeMask(0,uint64_t{1}<<63),"shifts cross into the high word");
+static_assert((ChangeMask(0,1)>>64)==ChangeMask{1}&&(ChangeMask{3}<<63)==ChangeMask(uint64_t{1}<<63,1),"shifts carry between words");
 int main(){
+    {
+        int supported=0;
+        for(int i=0;i<ChangeMask::Bits;++i){
+            const ChangeMask bit=ChangeMask{1}<<i;
+            Check(bit&&(bit>>i)==ChangeMask{1}&&(bit&bit)==bit&&!(bit&~bit),"every mask bit, below and above 63, round-trips");
+            for(int j=0;j<ChangeMask::Bits;j+=7)Check(bool(bit&(ChangeMask{1}<<j))==(i==j),"mask bits stay distinct across both words");
+            supported+=bool(bit&SupportedChanges);
+            Check(bool(bit&~SupportedChanges)==(i>=Count),"only bits past the last setting are unsupported");
+        }
+        Check(supported==Count,"one supported bit per setting");
+        ChangeMask mask=0;mask|=ChangeMask{1}<<5;mask|=ChangeMask{1}<<100;
+        Check(mask==((ChangeMask{1}<<100)|(ChangeMask{1}<<5))&&mask!=0&&(mask&(ChangeMask{1}<<100))&&!(mask&(ChangeMask{1}<<64)),"low and high bits combine");
+        Values a=Defaults(),b=a;b[Count-1]+=1;b[0]+=1;
+        Check(Changed(a,b)==((ChangeMask{1}<<(Count-1))|ChangeMask{1})&&Conflict(b,a,ChangeMask{1}<<(Count-1))&&!Conflict(b,a,ChangeMask{1}<<1),"Changed and Conflict use the wide mask");
+    }
     {
         Snapshot state;state.ready=true;Model model;model.Open(state);
         for(int page=0;page<TabCount;++page){
@@ -421,7 +438,7 @@ int main(){
             At(Page::HUD,Decrease(1)).index==VitalsTilt,"tilt controls sit next to vitals placement");
         tilt.Click(At(Page::HUD,Increase(1)));Check(tilt.Get()[VitalsTilt]==5,"plus tilts five degrees");
         const auto request=tilt.Click({Kind::Apply});
-        Check(request.changed==(ChangeMask{1}<<VitalsTilt)&&request.changed>UINT32_MAX,
+        Check(request.changed==(ChangeMask{1}<<VitalsTilt)&&!(request.changed&ChangeMask{UINT32_MAX}),
             "Apply preserves the new setting bit above the previous 32-bit mask");
         Check(request.values[VitalsLocation]==0&&request.values[NavigationLocation]==0&&request.values[CriticalAlerts]==0,
             "tilt saves independently of placement, navigation and alerts");

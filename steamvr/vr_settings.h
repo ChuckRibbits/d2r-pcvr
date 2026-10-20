@@ -16,9 +16,23 @@ enum class Page { Controls, VR, Video, HUD, Combat, Aim, Shield, Haptics, Releas
 enum Key { Motion, Seated, Dominant, Snap, TurnSpeed, Waist, BeltForward,
            Foveation, Sky, Fog, Ceiling, DrawDistance, ObjectDistance,
            EyeHeight, ArmSpan, BodyCalibration, SkillGestures, WristMap, WristCompass, ControllerLabels, WeaponSkillIndicators, PlanarSpellAim, VitalsLocation, CriticalAlerts, RenderResolution, NavigationLocation, SmoothTurn, OrdinaryMobBars, MenuDistance, TooltipTiming, ProjectileAimAssist, MeleeHitSpeed, VitalsTilt, HapticStrength, HapticMelee, HapticBowDraw, HapticBowRelease, HapticSpell, HapticInteraction, HapticAlert, HapticShortMelee, BloodVisor, BloodWipe, MeleeRules, MeleeThrustSpeed, LootLabelSize, CompanionCounts, StrainDark, OfflinePlayers, ShieldBashSpeed, StrainSpeed, DesktopOneEye, MapTopDown, MapRotate, FoveationStrength, StereoRendering, DeferGpuWait, TargetHighlight, TargetOutlineColour, TargetOutlineHue, HeartbeatStart, ShieldGrip, ShieldOut, ShieldUp, Count };
-using ChangeMask=uint64_t;
-static_assert(Count<=64,"settings change mask capacity");
-constexpr ChangeMask SupportedChanges=~ChangeMask{0}>>(64-Count);
+// One bit per setting, 128 wide: two words, since MSVC has no 128-bit integer.
+struct ChangeMask {
+    static constexpr int Bits=128;
+    uint64_t low=0,high=0;
+    constexpr ChangeMask(uint64_t bits=0):low(bits){}
+    constexpr ChangeMask(uint64_t lowBits,uint64_t highBits):low(lowBits),high(highBits){}
+    constexpr explicit operator bool()const{return (low|high)!=0;}
+    constexpr bool operator==(const ChangeMask&)const=default;
+    constexpr ChangeMask operator~()const{return {~low,~high};}
+    constexpr ChangeMask operator&(ChangeMask o)const{return {low&o.low,high&o.high};}
+    constexpr ChangeMask operator|(ChangeMask o)const{return {low|o.low,high|o.high};}
+    constexpr ChangeMask& operator|=(ChangeMask o){low|=o.low;high|=o.high;return *this;}
+    constexpr ChangeMask operator<<(int n)const{return n<=0?*this:n>=Bits?ChangeMask{}:n>=64?ChangeMask{0,low<<(n-64)}:ChangeMask{low<<n,high<<n|low>>(64-n)};}
+    constexpr ChangeMask operator>>(int n)const{return n<=0?*this:n>=Bits?ChangeMask{}:n>=64?ChangeMask{high>>(n-64),0}:ChangeMask{low>>n|high<<(64-n),high>>n};}
+};
+static_assert(Count<=ChangeMask::Bits,"settings change mask capacity");
+constexpr ChangeMask SupportedChanges=~ChangeMask{0}>>(ChangeMask::Bits-Count);
 struct Definition {
     const char* label;
     const char* detail;

@@ -118,6 +118,15 @@ int main(){
         request.base=request.values=vrsettings::Read().values;request.values[VitalsTilt]=5;
         request.changed=(ChangeMask{1}<<VitalsTilt)|(ChangeMask{1}<<63);request.sequence+=1;
         Check(!vrsettings::Submit(request),"unsupported high change bits are rejected");
+        for(int bit:{int(Count),64,100,127}){
+            request.changed=(ChangeMask{1}<<VitalsTilt)|(ChangeMask{1}<<bit);request.sequence+=1;
+            Check(!vrsettings::Submit(request),"change bits past the last setting are rejected in either mask word");
+        }
+        request.changed=ChangeMask{1}<<VitalsTilt;request.sequence+=1;
+        Check(vrsettings::Submit(request)&&vrsettings::Poll(name)&&vrsettings::Read().values[VitalsTilt]==5,"the same edit saves once its mask is valid");
+        request.base=request.values=vrsettings::Read().values;request.values[VitalsTilt]=current.values[VitalsTilt];
+        request.changed=Changed(request.base,request.values);request.sequence+=1;
+        Check(vrsettings::Submit(request)&&vrsettings::Poll(name),"restore tilt after mask checks");
     }
     Check(before.values[MeleeHitSpeed]==12,"missing melee speed uses twelve m/s default");
     Check(before.values[MeleeThrustSpeed]==2,"existing profiles gain the independent thrust default");
