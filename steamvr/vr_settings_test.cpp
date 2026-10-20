@@ -257,13 +257,16 @@ int main(){
     }
     {Model shield;shield.Open(s);shield.Click({Kind::Tab,int(Page::Shield)});
         Check(RowCount(Page::Shield)==3&&RowKey(Page::Shield,0)==ShieldGrip&&RowKey(Page::Shield,1)==ShieldOut&&RowKey(Page::Shield,2)==ShieldUp,"the Shield page holds grip, out and up");
-        Check(s.values[ShieldGrip]==3&&s.values[ShieldOut]==2&&s.values[ShieldUp]==2,"the shield defaults to 3 / 2 / 2 cm (tuned on a buckler)");
+        Check(s.values[ShieldGrip]==0&&s.values[ShieldOut]==0&&s.values[ShieldUp]==0,"the shield keeps its original position (and blocking surface) by default");
         Check(HelpAt(Page::Shield,(ValueBox(1).x+5.f)/Width,(ValueBox(1).y+5.f)/Height)==ShieldOut,"each Shield row explains itself");
         shield.Click(At(Page::Shield,Increase(0)));
         for(int i=0;i<3;++i)shield.Click(At(Page::Shield,Decrease(1)));
-        Check(shield.Get()[ShieldGrip]==4&&shield.Get()[ShieldOut]==-1,"grip steps up by a centimeter; out goes below zero");
-        for(int i=0;i<30;++i)shield.Click(At(Page::Shield,Increase(0)));
-        Check(shield.Get()[ShieldGrip]==20,"grip stops at 20 cm");
+        Check(shield.Get()[ShieldGrip]==1&&shield.Get()[ShieldOut]==-3,"grip steps up by a centimeter; out goes below zero");
+        for(int i=0;i<50;++i)shield.Click(At(Page::Shield,Increase(0)));
+        Check(shield.Get()[ShieldGrip]==40,"grip stops at 40 cm, room for large shields");
+        for(int i=0;i<40;++i)shield.Click(At(Page::Shield,Decrease(1)));
+        Check(shield.Get()[ShieldOut]==-30,"out stops at -30 cm");
+        Check(Normalize(ShieldGrip,-20)==-10&&Normalize(ShieldUp,45)==30&&Normalize(ShieldUp,NAN)==0,"shield offsets clamp to their ranges");
         const auto request=shield.Click({Kind::Apply});
         Check(request.changed==((ChangeMask{1}<<ShieldGrip)|(ChangeMask{1}<<ShieldOut)),"shield edits change nothing else");
     }
