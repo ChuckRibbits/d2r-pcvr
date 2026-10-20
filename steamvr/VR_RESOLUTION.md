@@ -7,8 +7,8 @@ several seconds for the view to return. Reopen Video to see the actual
 
 | Choice | Source dimensions | INI value |
 |---|---|---|
-| Desktop (default) | Physical game-window client size | 0 |
-| Headset | OpenXR runtime recommendation | 1 |
+| Desktop | Physical game-window client size | 0 |
+| Headset (default) | OpenXR runtime recommendation | 1 |
 | 1536 × 1536 | Fixed square preset | 2 |
 | 2048 × 2048 | Fixed square preset | 3 |
 | 2560 × 2560 | Fixed square preset | 4 |
@@ -16,7 +16,7 @@ several seconds for the view to return. Reopen Video to see the actual
 | 4096 × 4096 | Fixed square preset | 6 |
 
 The preference is `[render] vr_resolution` in `mods/D2R-PCVR/d2rloader/plugins/d2r_pcvr.ini`.
-Missing or invalid values retain Desktop. Start with a moderate preset and
+Missing or invalid values use Headset. Start with a moderate preset and
 increase only if frame timing permits. Independent sizes respect both eyes'
 OpenXR limits and the system's swapchain limits, with an additional cap of
 4096 pixels per side. Headset preserves the runtime's recommended aspect ratio.

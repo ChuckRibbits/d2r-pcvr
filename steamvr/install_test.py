@@ -183,7 +183,7 @@ class InstallationTests(unittest.TestCase):
                         self.assertEqual(value.value, expected)
                 self.assertTrue(cfg.getboolean('render','symmetric_projection'))
                 self.assertTrue(cfg.getboolean('hud','monster_draw_order'))
-                self.assertFalse(cfg.getboolean('render','defer_gpu_wait'))
+                self.assertTrue(cfg.getboolean('render','defer_gpu_wait'))   # every stereo mode's full rate
                 self.assertEqual(json.loads((saves / 'Settings.json').read_text())['NVIDIA DLSS'],0)
                 self.assertEqual(json.loads((saves / 'Settings.json').read_text())['Resolution Scale'], 100)
                 # An upgrade refreshes files without resetting calibration/video.
