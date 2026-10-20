@@ -667,6 +667,12 @@ forearm toward the elbow (0-40 cm), **Out** away from the forearm and **Up**
 across it (-25 to +25 cm each), in 1 cm steps at your scale; defaults 3 / 2 / 2
 cm (`[gameplay] shield_grip_cm`, `shield_out_cm`, `shield_up_cm`). All 0 puts the
 shield's centre exactly where the game hangs it. No value changes its turn.
+While a shield is held, `Frame shield seat:` is logged once a second: the pivot
+in use (`mesh centre` or the `attach bone` fallback) and its offset from the bone,
+the seated centre from the elbow (along the forearm, out, up, cm), the face's
+normal in the same axes, how far the hand has turned it from the game's hold,
+the last mesh reading and its fate, the last reason a rendered frame gave none,
+and the discovery stages (see [shield blocking](../docs/SHIELD_BLOCKING.md)).
 With **Smite** selected, an energetic
 left-arm swing or thrust that intersects an eligible creature requests one native
 Smite against that creature. A stationary shield cannot bash; one continuous

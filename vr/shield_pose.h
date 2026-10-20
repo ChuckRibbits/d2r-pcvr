@@ -80,14 +80,22 @@ inline bool Seat(const bow::Mat& followed,bow::Vec centre,bow::Vec target,bow::M
 }
 // The shield mesh's centre in its attach bone's axes. A pose and the frame
 // drawn from it can be a frame apart while the arm moves, so a reading counts
-// once three in a row agree; a centre farther from the bone than the shield
+// once three in a row agree (within 5% of its size); a centre farther from the bone than the shield
 // is wide is no shield's. Readings within the agreement leave it as it is.
-struct Fit {bow::Vec centre{},last{};int agree=0;bool ok=false;};
+// why: the last reading's fate, for the log.
+enum Why {Taken,Kept,Waiting,Invalid,TooFar};
+inline const char* WhyName(int why) {
+    constexpr const char* names[]={"taken","kept","waiting for agreement","not finite or no size","farther than the shield is wide"};
+    return why>=0&&why<5?names[why]:"?";
+}
+struct Fit {bow::Vec centre{},last{};int agree=0,why=Waiting;bool ok=false;};
 inline bool Learn(Fit& fit,bow::Vec centre,float halfSize) {
-    const float tolerance=.02f*halfSize;
-    if(!Finite(centre)||!std::isfinite(halfSize)||halfSize<=1e-4f||bow::Length(centre)>2*halfSize){fit.agree=0;return false;}
+    const float tolerance=.05f*halfSize;
+    if(!Finite(centre)||!std::isfinite(halfSize)||halfSize<=1e-4f){fit.agree=0;fit.why=Invalid;return false;}
+    if(bow::Length(centre)>2*halfSize){fit.agree=0;fit.why=TooFar;return false;}
     if(fit.agree>0&&bow::Length(centre-fit.last)<=tolerance)++fit.agree;else{fit.last=centre;fit.agree=1;}
-    if(fit.agree<3||(fit.ok&&bow::Length(fit.last-fit.centre)<=tolerance))return false;
-    fit.centre=fit.last;fit.ok=true;return true;
+    if(fit.agree<3){fit.why=Waiting;return false;}
+    if(fit.ok&&bow::Length(fit.last-fit.centre)<=tolerance){fit.why=Kept;return false;}
+    fit.centre=fit.last;fit.ok=true;fit.why=Taken;return true;
 }
 }

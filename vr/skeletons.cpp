@@ -340,7 +340,10 @@ struct ShieldContext {
 ShieldContext g_shieldContext{},g_renderedShieldContext{};
 // The held shield's mesh centre in its attach bone's axes (ShieldRendered),
 // for this hero and these hands only: PoseBody turns the shield about it.
-struct ShieldFitFor {shield::Fit fit;uintptr_t hero=0;uint32_t generation=0,equipment=0;uint64_t session=0;};
+struct ShieldFitFor {
+    shield::Fit fit;uintptr_t hero=0;uint32_t generation=0,equipment=0;uint64_t session=0;
+    bow::Vec reading{},normal{};float half=0;   // the last reading, the face's normal and half its diagonal (bone axes)
+};
 ShieldFitFor g_shieldFit;
 struct ShieldBound {int bone=-1;framevr::math::Vec low{},high{};};
 struct ShieldRenderSource {
@@ -351,9 +354,17 @@ struct ShieldRenderSource {
 };
 ShieldRenderSource g_shieldRenderSource;
 std::atomic<uint32_t> g_shieldEntity{UINT32_MAX};
-// Cumulative milestones collected while the developer overlay is enabled.
+// Cumulative milestones (2026-10-20: always kept - the shield seat log shows them too).
 std::atomic<unsigned> g_shieldStages{0};
-void ShieldStage(unsigned bit){if(devscenarios::DebugDraws())g_shieldStages.fetch_or(bit,std::memory_order_relaxed);}
+void ShieldStage(unsigned bit){g_shieldStages.fetch_or(bit,std::memory_order_relaxed);}
+// Why the last rendered shield frame gave no mesh centre (the shield seat log).
+enum ShieldMiss {MissNone,MissStale,MissOther,MissOwner,MissMatrices,MissFace,MissAttach,MissPoseMoved};
+std::atomic<int> g_shieldMiss{MissNone};
+const char* ShieldMissName(int miss) {
+    constexpr const char* names[]={"none","pose older than 100 ms","another item, hero or hand","skeleton not the shield's",
+        "item matrices unreadable","no shield face in the mesh bounds","attach bone not invertible","pose replaced during the frame"};
+    return miss>=0&&miss<8?names[miss]:"?";
+}
 struct CrossbowGeometry {Mat boltToAttach{};uintptr_t hero=0;uint32_t generation=0,key=0;ULONGLONG at=0;};
 CrossbowGeometry g_crossbowGeometry;
 framevr::crossbow::Pose g_crossbowPose;
@@ -1872,9 +1883,38 @@ void PoseBody(uintptr_t self, const Hero& h, const Input& in) {
                 const auto sides=shield::LearnArm(bindArm,bindWrist,shield::Point(bindBone,centre));
                 const float headY=in.haveEye?in.eyeModel[1]:Pos(newW[h.head>=0?h.head:hand]).y;
                 const float upm=framevr::body::UnitsPerMetre(h.eyeY>0?h.eyeY:headY,in.userHeadM,in.scale);
-                if(shield::Axes(arm,sides,along,out,up))
-                    target=target+shield::Offset(along,out,up,in.shieldGripCm,in.shieldOutCm,in.shieldUpCm,upm);
+                const bool axes=shield::Axes(arm,sides,along,out,up);
+                if(axes)target=target+shield::Offset(along,out,up,in.shieldGripCm,in.shieldOutCm,in.shieldUpCm,upm);
                 shield::Seat(followed,centre,target,followed);
+                // Once a second while a shield is held: what it is doing, for headset tests.
+                static ULONGLONG nextSeatLog=0;const ULONGLONG now=GetTickCount64();
+                if(axes&&upm>0&&now>=nextSeatLog) {
+                    nextSeatLog=now+1000;
+                    const float cm=100/upm;
+                    auto in3=[&](bow::Vec v,float k){return bow::Vec{bow::Dot(v,along)*k,bow::Dot(v,out)*k,bow::Dot(v,up)*k};};
+                    const bow::Vec seatAt=in3(target-bow::Position(arm),cm),pivot=in3(bow::Vector(followed,centre),cm);
+                    // the turn the hand gave it, away from where the game holds it on this forearm
+                    float trace=0;
+                    for(int r=0;r<3;++r)trace+=bow::Dot(bow::Normalized({followed.m[r*4],followed.m[r*4+1],followed.m[r*4+2]}),
+                                                        bow::Normalized({rigid.m[r*4],rigid.m[r*4+1],rigid.m[r*4+2]}));
+                    const float turned=acosf(std::clamp((trace-1)*.5f,-1.f,1.f))*57.2958f;
+                    const bool sameShield=learned.hero==self&&learned.generation==HeroGen()&&learned.equipment==gamestate::HandsKey();
+                    char face[64]="unknown (no mesh)";
+                    if(sameShield&&bow::Length(learned.normal)>.5f) {
+                        const bow::Vec f=in3(bow::Normalized(bow::Vector(followed,learned.normal)),1);
+                        std::snprintf(face,sizeof face,"along %.2f out %.2f up %.2f",f.x,f.y,f.z);
+                    }
+                    char reading[96]="none";
+                    if(sameShield&&learned.half>0)std::snprintf(reading,sizeof reading,"%.1f cm from the bone, %s",
+                        bow::Length(bow::Vector(followed,learned.reading))*cm,shield::WhyName(learned.fit.why));
+                    const uint32_t entity=g_shieldEntity.load();
+                    char line[640];std::snprintf(line,sizeof line,
+                        "Frame shield seat: pivot=%s (%.1f along, %.1f out, %.1f up cm from the bone); centre from the elbow: %.1f along, %.1f out, %.1f up cm; "
+                        "face normal: %s; turned %.0f deg from the game's hold; last reading: %s; last miss: %s; discovery stages=0x%X entity=%s",
+                        fit.ok?"mesh centre":"attach bone",pivot.x,pivot.y,pivot.z,seatAt.x,seatAt.y,seatAt.z,face,turned,reading,
+                        ShieldMissName(g_shieldMiss.load()),g_shieldStages.load(),entity==UINT32_MAX?"not found":"found");
+                    framevr::logging::Write(line);
+                }
             };
             // The visible shield hangs on shield_attach, a FOREARM child: give it
             // the same bind relationship to the tracked hand, so it turns with the wrist.
@@ -2347,8 +2387,15 @@ bool CaptureShield(uintptr_t self,const ShieldContext& context,const HeroXform& 
        !Get(source.skeleton+8,&source.count)||source.count<1||source.count>64||
        !Get(source.skeleton+0xC,&source.bones)||!source.bones)return false;
     ShieldStage(16);
+    // 2026-10-20: discovery never got past this point (stages 0x1F in every log):
+    // self+8 is the model INSTANCE - granny_model_instance starts with its Model,
+    // then the skeleton, which is why +8 read the skeleton fine. The mesh
+    // bindings are on the granny_model it points at; it must name the same
+    // skeleton. A granny_model itself (Name first) cannot pass that test.
+    uintptr_t granny=source.model,named=0,skeleton=0;
+    if(Get(source.model,&named)&&named&&Get(named+8,&skeleton)&&skeleton==source.skeleton)granny=named;
     int meshes=0;uintptr_t bindings=0;
-    if(!Get(source.model+0x54,&meshes)||meshes<1||meshes>16||!Get(source.model+0x58,&bindings)||!bindings)return false;
+    if(!Get(granny+0x54,&meshes)||meshes<1||meshes>64||!Get(granny+0x58,&bindings)||!bindings)return false;
     ShieldStage(32);
     uintptr_t nameObject=0,pathPointer=0;Get(self,&nameObject);Get(nameObject+8,&pathPointer);
     const auto path=Str(pathPointer);
@@ -2826,16 +2873,16 @@ void ShieldRendered(uint32_t entity,uintptr_t component,uintptr_t matrix) {
     const auto now=GetTickCount64();uint32_t parent=0;
     if(!context.pose.at||now<context.pose.at||now-context.pose.at>100||source.entity!=entity||source.hero!=context.hero||
        source.generation!=context.generation||source.generation!=HeroGen()||source.equipment!=context.equipment||source.session!=context.session||
-       !Get(component+0xC0,&parent)||parent!=source.parent)return;
+       !Get(component+0xC0,&parent)||parent!=source.parent){g_shieldMiss=now-context.pose.at>100||!context.pose.at?MissStale:MissOther;return;}
     {
         AcquireSRWLockExclusive(&ecs::g_lock);uintptr_t existing=0;
         const bool owned=ecs::SkeletonOf(entity,&existing)&&existing==source.self;
-        ReleaseSRWLockExclusive(&ecs::g_lock);if(!owned)return;
+        ReleaseSRWLockExclusive(&ecs::g_lock);if(!owned){g_shieldMiss=MissOwner;return;}
     }
     uintptr_t model=0,world=0,matrices=0;int count=0;Mat itemWorld;
     if(!Get(source.self+8,&model)||model!=source.model||!Get(source.self+0x20,&world)||
        !Get(world,&count)||count!=source.count||!Get(world+4,&matrices)||!matrices||
-       !SafeCopy(&itemWorld,reinterpret_cast<void*>(matrix),sizeof itemWorld))return;
+       !SafeCopy(&itemWorld,reinterpret_cast<void*>(matrix),sizeof itemWorld)){g_shieldMiss=MissMatrices;return;}
     ShieldStage(2048);
     framevr::guard::Pose best;float largest=0;Mat bestFinal{};ShieldBound bestBound;
     for(int i=0;i<source.boundCount;++i) {
@@ -2848,19 +2895,24 @@ void ShieldRendered(uint32_t entity,uintptr_t component,uintptr_t matrix) {
         const float size=framevr::math::Dot(area,area);
         if(size>largest){best=pose;largest=size;bestFinal=final;bestBound=bound;}
     }
-    if(!largest)return; // hidden/unsupported mesh keeps the attachment fallback
+    if(!largest){g_shieldMiss=MissFace;return;} // hidden/unsupported mesh keeps the attachment fallback
     {   // The mesh's centre in the axes of the bone it hangs on, as that bone was
         // posed: where PoseBody turns the shield about (the straps, not the bone).
         bow::Mat final,attach,inverse;memcpy(&final,&bestFinal,sizeof final);memcpy(&attach,&context.attach,sizeof attach);
-        if(bow::Inverse(attach,inverse)) {
+        if(!bow::Inverse(attach,inverse))g_shieldMiss=MissAttach;
+        else {
             const bow::Vec midWorld=shield::Point(final,(bestBound.low+bestBound.high)*.5f),cornerWorld=shield::Point(final,bestBound.high);
             const bow::Vec mid=shield::Point(inverse,midWorld),corner=shield::Point(inverse,cornerWorld);
+            const bow::Vec face=bow::Normalized(bow::Vector(inverse,best.normal));   // the face's normal, in the bone's axes
             AcquireSRWLockExclusive(&g_gunBoneLock);
             auto& fit=g_shieldFit;
             if(fit.hero!=context.hero||fit.generation!=context.generation||fit.equipment!=context.equipment||fit.session!=context.session)
                 fit={{},context.hero,context.generation,context.equipment,context.session};
-            const bool learned=g_shieldContext.pose.at==context.pose.at&&shield::Learn(fit.fit,mid,bow::Length(corner-mid));
+            const bool same=g_shieldContext.pose.at==context.pose.at;
+            const bool learned=same&&shield::Learn(fit.fit,mid,bow::Length(corner-mid));
+            if(same){fit.reading=mid;fit.half=bow::Length(corner-mid);if(learned||!fit.fit.ok)fit.normal=face;}
             ReleaseSRWLockExclusive(&g_gunBoneLock);
+            g_shieldMiss=same?MissNone:MissPoseMoved;
             if(learned) {
                 char line[200];std::snprintf(line,sizeof line,
                     "Frame shield fit: mesh centre %.1f cm from its attach bone, %.1f cm corner to corner; the shield turns about it (generation %u)",

@@ -94,6 +94,15 @@ All 55 checks still used `mesh=0`. Developer discovery stages stopped at `0x1F`
 not verification of runtime mesh-size capture. Keep the measured capture issue
 open separately; the fallback correction does not repair that discovery path.
 
+2026-10-20 (#156): discovery read the mesh bindings at `+0x54/+0x58` of the
+pointer at skeleton component `+8`. That pointer is the model instance
+(`granny_model_instance`: Model, then the skeleton - so `+8` still read the
+skeleton); the bindings are on the `granny_model` it points at. Discovery now
+follows it when that model names the same skeleton. Unverified in a headset:
+the once-a-second `Frame shield seat:` line reports the cumulative stages
+(`0x200` = shield found, `0x2000` = rendered surface published), the last miss
+and the last mesh reading.
+
 ## Diagnostics and test route
 
 - `Frame guard rejected:` counts decisions rejected by hand height/reach,

@@ -210,11 +210,14 @@ int main() {
         sh::Fit fit;const Vec c{0,.3f,.05f};
         assert(!sh::Learn(fit,c,.4f)&&!sh::Learn(fit,c,.4f)&&sh::Learn(fit,c,.4f)&&fit.ok&&Length(fit.centre-c)<1e-6f);
         assert(!sh::Learn(fit,c+Vec{.003f,0,0},.4f)&&!sh::Learn(fit,c+Vec{.003f,0,0},.4f)&&!sh::Learn(fit,c+Vec{.003f,0,0},.4f));
-        assert(Length(fit.centre-c)<1e-6f);   // within 2% of its size: kept as it is
+        assert(Length(fit.centre-c)<1e-6f);   // within 5% of its size: kept as it is
         const Vec skew{.1f,.3f,0};
         assert(!sh::Learn(fit,skew,.4f)&&!sh::Learn(fit,c,.4f)&&!sh::Learn(fit,skew,.4f)&&Length(fit.centre-c)<1e-6f);
         assert(!sh::Learn(fit,{2,0,0},.4f)&&!sh::Learn(fit,{NAN,0,0},.4f)&&!sh::Learn(fit,c,0)&&Length(fit.centre-c)<1e-6f);
         assert(!sh::Learn(fit,skew,.4f)&&!sh::Learn(fit,skew,.4f)&&sh::Learn(fit,skew,.4f)&&Length(fit.centre-skew)<1e-6f);   // a new shield
+        assert(fit.why==sh::Taken);sh::Learn(fit,skew,.4f);assert(fit.why==sh::Kept);
+        sh::Learn(fit,{2,0,0},.4f);assert(fit.why==sh::TooFar&&std::string_view(sh::WhyName(fit.why))=="farther than the shield is wide");
+        sh::Learn(fit,{NAN,0,0},.4f);assert(fit.why==sh::Invalid);sh::Learn(fit,c,.4f);assert(fit.why==sh::Waiting);
         static_assert(sh::kGripMaxCm==40&&sh::kSideMaxCm==25);
     }
     {
