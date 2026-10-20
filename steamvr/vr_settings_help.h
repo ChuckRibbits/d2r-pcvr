@@ -7,11 +7,12 @@ namespace framevr::settings {
 // transparent strip on its right in the same atlas/composition layer.
 constexpr int HelpGap=24,HelpWidth=440,AtlasWidth=Width+HelpGap+HelpWidth;
 constexpr Rect HelpCard{Width+HelpGap,242,HelpWidth-24,612};
-constexpr int NoHelp=-1,HelpApply=Count,HelpClose=Count+1,HelpRecenter=Count+2,HelpCalibrate=Count+3;
+constexpr int NoHelp=-1,HelpApply=Count,HelpClose=Count+1,HelpRecenter=Count+2,HelpCalibrate=Count+3,HelpMonoAudio=Count+4;
 inline const char* HelpTitle(int id) {
     if(id>=0&&id<Count)return Definitions[id].label;
     switch(id){case HelpApply:return "Apply";case HelpClose:return "Close";
-        case HelpRecenter:return "Reset eye height";case HelpCalibrate:return "Calibrate body";default:return "";}
+        case HelpRecenter:return "Reset eye height";case HelpCalibrate:return "Calibrate body";
+        case HelpMonoAudio:return "Windows Mono audio";default:return "";}
 }
 inline const char* HelpText(int id) {
     switch(id) {
@@ -80,6 +81,7 @@ inline const char* HelpText(int id) {
         case HelpClose:return "Returns to the game and discards changes you have not applied. Right B also closes this panel. The world continues running while VR Settings is open.";
         case HelpRecenter:return "Resets the current eye-height reference for your play position. This is separate from measuring your body and does not replace your saved body calibration.";
         case HelpCalibrate:return "Guides you through measuring standing eye height and controller span in a T-pose. Apply or discard pending settings first. Hold both triggers when prompted; Right B cancels.";
+        case HelpMonoAudio:return "Windows is set to Mono audio, which mixes every sound to the centre before it reaches the headset, so sounds cannot follow your head and stick turns. Turn it off in Windows Settings > Accessibility > Audio > Mono audio; the change applies at once.";
         default:break;
     }
     // Future settings retain at least their inline explanation until richer
@@ -203,8 +205,9 @@ inline ChoiceHelp HelpChoice(int id,float value) {
         default:return {};
     }
 }
-inline int HelpAt(Page page,float u,float v,bool controllerMenu=false,const Values* values=nullptr) {
+inline int HelpAt(Page page,float u,float v,bool controllerMenu=false,const Values* values=nullptr,bool monoAudio=false) {
     if(!std::isfinite(u)||!std::isfinite(v)||u<0||u>=1||v<0||v>=1)return NoHelp;
+    if(monoAudio&&MonoAudioBox.Contains(u*Width,v*Height))return HelpMonoAudio;
     // Do not explain controls hidden behind an open dropdown.
     if(page==Page::VR&&controllerMenu)return NoHelp;
     const float x=u*Width,y=v*Height;

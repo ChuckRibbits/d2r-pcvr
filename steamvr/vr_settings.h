@@ -160,6 +160,11 @@ inline constexpr const char* StereoRenderingNames[]={"Both eyes","By turns","Rep
 // rate. While it is not deferred, the Video page warns and offers a button
 // that turns it on (Apply saves it).
 constexpr Rect VideoDeferBox{940,181,300,52};
+// Windows Mono audio (Settings > Accessibility > Audio) folds the PC's sound to
+// the centre before any headset stream, so head-relative sound cannot pan.
+// While it is on, the title row's hint gives way to this warning on every page.
+constexpr Rect MonoAudioBox{820,40,420,50};
+inline constexpr const char* MonoAudioWarning="Windows Mono audio is on";
 inline bool DeferOffered(const Values& values){return values[DeferGpuWait]<.5f;}
 inline constexpr const char* DeferWarning="Each frame waits for the GPU: about half the frame rate";
 // The game's own video options that cost the headset frames, from its

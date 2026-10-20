@@ -1142,7 +1142,9 @@ with the view every 10 ms, so FMOD re-pans everything that is playing.
   are 2D sounds in the game's sound table and still play centred.
 - If nothing pans at all, check Windows **Mono audio** (Settings >
   Accessibility > Audio): it folds the PC's sound to mono before Quest Link,
-  Air Link or Virtual Desktop stream it.
+  Air Link or Virtual Desktop stream it. While it is on, VR Settings shows
+  **Windows Mono audio is on** at its top right on every page; pointing at it
+  explains where to turn it off.
 
 `d2r_pcvr.ini`, read at start:
 
