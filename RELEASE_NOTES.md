@@ -1,129 +1,141 @@
-# D2R VR Unleashed v0.3.20 - Windows preview
+# D2R VR Unleashed v0.3.21 - Windows preview
 
-This update focuses on hand-aimed spells, physical combat, wrist navigation,
-foveated rendering and clearer recording and launcher options.
+This update focuses on smoother VR rendering, shield combat, directional sound
+and easier installation with the shared launcher.
 
 ## Gameplay and combat
 
-- **Defense that reduces incoming damage - contributed by ChuckRibbits:**
-  In Unleashed, monster attacks no longer disappear because of a failed hit
-  roll. Instead, the native chance to hit your character scales the damage of
-  an attack that connects. Defense and character level still matter, while
-  dodging, shield blocking and parrying remain useful. Classic retains its
-  native hit rolls.
-- **Timed parries and clearer feedback - contributed by ChuckRibbits:**
-  Shield parries use a 450 ms window and must overlap the enemy's attack
-  wind-up. An unused parry sweep produces a short, soft vibration on the shield
-  hand. A successful parry still opens the 1.5-second riposte opportunity.
-- **Physical Assassin dual claws:** Equip two claws and swing or thrust with
-  either hand, in both Unleashed and Classic. Active skills retain their normal
-  button assignments.
-- **Hand-aimed Bone Spear and Holy Bolt:** Assign either casting hand's trigger
-  or shortcut and hold to repeat while walking or turning. Planar spell aiming
-  Off allows up/down controller aim. Projectile aim assist supports Off, Light
-  launch correction, or Strong launch correction and gentle homing. Holy Bolt
-  retains native damage against undead/demons and native friendly healing.
-- **Controlled bone placement:** Bone Wall and Bone Prison take their ground
-  target from the casting controller. Point downward to choose a location;
-  level or upward aim places bones six cells ahead, subject to native placement
-  rules.
+- **More demanding shield combat (Unleashed) - contributed by ChuckRibbits:** Champions,
+  uniques and act bosses build guard strain faster than ordinary monsters.
+  A broken guard allows chip damage through, with native resistances and damage
+  reduction still applying. Physical blocks can wear down your shield, and a
+  bone-snap sound signals a guard break. Act bosses can be blocked but not parried.
+- **Parries that meet the visible blow - contributed by ChuckRibbits:** Parry
+  timing now follows the enemy's downstroke and resolves at contact. A short
+  grace period after a blocked hit helps account for the difference between
+  the game's damage timing and the animation. Successful parries retain the
+  riposte opportunity; they do not undo damage already taken.
+- **Guard recovery between attacks - contributed by ChuckRibbits:** Strain
+  fades after attacks stop, even while your shield stays raised. Lowering the
+  shield starts recovery immediately. Broken guards recover once fully cleared.
+- **Low-life heartbeat - contributed by ChuckRibbits:** The heartbeat follows
+  your health in both melee modes, growing faster and louder as life falls.
+  **VR Settings > Combat > Heartbeat starts at** offers Off or 10-90%, default
+  60%. Healing quiets it; wiping the blood visor clean hushes it until another hit.
 
 ## Controls and interface
 
-- **Top-down wrist map - contributed by beadlebytes:** Choose Isometric or
-  Top-down under **VR Settings > HUD > Map view**. Enable **Rotate map** to keep
-  your facing direction at the top when using Top-down.
-- **Clearer skill selection - contributed by beadlebytes:** More skills show
-  their proper names in the picker, making assignments easier to recognize.
-- **One-eye desktop recording - contributed by beadlebytes:** The monitor can
-  show the left eye for cleaner recordings and streams while the headset keeps
-  its stereo view. **VR Settings > Video > Desktop shows one eye** is On by
-  default and can be disabled.
-- **Shared launcher integration:** Setup registers Unleashed's own name, icon,
-  version, support links, logs and update information with the D2R VR Launcher.
-  The standalone installer and launch options remain available. Thanks to
-  **Sergious** for the shared launcher and integration foundation.
+- **Optional enemy outlines - contributed by beadlebytes:** Under
+  **VR Settings > Aim**, enable a subtle outline around the hostile monster
+  you are pointing at. Choose strength, a static color or colors by range.
+  **Off by default.** Town residents, including camp cows, are excluded.
+  The outline is a visual guide and does not change attack aiming.
+- **Clearer settings help:** Hover help explains individual rendering and other
+  named choices. Video warnings identify game VSync, anti-aliasing settings and
+  disabled deferred GPU waits that can interfere with the recommended setup.
+  A separate warning explains where to turn off Windows Mono audio when it
+  would prevent directional sound.
 
 ## Visuals and stability
 
-- **Working foveation and adjustable strength:** Fixed and eye-tracked
-  foveation now apply to the visible world shading pass. Under
-  **VR Settings > Video > Foveation strength**, choose Low, Medium, High or
-  Maximum. Higher strengths shade more of the periphery coarsely; lower
-  strengths favor clarity. The frame-rate benefit depends on the GPU workload
-  and CPU limits.
-- **Eye-tracked rendering:** Supported runtime gaze input moves the detailed
-  region with your view. Steam Frame through SteamVR requires **Share eye
-  tracking data** to be enabled in SteamVR. Without usable gaze, Eye tracked
-  retains full shading quality.
-- **Clearer Kurast sewer entrances:** Entrance and stairwell surfaces render
-  from both sides, dark tunnel backdrops cover the exposed openings, and a
-  nearby entry prompt makes the Right A interaction easier to find.
+- **New stereo rendering modes:** **VR Settings > Video > Stereo rendering**
+  offers **By turns** (the new default), **Both eyes** and **Replay**. By turns
+  draws one eye each frame and reprojects the other using head motion and scene
+  depth, reducing the game's CPU rendering work. Both eyes retains the previous
+  rendering method. Replay reuses one game draw for both eyes once an area
+  settles, returning to two passes when needed.
+- **Smoother hand displays:** Wrist and wheel image updates reuse upload
+  resources, reducing refresh stalls. By turns keeps belt potions and game
+  labels out of the world reprojection so they remain more stable in the headset.
+- **Rendering defaults for VR:** Render resolution defaults to the headset's
+  recommendation. Fresh installs enable deferred GPU waits. Existing installs
+  retain their setting; if it is disabled, **VR Settings > Video > Defer GPU
+  wait**, then **Apply**, enables it without restarting.
+- **Head-relative directional sound - contributed by ChuckRibbits:** Native
+  3D sounds such as nearby monsters, NPCs and streams pan as you turn your head
+  or use stick turning. Music, UI and other native 2D sounds remain centered.
 
 ## Updating
 
-Download **D2R-PCVR-Setup-0.3.20.exe** for graphical installation, or
+Download **D2R-PCVR-Setup-0.3.21.exe** for graphical installation, or
 **d2r-pcvr-windows.zip** for portable setup. Existing users should choose
 **Update / repair and keep calibration and video settings**.
 
-Existing settings, calibration and saves are preserved. The shared launcher is
-optional; the installer, portable setup and standalone launch options work
-without it.
+The Windows installer now includes **D2R VR Launcher 0.3.5**, with thanks to
+**Sergious**. It installs or updates the launcher when needed and preserves a
+newer installed version. Choose Unleashed and an OpenXR runtime in the launcher;
+Authentic remains a separate optional installation. Direct Steam shortcuts and
+portable setup remain available, and a launcher installation failure does not
+prevent installing Unleashed.
+
+Close the game, Steam and the shared launcher before updating. Existing settings,
+calibration and saves are preserved. Stereo rendering starts on **By turns**;
+choose **Both eyes** to return to the previous rendering method.
 
 ## Verification and known issues
 
-The release build passed **110 native checks** and **217 Python checks** covering
-installation, launching, migrations, local asset preparation, release metadata
-and package staging. One additional Python symlink test was skipped because this
-Windows session cannot create symbolic links. The compiled installer lifecycle
-fixture passed installation, registration, failed-removal recovery and successful
-removal with an isolated stub backend. The compiled installer payload and package
-hashes were checked separately. The in-headset release page was rendered and
-visually inspected for readable feature lines, version, author, project link
-and credits.
+The production build passed **114 native checks** and **217 Python checks**.
+One additional Python symlink check was skipped because this Windows session
+cannot create symbolic links. The compiled installer lifecycle passed with an
+isolated stub backend, including registration and failed-removal recovery.
+The in-headset release page was rendered and visually checked for the version,
+author, project link, credits and readable feature lines.
 
-The gameplay changes were checked during development in the offline developer
-environment. Foveation was checked on Quest 3 through Virtual Desktop and
-Steam Frame through SteamVR, including usable eye-tracking input on Steam Frame.
-The corrected Holy Bolt candidate was verified before merging. The packaged
-release has not had a fresh headset pass; these are feature-level development
-checks.
+Launcher 0.3.5 source passed **22 checks**, including its GUI and install view.
+The compiled Unleashed installer was also checked with an isolated launcher
+fixture for fresh installation, upgrade, equal/newer-version preservation,
+nonblocking launcher failure and leaving the launcher after mod removal.
 
-Spell collision and ground placement retain the existing launch-floor
-approximation; assistance does not guarantee a hit. Battle.net remains
-experimental. The Sorceress elemental-hands prototype is excluded.
+Feature testing during development used Steam Frame through SteamVR on Windows,
+Steam D2R 3.3.93787 and offline developer characters. Rendering, revised shield
+combat, directional audio and the optional outline were checked in that
+environment. The contributor also checked the outline on Quest 2 through SteamVR
+with the Battle.net edition. This is feature-level testing, not a fresh headset
+pass of the final release package.
+
+By turns draws each eye at half the headset submission rate. Transparency,
+fast hand motion and moving labels can still show reprojection artifacts.
+Use Both eyes if you prefer its image consistency. Replay can pause frequently
+while areas stream, and DLSS history can smear between eyes; FXAA is recommended.
+Performance varies by hardware, runtime and scene. The new rendering paths have
+not been verified on Quest 3 through Virtual Desktop or under Linux/Proton.
+Battle.net remains experimental. Multiplayer and the Sorceress elemental-hands
+prototype are excluded.
 
 ## Special thanks
 
-Thanks to **ChuckRibbits** for combat and defense improvements, **beadlebytes**
-for the map, skill picker and desktop view contributions, **Sergious** for the
-launcher foundation, and everyone testing and reporting issues!
+Thanks to **ChuckRibbits** for shield combat, the low-life heartbeat and
+directional audio, **beadlebytes** for enemy outlines, **Sergious** for the
+shared launcher and shared rendering work, and everyone testing and reporting
+issues!
 
-D2R VR Unleashed is a mod by **monkeylashes**, based on the original D2R VR work
-by **Sergious / BodyWalkVR**, with contributions from the community.
+D2R VR Unleashed is a mod by **monkeylashes**, with contributions from the community.
 
 ## Downloads and links
 
-- [Windows installer, portable ZIP and checksums](https://github.com/bearstonem/d2r-pcvr/releases/tag/v0.3.20-windows-preview)
-- [Installation instructions](https://github.com/bearstonem/d2r-pcvr/blob/v0.3.20-windows-preview/INSTALL-WINDOWS.md)
-- [Controls](https://github.com/bearstonem/d2r-pcvr/blob/v0.3.20-windows-preview/CONTROLS.md)
-- [Full source comparison](https://github.com/bearstonem/d2r-pcvr/compare/v0.3.19-windows-preview...v0.3.20-windows-preview)
+- [Windows installer, portable ZIP and checksums](https://github.com/bearstonem/d2r-pcvr/releases/tag/v0.3.21-windows-preview)
+- [Installation instructions](https://github.com/bearstonem/d2r-pcvr/blob/v0.3.21-windows-preview/INSTALL-WINDOWS.md)
+- [Controls](https://github.com/bearstonem/d2r-pcvr/blob/v0.3.21-windows-preview/CONTROLS.md)
+- [Full source comparison](https://github.com/bearstonem/d2r-pcvr/compare/v0.3.20-windows-preview...v0.3.21-windows-preview)
 - [Project on GitHub](https://github.com/bearstonem/d2r-pcvr)
+- [Discord](https://discord.gg/DmbFfJAnnm)
+- [Support](https://ko-fi.com/bearstonem)
 
 <!-- PCVR_IN_HEADSET_NOTES
-release: v0.3.20-windows-preview
-credits: ChuckRibbits; beadlebytes; Sergious / BodyWalkVR.
-- Unleashed: monster hits connect; Defense reduces damage instead of rolling misses.
-- Parries: 450 ms timing window and shield-hand feedback for unused sweeps.
-- Assassin dual claws: swing or thrust with either hand in both melee modes.
-- Bone Spear: cast from either hand while moving, with free aim and optional homing.
-- Bone Wall / Prison: aim with your casting controller to choose the ground location.
-- Holy Bolt: full hand aiming and optional homing; native damage and healing rules.
-- Wrist map: Isometric or Top-down view, with optional rotation under HUD.
-- Skill picker: proper names for more skills.
-- Desktop recording: one-eye monitor view, adjustable under Video.
-- Kurast sewers: fuller entrances, dark tunnel backdrops and visible entry prompts.
-- Foveation: fixed and eye-tracked modes now shade the visible world.
-- Video: Foveation strength - Low, Medium, High or Maximum.
-- Shared launcher: Unleashed's name, icon, version and support links.
+release: v0.3.21-windows-preview
+credits: ChuckRibbits; beadlebytes; Sergious.
+- Stereo rendering: By turns (default), Both eyes or Replay under Video.
+- By turns: depth and head-motion reprojection, with steadier potions and game labels.
+- Faster wrist and wheel refreshes reduce display update stalls.
+- VR resolution defaults to Headset; fresh installs enable deferred GPU waits.
+- Video: Defer GPU wait button and warnings for game VSync and anti-aliasing.
+- Shield combat: stronger enemies strain guards faster; breaks allow chip damage.
+- Shields wear on physical blocks; a bone-snap sound signals a guard break.
+- Parries follow the visible downstroke; act bosses can be blocked, not parried.
+- Guard strain recovers when attacks stop, even while the shield stays raised.
+- Low-life heartbeat: choose its starting health percentage under Combat.
+- Directional 3D sound follows head and stick turns; Windows Mono audio warning.
+- Aim: optional subtle hostile-monster outlines, strength and colors; default Off.
+- Settings help explains individual named choices.
+- Windows Setup includes the shared D2R VR Launcher 0.3.5.
 PCVR_IN_HEADSET_NOTES -->
