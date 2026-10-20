@@ -12,7 +12,7 @@ static int HelpTextHeight(HDC dc,HFONT font,const char* value,int width) {
     DrawTextW(dc,wide,-1,&bounds,DT_CALCRECT|DT_WORDBREAK|DT_NOPREFIX);
     SelectObject(dc,old);return int(bounds.bottom);
 }
-std::vector<uint8_t> Paint(const Model& m,Hit hover,const char* runtimeStatus,const calibration::Flow* body,const controllers::Labels& detected,int help,GameVideo game){
+std::vector<uint8_t> Paint(const Model& m,Hit hover,const char* runtimeStatus,const calibration::Flow* body,const controllers::Labels& detected,int help,GameVideo game,bool monoAudio){
     const bool showHelp=!body&&help!=NoHelp&&HelpText(help)[0];
     BITMAPINFO info{};info.bmiHeader.biSize=sizeof(BITMAPINFOHEADER);info.bmiHeader.biWidth=AtlasWidth;
     info.bmiHeader.biHeight=-Height;info.bmiHeader.biPlanes=1;info.bmiHeader.biBitCount=32;
@@ -71,7 +71,8 @@ std::vector<uint8_t> Paint(const Model& m,Hit hover,const char* runtimeStatus,co
         text("Controls are blocked. The game world remains live.",{80,939,1120,50},false,true,quiet);
     }else{
     text("DIABLO II / VR SETTINGS",{40,33,960,55},true);
-    text("Point for help; trigger to change",{820,44,420,42},false,true,quiet);
+    if(monoAudio)text(MonoAudioWarning,{820,44,420,42},false,true,RGB(236,186,96));   // pointing at it explains
+    else text("Point for help; trigger to change",{820,44,420,42},false,true,quiet);
     for(int i=0;i<TabCount;++i)button(TabBox(i),TabNames[i],{Kind::Tab,i},int(m.page)==i);
     if(m.page==Page::ReleaseNotes){
         text(releasenotes::ReleaseTitle,{40,195,1200,45},true);

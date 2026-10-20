@@ -1436,8 +1436,26 @@ void CalibrationInput() {
         settingsPaintAt=now+100;
     }
 }
+// Windows Mono audio (HKCU Software\Microsoft\Multimedia\Audio,
+// AccessibilityMonoMixState 1) for the title row's warning, read at most every
+// 2 s while VR Settings is open; logged when it changes.
+bool MonoAudioOn(ULONGLONG now) {
+    static bool on=false,told=false;static ULONGLONG checkAt=0;
+    if(now<checkAt)return on;
+    checkAt=now+2000;
+    DWORD value=0,size=sizeof value;
+    const bool mono=RegGetValueW(HKEY_CURRENT_USER,L"Software\\Microsoft\\Multimedia\\Audio",L"AccessibilityMonoMixState",
+                                 RRF_RT_REG_DWORD,nullptr,&value,&size)==ERROR_SUCCESS&&value!=0;
+    if(mono!=on||!told) {
+        told=true;
+        Say(mono?"Frame VR settings: Windows Mono audio is on - 3D sounds cannot follow the head; VR Settings warns":
+                 "Frame VR settings: Windows Mono audio is off");
+    }
+    on=mono;return on;
+}
 void SettingsPointer(const settings::InputGate::Edges& edges) {
     if(!settingsModel.open)return;
+    const bool monoAudio=MonoAudioOn(GetTickCount64());
     settingsModel.Observe(vrsettings::Read());settingsHover={};pointerVisible=pointerHit=false;
     int helpTarget=settings::NoHelp;
     const auto previousPage=settingsModel.page;
@@ -1451,7 +1469,7 @@ void SettingsPointer(const settings::InputGate::Edges& edges) {
         beamLength=pointerHit?hit.distance:1.5f;const auto mid=ray+direction*(beamLength*.5f);
         beamPose=XrPose({mid,math::BeamOrientation(direction,V(head.position)-mid)});pointerVisible=true;
         if(pointerHit){settingsHover=settings::HitTest(settingsModel.page,hit.u,hit.v,settingsModel.controllerMenu);dotPose=settingsPose;
-            helpTarget=settings::HelpAt(settingsModel.page,hit.u,hit.v,settingsModel.controllerMenu,&settingsModel.Get());
+            helpTarget=settings::HelpAt(settingsModel.page,hit.u,hit.v,settingsModel.controllerMenu,&settingsModel.Get(),monoAudio);
             const auto p=hit.point+math::Rotate(Q(settingsPose.orientation),{0,0,.004f});dotPose.position={p.x,p.y,p.z};}
     }
     if(edges.click&&pointerHit&&settingsImageReady&&settingsPaintRevision==settingsModel.revision){
@@ -1481,12 +1499,13 @@ void SettingsPointer(const settings::InputGate::Edges& edges) {
     if(previousPage!=settingsModel.page||previousMenu!=settingsModel.controllerMenu)helpTarget=settings::NoHelp;
     const int help=settingsHelpVisible=settingsHelp.Step(helpTarget,now);
     const auto game=GameVideoOptions(now);
+    const int warnings=game.Code()|(monoAudio?4:0);
     if(now>=settingsPaintAt&&!settingsAtlasPending&&atlasUploads.size()<3&&
-       (settingsPaintRevision!=settingsModel.revision||settingsPaintHover!=hover||settingsPaintStatus!=status||settingsPaintHelp!=help||settingsPaintGame!=game.Code())){
+       (settingsPaintRevision!=settingsModel.revision||settingsPaintHover!=hover||settingsPaintStatus!=status||settingsPaintHelp!=help||settingsPaintGame!=warnings)){
         char resolutionStatus[160];resolution::Describe(resolutionStatus,sizeof resolutionStatus,{width,height});
-        auto pixels=settings::Paint(settingsModel,settingsHover,settingsModel.page==settings::Page::Video?resolutionStatus:descriptions[status],nullptr,detectedControllers,help,game);
+        auto pixels=settings::Paint(settingsModel,settingsHover,settingsModel.page==settings::Page::Video?resolutionStatus:descriptions[status],nullptr,detectedControllers,help,game,monoAudio);
         if(!pixels.empty()&&UploadAtlas(settingsChain,atlasFormat,settings::AtlasWidth,settings::Height,pixels,true,&settingsAtlasPending)){
-            settingsPaintRevision=settingsModel.revision;settingsPaintHover=hover;settingsPaintStatus=status;settingsPaintHelp=help;settingsPaintGame=game.Code();
+            settingsPaintRevision=settingsModel.revision;settingsPaintHover=hover;settingsPaintStatus=status;settingsPaintHelp=help;settingsPaintGame=warnings;
         }
         settingsPaintAt=now+100;
     }

@@ -274,6 +274,15 @@ int main(){
         const auto request=aim.Click({Kind::Apply});
         Check(request.changed==(ChangeMask{1}<<TargetHighlight)&&request.values[TargetHighlight]==20,"the outline strength changes nothing else");
     }
+    {   // Windows Mono audio: the title row warns on every page; pointing at it explains
+        const float u=(MonoAudioBox.x+20.f)/Width,v=(MonoAudioBox.y+20.f)/Height;
+        for(int page=0;page<TabCount;++page)
+            Check(HelpAt(Page(page),u,v,false,nullptr,true)==HelpMonoAudio,"the Mono audio warning explains itself on every page");
+        Check(HelpAt(Page::Video,u,v)==NoHelp,"no Mono audio help while it is off");
+        Check(std::string(HelpTitle(HelpMonoAudio))=="Windows Mono audio"&&std::string(HelpText(HelpMonoAudio)).find("Accessibility > Audio")!=std::string::npos,
+              "the help says where to turn it off");
+        Check(!MonoAudioBox.Contains(float(TabBox(0).x),float(TabBox(0).y))&&MonoAudioBox.y+MonoAudioBox.h<=TabBox(0).y,"the warning stays above the tabs");
+    }
     {Model heart;heart.Open(s);heart.Click({Kind::Tab,int(Page::Combat)});
         Check(s.values[HeartbeatStart]==60&&RowKey(Page::Combat,7)==HeartbeatStart,"heartbeat start is the last Combat row, 60% by default");
         Check(ValueBox(7).y+ValueBox(7).h<744,"heartbeat row avoids Combat notes");

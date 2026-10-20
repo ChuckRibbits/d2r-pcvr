@@ -44,7 +44,7 @@ int main(int argc,char** argv){
         HFONT normal=CreateFontW(27,0,0,0,FW_NORMAL,FALSE,FALSE,FALSE,DEFAULT_CHARSET,OUT_DEFAULT_PRECIS,CLIP_DEFAULT_PRECIS,ANTIALIASED_QUALITY,DEFAULT_PITCH,L"Arial");
         HFONT bold=CreateFontW(32,0,0,0,FW_SEMIBOLD,FALSE,FALSE,FALSE,DEFAULT_CHARSET,OUT_DEFAULT_PRECIS,CLIP_DEFAULT_PRECIS,ANTIALIASED_QUALITY,DEFAULT_PITCH,L"Arial");
         auto old=SelectObject(dc,normal);
-        for(int id=0;id<=HelpCalibrate;++id){
+        for(int id=0;id<=HelpMonoAudio;++id){
             for(int title=0;title<2;++title){
                 wchar_t wide[512]{};MultiByteToWideChar(CP_UTF8,0,title?HelpTitle(id):HelpText(id),-1,wide,512);
                 SelectObject(dc,title?bold:normal);RECT bounds{0,0,HelpCard.w-48,0};
@@ -80,6 +80,11 @@ int main(int argc,char** argv){
         }
         // The Video page's warning lines: one line each, left of the Defer GPU wait button.
         SelectObject(dc,normal);
+        {   // the Mono audio warning: one line in the title row's hint box
+            wchar_t wide[128]{};MultiByteToWideChar(CP_UTF8,0,MonoAudioWarning,-1,wide,128);RECT bounds{0,0,420,0};
+            DrawTextW(dc,wide,-1,&bounds,DT_CALCRECT|DT_WORDBREAK|DT_NOPREFIX);
+            if(bounds.bottom>42||bounds.right>420){std::fprintf(stderr,"Mono audio warning too long\n");return 18;}
+        }
         for(const char* line:{DeferWarning,GameVideoWarning({true,true}),GameVideoWarning({true,false}),GameVideoWarning({false,true})}){
             wchar_t wide[512]{};MultiByteToWideChar(CP_UTF8,0,line,-1,wide,512);RECT bounds{0,0,VideoDeferBox.x-50,0};
             DrawTextW(dc,wide,-1,&bounds,DT_CALCRECT|DT_WORDBREAK|DT_NOPREFIX);
@@ -92,8 +97,9 @@ int main(int argc,char** argv){
     // --game-video: the Video page as with Vertical Sync on and TAA; --deferred: the GPU wait already deferred.
     if(argc>3&&std::strcmp(argv[3],"--deferred")==0){Snapshot d=s;d.values[DeferGpuWait]=1;m.Open(d);m.Click({Kind::Tab,page});}
     const GameVideo game=argc>3&&std::strcmp(argv[3],"--game-video")==0?GameVideo{true,true}:GameVideo{};
+    const bool monoAudio=argc>3&&std::strcmp(argv[3],"--mono-audio")==0;   // the title row's Windows Mono audio warning
     const auto pixels=Paint(m,{},page==int(Page::Video)?"VR source: 2560 x 2560 per eye":"Foveated shading available. Eye-tracking samples are active.",page==TabCount?&body:nullptr,
-        framevr::controllers::Labels{{framevr::controllers::Layout::Touch,framevr::controllers::Layout::Touch}},help,game);
+        framevr::controllers::Labels{{framevr::controllers::Layout::Touch,framevr::controllers::Layout::Touch}},help,game,monoAudio);
     if(pixels.size()!=AtlasWidth*Height*4)return 1;
     FILE* file=std::fopen(argc>1?argv[1]:"vr-settings-preview.ppm","wb");if(!file)return 2;
     const char* name=argc>1?argv[1]:"";
