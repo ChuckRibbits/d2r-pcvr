@@ -71,8 +71,13 @@ Quest left X/Y correspond to Index left A/B; right A/B labels are the same.
 | Hold to show all nearby loot labels (Alt) | Hold **Right Grip + Right Trigger** during gameplay, grip first. Labels stay shown while both are held; release either to restore normal drop/hover labels. Uses the native Alt range, independently of where you aim. No cast or shot accompanies the combo. Also listed in **VR Settings > Controls** |
 | Interact / pick up / talk | Right A by default; requires an aimed interactable. One press acts on one target: press again for each item, including loot a chest just dropped |
 | Free melee swing / thrust | Move the equipped weapon through an enemy |
-| Break pots / barrels | Swing a held melee weapon through them with its trigger released. Either Barbarian weapon works; ordinary button interaction/kicking remains available |
+| Physical dual wield | Equip two supported melee weapons on a Barbarian or two claws on an Assassin; release both triggers and swing or thrust with either hand. Active skills retain their button bindings |
+| Break pots / barrels | Swing a held melee weapon through them with its trigger released. Either Barbarian weapon or Assassin claw works; ordinary button interaction/kicking remains available |
 | Choose melee rules / motion thresholds | **VR Settings > Combat**: Unleashed or Classic, Melee hit speed, and Melee thrust speed |
+| Bone Spear | Assign either hand's trigger or shortcut; aim with that controller and hold to repeat while moving. **Projectile aim assist** under Controls applies to Bone Spear too; Strong adds gentle homing |
+| Bone Wall / Bone Prison | Aim down at the desired ground location and cast. Level/upward aim places bones six cells ahead; native placement rules still apply |
+| Holy Bolt | Aim with either casting controller, including up/down with Planar spell aiming Off. Light assists at launch; Strong also adds gentle homing toward undead/demons. Directly aim at your mercenary to heal; native damage/healing rules apply |
+| See which monster you are aiming at | **VR Settings > Aim > Monster outline** (Off by default; 10-100% sets its brightness) draws a thin, steady outline round it, in one static color (**Static color**, any hue; gold by default) or, with **Monster outline colors: By range**, red near, orange mid-range, yellow far. With your arm held out, the monster your hand points at is chosen; otherwise the one you look at. Walls in between rule a monster out. A guide only: it does not change how attacks or spells aim |
 | Seat a held shield on your arm | **VR Settings > Shield**: Grip offset slides the shield up the forearm so your fingers reach its grip strap ; Out and Up move it away from and across the forearm. In centimeters, by default 3 / 2 / 2 (tuned on a buckler; all 0 restores the original position); the shield still turns with your wrist |
 | Increase offline difficulty | **VR Settings > Combat > Offline difficulty**: Game default or Players 1-8; higher counts make monsters tougher and increase rewards |
 | Bow draw | Right trigger near the left-hand bow string; draw and release |
@@ -128,6 +133,12 @@ rhythm: a stroke before your attack speed has recovered hits much weaker, so
 measured swings beat flailing. Faster attack speed (IAS) shortens the wait.
 One stroke can hit several monsters, each further one a little weaker.
 
+**Unleashed incoming damage:** monsters' attacks and projectiles always reach
+you; your shield is what stops them. Your Defense decides how hard they land:
+the chance a monster would have had to hit you (5-95%) scales the whole
+attack, elemental damage included. Spells never roll to hit, so Defense
+doesn't reduce them; resistances still matter.
+
 ### Shield: block, parry and strain (Unleashed)
 
 - **Block:** raise the shield and put its broad face between you and the
@@ -138,23 +149,44 @@ One stroke can hit several monsters, each further one a little weaker.
   incoming attack line. Unsupported meshes use an attachment-based fallback.
   Lowering it, holding it away from the attack line or turning it edge-on opens
   the guard.
+  Blows that meet the shield wear it, at the rate it wears as one piece of
+  your armor when you are struck (about 2% a block), but only the shield
+  wears; the rest of your armor wears only from hits that land. A parry
+  spares it.
 - **Parry:** as a melee attack comes in, swing the shield diagonally across
-  your view (lower right to upper left with a left-hand shield) up to
-  0.75 seconds before the hit. You can start before the enemy's wind-up. The swing
+  your view (lower right to upper left with a left-hand shield) as the blow
+  comes down at you, from late in its wind-up until just after the blow meets
+  your shield (0.2 s). A swing while the
+  enemy is still raising its arms is too early and is no parry. The swing
   only needs to finish with the shield raised on the attacker's side, even if
-  it ends edge-on. It also works on attacks that would have missed you. The
-  attacker staggers as soon as your swing meets its attack, before the blow
-  lands.
+  it ends edge-on. The blow meets your shield and the attacker staggers.
+  A monster with no stagger animation (Griswold, for one) is
+  **deflected**: the parry sound and the riposte, but it keeps its footing.
+  **Act bosses** (Andariel, Duriel, Mephisto, Diablo, Baal) cannot be parried:
+  the swing meets them as a plain block.
+  Every enemy attack makes contact: without a parry, where your shield is at
+  that moment decides whether it blocks or hits you.
 - **Riposte:** your next weapon hit on the parried monster within 1.5 s is a
   clean hit: full damage, whatever your attack rating or timing.
-- **Guard strain:** every block (not a parry) strains your guard. A pale light
-  creeps in from the edge of your view and a heartbeat builds; at full strain
+- **Guard strain:** every block (not a parry) strains your guard, and the
+  rarer the attacker the more: a minion strains it a little more than a
+  normal monster, a champion twice as much, a unique or super unique two and
+  a half times and an act boss four times. A pale light
+  creeps in from the edge of your view; at full strain
   the guard breaks and the light swells over most of your view. The shield
-  keeps blocking; the cost is sight. Lower the shield to let it fade.
+  keeps blocking; the cost is sight, then chip damage (below). It fades once
+  no hit has reached your shield for a moment, even held up, and is gone about
+  3 seconds after the last hit; lowering the shield starts the fade at once.
   **Combat > Guard strain color** switches the light to a black shadow.
   **Guard strain buildup** selects Slow / Medium / Fast: about 20 / 10 / 5
-  blocks to full strain with default tuning. Medium keeps the original rate.
+  normal-monster blocks to full strain with default tuning (an act boss: about
+  6 / 3 / 2). Medium keeps the original rate.
   This changes how quickly it builds, not how much of your view it covers.
+- **Guard break:** the guard breaks with a bone snap, and while it is broken
+  blocked hits leak a **chip**: part of their physical damage gets through,
+  less the higher your chance to block (more while running). Elemental damage
+  and its effects land in full, so resistances still matter. It recovers as
+  the strain fades: let hits stop or lower the shield.
 
 **HUD > Loot label size** adjusts dropped-item text and its darker backing from
 20% to 150% in five-point steps. The original size is 45%; Apply saves the choice
@@ -194,6 +226,13 @@ you are still hurt, the visor then stays clean until the next hit splashes it
 again. The centre of the view always stays clear. While a hand is scrubbing it
 does not attack; a held potion, squeezed trigger or bow draw never counts as
 wiping.
+
+**Low-life heartbeat:** **Combat > Heartbeat starts at** (default 60%, or Off)
+picks the life where a quiet heartbeat begins. Every 10% of life you lose below
+that, it gets louder and faster, at full strength below 10%. Healing winds it
+down beat by beat. Wiping the visor clean fades it out too, until the next hit
+brings it back. It plays in Classic and Unleashed; `[gameplay]
+low_life_heartbeat` sets its loudness (200%, 0 = off).
 
 ## Hand skill layouts
 
@@ -382,3 +421,14 @@ ran out, or tracking was lost, the use is discarded rather than retried.
 
 The minimap has a narrow bronze bevel and inset corner details. The full native
 map is fitted inside the frame so edge markers remain visible.
+
+A gold arrow sits on the game's blue hero marker and points the way you face.
+Change its view under **VR Settings > HUD**, then press **Apply**:
+
+- **Map view: Isometric / Top-down.** Top-down flattens the game's slanted map into
+  a plan, so rooms are square and the arrow matches your real turns. Map names
+  are left out in top-down, since they would turn 45 degrees with the floor.
+- **Rotate map: Off / On** (top-down only). On turns the map so the way you face
+  is up; Off keeps north up.
+
+Both are saved like any setting. Isometric with north up is the default.

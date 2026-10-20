@@ -35,8 +35,8 @@ bool Check(uint64_t,const void*,uint32_t){return false;}
 bool Hook(uint64_t,const void*,uint32_t,void*,void**){return false;}
 }
 namespace framevr::logging {void Write(const char* line){fixture::log+=line;fixture::log+='\n';}}
-namespace framevr {void ShieldGuardImpact(bool){++fixture::impacts;}void ShieldGuardState(bool,bool){}}
-namespace melee {bool QueueParry(uint32_t,int durability){++fixture::parries;fixture::parryDurability=durability;return true;}uint64_t AttackStart(uint32_t){return 0;}void QueueBlockSound(){}
+namespace framevr {void ShieldParryMiss(){}bool GuardBroken(){return false;}void ShieldGuardImpact(bool,float){++fixture::impacts;}void ShieldGuardState(bool,bool){}}
+namespace melee {bool QueueParry(uint32_t,int durability){++fixture::parries;fixture::parryDurability=durability;return true;}uint64_t AttackStart(uint32_t){return 0;}uint64_t ParryOpens(uint32_t){return 0;}void QueueBlockSound(){}void QueueClientDurability(uint32_t,int){}
 void NoteAttackRolled(uint32_t){++fixture::rolled;}void QueueParrySwing(){++fixture::swingScans;}}
 
 int main() {
@@ -106,7 +106,7 @@ int main() {
     // check. A timed parry swing still staggers it, once, with no shield wear
     // to refund; without a live swing a miss stays silent. Hits wait for the
     // block check, and native hit/miss is never changed.
-    ConfigureGuard(true,750,true);prime();
+    ConfigureGuard(true,450,true);prime();
     {const auto queued=fixture::parries,taps=fixture::impacts;
      const unsigned misses=incomingMisses,hits=incomingHits,missed=missParries;
      IncomingRoll(monster.Address(),player.Address(),false);
@@ -124,7 +124,7 @@ int main() {
      prime();guard.state.snapAt=guard.at;guard.state.snapUsed=false;
      const unsigned before=incomingMisses;
      player.Put(8,43u);IncomingRoll(monster.Address(),player.Address(),false);player.Put(8,42u);
-     ConfigureGuard(false,750);IncomingRoll(monster.Address(),player.Address(),false);ConfigureGuard(true,750,true);
+     ConfigureGuard(false,450);IncomingRoll(monster.Address(),player.Address(),false);ConfigureGuard(true,450,true);
      assert(incomingMisses==before&&fixture::parries==queued+1&&!guard.state.snapUsed);}
     // Every monster to-hit roll marks its attack as too late to stagger early.
     {const auto marked=fixture::rolled;IncomingRoll(monster.Address(),player.Address(),false);assert(fixture::rolled==marked+1);}
@@ -132,23 +132,29 @@ int main() {
     // begun (2026-10-18: hit-frame parries came a median 516 ms after the
     // swing). Judging spends nothing; ConfirmParry, after the stagger, spends
     // the swing once. A swing that began too long before the attack does not.
-    ConfigureGuard(true,750,true);prime();
+    ConfigureGuard(true,450,true);prime();
     {assert(!ParryArmed());
      const auto now=GetTickCount64();guard.state.snapAt=now;guard.state.snapUsed=false;
      assert(ParryArmed());
-     assert(!EarlyParry(monster.Address(),player.Address(),now+GuardTuning().parryLeadMs+1,"attack_start"));
-     const uint64_t swing=EarlyParry(monster.Address(),player.Address(),now,"attack_start");
+     assert(!EarlyParry(monster.Address(),player.Address(),now+GuardTuning().parryLeadMs+1,0,"attack_start"));
+     const uint64_t swing=EarlyParry(monster.Address(),player.Address(),now,0,"attack_start");
      assert(swing==now&&!guard.state.snapUsed);
      assert(fixture::log.find("Frame guard early parry: monster=9 class=0 trigger=attack_start")!=std::string::npos);
      const auto taps=fixture::impacts;const unsigned early=earlyParries,total=guardParries;
      ConfirmParry(swing);
      assert(guard.state.snapUsed&&fixture::impacts==taps+1&&earlyParries==early+1&&guardParries==total+1&&!ParryArmed());
-     assert(!EarlyParry(monster.Address(),player.Address(),now,"swing"));
+     assert(!EarlyParry(monster.Address(),player.Address(),now,0,"swing"));
+     // A swing still in the attacker's wind-up, before its downstroke opens,
+     // does not parry; one at the downstroke does (2026-10-19).
+     guard.state.snapUsed=false;
+     assert(!EarlyParry(monster.Address(),player.Address(),now,now+1,"swing")&&!guard.state.snapUsed);
+     assert(EarlyParry(monster.Address(),player.Address(),now-200,now,"swing")==now);
+     guard.state.snapUsed=true;
      // Classic, or a lowered guard, never parries early.
-     guard.state.snapUsed=false;ConfigureGuard(false,750);
-     assert(!ParryArmed()&&!EarlyParry(monster.Address(),player.Address(),now,"swing"));
-     ConfigureGuard(true,750,true);guard.state.raised=false;
-     assert(!EarlyParry(monster.Address(),player.Address(),now,"swing"));}
+     guard.state.snapUsed=false;ConfigureGuard(false,450);
+     assert(!ParryArmed()&&!EarlyParry(monster.Address(),player.Address(),now,0,"swing"));
+     ConfigureGuard(true,450,true);guard.state.raised=false;
+     assert(!EarlyParry(monster.Address(),player.Address(),now,0,"swing"));}
     // A newly armed swing asks the game thread to look for an attack under way.
     {prime();const auto scans=fixture::swingScans;
      framevr::guard::Pose from{{.18f,1.22f,-.30f},{0,0,-1},{0,1.7f,0},{.18f,-.48f,-.30f},2,GetTickCount64(),1};

@@ -17,7 +17,11 @@ inline bool MeleeType(uint32_t type) {
     }
 }
 inline bool Eligible(int heroClass,const Equipment& e) {
-    return heroClass==4&&e.id[0]&&e.id[1]&&e.id[0]!=e.id[1]&&MeleeType(e.type[0])&&MeleeType(e.type[1]);
+    if(!e.id[0]||!e.id[1]||e.id[0]==e.id[1])return false;
+    // Assassin dual wield is claw-only. Keep the Barbarian's supported
+    // weapon types separate so neither class gains invalid equipment pairs.
+    if(heroClass==6)return e.type[0]==D2RVR_TYPE_CLAW&&e.type[1]==D2RVR_TYPE_CLAW;
+    return heroClass==4&&MeleeType(e.type[0])&&MeleeType(e.type[1]);
 }
 // Rendered R/L attachments use the native primary/secondary composite slots,
 // which can differ from inventory body-slot order after equipping items.

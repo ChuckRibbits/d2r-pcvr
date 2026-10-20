@@ -20,9 +20,9 @@ complete change history.
 
 1. Choose the next version and review the changes merged since the previous tag.
    Keep unrelated experiments and unverified claims out of the release.
-2. Update `vr/pcvr_identity.h`, including the numeric resource version, and the
-   installer defaults in `installer/D2R_PCVR_Setup.iss` and
-   `installer/build_native_installer.ps1`. Existing identity tests check agreement.
+2. Update `vr/pcvr_identity.h`, including the numeric resource version, the version in
+   `vrmod-manifest.json`, and the installer defaults in `installer/D2R_PCVR_Setup.iss`
+   and `installer/build_native_installer.ps1`. Existing identity tests check agreement.
 3. Fill the template in `RELEASE_NOTES.md`, including its versioned heading and
    links. Update the `PCVR_IN_HEADSET_NOTES` comment at the end with the same
    release tag, current contributor credits, and 1-14 short feature bullets.

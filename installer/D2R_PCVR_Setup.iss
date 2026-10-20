@@ -3,10 +3,20 @@
   #error PayloadDir must point to a verified native Windows package with its private Python runtime.
 #endif
 #ifndef ModVersion
-  #define ModVersion "0.3.19"
+  #define ModVersion "0.3.20"
 #endif
 #ifndef InstallerOutput
   #define InstallerOutput "Output"
+#endif
+; The D2R VR Launcher (https://github.com/natpoh/d2r-vr-launcher) can ride inside this Setup: build_native_installer.ps1 -LauncherSetup ... stages
+; its unmodified Setup in the payload (launcher\) and defines LauncherSetupFile, LauncherVersion and LauncherSetupSha256. Without them nothing changes.
+#ifdef LauncherSetupFile
+  #ifndef LauncherVersion
+    #error LauncherVersion must be given with LauncherSetupFile.
+  #endif
+  #ifndef LauncherSetupSha256
+    #error LauncherSetupSha256 must be given with LauncherSetupFile.
+  #endif
 #endif
 
 [Setup]
@@ -373,9 +383,80 @@ begin
   end;
 end;
 
+#ifdef LauncherSetupFile
+// The carried D2R VR Launcher Setup (the launcher's docs/INSTALLER_CONTRACT.md). It is installed silently for this user when the launcher is missing or
+// older than the carried one. It never blocks this install (a failure is only logged), and removing D2R VR Unleashed never removes the launcher.
+function LauncherVersionNewer(A, B: String): Boolean;   // A > B, dotted numbers, up to four parts, a missing part is 0
+var
+  I, J, X, Y: Integer;
+  PA, PB: String;
+begin
+  Result := False;
+  PA := A + '.';
+  PB := B + '.';
+  for I := 1 to 4 do
+  begin
+    J := Pos('.', PA);
+    X := StrToIntDef(Copy(PA, 1, J - 1), 0);
+    Delete(PA, 1, J);
+    J := Pos('.', PB);
+    Y := StrToIntDef(Copy(PB, 1, J - 1), 0);
+    Delete(PB, 1, J);
+    if X > Y then begin Result := True; Exit; end;
+    if X < Y then Exit;
+  end;
+end;
+
+function LauncherNeeded(const SetupFile: String): Boolean;
+var
+  Installed, Dir: String;
+begin
+  Result := True;
+  if RegQueryStringValue(HKCU, 'Software\D2R VR Launcher', 'Version', Installed) and
+     RegQueryStringValue(HKCU, 'Software\D2R VR Launcher', 'InstallDir', Dir) and
+     FileExists(AddBackslash(Dir) + 'D2RVRLauncher.exe') then begin
+    Result := LauncherVersionNewer('{#LauncherVersion}', Installed);
+    if not Result then Log('D2R VR Launcher ' + Installed + ' is installed and the carried {#LauncherVersion} is not newer: it stays.');
+  end;
+  if Result then begin
+    // Only the exact file pinned at build time is run.
+    if not FileExists(SetupFile) then begin
+      Log('The carried D2R VR Launcher Setup is missing: ' + SetupFile);
+      Result := False;
+    end else if CompareText(GetSHA256OfFile(SetupFile), '{#LauncherSetupSha256}') <> 0 then begin
+      Log('The carried D2R VR Launcher Setup is not the pinned file: it is not run.');
+      Result := False;
+    end;
+  end;
+end;
+
+procedure InstallCarriedLauncher;
+var
+  SetupFile: String;
+  ResultCode: Integer;
+begin
+  SetupFile := ExpandConstant('{app}\launcher\{#LauncherSetupFile}');
+  try
+    if LauncherNeeded(SetupFile) then begin
+      WizardForm.StatusLabel.Caption := 'Installing the D2R VR Launcher...';
+      WizardForm.StatusLabel.Update;
+      if ExecAsOriginalUser(SetupFile, '/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /TASKS=', '', SW_HIDE, ewWaitUntilTerminated, ResultCode) then
+        Log('D2R VR Launcher Setup {#LauncherVersion} exited with code ' + IntToStr(ResultCode) + ' (ignored).')
+      else
+        Log('D2R VR Launcher Setup {#LauncherVersion} could not be started: ' + SysErrorMessage(ResultCode) + ' (ignored).');
+    end;
+  except
+    Log('D2R VR Launcher Setup: ' + GetExceptionMessage + ' (ignored).');
+  end;
+end;
+#endif
+
 procedure CurStepChanged(CurStep: TSetupStep);
 begin
   if CurStep = ssPostInstall then begin
+#ifdef LauncherSetupFile
+    InstallCarriedLauncher;
+#endif
     BackendBusy := True;
     try
       SetupFailed := not RunBackend(ExpandConstant('{app}'), '--install ' + Q(ChoicesFile));

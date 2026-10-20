@@ -30,7 +30,7 @@ void Install() {
     for(const auto& guard:Guards)if(!d2rsig::Check(guard.rva,guard.bytes,guard.size))return;
     if(!d2rsig::Hook(WeaponRva,WeaponSig,sizeof WeaponSig,reinterpret_cast<void*>(&CurrentWeapon),reinterpret_cast<void**>(&originalWeapon)))return;
     ready=true;
-    framevr::logging::Write("Frame dual wield: scoped native weapon selection ready; Barbarian physical hands enabled");
+    framevr::logging::Write("Frame dual wield: scoped native weapon selection ready; Barbarian weapons and Assassin dual claws enabled");
 }
 bool Ready(){return ready.load();}
 uintptr_t Select(uintptr_t player,int hand,const framevr::dualwield::Equipment& e) {

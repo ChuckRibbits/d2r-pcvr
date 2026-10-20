@@ -81,7 +81,8 @@ Open either hand's wheel and choose **DEV**. Its tabs are grouped by purpose:
 - **Character:** level 10, 30, 60 and 90 presets; heal life/mana.
 - **Equipment:** starter primary/alternate gear, class unique primary/alternate
   gear, crossbow + bolts, bow + arrows, a small shield and **Render debug draws**.
-- **Act I - III:** towns, combat areas and inspection destinations.
+- **Act I - II:** towns, combat areas and inspection destinations.
+- **Act III:** Kurast regions, sewer entrances, jungle areas and bosses.
 - **Act IV - V:** later-act combat areas and filming locations.
 
 Preparation applies exact values to the current class. Skill ranks are capped
@@ -160,7 +161,8 @@ every stage. `mesh=1` confirms the current check actually uses measured bounds.
 
 | Page | Destinations |
 | --- | --- |
-| Act I - III | Rogue Encampment, Blood Moor, Tristram, Cathedral, Andariel's chamber, Lut Gholein, Arcane Sanctuary, Tyrael, Duriel, Kurast Bazaar, Travincal, Mephisto's chamber, Spider Forest, Flayer Jungle |
+| Act I - II | Rogue Encampment, Blood Moor, Tristram, Cathedral, Andariel's chamber, Lut Gholein, Arcane Sanctuary, Tyrael, Duriel |
+| Act III | Kurast Bazaar, Upper Kurast, Kurast Sewers, Travincal, Mephisto's chamber, Spider Forest, Flayer Jungle |
 | Act IV - V | River of Flame, Chaos Sanctuary, Harrogath, Bloody Foothills, Crystalline Passage, Arreat Summit, Throne of Destruction, Worldstone Chamber |
 
 Travel uses native area entrances; bosses depend on the test character's save.
@@ -168,6 +170,15 @@ It does not deliberately finish quests, change difficulty, reset bosses or
 respawn enemies. Arcane Sanctuary does not teleport directly to the Summoner.
 Tyrael targets his platform in level 73 at `(22578,15594)`; Duriel targets that
 level's native arena entrance. Prepare and equip before dangerous destinations.
+
+For the Kurast sewer entrance report, choose **Act III > Kurast Sewers** and
+use its stairs to return outside. Inspect the stairwell and try selecting it
+with Interact while standing normally, then compare crouching and turning.
+Check entrances in both Kurast Bazaar and Upper Kurast. Console dispatch alone
+does not confirm arrival at a specific entrance or completion of a quest.
+**Equipment > Render debug draws** also enables a read-only, once-per-second
+`Frame entrance targeting` log with native target type/ID and eye height/pitch.
+It does not expand targeting, choose an exit or teleport on an interaction.
 
 ## Release reference in VR
 

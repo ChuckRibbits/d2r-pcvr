@@ -1,7 +1,7 @@
 # Hand-origin projectile spells
 
 Experimental support for Fire Bolt, Fireball, Ice Bolt, Ice Blast and Charged Bolt on the
-Sorceress, using the existing per-hand skill wheels. Assign either hand's
+Sorceress, Bone Spear on the Necromancer, and Holy Bolt on the Paladin, using the existing per-hand skill wheels. Assign either hand's
 trigger or face-button shortcut. Hold it to repeat; both hands can cast their
 own assigned projectile at the same time, with separate aim and cast timing.
 Walking and turning remain available during these casts.
@@ -10,24 +10,29 @@ Straight free-hand shots start 5 cm along that controller's aim ray. The right c
 weapon uses its visible shaft direction and an origin 12 cm beyond its hand
 attachment when a fresh weapon pose is available. This is a hand muzzle,
 not an automatically measured staff tip. Each accepted launch freezes its
-position and horizontal direction. Pitch is clamped after the weapon pose is
+position and direction. In planar mode, pitch is clamped after the weapon pose is
 applied, retaining continuous 360-degree yaw and the muzzle's launch height.
-Within five degrees of vertical, that hand keeps its last stable heading;
-without one, it waits for a usable aim. Turning afterward does not steer a shot.
+In planar mode, within five degrees of vertical, that hand keeps its last stable heading;
+without one, it waits for a usable aim. Free aim retains full pitch, including
+vertical shots. Turning afterward does not steer a shot.
+Bone Spear and Holy Bolt use tracked controller aim even with a wand or scepter equipped. Bone Spear's
+native piercing result is preserved, with each enemy contacted at most once.
+The owned visual definition's four-unit height and three-unit backward offset
+are canceled so the visible spear starts at the casting hand.
 
-In **VR Settings > Controls**, **Planar spell aiming** defaults to **On**, including
-existing profiles. Turn it **Off** and press **Apply** for full up/down aiming of
-Fire Bolt, Fireball, Ice Bolt and Ice Blast. The change applies to new casts from
+In **VR Settings > Controls**, **Planar spell aiming** defaults to **Off** when
+no preference is saved. Keep it **Off** for full up/down aiming of
+Fire Bolt, Fireball, Ice Bolt, Ice Blast, Bone Spear and Holy Bolt. The change applies to new casts from
 both hands without restarting; projectiles already in flight keep their original
 direction. Charged Bolt retains its native planar wandering in either mode.
 The saved preference is `[gameplay] planar_spell_aim=1` (or `0` for free aim).
 
 ## Optional projectile aim assist
 
-In **VR Settings > Controls**, cycle **Projectile aim assist** through **Off**
-(the default), **Light**, and **Strong**, then press **Apply**. The saved setting
+In **VR Settings > Controls**, cycle **Projectile aim assist** through **Off**,
+**Light**, and **Strong** (the default for missing preferences), then press **Apply**. The saved setting
 is `[gameplay] projectile_aim_assist=0`, `1`, or `2`, respectively. This applies
-only to the five supported Sorceress hand spells above, independently for each
+to the supported Sorceress hand spells, Necromancer Bone Spear and Paladin Holy Bolt, independently for each
 hand. Bow, javelin and native fallback skills retain their existing aiming.
 
 Light permits up to four degrees of launch correction; Strong permits twelve.
@@ -49,7 +54,7 @@ also permits a small vertical correction. Charged Bolt uses the target's ground
 footprint and adjusts the volley's heading, preserving native spread and
 wandering, with launch-only assistance even on Strong.
 
-For Fire Bolt, Fireball, Ice Bolt and Ice Blast, **Strong adds gentle homing**
+For Fire Bolt, Fireball, Ice Bolt, Ice Blast, Bone Spear and Holy Bolt, **Strong adds gentle homing**
 toward the one enemy selected at launch, including a directly aimed target.
 Steering is limited to 60 degrees/second, 45 degrees total, and 1.5 seconds.
 Planar shots stay horizontal; free-aim shots can also bend vertically. The
@@ -77,7 +82,8 @@ The native skill-start and skill-dispatch routines validate and consume mana
 on the game thread. Each hand supplies its own skill in a scoped selection;
 the original selection is restored before returning. No controller cast button
 or native casting animation is sent for these supported spells. Each hand
-uses the ordinary Sorceress casting frames, including Faster Cast Rate. Two
+uses the character's ordinary casting frames, including Faster Cast Rate:
+14 base frames for Sorceress and 16 for Necromancer/Paladin, excluding the terminal frame. Two
 hands intentionally permit twice the single-hand throughput, at the combined
 native mana cost. There is no unlimited or free casting mode.
 
@@ -119,9 +125,37 @@ and released buttons cancel pending requests. A hand's latest pose replaces
 older pending samples; there is no accumulated burst after a stall. A cast
 already in flight keeps its release direction until impact or native expiration.
 
+## Bone placement and Holy Bolt
+
+Bone Wall and Bone Prison retain native casting, mana costs, lifetime and
+placement restrictions. Their target comes from the casting controller's ray
+meeting the hero's floor, clamped to 2–40 grid cells. Point down to choose a
+closer location; a level or upward ray places them six cells ahead. A moving
+character, an old hover target or the wand's decorative angle does not supply
+the destination. Bone Prison retains the game's own nearby-target/placement
+validation; aiming at the ground near the monster's feet is the test case.
+
+Holy Bolt uses full tracked-controller aim with Planar spell aiming Off.
+Off/Light/Strong assistance applies as it does to Bone Spear. Assistance selects
+hostile undead and demons from the current compiled MonStats table; it does
+not steer toward ordinary beasts or town NPCs. A ray aimed directly at a
+friendly creature keeps its direction and disables enemy steering for that
+shot, preserving deliberate mercenary healing.
+
+Swept contacts include friendly monsters/mercenaries through the game's own
+type-3 missile collision filter. Its current signature is `(bank, target, args)`;
+`args` holds native game/missile/owner/table-row pointers. Both the caller and
+actual callback register/row layout are checked. Native hit handling still decides healing eligibility, damage,
+immunity and piercing. It does not add damage to beasts or invent a healing
+calculation. Other players are not scanned; only offline local play is supported.
+The extra adapter is guarded separately: absent SDK services or a changed
+native collision layout leaves Holy Bolt on its original casting path without
+disabling other hand spells. Borrowed table rows stay on the game thread and
+are reacquired each tick. The visual cancels its native four-unit emitter offset.
+
 ## Current limits
 
-- Other classes, charged item skills, other fans, homing projectiles, channels,
+- Other class skills, charged item skills, other fans, homing projectiles, channels,
   ground effects and utility skills retain native input. This includes Town
   Portal, Lightning and Nova. A native action and physical spells do not start simultaneously;
   a competing button must be released before retrying. Native fallback skills
@@ -155,6 +189,13 @@ and settings normalization, interaction and INI persistence. Follow-up fixtures
 cover sideways target movement, the wider Strong limit, homing versus straight
 flight, steering bounds, continuous positions through turns, visual heading,
 planar/free/ground behavior, and permanent loss of steering.
+
+Holy Bolt's callback fixture also checks forwarding the leading data bank,
+target and all four argument pointers, accepted/refused results, and rejection
+of absent callbacks or invalid banks. This guards against accidentally using
+the legacy two-argument callback convention. Runtime diagnostics distinguish
+native-filter rejection from accepted contacts, and sample target life before
+and after native hit handling; automated fixtures do not execute those game routines.
 The Windows build and all 57 checks passed; its settings layout was also
 inspected with the synthetic preview. The initial headset test reported
 Fireballs passing beside moving enemies even on Strong. Subsequent runtime
@@ -212,3 +253,13 @@ On an offline Sorceress in Steam or Battle.net D2R 3.3.93787:
 Native behavior was investigated using the locally owned game's code and data,
 with the public [D2MOO research](https://github.com/ThePhrozenKeep/D2MOO) as a
 reference. No D2MOO implementation or Blizzard game assets are included.
+
+Necromancer/Paladin regression checks use an offline developer character with
+the existing level presets and Wand gear / Caster gear. Compare Bone Spear
+Off/Light/Strong while walking and turning, both hands, native piercing through
+multiple enemies, and mana/FCR cadence. Cast Bone Wall/Prison near, far and at
+different headings while strafing. Check Holy Bolt with Planar Off/On and
+assist Off/Light/Strong, both hands, walking/turning and clearly pitched shots.
+Use undead/demons to check hits and homing, beasts to check native immunity,
+and an injured mercenary to check healing with an enemy nearby. These new behaviors require
+headset validation; automated geometry and eligibility tests are separate.

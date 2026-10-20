@@ -4,16 +4,18 @@
 #include <cmath>
 #include <cstdint>
 #include <limits>
+#include <string>
+#include <string_view>
 #include "controller_labels.h"
 #include "hand_vitals.h"
 #include "vr_resolution.h"
 #include "haptic_strength.h"
 
 namespace framevr::settings {
-enum class Page { Controls, VR, Video, HUD, Combat, Shield, Haptics, ReleaseNotes };
+enum class Page { Controls, VR, Video, HUD, Combat, Aim, Shield, Haptics, ReleaseNotes };
 enum Key { Motion, Seated, Dominant, Snap, TurnSpeed, Waist, BeltForward,
            Foveation, Sky, Fog, Ceiling, DrawDistance, ObjectDistance,
-           EyeHeight, ArmSpan, BodyCalibration, SkillGestures, WristMap, WristCompass, ControllerLabels, WeaponSkillIndicators, PlanarSpellAim, VitalsLocation, CriticalAlerts, RenderResolution, NavigationLocation, SmoothTurn, OrdinaryMobBars, MenuDistance, TooltipTiming, ProjectileAimAssist, MeleeHitSpeed, VitalsTilt, HapticStrength, HapticMelee, HapticBowDraw, HapticBowRelease, HapticSpell, HapticInteraction, HapticAlert, HapticShortMelee, BloodVisor, BloodWipe, MeleeRules, MeleeThrustSpeed, LootLabelSize, CompanionCounts, StrainDark, OfflinePlayers, ShieldBashSpeed, StrainSpeed, ShieldGrip, ShieldOut, ShieldUp, Count };
+           EyeHeight, ArmSpan, BodyCalibration, SkillGestures, WristMap, WristCompass, ControllerLabels, WeaponSkillIndicators, PlanarSpellAim, VitalsLocation, CriticalAlerts, RenderResolution, NavigationLocation, SmoothTurn, OrdinaryMobBars, MenuDistance, TooltipTiming, ProjectileAimAssist, MeleeHitSpeed, VitalsTilt, HapticStrength, HapticMelee, HapticBowDraw, HapticBowRelease, HapticSpell, HapticInteraction, HapticAlert, HapticShortMelee, BloodVisor, BloodWipe, MeleeRules, MeleeThrustSpeed, LootLabelSize, CompanionCounts, StrainDark, OfflinePlayers, ShieldBashSpeed, StrainSpeed, DesktopOneEye, MapTopDown, MapRotate, FoveationStrength, StereoRendering, DeferGpuWait, TargetHighlight, TargetOutlineColour, TargetOutlineHue, HeartbeatStart, ShieldGrip, ShieldOut, ShieldUp, Count };
 using ChangeMask=uint64_t;
 static_assert(Count<=64,"settings change mask capacity");
 constexpr ChangeMask SupportedChanges=~ChangeMask{0}>>(64-Count);
@@ -49,7 +51,7 @@ inline constexpr std::array<Definition,Count> Definitions{{
     {"Planar spell aiming", "Keep straight projectiles level; Off allows aiming up/down", L"gameplay",L"planar_spell_aim",0,0,1,1},
     {"Health / mana location", "Wrist, palm-up, either gesture, or hidden", L"interactions",L"vitals_location",0,0,3,1},
     {"Low health / mana alerts", "Brief popup and vibration when resources are low", L"interactions",L"critical_alerts",0,0,1,1},
-    {"VR render resolution", "Independent of monitor; higher values cost GPU time", L"render",L"vr_resolution",0,0,6,1},
+    {"VR render resolution", "Independent of monitor; higher values cost GPU time", L"render",L"vr_resolution",1,0,6,1},
     {"Minimap & Compass", "Wrist / Palm / Either / Off; independent of health and mana", L"interactions",L"navigation_location",0,0,3,1},
     {"Smooth turning", "Continuous right-stick turning; Off uses snap turning", L"turn",L"smooth",0,0,1,1},
     {"Ordinary mob bars", "Weak mobs' health and names; bosses and elites stay visible", L"hud",L"ordinary_mob_bars",0,0,1,1},
@@ -76,6 +78,16 @@ inline constexpr std::array<Definition,Count> Definitions{{
     {"Offline difficulty", "Players 1-8 scaling for newly spawned monsters", L"gameplay",L"offline_players",0,0,8,1},
     {"Shield bash speed", "Hand speed for bash / Smite; wrist twisting never attacks", L"gameplay",L"shield_bash_speed",2,.75f,10,.25f},
     {"Guard strain buildup", "How quickly repeated blocks build the vignette; same size", L"gameplay",L"guard_strain_speed",1,0,2,1},
+    {"Desktop shows one eye", "Monitor shows the left eye only; one extra GPU copy per frame", L"render",L"desktop_one_eye",1,0,1,1},
+    {"Map view", "Isometric or Top-down wrist minimap", L"interactions",L"map_top_down",0,0,1,1},
+    {"Rotate map", "Top-down only: keep your facing direction at the top", L"interactions",L"map_rotate",0,0,1,1},
+    {"Foveation strength", "Higher levels shade a larger edge area more coarsely", L"render",L"foveation_strength",1,0,3,1},
+    {"Stereo rendering", "By turns: one eye a frame; Replay: one CPU pass for both eyes", L"stereo",L"rendering",1,0,2,1},
+    {"Defer GPU wait", "Start the next frame while the GPU finishes the last", L"render",L"defer_gpu_wait",0,0,1,1},
+    {"Monster outline", "Outline strength for the monster you aim at; Off by default", L"gameplay",L"target_outline_pct",0,0,100,10},
+    {"Monster outline colors", "Static: one color. By range: red near, orange mid-range, yellow far", L"gameplay",L"target_outline_by_range",0,0,1,1},
+    {"Static color", "The outline's color around the color wheel", L"gameplay",L"target_outline_hue",45,0,345,15},
+    {"Heartbeat starts at", "Life % where the heartbeat begins; louder and faster every 10% lower", L"gameplay",L"low_life_heart_start",60,0,90,10},
     {"Shield grip offset", "Slides the shield up the forearm so the hand reaches its grip", L"gameplay",L"shield_grip_cm",3,0,20,1},
     {"Shield out from the arm", "Moves the shield away from the forearm (+) or into it (-)", L"gameplay",L"shield_out_cm",2,-10,10,1},
     {"Shield up", "Moves the shield across the forearm, square to Out", L"gameplay",L"shield_up_cm",2,-10,10,1},
@@ -95,9 +107,10 @@ inline float Normalize(Key key,float value){
     const auto& d=Definitions[key];
     if(!std::isfinite(value))return d.defaultValue;
     if(key==OfflinePlayers&&(value<0||value>8||std::floor(value)!=value))return 0;
+    if(key==HeartbeatStart)return std::clamp(std::round(value/10)*10,d.min,d.max);   // 0 = Off, else a 10% step
     if(key==VitalsTilt)return vitals::NormalizeTilt(value);
     if(HapticKey(key))return haptics::NormalizeStrength(value);
-    if((key==ControllerLabels||key==VitalsLocation||key==NavigationLocation||key==RenderResolution||key==MenuDistance||key==TooltipTiming||key==ProjectileAimAssist||key==StrainSpeed)&&(value<d.min||value>d.max||value!=std::round(value)))return d.defaultValue;
+    if((key==ControllerLabels||key==VitalsLocation||key==NavigationLocation||key==RenderResolution||key==MenuDistance||key==TooltipTiming||key==ProjectileAimAssist||key==StrainSpeed||key==FoveationStrength||key==StereoRendering)&&(value<d.min||value>d.max||value!=std::round(value)))return d.defaultValue;
     value=std::clamp(value,d.min,d.max);
     return d.step==1?std::round(value):value;
 }
@@ -116,36 +129,114 @@ struct Rect {
     bool Contains(float px,float py)const{return px>=x&&px<x+w&&py>=y&&py<y+h;}
 };
 constexpr int Width=1280,Height=1024;
-constexpr int TabCount=8;
-inline constexpr const char* TabNames[TabCount]={"Controls","VR","Video","HUD","Combat","Shield","Haptics","Release Notes"};
-constexpr Rect Tabs[TabCount]={{40,114,150,60},{202,114,90,60},{304,114,120,60},{436,114,104,60},{552,114,146,60},{710,114,140,60},{862,114,140,60},{1014,114,226,60}};
+constexpr int TabCount=9;
+inline constexpr const char* TabNames[TabCount]={"Controls","VR","Video","HUD","Combat","Aim","Shield","Haptics","Release Notes"};
+constexpr Rect Tabs[TabCount]={{40,114,144,60},{194,114,74,60},{278,114,108,60},{396,114,96,60},{502,114,136,60},{648,114,84,60},{742,114,116,60},{868,114,132,60},{1010,114,230,60}};
 inline Rect TabBox(int index){return Tabs[index];}
 constexpr Rect Apply{965,918,275,68},Close{650,918,275,68},Recenter{40,918,270,68},Calibrate{330,918,300,68};
 constexpr int RowY=242,RowStep=62;
 constexpr Rect ControllerBox{865,181,375,52};
+constexpr Rect HudMapViewBox{280,181,275,52},HudMapRotateBox{942,181,221,52};
+inline constexpr const char* MapViewNames[]={"Isometric","Top-down"};
 inline constexpr const char* MenuDistanceNames[]={"Close","Medium","Far"};
 inline constexpr const char* TooltipTimingNames[]={"Instant","Short","Original"};
 constexpr Rect WeaponIndicatorsBox{942,666,221,52},PlanarSpellAimBox{942,728,221,52},AimAssistBox{942,790,221,52};
 inline Rect TestHapticsBox(int row,int choice,haptics::Category category){return {haptics::PreviewCount(category)==1?700:590+choice*128,RowY+row*RowStep,haptics::PreviewCount(category)==1?140:122,52};}
 inline constexpr const char* AimAssistNames[]={"Off","Light","Strong"};
+inline const char* HueName(float hue){
+    constexpr const char* names[]={"Red","Orange","Gold","Lime","Green","Mint","Cyan","Azure","Blue","Violet","Magenta","Pink"};
+    return names[int(hue/30.f+.5f)%12];
+}
+// The outline color for a hue, at full saturation and brightness.
+inline void HueRgb(float hue,float rgb[3]){
+    const float h=std::fmod(std::max(0.f,hue),360.f)/60.f,x=1.f-std::fabs(std::fmod(h,2.f)-1.f);
+    const float table[6][3]={{1,x,0},{x,1,0},{0,1,x},{0,x,1},{x,0,1},{1,0,x}};
+    for(int i=0;i<3;++i)rgb[i]=table[std::min(5,int(h))][i];
+}
 inline constexpr const char* MeleeRulesNames[]={"Unleashed","Classic"};
 inline constexpr const char* StrainColorNames[]={"White","Black"};
 inline constexpr const char* StrainSpeedNames[]={"Slow","Medium","Fast"};
+inline constexpr const char* FoveationStrengthNames[]={"Low","Medium","High","Maximum"};
+inline constexpr const char* StereoRenderingNames[]={"Both eyes","By turns","Replay"};
+// Every stereo rendering choice ends each frame waiting for the GPU unless
+// the wait is deferred ([render] defer_gpu_wait): then about half the frame
+// rate. While it is not deferred, the Video page warns and offers a button
+// that turns it on (Apply saves it).
+constexpr Rect VideoDeferBox{940,181,300,52};
+// Windows Mono audio (Settings > Accessibility > Audio) folds the PC's sound to
+// the centre before any headset stream, so head-relative sound cannot pan.
+// While it is on, the title row's hint gives way to this warning on every page.
+constexpr Rect MonoAudioBox{820,40,420,50};
+inline constexpr const char* MonoAudioWarning="Windows Mono audio is on";
+inline bool DeferOffered(const Values& values){return values[DeferGpuWait]<.5f;}
+inline constexpr const char* DeferWarning="Each frame waits for the GPU: about half the frame rate";
+// The game's own video options that cost the headset frames, from its
+// Settings.json (Saved Games\Diablo II Resurrected, written when its options
+// close): Vertical Sync holds each frame to the monitor's refresh, and
+// anti-aliasing other than FXAA ("Anti Aliasing": 1) blurs (TAA builds each
+// frame from the ones before it) or costs more. The Video page warns about
+// each; a key the file lacks is not warned about.
+struct GameVideo {bool vsync=false,antiAliasing=false;int Code()const{return int(vsync)|int(antiAliasing)<<1;}};
+// "key": integer in the game's JSON; -1 if absent or not a number.
+inline int GameSetting(std::string_view json,std::string_view key) {
+    for(size_t at=json.find(key);at!=std::string_view::npos;at=json.find(key,at+1)){
+        size_t i=at+key.size();
+        if(at==0||json[at-1]!='"'||i>=json.size()||json[i]!='"')continue;
+        const auto blank=[&]{while(i<json.size()&&(json[i]==' '||json[i]=='\t'||json[i]=='\r'||json[i]=='\n'))++i;};
+        ++i;blank();
+        if(i>=json.size()||json[i]!=':')continue;
+        ++i;blank();
+        if(i>=json.size()||json[i]<'0'||json[i]>'9')return -1;
+        int value=0;
+        while(i<json.size()&&json[i]>='0'&&json[i]<='9'&&value<100000)value=value*10+(json[i++]-'0');
+        return value;
+    }
+    return -1;
+}
+inline GameVideo ParseGameVideo(std::string_view json) {
+    const int antiAliasing=GameSetting(json,"Anti Aliasing");
+    return {GameSetting(json,"VSync")>0,antiAliasing>=0&&antiAliasing!=1};
+}
+// Launched with -mod <mod>, the game keeps that mod's own Settings.json in
+// Saved Games\Diablo II Resurrected\mods\<mod>, not the unmodded game's one
+// two levels up. <mod> is the folder the plugin loads from
+// (<game>\mods\<mod>\d2rloader\plugins\); empty when the plugin is elsewhere.
+inline std::wstring ModSettingsFile(std::wstring_view savedGames,std::wstring_view plugin) {
+    std::wstring lower(plugin);
+    for(auto& c:lower)if(c==L'/')c=L'\\';else if(c>=L'A'&&c<=L'Z')c=wchar_t(c-L'A'+L'a');
+    const size_t at=lower.rfind(L"\\mods\\");
+    if(at==std::wstring::npos||savedGames.empty())return {};
+    const size_t start=at+6,end=lower.find(L'\\',start);
+    if(end==std::wstring::npos||end==start||lower.compare(end,19,L"\\d2rloader\\plugins\\")!=0)return {};
+    return std::wstring(savedGames)+L"\\Diablo II Resurrected\\mods\\"+std::wstring(plugin.substr(start,end-start))+L"\\Settings.json";
+}
+inline const char* GameVideoWarning(GameVideo game) {
+    return game.vsync&&game.antiAliasing?"Game Options > Video: turn Vertical Sync off and set Anti-Aliasing to FXAA":
+           game.vsync?"Game Options > Video: turn Vertical Sync off":
+           game.antiAliasing?"Game Options > Video: set Anti-Aliasing to FXAA":nullptr;
+}
+// Strength only applies while foveated rendering is selected; Off greys it out.
+inline bool RowEnabled(const Values& values,Key key){
+    if(key==DeferGpuWait)return DeferOffered(values);   // the button only turns it on
+    return key!=FoveationStrength||values[Foveation]>.5f;
+}
 inline Rect ControllerOption(int option){return {865,233+option*58,375,58};}
 inline Rect Decrease(int row){return {865,RowY+row*RowStep,64,52};}
 inline Rect Increase(int row){return {1176,RowY+row*RowStep,64,52};}
 inline Rect ValueBox(int row){return {942,RowY+row*RowStep,221,52};}
-inline int RowCount(Page page){return page==Page::Haptics?2+haptics::CategoryCount:page==Page::Combat?7:page==Page::Shield?3:page==Page::VR?10:page==Page::Video?7:page==Page::HUD?10:0;}
+inline int RowCount(Page page){return page==Page::Haptics?2+haptics::CategoryCount:page==Page::Combat?8:page==Page::Aim?3:page==Page::Shield?3:page==Page::VR?10:page==Page::Video?10:page==Page::HUD?10:0;}
 inline Key RowKey(Page page,int row){
     constexpr Key hapticRows[]={HapticStrength,HapticMelee,HapticShortMelee,HapticBowDraw,HapticBowRelease,HapticSpell,HapticInteraction,HapticAlert};
     if(page==Page::Haptics)return hapticRows[row];
-    if(page==Page::Combat)return row==0?MeleeRules:row==1?MeleeHitSpeed:row==2?MeleeThrustSpeed:row==3?ShieldBashSpeed:row==4?StrainDark:row==5?StrainSpeed:OfflinePlayers;
+    if(page==Page::Combat)return row==0?MeleeRules:row==1?MeleeHitSpeed:row==2?MeleeThrustSpeed:row==3?ShieldBashSpeed:row==4?StrainDark:row==5?StrainSpeed:row==6?OfflinePlayers:HeartbeatStart;
+    if(page==Page::Aim)return row==0?TargetHighlight:row==1?TargetOutlineColour:TargetOutlineHue;
     if(page==Page::Shield)return Key(ShieldGrip+row);
     constexpr Key hud[]={VitalsLocation,VitalsTilt,CriticalAlerts,NavigationLocation,MenuDistance,TooltipTiming,BloodVisor,BloodWipe,LootLabelSize,CompanionCounts};
     if(page==Page::HUD)return hud[row];
-    if(page==Page::Video&&row==6)return RenderResolution;
+    constexpr Key video[]={Foveation,FoveationStrength,Sky,Fog,Ceiling,DrawDistance,ObjectDistance,RenderResolution,DesktopOneEye,StereoRendering};
+    if(page==Page::Video)return video[row];
     constexpr Key vrRows[]={Motion,Seated,Dominant,SmoothTurn,Snap,TurnSpeed,Waist,BeltForward,SkillGestures,OrdinaryMobBars};
-    return page==Page::VR?vrRows[row]:Key(Foveation+row);
+    return vrRows[row];
 }
 enum class Kind { None, Tab, Change, Apply, Close, Recenter, Calibrate, ControllerMenu, ControllerChoice, DismissMenu, TestHaptics };
 struct Hit {Kind kind=Kind::None;int index=-1,delta=0;};
@@ -168,6 +259,9 @@ inline Hit HitTest(Page page,float u,float v,bool controllerMenu=false){
     if(page==Page::Controls&&WeaponIndicatorsBox.Contains(x,y))return {Kind::Change,WeaponSkillIndicators,1};
     if(page==Page::Controls&&PlanarSpellAimBox.Contains(x,y))return {Kind::Change,PlanarSpellAim,1};
     if(page==Page::Controls&&AimAssistBox.Contains(x,y))return {Kind::Change,ProjectileAimAssist,1};
+    if(page==Page::HUD&&HudMapViewBox.Contains(x,y))return {Kind::Change,MapTopDown,1};
+    if(page==Page::HUD&&HudMapRotateBox.Contains(x,y))return {Kind::Change,MapRotate,1};
+    if(page==Page::Video&&VideoDeferBox.Contains(x,y))return {Kind::Change,DeferGpuWait,1};
     for(int r=0;r<RowCount(page);++r){
         const auto key=RowKey(page,r);
         if(page==Page::Haptics&&HapticCategory(key)>=0){
@@ -219,11 +313,12 @@ public:
         if(hit.kind==Kind::ControllerChoice&&page==Page::VR&&controllerMenu&&hit.index>=0&&hit.index<int(controllers::Choice::Count)){
             draft[ControllerLabels]=float(hit.index);controllerMenu=false;result=Result::None;++revision;return {};
         }
-        if(hit.kind==Kind::Change&&hit.index>=0&&hit.index<Count){
+        if(hit.kind==Kind::Change&&hit.index>=0&&hit.index<Count&&RowEnabled(draft,Key(hit.index))){
             const auto key=Key(hit.index);const auto& d=Definitions[key];
             if(d.max==1)draft[key]=draft[key]>.5f?0.f:1.f;
             else if(key==OfflinePlayers)draft[key]=std::clamp(draft[key]+float(hit.delta),0.f,8.f);
             else if(key==StrainSpeed)draft[key]=std::clamp(draft[key]+float(hit.delta),0.f,2.f);
+            else if(key==FoveationStrength||key==StereoRendering)draft[key]=std::clamp(draft[key]+float(hit.delta),d.min,d.max);
             else if(key==ProjectileAimAssist)draft[key]=float((int(draft[key])+(hit.delta<0?2:1))%3);
             else draft[key]=Normalize(key,draft[key]+hit.delta*d.step);
             result=Result::None;++revision;

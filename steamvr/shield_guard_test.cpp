@@ -110,6 +110,8 @@ int main() {
     Move(s,swingFrom,swingTo,true,now,90,t);
     const uint64_t snap=s.snapAt;
     assert(snap&&!s.snapUsed&&s.swingCos>.9f&&Judge(s,ahead,now+20,t)==Verdict::Parry);
+    // ...an act boss (not parryable) meets the same swing as a plain guard...
+    assert(Judge(s,ahead,now+20,t,0,nullptr,0,false)==Verdict::Block);
     // ...ranged attackers are blocked, never parried...
     assert(Judge(s,{0,0,-8.f},now+20,t)==Verdict::Block);
     // ...one parry per swing, even while the same swing goes on...
@@ -147,9 +149,16 @@ int main() {
     {State g;uint64_t n=40000;Hold(g,swingFrom,true,n,300,t);
      const uint64_t attack=n;Hold(g,swingFrom,true,n,150,t);              // the attack winds up
      Move(g,swingFrom,swingTo,true,n,90,t);
-     assert(Judge(g,ahead,n+30,t,attack)==Verdict::Parry);}
-    // ...or starting up to parryLeadMs before it began (fast attackers land
-    // 250-360 ms after starting), but not with a swing from well before it...
+     assert(Judge(g,ahead,n+30,t,attack)==Verdict::Parry);
+     // ...once the attack is coming down: a swing before the downstroke opens
+     // is a windup miss (2026-10-19), at or after it a parry.
+     const uint64_t snap=g.snapAt;
+     assert(Judge(g,ahead,n+30,t,attack,nullptr,snap+1)==Verdict::Block);
+     assert(ParryCheck(g,ahead,n+30,t,attack,snap+1)==ParryMiss::Windup);
+     assert(Judge(g,ahead,n+30,t,attack,nullptr,snap)==Verdict::Parry);
+     assert(!strcmp(ParryMissName(ParryMiss::Windup),"windup"));}
+    // ...but not with a swing that began before the attack did (parryLeadMs
+    // is 0: no lead, 2026-10-18)...
     {State g;uint64_t n=42000;Hold(g,swingFrom,true,n,300,t);Move(g,swingFrom,swingTo,true,n,90,t);
      const uint64_t snap=g.snapAt;Hold(g,swingTo,true,n,t.parryLeadMs+20,t);  // the guard stays up after the swing
      assert(snap&&g.snapAt==snap&&n>snap+t.parryLeadMs&&n-snap<=t.parryMs);
@@ -157,13 +166,26 @@ int main() {
      assert(Judge(g,ahead,n,t,snap+t.parryLeadMs+1)==Verdict::Block);
      assert(ParryCheck(g,ahead,n,t,snap+t.parryLeadMs+1)==ParryMiss::BeforeAttack);
      assert(Judge(g,ahead,n,t,0)==Verdict::Parry);}                        // (attack start unknown: window alone)
-    // The owner's habit (log 2026-10-17): a swing ~700 ms before a Fallen hit
-    // whose attack began ~300 ms before it parries; much earlier is a block.
-    {State g;uint64_t n=42500;Hold(g,swingFrom,true,n,300,t);Move(g,swingFrom,swingTo,true,n,90,t);
-     const uint64_t snap=g.snapAt;Hold(g,swingTo,true,n,snap+700-n,t);
-     assert(n==snap+700&&Judge(g,ahead,n,t,n-300)==Verdict::Parry);
-     Hold(g,swingTo,true,n,60,t);
-     assert(Judge(g,ahead,n,t,n-300)==Verdict::Block&&ParryCheck(g,ahead,n,t,n-300)==ParryMiss::Early);}
+    // 450 ms, no lead (2026-10-18): a swing during the wind-up parries a hit
+    // up to parryMs after it; one ms later is a block. The old habit of a swing
+    // ~700 ms before the hit no longer parries.
+    {State g;uint64_t n=42500;Hold(g,swingFrom,true,n,300,t);
+     const uint64_t attack=n;Move(g,swingFrom,swingTo,true,n,90,t);       // the swing comes after the attack began
+     const uint64_t snap=g.snapAt;assert(snap>=attack);Hold(g,swingTo,true,n,snap+t.parryMs-n,t);
+     assert(n==snap+t.parryMs&&Judge(g,ahead,n,t,attack)==Verdict::Parry);
+     ++n;assert(Judge(g,ahead,n,t,attack)==Verdict::Block&&ParryCheck(g,ahead,n,t,attack)==ParryMiss::Early);
+     Hold(g,swingTo,true,n,snap+700-n,t);assert(Judge(g,ahead,n,t,attack)==Verdict::Block);}
+    // A missed parry swing is reported once, after its window (plus grace) runs
+    // out unspent; a spent swing, or one still inside its window, is not.
+    {State g;uint64_t n=42800;Hold(g,swingFrom,true,n,300,t);Move(g,swingFrom,swingTo,true,n,90,t);
+     const uint64_t snap=g.snapAt;
+     assert(!ParryMissed(g,snap+t.parryMs,t)&&!ParryMissed(g,snap+t.parryMs+50,t));
+     assert(ParryMissed(g,snap+t.parryMs+51,t));
+     assert(!ParryMissed(g,snap+t.parryMs+200,t));                        // once per swing
+     State spent;n=43900;Hold(spent,swingFrom,true,n,300,t);Move(spent,swingFrom,swingTo,true,n,90,t);
+     SpendParry(spent,spent.snapAt);assert(!ParryMissed(spent,spent.snapAt+t.parryMs+500,t));
+     Tuning none=t;none.parryMs=0;State g2;n=44900;Hold(g2,swingFrom,true,n,300,t);Move(g2,swingFrom,swingTo,true,n,90,t);
+     assert(!ParryMissed(g2,g2.snapAt+5000,none));}                      // parry disabled: no buzz
     // A timed swing parries even after it turned the face edge-on to the
     // attacker (3 of 6 timed swings, log 2026-10-17); the same pose without a
     // live swing is open.

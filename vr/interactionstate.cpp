@@ -259,6 +259,10 @@ void Capture(){
         {std::lock_guard lock(mutex);mercAsking=false;}
 }
 framevr::interaction::Snapshot Read(){std::lock_guard lock(mutex);return snapshot;}
+int CurrentLevel(uint64_t session,uint64_t now) {
+    std::lock_guard lock(mutex);
+    return framevr::interaction::Fresh(snapshot,session,now)?snapshot.location.level:0;
+}
 framevr::interaction::Reply Status(){const auto dev=devscenarios::Status();if(dev.sequence)return dev;std::lock_guard lock(mutex);return reply;}
 void Request(const framevr::interaction::Request& r) {
     if(r.action==Action::Developer){devscenarios::Request(r);return;}
