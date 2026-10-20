@@ -146,19 +146,23 @@ headset frame are drawn:
   moved across with its own depth: monsters and missiles stand where the
   drawn eye shows them instead of a game frame back. Along an edge each pixel
   goes with its own depth, so a head's outline or a thin blade stays whole.
-  Round near things - the hands, the weapon, a monster close by - the
-  other eye's own older image, moved with its own depth, stays where it
-  shows the same surface as the drawn eye's: the game's glow round a bright
-  blade and a monster's hair have no depth of their own, and moved across
-  from the drawn eye they stood beside the sword or the head as a ghost;
-  from the eye's own image they stand where that eye sees them, a frame
-  old. Elsewhere, and where the two part (what moved since), the drawn
-  eye's picture goes, so the rest of the scene is of one moment in both
-  eyes. Near means nearer than what is round it by more than
-  `[stereo] turns_keep_gap` pixels of parallax (48), kept within
-  `turns_keep_reach` pixels of it (96), both of a 4096-wide eye.
-  `turns_keep_own` (live; in developer mode also DEV > Equipment > By turns
-  own picture) is 1 for that, 2 to keep the own image wherever it shows the
+  Where the game's effects are - spells, flames, Tyrael's wings, which it
+  draws into a layer of their own with no depth - the other eye's own older
+  image, moved with its own depth, stays where it shows the same surface as
+  the drawn eye's: moved across from the drawn eye they stood where that eye
+  saw them, the scene showing through; from the eye's own image they stand
+  where that eye sees them, a frame old. Elsewhere, and where the two part
+  (what moved since), the drawn eye's picture goes, so the rest of the scene
+  is of one moment in both eyes. An effect counts from
+  `[stereo] turns_effects_level` (0.02, the layer's strongest channel), kept
+  within `turns_effects_reach` pixels of it (32). Anything else drawn
+  without depth and not in that layer (the game's bloom) can be kept round
+  near things too - nearer than what is round them by more than
+  `turns_keep_gap` pixels of parallax (48), within `turns_keep_reach` pixels
+  of them (96). The pixel figures are of a 4096-wide eye.
+  `turns_keep_own` (live; in developer mode also
+  DEV > Equipment > By turns own picture) is 3 for the effects (the
+  default), 1 round near things, 4 both, 2 wherever the own image shows the
   same surface and 0 for the drawn eye's picture wherever it reaches;
   `turns_from_drawn_eye=0` (live) keeps the other eye's own image alone.
   The belt's potion models, drawn by the mod over the game's picture,

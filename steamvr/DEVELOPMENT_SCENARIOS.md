@@ -162,17 +162,21 @@ every stage. `mesh=1` confirms the current check actually uses measured bounds.
 
 Select **DEV > Equipment > By turns own picture** to step, for the session,
 where the eye not drawn takes its picture with Stereo rendering: By turns.
-**NEAR** (the default, `[stereo] turns_keep_own=1`): round near things - the
-hands, the weapon, a monster close by - it keeps its own picture from a frame
-back where that shows the same surface as the eye just drawn, so the glow round
-a bright blade and a monster's hair stand where that eye sees them; elsewhere
-it takes the drawn eye's picture. **ALL** (2): its own picture wherever it
-shows the same surface, so the whole eye is a frame behind the other. **OFF**
-(0): the drawn eye's picture wherever it reaches, as v0.3.23 does. The button
-shows the current state and the frame log records each step. It changes
-nothing else and no saved setting; editing the ini's value applies that value
-again. Compare the sword against the sky, monsters' heads close up and walking
-monsters with the same view in each state.
+**FX** (the default, `[stereo] turns_keep_own=3`): where the game's effects
+layer has something - spells, flames, Tyrael's wings - it keeps its own
+picture from a frame back where that shows the same surface as the eye just
+drawn, so they stand where that eye sees them; elsewhere it takes the drawn
+eye's picture. **NEAR+FX** (4): round near things as well - the hands, the
+weapon, a monster close by - for anything else drawn without depth there
+(the game's bloom). **OFF** (0): the drawn eye's
+picture wherever it reaches, as v0.3.23 does. **NEAR** (1): round near things
+only. **ALL** (2): its own picture wherever it shows the same surface, so the
+whole eye is a frame behind the other. The button steps in that order, shows
+the current state, and the frame log records each step. It changes nothing
+else and no saved setting; editing the ini's value applies that value again.
+Compare Tyrael's wings, a waypoint's flame and spells against the scene
+behind them, the sword against the sky and monsters' heads close up, with
+the same view in each state.
 
 ## Locations
 
