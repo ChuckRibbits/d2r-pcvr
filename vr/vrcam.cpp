@@ -393,8 +393,6 @@ struct Settings {
     std::atomic<bool>  thirdTurn{true};     // [body] turn_third: from behind too the whole hero faces where the camera looks (the right stick turns him)
     std::atomic<int>   bodyTurn{2};         // 0 game facing, 1 above the pelvis, 2 whole body turns to where the camera looks
     std::atomic<bool>  wrist{true};         // arms mode 2: the hands turn with the controllers
-    std::atomic<float> targetArmOutCm{20.0f};   // [gameplay] target_arm_out_cm: the aimed monster follows the hand held out this far from the head (0 = always), else the look
-    std::atomic<bool>  spellLockBow{false};     // [gameplay] spell_lock_bow: bow skills go to the aimed monster too (archers aim on purpose: Off)
     std::atomic<float> wristPitch{0.0f}, wristYaw{0.0f}, wristRoll{0.0f};   // degrees on top, controller axes
     std::atomic<float> convergence{15.0f};  // distance (world units) that sits ON the screen; 0 = parallel eyes
     std::atomic<float> thirdDistance{7.0f}; // third person: camera this far behind the eye point
@@ -1422,8 +1420,6 @@ void LoadSettings() {
     g_set.spearShaftAxis.store(std::clamp((int)IniF(L"hands", L"spear_shaft_axis", -2.0f), -3, 3));
     g_set.bodyYawDeg.store(std::clamp(IniF(L"body", L"yaw", 0.0f), -180.0f, 180.0f));
     g_set.wrist.store(IniB(L"hands", L"wrist", true));
-    g_set.targetArmOutCm.store(std::clamp(IniF(L"gameplay", L"target_arm_out_cm", 20.0f), 0.0f, 50.0f));
-    g_set.spellLockBow.store(IniB(L"gameplay", L"spell_lock_bow", false));
     g_set.wristPitch.store(std::clamp(IniF(L"hands", L"pitch", 0.0f), -180.0f, 180.0f));
     g_set.wristYaw.store(std::clamp(IniF(L"hands", L"yaw", 0.0f), -180.0f, 180.0f));
     g_set.wristRoll.store(std::clamp(IniF(L"hands", L"roll", 0.0f), -180.0f, 180.0f));
@@ -2887,24 +2883,32 @@ bool ShooterActive();
 #ifdef D2RVR_NATIVE_OPENXR
 extern std::atomic<uint32_t> g_meleeTurnEpoch;
 #endif
-// The Aim switches, read by the update, render and game threads: one settings
+// The Aim settings, read by the update, render and game threads: one settings
 // snapshot every 200 ms, not one per call (HandRay runs several times a frame).
-bool AimOn(framevr::settings::Key key) {
-    using namespace framevr::settings;
-    static std::atomic<ULONGLONG> at{0};
-    static std::atomic<uint32_t> bits{0};
-    constexpr Key keys[] = {TargetHighlight, SpellLock, StaffPoint};
+namespace aimsettings {
+std::atomic<ULONGLONG> at{0};
+std::atomic<uint32_t> bits{0};
+std::atomic<float> armOutCm{20.0f};
+constexpr framevr::settings::Key keys[] = {framevr::settings::TargetHighlight, framevr::settings::SpellLock,
+                                           framevr::settings::StaffPoint, framevr::settings::SpellLockBow};
+void Refresh() {
     const ULONGLONG now = GetTickCount64();
-    if (now - at.load() > 200) {
-        const auto values = vrsettings::Read().values;
-        uint32_t b = 0;
-        for (int i = 0; i < 3; ++i) if (values[keys[i]] > .5f) b |= 1u << i;
-        bits.store(b);
-        at.store(now);
-    }
-    for (int i = 0; i < 3; ++i) if (keys[i] == key) return (bits.load() >> i) & 1;
+    if (now - at.load() <= 200) return;
+    const auto values = vrsettings::Read().values;
+    uint32_t b = 0;
+    for (int i = 0; i < 4; ++i) if (values[keys[i]] > .5f) b |= 1u << i;
+    bits.store(b);
+    armOutCm.store(values[framevr::settings::TargetArmOut]);
+    at.store(now);
+}
+}
+bool AimOn(framevr::settings::Key key) {
+    aimsettings::Refresh();
+    for (int i = 0; i < 4; ++i) if (aimsettings::keys[i] == key) return (aimsettings::bits.load() >> i) & 1;
     return false;
 }
+// VR Settings > Aim > Hand aims when held out, cm (0: always the hand).
+float AimArmOutCm() { aimsettings::Refresh(); return aimsettings::armOutCm.load(); }
 #ifdef D2RVR_NATIVE_OPENXR
 // Staff aim: a staff levelled out like a wand (its shaft within ~35 degrees of
 // flat) fires out of its top; held upright (the usual way) up its shaft is up,
@@ -3290,13 +3294,13 @@ float TargetOutlineStrength() {
 bool TargetHighlightOn() { return TargetOutlineStrength() > 0.0f; }
 // Aim source: deliberate pointing beats looking. The aiming hand counts as
 // pointing while held out from the body (armpointing: horizontal reach from the
-// head against [gameplay] target_arm_out_cm, with hysteresis); a hand resting in
+// head against VR Settings > Aim > Hand aims when held out, with hysteresis); a hand resting in
 // the lap does not. The target's own state, on vrcam's update thread only.
 bool TargetPointing() {
     static framevr::armpointing::State state;
     const bool was = state.on;
     float o[3], d[3];
-    if (g_eyeOk.load() && framevr::GameplayRay(o, d)) framevr::armpointing::Update(state, std::hypot(o[0], o[2]), d[1], g_set.targetArmOutCm.load());
+    if (g_eyeOk.load() && framevr::GameplayRay(o, d)) framevr::armpointing::Update(state, std::hypot(o[0], o[2]), d[1], AimArmOutCm());
     else state.on = false;
     if (state.on != was) LogF("Frame aim source: %s", state.on ? "hand pointing (arm out)" : "where you look");
     return state.on;
@@ -3387,10 +3391,10 @@ bool DirectedSpellAim(float& gx,float& gy) {
     // Spells go to the aimed monster: the spells the game aims itself
     // (Lightning, Chain Lightning...) turn toward the locked monster when it is
     // within ~53 degrees of the hand's direction. Bow skills only with
-    // [gameplay] spell_lock_bow (archers aim on purpose).
+    // VR Settings > Aim > Bow skills go to the aimed monster (archers aim on purpose).
     float mx=0,my=0,md=0;
     const bool bow=framevr::BowSkillActive();
-    if((bow?g_set.spellLockBow.load():AimOn(framevr::settings::SpellLock))&&mobaim::Get(mx,my,md)) {
+    if((bow?AimOn(framevr::settings::SpellLockBow):AimOn(framevr::settings::SpellLock))&&mobaim::Get(mx,my,md)) {
         const auto s=targetlock::Get();
         const float tx=mx-s.heroX,ty=my-s.heroY,tl=std::hypot(tx,ty),hl=std::hypot(gx,gy);
         if(s.at&&tl>.5f&&hl>1e-4f&&(tx*gx+ty*gy)/(tl*hl)>.6f) {
