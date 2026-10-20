@@ -114,6 +114,7 @@ namespace gamestate {bool OpaqueMenuOpen();}
 #include "dev_scenarios.h"
 #include "../steamvr/shield_debug.h"
 #include "melee.h"
+#include "target_lock.h"
 #include "bow.h"
 #include "crossbow.h"
 #include "memory.h"
@@ -3192,6 +3193,106 @@ int HookSpellCommand(framevr::spellaim::NativeCommand* command) {
     }
     return result;
 }
+
+// Monster outline strength (VR Settings > Aim, 0 = Off), read by the update and
+// render threads: one settings snapshot every 200 ms, not one per frame.
+float TargetOutlineStrength() {
+    static std::atomic<ULONGLONG> at{0};
+    static std::atomic<float> strength{0.0f};
+    const ULONGLONG now = GetTickCount64();
+    if (now - at.load() > 200) {
+        strength.store(std::clamp(vrsettings::Read().values[framevr::settings::TargetHighlight] * 0.01f, 0.0f, 1.0f));
+        at.store(now);
+    }
+    return strength.load();
+}
+bool TargetHighlightOn() { return TargetOutlineStrength() > 0.0f; }
+// Aim source: deliberate pointing beats looking. The aiming hand counts as
+// pointing while held out from the body (horizontal reach from the head, in
+// metres, with hysteresis); a hand resting in the lap does not.
+constexpr float kPointOnM = 0.40f, kPointOffM = 0.34f;
+// Pointing steeply down (at something by the feet) the arm cannot reach out as
+// far; a shorter reach counts while the ray dips this much.
+constexpr float kPointDownOnM = 0.30f, kPointDownOffM = 0.25f, kPointDownDip = -0.75f;
+std::atomic<bool> g_pointing{false};
+bool HandPointing() {
+    float o[3], d[3];
+    bool now = false;
+    if (g_eyeOk.load() && framevr::GameplayRay(o, d)) {
+        const float reach = std::hypot(o[0], o[2]);
+        const bool down = d[1] < kPointDownDip;
+        now = reach >= (g_pointing.load() ? (down ? kPointDownOffM : kPointOffM) : (down ? kPointDownOnM : kPointOnM));
+    }
+    if (now != g_pointing.exchange(now)) LogF("Frame aim source: %s", now ? "hand pointing (arm out)" : "where you look");
+    return now;
+}
+// The left eye in render-world units and its forward direction.
+bool HeadGaze(float eye[3], float forward[3]) {
+    AcquireSRWLockShared(&g_skyLock); const SkyView s = g_skyView[0]; ReleaseSRWLockShared(&g_skyLock);
+    if (!s.axes_ok) return false;
+    for (int i = 0; i < 3; ++i) { eye[i] = s.hero[i] + s.eyeRel[i]; forward[i] = -s.axes[6 + i]; }
+    return std::isfinite(eye[0] + eye[1] + eye[2] + forward[0] + forward[1] + forward[2]);
+}
+// The two aims for the target lock, as headings on the grid: the pointing
+// hand's (when the arm is out) and the head's. The lock tries the hand first and
+// the head when the hand is on no monster, so a seated player with the hands
+// held out in front can still turn the head to another monster.
+bool HandHeading(float& gx, float& gy) {
+    float theta = 0;
+    if (!HandPointing() || !HandWorldTheta(&theta)) return false;
+    gx = cosf(theta); gy = sinf(theta); return true;
+}
+bool HeadHeading(float& gx, float& gy) {
+    float eye[3], forward[3];
+    if (!HeadGaze(eye, forward) || std::hypot(forward[0], forward[2]) < 1e-3f) return false;
+    gx = forward[0]; gy = forward[2];   // native OpenXR: world x/z are the grid's x/y
+    return true;
+}
+
+// Target lock: the hostile monster being aimed at - pointed at deliberately
+// with the hand, else looked at - inside the cone on the grid, the nearest first
+// (targetcone). Chosen on vrcam's update thread from the game thread's list;
+// read by the outline.
+namespace mobaim {
+std::atomic<uint32_t> g_id{0};
+std::atomic<float> g_x{0}, g_y{0}, g_distance{0};
+std::atomic<ULONGLONG> g_at{0};
+bool Wanted() {
+    return g_enabled.load() && g_inWorld.load() && TargetHighlightOn();
+}
+void Tick() {
+    const bool wanted = Wanted();
+    targetlock::Pump(wanted);
+    if (!wanted || gamestate::MenuOpen()) { g_id.store(0); return; }
+    const auto s = targetlock::Get();
+    if (!s.at || GetTickCount64() - s.at > 500) { g_id.store(0); return; }
+    // the hand first; a hand on no monster frees the lock for the head
+    float gx = 0, gy = 0;
+    int i = HandHeading(gx, gy) ? framevr::targetcone::Pick(s.targets, s.count, s.heroX, s.heroY, gx, gy, g_id.load()) : -1;
+    if (i < 0 && HeadHeading(gx, gy)) i = framevr::targetcone::Pick(s.targets, s.count, s.heroX, s.heroY, gx, gy, g_id.load());
+    const uint32_t was = g_id.load();
+    if (i < 0) { g_id.store(0); return; }
+    const auto& t = s.targets[i];
+    g_x.store(t.x); g_y.store(t.y);
+    g_distance.store(std::hypot(t.x - s.heroX, t.y - s.heroY));
+    g_at.store(GetTickCount64());
+    g_id.store(t.id);
+    if (t.id != was) {
+        static ULONGLONG lastLog = 0;
+        if (GetTickCount64() - lastLog > 1000) {
+            lastLog = GetTickCount64();
+            LogF("Frame target lock: monster id %u at %.1f %.1f, %.1f cells (%d hostile near)", t.id, t.x, t.y, g_distance.load(), s.count);
+        }
+    }
+}
+// The current target while fresh.
+bool Get(float& x, float& y, float& distance) {
+    if (!g_id.load() || GetTickCount64() - g_at.load() > 300) return false;
+    x = g_x.load(); y = g_y.load(); distance = g_distance.load();
+    return true;
+}
+}
+
 bool DirectedSpellAim(float& gx,float& gy) {
     float origin[3],direction[3];
     // Native OpenXR poses already use world X/Z == grid X/Y. The legacy
@@ -7741,6 +7842,16 @@ bool ShieldDebugWanted() {
     return false;
 #endif
 }
+// The glowing edge round the monster the target lock holds (D2R_DepthFog.fx
+// PS_Outline), never over an open menu.
+bool OutlineWanted() {
+#ifdef D2RVR_NATIVE_OPENXR
+    float x, y, d;
+    return g_enabled.load() && g_inWorld.load() && !gamestate::MenuOpen() && mobaim::Get(x, y, d);
+#else
+    return false;
+#endif
+}
 
 // The frame stamp strip (D2R_DepthFog.fx PS_Stamp): whenever the camera turns
 // with the head, so that FlatVR can place its screen at the pose of the frame.
@@ -7835,7 +7946,7 @@ void OnFinishEffects(reshade::api::effect_runtime* rt, reshade::api::command_lis
     if (!g_tech[0].handle) { hud::SetPictureReady(false); return; }
     // Off while a menu is open: the fog lies over the whole picture, the
     // inventory and trade panels included, and darkened them.
-    const bool want = FogWanted() || g_skyPalette.load() >= 0 || g_arcaneSky.load() || CeilWanted() || HudWanted() || StampWanted() || hud::PictureWanted() || TableKeyWanted() || PhantomWanted() || BoneAxesWanted() || ShieldDebugWanted();
+    const bool want = FogWanted() || g_skyPalette.load() >= 0 || g_arcaneSky.load() || CeilWanted() || HudWanted() || StampWanted() || hud::PictureWanted() || TableKeyWanted() || PhantomWanted() || BoneAxesWanted() || ShieldDebugWanted() || OutlineWanted();
     // The toolbar and the map are taken out of the game's picture to be drawn
     // back at their own size only while this effect runs, and is new enough to.
     {
@@ -8037,7 +8148,7 @@ void OnBeginEffects(reshade::api::effect_runtime* rt, reshade::api::command_list
         renderscale::Frame(rt, s);
 #ifdef D2RVR_NATIVE_OPENXR
         const bool ownDepth=g_enabled.load()&&g_inWorld.load()&&framevr::Active()&&
-            (FogWanted()||g_set.skyOn.load()||g_arcaneSky.load()||CeilWanted()||TableKeyWanted());
+            (FogWanted()||g_set.skyOn.load()||g_arcaneSky.load()||CeilWanted()||TableKeyWanted()||OutlineWanted());
         const bool turnDepth=g_enabled.load()&&g_inWorld.load()&&framevr::Active()&&framevr::TurnDepthWanted();
         framevr::scenedepth::Bind(rt,cl,ownDepth,turnDepth,stereoreplay::RightEffects(),s);
         SetBool(rt,"OwnDepth",ownDepth);
@@ -8368,6 +8479,46 @@ void OnBeginEffects(reshade::api::effect_runtime* rt, reshade::api::command_list
         }
     }
 #endif
+    {   // Target outline: a cylinder round the locked monster's cell on the hero's
+        // floor (render = grid*2 + floor height x shear); the pixels inside it
+        // standing above the floor are its model, and the shader glows along
+        // that shape's edge. xyz centre relative to the hero, w strength;
+        // shape = radius, lowest and highest height (world units).
+        SkyView sv[2];
+        AcquireSRWLockShared(&g_skyLock); sv[0] = g_skyView[0]; sv[1] = g_skyView[1]; ReleaseSRWLockShared(&g_skyLock);
+        float mx = 0, my = 0, md = 0;
+        const bool on = OutlineWanted() && sv[0].proj_ok && sv[0].axes_ok && mobaim::Get(mx, my, md);
+        SetBool(rt, "OutlineOn", on);
+        float mob[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+        if (on) {
+            const float upm = std::max(1.0f, ViewHeight()) / UserEyeHeightM();
+            for (int e = 0; e < 2; ++e) {
+                const SkyView& s = sv[e].axes_ok && sv[e].proj_ok ? sv[e] : sv[0];
+                char n[16];
+                snprintf(n, sizeof n, "OutlineEye%d", e); SetFloats(rt, n, s.eyeRel, 3);
+                snprintf(n, sizeof n, "SkyProj%d", e); SetFloats(rt, n, s.proj, 4);
+                snprintf(n, sizeof n, "CamRight%d", e); SetFloats(rt, n, s.axes, 3);
+                snprintf(n, sizeof n, "CamUp%d", e); SetFloats(rt, n, s.axes + 3, 3);
+                snprintf(n, sizeof n, "CamBack%d", e); SetFloats(rt, n, s.axes + 6, 3);
+            }
+            const float floor = sv[0].hero[1], shear = framevr::coordinates::GroundShear;
+            mob[0] = mx * 2.0f + floor * shear - sv[0].hero[0];
+            mob[2] = my * 2.0f + floor * shear - sv[0].hero[2];
+            mob[3] = TargetOutlineStrength();   // steady, no pulse
+            // gold, or by range: near red, mid orange, far yellow
+            static const float kBands[3][3] = {{1.0f, 0.2f, 0.12f}, {1.0f, 0.55f, 0.1f}, {1.0f, 0.92f, 0.25f}};
+            const auto settingsNow = vrsettings::Read();
+            const auto& values = settingsNow.values;
+            float wheel[3];
+            framevr::settings::HueRgb(values[framevr::settings::TargetOutlineHue], wheel);
+            SetFloats(rt, "OutlineColor", values[framevr::settings::TargetOutlineColour] > .5f ? kBands[framevr::targetcone::Band(md)] : wheel, 3);
+            // Tuned in the headset (2026-10-18): a 5 unit search circle (a long monster
+            // whole), the body from 0.38 m below the floor level (feet on slopes) to 3 m up.
+            const float mobShape[3] = {5.0f, -0.38f * upm, 3.0f * upm};
+            SetFloats(rt, "OutlineShape", mobShape, 3);
+        }
+        SetFloats(rt, "OutlinePos", mob, 4);
+    }
 #ifdef D2RVR_NATIVE_OPENXR
     {
         framevr::guard::Debug state;framevr::guard::DebugDraw draw;
@@ -8680,6 +8831,9 @@ DWORD WINAPI UpdateThread(void*) {
         SkyTick();
         flog::Tick(g_set.frameLog.load());
         gamecmd::Tick();   // skills, potions, Alt... held in BodyWalk: pressed on the UI thread
+#ifdef D2RVR_NATIVE_OPENXR
+        mobaim::Tick();    // target lock: the monster the hand points at, else the one looked at
+#endif
         FloorPointerTick();   // F3: the mouse pointer on the game's ground, as the head moves
         CrosshairDepthTick();   // F2's crosshair: nearer as the camera looks down
         AfrQuietWhenOff();

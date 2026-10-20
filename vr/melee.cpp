@@ -615,6 +615,42 @@ uintptr_t Hireling(uintptr_t game,uintptr_t self,uint32_t id,bool alive) {
     if(alive&&(header[3]==0||header[3]==12))return 0;
     return reinterpret_cast<int(*)(uintptr_t,uintptr_t,uintptr_t)>(d2rsig::Addr(RelationRva))(game,self,unit)?0:unit;
 }
+// Target lock: the same bounded walk, keeping live monsters the native
+// relation check calls hostile, in grid cells, with whether a wall is between.
+// MonStats flags of a monster (unit +0x10 monster data, whose first field is
+// its MonStats record; D2R's record, as monstats.bin, has the flags dword at
+// +0x3C, matching every row of monstats.txt). 0x100
+// npc, 0x400 inTown: town residents such as the Rogue camp's cows (class 179),
+// which the relation check still calls attackable. Unread: 0.
+uint32_t MonsterFlags(uintptr_t unit) {
+    uintptr_t data=0,stats=0;uint32_t flags=0;
+    if(!Read(unit+0x10,data)||data<0x10000||!Read(data,stats)||stats<0x10000||!Read(stats+0x3c,flags))return 0;
+    return flags;
+}
+constexpr uint32_t kMonNpc=0x100,kMonInTown=0x400;
+int Hostiles(Hostile* out,int max,float range,float& heroX,float& heroY) {
+    uintptr_t game=0,self=0;Vec selfPos{};
+    if(!out||max<=0||!LocalServer(game,self)||!Position(self,selfPos))return -1;
+    heroX=selfPos.x*.5f;heroY=selfPos.z*.5f;
+    uintptr_t buckets[128]{};
+    if(!Read(game+0x4c6*8,buckets))return -1;
+    int n=0;unsigned visited=0;
+    for(uintptr_t unit:buckets) {
+        for(unsigned chain=0;unit&&chain<256&&visited++<4096&&n<max;++chain) {
+            uintptr_t next=0;uint32_t header[4]{};Vec pos{};
+            if(!Read(unit+0x158,next)||!Read(unit,header))break;
+            if(header[0]==1&&header[3]!=0&&header[3]!=12&&Position(unit,pos)&&
+               std::hypot(pos.x*.5f-heroX,pos.z*.5f-heroY)<=range&&
+               reinterpret_cast<int(*)(uintptr_t,uintptr_t,uintptr_t)>(d2rsig::Addr(RelationRva))(game,self,unit)&&
+               !(MonsterFlags(unit)&(kMonNpc|kMonInTown))) {   // not town residents
+                const bool clear=reinterpret_cast<int(*)(uintptr_t,uintptr_t,int)>(d2rsig::Addr(LineRva))(self,unit,0x804)==0;
+                out[n++]={header[2],header[1],pos.x*.5f,pos.z*.5f,clear};
+            }
+            unit=next;
+        }
+    }
+    return n;
+}
 bool HirelingVitals(uint32_t hint,float& health,float& maxHealth,uint32_t& classId,uint32_t& unitId) {
     health=maxHealth=0;classId=unitId=0;
     const bool statReady=d2rsig::Check(nativeui::abi::StatRva,nativeui::abi::StatSig,sizeof nativeui::abi::StatSig);

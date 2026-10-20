@@ -255,6 +255,25 @@ int main(){
         speed.Click(At(Page::Combat,Increase(5)));Check(speed.Get()[StrainSpeed]==2,"Fast is the upper bound");
         Check(speed.Click({Kind::Apply}).changed==(ChangeMask{1}<<StrainSpeed),"buildup edits preserve combat rules, difficulty and colour");
     }
+    {Model aim;aim.Open(s);aim.Click({Kind::Tab,int(Page::Aim)});
+        Check(s.values[TargetHighlight]==0&&RowKey(Page::Aim,0)==TargetHighlight,"the monster outline is Off by default, first on the Aim page");
+        Check(RowCount(Page::Aim)==3&&RowKey(Page::Aim,1)==TargetOutlineColour&&RowKey(Page::Aim,2)==TargetOutlineHue,"strength, colors, then the static color");
+        Check(s.values[TargetOutlineColour]==0&&s.values[TargetOutlineHue]==45,"static gold (45 degrees) by default");
+        {Model colors;colors.Open(s);colors.Click({Kind::Tab,int(Page::Aim)});
+            colors.Click(At(Page::Aim,ValueBox(1)));Check(colors.Get()[TargetOutlineColour]==1,"selecting the colors value switches to By range");
+            colors.Click(At(Page::Aim,ValueBox(1)));Check(colors.Get()[TargetOutlineColour]==0,"and back to Static");
+            for(int i=0;i<30;++i)colors.Click(At(Page::Aim,Increase(2)));
+            Check(colors.Get()[TargetOutlineHue]==345,"the wheel ends at 345 degrees");
+            for(int i=0;i<30;++i)colors.Click(At(Page::Aim,Decrease(2)));
+            Check(colors.Get()[TargetOutlineHue]==0,"and starts at red");
+            float rgb[3];HueRgb(45,rgb);Check(rgb[0]==1&&rgb[1]==.75f&&rgb[2]==0,"45 degrees is gold");}
+        Check(HelpAt(Page::Aim,(ValueBox(0).x+5.f)/Width,(ValueBox(0).y+5.f)/Height)==TargetHighlight,"the Aim row explains the outline");
+        aim.Click(At(Page::Aim,Increase(0)));Check(aim.Get()[TargetHighlight]==10,"plus turns the outline on at 10%");
+        aim.Click(At(Page::Aim,Decrease(0)));aim.Click(At(Page::Aim,Decrease(0)));Check(aim.Get()[TargetHighlight]==0,"Off is the lower bound");
+        aim.Click(At(Page::Aim,Increase(0)));aim.Click(At(Page::Aim,Increase(0)));
+        const auto request=aim.Click({Kind::Apply});
+        Check(request.changed==(ChangeMask{1}<<TargetHighlight)&&request.values[TargetHighlight]==20,"the outline strength changes nothing else");
+    }
     {Model difficulty;difficulty.Open(s);difficulty.Click({Kind::Tab,int(Page::Combat)});
         Check(s.values[OfflinePlayers]==0&&RowKey(Page::Combat,6)==OfflinePlayers,"difficulty preserves native settings by default");
         Check(ValueBox(6).y+ValueBox(6).h<698,"difficulty avoids Combat notes");
