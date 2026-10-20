@@ -1122,6 +1122,37 @@ The held bottle now uses the original 3D model when the local cache is available
 and health/mana now use the read-only native snapshot and local icon cache.
 Do not describe this prototype as completed physics combat.
 
+## Head-relative sound
+
+Monsters, NPCs, objects and other positioned sounds now come from where they
+are relative to where you look. Turn your head (or the stick) away from a
+monster and its sound moves to the other ear; a looping sound such as the
+Rogue Encampment's stream swings as you turn without you moving.
+
+Stock D2R pans its 3D sounds by their left/right position on the flat
+screen and never moves FMOD's listener, so in VR they stayed tied to the
+fixed camera. The plugin lays each 3D sound's screen offset onto the ground
+(screen-up is ahead) at the game's own distance, and turns FMOD's listener
+with the view every 10 ms, so FMOD re-pans everything that is playing.
+
+- Stereo left/right plus the game's distance falloff; front and back sound
+  alike (no HRTF).
+- Music, ambience, UI sounds and your own hero's sounds stay centred.
+- Not yet: monsters' attack cries (`<monster>_attack_*`, `damage_dealt`)
+  are 2D sounds in the game's sound table and still play centred.
+- If nothing pans at all, check Windows **Mono audio** (Settings >
+  Accessibility > Audio): it folds the PC's sound to mono before Quest Link,
+  Air Link or Virtual Desktop stream it.
+
+`d2r_pcvr.ini`, read at start:
+
+| `[audio]` key | Default | |
+|---|---|---|
+| `head_follow` | `1` | `0` = the game's own panning (flat-camera frame). |
+| `listener_turn` | `1` | `0` = keep the ground mapping but leave FMOD's listener facing the camera. |
+| `forward_sign` | `-1` | Which screen direction counts as ahead (`-1` = up). |
+| `depth_scale` | `2` | Stretches screen up/down to undo the isometric squash. |
+
 ## Cancellation and performance
 
 Menus, focus/tracking loss, weapon changes, recenter and discontinuous samples

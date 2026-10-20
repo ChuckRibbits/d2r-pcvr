@@ -83,6 +83,7 @@ namespace hud { void Register(); void SetHide(int mode); void SetInterfaceScale(
 #include "sigscan.h"
 #include "mat4.h"
 namespace gamecmd { void Init(const D2RL::PluginContext* ctx); void Tick(); }   // the game's key commands from BodyWalk (gamecmd.cpp)
+namespace spatialaudio { void SetLogger(void (*log)(const char*)); void SetViewYaw(float (*yaw)()); void Configure(bool headFollow, bool listenerTurn, float forwardSign, float depthScale); void Poll(); }   // head-relative sound (spatial_audio.cpp)
 namespace gamestate { bool ToggleMenus(); }
 namespace gamestate { uint32_t MenuEpoch(); }
 namespace gamestate { void Init(const D2RL::PluginContext* ctx); void Tick(); uint32_t WeaponClass(); uint32_t WeaponSet(); uint32_t WeaponType(); uint32_t HandsHeld(); uint32_t TwoHanded(); uint32_t WeaponHand(); uint32_t HandsKey(); bool MenuOpen(); int ObjectLight(uint32_t txt, uint32_t mode, float rgb[3]); uint64_t LocalPlayer(); void SetViewMode(uint32_t mode); bool AutoMapOpen(); bool SetAutoMap(bool open); void PollPlate(); bool PlateRect(int32_t out[4]); }
@@ -8978,6 +8979,7 @@ DWORD WINAPI UpdateThread(void*) {
             OpenShared();
             UpdateFovFromFlatVR();
             HookXInput();
+            spatialaudio::Poll();
             ReportXInputUse();
             fx::TryRegister();
             InstallBiomeHook();
@@ -9135,6 +9137,11 @@ D2RL_PLUGIN_EXPORT bool D2RLoaderLoadPlugin(const PluginContext* ctx) noexcept {
     skel::SetFreshHands(&FreshHands);
     InstallHooks();
     HookXInput();
+    spatialaudio::SetLogger(&Log);
+    spatialaudio::SetViewYaw([] { return g_camYaw.load(); });
+    spatialaudio::Configure(IniB(L"audio", L"head_follow", true), IniB(L"audio", L"listener_turn", true),
+                            IniF(L"audio", L"forward_sign", -1.0f), IniF(L"audio", L"depth_scale", 2.0f));
+    spatialaudio::Poll();
     OpenShared();
     OpenAfrBlock();
     gamestate::Init(ctx);
