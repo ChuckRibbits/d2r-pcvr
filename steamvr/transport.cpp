@@ -3334,6 +3334,15 @@ bool DirectedSpellActive() {
     return skill.known&&skill.available&&skill.id>=0&&(skill.directed||
         (motionOutput.bowReady&&weaponskills::Bow(skill.id)&&skill.id!=weaponskills::Strafe));
 }
+bool BowSkillActive() {
+    std::lock_guard lock(mutex);
+    const int slot=motionOutput.skill;
+    const auto now=GetTickCount64();
+    if(!motionControls.load()||!motionOutput.bowReady||!gameplay::CastingSkill(motionInput,motionOutput,now-motionAt)||
+       !interaction::Fresh(interactionInput.snapshot,gamestate::LocalPlayer(),now))return false;
+    const auto& skill=interactionInput.snapshot.skills[slot];
+    return skill.known&&skill.available&&weaponskills::Bow(skill.id);
+}
 bool GameplayRay(float outOrigin[3],float outDirection[3]) {
     std::lock_guard lock(mutex);
     if(!motionControls.load()||!motionOutput.rayValid||!motionInput.active||GetTickCount64()-motionAt>150)return false;

@@ -102,7 +102,7 @@ inline constexpr std::array<Definition,Count> Definitions{{
     {"Monster outline colors", "Static: one color. By range: red near, orange mid-range, yellow far", L"gameplay",L"target_outline_by_range",0,0,1,1},
     {"Static color", "The outline's color around the color wheel", L"gameplay",L"target_outline_hue",45,0,345,15},
     {"Heartbeat starts at", "Life % where the heartbeat begins; louder and faster every 10% lower", L"gameplay",L"low_life_heart_start",60,0,90,10},
-    {"Spells go to the aimed monster", "Bolts and Lightning turn to it when it is roughly ahead", L"gameplay",L"spell_lock",1,0,1,1},
+    {"Spells go to the aimed monster", "Bolts and Lightning: the monster you point at, else look at", L"gameplay",L"spell_lock",1,0,1,1},
     {"Staff aims where your arm points", "Upright: along your arm. Levelled out: from the staff's top", L"gameplay",L"staff_point",1,0,1,1},
 }};
 using Values=std::array<float,Count>;
