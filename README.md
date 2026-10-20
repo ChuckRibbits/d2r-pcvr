@@ -168,6 +168,7 @@ Bosses, champions, uniques and their minions keep their bars with either setting
 There is no left-trigger modifier layer. Each hand aims its own spells. Face
 shortcuts do not change either trigger assignment. On a Sorceress, Fire Bolt,
 Fireball, Ice Bolt, Ice Blast and Charged Bolt can fire from both hands simultaneously,
+as can Necromancer Bone Spear and Paladin Holy Bolt,
 each with independent aim and its own Faster Cast Rate timing. Hold the input to repeat. Native
 mana costs apply to each cast, and walking remains available without entering
 the original casting animation. See [hand projectile spells](docs/hand_projectile_spells.md)
