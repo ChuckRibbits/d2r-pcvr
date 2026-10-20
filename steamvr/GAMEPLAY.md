@@ -917,7 +917,8 @@ instead of a random one. Classic keeps the native roll.
   (2026-10-19) started 0-156 ms after a blocked hit, timed to the animation. A
   parry swing within this long after a blocked melee hit (within 3 m) still parries
   it: the attacker staggers and the block's wear is restored; the block's strain
-  stands. A hit that landed on you is not undone. Logged as `Frame guard late parry:`
+  stands. Act bosses are never parried late either (2026-10-20: the late parry
+  had skipped the act-boss gate, so Andariel could be parried). A hit that landed on you is not undone. Logged as `Frame guard late parry:`
   and `late_parries` in `Frame guard:`; later swings stay `swing too late`. Hit-frame parries
   had come a median 516 ms after the swing (2026-10-18). An attack whose to-hit
   roll has already run is never staggered early; otherwise the to-hit roll or
