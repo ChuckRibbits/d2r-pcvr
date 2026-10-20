@@ -294,10 +294,10 @@ inline void SpellMatrix(const Flight& f,uint64_t now,float out[16]) {
         out[i*4]=basis[i].x*scale;out[i*4+1]=basis[i].y*scale;out[i*4+2]=basis[i].z*scale;
     }
     // The straight VFX have a +4-unit child height; Charged Bolt has -.25.
-    // Fireball also has +2.3 forward. Cancel authored offsets at the root
+    // Fireball also has +2.3 forward; Bone Spear has -3. Cancel offsets at the root
     // so the visible emitter starts at the hand for straight shots and on the
     // floor for Charged Bolt. Values verified in owned HD definitions; no assets ship.
-    const float ahead=f.shot.skill==47?2.3f:0;
+    const float ahead=f.shot.skill==47?2.3f:f.shot.skill==84?-3.f:0;
     const float height=f.shot.skill==38?-.25f:4.f;
     out[12]=p.x-out[4]*height-out[8]*ahead;
     out[13]=p.y-out[5]*height-out[9]*ahead;

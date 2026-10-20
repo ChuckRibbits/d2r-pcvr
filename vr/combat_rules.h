@@ -27,6 +27,13 @@ inline float ArFactor(int chance,float floor) {
     const float f=floor<0?0.f:floor>1?1.f:floor;
     return f+(1-f)*c;
 }
+// Unleashed incoming defense: a monster's to-hit roll against the local player
+// always connects, and the native chance it would have had (its attack rating
+// against the player's Defense, clamped 5..95) scales the whole landed attack,
+// elemental riders included. Applied at the final life write, after damage
+// reduction, resistances and absorb, so the expected damage equals native
+// (chance x a landed hit) without the hit-or-miss variance. No floor.
+inline float DefenseFactor(int chance) {return ArFactor(chance,0);}
 // Unleashed swing damage: how recovered a stroke is - the time since the
 // previous landed stroke over the native attack cycle, raised to `curve`, at
 // most 1. curve 1 is damage-per-second neutral (twice the strokes at half the

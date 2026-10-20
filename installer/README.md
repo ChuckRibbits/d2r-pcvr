@@ -79,6 +79,16 @@ game installation or generated artwork/model cache. Output:
 - `build-frame/installers/D2R-PCVR-Setup-0.3.19.exe`
 - matching `.exe.sha256` checksum and `.exe.build.json` provenance report
 
+Optionally the EXE carries the [D2R VR Launcher](https://github.com/natpoh/d2r-vr-launcher) (its
+`docs/INSTALLER_CONTRACT.md`). Download `D2R_VR_Launcher_Setup_<version>.exe` and its `.sha256` from that
+project's releases once per release, check the hash, and add
+`-LauncherSetup <file> -LauncherSetupSha256 <the 64 digits>` to the command above. The wrapper refuses another
+file name or a hash that differs, stages the file unmodified under `launcher\` in the payload, and records it in
+`.exe.build.json`. At install time Setup runs it silently for the installing user
+(`/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /TASKS=`) only when `HKCU\Software\D2R VR Launcher` shows no launcher
+or an older one, after re-checking the pinned hash, and ignores its exit code: a launcher problem never blocks the
+mod. Removing D2R VR Unleashed leaves the launcher installed. Without the two parameters nothing changes.
+
 The EXE is unsigned unless a release maintainer separately signs it. Signing
 requires an appropriate publisher certificate; do not label an unsigned EXE as
 signed. Build output and downloaded dependencies stay out of source control.

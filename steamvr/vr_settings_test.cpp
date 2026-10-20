@@ -2,6 +2,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <limits>
+#include <string>
 using namespace framevr::settings;
 static void Check(bool b,const char* label){if(!b){std::fprintf(stderr,"FAIL: %s\n",label);std::exit(1);}}
 static Hit At(Page p,Rect r){return HitTest(p,(r.x+r.w*.5f)/Width,(r.y+r.h*.5f)/Height);}
@@ -40,6 +41,119 @@ int main(){
         Check(HelpCard.x>=Width&&HelpCard.y+HelpCard.h<Apply.y,"help never covers controls or footer");
     }
     Snapshot s;s.ready=true;
+    {
+        Check(RowCount(Page::Video)==10&&RowKey(Page::Video,0)==Foveation&&RowKey(Page::Video,1)==FoveationStrength&&
+              RowKey(Page::Video,7)==RenderResolution&&RowKey(Page::Video,8)==DesktopOneEye,"strength sits directly under foveated rendering");
+        Check(RowKey(Page::Video,9)==StereoRendering,"stereo rendering is the last video row");
+        const auto last=Increase(RowCount(Page::Video)-1);
+        Check(last.y+last.h<876,"video rows end above the save status");
+        Model strength;strength.Open(s);strength.Click({Kind::Tab,int(Page::Video)});
+        Check(strength.Get()[Foveation]==1&&strength.Get()[FoveationStrength]==1,"fixed foveation at Medium strength by default");
+        strength.Click(At(Page::Video,Increase(1)));
+        Check(strength.Get()[FoveationStrength]==2&&strength.Dirty(),"strength adjusts while foveation is selected");
+        for(int i=0;i<5;++i)strength.Click(At(Page::Video,Increase(1)));
+        Check(strength.Get()[FoveationStrength]==3,"Maximum is the strongest level");
+        strength.Click(At(Page::Video,Decrease(0)));Check(strength.Get()[Foveation]==0,"foveation can be turned off");
+        Check(!RowEnabled(strength.Get(),FoveationStrength)&&RowEnabled(strength.Get(),Foveation),"Off disables only the strength row");
+        strength.Click(At(Page::Video,Decrease(1)));strength.Click(At(Page::Video,Decrease(1)));
+        Check(strength.Get()[FoveationStrength]==3,"strength ignores edits while foveation is off");
+        strength.Click(At(Page::Video,Increase(0)));strength.Click(At(Page::Video,Decrease(1)));
+        Check(strength.Get()[FoveationStrength]==2,"strength edits resume when foveation is selected again");
+        Check(Normalize(FoveationStrength,1.5f)==1&&Normalize(FoveationStrength,7)==1&&Normalize(FoveationStrength,-1)==1,"malformed strength shows Medium");
+    }
+    {
+        Model stereo;stereo.Open(s);stereo.Click({Kind::Tab,int(Page::Video)});
+        Check(stereo.Get()[StereoRendering]==1&&RowEnabled(stereo.Get(),StereoRendering),"By turns by default");
+        for(int i=0;i<2;++i)stereo.Click(At(Page::Video,Increase(9)));
+        Check(stereo.Get()[StereoRendering]==2&&stereo.Dirty(),"Replay is the last choice");
+        for(int i=0;i<3;++i)stereo.Click(At(Page::Video,Decrease(9)));
+        Check(stereo.Get()[StereoRendering]==0,"Both eyes is the first choice");
+        stereo.Click(At(Page::Video,ValueBox(9)));
+        Check(stereo.Get()[StereoRendering]==0,"the value box does not cycle the choices");
+        stereo.Click(At(Page::Video,Increase(9)));
+        Check(stereo.Get()[StereoRendering]==1&&!stereo.Dirty(),"the arrows step back to By turns");
+        Check(std::string(StereoRenderingNames[0])=="Both eyes"&&std::string(StereoRenderingNames[1])=="By turns"&&
+              std::string(StereoRenderingNames[2])=="Replay","stereo rendering names");
+        Check(Normalize(StereoRendering,NAN)==1&&Normalize(StereoRendering,-3)==1&&Normalize(StereoRendering,3)==1&&Normalize(StereoRendering,1.5f)==1&&
+              Normalize(StereoRendering,0)==0&&Normalize(StereoRendering,2)==2,"malformed stereo rendering goes by turns");
+    }
+    {   // The GPU wait not deferred: the Video page's button turns it on, once, in every mode
+        Model defer;defer.Open(s);defer.Click({Kind::Tab,int(Page::Video)});
+        const auto box=[&]{return At(Page::Video,VideoDeferBox);};
+        Check(DeferOffered(defer.Get())&&defer.Get()[DeferGpuWait]==0,"the deferred GPU wait is offered while it is off");
+        Check(HelpAt(Page::Video,(VideoDeferBox.x+10.f)/Width,(VideoDeferBox.y+10.f)/Height,false,&defer.Get())==DeferGpuWait,"the button has help");
+        defer.Click(box());
+        Check(defer.Get()[DeferGpuWait]==1&&defer.Dirty()&&!DeferOffered(defer.Get()),"the button turns it on; Apply saves it");
+        defer.Click(box());
+        Check(defer.Get()[DeferGpuWait]==1,"the button never turns it off");
+        for(int mode:{0,2}){
+            Model other;other.Open(s);other.Click({Kind::Tab,int(Page::Video)});
+            other.Click(At(Page::Video,mode?Increase(9):Decrease(9)));
+            Check(other.Get()[StereoRendering]==mode&&DeferOffered(other.Get()),"offered with Both eyes and Replay too");
+            other.Click(box());
+            Check(other.Get()[DeferGpuWait]==1,"the button turns it on in every mode");
+        }
+        Snapshot on=s;on.values[DeferGpuWait]=1;
+        Model deferred;deferred.Open(on);deferred.Click({Kind::Tab,int(Page::Video)});deferred.Click(box());
+        Check(!DeferOffered(deferred.Get())&&deferred.Get()[DeferGpuWait]==1&&!deferred.Dirty(),"no button and no change once deferred");
+        Check(HelpAt(Page::Video,(VideoDeferBox.x+10.f)/Width,(VideoDeferBox.y+10.f)/Height,false,&deferred.Get())==NoHelp,"no help for a hidden button");
+    }
+    {   // The game's own video options (its Settings.json): Vertical Sync off, FXAA
+        const auto code=[](const char* json){return ParseGameVideo(json).Code();};
+        Check(code("{\n    \"Anti Aliasing\": 1,\n    \"VSync\": 0\n}")==0&&!GameVideoWarning(ParseGameVideo("{\"Anti Aliasing\": 1, \"VSync\": 0}")),"FXAA without VSync is fine");
+        Check(code("{\"Anti Aliasing\": 1, \"VSync\": 1}")==1,"VSync on is warned about");
+        Check(code("{\"Anti Aliasing\": 3, \"VSync\": 0}")==2&&code("{\"Anti Aliasing\": 2}")==2&&code("{\"Anti Aliasing\":0}")==2,"every anti-aliasing but FXAA is warned about");
+        Check(code("{\"Anti Aliasing\" :\r\n 2,\"VSync\"\t: 1}")==3,"spacing around the colon");
+        Check(code("{}")==0&&code("")==0&&code("{\"VSync Mode\": 1, \"My Anti Aliasing\": 3, \"VSync\": \"x\"}")==0,"missing, other or malformed keys are not warned about");
+        Check(std::string(GameVideoWarning({true,true}))=="Game Options > Video: turn Vertical Sync off and set Anti-Aliasing to FXAA"&&
+              std::string(GameVideoWarning({true,false})).find("Vertical Sync off")!=std::string::npos&&
+              std::string(GameVideoWarning({false,true})).find("FXAA")!=std::string::npos,"each warning names the game's option");
+        const std::wstring saved=L"C:\\Users\\p\\Saved Games";
+        Check(ModSettingsFile(saved,L"C:\\steam\\steamapps\\common\\Diablo II Resurrected\\mods\\pcvr-dev\\d2rloader\\plugins\\d2rl-pcvr.dll")==
+              L"C:\\Users\\p\\Saved Games\\Diablo II Resurrected\\mods\\pcvr-dev\\Settings.json","a mod's game settings are its own");
+        Check(ModSettingsFile(saved,L"D:/Games/D2R/MODS/D2R-PCVR/D2RLoader/Plugins/d2rl-pcvr.dll")==
+              L"C:\\Users\\p\\Saved Games\\Diablo II Resurrected\\mods\\D2R-PCVR\\Settings.json","any case and slashes; the mod's name as spelled");
+        Check(ModSettingsFile(saved,L"C:\\D2R\\d2rloader\\plugins\\d2rl-pcvr.dll").empty()&&ModSettingsFile(saved,L"C:\\D2R\\mods\\x\\other\\a.dll").empty()&&
+              ModSettingsFile(L"",L"C:\\D2R\\mods\\x\\d2rloader\\plugins\\a.dll").empty(),"no mod folder: the unmodded game's file");
+    }
+    {
+        for(int id=0;id<Count;++id)if(const int n=HelpChoices(id)) {
+            Check(n==int(Definitions[id].max-Definitions[id].min)+1,"every choice of a row is explained");
+            for(int c=0;c<n;++c){const auto h=HelpChoice(id,Definitions[id].min+c);Check(h.name&&h.name[0]&&h.text&&h.text[0]&&std::string(h.text)!=HelpText(id),"each choice has a name and its own text");}
+        }
+        Check(std::string(HelpChoice(StereoRendering,1).name)=="By turns"&&std::string(HelpChoice(Foveation,2).name)=="Eye tracked"&&
+              std::string(HelpChoice(Dominant,1).name)=="Left"&&std::string(HelpChoice(RenderResolution,4).name)=="2560 x 2560","the help names the choice the row shows");
+        Check(!HelpChoice(Motion,1).name&&!HelpChoice(Snap,30).name&&!HelpChoice(HelpApply,0).name&&!HelpChoice(Foveation,NAN).name,"toggles, numbers and buttons keep their general help");
+    }
+    {
+        Model map;map.Open(s);map.Click({Kind::Tab,int(Page::HUD)});
+        const auto view=At(Page::HUD,HudMapViewBox),rotate=At(Page::HUD,HudMapRotateBox);
+        Check(view.kind==Kind::Change&&view.index==MapTopDown&&rotate.kind==Kind::Change&&rotate.index==MapRotate,"HUD map controls target separate preferences");
+        Check(s.values[MapTopDown]==0&&s.values[MapRotate]==0,"map defaults remain isometric and north-up");
+        for(const auto box:{HudMapViewBox,HudMapRotateBox}){
+            Check(box.y>TabBox(TabCount-1).y+TabBox(TabCount-1).h&&box.y+box.h<RowY-4,"map controls fit between tabs and existing HUD rows");
+            for(int page=0;page<TabCount;++page)if(Page(page)!=Page::HUD){
+                const auto hit=At(Page(page),box);
+                Check(hit.kind!=Kind::Change||(hit.index!=MapTopDown&&hit.index!=MapRotate),"other pages have no invisible map controls");
+            }
+        }
+        Check(HelpAt(Page::HUD,100.f/Width,205.f/Height)==MapTopDown&&
+              HelpAt(Page::HUD,700.f/Width,205.f/Height)==MapRotate,"map labels explain their own settings");
+        Check(HelpAt(Page::HUD,400.f/Width,205.f/Height)==MapTopDown&&
+              HelpAt(Page::HUD,1050.f/Width,205.f/Height)==MapRotate,"map values have the same help as their labels");
+        map.Click(view);map.Click(rotate);
+        Check(map.Dirty()&&map.Get()[MapTopDown]==1&&map.Get()[MapRotate]==1&&s.values[MapTopDown]==0,"map changes remain drafts");
+        map.Click({Kind::Close});map.Open(s);map.Click({Kind::Tab,int(Page::HUD)});
+        Check(!map.Dirty()&&map.Get()[MapTopDown]==0&&map.Get()[MapRotate]==0,"Close discards unapplied map changes");
+        map.Click(rotate);map.Click(view);
+        const auto request=map.Click({Kind::Apply});
+        Check(request.changed==((ChangeMask{1}<<MapTopDown)|(ChangeMask{1}<<MapRotate))&&
+              request.values[MapTopDown]==1&&request.values[MapRotate]==1,"Apply saves both map choices without changing other settings");
+        map.Click(view);Check(map.Get()[MapTopDown]==1,"map cannot change while saving");
+        auto saved=s;saved.values=request.values;saved.sequence=request.sequence;saved.result=Result::Saved;
+        map.Observe(saved);map.Close();map.Open(saved);
+        Check(!map.Dirty()&&map.Get()[MapTopDown]==1&&map.Get()[MapRotate]==1,"reopening retains saved map choices");
+    }
     {
         Check(s.values[LootLabelSize]==45,"loot labels retain original shipped size by default");
         Check(Normalize(LootLabelSize,0)==20&&Normalize(LootLabelSize,200)==150&&
@@ -152,6 +266,25 @@ int main(){
         Check(shield.Get()[ShieldGrip]==20,"grip stops at 20 cm");
         const auto request=shield.Click({Kind::Apply});
         Check(request.changed==((ChangeMask{1}<<ShieldGrip)|(ChangeMask{1}<<ShieldOut)),"shield edits change nothing else");
+    }
+    {Model aim;aim.Open(s);aim.Click({Kind::Tab,int(Page::Aim)});
+        Check(s.values[TargetHighlight]==0&&RowKey(Page::Aim,0)==TargetHighlight,"the monster outline is Off by default, first on the Aim page");
+        Check(RowCount(Page::Aim)==3&&RowKey(Page::Aim,1)==TargetOutlineColour&&RowKey(Page::Aim,2)==TargetOutlineHue,"strength, colors, then the static color");
+        Check(s.values[TargetOutlineColour]==0&&s.values[TargetOutlineHue]==45,"static gold (45 degrees) by default");
+        {Model colors;colors.Open(s);colors.Click({Kind::Tab,int(Page::Aim)});
+            colors.Click(At(Page::Aim,ValueBox(1)));Check(colors.Get()[TargetOutlineColour]==1,"selecting the colors value switches to By range");
+            colors.Click(At(Page::Aim,ValueBox(1)));Check(colors.Get()[TargetOutlineColour]==0,"and back to Static");
+            for(int i=0;i<30;++i)colors.Click(At(Page::Aim,Increase(2)));
+            Check(colors.Get()[TargetOutlineHue]==345,"the wheel ends at 345 degrees");
+            for(int i=0;i<30;++i)colors.Click(At(Page::Aim,Decrease(2)));
+            Check(colors.Get()[TargetOutlineHue]==0,"and starts at red");
+            float rgb[3];HueRgb(45,rgb);Check(rgb[0]==1&&rgb[1]==.75f&&rgb[2]==0,"45 degrees is gold");}
+        Check(HelpAt(Page::Aim,(ValueBox(0).x+5.f)/Width,(ValueBox(0).y+5.f)/Height)==TargetHighlight,"the Aim row explains the outline");
+        aim.Click(At(Page::Aim,Increase(0)));Check(aim.Get()[TargetHighlight]==10,"plus turns the outline on at 10%");
+        aim.Click(At(Page::Aim,Decrease(0)));aim.Click(At(Page::Aim,Decrease(0)));Check(aim.Get()[TargetHighlight]==0,"Off is the lower bound");
+        aim.Click(At(Page::Aim,Increase(0)));aim.Click(At(Page::Aim,Increase(0)));
+        const auto request=aim.Click({Kind::Apply});
+        Check(request.changed==(ChangeMask{1}<<TargetHighlight)&&request.values[TargetHighlight]==20,"the outline strength changes nothing else");
     }
     {Model difficulty;difficulty.Open(s);difficulty.Click({Kind::Tab,int(Page::Combat)});
         Check(s.values[OfflinePlayers]==0&&RowKey(Page::Combat,6)==OfflinePlayers,"difficulty preserves native settings by default");

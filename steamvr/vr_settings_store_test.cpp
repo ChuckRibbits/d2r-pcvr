@@ -14,6 +14,22 @@ int main(){
     Check(WritePrivateProfileStringW(L"custom",L"keep",L"12345",name),"write unrelated key");
     Check(WritePrivateProfileStringW(L"render",L"rings",L"6",name),"write existing setting");
     vrsettings::Poll(name);auto before=vrsettings::Read();
+    Check(before.values[MapTopDown]==0&&before.values[MapRotate]==0,"missing map preferences retain the existing view");
+    Check(WritePrivateProfileStringW(L"interactions",L"map_top_down",L"1",name)&&
+          WritePrivateProfileStringW(L"interactions",L"map_rotate",L"1",name),"write existing wrist-map choices");
+    vrsettings::Poll(name);
+    Check(vrsettings::Read().values[MapTopDown]==1&&vrsettings::Read().values[MapRotate]==1,"HUD uses the existing wrist-map saved keys");
+    for(int choice:{0,1}){
+        const auto current=vrsettings::Read();Model map;map.Open(current);map.Click({Kind::Tab,int(Page::HUD)});
+        auto click=[&](Rect box){return HitTest(Page::HUD,(box.x+box.w*.5f)/Width,(box.y+box.h*.5f)/Height);};
+        map.Click(click(HudMapViewBox));map.Click(click(HudMapRotateBox));
+        const auto request=map.Click({Kind::Apply});
+        Check(vrsettings::Submit(request)&&vrsettings::Poll(name),"save HUD map choices through the normal transaction");
+        const auto saved=vrsettings::Read();
+        Check(saved.values[MapTopDown]==choice&&saved.values[MapRotate]==choice&&
+              Int(path,L"interactions",L"map_top_down")==choice&&Int(path,L"interactions",L"map_rotate")==choice,"both HUD map choices survive INI reload");
+        Check(Changed(saved.values,current.values)==request.changed&&Int(path,L"custom",L"keep")==12345,"map saves preserve unrelated settings");
+    }
     Check(before.values[LootLabelSize]==45,"missing loot size uses original shipped percentage");
     Check(WritePrivateProfileStringW(L"hud",L"labels_size",L"65",name),"existing player loot size");
     vrsettings::Poll(name);
@@ -170,8 +186,8 @@ int main(){
     Check(vrsettings::Read().result==Result::Saving&&vrsettings::Poll(name),"write transaction succeeds");
     auto saved=vrsettings::Read();Check(saved.result==Result::Saved&&saved.values[Foveation]==2&&saved.values[Motion]==1,"saved values round trip");
     Check(saved.values[OrdinaryMobBars]==1&&Int(path,L"hud",L"ordinary_mob_bars")==1,"show ordinary bars round trips");
-    Check(saved.values[RenderResolution]==0,"legacy profile keeps desktop resolution until opted in");
-    for(int choice=1;choice<framevr::resolution::ChoiceCount;++choice){
+    Check(saved.values[RenderResolution]==1,"profiles without the key use the headset's own resolution");
+    for(int choice=2;choice<framevr::resolution::ChoiceCount;++choice){
         model.Open(vrsettings::Read());model.Click({Kind::Change,RenderResolution,1});request=model.Click({Kind::Apply});
         Check(vrsettings::Submit(request)&&vrsettings::Poll(name),"save render resolution");
         saved=vrsettings::Read();
@@ -220,6 +236,28 @@ int main(){
     saved=vrsettings::Read();
     Check(saved.values[ControllerLabels]==2&&Int(path,L"interactions",L"controller_labels")==2,"controller selection survives reload");
     Check(Int(path,L"render",L"fixed_foveation")==1&&Int(path,L"render",L"eye_tracked_foveation")==1,"eye-tracked mode writes both keys");
+    Check(saved.values[FoveationStrength]==1,"profiles without a saved strength show Medium");
+    for(int level:{3,0}){
+        model.Open(saved);for(int i=0;i<3;++i)model.Click({Kind::Change,FoveationStrength,level?1:-1});request=model.Click({Kind::Apply});
+        Check(vrsettings::Submit(request)&&vrsettings::Poll(name),"save foveation strength");
+        saved=vrsettings::Read();
+        Check(saved.values[FoveationStrength]==level&&Int(path,L"render",L"foveation_strength")==level&&
+              saved.values[Foveation]==2&&Int(path,L"custom",L"keep")==12345,"foveation strength survives reload without changing the mode");
+    }
+    Check(saved.values[StereoRendering]==1,"profiles without the key go by turns");
+    for(int turns:{2,0,1}){
+        model.Open(saved);
+        for(int step=int(saved.values[StereoRendering]);step!=turns;step+=turns>step?1:-1)model.Click({Kind::Change,StereoRendering,turns>step?1:-1});
+        request=model.Click({Kind::Apply});
+        Check(vrsettings::Submit(request)&&vrsettings::Poll(name),"save stereo rendering");
+        saved=vrsettings::Read();
+        Check(saved.values[StereoRendering]==turns&&Int(path,L"stereo",L"rendering")==turns,"stereo rendering survives reload");
+    }
+    Check(saved.values[DeferGpuWait]==0,"the GPU wait stays as it was until asked");
+    model.Open(saved);model.Click({Kind::Change,DeferGpuWait,1});request=model.Click({Kind::Apply});
+    Check(vrsettings::Submit(request)&&vrsettings::Poll(name),"save the deferred GPU wait");
+    saved=vrsettings::Read();
+    Check(saved.values[DeferGpuWait]==1&&Int(path,L"render",L"defer_gpu_wait")==1,"the Video page's button writes [render] defer_gpu_wait");
     Check(Int(path,L"custom",L"keep")==12345&&Int(path,L"render",L"rings")==6,"Apply preserves unrelated keys");
     Check(Int(backup,L"custom",L"keep")==12345&&Int(backup,L"gameplay",L"motion_controls")==-999,"first Apply preserves original config backup");
     model.Open(saved);model.Click({Kind::Change,SkillGestures,-1});request=model.Click({Kind::Apply});

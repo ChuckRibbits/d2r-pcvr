@@ -42,6 +42,9 @@ int main() {
     assert(near(ArFactor(95,0),.95f)&&near(ArFactor(5,0),.05f)&&near(ArFactor(50,0),.5f));
     assert(near(ArFactor(0,.25f),.25f)&&near(ArFactor(100,.25f),1)&&near(ArFactor(50,.5f),.75f));
     assert(near(ArFactor(-3,0),0)&&near(ArFactor(140,0),1)&&near(ArFactor(50,-1),.5f)&&near(ArFactor(50,2),1));
+    // Incoming defense: the raw native chance, no floor (5% chance = 5% of the hit).
+    assert(near(DefenseFactor(5),.05f)&&near(DefenseFactor(95),.95f)&&near(DefenseFactor(60),.6f));
+    assert(near(DefenseFactor(-1),0)&&near(DefenseFactor(120),1));
     // Recovery, linear (curve 1).
     assert(RecoveryFactor(UINT64_MAX,600)==1.f); // first stroke
     assert(RecoveryFactor(300,0)==1.f);          // unknown cycle never penalizes

@@ -69,6 +69,8 @@
 #include "../steamvr/native_hud.h"
 
 #include "game_hud_shared.h"
+#include "settings_menu.h"
+#include "../steamvr/vr_settings.h"
 
 #include "journal_ui.h"
 #include "../steamvr/journal.h"
@@ -436,10 +438,65 @@ void Publish(command_list* cl, resource layer, uint32_t w, uint32_t h, framevr::
     }
 }
 
+// Top-down wrist map: the map's names (NPCs, exits) are text draws, which the
+// top-down view would turn 45 degrees with the floor, so they are left out of
+// the map then. Every map draw is a 4-vertex quad; they are told apart by their
+// pixel shader, hashed when its pipeline is created (stable across runs): the
+// text uses these two, the walls and icons others.
+constexpr uint64_t kMapTextPsA = 0x17ebd88ea6190870ull, kMapTextPsB = 0x07038bc6447279eeull;
+std::atomic<bool> g_topDownNames{false};
+framevr::NativeMutex g_pipeLock;
+std::unordered_map<uint64_t, uint64_t> g_pixelShaders;   // pipeline handle -> its pixel shader's hash
+struct BoundPipeline { command_list* cl = nullptr; uint64_t pipe = 0; };
+thread_local BoundPipeline t_bound;
+
+void OnInitPipeline(device*, pipeline_layout, uint32_t count, const pipeline_subobject* subs, pipeline pl) {
+    for (uint32_t i = 0; i < count; ++i) {
+        if (subs[i].type != pipeline_subobject_type::pixel_shader || !subs[i].data) continue;
+        const auto* sd = static_cast<const shader_desc*>(subs[i].data);
+        if (!sd->code || !sd->code_size) continue;
+        uint64_t h = 1469598103934665603ull;   // FNV-1a
+        for (size_t b = 0; b < sd->code_size; ++b) { h ^= static_cast<const uint8_t*>(sd->code)[b]; h *= 1099511628211ull; }
+        std::lock_guard g(g_pipeLock);
+        g_pixelShaders[pl.handle] = h;
+        return;
+    }
+}
+void OnDestroyPipeline(device*, pipeline pl) { std::lock_guard g(g_pipeLock); g_pixelShaders.erase(pl.handle); }
+void OnBindPipeline(command_list* cl, pipeline_stage stages, pipeline pl) {
+    if (g_topDownNames.load(std::memory_order_relaxed) &&
+        ((stages & pipeline_stage::pixel_shader) != 0 || stages == pipeline_stage::all || stages == pipeline_stage::all_graphics))
+        t_bound = BoundPipeline{cl, pl.handle};
+}
+// A draw into the redirected map with a text shader, on the top-down map: skipped.
+bool SkipMapName(command_list* cl) {
+    if (!g_topDownNames.load(std::memory_order_relaxed) || t_bound.cl != cl || !g_drawingKeys.MaybeContains(ListKey(cl))) return false;
+    {
+        DrawingLock g;
+        auto it = g_drawing.find(cl);
+        if (it == g_drawing.end() || !it->second.inMap) return false;
+    }
+    uint64_t ps = 0;
+    {
+        std::lock_guard g(g_pipeLock);
+        auto it = g_pixelShaders.find(t_bound.pipe);
+        if (it == g_pixelShaders.end()) return false;
+        ps = it->second;
+    }
+    return ps == kMapTextPsA || ps == kMapTextPsB;
+}
+bool OnMapDraw(command_list* cl, uint32_t, uint32_t, uint32_t, uint32_t) { return SkipMapName(cl); }
+bool OnMapDrawIndexed(command_list* cl, uint32_t, uint32_t, uint32_t, int32_t, uint32_t) { return SkipMapName(cl); }
+
 bool OnClear(command_list* cl, resource_view rtv, const float c[4], uint32_t, const rect*) {
     device* dev = cl->get_device();
     if (!IsLayerClear(dev, rtv, c)) return false;
     g_frameMap.store(MapNow());
+    {   // the map's view, re-read now and then
+        static uint64_t readAt = 0;
+        const uint64_t now = GetTickCount64();
+        if (now - readAt > 250) { readAt = now; g_topDownNames.store(vrsettings::Read().values[framevr::settings::MapTopDown] > .5f); }
+    }
     if (g_frameMap.load() == 1) {   // the frame's interface starts: so does the map's
         const resource_desc d = framevr::resources::Describe(dev,framevr::resources::Resolve(dev,rtv));
         std::lock_guard g(g_lock);
@@ -556,6 +613,11 @@ void Register() {
     reshade::register_event<reshade::addon_event::reset_command_list>(&OnReset);
     reshade::register_event<reshade::addon_event::destroy_command_list>(&OnReset);
     reshade::register_event<reshade::addon_event::bind_scissor_rects>(&OnScissor);
+    reshade::register_event<reshade::addon_event::init_pipeline>(&OnInitPipeline);
+    reshade::register_event<reshade::addon_event::destroy_pipeline>(&OnDestroyPipeline);
+    reshade::register_event<reshade::addon_event::bind_pipeline>(&OnBindPipeline);
+    reshade::register_event<reshade::addon_event::draw>(&OnMapDraw);
+    reshade::register_event<reshade::addon_event::draw_indexed>(&OnMapDrawIndexed);
 }
 
 void UiFrame(bool active,bool workspace,int eye){

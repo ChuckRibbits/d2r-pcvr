@@ -71,9 +71,14 @@ Quest left X/Y correspond to Index left A/B; right A/B labels are the same.
 | Hold to show all nearby loot labels (Alt) | Hold **Right Grip + Right Trigger** during gameplay, grip first. Labels stay shown while both are held; release either to restore normal drop/hover labels. Uses the native Alt range, independently of where you aim. No cast or shot accompanies the combo. Also listed in **VR Settings > Controls** |
 | Interact / pick up / talk | Right A by default; requires an aimed interactable. One press acts on one target: press again for each item, including loot a chest just dropped |
 | Free melee swing / thrust | Move the equipped weapon through an enemy |
-| Break pots / barrels | Swing a held melee weapon through them with its trigger released. Either Barbarian weapon works; ordinary button interaction/kicking remains available |
+| Physical dual wield | Equip two supported melee weapons on a Barbarian or two claws on an Assassin; release both triggers and swing or thrust with either hand. Active skills retain their button bindings |
+| Break pots / barrels | Swing a held melee weapon through them with its trigger released. Either Barbarian weapon or Assassin claw works; ordinary button interaction/kicking remains available |
 | Choose melee rules / motion thresholds | **VR Settings > Combat**: Unleashed or Classic, Melee hit speed, and Melee thrust speed |
 | Seat a held shield on your arm | **VR Settings > Shield**: Grip offset slides the shield up the forearm so your fingers reach its grip strap ; Out and Up move it away from and across the forearm. In centimeters, by default 3 / 2 / 2 (tuned on a buckler; all 0 restores the original position); the shield still turns with your wrist |
+| Bone Spear | Assign either hand's trigger or shortcut; aim with that controller and hold to repeat while moving. **Projectile aim assist** under Controls applies to Bone Spear too; Strong adds gentle homing |
+| Bone Wall / Bone Prison | Aim down at the desired ground location and cast. Level/upward aim places bones six cells ahead; native placement rules still apply |
+| Holy Bolt | Aim with either casting controller, including up/down with Planar spell aiming Off. Light assists at launch; Strong also adds gentle homing toward undead/demons. Directly aim at your mercenary to heal; native damage/healing rules apply |
+| See which monster you are aiming at | **VR Settings > Aim > Monster outline** (Off by default; 10-100% sets its brightness) draws a thin, steady outline round it, in one static color (**Static color**, any hue; gold by default) or, with **Monster outline colors: By range**, red near, orange mid-range, yellow far. With your arm held out, the monster your hand points at is chosen; otherwise the one you look at. Walls in between rule a monster out. A guide only: it does not change how attacks or spells aim |
 | Increase offline difficulty | **VR Settings > Combat > Offline difficulty**: Game default or Players 1-8; higher counts make monsters tougher and increase rewards |
 | Bow draw | Right trigger near the left-hand bow string; draw and release |
 | Fire a crossbow | Equip bolts and assign **Attack** to Right Trigger; aim and fire while moving. Release Right Grip so the loot-label combo does not consume the trigger |
@@ -127,6 +132,12 @@ defense scales the damage (the game's own hit chance, 5-95%), and so does your
 rhythm: a stroke before your attack speed has recovered hits much weaker, so
 measured swings beat flailing. Faster attack speed (IAS) shortens the wait.
 One stroke can hit several monsters, each further one a little weaker.
+
+**Unleashed incoming damage:** monsters' attacks and projectiles always reach
+you; your shield is what stops them. Your Defense decides how hard they land:
+the chance a monster would have had to hit you (5-95%) scales the whole
+attack, elemental damage included. Spells never roll to hit, so Defense
+doesn't reduce them; resistances still matter.
 
 ### Shield: block, parry and strain (Unleashed)
 
@@ -382,3 +393,14 @@ ran out, or tracking was lost, the use is discarded rather than retried.
 
 The minimap has a narrow bronze bevel and inset corner details. The full native
 map is fitted inside the frame so edge markers remain visible.
+
+A gold arrow sits on the game's blue hero marker and points the way you face.
+Change its view under **VR Settings > HUD**, then press **Apply**:
+
+- **Map view: Isometric / Top-down.** Top-down flattens the game's slanted map into
+  a plan, so rooms are square and the arrow matches your real turns. Map names
+  are left out in top-down, since they would turn 45 degrees with the floor.
+- **Rotate map: Off / On** (top-down only). On turns the map so the way you face
+  is up; Off keeps north up.
+
+Both are saved like any setting. Isometric with north up is the default.

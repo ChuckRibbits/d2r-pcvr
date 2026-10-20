@@ -13,6 +13,24 @@ Candidate Enemy(const Shot& s,uint32_t id,float yaw,float distance=6,float radiu
     return Evaluate(s,id,c-Vec{0,.4f,0},c+Vec{0,.4f,0},radius);
 }
 int main() {
+    for(int skill:{84,101})for(int mode:{0,1,2}) {
+        auto spear=ShotAt(mode,false);spear.skill=skill;
+        const auto target=Enemy(spear,42,3);
+        assert(target.valid==(mode!=0));
+        Homing guide;const Vec center=spear.origin+Vec{.3f,0,6};
+        guide.Arm(spear,target,1,center);
+        assert(guide.active==(mode==2));
+        if(mode==2){
+            Flight flight;flight.shot=spear;Vec direction{};
+            const Vec moved=center+Vec{.05f,0,0};
+            assert(guide.Step(flight,moved-Vec{0,.4f,0},moved+Vec{0,.4f,0},.2f,true,.04f,direction));
+            flight.Redirect(direction);assert(flight.redirected&&flight.Direction().x>0);
+            // A pierced target cannot be hit again; the existing loss path
+            // must end steering rather than turning the spear back to it.
+            assert(flight.Remember(42)&&flight.Seen(42));
+            assert(!guide.Step(flight,moved-Vec{0,.4f,0},moved+Vec{0,.4f,0},.2f,false,.04f,direction)&&!guide.active);
+        }
+    }
     auto s=ShotAt();
     assert(!Enemy(ShotAt(0),1,0).valid&&!Enemy(ShotAt(3),1,0).valid);
     assert(Enemy(s,1,0).direct&&Enemy(s,1,3).valid&&!Enemy(s,1,8).valid);

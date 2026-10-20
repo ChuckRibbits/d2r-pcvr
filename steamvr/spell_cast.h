@@ -36,20 +36,24 @@ public:
     }
 };
 inline bool NativePath(int id) {return id==38;} // Charged Bolt keeps its native wandering path and grid hits.
-inline bool Supported(int id) {return id==36||id==38||id==39||id==45||id==47;}
+inline bool Supported(int id) {return id==36||id==38||id==39||id==45||id==47||id==84||id==101;}
 inline unsigned LaunchCapacity(int id) {return NativePath(id)?24:1;}
 inline bool Candidate(unsigned character,int id,int start,int action,int missile,unsigned flags,int secondary=-1) {
-    if(character!=1||!Supported(id)||start!=0||(flags&3u))return false;
+    if(!Supported(id)||(id==84?character!=2:id==101?character!=3:character!=1)||start!=0||(flags&3u))return false;
+    if(id==84)return action==0&&missile==192;
+    if(id==101)return action==0&&missile==55;
     if(NativePath(id))return action==17&&missile==-1&&secondary==56;
     return action==0&&missile>1&&missile<4096;
 }
-// Ordinary Sorceress cast animation: 14 frames, 256 base animation speed,
+// Owned AnimData: Sorceress SC has 14 frames, Necromancer/Paladin SC have 16,
+// both at 256 base animation speed. Preserve class timing when adding spells.
 // diminishing returns capped at 75 effective FCR, minus the terminal frame.
-inline unsigned CastFrames(int fcr) {
+inline unsigned CastFrames(int fcr,unsigned character=1) {
     fcr=std::clamp(fcr,0,100000);
     const int effective=std::min(75,120*fcr/(120+fcr));
     const int speed=256*(100+effective)/100;
-    return unsigned((14*256+speed-1)/speed-1);
+    const int frames=character==2||character==3?16:14;
+    return unsigned((frames*256+speed-1)/speed-1);
 }
 class Cadence {
     uint64_t session=0;
