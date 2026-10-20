@@ -21,7 +21,9 @@ void ConfigureTurnsFromDrawnEye(bool enabled);
 // [stereo] turns_keep_own (1): the eye not drawn keeps its own older
 // picture where that shows the same surface as the drawn eye's, so glows and
 // hair stand where this eye sees them (TurnDepth::keep) - 1 round near things
-// only (TurnDepth::keepNear), 2 everywhere; 0: the drawn eye's picture
+// only (TurnDepth::keepNear), 2 everywhere, 3 where the game's effects
+// layer has something (TurnDepth::keepEffects), 4 both near things and
+// effects; 0: the drawn eye's picture
 // wherever it reaches. Applied when the ini's value changes; DEV > Equipment
 // switches it for the session (Set), and reads it back.
 void ConfigureTurnsKeepOwn(int mode);
@@ -31,6 +33,11 @@ int TurnsKeepOwn();
 // pixels: near things are nearer than what is round them by more than the
 // gap in parallax; their own picture is kept within the reach of them.
 void ConfigureTurnsKeepNear(float gap,float reach);
+// [stereo] turns_effects_level (0.02), turns_effects_reach (32, a 4096-wide
+// eye's pixels): with turns_keep_own 3 or 4, the eye's own picture is kept
+// where the game's effects layer has this much (its strongest channel)
+// within the reach.
+void ConfigureTurnsKeepEffects(float level,float reach);
 void ConfigureEyeTracking(bool enabled);
 void ConfigureGameplay(bool enabled);
 void ConfigureQuiver(bool enabled,bool preview); // [bow] quiver, quiver_preview

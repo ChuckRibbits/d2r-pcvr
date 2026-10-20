@@ -273,7 +273,8 @@ std::vector<uint8_t> Paint(const Snapshot& s,const Output& o,int selection,const
             frame({x,y,right,bottom},available&&o.hover==DeveloperCell(i));
             SetTextColor(dc,available?RGB(235,218,181):RGB(148,137,117));
             const char* title=i==dev::DebugDrawsChoice?(s.devDebugDraws?"Render debug draws: ON":"Render debug draws: OFF"):
-                              i==dev::TurnsKeepOwnChoice?(s.devTurnsKeepOwn==1?"By turns own picture: NEAR":s.devTurnsKeepOwn==2?"By turns own picture: ALL":"By turns own picture: OFF"):choice.name;
+                              i==dev::TurnsKeepOwnChoice?(s.devTurnsKeepOwn==1?"By turns own picture: NEAR":s.devTurnsKeepOwn==2?"By turns own picture: ALL":
+                                                          s.devTurnsKeepOwn==3?"By turns own picture: FX":s.devTurnsKeepOwn==4?"By turns own picture: NEAR+FX":"By turns own picture: OFF"):choice.name;
             text(title,{x+8,y+4,right-8,y+29});
             SelectObject(dc,shortcutFont);text(choice.detail,{x+8,y+29,right-8,bottom-4});SelectObject(dc,font);
         }
@@ -281,6 +282,8 @@ std::vector<uint8_t> Paint(const Snapshot& s,const Output& o,int selection,const
         text(o.result==Result::Pending?"Working...":o.result==Result::DebugUpdated?(s.devDebugDraws?"Cyan: measured / Amber: fallback. Hit flash: green block, red rejected, pink native skip.":"Debug draws OFF. Blocking behavior is unchanged."):
              o.result==Result::TurnsUpdated?(s.devTurnsKeepOwn==1?"By turns: the eye not drawn keeps its own picture round near things only.":
                                          s.devTurnsKeepOwn==2?"By turns: the eye not drawn keeps its own picture wherever both show the same surface.":
+                                         s.devTurnsKeepOwn==3?"By turns: the eye not drawn keeps its own picture where the game's effects are (spells, flames, wings).":
+                                         s.devTurnsKeepOwn==4?"By turns: the eye not drawn keeps its own picture round near things and where the game's effects are.":
                                          "By turns: the eye not drawn takes the drawn eye's picture wherever it reaches."):
              o.result==Result::Applied?"Kit added to inventory. Equip it using the native inventory screen.":
              o.result==Result::Dispatched?"Commands sent. Check character stats / destination in game.":

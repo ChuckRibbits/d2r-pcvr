@@ -92,14 +92,16 @@ void __cdecl Commands(const PluginContext*,void* token) noexcept {
     }
     // By turns A/B for the session; the ini's value applies again only when it changes.
     if(r.index==framevr::dev::TurnsKeepOwnChoice) {
-        int mode;   // off, near things only, everywhere, and round
+        int mode;   // off, near things only, everywhere, the game's effects, near things and effects, and round
         {
             std::lock_guard lock(mutex);if(claim!=ticket)return;
-            mode=(framevr::TurnsKeepOwn()+1)%3;
+            mode=(framevr::TurnsKeepOwn()+1)%5;
         }
         framevr::SetTurnsKeepOwn(mode);
         framevr::logging::Write(mode==1?"Frame development: by turns keeps the eye's own picture round near things only":
                                 mode==2?"Frame development: by turns keeps the eye's own picture wherever both show the same surface":
+                                mode==3?"Frame development: by turns keeps the eye's own picture where the game's effects are":
+                                mode==4?"Frame development: by turns keeps the eye's own picture round near things and where the game's effects are":
                                 "Frame development: by turns takes the drawn eye's picture wherever it reaches");
         Finish(r,Result::TurnsUpdated,claim);return;
     }

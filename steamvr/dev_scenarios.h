@@ -66,7 +66,7 @@ inline constexpr std::array<Choice,38> Choices{{
     {"Render debug draws", "Toggle shield block outline and hit feedback", nullptr},
     {"Kurast Sewers", "Level 1 / take stairs back out to inspect entrances", "goto 92"},
     {"Upper Kurast", "Act III / second sewer-entrance region", "goto 81"},
-    {"By turns own picture", "Eye not drawn: off / near things / all", nullptr},
+    {"By turns own picture", "Eye not drawn: off / near / all / FX / near+FX", nullptr},
 }};
 // Stable action IDs are independent of their presentation order.
 inline constexpr int PageCount=5;

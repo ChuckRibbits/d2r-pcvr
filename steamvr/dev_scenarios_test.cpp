@@ -258,9 +258,9 @@ int main(){
     devscenarios::Request(Make(DebugDrawsChoice));++local;Run(tasks.size()-1);--local;
     assert(!devscenarios::DebugDraws()&&devscenarios::Status().result==Result::Refused);
     // The By turns switch steps the transport's [stereo] turns_keep_own for
-    // the session (near things, everywhere, off, round), also with no
+    // the session (near things, everywhere, effects, near things and effects, off, round), also with no
     // console/item operations; a stale one does not.
-    for(int expected:{2,0,1}) {
+    for(int expected:{2,3,4,0,1}) {
         devscenarios::Request(Make(TurnsKeepOwnChoice));assert(!tasks.back().game);Run(tasks.size()-1);
         assert(devscenarios::Status().result==Result::TurnsUpdated&&keepOwn==expected);
         Snapshot snapshot;devscenarios::Capture(snapshot);assert(snapshot.devTurnsKeepOwn==expected);

@@ -111,6 +111,15 @@ struct TurnDepth {
     // eye sees it: the hands, the weapon, a monster close by, where a ghost
     // is wide enough to see. 0: everywhere.
     float keepNear=0,keepReach=0;
+    // Spells, flames and Tyrael's wings are the game's effects layer, with no
+    // depth of their own either: moved across with the depth behind them they
+    // stood where the drawn eye saw them and the scene showed through them,
+    // right only within the near things' reach round the sword (owner,
+    // 2026-10-20). With keepEffects, where the layer (TurnWarp::Effects) has
+    // anything from this level up - as the drawn eye drew it, round where its
+    // picture comes from, or as this eye did, round here - this eye's own
+    // picture stays as well. 0: off; with keepNear neither off, either keeps.
+    float keepEffects=0;
 };
 inline constexpr float TurnEdgePixels=2;
 // The grid's spacing in target pixels: an edge in depth stays within a few.
@@ -141,6 +150,13 @@ class TurnWarp {
     Microsoft::WRL::ComPtr<ID3D12PipelineState> reducePipeline,spreadPipeline;
     Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> nearTargets;
     std::array<Microsoft::WRL::ComPtr<ID3D12Resource>,3> nears;
+    // TurnDepth::keepEffects: the strongest of each eye's effects layer within
+    // reach of each block, as that eye was last drawn (Effects), then two
+    // between (R32_FLOAT, TurnNearBlock pixels a texel).
+    Microsoft::WRL::ComPtr<ID3D12PipelineState> effectsPipeline;
+    Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> effectsTargets;
+    std::array<Microsoft::WRL::ComPtr<ID3D12Resource>,4> effects;
+    std::array<bool,2> effectsKept{};
     DXGI_FORMAT format=DXGI_FORMAT_UNKNOWN;
 public:
     // format: the eye swapchain's typed format, of the source and the target alike.
@@ -148,6 +164,12 @@ public:
     bool Ready() const {return pipeline!=nullptr;}
     bool DepthReady() const {return depthPipeline!=nullptr;}
     bool NearReady() const {return spreadPipeline!=nullptr;}
+    bool EffectsReady() const {return effectsPipeline!=nullptr&&spreadPipeline!=nullptr;}
+    // The game's effects layer as the eye `slot` was drawn this frame: its two
+    // targets, in `states` and left so, into that eye's blocks, each the
+    // strongest of the layer within `reach` of its pixels (TurnDepth::keepEffects).
+    bool Effects(ID3D12Device*,ID3D12GraphicsCommandList*,ID3D12Resource* const layer[2],const D3D12_RESOURCE_STATES states[2],int slot,float reach);
+    void ForgetEffects(int slot){if(slot==0||slot==1)effectsKept[slot]=false;}
     // Render will take these: checked before a swapchain image is acquired for it.
     bool Fits(ID3D12Resource* source,ID3D12Resource* target) const;
     // source in PIXEL_SHADER_RESOURCE, target in RENDER_TARGET. slot 0 or 1, one
