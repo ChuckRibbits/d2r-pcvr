@@ -146,13 +146,20 @@ headset frame are drawn:
   moved across with its own depth: monsters and missiles stand where the
   drawn eye shows them instead of a game frame back. Only what the drawn eye
   could not see (beside the edges of near things, past the outer edge of its
-  view) keeps the other eye's own older image, and transparent effects and
-  the game's labels, without depth of their own, look as deep as what is
-  behind them. `[stereo] turns_from_drawn_eye=0` (live) keeps the other
-  eye's own image alone. The belt's potion models, drawn by the mod over the
-  game's picture, are drawn fresh in that eye at its own pose. Edges where something near uncovers what is behind it
-  stretch for that frame; transparent effects and the game's labels move as
-  the scene behind them. Within arm's reach (nearer than 1.0 m along the
+  view) keeps the other eye's own older image, and transparent effects,
+  without depth of their own, look as deep as what is behind them.
+  `[stereo] turns_from_drawn_eye=0` (live) keeps the other eye's own image
+  alone. The belt's potion models, drawn by the mod over the game's picture,
+  are drawn fresh in that eye at its own pose. The game's interface (labels
+  and health bars over monsters, names, chat) is taken out of each eye's
+  picture before it is kept and laid back over it as the game lays it; the
+  eye not drawn gets its own interface from its last pass, turned to the
+  current head, so each label stays at its own depth instead of moving with
+  the scene behind it (moved with it, nameplates were cut along the
+  monster's edge and flickered). A label over a monster that moves, or
+  while the hero runs, is a pass old in that eye. Edges where something
+  near uncovers what is behind it stretch for that frame; transparent
+  effects move as the scene behind them. Within arm's reach (nearer than 1.0 m along the
   view, blended out by 1.6 m) points move with the hero instead of the world:
   the hands, the weapon and the body stay with the eye while running, where
   moved as the world they trailed a frame behind and smeared; a monster that

@@ -62,6 +62,7 @@
 #include "menu_controls.h"
 #include "ui_blit.h"
 #include "turn_warp.h"
+#include "dxgi_views.h"
 #include "scene_depth.h"
 #include "ui_world.h"
 #include "../vr/interactionstate.h"
@@ -489,6 +490,14 @@ TurnWarp turnWarp;
 bool keepDepth=false;
 struct KeptDepth {ComPtr<ID3D12Resource> texture;DXGI_FORMAT format=DXGI_FORMAT_UNKNOWN;float scale[2]{1,1};bool ok=false;};
 std::array<KeptDepth,2> turnDepths;
+// By turns: each eye's interface as its pass drew it (hud::TakenInterface),
+// laid back over its picture by Copy and, turned to this frame's head, over
+// the eye not drawn by TurnEye: into turnTarget (typeless, so the interface
+// goes over it UNORM as the game blends it), then to its swapchain image.
+std::array<ComPtr<ID3D12Resource>,2> turnLayers;
+std::array<bool,2> layerKept{};
+ComPtr<ID3D12Resource> turnTarget;
+bool layersFailed=false;
 TurnCounts turnCounts;
 std::atomic<bool> uiSupported{false};
 bool journalMode=false,spatialMode=false,workspacePlaced=false,opaqueMenuMode=false,upperBandMenuMode=false;
@@ -2356,7 +2365,7 @@ bool WaitGpuValue(uint64_t value) {
     if(result!=WAIT_OBJECT_0) {Say("Frame D3D12: GPU copy fence timed out");return false;}
     return true;
 }
-bool KeepTurn(ID3D12GraphicsCommandList* list,ID3D12Resource* shown,int eye) {
+bool KeepTurn(ID3D12GraphicsCommandList* list,ID3D12Resource* shown,int eye,D3D12_RESOURCE_STATES state=D3D12_RESOURCE_STATE_RENDER_TARGET) {
     if(turnImagesFailed)return false;
     if(!turnWarpTried){turnWarpTried=true;turnWarp.Initialize(device.Get(),turnFormat,&Say);}
     // The eyes' size is the session's: a new size comes with a new session.
@@ -2370,11 +2379,12 @@ bool KeepTurn(ID3D12GraphicsCommandList* list,ID3D12Resource* shown,int eye) {
     }
     D3D12_RESOURCE_BARRIER b[2]{};
     for(auto& x:b){x.Type=D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;x.Transition.Subresource=D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;}
-    b[0].Transition.pResource=shown;b[0].Transition.StateBefore=D3D12_RESOURCE_STATE_RENDER_TARGET;b[0].Transition.StateAfter=D3D12_RESOURCE_STATE_COPY_SOURCE;
+    b[0].Transition.pResource=shown;b[0].Transition.StateBefore=state;b[0].Transition.StateAfter=D3D12_RESOURCE_STATE_COPY_SOURCE;
     b[1].Transition.pResource=kept.Get();b[1].Transition.StateBefore=D3D12_RESOURCE_STATE_COMMON;b[1].Transition.StateAfter=D3D12_RESOURCE_STATE_COPY_DEST;
-    list->ResourceBarrier(2,b);list->CopyResource(kept.Get(),shown);
+    const UINT first=state==D3D12_RESOURCE_STATE_COPY_SOURCE?1:0;   // already readable
+    list->ResourceBarrier(2-first,b+first);list->CopyResource(kept.Get(),shown);
     for(auto& x:b)std::swap(x.Transition.StateBefore,x.Transition.StateAfter);
-    list->ResourceBarrier(2,b);
+    list->ResourceBarrier(2-first,b+first);
     return true;
 }
 // By turns: this present's scene depth (scenedepth's copy, made for it before
@@ -2409,6 +2419,57 @@ bool KeepDepth(ID3D12GraphicsCommandList* list,int eye) {
     for(auto& x:b)std::swap(x.Transition.StateBefore,x.Transition.StateAfter);
     list->ResourceBarrier(2,b);
     kept.format=DXGI_FORMAT(latest.format);kept.scale[0]=latest.scale[0];kept.scale[1]=latest.scale[1];
+    return true;
+}
+// By turns: this eye's interface (hud's copy, in a shader-resource state) kept
+// beside its image, for TurnEye to lay over the eye when it is not drawn.
+bool KeepLayer(ID3D12GraphicsCommandList* list,ID3D12Resource* layer,int eye) {
+    auto& kept=turnLayers[eye];
+    const auto desc=layer->GetDesc();
+    if(kept) {   // the game's interface took a new size: the last turn may still read the old one
+        const auto k=kept->GetDesc();
+        if(k.Width!=desc.Width||k.Height!=desc.Height||k.Format!=desc.Format){if(!WaitGpu())return false;kept.Reset();}
+    }
+    if(!kept) {
+        D3D12_HEAP_PROPERTIES heap{};heap.Type=D3D12_HEAP_TYPE_DEFAULT;
+        auto r=desc;r.Alignment=0;r.Flags=D3D12_RESOURCE_FLAG_NONE;
+        if(!Hr(device->CreateCommittedResource(&heap,D3D12_HEAP_FLAG_NONE,&r,D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE,nullptr,IID_PPV_ARGS(&kept)),"create kept eye interface"))return false;
+        char line[160];std::snprintf(line,sizeof line,"Frame OpenXR: by turns - the game's interface taken out of each eye's picture and laid back over it (%llux%u)",
+            (unsigned long long)desc.Width,desc.Height);Say(line);
+    }
+    constexpr auto readable=D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE|D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE;
+    D3D12_RESOURCE_BARRIER b[2]{};
+    for(auto& x:b){x.Type=D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;x.Transition.Subresource=D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;}
+    b[0].Transition.pResource=layer;b[0].Transition.StateBefore=readable;b[0].Transition.StateAfter=D3D12_RESOURCE_STATE_COPY_SOURCE;
+    b[1].Transition.pResource=kept.Get();b[1].Transition.StateBefore=D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;b[1].Transition.StateAfter=D3D12_RESOURCE_STATE_COPY_DEST;
+    list->ResourceBarrier(2,b);list->CopyResource(kept.Get(),layer);
+    for(auto& x:b)std::swap(x.Transition.StateBefore,x.Transition.StateAfter);
+    list->ResourceBarrier(2,b);
+    return true;
+}
+// The interface over target (in `state`, and left in it): TurnWarp::Interface.
+bool LayInterface(ID3D12GraphicsCommandList* list,ID3D12Resource* layer,ID3D12Resource* target,const std::array<float,9>& homography,int at,D3D12_RESOURCE_STATES state) {
+    D3D12_RESOURCE_BARRIER b{};b.Type=D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+    b.Transition={target,D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES,state,D3D12_RESOURCE_STATE_RENDER_TARGET};
+    const bool moved=state!=D3D12_RESOURCE_STATE_RENDER_TARGET;
+    if(moved)list->ResourceBarrier(1,&b);
+    const bool laid=turnWarp.Interface(device.Get(),list,layer,target,homography,at);
+    std::swap(b.Transition.StateBefore,b.Transition.StateAfter);
+    if(moved)list->ResourceBarrier(1,&b);
+    return laid;
+}
+// The eye not drawn is turned here when its interface goes over it (TurnEye).
+bool TurnTarget(ID3D12Resource* image) {
+    const auto d=image->GetDesc();
+    if(turnTarget){const auto t=turnTarget->GetDesc();return t.Width==d.Width&&t.Height==d.Height;}   // one size a session
+    D3D12_HEAP_PROPERTIES heap{};heap.Type=D3D12_HEAP_TYPE_DEFAULT;
+    auto r=d;r.Alignment=0;r.Format=TypelessFamily(turnFormat);r.Flags=D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET;
+    if(r.Format==DXGI_FORMAT_UNKNOWN||
+       !Hr(device->CreateCommittedResource(&heap,D3D12_HEAP_FLAG_NONE,&r,D3D12_RESOURCE_STATE_RENDER_TARGET,nullptr,IID_PPV_ARGS(&turnTarget)),"create turned eye target")) {
+        turnTarget.Reset();layersFailed=true;layerKept={};
+        Say("Frame OpenXR: by turns - no target to lay the interface over the eye not drawn; it stays in the picture");
+        return false;
+    }
     return true;
 }
 // The eye not drawn this frame, turned from its kept image to this frame's
@@ -2469,14 +2530,32 @@ bool TurnEye(int i) {
     for(UINT k=0;k<kept;++k){b[k].Type=D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
         b[k].Transition={turnImages[i^k].Get(),D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES,D3D12_RESOURCE_STATE_COMMON,D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE};}
     e.commands->ResourceBarrier(kept,b);
-    const bool turned=turnWarp.Render(device.Get(),e.commands.Get(),turnImages[i].Get(),e.images[e.index].texture,h,i,moving,fromDrawn);
+    // With its interface kept (the game's labels, out of its picture) the eye
+    // is turned into turnTarget, its interface laid over it there as the game
+    // blends it (UNORM), and then it goes to its swapchain image.
+    ID3D12Resource* image=e.images[e.index].texture;
+    const bool layered=layerKept[i]&&TurnTarget(image);
+    const bool turned=turnWarp.Render(device.Get(),e.commands.Get(),turnImages[i].Get(),layered?turnTarget.Get():image,h,i,moving,fromDrawn);
     for(UINT k=0;k<kept;++k)std::swap(b[k].Transition.StateBefore,b[k].Transition.StateAfter);
     e.commands->ResourceBarrier(kept,b);
+    if(turned&&layered) {
+        // Its own interface as its pass drew it, turned as its picture was:
+        // each label where this eye last saw it, at its own depth, never moved
+        // with the scene behind it or cut along a monster's edge.
+        LayInterface(e.commands.Get(),turnLayers[i].Get(),turnTarget.Get(),h,i*2,D3D12_RESOURCE_STATE_RENDER_TARGET);
+        D3D12_RESOURCE_BARRIER c[2]{};
+        for(auto& x:c){x.Type=D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;x.Transition.Subresource=D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;}
+        c[0].Transition.pResource=turnTarget.Get();c[0].Transition.StateBefore=D3D12_RESOURCE_STATE_RENDER_TARGET;c[0].Transition.StateAfter=D3D12_RESOURCE_STATE_COPY_SOURCE;
+        c[1].Transition.pResource=image;c[1].Transition.StateBefore=D3D12_RESOURCE_STATE_RENDER_TARGET;c[1].Transition.StateAfter=D3D12_RESOURCE_STATE_COPY_DEST;
+        e.commands->ResourceBarrier(2,c);e.commands->CopyResource(image,turnTarget.Get());
+        for(auto& x:c)std::swap(x.Transition.StateBefore,x.Transition.StateAfter);
+        e.commands->ResourceBarrier(2,c);
+    }
     // The belt's potion models, left out of the kept images (Copy), drawn fresh
     // at this eye's pose: moved with the depth behind them they flickered and
     // smeared (owner, 2026-10-19). The eye's copy fence was waited above.
     if(turned&&interactionInput.active&&potionModels.Ready())
-        potionModels.Render(e.commands.Get(),e.images[e.index].texture,unsigned(i),{V(now.pose.position),Q(now.pose.orientation)},
+        potionModels.Render(e.commands.Get(),image,unsigned(i),{V(now.pose.position),Q(now.pose.orientation)},
             {now.fov.angleLeft,now.fov.angleRight,now.fov.angleDown,now.fov.angleUp},potionScene);
     if(!Hr(e.commands->Close(),"close turn list")||!turned){failed=true;return false;}
     ID3D12CommandList* lists[]={e.commands.Get()};queue->ExecuteCommandLists(1,lists);
@@ -2506,7 +2585,23 @@ bool Copy(ID3D12Resource* src,Eye& e,reshade::api::command_queue* rq) {
     barriers[0].Transition.pResource=src;barriers[0].Transition.StateBefore=D3D12_RESOURCE_STATE_PRESENT;barriers[0].Transition.StateAfter=D3D12_RESOURCE_STATE_COPY_SOURCE;
     barriers[1].Transition.pResource=dest;barriers[1].Transition.StateBefore=D3D12_RESOURCE_STATE_RENDER_TARGET;barriers[1].Transition.StateAfter=D3D12_RESOURCE_STATE_COPY_DEST;
     if(gpu)e.commands->EndQuery(gpuProfile.heap.Get(),D3D12_QUERY_TYPE_TIMESTAMP,eye*5+3);
-    e.commands->ResourceBarrier(2,barriers);e.commands->CopyResource(dest,src);
+    e.commands->ResourceBarrier(2,barriers);
+    // Kept before the game's interface and the belt's potion models go over
+    // the picture: neither is in the scene's depth, so by turns the eye not
+    // drawn lays its own over (TurnEye) instead of moving these with the
+    // depth behind them.
+    turnKept[eye]=keepTurns&&KeepTurn(e.commands.Get(),src,int(eye),D3D12_RESOURCE_STATE_COPY_SOURCE);
+    turnDepths[eye].ok=keepDepth&&turnKept[eye]&&KeepDepth(e.commands.Get(),int(eye));
+    // By turns the game's interface was taken out of its picture: laid back as
+    // the game lays it, before the headset and the window get the picture.
+    uint32_t layerWidth=0,layerHeight=0;
+    auto* layer=reinterpret_cast<ID3D12Resource*>(hud::TakenInterface(layerWidth,layerHeight));
+    layerKept[eye]=layer&&turnKept[eye]&&KeepLayer(e.commands.Get(),layer,int(eye));
+    if(layer&&!LayInterface(e.commands.Get(),layerKept[eye]?turnLayers[eye].Get():layer,src,TurnIdentity,int(eye)*2,D3D12_RESOURCE_STATE_COPY_SOURCE)) {
+        layersFailed=true;layerKept={};
+        Say("Frame OpenXR: by turns - the game's interface could not be laid back; from the next frame it stays in the picture");
+    }
+    e.commands->CopyResource(dest,src);
     const bool pairLeft=!turnFrame&&mirrorSupported&&eyes[0].acquired&&eyes[0].copied;
     if(eye==1&&mirrorMono&&(pairLeft||(turnFrame&&turnKept[0]))) {
         // The headset already has this right frame; the window gets the left
@@ -2518,15 +2613,12 @@ bool Copy(ID3D12Resource* src,Eye& e,reshade::api::command_queue* rq) {
         if(!pairLeft)m[1].Transition.StateBefore=D3D12_RESOURCE_STATE_COMMON;
         e.commands->ResourceBarrier(2,m);e.commands->CopyResource(src,m[1].Transition.pResource);
         std::swap(m[1].Transition.StateBefore,m[1].Transition.StateAfter);e.commands->ResourceBarrier(1,&m[1]);
+        // By turns the kept left image is the scene alone: its interface over it.
+        if(!pairLeft&&layerKept[0])LayInterface(e.commands.Get(),turnLayers[0].Get(),src,TurnIdentity,3,D3D12_RESOURCE_STATE_COPY_DEST);
         barriers[0].Transition.StateAfter=D3D12_RESOURCE_STATE_COPY_DEST;
     }
     for(auto& b:barriers)std::swap(b.Transition.StateBefore,b.Transition.StateAfter);
     e.commands->ResourceBarrier(2,barriers);
-    // Kept before the belt's potion models go over the picture: they are not
-    // in the scene's depth, so by turns the eye not drawn draws its own
-    // (TurnEye) instead of moving these with the depth behind them.
-    turnKept[eye]=keepTurns&&KeepTurn(e.commands.Get(),dest,int(eye));
-    turnDepths[eye].ok=keepDepth&&turnKept[eye]&&KeepDepth(e.commands.Get(),int(eye));
     if(!panelMode&&interactionInput.active&&potionModels.Ready()) {
         const auto& v=views[eye];
         potionModels.Render(e.commands.Get(),dest,eye,{V(v.pose.position),Q(v.pose.orientation)},
@@ -2724,6 +2816,9 @@ void ConfigureEyeTracking(bool on) {eyeTracking.store(on);}
 void BeginEye(int eye) {
     hud::UiFrame(spatialMode,!journalMode,eye);
     std::lock_guard lock(mutex);
+    // By turns the game's interface comes out of the picture: Copy and TurnEye lay it back.
+    hud::TakeInterface(Active()&&keepDepth&&!layersFailed&&turnWarp.InterfaceReady()&&
+        RenderTargetCompatible(format,UnormView(turnFormat))&&TypelessFamily(turnFormat)!=DXGI_FORMAT_UNKNOWN);
     hud::NativeGameplay(nativehud::Gameplay(Active(),inWorld&&inWorld(),wantsPanel&&wantsPanel(),spatialMode));
     lightbounds::SetActive(Active()&&inWorld&&inWorld());
     d2rcam::SetStereoUiEye(Active()?(eye&1):-1);
@@ -2809,6 +2904,7 @@ void BeginPair(bool byTurns,bool replay) {
 }
 void EndPair() {
     hud::EndNativeEye();
+    hud::TakeInterface(false);
     lightbounds::SetActive(false);
     foveation::EndWorld();
     d2rcam::SetStereoUiEye(-1);
@@ -3543,6 +3639,7 @@ void Shutdown(bool preserveResolution) {
     for(auto& e:eyes){if(e.chain&&pDestroySwapchain)pDestroySwapchain(e.chain);e={};}
     mirrorSupported=mirrorMono=false;
     turnFrame=keepTurns=keepDepth=false;lastEyes={};viewBase={{{0,0,0,1},{0,0,0,1}}};viewWorld={};turnDepths={};turnCounts={};turnImages={};turnKept={};turnImagesFailed=turnWarpTried=false;turnWarp={};
+    turnLayers={};layerKept={};turnTarget.Reset();layersFailed=false;
     for(auto& s:handSpaces){if(s&&pDestroySpace)pDestroySpace(s);s=XR_NULL_HANDLE;}
     if(headSpace&&pDestroySpace)pDestroySpace(headSpace);if(space&&pDestroySpace)pDestroySpace(space);
     if(session&&pDestroySession)pDestroySession(session);if(actionSet&&pDestroyActionSet)pDestroyActionSet(actionSet);
