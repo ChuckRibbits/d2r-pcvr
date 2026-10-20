@@ -5,17 +5,17 @@
 #include <cstdint>
 #include <mutex>
 
-// Landing circles for #160's ground skills: a circle at the point each cast
-// was aimed at, placed the same way for every ground skill (Jeff, 2026-10-19:
-// Fire Blast is no special case). Its fill closes from the rim inward over the
-// skill's time (ForSkill) and then it fades. A skill whose missiles are known
-// (Flights) is then timed by the game itself (Jeff, 2026-10-19: attack speed,
-// skill levels and gear change the throw, so nothing is hard-coded but the
-// first guess): the launch missile re-times the circle from the moment it
-// really leaves the hand, at the velocity the game gave that very missile;
-// the landing missile ends it. The speed it flew is also remembered, in case
-// the velocity cannot be read. Several can show at once. The game thread records; the render
-// thread samples. Positions are native grid cells; no pointers are kept.
+// Landing circles for ground skills: a circle at the point each cast was
+// aimed at, placed the same way for every ground skill, Fire Blast included.
+// Its fill closes from the rim inward over the skill's time (ForSkill) and then
+// it fades. A skill whose missiles are known (Flights) is then timed by the
+// game itself (attack speed, skill levels and gear change the throw, so
+// nothing is hard-coded but the first guess): the launch missile re-times the
+// circle from the moment it really leaves the hand, at the velocity the game
+// gave that very missile; the landing missile ends it. The speed it flew is
+// also remembered, in case the velocity cannot be read. Several can show at
+// once. The game thread records; the render thread samples. Positions are
+// native grid cells; no pointers are kept.
 namespace framevr::telegraph {
 inline constexpr float CellsPerSecond=14.f;   // first guess, measured: 31 cells in 2.4 s, 22 in 1.6 s
 inline constexpr float RadiusCells=2.5f;      // approximate burst area

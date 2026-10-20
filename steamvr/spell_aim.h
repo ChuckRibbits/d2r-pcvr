@@ -80,8 +80,8 @@ inline bool Point(float x,float y,math::Vec direction,float& targetX,float& targ
 // Skills cast at a ground point (Skills.txt ids): Fire Blast, whose bomb
 // explodes where its flight ends (missiles.txt AlwaysExplode), traps and Shock
 // Web, Sorceress Blizzard / Meteor / Fire Wall / Hydra, Druid Fissure /
-// Volcano. All take the same point (#160): the #155 target, else the floor
-// point aimed at. Fire Blast is no special case (Jeff, 2026-10-19).
+// Volcano. All take the same point: the aimed monster, else the floor point
+// aimed at. Fire Blast is no special case.
 inline bool GroundTarget(int skill) {
     switch(skill) {
         case 251: case 256: case 261: case 262: case 271: case 272: case 276:  // Assassin

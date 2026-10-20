@@ -30,7 +30,7 @@ int main() {
     Check(Showing(full,10010)==MaxMarks,"more casts than slots reuse the oldest circles");
     bool newest=false;for(const auto& k:full)newest|=k.x==float((MaxMarks+1)*3);
     Check(newest,"the newest cast always gets a circle");
-    // Timed by the game (Jeff, 2026-10-19: attack speed changes the throw): the launch
+    // Timed by the game (attack speed changes the throw): the launch
     // missile re-times the circle, the landing ends it and teaches the next guess.
     {
         Board timed;bool landing=true;
