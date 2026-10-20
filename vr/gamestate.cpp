@@ -219,7 +219,6 @@ int g_twoOffset = -2;                        // -2 not tried yet, -1 failed
 std::atomic<uint32_t> g_two{0};
 std::atomic<uint32_t> g_from{0};
 std::atomic<bool> g_leftShield{false};
-std::atomic<uint32_t> g_shieldCode{0};        // the held shield's item code, first character in the low byte (0: none)
 std::mutex g_meleeEquipmentMutex;framevr::dualwield::Equipment g_meleeEquipment;
 std::vector<uint32_t> g_shieldTypes;
 std::atomic<uint32_t> g_handsKey{0};          // what is in the two hands, as one number (HandsKey)             // the hand slot the weapon kind came from: 0 right, 1 left              // D2RVR_TWO_HANDED* bits of what is held
@@ -503,7 +502,7 @@ void __cdecl ReadItems(const PluginContext* ctx, void* token) noexcept {
         g_weapon.store(D2RVR_WEAPON_UNKNOWN);
         g_type.store(D2RVR_TYPE_UNKNOWN);
         g_held.store(0);
-        g_leftShield=false;g_shieldCode=0;
+        g_leftShield=false;
         {std::lock_guard lock(g_meleeEquipmentMutex);g_meleeEquipment={};}
         g_two.store(0);
         g_set.store(0);
@@ -575,8 +574,6 @@ void __cdecl ReadItems(const PluginContext* ctx, void* token) noexcept {
     // The tracked shield is on the left wrist even when the SDK reports it
     // in body location 4 (observed with the development Paladin).
     g_leftShield=IsShield(code[0])||IsShield(code[1]);
-    {auto pack=[](const std::string& c){uint32_t v=0;for(size_t i=0;i<4&&i<c.size();++i)v|=uint32_t(uint8_t(c[i]))<<(8*i);return v;};   // CodeText's order: first character low
-     g_shieldCode=IsShield(code[1])?pack(code[1]):IsShield(code[0])?pack(code[0]):0;}   // per-shield seat tweaks (shield::kTweaks)
     const uint32_t handTypes[2]={KindOf(code[0]),KindOf(code[1])};
     {std::lock_guard lock(g_meleeEquipmentMutex);
         if(g_meleeEquipment.id[0]!=id[0]||g_meleeEquipment.id[1]!=id[1])g_meleeEquipment={};
@@ -841,7 +838,6 @@ uint32_t WeaponSet() { return g_set.load(); }
 uint32_t WeaponType() { return g_type.load(); }
 uint32_t HandsHeld() { return g_held.load(); }
 bool LeftShield() {return g_leftShield.load();}
-uint32_t ShieldCode() {return g_shieldCode.load();}
 uint32_t TwoHanded() { return g_two.load(); }
 uint32_t WeaponHand() { return g_from.load(); }
 uint32_t HandsKey() { return g_handsKey.load(); }

@@ -681,11 +681,6 @@ on the outside of the forearm; +90 suits a controller held palm down (the face
 outward instead of lying on the forearm like a tray), while with the thumb up it
 lays the shield flat under the wrist.
 
-Per-shield adjustments are one table in `vr/shield_pose.h` (`kTweaks`), keyed by
-the equipped shield's item code read live from the game. The Bone Shield (`bsh`)
-is drawn at 80% of its size: its skull dome and spikes spread wide beside the
-wrist. Add a row to adjust another shield's scale or Grip / Out / Up.
-
 The side of the forearm the shield is on - for the wrist stop and for Out - is
 decided once from the bind pose: read each frame, it flipped when the shield's
 bone sat near the forearm's line, and the shield jumped across the wrist.
@@ -693,7 +688,7 @@ bone sat near the forearm's line, and the shield jumped across the wrist.
 `[debug] shield_trace=1` (on by default in developer builds, off for players)
 logs the held shield's pose chain at 5 Hz, and at once when it jumps:
 
-`Frame shield trace: t=1234567 face=35 hand=(-21.0,-38.5,-30.2|12,-35,80) wrist=(-19.8,-41.0,-27.5|10,-33,78) elbow=(-24.1,-48.7,-3.0|5,-20,70) seat=(-3.0,6.1,2.0) shield=(-15.9,-43.1,-31.8|-80,10,15) side=back stop=0 follow=50% roll=0 bend=24 scale=1.00 turn=3.2deg`
+`Frame shield trace: t=1234567 face=35 hand=(-21.0,-38.5,-30.2|12,-35,80) wrist=(-19.8,-41.0,-27.5|10,-33,78) elbow=(-24.1,-48.7,-3.0|5,-20,70) seat=(-3.0,6.1,2.0) shield=(-15.9,-43.1,-31.8|-80,10,15) side=back stop=0 follow=50% roll=0 bend=24 turn=3.2deg`
 
 Everything is in model space from the eye, so a body turn or a level load no
 longer reads as a flip. A new world placement (snap turn, recenter, level), the

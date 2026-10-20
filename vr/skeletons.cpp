@@ -1831,7 +1831,7 @@ void PoseBody(uintptr_t self, const Hero& h, const Input& in) {
     // combat animation or applying the sword/bow adjustment makes it orbit
     // the forearm. The bind relationship follows the final tracked wrist.
     bool shieldFollowed=false;
-    struct {int bone=-1,side=1;float heldBack=0,bend=-1,scale=1;shield::Frame frame;} seatTrace;   // for [debug] shield_trace
+    struct {int bone=-1,side=1;float heldBack=0,bend=-1;shield::Frame frame;} seatTrace;   // for [debug] shield_trace
     if(in.mode==2&&in.leftShield&&(in.handsValid&2u)&&h.bindOk&&h.weapon[1]>=0&&h.hand[1]>=0) {
         const int wb=h.weapon[1],hand=h.hand[1];
         int side=1;const float heldBack=StopShieldWrist(h,newW,&side);   // before the shield takes the hand's turn
@@ -1858,7 +1858,6 @@ void PoseBody(uintptr_t self, const Hero& h, const Input& in) {
             if(sa>=0&&sa!=wb&&l>=0) {
                 memcpy(&attachBind,&h.bind[sa],sizeof attachBind);
                 auto bv=[](V3 v){return bow::Vec{v.x,v.y,v.z};};
-                const shield::Tweak tweak=shield::TweakFor(in.shieldCode);
                 shield::Frame bindFrame,wristFrame,strapped,frame;
                 if(ki>=0&&kp>=0&&km>=0) {
                     const float handed=shield::Handed(bv(Pos(h.bind[l])),bv(Pos(h.bind[hand])),bv(Pos(h.bind[ki])),bv(Pos(h.bind[kp])),bv(Pos(h.bind[km])),side);
@@ -1872,14 +1871,12 @@ void PoseBody(uintptr_t self, const Hero& h, const Input& in) {
                 if(placed||shield::Follow(wristBind,attachBind,wristNow,attachNow)) {   // no knuckles: the wrist attach, unmoved
                     const auto beforeAttach=newW;memcpy(&newW[sa],&attachNow,sizeof attachNow);
                     if(placed) {
-                        if(tweak.scale!=1.f)for(int r=0;r<3;++r)for(int c2=0;c2<3;++c2)newW[sa].m[r*4+c2]*=tweak.scale;
                         const float units=Len(Sub(Pos(newW[hand]),Pos(newW[l])));   // this model's forearm, ~0.26 m on an adult
-                        const bow::Vec move=shield::Offset(frame.along,frame.out,frame.up,in.shieldGripCm+tweak.gripCm,
-                                                           in.shieldOutCm+tweak.outCm,in.shieldUpCm+tweak.upCm,units/0.26f);
+                        const bow::Vec move=shield::Offset(frame.along,frame.out,frame.up,in.shieldGripCm,
+                                                           in.shieldOutCm,in.shieldUpCm,units/0.26f);
                         newW[sa].m[12]+=move.x;newW[sa].m[13]+=move.y;newW[sa].m[14]+=move.z;
                     }
                     seatTrace.bone=sa;seatTrace.side=side;seatTrace.heldBack=heldBack;seatTrace.frame=placed?frame:shield::Frame{};
-                    seatTrace.scale=placed?tweak.scale:1.f;
                     {bow::Vec axis;float angle;seatTrace.bend=shield::TurnBetween(strapped,wristFrame,axis,angle)?angle*57.2958f:-1;}
                     std::vector<char> movedAttach(n,0);movedAttach[sa]=1;Propagate(h,beforeAttach,newW,movedAttach,sa);
                 }
@@ -2238,12 +2235,12 @@ void PoseBody(uintptr_t self, const Hero& h, const Input& in) {
             char line[640]; std::snprintf(line, sizeof line,
                 "Frame shield trace: t=%llu%s face=%.0f hand=(%.1f,%.1f,%.1f|%.0f,%.0f,%.0f) wrist=(%.1f,%.1f,%.1f|%.0f,%.0f,%.0f) "
                 "elbow=(%.1f,%.1f,%.1f|%.0f,%.0f,%.0f) seat=(%.1f,%.1f,%.1f) shield=(%.1f,%.1f,%.1f|%.0f,%.0f,%.0f) side=%s stop=%.0f "
-                "follow=%.0f%% roll=%.0f bend=%.0f scale=%.2f%s turn=%.1fdeg",
+                "follow=%.0f%% roll=%.0f bend=%.0f%s turn=%.1fdeg",
                 (unsigned long long)now, sudden ? " JUMP" : "", in.yawInModel * 57.29578f,
                 t.x, t.y, t.z, ta.x, ta.y, ta.z,
                 w.x, w.y, w.z, wa.x, wa.y, wa.z, e.x, e.y, e.z, ea.x, ea.y, ea.z, seat.x, seat.y, seat.z,
                 s2.x, s2.y, s2.z, sa.x, sa.y, sa.z, seatTrace.side < 0 ? "palm" : "back", seatTrace.heldBack,
-                in.shieldFollowPct, in.shieldRollDeg, seatTrace.bend, seatTrace.scale, f.ok ? "" : " (wrist attach)",
+                in.shieldFollowPct, in.shieldRollDeg, seatTrace.bend, f.ok ? "" : " (wrist attach)",
                 haveFrame ? shield::TurnDeg(lastLine, shieldNow) : 0.f);
             framevr::logging::Write(line);
             lastLine = shieldNow;

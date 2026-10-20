@@ -88,7 +88,7 @@ namespace gamecmd { void Init(const D2RL::PluginContext* ctx); void Tick(); }   
 namespace spatialaudio { void SetLogger(void (*log)(const char*)); void SetViewYaw(float (*yaw)()); void Configure(bool headFollow, bool listenerTurn, float forwardSign, float depthScale); void Poll(); }   // head-relative sound (spatial_audio.cpp)
 namespace gamestate { bool ToggleMenus(); }
 namespace gamestate { uint32_t MenuEpoch(); }
-namespace gamestate { void Init(const D2RL::PluginContext* ctx); void Tick(); uint32_t WeaponClass(); uint32_t WeaponSet(); uint32_t WeaponType(); uint32_t HandsHeld(); uint32_t TwoHanded(); uint32_t WeaponHand(); uint32_t HandsKey(); uint32_t ShieldCode(); bool MenuOpen(); int ObjectLight(uint32_t txt, uint32_t mode, float rgb[3]); uint64_t LocalPlayer(); void SetViewMode(uint32_t mode); bool AutoMapOpen(); bool SetAutoMap(bool open); void PollPlate(); bool PlateRect(int32_t out[4]); }
+namespace gamestate { void Init(const D2RL::PluginContext* ctx); void Tick(); uint32_t WeaponClass(); uint32_t WeaponSet(); uint32_t WeaponType(); uint32_t HandsHeld(); uint32_t TwoHanded(); uint32_t WeaponHand(); uint32_t HandsKey(); bool MenuOpen(); int ObjectLight(uint32_t txt, uint32_t mode, float rgb[3]); uint64_t LocalPlayer(); void SetViewMode(uint32_t mode); bool AutoMapOpen(); bool SetAutoMap(bool open); void PollPlate(); bool PlateRect(int32_t out[4]); }
 namespace gamestate {bool LeftShield();}
 namespace gamestate {bool OpaqueMenuOpen();}
 #include "d2r_vr_state.h"
@@ -6824,7 +6824,6 @@ void PushArms() {
      in.shieldOutCm = v[framevr::settings::ShieldOut]; in.shieldUpCm = v[framevr::settings::ShieldUp];
      in.shieldFollowPct = skel::shield::FollowSetting(v[framevr::settings::ShieldFollow]);   // 0..100 in 10% steps
      in.shieldRollDeg = skel::shield::RollSetting(v[framevr::settings::ShieldRoll]);}       // -180..+180 in 5-degree steps
-    in.shieldCode = gamestate::ShieldCode();
 #endif
     in.wristDeg[0] = g_set.wristPitch.load(); in.wristDeg[1] = g_set.wristYaw.load(); in.wristDeg[2] = g_set.wristRoll.load();
     float yaw = 0.0f;

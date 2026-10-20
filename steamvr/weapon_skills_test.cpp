@@ -252,11 +252,6 @@ int main() {
         assert(!sh::ArmFrame(elbow,wrist,{0,0,.4f},{0,0,.3f},1).ok);   // knuckles along the forearm
         assert(!sh::ArmFrame({NAN,0,0},wrist,index,pinky,1).ok&&!sh::Carry(sh::Frame{},handA,handA).ok);
         {Mat out;assert(!sh::Place(Identity(),sh::Frame{},wrist,1,bind,wrist,1,out)&&!sh::Place(Identity(),bind,wrist,0,bind,wrist,1,out));}
-        // one table of per-shield tweaks, keyed by the item code as the game packs it
-        auto code=[](const char* c){uint32_t v=0;for(int i=0;i<4&&c[i];++i)v|=uint32_t(uint8_t(c[i]))<<(8*i);return v;};
-        assert(sh::TweakFor(code("bsh ")).scale==.8f&&sh::TweakFor(code("bsh")).scale==.8f);
-        assert(sh::TweakFor(code("buc ")).scale==1&&sh::TweakFor(code("bs  ")).scale==1&&sh::TweakFor(code("bshx")).scale==1&&sh::TweakFor(0).scale==1);
-        for(const auto& t:sh::kTweaks)assert(t.scale>=.3f&&t.scale<=3.f);
         // Offset: cm at the model's scale, clamped to the settings' ranges
         const Vec x{1,0,0},y{0,1,0},z{0,0,1};
         assert(Length(sh::Offset(z,x,y,3,2,2,10)-Vec{.2f,.2f,-.3f})<1e-5f);   // grip toward the elbow (-along)

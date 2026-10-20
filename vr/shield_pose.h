@@ -169,24 +169,6 @@ inline bow::Vec Offset(bow::Vec along,bow::Vec out,bow::Vec up,float gripCm,floa
     return (along*-Clamp(gripCm,kGripMinCm,kGripMaxCm)+out*Clamp(outCm,-kSideMaxCm,kSideMaxCm)+
             up*Clamp(upCm,-kSideMaxCm,kSideMaxCm))*(.01f*unitsPerMetre);
 }
-// Per-shield adjustments, keyed by the equipped item's code (read live from the
-// game, gamestate ShieldCode). One table: add a row for another shield. Scale is
-// about the attach bone; the cm add to the player's Grip / Out / Up.
-struct Tweak {const char* code;float scale,gripCm,outCm,upCm;};
-inline constexpr Tweak kTweaks[]={
-    // Bone Shield: its skull dome and spikes spread wide beside the wrist (headset, 2026-10-21)
-    {"bsh",.8f,0,0,0},
-};
-// code: the item code as the game packs it (first character in the low byte).
-inline Tweak TweakFor(uint32_t code) {
-    char c[4];for(int i=0;i<4;++i){c[i]=char((code>>(8*i))&0xFF);if(c[i]==' ')c[i]=0;}
-    for(const auto& t:kTweaks) {
-        bool same=true;
-        for(int i=0;i<4&&same;++i){const char want=t.code[i];same=want==c[i];if(!want)break;}
-        if(same)return t;
-    }
-    return {"",1,0,0,0};
-}
 // For the shield trace: the turn between two poses' axes, degrees (scale and
 // mirroring ignored), and a pose's heading, pitch and roll, degrees.
 inline float TurnDeg(const bow::Mat& a,const bow::Mat& b) {
