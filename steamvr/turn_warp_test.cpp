@@ -294,6 +294,21 @@ static void Move(Gpu& gpu,bool typeless) {
         from(25,27,8,true,"the blade inside one cell moved 8 px");
         from(29,31,0,false,"what the blade hid from the drawn eye keeps this eye's own");
         from(31,56,4,true,"the wall right of the blade moved 4 px");
+        // This eye's own picture, moved with its own depth (the head still: in
+        // place), showed the wall alone; the drawn eye's shows the post moved
+        // in front of it since. Where both show the wall, this eye's own stays
+        // (as a glow or hair would, seen from this eye); the post is the drawn
+        // eye's; what it hid is this eye's own as before.
+        const auto post=distances([](UINT x){return x>=24&&x<40?2.f:4.f;}),wall=distances([](UINT){return 4.f;});
+        drawn.depth=post.Get();drawn.keep=framevr::TurnEdgePixels;
+        framevr::TurnDepth still=moved;still.depth=wall.Get();still.move=framevr::TurnMove({0,0,0},{0,0,0,1},{0,0,0},{0,0,0,1});
+        out=gpu.Warp(warp,source.Get(),target.Get(),Identity,slot^=1,&still,&drawn);
+        from(2,15,0,false,"where both show the wall this eye's own stays");
+        from(16,32,8,true,"the post moved in from the drawn eye");
+        from(32,56,0,false,"what it hid and the wall past it: this eye's own");
+        drawn.keep=0;
+        out=gpu.Warp(warp,source.Get(),target.Get(),Identity,slot^=1,&still,&drawn);
+        from(2,15,4,true,"keep off: the drawn eye's wall everywhere it reaches");
     }
     {   // DLSS: the scene drawn into the top-left quarter of a depth twice the size
         auto big=gpu.Texture(side*2,side*2,DXGI_FORMAT_R32_FLOAT,D3D12_RESOURCE_FLAG_NONE,D3D12_RESOURCE_STATE_COPY_DEST);
@@ -303,7 +318,7 @@ static void Move(Gpu& gpu,bool typeless) {
         framevr::TurnDepth corner=moved;corner.depth=big.Get();corner.scale[0]=corner.scale[1]=.5f;
         expect(gpu.Warp(warp,source.Get(),target.Get(),Identity,slot^=1,&corner),0,56,4,"the depth read from its drawn corner");
     }
-    std::printf("Turn depth GPU pass passed (%s target): wall, sky, occlusion, edge, carried, the drawn eye's picture to the pixel, a thin blade, drawn corner\n",typeless?"typeless":"typed");
+    std::printf("Turn depth GPU pass passed (%s target): wall, sky, occlusion, edge, carried, the drawn eye's picture to the pixel, a thin blade, this eye's own where the surface is the same, drawn corner\n",typeless?"typeless":"typed");
 }
 
 // IEEE half for the interface's texels: 0 and normal values only.

@@ -92,6 +92,18 @@ struct TurnDepth {
     float reach[2]{0,0};
     ID3D12Resource* image=nullptr;   // the drawn eye's picture (PIXEL_SHADER_RESOURCE); null: the source's
     float apart=0;   // the drawn eye: how far it stood from this one, in the world's units
+    // The drawn eye's: where this eye's own older picture, moved with its own
+    // depth (Render's `depth`), shows the same surface - within `keep` pixels
+    // of parallax - it stays; the drawn eye's goes only where they part: what
+    // moved since, what this eye's own could not show. The game's glow round a
+    // bright blade and a monster's hair have no depth of their own: moved
+    // across with the depth behind them they stood where the drawn eye saw
+    // them, a ghost blade with a glowing rim beside the sword, a second
+    // outline of hair round a head (owner's videos, 2026-10-20). This eye's
+    // own shows them from this eye. Carrying a near thing's depth over them
+    // instead dragged the ground and the grass round everything near along:
+    // a heat haze (owner, the same day). 0: the drawn eye's everywhere.
+    float keep=0;
 };
 inline constexpr float TurnEdgePixels=2;
 // The grid's spacing in target pixels: an edge in depth stays within a few.
@@ -111,7 +123,9 @@ class TurnWarp {
     Microsoft::WRL::ComPtr<ID3D12RootSignature> root,depthRoot;
     Microsoft::WRL::ComPtr<ID3D12PipelineState> pipeline,depthPipeline,layerPipeline;
     Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> sourceHeap,targetHeap,depthHeap;
-    Microsoft::WRL::ComPtr<ID3D12Resource> depthTarget;   // the grid's own depth test, the target's size
+    Microsoft::WRL::ComPtr<ID3D12Resource> depthTarget;   // this eye's grid's own depth test, the target's size (R32 typeless: read by the next)
+    Microsoft::WRL::ComPtr<ID3D12Resource> drawnDepthTarget;   // the drawn eye's grid's
+    Microsoft::WRL::ComPtr<ID3D12Resource> ownTurned;   // the target as this eye's grid left it (TurnDepth::keep)
     DXGI_FORMAT format=DXGI_FORMAT_UNKNOWN;
 public:
     // format: the eye swapchain's typed format, of the source and the target alike.

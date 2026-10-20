@@ -18,6 +18,11 @@ void ConfigureSymmetricProjection(bool enabled);
 // [stereo] turns_from_drawn_eye (1): by turns, the eye not drawn mostly from
 // the drawn eye's picture of this frame (TurnDepth); 0: its own image alone.
 void ConfigureTurnsFromDrawnEye(bool enabled);
+// [stereo] turns_keep_own (1): with it, the eye not drawn keeps its own older
+// picture wherever that shows the same surface as the drawn eye's, so glows
+// and hair stand where this eye sees them (TurnDepth::keep); 0: the drawn
+// eye's picture wherever it reaches.
+void ConfigureTurnsKeepOwn(bool enabled);
 void ConfigureEyeTracking(bool enabled);
 void ConfigureGameplay(bool enabled);
 void ConfigureQuiver(bool enabled,bool preview); // [bow] quiver, quiver_preview

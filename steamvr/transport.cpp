@@ -112,6 +112,7 @@ std::atomic<double> maxPipelineMs{0};
 std::atomic<bool> deferredWait{false};
 std::atomic<bool> symmetricProjection{true};
 std::atomic<bool> turnsFromDrawnEye{true};
+std::atomic<bool> turnsKeepOwn{true};   // ConfigureTurnsKeepOwn
 std::atomic<bool> eyeTracking{false};
 std::atomic<bool> motionControls{false};
 // Stamped each focused XR input while motion controls are on (menus included).
@@ -2511,6 +2512,7 @@ bool TurnEye(int i) {
         other.drawnFov={f.angleLeft,f.angleRight,f.angleDown,f.angleUp};
         other.nowFov={now.fov.angleLeft,now.fov.angleRight,now.fov.angleDown,now.fov.angleUp};
         const auto gap=drawnAt.at-at;other.apart=std::sqrt(gap.x*gap.x+gap.y*gap.y+gap.z*gap.z);
+        if(turnsKeepOwn.load())other.keep=TurnEdgePixels;   // this eye's own picture where it shows the same surface
         fromDrawn=&other;
     }
     if(placed&&was.world.ok&&turnDepths[i].ok) {
@@ -2526,6 +2528,8 @@ bool TurnEye(int i) {
         depth.reach[0]=CarriedNear*w.upm;depth.reach[1]=CarriedFar*w.upm;
         moving=&depth;
     }
+    static bool keepTold=false;
+    if(moving&&fromDrawn&&other.keep>0&&!keepTold){keepTold=true;Say("Frame OpenXR: by turns - the eye not drawn keeps its own picture where the drawn eye's shows the same surface");}
     D3D12_RESOURCE_BARRIER b[2]{};const UINT kept=fromDrawn?2:1;
     for(UINT k=0;k<kept;++k){b[k].Type=D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
         b[k].Transition={turnImages[i^k].Get(),D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES,D3D12_RESOURCE_STATE_COMMON,D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE};}
@@ -2811,6 +2815,10 @@ void ConfigureDeferredWait(bool on) {
 void ConfigureSymmetricProjection(bool on) {symmetricProjection.store(on);}
 void ConfigureTurnsFromDrawnEye(bool on) {
     if(turnsFromDrawnEye.exchange(on)!=on)Say(on?"Frame OpenXR: by turns - the eye not drawn mostly from the drawn eye's picture":"Frame OpenXR: by turns - the eye not drawn from its own image alone");
+}
+void ConfigureTurnsKeepOwn(bool on) {
+    if(turnsKeepOwn.exchange(on)!=on)Say(on?"Frame OpenXR: by turns - the eye not drawn keeps its own picture where the drawn eye's shows the same surface":
+                                             "Frame OpenXR: by turns - the eye not drawn takes the drawn eye's picture wherever it reaches");
 }
 void ConfigureEyeTracking(bool on) {eyeTracking.store(on);}
 void BeginEye(int eye) {
