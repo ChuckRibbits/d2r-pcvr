@@ -32,6 +32,7 @@ bool CrossbowAiming();
 bool NativeAimOwnership(); // hand casting or wheel: preserve locomotion, suppress legacy aim modes
 bool NativeSkillCasting(); // any active trigger/quick cast; retain native locomotion input
 bool DirectedSpellActive(); // fresh native assignment, actually casting (wheel or quick shortcut)
+bool BowSkillActive();   // a bow or crossbow skill is being cast from a button (bow ready)
 bool GroundSpellActive(); // as above, and the skill lands where it is aimed (spellaim::Lobbed / GroundTarget)
 int GroundSpellSkill();   // that skill's id, or -1
 int NativeCastSkill(); // current fresh native cast id, -1 when idle/blocked/stale

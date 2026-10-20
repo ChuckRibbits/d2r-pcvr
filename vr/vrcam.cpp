@@ -30,6 +30,7 @@
 #include "../steamvr/interact_press.h"
 #include "../steamvr/sewer_interaction.h"
 #include "../steamvr/dropped_item_labels.h"
+#include "../steamvr/arm_pointing.h"
 #include <tlhelp32.h>
 #include <intrin.h>
 #include <xinput.h>
@@ -393,6 +394,8 @@ struct Settings {
     std::atomic<bool>  thirdTurn{true};     // [body] turn_third: from behind too the whole hero faces where the camera looks (the right stick turns him)
     std::atomic<int>   bodyTurn{2};         // 0 game facing, 1 above the pelvis, 2 whole body turns to where the camera looks
     std::atomic<bool>  wrist{true};         // arms mode 2: the hands turn with the controllers
+    std::atomic<float> targetArmOutCm{20.0f};   // [gameplay] target_arm_out_cm: the aimed monster follows the hand held out this far from the head (0 = always), else the look
+    std::atomic<bool>  spellLockBow{false};     // [gameplay] spell_lock_bow: bow skills go to the aimed monster too (archers aim on purpose: Off)
     std::atomic<float> wristPitch{0.0f}, wristYaw{0.0f}, wristRoll{0.0f};   // degrees on top, controller axes
     std::atomic<float> convergence{15.0f};  // distance (world units) that sits ON the screen; 0 = parallel eyes
     std::atomic<float> thirdDistance{7.0f}; // third person: camera this far behind the eye point
@@ -1420,6 +1423,8 @@ void LoadSettings() {
     g_set.spearShaftAxis.store(std::clamp((int)IniF(L"hands", L"spear_shaft_axis", -2.0f), -3, 3));
     g_set.bodyYawDeg.store(std::clamp(IniF(L"body", L"yaw", 0.0f), -180.0f, 180.0f));
     g_set.wrist.store(IniB(L"hands", L"wrist", true));
+    g_set.targetArmOutCm.store(std::clamp(IniF(L"gameplay", L"target_arm_out_cm", 20.0f), 0.0f, 50.0f));
+    g_set.spellLockBow.store(IniB(L"gameplay", L"spell_lock_bow", false));
     g_set.wristPitch.store(std::clamp(IniF(L"hands", L"pitch", 0.0f), -180.0f, 180.0f));
     g_set.wristYaw.store(std::clamp(IniF(L"hands", L"yaw", 0.0f), -180.0f, 180.0f));
     g_set.wristRoll.store(std::clamp(IniF(L"hands", L"roll", 0.0f), -180.0f, 180.0f));
@@ -3285,23 +3290,17 @@ float TargetOutlineStrength() {
 }
 bool TargetHighlightOn() { return TargetOutlineStrength() > 0.0f; }
 // Aim source: deliberate pointing beats looking. The aiming hand counts as
-// pointing while held out from the body (horizontal reach from the head, in
-// metres, with hysteresis); a hand resting in the lap does not.
-constexpr float kPointOnM = 0.40f, kPointOffM = 0.34f;
-// Pointing steeply down (at something by the feet) the arm cannot reach out as
-// far; a shorter reach counts while the ray dips this much.
-constexpr float kPointDownOnM = 0.30f, kPointDownOffM = 0.25f, kPointDownDip = -0.75f;
-std::atomic<bool> g_pointing{false};
-bool HandPointing() {
+// pointing while held out from the body (armpointing: horizontal reach from the
+// head against [gameplay] target_arm_out_cm, with hysteresis); a hand resting in
+// the lap does not. The target's own state, on vrcam's update thread only.
+bool TargetPointing() {
+    static framevr::armpointing::State state;
+    const bool was = state.on;
     float o[3], d[3];
-    bool now = false;
-    if (g_eyeOk.load() && framevr::GameplayRay(o, d)) {
-        const float reach = std::hypot(o[0], o[2]);
-        const bool down = d[1] < kPointDownDip;
-        now = reach >= (g_pointing.load() ? (down ? kPointDownOffM : kPointOffM) : (down ? kPointDownOnM : kPointOnM));
-    }
-    if (now != g_pointing.exchange(now)) LogF("Frame aim source: %s", now ? "hand pointing (arm out)" : "where you look");
-    return now;
+    if (g_eyeOk.load() && framevr::GameplayRay(o, d)) framevr::armpointing::Update(state, std::hypot(o[0], o[2]), d[1], g_set.targetArmOutCm.load());
+    else state.on = false;
+    if (state.on != was) LogF("Frame aim source: %s", state.on ? "hand pointing (arm out)" : "where you look");
+    return state.on;
 }
 // The left eye in render-world units and its forward direction.
 bool HeadGaze(float eye[3], float forward[3]) {
@@ -3316,7 +3315,7 @@ bool HeadGaze(float eye[3], float forward[3]) {
 // held out in front can still turn the head to another monster.
 bool HandHeading(float& gx, float& gy) {
     float theta = 0;
-    if (!HandPointing() || !HandWorldTheta(&theta)) return false;
+    if (!TargetPointing() || !HandWorldTheta(&theta)) return false;
     gx = cosf(theta); gy = sinf(theta); return true;
 }
 bool HeadHeading(float& gx, float& gy) {
@@ -3328,12 +3327,15 @@ bool HeadHeading(float& gx, float& gy) {
 
 // Target lock: the hostile monster being aimed at - pointed at deliberately
 // with the hand, else looked at - inside the cone on the grid, the nearest first
-// (targetcone). Chosen on vrcam's update thread from the game thread's list;
-// read by the outline.
+// (targetcone), never past the game's reach (aimreach). Chosen on vrcam's update
+// thread from the game thread's list; read by the casts and the outline. Skills
+// go to the monster the hand is on, else the one looked at, else where the hand
+// aims. Kept only while something uses it: the outline or a spell lock.
 namespace mobaim {
 std::atomic<uint32_t> g_id{0};
 std::atomic<float> g_x{0}, g_y{0}, g_distance{0};
 std::atomic<ULONGLONG> g_at{0};
+std::atomic<bool> g_byHand{false};   // the target was pointed at (else looked at)
 bool Wanted() {
     return g_enabled.load() && g_inWorld.load() && (TargetHighlightOn() || AimOn(framevr::settings::SpellLock) || AimOn(framevr::settings::GroundSkills));
 }
@@ -3346,6 +3348,7 @@ void Tick() {
     // the hand first; a hand on no monster frees the lock for the head
     float gx = 0, gy = 0;
     int i = HandHeading(gx, gy) ? framevr::targetcone::Pick(s.targets, s.count, s.heroX, s.heroY, gx, gy, g_id.load()) : -1;
+    const bool byHand = i >= 0;
     if (i < 0 && HeadHeading(gx, gy)) i = framevr::targetcone::Pick(s.targets, s.count, s.heroX, s.heroY, gx, gy, g_id.load());
     const uint32_t was = g_id.load();
     if (i < 0) { g_id.store(0); return; }
@@ -3353,12 +3356,14 @@ void Tick() {
     g_x.store(t.x); g_y.store(t.y);
     g_distance.store(std::hypot(t.x - s.heroX, t.y - s.heroY));
     g_at.store(GetTickCount64());
+    g_byHand.store(byHand);
     g_id.store(t.id);
     if (t.id != was) {
         static ULONGLONG lastLog = 0;
         if (GetTickCount64() - lastLog > 1000) {
             lastLog = GetTickCount64();
-            LogF("Frame target lock: monster id %u at %.1f %.1f, %.1f cells (%d hostile near)", t.id, t.x, t.y, g_distance.load(), s.count);
+            LogF("Frame target lock: monster id %u at %.1f %.1f, %.1f cells, by the %s (%d hostile near)", t.id, t.x, t.y, g_distance.load(),
+                 byHand ? "hand" : "look", s.count);
         }
     }
 }
@@ -3368,6 +3373,8 @@ bool Get(float& x, float& y, float& distance) {
     x = g_x.load(); y = g_y.load(); distance = g_distance.load();
     return true;
 }
+// How the current target was chosen, for the logs.
+const char* Source() { return g_byHand.load() ? "hand" : "look"; }
 }
 
 bool DirectedSpellAim(float& gx,float& gy) {
@@ -3380,12 +3387,18 @@ bool DirectedSpellAim(float& gx,float& gy) {
         framevr::spellaim::Horizontal({direction[0],direction[1],direction[2]},gx,gy)))return false;
     // Spells go to the aimed monster: the spells the game aims itself
     // (Lightning, Chain Lightning...) turn toward the locked monster when it is
-    // within ~53 degrees of the hand's direction.
+    // within ~53 degrees of the hand's direction. Bow skills only with
+    // [gameplay] spell_lock_bow (archers aim on purpose).
     float mx=0,my=0,md=0;
-    if(AimOn(framevr::settings::SpellLock)&&framevr::DirectedSpellActive()&&mobaim::Get(mx,my,md)) {
+    const bool bow=framevr::BowSkillActive();
+    if((bow?g_set.spellLockBow.load():AimOn(framevr::settings::SpellLock))&&framevr::DirectedSpellActive()&&mobaim::Get(mx,my,md)) {
         const auto s=targetlock::Get();
         const float tx=mx-s.heroX,ty=my-s.heroY,tl=std::hypot(tx,ty),hl=std::hypot(gx,gy);
-        if(s.at&&tl>.5f&&hl>1e-4f&&(tx*gx+ty*gy)/(tl*hl)>.6f){gx=tx/tl;gy=ty/tl;}
+        if(s.at&&tl>.5f&&hl>1e-4f&&(tx*gx+ty*gy)/(tl*hl)>.6f) {
+            gx=tx/tl;gy=ty/tl;
+            static ULONGLONG told=0;
+            if(GetTickCount64()-told>2000){told=GetTickCount64();LogF("Frame spell lock: %s skill %d to the %s target, %.1f cells",bow?"bow":"game-aimed",framevr::NativeCastSkill(),mobaim::Source(),md);}
+        }
     }
     return true;
 }
@@ -6645,8 +6658,11 @@ void BowTick() {
             const float ahead=std::hypot(shot.direction.x,shot.direction.z);
             if(len>.3f&&ahead>1e-3f&&(to.x*shot.direction.x+to.z*shot.direction.z)/(std::hypot(to.x,to.z)*ahead)>.6f) {
                 shot.direction=to*(1/len);
+                // one steerer per shot: VR Settings' Projectile aim assist would
+                // bend it again, perhaps toward another monster
+                shot.aimAssist=0;
                 static ULONGLONG told=0;
-                if(GetTickCount64()-told>2000){told=GetTickCount64();LogF("Frame spell lock: skill %d to the locked monster, %.1f cells",shot.skill,md);}
+                if(GetTickCount64()-told>2000){told=GetTickCount64();LogF("Frame spell lock: hand skill %d to the %s target, %.1f cells (aim assist skipped)",shot.skill,mobaim::Source(),md);}
             }
         }
         bowvr::Submit(shot);

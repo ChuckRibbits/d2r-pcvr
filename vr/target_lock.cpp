@@ -20,7 +20,7 @@ std::atomic<uint64_t> askedAt{0};
 void __cdecl Refresh(const PluginContext*,void*) noexcept {
     melee::Hostile found[framevr::targetcone::MaxTargets];
     float heroX=0,heroY=0;
-    const int n=melee::Hostiles(found,framevr::targetcone::MaxTargets,framevr::targetcone::RangeCells+4,heroX,heroY);
+    const int n=melee::Hostiles(found,framevr::targetcone::MaxTargets,framevr::aimreach::CornerCells+4,heroX,heroY);   // the game's reach (aimreach), its corners included
     Snapshot s;
     if(n>=0) {
         for(int i=0;i<n;++i)s.targets[i]={found[i].id,found[i].x,found[i].y,found[i].clear};
