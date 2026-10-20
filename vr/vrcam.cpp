@@ -64,6 +64,7 @@ void FindHero(const float hero[3], const wchar_t* outPath, const char* tag);
 int FindHeroMatrices(const float hero[3], uintptr_t* out, int max);
 }
 #include "skeletons.h"
+namespace effectstate { bool HolyShield(uint64_t session); }   // active_effects.cpp: the last game-thread sample
 #include "writewatch.h"
 namespace uitrace { void Register(bool diagnostic); bool Enabled(); bool Arm(const std::wstring& path); void SetSkip(uint64_t pipe); void SetSkipShaders(const uint64_t* hashes, int n); }
 #include "game_hud_shared.h"
@@ -6505,6 +6506,15 @@ void ShieldGuardTick() {
     const auto epoch=g_meleeTurnEpoch.load();
     const bool posed=eligible&&skel::ShieldGuardPose(pose)&&pose.epoch==epoch;
     pose.epoch=epoch; // invalidate cached coverage across a snap turn
+    // Holy Shield: blocks land on its larger glow, mesh surface or fallback alike.
+    const bool holy=eligible&&effectstate::HolyShield(gamestate::LocalPlayer());
+    pose.coverScale=framevr::guard::CoverScale(holy);
+    static bool holyWas=false;
+    if(holy!=holyWas) {
+        holyWas=holy;char line[160];snprintf(line,sizeof line,"Frame guard: Holy Shield coverage %s (x%.1f about the shield's centre)",
+            holy?"on":"off",holy?framevr::guard::HolyShieldCover:1.f);
+        framevr::logging::Write(line);
+    }
     // Coverage, height and scale all come from the completed shield pose.
     // Latest tracking may invalidate it, but must not replace its input sample.
     const D2RVR_Shared* sh=g_shared;

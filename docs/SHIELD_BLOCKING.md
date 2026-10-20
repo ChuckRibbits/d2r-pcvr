@@ -103,6 +103,16 @@ the once-a-second `Frame shield seat:` line reports the cumulative stages
 (`0x200` = shield found, `0x2000` = rendered surface published), the last miss
 and the last mesh reading.
 
+Holy Shield (state 101): while the local Paladin has it, coverage grows 1.6x
+about the shield's centre - the measured face's width and height, or the
+fallback's lateral proxy - because blocks are expected to land on the glow drawn
+around the shield. The glow's size is not in the tables (states.txt names its
+overlay; Overlay.txt gives only a light radius), so 1.6 is a visual estimate
+(`HolyShieldCover` in `steamvr/shield_guard.h`). The state comes from the
+game-thread effects sample (every 200 ms, stale after 1 s); facing, height and
+parry rules are unchanged. `Frame guard: Holy Shield coverage on/off` is logged
+on each switch.
+
 ## Diagnostics and test route
 
 - `Frame guard rejected:` counts decisions rejected by hand height/reach,
