@@ -16,9 +16,9 @@ enum class Page { Controls, VR, Video, HUD, Combat, Aim, Haptics, ReleaseNotes }
 enum Key { Motion, Seated, Dominant, Snap, TurnSpeed, Waist, BeltForward,
            Foveation, Sky, Fog, Ceiling, DrawDistance, ObjectDistance,
            EyeHeight, ArmSpan, BodyCalibration, SkillGestures, WristMap, WristCompass, ControllerLabels, WeaponSkillIndicators, PlanarSpellAim, VitalsLocation, CriticalAlerts, RenderResolution, NavigationLocation, SmoothTurn, OrdinaryMobBars, MenuDistance, TooltipTiming, ProjectileAimAssist, MeleeHitSpeed, VitalsTilt, HapticStrength, HapticMelee, HapticBowDraw, HapticBowRelease, HapticSpell, HapticInteraction, HapticAlert, HapticShortMelee, BloodVisor, BloodWipe, MeleeRules, MeleeThrustSpeed, LootLabelSize, CompanionCounts, StrainDark, OfflinePlayers, ShieldBashSpeed, StrainSpeed, DesktopOneEye, MapTopDown, MapRotate, FoveationStrength, StereoRendering, DeferGpuWait, TargetHighlight, TargetOutlineColour, TargetOutlineHue, HeartbeatStart, SpellLock, StaffPoint, GroundSkills, LandingCircles, Count };
-using ChangeMask=uint64_t;
-static_assert(Count<=64,"settings change mask capacity");
-constexpr ChangeMask SupportedChanges=~ChangeMask{0}>>(64-Count);
+using ChangeMask=unsigned __int128;   // one bit per setting: 64 were not enough
+static_assert(Count<=128,"settings change mask capacity");
+constexpr ChangeMask SupportedChanges=~ChangeMask{0}>>(128-Count);
 struct Definition {
     const char* label;
     const char* detail;
