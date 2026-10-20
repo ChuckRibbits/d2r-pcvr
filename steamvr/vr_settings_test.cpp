@@ -275,8 +275,14 @@ int main(){
     {Model aim;aim.Open(s);aim.Click({Kind::Tab,int(Page::Aim)});
         Check(s.values[TargetHighlight]==0&&RowKey(Page::Aim,0)==TargetHighlight,"the monster outline is Off by default, first on the Aim page");
         Check(RowKey(Page::Aim,1)==TargetOutlineColour&&RowKey(Page::Aim,2)==TargetOutlineHue,"strength, colors, then the static color");
-        Check(RowKey(Page::Aim,3)==SpellLock&&RowKey(Page::Aim,4)==StaffPoint&&s.values[SpellLock]==1&&s.values[StaffPoint]==1,"spell lock and staff aim follow, On by default");
-        Check(HelpAt(Page::Aim,(ValueBox(4).x+5.f)/Width,(ValueBox(4).y+5.f)/Height)==StaffPoint,"the staff row explains itself");
+        Check(RowCount(Page::Aim)==10&&RowKey(Page::Aim,3)==TargetArmOut&&RowKey(Page::Aim,4)==SpellLock&&RowKey(Page::Aim,5)==SpellLockBow&&RowKey(Page::Aim,6)==StaffPoint,"hand reach, spell lock, bow skills, then staff aim");
+        Check(s.values[SpellLock]==1&&s.values[StaffPoint]==1&&s.values[SpellLockBow]==0&&s.values[TargetArmOut]==20,"spell lock and staff aim On, bow skills Off, the hand from 20 cm");
+        Check(HelpAt(Page::Aim,(ValueBox(6).x+5.f)/Width,(ValueBox(6).y+5.f)/Height)==StaffPoint&&HelpAt(Page::Aim,(ValueBox(3).x+5.f)/Width,(ValueBox(3).y+5.f)/Height)==TargetArmOut,"the staff and hand rows explain themselves");
+        Check(Normalize(TargetArmOut,22)==20&&Normalize(TargetArmOut,23)==25&&Normalize(TargetArmOut,-5)==0&&Normalize(TargetArmOut,80)==50&&Normalize(TargetArmOut,NAN)==20,"hand reach snaps to 5 cm, 0-50");
+        {Model reach;reach.Open(s);reach.Click({Kind::Tab,int(Page::Aim)});
+            reach.Click(At(Page::Aim,Increase(3)));Check(reach.Get()[TargetArmOut]==25,"plus reaches 5 cm farther");
+            for(int i=0;i<10;++i)reach.Click(At(Page::Aim,Decrease(3)));Check(reach.Get()[TargetArmOut]==0,"0 (always the hand) is the lower bound");
+            Check(reach.Click({Kind::Apply}).changed==(ChangeMask{1}<<TargetArmOut),"hand reach saves only its own setting");}
         Check(s.values[TargetOutlineColour]==0&&s.values[TargetOutlineHue]==45,"static gold (45 degrees) by default");
         {Model colors;colors.Open(s);colors.Click({Kind::Tab,int(Page::Aim)});
             colors.Click(At(Page::Aim,ValueBox(1)));Check(colors.Get()[TargetOutlineColour]==1,"selecting the colors value switches to By range");
@@ -290,8 +296,9 @@ int main(){
         aim.Click(At(Page::Aim,Increase(0)));Check(aim.Get()[TargetHighlight]==10,"plus turns the outline on at 10%");
         aim.Click(At(Page::Aim,Decrease(0)));aim.Click(At(Page::Aim,Decrease(0)));Check(aim.Get()[TargetHighlight]==0,"Off is the lower bound");
         aim.Click(At(Page::Aim,Increase(0)));aim.Click(At(Page::Aim,Increase(0)));
-        Check(RowCount(Page::Aim)==7&&RowKey(Page::Aim,5)==GroundSkills&&RowKey(Page::Aim,6)==LandingCircles&&s.values[GroundSkills]==1&&s.values[LandingCircles]==1,"ground skills and landing circles follow, On by default");
-        Check(HelpAt(Page::Aim,(ValueBox(6).x+5.f)/Width,(ValueBox(6).y+5.f)/Height)==LandingCircles,"the circles row explains itself");
+        Check(RowKey(Page::Aim,7)==GroundSkills&&RowKey(Page::Aim,8)==GroundToTarget&&RowKey(Page::Aim,9)==LandingCircles&&s.values[GroundSkills]==1&&s.values[GroundToTarget]==1&&s.values[LandingCircles]==1,"ground skills, their target and landing circles follow, On by default");
+        Check(HelpAt(Page::Aim,(ValueBox(9).x+5.f)/Width,(ValueBox(9).y+5.f)/Height)==LandingCircles&&HelpAt(Page::Aim,(ValueBox(8).x+5.f)/Width,(ValueBox(8).y+5.f)/Height)==GroundToTarget,"the circles and ground target rows explain themselves");
+        {auto off=s.values;off[GroundSkills]=0;Check(!RowEnabled(off,GroundToTarget)&&RowEnabled(s.values,GroundToTarget),"the ground target greys out while ground skills are Off");}
         const auto request=aim.Click({Kind::Apply});
         Check(request.changed==(ChangeMask{1}<<TargetHighlight)&&request.values[TargetHighlight]==20,"the outline strength changes nothing else");
     }
