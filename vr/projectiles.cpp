@@ -69,6 +69,10 @@ uint32_t LocalArrowParams(uintptr_t params) {
 // Nesting an unrelated projectile temporarily clears it; unrelated path calls
 // never inherit a previous arrow. No game-owned table or request is edited.
 struct Creation {int side=-1;float multiplier=1;uintptr_t changedPath=0;uint32_t missile=0;};
+// A ground skill's launch missile (telegraph::Flights) being created on the
+// server: the velocity the game sets for it, live for this build and level.
+struct FlightWatch {uint32_t missile=0;int velocity=0;uintptr_t unit=0;};
+thread_local FlightWatch flightWatch;
 thread_local Creation creation;
 struct Scope {
     Creation saved;
@@ -95,25 +99,33 @@ void ReportSpell(uintptr_t params,int side,uintptr_t created) {
         side?"server":"client",missile,flags,points[0],points[1],points[2],points[3],created?"yes":"no");
     framevr::logging::Write(line);
 }
-// Fire Blast's thrown bomb and its burst, as the server actually created
-// them: the target the bomb was given, and where it came down.
-constexpr uint32_t BombInAir=385,BombOnGround=386;
+// A ground skill's missiles as the server actually created them (telegraph::
+// Flights: Fire Blast's bomb so far): the launch re-times its circle from the
+// moment it really leaves the hand, the landing ends it and teaches the speed.
+// The circle itself is placed at the cast, like every ground skill's (vrcam).
 void Telegraph(uintptr_t params,uintptr_t unit) {
-    uintptr_t owner=0;uint32_t missile=0;int points[4]{};
-    if(!unit||!enabled.load()||!Read(params+0x20,missile)||(missile!=BombInAir&&missile!=BombOnGround)||
-       !Read(params+8,owner)||!IsLocalOwner(owner)||!Read(params+0x24,points))return;
+    uintptr_t owner=0;uint32_t missile=0;int points[4]{};bool landing=false;
+    if(!unit||!enabled.load()||!Read(params+0x20,missile))return;
+    const int flight=framevr::telegraph::FlightOf(missile,landing);
+    if(flight<0||!Read(params+8,owner)||!IsLocalOwner(owner)||!Read(params+0x24,points))return;
     auto& board=framevr::telegraph::Current();
     const auto now=GetTickCount64();
-    char line[200];
-    if(missile==BombInAir) {
-        board.Cast(float(points[0]),float(points[1]),float(points[2]),float(points[3]),now);
-        snprintf(line,sizeof line,"Frame landing circle: bomb from %d,%d to %d,%d (%.1f cells)",points[0],points[1],points[2],points[3],
-            std::hypot(float(points[2]-points[0]),float(points[3]-points[1])));
+    const int skill=framevr::telegraph::Flights[flight].skill;
+    char line[240];
+    if(!landing) {
+        const int velocity=flightWatch.unit==unit?flightWatch.velocity:0;
+        const float live=framevr::telegraph::CellsPerSecondOf(velocity);
+        const float speed=board.Launched(flight,float(points[0]),float(points[1]),float(points[2]),float(points[3]),now,live);
+        snprintf(line,sizeof line,"Frame landing circle: skill %d missile from %d,%d to %d,%d (%.1f cells)%s, timed at %.1f cells/s (%s, game velocity %d)",skill,
+            points[0],points[1],points[2],points[3],std::hypot(float(points[2]-points[0]),float(points[3]-points[1])),
+            speed>0?"":" - no circle to time",speed>0?speed:board.Speed(flight),
+            framevr::telegraph::SaneSpeed(live)?"live":"last flown",velocity);
     } else {
-        const auto mark=board.Landed(float(points[0]),float(points[1]),now);
-        if(mark.cast)snprintf(line,sizeof line,"Frame landing circle: burst at %d,%d, %.1f cells from its circle %.0f,%.0f, %llu ms after the throw",
-            points[0],points[1],std::hypot(points[0]-mark.x,points[1]-mark.y),mark.x,mark.y,(unsigned long long)(now-mark.cast));
-        else snprintf(line,sizeof line,"Frame landing circle: burst at %d,%d with no circle showing",points[0],points[1]);
+        const auto mark=board.Landed(flight,float(points[0]),float(points[1]),now);
+        if(mark.cast)snprintf(line,sizeof line,"Frame landing circle: skill %d landed at %d,%d, %.1f cells from its circle %.0f,%.0f, %llu ms after the cast "
+            "(%llu after launch); next guess %.1f cells/s",skill,points[0],points[1],std::hypot(points[0]-mark.x,points[1]-mark.y),mark.x,mark.y,
+            (unsigned long long)(now-mark.cast),(unsigned long long)(mark.launched?now-mark.launched:0),board.Speed(flight));
+        else snprintf(line,sizeof line,"Frame landing circle: skill %d landed at %d,%d with no circle showing",skill,points[0],points[1]);
     }
     framevr::logging::Write(line);
 }
@@ -134,14 +146,25 @@ uintptr_t Server(uintptr_t game,uintptr_t params) {
     std::array<uint8_t,0x98> boltParams{};framevr::crossbow::Launch bolt;
     const bool crossbow=enabled.load()&&!bowvr::DirectCrossbow()&&crossbowvr::Prepare(params,boltParams,bolt,true);
     if(crossbow)params=reinterpret_cast<uintptr_t>(boltParams.data());
+    const FlightWatch outer=flightWatch;
+    {   // a ground skill's launch missile: watch the velocity the game gives it
+        uint32_t missile=0;bool landing=false;
+        flightWatch={enabled.load()&&Read(params+0x20,missile)&&framevr::telegraph::FlightOf(missile,landing)>=0&&!landing?missile:0u};
+    }
     Scope scope(params,1);const auto unit=originalServer(game,params);
     if(crossbow)crossbowvr::ServerDone(bolt,unit&&bowvr::AdoptCrossbow(game,unit,bolt.flight));
     ReportSpell(params,1,unit);
     Telegraph(params,unit);
+    flightWatch=outer;
     if(unit)bowvr::Created(game,params,unit);
     return unit;
 }
 void Velocity(uintptr_t path,int native,uintptr_t source,int line) {
+    if(flightWatch.missile&&native>0) {   // the last positive value set during creation is its velocity
+        uintptr_t unit=0,back=0;uint32_t type=~0u,missile=~0u;
+        if(Read(path+0x40,unit)&&Read(unit,type)&&type==3&&Read(unit+4,missile)&&missile==flightWatch.missile&&Read(unit+0x38,back)&&back==path)
+            {flightWatch.velocity=native;flightWatch.unit=unit;}
+    }
     int adjusted=native;
     // Native creation first clears velocity, then sets the final value. Only
     // the latter is scaled, once per path per creation; slow-missile and later

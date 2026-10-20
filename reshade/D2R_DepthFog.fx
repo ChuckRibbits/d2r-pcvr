@@ -1875,10 +1875,24 @@ uniform float4 RingDir3 < hidden = true; > = float4(0.0, 0.0, 0.0, 0.0);
 uniform float4 RingDir4 < hidden = true; > = float4(0.0, 0.0, 0.0, 0.0);
 uniform float4 RingDir5 < hidden = true; > = float4(0.0, 0.0, 0.0, 0.0);
 
+// How much the surface at p faces up: 1 floor (slopes and bumps nearly so),
+// 0 a leg, wall or rock side. From its neighbours stepPx pixels right and down;
+// 1 where a neighbour has no depth, so the floor's own edges still paint.
+float FacingUp(float2 uv, int eye, float3 p, float stepPx)
+{
+    float ok1, ok2;
+    const float2 px = float2(BUFFER_RCP_WIDTH, BUFFER_RCP_HEIGHT) * stepPx;
+    const float3 a = OutlineWorld(uv + float2(px.x, 0.0), eye, ok1) - p;
+    const float3 b = OutlineWorld(uv + float2(0.0, px.y), eye, ok2) - p;
+    const float3 n = cross(a, b);
+    const float len = length(n);
+    return (ok1 * ok2 > 0.0 && len > 1e-6) ? abs(n.y) / len : 1.0;
+}
 // One circle over color c, for the ground point p (relative to the hero). A
 // strip measures from its centre line instead of the centre point, so the same
-// rim and fill draw a rounded band.
-float3 RingTint(float3 c, float3 p, float4 ring, float fill, float4 col, float4 dir)
+// rim and fill draw a rounded band. up (FacingUp) keeps the paint on the floor:
+// a monster's legs, a wall or a rock side inside the circle stay unpainted.
+float3 RingTint(float3 c, float3 p, float4 ring, float fill, float4 col, float4 dir, float up)
 {
     if (ring.w <= 0.0 || abs(p.y - ring.y) > RingFloorTol) return c;
     float2 q = p.xz - ring.xz;
@@ -1892,7 +1906,7 @@ float3 RingTint(float3 c, float3 p, float4 ring, float fill, float4 col, float4 
     const float filled = inner * smoothstep(front - aa, front, r);              // the band from the rim to it
     const float glow = inner * exp(-abs(r - front) * 18.0) * step(0.001, fill);
     const float centre = 1.0 - smoothstep(0.05, 0.05 + aa, r);                  // the exact aim point
-    const float a = saturate(0.12 * inner + 0.35 * filled + 0.6 * glow + 0.9 * rim + 0.9 * centre) * ring.w;
+    const float a = saturate(0.12 * inner + 0.35 * filled + 0.6 * glow + 0.9 * rim + 0.9 * centre) * ring.w * smoothstep(0.55, 0.8, up);
     return lerp(c, col.rgb + 0.35 * glow, a);
 }
 float3 Outline(float2 uv, int eye)
@@ -1903,12 +1917,13 @@ float3 Outline(float2 uv, int eye)
     const float3 p = OutlineWorld(uv, eye, ok);
     if (ok <= 0.0) return c;
     if (RingOn) {
-        c = RingTint(c, p, RingPos0, RingFill0, RingCol0, RingDir0);
-        c = RingTint(c, p, RingPos1, RingFill1, RingCol1, RingDir1);
-        c = RingTint(c, p, RingPos2, RingFill2, RingCol2, RingDir2);
-        c = RingTint(c, p, RingPos3, RingFill3, RingCol3, RingDir3);
-        c = RingTint(c, p, RingPos4, RingFill4, RingCol4, RingDir4);
-        c = RingTint(c, p, RingPos5, RingFill5, RingCol5, RingDir5);
+        const float up = FacingUp(uv, eye, p, 3.0);   // two more depth taps, only while a circle shows
+        c = RingTint(c, p, RingPos0, RingFill0, RingCol0, RingDir0, up);
+        c = RingTint(c, p, RingPos1, RingFill1, RingCol1, RingDir1, up);
+        c = RingTint(c, p, RingPos2, RingFill2, RingCol2, RingDir2, up);
+        c = RingTint(c, p, RingPos3, RingFill3, RingCol3, RingDir3, up);
+        c = RingTint(c, p, RingPos4, RingFill4, RingCol4, RingDir4, up);
+        c = RingTint(c, p, RingPos5, RingFill5, RingCol5, RingDir5, up);
     }
     if (OutlineOn) c = OutlineTint(c, uv, eye, p, OutlinePos, OutlineShape, OutlineColor);
     return c;

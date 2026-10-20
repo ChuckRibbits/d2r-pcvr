@@ -3345,7 +3345,10 @@ bool BowSkillActive() {
     return skill.known&&skill.available&&weaponskills::Bow(skill.id);
 }
 int GroundSpellSkill() {
-    // VR Settings > Aim > Ground skills land where you aim, read before our lock.
+    // VR Settings > Aim > Ground skills land where you aim, read before our
+    // lock; Fire Blast like every other ground skill. Off: none aims at the
+    // ground - Fire Blast flies the fixed heading distance and the game places
+    // the rest, as without this setting.
     if(vrsettings::Read().values[settings::GroundSkills]<=.5f)return -1;
     std::lock_guard lock(mutex);
     const int slot=motionOutput.skill;
@@ -3354,7 +3357,6 @@ int GroundSpellSkill() {
        !interaction::Fresh(interactionInput.snapshot,gamestate::LocalPlayer(),now))return -1;
     const auto& skill=interactionInput.snapshot.skills[slot];
     if(!skill.known||!skill.available)return -1;
-    if(spellaim::Lobbed(skill.id))return skill.directed?skill.id:-1;
     return spellaim::GroundTarget(skill.id)?skill.id:-1;
 }
 bool GroundSpellActive(){return GroundSpellSkill()>=0;}

@@ -31,6 +31,7 @@
 #include "../steamvr/sewer_interaction.h"
 #include "../steamvr/dropped_item_labels.h"
 #include "../steamvr/arm_pointing.h"
+#include "../steamvr/aim_reach.h"
 #include <tlhelp32.h>
 #include <intrin.h>
 #include <xinput.h>
@@ -396,6 +397,7 @@ struct Settings {
     std::atomic<bool>  wrist{true};         // arms mode 2: the hands turn with the controllers
     std::atomic<float> targetArmOutCm{20.0f};   // [gameplay] target_arm_out_cm: the aimed monster follows the hand held out this far from the head (0 = always), else the look
     std::atomic<bool>  spellLockBow{false};     // [gameplay] spell_lock_bow: bow skills go to the aimed monster too (archers aim on purpose: Off)
+    std::atomic<bool>  groundToTarget{true};    // [gameplay] ground_to_target: ground skills land on the aimed monster when there is one (Off: always where the hand points)
     std::atomic<float> wristPitch{0.0f}, wristYaw{0.0f}, wristRoll{0.0f};   // degrees on top, controller axes
     std::atomic<float> convergence{15.0f};  // distance (world units) that sits ON the screen; 0 = parallel eyes
     std::atomic<float> thirdDistance{7.0f}; // third person: camera this far behind the eye point
@@ -1425,6 +1427,7 @@ void LoadSettings() {
     g_set.wrist.store(IniB(L"hands", L"wrist", true));
     g_set.targetArmOutCm.store(std::clamp(IniF(L"gameplay", L"target_arm_out_cm", 20.0f), 0.0f, 50.0f));
     g_set.spellLockBow.store(IniB(L"gameplay", L"spell_lock_bow", false));
+    g_set.groundToTarget.store(IniB(L"gameplay", L"ground_to_target", true));
     g_set.wristPitch.store(std::clamp(IniF(L"hands", L"pitch", 0.0f), -180.0f, 180.0f));
     g_set.wristYaw.store(std::clamp(IniF(L"hands", L"yaw", 0.0f), -180.0f, 180.0f));
     g_set.wristRoll.store(std::clamp(IniF(L"hands", L"roll", 0.0f), -180.0f, 180.0f));
@@ -3337,7 +3340,8 @@ std::atomic<float> g_x{0}, g_y{0}, g_distance{0};
 std::atomic<ULONGLONG> g_at{0};
 std::atomic<bool> g_byHand{false};   // the target was pointed at (else looked at)
 bool Wanted() {
-    return g_enabled.load() && g_inWorld.load() && (TargetHighlightOn() || AimOn(framevr::settings::SpellLock) || AimOn(framevr::settings::GroundSkills));
+    return g_enabled.load() && g_inWorld.load() && (TargetHighlightOn() || AimOn(framevr::settings::SpellLock) ||
+        (AimOn(framevr::settings::GroundSkills) && g_set.groundToTarget.load()));
 }
 void Tick() {
     const bool wanted = Wanted();
@@ -3402,6 +3406,7 @@ bool DirectedSpellAim(float& gx,float& gy) {
     }
     return true;
 }
+bool GroundSpellAim(float playerX,float playerY,float& targetX,float& targetY);
 bool NativeSpellAim(float playerX,float playerY,framevr::spellaim::Cast& cast) {
     if(framevr::spellaim::BonePlacement(framevr::NativeCastSkill())) {
         if(!g_spellAimReady.load()||!g_enabled.load()||gamestate::MenuOpen()||!g_eyeOk.load())return false;
@@ -3413,42 +3418,56 @@ bool NativeSpellAim(float playerX,float playerY,framevr::spellaim::Cast& cast) {
            {d[0],d[1],d[2]},cast.x,cast.y))return false;
         cast.directed=cast.contactPoint=true;return true;
     }
-    cast.directed=DirectedSpellAim(cast.x,cast.y);return cast.directed;
+    // Ground skills (Fire Blast, traps, Blizzard...): the landing point.
+    cast.directed=DirectedSpellAim(cast.x,cast.y);
+    float groundX=0,groundY=0;
+    if(cast.directed&&GroundSpellAim(playerX,playerY,groundX,groundY)) {
+        cast.x=groundX;cast.y=groundY;cast.contactPoint=true;
+    }
+    return cast.directed;
 }
-uintptr_t NearbySewerInteraction();
-// Ground skills (Fire Blast's bomb explodes where it lands; Blizzard, Meteor,
-// traps... are cast at a point): the highlighted monster takes them; else the
-// point where the hand ray meets the hero's floor, rather than the native
-// fixed-range heading. HandRay is render-world units; g_lookAt[1] is the hero's feet.
+// Ground skills (Fire Blast, whose bomb bursts where its flight ends, traps,
+// Blizzard, Meteor...) land where they are aimed, in this order: the aimed
+// monster pointed at with the hand, else the one looked at
+// ([gameplay] ground_to_target), otherwise the floor where the hand points - a
+// level or upward ray (the horizon, the sky) goes to the full reach. The true
+// ray, not HandRay's forced downward tilt (at least 8%), which kept every throw
+// within about 30 cells. Never past the game's reach (aimreach).
+// HandRay is render-world units; g_lookAt[1] is the hero's feet.
 bool GroundSpellAim(float playerX,float playerY,float& targetX,float& targetY) {
     float origin[3],direction[3],L[3];
     if(!g_spellAimReady.load()||!g_enabled.load()||gamestate::MenuOpen()||
        !framevr::GroundSpellActive())return false;
-    float mx=0,my=0,md=0;
-    if(mobaim::Get(mx,my,md)) {
-        const float dx=mx-playerX,dy=my-playerY,d=std::hypot(dx,dy);
-        if(d>=.01f) {
-            const float scale=std::clamp(d,framevr::spellaim::GroundMinDistance,framevr::spellaim::AimDistance)/d;
-            targetX=playerX+dx*scale;targetY=playerY+dy*scale;
-            static ULONGLONG lastLog=0;
-            if(GetTickCount64()-lastLog>1000){lastLog=GetTickCount64();LogF("Frame target lock: ground skill to the target at %.1f %.1f (%.1f cells)",mx,my,d);}
-            return true;
+    float dx=0,dy=0,mx=0,my=0,md=0;
+    const char* how="free aim";
+    if(g_set.groundToTarget.load()&&mobaim::Get(mx,my,md)&&std::hypot(mx-playerX,my-playerY)>=.01f) {
+        dx=mx-playerX;dy=my-playerY;
+        how=mobaim::g_byHand.load()?"hand target":"look target";
+    } else {
+        if(!HandRay(origin,direction,false))return false;
+        AcquireSRWLockShared(&g_lookLock);memcpy(L,g_lookAt,sizeof L);ReleaseSRWLockShared(&g_lookLock);
+        float fx=0,fy=0;
+        if(framevr::spellaim::GroundPoint({origin[0],origin[1],origin[2]},{direction[0],direction[1],direction[2]},
+            L[1],.5f,playerX,playerY,fx,fy,framevr::aimreach::CornerCells)){dx=fx-playerX;dy=fy-playerY;}
+        else {   // the ray never meets the floor: as far as the reach goes along its heading
+            if(!framevr::spellaim::Horizontal({direction[0],direction[1],direction[2]},dx,dy))return false;
+            dx*=framevr::aimreach::CornerCells*2;dy*=framevr::aimreach::CornerCells*2;
+            how="free aim (level or up: full reach)";
         }
     }
-    if(!HandRay(origin,direction))return false;
-    AcquireSRWLockShared(&g_lookLock);memcpy(L,g_lookAt,sizeof L);ReleaseSRWLockShared(&g_lookLock);
-    return framevr::spellaim::GroundPoint({origin[0],origin[1],origin[2]},{direction[0],direction[1],direction[2]},
-        L[1],.5f,playerX,playerY,targetX,targetY);
-}
-// Integer-cell target for the controller quick-cast paths: the landing point
-// for ground skills, otherwise the existing fixed-range hand heading.
-bool ControllerSpellPoint(float playerX,float playerY,const framevr::spellaim::Cast& cast,int& targetX,int& targetY) {
-    float gx=0,gy=0;
-    if(GroundSpellAim(playerX,playerY,gx,gy)&&gx>=1&&gy>=1&&gx<=65534&&gy<=65534) {
-        targetX=int(gx);targetY=int(gy);return true;
+    const float wanted=std::hypot(dx,dy);
+    if(wanted<framevr::spellaim::GroundMinDistance&&wanted>.001f){dx*=framevr::spellaim::GroundMinDistance/wanted;dy*=framevr::spellaim::GroundMinDistance/wanted;}
+    if(!framevr::aimreach::Clamp(dx,dy))return false;
+    targetX=playerX+dx;targetY=playerY+dy;
+    static ULONGLONG lastLog=0;
+    if(GetTickCount64()-lastLog>1000) {
+        lastLog=GetTickCount64();
+        LogF("Frame ground aim: skill %d by %s, %.1f cells (wanted %.1f; game reach %.0f)",framevr::GroundSpellSkill(),how,std::hypot(dx,dy),wanted,
+             framevr::aimreach::Along(dx,dy));
     }
-    return framevr::spellaim::ControllerPoint(cast,playerX,playerY,targetX,targetY);
+    return true;
 }
+uintptr_t NearbySewerInteraction();
 uintptr_t HookSpellControllerTarget(uintptr_t manager,int id) {
     if(g_spellCast.directed&&uintptr_t(_ReturnAddress())==d2rsig::Addr(spellaimabi::ControllerCallRva+5))return 0;
     const auto target=OrigSpellControllerTarget(manager,id);
@@ -3476,10 +3495,6 @@ void HookSpellResolve(uintptr_t manager,void* unit,bool assist,float* x,float* y
     float playerX=0,playerY=0;
     const bool local=x&&y&&SpellPlayerPosition(unit,playerX,playerY);
     if(local)NativeSpellAim(playerX,playerY,cast);
-    float groundX=0,groundY=0;
-    if(cast.directed&&!cast.contactPoint&&GroundSpellAim(playerX,playerY,groundX,groundY)) {
-        cast.x=groundX;cast.y=groundY;cast.contactPoint=true;
-    }
     if(local&&g_spellAimReady.load()&&g_enabled.load()&&!gamestate::MenuOpen()&&
        framevr::ShieldAim(cast.x,cast.y))cast.directed=cast.contactPoint=true;
     framevr::spellaim::Scope scope(g_spellCast,cast);
@@ -4352,19 +4367,20 @@ uint64_t HookMapClick(void* unit, int type, int x, int y, uint64_t flags) {
     if(g_spellCommandReady.load()&&framevr::spellaim::ControllerCast(type)&&
        (caller==d2rsig::Addr(spellaimabi::CastClickRva+5)||caller==d2rsig::Addr(spellaimabi::RepeatClickRva+5))&&
        SpellPlayerPosition(unit,px,py)&&NativeSpellAim(px,py,cast)&&
-       ControllerSpellPoint(px,py,cast,tx,ty)) {
+       framevr::spellaim::ControllerPoint(cast,px,py,tx,ty)) {
         g_spellCommand={reinterpret_cast<uintptr_t>(unit),tx,ty};
         x=tx;y=ty;
-        // Ground skills other than Fire Blast (whose circle follows its missile):
-        // a circle at the cast point, in the element's color, for its measured
-        // area and time (telegraph::ForSkill); a strip (Fire Wall) lies square
-        // to the line from the hero to the cast point.
+        // Every ground skill, Fire Blast included: a circle at the cast point, in
+        // the element's color, for the skill's time (telegraph::ForSkill; Fire
+        // Blast's from its throw distance, then re-timed by its own missiles in
+        // projectiles.cpp). A strip (Fire Wall) lies square to the line from the
+        // hero to the cast point.
         const int skill=framevr::GroundSpellSkill();
-        if(skill>=0&&!framevr::spellaim::Lobbed(skill)) {
-            const auto area=framevr::telegraph::ForSkill(skill);
+        if(skill>=0) {
             const float ax=float(tx)-px,ay=float(ty)-py;
+            const auto area=framevr::telegraph::ForSkill(skill,std::hypot(ax,ay));
             if(framevr::telegraph::Current().Place(float(tx),float(ty),GetTickCount64(),area.showMs,framevr::spellaim::ElementOf(skill),
-                                                   area.radius,-ay,ax,area.halfLength))
+                                                   area.radius,-ay,ax,area.halfLength,skill))
                 LogF("Frame landing circle: skill %d at %d,%d (element %d)",skill,tx,ty,int(framevr::spellaim::ElementOf(skill)));
         }
     }

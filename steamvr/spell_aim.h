@@ -77,15 +77,11 @@ inline bool Point(float x,float y,math::Vec direction,float& targetX,float& targ
     if(!std::isfinite(x+y)||!Horizontal(direction,dx,dy))return false;
     targetX=x+dx*AimDistance;targetY=y+dy*AimDistance;return true;
 }
-// Skills whose missile explodes where its flight ends (missiles.txt
-// AlwaysExplode): the aimed point is the landing point, so a fixed heading
-// distance would always throw them to full range. Fire Blast ("Fire Trauma",
-// srvmissile "bomb in air") is the only player skill this way in 3.3.
-inline bool Lobbed(int skill) {return skill==251;}
-// Other skills cast at a ground point (Skills.txt ids): traps and Shock Web,
-// Sorceress Blizzard / Meteor / Fire Wall / Hydra, Druid Fissure / Volcano.
-// They take the same point as a bomb: the locked monster, else the floor
-// point aimed at (VR Settings > Aim > Ground skills land where you aim).
+// Skills cast at a ground point (Skills.txt ids): Fire Blast, whose bomb
+// explodes where its flight ends (missiles.txt AlwaysExplode), traps and Shock
+// Web, Sorceress Blizzard / Meteor / Fire Wall / Hydra, Druid Fissure /
+// Volcano. All take the same point (#160): the #155 target, else the floor
+// point aimed at. Fire Blast is no special case (Jeff, 2026-10-19).
 inline bool GroundTarget(int skill) {
     switch(skill) {
         case 251: case 256: case 261: case 262: case 271: case 272: case 276:  // Assassin
@@ -112,7 +108,7 @@ inline constexpr float GroundMinDistance=2.f;
 // on the ray's heading at the nearest allowed distance; a ray that never
 // descends (HandRay always tilts it down) is refused.
 inline bool GroundPoint(math::Vec origin,math::Vec direction,float floorY,float cellsPerUnit,
-                        float playerX,float playerY,float& targetX,float& targetY) {
+                        float playerX,float playerY,float& targetX,float& targetY,float maxDistance=AimDistance) {
     if(!std::isfinite(origin.x+origin.y+origin.z+direction.x+direction.y+direction.z+floorY+cellsPerUnit+playerX+playerY)||
        cellsPerUnit<=0||direction.y>=-1e-4f||origin.y<=floorY)return false;
     const float t=(floorY-origin.y)/direction.y;
@@ -123,7 +119,7 @@ inline bool GroundPoint(math::Vec origin,math::Vec direction,float floorY,float 
         if(!Horizontal(direction,dx,dy))return false;
         targetX=playerX+dx*GroundMinDistance;targetY=playerY+dy*GroundMinDistance;return true;
     }
-    const float scale=std::clamp(distance,GroundMinDistance,AimDistance)/distance;
+    const float scale=std::clamp(distance,GroundMinDistance,std::max(GroundMinDistance,maxDistance))/distance;
     targetX=playerX+dx*scale;targetY=playerY+dy*scale;return true;
 }
 // The controller quick-cast path takes integer grid cells. Refuse malformed

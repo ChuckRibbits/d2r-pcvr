@@ -133,9 +133,6 @@ int main() {
           !spellaim::GroundTarget(36)&&!spellaim::GroundTarget(64)&&!spellaim::GroundTarget(-1),"traps, Blizzard and Meteor are ground-target skills; bolts and orbs are not");
     Check(spellaim::ElementOf(59)==spellaim::Cold&&spellaim::ElementOf(251)==spellaim::Fire&&spellaim::ElementOf(261)==spellaim::Lightning,
           "circle colours: Blizzard cold, Fire Blast fire, Charged Bolt Sentry lightning");
-    // Lobbed skills land where the hand ray meets the floor, not 40 cells out.
-    Check(spellaim::Lobbed(251)&&!spellaim::Lobbed(256)&&!spellaim::Lobbed(36)&&!spellaim::Lobbed(-1),
-          "only Fire Blast is a landing-point skill");
     {
         float gx=0,gy=0;
         const auto down45=math::Normalized(math::Vec{1,-1,0});
@@ -148,6 +145,11 @@ int main() {
         const auto shallow=math::Normalized(math::Vec{0,-.01f,1});
         Check(spellaim::GroundPoint({100,10,100},shallow,0,.5f,50,50,gx,gy)&&std::fabs(std::hypot(gx-50,gy-50)-spellaim::AimDistance)<.01f&&
               gx==50&&gy>50,"a near-level aim is limited to the native command range on its heading");
+        Check(spellaim::GroundPoint({100,10,100},shallow,0,.5f,50,50,gx,gy,63.6f)&&std::fabs(std::hypot(gx-50,gy-50)-63.6f)<.01f,
+              "a ground skill may land as far as the caller's reach (the game's, up to its corners)");
+        Check(spellaim::GroundPoint({100,10,100},shallow,0,.5f,50,50,gx,gy,0)&&std::fabs(std::hypot(gx-50,gy-50)-spellaim::GroundMinDistance)<.01f,
+              "a reach below the minimum still throws the minimum distance");
+        Check(spellaim::GroundTarget(251)&&spellaim::GroundTarget(59)&&!spellaim::GroundTarget(36),"Fire Blast is a ground skill like Blizzard; Fire Bolt is not");
         const auto steep=math::Normalized(math::Vec{.001f,-1,0});
         Check(spellaim::GroundPoint({100,10,100},steep,0,.5f,50,50,gx,gy)&&std::fabs(std::hypot(gx-50,gy-50)-spellaim::GroundMinDistance)<.01f&&gx>50,
               "aiming at your feet still throws a short distance forward");
