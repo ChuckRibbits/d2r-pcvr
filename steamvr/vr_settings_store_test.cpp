@@ -116,7 +116,7 @@ int main(){
         request.changed=Changed(request.base,request.values);request.sequence=saved.sequence+1;
         Check(vrsettings::Submit(request)&&vrsettings::Poll(name),"restore mixed-mask fixture preferences");
         request.base=request.values=vrsettings::Read().values;request.values[VitalsTilt]=5;
-        request.changed=(ChangeMask{1}<<VitalsTilt)|(ChangeMask{1}<<63);request.sequence+=1;
+        request.changed=(ChangeMask{1}<<VitalsTilt)|(ChangeMask{1}<<(ChangeMask::Bits-1));request.sequence+=1;
         Check(!vrsettings::Submit(request),"unsupported high change bits are rejected");
         for(int bit:{int(Count),64,100,127}){
             request.changed=(ChangeMask{1}<<VitalsTilt)|(ChangeMask{1}<<bit);request.sequence+=1;
