@@ -132,8 +132,6 @@ a workaround: background/focus handling also affects input and frame pacing.
 VR Settings > Video > **Stereo rendering** chooses how the two eyes of each
 headset frame are drawn:
 
-- **Replay** draws both eyes from one game frame for about one eye's CPU
-  work (below).
 - **Both eyes** draws the left eye, then the right with the game time held.
 - **By turns**, the default, draws one eye per game frame, alternating. The headset gets that
   eye fresh and the other eye's last image turned on the GPU from the pose it
@@ -144,12 +142,28 @@ headset frame are drawn:
   the draw work per headset frame. Each eye is still drawn at half the frame
   rate, so over that the drawn eye's picture of the same frame is laid,
   moved across with its own depth: monsters and missiles stand where the
-  drawn eye shows them instead of a game frame back. Only what the drawn eye
-  could not see (beside the edges of near things, past the outer edge of its
-  view) keeps the other eye's own older image, and transparent effects,
-  without depth of their own, look as deep as what is behind them.
-  `[stereo] turns_from_drawn_eye=0` (live) keeps the other eye's own image
-  alone. The belt's potion models, drawn by the mod over the game's picture,
+  drawn eye shows them instead of a game frame back. Along an edge each pixel
+  goes with its own depth, so a head's outline or a thin blade stays whole.
+  Where the game's effects are - spells, flames, Tyrael's wings, which it
+  draws into a layer of their own with no depth - the other eye's own older
+  image, moved with its own depth, stays where it shows the same surface as
+  the drawn eye's: moved across from the drawn eye they stood where that eye
+  saw them, the scene showing through; from the eye's own image they stand
+  where that eye sees them, a frame old. Elsewhere, and where the two part
+  (what moved since), the drawn eye's picture goes, so the rest of the scene
+  is of one moment in both eyes. An effect counts from
+  `[stereo] turns_effects_level` (0.02, the layer's strongest channel), kept
+  within `turns_effects_reach` pixels of it (32). Anything else drawn
+  without depth and not in that layer (the game's bloom) can be kept round
+  near things too - nearer than what is round them by more than
+  `turns_keep_gap` pixels of parallax (48), within `turns_keep_reach` pixels
+  of them (96). The pixel figures are of a 4096-wide eye.
+  `turns_keep_own` (live; in developer mode also
+  DEV > Equipment > By turns own picture) is 3 for the effects (the
+  default), 1 round near things, 4 both, 2 wherever the own image shows the
+  same surface and 0 for the drawn eye's picture wherever it reaches;
+  `turns_from_drawn_eye=0` (live) keeps the other eye's own image alone.
+  The belt's potion models, drawn by the mod over the game's picture,
   are drawn fresh in that eye at its own pose. The game's interface (labels
   and health bars over monsters, names, chat) is taken out of each eye's
   picture before it is kept and laid back over it as the game lays it; the
@@ -172,28 +186,12 @@ during stereo captures and on any frame without a reusable image for both eyes.
 With **Desktop shows one eye**, the kept left image covers the right frames on
 the monitor.
 
-**Replay** (adapted from upstream's "one pass, two pictures") draws both eyes
-from one game frame for about one eye's CPU work. The game draws the left eye
-as usual while every list it submits is noted, and the camera constant buffers
-those lists bind come from slots of the mod's own instead: the left eye's
-values for the left pass, the right eye's for the replay (the eye gap folded
-into the projection, `steamvr/replay_camera.h`). The game's present at the end
-of the left pass is held: the left eye's effects run and it goes to the
-headset. The noted lists then run again on the same queues, in the game's own
-submissions, the right eye's effects run, and one real present takes it to
-the headset. The GPU still draws both eyes, shadow maps included, so it helps
-when the CPU limits the frame rate. It starts after 240 pairs in a settled
-area and pauses for every area change, menu, long frame or stereo capture,
-drawing two passes until it can run again. The eyes share the game's labels,
-the gaze-driven foveation centre and one DLSS instance (its history alternates
-eyes, so DLSS may smear); the right eye is submitted as the left eye moved
-along its own x. `[stereo] replay_marks` (3: the game's calls; 1: one list a
-call with a signal after each), `replay_ahead`, `replay_positions` and
-`replay_prev` tune it. Every 10 seconds the log reports how many pairs were
-replayed, the lists and calls a replayed pair submitted, and the camera
-records folded, and what started the settle again (biome sets, frames over
-150 ms, pairs out of the world); a watchdog logs each queue's fences if no
-present comes for 3 seconds while replaying.
+Replay (both eyes from one CPU pass, adapted from upstream) was a third
+choice until 2026-10-20. On the owner's PC it halved the CPU work a frame but
+not the frame time, as the right eye's GPU work waits for the whole left pass,
+and it ran at 45 Hz like Both eyes while By turns ran 74-90
+(`PERFORMANCE.md`). A profile saved with it now goes by turns; its code
+(`vr/stereo_replay.cpp`) is no longer registered.
 
 Every choice needs `[render] defer_gpu_wait=1` for its full rate; the
 installer sets it for new installs, and an upgrade keeps the existing value.

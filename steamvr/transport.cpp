@@ -70,6 +70,7 @@
 #include "../vr/panel_input.h"
 #include "d2r_vr_state.h"
 #include "foveation.h"
+#include "effects_layer.h"
 #include "gaze.h"
 #include "d2rcam.h"
 #include "profile.h"
@@ -112,6 +113,9 @@ std::atomic<double> maxPipelineMs{0};
 std::atomic<bool> deferredWait{false};
 std::atomic<bool> symmetricProjection{true};
 std::atomic<bool> turnsFromDrawnEye{true};
+std::atomic<int> turnsKeepOwn{3};   // ConfigureTurnsKeepOwn: 0 off, 1 near things only, 2 everywhere, 3 the game's effects, 4 near things and effects
+std::atomic<float> turnsKeepGap{48},turnsKeepReach{96};   // ConfigureTurnsKeepNear: a 4096-wide eye's pixels
+std::atomic<float> turnsEffectsLevel{.02f},turnsEffectsReach{32};   // ConfigureTurnsKeepEffects: the layer's level; a 4096-wide eye's pixels
 std::atomic<bool> eyeTracking{false};
 std::atomic<bool> motionControls{false};
 // Stamped each focused XR input while motion controls are on (menus included).
@@ -2421,6 +2425,18 @@ bool KeepDepth(ID3D12GraphicsCommandList* list,int eye) {
     kept.format=DXGI_FORMAT(latest.format);kept.scale[0]=latest.scale[0];kept.scale[1]=latest.scale[1];
     return true;
 }
+// By turns: this present's effects layer (the game's own targets, as
+// effectslayer last saw them) into the eye's effects blocks, while the
+// turns keep the eye's own picture where the effects are.
+void KeepEffects(ID3D12GraphicsCommandList* list,int eye) {
+    effectslayer::Layer layer;
+    if(turnsKeepOwn.load()<3||!effectslayer::Latest(layer)||
+       !turnWarp.Effects(device.Get(),list,layer.targets,layer.states,eye,turnsEffectsReach.load()*float(layer.width)/4096)) {
+        turnWarp.ForgetEffects(eye);return;
+    }
+    static bool told=false;
+    if(!told){told=true;Say("Frame OpenXR: by turns - the game's effects layer kept for each eye (first frame doing so)");}
+}
 // By turns: this eye's interface (hud's copy, in a shader-resource state) kept
 // beside its image, for TurnEye to lay over the eye when it is not drawn.
 bool KeepLayer(ID3D12GraphicsCommandList* list,ID3D12Resource* layer,int eye) {
@@ -2511,6 +2527,12 @@ bool TurnEye(int i) {
         other.drawnFov={f.angleLeft,f.angleRight,f.angleDown,f.angleUp};
         other.nowFov={now.fov.angleLeft,now.fov.angleRight,now.fov.angleDown,now.fov.angleUp};
         const auto gap=drawnAt.at-at;other.apart=std::sqrt(gap.x*gap.x+gap.y*gap.y+gap.z*gap.z);
+        if(const int keep=turnsKeepOwn.load()) {   // this eye's own picture where it shows the same surface
+            other.keep=TurnEdgePixels;
+            const float wide=float(turnImages[i^1]->GetDesc().Width)/4096;
+            if(keep==1||keep==4){other.keepNear=turnsKeepGap.load()*wide;other.keepReach=turnsKeepReach.load()*wide;}   // round near things
+            if(keep>=3)other.keepEffects=turnsEffectsLevel.load();   // where the game's effects are
+        }
         fromDrawn=&other;
     }
     if(placed&&was.world.ok&&turnDepths[i].ok) {
@@ -2526,6 +2548,8 @@ bool TurnEye(int i) {
         depth.reach[0]=CarriedNear*w.upm;depth.reach[1]=CarriedFar*w.upm;
         moving=&depth;
     }
+    static bool keepTold=false;
+    if(moving&&fromDrawn&&other.keep>0&&!keepTold){keepTold=true;Say("Frame OpenXR: by turns - the eye not drawn keeps its own picture where the drawn eye's shows the same surface (first frame doing so)");}
     D3D12_RESOURCE_BARRIER b[2]{};const UINT kept=fromDrawn?2:1;
     for(UINT k=0;k<kept;++k){b[k].Type=D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
         b[k].Transition={turnImages[i^k].Get(),D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES,D3D12_RESOURCE_STATE_COMMON,D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE};}
@@ -2592,6 +2616,8 @@ bool Copy(ID3D12Resource* src,Eye& e,reshade::api::command_queue* rq) {
     // depth behind them.
     turnKept[eye]=keepTurns&&KeepTurn(e.commands.Get(),src,int(eye),D3D12_RESOURCE_STATE_COPY_SOURCE);
     turnDepths[eye].ok=keepDepth&&turnKept[eye]&&KeepDepth(e.commands.Get(),int(eye));
+    // and where the game's effects were in it (TurnDepth::keepEffects)
+    if(turnDepths[eye].ok)KeepEffects(e.commands.Get(),int(eye));else turnWarp.ForgetEffects(int(eye));
     // By turns the game's interface was taken out of its picture: laid back as
     // the game lays it, before the headset and the window get the picture.
     uint32_t layerWidth=0,layerHeight=0;
@@ -2796,6 +2822,7 @@ void Register(LogFn log,PanelFn panel,PanelFn world,PanelFn toggle) {
     reshade::register_event<reshade::addon_event::create_pipeline>(&PipelineCreating);
     reshade::register_event<reshade::addon_event::init_pipeline>(&PipelineCreated);
     foveation::Register(log);
+    effectslayer::Register(log);
     resolution::Register(log);
     registered=true;Say("Frame OpenXR: registered D3D12 capture; awaiting game Present");
 }
@@ -2812,6 +2839,25 @@ void ConfigureSymmetricProjection(bool on) {symmetricProjection.store(on);}
 void ConfigureTurnsFromDrawnEye(bool on) {
     if(turnsFromDrawnEye.exchange(on)!=on)Say(on?"Frame OpenXR: by turns - the eye not drawn mostly from the drawn eye's picture":"Frame OpenXR: by turns - the eye not drawn from its own image alone");
 }
+void SetTurnsKeepOwn(int mode) {
+    static const char* const said[]={"Frame OpenXR: by turns - the eye not drawn takes the drawn eye's picture wherever it reaches",
+        "Frame OpenXR: by turns - the eye not drawn keeps its own picture where it shows the same surface, round near things only",
+        "Frame OpenXR: by turns - the eye not drawn keeps its own picture wherever it shows the same surface",
+        "Frame OpenXR: by turns - the eye not drawn keeps its own picture where it shows the same surface, where the game's effects are",
+        "Frame OpenXR: by turns - the eye not drawn keeps its own picture where it shows the same surface, round near things and where the game's effects are"};
+    mode=std::clamp(mode,0,4);
+    if(turnsKeepOwn.exchange(mode)!=mode)Say(said[mode]);
+}
+int TurnsKeepOwn() {return turnsKeepOwn.load();}
+void ConfigureTurnsKeepOwn(int mode) {
+    // Every ini reload passes it (VR Settings' Apply too): only a change of
+    // the ini's own value overrides the DEV switch.
+    static std::atomic<int> read{-1};
+    mode=std::clamp(mode,0,4);
+    if(read.exchange(mode)!=mode)SetTurnsKeepOwn(mode);
+}
+void ConfigureTurnsKeepNear(float gap,float reach) {turnsKeepGap.store(std::clamp(gap,1.f,1000.f));turnsKeepReach.store(std::clamp(reach,16.f,1024.f));}
+void ConfigureTurnsKeepEffects(float level,float reach) {turnsEffectsLevel.store(std::clamp(level,1e-4f,100.f));turnsEffectsReach.store(std::clamp(reach,0.f,512.f));}
 void ConfigureEyeTracking(bool on) {eyeTracking.store(on);}
 void BeginEye(int eye) {
     hud::UiFrame(spatialMode,!journalMode,eye);
@@ -2858,7 +2904,7 @@ bool TakeWorldRecenter() {
     std::lock_guard lock(mutex);const bool take=worldRecenter;worldRecenter=false;return take;
 }
 void RequestStereoCapture(){captureRequested.store(true);}
-int StereoRendering() {return std::clamp(int(std::lround(vrsettings::Read().values[settings::StereoRendering])),0,2);}
+int StereoRendering() {return std::clamp(int(std::lround(vrsettings::Read().values[settings::StereoRendering])),0,1);}
 bool GpuWaitDeferred() {return deferredWait.load();}
 bool ReplayReady() {
     std::lock_guard lock(mutex);
