@@ -510,7 +510,7 @@ graphics settings for comparisons. Set the counter to zero after testing so
 the request does not repeat on the next launch.
 
 ```sh
-python3 steamvr/profile_report.py "/path/to/game/d2rloader/logs/d2r-vr-frame.log" \
+python3 steamvr/profile_report.py "/path/to/game/mods/D2R-PCVR/d2rloader/logs/d2r-vr-frame.log" \
   --sequence 1 --csv build-frame/profile-stationary.csv
 ```
 
@@ -628,7 +628,8 @@ fault-triggered snapshots, not a session FPS or loss-rate benchmark, and contain
 no image-resolution/bitrate measurement. `--since`/`--until` accept ISO timestamps;
 include a UTC offset when analyzing logs away from the capture machine's timezone.
 
-- Runtime log: `d2rloader/logs/d2r-vr-frame.log` in the game folder. A bounded
+- Runtime log: `mods/D2R-PCVR/d2rloader/logs/d2r-vr-frame.log` in the game folder
+  (`mods/pcvr-dev/d2rloader/logs/d2r-vr-frame.log` for developer mode). A bounded
   queue writes batches on a worker without forced disk flushes. The old SDK log,
   `d2r-pcvr-vrcam.log` (`d2r-vr-vrcam.log` up to 0.3.15), remains for loader/startup messages. Live syscall sampling
   identified repeated main-thread `fsync()` waits on that old file during hitches.
