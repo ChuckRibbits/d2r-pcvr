@@ -1,5 +1,6 @@
 #pragma once
 #include <cstdint>
+namespace reshade::api { struct effect_runtime; }
 #include "melee_contact.h"
 #include "bow_flight.h"
 #include "sewer_prompt.h"
@@ -14,6 +15,9 @@ void Register(LogFn log, PanelFn wantsPanel, PanelFn inWorld, PanelFn toggleMenu
 bool HandleWindowFocusMessage(void* window,uint32_t message,uint64_t token,int64_t deadline);
 void ConfigureDeferredWait(bool enabled);
 void ConfigureSymmetricProjection(bool enabled);
+// [stereo] turns_from_drawn_eye (1): by turns, the eye not drawn mostly from
+// the drawn eye's picture of this frame (TurnDepth); 0: its own image alone.
+void ConfigureTurnsFromDrawnEye(bool enabled);
 void ConfigureEyeTracking(bool enabled);
 void ConfigureGameplay(bool enabled);
 void ConfigureQuiver(bool enabled,bool preview); // [bow] quiver, quiver_preview
@@ -68,8 +72,41 @@ struct FrameTiming {
 };
 FrameTiming LastTiming();
 void Shutdown(bool preserveResolution=false);
-void BeginPair();
+// byTurns: this frame draws one eye; EndPair submits the other eye's last
+// image again at the pose and FOV it was drawn with. replay: the right eye is
+// drawn from the left pass (vr/stereo_replay.h) as the left eye moved along
+// its own x, and placed so.
+void BeginPair(bool byTurns=false,bool replay=false);
 void BeginEye(int eye);
+// VR Settings > Video > Stereo rendering: 0 both eyes, 1 By turns (the eye not
+// drawn turned and moved with the scene's depth; the default), 2 Replay (one
+// CPU pass, the right eye replayed from it).
+int StereoRendering();
+// [render] defer_gpu_wait: frames end without waiting for the GPU.
+bool GpuWaitDeferred();
+// Replay: no capture waits for a pair of two passes.
+bool ReplayReady();
+// After BeginPair(...,true): the frame begun is a stereo one the replay can
+// draw (rendering, views located, no flat panel).
+bool ReplayPair();
+// The eyes' gap along the left eye's x, in the world's units (View), and half
+// the left minus right eye's off-axis projection term: the replay's camera.
+float ReplayShift();
+float ReplayProjShift();
+// At a held present (the replay's left eye): its picture to the headset as at
+// the present's effects.
+void CaptureEffects(reshade::api::effect_runtime* rt);
+// Both eyes have a submitted image to reuse and no capture waits for a pair.
+bool TurnReady();
+// By turns: scenedepth copies the depth every present for it.
+bool TurnDepthWanted();
+// Both eyes' last images have their depth and place kept: walking can go by turns.
+bool TurnDepthReady();
+// How the eyes not drawn went since the last call: moved with depth, or turned only.
+// By turns, the eye not drawn: its own image moved with its depth, or turned
+// only; and of those, how many had the drawn eye's picture laid over them.
+struct TurnCounts {uint32_t moved=0,turned=0,drawn=0;};
+TurnCounts TakeTurnCounts();
 // Diagnostic only: F8 saves the next complete gameplay pair via ReShade.
 void RequestStereoCapture();
 void EndPair();
