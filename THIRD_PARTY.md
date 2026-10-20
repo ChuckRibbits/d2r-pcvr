@@ -25,7 +25,16 @@ adapt further work from `natpoh/diablo2-vr-port` at
 `4b6284c0766c089139693a504333b9a19201cdd2` (MIT, copyright 2026 BodyWalkVR).
 The native OpenXR adaptation uses current-eye color/depth bindings, tracked
 resource states and device lifetimes to keep square shadow maps out of fog/sky
-sampling. This does not include upstream's experimental command replay renderer.
+sampling.
+
+The stereo replay (VR Settings > Video > Stereo rendering: Replay) in
+`vr/stereo_replay.*`, `vr/ecl_hook.*`, `steamvr/replay_camera.h`,
+`steamvr/replay_groups.h` and `steamvr/replay_pause.h` adapts upstream's
+"one pass, two pictures" renderer (`camfix` and `replay` in `vr/vrcam.cpp`,
+`vr/ecl_hook.*`, `vr/replay_groups.h`, `vr/replay_pause.h`) at
+`8bd1d3bc7f9f8a7d5fc2f49d250d57988ec6256e` (MIT, copyright 2026 BodyWalkVR).
+Upstream's DLSS predication, held queue signals, stall guard and stack dump
+are not included.
 
 Native renderer/entity pool growth, its allocator checks, signatures and snapshot
 test are adapted from Sergious / BodyWalkVR

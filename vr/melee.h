@@ -76,5 +76,10 @@ bool HirelingVitals(uint32_t hint,float& health,float& maxHealth,uint32_t& class
 // reaches a dead one. A state set here outranks the hireling's other colour
 // tints (cold, poison) until it is cleared. False when unavailable or gone.
 bool HirelingState(uint32_t unitId,int state,bool on);
+// Owning game thread only. Live monsters hostile to the local player within
+// range grid cells: id, class, cell, and clear = no wall between. Returns the
+// count, -1 when the local server is unavailable; hero receives the player's cell.
+struct Hostile {uint32_t id,classId;float x,y;bool clear;};
+int Hostiles(Hostile* out,int max,float range,float& heroX,float& heroY);
 bool HirelingOverlay(uint32_t unitId,int overlay);
 }
