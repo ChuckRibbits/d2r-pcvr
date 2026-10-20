@@ -666,22 +666,20 @@ cm suits a buckler and large shields need more (`[gameplay] shield_grip_cm`,
 `shield_out_cm`, `shield_up_cm`). The posed shield is also the guard pose that
 blocking, parrying and bashing read, so the shield blocks where it is shown.
 
-How much the shield turns with the wrist is `[gameplay] shield_follow_pct`
-(0-100, snapped to 10% steps, default 50%). It is an INI value only: VR
-Settings has no key left (64 of 64), so it has no row on the Shield page. 0
-straps the shield to the forearm, so a wrist bend leaves it still; 100 turns it
+**Shield follows** sets how much the shield turns with the wrist
+(`[gameplay] shield_follow_pct`, 0-100 in 10% steps, default 50%; the row reads
+"0% Forearm" and "100% Wrist" at its ends). 0 straps the shield to the forearm, so a wrist bend leaves it still; 100 turns it
 with the hand, the original wrist attach. The blend is a slerp between the two,
 so it is smooth at every value. Twisting the forearm turns the shield at every
 value.
 
-A resting roll then turns the shield about the forearm: `[gameplay]
-shield_roll_deg`, default 0 (the attach's own facing), -180 to +180, snapped to
+A resting roll then turns the shield about the forearm: **Shield roll**
+(`[gameplay] shield_roll_deg`), default 0 (the attach's own facing), -180 to +180, snapped to
 5-degree steps; positive turns the face from the back of the hand toward the
 little finger. With the usual near thumb-up grip, 0 seats every class's shield
 on the outside of the forearm; +90 suits a controller held palm down (the face
 outward instead of lying on the forearm like a tray), while with the thumb up it
-lays the shield flat under the wrist. It is an INI value only, because VR
-Settings has no key left (64 of 64).
+lays the shield flat under the wrist.
 
 Per-shield adjustments are one table in `vr/shield_pose.h` (`kTweaks`), keyed by
 the equipped shield's item code read live from the game. The Bone Shield (`bsh`)

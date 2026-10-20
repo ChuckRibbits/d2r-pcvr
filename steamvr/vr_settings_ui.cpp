@@ -171,6 +171,8 @@ std::vector<uint8_t> Paint(const Model& m,Hit hover,const char* runtimeStatus,co
             else if(HapticKey(key)){if(value==0)std::snprintf(label,sizeof label,"Off (0%%)");else std::snprintf(label,sizeof label,"%.0f%%",value);}
             else if(key==LootLabelSize)std::snprintf(label,sizeof label,"%g%%",value);
             else if(key==ShieldGrip||key==ShieldOut||key==ShieldUp)std::snprintf(label,sizeof label,"%+.0f cm",value);
+            else if(key==ShieldFollow){if(value==0)std::snprintf(label,sizeof label,"0%% Forearm");else if(value==100)std::snprintf(label,sizeof label,"100%% Wrist");else std::snprintf(label,sizeof label,"%.0f%%",value);}
+            else if(key==ShieldRoll)std::snprintf(label,sizeof label,"%+.0f\xc2\xb0",value);
             else if(key==Waist||key==BeltForward)std::snprintf(label,sizeof label,"%.1f cm",value*100);
             else std::snprintf(label,sizeof label,"%.0f",value);
             const bool enabled=m.ready&&!m.Busy()&&applies;

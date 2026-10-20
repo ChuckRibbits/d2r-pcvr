@@ -274,7 +274,36 @@ int main(){
         Check(speed.Click({Kind::Apply}).changed==(ChangeMask{1}<<StrainSpeed),"buildup edits preserve combat rules, difficulty and colour");
     }
     {Model shield;shield.Open(s);shield.Click({Kind::Tab,int(Page::Shield)});
-        Check(RowCount(Page::Shield)==3&&RowKey(Page::Shield,0)==ShieldGrip&&RowKey(Page::Shield,1)==ShieldOut&&RowKey(Page::Shield,2)==ShieldUp,"the Shield page holds grip, out and up");
+        Check(RowCount(Page::Shield)==5&&RowKey(Page::Shield,0)==ShieldGrip&&RowKey(Page::Shield,1)==ShieldOut&&RowKey(Page::Shield,2)==ShieldUp&&
+              RowKey(Page::Shield,3)==ShieldFollow&&RowKey(Page::Shield,4)==ShieldRoll,"the Shield page holds grip, out, up, follows and roll");
+        Check(ValueBox(RowCount(Page::Shield)-1).y+ValueBox(0).h<=Apply.y&&RowCount(Page::Shield)<=RowCount(Page::HUD),"five Shield rows fit above Apply, as the ten-row pages do");
+        Check(HelpAt(Page::Shield,(ValueBox(3).x+5.f)/Width,(ValueBox(3).y+5.f)/Height)==ShieldFollow&&HelpAt(Page::Shield,(ValueBox(4).x+5.f)/Width,(ValueBox(4).y+5.f)/Height)==ShieldRoll,
+              "Shield follows and Shield roll explain themselves");
+        Check(Definitions[ShieldFollow].section==std::wstring_view(L"gameplay")&&Definitions[ShieldFollow].key==std::wstring_view(L"shield_follow_pct")&&
+              Definitions[ShieldRoll].section==std::wstring_view(L"gameplay")&&Definitions[ShieldRoll].key==std::wstring_view(L"shield_roll_deg"),"follows and roll keep their INI keys");
+        Check(s.values[ShieldFollow]==skel::shield::kFollowDefaultPct&&s.values[ShieldRoll]==0&&Definitions[ShieldFollow].defaultValue==skel::shield::FollowSetting(NAN)&&
+              Definitions[ShieldRoll].defaultValue==skel::shield::RollSetting(NAN),"follows 50% and roll 0 by default, as the pose reads an unset value");
+        Check(Definitions[ShieldFollow].min==0&&Definitions[ShieldFollow].max==skel::shield::kFollowMaxPct&&Definitions[ShieldFollow].step==skel::shield::kFollowStepPct&&
+              Definitions[ShieldRoll].min==-skel::shield::kRollMaxDeg&&Definitions[ShieldRoll].max==skel::shield::kRollMaxDeg&&Definitions[ShieldRoll].step==skel::shield::kRollStepDeg,
+              "follows and roll span the pose's range in its own steps");
+        for(float v:{-500.f,-181.f,-93.f,-7.f,-1.f,0.f,2.f,3.f,34.f,35.f,92.f,93.f,101.f,179.f,500.f}){
+            Check(Normalize(ShieldFollow,v)==skel::shield::FollowSetting(v),"Shield follows normalizes as the pose snaps it");
+            Check(Normalize(ShieldRoll,v)==skel::shield::RollSetting(v),"Shield roll normalizes as the pose snaps it");
+        }
+        Check(Normalize(ShieldFollow,NAN)==50&&Normalize(ShieldRoll,NAN)==0&&!std::signbit(Normalize(ShieldRoll,-1)),"unreadable values fall back; no -0 degrees");
+        {Model turn;turn.Open(s);turn.Click({Kind::Tab,int(Page::Shield)});
+            turn.Click(At(Page::Shield,Increase(3)));turn.Click(At(Page::Shield,Decrease(4)));
+            Check(turn.Get()[ShieldFollow]==60&&turn.Get()[ShieldRoll]==-5,"follows steps 10%, roll 5 degrees");
+            for(int i=0;i<20;++i)turn.Click(At(Page::Shield,Increase(3)));
+            for(int i=0;i<50;++i)turn.Click(At(Page::Shield,Decrease(4)));
+            Check(turn.Get()[ShieldFollow]==100&&turn.Get()[ShieldRoll]==-180,"follows stops at 100% (Wrist), roll at -180");
+            for(int i=0;i<20;++i)turn.Click(At(Page::Shield,Decrease(3)));
+            for(int i=0;i<80;++i)turn.Click(At(Page::Shield,Increase(4)));
+            Check(turn.Get()[ShieldFollow]==0&&turn.Get()[ShieldRoll]==180,"follows stops at 0% (Forearm), roll at +180");
+            const auto request=turn.Click({Kind::Apply});
+            Check(request.changed==((ChangeMask{1}<<ShieldFollow)|(ChangeMask{1}<<ShieldRoll))&&request.values[ShieldFollow]==0&&request.values[ShieldRoll]==180,
+                  "follows and roll save through their own mask bits, nothing else");
+        }
         Check(s.values[ShieldGrip]==0&&s.values[ShieldOut]==0&&s.values[ShieldUp]==0,"the shield keeps its original position (and blocking surface) by default");
         Check(HelpAt(Page::Shield,(ValueBox(1).x+5.f)/Width,(ValueBox(1).y+5.f)/Height)==ShieldOut,"each Shield row explains itself");
         shield.Click(At(Page::Shield,Increase(0)));
