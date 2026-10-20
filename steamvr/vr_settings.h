@@ -12,10 +12,10 @@
 #include "haptic_strength.h"
 
 namespace framevr::settings {
-enum class Page { Controls, VR, Video, HUD, Combat, Shield, Aim, Haptics, ReleaseNotes };
+enum class Page { Controls, VR, Video, HUD, Combat, Aim, Shield, Haptics, ReleaseNotes };
 enum Key { Motion, Seated, Dominant, Snap, TurnSpeed, Waist, BeltForward,
            Foveation, Sky, Fog, Ceiling, DrawDistance, ObjectDistance,
-           EyeHeight, ArmSpan, BodyCalibration, SkillGestures, WristMap, WristCompass, ControllerLabels, WeaponSkillIndicators, PlanarSpellAim, VitalsLocation, CriticalAlerts, RenderResolution, NavigationLocation, SmoothTurn, OrdinaryMobBars, MenuDistance, TooltipTiming, ProjectileAimAssist, MeleeHitSpeed, VitalsTilt, HapticStrength, HapticMelee, HapticBowDraw, HapticBowRelease, HapticSpell, HapticInteraction, HapticAlert, HapticShortMelee, BloodVisor, BloodWipe, MeleeRules, MeleeThrustSpeed, LootLabelSize, CompanionCounts, StrainDark, OfflinePlayers, ShieldBashSpeed, StrainSpeed, DesktopOneEye, MapTopDown, MapRotate, FoveationStrength, StereoRendering, DeferGpuWait, TargetHighlight, TargetOutlineColour, TargetOutlineHue, ShieldGrip, ShieldOut, ShieldUp, ShieldFollow, Count };
+           EyeHeight, ArmSpan, BodyCalibration, SkillGestures, WristMap, WristCompass, ControllerLabels, WeaponSkillIndicators, PlanarSpellAim, VitalsLocation, CriticalAlerts, RenderResolution, NavigationLocation, SmoothTurn, OrdinaryMobBars, MenuDistance, TooltipTiming, ProjectileAimAssist, MeleeHitSpeed, VitalsTilt, HapticStrength, HapticMelee, HapticBowDraw, HapticBowRelease, HapticSpell, HapticInteraction, HapticAlert, HapticShortMelee, BloodVisor, BloodWipe, MeleeRules, MeleeThrustSpeed, LootLabelSize, CompanionCounts, StrainDark, OfflinePlayers, ShieldBashSpeed, StrainSpeed, DesktopOneEye, MapTopDown, MapRotate, FoveationStrength, StereoRendering, DeferGpuWait, TargetHighlight, TargetOutlineColour, TargetOutlineHue, HeartbeatStart, ShieldGrip, ShieldOut, ShieldUp, Count };
 using ChangeMask=uint64_t;
 static_assert(Count<=64,"settings change mask capacity");
 constexpr ChangeMask SupportedChanges=~ChangeMask{0}>>(64-Count);
@@ -87,10 +87,10 @@ inline constexpr std::array<Definition,Count> Definitions{{
     {"Monster outline", "Outline strength for the monster you aim at; Off by default", L"gameplay",L"target_outline_pct",0,0,100,10},
     {"Monster outline colors", "Static: one color. By range: red near, orange mid-range, yellow far", L"gameplay",L"target_outline_by_range",0,0,1,1},
     {"Static color", "The outline's color around the color wheel", L"gameplay",L"target_outline_hue",45,0,345,15},
-    {"Shield grip offset", "Slides the shield up the forearm so the hand reaches its grip", L"gameplay",L"shield_grip_cm",3,0,40,1},
-    {"Shield out from the arm", "Moves the shield away from the arm (+) or into it (-)", L"gameplay",L"shield_out_cm",2,-25,25,1},
-    {"Shield up", "Moves the shield toward your thumb (+) or little finger (-)", L"gameplay",L"shield_up_cm",2,-25,25,1},
-    {"Shield follows", "0% strapped to the forearm; 100% turns with the wrist", L"gameplay",L"shield_follow_pct",50,0,100,10},
+    {"Heartbeat starts at", "Life % where the heartbeat begins; louder and faster every 10% lower", L"gameplay",L"low_life_heart_start",60,0,90,10},
+    {"Shield grip offset", "Slides the shield along the forearm so the hand reaches its grip", L"gameplay",L"shield_grip_cm",0,-10,40,1},
+    {"Shield out from the arm", "Moves the shield away from the forearm (+) or into it (-)", L"gameplay",L"shield_out_cm",0,-30,30,1},
+    {"Shield up", "Moves the shield across the forearm, square to Out", L"gameplay",L"shield_up_cm",0,-30,30,1},
 }};
 using Values=std::array<float,Count>;
 inline bool HapticKey(Key key){return key>=HapticStrength&&key<=HapticAlert;}
@@ -107,6 +107,7 @@ inline float Normalize(Key key,float value){
     const auto& d=Definitions[key];
     if(!std::isfinite(value))return d.defaultValue;
     if(key==OfflinePlayers&&(value<0||value>8||std::floor(value)!=value))return 0;
+    if(key==HeartbeatStart)return std::clamp(std::round(value/10)*10,d.min,d.max);   // 0 = Off, else a 10% step
     if(key==VitalsTilt)return vitals::NormalizeTilt(value);
     if(HapticKey(key))return haptics::NormalizeStrength(value);
     if((key==ControllerLabels||key==VitalsLocation||key==NavigationLocation||key==RenderResolution||key==MenuDistance||key==TooltipTiming||key==ProjectileAimAssist||key==StrainSpeed||key==FoveationStrength||key==StereoRendering)&&(value<d.min||value>d.max||value!=std::round(value)))return d.defaultValue;
@@ -129,8 +130,8 @@ struct Rect {
 };
 constexpr int Width=1280,Height=1024;
 constexpr int TabCount=9;
-inline constexpr const char* TabNames[TabCount]={"Controls","VR","Video","HUD","Combat","Shield","Aim","Haptics","Release Notes"};
-constexpr Rect Tabs[TabCount]={{40,114,140,60},{192,114,76,60},{280,114,104,60},{396,114,92,60},{500,114,128,60},{640,114,116,60},{768,114,80,60},{860,114,126,60},{998,114,242,60}};
+inline constexpr const char* TabNames[TabCount]={"Controls","VR","Video","HUD","Combat","Aim","Shield","Haptics","Release Notes"};
+constexpr Rect Tabs[TabCount]={{40,114,144,60},{194,114,74,60},{278,114,108,60},{396,114,96,60},{502,114,136,60},{648,114,84,60},{742,114,116,60},{868,114,132,60},{1010,114,230,60}};
 inline Rect TabBox(int index){return Tabs[index];}
 constexpr Rect Apply{965,918,275,68},Close{650,918,275,68},Recenter{40,918,270,68},Calibrate{330,918,300,68};
 constexpr int RowY=242,RowStep=62;
@@ -162,6 +163,11 @@ inline constexpr const char* StereoRenderingNames[]={"Both eyes","By turns","Rep
 // rate. While it is not deferred, the Video page warns and offers a button
 // that turns it on (Apply saves it).
 constexpr Rect VideoDeferBox{940,181,300,52};
+// Windows Mono audio (Settings > Accessibility > Audio) folds the PC's sound to
+// the centre before any headset stream, so head-relative sound cannot pan.
+// While it is on, the title row's hint gives way to this warning on every page.
+constexpr Rect MonoAudioBox{820,40,420,50};
+inline constexpr const char* MonoAudioWarning="Windows Mono audio is on";
 inline bool DeferOffered(const Values& values){return values[DeferGpuWait]<.5f;}
 inline constexpr const char* DeferWarning="Each frame waits for the GPU: about half the frame rate";
 // The game's own video options that cost the headset frames, from its
@@ -218,13 +224,13 @@ inline Rect ControllerOption(int option){return {865,233+option*58,375,58};}
 inline Rect Decrease(int row){return {865,RowY+row*RowStep,64,52};}
 inline Rect Increase(int row){return {1176,RowY+row*RowStep,64,52};}
 inline Rect ValueBox(int row){return {942,RowY+row*RowStep,221,52};}
-inline int RowCount(Page page){return page==Page::Haptics?2+haptics::CategoryCount:page==Page::Combat?7:page==Page::Shield?4:page==Page::Aim?3:page==Page::VR?10:page==Page::Video?10:page==Page::HUD?10:0;}
+inline int RowCount(Page page){return page==Page::Haptics?2+haptics::CategoryCount:page==Page::Combat?8:page==Page::Aim?3:page==Page::Shield?3:page==Page::VR?10:page==Page::Video?10:page==Page::HUD?10:0;}
 inline Key RowKey(Page page,int row){
     constexpr Key hapticRows[]={HapticStrength,HapticMelee,HapticShortMelee,HapticBowDraw,HapticBowRelease,HapticSpell,HapticInteraction,HapticAlert};
     if(page==Page::Haptics)return hapticRows[row];
-    if(page==Page::Combat)return row==0?MeleeRules:row==1?MeleeHitSpeed:row==2?MeleeThrustSpeed:row==3?ShieldBashSpeed:row==4?StrainDark:row==5?StrainSpeed:OfflinePlayers;
-    if(page==Page::Shield)return Key(ShieldGrip+row);
+    if(page==Page::Combat)return row==0?MeleeRules:row==1?MeleeHitSpeed:row==2?MeleeThrustSpeed:row==3?ShieldBashSpeed:row==4?StrainDark:row==5?StrainSpeed:row==6?OfflinePlayers:HeartbeatStart;
     if(page==Page::Aim)return row==0?TargetHighlight:row==1?TargetOutlineColour:TargetOutlineHue;
+    if(page==Page::Shield)return Key(ShieldGrip+row);
     constexpr Key hud[]={VitalsLocation,VitalsTilt,CriticalAlerts,NavigationLocation,MenuDistance,TooltipTiming,BloodVisor,BloodWipe,LootLabelSize,CompanionCounts};
     if(page==Page::HUD)return hud[row];
     constexpr Key video[]={Foveation,FoveationStrength,Sky,Fog,Ceiling,DrawDistance,ObjectDistance,RenderResolution,DesktopOneEye,StereoRendering};

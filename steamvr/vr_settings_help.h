@@ -7,11 +7,12 @@ namespace framevr::settings {
 // transparent strip on its right in the same atlas/composition layer.
 constexpr int HelpGap=24,HelpWidth=440,AtlasWidth=Width+HelpGap+HelpWidth;
 constexpr Rect HelpCard{Width+HelpGap,242,HelpWidth-24,612};
-constexpr int NoHelp=-1,HelpApply=Count,HelpClose=Count+1,HelpRecenter=Count+2,HelpCalibrate=Count+3;
+constexpr int NoHelp=-1,HelpApply=Count,HelpClose=Count+1,HelpRecenter=Count+2,HelpCalibrate=Count+3,HelpMonoAudio=Count+4;
 inline const char* HelpTitle(int id) {
     if(id>=0&&id<Count)return Definitions[id].label;
     switch(id){case HelpApply:return "Apply";case HelpClose:return "Close";
-        case HelpRecenter:return "Reset eye height";case HelpCalibrate:return "Calibrate body";default:return "";}
+        case HelpRecenter:return "Reset eye height";case HelpCalibrate:return "Calibrate body";
+        case HelpMonoAudio:return "Windows Mono audio";default:return "";}
 }
 inline const char* HelpText(int id) {
     switch(id) {
@@ -56,15 +57,15 @@ inline const char* HelpText(int id) {
         case MeleeRules:return "How your physical melee strokes deal damage.";
         case CompanionCounts:return "Shows companion counts and effects currently affecting your character below the left-hand minimap. This includes received buffs, auras and harmful effects, not just assigned skills. It follows Minimap & Compass placement.";
         case OfflinePlayers:return "Uses native offline Players 1-8 scaling for tougher monsters and increased experience and loot. Apply affects newly spawned monsters; existing monsters keep their current stats. For all monsters to use the new value, Save and Exit, then start a new game with the same character. Game default follows the game's own setting. Works with every class and either melee mode. Does not change Normal, Nightmare or Hell, or your desktop preference.";
-        case StrainSpeed:return "How quickly blocked hits build the shield strain vignette in Unleashed. Lowering your shield clears full strain in 3 seconds.";
-        case StrainDark:return "The color of the edge effect as repeated blocks strain your guard in Unleashed. Lower your shield to let it clear.";
+        case StrainSpeed:return "How quickly blocked hits build the shield strain vignette in Unleashed. Strain starts fading a moment after hits stop, or as soon as you lower the shield; full strain is gone about 3 seconds after the last hit.";
+        case StrainDark:return "The color of the edge effect as repeated blocks strain your guard in Unleashed. It clears when hits stop for a few seconds or you lower your shield.";
         case TargetOutlineColour:return "Static: every outline in the Static color below. By range: red near, orange mid-range, yellow far, so you can tell at a glance how close the monster you aim at is. Select the value to switch.";
         case TargetOutlineHue:return "The Static color, around the color wheel 15 degrees at a time; gold by default. A color unlike the monster's own reads best: red is hard to see on red monsters.";
         case TargetHighlight:return "A thin, steady outline round the monster you are aiming at. Off by default; the percentage sets how strongly it shows. Monster outline color chooses gold or a color by distance. While your arm is held out, the monster your hand points at is chosen; when your hand points at none, the monster you look at is. Only monsters in your line of sight count. The outline is a guide only: it does not change how attacks or spells aim.";
-        case ShieldGrip:return "Slides a held shield back along your forearm toward the elbow so your fingers reach its grip strap, 0-40 cm. Default 3 cm, tuned on a buckler; large shields may need much more. Grip offset, Out and Up mean the same directions for every class. Set all three to 0 for the shield's original place on the arm.";
-        case ShieldOut:return "Moves a held shield away from your arm on the shield's side (+) or into it (-), -25 to +25 cm. Use it with Grip offset and Up to seat the shield on your arm.";
-        case ShieldUp:return "Moves a held shield toward your thumb (+) or your little finger (-), -25 to +25 cm. Use it with Grip offset and Out to seat the shield on your arm.";
-        case ShieldFollow:return "How much a held shield turns with your wrist. 0% (Forearm): strapped to your forearm, so bending the wrist leaves it still. 100% (Wrist): it turns with your hand as before. Default 50%. Twisting your forearm turns it at every setting.";
+        case HeartbeatStart:return "The life percentage where the low-life heartbeat begins. Below it the heartbeat steps up every 10% of life you lose, louder and faster, until it is at full strength below 10%. 60% is the default; Off silences it. Healing winds it back down beat by beat; wiping the visor clean fades it until the next hit. Works in Unleashed and Classic.";
+        case ShieldGrip:return "Slides a held shield along your forearm: + toward the elbow so your fingers reach its grip strap, - toward the hand. How much it turns with your wrist is the INI value [gameplay] shield_follow_pct (default 50%). 0 by default, the original position; about 3 cm suits a buckler, large shields need more. The shield blocks where it is shown, so this moves its blocking surface too.";
+        case ShieldOut:return "Moves a held shield away from your forearm (+) or into it (-), up to 30 cm either way. Use it with Grip offset and Up to seat the shield on your arm; it blocks where it is shown. 0 by default.";
+        case ShieldUp:return "Moves a held shield across your forearm, square to Out, up to 30 cm either way. Use it with Grip offset and Out to seat the shield on your arm; it blocks where it is shown. 0 by default.";
         case MeleeHitSpeed:return "Minimum weapon movement speed for a swing to count as a strike. Lower it for easier swings; raise it to require faster movement. Default: 12 m/s. Both melee modes use this value. Shield bash has its own threshold.";
         case ShieldBashSpeed:return "Minimum tracked hand speed for a physical shield bash, including assigned Smite. Default: 2 m/s. Move the hand at least 12 cm in one deliberate stroke; wrist twisting alone does not attack. The speed must still be met at contact. Applies in both melee modes; blocking, parries and trigger attacks are unchanged.";
         case MeleeThrustSpeed:return "Minimum forward speed for a stab along your weapon's tip. Default: 2 m/s. Move forward at least 12 cm, then pull back before stabbing again. This is separate from swing speed and applies in both melee modes.";
@@ -83,6 +84,7 @@ inline const char* HelpText(int id) {
         case HelpClose:return "Returns to the game and discards changes you have not applied. Right B also closes this panel. The world continues running while VR Settings is open.";
         case HelpRecenter:return "Resets the current eye-height reference for your play position. This is separate from measuring your body and does not replace your saved body calibration.";
         case HelpCalibrate:return "Guides you through measuring standing eye height and controller span in a T-pose. Apply or discard pending settings first. Hold both triggers when prompted; Right B cancels.";
+        case HelpMonoAudio:return "Windows is set to Mono audio, which mixes every sound to the centre before it reaches the headset, so sounds cannot follow your head and stick turns. Turn it off in Windows Settings > Accessibility > Audio > Mono audio; the change applies at once.";
         default:break;
     }
     // Future settings retain at least their inline explanation until richer
@@ -206,8 +208,9 @@ inline ChoiceHelp HelpChoice(int id,float value) {
         default:return {};
     }
 }
-inline int HelpAt(Page page,float u,float v,bool controllerMenu=false,const Values* values=nullptr) {
+inline int HelpAt(Page page,float u,float v,bool controllerMenu=false,const Values* values=nullptr,bool monoAudio=false) {
     if(!std::isfinite(u)||!std::isfinite(v)||u<0||u>=1||v<0||v>=1)return NoHelp;
+    if(monoAudio&&MonoAudioBox.Contains(u*Width,v*Height))return HelpMonoAudio;
     // Do not explain controls hidden behind an open dropdown.
     if(page==Page::VR&&controllerMenu)return NoHelp;
     const float x=u*Width,y=v*Height;

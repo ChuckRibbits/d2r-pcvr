@@ -52,6 +52,15 @@ int main(){
         Check(saved.values[StrainSpeed]==choice&&Int(path,L"gameplay",L"guard_strain_speed")==choice,"buildup survives reload");
         Check(Changed(saved.values,current.values)==request.changed&&Int(path,L"custom",L"keep")==12345,"buildup preserves other settings");
     }
+    Check(before.values[HeartbeatStart]==60,"missing heartbeat start uses 60%");
+    for(int choice:{50,0,90}){
+        const auto current=vrsettings::Read();auto values=current.values;values[HeartbeatStart]=float(choice);
+        const Request request{current.values,values,Changed(current.values,values),current.sequence+1};
+        Check(vrsettings::Submit(request)&&vrsettings::Poll(name),"save heartbeat start");
+        const auto saved=vrsettings::Read();
+        Check(saved.values[HeartbeatStart]==choice&&Int(path,L"gameplay",L"low_life_heart_start")==choice,"heartbeat start survives reload");
+        Check(Changed(saved.values,current.values)==request.changed&&Int(path,L"custom",L"keep")==12345,"heartbeat start preserves other settings");
+    }
     Check(before.values[OfflinePlayers]==0,"missing difficulty preserves game default");
     for(int choice:{1,8,3,0}){
         const auto current=vrsettings::Read();auto values=current.values;values[OfflinePlayers]=float(choice);

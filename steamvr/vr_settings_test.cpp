@@ -236,7 +236,7 @@ int main(){
         thrust.Click(hit);Check(thrust.Get()[MeleeThrustSpeed]==2.25f,"thrust speed adjusts in quarter steps");
         const auto request=thrust.Click({Kind::Apply});
         Check(request.changed==(ChangeMask{1}<<MeleeThrustSpeed),"thrust edit does not change swing speed or combat rules");
-        Check(RowCount(Page::Combat)==7&&RowKey(Page::Combat,3)==ShieldBashSpeed,"seven Combat rows retain independent bash speed; parry window is fixed");
+        Check(RowCount(Page::Combat)==8&&RowKey(Page::Combat,3)==ShieldBashSpeed,"eight Combat rows retain independent bash speed; parry window is fixed");
         Check(Normalize(MeleeThrustSpeed,NAN)==2&&Normalize(MeleeThrustSpeed,0)==.75f&&Normalize(MeleeThrustSpeed,99)==10,"thrust speed has finite usable bounds");
     }
     {Model strain;strain.Open(s);strain.Click({Kind::Tab,int(Page::Combat)});
@@ -257,27 +257,22 @@ int main(){
         Check(speed.Click({Kind::Apply}).changed==(ChangeMask{1}<<StrainSpeed),"buildup edits preserve combat rules, difficulty and colour");
     }
     {Model shield;shield.Open(s);shield.Click({Kind::Tab,int(Page::Shield)});
-        Check(RowCount(Page::Shield)==4&&RowKey(Page::Shield,0)==ShieldGrip&&RowKey(Page::Shield,1)==ShieldOut&&RowKey(Page::Shield,2)==ShieldUp&&RowKey(Page::Shield,3)==ShieldFollow,"the Shield page holds grip, out, up and follows");
-        Check(s.values[ShieldFollow]==50&&Definitions[ShieldFollow].min==0&&Definitions[ShieldFollow].max==skel::shield::kFollowMaxPct&&Definitions[ShieldFollow].step==10,"the shield follows the wrist halfway by default, 0-100% in tens");
-        Check(s.values[ShieldGrip]==3&&s.values[ShieldOut]==2&&s.values[ShieldUp]==2,"the shield defaults to 3 / 2 / 2 cm (tuned on a buckler)");
-        Check(Definitions[ShieldGrip].min==0&&Definitions[ShieldGrip].max==skel::shield::kGripMaxCm&&Definitions[ShieldOut].min==-skel::shield::kSideMaxCm&&
-              Definitions[ShieldOut].max==skel::shield::kSideMaxCm&&Definitions[ShieldUp].min==-skel::shield::kSideMaxCm&&Definitions[ShieldUp].max==skel::shield::kSideMaxCm&&
-              Definitions[ShieldGrip].step==1&&Definitions[ShieldOut].step==1&&Definitions[ShieldUp].step==1,"the Shield rows span what the pose accepts, 1 cm a step");
+        Check(RowCount(Page::Shield)==3&&RowKey(Page::Shield,0)==ShieldGrip&&RowKey(Page::Shield,1)==ShieldOut&&RowKey(Page::Shield,2)==ShieldUp,"the Shield page holds grip, out and up");
+        Check(s.values[ShieldGrip]==0&&s.values[ShieldOut]==0&&s.values[ShieldUp]==0,"the shield keeps its original position (and blocking surface) by default");
         Check(HelpAt(Page::Shield,(ValueBox(1).x+5.f)/Width,(ValueBox(1).y+5.f)/Height)==ShieldOut,"each Shield row explains itself");
         shield.Click(At(Page::Shield,Increase(0)));
         for(int i=0;i<3;++i)shield.Click(At(Page::Shield,Decrease(1)));
-        Check(shield.Get()[ShieldGrip]==4&&shield.Get()[ShieldOut]==-1,"grip steps up by a centimeter; out goes below zero");
-        for(int i=0;i<60;++i)shield.Click(At(Page::Shield,Increase(0)));
-        Check(shield.Get()[ShieldGrip]==40,"grip stops at 40 cm");
-        for(int i=0;i<60;++i)shield.Click(At(Page::Shield,Decrease(1)));
-        Check(shield.Get()[ShieldOut]==-25,"out stops at -25 cm");
-        for(int i=0;i<60;++i)shield.Click(At(Page::Shield,Increase(2)));
-        Check(shield.Get()[ShieldUp]==25,"up stops at +25 cm");
-        for(int i=0;i<20;++i)shield.Click(At(Page::Shield,Decrease(3)));
-        Check(shield.Get()[ShieldFollow]==0,"follows stops at 0% (strapped to the forearm)");
-        Check(HelpAt(Page::Shield,(ValueBox(3).x+5.f)/Width,(ValueBox(3).y+5.f)/Height)==ShieldFollow,"follows explains itself");
+        Check(shield.Get()[ShieldGrip]==1&&shield.Get()[ShieldOut]==-3,"grip steps up by a centimeter; out goes below zero");
+        for(int i=0;i<50;++i)shield.Click(At(Page::Shield,Increase(0)));
+        Check(shield.Get()[ShieldGrip]==40,"grip stops at 40 cm, room for large shields");
+        for(int i=0;i<40;++i)shield.Click(At(Page::Shield,Decrease(1)));
+        Check(shield.Get()[ShieldOut]==-30,"out stops at -30 cm");
+        Check(Normalize(ShieldGrip,-20)==-10&&Normalize(ShieldUp,45)==30&&Normalize(ShieldUp,NAN)==0,"shield offsets clamp to their ranges");
+        Check(Definitions[ShieldGrip].min==skel::shield::kGripMinCm&&Definitions[ShieldGrip].max==skel::shield::kGripMaxCm&&Definitions[ShieldOut].min==-skel::shield::kSideMaxCm&&
+              Definitions[ShieldOut].max==skel::shield::kSideMaxCm&&Definitions[ShieldUp].min==-skel::shield::kSideMaxCm&&Definitions[ShieldUp].max==skel::shield::kSideMaxCm&&
+              Definitions[ShieldGrip].step==1&&Definitions[ShieldOut].step==1&&Definitions[ShieldUp].step==1,"the Shield rows span what the pose accepts, 1 cm a step");
         const auto request=shield.Click({Kind::Apply});
-        Check(request.changed==((ChangeMask{1}<<ShieldGrip)|(ChangeMask{1}<<ShieldOut)|(ChangeMask{1}<<ShieldUp)|(ChangeMask{1}<<ShieldFollow)),"shield edits change nothing else");
+        Check(request.changed==((ChangeMask{1}<<ShieldGrip)|(ChangeMask{1}<<ShieldOut)),"shield edits change nothing else");
     }
     {Model aim;aim.Open(s);aim.Click({Kind::Tab,int(Page::Aim)});
         Check(s.values[TargetHighlight]==0&&RowKey(Page::Aim,0)==TargetHighlight,"the monster outline is Off by default, first on the Aim page");
@@ -297,6 +292,26 @@ int main(){
         aim.Click(At(Page::Aim,Increase(0)));aim.Click(At(Page::Aim,Increase(0)));
         const auto request=aim.Click({Kind::Apply});
         Check(request.changed==(ChangeMask{1}<<TargetHighlight)&&request.values[TargetHighlight]==20,"the outline strength changes nothing else");
+    }
+    {   // Windows Mono audio: the title row warns on every page; pointing at it explains
+        const float u=(MonoAudioBox.x+20.f)/Width,v=(MonoAudioBox.y+20.f)/Height;
+        for(int page=0;page<TabCount;++page)
+            Check(HelpAt(Page(page),u,v,false,nullptr,true)==HelpMonoAudio,"the Mono audio warning explains itself on every page");
+        Check(HelpAt(Page::Video,u,v)==NoHelp,"no Mono audio help while it is off");
+        Check(std::string(HelpTitle(HelpMonoAudio))=="Windows Mono audio"&&std::string(HelpText(HelpMonoAudio)).find("Accessibility > Audio")!=std::string::npos,
+              "the help says where to turn it off");
+        Check(!MonoAudioBox.Contains(float(TabBox(0).x),float(TabBox(0).y))&&MonoAudioBox.y+MonoAudioBox.h<=TabBox(0).y,"the warning stays above the tabs");
+    }
+    {Model heart;heart.Open(s);heart.Click({Kind::Tab,int(Page::Combat)});
+        Check(s.values[HeartbeatStart]==60&&RowKey(Page::Combat,7)==HeartbeatStart,"heartbeat start is the last Combat row, 60% by default");
+        Check(ValueBox(7).y+ValueBox(7).h<744,"heartbeat row avoids Combat notes");
+        Check(Normalize(HeartbeatStart,NAN)==60&&Normalize(HeartbeatStart,45)==50&&Normalize(HeartbeatStart,-5)==0&&Normalize(HeartbeatStart,100)==90,"heartbeat start snaps to 10% steps, 0-90");
+        heart.Click(At(Page::Combat,Decrease(7)));Check(heart.Get()[HeartbeatStart]==50,"minus lowers the start by 10%");
+        for(int i=0;i<6;++i)heart.Click(At(Page::Combat,Decrease(7)));
+        Check(heart.Get()[HeartbeatStart]==0,"Off is the lower bound");
+        for(int i=0;i<10;++i)heart.Click(At(Page::Combat,Increase(7)));
+        Check(heart.Get()[HeartbeatStart]==90,"90% is the upper bound");
+        Check(heart.Click({Kind::Apply}).changed==(ChangeMask{1}<<HeartbeatStart),"heartbeat start saves only its own setting");
     }
     {Model difficulty;difficulty.Open(s);difficulty.Click({Kind::Tab,int(Page::Combat)});
         Check(s.values[OfflinePlayers]==0&&RowKey(Page::Combat,6)==OfflinePlayers,"difficulty preserves native settings by default");

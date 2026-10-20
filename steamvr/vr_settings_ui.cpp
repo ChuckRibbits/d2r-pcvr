@@ -12,7 +12,7 @@ static int HelpTextHeight(HDC dc,HFONT font,const char* value,int width) {
     DrawTextW(dc,wide,-1,&bounds,DT_CALCRECT|DT_WORDBREAK|DT_NOPREFIX);
     SelectObject(dc,old);return int(bounds.bottom);
 }
-std::vector<uint8_t> Paint(const Model& m,Hit hover,const char* runtimeStatus,const calibration::Flow* body,const controllers::Labels& detected,int help,GameVideo game){
+std::vector<uint8_t> Paint(const Model& m,Hit hover,const char* runtimeStatus,const calibration::Flow* body,const controllers::Labels& detected,int help,GameVideo game,bool monoAudio){
     const bool showHelp=!body&&help!=NoHelp&&HelpText(help)[0];
     BITMAPINFO info{};info.bmiHeader.biSize=sizeof(BITMAPINFOHEADER);info.bmiHeader.biWidth=AtlasWidth;
     info.bmiHeader.biHeight=-Height;info.bmiHeader.biPlanes=1;info.bmiHeader.biBitCount=32;
@@ -71,7 +71,8 @@ std::vector<uint8_t> Paint(const Model& m,Hit hover,const char* runtimeStatus,co
         text("Controls are blocked. The game world remains live.",{80,939,1120,50},false,true,quiet);
     }else{
     text("DIABLO II / VR SETTINGS",{40,33,960,55},true);
-    text("Point for help; trigger to change",{820,44,420,42},false,true,quiet);
+    if(monoAudio)text(MonoAudioWarning,{820,44,420,42},false,true,RGB(236,186,96));   // pointing at it explains
+    else text("Point for help; trigger to change",{820,44,420,42},false,true,quiet);
     for(int i=0;i<TabCount;++i)button(TabBox(i),TabNames[i],{Kind::Tab,i},int(m.page)==i);
     if(m.page==Page::ReleaseNotes){
         text(releasenotes::ReleaseTitle,{40,195,1200,45},true);
@@ -134,7 +135,7 @@ std::vector<uint8_t> Paint(const Model& m,Hit hover,const char* runtimeStatus,co
             text(defer&&gameWarning?DeferWarning:runtimeStatus,{40,181,width,29},false,false,defer&&gameWarning?warn:quiet);
             text(gameWarning?gameWarning:DeferWarning,{40,209,width,29},false,false,warn);
             if(defer)button(VideoDeferBox,"Defer GPU wait",{Kind::Change,DeferGpuWait,1},false,m.ready&&!m.Busy());
-        }else text(m.page==Page::Haptics?"Tune vibration for your headset and controllers.":m.page==Page::Combat?"Tune physical combat and offline difficulty.":m.page==Page::Shield?"Seat a held shield on your forearm.":m.page==Page::Aim?"Choose how the monster you aim at is shown.":runtimeStatus,{40,197,1200,42},false,false,quiet);
+        }else text(m.page==Page::Haptics?"Tune vibration for your headset and controllers.":m.page==Page::Combat?"Tune physical combat and offline difficulty.":m.page==Page::Aim?"Choose how the monster you aim at is shown.":m.page==Page::Shield?"Seat a held shield on your forearm.":runtimeStatus,{40,197,1200,42},false,false,quiet);
         for(int row=0;row<RowCount(m.page);++row){
             const Key key=RowKey(m.page,row);const auto& d=Definitions[key];const float value=m.Get()[key];const int y=RowY+row*RowStep;
             fill({40,y-4,1200,RowStep},row%2?RGB(19,31,39):RGB(22,36,44));
@@ -161,6 +162,7 @@ std::vector<uint8_t> Paint(const Model& m,Hit hover,const char* runtimeStatus,co
             else if(key==OfflinePlayers){if(value==0)std::snprintf(label,sizeof label,"Game default");else std::snprintf(label,sizeof label,"Players %.0f",value);}
             else if(key==StrainDark)std::snprintf(label,sizeof label,"%s",StrainColorNames[value>.5f?1:0]);
             else if(key==StrainSpeed)std::snprintf(label,sizeof label,"%s",StrainSpeedNames[int(value)]);
+            else if(key==HeartbeatStart){if(value==0)std::snprintf(label,sizeof label,"Off");else std::snprintf(label,sizeof label,"%.0f%% life",value);}
             else if(d.max==1)std::snprintf(label,sizeof label,"%s",value>.5f?"On":"Off");
             else if(key==Snap)std::snprintf(label,sizeof label,"%.0f deg",value);
             else if(key==VitalsTilt)std::snprintf(label,sizeof label,"%+.6g deg",value);
@@ -169,7 +171,6 @@ std::vector<uint8_t> Paint(const Model& m,Hit hover,const char* runtimeStatus,co
             else if(HapticKey(key)){if(value==0)std::snprintf(label,sizeof label,"Off (0%%)");else std::snprintf(label,sizeof label,"%.0f%%",value);}
             else if(key==LootLabelSize)std::snprintf(label,sizeof label,"%g%%",value);
             else if(key==ShieldGrip||key==ShieldOut||key==ShieldUp)std::snprintf(label,sizeof label,"%+.0f cm",value);
-            else if(key==ShieldFollow){if(value<=0)std::snprintf(label,sizeof label,"Forearm");else if(value>=100)std::snprintf(label,sizeof label,"Wrist");else std::snprintf(label,sizeof label,"%.0f%% wrist",value);}
             else if(key==Waist||key==BeltForward)std::snprintf(label,sizeof label,"%.1f cm",value*100);
             else std::snprintf(label,sizeof label,"%.0f",value);
             const bool enabled=m.ready&&!m.Busy()&&applies;
@@ -181,11 +182,12 @@ std::vector<uint8_t> Paint(const Model& m,Hit hover,const char* runtimeStatus,co
             text("Palm: raise left hand palm up; release grip/trigger. Status follows the minimap.",{58,854,1160,22},false,false,quiet);
         }
         if(m.page==Page::Combat){
-            text("Defaults: swings 12 m/s with 18 cm travel; thrusts and shield bashes 2 m/s with 12 cm travel. Wrist twisting alone cannot bash. Hover each setting for details.",{58,698,1160,66},false,false,quiet);
-            text("Difficulty affects new monsters only; existing monsters keep their stats. To apply it throughout the game, Save and Exit, then start a new game with the same character.",{58,770,1160,66},false,false,quiet);
+            text("Defaults: swings 12 m/s with 18 cm travel; thrusts and shield bashes 2 m/s with 12 cm travel. Wrist twisting alone cannot bash. Hover each setting for details.",{58,744,1160,56},false,false,quiet);
+            // The eighth row ends at 738; without the offline adapter its notice replaces the difficulty note.
+            if(m.offlineDifficultyAvailable)
+                text("Difficulty affects new monsters only; existing monsters keep their stats. To apply it throughout the game, Save and Exit, then start a new game with the same character.",{58,806,1160,56},false,false,quiet);
+            else text("Offline scaling adapter unavailable. Game difficulty remains unchanged.",{58,806,1160,30},false,false,quiet);
         }
-        if(m.page==Page::Combat&&!m.offlineDifficultyAvailable)
-            text("Offline scaling adapter unavailable. Game difficulty remains unchanged.",{58,842,1160,30},false,false,quiet);
         if(m.page==Page::Haptics){
             text("0% is Off; 100% is normal. Overall strength scales each category, up to the controller's maximum. Adjust in steps of 10%.",{58,750,1160,56},false,false,quiet);
             text("Tests match the action's hands and use displayed settings. Apply saves; Close discards edits. Alerts also need the HUD option.",{58,810,1160,56},false,false,quiet);

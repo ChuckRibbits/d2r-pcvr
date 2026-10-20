@@ -230,6 +230,10 @@ int main() {
          assert(sh::RollSetting(0)==0&&sh::RollSetting(NAN)==0&&sh::RollSetting(INFINITY)==0);
          assert(sh::RollSetting(92)==90&&sh::RollSetting(93)==95&&sh::RollSetting(-7)==-5&&sh::RollSetting(-8)==-10);
          assert(sh::RollSetting(500)==180&&sh::RollSetting(-500)==-180&&sh::RollSetting(-1)==0&&!std::signbit(sh::RollSetting(-1)));
+         // [gameplay] shield_follow_pct: 0..100 snapped to 10% steps; 50 when unreadable
+         assert(sh::FollowSetting(50)==50&&sh::FollowSetting(NAN)==50&&sh::FollowSetting(INFINITY)==50);
+         assert(sh::FollowSetting(0)==0&&sh::FollowSetting(100)==100&&sh::FollowSetting(34)==30&&sh::FollowSetting(35)==40);
+         assert(sh::FollowSetting(-20)==0&&sh::FollowSetting(250)==100&&!std::signbit(sh::FollowSetting(-1)));
          // the trace's jump check starts over on its first frame, a new shield or arm, and after a gap (a level load)
          assert(sh::TraceFresh(false,1000,1011,true));                       // first frame
          assert(!sh::TraceFresh(true,1000,1011,true)&&!sh::TraceFresh(true,1000,1500,true));
@@ -256,8 +260,9 @@ int main() {
         // Offset: cm at the model's scale, clamped to the settings' ranges
         const Vec x{1,0,0},y{0,1,0},z{0,0,1};
         assert(Length(sh::Offset(z,x,y,3,2,2,10)-Vec{.2f,.2f,-.3f})<1e-5f);   // grip toward the elbow (-along)
-        assert(Length(sh::Offset(z,x,y,100,-100,100,100)-Vec{-25,25,-40})<1e-4f);
-        assert(Length(sh::Offset(z,x,y,-5,0,0,100))<1e-6f);   // grip never toward the fingers
+        assert(Length(sh::Offset(z,x,y,100,-100,100,100)-Vec{-30,30,-40})<1e-4f);
+        assert(Length(sh::Offset(z,x,y,-5,0,0,100)-Vec{0,0,5})<1e-5f);     // a little toward the hand
+        assert(Length(sh::Offset(z,x,y,-50,0,0,100)-Vec{0,0,10})<1e-5f);   // at most 10 cm
         assert(Length(sh::Offset(z,x,y,NAN,INFINITY,-INFINITY,100))<1e-6f);
         assert(Length(sh::Offset(z,x,y,3,2,2,0))==0&&Length(sh::Offset(z,x,y,3,2,2,NAN))==0);
         // the trace's turn and angles
@@ -265,7 +270,7 @@ int main() {
         assert(std::fabs(sh::TurnDeg(Identity(),turnAbout({1,0,0},180))-180)<.5f);   // a flip reads as one
         {Mat scaled=turnAbout({0,0,1},30);for(int i=0;i<12;++i)scaled.m[i]*=2;assert(std::fabs(sh::TurnDeg(Identity(),scaled)-30)<.1f);}
         {const Vec a=sh::Angles(turnAbout({0,1,0},90));assert(std::fabs(std::fabs(a.x)-90)<.1f&&std::fabs(a.y)<.1f&&std::fabs(a.z)<.1f);}
-        static_assert(sh::kGripMaxCm==40&&sh::kSideMaxCm==25);
+        static_assert(sh::kGripMinCm==-10&&sh::kGripMaxCm==40&&sh::kSideMaxCm==30);
     }
     {
         using ::melee::native::FunctionRange;using ::melee::native::FindFunction;

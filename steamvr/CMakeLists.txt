@@ -56,6 +56,7 @@ endif()
 target_sources(d2rl-pcvr PRIVATE ${ROOT}/vr/dlss_depth.cpp ${ROOT}/vr/crossbow.cpp)
 target_sources(d2rl-pcvr PRIVATE ${ROOT}/vr/billboards.cpp)
 target_sources(d2rl-pcvr PRIVATE ${ROOT}/vr/stereo_replay.cpp ${ROOT}/vr/ecl_hook.cpp)
+target_sources(d2rl-pcvr PRIVATE ${ROOT}/vr/spatial_audio.cpp)   # head-relative sound
 target_sources(d2rl-pcvr PRIVATE ${ROOT}/vr/roof_materials.cpp)
 target_sources(d2rl-pcvr PRIVATE ${ROOT}/vr/panel_input.cpp)
 target_sources(d2rl-pcvr PRIVATE interaction_assets.rc interaction_icons.cpp ui_blit.cpp turn_warp.cpp ui_world.cpp)

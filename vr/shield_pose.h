@@ -33,7 +33,7 @@ inline bool Follow(const bow::Mat& bindWrist,const bow::Mat& bindShield,
 //           the bind pose hangs it there), square to both.
 // A wrist bend turns the knuckle line about itself, so it leaves "up" alone;
 // only the forearm's twist turns the frame.
-constexpr float kGripMaxCm=40,kSideMaxCm=25,kFollowMaxPct=100,kRollMaxDeg=180;
+constexpr float kGripMinCm=-10,kGripMaxCm=40,kSideMaxCm=30,kFollowMaxPct=100,kRollMaxDeg=180;
 inline bool Finite(bow::Vec v) {return std::isfinite(v.x)&&std::isfinite(v.y)&&std::isfinite(v.z);}
 inline float Clamp(float cm,float low,float high) {return std::isfinite(cm)?std::clamp(cm,low,high):0.f;}
 struct Frame {bow::Vec along{},out{},up{};bool ok=false;};
@@ -100,7 +100,7 @@ inline bool TurnBetween(const Frame& a,const Frame& b,bow::Vec& axis,float& angl
     if(s<1e-6f){axis={1,0,0};angle=0;return true;}
     axis=q*(1/s);angle=2*std::atan2(s,w);return true;
 }
-// VR Settings > Shield > Shield follows: t=0 strapped to the forearm (the
+// [gameplay] shield_follow_pct (Shield follows, INI only): t=0 strapped to the forearm (the
 // wrist's bend ignored), 1 the hand's own turn - a slerp, so every share in
 // between turns smoothly and the same way for every class and shield.
 inline Frame Blend(const Frame& strapped,const Frame& wrist,float t) {
@@ -133,6 +133,14 @@ inline float RollSetting(float deg) {
     if(!std::isfinite(deg))return 0;
     return std::round(std::clamp(deg,-kRollMaxDeg,kRollMaxDeg)/kRollStepDeg)*kRollStepDeg+0.f;
 }
+// [gameplay] shield_follow_pct as read from the INI (VR Settings has no key left):
+// 0 strapped to the forearm .. 100 turns with the wrist, in 10% steps; 50 when it
+// is not a number.
+constexpr float kFollowDefaultPct=50,kFollowStepPct=10;
+inline float FollowSetting(float pct) {
+    if(!std::isfinite(pct))return kFollowDefaultPct;
+    return std::round(std::clamp(pct,0.f,kFollowMaxPct)/kFollowStepPct)*kFollowStepPct+0.f;
+}
 // The frame as a bone matrix (row vectors): its axes scaled, at origin.
 inline bow::Mat Matrix(const Frame& f,bow::Vec origin,float scale) {
     bow::Mat m=bow::Identity();
@@ -154,11 +162,11 @@ inline bool Place(const bow::Mat& bindAttach,const Frame& bind,bow::Vec bindWris
     if(size<.3f||size>3.f)return false;
     result=bow::Multiply(local,Matrix(now,wrist,scale));return bow::Affine(result);
 }
-// Grip up toward the elbow, Out and Up, cm, clamped to the settings' ranges;
+// Grip toward the elbow (+) or the hand (-), Out and Up, cm, clamped to the settings' ranges;
 // anything not finite is 0.
 inline bow::Vec Offset(bow::Vec along,bow::Vec out,bow::Vec up,float gripCm,float outCm,float upCm,float unitsPerMetre) {
     if(!std::isfinite(unitsPerMetre)||unitsPerMetre<=0)return {};
-    return (along*-Clamp(gripCm,0,kGripMaxCm)+out*Clamp(outCm,-kSideMaxCm,kSideMaxCm)+
+    return (along*-Clamp(gripCm,kGripMinCm,kGripMaxCm)+out*Clamp(outCm,-kSideMaxCm,kSideMaxCm)+
             up*Clamp(upCm,-kSideMaxCm,kSideMaxCm))*(.01f*unitsPerMetre);
 }
 // Per-shield adjustments, keyed by the equipped item's code (read live from the

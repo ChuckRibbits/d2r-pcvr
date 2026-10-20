@@ -21,7 +21,7 @@ struct Input {
     bool forearmTwist = false;  // the forearm takes a share of the wrist's twist about its own axis (sleeves, bracers)
     float shieldGripCm = 0.0f;  // VR Settings > Shield: the shield moved up the forearm toward the elbow, so the hand reaches its grip
     float shieldOutCm = 0.0f, shieldUpCm = 0.0f;  // and out from the arm, and toward the thumb (cm, scaled by the model's forearm)
-    float shieldFollowPct = 100.0f;  // VR Settings > Shield > Shield follows: 0 strapped to the forearm, 100 turns with the wrist
+    float shieldFollowPct = 100.0f;  // [gameplay] shield_follow_pct (INI only): 0 strapped to the forearm, 100 turns with the wrist
     float shieldRollDeg = 0.0f;      // [gameplay] shield_roll_deg: the shield turned about the forearm, + toward the little finger
     uint32_t shieldCode = 0;         // the held shield's item code (gamestate ShieldCode), for its own tweaks (shield::kTweaks)
     bool shieldTrace = false;   // [debug] shield_trace: log the held shield's pose chain (5 Hz, and at once on a jump)
