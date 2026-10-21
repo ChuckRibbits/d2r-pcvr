@@ -5,6 +5,7 @@
 #include <cstdio>
 #include <mutex>
 #include "melee.h"
+#include "projectiles.h"
 #include "../steamvr/logging.h"
 
 namespace targetlock {
@@ -27,6 +28,7 @@ void __cdecl Refresh(const PluginContext*,void*) noexcept {
         s.count=n;s.heroX=heroX;s.heroY=heroY;s.at=GetTickCount64();
     }
     {std::lock_guard lock(mutex);latest=s;}
+    projectiles::FollowFlights();   // telemetry: where the hero's missiles end (game thread)
     static int told=-2;
     if((n<0)!=(told<0)||(n>0)!=(told>0)) {
         told=n;

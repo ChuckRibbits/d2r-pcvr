@@ -1791,6 +1791,10 @@ uniform float3 OutlineEye1 < hidden = true; > = float3(0.0, 0.0, 0.0);
 uniform float4 OutlinePos < hidden = true; > = float4(0.0, 0.0, 0.0, 0.0);
 uniform float3 OutlineShape < hidden = true; > = float3(2.6, 0.15, 4.0);
 uniform float3 OutlineColor < hidden = true; > = float3(1.0, 0.2, 0.12);
+// A second aimed monster (the other hand's), drawn like the first in its own color.
+uniform float4 Outline2Pos < hidden = true; > = float4(0.0, 0.0, 0.0, 0.0);
+uniform float3 Outline2Shape < hidden = true; > = float3(2.6, 0.15, 4.0);
+uniform float3 Outline2Color < hidden = true; > = float3(0.2, 0.5, 1.0);
 uniform float OutlineWidth < hidden = true; > = 1.0;   // how far out a neighbour is looked for, in pixels: the edge's thickness
 uniform float OutlineJump < hidden = true; > = 6.0;    // a neighbour this close in 3D still belongs to the body (world units)
 uniform float OutlineInner < hidden = true; > = 0.05;  // a faint tint over the whole body, a share of the strength
@@ -1848,7 +1852,7 @@ float3 Outline(float2 uv, int eye)
     float ok;
     const float3 p = OutlineWorld(uv, eye, ok);
     if (ok <= 0.0) return c;
-    return OutlineTint(c, uv, eye, p, OutlinePos, OutlineShape, OutlineColor);
+    return OutlineTint(OutlineTint(c, uv, eye, p, OutlinePos, OutlineShape, OutlineColor), uv, eye, p, Outline2Pos, Outline2Shape, Outline2Color);
 }
 float3 PS_Outline(float4 pos : SV_Position, float2 uv : TEXCOORD) : SV_Target { return Outline(uv, 0); }
 float3 PS_OutlineR(float4 pos : SV_Position, float2 uv : TEXCOORD) : SV_Target { return Outline(uv, 1); }
