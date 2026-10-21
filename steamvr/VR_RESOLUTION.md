@@ -7,8 +7,8 @@ several seconds for the view to return. Reopen Video to see the actual
 
 | Choice | Source dimensions | INI value |
 |---|---|---|
-| Desktop (default) | Physical game-window client size | 0 |
-| Headset | OpenXR runtime recommendation | 1 |
+| Desktop | Physical game-window client size | 0 |
+| Headset (default) | OpenXR runtime recommendation | 1 |
 | 1536 × 1536 | Fixed square preset | 2 |
 | 2048 × 2048 | Fixed square preset | 3 |
 | 2560 × 2560 | Fixed square preset | 4 |
@@ -16,7 +16,7 @@ several seconds for the view to return. Reopen Video to see the actual
 | 4096 × 4096 | Fixed square preset | 6 |
 
 The preference is `[render] vr_resolution` in `mods/D2R-PCVR/d2rloader/plugins/d2r_pcvr.ini`.
-Missing or invalid values retain Desktop. Start with a moderate preset and
+Missing or invalid values use Headset. Start with a moderate preset and
 increase only if frame timing permits. Independent sizes respect both eyes'
 OpenXR limits and the system's swapchain limits, with an additional cap of
 4096 pixels per side. Headset preserves the runtime's recommended aspect ratio.
@@ -225,6 +225,15 @@ uses a direct call; width tail-calls the query, so both the caller and tail
 jump are signature-checked. UI layout/font callers still receive only the
 widescreen band. Desktop mode retains the native bounds.
 
+Ground-item labels are placed over the whole eye, but the game's label layout
+drops a label whose bottom passes the UI safe area's height, which is the
+widescreen band. Items lower in the view lost their labels. At a 2048 square or
+an Index eye that line is about the middle of the view, so the item a player
+looked at had no label, with Show Items on as well. The label layout's single
+safe-area size query (`0x8462E0`, called at `0x1FAC2A`, both signature-checked
+once the label code is decrypted) now receives the full source height. Its
+width, every other caller and Desktop mode are unchanged.
+
 The real-window fixture reproduces the desktop-height truncation and verifies
 bottom-row coordinates survive the corrected clamp after each live size
 change, with desktop restoration. The three added branch guards match the
@@ -248,3 +257,38 @@ The owner confirmed the complete bottom row is now clickable on Quest 3 through
 Virtual Desktop/VDXR with the combined cursor-bounds build. The earlier failed
 mouse-event-only test above is retained as diagnostic history. This does not
 establish every resolution/runtime combination.
+
+## A game window narrower than the VR source (October 20)
+
+With the game windowed at 1920 x 1080 and a 3072-square VR source, the laser
+could not reach the right side of any panel (the main menu's options, the
+inventory, the stash), and the wrist map stayed empty under its title and
+compass. A player reported the same on a Vive Pro at 3000 and 4000 sources:
+part of the inventory at 3000, nearly all of it at 4000. A full-screen 3840 x
+2160 desktop showed neither.
+
+- **Cursor.** The game converts the cursor between the window's pixels and its
+  own space (`0x7f350` in; `0x7f210` and `0x7f2d0` out; their content size
+  `0x7f540`). With modern graphics it fits a letterbox and clamps X to a
+  centred band 2.11 times the window's height. Those size queries returned
+  the physical window, while the cursor arrives in VR-source pixels. The band
+  ended at 2100 of 3072 in the 1920 x 1080 window, at 2800 for a 2560 x 1440
+  one and at 4200 for 3840 x 2160, which is past the source. The seven
+  return sites now receive the full applied VR source, as SetCursorPosition's
+  clamp already did, and so does the controller cursor's own clamp, which
+  calls `0x7f4d0` (it tail-jumps to the query). Each CALL and JMP is
+  signature-checked before the hook goes in. Desktop mode and the time before
+  a resize are unchanged.
+- **Wrist map.** The game sizes the corner map's box from its own window, a
+  third of it: 1280 x 720 under the 3840 desktop and 640 x 360 in the 1920
+  window, both at the same corner of the 3072 layer. The map's scissor test
+  required a box taller than an eighth of the layer, 384 at 3072, so the
+  windowed box was refused and nothing was copied. The box now passes when
+  its size fits the layer or the game window's own client area; the corner
+  test is unchanged.
+
+A private diagnostic build logged the game's cursor stopping at X = 2100
+while the converted pointer reached 2797, and the map's 640 x 360 box being
+refused. The owner then confirmed in the headset that the options panel and
+the inventory's right side can be pointed at and clicked, and that the
+wrist map shows, in the windowed 1920 x 1080 game.
