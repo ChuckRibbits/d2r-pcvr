@@ -372,7 +372,7 @@ int main() {
         assert(!DrawDebug(d,{NAN,0,0},100700,b));
         d.pose.player.x=NAN;assert(!DrawDebug(d,camera,100700,b));
     }
-    {   // 2026-10-20: Holy Shield's glow: coverage x1.6 about the shield's centre, mesh or fallback
+    {   // 2026-10-20: Holy Shield's glow: coverage x1.6 about the shield's center, mesh or fallback
         const Tuning t;
         assert(CoverScale(false)==1&&CoverScale(true)==HolyShieldCover&&HolyShieldCover>1&&HolyShieldCover<=MaxCoverScale);
         bool listed=false;for(const auto& d:framevr::effects::Definitions)listed|=d.state==framevr::effects::HolyShieldState&&d.skill==117;

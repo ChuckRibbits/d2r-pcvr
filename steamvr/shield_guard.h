@@ -20,7 +20,7 @@ struct Pose {
     // attachment-only fallback. These include the item's own bone/transform.
     Vec halfRight{},halfUp{};
     Vec player{}; // render-world origin of this same pose; debug projection only
-    // Coverage grows by this about the shield's centre (Holy Shield's glow); 1 is the shield.
+    // Coverage grows by this about the shield's center (Holy Shield's glow); 1 is the shield.
     float coverScale=1;
 };
 // 2026-10-20: Holy Shield (state 101) draws a large glowing shield around the

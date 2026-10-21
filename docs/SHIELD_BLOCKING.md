@@ -95,7 +95,7 @@ not verification of runtime mesh-size capture. Keep the measured capture issue
 open separately; the fallback correction does not repair that discovery path.
 
 Holy Shield (state 101): while the local Paladin has it, coverage grows 1.6x
-about the shield's centre - the measured face's width and height, or the
+about the shield's center - the measured face's width and height, or the
 fallback's lateral proxy - because blocks are expected to land on the glow drawn
 around the shield. The glow's size is not in the tables (states.txt names its
 overlay; Overlay.txt gives only a light radius), so 1.6 is a visual estimate

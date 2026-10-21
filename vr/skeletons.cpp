@@ -1841,7 +1841,7 @@ void PoseBody(uintptr_t self, const Hero& h, const Input& in) {
             const V3 a = p;
             const Mat R = RotBetween(a, Add(Scale(a, cosf(t)), Scale(Cross(axis, a), sinf(t))));
             // keep the hand's whole subtree as posed; turn the forearm and re-derive
-            // only its other children (twist helpers, armour pieces)
+            // only its other children (twist helpers, armor pieces)
             std::vector<char> handTree(n, 0); handTree[k] = 1;
             for (int i = k + 1; i < n; ++i) if (h.parent[i] >= 0 && handTree[h.parent[i]]) handTree[i] = 1;
             const auto before = newW;

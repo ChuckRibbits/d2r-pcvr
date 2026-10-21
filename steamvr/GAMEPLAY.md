@@ -717,7 +717,7 @@ restart the jump check, so spawning never prints a JUMP.
 - `side`: the side of the forearm the shield is on (`back` of the hand or
   `palm`); `stop`: degrees of wrist bend the shield stop held back.
 - `follow`, `roll`: the settings in use; `bend`: degrees between the forearm and
-  wrist frames (the bend shield_follow_pct splits); `scale`: the per-shield scale;
+  wrist frames (the bend shield_follow_pct splits);
   ` (wrist attach)` when the hand has no knuckle bones and the original wrist
   attach is used unmoved.
 - `turn`: the shield's turn since the previous line, degrees - a flip shows as
