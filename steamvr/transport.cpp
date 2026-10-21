@@ -1880,7 +1880,7 @@ void Input() {
             bloodPaintRequest=0;
         }
     }
-    // Bow path laser color (VR Settings > Aim > Bow path laser); Off keeps the last.
+    // Bow path laser color (VR Settings > Combat > Bow path laser); Off keeps the last.
     if(const float hue=hudSettings.values[settings::BowLaser];hue>=0&&hue!=bowLaserHue&&!bowLaserAtlasPending&&atlasUploads.size()<3) {
         if(UploadAtlas(bowLaserChain,atlasFormat,bowlaser::AtlasWidth,bowlaser::AtlasHeight,bowlaser::Paint(hue),true,&bowLaserAtlasPending))bowLaserHue=hue;
     }

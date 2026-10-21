@@ -309,12 +309,12 @@ inline Rect ControllerOption(int option){return {865,233+option*58,375,58};}
 inline Rect Decrease(int row){return {865,RowY+row*RowStep,64,52};}
 inline Rect Increase(int row){return {1176,RowY+row*RowStep,64,52};}
 inline Rect ValueBox(int row){return {942,RowY+row*RowStep,221,52};}
-inline int RowCount(Page page){return page==Page::Haptics?2+haptics::CategoryCount:page==Page::Combat?8:page==Page::Aim?4:page==Page::VR?10:page==Page::Video?3:page==Page::Performance?8:page==Page::HUD?10:0;}
+inline int RowCount(Page page){return page==Page::Haptics?2+haptics::CategoryCount:page==Page::Combat?9:page==Page::Aim?3:page==Page::VR?10:page==Page::Video?3:page==Page::Performance?8:page==Page::HUD?10:0;}
 inline Key RowKey(Page page,int row){
     constexpr Key hapticRows[]={HapticStrength,HapticMelee,HapticShortMelee,HapticBowDraw,HapticBowRelease,HapticSpell,HapticInteraction,HapticAlert};
     if(page==Page::Haptics)return hapticRows[row];
-    if(page==Page::Combat)return row==0?MeleeRules:row==1?MeleeHitSpeed:row==2?MeleeThrustSpeed:row==3?ShieldBashSpeed:row==4?StrainDark:row==5?StrainSpeed:row==6?OfflinePlayers:HeartbeatStart;
-    if(page==Page::Aim)return row==0?TargetHighlight:row==1?TargetOutlineColour:row==2?TargetOutlineHue:BowLaser;
+    if(page==Page::Combat)return row==0?MeleeRules:row==1?MeleeHitSpeed:row==2?MeleeThrustSpeed:row==3?ShieldBashSpeed:row==4?StrainDark:row==5?StrainSpeed:row==6?OfflinePlayers:row==7?HeartbeatStart:BowLaser;
+    if(page==Page::Aim)return row==0?TargetHighlight:row==1?TargetOutlineColour:TargetOutlineHue;
     constexpr Key hud[]={VitalsLocation,VitalsTilt,CriticalAlerts,NavigationLocation,MenuDistance,TooltipTiming,BloodVisor,BloodWipe,LootLabelSize,CompanionCounts};
     if(page==Page::HUD)return hud[row];
     constexpr Key video[]={Sky,Fog,Ceiling};

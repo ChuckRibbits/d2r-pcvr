@@ -305,7 +305,7 @@ int main(){
         thrust.Click(hit);Check(thrust.Get()[MeleeThrustSpeed]==2.25f,"thrust speed adjusts in quarter steps");
         const auto request=thrust.Click({Kind::Apply});
         Check(request.changed==(ChangeMask{1}<<MeleeThrustSpeed),"thrust edit does not change swing speed or combat rules");
-        Check(RowCount(Page::Combat)==8&&RowKey(Page::Combat,3)==ShieldBashSpeed,"eight Combat rows retain independent bash speed; parry window is fixed");
+        Check(RowCount(Page::Combat)==9&&RowKey(Page::Combat,3)==ShieldBashSpeed,"nine Combat rows retain independent bash speed; parry window is fixed");
         Check(Normalize(MeleeThrustSpeed,NAN)==2&&Normalize(MeleeThrustSpeed,0)==.75f&&Normalize(MeleeThrustSpeed,99)==10,"thrust speed has finite usable bounds");
     }
     {Model strain;strain.Open(s);strain.Click({Kind::Tab,int(Page::Combat)});
@@ -338,28 +338,28 @@ int main(){
         speed.Click(At(Page::Combat,Increase(5)));Check(speed.Get()[StrainSpeed]==2,"Fast is the upper bound");
         Check(speed.Click({Kind::Apply}).changed==(ChangeMask{1}<<StrainSpeed),"buildup edits preserve combat rules, difficulty and colour");
     }
+    {Model laser;laser.Open(s);laser.Click({Kind::Tab,int(Page::Combat)});
+        const auto& d=Definitions[BowLaser];
+        Check(RowKey(Page::Combat,8)==BowLaser&&s.values[BowLaser]==LaserOff&&!LaserOn(s.values),"the bow path laser is last on the Combat page, Off by default");
+        Check(std::wstring(d.section)==L"bow"&&std::wstring(d.key)==L"path_laser_hue"&&d.step==15,"one [bow] path_laser_hue value in 15-degree steps");
+        laser.Click(At(Page::Combat,Increase(8)));Check(laser.Get()[BowLaser]==0&&LaserOn(laser.Get()),"plus from Off is the first color, red 0 degrees");
+        laser.Click(At(Page::Combat,Increase(8)));Check(laser.Get()[BowLaser]==15,"plus steps 15 degrees");
+        for(int i=0;i<22;++i)laser.Click(At(Page::Combat,Increase(8)));
+        Check(laser.Get()[BowLaser]==345,"the last color is 345 degrees");
+        laser.Click(At(Page::Combat,Increase(8)));Check(laser.Get()[BowLaser]==LaserOff&&!LaserOn(laser.Get()),"past the last color comes Off");
+        laser.Click(At(Page::Combat,Increase(8)));Check(laser.Get()[BowLaser]==0,"then the first color");
+        laser.Click(At(Page::Combat,Decrease(8)));Check(laser.Get()[BowLaser]==LaserOff,"back from the first color is Off");
+        laser.Click(At(Page::Combat,Decrease(8)));Check(laser.Get()[BowLaser]==345,"and back from Off the last color");
+        for(int i=0;i<25;++i)laser.Click(At(Page::Combat,Increase(8)));
+        Check(laser.Get()[BowLaser]==345,"Off and 24 colors make a whole turn");
+        laser.Click(At(Page::Combat,ValueBox(8)));Check(laser.Get()[BowLaser]==345,"the value box is no toggle");
+        const auto save=laser.Click({Kind::Apply});
+        Check(save.changed==(ChangeMask{1}<<BowLaser)&&save.values[BowLaser]==345,"Apply saves only the laser");
+        Check(Normalize(BowLaser,-1)==LaserOff&&Normalize(BowLaser,-200)==LaserOff&&Normalize(BowLaser,400)==345&&Normalize(BowLaser,NAN)==LaserOff,
+              "any negative saved value is Off; others stay on the wheel");}
     {Model aim;aim.Open(s);aim.Click({Kind::Tab,int(Page::Aim)});
         Check(s.values[TargetHighlight]==0&&RowKey(Page::Aim,0)==TargetHighlight,"the monster outline is Off by default, first on the Aim page");
-        Check(RowCount(Page::Aim)==4&&RowKey(Page::Aim,1)==TargetOutlineColour&&RowKey(Page::Aim,2)==TargetOutlineHue,"strength, colors, then the static color");
-        {Model laser;laser.Open(s);laser.Click({Kind::Tab,int(Page::Aim)});
-            const auto& d=Definitions[BowLaser];
-            Check(RowKey(Page::Aim,3)==BowLaser&&s.values[BowLaser]==LaserOff&&!LaserOn(s.values),"the bow path laser is last on the Aim page, Off by default");
-            Check(std::wstring(d.section)==L"bow"&&std::wstring(d.key)==L"path_laser_hue"&&d.step==15,"one [bow] path_laser_hue value in 15-degree steps");
-            laser.Click(At(Page::Aim,Increase(3)));Check(laser.Get()[BowLaser]==0&&LaserOn(laser.Get()),"plus from Off is the first color, red 0 degrees");
-            laser.Click(At(Page::Aim,Increase(3)));Check(laser.Get()[BowLaser]==15,"plus steps 15 degrees");
-            for(int i=0;i<22;++i)laser.Click(At(Page::Aim,Increase(3)));
-            Check(laser.Get()[BowLaser]==345,"the last color is 345 degrees");
-            laser.Click(At(Page::Aim,Increase(3)));Check(laser.Get()[BowLaser]==LaserOff&&!LaserOn(laser.Get()),"past the last color comes Off");
-            laser.Click(At(Page::Aim,Increase(3)));Check(laser.Get()[BowLaser]==0,"then the first color");
-            laser.Click(At(Page::Aim,Decrease(3)));Check(laser.Get()[BowLaser]==LaserOff,"back from the first color is Off");
-            laser.Click(At(Page::Aim,Decrease(3)));Check(laser.Get()[BowLaser]==345,"and back from Off the last color");
-            for(int i=0;i<25;++i)laser.Click(At(Page::Aim,Increase(3)));
-            Check(laser.Get()[BowLaser]==345,"Off and 24 colors make a whole turn");
-            laser.Click(At(Page::Aim,ValueBox(3)));Check(laser.Get()[BowLaser]==345,"the value box is no toggle");
-            const auto save=laser.Click({Kind::Apply});
-            Check(save.changed==(ChangeMask{1}<<BowLaser)&&save.values[BowLaser]==345,"Apply saves only the laser");
-            Check(Normalize(BowLaser,-1)==LaserOff&&Normalize(BowLaser,-200)==LaserOff&&Normalize(BowLaser,400)==345&&Normalize(BowLaser,NAN)==LaserOff,
-                  "any negative saved value is Off; others stay on the wheel");}
+        Check(RowCount(Page::Aim)==3&&RowKey(Page::Aim,1)==TargetOutlineColour&&RowKey(Page::Aim,2)==TargetOutlineHue,"strength, colors, then the static color");
         Check(s.values[TargetOutlineColour]==0&&s.values[TargetOutlineHue]==45,"static gold (45 degrees) by default");
         {Model colors;colors.Open(s);colors.Click({Kind::Tab,int(Page::Aim)});
             colors.Click(At(Page::Aim,ValueBox(1)));Check(colors.Get()[TargetOutlineColour]==1,"selecting the colors value switches to By range");
@@ -386,8 +386,8 @@ int main(){
         Check(!MonoAudioBox.Contains(float(TabBox(0).x),float(TabBox(0).y))&&MonoAudioBox.y+MonoAudioBox.h<=TabBox(0).y,"the warning stays above the tabs");
     }
     {Model heart;heart.Open(s);heart.Click({Kind::Tab,int(Page::Combat)});
-        Check(s.values[HeartbeatStart]==60&&RowKey(Page::Combat,7)==HeartbeatStart,"heartbeat start is the last Combat row, 60% by default");
-        Check(ValueBox(7).y+ValueBox(7).h<744,"heartbeat row avoids Combat notes");
+        Check(s.values[HeartbeatStart]==60&&RowKey(Page::Combat,7)==HeartbeatStart,"heartbeat start is the eighth Combat row, 60% by default");
+        Check(ValueBox(7).y+ValueBox(7).h<RowY+8*RowStep&&ValueBox(8).y+ValueBox(8).h<804,"heartbeat and bow laser rows stay above the Combat notes");
         Check(Normalize(HeartbeatStart,NAN)==60&&Normalize(HeartbeatStart,45)==50&&Normalize(HeartbeatStart,-5)==0&&Normalize(HeartbeatStart,100)==90,"heartbeat start snaps to 10% steps, 0-90");
         heart.Click(At(Page::Combat,Decrease(7)));Check(heart.Get()[HeartbeatStart]==50,"minus lowers the start by 10%");
         for(int i=0;i<6;++i)heart.Click(At(Page::Combat,Decrease(7)));

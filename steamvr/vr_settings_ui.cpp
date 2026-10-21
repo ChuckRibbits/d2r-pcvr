@@ -136,7 +136,7 @@ std::vector<uint8_t> Paint(const Model& m,Hit hover,const char* runtimeStatus,co
             text(defer&&gameWarning?DeferWarning:runtimeStatus,{40,181,width,29},false,false,defer&&gameWarning?warn:quiet);
             text(gameWarning?gameWarning:DeferWarning,{40,209,width,29},false,false,warn);
             if(defer)button(DeferBox,"Defer GPU wait",{Kind::Change,DeferGpuWait,1},false,m.ready&&!m.Busy());
-        }else text(m.page==Page::Haptics?"Tune vibration for your headset and controllers.":m.page==Page::Combat?"Tune physical combat and offline difficulty.":m.page==Page::Aim?"Choose how the monster you aim at and a drawn arrow's path are shown.":
+        }else text(m.page==Page::Haptics?"Tune vibration for your headset and controllers.":m.page==Page::Combat?"Tune physical combat, offline difficulty and the bow path laser.":m.page==Page::Aim?"Choose how the monster you aim at is shown.":
              m.page==Page::Video?"The mod's added effects. What changes the frame rate is on Perf.":runtimeStatus,{40,197,1200,42},false,false,quiet);
         for(int row=0;row<RowCount(m.page);++row){
             const Key key=RowKey(m.page,row);const auto& d=Definitions[key];const float value=m.Get()[key];const int y=RowY+row*RowStep;
@@ -195,11 +195,13 @@ std::vector<uint8_t> Paint(const Model& m,Hit hover,const char* runtimeStatus,co
             if(depthRestart)text(DepthRestartNote,{58,DepthRestartBox.y+2,1170,29},false,false,warn);
         }
         if(m.page==Page::Combat){
-            text("Defaults: swings 12 m/s with 18 cm travel; thrusts and shield bashes 2 m/s with 12 cm travel. Wrist twisting alone cannot bash. Hover each setting for details.",{58,744,1160,56},false,false,quiet);
-            // The eighth row ends at 738; without the offline adapter its notice replaces the difficulty note.
+            // The ninth row ends at 790: one line each, above the status line at 876.
+            // Each row's help keeps the full details. Without the offline adapter
+            // its notice replaces the difficulty note.
+            text("Defaults: swings 12 m/s with 18 cm travel; thrusts and bashes 2 m/s with 12 cm.",{58,804,1160,30},false,false,quiet);
             if(m.offlineDifficultyAvailable)
-                text("Difficulty affects new monsters only; existing monsters keep their stats. To apply it throughout the game, Save and Exit, then start a new game with the same character.",{58,806,1160,56},false,false,quiet);
-            else text("Offline scaling adapter unavailable. Game difficulty remains unchanged.",{58,806,1160,30},false,false,quiet);
+                text("Difficulty affects new monsters only; start a new game to apply it to all.",{58,838,1160,30},false,false,quiet);
+            else text("Offline scaling adapter unavailable. Game difficulty remains unchanged.",{58,838,1160,30},false,false,quiet);
         }
         if(m.page==Page::Haptics){
             text("0% is Off; 100% is normal. Overall strength scales each category, up to the controller's maximum. Adjust in steps of 10%.",{58,750,1160,56},false,false,quiet);
