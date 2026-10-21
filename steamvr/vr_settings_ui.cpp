@@ -12,7 +12,8 @@ static int HelpTextHeight(HDC dc,HFONT font,const char* value,int width) {
     DrawTextW(dc,wide,-1,&bounds,DT_CALCRECT|DT_WORDBREAK|DT_NOPREFIX);
     SelectObject(dc,old);return int(bounds.bottom);
 }
-std::vector<uint8_t> Paint(const Model& m,Hit hover,const char* runtimeStatus,const calibration::Flow* body,const controllers::Labels& detected,int help,GameVideo game,bool monoAudio){
+std::vector<uint8_t> Paint(const Model& m,Hit hover,const char* runtimeStatus,const calibration::Flow* body,const controllers::Labels& detected,int help,GameVideo game,bool monoAudio,
+                           const PerformanceReadout& performance,bool depthRestart){
     const bool showHelp=!body&&help!=NoHelp&&HelpText(help)[0];
     BITMAPINFO info{};info.bmiHeader.biSize=sizeof(BITMAPINFOHEADER);info.bmiHeader.biWidth=AtlasWidth;
     info.bmiHeader.biHeight=-Height;info.bmiHeader.biPlanes=1;info.bmiHeader.biBitCount=32;
@@ -126,16 +127,17 @@ std::vector<uint8_t> Paint(const Model& m,Hit hover,const char* runtimeStatus,co
             const bool enabled=m.ready&&!m.Busy();
             button(HudMapViewBox,MapViewNames[m.Get()[MapTopDown]>.5f?1:0],{Kind::Change,MapTopDown,1},false,enabled);
             button(HudMapRotateBox,m.Get()[MapRotate]>.5f?"On":"Off",{Kind::Change,MapRotate,1},false,enabled);
-        }else if(m.page==Page::Video&&(DeferOffered(m.Get())||GameVideoWarning(game))){
+        }else if(m.page==Page::Performance&&(DeferOffered(m.Get())||GameVideoWarning(game))){
             // Warnings in amber under the status, two lines at most: the GPU
             // wait not deferred (and the button that turns it on), then the
             // game's own video options; both push the status out.
             const bool defer=DeferOffered(m.Get());const char* gameWarning=GameVideoWarning(game);
-            const COLORREF warn=RGB(236,186,96);const int width=defer?VideoDeferBox.x-50:1200;
+            const COLORREF warn=RGB(236,186,96);const int width=defer?DeferBox.x-50:1200;
             text(defer&&gameWarning?DeferWarning:runtimeStatus,{40,181,width,29},false,false,defer&&gameWarning?warn:quiet);
             text(gameWarning?gameWarning:DeferWarning,{40,209,width,29},false,false,warn);
-            if(defer)button(VideoDeferBox,"Defer GPU wait",{Kind::Change,DeferGpuWait,1},false,m.ready&&!m.Busy());
-        }else text(m.page==Page::Haptics?"Tune vibration for your headset and controllers.":m.page==Page::Combat?"Tune physical combat and offline difficulty.":m.page==Page::Aim?"Choose how the monster you aim at is shown.":m.page==Page::Shield?"Seat a held shield on your forearm.":runtimeStatus,{40,197,1200,42},false,false,quiet);
+            if(defer)button(DeferBox,"Defer GPU wait",{Kind::Change,DeferGpuWait,1},false,m.ready&&!m.Busy());
+        }else text(m.page==Page::Haptics?"Tune vibration for your headset and controllers.":m.page==Page::Combat?"Tune physical combat and offline difficulty.":m.page==Page::Aim?"Choose how the monster you aim at is shown.":
+             m.page==Page::Shield?"Seat a held shield on your forearm.":m.page==Page::Video?"The mod's added effects. What changes the frame rate is on Perf.":runtimeStatus,{40,197,1200,42},false,false,quiet);
         for(int row=0;row<RowCount(m.page);++row){
             const Key key=RowKey(m.page,row);const auto& d=Definitions[key];const float value=m.Get()[key];const int y=RowY+row*RowStep;
             fill({40,y-4,1200,RowStep},row%2?RGB(19,31,39):RGB(22,36,44));
@@ -182,6 +184,17 @@ std::vector<uint8_t> Paint(const Model& m,Hit hover,const char* runtimeStatus,co
         }
         if(m.page==Page::HUD){
             text("Palm: raise left hand palm up; release grip/trigger. Status follows the minimap.",{58,854,1160,22},false,false,quiet);
+        }
+        if(m.page==Page::Performance){
+            // The last second's frames, whether the CPU's part fits the
+            // headset's frame, the game's own options, a restart to come.
+            const COLORREF teal=RGB(116,220,219),warn=RGB(236,186,96);
+            const auto line=PerformanceLine(performance),verdict=PerformanceVerdict(performance);
+            text(line.c_str(),{58,PerformanceBox.y+2,1170,30},false,false,performance.valid?teal:quiet);
+            if(!verdict.empty())text(verdict.c_str(),{58,PerformanceBox.y+33,1170,29},false,false,performance.CpuMs()>performance.budgetMs?warn:quiet);
+            const auto gameLine=GameVideoLine(game);
+            text(gameLine.empty()?GameVideoUnsaved:gameLine.c_str(),{58,GameVideoBox.y+2,1170,29},false,false,quiet);
+            if(depthRestart)text(DepthRestartNote,{58,DepthRestartBox.y+2,1170,29},false,false,warn);
         }
         if(m.page==Page::Combat){
             text("Defaults: swings 12 m/s with 18 cm travel; thrusts and shield bashes 2 m/s with 12 cm travel. Wrist twisting alone cannot bash. Hover each setting for details.",{58,744,1160,56},false,false,quiet);

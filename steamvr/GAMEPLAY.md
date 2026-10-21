@@ -168,7 +168,7 @@ not generate melee velocity. The layout currently assumes a right-handed player.
 | Selected skill / spell | Point right hand and press trigger; supported bow skills also use draw/release as described below |
 | Selected Amazon arrow skill | Draw and release once for the native skill; Multiple Shot emits its fan, Strafe requests its native volley |
 | Selected Smite with a shield | Swing or thrust the left shield through an enemy; keep right trigger released |
-| Quick cast without opening wheel | Hold Left Trigger, point right hand and press a face button; add Left Grip for the alternate four slots (mapping below) |
+| Cast without opening the wheel | Each hand casts its own skills, aimed with that hand: trigger, two face buttons, and same-hand grip + face button for two more ([hand skill layouts](../CONTROLS.md#hand-skill-layouts)) |
 | Melee swing / thrust | Swing the equipped melee weapon through a creature, including with a skill selected; no grip, trigger, or preselected target |
 | Button attack / crossbow | Weapon combat mode, right trigger; native crossbow firing |
 | Nock bow | Bow equipped: bring right hand to string and hold right trigger; no left grip required |
@@ -367,17 +367,21 @@ pending.
 
 ### In-headset VR settings
 
-The panel opens in front of the headset and stays in room space. It has six
+The panel opens in front of the headset and stays in room space. It has ten
 tabs and a **Reset eye height** button:
 
 | Tab | Contents |
 |---|---|
 | Controls | Left/right controller reference for movement, menus, melee, bow, spells, potions, holsters and height reset |
 | VR | Controller labels, motion combat, seated belt position, dominant hand, smooth/snap turning, belt height and reach, weapon skill gestures and ordinary mob bars |
-| Video | Foveation Off / Fixed / Eye tracked and its strength (Low / Medium / High / Maximum), actual VR source size, added sky, fog, dungeon ceilings, terrain and object draw distances, VR render resolution (Headset by default), desktop one eye, stereo rendering (Both eyes / By turns, By turns by default), a Defer GPU wait button while frames wait for the GPU, and warnings while the game's Vertical Sync is on or its anti-aliasing is not FXAA |
+| Video | Added sky, fog and dungeon ceilings |
 | HUD | Health/mana location and tilt, optional resource alerts, navigation location, menu distance and tooltip timing |
 | Combat | Melee rules, swing hit speed and thrust speed |
+| Aim | Outline for the monster you aim at: strength, static or by-range colors, and the static color |
+| Shield | Where a held shield sits on the forearm: grip offset, out and up (all 0 by default), how far it follows the wrist, and its roll about the forearm |
 | Haptics | Overall strength and separate melee, bow draw, bow/throw release, spell, interaction and resource-alert strengths; tests follow each action's hands |
+| Perf | Everything that changes the frame rate: stereo rendering (Both eyes / By turns, By turns by default), VR render resolution (Headset by default), terrain and object draw distances, foveation Off / Fixed / Eye tracked and its strength, ReShade depth (after a restart) and desktop one eye; the actual VR source size, a Defer GPU wait button while frames wait for the GPU, and warnings while the game's Vertical Sync is on or its anti-aliasing is not FXAA. Under them, each second's frame rate and where the frame's time goes, whether the CPU's part fits the headset's frame, and the game's own graphics options |
+| Notes | The last published release's notes, read-only |
 
 Added indoor fog defaults to **Off** for new profiles, preserving the game's
 own lighting and effects, including Tyrael's wings. Outdoor fog keeps its
@@ -478,26 +482,12 @@ release the selection trigger before casting. **BASIC ATTACK** restores the basi
 right-trigger attack or physical bow controls. Free melee swings remain
 available with a skill selected, pausing during casting, menus or potion handling.
 
-Quick casting uses the **same saved bindings**, while keeping the selected
-right-trigger ability. Point with the right hand, hold **Left Trigger**, then
-press one face button. Hold the button to use the native repeat/channel behavior;
-release it to stop. Add **Left Grip** before pressing for the alternate slot.
-
-| VR face button while Left Trigger is held | Native binding | With Left Grip also held |
-|---|---|---|
-| Right A | B | LT + B |
-| Right B | X | LT + X |
-| Left A on Frame / X on Quest | Y | LT + Y |
-| Left B on Frame / Y on Quest | RB | LT + RB |
-
-The wheel shows these VR shortcuts below the skill names. These chords require
-motion controls and apply during gameplay; menus keep their pointer/modifier
-controls. While quick casting, face buttons do not also open inventory/wheel,
-interact, cancel, or open settings, and Left Grip cannot grab a belt potion or
-holster. Entering the layer cancels a drawn bow without shooting. Release and
-press again after changing the alternate-slot grip, tracking interruption or
-weapon swap. Unassigned/unavailable slots cannot cast; costs and timing remain
-native. Candidate host tests pass; headset quick-cast validation is pending.
+There is no left-trigger quick-cast layer. Each hand casts its own wheel
+skills, aimed with that hand: its trigger, its two face buttons, and the same
+hand's grip plus a face button for two more. Hold the input for the native
+repeat/channel behavior; release it to stop. The slots, the native gamepad
+bindings behind them and what happens when both hands cast at once are in
+[hand skill layouts](../CONTROLS.md#hand-skill-layouts).
 
 Equipping a different melee weapon or bow selects weapon mode. Javelins and
 throwing weapons use free-swing contacts; select the native Throw skill to throw.
