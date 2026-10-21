@@ -55,7 +55,7 @@ choose local offline Play. Create a new character in the separate character list
 
 Normal native builds include the dormant backend. It only activates when the
 loader's active mod and exact metadata both identify the isolated environment.
-The hand-wheel DEV tab is hidden in ordinary play. VR Settings > Release Notes
+The hand-wheel DEV tab is hidden in ordinary play. VR Settings > Notes (Release Notes)
 is available in both regular and developer builds.
 
 ```powershell
