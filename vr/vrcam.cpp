@@ -3365,6 +3365,9 @@ void Store(int k, const targetlock::Snapshot* s, int i) {
 // each arm's pointing still decides where a cast goes.
 void Tick(const targetlock::Snapshot* s) {
     static framevr::armpointing::State arm[2];
+    for (int b = 0; b < 2; ++b)   // a released button lets its target go now, not at its next cast (else the next press keeps the old monster)
+        if (framevr::CastButtonHand() != b && !framevr::HandSpellHeld(b))
+            if (const uint32_t was = g_held[b].exchange(0)) LogF("Frame aim hold: %s button let go of monster %u", b ? "left" : "right", was);
     const float armOut = AimArmOutCm();
     for (int h = 0; h < 2; ++h) {
         float o[3], d[3];
