@@ -3381,13 +3381,14 @@ void Tick(const targetlock::Snapshot* s) {
         float o[3], d[3];
         bool on = false;
         const bool tracked = g_eyeOk.load() && framevr::HandAimRay(h, o, d);
-        const float reach = tracked ? std::hypot(o[0], o[2]) : 0.f;
+        const float flat = tracked ? std::hypot(d[0], d[2]) : 0.f;   // reach out along where the hand points, not to the side
+        const float reach = flat > 1e-3f ? (o[0] * d[0] + o[2] * d[2]) / flat : 0.f;
         if (tracked) on = framevr::armpointing::Update(arm[h], reach, d[1], armOut);
         else arm[h].on = false;
         // Telemetry: "Frame aim hands:" each change, with why (reach against the arm-out, a tenth of the span, or no tracking)
         if (on != g_pointing[h].load())
-            LogF("Frame aim hands: %s %s (%s %.0f cm, arm out %.0f cm)", h ? "left" : "right", on ? "pointing" : "down",
-                 tracked ? "reach" : "no tracking, reach", reach * 100.f, armOut);
+            LogF("Frame aim hands: %s %s (%s %.0f cm, arm out %.0f cm, %.0f deg below level)", h ? "left" : "right", on ? "pointing" : "down",
+                 tracked ? "reach" : "no tracking, reach", reach * 100.f, armOut, tracked ? std::asin(std::clamp(-d[1], -1.f, 1.f)) * 57.2958f : 0.f);
         g_pointing[h].store(on);
         int i = -1;   // each hand's pick uses the same aim as its cast (pointer, arm line, weapon shaft, bow)
         if (s && on && HandRay(o, d, true, h) && std::hypot(d[0], d[2]) > 1e-3f)
@@ -3449,10 +3450,12 @@ int ShownTargets(Shown out[2]) {
         return false;
     };
     const bool both = AimOn(framevr::settings::AimHighlights);
-    const int dominant = AimOn(framevr::settings::Dominant) ? 1 : 0;
+    // the bow hand is the main hand while a bow is out: first, so a monster both hands are on shows its color
+    const int dominant = gamestate::WeaponType() == D2RVR_TYPE_BOW || AimOn(framevr::settings::Dominant) ? 1 : 0;
     int n = 0;
     uint32_t first = 0;
-    for (int h = 0; h < 2; ++h) {
+    for (int k = 0; k < 2; ++k) {
+        const int h = k == 0 ? dominant : 1 - dominant;
         if (!both && h != dominant) continue;
         const uint32_t id = idOf(h);
         if (id && id != first && fill(id, h, out[n])) { first = id; ++n; }
