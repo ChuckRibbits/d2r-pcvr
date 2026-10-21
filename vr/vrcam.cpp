@@ -9086,8 +9086,9 @@ bool SyncReShadeDepth(const std::wstring& ini) {
     const float want = IniF(L"render", L"reshade_depth", -1.0f);
     if ((want == 0.0f || want == 1.0f) && (want == 1.0f) != on) {
         const std::wstring next = addons::WithEnabled(list, addons::GenericDepth, want == 1.0f);
-        if (GetFileAttributesW(ini.c_str()) != INVALID_FILE_ATTRIBUTES &&
-            WritePrivateProfileStringW(L"ADDON", L"DisabledAddons", next.c_str(), ini.c_str())) {
+        if (GetFileAttributesW(ini.c_str()) == INVALID_FILE_ATTRIBUTES)
+            LogF("vrcam: no ReShade.ini yet (ReShade makes it when it first starts) - ReShade depth %s from the next start", want == 1.0f ? "on" : "off");
+        else if (WritePrivateProfileStringW(L"ADDON", L"DisabledAddons", next.c_str(), ini.c_str())) {
             on = want == 1.0f;
             LogF("vrcam: ReShade depth (Generic Depth add-on) %s - ReShade.ini set from VR Settings", on ? "on" : "off");
         } else LogF("vrcam: ReShade depth could not be set in ReShade.ini (error %lu) - it stays %s", GetLastError(), on ? "on" : "off");

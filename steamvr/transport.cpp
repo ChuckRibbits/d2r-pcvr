@@ -343,7 +343,8 @@ SettingsPicture settingsPainted;     // what the picture shown has
 SettingsPicture settingsRequested;   // what the outstanding settings request paints
 int calibrationRequestedKey=-1;      // the same for calibration
 // The Perf page's numbers: each second's frames as NoteFrame gets them.
-struct PerformanceWindow {double game=0,wait=0,draw=0,vr=0,period=0;uint32_t frames=0,periods=0;ULONGLONG since=0;} performanceWindow;
+struct PerformanceWindow {double game=0,wait=0,draw=0,vr=0,period=0;uint32_t frames=0,periods=0,turns=0;ULONGLONG since=0,last=0;} performanceWindow;
+double performanceBudget=0;   // the headset's frame, from the last frame that had one
 settings::PerformanceReadout performance;
 uint64_t performanceSerial=0;ULONGLONG performanceAt=0;
 uint64_t settingsPaintRequest=0;
@@ -3393,16 +3394,20 @@ FrameTiming LastTiming() {std::lock_guard lock(mutex);return lastTiming;}
 void NoteFrame(double gameMs,double waitMs,double drawMs,double vrMs,double periodMs,double budgetMs,bool byTurns) {
     std::lock_guard lock(mutex);
     auto& w=performanceWindow;const auto now=GetTickCount64();
-    if(!w.since)w.since=now;
-    w.wait+=waitMs;w.draw+=drawMs;w.vr+=vrMs;++w.frames;
+    // A gap in frames (menus, loading) begins a new second: what came before
+    // it is not averaged in. Switching between turns and pairs is no gap.
+    if(!w.since||now-w.last>250){w={};w.since=now;}
+    w.last=now;
+    if(budgetMs>0)performanceBudget=budgetMs;
+    w.wait+=waitMs;w.draw+=drawMs;w.vr+=vrMs;++w.frames;w.turns+=byTurns?1:0;
     if(periodMs>0){w.game+=gameMs;w.period+=periodMs;++w.periods;}
     if(now-w.since<1000)return;
     const double k=1.0/w.frames;
-    performance.valid=true;performance.byTurns=byTurns;
-    performance.fps=w.periods?float(w.periods*1000.0/w.period):0.f;performance.budgetMs=float(budgetMs);
+    performance.valid=true;performance.byTurns=w.turns*2>=w.frames;performance.mixed=w.turns&&w.turns<w.frames;
+    performance.fps=w.periods?float(w.periods*1000.0/w.period):0.f;performance.budgetMs=float(performanceBudget);
     performance.gameMs=w.periods?float(w.game/w.periods):0.f;performance.waitMs=float(w.wait*k);
     performance.drawMs=float(w.draw*k);performance.vrMs=float(w.vr*k);
-    ++performanceSerial;performanceAt=now;w={};w.since=now;
+    ++performanceSerial;performanceAt=now;w={};w.since=w.last=now;
 }
 void ConfigureGameplay(bool enabled) {
     std::lock_guard lock(mutex);

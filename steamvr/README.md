@@ -216,7 +216,8 @@ shadows, and hardly with resolution. The game's own graphics options are shown
 as it last saved them; change those in its Options > Video. **ReShade depth**
 (`[render] reshade_depth`) switches ReShade's Generic Depth add-on, which looks
 at every draw call to find the depth buffer; in VR the fog and sky read the
-mod's own depth. The plugin writes it into ReShade.ini's `[ADDON]
+mod's own depth (on the flat menu panel and outside VR they need ReShade's).
+The plugin writes it into ReShade.ini's `[ADDON]
 DisabledAddons` before ReShade loads, so a change applies after a restart;
 without the key ReShade.ini is left as it is.
 

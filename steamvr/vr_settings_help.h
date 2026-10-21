@@ -79,7 +79,7 @@ inline const char* HelpText(int id) {
         case HapticAlert:return "Strength of low-health and low-mana warning vibration on the left controller. Actual warnings also require Low health / mana alerts under HUD to be On. Test previews the vibration even when warnings are disabled.";
         case BloodVisor:return "Shows peripheral blood splatters as life falls below 60%, 40% and 20%. Healing back above each threshold fades that layer. Face wipe gesture lets you clear splatters by hand.";
         case BloodWipe:return "With blood on the visor, move either hand side to side in front of your face with that hand's trigger released. Successful wipes remove blood with vibration. This does not restore health.";
-        case ReShadeDepth:return "ReShade's built-in Generic Depth add-on looks at every draw call the game makes to find its depth. In VR the mod gives the fog and sky its own depth, so in the game world the add-on is not needed. Off saves its work on each draw; outside VR the fog and sky then have no depth. ReShade reads this when it starts: changes apply after you restart the game.";
+        case ReShadeDepth:return "ReShade's built-in Generic Depth add-on looks at every draw call the game makes to find its depth. In VR the mod gives the fog and sky its own depth, so in the game world the add-on is not needed. Off saves its work on each draw; on the flat menu panel and outside VR the fog and sky then have no depth. ReShade reads this when it starts: changes apply after you restart the game.";
         case HelpPerformance:return "The last second of headset frames. Drawing: the game preparing one eye (By turns) or both; it grows with what is in view, draw distances and shadows, hardly with resolution. Game: its update between frames. VR: the mod's own work. Headset wait: the runtime holding the frame for the next refresh. Past the headset's frame (11.1 ms at 90 Hz), late frames wait a whole refresh: up to half the frame rate.";
         case HelpGameVideo:return "The game's own graphics options, as it saved them (Options > Video, then close the menu). Shadows, character detail and lights add drawing work for the CPU; ambient occlusion (AO), atmospherics and scale cost the graphics card. Change them in the game's Options > Video; the numbers are the game's own, 0 its lowest.";
         case HelpApply:return "Saves your pending changes and applies them. Your other saved settings and calibration are preserved. Changes stay as a draft until you press Apply.";
@@ -225,7 +225,6 @@ inline int HelpAt(Page page,float u,float v,bool controllerMenu=false,const Valu
         if(DeferBox.Contains(x,y)&&(!values||DeferOffered(*values)))return DeferGpuWait;
         if(PerformanceBox.Contains(x,y))return HelpPerformance;
         if(GameVideoBox.Contains(x,y))return HelpGameVideo;
-        if(DepthRestartBox.Contains(x,y))return ReShadeDepth;
     }
     if(page==Page::HUD){
         if(Rect{40,181,570,52}.Contains(x,y))return MapTopDown;

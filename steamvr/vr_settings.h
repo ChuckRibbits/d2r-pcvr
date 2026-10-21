@@ -253,6 +253,7 @@ inline std::string GameVideoLine(const GameVideo& g) {
 struct PerformanceReadout {
     bool valid=false,byTurns=true;
     float fps=0,budgetMs=0,gameMs=0,waitMs=0,drawMs=0,vrMs=0;
+    bool mixed=false;   // some frames by turns, some pairs
     float CpuMs()const{return gameMs+drawMs+vrMs;}
     bool operator==(const PerformanceReadout&)const=default;
 };
@@ -260,7 +261,7 @@ inline std::string PerformanceLine(const PerformanceReadout& r) {
     if(!r.valid)return "Now: waiting for a second of headset frames in the game";
     char line[200];
     std::snprintf(line,sizeof line,"Now: %.0f fps \xc2\xb7 drawing %.1f ms (%s) \xc2\xb7 game %.1f \xc2\xb7 VR %.1f \xc2\xb7 headset wait %.1f",
-        double(r.fps),double(r.drawMs),r.byTurns?"one eye":"both eyes",double(r.gameMs),double(r.vrMs),double(r.waitMs));
+        double(r.fps),double(r.drawMs),r.mixed?"mixed":r.byTurns?"one eye":"both eyes",double(r.gameMs),double(r.vrMs),double(r.waitMs));
     return line;
 }
 inline constexpr const char* GameVideoUnsaved="Game: options not saved yet; the game writes them when its options menu closes";
