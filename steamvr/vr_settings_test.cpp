@@ -54,6 +54,8 @@ int main(){
             Check(HelpText(key)[0]&&HelpTitle(key)[0],"every visible row has help");
             Check(HitTest(Page(p),100.f/Width,v).kind==Kind::None,"hovering or clicking a label does not edit settings");
         }
+        // The help card converts into wchar_t wide[512] (vr_settings_ui.cpp); keep a margin.
+        for(int id=0;id<=HelpLast;++id)Check(std::string(HelpText(id)).size()<450,"every help text fits its 512-character buffer with room to spare");
         Check(HelpAt(Page::VR,900.f/Width,250.f/Height,true)==NoHelp,"dropdown blocks help for covered settings");
         Check(HelpAt(Page::Controls,100.f/Width,750.f/Height)==PlanarSpellAim,"controls page label has help");
         Check(HelpAt(Page::HUD,1000.f/Width,950.f/Height)==HelpApply,"footer buttons have help");
