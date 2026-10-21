@@ -24,7 +24,9 @@ int main() {
     Check(Update(a,.25f,0,20)&&!Update(b,.25f,0,40),"one hand, two settings, two answers");
     Check(Update(a,.16f,0,20),"once pointing it lets go 6 cm nearer");
     Check(!Update(a,.13f,0,20),"and then lets go");
-    Check(Update(b,.31f,-.9f,40),"pointing steeply down needs 3/4 of the reach");
+    State down;Check(!Update(down,.4f,-.8f,20),"a hand pointing within 45 degrees of straight down is resting");
+    Check(Update(down,.4f,-.6f,20)&&Update(down,.4f,-.74f,20)&&!Update(down,.4f,-.8f,20),"raised it points, and lets go past 50 degrees down");
+    State side;Check(!Update(side,0,0,20),"a hand at the side has no reach along its aim");
     State always;Check(Update(always,0,0,0),"0 cm: the hand always points");
     Check(Near(armpointing::ArmOutCm(1.5f),15)&&Near(armpointing::ArmOutCm(1.6f),16),"the arm-out is a tenth of the span: 15 cm on 1.5 m, 16 cm on the default 1.6 m");
     std::puts("aim reach tests passed");
