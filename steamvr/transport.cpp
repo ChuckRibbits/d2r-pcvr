@@ -170,6 +170,10 @@ XrSwapchain strainChain=XR_NULL_HANDLE;
 uint64_t strainPaintKey=~0ull,strainPaintSession=0;
 ULONGLONG strainPaintAt=0;
 bool strainAtlasPending=false,strainImageReady=false,strainSlotReported=false;
+// Bow path laser: its own small atlas, repainted only when its color changes.
+XrSwapchain bowLaserChain=XR_NULL_HANDLE;
+float bowLaserHue=-1;
+bool bowLaserAtlasPending=false,bowLaserImageReady=false;
 // Low-life heartbeat: its own waveOut stream, since PlaySound plays one sound
 // per process and would cut off the riposte. Frame thread only. Each buffer is
 // one beat period; the next is queued just before the current one ends, so
@@ -1006,19 +1010,14 @@ bool UploadAtlas(XrSwapchain& chain,DXGI_FORMAT eyeFormat,int atlasWidth,int atl
     XrSwapchainImageReleaseInfo ri{XR_TYPE_SWAPCHAIN_IMAGE_RELEASE_INFO};
     return Check(pReleaseSwapchainImage(chain,&ri),"release static atlas atlas");
 }
-// Menu laser and dot in cyan, then the faint gold bow path laser: a steady
-// beam (to the floor), a beam fading out toward its far end (row 128), and its
-// end dot. A beam quad's top edge is its far end.
 bool SetupPointer(DXGI_FORMAT eyeFormat) {
-    std::vector<uint8_t> pixels(64*256*4);
-    for(int y=0;y<256;++y)for(int x=0;x<64;++x) {
-        auto* p=pixels.data()+(y*64+x)*4;
-        const bool gold=y>=96;p[0]=gold?255:40;p[1]=gold?200:210;p[2]=gold?90:255;
-        const float radius=std::hypot((x-31.5f)/30.f,(y-(y<192?63.5f:223.5f))/30.f);
-        const float dot=std::clamp((1-radius)*10,0.f,1.f);
-        p[3]=y<32?200:y<96?uint8_t(dot*255):y<128?96:y<192?uint8_t(96*(y-128)/63):uint8_t(dot*150);
+    std::vector<uint8_t> pixels(64*96*4);
+    for(int y=0;y<96;++y)for(int x=0;x<64;++x) {
+        auto* p=pixels.data()+(y*64+x)*4;p[0]=40;p[1]=210;p[2]=255;
+        const float radius=std::hypot((x-31.5f)/30.f,(y-63.5f)/30.f);
+        p[3]=y<32?200:uint8_t(std::clamp((1-radius)*10,0.f,1.f)*255);
     }
-    return UploadAtlas(pointerChain,eyeFormat,64,256,pixels);
+    return UploadAtlas(pointerChain,eyeFormat,64,96,pixels);
 }
 // Static text atlas: allocated/uploaded once, never repainted in the frame loop.
 // Native skill icons, names and belt counts require a separate read-only UI adapter.
@@ -1880,6 +1879,10 @@ void Input() {
             }
             bloodPaintRequest=0;
         }
+    }
+    // Bow path laser color (VR Settings > Aim > Bow laser color).
+    if(const float hue=vrsettings::Read().values[settings::BowLaserHue];hue!=bowLaserHue&&!bowLaserAtlasPending&&atlasUploads.size()<3) {
+        if(UploadAtlas(bowLaserChain,atlasFormat,bowlaser::AtlasWidth,bowlaser::AtlasHeight,bowlaser::Paint(hue),true,&bowLaserAtlasPending))bowLaserHue=hue;
     }
     // Guard strain light (Unleashed shield): blocks strain the guard, light
     // creeps in from the rim; it drains with the shield lowered, or raised with
@@ -3120,6 +3123,10 @@ void EndPair() {
         XrSwapchainImageReleaseInfo release{XR_TYPE_SWAPCHAIN_IMAGE_RELEASE_INFO};
         strainImageReady=Check(pReleaseSwapchainImage(strainChain,&release),"release guard strain light");strainAtlasPending=false;
     }
+    if(bowLaserAtlasPending) {
+        XrSwapchainImageReleaseInfo release{XR_TYPE_SWAPCHAIN_IMAGE_RELEASE_INFO};
+        bowLaserImageReady=Check(pReleaseSwapchainImage(bowLaserChain,&release),"release bow laser");bowLaserAtlasPending=false;
+    }
     // Tabbed, trade and waypoint menus use the same black background in both eyes.
     // Submit just their shared opaque quad: no different cached world per eye.
     const bool blackMenu=opaqueMenuMode&&workspacePlaced&&uiEye.copied&&uiCrop[2]>0&&!settingsModel.open&&!bodyCalibration.Active();
@@ -3283,7 +3290,7 @@ void EndPair() {
     // the arrow guide; resolveBow only yaws and scales it, so it stays straight.
     // Added after the bow's own quads, so it can never displace them.
     bool bowLaserShown=false,bowLaserFloor=false;float bowLaserLength=0;
-    if(gameplayVisible&&!settingsModel.open&&!interactionOutput.wheel&&pointerChain&&motionOutput.bowPhysical&&
+    if(gameplayVisible&&!settingsModel.open&&!interactionOutput.wheel&&bowLaserImageReady&&motionOutput.bowPhysical&&
        vrsettings::Read().values[settings::BowLaser]>.5f&&
        bowlaser::Shown(motionOutput.bowCharged,motionOutput.rayDirection,motionOutput.bowForward)) {
         const auto now=GetTickCount64();
@@ -3294,8 +3301,10 @@ void EndPair() {
             const auto mid=path.start+motionOutput.rayDirection*(path.length*.5f);
             const auto orient=math::BeamOrientation(motionOutput.rayDirection,V(head.position)-mid);
             const auto before=count;
-            motionQuad(bowLaser,XrPose({mid,orient}),.004f,path.length,{{0,path.floor?96:128},{64,path.floor?32:64}},pointerChain);
-            if(path.floor)motionQuad(bowLaserEnd,XrPose({path.end,Q(head.orientation)}),.05f,.05f,{{0,192},{64,64}},pointerChain);
+            using namespace bowlaser;
+            motionQuad(bowLaser,XrPose({mid,orient}),.004f,path.length,
+                path.floor?XrRect2Di{{0,SteadyY},{AtlasWidth,SteadyHeight}}:XrRect2Di{{0,FadeY},{AtlasWidth,FadeHeight}},bowLaserChain);
+            if(path.floor)motionQuad(bowLaserEnd,XrPose({path.end,Q(head.orientation)}),.05f,.05f,{{0,DotY},{DotSize,DotSize}},bowLaserChain);
             bowLaserShown=count>before;bowLaserLength=path.length;bowLaserFloor=path.floor;
         }
     }
@@ -3817,6 +3826,8 @@ void Shutdown(bool preserveResolution) {
     if(bloodChain&&pDestroySwapchain)pDestroySwapchain(bloodChain);bloodChain=XR_NULL_HANDLE;
     bloodScreen.Reset();bloodOutput={};bloodShown=0;bloodPaintKey=bloodRequestedKey=~0ull;bloodPaintRequest=0;bloodPaintAt=0;bloodAtlasPending=bloodImageReady=false;
     if(strainChain&&pDestroySwapchain)pDestroySwapchain(strainChain);strainChain=XR_NULL_HANDLE;
+    if(bowLaserChain&&pDestroySwapchain)pDestroySwapchain(bowLaserChain);bowLaserChain=XR_NULL_HANDLE;
+    bowLaserHue=-1;bowLaserAtlasPending=bowLaserImageReady=false;
     heartStream.Stop();heartPlaying=false;heartLevel.Reset();heartAt=0;heartHush.Reset();heartHealth=-1;
     guardStrain.Reset();strainOutput={};strainPaintKey=~0ull;strainPaintSession=0;strainPaintAt=0;strainAtlasPending=strainImageReady=strainSlotReported=false;
     if(pointerChain&&pDestroySwapchain)pDestroySwapchain(pointerChain);pointerChain=XR_NULL_HANDLE;

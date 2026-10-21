@@ -26,5 +26,16 @@ int main() {
     }
     Check(Trace({0,1.5f,0},{0,0,-2},true,0).length==0,"a non-unit direction shows no line");
     Check(Near(Trace({0,1.5f,0},{0,1,0},true,0).length,MaxLength),"an upward shot never meets the floor");
-    std::puts("Bow laser: draw gate, arrow-tip start, floor stop and maximum length passed");
+    {   // The atlas in the chosen hue: faint beams, a brighter dot of the same color.
+        const auto gold=Paint(45),blue=Paint(240);
+        const auto at=[](const std::vector<uint8_t>& p,int x,int y){return p.data()+(y*AtlasWidth+x)*4;};
+        Check(gold.size()==size_t(AtlasWidth*AtlasHeight*4),"one RGBA atlas");
+        Check(at(gold,10,5)[0]==255&&at(gold,10,5)[1]>180&&at(gold,10,5)[2]<80,"45 degrees is the gold beam");
+        Check(at(blue,10,5)[2]==255&&at(blue,10,5)[0]<80,"another hue tints the whole atlas");
+        Check(at(gold,10,SteadyY+5)[3]==BeamAlpha&&BeamAlpha<128,"the steady beam stays faint");
+        Check(at(gold,10,FadeY)[3]==0&&at(gold,10,FadeY+FadeHeight-1)[3]==BeamAlpha,"the fading beam is clear at its far (top) end");
+        Check(at(gold,32,DotY+32)[3]==DotAlpha&&DotAlpha>BeamAlpha&&at(gold,0,DotY)[3]==0,"the end dot is brighter, round and edged with clear texels");
+        Check(at(gold,32,DotY+32)[1]==at(gold,10,5)[1],"the dot has the beam's color");
+    }
+    std::puts("Bow laser: draw gate, arrow-tip start, floor stop, maximum length and colored atlas passed");
 }

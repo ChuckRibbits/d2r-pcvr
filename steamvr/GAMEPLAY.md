@@ -1080,8 +1080,11 @@ for drawing farther. Both eyes share the same flying-arrow transform per pair.
 
 **Bow path laser** (**VR Settings > Aim > Bow path laser**, `[bow] path_laser`,
 On by default): at full draw, while a release would shoot a physical arrow
-(basic or quiver), a faint gold line runs from the arrow's tip along the
-release's own direction. Arrows have no gravity, so the line is the path. It
+(basic or quiver), a faint line runs from the arrow's tip along the
+release's own direction. **Bow laser color** (`[bow] path_laser_hue`, 45 =
+gold) steps its hue 15 degrees at a time and wraps around the color wheel in
+both directions; the end dot is the same hue, brighter. The line has its own
+small atlas, repainted only when the color changes. Arrows have no gravity, so the line is the path. It
 stops with a dot where the flight would meet the launch floor, with the
 flight's own clearance, and otherwise fades out at 15 m: it is drawn over the
 scene and does not stop at walls or monsters, which only the flight tests.
