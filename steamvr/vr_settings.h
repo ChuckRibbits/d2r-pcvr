@@ -102,7 +102,7 @@ inline constexpr std::array<Definition,Count> Definitions{{
     {"Defer GPU wait", "Start the next frame while the GPU finishes the last", L"render",L"defer_gpu_wait",0,0,1,1},
     {"Monster outline", "Outline strength for the monster you aim at; Off by default", L"gameplay",L"target_outline_pct",0,0,100,10},
     {"Heartbeat starts at", "Life % where the heartbeat begins; louder and faster every 10% lower", L"gameplay",L"low_life_heart_start",60,0,90,10},
-    {"Spells go to the aimed monster", "Its button's hand's monster, then the other hand's, then the one you look at", L"gameplay",L"spell_lock",1,0,1,1},
+    {"Spells go to the aimed monster", "Its button's hand's monster, then the other hand's, then the one you look at", L"gameplay",L"spell_lock",0,0,1,1},
     {"Staff aims where your arm points", "Upright: along your arm. Levelled out: from the staff's top", L"gameplay",L"staff_point",1,0,1,1},
     {"Bow skills go to the aimed monster", "Multiple Shot, Guided Arrow...: Off, archers aim on purpose", L"gameplay",L"spell_lock_bow",0,0,1,1},
     {"Monster highlights", "Dominant hand: its monster only. Both hands: each hand's own", L"gameplay",L"aim_highlights",1,0,1,1},
