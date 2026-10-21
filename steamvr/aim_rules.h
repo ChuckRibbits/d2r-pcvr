@@ -2,7 +2,7 @@
 #include <cstdint>
 
 // How each skill uses the aimed monster, and which hand's target it takes
-// (Jeff, 2026-10-20; the vault's Findings/Skill targeting map). One table, so
+// (Jeff, 2026-10-20). One table, so
 // an exception is a row here, not another path in the casts.
 namespace framevr::aimrules {
 enum class Use {
