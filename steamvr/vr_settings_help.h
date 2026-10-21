@@ -52,7 +52,7 @@ inline const char* HelpText(int id) {
         case MapTopDown:return "The wrist minimap's view. The gold arrow shows your facing direction. Apply saves your choice.";
         case MapRotate:return "In Top-down view, Off keeps north at the top and turns the arrow with you. On rotates the map so your facing direction stays at the top. This has no effect in Isometric view; your choice is kept for the next time you use Top-down. Apply saves it.";
         case OrdinaryMobBars:return "Shows names and health bars for ordinary enemies. Turn it Off to reduce clutter. Boss and elite bars remain visible.";
-        case MenuDistance:return "How far away eye-level game panels, such as inventory and merchant menus, appear. This does not move this VR Settings panel.";
+        case MenuDistance:return "How far away eye-level game panels, such as inventory and merchant menus, appear. You can also point at a game menu, hold Right Grip and push or pull it; menus reopen at that distance until you change this setting or restart. This does not move this VR Settings panel; grab it with Right Grip to move, push, pull or tilt it.";
         case TooltipTiming:return "How soon item details appear when you point the laser at an item in a game panel.";
         case MeleeRules:return "How your physical melee strokes deal damage.";
         case CompanionCounts:return "Shows companion counts and effects currently affecting your character below the left-hand minimap. This includes received buffs, auras and harmful effects, not just assigned skills. It follows Minimap & Compass placement.";

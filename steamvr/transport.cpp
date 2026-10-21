@@ -574,9 +574,28 @@ constexpr float panelWidth=2.0f,panelDistance=panels::MainDistance;
 XrSwapchain pointerChain=XR_NULL_HANDLE;
 XrPosef beamPose{},dotPose{};
 float beamLength=0;
+// 2026-10-19: one remembered push/pull for every game menu, kept as an
+// offset on each default placement (the main menu sits 15 cm beyond the
+// workspace). Choosing another Menu distance preset clears it. VR Settings
+// keeps its own free grab, relative to where you face when it opens.
+panels::Grab panelGrab;
+panels::Offset menuOffset,settingsOffset;
+panels::Placement uiBase{},menuBase{},settingsBase{};
 
 math::Quat Q(XrQuaternionf q) { return {q.x,q.y,q.z,q.w}; }
 math::Vec V(XrVector3f p) { return {p.x,p.y,p.z}; }
+XrPosef PanelPose(panels::Placement p) {
+    return {{p.orientation.x,p.orientation.y,p.orientation.z,p.orientation.w},{p.position.x,p.position.y,p.position.z}};
+}
+XrPosef Placed(panels::Placement base,panels::Offset offset) {
+    return PanelPose(panels::Apply(base,panels::Limit(base,offset,V(head.position))));
+}
+// The grabbing hand is the laser's own pose; hit tests read the moved pose.
+bool GrabPanel(XrPosef& pose,panels::Placement base,panels::Offset& offset,bool grip,bool hit,bool click,const XrPosef& hand,float pushOnly=0) {
+    const bool owned=panelGrab.Step(grip,hit,click,{V(hand.position),Q(hand.orientation)},base,V(head.position),offset,pushOnly);
+    if(owned)pose=PanelPose(panels::Apply(base,offset));
+    return owned;
+}
 void Say(const char* msg) { if(logger) logger(msg); }
 struct PipelineStart {reshade::api::device* device=nullptr;uint64_t layout=0;double at=0;};
 thread_local PipelineStart pipelineStart;
@@ -676,7 +695,7 @@ void ReleasePanelInput() {
         if(held){INPUT up{};up.type=INPUT_MOUSE;up.mi.dwFlags=i?MOUSEEVENTF_RIGHTUP:MOUSEEVENTF_LEFTUP;SendInput(1,&up,sizeof up);held=false;}
     }
     PanelModifier(VK_CONTROL,false,controlDown);PanelModifier(VK_SHIFT,false,shiftDown);
-    panelMouse.Suspend();panelScroll={};
+    panelMouse.Suspend();panelScroll={};panelGrab.Suspend();
 }
 weaponskills::ContactContext ShieldContext(const melee::Sample& sample,uint64_t session) {
     return {session,sample.epoch,sample.skillContext,sample.equipment,sample.skillSlot,sample.skillOwner};
@@ -1201,6 +1220,11 @@ void MenuPointer(const menus::Pad& controls) {
         Say(menuNavigation.Native()?"Frame panels: native controller navigation":"Frame panels: laser navigation");
     const bool laser=!menuNavigation.Native();
     if(!laser){panelinput::UseController();pointerVisible=pointerHit=false;}
+    // The handheld journal has its own left-grip placement.
+    const bool grip=aimTracked&&laser&&!journalMode&&(controls.buttons&menus::RightBumper);
+    const bool grabbing=GrabPanel(spatialMode?uiPose:menuPose,spatialMode?uiBase:menuBase,menuOffset,
+        grip,pointerHit,pressed||mouseDown||rightMouseDown,aim.pose,
+        panels::MenuDistance(int(vrsettings::Read().values[settings::MenuDistance]),!spatialMode));
     const bool active=uiActive&&focused&&aimTracked&&laser;
     if(active)panelinput::OwnPointer();
     if(active&&pointerHit) {
@@ -1215,8 +1239,8 @@ void MenuPointer(const menus::Pad& controls) {
     }
     const bool modifiers=active&&(pointerHit||mouseDown||rightMouseDown);
     PanelModifier(VK_CONTROL,modifiers&&controls.lt>140,controlDown);
-    PanelModifier(VK_SHIFT,modifiers&&(controls.buttons&menus::RightBumper),shiftDown);
-    laserClick.Step(pressed,(controls.buttons&menus::LeftBumper)!=0);
+    PanelModifier(VK_SHIFT,modifiers&&!grabbing&&(controls.buttons&menus::RightBumper),shiftDown);
+    laserClick.Step(pressed&&!grabbing,(controls.buttons&menus::LeftBumper)!=0);
     const auto edges=panelMouse.Step(active,pointerHit,laserClick.Left(),laserClick.Right());
     panelinput::ItemHover(active,pointerHit,panelMouse.down[0]||panelMouse.down[1]);
     for(int i=0;i<2;++i) {
@@ -1393,8 +1417,8 @@ void OpenSettings() {
     settingsImageReady=false;settingsPaintRevision=~0ull;settingsPaintAt=0;
     settingsModel.Open(vrsettings::Read());settingsOpen=true;settingsSession=gamestate::LocalPlayer();
     const auto q=math::Yaw(math::Heading(Q(head.orientation)));
-    const auto p=V(head.position)+math::Rotate(q,{0,-.06f,-1.05f});
-    settingsPose=XrPose({p,q});settingsHover={};ResetSettingsInput();
+    settingsBase={V(head.position)+math::Rotate(q,{0,-.06f,-1.05f}),q};
+    settingsPose=Placed(settingsBase,settingsOffset);settingsHover={};ResetSettingsInput();
     Say("Frame VR settings: panel opened");
 }
 void CloseSettings() {
@@ -1466,7 +1490,7 @@ bool MonoAudioOn(ULONGLONG now) {
     }
     on=mono;return on;
 }
-void SettingsPointer(const settings::InputGate::Edges& edges) {
+void SettingsPointer(const settings::InputGate::Edges& edges,bool grip) {
     if(!settingsModel.open)return;
     const bool monoAudio=MonoAudioOn(GetTickCount64());
     settingsModel.Observe(vrsettings::Read());settingsHover={};pointerVisible=pointerHit=false;
@@ -1485,7 +1509,8 @@ void SettingsPointer(const settings::InputGate::Edges& edges) {
             helpTarget=settings::HelpAt(settingsModel.page,hit.u,hit.v,settingsModel.controllerMenu,&settingsModel.Get(),monoAudio);
             const auto p=hit.point+math::Rotate(Q(settingsPose.orientation),{0,0,.004f});dotPose.position={p.x,p.y,p.z};}
     }
-    if(edges.click&&pointerHit&&settingsImageReady&&settingsPaintRevision==settingsModel.revision){
+    const bool grabbing=GrabPanel(settingsPose,settingsBase,settingsOffset,grip&&pointerVisible,pointerHit,Float(trigger,0)>.2f,aim.pose);
+    if(edges.click&&!grabbing&&pointerHit&&settingsImageReady&&settingsPaintRevision==settingsModel.revision){
         if(settingsHover.kind==settings::Kind::Close)CloseSettings();
         else if(settingsHover.kind==settings::Kind::Recenter){ResetHeight();MotionPulse(1,haptics::Category::Interaction,.4f,35000000);}
         else if(settingsHover.kind==settings::Kind::Calibrate&&settingsModel.ready&&!settingsModel.Busy()&&!settingsModel.Dirty())OpenBodyCalibration();
@@ -1604,7 +1629,7 @@ void Input() {
     }
     if(!settingsOwned&&!settingsChord)MenuPointer(controls);
     else {nativeMenuPad={};menuNavigation.Reset();panelinput::UseController();pointerVisible=pointerHit=false;triggerWasDown=Float(trigger,0)>.2f;cancelWasDown=Bool(secondary,0);}
-    SettingsPointer(settingsEdges);
+    SettingsPointer(settingsEdges,(controls.buttons&menus::RightBumper)!=0);
     settingsOwned=settingsOwned||bodyCalibration.Active();
     auto& s=*tracking.data;s.version=D2RVR_SHARED_VERSION;s.headValid=1;
     const auto q=Q(head.orientation);
@@ -2218,9 +2243,9 @@ void Input() {
 }
 void PlaceMainMenu() {
     if(!panels::CanAnchor(menuPlaced,render&&valid,state==XR_SESSION_STATE_FOCUSED,motionHeadTracked))return;
-    const auto placed=panels::AtEyeLevel(V(head.position),Q(head.orientation),
+    menuBase=panels::AtEyeLevel(V(head.position),Q(head.orientation),
         panels::MenuDistance(int(vrsettings::Read().values[settings::MenuDistance]),true));
-    menuPose=XrPose({placed.position,placed.orientation});menuPlaced=true;
+    menuPose=Placed(menuBase,menuOffset);menuPlaced=true;
     char b[160];std::snprintf(b,sizeof b,"Frame panels: main menu anchored from tracked head at eye height %.3f m",head.position.y);Say(b);
 }
 void Events() {
@@ -2338,10 +2363,10 @@ bool Begin() {
         }
         const int distancePreset=int(vrsettings::Read().values[settings::MenuDistance]);
         static int previousDistance=-1;
-        if(distancePreset!=previousDistance){workspacePlaced=menuPlaced=false;previousDistance=distancePreset;}
+        if(distancePreset!=previousDistance){workspacePlaced=menuPlaced=false;previousDistance=distancePreset;menuOffset={};}
         if(spatialMode&&!journalMode&&panels::CanAnchor(workspacePlaced,render,state==XR_SESSION_STATE_FOCUSED,motionHeadTracked)) {
-            const auto placed=panels::AtEyeLevel(V(head.position),Q(head.orientation),panels::MenuDistance(distancePreset));
-            uiPose=XrPose({placed.position,placed.orientation});
+            uiBase=panels::AtEyeLevel(V(head.position),Q(head.orientation),panels::MenuDistance(distancePreset));
+            uiPose=Placed(uiBase,menuOffset);
             uiSize=panels::Width;workspacePlaced=true;
         }
         if(panelMode)PlaceMainMenu();
