@@ -311,6 +311,7 @@ add_test(NAME interaction-hand-wheels-test COMMAND interaction-preview "${CMAKE_
 add_test(NAME wrist-compass-art-test COMMAND interaction-preview "${CMAKE_CURRENT_BINARY_DIR}/wrist-compass-preview.png" --compass-check)
 add_test(NAME navigation-info-art-test COMMAND interaction-preview "${CMAKE_CURRENT_BINARY_DIR}/navigation-info-preview.png" --navigation-check)
 add_test(NAME vr-settings-help-art-test COMMAND vr-settings-preview "${CMAKE_CURRENT_BINARY_DIR}/settings-help.bmp" 4 --help-check)
+add_test(NAME vr-settings-worker-paint-test COMMAND vr-settings-preview "${CMAKE_CURRENT_BINARY_DIR}/settings-worker.bmp" 0 --worker-check)
 add_test(NAME companions-art-test COMMAND interaction-preview "${CMAKE_CURRENT_BINARY_DIR}/companions-preview.png" --companions-check)
 
 add_test(NAME active-effects-art-test COMMAND interaction-preview "${CMAKE_CURRENT_BINARY_DIR}/active-effects-preview.png" --effects-check)

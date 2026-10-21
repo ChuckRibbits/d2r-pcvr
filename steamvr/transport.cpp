@@ -317,6 +317,30 @@ settings::GameVideo GameVideoOptions(ULONGLONG now) {
     return seen;
 }
 ULONGLONG settingsPaintAt=0;
+// VR Settings and body calibration are painted on a worker: GDI text over the
+// whole 1744 x 1024 page, with a new bitmap and fonts each time, held the frame
+// thread on every hover change. The frame thread uploads the finished picture,
+// and the painted state is what that picture shows, so a click still waits for
+// the page it lands on.
+struct SettingsPaintJob {
+    settings::Model model;settings::Hit hover;std::string status;controllers::Labels detected;
+    int help=settings::NoHelp;settings::GameVideo game{};bool monoAudio=false;
+    bool calibrating=false;calibration::Flow body;
+};
+struct SettingsPainted {std::vector<uint8_t> pixels;double paintMs=0;};
+LatestWorker<SettingsPaintJob,SettingsPainted> settingsPainter([](const SettingsPaintJob& job) {
+    const auto start=hookmetrics::Nanos();
+    auto pixels=job.calibrating?settings::Paint(job.model,{},"",&job.body):
+        settings::Paint(job.model,job.hover,job.status.c_str(),nullptr,job.detected,job.help,job.game,job.monoAudio);
+    return SettingsPainted{std::move(pixels),double(hookmetrics::Nanos()-start)/1e6};
+});
+struct SettingsPicture {
+    uint64_t revision=~0ull;int hover=-1,status=-1,help=settings::NoHelp,game=-1;
+    bool operator==(const SettingsPicture&)const=default;
+};
+SettingsPicture settingsRequested;   // what the outstanding settings request paints
+int calibrationRequestedKey=-1;      // the same for calibration
+uint64_t settingsPaintRequest=0;
 XrPosef settingsPose{};
 constexpr float settingsWidth=.95f,settingsHeight=settingsWidth*settings::Height/settings::Width;
 DXGI_FORMAT atlasFormat=DXGI_FORMAT_R8G8B8A8_UNORM_SRGB;
@@ -982,6 +1006,7 @@ bool SetupGameplay(DXGI_FORMAT eyeFormat) {
     if(!interactionPainter.Start())Say("Frame UI: background painter unavailable; interaction artwork cannot refresh");
     if(!bloodPainter.Start())Say("Frame blood visor: background painter unavailable; blood stays hidden");
     if(!strainPainter.Start())Say("Frame guard strain: background painter unavailable; the light stays hidden");
+    if(!settingsPainter.Start())Say("Frame VR settings: background painter unavailable; VR Settings and calibration cannot be shown");
     const auto compassPixels=compass::Paint();
     compassAtlasReady=!compassPixels.empty()&&UploadAtlas(compassChain,eyeFormat,compass::Width,compass::Height,compassPixels);
     if(!compassAtlasReady)Say("Frame wrist compass: static atlas unavailable");
@@ -1414,7 +1439,7 @@ void ResetSettingsInput() {
     ReleasePanelInput();
 }
 void OpenSettings() {
-    settingsImageReady=false;settingsPaintRevision=~0ull;settingsPaintAt=0;
+    settingsImageReady=false;settingsPaintRevision=~0ull;settingsPaintAt=0;settingsPaintRequest=0;settingsRequested={};
     settingsModel.Open(vrsettings::Read());settingsOpen=true;settingsSession=gamestate::LocalPlayer();
     const auto q=math::Yaw(math::Heading(Q(head.orientation)));
     settingsBase={V(head.position)+math::Rotate(q,{0,-.06f,-1.05f}),q};
@@ -1428,11 +1453,26 @@ void CloseSettings() {
 void OpenBodyCalibration() {
     if(settingsModel.open)CloseSettings();
     bodyCalibration.Begin();calibrationRelease.Consume();calibrationPrompted=true;
-    calibrationSession=gamestate::LocalPlayer();calibrationPaintKey=-1;
-    settingsOpen=true;settingsImageReady=false;settingsPaintAt=0;
+    calibrationSession=gamestate::LocalPlayer();calibrationPaintKey=calibrationRequestedKey=-1;
+    settingsOpen=true;settingsImageReady=false;settingsPaintAt=0;settingsPaintRequest=0;
     const auto q=math::Yaw(math::Heading(Q(head.orientation)));
     settingsPose=XrPose({V(head.position)+math::Rotate(q,{0,-.06f,-1.05f}),q});
     ResetSettingsInput();Say("Frame body calibration: started; upright T-pose + both triggers; Right B cancels");
+}
+// Uploads the picture last asked of the settings painter once it is done;
+// true if it was uploaded.
+bool TakeSettingsPicture() {
+    SettingsPainted painted;
+    if(!settingsPaintRequest||settingsAtlasPending||atlasUploads.size()>=3||!settingsPainter.Take(settingsPaintRequest,painted))return false;
+    settingsPaintRequest=0;
+    const auto uploadStart=Milliseconds();
+    const bool uploaded=!painted.pixels.empty()&&UploadAtlas(settingsChain,atlasFormat,settings::AtlasWidth,settings::Height,painted.pixels,true,&settingsAtlasPending);
+    static ULONGLONG reportAt=0;const auto now=GetTickCount64();
+    if(uploaded&&now>=reportAt) {
+        char message[160];std::snprintf(message,sizeof message,"Frame VR settings: page painted in %.2f ms on the background painter, uploaded in %.2f ms",
+            painted.paintMs,Milliseconds()-uploadStart);Say(message);reportAt=now+5000;
+    }
+    return uploaded;
 }
 void CalibrationInput() {
     if(!bodyCalibration.Active())return;
@@ -1467,11 +1507,11 @@ void CalibrationInput() {
     }
     const int key=int(bodyCalibration.hint)*100+int(bodyCalibration.progress*20);
     const auto now=GetTickCount64();
-    if(key!=calibrationPaintKey&&now>=settingsPaintAt&&!settingsAtlasPending&&atlasUploads.size()<3){
-        auto pixels=settings::Paint(settingsModel,{},"",&bodyCalibration);
-        if(!pixels.empty()&&UploadAtlas(settingsChain,atlasFormat,settings::AtlasWidth,settings::Height,pixels,true,&settingsAtlasPending))calibrationPaintKey=key;
-        settingsPaintAt=now+100;
+    if(key!=calibrationPaintKey&&now>=settingsPaintAt&&!settingsPaintRequest){
+        SettingsPaintJob job;job.model=settingsModel;job.calibrating=true;job.body=bodyCalibration;
+        settingsPaintRequest=settingsPainter.Submit(std::move(job));calibrationRequestedKey=key;settingsPaintAt=now+100;
     }
+    if(TakeSettingsPicture())calibrationPaintKey=calibrationRequestedKey;
 }
 // Windows Mono audio (HKCU Software\Microsoft\Multimedia\Audio,
 // AccessibilityMonoMixState 1) for the title row's warning, read at most every
@@ -1538,14 +1578,20 @@ void SettingsPointer(const settings::InputGate::Edges& edges,bool grip) {
     const int help=settingsHelpVisible=settingsHelp.Step(helpTarget,now);
     const auto game=GameVideoOptions(now);
     const int warnings=game.Code()|(monoAudio?4:0);
-    if(now>=settingsPaintAt&&!settingsAtlasPending&&atlasUploads.size()<3&&
-       (settingsPaintRevision!=settingsModel.revision||settingsPaintHover!=hover||settingsPaintStatus!=status||settingsPaintHelp!=help||settingsPaintGame!=warnings)){
+    // One request at a time, at most every 100 ms as when it was painted here.
+    // Each picture is shown when done, even if the pointer moved on meanwhile:
+    // the painted state names what it shows, and the next request catches up.
+    const SettingsPicture wanted{settingsModel.revision,hover,status,help,warnings};
+    const SettingsPicture painted{settingsPaintRevision,settingsPaintHover,settingsPaintStatus,settingsPaintHelp,settingsPaintGame};
+    if(!(wanted==painted)&&now>=settingsPaintAt&&!settingsPaintRequest){
         char resolutionStatus[160];resolution::Describe(resolutionStatus,sizeof resolutionStatus,{width,height});
-        auto pixels=settings::Paint(settingsModel,settingsHover,settingsModel.page==settings::Page::Video?resolutionStatus:descriptions[status],nullptr,detectedControllers,help,game,monoAudio);
-        if(!pixels.empty()&&UploadAtlas(settingsChain,atlasFormat,settings::AtlasWidth,settings::Height,pixels,true,&settingsAtlasPending)){
-            settingsPaintRevision=settingsModel.revision;settingsPaintHover=hover;settingsPaintStatus=status;settingsPaintHelp=help;settingsPaintGame=warnings;
-        }
-        settingsPaintAt=now+100;
+        settingsPaintRequest=settingsPainter.Submit({settingsModel,settingsHover,settingsModel.page==settings::Page::Video?resolutionStatus:descriptions[status],
+                                                    detectedControllers,help,game,monoAudio});
+        settingsRequested=wanted;settingsPaintAt=now+100;
+    }
+    if(TakeSettingsPicture()) {
+        settingsPaintRevision=settingsRequested.revision;settingsPaintHover=settingsRequested.hover;settingsPaintStatus=settingsRequested.status;
+        settingsPaintHelp=settingsRequested.help;settingsPaintGame=settingsRequested.game;
     }
 }
 void Input() {
@@ -3219,7 +3265,9 @@ void EndPair() {
     if(layer&&(settingsModel.open||bodyCalibration.Active())&&settingsImageReady){
         // Extend to the right, without moving or shrinking any control. Input
         // still intersects the original panel. Calibration uses only that crop.
-        const bool showHelp=!bodyCalibration.Active()&&settingsHelpVisible!=settings::NoHelp&&settingsPaintHelp==settingsHelpVisible;
+        // The card while help is wanted and the picture shown has one: from one
+        // card to the next, the old stays until the new is painted, not a narrow frame.
+        const bool showHelp=!bodyCalibration.Active()&&settingsHelpVisible!=settings::NoHelp&&settingsPaintHelp!=settings::NoHelp;
         const int pixels=showHelp?settings::AtlasWidth:settings::Width;
         const float fullWidth=settingsWidth*pixels/settings::Width;
         auto pose=settingsPose;
@@ -3680,14 +3728,15 @@ void Shutdown(bool preserveResolution) {
     if(!preserveResolution)hud::NativeSession(false);
     if(!preserveResolution)resolution::Restore();
     windowFocus.Cancel();
-    EndPair();ClearInput();interactionPainter.Stop();bloodPainter.Stop();strainPainter.Stop();interaction::icons::Shutdown();
+    EndPair();ClearInput();interactionPainter.Stop();bloodPainter.Stop();strainPainter.Stop();settingsPainter.Stop();interaction::icons::Shutdown();
     // Completion is mandatory before destroying our commands/resources, even
     // when ordinary frame submission uses queue ordering without a CPU wait.
     if(fence&&!WaitGpu())failed=true;
     if(uiEye.chain&&pDestroySwapchain)pDestroySwapchain(uiEye.chain);uiEye={};journalMode=spatialMode=workspacePlaced=false;hud::UiFrame(false,false,0);uiSupported=false;uiBlit={};potionModels.Reset();potionScene={};
     if(mapEye.chain&&pDestroySwapchain)pDestroySwapchain(mapEye.chain);mapEye={};mapSupported=false;mapBlit={};gamestate::MenuMap(false);hud::MenuMapCapture(false);
     settingsModel.Close();settingsOpen=false;settingsInputGate.Suspend();settingsPaintRevision=~0ull;settingsAtlasPending=settingsImageReady=false;
-    bodyCalibration.Cancel();calibrationRelease={};calibrationPrompted=floorSpace=false;calibrationSession=0;calibrationPaintKey=-1;
+    settingsPaintRequest=0;settingsRequested={};
+    bodyCalibration.Cancel();calibrationRelease={};calibrationPrompted=floorSpace=false;calibrationSession=0;calibrationPaintKey=calibrationRequestedKey=-1;
     if(settingsChain&&pDestroySwapchain)pDestroySwapchain(settingsChain);settingsChain=XR_NULL_HANDLE;
     atlasUploads.clear();atlasStagingFree.clear();interactionPaintKey=~0ull;interactionPrefetchSession=0;interactionPrefetchRevision=~0u;interactions.Reset();interactionstate::Cancel();
     interactionPaintRequest=0;interactionRequestedKey=~0ull;interactionPaintValid=false;interactionPaintContext={};interactionRequestedContext={};interactionPaintAt=0;
