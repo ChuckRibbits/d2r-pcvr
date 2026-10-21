@@ -168,7 +168,7 @@ not generate melee velocity. The layout currently assumes a right-handed player.
 | Selected skill / spell | Point right hand and press trigger; supported bow skills also use draw/release as described below |
 | Selected Amazon arrow skill | Draw and release once for the native skill; Multiple Shot emits its fan, Strafe requests its native volley |
 | Selected Smite with a shield | Swing or thrust the left shield through an enemy; keep right trigger released |
-| Quick cast without opening wheel | Hold Left Trigger, point right hand and press a face button; add Left Grip for the alternate four slots (mapping below) |
+| Cast without opening the wheel | Each hand casts its own skills, aimed with that hand: trigger, two face buttons, and same-hand grip + face button for two more ([hand skill layouts](../CONTROLS.md#hand-skill-layouts)) |
 | Melee swing / thrust | Swing the equipped melee weapon through a creature, including with a skill selected; no grip, trigger, or preselected target |
 | Button attack / crossbow | Weapon combat mode, right trigger; native crossbow firing |
 | Nock bow | Bow equipped: bring right hand to string and hold right trigger; no left grip required |
@@ -481,26 +481,12 @@ release the selection trigger before casting. **BASIC ATTACK** restores the basi
 right-trigger attack or physical bow controls. Free melee swings remain
 available with a skill selected, pausing during casting, menus or potion handling.
 
-Quick casting uses the **same saved bindings**, while keeping the selected
-right-trigger ability. Point with the right hand, hold **Left Trigger**, then
-press one face button. Hold the button to use the native repeat/channel behavior;
-release it to stop. Add **Left Grip** before pressing for the alternate slot.
-
-| VR face button while Left Trigger is held | Native binding | With Left Grip also held |
-|---|---|---|
-| Right A | B | LT + B |
-| Right B | X | LT + X |
-| Left A on Frame / X on Quest | Y | LT + Y |
-| Left B on Frame / Y on Quest | RB | LT + RB |
-
-The wheel shows these VR shortcuts below the skill names. These chords require
-motion controls and apply during gameplay; menus keep their pointer/modifier
-controls. While quick casting, face buttons do not also open inventory/wheel,
-interact, cancel, or open settings, and Left Grip cannot grab a belt potion or
-holster. Entering the layer cancels a drawn bow without shooting. Release and
-press again after changing the alternate-slot grip, tracking interruption or
-weapon swap. Unassigned/unavailable slots cannot cast; costs and timing remain
-native. Candidate host tests pass; headset quick-cast validation is pending.
+There is no left-trigger quick-cast layer. Each hand casts its own wheel
+skills, aimed with that hand: its trigger, its two face buttons, and the same
+hand's grip plus a face button for two more. Hold the input for the native
+repeat/channel behavior; release it to stop. The slots, the native gamepad
+bindings behind them and what happens when both hands cast at once are in
+[hand skill layouts](../CONTROLS.md#hand-skill-layouts).
 
 Equipping a different melee weapon or bow selects weapon mode. Javelins and
 throwing weapons use free-swing contacts; select the native Throw skill to throw.
