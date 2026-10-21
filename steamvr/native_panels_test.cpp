@@ -128,6 +128,12 @@ int main(){
     Check(panels::ItemCursorSnap(false,true,true)&&panels::ItemCursorSnap(true,false,true),"desktop and unrelated cursor queries remain native");
     Check(panels::CursorBoundsCaller(0x7f4b2)&&panels::CursorBoundsCaller(0x14fb2a),
         "native height and tail-called width clamp use full-source bounds");
+    for(auto address:panels::CursorConversionReturns)
+        Check(panels::CursorBoundsCaller(address)&&!panels::UiCanvasCaller(address),
+            "the cursor's window/game conversions use full-source bounds, never the UI band (X stopped at 2100 of 3072)");
+    for(auto address:panels::CursorClampReturns)
+        Check(panels::CursorBoundsCaller(address)&&!panels::UiCanvasCaller(address),"the controller cursor's clamp uses full-source bounds");
+    Check(std::size(panels::CursorConversionReturns)==7&&std::size(panels::CursorClampReturns)==2,"every audited cursor size query is listed");
     for(auto address:panels::UiCanvasReturns)
         Check(!panels::CursorBoundsCaller(address),"cursor bounds cannot enlarge native font/layout canvas");
     for(auto address:{uintptr_t(0),uintptr_t(0x14fb46),uintptr_t(0x667ff1),uintptr_t(0x904b3d)})

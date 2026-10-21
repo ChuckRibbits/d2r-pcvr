@@ -264,6 +264,19 @@ int main(){
         const auto request=strain.Click({Kind::Apply});
         Check(request.changed==(ChangeMask{1}<<StrainDark),"strain colour saves only its own setting");
     }
+    {Model look;look.Open(s);look.Click({Kind::Tab,int(Page::Combat)});
+        look.Click(At(Page::Combat,ValueBox(4)));look.Click(At(Page::Combat,ValueBox(4)));
+        Check(look.Get()[StrainDark]==2&&std::string(StrainColorNames[2])=="Off","a second click on the value turns the strain light Off");
+        look.Click(At(Page::Combat,ValueBox(4)));
+        Check(look.Get()[StrainDark]==0,"a third click returns to White");
+        look.Click(At(Page::Combat,Decrease(4)));
+        Check(look.Get()[StrainDark]==2,"minus from White wraps to Off");
+        look.Click(At(Page::Combat,Increase(4)));
+        Check(look.Get()[StrainDark]==0,"plus from Off wraps to White");
+        Check(Normalize(StrainDark,2)==2&&Normalize(StrainDark,1)==1&&Normalize(StrainDark,0)==0,"White, Black and Off persist");
+        for(float bad:{-1.f,3.f,.5f,NAN})Check(Normalize(StrainDark,bad)==0,"an invalid strain colour uses White");
+        Check(HelpChoices(StrainDark)==3&&std::string(HelpChoice(StrainDark,2).name)=="Off","the help card describes Off");
+    }
     {Model speed;speed.Open(s);speed.Click({Kind::Tab,int(Page::Combat)});
         Check(s.values[StrainSpeed]==1&&RowKey(Page::Combat,5)==StrainSpeed,"guard strain speed defaults to Medium in its own row");
         for(float bad:{-1.f,3.f,1.5f,NAN})Check(Normalize(StrainSpeed,bad)==1,"invalid buildup preference uses Medium");
