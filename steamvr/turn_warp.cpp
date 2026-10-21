@@ -202,7 +202,8 @@ constexpr UINT GridDescriptors=8,SlotDescriptors=2*GridDescriptors+1,InterfaceDe
 // The shaders' bytecode, compiled once a process: the compiles were about 106
 // of the 112 ms Initialize took on the render thread at every new session
 // (RTX 5090 / Ryzen 9 5950X, 2026-10-20). Copied out of the compiler's blobs,
-// which must not outlive d3dcompiler_47.
+// which must not outlive d3dcompiler_47. A shader that fails to compile stays
+// failed for the process; its pass is then unavailable as before.
 struct Compiled {
     bool compiler=false;
     std::vector<uint8_t> vs,ps,layer,depthVs,depthPs,nearVs,nearReduce,nearSpread,effectsReduce;
@@ -213,7 +214,7 @@ const Compiled& Shaders() {
     std::call_once(once,[]{
         const HMODULE module=LoadLibraryW(L"d3dcompiler_47.dll");
         const auto compile=module?reinterpret_cast<decltype(&D3DCompile)>(GetProcAddress(module,"D3DCompile")):nullptr;
-        if(compile) {
+        if(compile)try {
             c.compiler=true;
             const auto build=[&](const char* source,size_t size,const char* name,const char* entry,const char* target,std::vector<uint8_t>& out,std::string* errors) {
                 ComPtr<ID3DBlob> code,messages;
@@ -231,7 +232,7 @@ const Compiled& Shaders() {
             build(NearShader,sizeof(NearShader)-1,"turn-near","Reduce","ps_5_0",c.nearReduce,&c.nearErrors);
             build(NearShader,sizeof(NearShader)-1,"turn-near","Spread","ps_5_0",c.nearSpread,&c.nearErrors);
             build(EffectsShader,sizeof(EffectsShader)-1,"turn-effects","Reduce","ps_5_0",c.effectsReduce,&c.effectsErrors);
-        }
+        }catch(...) {}   // out of memory: what did not finish stays unavailable
         if(module)FreeLibrary(module);
     });
     return c;

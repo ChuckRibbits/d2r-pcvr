@@ -989,7 +989,6 @@ bool SetupGameplay(DXGI_FORMAT eyeFormat) {
     if(!interactionPainter.Start())Say("Frame UI: background painter unavailable; interaction artwork cannot refresh");
     if(!bloodPainter.Start())Say("Frame blood visor: background painter unavailable; blood stays hidden");
     if(!strainPainter.Start())Say("Frame guard strain: background painter unavailable; the light stays hidden");
-    if(turnCompiler.Start())turnCompiler.Submit({device,eyeFormat});   // else the first turned eye builds it all
     const auto compassPixels=compass::Paint();
     compassAtlasReady=!compassPixels.empty()&&UploadAtlas(compassChain,eyeFormat,compass::Width,compass::Height,compassPixels);
     if(!compassAtlasReady)Say("Frame wrist compass: static atlas unavailable");
@@ -1134,6 +1133,9 @@ bool Initialize(reshade::api::command_queue* rq,reshade::api::swapchain* swap) {
     tracking.data->version=D2RVR_SHARED_VERSION;pad.data->version=BW_PAD_MIRROR_VERSION;actions.data->version=D2RVR_ACTIONS_VERSION;
     gameSwapchain=swap;
     char b[160];std::snprintf(b,sizeof b,"Frame OpenXR: D3D12 session ready, eyes %ux%u format %d (game format %d)",width,height,int(eyeFormat),int(format));Say(b);
+    // Only for a session that started: a failed one is shut down at once, and
+    // that would wait here for the warm-up.
+    if(turnCompiler.Start())turnCompiler.Submit({device,turnFormat});   // else the first turned eye builds it all
     return true;
 }
 void UpdateControllerLabels() {
