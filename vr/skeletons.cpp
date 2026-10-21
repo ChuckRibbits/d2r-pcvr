@@ -847,10 +847,15 @@ void ApplyWrist(Mat& hand, const Wrist& r) {
 }
 
 #ifdef D2RVR_NATIVE_OPENXR
-// The shield wrist's stop. The hand bending toward the shield's side of the
-// forearm (back of the hand up) swings the shield's elbow edge into the arm:
-// that bend eases into where the shield sat rigid on the forearm before it
-// followed the hand. Bending the other way, twisting and side to side stay free.
+// The shield wrist's stop. The hand bending back (back of the hand up) swings
+// the shield's elbow edge into the arm: that bend eases into where the shield
+// sat rigid on the forearm before it followed the hand. Bending the other way,
+// twisting and side to side stay free.
+// Always the back of the hand, from the knuckles (the fingers curl and the thumb
+// sits the other way on every hero rig). It was chosen by which side of the
+// forearm shield_attach sat on: the necromancer's animation holds it past the
+// palm side, the stop turned round and pushed his hand up as it bent down,
+// with a steel shield only (2026-10-20). The barbarian's never turned it.
 // Returns how much bend the controller asked that the wrist held back, degrees (0: none).
 float StopShieldWrist(const Hero& h,std::vector<Mat>& newW) {
     const int k=h.hand[1],sa=h.shieldAttach,l=h.lwr[1],i=h.ind[1],m=h.mid[1],p=h.pnk[1];
@@ -860,23 +865,37 @@ float StopShieldWrist(const Hero& h,std::vector<Mat>& newW) {
     // the hand as it would be, holding the shield where it sat on the forearm
     const Mat rigid=Mul(Mul(h.bind[k],InvAffine(h.bind[sa])),newW[sa]);
     const V3 f=Norm(Sub(Pos(newW[k]),Pos(newW[l])));   // elbow -> wrist
-    V3 now=Norm(RotOnly(back,newW[k])),stop=Norm(RotOnly(back,rigid));
-    // the shield's side of the forearm: the back of the hand's, unless its bone says otherwise
-    const V3 off=Sub(Pos(newW[sa]),Pos(newW[l])),side=Sub(off,Scale(f,Dot(off,f)));
-    if(Len(side)>1e-3f&&Dot(side,stop)<0){now=Scale(now,-1);stop=Scale(stop,-1);}
+    const V3 now=Norm(RotOnly(back,newW[k])),stop=Norm(RotOnly(back,rigid));
     // Bend as the angle off the forearm: easing starts kEase short of the stop
     // and only approaches it, so the shield slows into place and never reaches the arm.
     constexpr float kEase=15.0f/57.2958f;
     const float asked=acosf(std::clamp(Dot(now,f),-1.f,1.f)),at=acosf(std::clamp(Dot(stop,f),-1.f,1.f));
     const float knee=at-kEase;
-    if(asked<=knee)return 0;   // short of the easing
-    const float given=knee+kEase*(1-expf(-(asked-knee)/kEase));
-    const V3 w=Sub(now,Scale(f,Dot(now,f)));
-    if(Len(w)<1e-4f)return 0;
-    const V3 target=Add(Scale(f,cosf(given)),Scale(Norm(w),sinf(given)));
-    const auto before=newW;
-    TurnAboutSelf(newW[k],RotBetween(now,target));
-    std::vector<char> fromK(h.count,0);fromK[k]=1;Propagate(h,before,newW,fromK,k);   // fingers, L_weapon_attach
+    float given=asked;
+    if(asked>knee) {   // into the easing
+        const V3 w=Sub(now,Scale(f,Dot(now,f)));
+        if(Len(w)>=1e-4f) {
+            given=knee+kEase*(1-expf(-(asked-knee)/kEase));
+            const V3 target=Add(Scale(f,cosf(given)),Scale(Norm(w),sinf(given)));
+            const auto before=newW;
+            TurnAboutSelf(newW[k],RotBetween(now,target));
+            std::vector<char> fromK(h.count,0);fromK[k]=1;Propagate(h,before,newW,fromK,k);   // fingers, L_weapon_attach
+        }
+    }
+#ifdef D2RVR_DEVELOPER
+    // [diag] developer builds only. 90 = hand straight, above 90 = bent back (back of the
+    // hand up), below = bent toward the palm. old_flip: the side the old rule went by
+    // (shield_attach's offset from the forearm, untouched by the turn above); 1 = it
+    // would have turned the stop round.
+    static ULONGLONG reportAt=0;const auto nowMs=GetTickCount64();
+    if(nowMs>=reportAt) {
+        const V3 off=Sub(Pos(newW[sa]),Pos(newW[l])),side=Sub(off,Scale(f,Dot(off,f)));
+        const int oldFlip=Len(side)>1e-3f&&Dot(side,stop)<0?1:0;
+        char line[200];snprintf(line,sizeof line,"Frame shield wrist stop: class=%d asked=%.1f stop=%.1f given=%.1f held=%.1f deg old_flip=%d",
+            h.cls,asked*57.2958f,at*57.2958f,given*57.2958f,(asked-given)*57.2958f,oldFlip);
+        framevr::logging::Write(line);reportAt=nowMs+1000;
+    }
+#endif
     return (asked-given)*57.2958f;
 }
 #endif
