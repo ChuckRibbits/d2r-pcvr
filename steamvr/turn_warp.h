@@ -160,6 +160,8 @@ class TurnWarp {
     DXGI_FORMAT format=DXGI_FORMAT_UNKNOWN;
 public:
     // format: the eye swapchain's typed format, of the source and the target alike.
+    // Any thread, for its own object: the shaders compile once for the process,
+    // and an Initialize meeting that compile running waits and reuses it.
     bool Initialize(ID3D12Device*,DXGI_FORMAT format,void (*log)(const char*));
     bool Ready() const {return pipeline!=nullptr;}
     bool DepthReady() const {return depthPipeline!=nullptr;}

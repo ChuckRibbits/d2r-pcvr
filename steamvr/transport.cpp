@@ -280,11 +280,10 @@ settings::InputGate settingsInputGate;
 settings::Hit settingsHover;
 std::atomic<bool> settingsOpen{false};
 bool settingsAtlasPending=false,settingsImageReady=false;
-uint64_t settingsPaintRevision=~0ull,settingsSession=0;
-int settingsPaintHover=-1,settingsPaintStatus=-1,settingsPaintGame=-1;
+uint64_t settingsSession=0;
 settings::HoverHelp settingsHelp;
-int settingsPaintHelp=settings::NoHelp,settingsHelpVisible=settings::NoHelp;
-// The game's own video options for the Video page's warnings, re-read at most
+int settingsHelpVisible=settings::NoHelp;
+// The game's own video options for the Perf page's warnings and line, re-read at most
 // every 2 s while VR Settings is open and only when the game has saved them:
 // the mod's own Settings.json (settings::ModSettingsFile), or the unmodded
 // game's while the mod has none yet.
@@ -327,21 +326,29 @@ ULONGLONG settingsPaintAt=0;
 struct SettingsPaintJob {
     settings::Model model;settings::Hit hover;std::string status;controllers::Labels detected;
     int help=settings::NoHelp;settings::GameVideo game{};bool monoAudio=false;
+    settings::PerformanceReadout performance{};bool depthRestart=false;
     bool calibrating=false;calibration::Flow body;
 };
 struct SettingsPainted {std::vector<uint8_t> pixels;double paintMs=0;};
 LatestWorker<SettingsPaintJob,SettingsPainted> settingsPainter([](const SettingsPaintJob& job) {
     const auto start=hookmetrics::Nanos();
     auto pixels=job.calibrating?settings::Paint(job.model,{},"",&job.body):
-        settings::Paint(job.model,job.hover,job.status.c_str(),nullptr,job.detected,job.help,job.game,job.monoAudio);
+        settings::Paint(job.model,job.hover,job.status.c_str(),nullptr,job.detected,job.help,job.game,job.monoAudio,job.performance,job.depthRestart);
     return SettingsPainted{std::move(pixels),double(hookmetrics::Nanos()-start)/1e6};
 });
 struct SettingsPicture {
     uint64_t revision=~0ull;int hover=-1,status=-1,help=settings::NoHelp,game=-1;
+    uint64_t performance=0;bool depthRestart=false;settings::GameVideo gameVideo{};   // the Perf page's
     bool operator==(const SettingsPicture&)const=default;
 };
+SettingsPicture settingsPainted;     // what the picture shown has
 SettingsPicture settingsRequested;   // what the outstanding settings request paints
 int calibrationRequestedKey=-1;      // the same for calibration
+// The Perf page's numbers: each second's frames as NoteFrame gets them.
+struct PerformanceWindow {double game=0,wait=0,draw=0,vr=0,period=0;uint32_t frames=0,periods=0,turns=0;ULONGLONG since=0,last=0;} performanceWindow;
+double performanceBudget=0;   // the headset's frame, from the last frame that had one
+settings::PerformanceReadout performance;
+uint64_t performanceSerial=0;ULONGLONG performanceAt=0;
 uint64_t settingsPaintRequest=0;
 XrPosef settingsPose{};
 constexpr float settingsWidth=.95f,settingsHeight=settingsWidth*settings::Height/settings::Width;
@@ -516,6 +523,13 @@ std::array<bool,2> turnKept{};
 bool turnImagesFailed=false,turnWarpTried=false;
 DXGI_FORMAT turnFormat=DXGI_FORMAT_UNKNOWN;
 TurnWarp turnWarp;
+// Built once in the background as a session is set up, long before a frame
+// first turns an eye: that compiles its shaders for the process and has the
+// driver build its pipelines once. On the render thread these held it about
+// 215 ms in a new process and 112 ms at every later session; then about 3 ms
+// (RTX 5090 / Ryzen 9 5950X, 2026-10-20).
+struct TurnWarmJob {ComPtr<ID3D12Device> device;DXGI_FORMAT format=DXGI_FORMAT_UNKNOWN;};
+LatestWorker<TurnWarmJob,bool> turnCompiler([](const TurnWarmJob& job){TurnWarp warm;return warm.Initialize(job.device.Get(),job.format,nullptr);});
 // By turns: each eye's scene depth as drawn, beside its kept image (KeepDepth).
 bool keepDepth=false;
 struct KeptDepth {ComPtr<ID3D12Resource> texture;DXGI_FORMAT format=DXGI_FORMAT_UNKNOWN;float scale[2]{1,1};bool ok=false;};
@@ -1153,6 +1167,9 @@ bool Initialize(reshade::api::command_queue* rq,reshade::api::swapchain* swap) {
     tracking.data->version=D2RVR_SHARED_VERSION;pad.data->version=BW_PAD_MIRROR_VERSION;actions.data->version=D2RVR_ACTIONS_VERSION;
     gameSwapchain=swap;
     char b[160];std::snprintf(b,sizeof b,"Frame OpenXR: D3D12 session ready, eyes %ux%u format %d (game format %d)",width,height,int(eyeFormat),int(format));Say(b);
+    // Only for a session that started: a failed one is shut down at once, and
+    // that would wait here for the warm-up.
+    if(turnCompiler.Start())turnCompiler.Submit({device,turnFormat});   // else the first turned eye builds it all
     return true;
 }
 void UpdateControllerLabels() {
@@ -1429,7 +1446,7 @@ gameplay::MeleeStyle MotionMeleeStyle() {
     }
 }
 void ResetSettingsInput() {
-    settingsHelp.Clear();settingsPaintHelp=settingsHelpVisible=settings::NoHelp;
+    settingsHelp.Clear();settingsPainted.help=settingsHelpVisible=settings::NoHelp;
     hapticPulses.Cancel();
     spellHaptics.Clear();
     panelinput::WorldInput(false);
@@ -1441,7 +1458,7 @@ void ResetSettingsInput() {
     ReleasePanelInput();
 }
 void OpenSettings() {
-    settingsImageReady=false;settingsPaintRevision=~0ull;settingsPaintAt=0;settingsPaintRequest=0;settingsRequested={};
+    settingsImageReady=false;settingsPainted={};settingsPaintAt=0;settingsPaintRequest=0;settingsRequested={};
     settingsModel.Open(vrsettings::Read());settingsOpen=true;settingsSession=gamestate::LocalPlayer();
     const auto q=math::Yaw(math::Heading(Q(head.orientation)));
     settingsBase={V(head.position)+math::Rotate(q,{0,-.06f,-1.05f}),q};
@@ -1504,7 +1521,7 @@ void CalibrationInput() {
         }else bodyCalibration.Failed();
     }
     if(!bodyCalibration.Active()){
-        settingsOpen=false;settingsImageReady=false;settingsPaintRevision=~0ull;ResetSettingsInput();
+        settingsOpen=false;settingsImageReady=false;settingsPainted={};ResetSettingsInput();
         Say("Frame body calibration: closed; held input consumed");return;
     }
     const int key=int(bodyCalibration.hint)*100+int(bodyCalibration.progress*20);
@@ -1552,7 +1569,7 @@ void SettingsPointer(const settings::InputGate::Edges& edges,bool grip) {
             const auto p=hit.point+math::Rotate(Q(settingsPose.orientation),{0,0,.004f});dotPose.position={p.x,p.y,p.z};}
     }
     const bool grabbing=GrabPanel(settingsPose,settingsBase,settingsOffset,grip&&pointerVisible,pointerHit,Float(trigger,0)>.2f,aim.pose);
-    if(edges.click&&!grabbing&&pointerHit&&settingsImageReady&&settingsPaintRevision==settingsModel.revision){
+    if(edges.click&&!grabbing&&pointerHit&&settingsImageReady&&settingsPainted.revision==settingsModel.revision){
         if(settingsHover.kind==settings::Kind::Close)CloseSettings();
         else if(settingsHover.kind==settings::Kind::Recenter){ResetHeight();MotionPulse(1,haptics::Category::Interaction,.4f,35000000);}
         else if(settingsHover.kind==settings::Kind::Calibrate&&settingsModel.ready&&!settingsModel.Busy()&&!settingsModel.Dirty())OpenBodyCalibration();
@@ -1583,18 +1600,19 @@ void SettingsPointer(const settings::InputGate::Edges& edges,bool grip) {
     // One request at a time, at most every 100 ms as when it was painted here.
     // Each picture is shown when done, even if the pointer moved on meanwhile:
     // the painted state names what it shows, and the next request catches up.
-    const SettingsPicture wanted{settingsModel.revision,hover,status,help,warnings};
-    const SettingsPicture painted{settingsPaintRevision,settingsPaintHover,settingsPaintStatus,settingsPaintHelp,settingsPaintGame};
-    if(!(wanted==painted)&&now>=settingsPaintAt&&!settingsPaintRequest){
+    // The Perf page repaints with each second's numbers; the others never for them.
+    const bool performancePage=settingsModel.page==settings::Page::Performance;
+    const bool fresh=performance.valid&&now-performanceAt<=2000;
+    const bool depthRestart=(vrsettings::Read().values[settings::ReShadeDepth]>.5f)!=vrsettings::ReShadeDepthActive();
+    const SettingsPicture wanted{settingsModel.revision,hover,status,help,warnings,performancePage&&fresh?performanceSerial:0,
+                                 performancePage&&depthRestart,performancePage?game:settings::GameVideo{}};
+    if(!(wanted==settingsPainted)&&now>=settingsPaintAt&&!settingsPaintRequest){
         char resolutionStatus[160];resolution::Describe(resolutionStatus,sizeof resolutionStatus,{width,height});
-        settingsPaintRequest=settingsPainter.Submit({settingsModel,settingsHover,settingsModel.page==settings::Page::Video?resolutionStatus:descriptions[status],
-                                                    detectedControllers,help,game,monoAudio});
+        settingsPaintRequest=settingsPainter.Submit({settingsModel,settingsHover,performancePage?resolutionStatus:descriptions[status],
+                                                    detectedControllers,help,game,monoAudio,fresh?performance:settings::PerformanceReadout{},depthRestart});
         settingsRequested=wanted;settingsPaintAt=now+100;
     }
-    if(TakeSettingsPicture()) {
-        settingsPaintRevision=settingsRequested.revision;settingsPaintHover=settingsRequested.hover;settingsPaintStatus=settingsRequested.status;
-        settingsPaintHelp=settingsRequested.help;settingsPaintGame=settingsRequested.game;
-    }
+    if(TakeSettingsPicture())settingsPainted=settingsRequested;
 }
 void Input() {
     gazeValid=false;
@@ -3276,7 +3294,7 @@ void EndPair() {
         // still intersects the original panel. Calibration uses only that crop.
         // The card while help is wanted and the picture shown has one: from one
         // card to the next, the old stays until the new is painted, not a narrow frame.
-        const bool showHelp=!bodyCalibration.Active()&&settingsHelpVisible!=settings::NoHelp&&settingsPaintHelp!=settings::NoHelp;
+        const bool showHelp=!bodyCalibration.Active()&&settingsHelpVisible!=settings::NoHelp&&settingsPainted.help!=settings::NoHelp;
         const int pixels=showHelp?settings::AtlasWidth:settings::Width;
         const float fullWidth=settingsWidth*pixels/settings::Width;
         auto pose=settingsPose;
@@ -3392,6 +3410,24 @@ void EndPair() {
     lastTiming=timing;frame=false;
 }
 FrameTiming LastTiming() {std::lock_guard lock(mutex);return lastTiming;}
+void NoteFrame(double gameMs,double waitMs,double drawMs,double vrMs,double periodMs,double budgetMs,bool byTurns) {
+    std::lock_guard lock(mutex);
+    auto& w=performanceWindow;const auto now=GetTickCount64();
+    // A gap in frames (menus, loading) begins a new second: what came before
+    // it is not averaged in. Switching between turns and pairs is no gap.
+    if(!w.since||now-w.last>250){w={};w.since=now;}
+    w.last=now;
+    if(budgetMs>0)performanceBudget=budgetMs;
+    w.wait+=waitMs;w.draw+=drawMs;w.vr+=vrMs;++w.frames;w.turns+=byTurns?1:0;
+    if(periodMs>0){w.game+=gameMs;w.period+=periodMs;++w.periods;}
+    if(now-w.since<1000)return;
+    const double k=1.0/w.frames;
+    performance.valid=true;performance.byTurns=w.turns*2>=w.frames;performance.mixed=w.turns&&w.turns<w.frames;
+    performance.fps=w.periods?float(w.periods*1000.0/w.period):0.f;performance.budgetMs=float(performanceBudget);
+    performance.gameMs=w.periods?float(w.game/w.periods):0.f;performance.waitMs=float(w.wait*k);
+    performance.drawMs=float(w.draw*k);performance.vrMs=float(w.vr*k);
+    ++performanceSerial;performanceAt=now;w={};w.since=w.last=now;
+}
 void ConfigureGameplay(bool enabled) {
     std::lock_guard lock(mutex);
     if(!enabled)gamestate::MenuMap(false);
@@ -3809,13 +3845,13 @@ void Shutdown(bool preserveResolution) {
     if(!preserveResolution)hud::NativeSession(false);
     if(!preserveResolution)resolution::Restore();
     windowFocus.Cancel();
-    EndPair();ClearInput();interactionPainter.Stop();bloodPainter.Stop();strainPainter.Stop();settingsPainter.Stop();interaction::icons::Shutdown();
+    EndPair();ClearInput();interactionPainter.Stop();bloodPainter.Stop();strainPainter.Stop();settingsPainter.Stop();turnCompiler.Stop();interaction::icons::Shutdown();
     // Completion is mandatory before destroying our commands/resources, even
     // when ordinary frame submission uses queue ordering without a CPU wait.
     if(fence&&!WaitGpu())failed=true;
     if(uiEye.chain&&pDestroySwapchain)pDestroySwapchain(uiEye.chain);uiEye={};journalMode=spatialMode=workspacePlaced=false;hud::UiFrame(false,false,0);uiSupported=false;uiBlit={};potionModels.Reset();potionScene={};
     if(mapEye.chain&&pDestroySwapchain)pDestroySwapchain(mapEye.chain);mapEye={};mapSupported=false;mapBlit={};gamestate::MenuMap(false);hud::MenuMapCapture(false);
-    settingsModel.Close();settingsOpen=false;settingsInputGate.Suspend();settingsPaintRevision=~0ull;settingsAtlasPending=settingsImageReady=false;
+    settingsModel.Close();settingsOpen=false;settingsInputGate.Suspend();settingsPainted={};settingsAtlasPending=settingsImageReady=false;
     settingsPaintRequest=0;settingsRequested={};
     bodyCalibration.Cancel();calibrationRelease={};calibrationPrompted=floorSpace=false;calibrationSession=0;calibrationPaintKey=calibrationRequestedKey=-1;
     if(settingsChain&&pDestroySwapchain)pDestroySwapchain(settingsChain);settingsChain=XR_NULL_HANDLE;
