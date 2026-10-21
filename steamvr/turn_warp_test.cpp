@@ -9,6 +9,7 @@
 #include <cstring>
 #include <functional>
 #include <stdexcept>
+#include <thread>
 #include <vector>
 using Microsoft::WRL::ComPtr;
 using framevr::math::Fov;
@@ -163,6 +164,20 @@ static bool Same(uint32_t got,uint32_t want) {
 }
 static constexpr std::array<float,9> Identity{1,0,0, 0,1,0, 0,0,1};
 
+// The transport builds a throwaway TurnWarp on a worker while a session
+// starts; the render thread's own Initialize may meet that compile still
+// running, and every later session reuses its code.
+static void Precompiled(Gpu& gpu) {
+    bool warmed=false;
+    std::thread worker([&]{framevr::TurnWarp warm;warmed=warm.Initialize(gpu.device.Get(),DXGI_FORMAT_R8G8B8A8_UNORM_SRGB,nullptr);});
+    framevr::TurnWarp first;
+    const bool built=first.Initialize(gpu.device.Get(),DXGI_FORMAT_R8G8B8A8_UNORM_SRGB,nullptr);
+    worker.join();
+    Check(warmed&&built&&first.DepthReady()&&first.NearReady()&&first.EffectsReady()&&first.InterfaceReady(),"every pass is built beside a running compile");
+    framevr::TurnWarp next;
+    Check(next.Initialize(gpu.device.Get(),DXGI_FORMAT_R8G8B8A8_UNORM_SRGB,nullptr)&&next.DepthReady()&&next.NearReady()&&
+          next.EffectsReady()&&next.InterfaceReady(),"a later session builds every pass from the compiled code");
+}
 // The pass on the GPU: an 8x8 picture, the target typed or typeless as the runtime's may be.
 static void Turn(Gpu& gpu,bool typeless) {
     framevr::TurnWarp warp;
@@ -511,5 +526,5 @@ static void Lay(Gpu& gpu,bool typeless) {
 
 int main(int argc,char** argv) {try {
     const bool typeless=argc>1&&!std::strcmp(argv[1],"--typeless");
-    Math();Gpu gpu;Turn(gpu,typeless);Move(gpu,typeless);KeepNear(gpu,typeless);KeepEffects(gpu,typeless);Lay(gpu,typeless);return 0;
+    Math();Gpu gpu;Precompiled(gpu);Turn(gpu,typeless);Move(gpu,typeless);KeepNear(gpu,typeless);KeepEffects(gpu,typeless);Lay(gpu,typeless);return 0;
 }catch(const std::exception& e){std::fprintf(stderr,"%s\n",e.what());return 1;}}

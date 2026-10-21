@@ -490,6 +490,13 @@ std::array<bool,2> turnKept{};
 bool turnImagesFailed=false,turnWarpTried=false;
 DXGI_FORMAT turnFormat=DXGI_FORMAT_UNKNOWN;
 TurnWarp turnWarp;
+// Built once in the background as a session is set up, long before a frame
+// first turns an eye: that compiles its shaders for the process and has the
+// driver build its pipelines once. On the render thread these held it about
+// 215 ms in a new process and 112 ms at every later session; then about 3 ms
+// (RTX 5090 / Ryzen 9 5950X, 2026-10-20).
+struct TurnWarmJob {ComPtr<ID3D12Device> device;DXGI_FORMAT format=DXGI_FORMAT_UNKNOWN;};
+LatestWorker<TurnWarmJob,bool> turnCompiler([](const TurnWarmJob& job){TurnWarp warm;return warm.Initialize(job.device.Get(),job.format,nullptr);});
 // By turns: each eye's scene depth as drawn, beside its kept image (KeepDepth).
 bool keepDepth=false;
 struct KeptDepth {ComPtr<ID3D12Resource> texture;DXGI_FORMAT format=DXGI_FORMAT_UNKNOWN;float scale[2]{1,1};bool ok=false;};
@@ -982,6 +989,7 @@ bool SetupGameplay(DXGI_FORMAT eyeFormat) {
     if(!interactionPainter.Start())Say("Frame UI: background painter unavailable; interaction artwork cannot refresh");
     if(!bloodPainter.Start())Say("Frame blood visor: background painter unavailable; blood stays hidden");
     if(!strainPainter.Start())Say("Frame guard strain: background painter unavailable; the light stays hidden");
+    if(turnCompiler.Start())turnCompiler.Submit({device,eyeFormat});   // else the first turned eye builds it all
     const auto compassPixels=compass::Paint();
     compassAtlasReady=!compassPixels.empty()&&UploadAtlas(compassChain,eyeFormat,compass::Width,compass::Height,compassPixels);
     if(!compassAtlasReady)Say("Frame wrist compass: static atlas unavailable");
@@ -3680,7 +3688,7 @@ void Shutdown(bool preserveResolution) {
     if(!preserveResolution)hud::NativeSession(false);
     if(!preserveResolution)resolution::Restore();
     windowFocus.Cancel();
-    EndPair();ClearInput();interactionPainter.Stop();bloodPainter.Stop();strainPainter.Stop();interaction::icons::Shutdown();
+    EndPair();ClearInput();interactionPainter.Stop();bloodPainter.Stop();strainPainter.Stop();turnCompiler.Stop();interaction::icons::Shutdown();
     // Completion is mandatory before destroying our commands/resources, even
     // when ordinary frame submission uses queue ordering without a CPU wait.
     if(fence&&!WaitGpu())failed=true;
