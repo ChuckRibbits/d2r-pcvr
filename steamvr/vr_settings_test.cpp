@@ -477,10 +477,12 @@ int main(){
         chooser.Click(hit(ControllerBox));Check(!chooser.controllerMenu,"cannot edit while saving");
         chooser.Close();chooser.Open(s);Check(chooser.Get()[ControllerLabels]==0&&!chooser.controllerMenu,"reopen discards unsaved choice");
     }
-    Check(s.values[DrawDistance]==2&&s.values[ObjectDistance]==300,"distance fallbacks match release configuration");
+    Check(s.values[DrawDistance]==2&&s.values[ObjectDistance]==210,"distance fallbacks match release configuration: objects just past the fog's end");
     {Model distance;distance.Open(s);
-        for(int i=0;i<3;++i)distance.Click({Kind::Change,ObjectDistance,-1});
-        Check(distance.Get()[ObjectDistance]==150,"object distance can reach native 150 without jumping from 300 to 50");}
+        distance.Click({Kind::Change,ObjectDistance,-1});
+        Check(distance.Get()[ObjectDistance]==160,"object distance steps by 50, never jumping to the minimum");
+        distance.Click({Kind::Change,ObjectDistance,1});distance.Click({Kind::Change,ObjectDistance,1});
+        Check(distance.Get()[ObjectDistance]==260,"and back up past the default");}
     Model m;m.Open(s);
     Check(m.open&&m.ready&&!m.Dirty()&&m.page==Page::Controls,"open actual configuration");
     Check(HitTest(Page::VR,-.01f,.5f).kind==Kind::None&&HitTest(Page::VR,NAN,.5f).kind==Kind::None,"invalid laser coordinates ignored");

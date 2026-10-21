@@ -176,10 +176,10 @@ int main(){
     Check(before.values[WristMap]==1,"legacy INI without wrist_map defaults on");
     Check(before.values[WristCompass]==1,"legacy INI without wrist_compass defaults on");
     Check(before.values[VitalsLocation]==0&&before.values[CriticalAlerts]==0,"legacy INI preserves wrist but disables unsolicited vitals alerts");
-    Check(before.ready&&before.values[DrawDistance]==6&&before.values[Foveation]==1&&before.values[ObjectDistance]==300,"explicit distance retained; missing object distance uses shipped default");
+    Check(before.ready&&before.values[DrawDistance]==6&&before.values[Foveation]==1&&before.values[ObjectDistance]==210,"explicit distance retained; missing object distance uses shipped default");
     Check(WritePrivateProfileStringW(L"render",L"rings",nullptr,name),"remove terrain distance in isolated legacy profile");
     vrsettings::Poll(name);before=vrsettings::Read();
-    Check(before.values[DrawDistance]==2&&before.values[ObjectDistance]==300,"missing draw distances do not silently select 4 rings and radius 1000");
+    Check(before.values[DrawDistance]==2&&before.values[ObjectDistance]==210,"missing draw distances do not silently select 4 rings and radius 1000");
     Check(WritePrivateProfileStringW(L"render",L"rings",L"6",name),"restore explicit terrain distance");
     vrsettings::Poll(name);before=vrsettings::Read();
     // Old separate switches migrate only until an explicit combined choice exists.

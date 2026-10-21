@@ -554,8 +554,9 @@ still resolved on every bind because descriptor copies can change their target.
 Detailed captures add `hud-scissor`, `hud-lock`, `resource-desc` (cache misses)
 and `resource-view` buckets. The lock bucket measures acquisition wait, not
 exclusive CPU work. Missing draw-distance keys now use the shipped two rings
-and object radius 300; explicit settings remain in effect. The object-distance
-control uses steps of 50 so reductions from 300 are practical.
+and object radius 210 (300 until October 20: see
+[Draw distance and the frame](PERFORMANCE.md#draw-distance-and-the-frame-october-20));
+explicit settings remain in effect. The object-distance control uses steps of 50.
 See [the #20 investigation](PERFORMANCE.md#issue-20-investigation-october-12)
 for validation and the remaining stereo architecture question.
 

@@ -22,6 +22,40 @@ Replay left VR Settings > Video > Stereo rendering. Walks on the owner's PC
 A profile saved with Replay goes by turns. Its code is kept but no longer
 registered; the test builds are on a local branch.
 
+## Draw distance and the frame, October 20
+
+Lowering the VR resolution from 3072 to 2560 and then 1536 square changed
+nothing: each eye's pass took 8-11 ms of CPU at every size. The game's drawing
+thread was busy 46-74% of a core, and the frame waited 2.5-8.5 ms for the
+headset because it had missed the 11.1 ms frame. The owner then stepped through
+the settings in Rogue Encampment, standing at one spot facing one way, and
+watched VR Settings' Perf page. The same timings are in the log's 10-second
+lines. The run used By turns, a 90 Hz headset and an RTX 5090 with a Ryzen 9
+5950X:
+
+| Setting | Drawing a frame | Frames/s |
+| --- | --- | --- |
+| Rings 3, objects 360, game Shadow Quality 4 (1536 square) | 10.8-11.6 ms | 45 |
+| Shadow Quality 4, then 2, then 1 | 9.8-11.4 ms | 45-50 |
+| Rings 2, objects 260 | 7.7-9.1 ms | 55-80 |
+| Objects 210 | 6.7-7.4 ms | 88-90 |
+| The same, ReShade's Generic Depth add-on off (restart) | 7.1-7.3 ms | 89-90 |
+| The same, at 3072 square | 7.0-7.3 ms | 89-90 |
+| Objects 160, 2560 square | 6.4-6.5 ms | 89-90 |
+
+The draw distances did it. Going from rings 3 / objects 360 to rings 2 /
+objects 210 halved the draws counted per frame, from about 14,000 to 6,500,
+and with that the drawing time. Once the frame fit, resolution made no
+difference. Shadows took off about half a millisecond, and Generic Depth
+nothing measurable. The default object distance became 210, just past the
+fog's end at 200, where further objects cost frames and hardly show. The
+shipped default had been 300, and 260 still missed the frame in the camp.
+Profiles that set the key keep their value.
+
+About 10 s after each VR resolution change the game stops drawing the world
+for about 3 s ("no world camera" in the log) while it rebuilds at the new size.
+That is the game's own work, not a gameplay stall.
+
 ## Replay, October 19
 
 **Replay** ports upstream's right-eye command-list replay (see the Issue 20
