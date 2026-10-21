@@ -109,7 +109,7 @@ std::vector<uint8_t> Paint(const Model& m,Hit hover,const char* runtimeStatus,co
         text(Definitions[ProjectileAimAssist].label,{40,784,875,32});
         text(Definitions[ProjectileAimAssist].detail,{40,816,875,29},false,false,quiet);
         button(AimAssistBox,AimAssistNames[int(m.Get()[ProjectileAimAssist])],{Kind::Change,ProjectileAimAssist,1},false,m.ready&&!m.Busy());
-        const auto panelHelp="Panels: Left Trigger = Ctrl; Right Grip = Shift; Right "+labels.Button(0,2)+" = Back.";
+        const auto panelHelp="Panels: Left Trigger = Ctrl; Right Grip = Shift / push-pull; Right "+labels.Button(0,2)+" = Back.";
         text(panelHelp.c_str(),{40,845,1200,29},false,false,quiet);
     }else{
         if(m.page==Page::VR){
@@ -149,7 +149,7 @@ std::vector<uint8_t> Paint(const Model& m,Hit hover,const char* runtimeStatus,co
             char label[96];
             if(key==Foveation){const char* modes[]={"Off","Fixed","Eye tracked"};std::snprintf(label,sizeof label,"%s",modes[int(value)]);}
             else if(key==FoveationStrength)std::snprintf(label,sizeof label,"%s",FoveationStrengthNames[int(value)]);
-            else if(key==StereoRendering)std::snprintf(label,sizeof label,"%s",StereoRenderingNames[std::clamp(int(value),0,2)]);
+            else if(key==StereoRendering)std::snprintf(label,sizeof label,"%s",StereoRenderingNames[std::clamp(int(value),0,int(std::size(StereoRenderingNames))-1)]);
             else if(key==VitalsLocation||key==NavigationLocation)std::snprintf(label,sizeof label,"%s",vitals::LocationNames[int(value)]);
             else if(key==RenderResolution)std::snprintf(label,sizeof label,"%s",resolution::Choices[int(value)]);
             else if(key==MenuDistance)std::snprintf(label,sizeof label,"%s",MenuDistanceNames[int(value)]);

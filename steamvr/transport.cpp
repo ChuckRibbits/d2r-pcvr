@@ -70,6 +70,7 @@
 #include "../vr/panel_input.h"
 #include "d2r_vr_state.h"
 #include "foveation.h"
+#include "effects_layer.h"
 #include "gaze.h"
 #include "d2rcam.h"
 #include "profile.h"
@@ -112,6 +113,9 @@ std::atomic<double> maxPipelineMs{0};
 std::atomic<bool> deferredWait{false};
 std::atomic<bool> symmetricProjection{true};
 std::atomic<bool> turnsFromDrawnEye{true};
+std::atomic<int> turnsKeepOwn{3};   // ConfigureTurnsKeepOwn: 0 off, 1 near things only, 2 everywhere, 3 the game's effects, 4 near things and effects
+std::atomic<float> turnsKeepGap{48},turnsKeepReach{96};   // ConfigureTurnsKeepNear: a 4096-wide eye's pixels
+std::atomic<float> turnsEffectsLevel{.02f},turnsEffectsReach{32};   // ConfigureTurnsKeepEffects: the layer's level; a 4096-wide eye's pixels
 std::atomic<bool> eyeTracking{false};
 std::atomic<bool> motionControls{false};
 // Stamped each focused XR input while motion controls are on (menus included).
@@ -570,9 +574,28 @@ constexpr float panelWidth=2.0f,panelDistance=panels::MainDistance;
 XrSwapchain pointerChain=XR_NULL_HANDLE;
 XrPosef beamPose{},dotPose{};
 float beamLength=0;
+// 2026-10-19: one remembered push/pull for every game menu, kept as an
+// offset on each default placement (the main menu sits 15 cm beyond the
+// workspace). Choosing another Menu distance preset clears it. VR Settings
+// keeps its own free grab, relative to where you face when it opens.
+panels::Grab panelGrab;
+panels::Offset menuOffset,settingsOffset;
+panels::Placement uiBase{},menuBase{},settingsBase{};
 
 math::Quat Q(XrQuaternionf q) { return {q.x,q.y,q.z,q.w}; }
 math::Vec V(XrVector3f p) { return {p.x,p.y,p.z}; }
+XrPosef PanelPose(panels::Placement p) {
+    return {{p.orientation.x,p.orientation.y,p.orientation.z,p.orientation.w},{p.position.x,p.position.y,p.position.z}};
+}
+XrPosef Placed(panels::Placement base,panels::Offset offset) {
+    return PanelPose(panels::Apply(base,panels::Limit(base,offset,V(head.position))));
+}
+// The grabbing hand is the laser's own pose; hit tests read the moved pose.
+bool GrabPanel(XrPosef& pose,panels::Placement base,panels::Offset& offset,bool grip,bool hit,bool click,const XrPosef& hand,float pushOnly=0) {
+    const bool owned=panelGrab.Step(grip,hit,click,{V(hand.position),Q(hand.orientation)},base,V(head.position),offset,pushOnly);
+    if(owned)pose=PanelPose(panels::Apply(base,offset));
+    return owned;
+}
 void Say(const char* msg) { if(logger) logger(msg); }
 struct PipelineStart {reshade::api::device* device=nullptr;uint64_t layout=0;double at=0;};
 thread_local PipelineStart pipelineStart;
@@ -672,7 +695,7 @@ void ReleasePanelInput() {
         if(held){INPUT up{};up.type=INPUT_MOUSE;up.mi.dwFlags=i?MOUSEEVENTF_RIGHTUP:MOUSEEVENTF_LEFTUP;SendInput(1,&up,sizeof up);held=false;}
     }
     PanelModifier(VK_CONTROL,false,controlDown);PanelModifier(VK_SHIFT,false,shiftDown);
-    panelMouse.Suspend();panelScroll={};
+    panelMouse.Suspend();panelScroll={};panelGrab.Suspend();
 }
 weaponskills::ContactContext ShieldContext(const melee::Sample& sample,uint64_t session) {
     return {session,sample.epoch,sample.skillContext,sample.equipment,sample.skillSlot,sample.skillOwner};
@@ -1197,6 +1220,11 @@ void MenuPointer(const menus::Pad& controls) {
         Say(menuNavigation.Native()?"Frame panels: native controller navigation":"Frame panels: laser navigation");
     const bool laser=!menuNavigation.Native();
     if(!laser){panelinput::UseController();pointerVisible=pointerHit=false;}
+    // The handheld journal has its own left-grip placement.
+    const bool grip=aimTracked&&laser&&!journalMode&&(controls.buttons&menus::RightBumper);
+    const bool grabbing=GrabPanel(spatialMode?uiPose:menuPose,spatialMode?uiBase:menuBase,menuOffset,
+        grip,pointerHit,pressed||mouseDown||rightMouseDown,aim.pose,
+        panels::MenuDistance(int(vrsettings::Read().values[settings::MenuDistance]),!spatialMode));
     const bool active=uiActive&&focused&&aimTracked&&laser;
     if(active)panelinput::OwnPointer();
     if(active&&pointerHit) {
@@ -1211,8 +1239,8 @@ void MenuPointer(const menus::Pad& controls) {
     }
     const bool modifiers=active&&(pointerHit||mouseDown||rightMouseDown);
     PanelModifier(VK_CONTROL,modifiers&&controls.lt>140,controlDown);
-    PanelModifier(VK_SHIFT,modifiers&&(controls.buttons&menus::RightBumper),shiftDown);
-    laserClick.Step(pressed,(controls.buttons&menus::LeftBumper)!=0);
+    PanelModifier(VK_SHIFT,modifiers&&!grabbing&&(controls.buttons&menus::RightBumper),shiftDown);
+    laserClick.Step(pressed&&!grabbing,(controls.buttons&menus::LeftBumper)!=0);
     const auto edges=panelMouse.Step(active,pointerHit,laserClick.Left(),laserClick.Right());
     panelinput::ItemHover(active,pointerHit,panelMouse.down[0]||panelMouse.down[1]);
     for(int i=0;i<2;++i) {
@@ -1389,8 +1417,8 @@ void OpenSettings() {
     settingsImageReady=false;settingsPaintRevision=~0ull;settingsPaintAt=0;
     settingsModel.Open(vrsettings::Read());settingsOpen=true;settingsSession=gamestate::LocalPlayer();
     const auto q=math::Yaw(math::Heading(Q(head.orientation)));
-    const auto p=V(head.position)+math::Rotate(q,{0,-.06f,-1.05f});
-    settingsPose=XrPose({p,q});settingsHover={};ResetSettingsInput();
+    settingsBase={V(head.position)+math::Rotate(q,{0,-.06f,-1.05f}),q};
+    settingsPose=Placed(settingsBase,settingsOffset);settingsHover={};ResetSettingsInput();
     Say("Frame VR settings: panel opened");
 }
 void CloseSettings() {
@@ -1462,7 +1490,7 @@ bool MonoAudioOn(ULONGLONG now) {
     }
     on=mono;return on;
 }
-void SettingsPointer(const settings::InputGate::Edges& edges) {
+void SettingsPointer(const settings::InputGate::Edges& edges,bool grip) {
     if(!settingsModel.open)return;
     const bool monoAudio=MonoAudioOn(GetTickCount64());
     settingsModel.Observe(vrsettings::Read());settingsHover={};pointerVisible=pointerHit=false;
@@ -1481,7 +1509,8 @@ void SettingsPointer(const settings::InputGate::Edges& edges) {
             helpTarget=settings::HelpAt(settingsModel.page,hit.u,hit.v,settingsModel.controllerMenu,&settingsModel.Get(),monoAudio);
             const auto p=hit.point+math::Rotate(Q(settingsPose.orientation),{0,0,.004f});dotPose.position={p.x,p.y,p.z};}
     }
-    if(edges.click&&pointerHit&&settingsImageReady&&settingsPaintRevision==settingsModel.revision){
+    const bool grabbing=GrabPanel(settingsPose,settingsBase,settingsOffset,grip&&pointerVisible,pointerHit,Float(trigger,0)>.2f,aim.pose);
+    if(edges.click&&!grabbing&&pointerHit&&settingsImageReady&&settingsPaintRevision==settingsModel.revision){
         if(settingsHover.kind==settings::Kind::Close)CloseSettings();
         else if(settingsHover.kind==settings::Kind::Recenter){ResetHeight();MotionPulse(1,haptics::Category::Interaction,.4f,35000000);}
         else if(settingsHover.kind==settings::Kind::Calibrate&&settingsModel.ready&&!settingsModel.Busy()&&!settingsModel.Dirty())OpenBodyCalibration();
@@ -1600,7 +1629,7 @@ void Input() {
     }
     if(!settingsOwned&&!settingsChord)MenuPointer(controls);
     else {nativeMenuPad={};menuNavigation.Reset();panelinput::UseController();pointerVisible=pointerHit=false;triggerWasDown=Float(trigger,0)>.2f;cancelWasDown=Bool(secondary,0);}
-    SettingsPointer(settingsEdges);
+    SettingsPointer(settingsEdges,(controls.buttons&menus::RightBumper)!=0);
     settingsOwned=settingsOwned||bodyCalibration.Active();
     auto& s=*tracking.data;s.version=D2RVR_SHARED_VERSION;s.headValid=1;
     const auto q=Q(head.orientation);
@@ -2214,9 +2243,9 @@ void Input() {
 }
 void PlaceMainMenu() {
     if(!panels::CanAnchor(menuPlaced,render&&valid,state==XR_SESSION_STATE_FOCUSED,motionHeadTracked))return;
-    const auto placed=panels::AtEyeLevel(V(head.position),Q(head.orientation),
+    menuBase=panels::AtEyeLevel(V(head.position),Q(head.orientation),
         panels::MenuDistance(int(vrsettings::Read().values[settings::MenuDistance]),true));
-    menuPose=XrPose({placed.position,placed.orientation});menuPlaced=true;
+    menuPose=Placed(menuBase,menuOffset);menuPlaced=true;
     char b[160];std::snprintf(b,sizeof b,"Frame panels: main menu anchored from tracked head at eye height %.3f m",head.position.y);Say(b);
 }
 void Events() {
@@ -2334,10 +2363,10 @@ bool Begin() {
         }
         const int distancePreset=int(vrsettings::Read().values[settings::MenuDistance]);
         static int previousDistance=-1;
-        if(distancePreset!=previousDistance){workspacePlaced=menuPlaced=false;previousDistance=distancePreset;}
+        if(distancePreset!=previousDistance){workspacePlaced=menuPlaced=false;previousDistance=distancePreset;menuOffset={};}
         if(spatialMode&&!journalMode&&panels::CanAnchor(workspacePlaced,render,state==XR_SESSION_STATE_FOCUSED,motionHeadTracked)) {
-            const auto placed=panels::AtEyeLevel(V(head.position),Q(head.orientation),panels::MenuDistance(distancePreset));
-            uiPose=XrPose({placed.position,placed.orientation});
+            uiBase=panels::AtEyeLevel(V(head.position),Q(head.orientation),panels::MenuDistance(distancePreset));
+            uiPose=Placed(uiBase,menuOffset);
             uiSize=panels::Width;workspacePlaced=true;
         }
         if(panelMode)PlaceMainMenu();
@@ -2420,6 +2449,18 @@ bool KeepDepth(ID3D12GraphicsCommandList* list,int eye) {
     list->ResourceBarrier(2,b);
     kept.format=DXGI_FORMAT(latest.format);kept.scale[0]=latest.scale[0];kept.scale[1]=latest.scale[1];
     return true;
+}
+// By turns: this present's effects layer (the game's own targets, as
+// effectslayer last saw them) into the eye's effects blocks, while the
+// turns keep the eye's own picture where the effects are.
+void KeepEffects(ID3D12GraphicsCommandList* list,int eye) {
+    effectslayer::Layer layer;
+    if(turnsKeepOwn.load()<3||!effectslayer::Latest(layer)||
+       !turnWarp.Effects(device.Get(),list,layer.targets,layer.states,eye,turnsEffectsReach.load()*float(layer.width)/4096)) {
+        turnWarp.ForgetEffects(eye);return;
+    }
+    static bool told=false;
+    if(!told){told=true;Say("Frame OpenXR: by turns - the game's effects layer kept for each eye (first frame doing so)");}
 }
 // By turns: this eye's interface (hud's copy, in a shader-resource state) kept
 // beside its image, for TurnEye to lay over the eye when it is not drawn.
@@ -2511,6 +2552,12 @@ bool TurnEye(int i) {
         other.drawnFov={f.angleLeft,f.angleRight,f.angleDown,f.angleUp};
         other.nowFov={now.fov.angleLeft,now.fov.angleRight,now.fov.angleDown,now.fov.angleUp};
         const auto gap=drawnAt.at-at;other.apart=std::sqrt(gap.x*gap.x+gap.y*gap.y+gap.z*gap.z);
+        if(const int keep=turnsKeepOwn.load()) {   // this eye's own picture where it shows the same surface
+            other.keep=TurnEdgePixels;
+            const float wide=float(turnImages[i^1]->GetDesc().Width)/4096;
+            if(keep==1||keep==4){other.keepNear=turnsKeepGap.load()*wide;other.keepReach=turnsKeepReach.load()*wide;}   // round near things
+            if(keep>=3)other.keepEffects=turnsEffectsLevel.load();   // where the game's effects are
+        }
         fromDrawn=&other;
     }
     if(placed&&was.world.ok&&turnDepths[i].ok) {
@@ -2526,6 +2573,8 @@ bool TurnEye(int i) {
         depth.reach[0]=CarriedNear*w.upm;depth.reach[1]=CarriedFar*w.upm;
         moving=&depth;
     }
+    static bool keepTold=false;
+    if(moving&&fromDrawn&&other.keep>0&&!keepTold){keepTold=true;Say("Frame OpenXR: by turns - the eye not drawn keeps its own picture where the drawn eye's shows the same surface (first frame doing so)");}
     D3D12_RESOURCE_BARRIER b[2]{};const UINT kept=fromDrawn?2:1;
     for(UINT k=0;k<kept;++k){b[k].Type=D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
         b[k].Transition={turnImages[i^k].Get(),D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES,D3D12_RESOURCE_STATE_COMMON,D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE};}
@@ -2592,6 +2641,8 @@ bool Copy(ID3D12Resource* src,Eye& e,reshade::api::command_queue* rq) {
     // depth behind them.
     turnKept[eye]=keepTurns&&KeepTurn(e.commands.Get(),src,int(eye),D3D12_RESOURCE_STATE_COPY_SOURCE);
     turnDepths[eye].ok=keepDepth&&turnKept[eye]&&KeepDepth(e.commands.Get(),int(eye));
+    // and where the game's effects were in it (TurnDepth::keepEffects)
+    if(turnDepths[eye].ok)KeepEffects(e.commands.Get(),int(eye));else turnWarp.ForgetEffects(int(eye));
     // By turns the game's interface was taken out of its picture: laid back as
     // the game lays it, before the headset and the window get the picture.
     uint32_t layerWidth=0,layerHeight=0;
@@ -2796,6 +2847,7 @@ void Register(LogFn log,PanelFn panel,PanelFn world,PanelFn toggle) {
     reshade::register_event<reshade::addon_event::create_pipeline>(&PipelineCreating);
     reshade::register_event<reshade::addon_event::init_pipeline>(&PipelineCreated);
     foveation::Register(log);
+    effectslayer::Register(log);
     resolution::Register(log);
     registered=true;Say("Frame OpenXR: registered D3D12 capture; awaiting game Present");
 }
@@ -2812,6 +2864,25 @@ void ConfigureSymmetricProjection(bool on) {symmetricProjection.store(on);}
 void ConfigureTurnsFromDrawnEye(bool on) {
     if(turnsFromDrawnEye.exchange(on)!=on)Say(on?"Frame OpenXR: by turns - the eye not drawn mostly from the drawn eye's picture":"Frame OpenXR: by turns - the eye not drawn from its own image alone");
 }
+void SetTurnsKeepOwn(int mode) {
+    static const char* const said[]={"Frame OpenXR: by turns - the eye not drawn takes the drawn eye's picture wherever it reaches",
+        "Frame OpenXR: by turns - the eye not drawn keeps its own picture where it shows the same surface, round near things only",
+        "Frame OpenXR: by turns - the eye not drawn keeps its own picture wherever it shows the same surface",
+        "Frame OpenXR: by turns - the eye not drawn keeps its own picture where it shows the same surface, where the game's effects are",
+        "Frame OpenXR: by turns - the eye not drawn keeps its own picture where it shows the same surface, round near things and where the game's effects are"};
+    mode=std::clamp(mode,0,4);
+    if(turnsKeepOwn.exchange(mode)!=mode)Say(said[mode]);
+}
+int TurnsKeepOwn() {return turnsKeepOwn.load();}
+void ConfigureTurnsKeepOwn(int mode) {
+    // Every ini reload passes it (VR Settings' Apply too): only a change of
+    // the ini's own value overrides the DEV switch.
+    static std::atomic<int> read{-1};
+    mode=std::clamp(mode,0,4);
+    if(read.exchange(mode)!=mode)SetTurnsKeepOwn(mode);
+}
+void ConfigureTurnsKeepNear(float gap,float reach) {turnsKeepGap.store(std::clamp(gap,1.f,1000.f));turnsKeepReach.store(std::clamp(reach,16.f,1024.f));}
+void ConfigureTurnsKeepEffects(float level,float reach) {turnsEffectsLevel.store(std::clamp(level,1e-4f,100.f));turnsEffectsReach.store(std::clamp(reach,0.f,512.f));}
 void ConfigureEyeTracking(bool on) {eyeTracking.store(on);}
 void BeginEye(int eye) {
     hud::UiFrame(spatialMode,!journalMode,eye);
@@ -2858,7 +2929,7 @@ bool TakeWorldRecenter() {
     std::lock_guard lock(mutex);const bool take=worldRecenter;worldRecenter=false;return take;
 }
 void RequestStereoCapture(){captureRequested.store(true);}
-int StereoRendering() {return std::clamp(int(std::lround(vrsettings::Read().values[settings::StereoRendering])),0,2);}
+int StereoRendering() {return std::clamp(int(std::lround(vrsettings::Read().values[settings::StereoRendering])),0,1);}
 bool GpuWaitDeferred() {return deferredWait.load();}
 bool ReplayReady() {
     std::lock_guard lock(mutex);

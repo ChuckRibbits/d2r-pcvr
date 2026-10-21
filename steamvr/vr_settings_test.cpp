@@ -81,18 +81,20 @@ int main(){
     {
         Model stereo;stereo.Open(s);stereo.Click({Kind::Tab,int(Page::Video)});
         Check(stereo.Get()[StereoRendering]==1&&RowEnabled(stereo.Get(),StereoRendering),"By turns by default");
-        for(int i=0;i<2;++i)stereo.Click(At(Page::Video,Increase(9)));
-        Check(stereo.Get()[StereoRendering]==2&&stereo.Dirty(),"Replay is the last choice");
-        for(int i=0;i<3;++i)stereo.Click(At(Page::Video,Decrease(9)));
-        Check(stereo.Get()[StereoRendering]==0,"Both eyes is the first choice");
-        stereo.Click(At(Page::Video,ValueBox(9)));
-        Check(stereo.Get()[StereoRendering]==0,"the value box does not cycle the choices");
+        // Two choices since Replay left: switched like the other two-choice rows
         stereo.Click(At(Page::Video,Increase(9)));
-        Check(stereo.Get()[StereoRendering]==1&&!stereo.Dirty(),"the arrows step back to By turns");
-        Check(std::string(StereoRenderingNames[0])=="Both eyes"&&std::string(StereoRenderingNames[1])=="By turns"&&
-              std::string(StereoRenderingNames[2])=="Replay","stereo rendering names");
+        Check(stereo.Get()[StereoRendering]==0&&stereo.Dirty(),"an arrow switches to Both eyes");
+        stereo.Click(At(Page::Video,ValueBox(9)));
+        Check(stereo.Get()[StereoRendering]==1&&!stereo.Dirty(),"the value box switches back to By turns");
+        stereo.Click(At(Page::Video,Decrease(9)));
+        Check(stereo.Get()[StereoRendering]==0,"the other arrow to Both eyes as well");
+        stereo.Click(At(Page::Video,Decrease(9)));
+        Check(stereo.Get()[StereoRendering]==1&&!stereo.Dirty(),"and back to By turns");
+        Check(std::size(StereoRenderingNames)==2&&std::string(StereoRenderingNames[0])=="Both eyes"&&std::string(StereoRenderingNames[1])=="By turns",
+              "stereo rendering names");
         Check(Normalize(StereoRendering,NAN)==1&&Normalize(StereoRendering,-3)==1&&Normalize(StereoRendering,3)==1&&Normalize(StereoRendering,1.5f)==1&&
-              Normalize(StereoRendering,0)==0&&Normalize(StereoRendering,2)==2,"malformed stereo rendering goes by turns");
+              Normalize(StereoRendering,0)==0,"malformed stereo rendering goes by turns");
+        Check(Normalize(StereoRendering,2)==1,"a profile saved with Replay goes by turns");
     }
     {   // The GPU wait not deferred: the Video page's button turns it on, once, in every mode
         Model defer;defer.Open(s);defer.Click({Kind::Tab,int(Page::Video)});
@@ -103,10 +105,10 @@ int main(){
         Check(defer.Get()[DeferGpuWait]==1&&defer.Dirty()&&!DeferOffered(defer.Get()),"the button turns it on; Apply saves it");
         defer.Click(box());
         Check(defer.Get()[DeferGpuWait]==1,"the button never turns it off");
-        for(int mode:{0,2}){
+        for(int mode:{0}){
             Model other;other.Open(s);other.Click({Kind::Tab,int(Page::Video)});
-            other.Click(At(Page::Video,mode?Increase(9):Decrease(9)));
-            Check(other.Get()[StereoRendering]==mode&&DeferOffered(other.Get()),"offered with Both eyes and Replay too");
+            other.Click(At(Page::Video,Decrease(9)));
+            Check(other.Get()[StereoRendering]==mode&&DeferOffered(other.Get()),"offered with Both eyes too");
             other.Click(box());
             Check(other.Get()[DeferGpuWait]==1,"the button turns it on in every mode");
         }

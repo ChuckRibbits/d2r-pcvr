@@ -1,5 +1,27 @@
 # VR performance investigations
 
+## Replay removed, October 20
+
+Replay left VR Settings > Video > Stereo rendering. Walks on the owner's PC
+(RTX 5090, Ryzen 9 5950X, 3072 square per eye, 90 Hz headset):
+
+- The game set its biome at every line of its 80-unit map grid, so the
+  240-pair settle restarted every 1-5 s while walking and Replay ran on no
+  pair. Within one level, the private test builds let it run through those
+  lines. Those builds waited for the last replay on every free the game made,
+  and never followed a held left present with a second pass, which stalled
+  the game for 1 s. With that, Replay ran on about 9 pairs in 10 while
+  walking.
+- It halved the game thread's CPU a pair (about 18 to 10 ms; fpsVR's CPU
+  frame time 17.6 to 12.8 ms), but not the frame time. The right eye's GPU
+  work can start only after the whole left pass is recorded, so a frame
+  spanned about 20 ms, the GPU busy about 13 of it (60% in fpsVR). SteamVR
+  paced it at 45 Hz, as it did Both eyes. By turns ran 74-90 frames/s in that
+  day's sessions.
+
+A profile saved with Replay goes by turns. Its code is kept but no longer
+registered; the test builds are on a local branch.
+
 ## Replay, October 19
 
 **Replay** ports upstream's right-eye command-list replay (see the Issue 20
