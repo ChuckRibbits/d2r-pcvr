@@ -1880,8 +1880,8 @@ void Input() {
             bloodPaintRequest=0;
         }
     }
-    // Bow path laser color (VR Settings > Aim > Bow laser color).
-    if(const float hue=vrsettings::Read().values[settings::BowLaserHue];hue!=bowLaserHue&&!bowLaserAtlasPending&&atlasUploads.size()<3) {
+    // Bow path laser color (VR Settings > Aim > Bow path laser); Off keeps the last.
+    if(const float hue=vrsettings::Read().values[settings::BowLaser];hue>=0&&hue!=bowLaserHue&&!bowLaserAtlasPending&&atlasUploads.size()<3) {
         if(UploadAtlas(bowLaserChain,atlasFormat,bowlaser::AtlasWidth,bowlaser::AtlasHeight,bowlaser::Paint(hue),true,&bowLaserAtlasPending))bowLaserHue=hue;
     }
     // Guard strain light (Unleashed shield): blocks strain the guard, light
@@ -3291,7 +3291,7 @@ void EndPair() {
     // Added after the bow's own quads, so it can never displace them.
     bool bowLaserShown=false,bowLaserFloor=false;float bowLaserLength=0;
     if(gameplayVisible&&!settingsModel.open&&!interactionOutput.wheel&&bowLaserImageReady&&motionOutput.bowPhysical&&
-       vrsettings::Read().values[settings::BowLaser]>.5f&&
+       settings::LaserOn(vrsettings::Read().values)&&
        bowlaser::Shown(motionOutput.bowCharged,motionOutput.rayDirection,motionOutput.bowForward)) {
         const auto now=GetTickCount64();
         const bool floorKnown=stageWorld.valid&&stageWorld.upm>0&&now>=stageWorld.at&&now-stageWorld.at<=250;

@@ -158,7 +158,8 @@ std::vector<uint8_t> Paint(const Model& m,Hit hover,const char* runtimeStatus,co
             else if(key==TooltipTiming)std::snprintf(label,sizeof label,"%s",TooltipTimingNames[int(value)]);
             else if(key==TargetHighlight){if(value==0)std::snprintf(label,sizeof label,"Off");else std::snprintf(label,sizeof label,"%.0f%%",value);}
             else if(key==TargetOutlineColour)std::snprintf(label,sizeof label,"%s",value>.5f?"By range":"Static");
-            else if(key==TargetOutlineHue||key==BowLaserHue)std::snprintf(label,sizeof label,"%s %.0f\xc2\xb0",HueName(value),value);
+            else if(key==TargetOutlineHue)std::snprintf(label,sizeof label,"%s %.0f\xc2\xb0",HueName(value),value);
+            else if(key==BowLaser){if(value<0)std::snprintf(label,sizeof label,"Off");else std::snprintf(label,sizeof label,"%s %.0f\xc2\xb0",HueName(value),value);}
             else if(key==Dominant)std::snprintf(label,sizeof label,"%s",value>.5f?"Left":"Right");
             else if(key==MeleeRules)std::snprintf(label,sizeof label,"%s",MeleeRulesNames[value>.5f?1:0]);
             else if(key==OfflinePlayers){if(value==0)std::snprintf(label,sizeof label,"Game default");else std::snprintf(label,sizeof label,"Players %.0f",value);}

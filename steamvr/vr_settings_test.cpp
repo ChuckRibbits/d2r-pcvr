@@ -338,31 +338,26 @@ int main(){
     }
     {Model aim;aim.Open(s);aim.Click({Kind::Tab,int(Page::Aim)});
         Check(s.values[TargetHighlight]==0&&RowKey(Page::Aim,0)==TargetHighlight,"the monster outline is Off by default, first on the Aim page");
-        Check(RowCount(Page::Aim)==5&&RowKey(Page::Aim,1)==TargetOutlineColour&&RowKey(Page::Aim,2)==TargetOutlineHue,"strength, colors, then the static color");
-        Check(RowKey(Page::Aim,3)==BowLaser&&s.values[BowLaser]==1,"the bow path laser is On by default, last on the Aim page");
+        Check(RowCount(Page::Aim)==4&&RowKey(Page::Aim,1)==TargetOutlineColour&&RowKey(Page::Aim,2)==TargetOutlineHue,"strength, colors, then the static color");
         {Model laser;laser.Open(s);laser.Click({Kind::Tab,int(Page::Aim)});
-            laser.Click(At(Page::Aim,ValueBox(3)));Check(laser.Get()[BowLaser]==0,"its value box switches the laser off");
-            const auto save=laser.Click({Kind::Apply});
-            Check(save.changed==(ChangeMask{1}<<BowLaser)&&save.values[BowLaser]==0,"Apply saves only the laser");
             const auto& d=Definitions[BowLaser];
-            Check(std::wstring(d.section)==L"bow"&&std::wstring(d.key)==L"path_laser","a [bow] setting beside the quiver's");}
-        {Model hue;hue.Open(s);hue.Click({Kind::Tab,int(Page::Aim)});
-            const auto& d=Definitions[BowLaserHue];
-            Check(RowKey(Page::Aim,4)==BowLaserHue&&s.values[BowLaserHue]==45,"the laser color sits under the laser, gold (45 degrees) by default");
-            Check(std::wstring(d.section)==L"bow"&&std::wstring(d.key)==L"path_laser_hue"&&d.step==15,"saved as [bow] path_laser_hue in 15-degree steps");
-            hue.Click(At(Page::Aim,Increase(4)));Check(hue.Get()[BowLaserHue]==60,"plus steps 15 degrees");
-            for(int i=0;i<19;++i)hue.Click(At(Page::Aim,Increase(4)));
-            Check(hue.Get()[BowLaserHue]==345,"the last color is 345 degrees");
-            hue.Click(At(Page::Aim,Increase(4)));Check(hue.Get()[BowLaserHue]==0,"past the last color wraps to the first");
-            hue.Click(At(Page::Aim,Decrease(4)));Check(hue.Get()[BowLaserHue]==345,"and back before the first wraps to the last");
-            for(int i=0;i<24;++i)hue.Click(At(Page::Aim,Increase(4)));
-            Check(hue.Get()[BowLaserHue]==345,"a whole turn returns to the same color");
-            const auto save=hue.Click({Kind::Apply});
-            Check(save.changed==(ChangeMask{1}<<BowLaserHue)&&save.values[BowLaserHue]==345,"Apply saves only the color");
-            Model off;off.Open(s);off.Click({Kind::Tab,int(Page::Aim)});off.Click(At(Page::Aim,ValueBox(3)));
-            Check(!RowEnabled(off.Get(),BowLaserHue),"the color is grayed out while the laser is off");
-            off.Click(At(Page::Aim,Increase(4)));Check(off.Get()[BowLaserHue]==45,"and cannot change then");
-            Check(Model{}.Get()[TargetOutlineHue]==45,"the outline hue keeps its own setting");}
+            Check(RowKey(Page::Aim,3)==BowLaser&&s.values[BowLaser]==45&&LaserOn(s.values),"the bow path laser is last on the Aim page, gold (45 degrees) by default");
+            Check(std::wstring(d.section)==L"bow"&&std::wstring(d.key)==L"path_laser_hue"&&d.step==15,"one [bow] path_laser_hue value in 15-degree steps");
+            laser.Click(At(Page::Aim,Increase(3)));Check(laser.Get()[BowLaser]==60,"plus steps 15 degrees");
+            for(int i=0;i<19;++i)laser.Click(At(Page::Aim,Increase(3)));
+            Check(laser.Get()[BowLaser]==345,"the last color is 345 degrees");
+            laser.Click(At(Page::Aim,Increase(3)));Check(laser.Get()[BowLaser]==LaserOff&&!LaserOn(laser.Get()),"past the last color comes Off");
+            laser.Click(At(Page::Aim,Increase(3)));Check(laser.Get()[BowLaser]==0,"then the first color");
+            laser.Click(At(Page::Aim,Decrease(3)));Check(laser.Get()[BowLaser]==LaserOff,"back from the first color is Off");
+            laser.Click(At(Page::Aim,Decrease(3)));Check(laser.Get()[BowLaser]==345,"and back from Off the last color");
+            for(int i=0;i<25;++i)laser.Click(At(Page::Aim,Increase(3)));
+            Check(laser.Get()[BowLaser]==345,"Off and 24 colors make a whole turn");
+            laser.Click(At(Page::Aim,ValueBox(3)));Check(laser.Get()[BowLaser]==345,"the value box is no toggle");
+            laser.Click(At(Page::Aim,Increase(3)));
+            const auto save=laser.Click({Kind::Apply});
+            Check(save.changed==(ChangeMask{1}<<BowLaser)&&save.values[BowLaser]==LaserOff,"Apply saves only the laser");
+            Check(Normalize(BowLaser,-1)==LaserOff&&Normalize(BowLaser,-200)==LaserOff&&Normalize(BowLaser,400)==345&&Normalize(BowLaser,NAN)==45,
+                  "any negative saved value is Off; others stay on the wheel");}
         Check(s.values[TargetOutlineColour]==0&&s.values[TargetOutlineHue]==45,"static gold (45 degrees) by default");
         {Model colors;colors.Open(s);colors.Click({Kind::Tab,int(Page::Aim)});
             colors.Click(At(Page::Aim,ValueBox(1)));Check(colors.Get()[TargetOutlineColour]==1,"selecting the colors value switches to By range");
