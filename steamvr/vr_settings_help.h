@@ -7,12 +7,14 @@ namespace framevr::settings {
 // transparent strip on its right in the same atlas/composition layer.
 constexpr int HelpGap=24,HelpWidth=440,AtlasWidth=Width+HelpGap+HelpWidth;
 constexpr Rect HelpCard{Width+HelpGap,242,HelpWidth-24,612};
-constexpr int NoHelp=-1,HelpApply=Count,HelpClose=Count+1,HelpRecenter=Count+2,HelpCalibrate=Count+3,HelpMonoAudio=Count+4;
+constexpr int NoHelp=-1,HelpApply=Count,HelpClose=Count+1,HelpRecenter=Count+2,HelpCalibrate=Count+3,HelpMonoAudio=Count+4,
+              HelpPerformance=Count+5,HelpGameVideo=Count+6,HelpLast=HelpGameVideo;
 inline const char* HelpTitle(int id) {
     if(id>=0&&id<Count)return Definitions[id].label;
     switch(id){case HelpApply:return "Apply";case HelpClose:return "Close";
         case HelpRecenter:return "Reset eye height";case HelpCalibrate:return "Calibrate body";
-        case HelpMonoAudio:return "Windows Mono audio";default:return "";}
+        case HelpMonoAudio:return "Windows Mono audio";
+        case HelpPerformance:return "Frame times now";case HelpGameVideo:return "The game's graphics options";default:return "";}
 }
 inline const char* HelpText(int id) {
     switch(id) {
@@ -77,6 +79,9 @@ inline const char* HelpText(int id) {
         case HapticAlert:return "Strength of low-health and low-mana warning vibration on the left controller. Actual warnings also require Low health / mana alerts under HUD to be On. Test previews the vibration even when warnings are disabled.";
         case BloodVisor:return "Shows peripheral blood splatters as life falls below 60%, 40% and 20%. Healing back above each threshold fades that layer. Face wipe gesture lets you clear splatters by hand.";
         case BloodWipe:return "With blood on the visor, move either hand side to side in front of your face with that hand's trigger released. Successful wipes remove blood with vibration. This does not restore health.";
+        case ReShadeDepth:return "ReShade's built-in Generic Depth add-on looks at every draw call the game makes to find its depth. In VR the mod gives the fog and sky its own depth, so in the game world the add-on is not needed. Off saves its work on each draw; outside VR the fog and sky then have no depth. ReShade reads this when it starts: changes apply after you restart the game.";
+        case HelpPerformance:return "The last second of headset frames. Drawing: the game preparing one eye (By turns) or both; it grows with what is in view, draw distances and shadows, hardly with resolution. Game: its update between frames. VR: the mod's own work. Headset wait: the runtime holding the frame for the next refresh. Past the headset's frame (11.1 ms at 90 Hz), late frames wait a whole refresh: up to half the frame rate.";
+        case HelpGameVideo:return "The game's own graphics options, as it saved them (Options > Video, then close the menu). Shadows, character detail and lights add drawing work for the CPU; ambient occlusion (AO), atmospherics and scale cost the graphics card. Change them in the game's Options > Video; the numbers are the game's own, 0 its lowest.";
         case HelpApply:return "Saves your pending changes and applies them. Your other saved settings and calibration are preserved. Changes stay as a draft until you press Apply.";
         case HelpClose:return "Returns to the game and discards changes you have not applied. Right B also closes this panel. The world continues running while VR Settings is open.";
         case HelpRecenter:return "Resets the current eye-height reference for your play position. This is separate from measuring your body and does not replace your saved body calibration.";
@@ -216,7 +221,12 @@ inline int HelpAt(Page page,float u,float v,bool controllerMenu=false,const Valu
     if(Recenter.Contains(x,y))return HelpRecenter;
     if(Calibrate.Contains(x,y))return HelpCalibrate;
     if(page==Page::VR&&ControllerBox.Contains(x,y))return ControllerLabels;
-    if(page==Page::Video&&VideoDeferBox.Contains(x,y)&&(!values||DeferOffered(*values)))return DeferGpuWait;
+    if(page==Page::Performance){
+        if(DeferBox.Contains(x,y)&&(!values||DeferOffered(*values)))return DeferGpuWait;
+        if(PerformanceBox.Contains(x,y))return HelpPerformance;
+        if(GameVideoBox.Contains(x,y))return HelpGameVideo;
+        if(DepthRestartBox.Contains(x,y))return ReShadeDepth;
+    }
     if(page==Page::HUD){
         if(Rect{40,181,570,52}.Contains(x,y))return MapTopDown;
         if(Rect{650,181,590,52}.Contains(x,y))return MapRotate;

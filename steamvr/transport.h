@@ -98,6 +98,12 @@ struct FrameTiming {
     uint32_t pipelines=0;bool gpuValid=false;
 };
 FrameTiming LastTiming();
+// One headset frame as the render thread measured it, for VR Settings > Perf:
+// the runtime's wait (xrWaitFrame), the game's drawing (one eye by turns, both
+// in a pair), the mod's own work around it without that wait, and the
+// headset's frame (budgetMs). periodMs is the time since the last frame ended
+// and gameMs the game's update between them; both 0 after menus or pairs.
+void NoteFrame(double gameMs,double waitMs,double drawMs,double vrMs,double periodMs,double budgetMs,bool byTurns);
 void Shutdown(bool preserveResolution=false);
 // byTurns: this frame draws one eye; EndPair submits the other eye's last
 // image again at the pose and FOV it was drawn with. replay: the right eye is
@@ -105,7 +111,7 @@ void Shutdown(bool preserveResolution=false);
 // its own x, and placed so.
 void BeginPair(bool byTurns=false,bool replay=false);
 void BeginEye(int eye);
-// VR Settings > Video > Stereo rendering: 0 both eyes, 1 By turns (the eye not
+// VR Settings > Perf > Stereo rendering: 0 both eyes, 1 By turns (the eye not
 // drawn turned and moved with the scene's depth; the default). Replay (2) is
 // no longer a choice (vr_settings.h).
 int StereoRendering();

@@ -129,7 +129,7 @@ a third scene for the monitor. Desktop presentation still has overhead;
 suppressing it safely is an open performance task. Do not minimize the game as
 a workaround: background/focus handling also affects input and frame pacing.
 
-VR Settings > Video > **Stereo rendering** chooses how the two eyes of each
+VR Settings > Perf > **Stereo rendering** chooses how the two eyes of each
 headset frame are drawn:
 
 - **Both eyes** draws the left eye, then the right with the game time held.
@@ -198,13 +198,27 @@ installer sets it for new installs, and an upgrade keeps the existing value.
 With the conservative wait each frame takes the CPU's time plus the GPU's,
 and at 90 Hz SteamVR then paces the game at half (By turns at 3128 square:
 43-46 frames/s, against 86-88 with the wait deferred). While the wait is not
-deferred, the Video page shows a warning and a **Defer GPU wait** button that
+deferred, the Perf page shows a warning and a **Defer GPU wait** button that
 turns it on (Apply saves it; it applies live), and the console says so once.
-The Video page also warns while the game's Vertical Sync is on or its
+The Perf page also warns while the game's Vertical Sync is on or its
 anti-aliasing is anything but FXAA (the game's Options > Video). It reads the
 mod's own game settings, `Saved Games\Diablo II Resurrected\mods\<mod>\Settings.json`,
 which the game keeps apart from the unmodded game's
 `Saved Games\Diablo II Resurrected\Settings.json`.
+
+The Perf page holds every setting that changes the frame rate, and under them
+the last second's frames as the render thread measured them: frames per
+second, the game's drawing (one eye by turns, both with Both eyes), its update,
+the mod's own work and the wait for the headset. It says whether the CPU's part
+fits the headset's frame (11.1 ms at 90 Hz); past it, late frames wait a whole
+refresh. Drawing grows with what is in view, the draw distances and the game's
+shadows, and hardly with resolution. The game's own graphics options are shown
+as it last saved them; change those in its Options > Video. **ReShade depth**
+(`[render] reshade_depth`) switches ReShade's Generic Depth add-on, which looks
+at every draw call to find the depth buffer; in VR the fog and sky read the
+mod's own depth. The plugin writes it into ReShade.ini's `[ADDON]
+DisabledAddons` before ReShade loads, so a change applies after a restart;
+without the key ReShade.ini is left as it is.
 
 The choice is stored as `[stereo] rendering` (0 Both eyes, 1 By turns,
 2 Replay; missing or invalid is By turns) and applies live. Every 10 seconds the log reports a
@@ -279,7 +293,7 @@ reduced and foveation had no visible or GPU effect. Unsupported devices/command
 lists fall back to full quality. Immutable masks are uploaded once per viewport;
 routine draws do not upload or wait for them.
 
-VR Settings > Video > **Foveation strength** (available when foveated rendering
+VR Settings > Perf > **Foveation strength** (available when foveated rendering
 is Fixed or Eye tracked) chooses how much detail is reduced:
 
 | Strength | Fixed protected radius | Gaze protected radius | Periphery |
@@ -594,7 +608,7 @@ Set 0 to restore runtime-recommended projections. See the
 [OpenXR projection-view contract](https://registry.khronos.org/OpenXR/specs/1.0/man/html/XrCompositionLayerProjectionView.html).
 
 `[render] defer_gpu_wait=1` is set by the installer; a missing key means 0, and
-VR Settings > Video offers it while it is off (see Stereo rendering above). Image
+VR Settings > Perf offers it while it is off (see Stereo rendering above). Image
 copies and state restoration are submitted on the D3D12 queue bound to OpenXR;
 completion is checked before each eye's copy allocator is reused and before
 shutdown, instead of blocking the CPU before every image release. Set it to 0

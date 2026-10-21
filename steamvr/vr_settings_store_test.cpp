@@ -275,7 +275,7 @@ int main(){
     model.Open(saved);model.Click({Kind::Change,DeferGpuWait,1});request=model.Click({Kind::Apply});
     Check(vrsettings::Submit(request)&&vrsettings::Poll(name),"save the deferred GPU wait");
     saved=vrsettings::Read();
-    Check(saved.values[DeferGpuWait]==1&&Int(path,L"render",L"defer_gpu_wait")==1,"the Video page's button writes [render] defer_gpu_wait");
+    Check(saved.values[DeferGpuWait]==1&&Int(path,L"render",L"defer_gpu_wait")==1,"the Perf page's button writes [render] defer_gpu_wait");
     Check(Int(path,L"custom",L"keep")==12345&&Int(path,L"render",L"rings")==6,"Apply preserves unrelated keys");
     Check(Int(backup,L"custom",L"keep")==12345&&Int(backup,L"gameplay",L"motion_controls")==-999,"first Apply preserves original config backup");
     model.Open(saved);model.Click({Kind::Change,SkillGestures,-1});request=model.Click({Kind::Apply});
