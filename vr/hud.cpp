@@ -67,8 +67,11 @@
 #include "../steamvr/resource_descriptions.h"
 #include "../steamvr/active_keys.h"
 #include "../steamvr/native_hud.h"
+#include "../steamvr/render_resolution.h"
 
 #include "game_hud_shared.h"
+#include "settings_menu.h"
+#include "../steamvr/vr_settings.h"
 
 #include "journal_ui.h"
 #include "../steamvr/journal.h"
@@ -124,6 +127,11 @@ std::atomic<bool> g_labels{false};
 // monsters were fogged over the void, 2026-10-04) and the floor's key keeps the letters off
 // the void (2026-10-06). Only when the labels are not out anyway.
 std::atomic<bool> g_uiMask{false};
+// By turns (TakeInterface, the transport): the interface left over taken out whole once
+// the eye's pass has drawn it, for the transport to lay back over each eye. Moved with
+// the scene's depth into the eye not drawn, the labels over monsters flickered
+// (2026-10-19). g_taken: taken out in this eye's pass (UiFrame starts each).
+std::atomic<bool> g_takeOut{false},g_taken{false};
 // The orb shown or hidden on its own: only when the game's map cannot be set
 // (no widget service). Otherwise the "D2R: Map" action opens and closes the
 // game's map and the orb follows what the game draws (g_mapDrawn), so it is
@@ -214,19 +222,30 @@ bool IsLayerClear(device* dev, resource_view rtv, const float c[4]) {
 // that, not by MapRect's size: the height rule held at 1920x1200 and
 // 1699x1274/80%, but at 1920x1440 the map is ~640 wide where it predicts 773,
 // past the tolerance - the map stayed in the picture and the share was empty.
+// The game window's own client size, read at each layer clear (IsMapScissor).
+std::atomic<uint32_t> g_windowW{0}, g_windowH{0};
+
+// Its size follows the game's own window, not the layer the mod resizes for
+// the headset: 1280x720 under a 3840x2160 desktop, 640x360 in a windowed
+// 1920x1080 game, both at the same corner of a 3072 layer. Judged by the layer
+// alone the small one was refused and the wrist map stayed empty (owner, a
+// player on Discord, 2026-10-20): by the window's size as well.
+bool MapSized(int32_t rw, int32_t rh, uint32_t w, uint32_t h) {
+    return rw > (int32_t)w / 8 && rw < (int32_t)w / 2 && rh > (int32_t)h / 8 && rh < (int32_t)(h * 0.6f);
+}
 bool IsMapScissor(const rect& r, uint32_t w, uint32_t h) {
     const float s = g_uiScale.load();
     const float left = 0.5f * (float)w * (1.0f - s), top = 0.5f * (float)h * (1.0f - s);
     const float tol = 0.07f * (float)h;
     const int32_t rw = r.right - r.left, rh = r.bottom - r.top;
+    const uint32_t ww = g_windowW.load(std::memory_order_relaxed), wh = g_windowH.load(std::memory_order_relaxed);
     // The game puts the mini map in either top corner (its own option): the
     // box hugs the safe area's left edge, or its right one.
     const float right = (float)w - left;
     const int which = g_mapCorner.load();
     const bool atLeft = std::abs(r.left - left) < tol, atRight = std::abs(r.right - right) < tol;
     const bool corner = which == 1 ? atLeft : which == 2 ? atRight : (atLeft || atRight);
-    return corner && std::abs(r.top - top) < tol &&
-           rw > (int32_t)w / 8 && rw < (int32_t)w / 2 && rh > (int32_t)h / 8 && rh < (int32_t)(h * 0.6f);
+    return corner && std::abs(r.top - top) < tol && (MapSized(rw, rh, w, h) || (ww && wh && MapSized(rw, rh, ww, wh)));
 }
 
 // The map scissor last seen, and the layer size it was seen at: what the
@@ -265,7 +284,7 @@ void DrainRetired(device* dev) {
 
 HANDLE g_blockMem = nullptr;
 FlatVRGameHud* g_block = nullptr;
-// How FlatVR is to show them: [hud] in d2r_vr.ini (D2R VR Settings > Interface), via SetLook.
+// How FlatVR is to show them: [hud] in d2r_pcvr.ini (D2R VR Settings > Interface), via SetLook.
 FlatVRGameHudLook g_look = FlatVRGameHudDefaultLook();
 // The hero's forearm each panel lies on (SetForearm, from the skeleton), copied into the block with every Publish.
 FlatVRGameHudPose g_pose[FLATVR_GAME_HUD_PANELS] = {};
@@ -436,10 +455,66 @@ void Publish(command_list* cl, resource layer, uint32_t w, uint32_t h, framevr::
     }
 }
 
+// Top-down wrist map: the map's names (NPCs, exits) are text draws, which the
+// top-down view would turn 45 degrees with the floor, so they are left out of
+// the map then. Every map draw is a 4-vertex quad; they are told apart by their
+// pixel shader, hashed when its pipeline is created (stable across runs): the
+// text uses these two, the walls and icons others.
+constexpr uint64_t kMapTextPsA = 0x17ebd88ea6190870ull, kMapTextPsB = 0x07038bc6447279eeull;
+std::atomic<bool> g_topDownNames{false};
+framevr::NativeMutex g_pipeLock;
+std::unordered_map<uint64_t, uint64_t> g_pixelShaders;   // pipeline handle -> its pixel shader's hash
+struct BoundPipeline { command_list* cl = nullptr; uint64_t pipe = 0; };
+thread_local BoundPipeline t_bound;
+
+void OnInitPipeline(device*, pipeline_layout, uint32_t count, const pipeline_subobject* subs, pipeline pl) {
+    for (uint32_t i = 0; i < count; ++i) {
+        if (subs[i].type != pipeline_subobject_type::pixel_shader || !subs[i].data) continue;
+        const auto* sd = static_cast<const shader_desc*>(subs[i].data);
+        if (!sd->code || !sd->code_size) continue;
+        uint64_t h = 1469598103934665603ull;   // FNV-1a
+        for (size_t b = 0; b < sd->code_size; ++b) { h ^= static_cast<const uint8_t*>(sd->code)[b]; h *= 1099511628211ull; }
+        std::lock_guard g(g_pipeLock);
+        g_pixelShaders[pl.handle] = h;
+        return;
+    }
+}
+void OnDestroyPipeline(device*, pipeline pl) { std::lock_guard g(g_pipeLock); g_pixelShaders.erase(pl.handle); }
+void OnBindPipeline(command_list* cl, pipeline_stage stages, pipeline pl) {
+    if (g_topDownNames.load(std::memory_order_relaxed) &&
+        ((stages & pipeline_stage::pixel_shader) != 0 || stages == pipeline_stage::all || stages == pipeline_stage::all_graphics))
+        t_bound = BoundPipeline{cl, pl.handle};
+}
+// A draw into the redirected map with a text shader, on the top-down map: skipped.
+bool SkipMapName(command_list* cl) {
+    if (!g_topDownNames.load(std::memory_order_relaxed) || t_bound.cl != cl || !g_drawingKeys.MaybeContains(ListKey(cl))) return false;
+    {
+        DrawingLock g;
+        auto it = g_drawing.find(cl);
+        if (it == g_drawing.end() || !it->second.inMap) return false;
+    }
+    uint64_t ps = 0;
+    {
+        std::lock_guard g(g_pipeLock);
+        auto it = g_pixelShaders.find(t_bound.pipe);
+        if (it == g_pixelShaders.end()) return false;
+        ps = it->second;
+    }
+    return ps == kMapTextPsA || ps == kMapTextPsB;
+}
+bool OnMapDraw(command_list* cl, uint32_t, uint32_t, uint32_t, uint32_t) { return SkipMapName(cl); }
+bool OnMapDrawIndexed(command_list* cl, uint32_t, uint32_t, uint32_t, int32_t, uint32_t) { return SkipMapName(cl); }
+
 bool OnClear(command_list* cl, resource_view rtv, const float c[4], uint32_t, const rect*) {
     device* dev = cl->get_device();
     if (!IsLayerClear(dev, rtv, c)) return false;
     g_frameMap.store(MapNow());
+    if (const auto window = framevr::resolution::WindowClient()) { g_windowW.store(window.w); g_windowH.store(window.h); }
+    {   // the map's view, re-read now and then
+        static uint64_t readAt = 0;
+        const uint64_t now = GetTickCount64();
+        if (now - readAt > 250) { readAt = now; g_topDownNames.store(vrsettings::Read().values[framevr::settings::MapTopDown] > .5f); }
+    }
     if (g_frameMap.load() == 1) {   // the frame's interface starts: so does the map's
         const resource_desc d = framevr::resources::Describe(dev,framevr::resources::Resolve(dev,rtv));
         std::lock_guard g(g_lock);
@@ -527,9 +602,16 @@ void OnBind(command_list* cl, uint32_t count, const resource_view* rtvs, resourc
         }
         // From above: the rest of it out whole, for the effect to lay on the tilted plane.
         const bool labels = g_labels.load() && g_picReady.load() && !g_menu.load();
+        const bool turns = !labels && g_takeOut.load() && !g_menu.load();   // out, for the transport to lay back
         const bool mask = !labels && g_uiMask.load() && g_picReady.load() && !g_menu.load();   // copied, left in
-        g_lab.on = (labels || mask) && CopyLayer(cl, layerResource, it->second.w, it->second.h);
-        if (g_lab.on && labels) cl->clear_render_target_view(layerRtv, kEmpty);
+        g_lab.on = (labels || turns || mask) && CopyLayer(cl, layerResource, it->second.w, it->second.h);
+        if (g_lab.on && (labels || turns)) cl->clear_render_target_view(layerRtv, kEmpty);
+        if (g_lab.on && turns) {
+            if (g_taken.exchange(true)) {
+                static bool told = false;
+                if (!told) { told = true; Log("hud: by turns - the interface was drawn twice in one eye's pass; the last part is laid back"); }
+            }
+        }
         g_lab.at = GetTickCount64();
         Untrack(it);
     }
@@ -556,10 +638,16 @@ void Register() {
     reshade::register_event<reshade::addon_event::reset_command_list>(&OnReset);
     reshade::register_event<reshade::addon_event::destroy_command_list>(&OnReset);
     reshade::register_event<reshade::addon_event::bind_scissor_rects>(&OnScissor);
+    reshade::register_event<reshade::addon_event::init_pipeline>(&OnInitPipeline);
+    reshade::register_event<reshade::addon_event::destroy_pipeline>(&OnDestroyPipeline);
+    reshade::register_event<reshade::addon_event::bind_pipeline>(&OnBindPipeline);
+    reshade::register_event<reshade::addon_event::draw>(&OnMapDraw);
+    reshade::register_event<reshade::addon_event::draw_indexed>(&OnMapDrawIndexed);
 }
 
 void UiFrame(bool active,bool workspace,int eye){
     std::lock_guard lock(g_lock);
+    g_taken=false;
     if(!active||eye==0)uiCaptured=false;
     uiActive=active;workspaceActive=workspace;uiEye=eye;
 #ifdef D2RVR_NATIVE_OPENXR
@@ -570,6 +658,12 @@ void NativeSession(bool active){g_nativeSession.store(active);}
 void NativeGameplay(bool active){g_nativeGameplay.store(active);}
 void EndNativeEye(){g_nativeGameplay=false;}
 bool NativeToolbarHidden(){return g_nativeSession.load();}
+void TakeInterface(bool on){g_takeOut.store(on);}
+uint64_t TakenInterface(uint32_t& width,uint32_t& height) {
+    std::lock_guard lock(g_lock);
+    if(!g_taken.load()||!g_lab.on||!g_lab.tex.handle)return 0;
+    width=g_lab.w;height=g_lab.h;return g_lab.tex.handle;
+}
 uint64_t UiTexture(uint32_t& width,uint32_t& height,int32_t crop[4]) {
     std::lock_guard lock(g_lock);
     if(!uiActive.load()||!uiCaptured||!g_lab.tex.handle)return 0;

@@ -7,6 +7,7 @@ import json
 from pathlib import Path
 import subprocess
 import zipfile
+from release_notes import read_notes, validate_package
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -33,13 +34,14 @@ def main():
         cwd=ROOT, text=True).strip() if args.variant == 'current-source' else None
     # Explicit allowlist. Never glob an install, backup, build or diagnostic tree.
     paths = ['INSTALL.md', 'INSTALL-WINDOWS.md', 'README.md', 'CONTROLS.md', 'RELEASE_NOTES.md',
-             'Launch-VR-SteamVR.cmd', 'Launch-VR-VDXR.cmd',
+             'Launch-VR-SteamVR.cmd', 'Launch-VR-VDXR.cmd', 'Launch-Dev-SteamVR.cmd',
+             'steamvr/DEVELOPMENT_SCENARIOS.md', 'steamvr/prepare_dev_scenarios.py',
              'Install-Windows.cmd', 'Uninstall-Windows.cmd', 'steamvr/setup_windows.ps1',
              'steamvr/uninstall_windows.py',
-             'steamvr/setup_windows.py', 'steamvr/steam_config.py',
-             'THIRD_PARTY.md', 'LICENSE', 'd2r_vr.ini',
+             'steamvr/setup_windows.py', 'steamvr/steam_config.py', 'steamvr/hdr_check.py',
+             'THIRD_PARTY.md', 'LICENSE', 'd2r_pcvr.ini', 'vrmod-manifest.json', 'launcher_icon.png',
              'reshade/D2R_DepthFog.fx', 'third_party/minhook/LICENSE.txt',
-             'external/reshade/LICENSE.md', 'steamvr/install.py',
+             'external/reshade/LICENSE.md', 'steamvr/install.py', 'steamvr/mod_identity.py',
              'steamvr/launch_windows.py']
     if args.platform == 'linux-proton':
         paths += ['INSTALL-LINUX.md', 'steamvr/launch.sh', 'steamvr/run-proton.sh', 'steamvr/session.py']
@@ -47,12 +49,13 @@ def main():
         paths += ['steamvr/setup_native.py']
     paths += ['steamvr/prepare_icons.py', 'steamvr/steam_assets.py', 'steamvr/game_assets.py',
               'steamvr/game_install.py', 'steamvr/casc_assets.py']
-    paths += ['steamvr/prepare_potions.py', 'steamvr/potion_assets.py', 'steamvr/vendor/bitknit.py']
+    paths += ['steamvr/prepare_potions.py', 'steamvr/potion_assets.py', 'steamvr/vendor/bitknit.py',
+              'steamvr/prepare_arcane_sky.py', 'steamvr/prepare_sewer_backdrop.py']
     files = {path: ROOT / path for path in paths}
     for folder, pattern in [('reshade/sky', '*.png'), ('steamvr/licenses', '*.txt')]:
         for path in sorted((ROOT / folder).glob(pattern)):
             files[path.relative_to(ROOT).as_posix()] = path
-    files['bin/d2rl-vrcam.dll'] = args.build / 'd2rl-vrcam.dll'
+    files['bin/d2rl-pcvr.dll'] = args.build / 'd2rl-pcvr.dll'
     if args.platform == 'linux-proton':
         files['bin/openxr-probe.exe'] = args.build / 'openxr-probe.exe'
     files['bin/openxr_loader.dll'] = args.openxr_loader
@@ -61,10 +64,18 @@ def main():
             raise SystemExit('Experimental Battle.net packaging currently requires native Windows')
         files['bin/CascLib.dll'] = args.casclib
         files['Install-BattleNet-Preview.cmd'] = ROOT / 'Install-BattleNet-Preview.cmd'
+    release_summary = None
+    if args.platform == 'native-windows' and args.variant == 'current-source':
+        try:
+            release_summary = validate_package(read_notes(ROOT / 'RELEASE_NOTES.md', ROOT / 'vr/pcvr_identity.h'),
+                                               args.release_tag, files['bin/d2rl-pcvr.dll'])
+        except ValueError as error:
+            raise SystemExit(str(error))
     hashes = {name: hashlib.sha256(path.read_bytes()).hexdigest() for name, path in files.items()}
     manifest = {'source_commit': commit, 'game_version': '3.3.93787',
                 'created_utc': datetime.now(timezone.utc).isoformat(),
                 'release_tag': args.release_tag,
+                'release_notes': release_summary,
                 'platform': args.platform,
                 'storefronts': {'steam': {'version': '3.3.93787', 'status': 'verified'},
                                **({'battlenet': {'version': '3.3.93847', 'status': 'experimental'}} if args.casclib else {})},

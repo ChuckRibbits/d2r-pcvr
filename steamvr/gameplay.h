@@ -19,7 +19,11 @@ enum class Weapon { Unknown, Melee, Bow, Crossbow, Other, Javelin };
 // Input gating and posed contact recognition must agree: real wrist-led
 // slashes exceed 35 rad/s. A stricter upstream limit continually cancels
 // contact recovery before those otherwise valid swings can reach it.
-inline constexpr float MeleeAngularTrackingLimit=60.f;
+// 60 still discarded the hardest swings - the riposte straight after a parry
+// (2026-10-17); a real glitch is a blade jump the turn cannot explain, caught apart.
+// 100, not more: at a 36 Hz frame rate it is still under half a turn per frame.
+inline constexpr float MeleeAngularTrackingLimit=100.f;
+inline constexpr float MeleeHandTrackingLimit=20.f; // m/s at the grip
 // Gesture sensitivity, not hitbox dimensions or native weapon reach. Selected
 // by equipped weapon category, never by character class or animation rig.
 enum class MeleeStyle { Unarmed, Short, OneHand, Long };
@@ -86,6 +90,13 @@ inline uint16_t SkillButtons(int slot) {
     return skills::Buttons(slot);
 }
 inline bool SkillModifier(int slot) { return skills::Alternate(slot); }
+// Only a ready physical basic crossbow shot consumes its native attack button.
+// Leaving that button down enters the native attack animation and stops walking.
+inline bool RouteCrossbow(const Input& in,Output& out,bool rightHand,bool ready,bool skillAvailable,int skillId) {
+    if(!ready||!rightHand||!in.active||in.weapon!=Weapon::Crossbow||out.block||!out.rayValid||
+       !(out.attack||(out.skill>=0&&skillAvailable&&skillId==0)))return false;
+    out.attack=false;out.skill=-1;return true;
+}
 
 class Engine {
     bool primed=false, triggerWas=false, gripWas=false, blockedTrigger=true;

@@ -1,4 +1,5 @@
 #include "melee_contact.h"
+#include "melee_hand_state.h"
 #include <cstdio>
 #include <cstdlib>
 #include <limits>
@@ -7,11 +8,135 @@ void Check(bool ok,const char* why){if(!ok){std::fprintf(stderr,"FAIL: %s\n",why
 struct Sim {
     Engine engine;Sample sample;Sweep sweep;
     Sim(){sample.minWeaponSpeed=3;sample.active=true;sample.epoch=1;sample.equipment=1;sample.unitsPerMetre=4;
-        sample.hand.p={0,1,-.5f};sample.blade={{0,1,-.5f},{0,1,-1.2f},.04f};Step(8);}
+        sample.hand.p={0,1,-.5f};sample.blade={{0,1,-.5f},{0,1,-1.2f},.04f};sample.thrustAxis={0,0,-1};Step(8);}
     bool Step(int n=1){bool result=false;while(n--){sample.time+=.02;result=engine.Step(sample,sweep);}return result;}
     bool Move(Vec d){sample.hand.p=sample.hand.p+d;sample.blade.base=sample.blade.base+d;sample.blade.tip=sample.blade.tip+d;return Step();}
 };
 int main(){
+    {
+        Sim right,left;left.sample.handIndex=1;left.Step(8);
+        Check(Lane(right.sample)==0&&Lane(left.sample)==2,"weapons use separate pose engines");
+        Sample shield=left.sample;shield.shield=true;
+        Check(Lane(shield)==1,"shield contact retains its own engine");
+        bool r=false,l=false;
+        for(int i=0;i<6;++i){r|=right.Move({.08f,0,0});l|=left.Move({-.08f,0,0});}
+        Check(r&&l,"simultaneous mirrored swings both generate contacts");
+        std::array<HandCombat,2> state;
+        for(auto& hand:state) {
+            Check(hand.hits.Insert(1,1,7),"each blade can hit the same target once");
+            Check(!hand.hits.Insert(1,1,7),"one blade cannot repeat its contact");
+            Check(hand.felt.Insert(1,1,7),"each controller receives its own impact");
+        }
+        state[0].recovery.Landed(1,1000,600);
+        Check(state[1].recovery.Since(1,1000)==UINT64_MAX,"right swing does not weaken first left swing");
+        state[1].recovery.Landed(1,1100,400);
+        Check(state[0].recovery.Since(1,1200)==200&&state[1].recovery.Since(1,1200)==100,"alternating strokes keep independent recovery");
+        ++state[0].cleaveLanded;
+        Check(state[1].cleaveLanded==0,"right cleave never consumes the left stroke's first target");
+        auto changed=left.sample;changed.weapons={{41,42},{D2RVR_TYPE_SWORD,D2RVR_TYPE_AXE},{41,42}};
+        changed.time+=.02;Sweep sweep;
+        Check(!left.engine.Step(changed,sweep),"equipping a second weapon cancels the old stroke");
+        changed.weapons.id[1]=43;changed.time+=.02;
+        Check(!left.engine.Step(changed,sweep),"same-type replacement weapon cannot inherit a stroke");
+        changed.active=false;changed.time+=.02;
+        Check(!left.engine.Step(changed,sweep),"menu/stow cancellation disables the left stroke");
+    }
+    {
+        Sim s;s.sample.minWeaponSpeed=12;s.Step(8);
+        bool thrust=false;
+        for(int i=0;i<8;++i)thrust|=s.Move({0,0,-.05f});
+        Check(thrust,"a deliberate straight thrust works at the default swing threshold");
+    }
+    // Axial thrusts do not need a fast rotating tip. Match the posed blade to
+    // its tracking-space axis across headings, pitches, lengths and XR rates.
+    for(double dt:{1./36,1./44,1./72,1./90,1./120,1./144})
+    for(Vec axis:{Vec{0,0,-1},Vec{1,0,0},Vec{0,1,0},math::Normalized(Vec{-1,1,-1})})
+    for(float length:{.28f,.7f,1.5f}) {
+        Sim s;s.sample.minWeaponSpeed=12;s.sample.thrustAxis=axis;
+        s.sample.blade.tip=s.sample.blade.base+axis*length;s.engine.Reset();s.Step(8);
+        bool hit=false;uint64_t stroke=0;HitSet hits;
+        const Vec target=s.sample.blade.tip+axis*.22f;
+        const Body body{target-Vec{0,.05f,0},target+Vec{0,.05f,0},.05f};
+        for(double t=0;t<.18;t+=dt) {
+            const Vec delta=axis*(2.5f*float(dt));const Blade before=s.sample.blade;
+            s.sample.time+=dt;s.sample.hand.p=s.sample.hand.p+delta;
+            s.sample.blade.base=s.sample.blade.base+delta;s.sample.blade.tip=s.sample.blade.tip+delta;
+            if(s.engine.Step(s.sample,s.sweep)) {
+                Check(s.sweep.thrust&&s.sweep.speed<12,"thrust uses axial speed independently of swing setting");
+                Check(Length(s.sweep.before.base-before.base)<.0001f,"thrust never replays earlier unpowered approach");
+                if(!stroke)stroke=s.sweep.stroke;
+                Check(stroke==s.sweep.stroke,"one thrust retains one stroke through overlap");
+                if(Touches(s.sweep.before,s.sweep.after,body)) {
+                    const bool first=hits.Insert(1,stroke,42);Check(first!=hit,"overlap deduplicates the contacted creature");hit=true;
+                }
+            }
+        }
+        Check(hit,"dagger, sword and spear thrusts hit across orientations and headset rates");
+        Check(!s.Step(8),"holding the thrust inside a target stops damaging");
+    }
+    {
+        Sim s;s.sample.minWeaponSpeed=12;s.Step(8);uint64_t last=0;
+        for(int jab=0;jab<6;++jab) {
+            uint64_t current=0;
+            for(int i=0;i<3;++i)if(s.Move({0,0,-.06f}))current=s.sweep.stroke;
+            Check(current>last,"quick repeated jabs rearm after a real pullback, without the slash timer");last=current;
+            for(int i=0;i<3;++i)Check(!s.Move({0,0,.06f}),"withdrawing a thrust does not deal another hit");
+        }
+    }
+    {
+        Sim s;s.sample.minWeaponSpeed=1.5f;s.Step(8);
+        for(int i=0;i<5;++i)s.Move({0,0,-.05f});
+        for(int i=0;i<7;++i)Check(!s.Move({0,0,.05f}),"lowering swing threshold does not make a long thrust pullback into a hit");
+    }
+    for(Vec move:{Vec{.05f,0,0},Vec{0,0,.05f},Vec{0,0,-.02f},Vec{.04f,0,-.03f}}) {
+        Sim s;s.sample.minWeaponSpeed=12;s.Step(8);
+        for(int i=0;i<16;++i)Check(!s.Move(move),"sideways, backward, slow and poorly aligned motions are not thrusts");
+    }
+    {
+        Sim s;s.sample.minWeaponSpeed=12;s.Step(8);
+        Check(!s.Move({0,0,-.10f}),"a short fast poke does not qualify");s.Step(8);
+        for(int i=0;i<40;++i)Check(!s.Move({0,0,i%2?.04f:-.04f}),"axial overlap jitter cannot accumulate a thrust");
+        bool hit=false;for(int i=0;i<6;++i)hit|=s.Move({0,0,-.05f});
+        Check(hit,"jitter does not poison the next deliberate thrust");
+        for(int i=0;i<12;++i)Check(!s.Move({0,0,-.01f}),"slow follow-through cannot prolong thrust damage");
+    }
+    for(float speed:{.75f,2.f,4.f}) {
+        Sim s;s.sample.minWeaponSpeed=12;s.sample.minThrustSpeed=speed;s.Step(8);
+        bool hit=false;for(int i=0;i<12;++i)hit|=s.Move({0,0,-.03f});
+        Check(hit==(speed<1.5f),"separate thrust setting controls a modest forward jab");
+        s.sample.minThrustSpeed=3;
+        Check(!s.Move({0,0,-.07f}),"changing thrust sensitivity discards the old stroke");
+    }
+    for(Vec badAxis:{Vec{},Vec{NAN,0,0}}) {
+        Sim s;s.sample.minWeaponSpeed=12;s.sample.thrustAxis=badAxis;s.Step(8);
+        for(int i=0;i<10;++i)Check(!s.Move({0,0,-.05f}),"missing or invalid posed axis cannot grant thrust hits");
+    }
+    {
+        // A weapon's local blade axis need not be controller forward. Recover
+        // it from the posed grip, then apply the matching absolute XR pose.
+        const Vec local=math::Normalized(Vec{.2f,1,-.4f});
+        const auto relative=math::Yaw(.7f),headYaw=math::Yaw(1.4f);
+        const Vec headAxis=math::Rotate(relative,local);
+        const Vec recovered=math::Rotate(math::Conjugate(relative),headAxis);
+        const Vec actual=TrackingThrustAxis(recovered,math::Multiply(headYaw,relative));
+        Check(Length(actual-math::Rotate(headYaw,headAxis))<.0001f,"rendered blade calibration follows matching tracked grip across head yaw");
+        Sim s;s.sample.minWeaponSpeed=12;s.Step(8);
+        for(int i=0;i<12;++i) {
+            s.sample.blade.base.z-=.05f;s.sample.blade.tip.z-=.05f;
+            Check(!s.Step(),"world movement alone cannot supply thrust energy");
+        }
+    }
+    {
+        Sim s;s.sample.minWeaponSpeed=12;s.Step(8);uint64_t thrust=0;
+        for(int i=0;i<5;++i)if(s.Move({0,0,-.05f}))thrust=s.sweep.stroke;
+        bool slash=false;
+        for(int i=1;i<6;++i) {
+            s.sample.hand.q=math::Yaw(i*.5f);s.sample.thrustAxis=math::Rotate(s.sample.hand.q,{0,0,-1});
+            s.sample.blade.tip=s.sample.blade.base+s.sample.thrustAxis*.7f;
+            if(s.Step()) {slash=true;Check(!s.sweep.thrust&&s.sweep.stroke!=thrust,"a deliberate slash can follow a thrust");}
+        }
+        Check(slash,"thrust state cannot lock out a subsequent slash");
+    }
     for(float setting:{1.5f,3.f,6.f,12.f,99.f}) {
         Sim s;s.sample.minWeaponSpeed=setting;s.Step(8);
         bool hit=false;for(int i=0;i<8;++i)hit|=s.Move({.07f,0,0});
@@ -72,10 +197,42 @@ int main(){
     }
     {
         Sim s;s.sample.shield=true;s.Step(8);
-        bool bash=false;for(int i=0;i<8;++i)bash|=s.Move({.028f,0,0});
-        Check(bash,"shield retains its existing 1.2 m/s onset threshold");
-        Check(s.Move({.02f,0,0}),"shield retains its existing follow-through threshold");
+        for(int i=0;i<8;++i)Check(!s.Move({.028f,0,0}),"slowly repositioning a guard never bashes");
+        bool bash=false;for(int i=0;i<5;++i)bash|=s.Move({.05f,0,0});
+        Check(bash,"deliberate hand travel powers shield bash at the default two m/s");
+        const auto stroke=s.sweep.stroke;
+        Check(!s.Move({.02f,0,0}),"bash must still meet its threshold at contact");
+        Check(s.Move({.05f,0,0})&&s.sweep.stroke==stroke,"same forward stroke cannot bash twice after slowing");
+        s.sample.minShieldBashSpeed=4;s.Step(8);
+        for(int i=0;i<5;++i)Check(!s.Move({.06f,0,0}),"higher shield threshold takes effect independently of weapon speed");
+        bool strong=false;for(int i=0;i<4;++i)strong|=s.Move({.09f,0,0});
+        Check(strong,"a faster bash meets the adjusted threshold");
     }
+    for(float length:{.25f,1.2f}) {
+        Sim s;s.sample.shield=true;s.Step(8);
+        for(int i=0;i<32;++i) {
+            s.sample.hand.q=math::Yaw(i*.2f);
+            s.sample.blade.tip=s.sample.blade.base+math::Rotate(s.sample.hand.q,{0,0,-length});
+            Check(!s.Step(),"wrist rotation alone cannot bash with either shield size");
+        }
+        for(int i=0;i<24;++i)Check(!s.Move({i%2?.045f:-.045f,0,0}),"fast short guard jitter does not accumulate into a bash");
+    }
+    {
+        Sim s;s.sample.shield=true;s.Step(8);
+        // An earlier low-speed approach arms no retroactive contact sweep.
+        for(int i=0;i<6;++i)s.Move({.015f,0,0});
+        const auto before=s.sample.blade;
+        Check(s.Move({.06f,0,0})&&Length(s.sweep.before.base-before.base)<1e-5f,"bash tests only the current fast contact interval");
+        PoseHistory h;Sample matched;h.Push(1,s.sample);
+        s.sample.minShieldBashSpeed=3;s.sample.time+=.02;h.Push(2,s.sample);
+        Check(!h.Find(1,s.sample.time,matched),"a live bash speed change invalidates old shield geometry");
+    }
+    {
+        Sim s;s.sample.shield=true;s.sample.minShieldBashSpeed=.75f;s.Step(8);
+        bool easy=false;for(int i=0;i<9;++i)easy|=s.Move({.016f,0,0});
+        Check(easy,"lower accessibility threshold still accepts deliberate twelve cm travel");
+    }
+    Check(ShieldBashSpeed(NAN)==2&&ShieldBashSpeed(0)==.75f&&ShieldBashSpeed(99)==10,"shield bash threshold rejects nonfinite and out-of-range values");
     const Body body{{0,.3f,0},{0,1.5f,0},.25f};
     Check(Touches({{-.6f,.8f,-.3f},{-.6f,.8f,.3f},.04f},{{.6f,.8f,-.3f},{.6f,.8f,.3f},.04f},body),"fast blade crossing between endpoints hits");
     Check(!Touches({{-.6f,2.1f,-.3f},{-.6f,2.1f,.3f},.04f},{{.6f,2.1f,-.3f},{.6f,2.1f,.3f},.04f},body),"swing above head misses");
@@ -202,8 +359,14 @@ int main(){
             }
             Check(powered>16,"strong swings survive input and contact gates after area loads at every headset rate");
             Check(input.Selection()==(area?2:-1),"free swings preserve the selected trigger skill across area loads");
-            // A real tracking jump must still drop this frame's geometry.
-            in.hand[0].q=math::Multiply(math::Yaw(65*float(dt)),in.hand[0].q);
+            // The hardest real swings (a riposte straight after a parry) turn the
+            // wrist faster than the old 60 rad/s limit: 90 rad/s must survive...
+            {   gameplay::Engine fastIn;Engine fastContact;bool alive=true;auto q=in.hand[0].q;
+                for(int i=0;i<12&&alive;++i){q=math::Multiply(math::Yaw(90*float(dt)),q);auto f=in;f.time+=dt*(i+1);f.hand[0].q=q;
+                    const auto out=fastIn.Step(f);if(i>2&&!out.meleeContact)alive=false;}
+                Check(alive,"a 90 rad/s riposte swing is not cancelled as a tracking jump"); }
+            // ...but a real tracking jump (over 100 rad/s) must still drop this frame's geometry.
+            in.hand[0].q=math::Multiply(math::Yaw(std::min(3.1f,105*float(dt))),in.hand[0].q);
             Check(!step(),"angular tracking jump cannot damage through the full pipeline");
         }
     }
@@ -229,6 +392,12 @@ int main(){
         history.Clear();Check(!history.Find(14,s.sample.time,matched),"tracking loss clears history");
         s.sample.active=true;history.Push(0,s.sample);
         Check(history.Find(0,s.sample.time,matched),"wrapped zero input stamp remains valid");
+        s.sample.weapons={{41,42},{D2RVR_TYPE_SWORD,D2RVR_TYPE_AXE},{41,42}};
+        s.sample.time+=.02;history.Push(1,s.sample);
+        Check(!history.Find(0,s.sample.time,matched),"same-code equipment identity change invalidates older poses");
+        std::swap(s.sample.weapons.displayed[0],s.sample.weapons.displayed[1]);
+        s.sample.time+=.02;history.Push(2,s.sample);
+        Check(!history.Find(1,s.sample.time,matched),"reversed native primary order invalidates older poses");
     }
     {
         // A quick slash ends between input update and the weapon pose. Pairing

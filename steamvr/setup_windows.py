@@ -5,11 +5,13 @@ import csv
 import hashlib
 import json
 import os
+import hdr_check
 from pathlib import Path, PurePosixPath
 import subprocess
 import sys
 
 import install
+import mod_identity
 import steam_config
 from game_install import validate_game, battlenet_location, STEAM_VERSION, BATTLENET_VERSION
 
@@ -140,9 +142,10 @@ def verify_release(root):
     if manifest.get('platform') != 'native-windows':
         raise ValueError('This setup needs the native Windows release ZIP.')
     hashes = manifest['sha256']
-    required = {'bin/d2rl-vrcam.dll', 'bin/openxr_loader.dll', 'steamvr/install.py',
-                'steamvr/setup_windows.py', 'steamvr/steam_config.py', 'steamvr/launch_windows.py',
+    required = {'bin/d2rl-pcvr.dll', 'bin/openxr_loader.dll', 'steamvr/install.py', 'steamvr/mod_identity.py',
+                'steamvr/setup_windows.py', 'steamvr/steam_config.py', 'steamvr/launch_windows.py', 'steamvr/prepare_dev_scenarios.py',
                 'steamvr/game_install.py', 'steamvr/game_assets.py', 'steamvr/casc_assets.py',
+                'steamvr/prepare_sewer_backdrop.py',
                 'Uninstall-Windows.cmd', 'steamvr/uninstall_windows.py'}
     if not required.issubset(hashes):
         raise ValueError('Incomplete Windows setup package')
@@ -207,7 +210,9 @@ def run_installer(command, root, hide_console=False):
             result = process.wait()
         output.write(f'Installer exit code: {result} (0x{result & 0xffffffff:08x})\n')
     if result:
-        detail = last_line[-800:] or 'The installer produced no diagnostic output.'
+        # Keep the diagnosis and recovery steps together, including the reminder
+        # to re-enable protection. Paths and security guidance can exceed 800 chars.
+        detail = last_line[:4096] or 'The installer produced no diagnostic output.'
         raise ValueError(f'Mod installation failed (exit code {result}): {detail} Full output: {log}')
 
 
@@ -216,6 +221,10 @@ def apply_setup(manifest, store, version, headset, connections, steam, game, pro
     """Shared console/graphical execution; callers collect and confirm choices first."""
     root = Path(root) if root is not None else ROOT
     require_closed()
+    hdr = hdr_check.check()
+    print('Windows HDR check: ' + hdr['hdr_status'], flush=True)
+    if hdr['hdr_warning']:
+        print(hdr['hdr_warning'], flush=True)
     routing = {} if store == 'steam' else {'store': store, 'python': Path(sys.executable).resolve(),
         'wrapper': root / 'steamvr/launch_windows.py', 'runtime': runtime}
     options = launch_options(Path(sys.executable).resolve(), root / 'steamvr/launch_windows.py', runtime) if store == 'steam' else None
@@ -223,7 +232,7 @@ def apply_setup(manifest, store, version, headset, connections, steam, game, pro
     old_options = preflight_steam(profile, steam, game, options, connections, **routing)
     if mode != 2:
         command = [sys.executable, str(root / 'steamvr/install.py'), '--game', str(game),
-                   '--saves', str(saves), '--plugin', str(root / 'bin/d2rl-vrcam.dll'),
+                   '--saves', str(saves), '--plugin', str(root / 'bin/d2rl-pcvr.dll'),
                    '--openxr-loader', str(root / 'bin/openxr_loader.dll'), '--deps', str(root / 'deps'),
                    '--backup-dir', str(root / 'setup-backups/game'), '--download-deps', '--store', store]
         if store == 'battlenet':
@@ -306,16 +315,21 @@ def main():
     selected = choose('Add shortcuts for which Steam account?', [f'{name} (local ID {profile.name})' for profile, name in accounts]) if len(accounts) > 1 else 0
     profile = accounts[selected][0]
     saves = folder('D2R saved games folder', saved_games(), 'Settings.json')
-    plugin = game / 'd2rloader/plugins/d2rl-vrcam.dll'
-    existing = plugin.is_file()
+    found = mod_identity.survey(game, [ROOT / 'setup-backups/game', ROOT / 'build-frame/backups'])
+    if found.other:
+        raise ValueError(found.message + ' No game or Steam configuration was changed.')
+    existing = found.ours
     mode = choose('How should setup install the mod?', ['Update / repair and keep calibration and video settings', 'Full install with recommended settings (resets calibration)', 'Only configure Steam shortcuts (keep installed mod)']) if existing else 1
-    if mode == 2 and not all((game / name).is_file() for name in ('D2RLoader.exe', 'ReShade64.dll', 'openxr_loader.dll', 'd2rloader/plugins/d2r_vr.ini')):
+    if mode == 2 and not all((game / name).is_file() for name in ('D2RLoader.exe', mod_identity.RESHADE, mod_identity.OPENXR_LOADER, mod_identity.PLUGIN, mod_identity.SETTINGS)):
         raise ValueError('The existing mod installation is incomplete. Rerun setup and choose Update / repair.')
     routing = {} if store == 'steam' else {'store': store, 'python': Path(sys.executable).resolve(),
                                           'wrapper': ROOT / 'steamvr/launch_windows.py', 'runtime': runtime}
     options = launch_options(Path(sys.executable).resolve(), ROOT / 'steamvr/launch_windows.py', runtime) if store == 'steam' else None
     old_options = preflight_steam(profile, steam, game, options, connections, **routing)
     print('\nReady to set up:')
+    hdr = hdr_check.check()
+    if hdr['hdr_warning']:
+        print(hdr['hdr_warning'])
     print(f'  Edition: {"Steam" if store == "steam" else "Battle.net (experimental)"}, D2R {version}')
     print(f'  Headset: {headset}\n  Game: {game}\n  Steam account: {accounts[selected][1]} (local ID {profile.name})')
     specs = steam_config.shortcut_specs(steam, game, **routing)

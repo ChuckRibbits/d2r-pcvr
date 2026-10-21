@@ -17,17 +17,149 @@ int main(){
     Check(before.values[ElementalHands]==0,"missing elemental setting defaults off");
     for(int enabled:{1,0}) {
         Model effects;effects.Open(vrsettings::Read());effects.Click({Kind::Change,ElementalHands,1});
-        auto request=effects.Click({Kind::Apply});auto malformed=request;malformed.changed|=ChangeMask{1}<<63;
+        auto request=effects.Click({Kind::Apply});auto malformed=request;malformed.changed|=ChangeMask{1}<<(ChangeMask::Bits-1);
         Check(!vrsettings::Submit(malformed),"unsupported high change bits rejected");
-        Check(vrsettings::Submit(request)&&vrsettings::Poll(name),"elemental setting saves beyond bit 31");
+        Check(vrsettings::Submit(request)&&vrsettings::Poll(name),"elemental setting saves through its own mask bit");
         Check(vrsettings::Read().values[ElementalHands]==enabled&&Int(path,L"interactions",L"elemental_hands")==enabled&&
             Int(path,L"custom",L"keep")==12345,"elemental opt-in/out round trips and preserves unrelated keys");
     }
+    Check(before.values[MapTopDown]==0&&before.values[MapRotate]==0,"missing map preferences retain the existing view");
+    Check(WritePrivateProfileStringW(L"interactions",L"map_top_down",L"1",name)&&
+          WritePrivateProfileStringW(L"interactions",L"map_rotate",L"1",name),"write existing wrist-map choices");
+    vrsettings::Poll(name);
+    Check(vrsettings::Read().values[MapTopDown]==1&&vrsettings::Read().values[MapRotate]==1,"HUD uses the existing wrist-map saved keys");
+    for(int choice:{0,1}){
+        const auto current=vrsettings::Read();Model map;map.Open(current);map.Click({Kind::Tab,int(Page::HUD)});
+        auto click=[&](Rect box){return HitTest(Page::HUD,(box.x+box.w*.5f)/Width,(box.y+box.h*.5f)/Height);};
+        map.Click(click(HudMapViewBox));map.Click(click(HudMapRotateBox));
+        const auto request=map.Click({Kind::Apply});
+        Check(vrsettings::Submit(request)&&vrsettings::Poll(name),"save HUD map choices through the normal transaction");
+        const auto saved=vrsettings::Read();
+        Check(saved.values[MapTopDown]==choice&&saved.values[MapRotate]==choice&&
+              Int(path,L"interactions",L"map_top_down")==choice&&Int(path,L"interactions",L"map_rotate")==choice,"both HUD map choices survive INI reload");
+        Check(Changed(saved.values,current.values)==request.changed&&Int(path,L"custom",L"keep")==12345,"map saves preserve unrelated settings");
+    }
+    Check(before.values[LootLabelSize]==45,"missing loot size uses original shipped percentage");
+    Check(WritePrivateProfileStringW(L"hud",L"labels_size",L"65",name),"existing player loot size");
+    vrsettings::Poll(name);
+    {
+        const auto current=vrsettings::Read();
+        Check(current.values[LootLabelSize]==65,"explicit loot size is preserved");
+        Model loot;loot.Open(current);loot.Click({Kind::Change,LootLabelSize,1});
+        const auto request=loot.Click({Kind::Apply});
+        Check(vrsettings::Submit(request)&&vrsettings::Poll(name),"save loot size with the normal transaction");
+        const auto saved=vrsettings::Read();
+        Check(saved.values[LootLabelSize]==70&&Int(path,L"hud",L"labels_size")==70,"loot size survives INI reload");
+        Check(Changed(saved.values,current.values)==(ChangeMask{1}<<LootLabelSize)&&Int(path,L"custom",L"keep")==12345,"loot change preserves all other settings");
+    }
+    Check(before.values[StrainSpeed]==1,"existing profiles retain Medium strain buildup");
+    for(int choice:{0,2,1}){
+        const auto current=vrsettings::Read();auto values=current.values;values[StrainSpeed]=float(choice);
+        const Request request{current.values,values,Changed(current.values,values),current.sequence+1};
+        Check(vrsettings::Submit(request)&&vrsettings::Poll(name),"save guard strain buildup");
+        const auto saved=vrsettings::Read();
+        Check(saved.values[StrainSpeed]==choice&&Int(path,L"gameplay",L"guard_strain_speed")==choice,"buildup survives reload");
+        Check(Changed(saved.values,current.values)==request.changed&&Int(path,L"custom",L"keep")==12345,"buildup preserves other settings");
+    }
+    Check(before.values[HeartbeatStart]==60,"missing heartbeat start uses 60%");
+    for(int choice:{50,0,90}){
+        const auto current=vrsettings::Read();auto values=current.values;values[HeartbeatStart]=float(choice);
+        const Request request{current.values,values,Changed(current.values,values),current.sequence+1};
+        Check(vrsettings::Submit(request)&&vrsettings::Poll(name),"save heartbeat start");
+        const auto saved=vrsettings::Read();
+        Check(saved.values[HeartbeatStart]==choice&&Int(path,L"gameplay",L"low_life_heart_start")==choice,"heartbeat start survives reload");
+        Check(Changed(saved.values,current.values)==request.changed&&Int(path,L"custom",L"keep")==12345,"heartbeat start preserves other settings");
+    }
+    Check(before.values[OfflinePlayers]==0,"missing difficulty preserves game default");
+    for(int choice:{1,8,3,0}){
+        const auto current=vrsettings::Read();auto values=current.values;values[OfflinePlayers]=float(choice);
+        const Request request{current.values,values,Changed(current.values,values),current.sequence+1};
+        Check(vrsettings::Submit(request)&&vrsettings::Poll(name),"save native difficulty preference");
+        const auto saved=vrsettings::Read();
+        Check(saved.values[OfflinePlayers]==choice&&Int(path,L"gameplay",L"offline_players")==choice,"difficulty survives reload");
+        Check(Changed(saved.values,current.values)==request.changed&&Int(path,L"custom",L"keep")==12345,"difficulty preserves other settings");
+    }
+    {const auto current=vrsettings::Read();vrsettings::SetOfflineDifficultyAvailable(true);const auto live=vrsettings::Read();
+        Check(live.offlineDifficultyAvailable&&live.revision>current.revision&&live.values==current.values,"runtime capability is separate from saved preferences");}
+    Check(before.values[HapticShortMelee]==0,"missing short-melee preference selects the compatible longer pulse");
+    for(int choice:{1,0}){
+        const auto current=vrsettings::Read();Model h;h.Open(current);h.Click({Kind::Change,HapticShortMelee,1});
+        const auto request=h.Click({Kind::Apply});
+        Check(request.changed==(ChangeMask{1}<<HapticShortMelee)&&vrsettings::Submit(request)&&vrsettings::Poll(name),"persist short-melee toggle");
+        const auto saved=vrsettings::Read();
+        Check(saved.values[HapticShortMelee]==choice&&Int(path,L"haptics",L"short_melee")==choice,"short-melee toggle survives profile reload");
+        Check(Changed(saved.values,current.values)==(ChangeMask{1}<<HapticShortMelee)&&Int(path,L"custom",L"keep")==12345,"pulse toggle preserves all strengths and unrelated settings");
+    }
+    for(int i=HapticStrength;i<=HapticAlert;++i){
+        const auto key=Key(i);const auto& definition=Definitions[key];
+        Check(before.values[key]==100,"existing profiles keep full haptic strength");
+        for(int choice:{50,0,200,100}){
+            const auto current=vrsettings::Read();Model h;h.Open(current);
+            const int delta=(choice-int(current.values[key]))/10;
+            for(int step=0;step<std::abs(delta);++step)h.Click({Kind::Change,key,delta>0?1:-1});
+            const auto request=h.Click({Kind::Apply});
+            Check(request.changed==(ChangeMask{1}<<key)&&vrsettings::Submit(request)&&vrsettings::Poll(name),"save haptic strength through its high mask bit");
+            const auto saved=vrsettings::Read();
+            Check(saved.values[key]==choice&&Int(path,definition.section,definition.key)==choice,"muted, reduced and boosted strengths survive INI reload");
+            Check(Changed(saved.values,current.values)==(ChangeMask{1}<<key)&&Int(path,L"custom",L"keep")==12345,"haptic edits preserve other categories and unrelated preferences");
+        }
+    }
+    Check(before.values[VitalsTilt]==0,"existing profiles keep their original vitals angle");
+    for(int choice:{5,0,-5,0}) {
+        const auto current=vrsettings::Read();Model tilt;tilt.Open(current);
+        tilt.Click({Kind::Change,VitalsTilt,choice>current.values[VitalsTilt]?1:-1});
+        const auto request=tilt.Click({Kind::Apply});
+        Check(request.changed==(ChangeMask{1}<<VitalsTilt)&&vrsettings::Submit(request)&&vrsettings::Poll(name),"save tilt through a mask above bit 31");
+        const auto saved=vrsettings::Read();
+        Check(saved.values[VitalsTilt]==choice&&Int(path,L"interactions",L"vitals_tilt")==choice,"positive, negative and zero tilt survive INI reload");
+        Check(Changed(saved.values,current.values)==(ChangeMask{1}<<VitalsTilt)&&Int(path,L"custom",L"keep")==12345,
+            "tilt saves preserve every unrelated preference and INI key");
+    }
+    {const auto current=vrsettings::Read();Request request;
+        request.base=request.values=current.values;request.values[VitalsTilt]=15;request.values[Motion]=1;
+        request.changed=Changed(request.base,request.values);request.sequence=current.sequence+1;
+        Check(request.changed==((ChangeMask{1}<<VitalsTilt)|(ChangeMask{1}<<Motion))&&vrsettings::Submit(request)&&vrsettings::Poll(name),
+            "low and high change bits save together");
+        Check(vrsettings::Read().values[VitalsTilt]==15&&vrsettings::Read().values[Motion]==1,"mixed-mask values both reload");
+        const auto saved=vrsettings::Read();request.base=saved.values;request.values=current.values;
+        request.changed=Changed(request.base,request.values);request.sequence=saved.sequence+1;
+        Check(vrsettings::Submit(request)&&vrsettings::Poll(name),"restore mixed-mask fixture preferences");
+        request.base=request.values=vrsettings::Read().values;request.values[VitalsTilt]=5;
+        request.changed=(ChangeMask{1}<<VitalsTilt)|(ChangeMask{1}<<(ChangeMask::Bits-1));request.sequence+=1;
+        Check(!vrsettings::Submit(request),"unsupported high change bits are rejected");
+        for(int bit:{int(Count),64,100,127}){
+            request.changed=(ChangeMask{1}<<VitalsTilt)|(ChangeMask{1}<<bit);request.sequence+=1;
+            Check(!vrsettings::Submit(request),"change bits past the last setting are rejected in either mask word");
+        }
+        request.changed=ChangeMask{1}<<VitalsTilt;request.sequence+=1;
+        Check(vrsettings::Submit(request)&&vrsettings::Poll(name)&&vrsettings::Read().values[VitalsTilt]==5,"the same edit saves once its mask is valid");
+        request.base=request.values=vrsettings::Read().values;request.values[VitalsTilt]=current.values[VitalsTilt];
+        request.changed=Changed(request.base,request.values);request.sequence+=1;
+        Check(vrsettings::Submit(request)&&vrsettings::Poll(name),"restore tilt after mask checks");
+    }
     Check(before.values[MeleeHitSpeed]==12,"missing melee speed uses twelve m/s default");
+    Check(before.values[MeleeThrustSpeed]==2,"existing profiles gain the independent thrust default");
+    Check(before.values[ShieldBashSpeed]==2,"existing profiles gain the independent bash default");
+    for(float choice:{2.25f,2.f}) {
+        const auto current=vrsettings::Read();Model bash;bash.Open(current);
+        bash.Click({Kind::Change,ShieldBashSpeed,choice>2?1:-1});
+        const auto request=bash.Click({Kind::Apply});
+        Check(request.changed==(ChangeMask{1}<<ShieldBashSpeed)&&vrsettings::Submit(request)&&vrsettings::Poll(name),"bash speed saves through its high mask bit");
+        const auto saved=vrsettings::Read();
+        Check(saved.values[ShieldBashSpeed]==choice&&Changed(saved.values,current.values)==request.changed&&Int(path,L"custom",L"keep")==12345,"bash reload preserves other preferences");
+    }
+    for(float choice:{2.25f,2.f}) {
+        const auto current=vrsettings::Read();Model thrust;thrust.Open(current);
+        thrust.Click({Kind::Change,MeleeThrustSpeed,choice>2?1:-1});
+        const auto request=thrust.Click({Kind::Apply});
+        Check(request.changed==(ChangeMask{1}<<MeleeThrustSpeed)&&vrsettings::Submit(request)&&vrsettings::Poll(name),"thrust speed saves through its high mask bit");
+        const auto saved=vrsettings::Read();
+        Check(saved.values[MeleeThrustSpeed]==choice&&Changed(saved.values,current.values)==request.changed&&Int(path,L"custom",L"keep")==12345,"thrust reload preserves swing speed, rules and unrelated settings");
+    }
     for(float choice:{12.25f,12.f}) {
         Model melee;melee.Open(vrsettings::Read());melee.Click({Kind::Change,MeleeHitSpeed,choice>12?1:-1});
         const auto request=melee.Click({Kind::Apply});
-        Check(vrsettings::Submit(request)&&vrsettings::Poll(name),"highest mask bit persists melee speed");
+        Check(vrsettings::Submit(request)&&vrsettings::Poll(name),"existing melee mask bit persists speed");
         Check(vrsettings::Read().values[MeleeHitSpeed]==choice&&Int(path,L"custom",L"keep")==12345,"fractional melee speed reloads without altering unrelated data");
     }
     for(float choice:{12.25f,24.f,3.f}) {
@@ -53,10 +185,10 @@ int main(){
     Check(before.values[WristMap]==1,"legacy INI without wrist_map defaults on");
     Check(before.values[WristCompass]==1,"legacy INI without wrist_compass defaults on");
     Check(before.values[VitalsLocation]==0&&before.values[CriticalAlerts]==0,"legacy INI preserves wrist but disables unsolicited vitals alerts");
-    Check(before.ready&&before.values[DrawDistance]==6&&before.values[Foveation]==1&&before.values[ObjectDistance]==300,"explicit distance retained; missing object distance uses shipped default");
+    Check(before.ready&&before.values[DrawDistance]==6&&before.values[Foveation]==1&&before.values[ObjectDistance]==210,"explicit distance retained; missing object distance uses shipped default");
     Check(WritePrivateProfileStringW(L"render",L"rings",nullptr,name),"remove terrain distance in isolated legacy profile");
     vrsettings::Poll(name);before=vrsettings::Read();
-    Check(before.values[DrawDistance]==2&&before.values[ObjectDistance]==300,"missing draw distances do not silently select 4 rings and radius 1000");
+    Check(before.values[DrawDistance]==2&&before.values[ObjectDistance]==210,"missing draw distances do not silently select 4 rings and radius 1000");
     Check(WritePrivateProfileStringW(L"render",L"rings",L"6",name),"restore explicit terrain distance");
     vrsettings::Poll(name);before=vrsettings::Read();
     // Old separate switches migrate only until an explicit combined choice exists.
@@ -81,8 +213,8 @@ int main(){
     Check(vrsettings::Read().result==Result::Saving&&vrsettings::Poll(name),"write transaction succeeds");
     auto saved=vrsettings::Read();Check(saved.result==Result::Saved&&saved.values[Foveation]==2&&saved.values[Motion]==1,"saved values round trip");
     Check(saved.values[OrdinaryMobBars]==1&&Int(path,L"hud",L"ordinary_mob_bars")==1,"show ordinary bars round trips");
-    Check(saved.values[RenderResolution]==0,"legacy profile keeps desktop resolution until opted in");
-    for(int choice=1;choice<framevr::resolution::ChoiceCount;++choice){
+    Check(saved.values[RenderResolution]==1,"profiles without the key use the headset's own resolution");
+    for(int choice=2;choice<framevr::resolution::ChoiceCount;++choice){
         model.Open(vrsettings::Read());model.Click({Kind::Change,RenderResolution,1});request=model.Click({Kind::Apply});
         Check(vrsettings::Submit(request)&&vrsettings::Poll(name),"save render resolution");
         saved=vrsettings::Read();
@@ -131,6 +263,28 @@ int main(){
     saved=vrsettings::Read();
     Check(saved.values[ControllerLabels]==2&&Int(path,L"interactions",L"controller_labels")==2,"controller selection survives reload");
     Check(Int(path,L"render",L"fixed_foveation")==1&&Int(path,L"render",L"eye_tracked_foveation")==1,"eye-tracked mode writes both keys");
+    Check(saved.values[FoveationStrength]==1,"profiles without a saved strength show Medium");
+    for(int level:{3,0}){
+        model.Open(saved);for(int i=0;i<3;++i)model.Click({Kind::Change,FoveationStrength,level?1:-1});request=model.Click({Kind::Apply});
+        Check(vrsettings::Submit(request)&&vrsettings::Poll(name),"save foveation strength");
+        saved=vrsettings::Read();
+        Check(saved.values[FoveationStrength]==level&&Int(path,L"render",L"foveation_strength")==level&&
+              saved.values[Foveation]==2&&Int(path,L"custom",L"keep")==12345,"foveation strength survives reload without changing the mode");
+    }
+    Check(saved.values[StereoRendering]==1,"profiles without the key go by turns");
+    for(int turns:{0,1}){
+        model.Open(saved);
+        for(int step=int(saved.values[StereoRendering]);step!=turns;step+=turns>step?1:-1)model.Click({Kind::Change,StereoRendering,turns>step?1:-1});
+        request=model.Click({Kind::Apply});
+        Check(vrsettings::Submit(request)&&vrsettings::Poll(name),"save stereo rendering");
+        saved=vrsettings::Read();
+        Check(saved.values[StereoRendering]==turns&&Int(path,L"stereo",L"rendering")==turns,"stereo rendering survives reload");
+    }
+    Check(saved.values[DeferGpuWait]==0,"the GPU wait stays as it was until asked");
+    model.Open(saved);model.Click({Kind::Change,DeferGpuWait,1});request=model.Click({Kind::Apply});
+    Check(vrsettings::Submit(request)&&vrsettings::Poll(name),"save the deferred GPU wait");
+    saved=vrsettings::Read();
+    Check(saved.values[DeferGpuWait]==1&&Int(path,L"render",L"defer_gpu_wait")==1,"the Perf page's button writes [render] defer_gpu_wait");
     Check(Int(path,L"custom",L"keep")==12345&&Int(path,L"render",L"rings")==6,"Apply preserves unrelated keys");
     Check(Int(backup,L"custom",L"keep")==12345&&Int(backup,L"gameplay",L"motion_controls")==-999,"first Apply preserves original config backup");
     model.Open(saved);model.Click({Kind::Change,SkillGestures,-1});request=model.Click({Kind::Apply});
@@ -202,6 +356,12 @@ int main(){
         Check(vrsettings::Submit(request)&&vrsettings::Poll(name),"save comfort enum");
         const auto& definition=Definitions[key];
         Check(vrsettings::Read().values[key]==choice&&Int(path,definition.section,definition.key)==choice&&Int(path,L"custom",L"keep")==12345,"all comfort presets survive INI round trip and preserve unrelated settings");
+    }
+    Check(vrsettings::Read().values[CompanionCounts]==1,"old profiles enable companion counts by default");
+    for(int enabled:{0,1}) {
+        model.Open(vrsettings::Read());model.Click({Kind::Change,CompanionCounts,enabled?1:-1});request=model.Click({Kind::Apply});
+        Check(vrsettings::Submit(request)&&vrsettings::Poll(name),"save companion count preference");
+        Check(vrsettings::Read().values[CompanionCounts]==enabled&&Int(path,L"interactions",L"companion_counts")==enabled&&Int(path,L"custom",L"keep")==12345,"companion preference survives reload without touching other settings");
     }
     model.Open(vrsettings::Read());model.Click({Kind::Change,Motion,-1});request=model.Click({Kind::Apply});
     Check(DeleteFileW(name)&&vrsettings::Submit(request)&&!vrsettings::Poll(name),"missing file fails safely");

@@ -34,11 +34,13 @@
 
 #include "d2r_vr_state.h"
 #include "interactionstate.h"
+#include "target_lock.h"
 #include "journal_ui.h"
 #include "../steamvr/native_panels.h"
 #include "../steamvr/callback_ticket.h"
 #include "../steamvr/native_hud.h"
 #include "../steamvr/attack_speed.h"
+#include "../steamvr/dual_wield.h"
 #include <mutex>
 #ifdef D2RVR_NATIVE_OPENXR
 #include "logging.h"
@@ -217,6 +219,7 @@ int g_twoOffset = -2;                        // -2 not tried yet, -1 failed
 std::atomic<uint32_t> g_two{0};
 std::atomic<uint32_t> g_from{0};
 std::atomic<bool> g_leftShield{false};
+std::mutex g_meleeEquipmentMutex;framevr::dualwield::Equipment g_meleeEquipment;
 std::vector<uint32_t> g_shieldTypes;
 std::atomic<uint32_t> g_handsKey{0};          // what is in the two hands, as one number (HandsKey)             // the hand slot the weapon kind came from: 0 right, 1 left              // D2RVR_TWO_HANDED* bits of what is held
 
@@ -387,7 +390,7 @@ bool IsShield(const std::string& code) {
 // leaves the cycle unknown, and an unknown cycle never gates melee.
 int g_wsmOffset = -2, g_wsmWidth = 0;        // -2 not tried yet, -1 failed
 int g_wclassOffset = -1, g_wclass2Offset = -1;
-std::atomic<int> g_attackWeapon{-1}, g_attackWsm{0};
+std::atomic<int> g_attackWeapon{-1}, g_attackWsm{0},g_offAttackWeapon{-1},g_offAttackWsm{0};
 int SignedAt(const uint8_t* p, int width) {
     if (width == 4) { int32_t v; memcpy(&v, p, 4); return (int)v; }
     if (width == 2) { int16_t v; memcpy(&v, p, 2); return (int)v; }
@@ -470,6 +473,7 @@ void Publish() {
     g_state->counter++;
 }
 
+std::atomic<int32_t> g_leftDurability{-1}; // active-set left hand; -1 none/indestructible (UI thread)
 std::atomic<uint64_t> g_player{0};   // the local player's handle, as the SDK gives it (vrcam tries it as the hero unit)
 void CalibrateObjectLights();   // the Objects table's light fields, below
 extern int g_objLitOffset;
@@ -499,6 +503,7 @@ void __cdecl ReadItems(const PluginContext* ctx, void* token) noexcept {
         g_type.store(D2RVR_TYPE_UNKNOWN);
         g_held.store(0);
         g_leftShield=false;
+        {std::lock_guard lock(g_meleeEquipmentMutex);g_meleeEquipment={};}
         g_two.store(0);
         g_set.store(0);
 #ifdef D2RVR_NATIVE_OPENXR
@@ -516,6 +521,7 @@ void __cdecl ReadItems(const PluginContext* ctx, void* token) noexcept {
     int32_t ownLoc[2] = {-1, -1}; // the items' own body location
     uint32_t id[4] = {};          // runtime ids at 4, 5, 11, 12
     std::string other[2];
+    int32_t leftDurability = -1;
     for (int i = 0; i < 4; ++i) {
         const int loc = i < 2 ? 4 + i : 9 + i;
         ItemHandle item = InvalidItemHandle;
@@ -526,7 +532,9 @@ void __cdecl ReadItems(const PluginContext* ctx, void* token) noexcept {
         id[i] = info.runtimeId ? info.runtimeId : info.code;
         if (i < 2) { code[i] = CodeText(info.code); ownLoc[i] = info.bodyLocation; }
         else other[i - 2] = CodeText(info.code);
+        if (i == 1) leftDurability = info.maximumDurability > 0 ? info.durability : -1;
     }
+    g_leftDurability.store(leftDurability);
     static uint32_t lastHands[2] = {}, lastOther[2] = {};
     static bool seen = false;
     static PlayerHandle lastPlayer=InvalidPlayerHandle;
@@ -562,7 +570,15 @@ void __cdecl ReadItems(const PluginContext* ctx, void* token) noexcept {
     // sits in the left with the quiver in the right); a hand holding no weapon
     // kind we know (a shield) is skipped. Unknown kinds fall back to the class.
     if (g_typeOffset == -2) CalibrateTypes();
-    g_leftShield=IsShield(code[1]);
+    // Native inventory body locations do not identify the drawn VR wrist.
+    // The tracked shield is on the left wrist even when the SDK reports it
+    // in body location 4 (observed with the development Paladin).
+    g_leftShield=IsShield(code[0])||IsShield(code[1]);
+    const uint32_t handTypes[2]={KindOf(code[0]),KindOf(code[1])};
+    {std::lock_guard lock(g_meleeEquipmentMutex);
+        if(g_meleeEquipment.id[0]!=id[0]||g_meleeEquipment.id[1]!=id[1])g_meleeEquipment={};
+        g_meleeEquipment.id[0]=id[0];g_meleeEquipment.id[1]=id[1];
+        g_meleeEquipment.type[0]=handTypes[0];g_meleeEquipment.type[1]=handTypes[1];}
     if (g_objLitOffset == -2) CalibrateObjectLights();
     if (g_twoOffset == -2 && g_typeOffset >= 0) CalibrateTwoHanded();
     uint32_t kind = KindOf(code[0]);
@@ -591,6 +607,7 @@ void __cdecl ReadItems(const PluginContext* ctx, void* token) noexcept {
         else AttackInputs(code[from], (two & D2RVR_TWO_HANDS_ON) != 0, weapon, wsm);
         g_attackWeapon.store(weapon);
         g_attackWsm.store(wsm);
+        AttackInputs(code[1],false,weapon,wsm);g_offAttackWeapon=weapon;g_offAttackWsm=wsm;
     }
     {   // FNV-1a over both codes: a new grip for any change of what the hands hold
         uint32_t h = 2166136261u;
@@ -674,6 +691,10 @@ SharedEvents::UiMessageAction __cdecl OnUiMessage(const PluginContext* ctx, cons
         g_journalOnly=menus==1&&quest;
         const bool npc=menus==1&&g_panels.count("NpcDialogPanel")!=0;
         if(g_npcChoices.exchange(npc)!=npc){std::lock_guard lock(npcChoicesMutex);npcChoicesAt=0;}
+        if(!strcmp(text,"NpcDialogPanel")||!strcmp(text,"ScrollSpeechPanel")) {
+            char b[200];snprintf(b,sizeof b,"Frame NPC transition: %s %s; choices=%d speech=%d choice_surface=%d modal_roots=%d",
+                command,text,int(g_panels.count("NpcDialogPanel")!=0),int(g_panels.count("ScrollSpeechPanel")!=0),int(npc),menus);Log(b);
+        }
         if(g_journalOnly.load())ReadJournalRect();
         if (menu != before) {
             std::string list;
@@ -767,6 +788,7 @@ void Init(const PluginContext* ctx) {
     g_ctx = ctx;
 #ifdef D2RVR_NATIVE_OPENXR
     interactionstate::Init(ctx);
+    targetlock::Init(ctx);
 #endif
     g_threads = Query<ThreadService>(ctx);
     g_widgets = Query<WidgetService>(ctx);
@@ -819,11 +841,35 @@ bool LeftShield() {return g_leftShield.load();}
 uint32_t TwoHanded() { return g_two.load(); }
 uint32_t WeaponHand() { return g_from.load(); }
 uint32_t HandsKey() { return g_handsKey.load(); }
-int AttackWeapon() { return g_attackWeapon.load(); }
-int AttackWsm() { return g_attackWsm.load(); }
+framevr::dualwield::Equipment MeleeEquipment(){std::lock_guard lock(g_meleeEquipmentMutex);return g_meleeEquipment;}
+void SetMeleeOrder(uint32_t right,uint32_t left) {
+    std::lock_guard lock(g_meleeEquipmentMutex);
+    if(framevr::dualwield::SamePair(right,left,g_meleeEquipment)){g_meleeEquipment.displayed[0]=right;g_meleeEquipment.displayed[1]=left;}
+}
+int AttackWeapon(int hand) { return hand==1?g_offAttackWeapon.load():g_attackWeapon.load(); }
+int AttackWsm(int hand) { return hand==1?g_offAttackWsm.load():g_attackWsm.load(); }
 bool MenuOpen() { return g_menu.load() != 0; }
 uint32_t MenuEpoch() { return g_menuEpoch.load(); }
 uint64_t LocalPlayer() { return g_player.load(); }
+int32_t LeftDurability() { return g_leftDurability.load(); }
+// D2RLoader game-thread callback only: raise the active-set left-hand item's
+// durability back to `value` through the SDK's validated edit. Never lowers it,
+// never exceeds its maximum, ignores indestructible items.
+bool RestoreLeftDurability(const PluginContext* ctx, int32_t value) {
+    const PlayerHandle player = g_player.load();
+    ItemHandle item = InvalidItemHandle;
+    if (!ctx || !g_inventory || !g_items || player == InvalidPlayerHandle || value <= 0 ||
+        g_inventory->getEquippedItem(ctx, player, 5, &item) != Inventory::Result::Success || item == InvalidItemHandle) return false;
+    Items::ItemInfo info{};
+    info.structSize = sizeof info;
+    if (g_items->getItemInfo(ctx, item, &info) != Items::Result::Success || info.maximumDurability <= 0 ||
+        info.durability >= value || value > info.maximumDurability) return false;
+    Items::ItemEdit edit{};
+    edit.structSize = sizeof edit;
+    edit.fields = Items::EditFieldBit(Items::EditField::Durability);
+    edit.durability = static_cast<uint32_t>(value);
+    return g_items->editItem(ctx, player, item, &edit) == Items::Result::Success;
+}
 uint32_t DataBank() {return uint32_t(g_bank);} // UI-thread-only table bank
 void MenuMap(bool wanted) {g_menuMapAt.store(wanted?GetTickCount64():0);}
 // An object's light in a mode: its radius (Objects.txt Lit, 0 = none) and colour 0..1.
@@ -840,14 +886,13 @@ bool UpperBandMenuOpen(){return g_upperBandMenu.load();}
 bool NpcChoicesOnly(){return g_npcChoices.load();}
 void ReadNpcChoicesRect() {
     if(!g_npcChoices.load()||!g_widgets||!g_widgets->getWidgetRect||!g_widgets->findPanel)return;
-    Widgets::WidgetHandle panel=0,border=0;Widgets::Rect root{},box{};
+    Widgets::WidgetHandle panel=0,border=0;Widgets::Rect root{},box{},child{};
     if(g_widgets->findPanel(g_ctx,"NpcDialogPanel",&panel)!=Widgets::Result::Success||
        g_widgets->getWidgetRect(g_ctx,panel,&root)!=Widgets::Result::Success)return;
     box=root;
     // DialogBorder includes the title, all available choices and the outline;
     // the panel also contains a full-screen click catcher which is not content.
     if(g_widgets->findWidget&&g_widgets->findWidget(g_ctx,panel,"DialogBorder",&border)==Widgets::Result::Success) {
-        Widgets::Rect child{};
         if(g_widgets->getWidgetRect(g_ctx,border,&child)==Widgets::Result::Success&&child.width>0&&child.height>0)
             box={root.x+child.x,root.y+child.y,child.width,child.height};
     }
@@ -855,7 +900,8 @@ void ReadNpcChoicesRect() {
        box.x<0||box.y<0||box.x>8192||box.y>8192)return;
     std::lock_guard lock(npcChoicesMutex);
     if(!npcChoicesAt||npcChoicesRect[2]!=box.width||npcChoicesRect[3]!=box.height) {
-        char b[180];snprintf(b,sizeof b,"Frame NPC choices: native bounds %d,%d %dx%d",box.x,box.y,box.width,box.height);Log(b);
+        char b[240];snprintf(b,sizeof b,"Frame NPC choices: native bounds %d,%d %dx%d; root %d,%d %dx%d; border %d,%d %dx%d",
+            box.x,box.y,box.width,box.height,root.x,root.y,root.width,root.height,child.x,child.y,child.width,child.height);Log(b);
     }
     npcChoicesRect[0]=box.x;npcChoicesRect[1]=box.y;npcChoicesRect[2]=box.width;npcChoicesRect[3]=box.height;npcChoicesAt=GetTickCount64();
 }

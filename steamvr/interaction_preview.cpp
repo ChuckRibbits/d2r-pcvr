@@ -6,6 +6,7 @@
 #include "interaction_paint.h"
 #include "latest_worker.h"
 #include "wrist_compass.h"
+#include "sewer_prompt_art.h"
 #include <cstdio>
 #include <cstring>
 #include <limits>
@@ -30,6 +31,123 @@ static bool SavePng(const char* path,const std::vector<uint8_t>& rgba,UINT width
 int main(int argc,char** argv) {
     using namespace framevr::interaction;
     struct Cleanup {~Cleanup(){icons::Shutdown();}} cleanup;
+    if(argc>2&&!std::strcmp(argv[2],"--sewer-prompt-check")) {
+        namespace prompt=framevr::sewerprompt;
+        BITMAPINFO info{};info.bmiHeader.biSize=sizeof(BITMAPINFOHEADER);
+        info.bmiHeader.biWidth=prompt::Width;info.bmiHeader.biHeight=-prompt::Height;
+        info.bmiHeader.biPlanes=1;info.bmiHeader.biBitCount=32;
+        HDC dc=CreateCompatibleDC(nullptr);void* bits=nullptr;
+        HBITMAP bitmap=CreateDIBSection(dc,&info,DIB_RGB_COLORS,&bits,nullptr,0);
+        if(!dc||!bitmap||!bits){if(bitmap)DeleteObject(bitmap);if(dc)DeleteDC(dc);return 120;}
+        const auto old=SelectObject(dc,bitmap);const bool fits=prompt::Paint(dc);
+        GdiFlush();std::vector<uint8_t> rgba(prompt::Width*prompt::Height*4);
+        const auto* bgra=static_cast<const uint8_t*>(bits);
+        for(size_t i=0;i<rgba.size();i+=4){rgba[i]=bgra[i+2];rgba[i+1]=bgra[i+1];rgba[i+2]=bgra[i];rgba[i+3]=255;}
+        SelectObject(dc,old);DeleteObject(bitmap);DeleteDC(dc);
+        if(!fits||!SavePng(argv[1],rgba,prompt::Width,prompt::Height))return 121;
+        std::puts("Sewer entry prompt painted; both lines fit");return 0;
+    }
+    if(argc>2&&!std::strcmp(argv[2],"--quick-use-check")) {
+        if(argc>3){wchar_t path[32768]{};MultiByteToWideChar(CP_UTF8,0,argv[3],-1,path,32768);icons::Directory(path);}
+        Snapshot s;s.quick.known=true;s.quick.assigned=Code('t','b','k');s.quick.count=3;
+        s.quick.items[0]={{91,4,Code('t','b','k')},18,"Tome of Town Portal"};
+        s.quick.items[1]={{92,5,Code('i','b','k')},0,"Tome of Identify"};
+        s.quick.items[2]={{93,6,Code('h','p','5')},4,"Super Healing Potion"};
+        for(auto& skill:s.skills){skill.known=skill.available=true;skill.id=0;std::snprintf(skill.name,sizeof skill.name,"Attack");}
+        icons::Prefetch(s);if(!icons::Wait(10000))return 110;
+        Output o;o.wheel=true;o.wheelHand=1;
+        constexpr int width=1536,height=768;std::vector<uint8_t> gallery(width*height*4);
+        for(int page=0;page<2;++page) {
+            o.editor=page?3:0;o.editCount=3;for(int i=0;i<3;++i)o.itemOptions[i]=s.quick.items[i];
+            auto pixels=Paint(s,o,-1);if(pixels.size()!=1024*1024*4)return 111;
+            for(int y=0;y<height;++y)std::memcpy(&gallery[(y*width+page*768)*4],&pixels[y*1024*4],768*4);
+        }
+        if(!SavePng(argv[1],gallery,width,height))return 112;
+        std::puts("Quick-use wheel and inventory picker painted");return 0;
+    }
+    if(argc>2&&!std::strcmp(argv[2],"--categories-check")) {
+        namespace categories=framevr::skillcategories;
+        if(argc>3){wchar_t path[32768]{};MultiByteToWideChar(CP_UTF8,0,argv[3],-1,path,32768);icons::Directory(path);}
+        HDC dc=CreateCompatibleDC(nullptr);
+        HFONT font=CreateFontW(18,0,0,0,FW_SEMIBOLD,FALSE,FALSE,FALSE,DEFAULT_CHARSET,
+            OUT_DEFAULT_PRECIS,CLIP_DEFAULT_PRECIS,ANTIALIASED_QUALITY,DEFAULT_PITCH,L"Georgia");
+        const auto old=SelectObject(dc,font);bool fits=true;
+        for(int cls=0;cls<8;++cls)for(int category=0;category<categories::Count;++category) {
+            const auto b=SkillCategoryBounds(category);const int width=int(768*b.right)-int(768*b.left)-12;
+            RECT r{0,0,width,0};wchar_t name[80]{};
+            MultiByteToWideChar(CP_UTF8,0,categories::Name(cls,category),-1,name,80);
+            DrawTextW(dc,name,-1,&r,DT_CENTER|DT_WORDBREAK|DT_NOPREFIX|DT_CALCRECT);
+            if(r.right>width||r.bottom>int(768*b.bottom)-int(768*b.top)-23)fits=false;
+        }
+        SelectObject(dc,old);DeleteObject(font);DeleteDC(dc);
+        if(!fits){std::fputs("Class category label would be clipped\n",stderr);return 110;}
+        constexpr int width=1536,height=1536;std::vector<uint8_t> gallery(width*height*4);
+        for(int tile=0;tile<4;++tile) {
+            Snapshot s;s.activeSet=1;s.bindingsEditable=true;Output o;o.editor=2;o.editSlot=1;o.wheelHand=0;
+            o.editClass=tile==0?3:tile==1?2:tile==2?1:0;o.editCategory=tile==0?2:tile==1?3:tile==2?1:0;
+            o.editCategoryCounts={13,4,4,2,3};o.editCount=tile==3?8:4;o.editPages=tile==3?2:1;
+            if(tile==1)o.editCategoryCounts={13,3,3,4,3};
+            if(tile==3)o.editCategoryCounts={9,3,0,3,3};
+            const int ids[4][8]={{98,102,114,122},{70,80,85,95},{36,47,51,62},{0,357,6,7,10,16,21,359}};
+            const char* names[4][8]={{"Might","Holy Fire","Holy Freeze","Fanaticism"},{"Raise Skeleton","Raise Skeletal Mage","Blood Golem","Revive"},
+                {"Fire Bolt","Fire Ball","Fire Wall","Hydra"},{"Attack","Interact","Magic Arrow","Fire Arrow","Jab","Power Strike","Charged Strike","Town Portal"}};
+            for(int i=0;i<o.editCount;++i){auto& skill=o.editOptions[i];skill.id=ids[tile][i];skill.level=10;skill.known=skill.available=true;
+                std::snprintf(skill.name,sizeof skill.name,"%s",names[tile][i]);s.catalog[s.skillCount++]=skill;}
+            icons::Prefetch(s);if(!icons::Wait(10000))return 111;
+            const auto pixels=Paint(s,o,-1);if(pixels.size()!=1024*1024*4)return 112;
+            for(int y=0;y<768;++y)std::memcpy(&gallery[(((tile/2)*768+y)*width+(tile%2)*768)*4],&pixels[y*1024*4],768*4);
+        }
+        if(!SavePng(argv[1],gallery,width,height))return 113;
+        std::puts("Skill category art: all eight classes fit; four picker layouts rendered");return 0;
+    }
+    if(argc>2&&!std::strcmp(argv[2],"--effects-check")) {
+        using namespace framevr;
+        if(argc>3){wchar_t path[32768]{};MultiByteToWideChar(CP_UTF8,0,argv[3],-1,path,32768);icons::Directory(path);}
+        Snapshot s;s.effects.known=true;s.companions.known=true;
+        for(int t:{4,5,3,6,7}){s.companions.relevant|=companions::Bit(t);s.companions.alive[t]=t==4?8:1;}
+        for(int state:{2,11,14,32,33,101,137})s.effects.Set(state);
+        icons::Prefetch(s);if(!icons::Wait(10000))return 100;
+        const auto pixels=PaintWristStatus(s.companions,s.effects);
+        if(pixels.size()!=wriststatus::Width*wriststatus::Height*4)return 101;
+        const int height=wriststatus::UsedHeight(s.companions,s.effects);
+        if(height!=companions::RowHeight*2)return 102;
+        for(int i=0;i<wriststatus::Width*height;++i)if(pixels[i*4+3]!=255)return 103;
+        for(size_t i=wriststatus::Width*height*4;i<pixels.size();++i)if(pixels[i])return 104;
+        // Effect-only characters, no-effect companions, and an unavailable sample.
+        auto solo=PaintWristStatus({},s.effects);if(solo.empty()||solo[3]!=255)return 105;
+        const auto old=PaintCompanions(s.companions),pets=PaintWristStatus(s.companions,{});
+        if(!std::equal(old.begin(),old.end(),pets.begin()))return 106;
+        for(auto b:PaintWristStatus({},{}))if(b)return 107;
+        effects::Status all;all.known=true;for(const auto& d:effects::Definitions)all.Set(d.state);
+        if(PaintWristStatus(s.companions,all).size()!=pixels.size())return 108;
+        // Save only used rows for easy visual review; the runtime uses the full atlas.
+        std::vector<uint8_t> crop(pixels.begin(),pixels.begin()+wriststatus::Width*height*4);
+        if(!SavePng(argv[1],crop,wriststatus::Width,height))return 109;
+        std::puts("Active effect art: pets + buffs + debuffs, no pets, unchanged companion art and transparent unused rows passed");return 0;
+    }
+    if(argc>2&&!std::strcmp(argv[2],"--companions-check")) {
+        using namespace framevr;
+        if(argc>3){wchar_t path[32768]{};MultiByteToWideChar(CP_UTF8,0,argv[3],-1,path,32768);icons::Directory(path);}
+        companions::Roster necro;necro.known=true;
+        for(int t:{4,5,3,6,7})necro.relevant|=companions::Bit(t);
+        necro.alive[4]=8;necro.alive[5]=5;necro.alive[3]=1;necro.alive[6]=12;necro.alive[7]=1;
+        Snapshot prefetch;prefetch.companions=necro;icons::Prefetch(prefetch);if(!icons::Wait(10000))return 90;
+        constexpr int rows=4;std::vector<uint8_t> gallery(companions::Width*companions::RowHeight*rows*4);
+        for(int r=0;r<rows;++r) {
+            auto state=necro;
+            if(r==1){state.alive[4]=5;state.alive[5]=0;state.alive[3]=0;state.alive[7]=0;}
+            if(r==2){state={};state.known=true;for(int t:{10,11,12,13,14,15,7}){state.relevant|=companions::Bit(t);state.alive[t]=t==10?5:t==11?5:t==12?3:1;}}
+            if(r==3){state={};state.known=true;for(int t:{2,16,17,19,20,21}){state.relevant|=companions::Bit(t);state.alive[t]=t==17?5:1;}}
+            prefetch.companions=state;icons::Prefetch(prefetch);if(!icons::Wait(10000))return 91;
+            auto pixels=PaintCompanions(state);if(pixels.size()!=companions::Width*companions::Height*4)return 92;
+            for(int i=0;i<companions::Width*companions::RowHeight;++i)if(pixels[i*4+3]!=255)return 93;
+            for(size_t i=companions::Width*companions::RowHeight*4;i<pixels.size();++i)if(pixels[i])return 94;
+            std::memcpy(gallery.data()+r*companions::Width*companions::RowHeight*4,pixels.data(),companions::Width*companions::RowHeight*4);
+        }
+        const auto blank=PaintCompanions({});for(auto b:blank)if(b)return 95;
+        if(!SavePng(argv[1],gallery,companions::Width,companions::RowHeight*rows))return 96;
+        std::puts("Companion art: Necromancer deaths, Druid, other summons, hidden unknown and transparent unused rows passed");return 0;
+    }
     if(argc>2&&!std::strcmp(argv[2],"--compass-check")) {
         using namespace framevr;
         const auto atlas=compass::Paint();if(atlas.size()!=compass::Width*compass::Height*4)return 60;
@@ -49,8 +167,67 @@ int main(int argc,char** argv) {
         if(!SavePng(argv[1],gallery,w,h))return 62;
         std::puts("Compass preview: eight bearings, fixed marker and seamless north wrap passed");return 0;
     }
+    if(argc>2&&!std::strcmp(argv[2],"--navigation-check")) {
+        using namespace framevr;
+        Snapshot s;s.session=1;Output o;
+        const auto baseline=Paint(s,o,-1);
+        constexpr int rows=7,w=navigation::Width,h=navigation::Height;
+        const char* areas[]={"Rogue Encampment","Tower Cellar Level 5","Durance of Hate Level 3",
+            "Worldstone Keep Level 3","A very long test area name with a floor number 12",
+            "\xe5\xb4\x94\xe6\x96\xaf\xe7\x89\xb9", ""};
+        const int acts[]={1,1,3,5,2,4,0};
+        std::vector<uint8_t> gallery(w*rows*h*4);
+        for(int row=0;row<rows;++row) {
+            s.location={};s.location.level=row==rows-1?0:row+1;s.location.act=acts[row];
+            std::snprintf(s.location.name,sizeof s.location.name,"%s",areas[row]);
+            const auto atlas=Paint(s,o,-1);if(atlas.size()!=1024*1024*4)return 70;
+            int changed=0;
+            for(int y=0;y<1024;++y)for(int x=0;x<1024;++x) {
+                const bool inside=x>=navigation::AtlasX&&y>=navigation::AtlasY&&y<navigation::AtlasY+h;
+                const bool different=std::memcmp(&atlas[(y*1024+x)*4],&baseline[(y*1024+x)*4],4)!=0;
+                if(!inside&&different)return 71;
+                if(inside&&different)++changed;
+            }
+            if(row!=rows-1&&changed<100)return 72;
+            for(int y=0;y<h;++y)std::memcpy(&gallery[((row*h+y)*w)*4],
+                &atlas[((navigation::AtlasY+y)*1024+navigation::AtlasX)*4],w*4);
+        }
+        if(!SavePng(argv[1],gallery,w,rows*h))return 73;
+        std::puts("Navigation preview: area/floor names, acts, Unicode, long/unknown labels and atlas isolation passed");return 0;
+    }
     if(argc>3){wchar_t path[32768]{};MultiByteToWideChar(CP_UTF8,0,argv[3],-1,path,32768);icons::Directory(path);}
     Snapshot s;s.session=1;s.equipmentKnown=s.beltKnown=s.vitalsKnown=true;s.activeSet=1;
+    if(argc>2&&!std::strcmp(argv[2],"--developer-check")) {
+        s.developer=true;s.devClass=3;Output o;o.wheel=o.developer=true;o.wheelHand=0;o.devPage=1;
+        const auto ready=Paint(s,o,-1);o.hover=DeveloperCell(framevr::dev::CrossbowChoice);const auto hovered=Paint(s,o,-1);
+        if(ready.empty()||ready==hovered)return 70;
+        o.devPage=2;o.hover=DeveloperCell(4);
+        const auto scenic=Paint(s,o,-1);
+        if(scenic.empty()||scenic==hovered)return 74;
+        if(!SavePng((std::string(argv[1])+".scenic.png").c_str(),scenic,1024,1024))return 75;
+        o.devPage=1;o.hover=DeveloperCell(framevr::dev::CrossbowChoice);
+        for(int cls=0;cls<8;++cls) {
+            s.devClass=cls;const auto other=Paint(s,o,-1);
+            if(other.empty()||(cls!=3&&other==hovered))return 73;
+            if(cls==4&&!SavePng((std::string(argv[1])+".barbarian.png").c_str(),other,1024,1024))return 76;
+        }
+        s.devClass=4;
+        for(int page=0;page<framevr::dev::PageCount;++page){
+            o.devPage=page;o.hover=-1;const auto pixels=Paint(s,o,-1);
+            if(!SavePng((std::string(argv[1])+".page"+std::to_string(page)+".png").c_str(),pixels,1024,1024))return 77;
+        }
+        o.devPage=1;s.devClass=-1;const auto unavailable=Paint(s,o,-1);
+        if(unavailable==hovered)return 71;
+        if(!SavePng(argv[1],hovered,1024,1024))return 72;
+        s.devClass=3;s.devDebugDraws=true;o.devPage=1;o.hover=DeveloperCell(framevr::dev::DebugDrawsChoice);o.result=Result::DebugUpdated;
+        const auto debug=Paint(s,o,-1);s.devDebugDraws=false;
+        if(debug==Paint(s,o,-1)||!SavePng((std::string(argv[1])+".debug-on.png").c_str(),debug,1024,1024))return 78;
+        s.devTurnsKeepOwn=1;o.hover=DeveloperCell(framevr::dev::TurnsKeepOwnChoice);o.result=Result::TurnsUpdated;
+        const auto turnsNear=Paint(s,o,-1);s.devTurnsKeepOwn=2;
+        if(turnsNear==Paint(s,o,-1)||!SavePng((std::string(argv[1])+".turns-own-near.png").c_str(),turnsNear,1024,1024))return 79;
+        s.devTurnsKeepOwn=0;
+        std::puts("Development preview: page, hover and unavailable state passed");return 0;
+    }
     s.health=74;s.maxHealth=100;s.mana=39;s.maxMana=80;
     s.experience={7,99,15450,14175,22680,true};
     const char* names[]={"Fire Bolt","Raise Skeleton","Corpse Explosion","Teleport","Frozen Armor","Bone Spear","Amplify Damage","Unassigned"};
@@ -174,6 +351,7 @@ int main(int argc,char** argv) {
         std::vector<uint8_t> gallery(1536*768*4);
         for(int page=0;page<2;++page) {
             o.utility=false;o.editor=page+1;o.editSlot=1;o.editCount=7;
+            o.editClass=1;o.editCategoryCounts={7,2,1,1,3};
             std::copy_n(s.skills.begin(),o.editOptions.size(),o.editOptions.begin());o.hover=page?3:1;
             const auto atlas=Paint(s,o,2);
             for(int y=0;y<768;++y)std::memcpy(&gallery[(y*1536+page*768)*4],&atlas[y*1024*4],768*4);

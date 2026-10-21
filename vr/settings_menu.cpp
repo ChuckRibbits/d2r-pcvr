@@ -1,4 +1,5 @@
 #include <windows.h>
+#include <atomic>
 #include <mutex>
 #include <string>
 #include <cwchar>
@@ -12,6 +13,7 @@ std::mutex mutex;
 Snapshot published;
 Request queued;
 bool busy=false;
+std::atomic<bool> depthActive{true},depthChanged{false};
 float Value(const wchar_t* path,const wchar_t* section,const wchar_t* key,float fallback){
     wchar_t def[64],text[128];std::swprintf(def,64,L"%.6g",double(fallback));
     GetPrivateProfileStringW(section,key,def,text,128,path);
@@ -25,7 +27,8 @@ Values Load(const wchar_t* path){
         // Legacy separate switches are read only for migration. Both off stays
         // off; either enabled becomes the combined wrist display. An explicit
         // navigation_location takes precedence without rewriting old keys.
-        const float fallback=i==NavigationLocation?(v[WristMap]>.5f||v[WristCompass]>.5f?0.f:3.f):d.defaultValue;
+        const float fallback=i==NavigationLocation?(v[WristMap]>.5f||v[WristCompass]>.5f?0.f:3.f):
+                             i==ReShadeDepth?(depthActive.load()?1.f:0.f):d.defaultValue;
         raw[i]=Value(path,d.section,d.key,fallback);v[i]=Normalize(Key(i),raw[i]);
     }
     v[SmoothTurn]=SmoothTurning(raw[Snap],Value(path,L"turn",L"smooth",-1))?1.f:0.f;
@@ -56,7 +59,7 @@ Result Save(const wchar_t* path,const Request& r){
         if(i==Foveation)ok=write(L"render",L"fixed_foveation",r.values[i]>0?1:0)&&write(L"render",L"eye_tracked_foveation",r.values[i]==2?1:0);
         // Materialize the mode before replacing legacy snap=0. Changing the
         // stored angle must not implicitly switch a smooth profile to snap.
-        else if(i==Snap)ok=write(d.section,d.key,r.values[i])&&write(L"turn",L"smooth",(r.changed&(1u<<SmoothTurn))?r.values[SmoothTurn]:current[SmoothTurn]);
+        else if(i==Snap)ok=write(d.section,d.key,r.values[i])&&write(L"turn",L"smooth",(r.changed&(ChangeMask{1}<<SmoothTurn))?r.values[SmoothTurn]:current[SmoothTurn]);
         else ok=write(d.section,d.key,r.values[i]);
     }
     WritePrivateProfileStringW(nullptr,nullptr,nullptr,temp.c_str());
@@ -78,6 +81,12 @@ Result Save(const wchar_t* path,const Request& r){
 }
 }
 framevr::settings::Snapshot Read(){std::lock_guard lock(mutex);return published;}
+void SetReShadeDepth(bool active){depthActive.store(active);depthChanged.store(true);}
+bool ReShadeDepthActive(){return depthActive.load();}
+void SetOfflineDifficultyAvailable(bool available){
+    std::lock_guard lock(mutex);
+    if(published.offlineDifficultyAvailable!=available){published.offlineDifficultyAvailable=available;++published.revision;}
+}
 bool Submit(const framevr::settings::Request& r){
     using namespace framevr::settings;
     if(!r.sequence||!r.changed||(r.changed&~SupportedChanges)||r.changed!=Changed(r.base,r.values))return false;
@@ -96,7 +105,9 @@ bool Poll(const wchar_t* path){
     static bool cached=false;
     WIN32_FILE_ATTRIBUTE_DATA attributes{};
     const bool exists=GetFileAttributesExW(path,GetFileExInfoStandard,&attributes)&&!(attributes.dwFileAttributes&FILE_ATTRIBUTE_DIRECTORY);
-    if(!request.sequence&&cached&&exists&&cachedPath==path&&SameFile(cachedAttributes,attributes))return false;
+    // A new session state for ReShade depth changes what an absent key shows.
+    const bool reload=depthChanged.exchange(false);
+    if(!request.sequence&&!reload&&cached&&exists&&cachedPath==path&&SameFile(cachedAttributes,attributes))return false;
     const auto result=request.sequence?Save(path,request):Result::None;
     const auto values=Load(path);
     cached=GetFileAttributesExW(path,GetFileExInfoStandard,&cachedAttributes)&&!(cachedAttributes.dwFileAttributes&FILE_ATTRIBUTE_DIRECTORY);

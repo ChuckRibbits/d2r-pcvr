@@ -79,7 +79,7 @@ void Install() {
     if(!originalTarget&&!d2rsig::Hook(TargetRva,TargetSig,sizeof TargetSig,reinterpret_cast<void*>(&Target),reinterpret_cast<void**>(&originalTarget)))return;
     castSoundReady=d2rsig::Check(CastSoundRva,CastSoundSig,sizeof CastSoundSig);
     ready=true;
-    framevr::logging::Write("Frame hand spells: independent planar Sorceress bolts/balls and native Charged Bolt volleys ready");
+    framevr::logging::Write("Frame hand spells: Sorceress bolts/balls, Necromancer Bone Spear, Paladin Holy Bolt and native Charged Bolt volleys ready");
 }
 bool Prepare(Shot& shot,uintptr_t game,uintptr_t player) {
     if(!ready.load()||!framevr::SpellHeld(shot))return false;
@@ -99,9 +99,24 @@ bool Prepare(Shot& shot,uintptr_t game,uintptr_t player) {
         missile=secondary;
     }
     shot.level=reinterpret_cast<int(*)(uintptr_t,uintptr_t,int,int)>(d2rsig::Addr(SkillLevelRva))(player,node,1,0);
+    if(id==101&&!bowvr::PrepareHoly(game))return false;
     shot.missile=missile;
     int16_t sound=0;
     shot.castSound=castSoundReady&&Read(row+0x152,sound)&&sound>0?sound:0;
+    return shot.level>0;
+}
+bool PrepareArrow(Shot& shot,uintptr_t game,uintptr_t player) {
+    if(!ready.load()||!SkillArrow(shot))return false;
+    uint32_t mode=0;uintptr_t list=0;
+    if(!Read(player+0xc,mode)||(mode!=1&&mode!=2&&mode!=3)||!Read(player+0x100,list)||!list)return false;
+    // Same compiled Skills row fields as Prepare: srvdofunc 0 with the
+    // expected srvmissile is the single straight missile the bow replaces.
+    const auto node=Skill(player,shot);uintptr_t row=0;
+    int16_t id=-1,action=-1,missile=-1;
+    if(!node||!Read(node,row)||!Read(row,id)||id!=shot.skill||!Read(row+0x4e,action)||action!=0||
+       !Read(row+0x66,missile)||missile!=shot.missile||
+       !framevr::weaponskills::QuiverSkill(id)||!framevr::weaponskills::QuiverMissile(missile))return false;
+    shot.level=reinterpret_cast<int(*)(uintptr_t,uintptr_t,int,int)>(d2rsig::Addr(SkillLevelRva))(player,node,1,0);
     return shot.level>0;
 }
 bool Cast(const Shot& shot,uintptr_t game,uintptr_t player) {
@@ -154,10 +169,12 @@ void Feedback(uint64_t session,uintptr_t player,uint32_t id,bool active) {
 }
 void Fired(const Shot& shot,uintptr_t game,uintptr_t player) {
     ++casts[shot.hand];
+    framevr::SpellCast(shot.hand,shot.session);
     framevr::SpellVisualCast(shot);
     uint32_t tick=0;if(!Read(game+0x170,tick))return;
     const int fcr=reinterpret_cast<int(*)(uintptr_t,int,int)>(d2rsig::Addr(nativeui::abi::StatRva))(player,105,0);
-    cadence.Fired(shot.session,shot.hand,tick,framevr::spellcast::CastFrames(fcr));
+    uint32_t character=~0u;if(!Read(player+4,character))return;
+    cadence.Fired(shot.session,shot.hand,tick,framevr::spellcast::CastFrames(fcr,character));
 }
 void Report() {
     const auto right=casts[0].exchange(0),left=casts[1].exchange(0),refused=denied.exchange(0);
@@ -178,7 +195,7 @@ bool FinishVisual(uintptr_t client,const Flight& flight) {
     if(!ready.load())return false;
     uintptr_t path=0;
     if(!Read(client+0x38,path)||!path)return false;
-    const auto point=GridPoint(flight.shot,flight.Point())*flight.shot.unitsPerMetre;
+    const auto point=GridPoint(flight.shot,flight.ImpactPoint())*flight.shot.unitsPerMetre;
     const int x=int(point.x*.5f),y=int(point.z*.5f);
     auto room=reinterpret_cast<uintptr_t(*)(uintptr_t)>(d2rsig::Addr(bowvr::native::RoomRva))(client);
     room=reinterpret_cast<uintptr_t(*)(uintptr_t,int,int)>(d2rsig::Addr(bowvr::native::RoomPointRva))(room,x,y);

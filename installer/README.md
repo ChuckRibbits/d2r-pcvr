@@ -1,8 +1,31 @@
 # Native Windows setup EXE
 
 `D2R_PCVR_Setup.iss` builds the graphical installer for the native OpenXR mod.
-The older `D2R_VR_Setup.iss` and `build_installer.ps1` belong to the original
-upstream implementation and are not used by this build.
+(The upstream D2R VR installer scripts, `D2R_VR_Setup.iss` and
+`build_installer.ps1`, carried D2R VR's own AppId and are no longer kept here.)
+
+Players see it as **D2R VR Unleashed** (the installer's name, Installed apps,
+`modinfo.json`'s description); the ids stay D2R PCVR's. It installs as the
+D2RLoader mod `D2R-PCVR`: `mods\D2R-PCVR\d2rloader\plugins\d2rl-pcvr.dll` with
+`d2r_pcvr.ini` and `openxr_loader.dll`, its ReShade in `mods\D2R-PCVR\reshade\`,
+`mods\D2R-PCVR\D2R-PCVR.mpq\modinfo.json`; the shortcuts start
+`D2RLoader.exe -mod D2R-PCVR` (`steamvr/mod_identity.py`, `steamvr/launch_windows.py`).
+See [migration and validation notes](../docs/MOD_COEXISTENCE.md) for shared
+dependency protection, ReShade migration, log paths and remaining gameplay checks.
+Releases up to 0.3.16 used D2R VR's names, `d2rl-vrcam.dll` and `d2r_vr.ini`;
+D2R VR still uses them. Setup decides whose those files are from this mod's
+own install record and snapshots plus the plugin's content, never from the
+name (`steamvr/mod_identity.py`):
+
+- An earlier D2R PCVR: Update / repair copies `d2r_vr.ini` (settings and body
+  calibration) to `d2r_pcvr.ini`, then removes the old plugin and ini. Both are
+  journaled in the new snapshot, so a failed setup or `install.py --restore`
+  puts them back, and removal still restores the pre-mod state.
+- D2R VR (or a `d2rl-vrcam.dll` no D2R PCVR record lists): setup says another
+  mod is installed and stops before changing anything; D2RLoader would load
+  both VR plugins. Its files are never changed, moved or deleted, and removal
+  of D2R PCVR leaves them in place. The plugin itself also stays off while a
+  `d2rl-vrcam.dll` sits beside it.
 
 The wizard and portable CMD setup share `steamvr/setup_windows.py` for the
 installation and Steam configuration. `steamvr/setup_native.py` adds unattended
@@ -28,30 +51,43 @@ the snapshots, then records their managed locations in that game's existing
 
 ## Build
 
-Use a clean committed topic branch. Build the native plugin as described in
-`CONTRIBUTING.md`, then package its output:
+Use a clean committed topic branch. Prepare the version, GitHub notes and
+in-headset summary with the [release workflow and template](../docs/RELEASING.md).
+Build the native plugin as described in `CONTRIBUTING.md`, then package its output:
 
 ```powershell
-.\deps\python\python.exe steamvr/package.py --build build-frame/windows-native --openxr-loader build-frame/windows-native/openxr_loader.dll --casclib build-frame/casclib-installer/CascLib.dll --release-tag v0.3.14-windows-preview --output build-frame/releases/v0.3.14-windows-preview/d2r-pcvr-windows.zip
+.\deps\python\python.exe steamvr/package.py --build build-frame/windows-native --openxr-loader build-frame/windows-native/openxr_loader.dll --casclib build-frame/casclib-installer/CascLib.dll --release-tag v0.3.19-windows-preview --output build-frame/releases/v0.3.19-windows-preview/d2r-pcvr-windows.zip
 ```
 
 Use the actual paths from your native and CascLib builds. When reusing an unchanged
 published plugin, pass `--plugin-source-commit` with its original source commit;
-do not claim that it was rebuilt from the installer change.
+do not claim that it was rebuilt from the installer change. Its embedded release
+summary must still match the source notes and requested tag; otherwise rebuild.
 
 Install [Inno Setup 7.1.0 or newer](https://jrsoftware.org/isdl.php), then run:
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File installer/build_native_installer.ps1 -PackagePath build-frame/releases/v0.3.14-windows-preview/d2r-pcvr-windows.zip -Version 0.3.14 -ISCCPath 'C:\Program Files (x86)\Inno Setup 7\ISCC.exe'
+powershell -NoProfile -ExecutionPolicy Bypass -File installer/build_native_installer.ps1 -PackagePath build-frame/releases/v0.3.19-windows-preview/d2r-pcvr-windows.zip -Version 0.3.19 -ISCCPath 'C:\Program Files (x86)\Inno Setup 7\ISCC.exe'
 ```
 
 The wrapper verifies the native ZIP manifest and distributable-file allowlist,
 downloads official Python 3.12.10 x64 if needed, verifies its pinned archive hash
 and Python Software Foundation signature, then compiles a fresh staging folder.
-It never stages a game installation or generated artwork/model cache. Output:
+It also checks that `-Version` matches the ZIP's release tag. It never stages a
+game installation or generated artwork/model cache. Output:
 
-- `build-frame/installers/D2R-PCVR-Setup-0.3.14.exe`
+- `build-frame/installers/D2R-PCVR-Setup-0.3.19.exe`
 - matching `.exe.sha256` checksum and `.exe.build.json` provenance report
+
+Optionally the EXE carries the [D2R VR Launcher](https://github.com/natpoh/d2r-vr-launcher) (its
+`docs/INSTALLER_CONTRACT.md`). Download `D2R_VR_Launcher_Setup_<version>.exe` and its `.sha256` from that
+project's releases once per release, check the hash, and add
+`-LauncherSetup <file> -LauncherSetupSha256 <the 64 digits>` to the command above. The wrapper refuses another
+file name or a hash that differs, stages the file unmodified under `launcher\` in the payload, and records it in
+`.exe.build.json`. At install time Setup runs it silently for the installing user
+(`/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /TASKS=`) only when `HKCU\Software\D2R VR Launcher` shows no launcher
+or an older one, after re-checking the pinned hash, and ignores its exit code: a launcher problem never blocks the
+mod. Removing D2R VR Unleashed leaves the launcher installed. Without the two parameters nothing changes.
 
 The EXE is unsigned unless a release maintainer separately signs it. Signing
 requires an appropriate publisher certificate; do not label an unsigned EXE as
@@ -90,7 +126,7 @@ it verifies Inno's lifecycle, not a real game install or headset launch.
 Check the payload actually embedded in the compiled EXE without installing:
 
 ```powershell
-.\build-frame\installers\D2R-PCVR-Setup-0.3.14.exe /PAYLOADCHECK=1 /VERYSILENT /SUPPRESSMSGBOXES /LOG=payload-check.log
+.\build-frame\installers\D2R-PCVR-Setup-0.3.19.exe /PAYLOADCHECK=1 /VERYSILENT /SUPPRESSMSGBOXES /LOG=payload-check.log
 ```
 
 The setup intentionally aborts after validation, so its exit code is nonzero.

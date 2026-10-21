@@ -25,7 +25,23 @@ adapt further work from `natpoh/diablo2-vr-port` at
 `4b6284c0766c089139693a504333b9a19201cdd2` (MIT, copyright 2026 BodyWalkVR).
 The native OpenXR adaptation uses current-eye color/depth bindings, tracked
 resource states and device lifetimes to keep square shadow maps out of fog/sky
-sampling. This does not include upstream's experimental command replay renderer.
+sampling.
+
+The stereo replay in `vr/stereo_replay.*`, `vr/ecl_hook.*`,
+`steamvr/replay_camera.h`, `steamvr/replay_groups.h` and `steamvr/replay_pause.h`
+adapts upstream's
+"one pass, two pictures" renderer (`camfix` and `replay` in `vr/vrcam.cpp`,
+`vr/ecl_hook.*`, `vr/replay_groups.h`, `vr/replay_pause.h`) at
+`8bd1d3bc7f9f8a7d5fc2f49d250d57988ec6256e` (MIT, copyright 2026 BodyWalkVR).
+Upstream's DLSS predication, held queue signals, stall guard and stack dump
+are not included. Replay is no longer a Stereo rendering choice (removed in
+v0.3.24); the adapted code remains in the tree.
+
+Native renderer/entity pool growth, its allocator checks, signatures and snapshot
+test are adapted from Sergious / BodyWalkVR
+[`natpoh/diablo2-vr-port`](https://github.com/natpoh/diablo2-vr-port) at
+`47a258c971c6a3be030769acba39764fcc1f6067` (MIT, copyright 2026 BodyWalkVR).
+Game snapshots used for optional local allocator tests are not distributed.
 
 | Component | Source / version | Notice |
 |---|---|---|
@@ -69,6 +85,23 @@ On Linux the installer also downloads Microsoft's
 and extracts `c/Redist/D3D/x64/d3dcompiler_47.dll` for mod-local shader compilation.
 Neither the SDK package nor its compiler is bundled in this repository or release.
 Microsoft's [Windows SDK license](https://aka.ms/WinSDKLicenseURL) applies.
+
+The visor blood splatters in `steamvr/assets/blood-splatters.png` are eight
+transparent images supplied by contributor ChuckRibbits, who states they are free,
+openly licensed vector splatters; their original download source was not
+recorded. They are packed by `steamvr/prepare_blood.py` and embedded in the
+plugin. See [`steamvr/assets/README.md`](steamvr/assets/README.md#visor-blood).
+
+The riposte impact sound in `steamvr/assets/riposte-impact.wav` is "Combat Impact"
+by Universfield, from Pixabay (item 352458), used under the
+[Pixabay Content License](https://pixabay.com/service/license-summary/); it was
+converted from MP3 to WAV and is embedded in the plugin.
+
+The low-life heartbeat in `steamvr/assets/guard-heartbeat.wav` is one beat cut
+from "Heartbeat" by SoundReality, from Pixabay (item 549797), used under the
+[Pixabay Content License](https://pixabay.com/service/license-summary/); it was
+decoded from MP3, trimmed to a single beat with short fades, peak-normalised and
+embedded in the plugin.
 
 Diablo II: Resurrected, its executable, archives and save data belong to Blizzard
 Entertainment / their owners and are not distributed in this preview. This

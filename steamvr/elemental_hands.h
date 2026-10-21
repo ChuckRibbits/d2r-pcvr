@@ -66,7 +66,7 @@ public:
     Scene Step(const Input& in,const interaction::Snapshot& snapshot) {
         Scene scene;
         if(!in.enabled||!in.active||!interaction::Valid(in.head)||
-           !interaction::Fresh(snapshot,in.context.session,in.at)||snapshot.heroClass!=1||
+           !interaction::Fresh(snapshot,in.context.session,in.at)||snapshot.skillClass!=1||
            !snapshot.vitalsKnown||!std::isfinite(snapshot.health)||snapshot.health<=0||
            !snapshot.actionKnown||snapshot.actionMode==0||snapshot.actionMode==17) {
             Reset();return scene;

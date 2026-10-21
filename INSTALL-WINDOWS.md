@@ -1,4 +1,4 @@
-# Install and play D2R PCVR on Windows
+# Install and play D2R VR Unleashed on Windows
 
 This preview supports **SteamVR and Virtual Desktop (VDXR)** on Windows.
 
@@ -73,6 +73,13 @@ installer's full output. Share the error at the end of those logs when reporting
 a problem; review them for personal paths before posting. Older installers may
 only report an exit code in `setup-last.log` and do not create `setup-install.log`.
 
+If Setup reports **Permission denied** for **launcher_icon.png**, fully close
+**D2R VR Launcher** and any image viewer showing that file, then rerun Setup
+with **Update / repair**. Keep Steam and the game closed while Setup runs.
+The launcher can hold its displayed icon open, preventing an installer from
+replacing it. This error alone does not mean you need administrator rights or
+to change antivirus settings. Keep the installation backups when retrying.
+
 If setup reports **Checksum mismatch**, the downloaded bytes do not match a
 version approved by that installer. An upstream download can be replaced while
 keeping the same filename; a damaged download can also cause this error. Get the
@@ -89,8 +96,23 @@ affected file path and time with the error report, after removing personal detai
 A readable dependency ZIP with the pinned SHA-256 is reused on retry; setup does
 not deliberately delete it. A file disappearing or becoming unreadable needs
 its security/file-access event checked. A checksum match establishes the expected
-version, not that an antivirus detection is a false positive. Keep protection enabled
-while the detection is investigated.
+version, not that an antivirus detection is a false positive.
+
+When Windows reports a confirmed security block, setup shows the affected file
+and recovery steps. VR loaders hook into the game to enable mods, which can
+trigger antivirus detections. Review the detection before continuing. If you
+trust the file, allowing that specific detection keeps protection active for
+other files.
+
+If you choose to retry with protection temporarily off, open **Windows Security
+> Virus & threat protection > Manage settings**, turn **Real-time protection**
+Off, then rerun Setup and choose **Update / repair**. Turn protection back **On
+immediately after the attempt, even if setup fails**. Only do this for a download
+you trust: your PC is less protected while it is off. See Microsoft's
+[real-time protection instructions](https://support.microsoft.com/en-us/windows/security/windows-security/stay-protected-with-the-windows-security-app).
+Setup never changes antivirus settings and continues to enforce the approved
+dependency checksums. Ordinary missing-file/permission errors do not trigger
+this confirmed-block message.
 
 You can rerun the EXE safely. It updates matching shortcuts without duplicates.
 When upgrading a recorded ZIP installation, it copies and verifies its referenced
@@ -196,9 +218,17 @@ If included, **Install-BattleNet-Preview.cmd** opens the same setup wizard;
 it is not required. If setup offers only Steam, download a package that
 explicitly includes Battle.net support before installing on that edition.
 
-Required icons and potion models are read from your own Battle.net archives
+Required icons, potion models and Arcane sky artwork are read from your own Battle.net archives
 and kept locally. No Blizzard game files or generated asset caches are included
 in the mod package. The existing [controller mappings](CONTROLS.md) also apply.
+
+Setup also prepares a surrounding starfield for Arcane Sanctuary. It uses the
+game's star and cloud textures, mapped around the VR view instead of the native
+flat weather cards. These generated textures and Arcane visual definitions stay
+inside this mod's folder and are tracked for repair/removal. Existing custom
+Arcane overrides are preserved. If preparation fails, setup retains the existing
+background and reports the reason. This level backdrop is independent of the
+added outdoor sky setting.
 
 ## Manual installation (Steam edition)
 
@@ -213,7 +243,7 @@ Replace the example path below with that folder, then run both lines:
 
 ```powershell
 $Game = 'C:\Program Files (x86)\Steam\steamapps\common\Diablo II Resurrected'
-py -3 .\steamvr\install.py --game "$Game" --plugin .\bin\d2rl-vrcam.dll --openxr-loader .\bin\openxr_loader.dll --deps .\deps --download-deps
+py -3 .\steamvr\install.py --game "$Game" --plugin .\bin\d2rl-pcvr.dll --openxr-loader .\bin\openxr_loader.dll --deps .\deps --download-deps
 ```
 
 The installer downloads the required components, prepares icons and potions
@@ -381,16 +411,24 @@ button to close. Use the game's left or right corner minimap layout. The Map
 tab temporarily opens the automap when needed and restores its previous
 visibility afterward. Left stick click still toggles the normal map. Health,
 mana, level and XP progress remain on your left wrist.
-For the full Quest and Steam Frame mappings, including all eight quick-cast
-shortcuts and the game's A/B/X/Y/LB/RB/LT/RT menu prompts, see
+For the full Quest and Steam Frame mappings, including each hand's skill slots
+and the game's A/B/X/Y/LB/RB/LT/RT menu prompts, see
 **[Controller reference](CONTROLS.md)**. Use a stick or face button for native
 navigation; release it and deliberately re-aim the laser to resume pointing
 and dragging. Laser dragging works in inventory, stash and merchant panels.
 Free swings pause while casting, using menus or handling a potion. Selecting
-a wheel skill changes the right-trigger action; its displayed quick-cast
-binding also remains available.
+a wheel wedge edits that slot's skill.
 
 ## If something goes wrong
+
+Setup checks Windows HDR on active desktop displays. When it is on, the wizard
+shows an advisory before installation; the portable setup and logs show it too.
+Players have reported VR visual problems that improve with HDR off. Open
+**Windows Settings > System > Display > HDR**, select the relevant display and
+turn **Use HDR** Off before playing. Setup can continue and does not change
+display settings. If the query is unavailable, setup says it could not check;
+HDR support alone does not trigger the enabled warning. This check covers the
+current desktop display mode, not per-game Auto HDR or an in-game HDR toggle.
 
 - **Game opens flat:** use the matching VR library shortcut and connect your
   headset before launching. For the Steam edition, check the Steam launch options.
@@ -422,7 +460,7 @@ Update / repair preserves your existing scale; if an older install still uses
 80%, set **Options > Video > Resolution Scale** to **100%** in the game.
 
 To remove an EXE installation, open **Windows Settings → Apps → Installed apps →
-D2R PCVR → Uninstall**, or the D2R PCVR Start menu uninstaller. This removes the
+D2R VR Unleashed → Uninstall**, or the D2R VR Unleashed Start menu uninstaller. This removes the
 mod from **every Steam and Battle.net copy managed by that EXE**, restores its
 tracked original files and removes matching VR shortcuts. Your current characters,
 shared stash and video settings are kept. Backups and logs remain in the helper
@@ -439,10 +477,38 @@ same game edition if prompted, and choose
 **Update / repair and keep calibration and video settings**. Setup refreshes
 the mod and its launch paths while keeping your calibration and video settings.
 
+**The D2RLoader mod D2R-PCVR (shown as D2R VR Unleashed):** everything of
+this mod is in the game's `mods\D2R-PCVR` folder: the plugin
+`mods\D2R-PCVR\d2rloader\plugins\d2rl-pcvr.dll` with its settings
+`d2r_pcvr.ini` and its OpenXR loader beside it, its own ReShade and ReShade's
+files in `mods\D2R-PCVR\reshade\`, and `mods\D2R-PCVR\D2R-PCVR.mpq\modinfo.json`
+(`savepath "../"`: your usual characters). The VR shortcuts start
+`D2RLoader.exe -mod D2R-PCVR`; D2RLoader loads a mod's plugin only while that mod
+runs, so another VR mod in its own mod folder (D2R VR as `mods\D2R-VR`) can be
+installed beside it and the shortcut you start picks the mod. Setup keeps an
+existing `d2rloader\config\d2rloader.toml` (your D2RLoader settings and
+`default_mod`) as it is. Removal takes this mod's own files; D2RLoader itself
+stays while another mod uses it. An install of this release's first file names
+in D2RLoader's global plugins folder (`d2rloader\plugins\d2rl-pcvr.dll`, which
+would load with every mod) moves into the mod folder with your settings and
+calibration on **Update / repair** (the old files stay in the setup backup).
+
+**File names:** D2R PCVR is `d2rl-pcvr.dll` with its settings in `d2r_pcvr.ini`.
+Releases up to 0.3.16 used `d2rl-vrcam.dll` and `d2r_vr.ini`, the names of
+D2R VR, the mod D2R PCVR is based on. **Update / repair** carries your settings
+and body calibration over to `d2r_pcvr.ini` and removes the old D2R PCVR files
+(they stay in the setup backup). Setup recognises them by its own installation
+record, not by the name: if D2R VR 0.167 or older is installed in the same game
+folder (its plugin in D2RLoader's global `d2rloader\plugins`, loaded with every
+mod), setup leaves D2R VR's files alone and stops, because D2RLoader would start
+both mods. Update D2R VR to its D2RLoader-mod release (`mods\D2R-VR`) or remove
+it with its own uninstaller before installing this one.
+
 For a manual DLL-only upgrade, keep a copy of the existing
-`d2rloader\plugins\d2rl-vrcam.dll` and `d2r_vr.ini` from your game folder.
-Replace only that DLL with the new release's `bin\d2rl-vrcam.dll`.
-Keep your existing INI to retain calibration. For the Steam edition, repeat
+`mods\D2R-PCVR\d2rloader\plugins\d2rl-pcvr.dll` and `d2r_pcvr.ini` from your game folder.
+Replace only that DLL with the new release's `bin\d2rl-pcvr.dll`.
+Keep your existing INI to retain calibration. Coming from 0.3.16 or older, use
+**Update / repair** once instead, so the old names are carried over. For the Steam edition, repeat
 the Steam launch-option step using the new extracted folder. For Battle.net,
 rerun the wizard and choose **Only configure Steam shortcuts** to update its paths.
 Run the full installer if the new release

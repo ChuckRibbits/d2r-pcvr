@@ -2,6 +2,7 @@
 #define XR_USE_GRAPHICS_API_D3D12
 #define XR_NO_PROTOTYPES
 #include <windows.h>
+#include <shlobj.h>
 #include <d3d12.h>
 #include <dxgi1_4.h>
 #include <wrl/client.h>
@@ -10,11 +11,14 @@
 #include <openxr/openxr_loader_negotiation.h>
 #include <reshade.hpp>
 #include <xinput.h>
+#include <mmsystem.h>
 #include <algorithm>
 #include <array>
 #include <atomic>
 #include <cstdio>
 #include <cstring>
+#include <deque>
+#include <memory>
 #include <mutex>
 #include <string>
 #include <vector>
@@ -23,19 +27,28 @@
 #include "pad_mirror_shared.h"
 #include "transport.h"
 #include "../vr/bow.h"
+#include "../vr/crossbow.h"
 #include "../vr/melee.h"
 #include "frame_math.h"
 #include "composition_layers.h"
 #include "swapchain_format.h"
 #include "input.h"
+#include "dropped_item_labels.h"
 #include "window_focus.h"
 #include "gameplay.h"
 #include "hand_controls.h"
 #include "interaction_ui.h"
+#include "sewer_prompt_art.h"
+#include "blood_screen.h"
+#include "guard_strain.h"
+#include "guard_strain_paint.h"
+#include "heartbeat.h"
 #include "wrist_compass.h"
 #include "interaction_paint.h"
 #include "latest_worker.h"
 #include "haptic_pulse.h"
+#include "haptic_actions.h"
+#include "xinput_rumble.h"
 #include "interaction_icons.h"
 #include "potion_models.h"
 #include "elemental_hands_renderer.h"
@@ -49,12 +62,16 @@
 #include "render_resolution.h"
 #include "menu_controls.h"
 #include "ui_blit.h"
+#include "turn_warp.h"
+#include "dxgi_views.h"
+#include "scene_depth.h"
 #include "ui_world.h"
 #include "../vr/interactionstate.h"
 #include "../vr/journal_ui.h"
 #include "../vr/panel_input.h"
 #include "d2r_vr_state.h"
 #include "foveation.h"
+#include "effects_layer.h"
 #include "gaze.h"
 #include "d2rcam.h"
 #include "profile.h"
@@ -63,7 +80,8 @@
 namespace gamestate {uint32_t WeaponType();uint32_t HandsKey();uint32_t WeaponSet();uint32_t WeaponClass();uint32_t TwoHanded();uint64_t LocalPlayer();uint32_t MenuEpoch();}
 namespace gamecmd {void RequestPotion(int slot);void CancelPotion();}
 namespace gamestate {void MenuMap(bool wanted);}
-namespace gamestate {bool LeftShield();}
+namespace gamestate {bool LeftShield();framevr::dualwield::Equipment MeleeEquipment();}
+namespace combat {float GameVolume();}
 
 namespace framevr {
 using Microsoft::WRL::ComPtr;
@@ -95,8 +113,15 @@ std::atomic<uint32_t> pipelineCreates{0};
 std::atomic<double> maxPipelineMs{0};
 std::atomic<bool> deferredWait{false};
 std::atomic<bool> symmetricProjection{true};
+std::atomic<bool> turnsFromDrawnEye{true};
+std::atomic<int> turnsKeepOwn{3};   // ConfigureTurnsKeepOwn: 0 off, 1 near things only, 2 everywhere, 3 the game's effects, 4 near things and effects
+std::atomic<float> turnsKeepGap{48},turnsKeepReach{96};   // ConfigureTurnsKeepNear: a 4096-wide eye's pixels
+std::atomic<float> turnsEffectsLevel{.02f},turnsEffectsReach{32};   // ConfigureTurnsKeepEffects: the layer's level; a 4096-wide eye's pixels
 std::atomic<bool> eyeTracking{false};
 std::atomic<bool> motionControls{false};
+// Stamped each focused XR input while motion controls are on (menus included).
+// Lock-free for other threads; desktop and flat play never stamp it.
+std::atomic<uint64_t> vrGameplayAt{0};
 gameplay::Engine motion;
 skills::HandControls handControls;
 skills::HandOutput handOutput;
@@ -112,7 +137,133 @@ gameplay::Output motionOutput;
 interaction::Engine interactions;
 interaction::Input interactionInput;
 interaction::Output interactionOutput;
+// Blood on the visor: state on the frame thread, artwork composed in the
+// background, one head-locked quad directly above the world.
+blood::Engine bloodScreen;
+blood::Output bloodOutput;
+struct BloodJob {uint32_t visible=0;std::array<float,blood::Placements> age{},opacity{};};
+struct BloodImage {std::vector<uint8_t> pixels;uint32_t visible=0;};
+LatestWorker<BloodJob,BloodImage> bloodPainter([](const BloodJob& job) {
+    // Decoded and placed once, on this thread; read-only afterwards.
+    static const auto patches=[]{
+        const auto strip=interaction::BloodArt(blood::StripWidth,blood::StripHeight);
+        return blood::Prepare(strip.empty()?blood::FallbackStrip():strip);
+    }();
+    return BloodImage{blood::Compose(patches,job.visible,job.age,job.opacity),job.visible};
+});
+XrSwapchain bloodChain=XR_NULL_HANDLE;
+uint64_t bloodPaintKey=~0ull,bloodRequestedKey=~0ull,bloodPaintRequest=0;
+uint32_t bloodShown=0; // splats in the uploaded image
+ULONGLONG bloodPaintAt=0;
+bool bloodAtlasPending=false,bloodImageReady=false;
+// Guard strain light: soft white at the rim, directly beneath the blood. Fed by
+// the game thread's blocks and the guard tick; painted small in the background.
+strain::Engine guardStrain;
+strain::Output strainOutput;
+std::mutex strainTuningMutex;strain::Tuning strainTuning;
+std::atomic<float> strainRecoverSeconds{1.5f};   // [gameplay] guard_strain_recover_ms; 0 = only lowering drains
+std::atomic<unsigned> guardBlockEvents{0},guardParryEvents{0},guardBlockWeight{0}; // weight in 1/1000ths
+std::atomic<bool> guardBroken{false};   // the game thread's chip check
+std::atomic<ULONGLONG> guardStateAt{0};std::atomic<bool> guardEligible{false},guardRaised{false};
+strain::Painter strainPainter;
+XrSwapchain strainChain=XR_NULL_HANDLE;
+uint64_t strainPaintKey=~0ull,strainPaintSession=0;
+ULONGLONG strainPaintAt=0;
+bool strainAtlasPending=false,strainImageReady=false,strainSlotReported=false;
+// Low-life heartbeat: its own waveOut stream, since PlaySound plays one sound
+// per process and would cut off the riposte. Frame thread only. Each buffer is
+// one beat period; the next is queued just before the current one ends, so
+// loudness and tempo follow life beat by beat and stop with it.
+std::mutex heartMutex;heartbeat::Tuning heartTuning;
+std::shared_ptr<const heartbeat::Pcm> heartSource=std::make_shared<heartbeat::Pcm>(heartbeat::BuiltIn());
+std::wstring heartFile=L"?";   // never a real path: the first configure loads the built-in beat
+const char* heartSourceName="built-in recording"; // for the first "started" line (under heartMutex)
+heartbeat::Level heartLevel;double heartAt=0;
+heartbeat::Hush heartHush;float heartHealth=-1;   // wiped visor; last fresh life, for hits
+void Say(const char* msg);   // logging, defined below
+class HeartStream {
+    using OpenFn=MMRESULT(WINAPI*)(LPHWAVEOUT,UINT,LPCWAVEFORMATEX,DWORD_PTR,DWORD_PTR,DWORD);
+    using HeaderFn=MMRESULT(WINAPI*)(HWAVEOUT,LPWAVEHDR,UINT);
+    using PositionFn=MMRESULT(WINAPI*)(HWAVEOUT,LPMMTIME,UINT);
+    using HandleFn=MMRESULT(WINAPI*)(HWAVEOUT);
+    OpenFn open=nullptr;HeaderFn prepare=nullptr,unprepare=nullptr,write=nullptr;PositionFn position=nullptr;HandleFn reset=nullptr,close=nullptr;
+    bool loaded=false;
+    HWAVEOUT out=nullptr;int rate=0,channels=0;
+    uint64_t queuedEnd=0; // frames written since open
+    struct Buffer {WAVEHDR header{};std::vector<int16_t> pcm;};
+    std::deque<std::unique_ptr<Buffer>> buffers;
+    bool Load() {
+        if(loaded)return open!=nullptr;
+        loaded=true;
+        if(HMODULE m=LoadLibraryW(L"winmm.dll")) {
+            open=reinterpret_cast<OpenFn>(GetProcAddress(m,"waveOutOpen"));prepare=reinterpret_cast<HeaderFn>(GetProcAddress(m,"waveOutPrepareHeader"));
+            unprepare=reinterpret_cast<HeaderFn>(GetProcAddress(m,"waveOutUnprepareHeader"));write=reinterpret_cast<HeaderFn>(GetProcAddress(m,"waveOutWrite"));
+            position=reinterpret_cast<PositionFn>(GetProcAddress(m,"waveOutGetPosition"));
+            reset=reinterpret_cast<HandleFn>(GetProcAddress(m,"waveOutReset"));close=reinterpret_cast<HandleFn>(GetProcAddress(m,"waveOutClose"));
+        }
+        if(!(open&&prepare&&unprepare&&write&&position&&reset&&close)){open=nullptr;Say("Frame low-life heartbeat: winmm waveOut unavailable; heartbeat silent");}
+        return open!=nullptr;
+    }
+    uint64_t Played() {
+        MMTIME t{};t.wType=TIME_SAMPLES;
+        if(!out||position(out,&t,sizeof t)!=MMSYSERR_NOERROR||t.wType!=TIME_SAMPLES)return queuedEnd;
+        return t.u.sample;
+    }
+public:
+    void Reap() {
+        while(!buffers.empty()&&(buffers.front()->header.dwFlags&WHDR_DONE)) {
+            unprepare(out,&buffers.front()->header,sizeof(WAVEHDR));buffers.pop_front();
+        }
+    }
+    // Frames still to play of what is queued.
+    uint64_t Remaining() {if(!out||buffers.empty())return 0;const auto p=Played();return queuedEnd>p?queuedEnd-p:0;}
+    bool Queue(int sourceRate,int sourceChannels,std::vector<int16_t>&& pcm) {
+        if(pcm.empty()||!Load())return false;
+        if(out&&(sourceRate!=rate||sourceChannels!=channels))Stop();
+        if(!out) {
+            WAVEFORMATEX f{};f.wFormatTag=WAVE_FORMAT_PCM;f.nChannels=WORD(sourceChannels);f.nSamplesPerSec=DWORD(sourceRate);
+            f.wBitsPerSample=16;f.nBlockAlign=WORD(sourceChannels*2);f.nAvgBytesPerSec=f.nSamplesPerSec*f.nBlockAlign;
+            if(open(&out,WAVE_MAPPER,&f,0,0,CALLBACK_NULL)!=MMSYSERR_NOERROR){out=nullptr;return false;}
+            rate=sourceRate;channels=sourceChannels;queuedEnd=0;
+        }
+        auto b=std::make_unique<Buffer>();b->pcm=std::move(pcm);
+        b->header.lpData=reinterpret_cast<LPSTR>(b->pcm.data());b->header.dwBufferLength=DWORD(b->pcm.size()*sizeof(int16_t));
+        if(prepare(out,&b->header,sizeof(WAVEHDR))!=MMSYSERR_NOERROR)return false;
+        if(write(out,&b->header,sizeof(WAVEHDR))!=MMSYSERR_NOERROR){unprepare(out,&b->header,sizeof(WAVEHDR));return false;}
+        queuedEnd+=b->pcm.size()/size_t(channels);buffers.push_back(std::move(b));
+        return true;
+    }
+    int Rate() const {return rate;}
+    void Stop() {
+        if(!out)return;
+        reset(out);   // marks every queued buffer done
+        for(auto& b:buffers)unprepare(out,&b->header,sizeof(WAVEHDR));
+        buffers.clear();close(out);out=nullptr;rate=channels=0;queuedEnd=0;
+    }
+    ~HeartStream(){Stop();}
+} heartStream;
+bool heartPlaying=false;
+// Guard break: a bone snap on its own stream, so neither the heartbeat nor the
+// riposte (PlaySound) cuts it off. Frame thread only; source under breakMutex.
+HeartStream breakStream;
+std::mutex breakMutex;std::shared_ptr<const heartbeat::Pcm> breakSource;float breakVolume=1;
+std::wstring breakFile=L"?";   // never a real path: the first configure loads the built-in snap
+void PlayGuardBreak() {
+    std::shared_ptr<const heartbeat::Pcm> source;float volume=0;
+    {std::lock_guard lock(breakMutex);source=breakSource;volume=breakVolume;}
+    if(!source||source->samples.empty()||!(volume>0))return;
+    const float gain=volume*combat::GameVolume();   // the game's Master x Combat sliders
+    if(!(gain>0))return;
+    std::vector<int16_t> pcm(source->samples.size());
+    // The heartbeat's soft limiter: guard_break_volume above 100 bends peaks instead of clipping.
+    for(size_t i=0;i<pcm.size();++i)pcm[i]=int16_t(std::lround(heartbeat::Limit(float(source->samples[i])*gain/32768.f)*32767.f));
+    breakStream.Reap();
+    if(!breakStream.Queue(source->rate,source->channels,std::move(pcm)))Say("Frame guard break: sound did not play");
+}
 XrSwapchain interactionChain=XR_NULL_HANDLE;
+XrSwapchain companionChain=XR_NULL_HANDLE;
+bool companionAtlasPending=false,companionPaintValid=false;
+interaction::PaintContext companionPaintContext{};
 XrSwapchain compassChain=XR_NULL_HANDLE;
 compass::Heading wristHeading;
 bool compassFrame=false,compassAtlasReady=false;
@@ -128,9 +279,76 @@ settings::InputGate settingsInputGate;
 settings::Hit settingsHover;
 std::atomic<bool> settingsOpen{false};
 bool settingsAtlasPending=false,settingsImageReady=false;
-uint64_t settingsPaintRevision=~0ull,settingsSession=0;
-int settingsPaintHover=-1,settingsPaintStatus=-1;
+uint64_t settingsSession=0;
+settings::HoverHelp settingsHelp;
+int settingsHelpVisible=settings::NoHelp;
+// The game's own video options for the Perf page's warnings and line, re-read at most
+// every 2 s while VR Settings is open and only when the game has saved them:
+// the mod's own Settings.json (settings::ModSettingsFile), or the unmodded
+// game's while the mod has none yet.
+settings::GameVideo GameVideoOptions(ULONGLONG now) {
+    static std::wstring modded,unmodded;
+    static const bool found=[]{
+        PWSTR dir=nullptr;std::wstring savedGames;
+        if(SUCCEEDED(SHGetKnownFolderPath(FOLDERID_SavedGames,0,nullptr,&dir)))savedGames=dir;
+        if(dir)CoTaskMemFree(dir);
+        if(savedGames.empty())return false;
+        wchar_t plugin[MAX_PATH]{};HMODULE self=nullptr;
+        if(GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS|GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                              reinterpret_cast<LPCWSTR>(&GameVideoOptions),&self))GetModuleFileNameW(self,plugin,MAX_PATH);
+        unmodded=savedGames+L"\\Diablo II Resurrected\\Settings.json";
+        modded=settings::ModSettingsFile(savedGames,plugin);
+        if(modded.empty())modded=unmodded;
+        char line[400];std::snprintf(line,sizeof line,"Frame VR settings: the game's video options from %ls",modded.c_str());
+        Say(line);
+        return true;
+    }();
+    static settings::GameVideo seen{};static ULONGLONG checkAt=0;static FILETIME written{};
+    if(now<checkAt||!found)return seen;
+    checkAt=now+2000;
+    const std::wstring& path=GetFileAttributesW(modded.c_str())!=INVALID_FILE_ATTRIBUTES?modded:unmodded;
+    WIN32_FILE_ATTRIBUTE_DATA a{};
+    if(!GetFileAttributesExW(path.c_str(),GetFileExInfoStandard,&a)){written={};return seen={};}
+    if(!CompareFileTime(&a.ftLastWriteTime,&written))return seen;
+    std::string json;
+    if(FILE* f=_wfopen(path.c_str(),L"rb")){char buf[4096];size_t n;while((n=fread(buf,1,sizeof buf,f))>0&&json.size()<256*1024)json.append(buf,n);fclose(f);}
+    else return seen;
+    written=a.ftLastWriteTime;seen=settings::ParseGameVideo(json);
+    return seen;
+}
 ULONGLONG settingsPaintAt=0;
+// VR Settings and body calibration are painted on a worker: GDI text over the
+// whole 1744 x 1024 page, with a new bitmap and fonts each time, held the frame
+// thread on every hover change. The frame thread uploads the finished picture,
+// and the painted state is what that picture shows, so a click still waits for
+// the page it lands on.
+struct SettingsPaintJob {
+    settings::Model model;settings::Hit hover;std::string status;controllers::Labels detected;
+    int help=settings::NoHelp;settings::GameVideo game{};bool monoAudio=false;
+    settings::PerformanceReadout performance{};bool depthRestart=false;
+    bool calibrating=false;calibration::Flow body;
+};
+struct SettingsPainted {std::vector<uint8_t> pixels;double paintMs=0;};
+LatestWorker<SettingsPaintJob,SettingsPainted> settingsPainter([](const SettingsPaintJob& job) {
+    const auto start=hookmetrics::Nanos();
+    auto pixels=job.calibrating?settings::Paint(job.model,{},"",&job.body):
+        settings::Paint(job.model,job.hover,job.status.c_str(),nullptr,job.detected,job.help,job.game,job.monoAudio,job.performance,job.depthRestart);
+    return SettingsPainted{std::move(pixels),double(hookmetrics::Nanos()-start)/1e6};
+});
+struct SettingsPicture {
+    uint64_t revision=~0ull;int hover=-1,status=-1,help=settings::NoHelp,game=-1;
+    uint64_t performance=0;bool depthRestart=false;settings::GameVideo gameVideo{};   // the Perf page's
+    bool operator==(const SettingsPicture&)const=default;
+};
+SettingsPicture settingsPainted;     // what the picture shown has
+SettingsPicture settingsRequested;   // what the outstanding settings request paints
+int calibrationRequestedKey=-1;      // the same for calibration
+// The Perf page's numbers: each second's frames as NoteFrame gets them.
+struct PerformanceWindow {double game=0,wait=0,draw=0,vr=0,period=0;uint32_t frames=0,periods=0,turns=0;ULONGLONG since=0,last=0;} performanceWindow;
+double performanceBudget=0;   // the headset's frame, from the last frame that had one
+settings::PerformanceReadout performance;
+uint64_t performanceSerial=0;ULONGLONG performanceAt=0;
+uint64_t settingsPaintRequest=0;
 XrPosef settingsPose{};
 constexpr float settingsWidth=.95f,settingsHeight=settingsWidth*settings::Height/settings::Width;
 DXGI_FORMAT atlasFormat=DXGI_FORMAT_R8G8B8A8_UNORM_SRGB;
@@ -142,21 +360,33 @@ bool interactionPaintValid=false;
 LatestWorker<interaction::PaintJob,interaction::PaintedAtlas> interactionPainter([](const interaction::PaintJob& job) {
     const auto start=hookmetrics::Nanos();
     auto pixels=interaction::Paint(job.snapshot,job.output,job.selection,job.labels);
-    return interaction::PaintedAtlas{std::move(pixels),double(hookmetrics::Nanos()-start)/1e6};
+    auto companionPixels=wriststatus::Rows(job.snapshot.companions,job.snapshot.effects)?interaction::PaintWristStatus(job.snapshot.companions,job.snapshot.effects):std::vector<uint8_t>{};
+    return interaction::PaintedAtlas{std::move(pixels),double(hookmetrics::Nanos()-start)/1e6,std::move(companionPixels)};
 });
 uint64_t interactionPrefetchSession=0;
 uint32_t interactionPrefetchRevision=~0u;
 ULONGLONG interactionPaintAt=0;
 bool interactionAtlasPending=false;
-struct AtlasUpload {
-    ComPtr<ID3D12Resource> upload;
+// An atlas upload's buffer (kept mapped) and command list, reused once the GPU
+// is past them: making a 4 MB upload heap and a command list on each refresh,
+// and clearing the buffer first, held the frame thread 5.4-7 ms a refresh
+// (Frame UI refresh, 2026-10-19).
+struct AtlasStaging {
+    ComPtr<ID3D12Resource> upload;uint8_t* data=nullptr;UINT64 bytes=0;
     ComPtr<ID3D12CommandAllocator> allocator;
     ComPtr<ID3D12GraphicsCommandList> commands;
+};
+struct AtlasUpload {
+    AtlasStaging staging;
     uint64_t fence=0;
 };
 std::vector<AtlasUpload> atlasUploads;
+std::vector<AtlasStaging> atlasStagingFree;   // the GPU is done with these
+constexpr size_t AtlasStagingKept=6;
+// Where an upload's frame-thread time went; UploadAtlas adds to it.
+struct AtlasTiming {double image=0,buffers=0,copy=0,record=0,submit=0;int made=0;} atlasTiming;
 
-melee::PoseHistory meleePoses;
+melee::PoseHistory meleePoses,offhandPoses;
 melee::PoseHistory shieldPoses;
 struct ShieldCast {
     weaponskills::ContactContext context{};uint64_t at=0;uint32_t target=0;
@@ -165,6 +395,11 @@ struct ShieldCast {
 };
 ShieldCast shieldCast;
 weaponskills::Pulse shieldPulse;
+// [bow] quiver: face-button arrow skills load the following physical arrows.
+std::atomic<bool> quiverEnabled{true},quiverPreview{true};
+weaponskills::Quiver quiver;
+weaponskills::Loaded quiverArrow{}; // the skill the next release carries, if any
+int quiverReportedSlot=-1; // one diagnostic line per face-button press
 uint64_t shieldFeedbackAt=0,cueChangedAt=0,volleyRequestedAt=0;
 bool shieldRefused=false;
 interaction::SkillCue previousCue{};
@@ -175,11 +410,19 @@ uint64_t bowSequence=0;
 bowflight::Shot bowPending{},bowReadyShot{},bowPreviewPose{};
 bool bowPreviewVisible=false;
 bool bowNeedsWorld=false,bowHasShot=false;
+// The latest centre-view stage-to-world frame (View, eye<0). Input reads it
+// for the room height of the world floor and to place a thrown bottle's
+// landing point in world metres; both run under the transport mutex.
+struct StageWorld {bool valid=false;math::Vec origin{},hero{};math::Quat base{0,0,0,1};float upm=0,eyeHeight=0;uint64_t at=0;} stageWorld;
+bool crossbowFire=false;
+uint64_t crossbowActivation=0,crossbowTakenAt=0;
 bowflight::Shot spellReadyShot[2]{};
 bool spellHasShot[2]{};
 uint64_t spellResolvedAt[2]{};
-std::atomic<ULONGLONG> meleeImpactAt{0},shieldImpactAt{0};
+std::atomic<ULONGLONG> meleeImpactAt[2]{},shieldImpactAt{0},parryMissAt{0};
 XrSwapchain gameplayChain=XR_NULL_HANDLE;
+std::mutex sewerPromptMutex;
+sewerprompt::Target sewerPrompt;
 XrPosef palettePose{};
 constexpr float paletteWidth=.45f,paletteHeight=.45f;
 ULONGLONG motionAt=0;
@@ -211,6 +454,7 @@ XrPosef head{};
 math::Vec origin{};
 bool haveOrigin=false;
 GripStickButton leftMenuButton;
+lootlabels::Shortcut lootLabelShortcut;
 MenuTriggerGate menuTriggerGate;
 PressEdge inventoryButton,menuButton;
 float lastRecenter=0;
@@ -236,11 +480,71 @@ struct Eye {
 std::array<Eye,2> eyes;
 Eye uiEye;
 Eye mapEye;
+// The wrist map's view: Isometric (the game's) or Top-down, and on the
+// top-down map whether it turns with you. Configured under VR Settings > HUD.
+bool MapTopDownOn(){return vrsettings::Read().values[settings::MapTopDown]>.5f;}
+bool MapTurnOn(){return vrsettings::Read().values[settings::MapRotate]>.5f;}
 bool mapSupported=false;
 constexpr uint32_t mapSide=512;
+// Desktop mirror: in stereo the game window presents alternating eye frames,
+// so the monitor flickers between both eyes (double vision). After the headset
+// takes each right frame, the left eye image (still acquired until EndPair) is
+// copied back over it, so the monitor shows only the left eye. [render]
+// desktop_one_eye turns it off; eye images need TRANSFER_SRC for it.
+bool mirrorSupported=false,mirrorMono=false;
+// Eyes by turns: a frame draws one eye. The other is turned from its kept
+// image to this frame's head (TurnEye) and goes at this frame's pose, as from
+// a pair; without the GPU pass, its last released image goes again at the
+// pose and FOV it was drawn with (lastEyes). A frame without a stereo layer
+// forgets both, so the next draws a pair.
+bool turnFrame=false;
+// Replay (Stereo rendering 3): this pair's right eye is the left one moved by
+// replayGap (metres) along the left eye's x - ReplayRight puts views[1] there,
+// so the camera, the potions and the layer all have it. replayShift: that gap
+// in the world's units, from View.
+bool replayPair=false;
+float replayGap=0,replayShift=0;
+// Where an eye stood and how it was turned in the game's world (View), and its
+// near plane (Projection): By turns moves the eye not drawn from there.
+struct EyeWorld {math::Vec at{};math::Quat turn{0,0,0,1};float nearPlane=0;bool ok=false;math::Vec hero{};};
+// base: the body's turn into the world the eye was drawn with (View), so a
+// stick, mouse or recentre turn since is turned out as well as the head's.
+struct LastEye {XrPosef pose{};XrFovf fov{};bool ok=false;math::Quat base{0,0,0,1};EyeWorld world{};};
+std::array<LastEye,2> lastEyes{};
+std::array<math::Quat,2> viewBase{{{0,0,0,1},{0,0,0,1}}};   // each eye's, as View last built it
+std::array<EyeWorld,2> viewWorld{};   // each eye's this frame
+// While the option is on, each eye's image as shown, kept by Copy (KeepTurn):
+// a released swapchain image is the runtime's. Also the desktop mirror's left
+// image on the frames that draw the right.
+bool keepTurns=false;
+std::array<ComPtr<ID3D12Resource>,2> turnImages;
+std::array<bool,2> turnKept{};
+bool turnImagesFailed=false,turnWarpTried=false;
+DXGI_FORMAT turnFormat=DXGI_FORMAT_UNKNOWN;
+TurnWarp turnWarp;
+// Built once in the background as a session is set up, long before a frame
+// first turns an eye: that compiles its shaders for the process and has the
+// driver build its pipelines once. On the render thread these held it about
+// 215 ms in a new process and 112 ms at every later session; then about 3 ms
+// (RTX 5090 / Ryzen 9 5950X, 2026-10-20).
+struct TurnWarmJob {ComPtr<ID3D12Device> device;DXGI_FORMAT format=DXGI_FORMAT_UNKNOWN;};
+LatestWorker<TurnWarmJob,bool> turnCompiler([](const TurnWarmJob& job){TurnWarp warm;return warm.Initialize(job.device.Get(),job.format,nullptr);});
+// By turns: each eye's scene depth as drawn, beside its kept image (KeepDepth).
+bool keepDepth=false;
+struct KeptDepth {ComPtr<ID3D12Resource> texture;DXGI_FORMAT format=DXGI_FORMAT_UNKNOWN;float scale[2]{1,1};bool ok=false;};
+std::array<KeptDepth,2> turnDepths;
+// By turns: each eye's interface as its pass drew it (hud::TakenInterface),
+// laid back over its picture by Copy and, turned to this frame's head, over
+// the eye not drawn by TurnEye: into turnTarget (typeless, so the interface
+// goes over it UNORM as the game blends it), then to its swapchain image.
+std::array<ComPtr<ID3D12Resource>,2> turnLayers;
+std::array<bool,2> layerKept{};
+ComPtr<ID3D12Resource> turnTarget;
+bool layersFailed=false;
+TurnCounts turnCounts;
 std::atomic<bool> uiSupported{false};
 bool journalMode=false,spatialMode=false,workspacePlaced=false,opaqueMenuMode=false,upperBandMenuMode=false;
-bool npcChoicesMode=false,npcChoicesCropped=false;
+bool npcChoicesMode=false;
 UiBlit uiBlit;
 UiBlit mapBlit; // Own descriptors: native menu and map copies may share a frame.
 potions::Models potionModels;
@@ -293,11 +597,14 @@ Block<D2RVR_Actions> actions;
 XrActionSet actionSet=XR_NULL_HANDLE;
 XrAction gripPose=XR_NULL_HANDLE, stick=XR_NULL_HANDLE, trigger=XR_NULL_HANDLE, squeeze=XR_NULL_HANDLE;
 XrAction aimPose=XR_NULL_HANDLE;
-XrAction haptic=XR_NULL_HANDLE;
+haptics::Actions hapticActions;
 haptics::Pulses hapticPulses;
+haptics::CastEvents spellHaptics;
+haptics::RumbleLease controllerRumbleLease;
 XrAction primary=XR_NULL_HANDLE, secondary=XR_NULL_HANDLE, stickClick=XR_NULL_HANDLE, menu=XR_NULL_HANDLE;
 XrPath hands[2]{}; // right, left, matching the existing wire format.
 XrSpace handSpaces[2]{};
+math::Vec handVelocity[2]{};bool handVelocityKnown[2]{};
 XrSpace aimSpace=XR_NULL_HANDLE,leftAimSpace=XR_NULL_HANDLE;
 XrPosef menuPose{};
 bool menuPlaced=false;
@@ -309,9 +616,28 @@ constexpr float panelWidth=2.0f,panelDistance=panels::MainDistance;
 XrSwapchain pointerChain=XR_NULL_HANDLE;
 XrPosef beamPose{},dotPose{};
 float beamLength=0;
+// 2026-10-19: one remembered push/pull for every game menu, kept as an
+// offset on each default placement (the main menu sits 15 cm beyond the
+// workspace). Choosing another Menu distance preset clears it. VR Settings
+// keeps its own free grab, relative to where you face when it opens.
+panels::Grab panelGrab;
+panels::Offset menuOffset,settingsOffset;
+panels::Placement uiBase{},menuBase{},settingsBase{};
 
 math::Quat Q(XrQuaternionf q) { return {q.x,q.y,q.z,q.w}; }
 math::Vec V(XrVector3f p) { return {p.x,p.y,p.z}; }
+XrPosef PanelPose(panels::Placement p) {
+    return {{p.orientation.x,p.orientation.y,p.orientation.z,p.orientation.w},{p.position.x,p.position.y,p.position.z}};
+}
+XrPosef Placed(panels::Placement base,panels::Offset offset) {
+    return PanelPose(panels::Apply(base,panels::Limit(base,offset,V(head.position))));
+}
+// The grabbing hand is the laser's own pose; hit tests read the moved pose.
+bool GrabPanel(XrPosef& pose,panels::Placement base,panels::Offset& offset,bool grip,bool hit,bool click,const XrPosef& hand,float pushOnly=0) {
+    const bool owned=panelGrab.Step(grip,hit,click,{V(hand.position),Q(hand.orientation)},base,V(head.position),offset,pushOnly);
+    if(owned)pose=PanelPose(panels::Apply(base,offset));
+    return owned;
+}
 void Say(const char* msg) { if(logger) logger(msg); }
 struct PipelineStart {reshade::api::device* device=nullptr;uint64_t layout=0;double at=0;};
 thread_local PipelineStart pipelineStart;
@@ -411,7 +737,7 @@ void ReleasePanelInput() {
         if(held){INPUT up{};up.type=INPUT_MOUSE;up.mi.dwFlags=i?MOUSEEVENTF_RIGHTUP:MOUSEEVENTF_LEFTUP;SendInput(1,&up,sizeof up);held=false;}
     }
     PanelModifier(VK_CONTROL,false,controlDown);PanelModifier(VK_SHIFT,false,shiftDown);
-    panelMouse.Suspend();panelScroll={};
+    panelMouse.Suspend();panelScroll={};panelGrab.Suspend();
 }
 weaponskills::ContactContext ShieldContext(const melee::Sample& sample,uint64_t session) {
     return {session,sample.epoch,sample.skillContext,sample.equipment,sample.skillSlot,sample.skillOwner};
@@ -427,8 +753,13 @@ void CancelShieldCast() {
     if(shieldCast.issued)shieldCast.cancelled=true;else shieldCast={};
 }
 void ClearInput() {
+    settingsHelp.Clear();settingsHelpVisible=settings::NoHelp;
+    controllerRumbleLease.Update(0,false);
     hapticPulses.Cancel();
-    meleeImpactAt=shieldImpactAt=0;
+    spellHaptics.Clear();
+    lootlabels::display.Clear();
+    lootLabelShortcut.Suspend();
+    meleeImpactAt[0]=meleeImpactAt[1]=shieldImpactAt=parryMissAt=0;
     wristHeading.Reset();compassFrame=false;
     panelinput::WorldInput(false);
     gamestate::MenuMap(false);
@@ -441,7 +772,7 @@ void ClearInput() {
     potionScene={};
     elementalState.Reset();elementalScene={};
     journalPlacement.LoseTracking();
-    meleePoses.Clear();CancelShieldCast();
+    meleePoses.Clear();offhandPoses.Clear();CancelShieldCast();
     bowNeedsWorld=bowHasShot=false;
     skel::SetMotionBow(false,false,0);
     ReleaseUiKey();
@@ -460,6 +791,21 @@ bool LoadFunctions() {
     // Negotiate it directly, or use a standard Windows loader as a fallback.
     loader=LoadLibraryW(L"wineopenxr.dll");
     wineOpenXR=loader!=nullptr;
+    // The mod's own loader beside this plugin (mods\D2R-PCVR\d2rloader\plugins), then
+    // the usual search (the game folder of an older install).
+    if(!loader) {
+        HMODULE self=nullptr;
+        wchar_t path[MAX_PATH]{};
+        if(GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS|GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,reinterpret_cast<LPCWSTR>(&LoadFunctions),&self)) {
+            DWORD n=GetModuleFileNameW(self,path,MAX_PATH);
+            if(n&&n<MAX_PATH) {
+                while(n&&path[n-1]!=L'\\')--n;
+                path[n]=0;
+                if(wcscat_s(path,L"openxr_loader.dll")==0&&GetFileAttributesW(path)!=INVALID_FILE_ATTRIBUTES)
+                    loader=LoadLibraryExW(path,nullptr,LOAD_WITH_ALTERED_SEARCH_PATH);
+            }
+        }
+    }
     if(!loader) loader=LoadLibraryW(L"openxr_loader.dll");
     if(!loader) { Say("Frame OpenXR: no WineOpenXR/Windows OpenXR loader; use Proton 11 or Experimental");return false; }
     getProc=reinterpret_cast<PFN_xrGetInstanceProcAddr>(GetProcAddress(loader,"xrGetInstanceProcAddr"));
@@ -528,22 +874,23 @@ bool SetupActions() {
     std::strcpy(ci.actionSetName,"d2r");std::strcpy(ci.localizedActionSetName,"Diablo II");
     if(!Check(pCreateActionSet(instance,&ci,&actionSet),"create action set")) return false;
     if(!MakeAction(gripPose,"hands",XR_ACTION_TYPE_POSE_INPUT) || !MakeAction(stick,"sticks",XR_ACTION_TYPE_VECTOR2F_INPUT) ||
-       !MakeAction(aimPose,"menu_aim",XR_ACTION_TYPE_POSE_INPUT) || !MakeAction(haptic,"feedback",XR_ACTION_TYPE_VIBRATION_OUTPUT) ||
+       !MakeAction(aimPose,"menu_aim",XR_ACTION_TYPE_POSE_INPUT) || !Check(hapticActions.Create(actionSet,pCreateAction),"create hand haptics") ||
        !MakeAction(trigger,"triggers",XR_ACTION_TYPE_FLOAT_INPUT) || !MakeAction(squeeze,"grips",XR_ACTION_TYPE_FLOAT_INPUT) ||
        !MakeAction(primary,"primary",XR_ACTION_TYPE_BOOLEAN_INPUT) || !MakeAction(secondary,"secondary",XR_ACTION_TYPE_BOOLEAN_INPUT) ||
        !MakeAction(stickClick,"stick_click",XR_ACTION_TYPE_BOOLEAN_INPUT) || !MakeAction(menu,"menu",XR_ACTION_TYPE_BOOLEAN_INPUT)) return false;
+    Say("Frame haptics: separate feedback_right and feedback_left actions; apply and timed stop use each hand's own output");
     for(const auto* profile:{"/interaction_profiles/valve/index_controller","/interaction_profiles/oculus/touch_controller","/interaction_profiles/microsoft/motion_controller",controllers::FrameProfile}) {
         const bool frameController=std::string_view(profile)==controllers::FrameProfile;
         if(frameController&&!frameControllerExtension)continue;
         const bool index=std::strstr(profile,"index"), touch=std::strstr(profile,"touch");
         const auto layout=controllers::Detect(profile);
         std::vector<XrActionSuggestedBinding> bindings;
+        if(!Check(hapticActions.Bind(instance,pStringToPath,bindings),"bind hand haptics"))return false;
         for(int i=0;i<2;++i) {
             const std::string base=i==0?"/user/hand/right/input/":"/user/hand/left/input/";
             auto bind=[&](XrAction a,const char* suffix){bindings.push_back({a,Path((base+suffix).c_str())});};
             bind(gripPose,"grip/pose");bind(stick,"thumbstick");bind(stickClick,"thumbstick/click");bind(trigger,"trigger/value");
             bind(aimPose,"aim/pose");
-            bindings.push_back({haptic,Path((std::string(i==0?"/user/hand/right":"/user/hand/left")+"/output/haptic").c_str())});
             // Motion controllers expose squeeze/click (boolean), so omit our float grip there.
             if(index||touch||frameController) bind(squeeze,index?"squeeze/force":"squeeze/value");
             if(index||touch||frameController) {
@@ -595,21 +942,40 @@ bool UploadAtlas(XrSwapchain& chain,DXGI_FORMAT eyeFormat,int atlasWidth,int atl
     if(!Check(pEnumerateSwapchainImages(chain,0,&count,nullptr),"count static atlas images"))return false;
     std::vector<XrSwapchainImageD3D12KHR> images(count,{XR_TYPE_SWAPCHAIN_IMAGE_D3D12_KHR});
     if(!Check(pEnumerateSwapchainImages(chain,count,&count,reinterpret_cast<XrSwapchainImageBaseHeader*>(images.data())),"get static atlas images"))return false;
+    double at=Milliseconds();
+    const auto stage=[&](double& into){const double t=Milliseconds();into+=t-at;at=t;};
     uint32_t index=0;XrSwapchainImageAcquireInfo ai{XR_TYPE_SWAPCHAIN_IMAGE_ACQUIRE_INFO};
     if(!Check(pAcquireSwapchainImage(chain,&ai,&index),"acquire static atlas atlas"))return false;
     XrSwapchainImageWaitInfo wi{XR_TYPE_SWAPCHAIN_IMAGE_WAIT_INFO};wi.timeout=XR_INFINITE_DURATION;
     if(!Check(pWaitSwapchainImage(chain,&wi),"wait static atlas atlas"))return false;
+    stage(atlasTiming.image);
     auto* dest=images[index].texture;const auto desc=dest->GetDesc();
     D3D12_PLACED_SUBRESOURCE_FOOTPRINT footprint{};UINT64 bytes=0;
     device->GetCopyableFootprints(&desc,0,1,0,&footprint,nullptr,nullptr,&bytes);
-    D3D12_HEAP_PROPERTIES heap{};heap.Type=D3D12_HEAP_TYPE_UPLOAD;
-    D3D12_RESOURCE_DESC uploadDesc{};uploadDesc.Dimension=D3D12_RESOURCE_DIMENSION_BUFFER;uploadDesc.Width=bytes;
-    uploadDesc.Height=uploadDesc.DepthOrArraySize=uploadDesc.MipLevels=uploadDesc.SampleDesc.Count=1;uploadDesc.Layout=D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
-    ComPtr<ID3D12Resource> upload;
-    if(!Hr(device->CreateCommittedResource(&heap,D3D12_HEAP_FLAG_NONE,&uploadDesc,D3D12_RESOURCE_STATE_GENERIC_READ,nullptr,IID_PPV_ARGS(&upload)),"create static atlas upload"))return false;
-    uint8_t* data=nullptr;D3D12_RANGE readRange{};
-    if(!Hr(upload->Map(0,&readRange,reinterpret_cast<void**>(&data)),"map static atlas upload"))return false;
-    std::memset(data,0,size_t(bytes));
+    // The smallest kept buffer that fits, else a new one, mapped for good.
+    AtlasStaging staging;
+    {
+        auto best=atlasStagingFree.end();
+        for(auto it=atlasStagingFree.begin();it!=atlasStagingFree.end();++it)
+            if(it->bytes>=bytes&&(best==atlasStagingFree.end()||it->bytes<best->bytes))best=it;
+        if(best!=atlasStagingFree.end()){staging=std::move(*best);atlasStagingFree.erase(best);}
+    }
+    if(!staging.upload) {
+        D3D12_HEAP_PROPERTIES heap{};heap.Type=D3D12_HEAP_TYPE_UPLOAD;
+        D3D12_RESOURCE_DESC uploadDesc{};uploadDesc.Dimension=D3D12_RESOURCE_DIMENSION_BUFFER;uploadDesc.Width=bytes;
+        uploadDesc.Height=uploadDesc.DepthOrArraySize=uploadDesc.MipLevels=uploadDesc.SampleDesc.Count=1;uploadDesc.Layout=D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
+        if(!Hr(device->CreateCommittedResource(&heap,D3D12_HEAP_FLAG_NONE,&uploadDesc,D3D12_RESOURCE_STATE_GENERIC_READ,nullptr,IID_PPV_ARGS(&staging.upload)),"create static atlas upload"))return false;
+        D3D12_RANGE readRange{};
+        if(!Hr(staging.upload->Map(0,&readRange,reinterpret_cast<void**>(&staging.data)),"map static atlas upload"))return false;
+        staging.bytes=bytes;
+        if(!Hr(device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT,IID_PPV_ARGS(&staging.allocator)),"create static atlas allocator")||
+           !Hr(device->CreateCommandList(0,D3D12_COMMAND_LIST_TYPE_DIRECT,staging.allocator.Get(),nullptr,IID_PPV_ARGS(&staging.commands)),"create static atlas list")||
+           !Hr(staging.commands->Close(),"close new static atlas list"))return false;
+        ++atlasTiming.made;
+    }
+    stage(atlasTiming.buffers);
+    // Only the footprint's rows are copied, so the rest of the buffer need not be cleared.
+    uint8_t* const data=staging.data;
     const bool bgra=eyeFormat==DXGI_FORMAT_B8G8R8A8_UNORM_SRGB||eyeFormat==DXGI_FORMAT_B8G8R8A8_UNORM;
     for(int y=0;y<atlasHeight;++y) {
       if(!bgra) {std::memcpy(data+footprint.Offset+y*footprint.Footprint.RowPitch,pixels.data()+y*atlasWidth*4,atlasWidth*4);continue;}
@@ -619,26 +985,28 @@ bool UploadAtlas(XrSwapchain& chain,DXGI_FORMAT eyeFormat,int atlasWidth,int atl
         pixel[0]=rgba[bgra?2:0];pixel[1]=rgba[1];pixel[2]=rgba[bgra?0:2];pixel[3]=rgba[3];
       }
     }
-    upload->Unmap(0,nullptr);
-    ComPtr<ID3D12CommandAllocator> alloc;ComPtr<ID3D12GraphicsCommandList> list;
-    if(!Hr(device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT,IID_PPV_ARGS(&alloc)),"create static atlas allocator")||
-       !Hr(device->CreateCommandList(0,D3D12_COMMAND_LIST_TYPE_DIRECT,alloc.Get(),nullptr,IID_PPV_ARGS(&list)),"create static atlas list"))return false;
+    stage(atlasTiming.copy);
+    auto* list=staging.commands.Get();
+    if(!Hr(staging.allocator->Reset(),"reset static atlas allocator")||!Hr(list->Reset(staging.allocator.Get(),nullptr),"reset static atlas list"))return false;
     D3D12_RESOURCE_BARRIER barrier{};barrier.Type=D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
     barrier.Transition={dest,D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES,D3D12_RESOURCE_STATE_RENDER_TARGET,D3D12_RESOURCE_STATE_COPY_DEST};
     list->ResourceBarrier(1,&barrier);
-    D3D12_TEXTURE_COPY_LOCATION src{};src.pResource=upload.Get();src.Type=D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT;src.PlacedFootprint=footprint;
+    D3D12_TEXTURE_COPY_LOCATION src{};src.pResource=staging.upload.Get();src.Type=D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT;src.PlacedFootprint=footprint;
     D3D12_TEXTURE_COPY_LOCATION dst{};dst.pResource=dest;dst.Type=D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX;
     list->CopyTextureRegion(&dst,0,0,0,&src,nullptr);
     std::swap(barrier.Transition.StateBefore,barrier.Transition.StateAfter);list->ResourceBarrier(1,&barrier);
     if(!Hr(list->Close(),"close static atlas list"))return false;
-    ID3D12CommandList* lists[]={list.Get()};queue->ExecuteCommandLists(1,lists);
+    stage(atlasTiming.record);
+    ID3D12CommandList* lists[]={list};queue->ExecuteCommandLists(1,lists);
     if(!Hr(queue->Signal(fence.Get(),++fenceValue),"signal atlas fence"))return false;
+    stage(atlasTiming.submit);
     if(dynamic) {
-        atlasUploads.push_back({upload,alloc,list,fenceValue});
+        atlasUploads.push_back({std::move(staging),fenceValue});
         if(pending)*pending=true;else interactionAtlasPending=true;
         return true; // Released at EndPair, after the pair's existing GPU fence.
     }
     if(!WaitGpu())return false;
+    if(atlasStagingFree.size()<AtlasStagingKept)atlasStagingFree.push_back(std::move(staging));
     XrSwapchainImageReleaseInfo ri{XR_TYPE_SWAPCHAIN_IMAGE_RELEASE_INFO};
     return Check(pReleaseSwapchainImage(chain,&ri),"release static atlas atlas");
 }
@@ -655,6 +1023,9 @@ bool SetupPointer(DXGI_FORMAT eyeFormat) {
 // Native skill icons, names and belt counts require a separate read-only UI adapter.
 bool SetupGameplay(DXGI_FORMAT eyeFormat) {
     if(!interactionPainter.Start())Say("Frame UI: background painter unavailable; interaction artwork cannot refresh");
+    if(!bloodPainter.Start())Say("Frame blood visor: background painter unavailable; blood stays hidden");
+    if(!strainPainter.Start())Say("Frame guard strain: background painter unavailable; the light stays hidden");
+    if(!settingsPainter.Start())Say("Frame VR settings: background painter unavailable; VR Settings and calibration cannot be shown");
     const auto compassPixels=compass::Paint();
     compassAtlasReady=!compassPixels.empty()&&UploadAtlas(compassChain,eyeFormat,compass::Width,compass::Height,compassPixels);
     if(!compassAtlasReady)Say("Frame wrist compass: static atlas unavailable");
@@ -696,6 +1067,7 @@ bool SetupGameplay(DXGI_FORMAT eyeFormat) {
     label(L"Trigger: nock",{576,768,1024,853});
     label(L"Pull back",{576,853,1024,938});
     label(L"Release to shoot",{576,938,1024,1024});
+    sewerprompt::Paint(dc,sewerprompt::AtlasX,sewerprompt::AtlasY);
     GdiFlush();
     std::vector<uint8_t> rgba(1024*1024*4);const auto* b=static_cast<const uint8_t*>(bits);
     for(int i=0;i<1024*1024;++i) {
@@ -768,10 +1140,18 @@ bool Initialize(reshade::api::command_queue* rq,reshade::api::swapchain* swap) {
     {char message[128];std::snprintf(message,sizeof message,"Frame OpenXR: game format %d, eye format %d",int(format),int(eyeFormat));Say(message);}
     uiSupported=std::find(formats.begin(),formats.end(),int64_t(DXGI_FORMAT_R16G16B16A16_FLOAT))!=formats.end()&&uiBlit.Initialize(device.Get(),&Say);
     mapSupported=std::find(formats.begin(),formats.end(),int64_t(DXGI_FORMAT_R16G16B16A16_FLOAT))!=formats.end()&&mapBlit.Initialize(device.Get(),&Say);
+    mirrorSupported=true;
     for(auto& e:eyes) {
         XrSwapchainCreateInfo c{XR_TYPE_SWAPCHAIN_CREATE_INFO};c.usageFlags=XR_SWAPCHAIN_USAGE_COLOR_ATTACHMENT_BIT|XR_SWAPCHAIN_USAGE_TRANSFER_DST_BIT;
         c.format=eyeFormat;c.width=width;c.height=height;c.sampleCount=1;c.faceCount=1;c.arraySize=1;c.mipCount=1;
-        if(!Check(pCreateSwapchain(session,&c,&e.chain),"create eye swapchain")) return false;
+        if(&e==&eyes[0]) {
+            c.usageFlags|=XR_SWAPCHAIN_USAGE_TRANSFER_SRC_BIT; // desktop mirror source
+            if(XR_FAILED(pCreateSwapchain(session,&c,&e.chain))) {
+                e.chain=XR_NULL_HANDLE;mirrorSupported=false;c.usageFlags&=~XrSwapchainUsageFlags(XR_SWAPCHAIN_USAGE_TRANSFER_SRC_BIT);
+                Say("Frame OpenXR: eye image cannot be a copy source; desktop shows both eyes");
+            }
+        }
+        if(!e.chain&&!Check(pCreateSwapchain(session,&c,&e.chain),"create eye swapchain")) return false;
         n=0;pEnumerateSwapchainImages(e.chain,0,&n,nullptr);e.images.resize(n,{XR_TYPE_SWAPCHAIN_IMAGE_D3D12_KHR});
         if(!Check(pEnumerateSwapchainImages(e.chain,n,&n,reinterpret_cast<XrSwapchainImageBaseHeader*>(e.images.data())),"enumerate eye textures")) return false;
         if(!Hr(device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT,IID_PPV_ARGS(&e.allocator)),"create eye copy allocator")||
@@ -785,11 +1165,15 @@ bool Initialize(reshade::api::command_queue* rq,reshade::api::swapchain* swap) {
     atlasFormat=eyeFormat;
     if(!SetupGameplay(eyeFormat))Say("Frame gameplay: palette atlas unavailable; motion controls remain disabled");
     potionModels.Initialize(device.Get(),queue.Get(),eyeFormat,width,height,&Say);
+    turnFormat=eyeFormat;
     elementalRenderer.Initialize(device.Get(),eyeFormat,width,height,&Say);
     if(!tracking.Open(D2RVR_SHARED_NAME)||!pad.Open(BW_PAD_MIRROR_NAME)||!actions.Open(D2RVR_ACTIONS_NAME)) return false;
     tracking.data->version=D2RVR_SHARED_VERSION;pad.data->version=BW_PAD_MIRROR_VERSION;actions.data->version=D2RVR_ACTIONS_VERSION;
     gameSwapchain=swap;
     char b[160];std::snprintf(b,sizeof b,"Frame OpenXR: D3D12 session ready, eyes %ux%u format %d (game format %d)",width,height,int(eyeFormat),int(format));Say(b);
+    // Only for a session that started: a failed one is shut down at once, and
+    // that would wait here for the warm-up.
+    if(turnCompiler.Start())turnCompiler.Submit({device,turnFormat});   // else the first turned eye builds it all
     return true;
 }
 void UpdateControllerLabels() {
@@ -840,7 +1224,6 @@ bool FocusGameForUi() {
 panels::Size UiSurfaceSize() {
     // The handheld journal keeps its book size; native workspaces fit in both axes.
     if(journalMode)return {uiSize,uiSize*(uiCrop[2]>0?float(uiCrop[3])/uiCrop[2]:1.3f)};
-    if(npcChoicesMode&&npcChoicesCropped)return dialogue::Size({uiCrop[0],uiCrop[1],uiCrop[2],uiCrop[3]},uiWidth,uiHeight);
     return panels::Fit(uiCrop[2]>0?unsigned(uiCrop[2]):0,uiCrop[3]>0?unsigned(uiCrop[3]):0);
 }
 XrPosef UiSurfacePose() {
@@ -885,6 +1268,11 @@ void MenuPointer(const menus::Pad& controls) {
         Say(menuNavigation.Native()?"Frame panels: native controller navigation":"Frame panels: laser navigation");
     const bool laser=!menuNavigation.Native();
     if(!laser){panelinput::UseController();pointerVisible=pointerHit=false;}
+    // The handheld journal has its own left-grip placement.
+    const bool grip=aimTracked&&laser&&!journalMode&&(controls.buttons&menus::RightBumper);
+    const bool grabbing=GrabPanel(spatialMode?uiPose:menuPose,spatialMode?uiBase:menuBase,menuOffset,
+        grip,pointerHit,pressed||mouseDown||rightMouseDown,aim.pose,
+        panels::MenuDistance(int(vrsettings::Read().values[settings::MenuDistance]),!spatialMode));
     const bool active=uiActive&&focused&&aimTracked&&laser;
     if(active)panelinput::OwnPointer();
     if(active&&pointerHit) {
@@ -899,8 +1287,8 @@ void MenuPointer(const menus::Pad& controls) {
     }
     const bool modifiers=active&&(pointerHit||mouseDown||rightMouseDown);
     PanelModifier(VK_CONTROL,modifiers&&controls.lt>140,controlDown);
-    PanelModifier(VK_SHIFT,modifiers&&(controls.buttons&menus::RightBumper),shiftDown);
-    laserClick.Step(pressed,(controls.buttons&menus::LeftBumper)!=0);
+    PanelModifier(VK_SHIFT,modifiers&&!grabbing&&(controls.buttons&menus::RightBumper),shiftDown);
+    laserClick.Step(pressed&&!grabbing,(controls.buttons&menus::LeftBumper)!=0);
     const auto edges=panelMouse.Step(active,pointerHit,laserClick.Left(),laserClick.Right());
     panelinput::ItemHover(active,pointerHit,panelMouse.down[0]||panelMouse.down[1]);
     for(int i=0;i<2;++i) {
@@ -975,50 +1363,67 @@ void MotionPointer() {
     const auto mid=ray+direction*(beamLength*.5f);
     beamPose=XrPose({mid,math::BeamOrientation(direction,V(head.position)-mid)});pointerVisible=true;
     if(pointerHit) {
-        motionInput.hover=interaction::WheelCell(hit.u,hit.v,interactionOutput.hover,interactions.Page(),hand);
+        motionInput.hover=interaction::WheelCell(hit.u,hit.v,interactionOutput.hover,interactions.Page(),hand,interactionInput.snapshot.developer,interactions.DeveloperPage());
         dotPose=XrPose({hit.point+math::Rotate(pose.q,{0,0,.003f}),pose.q});
     }
 }
-void MotionPulse(int hand,float strength,XrDuration duration,float frequency=XR_FREQUENCY_UNSPECIFIED) {
-    if(!haptic||!pApplyHapticFeedback||!pStopHapticFeedback||!session||!running)return;
+bool MotionPulse(int hand,haptics::Category category,float strength,XrDuration duration,float frequency=XR_FREQUENCY_UNSPECIFIED,const haptics::Strengths* preview=nullptr) {
+    const auto ai=hapticActions.Info(hand);
+    if(!ai.action||!pApplyHapticFeedback||!pStopHapticFeedback||!session||!running)return false;
+    hapticPulses.Configure(settings::HapticLevels(vrsettings::Read().values));
     // Capture handles by value. Shutdown joins the timer before destroying
     // these handles; the worker never takes the transport/render mutex.
-    const auto xrSession=session;const auto action=haptic;const auto stop=pStopHapticFeedback;
-    const std::array<XrPath,2> paths{hands[0],hands[1]};const auto log=logger;
-    if(!hapticPulses.Start([xrSession,action,stop,paths,log,reported=std::array<bool,2>{}](int hand) mutable {
-        XrHapticActionInfo ai{XR_TYPE_HAPTIC_ACTION_INFO};ai.action=action;ai.subactionPath=paths[hand];
+    const auto xrSession=session;const auto outputs=hapticActions;const auto stop=pStopHapticFeedback;const auto log=logger;
+    if(!hapticPulses.Start([xrSession,outputs,stop,log,reported=std::array<bool,2>{}](int hand) mutable {
+        const auto ai=outputs.Info(hand);
         const auto result=stop(xrSession,&ai);
         if(!reported[hand]&&log) {
             char message[128];std::snprintf(message,sizeof message,"Frame haptics: explicit timed stop hand=%d result=%d",hand,int(result));log(message);reported[hand]=true;
         }
-    }))return;
-    XrHapticActionInfo ai{XR_TYPE_HAPTIC_ACTION_INFO};ai.action=haptic;ai.subactionPath=hands[hand];
+    }))return false;
     XrHapticVibration vibration{XR_TYPE_HAPTIC_VIBRATION};
-    vibration.duration=duration;vibration.frequency=frequency;vibration.amplitude=strength;
-    XrResult result=XR_ERROR_RUNTIME_FAILURE;
-    hapticPulses.Pulse(hand,std::chrono::nanoseconds(duration),[&]{
+    vibration.duration=duration;vibration.frequency=frequency;
+    XrResult result=XR_SUCCESS;
+    const bool applied=hapticPulses.Pulse(hand,category,std::chrono::nanoseconds(duration),strength,[&](float amplitude){
+        vibration.amplitude=amplitude;
         result=pApplyHapticFeedback(session,&ai,reinterpret_cast<XrHapticBaseHeader*>(&vibration));return result==XR_SUCCESS;
-    });
+    },preview);
+    if(preview) {
+        char message[192];std::snprintf(message,sizeof message,
+            "Frame haptics test: hand=%d category=%d amplitude=%.3f duration_ms=%lld frequency=%.0f sent=%d result=%d",
+            hand,int(category),vibration.amplitude,static_cast<long long>(duration/1000000),frequency,applied,int(result));
+        Say(message);
+    }
     static bool reported[2]{};static ULONGLONG errorAt=0;
-    if(XR_SUCCEEDED(result)&&!reported[hand]) {
+    if(applied&&!reported[hand]) {
         Say(hand==0?"Frame gameplay: right-hand haptic accepted":"Frame gameplay: left-hand haptic accepted");reported[hand]=true;
     } else if(XR_FAILED(result)&&GetTickCount64()>=errorAt) {
         char message[128];std::snprintf(message,sizeof message,"Frame gameplay: haptic failed hand=%d result=%d",hand,int(result));Say(message);
         errorAt=GetTickCount64()+5000;
+    }
+    return applied;
+}
+void MotionPattern(haptics::Category category,const haptics::Pattern& pattern,const haptics::Strengths* preview=nullptr) {
+    for(int hand=0;hand<2;++hand){
+        const auto& sample=pattern[hand];
+        if(sample.milliseconds>0)MotionPulse(hand,category,sample.amplitude,XrDuration(sample.milliseconds)*1000000,sample.frequency,preview);
     }
 }
 void MotionFeedback(const gameplay::Output& out) {
     static double lastPull=0;static float previousDraw=0;
     const unsigned event=out.feedback;
     if(event) {
-        MotionPulse(0,event==6?.12f:event==4?.2f:event==2||event==3?.65f:.45f,event==4||event==6?20000000:45000000);
-        if(out.bowReady&&(event==1||event==2||event==5))MotionPulse(1,event==2?.65f:.25f,35000000);
+        const auto category=haptics::MotionCategory(event,out.bowReady,out.javelinReady);
+        if(event==2&&(out.bowReady||out.javelinReady))MotionPattern(category,haptics::Release(out.bowReady));
+        else {
+            MotionPulse(0,category,event==6?.12f:event==4?.2f:event==2||event==3?.65f:.45f,event==4||event==6?20000000:45000000);
+            if(out.bowReady&&(event==1||event==5))MotionPulse(1,category,.25f,35000000);
+        }
         lastPull=motionInput.time;previousDraw=out.draw;
     } else if(out.bowDrawing&&motionInput.time-lastPull>.07&&std::fabs(out.draw-previousDraw)>.018f) {
         // A light ratchet felt while pulling, rather than only the native
         // attack rumble after release. No repeated buzz while held still.
-        MotionPulse(0,.22f+.28f*out.draw,25000000);
-        MotionPulse(1,.1f+.15f*out.draw,20000000);
+        MotionPattern(haptics::Category::BowDraw,haptics::BowPull(out.draw));
         lastPull=motionInput.time;previousDraw=out.draw;
     }
     if(!out.bowDrawing)previousDraw=0;
@@ -1045,21 +1450,23 @@ gameplay::MeleeStyle MotionMeleeStyle() {
     }
 }
 void ResetSettingsInput() {
+    settingsHelp.Clear();settingsPainted.help=settingsHelpVisible=settings::NoHelp;
     hapticPulses.Cancel();
+    spellHaptics.Clear();
     panelinput::WorldInput(false);
     gamestate::MenuMap(false);
     motion.Cancel();motionOutput={};interactions.Reset();interactionstate::Cancel();
-    meleePoses.Clear();CancelShieldCast();++meleeEpoch;bowNeedsWorld=bowHasShot=false;
+    meleePoses.Clear();offhandPoses.Clear();CancelShieldCast();++meleeEpoch;bowNeedsWorld=bowHasShot=false;
     skel::SetMotionBow(false,false,0);gamecmd::CancelPotion();menuTriggerGate.consumed=true;
     settingsInputGate.Consume();ReleaseUiKey();
     ReleasePanelInput();
 }
 void OpenSettings() {
-    settingsImageReady=false;settingsPaintRevision=~0ull;settingsPaintAt=0;
+    settingsImageReady=false;settingsPainted={};settingsPaintAt=0;settingsPaintRequest=0;settingsRequested={};
     settingsModel.Open(vrsettings::Read());settingsOpen=true;settingsSession=gamestate::LocalPlayer();
     const auto q=math::Yaw(math::Heading(Q(head.orientation)));
-    const auto p=V(head.position)+math::Rotate(q,{0,-.06f,-1.05f});
-    settingsPose=XrPose({p,q});settingsHover={};ResetSettingsInput();
+    settingsBase={V(head.position)+math::Rotate(q,{0,-.06f,-1.05f}),q};
+    settingsPose=Placed(settingsBase,settingsOffset);settingsHover={};ResetSettingsInput();
     Say("Frame VR settings: panel opened");
 }
 void CloseSettings() {
@@ -1069,11 +1476,26 @@ void CloseSettings() {
 void OpenBodyCalibration() {
     if(settingsModel.open)CloseSettings();
     bodyCalibration.Begin();calibrationRelease.Consume();calibrationPrompted=true;
-    calibrationSession=gamestate::LocalPlayer();calibrationPaintKey=-1;
-    settingsOpen=true;settingsImageReady=false;settingsPaintAt=0;
+    calibrationSession=gamestate::LocalPlayer();calibrationPaintKey=calibrationRequestedKey=-1;
+    settingsOpen=true;settingsImageReady=false;settingsPaintAt=0;settingsPaintRequest=0;
     const auto q=math::Yaw(math::Heading(Q(head.orientation)));
     settingsPose=XrPose({V(head.position)+math::Rotate(q,{0,-.06f,-1.05f}),q});
     ResetSettingsInput();Say("Frame body calibration: started; upright T-pose + both triggers; Right B cancels");
+}
+// Uploads the picture last asked of the settings painter once it is done;
+// true if it was uploaded.
+bool TakeSettingsPicture() {
+    SettingsPainted painted;
+    if(!settingsPaintRequest||settingsAtlasPending||atlasUploads.size()>=3||!settingsPainter.Take(settingsPaintRequest,painted))return false;
+    settingsPaintRequest=0;
+    const auto uploadStart=Milliseconds();
+    const bool uploaded=!painted.pixels.empty()&&UploadAtlas(settingsChain,atlasFormat,settings::AtlasWidth,settings::Height,painted.pixels,true,&settingsAtlasPending);
+    static ULONGLONG reportAt=0;const auto now=GetTickCount64();
+    if(uploaded&&now>=reportAt) {
+        char message[160];std::snprintf(message,sizeof message,"Frame VR settings: page painted in %.2f ms on the background painter, uploaded in %.2f ms",
+            painted.paintMs,Milliseconds()-uploadStart);Say(message);reportAt=now+5000;
+    }
+    return uploaded;
 }
 void CalibrationInput() {
     if(!bodyCalibration.Active())return;
@@ -1084,7 +1506,7 @@ void CalibrationInput() {
     bodyCalibration.Observe(vrsettings::Read(),motionInput.time);
     if(phaseBefore==calibration::Phase::Saving&&bodyCalibration.phase==calibration::Phase::Saved){
         origin=calibrationOrigin;haveOrigin=true;worldRecenter=true;
-        MotionPulse(0,.45f,70000000);MotionPulse(1,.45f,70000000);
+        MotionPulse(0,haptics::Category::Interaction,.45f,70000000);MotionPulse(1,haptics::Category::Interaction,.45f,70000000);
         const auto m=bodyCalibration.Get();char message[180];
         std::snprintf(message,sizeof message,"Frame body calibration: saved eye height %.3f m, controller span %.3f m",m.eyeHeight,m.armSpan);Say(message);
     }
@@ -1103,20 +1525,41 @@ void CalibrationInput() {
         }else bodyCalibration.Failed();
     }
     if(!bodyCalibration.Active()){
-        settingsOpen=false;settingsImageReady=false;settingsPaintRevision=~0ull;ResetSettingsInput();
+        settingsOpen=false;settingsImageReady=false;settingsPainted={};ResetSettingsInput();
         Say("Frame body calibration: closed; held input consumed");return;
     }
     const int key=int(bodyCalibration.hint)*100+int(bodyCalibration.progress*20);
     const auto now=GetTickCount64();
-    if(key!=calibrationPaintKey&&now>=settingsPaintAt&&!settingsAtlasPending&&atlasUploads.size()<3){
-        auto pixels=settings::Paint(settingsModel,{},"",&bodyCalibration);
-        if(!pixels.empty()&&UploadAtlas(settingsChain,atlasFormat,settings::Width,settings::Height,pixels,true,&settingsAtlasPending))calibrationPaintKey=key;
-        settingsPaintAt=now+100;
+    if(key!=calibrationPaintKey&&now>=settingsPaintAt&&!settingsPaintRequest){
+        SettingsPaintJob job;job.model=settingsModel;job.calibrating=true;job.body=bodyCalibration;
+        settingsPaintRequest=settingsPainter.Submit(std::move(job));calibrationRequestedKey=key;settingsPaintAt=now+100;
     }
+    if(TakeSettingsPicture())calibrationPaintKey=calibrationRequestedKey;
 }
-void SettingsPointer(const settings::InputGate::Edges& edges) {
+// Windows Mono audio (HKCU Software\Microsoft\Multimedia\Audio,
+// AccessibilityMonoMixState 1) for the title row's warning, read at most every
+// 2 s while VR Settings is open; logged when it changes.
+bool MonoAudioOn(ULONGLONG now) {
+    static bool on=false,told=false;static ULONGLONG checkAt=0;
+    if(now<checkAt)return on;
+    checkAt=now+2000;
+    DWORD value=0,size=sizeof value;
+    const bool mono=RegGetValueW(HKEY_CURRENT_USER,L"Software\\Microsoft\\Multimedia\\Audio",L"AccessibilityMonoMixState",
+                                 RRF_RT_REG_DWORD,nullptr,&value,&size)==ERROR_SUCCESS&&value!=0;
+    if(mono!=on||!told) {
+        told=true;
+        Say(mono?"Frame VR settings: Windows Mono audio is on - 3D sounds cannot follow the head; VR Settings warns":
+                 "Frame VR settings: Windows Mono audio is off");
+    }
+    on=mono;return on;
+}
+void SettingsPointer(const settings::InputGate::Edges& edges,bool grip) {
     if(!settingsModel.open)return;
+    const bool monoAudio=MonoAudioOn(GetTickCount64());
     settingsModel.Observe(vrsettings::Read());settingsHover={};pointerVisible=pointerHit=false;
+    int helpTarget=settings::NoHelp;
+    const auto previousPage=settingsModel.page;
+    const bool previousMenu=settingsModel.controllerMenu;
     XrSpaceLocation aim{XR_TYPE_SPACE_LOCATION};
     const auto needed=XR_SPACE_LOCATION_POSITION_VALID_BIT|XR_SPACE_LOCATION_ORIENTATION_VALID_BIT|
                       XR_SPACE_LOCATION_POSITION_TRACKED_BIT|XR_SPACE_LOCATION_ORIENTATION_TRACKED_BIT;
@@ -1126,12 +1569,19 @@ void SettingsPointer(const settings::InputGate::Edges& edges) {
         beamLength=pointerHit?hit.distance:1.5f;const auto mid=ray+direction*(beamLength*.5f);
         beamPose=XrPose({mid,math::BeamOrientation(direction,V(head.position)-mid)});pointerVisible=true;
         if(pointerHit){settingsHover=settings::HitTest(settingsModel.page,hit.u,hit.v,settingsModel.controllerMenu);dotPose=settingsPose;
+            helpTarget=settings::HelpAt(settingsModel.page,hit.u,hit.v,settingsModel.controllerMenu,&settingsModel.Get(),monoAudio);
             const auto p=hit.point+math::Rotate(Q(settingsPose.orientation),{0,0,.004f});dotPose.position={p.x,p.y,p.z};}
     }
-    if(edges.click&&pointerHit&&settingsImageReady&&settingsPaintRevision==settingsModel.revision){
+    const bool grabbing=GrabPanel(settingsPose,settingsBase,settingsOffset,grip&&pointerVisible,pointerHit,Float(trigger,0)>.2f,aim.pose);
+    if(edges.click&&!grabbing&&pointerHit&&settingsImageReady&&settingsPainted.revision==settingsModel.revision){
         if(settingsHover.kind==settings::Kind::Close)CloseSettings();
-        else if(settingsHover.kind==settings::Kind::Recenter){ResetHeight();MotionPulse(1,.4f,35000000);}
+        else if(settingsHover.kind==settings::Kind::Recenter){ResetHeight();MotionPulse(1,haptics::Category::Interaction,.4f,35000000);}
         else if(settingsHover.kind==settings::Kind::Calibrate&&settingsModel.ready&&!settingsModel.Busy()&&!settingsModel.Dirty())OpenBodyCalibration();
+        else if(settingsHover.kind==settings::Kind::TestHaptics&&settingsModel.CanTestHaptics(settingsHover.index)){
+            const auto levels=settings::HapticLevels(settingsModel.Get());
+            const auto category=haptics::Category(settingsHover.index);
+            MotionPattern(category,haptics::Preview(category,settingsHover.delta-1,settingsModel.Get()[settings::HapticShortMelee]>.5f),&levels);
+        }
         else {
             const auto request=settingsModel.Click(settingsHover);
             if(request.sequence&&!vrsettings::Submit(request)){
@@ -1147,23 +1597,37 @@ void SettingsPointer(const settings::InputGate::Edges& edges) {
         "Foveated shading available. Gaze inactive or waiting for tracked samples.",
         "Foveated shading available. Eye-tracking samples are active."};
     const auto now=GetTickCount64();
-    if(now>=settingsPaintAt&&!settingsAtlasPending&&atlasUploads.size()<3&&
-       (settingsPaintRevision!=settingsModel.revision||settingsPaintHover!=hover||settingsPaintStatus!=status)){
+    if(previousPage!=settingsModel.page||previousMenu!=settingsModel.controllerMenu)helpTarget=settings::NoHelp;
+    const int help=settingsHelpVisible=settingsHelp.Step(helpTarget,now);
+    const auto game=GameVideoOptions(now);
+    const int warnings=game.Code()|(monoAudio?4:0);
+    // One request at a time, at most every 100 ms as when it was painted here.
+    // Each picture is shown when done, even if the pointer moved on meanwhile:
+    // the painted state names what it shows, and the next request catches up.
+    // The Perf page repaints with each second's numbers; the others never for them.
+    const bool performancePage=settingsModel.page==settings::Page::Performance;
+    const bool fresh=performance.valid&&now-performanceAt<=2000;
+    const bool depthRestart=(vrsettings::Read().values[settings::ReShadeDepth]>.5f)!=vrsettings::ReShadeDepthActive();
+    const SettingsPicture wanted{settingsModel.revision,hover,status,help,warnings,performancePage&&fresh?performanceSerial:0,
+                                 performancePage&&depthRestart,performancePage?game:settings::GameVideo{}};
+    if(!(wanted==settingsPainted)&&now>=settingsPaintAt&&!settingsPaintRequest){
         char resolutionStatus[160];resolution::Describe(resolutionStatus,sizeof resolutionStatus,{width,height});
-        auto pixels=settings::Paint(settingsModel,settingsHover,settingsModel.page==settings::Page::Video?resolutionStatus:descriptions[status],nullptr,detectedControllers);
-        if(!pixels.empty()&&UploadAtlas(settingsChain,atlasFormat,settings::Width,settings::Height,pixels,true,&settingsAtlasPending)){
-            settingsPaintRevision=settingsModel.revision;settingsPaintHover=hover;settingsPaintStatus=status;
-        }
-        settingsPaintAt=now+100;
+        settingsPaintRequest=settingsPainter.Submit({settingsModel,settingsHover,performancePage?resolutionStatus:descriptions[status],
+                                                    detectedControllers,help,game,monoAudio,fresh?performance:settings::PerformanceReadout{},depthRestart});
+        settingsRequested=wanted;settingsPaintAt=now+100;
     }
+    if(TakeSettingsPicture())settingsPainted=settingsRequested;
 }
 void Input() {
     gazeValid=false;
     if(!tracking.data) return;
     if(!valid||state!=XR_SESSION_STATE_FOCUSED) {gazeStability.Reset();ClearInput();return; }
+    if(motionControls.load())vrGameplayAt.store(GetTickCount64());
+    hapticPulses.Configure(settings::HapticLevels(vrsettings::Read().values));
     XrActiveActionSet active{actionSet,XR_NULL_PATH};
     XrActionsSyncInfo si{XR_TYPE_ACTIONS_SYNC_INFO};si.countActiveActionSets=1;si.activeActionSets=&active;
     if(pSyncActions(session,&si)!=XR_SUCCESS) {gazeStability.Reset();ClearInput();return;}
+    controllerRumbleLease.Update(GetTickCount64(),motionControls.load());
     UpdateControllerLabels();
     const bool nativeUi=panelMode||spatialMode;
     const uint32_t inputEpoch=gamestate::MenuEpoch();
@@ -1186,7 +1650,11 @@ void Input() {
     const bool modUi=settingsModel.open||bodyCalibration.Active()||calibrationRelease.blocked;
     auto controls=menuControls.Step(modUi?menus::Mode::Blocked:nativeUi?menus::Mode::Native:menus::Mode::World,inputEpoch,physical);
     SampleGaze();
-    atlasUploads.erase(std::remove_if(atlasUploads.begin(),atlasUploads.end(),[](const auto& a){return fence->GetCompletedValue()>=a.fence;}),atlasUploads.end());
+    for(auto upload=atlasUploads.begin();upload!=atlasUploads.end();) {
+        if(fence->GetCompletedValue()<upload->fence){++upload;continue;}
+        if(atlasStagingFree.size()<AtlasStagingKept)atlasStagingFree.push_back(std::move(upload->staging));
+        upload=atlasUploads.erase(upload);
+    }
     if(!calibrationPrompted&&!settingsModel.open&&!panelMode&&!spatialMode&&inWorld&&inWorld()){
         const auto config=vrsettings::Read();
         if(config.ready&&config.result!=settings::Result::Saving){calibrationPrompted=true;if(!calibration::Stored(config.values))OpenBodyCalibration();}
@@ -1231,7 +1699,7 @@ void Input() {
     }
     if(!settingsOwned&&!settingsChord)MenuPointer(controls);
     else {nativeMenuPad={};menuNavigation.Reset();panelinput::UseController();pointerVisible=pointerHit=false;triggerWasDown=Float(trigger,0)>.2f;cancelWasDown=Bool(secondary,0);}
-    SettingsPointer(settingsEdges);
+    SettingsPointer(settingsEdges,(controls.buttons&menus::RightBumper)!=0);
     settingsOwned=settingsOwned||bodyCalibration.Active();
     auto& s=*tracking.data;s.version=D2RVR_SHARED_VERSION;s.headValid=1;
     const auto q=Q(head.orientation);
@@ -1256,12 +1724,17 @@ void Input() {
     motionInput.equipment=gamestate::HandsKey()^(gamestate::WeaponSet()<<30);
     const auto undo=math::Conjugate(math::Yaw(heading));
     for(int i=0;i<2;++i) {
-        XrSpaceLocation loc{XR_TYPE_SPACE_LOCATION};
+        XrSpaceVelocity velocity{XR_TYPE_SPACE_VELOCITY};
+        XrSpaceLocation loc{XR_TYPE_SPACE_LOCATION,&velocity};
         const XrSpaceLocationFlags required=XR_SPACE_LOCATION_POSITION_VALID_BIT|XR_SPACE_LOCATION_ORIENTATION_VALID_BIT;
+        handVelocityKnown[i]=false;
         if(XR_SUCCEEDED(pLocateSpace(handSpaces[i],space,frameState.predictedDisplayTime,&loc))&&(loc.locationFlags&required)==required) {
             const auto tracked=XR_SPACE_LOCATION_POSITION_TRACKED_BIT|XR_SPACE_LOCATION_ORIENTATION_TRACKED_BIT;
             motionInput.tracked[i]=(loc.locationFlags&tracked)==tracked;
             motionInput.hand[i]=MotionPose(loc.pose);
+            // The runtime's own linear velocity, in the same reference space.
+            handVelocityKnown[i]=(velocity.velocityFlags&XR_SPACE_VELOCITY_LINEAR_VALID_BIT)!=0;
+            if(handVelocityKnown[i])handVelocity[i]=V(velocity.linearVelocity);
             s.handsValid|=1u<<i;
             const auto p=math::Rotate(undo,V(loc.pose.position)-V(head.position));
             const auto rot=math::Multiply(undo,Q(loc.pose.orientation));
@@ -1290,6 +1763,25 @@ void Input() {
     handInput.layout^=uint64_t(handInput.independentSlots)<<48;
     handInput.active=motionInput.active&&motionInput.tracked[0]&&motionInput.tracked[1]&&handAimTracked[0]&&handAimTracked[1]&&gamestate::LocalPlayer();
     handInput.occupied=interactionOutput.bottle>=0||interactionOutput.owner[0]==interaction::Owner::Holster||interactionOutput.owner[1]==interaction::Owner::Holster;
+    const auto lootNow=GetTickCount64(),lootSession=gamestate::LocalPlayer();
+    const bool lootWorld=motionHeadTracked&&!nativeUi&&!settingsOwned&&!settingsChord&&inWorld&&inWorld()&&lootSession;
+    const bool lootAllowed=lootWorld&&!settingsOwned&&!settingsChord&&motionInput.tracked[0]&&
+        !handInput.occupied&&handControls.Wheel()<0;
+    const bool lootHeld=lootLabelShortcut.Step(lootSession,inputEpoch,lootNow,lootAllowed,
+        controls.rt/255.f,motionInput.grip[0]);
+    const bool wasLootHeld=lootlabels::display.ShowAll(lootNow);
+    lootlabels::display.Refresh(lootSession,lootNow,lootWorld,lootHeld);
+    if(lootHeld!=wasLootHeld) {
+        Say(lootHeld?"Frame loot labels: Show Items (Alt) held":"Frame loot labels: normal drop/hover behavior");
+        if(lootHeld)MotionPulse(0,haptics::Category::Interaction,.45f,45000000);
+    }
+    // The world shortcut owns the whole trigger squeeze, including if grip is
+    // released first. A consumed grip also needs its own physical release so
+    // it cannot reappear as a potion grab or shoulder swap. Native panel
+    // trigger/Shift actions and ordinary stick clicks retain their bindings.
+    lootLabelShortcut.Filter(controls,motionInput.grip[0],nativeUi);
+    motionInput.trigger=controls.rt/255.f;
+    handInput.occupied|=lootLabelShortcut.Consumed(nativeUi)||lootLabelShortcut.GripConsumed(nativeUi);
     for(int h=0;h<2;++h){
         handInput.trigger[h]=h?controls.lt/255.f:controls.rt/255.f;handInput.grip[h]=motionInput.grip[h];
         handInput.click[h]=(controls.buttons&(h?menus::LeftStick:menus::RightStick))!=0;
@@ -1298,6 +1790,21 @@ void Input() {
         handInput.face[h][1]=(controls.buttons&(h?menus::Y:menus::B))!=0;
     }
     handOutput=handControls.Step(handInput);
+    {
+        // Diagnostics: a bow face press that never became a hand slot was
+        // taken earlier (wheel, holster, potion, loot shortcut or a block).
+        static bool faceWas[2][2]{};
+        for(int h=0;h<2;++h)for(int b=0;b<2;++b) {
+            const bool down=handInput.face[h][b];
+            const bool faceSlot=handOutput.slot>=0&&handOutput.slot!=skills::TriggerSlot(0)&&handOutput.slot!=shieldSlot;
+            if(down&&!faceWas[h][b]&&motionInput.weapon==gameplay::Weapon::Bow&&!faceSlot&&quiverEnabled.load()) {
+                char line[240];std::snprintf(line,sizeof line,"Frame bow quiver: raw %s %s press without a face slot (slot=%d wheel=%d occupied=%d active=%d grip=%.2f)",
+                    h?"left":"right",b?"secondary":"primary",handOutput.slot,handOutput.wheel,int(handInput.occupied),int(handInput.active),handInput.grip[h]);
+                Say(line);
+            }
+            faceWas[h][b]=down;
+        }
+    }
     motionInput.palette=handOutput.wheel>=0;
     motionInput.aim=handAim[0];motionInput.aimTracked=handAimTracked[0];
     MotionPointer();
@@ -1312,14 +1819,148 @@ void Input() {
     const auto hudSettings=vrsettings::Read();
     interactionInput.navigationLocation=vitals::Location(int(hudSettings.values[settings::NavigationLocation]));
     interactionInput.vitalsLocation=vitals::Location(int(hudSettings.values[settings::VitalsLocation]));
+    interactionInput.vitalsTilt=hudSettings.values[settings::VitalsTilt];
     interactionInput.criticalAlerts=hudSettings.values[settings::CriticalAlerts]>.5f;
     interactionInput.leftCasting=handOutput.spells[1]>=0||(handOutput.slot>=0&&handOutput.hand==1);
     interactionInput.leftTrigger=controls.lt/255.f;
+    // A thrown bottle lands on the world floor in room space. Without a recent
+    // view frame (menus, loading) throwing is off; a release re-belts as before.
+    {
+        const auto age=interactionInput.at>=stageWorld.at?interactionInput.at-stageWorld.at:0;
+        interactionInput.floorKnown=stageWorld.valid&&stageWorld.upm>0&&age<=250;
+        if(interactionInput.floorKnown) {
+            const auto& w=stageWorld;
+            interactionInput.floor=w.origin.y-w.eyeHeight/w.upm;
+            // Same mapping as resolveBow in View: room metres to world metres.
+            interactionInput.stage={true,w.origin,{w.hero.x/w.upm,(w.hero.y+w.eyeHeight)/w.upm,w.hero.z/w.upm},w.base};
+        }
+    }
     if(!interactionPaintValid||interactionPaintContext!=interaction::Context(interactionInput.snapshot,interactionOutput,
         interaction::Fresh(interactionInput.snapshot,interactionInput.session,interactionInput.at),controllerLabels))interactionInput.hover=-1;
     for(int i=0;i<2;++i){interactionInput.tracked[i]=motionInput.tracked[i];interactionInput.grip[i]=motionInput.grip[i];
-        interactionInput.hand[i]={motionInput.hand[i].p,motionInput.hand[i].q};}
+        interactionInput.hand[i]={motionInput.hand[i].p,motionInput.hand[i].q};
+        interactionInput.handVelocity[i]=handVelocity[i];interactionInput.velocityKnown[i]=handVelocityKnown[i];}
     interactionOutput=interactions.Step(interactionInput);
+    // Blood on the visor follows life bands; a side-to-side scrub at the face
+    // wipes what healing has uncovered. A scrubbing hand is not a weapon.
+    {
+        blood::Input in;
+        in.time=interactionInput.time;in.session=interactionInput.session;in.epoch=interactionInput.epoch;
+        in.enabled=hudSettings.values[settings::BloodVisor]>.5f;
+        in.wipe=hudSettings.values[settings::BloodWipe]>.5f;
+        in.active=interactionInput.active&&!interactionOutput.wheel&&!interactionOutput.settings;
+        in.fresh=interaction::Fresh(interactionInput.snapshot,interactionInput.session,interactionInput.at);
+        in.vitalsKnown=interactionInput.snapshot.vitalsKnown;
+        in.health=interactionInput.snapshot.health;in.maxHealth=interactionInput.snapshot.maxHealth;
+        in.head=interactionInput.head.p;in.headRotation=interactionInput.head.q;
+        for(int h=0;h<2;++h) {
+            in.hand[h]=interactionInput.hand[h].p;in.tracked[h]=interactionInput.tracked[h];
+            in.busy[h]=interactionOutput.bottleHand==h||handInput.trigger[h]>.3f||(h==0&&motionOutput.bowDrawing);
+        }
+        bloodOutput=bloodScreen.Step(in);
+        for(int h=0;h<2;++h)if(bloodOutput.stroke[h]) {
+            MotionPulse(h,haptics::Category::Interaction,bloodOutput.clean?.45f:.18f,bloodOutput.clean?45000000:20000000);
+            char line[128];std::snprintf(line,sizeof line,"Frame blood visor: wipe hand=%d coverage=%.2f band=%.2f",h,bloodOutput.coverage,bloodOutput.band);Say(line);
+        }
+        if(bloodOutput.healed) {
+            char line[96];std::snprintf(line,sizeof line,"Frame blood visor: healed, fading to band=%.2f",bloodOutput.band);Say(line);
+        }
+        // Repaint only when something visibly changes: 25 Hz while splats land
+        // or fade, otherwise at most 8 Hz for the slow drips.
+        const auto now=GetTickCount64();
+        const auto key=blood::PaintKey(bloodOutput.visible,bloodOutput.age,bloodOutput.opacity);
+        if(bloodOutput.visible&&key!=bloodPaintKey&&now>=bloodPaintAt&&(!bloodPaintRequest||key!=bloodRequestedKey)) {
+            bloodPaintRequest=bloodPainter.Submit({bloodOutput.visible,bloodOutput.age,bloodOutput.opacity});bloodRequestedKey=key;
+            bloodPaintAt=now+(bloodOutput.fading?40:125);
+        }
+        BloodImage painted;
+        if(bloodPaintRequest&&!bloodAtlasPending&&atlasUploads.size()<3&&bloodPainter.Take(bloodPaintRequest,painted)) {
+            if(!painted.pixels.empty()&&UploadAtlas(bloodChain,atlasFormat,blood::Size,blood::Size,painted.pixels,true,&bloodAtlasPending)) {
+                bloodPaintKey=bloodRequestedKey;bloodShown=painted.visible;
+            }
+            bloodPaintRequest=0;
+        }
+    }
+    // Guard strain light (Unleashed shield): blocks strain the guard, light
+    // creeps in from the rim; it drains with the shield lowered, or raised with
+    // no hit on it for guard_strain_recover_ms.
+    {
+        const auto now=GetTickCount64();
+        strain::Tuning tuning;{std::lock_guard lock(strainTuningMutex);tuning=strainTuning;}
+        const float lightOn=tuning.brightness;   // [gameplay] guard_strain_light
+        tuning.brightness=1;   // strain itself runs regardless of the light; only the drawing is scaled
+        tuning.speed=strain::BuildSpeed(int(hudSettings.values[settings::StrainSpeed]));
+        tuning.recoverSeconds=strainRecoverSeconds.load(std::memory_order_relaxed);
+        strain::Input in;
+        in.time=interactionInput.time;in.session=interactionInput.session;
+        in.enabled=hudSettings.values[settings::MeleeRules]<.5f&&motionControls.load();
+        in.eligible=guardEligible.load()&&now-guardStateAt.load()<=250;
+        in.raised=guardRaised.load();
+        in.blocks=guardBlockEvents.exchange(0);in.parries=guardParryEvents.exchange(0);
+        in.weight=float(guardBlockWeight.exchange(0))/1000.f;   // rank-weighted strain of those blocks
+        strainOutput=guardStrain.Step(in,tuning);
+        guardBroken=strainOutput.broken;
+        strainOutput.alpha*=std::clamp(lightOn,0.f,1.f);strainOutput.visible=strainOutput.alpha>.004f;
+        if(strainOutput.brokeNow) {
+            MotionPulse(1,haptics::Category::Alert,.6f,120000000);
+            Say("Frame guard strain: guard broken; it clears once hits stop or the shield is lowered");
+            PlayGuardBreak();
+        }
+        if(strainOutput.clearedNow)Say("Frame guard strain: cleared");
+        // Consume completed images before scheduling more work. Never replace an
+        // in-flight request: at <=25 FPS that discarded every animated result.
+        if(in.session!=strainPaintSession||!strainOutput.visible) {
+            strainPainter.Discard();strainPaintKey=~0ull;strainImageReady=false;
+            strainPaintAt=0;strainPaintSession=in.session;
+        }
+        if(strainOutput.visible) {
+            strain::PaintImage painted;
+            if(!strainAtlasPending&&atlasUploads.size()<3&&strainPainter.Take(painted)) {
+                if(!painted.pixels.empty()&&UploadAtlas(strainChain,atlasFormat,strain::Size,strain::Size,painted.pixels,true,&strainAtlasPending))
+                    strainPaintKey=painted.key;
+            }
+            const auto key=strain::PaintKey(strainOutput.edge,strainOutput.alpha,tuning.feather,tuning.color,tuning.density);
+            if(key!=strainPaintKey&&now>=strainPaintAt&&!strainPainter.Busy()&&
+               strainPainter.Submit({strainOutput.edge,strainOutput.alpha,tuning.feather,tuning.color,tuning.density}))strainPaintAt=now+40;
+        }
+    }
+    // Low-life heartbeat (Classic and Unleashed): queue the next beat ~80 ms before
+    // the current one ends, at the loudness and tempo of the 10 % step of life below
+    // VR Settings > Combat > Heartbeat starts at. Above it, Off, dead or stale vitals:
+    // the last beat finishes, then silence.
+    {
+        heartStream.Reap();breakStream.Reap();   // breakStream: the guard-break bone snap
+        heartbeat::Tuning heart;std::shared_ptr<const heartbeat::Pcm> source;const char* sourceName=nullptr;
+        {std::lock_guard lock(heartMutex);heart=heartTuning;source=heartSource;sourceName=heartSourceName;}
+        const auto& vitals=interactionInput.snapshot;
+        const bool lifeKnown=vitals.vitalsKnown&&interaction::Fresh(vitals,interactionInput.session,interactionInput.at);
+        const float life=lifeKnown?heartbeat::LifeLevel(vitals.health,vitals.maxHealth,int(hudSettings.values[settings::HeartbeatStart])):0.f;
+        // Tied to the blood: a scrub that clears the visor fades it out; the next hit
+        // (the blood visor's own hit size) brings it back at its step.
+        const bool hit=lifeKnown&&heartHealth>=0&&heartHealth-vitals.health>=blood::HitFraction*vitals.maxHealth;
+        if(lifeKnown)heartHealth=vitals.health;
+        const bool wasHushed=heartHush.On();
+        const float target=heartHush.Step(life,bloodOutput.clean,hit);
+        if(heartHush.On()!=wasHushed)Say(heartHush.On()?"Frame low-life heartbeat: visor wiped, fading":"Frame low-life heartbeat: struck again, resuming");
+        // Its own level: winds down slower than a heal, quieter and slower beat by beat.
+        const float level=heartLevel.Step(target,heartAt>0?interactionInput.time-heartAt:0,heart.fadeSeconds);
+        heartAt=interactionInput.time;
+        if(level>0&&heart.volume>0&&source) {
+            if(heartStream.Remaining()<uint64_t(std::max(1,source->rate)*8/100)) {
+                heart.volume*=combat::GameVolume();
+                auto beat=heartbeat::Beat(*source,level,heart);
+                if(!beat.empty()&&heartStream.Queue(source->rate,source->channels,std::move(beat))&&!heartPlaying) {
+                    heartPlaying=true;
+                    static bool namedSource=false;   // the first start says which beat is playing
+                    char line[120];
+                    if(!namedSource){namedSource=true;snprintf(line,sizeof line,"Frame low-life heartbeat: started life=%.0f%% (%s)",
+                        vitals.maxHealth>0?100*vitals.health/vitals.maxHealth:-1.f,sourceName?sourceName:"?");}
+                    else snprintf(line,sizeof line,"Frame low-life heartbeat: started life=%.0f%%",vitals.maxHealth>0?100*vitals.health/vitals.maxHealth:-1.f);
+                    Say(line);
+                }
+            }
+        } else if(heartPlaying&&!heartStream.Remaining()){heartPlaying=false;Say("Frame low-life heartbeat: stopped");}
+    }
     // Bounded diagnostics distinguish gesture misses from native refusal.
     static ULONGLONG potionReportAt=0;
     if(interactionOutput.bottleHand>=0&&GetTickCount64()>=potionReportAt) {
@@ -1336,10 +1977,17 @@ void Input() {
     if(interactionOutput.inventory&&toggleMenus)toggleMenus();
     if(handOutput.wheel>=0&&!interactionOutput.wheel){handControls.Close();handOutput={};}
     if(interactionOutput.cancelPending)interactionstate::Cancel();
+    if(interactionOutput.request.action==interaction::Action::FeedMerc&&stageWorld.valid&&stageWorld.upm>0) {
+        // The engine already landed the bottle in world metres; add the
+        // rendered player and scale for the game thread's grid conversion.
+        auto& r=interactionOutput.request;const auto& w=stageWorld;
+        r.player=w.hero*(1/w.upm);r.unitsPerMetre=w.upm;
+    }
     if(interactionOutput.request.action!=interaction::Action::None)interactionstate::Request(interactionOutput.request);
-    if(interactionOutput.feedback)MotionPulse(interactionOutput.feedbackHand,interactionOutput.feedback==2?.65f:.25f,interactionOutput.feedback>=3?100000000:35000000);
+    if(interactionOutput.feedback)MotionPulse(interactionOutput.feedbackHand,interactionOutput.feedback==4?haptics::Category::Alert:haptics::Category::Interaction,
+        interactionOutput.feedback==2?.65f:.25f,interactionOutput.feedback>=3?100000000:35000000);
     motionInput.palette=false; // Dedicated interaction owner handles the new wheel/belt.
-    motionInput.active=motionInput.active&&!interactionOutput.block;
+    motionInput.active=motionInput.active&&!interactionOutput.block&&!bloodOutput.block[0]&&!bloodOutput.block[1];
     const auto& quickSnapshot=interactionInput.snapshot;
     const bool quickFresh=interaction::Fresh(quickSnapshot,interactionInput.session,interactionInput.at);
     const auto& rightSkill=quickSnapshot.skills[skills::TriggerSlot(0)];
@@ -1351,7 +1999,47 @@ void Input() {
     shieldSkill=quickSnapshot.skills[shieldSlot];
     motionInput.bowSlot=gestureSettings[settings::SkillGestures]>.5f&&shieldSkill.known&&shieldSkill.available&&shieldSkill.motion&&weaponskills::Bow(shieldSkill.id)?shieldSlot:-1;
     motionInput.bowSkill=motionInput.bowSlot>=0?shieldSkill.id:-1;motionInput.bowOwner=shieldSkill.owner;
-    const int requested=handOutput.slot;
+    int requested=handOutput.slot;
+    {
+        // A held face button whose skill is a quiver arrow loads, swaps or
+        // unloads it once per press, instead of a native animated cast.
+        const bool bow=quiverEnabled.load()&&motionInput.active&&gestureSettings[settings::SkillGestures]>.5f&&
+            motionInput.weapon==gameplay::Weapon::Bow&&quickFresh;
+        // Raw buttons, not the native single-owner cast: loading works while
+        // the right trigger holds the string, and with the bow hand gripped.
+        const auto press=handOutput.wheel<0&&!handInput.occupied?skills::QuiverFace(handInput,[&](int slot){
+            return quickSnapshot.skills[slot].known?quickSnapshot.skills[slot].id:-1;}):skills::FacePress{};
+        const bool face=press.slot>=0;
+        const auto& held=quickSnapshot.skills[face?press.slot:0];
+        const auto step=quiver.Step(gamestate::LocalPlayer(),press.slot,held.id,held.owner,held.missile,
+            bow&&face&&held.known&&held.available);
+        if(face&&press.slot!=quiverReportedSlot&&motionInput.weapon==gameplay::Weapon::Bow) {
+            // Every bow face press says who owns it and why, so a headset
+            // report can be matched to the exact eligibility check.
+            char line[320];std::snprintf(line,sizeof line,
+                "Frame bow quiver: press slot=%d hand=%d skill=%d owner=%d missile=%d known=%d available=%d enabled=%d active=%d gestures=%d fresh=%d -> %s",
+                press.slot,press.hand,held.id,held.owner,held.missile,int(held.known),int(held.available),int(quiverEnabled.load()),
+                int(motionInput.active),int(gestureSettings[settings::SkillGestures]>.5f),int(quickFresh),
+                step.change==weaponskills::Quiver::Change::Loaded?"loaded":step.change==weaponskills::Quiver::Change::Unloaded?"unloaded":
+                step.consumed?"held":"native");
+            Say(line);
+        }
+        quiverReportedSlot=press.slot;
+        // The same physical press must not also start a native face cast;
+        // a trigger draw already in progress keeps going.
+        if(step.consumed&&requested>=0&&requested!=skills::TriggerSlot(0)&&skills::Hand(requested)==press.hand){requested=-1;handOutput.interact=false;}
+        if(step.change!=weaponskills::Quiver::Change::None)
+            MotionPulse(press.hand,haptics::Category::Interaction,step.change==weaponskills::Quiver::Change::Loaded?.45f:.25f,35000000);
+        quiverArrow={};
+        if(bow) {
+            // A loaded skill wins; otherwise a quiver skill on the left trigger
+            // (the bow's gesture skill) uses the same physical release.
+            if(quiver.Current().Active())quiverArrow=quiver.Current();
+            else if(shieldSkill.known&&shieldSkill.available&&weaponskills::QuiverSkill(shieldSkill.id)&&weaponskills::QuiverMissile(shieldSkill.missile))
+                quiverArrow={shieldSkill.id,shieldSkill.owner,shieldSkill.missile};
+        }
+        if(quiverArrow.Active()){motionInput.bowSlot=-1;motionInput.bowSkill=-1;}
+    }
     const bool requestedKnown=requested>=0&&quickFresh&&quickSnapshot.skills[requested].known&&quickSnapshot.skills[requested].available;
     handOutput.interact=requestedKnown&&quickSnapshot.skills[requested].id==357;
     const bool quick=requested>=0&&requested!=skills::TriggerSlot(0);
@@ -1366,6 +2054,16 @@ void Input() {
     motionOutput.shieldContact=motionInput.active&&!motionOutput.block&&!motionInput.quickCast&&motionInput.trigger<.2f&&
         motionInput.shieldEquipped&&gestureSettings[settings::SkillGestures]>.5f&&quickFresh&&shieldSkill.available&&shieldSkill.motion&&shieldSkill.id==weaponskills::Smite;
     if(motionOutput.skill>=0&&(!quickFresh||!quickSnapshot.skills[motionOutput.skill].available))motionOutput.skill=-1;
+    {
+        crossbow::Pose pose;
+        const bool ready=motionControls.load()&&motionInput.weapon==gameplay::Weapon::Crossbow&&bowvr::MotionReady()&&
+            skel::CrossbowPose(pose)&&crossbow::Fresh(pose,motionAt,gamestate::LocalPlayer(),motionInput.equipment,bowWorldEpoch);
+        const int slot=motionOutput.skill;
+        const bool known=slot>=0&&slot<skills::Count&&quickFresh&&quickSnapshot.skills[slot].known&&quickSnapshot.skills[slot].available;
+        const bool firing=gameplay::RouteCrossbow(motionInput,motionOutput,castHand==0,ready,known,known?quickSnapshot.skills[slot].id:-1);
+        if(firing&&!crossbowFire)++crossbowActivation;
+        crossbowFire=firing;
+    }
     const bool shieldValid=motionInput.active&&!motionOutput.block&&!motionInput.quickCast&&motionInput.trigger<.2f&&gestureSettings[settings::SkillGestures]>.5f&&
         motionInput.shieldEquipped&&shieldSkill.available&&shieldSkill.motion&&shieldSkill.id==weaponskills::Smite&&
         weaponskills::Current(shieldCast.context,LiveShieldContext(),shieldCast.at,motionAt);
@@ -1399,6 +2097,13 @@ void Input() {
         std::snprintf(cue.hint,sizeof cue.hint,"%s",motionInput.weapon==gameplay::Weapon::Bow?"Draw & release":motionInput.weapon==gameplay::Weapon::Javelin?"Swing / throw":"Swing / trigger");
     } else {
         std::snprintf(cue.name,sizeof cue.name,"Skill unavailable");std::snprintf(cue.hint,sizeof cue.hint,"Refresh assignments");
+    }
+    if(quiverArrow.Active()&&!cue.temporary&&motionInput.weapon==gameplay::Weapon::Bow) {
+        const char* name=nullptr;
+        for(const auto& skill:quickSnapshot.skills)if(skill.known&&skill.id==quiverArrow.skill&&skill.owner==quiverArrow.owner){name=skill.name;break;}
+        cue.id=quiverArrow.skill;cue.owner=quiverArrow.owner;cue.known=cue.available=true;
+        std::snprintf(cue.name,sizeof cue.name,"%s",name?name:"Skill arrow");
+        std::snprintf(cue.hint,sizeof cue.hint,"%s",quiver.Current().Active()?"Loaded: draw & release":"Draw & release");
     }
     cue.busy=(shieldCast.issued&&!shieldCast.cancelled)||(cue.id==weaponskills::Strafe&&quickFresh&&quickSnapshot.actionKnown&&quickSnapshot.actionMode==16&&
         volleyRequestedAt&&motionAt>=volleyRequestedAt&&motionAt-volleyRequestedAt<10000);
@@ -1452,23 +2157,42 @@ void Input() {
         const bool visible=motionInput.active||interactionOutput.wheel||interactionOutput.wrist||interactionOutput.vitals||interactionOutput.critical||interactionOutput.bottle>=0||
             interactionOutput.nearBelt>=0||interactionOutput.nearHolster>=0||math::Rotate(Q(head.orientation),{0,0,-1}).y<-.60f;
         const auto context=interaction::Context(interactionInput.snapshot,interactionOutput,snapshotFresh,controllerLabels);
-        if(visible&&(!interactionPaintValid||key!=interactionPaintKey||context!=interactionPaintContext)) {
+        const bool missingCompanions=snapshotFresh&&wriststatus::Rows(context.companions,context.effects)&&!companionPaintValid;
+        if(visible&&(!interactionPaintValid||missingCompanions||key!=interactionPaintKey||context!=interactionPaintContext)) {
             if(now>=interactionPaintAt&&(!interactionPaintRequest||key!=interactionRequestedKey||context!=interactionRequestedContext)) {
                 interactionPaintRequest=interactionPainter.Submit({snapshotFresh?interactionInput.snapshot:interaction::Snapshot{},interactionOutput,motion.Selection(),controllerLabels});
                 interactionRequestedKey=key;interactionRequestedContext=context;interactionPaintAt=now+100;
             }
             interaction::PaintedAtlas painted;
-            if(key==interactionRequestedKey&&context==interactionRequestedContext&&atlasUploads.size()<3&&!interactionAtlasPending&&
-               interactionPainter.Take(interactionPaintRequest,painted)) {
-                const auto uploadStart=Milliseconds();
+            if(key==interactionRequestedKey&&context==interactionRequestedContext&&atlasUploads.size()<2&&!interactionAtlasPending&&
+               !companionAtlasPending&&interactionPainter.Take(interactionPaintRequest,painted)) {
+                const auto uploadStart=Milliseconds();atlasTiming={};
                 if(!painted.pixels.empty()&&UploadAtlas(interactionChain,atlasFormat,1024,1024,painted.pixels,true)) {
                     interactionPaintKey=key;interactionPaintContext=context;interactionPaintValid=true;
+                    companionPaintValid=!painted.companions.empty()&&UploadAtlas(companionChain,atlasFormat,
+                        wriststatus::Width,wriststatus::Height,painted.companions,true,&companionAtlasPending);
+                    if(companionPaintValid)companionPaintContext=context;
                 }
                 interactionPaintRequest=0;
                 const auto uploadMs=Milliseconds()-uploadStart;
+                const auto& t=atlasTiming;
                 static ULONGLONG reportAt=0;
                 if((profile::Active()||uploadMs>4)&&now>=reportAt) {
-                    char message[180];std::snprintf(message,sizeof message,"Frame UI refresh: background paint %.2f ms, frame-thread upload %.2f ms",painted.paintMs,uploadMs);Say(message);reportAt=now+1000;
+                    char message[300];std::snprintf(message,sizeof message,"Frame UI refresh: background paint %.2f ms, frame-thread upload %.2f ms "
+                        "(image wait %.2f, buffers %.2f%s, copy %.2f, commands %.2f, submit %.2f)",
+                        painted.paintMs,uploadMs,t.image,t.buffers,t.made?" new":"",t.copy,t.record,t.submit);Say(message);reportAt=now+1000;
+                }
+                // Every 10 s, all refreshes: the spikes above alone do not show the usual cost.
+                static ULONGLONG summaryFrom=0;static int refreshes=0,made=0;static double sumMs=0,maxMs=0;static AtlasTiming sum{};
+                if(!summaryFrom)summaryFrom=now;
+                ++refreshes;sumMs+=uploadMs;maxMs=std::max(maxMs,uploadMs);made+=t.made;
+                sum.image+=t.image;sum.buffers+=t.buffers;sum.copy+=t.copy;sum.record+=t.record;sum.submit+=t.submit;
+                if(now-summaryFrom>=10000) {
+                    const double n=1.0/refreshes;char message[300];
+                    std::snprintf(message,sizeof message,"Frame UI refresh: %d in %.0f s, frame-thread upload mean %.2f ms, max %.2f ms | a refresh: "
+                        "image wait %.2f, buffers %.2f (%d new), copy %.2f, commands %.2f, submit %.2f ms",
+                        refreshes,(now-summaryFrom)/1000.0,sumMs*n,maxMs,sum.image*n,sum.buffers*n,made,sum.copy*n,sum.record*n,sum.submit*n);
+                    Say(message);summaryFrom=now;refreshes=made=0;sumMs=maxMs=0;sum={};
                 }
             }
         }
@@ -1478,7 +2202,16 @@ void Input() {
         sample.time=motionInput.time;sample.hand=motionInput.hand[0];sample.epoch=meleeEpoch;
         sample.equipment=motionInput.equipment;sample.active=motionInput.active&&motionOutput.meleeContact;
         sample.minWeaponSpeed=gestureSettings[settings::MeleeHitSpeed];
+        sample.minThrustSpeed=gestureSettings[settings::MeleeThrustSpeed];
+        sample.minShieldBashSpeed=gestureSettings[settings::ShieldBashSpeed];
+        const auto weapons=gamestate::MeleeEquipment();
+        const bool dual=dualwield::Eligible(skel::HeroClass(),weapons);
+        if(dual)sample.weapons=weapons;
         meleePoses.Push(s.sampleStamp,sample);
+        sample.hand=motionInput.hand[1];sample.handIndex=1;
+        sample.active=sample.active&&dual&&controls.lt<51&&controls.rt<51;
+        offhandPoses.Push(s.sampleStamp,sample);
+        sample.weapons={};
         sample.hand=motionInput.hand[1];sample.shield=true;sample.active=motionInput.active&&motionOutput.shieldContact;
         sample.skillSlot=shieldSlot;sample.skillOwner=shieldSkill.owner;sample.skillContext=motionInput.skillContext;
         shieldPoses.Push(s.sampleStamp,sample);
@@ -1490,6 +2223,13 @@ void Input() {
         if(motionOutput.javelinRelease) {
             bowPending.kind=bowflight::Kind::Javelin;
             bowPending.origin=bowPending.origin-bowPending.direction*bowflight::JavelinGrip;
+        } else if(quiverArrow.Active()) {
+            bowPending.skill=quiverArrow.skill;bowPending.owner=quiverArrow.owner;bowPending.missile=quiverArrow.missile;
+        }
+        if(motionOutput.bowRelease&&(quiverArrow.Active()||quiver.Current().Active())) {
+            char line[200];std::snprintf(line,sizeof line,"Frame bow quiver: release carries skill=%d missile=%d (loaded=%d)",
+                quiverArrow.skill,quiverArrow.missile,quiver.Current().skill);
+            Say(line);
         }
         bowPending.draw=motionOutput.draw;bowPending.at=GetTickCount64();bowPending.stamp=s.sampleStamp;
         bowPending.session=gamestate::LocalPlayer();bowPending.equipment=motionInput.equipment;
@@ -1499,10 +2239,27 @@ void Input() {
     MotionFeedback(motionOutput);
     // One sharp tap per confirmed impact. Consume the event once; do not
     // sustain or refresh it while the weapon remains inside the creature.
-    if(const auto at=meleeImpactAt.exchange(0);at&&motionInput.active&&GetTickCount64()-at<150)
-        MotionPulse(0,.95f,10000000,180.f);
+    auto impactPulse=[&](int hand,bool shield=false){
+        const auto impact=settings::HapticSample(gestureSettings,haptics::Category::Melee,shield?1:0);
+        const bool sent=MotionPulse(hand,haptics::Category::Melee,impact.amplitude,XrDuration(impact.milliseconds)*1000000,impact.frequency);
+        static ULONGLONG reportAt[2]{};const auto now=GetTickCount64();
+        if(now>=reportAt[hand]) {
+            char line[160];std::snprintf(line,sizeof line,"Frame melee haptics: source=%s output=%s duration_ms=%d frequency=%.0f sent=%d",
+                shield?"shield":"weapon",hand==0?"right":"left",impact.milliseconds,impact.frequency,sent);Say(line);reportAt[hand]=now+1000;
+        }
+    };
+    for(int hand=0;hand<2;++hand)if(const auto at=meleeImpactAt[hand].exchange(0);at&&motionInput.active&&GetTickCount64()-at<150)
+        impactPulse(hand);
     if(const auto at=shieldImpactAt.exchange(0);at&&motionInput.active&&GetTickCount64()-at<150)
-        MotionPulse(1,.95f,10000000,180.f);
+        impactPulse(1,true);
+    // A parry swing that missed: a soft, dull buzz on the shield hand, unlike a
+    // block's sharp tap. Scaled by the Melee haptic strength setting.
+    if(const auto at=parryMissAt.exchange(0);at&&motionInput.active&&GetTickCount64()-at<150)
+        MotionPulse(1,haptics::Category::Melee,.3f,70000000,60);
+    for(int hand=0;hand<2;++hand)if(spellHaptics.Take(hand,gamestate::LocalPlayer(),GetTickCount64(),motionInput.active)) {
+        const auto sample=haptics::Samples[int(haptics::Category::Spell)];
+        MotionPulse(hand,haptics::Category::Spell,sample.amplitude,XrDuration(sample.milliseconds)*1000000,sample.frequency);
+    }
     if(motionOutput.potion>=0)gamecmd::RequestPotion(motionOutput.potion);
     if(!motionInput.active)gamecmd::CancelPotion();
     if(motionOutput.feedback) {
@@ -1515,10 +2272,10 @@ void Input() {
         static ULONGLONG reportAt=0;
         if(GetTickCount64()>=reportAt) {
             char message[600];std::snprintf(message,sizeof message,
-                "Frame gameplay ready: active=%d head=%d hands=%d%d aim=%d panel=%d atlas=%d selection=%d weapon=%d trigger=%d blocked=%d bow ready=%d reach=%d drawing=%d charged=%d native=%d anchored=%d draw=%.2f melee contact=%d grip=%d skill=%d motion=%d shield equipped=%d hook=%d contact=%d",
+                "Frame gameplay ready: active=%d head=%d hands=%d%d aim=%d panel=%d atlas=%d selection=%d weapon=%d trigger=%d blocked=%d bow ready=%d reach=%d drawing=%d charged=%d native=%d anchored=%d arrow_preview=%d draw=%.2f melee contact=%d grip=%d skill=%d motion=%d shield equipped=%d hook=%d contact=%d",
                 motionInput.active,motionHeadTracked,motionInput.tracked[0],motionInput.tracked[1],motionInput.aimTracked,panelMode,
                 gameplayChain!=XR_NULL_HANDLE,motion.Selection(),int(motionInput.weapon),motionInput.trigger>.55f,motionOutput.block,
-                motionOutput.bowReady,motionOutput.bowInReach,motionOutput.bowDrawing,motionOutput.bowCharged,skel::MotionBowPosed(),skel::MotionBowAnchored(),motionOutput.draw,
+                motionOutput.bowReady,motionOutput.bowInReach,motionOutput.bowDrawing,motionOutput.bowCharged,skel::MotionBowPosed(),skel::MotionBowAnchored(),bowvr::PreviewReady(),motionOutput.draw,
                 motionOutput.meleeContact,motionInput.grip[0]>.6f,motionInput.selectedSkill,motionInput.selectedAvailable,
                 gamestate::LeftShield(),::melee::ShieldReady(),motionOutput.shieldContact);Say(message);
             reportAt=GetTickCount64()+5000;
@@ -1569,9 +2326,9 @@ void Input() {
 }
 void PlaceMainMenu() {
     if(!panels::CanAnchor(menuPlaced,render&&valid,state==XR_SESSION_STATE_FOCUSED,motionHeadTracked))return;
-    const auto placed=panels::AtEyeLevel(V(head.position),Q(head.orientation),
+    menuBase=panels::AtEyeLevel(V(head.position),Q(head.orientation),
         panels::MenuDistance(int(vrsettings::Read().values[settings::MenuDistance]),true));
-    menuPose=XrPose({placed.position,placed.orientation});menuPlaced=true;
+    menuPose=Placed(menuBase,menuOffset);menuPlaced=true;
     char b[160];std::snprintf(b,sizeof b,"Frame panels: main menu anchored from tracked head at eye height %.3f m",head.position.y);Say(b);
 }
 void Events() {
@@ -1594,6 +2351,27 @@ void Events() {
         event={XR_TYPE_EVENT_DATA_BUFFER};
     }
 }
+// Replay: the right eye drawn as the left one moved along the left view's own
+// x (the camera fold folds that move into its projection) - and submitted so:
+// the left eye's turn, its place moved by the eyes' gap along that x. A
+// headset whose eyes are turned apart or set off along y or z is shown the
+// right image reprojected from there.
+void ReplayRight() {
+    const auto q0=Q(views[0].pose.orientation),q1=Q(views[1].pose.orientation);
+    const auto apart=math::Rotate(math::Conjugate(q0),V(views[1].pose.position)-V(views[0].pose.position));
+    static bool told=false;
+    if(!told){
+        told=true;
+        const float dot=std::min(1.f,std::fabs(q0.x*q1.x+q0.y*q1.y+q0.z*q1.z+q0.w*q1.w));
+        char b[224];std::snprintf(b,sizeof b,"Frame OpenXR: replay - right eye %.1f mm along the left eye's x (%.1f mm up, %.1f mm back), the eyes turned %.2f degrees apart",
+            apart.x*1000,apart.y*1000,apart.z*1000,2*std::acos(dot)*57.2957795f);
+        Say(b);
+    }
+    replayGap=apart.x;
+    const auto at=V(views[0].pose.position)+math::Rotate(q0,{apart.x,0,0});
+    views[1].pose.orientation=views[0].pose.orientation;
+    views[1].pose.position={at.x,at.y,at.z};
+}
 bool Begin() {
     if(!session||frame) return frame;
     Events();if(!running)return false;
@@ -1613,14 +2391,15 @@ bool Begin() {
     const bool spatial=SpatialMenu();
     const bool book=spatial&&gamestate::JournalOnly();
     const bool npc=spatial&&gamestate::NpcChoicesOnly();
-    if(spatial!=spatialMode||book!=journalMode||npc!=npcChoicesMode) {
+    const bool surfaceChanged=spatial!=spatialMode||book!=journalMode;
+    if(surfaceChanged) {
         workspacePlaced=false;uiMissingFrames=0;std::fill_n(uiCrop,4,0);
-        npcChoicesCropped=false;
         if(book)journalPlacement.Open();
-        // An attack held when an NPC opens its dialog must not select an option.
-        ReleasePanelInput();panelMouse.Suspend();
         Say(spatial?(book?"Frame panels: handheld quest log":"Frame panels: native menus in stereo world"):"Frame panels: native surface closed");
     }
+    // Rearm pointer input when story/choices change, keeping the same anchored
+    // canvas. A trigger that dismisses speech must not also choose an option.
+    if(surfaceChanged||npc!=npcChoicesMode){ReleasePanelInput();panelMouse.Suspend();}
     const bool opaque=spatial&&gamestate::OpaqueMenuOpen();
     if(opaque!=opaqueMenuMode)Say(opaque?"Frame panels: shared black menu background":"Frame panels: spatial background restored");
     spatialMode=spatial;journalMode=book;npcChoicesMode=npc;opaqueMenuMode=opaque;upperBandMenuMode=spatial&&gamestate::UpperBandMenuOpen();uiEye.copied=false;
@@ -1629,6 +2408,7 @@ bool Begin() {
     const bool panel=wantsPanel&&wantsPanel()&&!spatialMode;
     if(panel!=panelMode){ReleasePanelInput();panelMouse.Suspend();panelMode=panel;menuPlaced=false;Say(panel?"Frame OpenXR: flat menu panel active":"Frame OpenXR: stereo gameplay active");}
     for(auto& e:eyes)e.copied=false;
+    for(auto& w:viewWorld)w.ok=false;
     XrViewLocateInfo li{XR_TYPE_VIEW_LOCATE_INFO};li.viewConfigurationType=XR_VIEW_CONFIGURATION_TYPE_PRIMARY_STEREO;li.displayTime=frameState.predictedDisplayTime;li.space=space;
     XrViewState vs{XR_TYPE_VIEW_STATE};uint32_t count=0;
     const double locateStart=Milliseconds();
@@ -1651,6 +2431,7 @@ bool Begin() {
                 {r.angleLeft,r.angleRight,r.angleDown,r.angleUp});
             for(auto& view:views)view.fov={f.left,f.right,f.up,f.down};
         }
+        if(replayPair)ReplayRight();
         static int lastProjectionMode=-1;
         if(lastProjectionMode!=int(centered)) {
             const auto& f=views[0].fov;char b[192];
@@ -1665,10 +2446,10 @@ bool Begin() {
         }
         const int distancePreset=int(vrsettings::Read().values[settings::MenuDistance]);
         static int previousDistance=-1;
-        if(distancePreset!=previousDistance){workspacePlaced=menuPlaced=false;previousDistance=distancePreset;}
+        if(distancePreset!=previousDistance){workspacePlaced=menuPlaced=false;previousDistance=distancePreset;menuOffset={};}
         if(spatialMode&&!journalMode&&panels::CanAnchor(workspacePlaced,render,state==XR_SESSION_STATE_FOCUSED,motionHeadTracked)) {
-            const auto placed=panels::AtEyeLevel(V(head.position),Q(head.orientation),panels::MenuDistance(distancePreset));
-            uiPose=XrPose({placed.position,placed.orientation});
+            uiBase=panels::AtEyeLevel(V(head.position),Q(head.orientation),panels::MenuDistance(distancePreset));
+            uiPose=Placed(uiBase,menuOffset);
             uiSize=panels::Width;workspacePlaced=true;
         }
         if(panelMode)PlaceMainMenu();
@@ -1696,6 +2477,231 @@ bool WaitGpuValue(uint64_t value) {
     if(result!=WAIT_OBJECT_0) {Say("Frame D3D12: GPU copy fence timed out");return false;}
     return true;
 }
+bool KeepTurn(ID3D12GraphicsCommandList* list,ID3D12Resource* shown,int eye,D3D12_RESOURCE_STATES state=D3D12_RESOURCE_STATE_RENDER_TARGET) {
+    if(turnImagesFailed)return false;
+    if(!turnWarpTried){turnWarpTried=true;turnWarp.Initialize(device.Get(),turnFormat,&Say);}
+    // The eyes' size is the session's: a new size comes with a new session.
+    auto& kept=turnImages[eye];
+    if(!kept) {
+        D3D12_HEAP_PROPERTIES heap{};heap.Type=D3D12_HEAP_TYPE_DEFAULT;
+        auto r=shown->GetDesc();r.Alignment=0;r.Flags=D3D12_RESOURCE_FLAG_NONE;r.Format=turnFormat;
+        if(!Hr(device->CreateCommittedResource(&heap,D3D12_HEAP_FLAG_NONE,&r,D3D12_RESOURCE_STATE_COMMON,nullptr,IID_PPV_ARGS(&kept)),"create kept eye image")) {
+            turnImagesFailed=true;turnKept={};return false;   // the other may still be read on the GPU: kept to Shutdown
+        }
+    }
+    D3D12_RESOURCE_BARRIER b[2]{};
+    for(auto& x:b){x.Type=D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;x.Transition.Subresource=D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;}
+    b[0].Transition.pResource=shown;b[0].Transition.StateBefore=state;b[0].Transition.StateAfter=D3D12_RESOURCE_STATE_COPY_SOURCE;
+    b[1].Transition.pResource=kept.Get();b[1].Transition.StateBefore=D3D12_RESOURCE_STATE_COMMON;b[1].Transition.StateAfter=D3D12_RESOURCE_STATE_COPY_DEST;
+    const UINT first=state==D3D12_RESOURCE_STATE_COPY_SOURCE?1:0;   // already readable
+    list->ResourceBarrier(2-first,b+first);list->CopyResource(kept.Get(),shown);
+    for(auto& x:b)std::swap(x.Transition.StateBefore,x.Transition.StateAfter);
+    list->ResourceBarrier(2-first,b+first);
+    return true;
+}
+// By turns: this present's scene depth (scenedepth's copy, made for it before
+// the effects) kept beside the eye's image, as the depth it was drawn with.
+bool KeepDepth(ID3D12GraphicsCommandList* list,int eye) {
+    scenedepth::Kept latest;
+    if(!scenedepth::Take(latest)) {
+        static bool told=false;
+        if(!told){told=true;Say("Frame OpenXR: by turns - no scene depth for an eye yet; moving draws both eyes until there is");}
+        return false;
+    }
+    constexpr auto readable=D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE|D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE;
+    auto* source=reinterpret_cast<ID3D12Resource*>(latest.resource);
+    auto& kept=turnDepths[eye];
+    const auto desc=source->GetDesc();
+    if(kept.texture) {   // a new DLSS mode: a new size. The last turn may still read the old one.
+        const auto k=kept.texture->GetDesc();
+        if(k.Width!=desc.Width||k.Height!=desc.Height||k.Format!=desc.Format){if(!WaitGpu())return false;kept.texture.Reset();}
+    }
+    if(!kept.texture) {
+        D3D12_HEAP_PROPERTIES heap{};heap.Type=D3D12_HEAP_TYPE_DEFAULT;
+        auto r=desc;r.Alignment=0;r.Flags=D3D12_RESOURCE_FLAG_NONE;
+        if(!Hr(device->CreateCommittedResource(&heap,D3D12_HEAP_FLAG_NONE,&r,readable,nullptr,IID_PPV_ARGS(&kept.texture)),"create kept eye depth"))return false;
+        char line[192];std::snprintf(line,sizeof line,"Frame OpenXR: by turns - each eye's scene depth kept: %llux%u format %u, the scene in %.3f x %.3f of it",
+            (unsigned long long)desc.Width,desc.Height,latest.format,latest.scale[0],latest.scale[1]);Say(line);
+    }
+    D3D12_RESOURCE_BARRIER b[2]{};
+    for(auto& x:b){x.Type=D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;x.Transition.Subresource=D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;}
+    b[0].Transition.pResource=source;b[0].Transition.StateBefore=readable;b[0].Transition.StateAfter=D3D12_RESOURCE_STATE_COPY_SOURCE;
+    b[1].Transition.pResource=kept.texture.Get();b[1].Transition.StateBefore=readable;b[1].Transition.StateAfter=D3D12_RESOURCE_STATE_COPY_DEST;
+    list->ResourceBarrier(2,b);list->CopyResource(kept.texture.Get(),source);
+    for(auto& x:b)std::swap(x.Transition.StateBefore,x.Transition.StateAfter);
+    list->ResourceBarrier(2,b);
+    kept.format=DXGI_FORMAT(latest.format);kept.scale[0]=latest.scale[0];kept.scale[1]=latest.scale[1];
+    return true;
+}
+// By turns: this present's effects layer (the game's own targets, as
+// effectslayer last saw them) into the eye's effects blocks, while the
+// turns keep the eye's own picture where the effects are.
+void KeepEffects(ID3D12GraphicsCommandList* list,int eye) {
+    effectslayer::Layer layer;
+    if(turnsKeepOwn.load()<3||!effectslayer::Latest(layer)||
+       !turnWarp.Effects(device.Get(),list,layer.targets,layer.states,eye,turnsEffectsReach.load()*float(layer.width)/4096)) {
+        turnWarp.ForgetEffects(eye);return;
+    }
+    static bool told=false;
+    if(!told){told=true;Say("Frame OpenXR: by turns - the game's effects layer kept for each eye (first frame doing so)");}
+}
+// By turns: this eye's interface (hud's copy, in a shader-resource state) kept
+// beside its image, for TurnEye to lay over the eye when it is not drawn.
+bool KeepLayer(ID3D12GraphicsCommandList* list,ID3D12Resource* layer,int eye) {
+    auto& kept=turnLayers[eye];
+    const auto desc=layer->GetDesc();
+    if(kept) {   // the game's interface took a new size: the last turn may still read the old one
+        const auto k=kept->GetDesc();
+        if(k.Width!=desc.Width||k.Height!=desc.Height||k.Format!=desc.Format){if(!WaitGpu())return false;kept.Reset();}
+    }
+    if(!kept) {
+        D3D12_HEAP_PROPERTIES heap{};heap.Type=D3D12_HEAP_TYPE_DEFAULT;
+        auto r=desc;r.Alignment=0;r.Flags=D3D12_RESOURCE_FLAG_NONE;
+        if(!Hr(device->CreateCommittedResource(&heap,D3D12_HEAP_FLAG_NONE,&r,D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE,nullptr,IID_PPV_ARGS(&kept)),"create kept eye interface"))return false;
+        char line[160];std::snprintf(line,sizeof line,"Frame OpenXR: by turns - the game's interface taken out of each eye's picture and laid back over it (%llux%u)",
+            (unsigned long long)desc.Width,desc.Height);Say(line);
+    }
+    constexpr auto readable=D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE|D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE;
+    D3D12_RESOURCE_BARRIER b[2]{};
+    for(auto& x:b){x.Type=D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;x.Transition.Subresource=D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;}
+    b[0].Transition.pResource=layer;b[0].Transition.StateBefore=readable;b[0].Transition.StateAfter=D3D12_RESOURCE_STATE_COPY_SOURCE;
+    b[1].Transition.pResource=kept.Get();b[1].Transition.StateBefore=D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;b[1].Transition.StateAfter=D3D12_RESOURCE_STATE_COPY_DEST;
+    list->ResourceBarrier(2,b);list->CopyResource(kept.Get(),layer);
+    for(auto& x:b)std::swap(x.Transition.StateBefore,x.Transition.StateAfter);
+    list->ResourceBarrier(2,b);
+    return true;
+}
+// The interface over target (in `state`, and left in it): TurnWarp::Interface.
+bool LayInterface(ID3D12GraphicsCommandList* list,ID3D12Resource* layer,ID3D12Resource* target,const std::array<float,9>& homography,int at,D3D12_RESOURCE_STATES state) {
+    D3D12_RESOURCE_BARRIER b{};b.Type=D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+    b.Transition={target,D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES,state,D3D12_RESOURCE_STATE_RENDER_TARGET};
+    const bool moved=state!=D3D12_RESOURCE_STATE_RENDER_TARGET;
+    if(moved)list->ResourceBarrier(1,&b);
+    const bool laid=turnWarp.Interface(device.Get(),list,layer,target,homography,at);
+    std::swap(b.Transition.StateBefore,b.Transition.StateAfter);
+    if(moved)list->ResourceBarrier(1,&b);
+    return laid;
+}
+// The eye not drawn is turned here when its interface goes over it (TurnEye).
+bool TurnTarget(ID3D12Resource* image) {
+    const auto d=image->GetDesc();
+    if(turnTarget){const auto t=turnTarget->GetDesc();return t.Width==d.Width&&t.Height==d.Height;}   // one size a session
+    D3D12_HEAP_PROPERTIES heap{};heap.Type=D3D12_HEAP_TYPE_DEFAULT;
+    auto r=d;r.Alignment=0;r.Format=TypelessFamily(turnFormat);r.Flags=D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET;
+    if(r.Format==DXGI_FORMAT_UNKNOWN||
+       !Hr(device->CreateCommittedResource(&heap,D3D12_HEAP_FLAG_NONE,&r,D3D12_RESOURCE_STATE_RENDER_TARGET,nullptr,IID_PPV_ARGS(&turnTarget)),"create turned eye target")) {
+        turnTarget.Reset();layersFailed=true;layerKept={};
+        Say("Frame OpenXR: by turns - no target to lay the interface over the eye not drawn; it stays in the picture");
+        return false;
+    }
+    return true;
+}
+// The eye not drawn this frame, turned from its kept image to this frame's
+// head into its swapchain. False leaves it unacquired: its last released
+// image goes again at the pose it was drawn with.
+// By turns: nearer than CarriedNear metres along the view the eye not drawn
+// moves with the hero (TurnDepth::carry), farther than CarriedFar with the
+// world. Hands and weapons sit within the first; the ground at the feet,
+// even looking straight down, past the second.
+constexpr float CarriedNear=1.0f,CarriedFar=1.6f;
+bool TurnEye(int i) {
+    auto& e=eyes[i];
+    // All of a swapchain's images are alike: checked before one is acquired,
+    // as an acquired image nothing was written to must never be released.
+    if(!turnKept[i]||!lastEyes[i].ok||e.acquired||e.images.empty()||!turnWarp.Fits(turnImages[i].Get(),e.images[0].texture))return false;
+    if(!Acquire(e)||!WaitGpuValue(e.copyFence)||
+       !Hr(e.allocator->Reset(),"reset turn allocator")||!Hr(e.commands->Reset(e.allocator.Get(),nullptr),"reset turn list")){failed=true;return false;}
+    // In the world: the body's turn then the head's, now the drawn eye's body turn.
+    const auto& was=lastEyes[i];const auto& now=views[i];
+    const auto h=TurnHomography(math::Multiply(was.base,Q(was.pose.orientation)),{was.fov.angleLeft,was.fov.angleRight,was.fov.angleDown,was.fov.angleUp},
+                                math::Multiply(viewBase[i^1],Q(now.pose.orientation)),{now.fov.angleLeft,now.fov.angleRight,now.fov.angleDown,now.fov.angleUp});
+    // By turns: moved as well, with the depth it was drawn with, to where View
+    // puts this eye this frame (the hero's step, the head's, the body's turn).
+    TurnDepth depth{},other{};const TurnDepth* moving=nullptr;const TurnDepth* fromDrawn=nullptr;
+    const auto& w=stageWorld;
+    const bool placed=keepDepth&&turnWarp.DepthReady()&&w.valid&&w.upm>0&&GetTickCount64()-w.at<250;
+    const auto offset=math::Rotate(w.base,V(now.pose.position)-w.origin)*w.upm;
+    const math::Vec at={w.hero.x+offset.x,w.hero.y+w.eyeHeight+offset.y,w.hero.z+offset.z};
+    // The drawn eye's picture of this frame (kept by Copy, before this on the
+    // queue), moved across with its depth from where View put it.
+    const auto& drawnAt=viewWorld[i^1];
+    if(placed&&turnsFromDrawnEye.load()&&eyes[i^1].copied&&turnKept[i^1]&&turnDepths[i^1].ok&&drawnAt.ok&&drawnAt.nearPlane>0) {
+        const auto& f=views[i^1].fov;
+        other.image=turnImages[i^1].Get();
+        other.depth=turnDepths[i^1].texture.Get();other.format=turnDepths[i^1].format;
+        other.scale[0]=turnDepths[i^1].scale[0];other.scale[1]=turnDepths[i^1].scale[1];
+        other.nearPlane=drawnAt.nearPlane;
+        other.move=TurnMove(drawnAt.at,drawnAt.turn,at,math::Multiply(w.base,Q(now.pose.orientation)));
+        other.drawnFov={f.angleLeft,f.angleRight,f.angleDown,f.angleUp};
+        other.nowFov={now.fov.angleLeft,now.fov.angleRight,now.fov.angleDown,now.fov.angleUp};
+        const auto gap=drawnAt.at-at;other.apart=std::sqrt(gap.x*gap.x+gap.y*gap.y+gap.z*gap.z);
+        if(const int keep=turnsKeepOwn.load()) {   // this eye's own picture where it shows the same surface
+            other.keep=TurnEdgePixels;
+            const float wide=float(turnImages[i^1]->GetDesc().Width)/4096;
+            if(keep==1||keep==4){other.keepNear=turnsKeepGap.load()*wide;other.keepReach=turnsKeepReach.load()*wide;}   // round near things
+            if(keep>=3)other.keepEffects=turnsEffectsLevel.load();   // where the game's effects are
+        }
+        fromDrawn=&other;
+    }
+    if(placed&&was.world.ok&&turnDepths[i].ok) {
+        depth.depth=turnDepths[i].texture.Get();depth.format=turnDepths[i].format;
+        depth.scale[0]=turnDepths[i].scale[0];depth.scale[1]=turnDepths[i].scale[1];
+        depth.nearPlane=was.world.nearPlane;
+        depth.move=TurnMove(was.world.at,was.world.turn,at,math::Multiply(w.base,Q(now.pose.orientation)));
+        depth.drawnFov={was.fov.angleLeft,was.fov.angleRight,was.fov.angleDown,was.fov.angleUp};
+        depth.nowFov={now.fov.angleLeft,now.fov.angleRight,now.fov.angleDown,now.fov.angleUp};
+        // Within reach (the hands, the weapon, the body): taken along by the
+        // hero's step and the body's turn since the eye was drawn.
+        depth.carry=TurnCarry(was.world.at,was.world.turn,was.world.hero,was.base,w.hero,w.base,at,math::Multiply(w.base,Q(now.pose.orientation)));
+        depth.reach[0]=CarriedNear*w.upm;depth.reach[1]=CarriedFar*w.upm;
+        moving=&depth;
+    }
+    static bool keepTold=false;
+    if(moving&&fromDrawn&&other.keep>0&&!keepTold){keepTold=true;Say("Frame OpenXR: by turns - the eye not drawn keeps its own picture where the drawn eye's shows the same surface (first frame doing so)");}
+    D3D12_RESOURCE_BARRIER b[2]{};const UINT kept=fromDrawn?2:1;
+    for(UINT k=0;k<kept;++k){b[k].Type=D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+        b[k].Transition={turnImages[i^k].Get(),D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES,D3D12_RESOURCE_STATE_COMMON,D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE};}
+    e.commands->ResourceBarrier(kept,b);
+    // With its interface kept (the game's labels, out of its picture) the eye
+    // is turned into turnTarget, its interface laid over it there as the game
+    // blends it (UNORM), and then it goes to its swapchain image.
+    ID3D12Resource* image=e.images[e.index].texture;
+    const bool layered=layerKept[i]&&TurnTarget(image);
+    const bool turned=turnWarp.Render(device.Get(),e.commands.Get(),turnImages[i].Get(),layered?turnTarget.Get():image,h,i,moving,fromDrawn);
+    for(UINT k=0;k<kept;++k)std::swap(b[k].Transition.StateBefore,b[k].Transition.StateAfter);
+    e.commands->ResourceBarrier(kept,b);
+    if(turned&&layered) {
+        // Its own interface as its pass drew it, turned as its picture was:
+        // each label where this eye last saw it, at its own depth, never moved
+        // with the scene behind it or cut along a monster's edge.
+        LayInterface(e.commands.Get(),turnLayers[i].Get(),turnTarget.Get(),h,i*2,D3D12_RESOURCE_STATE_RENDER_TARGET);
+        D3D12_RESOURCE_BARRIER c[2]{};
+        for(auto& x:c){x.Type=D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;x.Transition.Subresource=D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;}
+        c[0].Transition.pResource=turnTarget.Get();c[0].Transition.StateBefore=D3D12_RESOURCE_STATE_RENDER_TARGET;c[0].Transition.StateAfter=D3D12_RESOURCE_STATE_COPY_SOURCE;
+        c[1].Transition.pResource=image;c[1].Transition.StateBefore=D3D12_RESOURCE_STATE_RENDER_TARGET;c[1].Transition.StateAfter=D3D12_RESOURCE_STATE_COPY_DEST;
+        e.commands->ResourceBarrier(2,c);e.commands->CopyResource(image,turnTarget.Get());
+        for(auto& x:c)std::swap(x.Transition.StateBefore,x.Transition.StateAfter);
+        e.commands->ResourceBarrier(2,c);
+    }
+    // The belt's potion models, left out of the kept images (Copy), drawn fresh
+    // at this eye's pose: moved with the depth behind them they flickered and
+    // smeared (owner, 2026-10-19). The eye's copy fence was waited above.
+    if(turned&&interactionInput.active&&potionModels.Ready())
+        potionModels.Render(e.commands.Get(),image,unsigned(i),{V(now.pose.position),Q(now.pose.orientation)},
+            {now.fov.angleLeft,now.fov.angleRight,now.fov.angleDown,now.fov.angleUp},potionScene);
+    // The elemental hands likewise: Copy draws them after the image is kept.
+    if(turned&&!panelMode&&!spatialMode&&!settingsModel.open&&interactionInput.active&&
+       elements::Current(elementalScene,gamestate::LocalPlayer(),GetTickCount64()))
+        elementalRenderer.Render(e.commands.Get(),image,unsigned(i),{V(now.pose.position),Q(now.pose.orientation)},
+            {now.fov.angleLeft,now.fov.angleRight,now.fov.angleDown,now.fov.angleUp},elementalScene);
+    if(!Hr(e.commands->Close(),"close turn list")||!turned){failed=true;return false;}
+    ID3D12CommandList* lists[]={e.commands.Get()};queue->ExecuteCommandLists(1,lists);
+    if(!Hr(queue->Signal(fence.Get(),++fenceValue),"signal turn fence")){failed=true;return false;}
+    e.copyFence=fenceValue;
+    if(moving)++turnCounts.moved;else ++turnCounts.turned;
+    if(fromDrawn)++turnCounts.drawn;
+    return true;
+}
 bool Copy(ID3D12Resource* src,Eye& e,reshade::api::command_queue* rq) {
     // The runtime orders images on our bound D3D12 queue. Our allocator has a
     // separate lifetime: never reset it until its own previous copy completed.
@@ -1716,7 +2722,40 @@ bool Copy(ID3D12Resource* src,Eye& e,reshade::api::command_queue* rq) {
     barriers[0].Transition.pResource=src;barriers[0].Transition.StateBefore=D3D12_RESOURCE_STATE_PRESENT;barriers[0].Transition.StateAfter=D3D12_RESOURCE_STATE_COPY_SOURCE;
     barriers[1].Transition.pResource=dest;barriers[1].Transition.StateBefore=D3D12_RESOURCE_STATE_RENDER_TARGET;barriers[1].Transition.StateAfter=D3D12_RESOURCE_STATE_COPY_DEST;
     if(gpu)e.commands->EndQuery(gpuProfile.heap.Get(),D3D12_QUERY_TYPE_TIMESTAMP,eye*5+3);
-    e.commands->ResourceBarrier(2,barriers);e.commands->CopyResource(dest,src);
+    e.commands->ResourceBarrier(2,barriers);
+    // Kept before the game's interface and the belt's potion models go over
+    // the picture: neither is in the scene's depth, so by turns the eye not
+    // drawn lays its own over (TurnEye) instead of moving these with the
+    // depth behind them.
+    turnKept[eye]=keepTurns&&KeepTurn(e.commands.Get(),src,int(eye),D3D12_RESOURCE_STATE_COPY_SOURCE);
+    turnDepths[eye].ok=keepDepth&&turnKept[eye]&&KeepDepth(e.commands.Get(),int(eye));
+    // and where the game's effects were in it (TurnDepth::keepEffects)
+    if(turnDepths[eye].ok)KeepEffects(e.commands.Get(),int(eye));else turnWarp.ForgetEffects(int(eye));
+    // By turns the game's interface was taken out of its picture: laid back as
+    // the game lays it, before the headset and the window get the picture.
+    uint32_t layerWidth=0,layerHeight=0;
+    auto* layer=reinterpret_cast<ID3D12Resource*>(hud::TakenInterface(layerWidth,layerHeight));
+    layerKept[eye]=layer&&turnKept[eye]&&KeepLayer(e.commands.Get(),layer,int(eye));
+    if(layer&&!LayInterface(e.commands.Get(),layerKept[eye]?turnLayers[eye].Get():layer,src,TurnIdentity,int(eye)*2,D3D12_RESOURCE_STATE_COPY_SOURCE)) {
+        layersFailed=true;layerKept={};
+        Say("Frame OpenXR: by turns - the game's interface could not be laid back; from the next frame it stays in the picture");
+    }
+    e.commands->CopyResource(dest,src);
+    const bool pairLeft=!turnFrame&&mirrorSupported&&eyes[0].acquired&&eyes[0].copied;
+    if(eye==1&&mirrorMono&&(pairLeft||(turnFrame&&turnKept[0]))) {
+        // The headset already has this right frame; the window gets the left
+        // image back: this pair's, still acquired until EndPair releases both
+        // eyes, or by turns the image kept from the last left frame.
+        D3D12_RESOURCE_BARRIER m[2]{barriers[0],barriers[1]};
+        m[0].Transition.StateBefore=D3D12_RESOURCE_STATE_COPY_SOURCE;m[0].Transition.StateAfter=D3D12_RESOURCE_STATE_COPY_DEST;
+        m[1].Transition.pResource=pairLeft?eyes[0].images[eyes[0].index].texture:turnImages[0].Get();m[1].Transition.StateAfter=D3D12_RESOURCE_STATE_COPY_SOURCE;
+        if(!pairLeft)m[1].Transition.StateBefore=D3D12_RESOURCE_STATE_COMMON;
+        e.commands->ResourceBarrier(2,m);e.commands->CopyResource(src,m[1].Transition.pResource);
+        std::swap(m[1].Transition.StateBefore,m[1].Transition.StateAfter);e.commands->ResourceBarrier(1,&m[1]);
+        // By turns the kept left image is the scene alone: its interface over it.
+        if(!pairLeft&&layerKept[0])LayInterface(e.commands.Get(),turnLayers[0].Get(),src,TurnIdentity,3,D3D12_RESOURCE_STATE_COPY_DEST);
+        barriers[0].Transition.StateAfter=D3D12_RESOURCE_STATE_COPY_DEST;
+    }
     for(auto& b:barriers)std::swap(b.Transition.StateBefore,b.Transition.StateAfter);
     e.commands->ResourceBarrier(2,barriers);
     if(!panelMode&&interactionInput.active&&potionModels.Ready()) {
@@ -1763,7 +2802,10 @@ bool CopyMap(reshade::api::command_queue* rq) {
     if(!Acquire(e)||!WaitGpuValue(e.copyFence))return false;
     rq->flush_immediate_command_list();
     if(FAILED(e.allocator->Reset())||FAILED(e.commands->Reset(e.allocator.Get(),nullptr)))return false;
-    if(!mapBlit.Render(device.Get(),e.commands.Get(),src,e.images[e.index].texture,true,true)) {
+    // The heading arrow over the hero (while the compass knows the heading),
+    // the map turning with you (top-down only), and top-down itself.
+    const uint32_t flags=(compassFrame?1u:0u)|(compassFrame&&MapTurnOn()&&MapTopDownOn()?4u:0u)|(MapTopDownOn()?8u:0u);
+    if(!mapBlit.Render(device.Get(),e.commands.Get(),src,e.images[e.index].texture,true,true,flags,float(wristHeading.bearing),1.f)) {
         e.commands->Close();return false;
     }
     if(FAILED(e.commands->Close()))return false;
@@ -1780,24 +2822,15 @@ bool CopyUi(reshade::api::command_queue* rq) {
         return true;
     }
     uiMissingFrames=0;
-    bool croppedNpc=false;
-    int32_t native[4]{};
-    // Touch profiles need the complete canvas to retain Trade/Talk choices at
-    // square resolutions. Keep the separately tested Frame/Index widget crop.
-    const bool quest=detectedControllers.hands[0]==controllers::Layout::Touch||
-        detectedControllers.hands[1]==controllers::Layout::Touch;
-    static bool uncroppedNpcLogged=false;
-    if(npcChoicesMode&&quest) {
-        crop[0]=crop[1]=0;crop[2]=int(w);crop[3]=int(h);
-        if(!uncroppedNpcLogged)Say("Frame NPC choices: Quest diagnostic uses complete canvas, no widget crop");
-        uncroppedNpcLogged=true;
-    } else uncroppedNpcLogged=false;
-    if(npcChoicesMode&&!quest&&gamestate::NpcChoicesRect(native)) {
-        const auto box=dialogue::Crop({native[0],native[1],native[2],native[3]},int(w),int(h));
-        if(box.w>0&&box.h>0) {
-            crop[0]=box.x;crop[1]=box.y;crop[2]=box.w;crop[3]=box.h;croppedNpc=true;
+    static bool completeNpcLogged=false;
+    if(npcChoicesMode) {
+        const auto canvas=dialogue::Canvas(int(w),int(h));
+        crop[0]=canvas.x;crop[1]=canvas.y;crop[2]=canvas.w;crop[3]=canvas.h;
+        if(!completeNpcLogged) {
+            char b[180];std::snprintf(b,sizeof b,"Frame NPC choices: complete %ux%u source canvas; widget crop disabled",w,h);Say(b);
         }
     }
+    completeNpcLogged=npcChoicesMode;
     auto& e=uiEye;
     if(e.chain&&(w!=uiWidth||h!=uiHeight)) {
         if(!WaitGpuValue(e.copyFence))return false;
@@ -1825,10 +2858,6 @@ bool CopyUi(reshade::api::command_queue* rq) {
     if(FAILED(e.commands->Close()))return false;
     ID3D12CommandList* lists[]={e.commands.Get()};queue->ExecuteCommandLists(1,lists);
     if(FAILED(queue->Signal(fence.Get(),++fenceValue)))return false;
-    if(croppedNpc&&!npcChoicesCropped) {
-        char b[180];std::snprintf(b,sizeof b,"Frame NPC choices: eye-level 4x surface, crop %d,%d %dx%d of %ux%u",crop[0],crop[1],crop[2],crop[3],w,h);Say(b);
-    }
-    npcChoicesCropped=croppedNpc;
     e.copyFence=fenceValue;e.copied=true;std::copy_n(crop,4,uiCrop);return true;
 }
 void Capture(reshade::api::command_queue* rq,reshade::api::swapchain* swap) {
@@ -1848,14 +2877,18 @@ void Capture(reshade::api::command_queue* rq,reshade::api::swapchain* swap) {
     const bool stereo=afr&&afr->version==FLATVR_AFR_EYE_VERSION&&afr->enabled&&(!(wantsPanel&&wantsPanel())||SpatialMenu());
     if(!Begin()||!render||!valid) {if(!stereo)EndPair();return;}
     const uint32_t eye=stereo?((afr->eye^afr->swap)&1u):0u;
-    if(eye==0&&!CopyMap(rq)) {mapSupported=false;mapEye.copied=false;Say("Frame menu map: copy unavailable; optional map suspended");}
-    if((eye==0&&!CopyUi(rq))||!Copy(src,eyes[eye],rq)){failed=true;EndPair();ClearInput();return;}
+    mirrorMono=stereo&&vrsettings::Read().values[settings::DesktopOneEye]>.5f;
+    // The map and menu surfaces are copied once a frame: from the left eye's
+    // pass, or by turns from whichever eye this frame draws.
+    const bool shared=eye==0||(pairDrawing&&turnFrame);
+    if(shared&&!CopyMap(rq)) {mapSupported=false;mapEye.copied=false;Say("Frame menu map: copy unavailable; optional map suspended");}
+    if((shared&&!CopyUi(rq))||!Copy(src,eyes[eye],rq)){failed=true;EndPair();ClearInput();return;}
     if(!stereo) {
         PlaceMainMenu();
         EndPair();
     } else if(!pairDrawing&&eyes[0].copied&&eyes[1].copied) {
         EndPair();
-    } else if(eye==1&&!eyes[0].copied) {
+    } else if(eye==1&&!eyes[0].copied&&!turnFrame) {
         // Missed left eye: submit zero layers, never present an old/mono image as stereo.
         EndPair();
     }
@@ -1894,6 +2927,7 @@ void DestroySwap(reshade::api::swapchain* swap,bool resize) {
 }
 } // namespace
 
+void CaptureEffects(reshade::api::effect_runtime* rt){AfterEffects(rt);}
 bool HandleWindowFocusMessage(void* window,uint32_t message,uint64_t token,int64_t deadline) {
     return windowFocus.Handle(static_cast<HWND>(window),message,WPARAM(token),LPARAM(deadline));
 }
@@ -1907,19 +2941,49 @@ void Register(LogFn log,PanelFn panel,PanelFn world,PanelFn toggle) {
     reshade::register_event<reshade::addon_event::create_pipeline>(&PipelineCreating);
     reshade::register_event<reshade::addon_event::init_pipeline>(&PipelineCreated);
     foveation::Register(log);
+    effectslayer::Register(log);
     resolution::Register(log);
     registered=true;Say("Frame OpenXR: registered D3D12 capture; awaiting game Present");
 }
 bool SpatialMenu(){return uiSupported.load()&&uiworld::Ready()&&hud::LayerFound()&&inWorld&&inWorld()&&wantsPanel&&wantsPanel();}
 bool Active() {std::lock_guard lock(mutex);return frame&&valid&&render&&!failed&&!panelMode;}
+bool VrGameplay(uint64_t now) {const auto at=vrGameplayAt.load();return at&&now>=at&&now-at<=1500;}
+void PublishSewerPrompt(const sewerprompt::Target& target) {
+    std::lock_guard lock(sewerPromptMutex);sewerPrompt=target;
+}
 void ConfigureDeferredWait(bool on) {
     if(deferredWait.exchange(on)!=on)Say(on?"Frame OpenXR: GPU wait deferred until copy allocator reuse":"Frame OpenXR: conservative GPU wait before image release");
 }
 void ConfigureSymmetricProjection(bool on) {symmetricProjection.store(on);}
+void ConfigureTurnsFromDrawnEye(bool on) {
+    if(turnsFromDrawnEye.exchange(on)!=on)Say(on?"Frame OpenXR: by turns - the eye not drawn mostly from the drawn eye's picture":"Frame OpenXR: by turns - the eye not drawn from its own image alone");
+}
+void SetTurnsKeepOwn(int mode) {
+    static const char* const said[]={"Frame OpenXR: by turns - the eye not drawn takes the drawn eye's picture wherever it reaches",
+        "Frame OpenXR: by turns - the eye not drawn keeps its own picture where it shows the same surface, round near things only",
+        "Frame OpenXR: by turns - the eye not drawn keeps its own picture wherever it shows the same surface",
+        "Frame OpenXR: by turns - the eye not drawn keeps its own picture where it shows the same surface, where the game's effects are",
+        "Frame OpenXR: by turns - the eye not drawn keeps its own picture where it shows the same surface, round near things and where the game's effects are"};
+    mode=std::clamp(mode,0,4);
+    if(turnsKeepOwn.exchange(mode)!=mode)Say(said[mode]);
+}
+int TurnsKeepOwn() {return turnsKeepOwn.load();}
+void ConfigureTurnsKeepOwn(int mode) {
+    // Every ini reload passes it (VR Settings' Apply too): only a change of
+    // the ini's own value overrides the DEV switch.
+    static std::atomic<int> read{-1};
+    mode=std::clamp(mode,0,4);
+    if(read.exchange(mode)!=mode)SetTurnsKeepOwn(mode);
+}
+void ConfigureTurnsKeepNear(float gap,float reach) {turnsKeepGap.store(std::clamp(gap,1.f,1000.f));turnsKeepReach.store(std::clamp(reach,16.f,1024.f));}
+void ConfigureTurnsKeepEffects(float level,float reach) {turnsEffectsLevel.store(std::clamp(level,1e-4f,100.f));turnsEffectsReach.store(std::clamp(reach,0.f,512.f));}
 void ConfigureEyeTracking(bool on) {eyeTracking.store(on);}
 void BeginEye(int eye) {
     hud::UiFrame(spatialMode,!journalMode,eye);
     std::lock_guard lock(mutex);
+    // By turns the game's interface comes out of the picture: Copy and TurnEye lay it back.
+    hud::TakeInterface(Active()&&keepDepth&&!layersFailed&&turnWarp.InterfaceReady()&&
+        RenderTargetCompatible(format,UnormView(turnFormat))&&TypelessFamily(turnFormat)!=DXGI_FORMAT_UNKNOWN);
     hud::NativeGameplay(nativehud::Gameplay(Active(),inWorld&&inWorld(),wantsPanel&&wantsPanel(),spatialMode));
     lightbounds::SetActive(Active()&&inWorld&&inWorld());
     d2rcam::SetStereoUiEye(Active()?(eye&1):-1);
@@ -1937,7 +3001,7 @@ void BeginEye(int eye) {
 void ResetHeight() {
     std::lock_guard lock(mutex);
     ++meleeEpoch;motion.Cancel();motionOutput={};gamecmd::CancelPotion();
-    meleePoses.Clear();CancelShieldCast();
+    meleePoses.Clear();offhandPoses.Clear();CancelShieldCast();
     bowNeedsWorld=bowHasShot=false;
     skel::SetMotionBow(false,false,0);
     if(!valid||!haveOrigin)return;
@@ -1947,7 +3011,7 @@ void ResetHeight() {
 void Recenter() {
     std::lock_guard lock(mutex);
     ++meleeEpoch;motion.Cancel();motionOutput={};gamecmd::CancelPotion();
-    meleePoses.Clear();CancelShieldCast();
+    meleePoses.Clear();offhandPoses.Clear();CancelShieldCast();
     bowNeedsWorld=bowHasShot=false;
     skel::SetMotionBow(false,false,0);
     if(!valid)return;
@@ -1959,14 +3023,45 @@ bool TakeWorldRecenter() {
     std::lock_guard lock(mutex);const bool take=worldRecenter;worldRecenter=false;return take;
 }
 void RequestStereoCapture(){captureRequested.store(true);}
-void BeginPair() {
+int StereoRendering() {return std::clamp(int(std::lround(vrsettings::Read().values[settings::StereoRendering])),0,1);}
+bool GpuWaitDeferred() {return deferredWait.load();}
+bool ReplayReady() {
+    std::lock_guard lock(mutex);
+    return !captureRequested.load()&&!d2rcam::LabelCapturePending();
+}
+bool ReplayPair() {std::lock_guard lock(mutex);return replayPair&&!failed;}
+float ReplayShift() {std::lock_guard lock(mutex);return replayShift;}
+float ReplayProjShift() {
+    std::lock_guard lock(mutex);
+    const auto off=[](const XrFovf& f){const float l=std::tan(f.angleLeft),r=std::tan(f.angleRight);return (r+l)/(r-l);};
+    return .5f*(off(views[0].fov)-off(views[1].fov));
+}
+bool TurnDepthWanted() {return StereoRendering()==1;}
+bool TurnDepthReady() {
+    std::lock_guard lock(mutex);
+    return turnWarp.DepthReady()&&turnDepths[0].ok&&turnDepths[1].ok&&lastEyes[0].world.ok&&lastEyes[1].world.ok;
+}
+TurnCounts TakeTurnCounts() {
+    std::lock_guard lock(mutex);
+    const auto counts=turnCounts;turnCounts={};return counts;
+}
+bool TurnReady() {
+    std::lock_guard lock(mutex);
+    return lastEyes[0].ok&&lastEyes[1].ok&&!captureRequested.load()&&!d2rcam::LabelCapturePending();
+}
+void BeginPair(bool byTurns,bool replay) {
     std::lock_guard lock(mutex);
     lastTiming={};
     if(session&&!failed){
-        if(frame)EndPair();Begin();pairDrawing=true;
+        if(frame)EndPair();
+        const int mode=StereoRendering();
+        turnFrame=byTurns;replayPair=replay&&!byTurns;
+        keepTurns=byTurns||mode==1;keepDepth=mode==1;Begin();pairDrawing=true;
+        if(replayPair&&!(frame&&valid&&render&&!panelMode))replayPair=false;
         gpuProfile.started=gpuProfile.effects=gpuProfile.resolved=0;
-        if(Active())profile::BeginPair();else profile::SkipPair();
-        if(Active()&&(captureRequested.exchange(false)||d2rcam::TakeLabelCapture())) {
+        // The profile and stereo captures take both eyes from two passes.
+        if(Active()&&!byTurns&&!replayPair)profile::BeginPair();else profile::SkipPair();
+        if(Active()&&!byTurns&&!replayPair&&(captureRequested.exchange(false)||d2rcam::TakeLabelCapture())) {
             capturePair=true;captureEyes=0;++captureSerial;
             Say("Frame capture: recording one stereo pair (readback pause is diagnostic, exclude from performance comparison)");
         }
@@ -1974,25 +3069,32 @@ void BeginPair() {
 }
 void EndPair() {
     hud::EndNativeEye();
+    hud::TakeInterface(false);
     lightbounds::SetActive(false);
     foveation::EndWorld();
     d2rcam::SetStereoUiEye(-1);
-    std::lock_guard lock(mutex);pairDrawing=false;if(!frame||!session)return;
+    std::lock_guard lock(mutex);pairDrawing=false;const bool turn=turnFrame;turnFrame=false;replayPair=false;if(!frame||!session)return;
     d2rcam::TraceStereoLabels(-1);
     if(capturePair){Say(captureEyes==3?"Frame capture: both eye screenshots requested":"Frame capture: incomplete pair; do not use for stereo comparison");capturePair=false;}
+    // By turns: the eye not drawn, turned to this frame's head.
+    int turned=-1;
+    if(turn&&render&&valid&&!panelMode&&!failed)
+        for(int i=0;i<2;++i)if(!eyes[i].copied&&eyes[i^1].copied&&TurnEye(i))turned=i;
     // All image writes and state restoration have been submitted on the queue
     // bound to xrCreateSession. OpenXR orders its work after those commands;
     // it does not require a CPU completion wait before xrReleaseSwapchainImage.
     // WineOpenXR also drains that queue before its release/layout commands.
     // Keep the old path for A/B, and for synchronous diagnostic query readback.
     const bool waitNow=!deferredWait.load()||gpuProfile.started!=0;
-    if(waitNow&&fence&&!WaitGpu()){failed=true;for(auto& e:eyes)e.copied=false;}
+    if(waitNow&&fence&&!WaitGpu()){failed=true;for(auto& e:eyes)e.copied=false;turned=-1;}
     if(!failed)ReadGpuProfile();
     gpuProfile.started=gpuProfile.effects=gpuProfile.resolved=0;
     const double releaseStart=Milliseconds();
     for(auto& e:eyes)if(e.acquired){
+        const int i=int(&e-eyes.data());
         XrSwapchainImageReleaseInfo ri{XR_TYPE_SWAPCHAIN_IMAGE_RELEASE_INFO};
-        if(!Check(pReleaseSwapchainImage(e.chain,&ri),"release copied eye")){failed=true;e.copied=false;}
+        if(!Check(pReleaseSwapchainImage(e.chain,&ri),"release copied eye")){failed=true;e.copied=false;if(i==turned)turned=-1;}
+        if(!e.copied&&i!=turned)lastEyes[i].ok=false;
         e.acquired=false;
     }
     if(uiEye.acquired){XrSwapchainImageReleaseInfo release{XR_TYPE_SWAPCHAIN_IMAGE_RELEASE_INFO};
@@ -2004,10 +3106,18 @@ void EndPair() {
     std::array<XrCompositionLayerProjectionView,2> pv{{{XR_TYPE_COMPOSITION_LAYER_PROJECTION_VIEW},{XR_TYPE_COMPOSITION_LAYER_PROJECTION_VIEW}}};
     XrCompositionLayerQuad quad{XR_TYPE_COMPOSITION_LAYER_QUAD};
     const XrCompositionLayerBaseHeader* layer=nullptr;
-    if(render&&valid&&!panelMode&&eyes[0].copied&&eyes[1].copied) {
-        for(int i=0;i<2;++i){pv[i].pose=views[i].pose;pv[i].fov=views[i].fov;pv[i].subImage.swapchain=eyes[i].chain;pv[i].subImage.imageRect={{0,0},{int32_t(width),int32_t(height)}};}
+    const auto drawn=[&](int i){return eyes[i].copied||(turn&&lastEyes[i].ok);};
+    if(render&&valid&&!panelMode&&drawn(0)&&drawn(1)&&(eyes[0].copied||eyes[1].copied)) {
+        for(int i=0;i<2;++i){
+            if(eyes[i].copied)lastEyes[i]={views[i].pose,views[i].fov,true,viewBase[i],viewWorld[i]};
+            // drawn or turned this frame: this frame's pose; else as drawn
+            const bool now=eyes[i].copied||i==turned;
+            pv[i].pose=now?views[i].pose:lastEyes[i].pose;pv[i].fov=now?views[i].fov:lastEyes[i].fov;
+            pv[i].subImage.swapchain=eyes[i].chain;pv[i].subImage.imageRect={{0,0},{int32_t(width),int32_t(height)}};
+        }
         projection.space=space;projection.viewCount=2;projection.views=pv.data();layer=reinterpret_cast<const XrCompositionLayerBaseHeader*>(&projection);menuPlaced=false;
-    } else if(render&&valid&&eyes[0].copied&&menuPlaced) {
+    } else lastEyes={};
+    if(!layer&&render&&valid&&eyes[0].copied&&menuPlaced) {
         const auto size=panels::Fit(width,height,panelWidth);
         quad.space=space;quad.eyeVisibility=XR_EYE_VISIBILITY_BOTH;quad.pose=menuPose;quad.size={size.width,size.height};
         quad.subImage.swapchain=eyes[0].chain;quad.subImage.imageRect={{0,0},{int32_t(width),int32_t(height)}};layer=reinterpret_cast<const XrCompositionLayerBaseHeader*>(&quad);
@@ -2022,6 +3132,18 @@ void EndPair() {
         XrSwapchainImageReleaseInfo release{XR_TYPE_SWAPCHAIN_IMAGE_RELEASE_INFO};
         Check(pReleaseSwapchainImage(interactionChain,&release),"release interaction atlas");interactionAtlasPending=false;
     }
+    if(companionAtlasPending) {
+        XrSwapchainImageReleaseInfo release{XR_TYPE_SWAPCHAIN_IMAGE_RELEASE_INFO};
+        companionPaintValid=Check(pReleaseSwapchainImage(companionChain,&release),"release companion atlas")&&companionPaintValid;companionAtlasPending=false;
+    }
+    if(bloodAtlasPending) {
+        XrSwapchainImageReleaseInfo release{XR_TYPE_SWAPCHAIN_IMAGE_RELEASE_INFO};
+        bloodImageReady=Check(pReleaseSwapchainImage(bloodChain,&release),"release blood visor");bloodAtlasPending=false;
+    }
+    if(strainAtlasPending) {
+        XrSwapchainImageReleaseInfo release{XR_TYPE_SWAPCHAIN_IMAGE_RELEASE_INFO};
+        strainImageReady=Check(pReleaseSwapchainImage(strainChain,&release),"release guard strain light");strainAtlasPending=false;
+    }
     // Tabbed, trade and waypoint menus use the same black background in both eyes.
     // Submit just their shared opaque quad: no different cached world per eye.
     const bool blackMenu=opaqueMenuMode&&workspacePlaced&&uiEye.copied&&uiCrop[2]>0&&!settingsModel.open&&!bodyCalibration.Active();
@@ -2030,7 +3152,6 @@ void EndPair() {
     const bool padQuads=composition::NeedsQuadPadding(wineOpenXR,layer,pointerChain);
     const uint32_t contentLimit=padQuads&&capacity>1?capacity-1:capacity;
     XrCompositionLayerQuad palette{XR_TYPE_COMPOSITION_LAYER_QUAD},bottle{XR_TYPE_COMPOSITION_LAYER_QUAD},chosen{XR_TYPE_COMPOSITION_LAYER_QUAD};
-    std::array<XrCompositionLayerQuad,2> bowString{{{XR_TYPE_COMPOSITION_LAYER_QUAD},{XR_TYPE_COMPOSITION_LAYER_QUAD}}};
     std::array<XrCompositionLayerQuad,2> arrow{{{XR_TYPE_COMPOSITION_LAYER_QUAD},{XR_TYPE_COMPOSITION_LAYER_QUAD}}};
     XrCompositionLayerQuad nock{XR_TYPE_COMPOSITION_LAYER_QUAD},bowHint{XR_TYPE_COMPOSITION_LAYER_QUAD},activeSkill{XR_TYPE_COMPOSITION_LAYER_QUAD},leftActiveSkill{XR_TYPE_COMPOSITION_LAYER_QUAD};
     const bool gameplayVisible=layer&&!panelMode&&motionControls.load()&&motionInput.active&&gameplayChain&&motionOutput.rayValid;
@@ -2062,6 +3183,8 @@ void EndPair() {
     std::array<XrCompositionLayerQuad,4> beltQuads;
     XrCompositionLayerQuad wrist{XR_TYPE_COMPOSITION_LAYER_QUAD},wristMap{XR_TYPE_COMPOSITION_LAYER_QUAD};
     XrCompositionLayerQuad wristCompass{XR_TYPE_COMPOSITION_LAYER_QUAD},compassMarker{XR_TYPE_COMPOSITION_LAYER_QUAD};
+    XrCompositionLayerQuad navigationInfo{XR_TYPE_COMPOSITION_LAYER_QUAD};
+    XrCompositionLayerQuad companionRow{XR_TYPE_COMPOSITION_LAYER_QUAD};
     if(interactionVisible) {
         if(!potionModels.Ready()&&interactionOutput.bottle>=0&&interactionOutput.bottleHand>=0) {
             auto pose=motionInput.hand[interactionOutput.bottleHand];pose.q=potions::HeldRotation(pose.q);
@@ -2080,21 +3203,29 @@ void EndPair() {
         }
         if((interactionOutput.vitals||interactionOutput.critical)&&!interactionOutput.wheel) {
             const bool palm=interactionOutput.palm;
-            const auto panel=palm?interaction::PalmPanel(interactionInput.hand[1],interactionInput.head):
-                interaction::WristPanel(interactionInput.hand[1],interactionInput.head);
+            const auto panel=interaction::VitalsPanel(interactionInput.hand[1],interactionInput.head,palm,interactionInput.vitalsTilt);
             auto pose=motionInput.hand[1];pose.p=panel.p;pose.q=panel.q;
             if(interactionOutput.critical&&!interactionOutput.vitals){pose.p=V(head.position)+math::Rotate(Q(head.orientation),{-.20f,-.22f,-.55f});pose.q=Q(head.orientation);}
             motionQuad(wrist,XrPose(pose),palm?interaction::PalmWidth:interaction::WristWidth,
                 palm?interaction::PalmHeight:interaction::WristHeight,{{512,768},{512,256}},interactionChain);
         }
-        // Submit the map, compass strip and marker as one navigation display.
-        if(mapEye.copied&&compassAtlasReady&&compassFrame&&count+3<=contentLimit&&
+        // The area label and compass remain usable during a missing map capture.
+        // Never submit a label painted for another session or a previous area.
+        const uint32_t navigationLayers=2+uint32_t(mapEye.copied);
+        const bool locationReady=interactionPaintValid&&count+navigationLayers+1<=contentLimit&&
+            interaction::LocationImageCurrent(interactionPaintContext,interactionInput.snapshot);
+        if(compassAtlasReady&&compassFrame&&count+navigationLayers<=contentLimit&&
            interaction::NavigationWanted(interactionInput,interactionOutput,GetTickCount64())) {
             const bool palm=interactionOutput.navigationPalm;
             const bool withVitals=interactionOutput.vitals&&interactionOutput.palm==palm;
-            motionQuad(wristMap,interactionPose(interaction::NavigationMapPanel(interactionInput.hand[1],interactionInput.head,palm,withVitals)),
+            const bool companionsReady=vrsettings::Read().values[settings::CompanionCounts]>.5f&&companionPaintValid&&
+                companionChain&&count+navigationLayers+uint32_t(locationReady)+1<=contentLimit&&
+                interaction::CompanionImageCurrent(companionPaintContext,interactionInput.snapshot);
+            const int companionRows=companionsReady?wriststatus::Rows(interactionInput.snapshot.companions,interactionInput.snapshot.effects):0;
+            const float footer=interaction::CompanionSpace(companionRows);
+            if(mapEye.copied)motionQuad(wristMap,interactionPose(interaction::NavigationMapPanel(interactionInput.hand[1],interactionInput.head,palm,withVitals,footer)),
                 interaction::WristMapSize,interaction::WristMapSize,{{0,0},{int32_t(mapSide),int32_t(mapSide)}},mapEye.chain);
-            auto compassPose=interaction::NavigationCompassPanel(interactionInput.hand[1],interactionInput.head,palm,withVitals);
+            auto compassPose=interaction::NavigationCompassPanel(interactionInput.hand[1],interactionInput.head,palm,withVitals,footer);
             motionQuad(wristCompass,interactionPose(compassPose),interaction::WristCompassWidth,interaction::WristCompassHeight,
                 {{compass::Crop(wristHeading.bearing),0},{compass::Window,compass::StripHeight}},compassChain);
             constexpr float markerWidth=interaction::WristCompassWidth*compass::MarkerWidth/compass::Window;
@@ -2102,6 +3233,12 @@ void EndPair() {
             compassPose.p=compassPose.p+math::Rotate(compassPose.q,{0,(interaction::WristCompassHeight-markerHeight)*.5f,.001f});
             motionQuad(compassMarker,interactionPose(compassPose),markerWidth,markerHeight,
                 {{0,compass::StripHeight},{compass::MarkerWidth,compass::MarkerHeight}},compassChain);
+            if(locationReady)motionQuad(navigationInfo,interactionPose(interaction::NavigationInfoPanel(
+                interactionInput.hand[1],interactionInput.head,palm,withVitals,footer)),interaction::NavigationInfoWidth,interaction::NavigationInfoHeight,
+                {{navigation::AtlasX,navigation::AtlasY},{navigation::Width,navigation::Height}},interactionChain);
+            if(companionRows)motionQuad(companionRow,interactionPose(interaction::NavigationCompanionsPanel(
+                interactionInput.hand[1],interactionInput.head,palm,withVitals,companionRows)),interaction::WristMapSize,interaction::CompanionHeight(companionRows),
+                {{0,0},{companions::Width,wriststatus::UsedHeight(interactionInput.snapshot.companions,interactionInput.snapshot.effects)}},companionChain);
         }
     }
     const bool weaponSkillIndicators=vrsettings::Read().values[settings::WeaponSkillIndicators]>.5f;
@@ -2125,20 +3262,29 @@ void EndPair() {
             else motionQuad(leftActiveSkill,pose,.075f,.075f,{{768,200},{96,96}},interactionChain);
         }
     }
+    XrCompositionLayerQuad sewerHint{XR_TYPE_COMPOSITION_LAYER_QUAD};
+    bool sewerHintShown=false;
+    if(interactionVisible&&!interactionOutput.wheel&&!settingsModel.open&&!bodyCalibration.Active()&&gameplayChain) {
+        sewerprompt::Target target;
+        {std::lock_guard lock(sewerPromptMutex);target=sewerPrompt;}
+        const auto now=GetTickCount64();math::Vec at{};
+        const bool spaceFresh=stageWorld.valid&&now>=stageWorld.at&&now-stageWorld.at<=250;
+        if(spaceFresh&&sewerprompt::Fresh(target,gamestate::LocalPlayer(),now,interactionInput.snapshot.location.level)&&
+           sewerprompt::Position(target,stageWorld.origin,stageWorld.hero,stageWorld.base,stageWorld.upm,
+                                 stageWorld.eyeHeight,V(head.position),Q(head.orientation),at)) {
+            const auto before=count;
+            motionQuad(sewerHint,XrPose({at,Q(head.orientation)}),sewerprompt::PanelWidth,sewerprompt::PanelHeight,
+                {{sewerprompt::AtlasX,sewerprompt::AtlasY},{sewerprompt::Width,sewerprompt::Height}},gameplayChain);
+            sewerHintShown=count>before;
+        }
+    }
+    static bool sewerHintWasShown=false;
+    if(sewerHintShown!=sewerHintWasShown){Say(sewerHintShown?"Frame sewer prompt: shown":"Frame sewer prompt: hidden");sewerHintWasShown=sewerHintShown;}
     if(gameplayVisible&&motionOutput.bowReady) {
         const auto bow=motionInput.hand[1];
         const auto center=motionOutput.bowDrawing?motionInput.hand[0].p:motionOutput.nockPoint;
-        auto up=math::Rotate(bow.q,{0,0,-1});
-        if(std::fabs(math::Dot(up,motionOutput.bowForward))>.8f)up=math::Rotate(bow.q,{0,1,0});
-        up=math::Normalized(up-motionOutput.bowForward*math::Dot(up,motionOutput.bowForward));
-        // Unrecognized rigs retain the draw guides. Once the actual model is
-        // posed, remove these overlapping copies of its string and arrow.
-        const bool nativeBow=skel::MotionBowPosed();
-        for(int i=0;i<2&&!nativeBow;++i) {
-            const auto end=bow.p+up*(i==0?.40f:-.40f),mid=(center+end)*.5f;
-            motionQuad(bowString[i],XrPose({mid,math::BeamOrientation(end-center,V(head.position)-mid)}),
-                .0015f,gameplay::Length(end-center),{{0,0},{64,32}},pointerChain);
-        }
+        // The game's bow mesh supplies the string. Do not draw the teal
+        // V-string guide over it, even when its rig cannot follow the hand.
         if(!bowvr::PreviewReady()&&(motionOutput.bowDrawing||motionOutput.bowInReach)) {
             const auto direction=motionOutput.bowDrawing?motionOutput.rayDirection:motionOutput.bowForward;
             const auto mid=center+direction*(bowflight::ArrowLength*.5f);
@@ -2148,7 +3294,7 @@ void EndPair() {
         }
         // Native bows have a visible string to grab. The extra idle marker
         // correlated with compositor pose errors; omit it on this path.
-        if(!nativeBow&&!motionOutput.bowDrawing) {
+        if(!skel::MotionBowPosed()&&!motionOutput.bowDrawing) {
             const float size=motionOutput.bowInReach?.045f:.025f;
             motionQuad(nock,XrPose({center,Q(head.orientation)}),size,size,{{0,32},{64,64}},pointerChain);
         }
@@ -2164,14 +3310,65 @@ void EndPair() {
         book.layerFlags=opaqueMenuMode?0:XR_COMPOSITION_LAYER_BLEND_TEXTURE_SOURCE_ALPHA_BIT;
     }
     XrCompositionLayerQuad settingsPanel{XR_TYPE_COMPOSITION_LAYER_QUAD};
-    if(layer&&(settingsModel.open||bodyCalibration.Active())&&settingsImageReady)
-        motionQuad(settingsPanel,settingsPose,settingsWidth,settingsHeight,{{0,0},{settings::Width,settings::Height}},settingsChain);
+    if(layer&&(settingsModel.open||bodyCalibration.Active())&&settingsImageReady){
+        // Extend to the right, without moving or shrinking any control. Input
+        // still intersects the original panel. Calibration uses only that crop.
+        // The card while help is wanted and the picture shown has one: from one
+        // card to the next, the old stays until the new is painted, not a narrow frame.
+        const bool showHelp=!bodyCalibration.Active()&&settingsHelpVisible!=settings::NoHelp&&settingsPainted.help!=settings::NoHelp;
+        const int pixels=showHelp?settings::AtlasWidth:settings::Width;
+        const float fullWidth=settingsWidth*pixels/settings::Width;
+        auto pose=settingsPose;
+        const auto shift=math::Rotate(Q(pose.orientation),{(fullWidth-settingsWidth)*.5f,0,0});
+        pose.position.x+=shift.x;pose.position.y+=shift.y;pose.position.z+=shift.z;
+        motionQuad(settingsPanel,pose,fullWidth,settingsHeight,{{0,0},{pixels,settings::Height}},settingsChain);
+    }
     XrCompositionLayerQuad laser{XR_TYPE_COMPOSITION_LAYER_QUAD},dot{XR_TYPE_COMPOSITION_LAYER_QUAD};
     if(layer&&(settingsModel.open||panelMode||spatialMode||(interactionVisible&&interactionOutput.wheel))&&pointerChain&&pointerVisible) {
         // The pointer needs the same finite-pose checks and normalization as
         // every other optional layer: one bad laser must not hide the menu.
         motionQuad(laser,beamPose,.003f,beamLength,{{0,0},{64,32}},pointerChain);
         if(pointerHit)motionQuad(dot,dotPose,.018f,.018f,{{0,32},{64,64}},pointerChain);
+    }
+    // Head-locked blood: VIEW space, with a bounded angular size so large render
+    // frusta cannot push the rim out of sight. It goes directly above
+    // the world and below every HUD quad, and only into a spare layer slot.
+    XrCompositionLayerQuad bloodQuad{XR_TYPE_COMPOSITION_LAYER_QUAD};
+    if(bloodImageReady&&bloodShown&&bloodOutput.visible&&layer&&!panelMode&&!blackMenu&&!settingsModel.open&&
+       !bodyCalibration.Active()&&headSpace&&count<contentLimit) {
+        const auto extent=blood::VisorExtent(
+            {views[0].fov.angleLeft,views[0].fov.angleRight,views[0].fov.angleDown,views[0].fov.angleUp},
+            {views[1].fov.angleLeft,views[1].fov.angleRight,views[1].fov.angleDown,views[1].fov.angleUp});
+        const float width=extent.width,height=extent.height;
+        if(std::isfinite(width)&&std::isfinite(height)&&width>0&&height>0) {
+            bloodQuad.layerFlags=XR_COMPOSITION_LAYER_BLEND_TEXTURE_SOURCE_ALPHA_BIT|XR_COMPOSITION_LAYER_UNPREMULTIPLIED_ALPHA_BIT;
+            bloodQuad.space=headSpace;bloodQuad.eyeVisibility=XR_EYE_VISIBILITY_BOTH;
+            bloodQuad.pose.orientation.w=1;bloodQuad.pose.position.z=-blood::VisorDistance;bloodQuad.size={width,height};
+            bloodQuad.subImage.swapchain=bloodChain;bloodQuad.subImage.imageRect={{0,0},{blood::Size,blood::Size}};
+            const uint32_t below=count&&layers[0]==layer?1:0;
+            for(uint32_t i=count;i>below;--i)layers[i]=layers[i-1];
+            layers[below]=reinterpret_cast<const XrCompositionLayerBaseHeader*>(&bloodQuad);++count;
+        }
+    }
+    // Guard strain light: the blood's head-locked extent, inserted at the same
+    // slot after it, so it sits directly above the world and beneath the blood.
+    XrCompositionLayerQuad strainQuad{XR_TYPE_COMPOSITION_LAYER_QUAD};
+    if(strainImageReady&&strainPaintKey&&strainPaintKey!=~0ull&&strainOutput.visible&&layer&&!panelMode&&!blackMenu&&!settingsModel.open&&
+       !bodyCalibration.Active()&&headSpace) {
+        const auto extent=blood::VisorExtent(
+            {views[0].fov.angleLeft,views[0].fov.angleRight,views[0].fov.angleDown,views[0].fov.angleUp},
+            {views[1].fov.angleLeft,views[1].fov.angleRight,views[1].fov.angleDown,views[1].fov.angleUp});
+        if(count>=contentLimit) {
+            if(!strainSlotReported){Say("Frame guard strain: no spare composition layer; light hidden");strainSlotReported=true;}
+        } else if(std::isfinite(extent.width)&&std::isfinite(extent.height)&&extent.width>0&&extent.height>0) {
+            strainQuad.layerFlags=XR_COMPOSITION_LAYER_BLEND_TEXTURE_SOURCE_ALPHA_BIT|XR_COMPOSITION_LAYER_UNPREMULTIPLIED_ALPHA_BIT;
+            strainQuad.space=headSpace;strainQuad.eyeVisibility=XR_EYE_VISIBILITY_BOTH;
+            strainQuad.pose.orientation.w=1;strainQuad.pose.position.z=-blood::VisorDistance;strainQuad.size={extent.width,extent.height};
+            strainQuad.subImage.swapchain=strainChain;strainQuad.subImage.imageRect={{0,0},{strain::Size,strain::Size}};
+            const uint32_t below=count&&layers[0]==layer?1:0;
+            for(uint32_t i=count;i>below;--i)layers[i]=layers[i-1];
+            layers[below]=reinterpret_cast<const XrCompositionLayerBaseHeader*>(&strainQuad);++count;
+        }
     }
     XrCompositionLayerQuad winePadding{XR_TYPE_COMPOSITION_LAYER_QUAD};
     if(padQuads&&composition::PrependQuadPadding(layers.data(),count,capacity,winePadding,headSpace,pointerChain)) {
@@ -2234,6 +3431,24 @@ void EndPair() {
     lastTiming=timing;frame=false;
 }
 FrameTiming LastTiming() {std::lock_guard lock(mutex);return lastTiming;}
+void NoteFrame(double gameMs,double waitMs,double drawMs,double vrMs,double periodMs,double budgetMs,bool byTurns) {
+    std::lock_guard lock(mutex);
+    auto& w=performanceWindow;const auto now=GetTickCount64();
+    // A gap in frames (menus, loading) begins a new second: what came before
+    // it is not averaged in. Switching between turns and pairs is no gap.
+    if(!w.since||now-w.last>250){w={};w.since=now;}
+    w.last=now;
+    if(budgetMs>0)performanceBudget=budgetMs;
+    w.wait+=waitMs;w.draw+=drawMs;w.vr+=vrMs;++w.frames;w.turns+=byTurns?1:0;
+    if(periodMs>0){w.game+=gameMs;w.period+=periodMs;++w.periods;}
+    if(now-w.since<1000)return;
+    const double k=1.0/w.frames;
+    performance.valid=true;performance.byTurns=w.turns*2>=w.frames;performance.mixed=w.turns&&w.turns<w.frames;
+    performance.fps=w.periods?float(w.periods*1000.0/w.period):0.f;performance.budgetMs=float(performanceBudget);
+    performance.gameMs=w.periods?float(w.game/w.periods):0.f;performance.waitMs=float(w.wait*k);
+    performance.drawMs=float(w.draw*k);performance.vrMs=float(w.vr*k);
+    ++performanceSerial;performanceAt=now;w={};w.since=w.last=now;
+}
 void ConfigureGameplay(bool enabled) {
     std::lock_guard lock(mutex);
     if(!enabled)gamestate::MenuMap(false);
@@ -2241,6 +3456,14 @@ void ConfigureGameplay(bool enabled) {
     if(!enabled){skel::SetMotionBow(false,false,0);skel::SetInteractionHidden(0);interactions.Reset();interactionstate::Cancel();CancelShieldCast();}
     if(motionControls.exchange(enabled)!=enabled)
         Say(enabled?"Frame gameplay: motion controls enabled (right-handed prototype)":"Frame gameplay: motion controls disabled; legacy buttons restored");
+}
+void ConfigureQuiver(bool enabled,bool preview) {
+    std::lock_guard lock(mutex);
+    quiverPreview=preview;
+    if(quiverEnabled.exchange(enabled)!=enabled) {
+        quiver.Clear();quiverArrow={};
+        Say(enabled?"Frame bow quiver: arrow skills load physical arrows":"Frame bow quiver: disabled; arrow skills use native buttons");
+    }
 }
 void ConfigureInteractions(bool seated,float waist,float forward,int dominant) {
     static interaction::Config previous;static bool configured=false;
@@ -2257,6 +3480,16 @@ bool SpellSelected() {
         (motion.Selection()>=0||motionOutput.skill>=0)&&GetTickCount64()-motionAt<150;
 }
 bool LeftHandAiming(){std::lock_guard lock(mutex);return motionControls.load()&&castHand==1&&motionInput.active&&GetTickCount64()-motionAt<150;}
+bool CrossbowAiming() {
+    std::lock_guard lock(mutex);
+    if(!motionControls.load()||!motionInput.active||motionOutput.block||castHand==1||
+       motionInput.weapon!=gameplay::Weapon::Crossbow||GetTickCount64()-motionAt>100)return false;
+    if(crossbowFire)return true;
+    if(motionOutput.attack)return true;
+    const int slot=motionOutput.skill;
+    if(slot<0||slot>=skills::Count||!interaction::Fresh(interactionInput.snapshot,gamestate::LocalPlayer(),GetTickCount64()))return false;
+    const auto& skill=interactionInput.snapshot.skills[slot];return skill.known&&skill.available&&skill.id==0;
+}
 bool NativeSkillCasting() {
     std::lock_guard lock(mutex);
     return motionControls.load()&&gameplay::CastingSkill(motionInput,motionOutput,GetTickCount64()-motionAt);
@@ -2266,6 +3499,14 @@ bool NativeAimOwnership() {
     const bool physical=motionInput.active&&!motionOutput.block&&GetTickCount64()-motionAt<100&&
         (handOutput.spells[0]>=0||handOutput.spells[1]>=0);
     return motionControls.load()&&(physical||interactionOutput.wheel||gameplay::CastingSkill(motionInput,motionOutput,GetTickCount64()-motionAt));
+}
+int NativeCastSkill() {
+    std::lock_guard lock(mutex);
+    const auto now=GetTickCount64();
+    if(!motionControls.load()||!gameplay::CastingSkill(motionInput,motionOutput,now-motionAt)||
+       !interaction::Fresh(interactionInput.snapshot,gamestate::LocalPlayer(),now))return -1;
+    const auto& skill=interactionInput.snapshot.skills[motionOutput.skill];
+    return skill.known&&skill.available?skill.id:-1;
 }
 bool DirectedSpellActive() {
     std::lock_guard lock(mutex);
@@ -2288,10 +3529,11 @@ bool GameplayRay(float outOrigin[3],float outDirection[3]) {
     outDirection[0]=d.x;outDirection[1]=d.y;outDirection[2]=d.z;
     return true;
 }
-bool MeleeSample(uint32_t poseStamp,melee::Sample& sample) {
+bool MeleeSample(uint32_t poseStamp,melee::Sample& sample,int hand) {
     std::lock_guard lock(mutex);
     if(!motionControls.load()||!motionInput.active||!motionOutput.meleeContact||GetTickCount64()-motionAt>100)return false;
-    if(!meleePoses.Find(poseStamp,Milliseconds()/1000.,sample))return false;
+    if(hand<0||hand>1||!(hand?offhandPoses:meleePoses).Find(poseStamp,Milliseconds()/1000.,sample))return false;
+    if(hand==1&&!dualwield::Eligible(skel::HeroClass(),gamestate::MeleeEquipment()))return false;
     return sample.epoch==meleeEpoch&&sample.equipment==motionInput.equipment;
 }
 bool ShieldSample(uint32_t poseStamp,melee::Sample& sample) {
@@ -2327,7 +3569,93 @@ void FinishShieldSkill(bool accepted) {
     shieldFeedbackAt=GetTickCount64();shieldRefused=!accepted;
     if(accepted)shieldImpactAt=shieldFeedbackAt;
 }
-void MeleeImpact() {meleeImpactAt=GetTickCount64();}
+void MeleeImpact(int hand) {if(hand>=0&&hand<2)meleeImpactAt[hand]=GetTickCount64();}
+void ShieldGuardImpact(bool parry,float weight) {
+    shieldImpactAt=GetTickCount64();
+    if(parry){guardParryEvents.fetch_add(1);return;}
+    guardBlockWeight.fetch_add(unsigned(std::clamp(std::isfinite(weight)?weight:1.f,0.f,16.f)*1000.f+.5f));
+    guardBlockEvents.fetch_add(1);
+}
+bool GuardBroken() {return guardBroken.load();}
+void ShieldParryMiss() {parryMissAt=GetTickCount64();}
+void ShieldGuardState(bool eligible,bool raised) {guardStateAt=GetTickCount64();guardEligible=eligible;guardRaised=raised;}
+void ConfigureGuardStrain(float perBlock,float resetSeconds,float clear,float breatheSeconds,float softness,float brightness,uint32_t color,float density) {
+    strain::Tuning t;
+    t.perBlock=std::isfinite(perBlock)?std::clamp(perBlock,0.f,1.f):t.perBlock;
+    t.resetSeconds=std::isfinite(resetSeconds)?std::clamp(resetSeconds,0.f,10.f):t.resetSeconds;
+    t.clear=std::isfinite(clear)?std::clamp(clear,0.f,strain::FullEdge):t.clear;
+    t.breatheSeconds=std::isfinite(breatheSeconds)?std::clamp(breatheSeconds,1.f,10.f):t.breatheSeconds;
+    t.feather=std::isfinite(softness)?std::clamp(softness,.05f,1.f):t.feather;
+    t.brightness=std::isfinite(brightness)?std::clamp(brightness,0.f,1.f):t.brightness;
+    t.color=color&0xFFFFFFu;
+    t.density=std::isfinite(density)?std::clamp(density,1.f,6.f):1.f;
+    std::lock_guard lock(strainTuningMutex);strainTuning=t;
+}
+void ConfigureGuardStrainRecover(float seconds) {
+    strainRecoverSeconds=std::isfinite(seconds)?std::clamp(seconds,0.f,30.f):1.5f;
+}
+void ConfigureHeartbeat(float volume,float bpmMin,float bpmMax,float fadeSeconds,const wchar_t* file) {
+    heartbeat::Tuning t;
+    t.fadeSeconds=std::isfinite(fadeSeconds)?std::clamp(fadeSeconds,0.f,30.f):t.fadeSeconds;
+    t.volume=std::isfinite(volume)?std::clamp(volume,0.f,4.f):t.volume;
+    t.bpmMin=std::isfinite(bpmMin)?std::clamp(bpmMin,30.f,200.f):t.bpmMin;
+    t.bpmMax=std::isfinite(bpmMax)?std::clamp(bpmMax,t.bpmMin,200.f):std::max(t.bpmMax,t.bpmMin);
+    const std::wstring path=file?file:L"";
+    bool reload=false;
+    {std::lock_guard lock(heartMutex);heartTuning=t;reload=path!=heartFile;if(reload)heartFile=path;}
+    if(!reload)return;
+    auto pcm=std::make_shared<heartbeat::Pcm>();
+    bool fromFile=false;
+    if(!path.empty()) {
+        std::vector<uint8_t> bytes;
+        if(FILE* f=_wfopen(path.c_str(),L"rb")){uint8_t buf[65536];size_t n;while((n=fread(buf,1,sizeof buf,f))>0&&bytes.size()<16u<<20)bytes.insert(bytes.end(),buf,buf+n);fclose(f);}
+        fromFile=heartbeat::ParseWav(bytes,*pcm);
+    }
+    bool embedded=false;
+    if(!fromFile) {   // the recording embedded by interaction_assets.rc; synthesized if it is missing
+        HMODULE module=nullptr;std::vector<uint8_t> bytes;
+        GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS|GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                           reinterpret_cast<LPCWSTR>(&ConfigureHeartbeat),&module);
+        if(HRSRC res=module?FindResourceW(module,L"D2RVR_HEARTBEAT_SOUND",MAKEINTRESOURCEW(10)):nullptr)
+            if(HGLOBAL h=LoadResource(module,res))
+                if(const auto* p=static_cast<const uint8_t*>(LockResource(h)))bytes.assign(p,p+SizeofResource(module,res));
+        embedded=heartbeat::ParseWav(bytes,*pcm);
+        if(!embedded)*pcm=heartbeat::BuiltIn();
+    }
+    {std::lock_guard lock(heartMutex);heartSource=pcm;heartSourceName=fromFile?"ini WAV":embedded?"built-in recording":"synthesized beat";}
+    Say(fromFile?"Frame low-life heartbeat: ini WAV loaded":
+        !path.empty()?(embedded?"Frame low-life heartbeat: ini WAV missing or not 16-bit PCM; built-in recording":
+                                "Frame low-life heartbeat: ini WAV missing or not 16-bit PCM; synthesized beat"):
+        embedded?"Frame low-life heartbeat: built-in recording":"Frame low-life heartbeat: recording missing; synthesized beat");
+}
+void ConfigureGuardBreakSound(float volume,const wchar_t* file) {
+    const std::wstring path=file?file:L"";
+    bool reload=false;
+    {std::lock_guard lock(breakMutex);breakVolume=std::isfinite(volume)?std::clamp(volume,0.f,4.f):1.f;reload=path!=breakFile;if(reload)breakFile=path;}
+    if(!reload)return;
+    auto pcm=std::make_shared<heartbeat::Pcm>();
+    bool fromFile=false,embedded=false;
+    if(!path.empty()) {
+        std::vector<uint8_t> bytes;
+        if(FILE* f=_wfopen(path.c_str(),L"rb")){uint8_t buf[65536];size_t n;while((n=fread(buf,1,sizeof buf,f))>0&&bytes.size()<16u<<20)bytes.insert(bytes.end(),buf,buf+n);fclose(f);}
+        fromFile=heartbeat::ParseWav(bytes,*pcm);
+    }
+    if(!fromFile) {   // the recording embedded by interaction_assets.rc
+        HMODULE module=nullptr;std::vector<uint8_t> bytes;
+        GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS|GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                           reinterpret_cast<LPCWSTR>(&ConfigureGuardBreakSound),&module);
+        if(HRSRC res=module?FindResourceW(module,L"D2RVR_GUARD_BREAK_SOUND",MAKEINTRESOURCEW(10)):nullptr)
+            if(HGLOBAL h=LoadResource(module,res))
+                if(const auto* p=static_cast<const uint8_t*>(LockResource(h)))bytes.assign(p,p+SizeofResource(module,res));
+        embedded=heartbeat::ParseWav(bytes,*pcm);
+    }
+    {std::lock_guard lock(breakMutex);breakSource=fromFile||embedded?pcm:nullptr;}
+    Say(fromFile?"Frame guard break: ini WAV loaded":
+        embedded?(path.empty()?"Frame guard break: built-in bone snap":"Frame guard break: ini WAV missing or not 16-bit PCM; built-in bone snap"):
+        "Frame guard break: sound missing; silent");
+}
+bool OwnsControllerRumble() {return motionControls.load()&&controllerRumbleLease.Owns(GetTickCount64());}
+void SpellCast(int hand,uint64_t session) {spellHaptics.Publish(hand,session,GetTickCount64());}
 void SpellVisualCast(const bowflight::Shot& shot) {
     if(shot.kind!=bowflight::Kind::Spell)return;
     std::lock_guard lock(mutex);
@@ -2352,6 +3680,23 @@ bool TakeBowShot(bowflight::Shot& shot) {
     std::lock_guard lock(mutex);
     if(!bowHasShot)return false;
     bowHasShot=false;shot=bowReadyShot;return true;
+}
+bool TakeCrossbowShot(bowflight::Shot& shot) {
+    std::lock_guard lock(mutex);const auto now=GetTickCount64();
+    if(!crossbowFire||!motionControls.load()||!motionInput.active||motionOutput.block||settingsOpen.load()||
+       now-motionAt>100||crossbowTakenAt==motionAt)return false;
+    crossbowTakenAt=motionAt;
+    crossbow::Pose pose;crossbow::Launch launch;
+    if(!skel::CrossbowPose(pose)||!crossbow::Fresh(pose,now,gamestate::LocalPlayer(),motionInput.equipment,bowWorldEpoch)||
+       !crossbowvr::MakeShot(pose,(meleeEpoch<<32)|bowWorldEpoch,launch))return false;
+    shot=launch.flight;shot.binding=motionInput.skillContext;shot.activation=crossbowActivation;return true;
+}
+bool CrossbowHeld(const bowflight::Shot& shot) {
+    std::lock_guard lock(mutex);const auto now=GetTickCount64();
+    return shot.kind==bowflight::Kind::Crossbow&&crossbowFire&&motionControls.load()&&motionInput.active&&!motionOutput.block&&
+        !settingsOpen.load()&&now-motionAt<=100&&motionInput.weapon==gameplay::Weapon::Crossbow&&
+        shot.session==gamestate::LocalPlayer()&&shot.equipment==motionInput.equipment&&shot.binding==motionInput.skillContext&&
+        shot.activation==crossbowActivation&&shot.epoch==((meleeEpoch<<32)|bowWorldEpoch);
 }
 bool TakeSpellShot(int hand,bowflight::Shot& shot) {
     std::lock_guard lock(mutex);
@@ -2383,6 +3728,7 @@ bool View(float out[16],const float hero[3],float eyeHeight,float userEyeHeight,
     const auto base=math::Yaw(bodyHeading-recenterYaw);
     if(eye<0)compassFrame=wristHeading.Update(gamestate::LocalPlayer(),motionHeadTracked,
         Q(head.orientation),bodyHeading-recenterYaw,mapNorth);
+    if(eye<0)stageWorld={true,origin,{hero[0],hero[1],hero[2]},base,upm,eyeHeight,GetTickCount64()};
     const auto resolveBow=[&](bowflight::Shot shot) {
         const auto offset=math::Rotate(base,shot.origin-origin);
         shot.origin={hero[0]/upm+offset.x,(hero[1]+eyeHeight)/upm+offset.y,hero[2]/upm+offset.z};
@@ -2412,7 +3758,11 @@ bool View(float out[16],const float hero[3],float eyeHeight,float userEyeHeight,
     held.direction=motionOutput.bowDrawing?motionOutput.rayDirection:motionOutput.bowForward;
     held.draw=motionOutput.draw;held.at=motionAt;held.session=gamestate::LocalPlayer();
     held.epoch=(meleeEpoch<<32)|bowWorldEpoch;held.equipment=motionInput.equipment;held.sequence=1;
+    if(quiverArrow.Active()&&quiverPreview.load()){held.skill=quiverArrow.skill;held.owner=quiverArrow.owner;held.missile=quiverArrow.missile;}
     bowPreviewPose=resolveBow(held);bowPreviewVisible=motionOutput.bowDrawing||motionOutput.bowInReach;
+    const bowflight::Gate previewGate{motionControls.load()&&motionInput.active&&!motionOutput.block,
+        held.session,held.epoch,motionAt,motionInput.equipment,motionOutput.bowReady};
+    bowvr::PublishPreviewPose(bowPreviewPose,previewGate,bowPreviewVisible,bowRenderTime.load());
     // Resolve the release once in the SAME stage-to-world frame as this view.
     // Absolute room poses avoid mixing an old weapon bone with a newer head yaw.
     if(bowNeedsWorld) {
@@ -2421,14 +3771,26 @@ bool View(float out[16],const float hero[3],float eyeHeight,float userEyeHeight,
             gamestate::LocalPlayer(),(meleeEpoch<<32)|bowWorldEpoch,motionAt,motionInput.equipment};
         const auto shot=resolveBow(bowPending);
         if(bowflight::Allowed(shot,gate,GetTickCount64())){bowReadyShot=shot;bowHasShot=true;}
+        else if(bowflight::SkillArrow(shot)) {
+            char line[200];std::snprintf(line,sizeof line,"Frame bow quiver: release rejected skill=%d missile=%d valid=%d",
+                shot.skill,shot.missile,int(bowflight::Valid(shot)));
+            Say(line);
+        }
     }
     const auto& pose=eye<0?head:views[eye&1].pose;
     const auto offset=math::Rotate(base,V(pose.position)-origin)*upm;
     const math::Vec position={hero[0]+offset.x,hero[1]+eyeHeight+offset.y,hero[2]+offset.z};
-    math::View(position,math::Multiply(base,Q(pose.orientation)),out);return true;
+    const auto turn=math::Multiply(base,Q(pose.orientation));
+    if(eye>=0){viewBase[eye&1]=base;auto& w=viewWorld[eye&1];w.at=position;w.turn=turn;w.ok=true;w.hero={hero[0],hero[1],hero[2]};}
+    if(eye==0){   // the replay's eye gap in this view's units: along the left eye's x
+        const auto apart=math::Rotate(math::Conjugate(Q(views[0].pose.orientation)),V(views[1].pose.position)-V(views[0].pose.position));
+        replayShift=apart.x*upm;
+    }
+    math::View(position,turn,out);return true;
 }
 bool Projection(float out[16],float nearWorld,int eye) {
     std::lock_guard lock(mutex);if(!Active())return false;
+    viewWorld[eye&1].nearPlane=nearWorld;
     const auto& f=views[eye&1].fov;
     math::Projection(f.angleLeft,f.angleRight,f.angleDown,f.angleUp,nearWorld,out);return true;
 }
@@ -2439,21 +3801,29 @@ void Shutdown(bool preserveResolution) {
     if(!preserveResolution)hud::NativeSession(false);
     if(!preserveResolution)resolution::Restore();
     windowFocus.Cancel();
-    EndPair();ClearInput();interactionPainter.Stop();interaction::icons::Shutdown();
+    EndPair();ClearInput();interactionPainter.Stop();bloodPainter.Stop();strainPainter.Stop();settingsPainter.Stop();turnCompiler.Stop();interaction::icons::Shutdown();
     // Completion is mandatory before destroying our commands/resources, even
     // when ordinary frame submission uses queue ordering without a CPU wait.
     if(fence&&!WaitGpu())failed=true;
     if(uiEye.chain&&pDestroySwapchain)pDestroySwapchain(uiEye.chain);uiEye={};journalMode=spatialMode=workspacePlaced=false;hud::UiFrame(false,false,0);uiSupported=false;uiBlit={};potionModels.Reset();potionScene={};
     elementalRenderer.Reset();elementalState.Reset();elementalScene={};
     if(mapEye.chain&&pDestroySwapchain)pDestroySwapchain(mapEye.chain);mapEye={};mapSupported=false;mapBlit={};gamestate::MenuMap(false);hud::MenuMapCapture(false);
-    settingsModel.Close();settingsOpen=false;settingsInputGate.Suspend();settingsPaintRevision=~0ull;settingsAtlasPending=settingsImageReady=false;
-    bodyCalibration.Cancel();calibrationRelease={};calibrationPrompted=floorSpace=false;calibrationSession=0;calibrationPaintKey=-1;
+    settingsModel.Close();settingsOpen=false;settingsInputGate.Suspend();settingsPainted={};settingsAtlasPending=settingsImageReady=false;
+    settingsPaintRequest=0;settingsRequested={};
+    bodyCalibration.Cancel();calibrationRelease={};calibrationPrompted=floorSpace=false;calibrationSession=0;calibrationPaintKey=calibrationRequestedKey=-1;
     if(settingsChain&&pDestroySwapchain)pDestroySwapchain(settingsChain);settingsChain=XR_NULL_HANDLE;
-    atlasUploads.clear();interactionPaintKey=~0ull;interactionPrefetchSession=0;interactionPrefetchRevision=~0u;interactions.Reset();interactionstate::Cancel();
+    atlasUploads.clear();atlasStagingFree.clear();interactionPaintKey=~0ull;interactionPrefetchSession=0;interactionPrefetchRevision=~0u;interactions.Reset();interactionstate::Cancel();
     interactionPaintRequest=0;interactionRequestedKey=~0ull;interactionPaintValid=false;interactionPaintContext={};interactionRequestedContext={};interactionPaintAt=0;
     if(interactionChain&&pDestroySwapchain)pDestroySwapchain(interactionChain);interactionChain=XR_NULL_HANDLE;
+    if(companionChain&&pDestroySwapchain)pDestroySwapchain(companionChain);companionChain=XR_NULL_HANDLE;
+    companionAtlasPending=companionPaintValid=false;companionPaintContext={};
     if(compassChain&&pDestroySwapchain)pDestroySwapchain(compassChain);compassChain=XR_NULL_HANDLE;wristHeading.Reset();compassFrame=compassAtlasReady=false;
     if(gameplayChain&&pDestroySwapchain)pDestroySwapchain(gameplayChain);gameplayChain=XR_NULL_HANDLE;
+    if(bloodChain&&pDestroySwapchain)pDestroySwapchain(bloodChain);bloodChain=XR_NULL_HANDLE;
+    bloodScreen.Reset();bloodOutput={};bloodShown=0;bloodPaintKey=bloodRequestedKey=~0ull;bloodPaintRequest=0;bloodPaintAt=0;bloodAtlasPending=bloodImageReady=false;
+    if(strainChain&&pDestroySwapchain)pDestroySwapchain(strainChain);strainChain=XR_NULL_HANDLE;
+    heartStream.Stop();heartPlaying=false;heartLevel.Reset();heartAt=0;heartHush.Reset();heartHealth=-1;
+    guardStrain.Reset();strainOutput={};strainPaintKey=~0ull;strainPaintSession=0;strainPaintAt=0;strainAtlasPending=strainImageReady=strainSlotReported=false;
     if(pointerChain&&pDestroySwapchain)pDestroySwapchain(pointerChain);pointerChain=XR_NULL_HANDLE;
     if(aimSpace&&pDestroySpace)pDestroySpace(aimSpace);aimSpace=XR_NULL_HANDLE;
     if(leftAimSpace&&pDestroySpace)pDestroySpace(leftAimSpace);leftAimSpace=XR_NULL_HANDLE;
@@ -2461,11 +3831,15 @@ void Shutdown(bool preserveResolution) {
     gazeAction=XR_NULL_HANDLE;gazeReady=gazeValid=gazeExtension=gazeSupported=false;gazeStability.Reset();
     detectedControllers={};controllerLabels={};controllerProfilesDirty=true;frameControllerExtension=false;
     for(auto& e:eyes){if(e.chain&&pDestroySwapchain)pDestroySwapchain(e.chain);e={};}
+    mirrorSupported=mirrorMono=false;
+    turnFrame=keepTurns=keepDepth=false;lastEyes={};viewBase={{{0,0,0,1},{0,0,0,1}}};viewWorld={};turnDepths={};turnCounts={};turnImages={};turnKept={};turnImagesFailed=turnWarpTried=false;turnWarp={};
+    turnLayers={};layerKept={};turnTarget.Reset();layersFailed=false;
     for(auto& s:handSpaces){if(s&&pDestroySpace)pDestroySpace(s);s=XR_NULL_HANDLE;}
     if(headSpace&&pDestroySpace)pDestroySpace(headSpace);if(space&&pDestroySpace)pDestroySpace(space);
     if(session&&pDestroySession)pDestroySession(session);if(actionSet&&pDestroyActionSet)pDestroyActionSet(actionSet);
     if(instance&&pDestroyInstance)pDestroyInstance(instance);
     session=XR_NULL_HANDLE;instance=XR_NULL_HANDLE;actionSet=XR_NULL_HANDLE;headSpace=space=XR_NULL_HANDLE;
+    hapticActions.Reset();
     running=frame=valid=render=haveOrigin=menuPlaced=panelMode=false;state=XR_SESSION_STATE_UNKNOWN;gameWindow=nullptr;
     worldWasLoaded=worldCalibrationPending=worldRecenter=false;
     if(fenceEvent)CloseHandle(fenceEvent);fenceEvent=nullptr;

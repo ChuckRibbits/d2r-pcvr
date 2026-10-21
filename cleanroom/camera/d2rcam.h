@@ -58,6 +58,7 @@ void SetStereoUiEye(int eye);
 void TraceStereoLabels(int eye);
 void ArmLabelCapture();
 bool TakeLabelCapture();
+bool LabelCapturePending();
 
 // Called once per game frame, right after the game placed its camera and before
 // the view/projection callbacks, while a game is running (enabled or not).
@@ -108,5 +109,10 @@ struct Status {
 	int  roomsLoaded;     // rooms tiled on demand so far
 };
 Status GetStatus();
+
+// Increase native renderer/entity TLSF capacity once per process. Zero leaves a
+// pool unchanged. False means initialization/decryption is pending; line reports
+// the result or reason for refusing. Changes take effect on the next game start.
+bool GrowPools(unsigned renderMb, unsigned entityMb, char* line, size_t lineSize);
 
 }   // namespace d2rcam

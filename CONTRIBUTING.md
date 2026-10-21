@@ -70,7 +70,18 @@ run the relevant Python fixture tests, for example:
 .\deps\python\python.exe -m unittest discover -s steamvr -p launch_windows_test.py
 .\deps\python\python.exe -m unittest discover -s steamvr -p battlenet_test.py
 .\deps\python\python.exe -m unittest discover -s steamvr -p uninstall_windows_test.py
+.\deps\python\python.exe -m unittest discover -s steamvr -p setup_native_test.py
+.\deps\python\python.exe -m unittest discover -s steamvr -p mod_identity_test.py
 ```
+
+For isolated gameplay testing, see [developer mode](steamvr/DEVELOPMENT_SCENARIOS.md).
+`--frame-dev` selects a separate offline character list; its DEV tools provide
+level presets, class gear and travel. VR Settings > Release Notes is available
+in regular and developer builds.
+`build_windows.ps1 -Developer -Test` stages a candidate separately for this mode.
+Run `prepare_dev_scenarios_test.py` and `launch_windows_test.py` after changing
+developer staging or launch flags. Linux `session_test.py` requires `/proc` and
+is not a Windows check.
 
 Report the commands you ran and any failures. Documentation-only changes
 normally need a content and link check, not a full native build. If you cannot
@@ -101,6 +112,10 @@ Test only with offline characters; do not test this injected mod in online play.
 
 ## Review and protected main
 
+Release preparation uses the [release workflow](docs/RELEASING.md) and
+[GitHub release template](.github/RELEASE_TEMPLATE.md). Keep the versioned
+in-headset summary in `RELEASE_NOTES.md` current when preparing a release.
+
 `main` requires pull requests and blocks force pushes and branch deletion.
 Contributor PRs require an approving maintainer review; new commits dismiss
 stale approvals. Review conversations must be resolved before merging.
@@ -113,6 +128,11 @@ main-integrity ruleset. Do not disable protection to land a change.
 
 GitHub's live settings are authoritative. The intended configuration and
 maintenance notes are kept in [`.github/rulesets/`](.github/rulesets/README.md).
+
+Release tags matching `v*` are restricted to the repository owner. Future
+releases use GitHub release immutability: prepare a draft, attach and verify
+all assets, then publish. Published immutable assets require a new release
+version for corrections. Existing releases are not made immutable retroactively.
 
 ## Reporting problems and suggesting features
 

@@ -36,7 +36,10 @@
 
 #include "skeletons.h"
 #include "../steamvr/body_tracking.h"
+#include "../steamvr/dual_wield.h"
+#include "../steamvr/crossbow_pose.h"
 #include "../steamvr/profile.h"
+#include "../steamvr/guarded_text.h"
 #include "sigscan.h"
 #ifdef D2RVR_NATIVE_OPENXR
 #include "memory.h"
@@ -44,6 +47,9 @@
 #include "hero_selection.h"
 #include "bow_pose.h"
 #include "shield_pose.h"
+#include "dev_scenarios.h"
+#include "../steamvr/shield_surface.h"
+namespace gamestate {framevr::dualwield::Equipment MeleeEquipment();uint64_t LocalPlayer();uint32_t HandsKey();uint32_t WeaponSet();}
 #endif
 
 namespace skel {
@@ -72,15 +78,11 @@ bool SafeWrite(void* dst, const void* src, size_t n) {
 #endif
 }
 
+// One guarded copy per page, not per character (natively each is a system call).
 std::string Str(uintptr_t p) {
     char buf[96];
-    int n = 0;
-    for (; n < 95; ++n) {
-        if (!Get(p + n, &buf[n])) return {};
-        if (!buf[n]) break;
-        if (buf[n] < 32 || buf[n] > 126) return {};
-    }
-    return std::string(buf, n);
+    const int n = framevr::ReadText(p, buf, int(sizeof buf), SafeCopy);
+    return n < 0 ? std::string() : std::string(buf, n);
 }
 
 SRWLOCK g_lock = SRWLOCK_INIT;
@@ -264,6 +266,9 @@ struct Hero {
     // two_hand_weapon_attach (the barbarian's rig, under the body, not a wrist): the game hangs a
     // two-handed weapon on it in some animations - walking with a great axe (2026-10-06).
     int twoHand = -1;
+    // shield_attach, under the left FOREARM (not the wrist): where the game
+    // actually hangs a shield. Posed from the tracked hand so it bends with the wrist.
+    int shieldAttach = -1;
     std::vector<char> upper;    // spine_01 and everything under it: the body above the pelvis
     int upr[2] = {-1, -1}, lwr[2] = {-1, -1}, hand[2] = {-1, -1};   // [0] right, [1] left
     // first knuckles: index, middle, pinky - they give the hand's own axes
@@ -315,12 +320,47 @@ struct GunBoneOut { float o[3], ax[3][3]; ULONGLONG at; Mat leftToHead; uintptr_
     MeleeWeaponPose melee{};bool haveMelee=false;
     uint32_t poseStamp=0;bool havePoseStamp=false;
     bow::Vec handOffset{};
+    bool crossbow=false;Mat crossbowWorld{};uint32_t weaponKey=0,heroGeneration=0;
+    uint64_t session=0;uint32_t equipment=0,worldEpoch=0;float crossbowUpm=0;
 #endif
 };
 SRWLOCK g_gunBoneLock = SRWLOCK_INIT;
 GunBoneOut g_gunBone{};
 #ifdef D2RVR_NATIVE_OPENXR
-MeleeWeaponPose g_shieldPose{};ULONGLONG g_shieldAt=0;
+MeleeWeaponPose g_shieldPose{},g_offhandPose{};ULONGLONG g_shieldAt=0,g_offhandAt=0;
+framevr::guard::Pose g_shieldGuardPose{};
+struct ShieldContext {
+    framevr::guard::Pose pose{};V3 player{};uintptr_t hero=0;
+    uint32_t generation=0,equipment=0;uint64_t session=0;
+};
+ShieldContext g_shieldContext{},g_renderedShieldContext{};
+struct ShieldBound {int bone=-1;framevr::math::Vec low{},high{};};
+struct ShieldRenderSource {
+    uintptr_t self=0,model=0,skeleton=0,bones=0,hero=0;
+    uint32_t entity=UINT32_MAX,parent=0,generation=0,equipment=0;
+    uint64_t session=0;int count=0,boundCount=0;
+    std::array<ShieldBound,16> bounds{};
+};
+ShieldRenderSource g_shieldRenderSource;
+std::atomic<uint32_t> g_shieldEntity{UINT32_MAX};
+// Cumulative milestones collected while the developer overlay is enabled.
+std::atomic<unsigned> g_shieldStages{0};
+void ShieldStage(unsigned bit){if(devscenarios::DebugDraws())g_shieldStages.fetch_or(bit,std::memory_order_relaxed);}
+struct CrossbowGeometry {Mat boltToAttach{};uintptr_t hero=0;uint32_t generation=0,key=0;ULONGLONG at=0;};
+CrossbowGeometry g_crossbowGeometry;
+framevr::crossbow::Pose g_crossbowPose;
+std::atomic<unsigned> g_crossbowStages{0};
+// When the hero's last weapon pose held a crossbow, else 0. Only within 100 ms
+// of one, as the capture itself requires, is every posed rig searched for its
+// helper bones; a static crossbow posed outside that is found by
+// RefreshCrossbow's scan of the skeleton storage.
+std::atomic<ULONGLONG> g_crossbowHeldAt{0};
+struct CrossbowRenderSource {
+    uintptr_t self=0,hero=0;uint32_t parent=0,generation=0,equipment=0;
+    int count=0,cog=-1;Mat relative{};ULONGLONG seen=0;
+};
+CrossbowRenderSource g_crossbowRenderSource; // g_gunBoneLock
+std::atomic<uint32_t> g_crossbowEntity{UINT32_MAX};
 #endif
 // [debug] the line the left hand takes the weapon by (staff, spear, sword), the same frame
 struct GrabLineOut { float a[3], b[3]; ULONGLONG at; };
@@ -342,6 +382,7 @@ std::map<std::pair<uintptr_t, uintptr_t>, Hero> g_heroes;   // count == 0: not t
 struct Grip {
     int type = -1;
     bool ok = false;
+    uint32_t generation=0;
     Mat attach[2];       // R/L_weapon_attach relative to its wrist
     Mat inStaff[2];      // each wrist relative to the staff (the attach bone that holds it)
     // Each palm's middle (wrist to middle knuckle, halfway) in the staff's
@@ -554,6 +595,7 @@ bool Learn(uintptr_t self, Hero* h) {
             {&h->weapon[0], {"R_weapon_attach", "R_weapon_attach", "R_weapon_attach"}},
             {&h->weapon[1], {"L_weapon_attach", "L_weapon_attach", "L_weapon_attach"}},
             {&h->twoHand, {"two_hand_weapon_attach", "two_hand_weapon_attach", "two_hand_weapon_attach"}},
+            {&h->shieldAttach, {"shield_attach", "shield_attach", "shield_attach"}},
         };
         for (const Alias& a : kAliases) {
             if (*a.slot >= 0) continue;
@@ -806,6 +848,60 @@ void ApplyWrist(Mat& hand, const Wrist& r) {
     }
 }
 
+#ifdef D2RVR_NATIVE_OPENXR
+// The shield wrist's stop. The hand bending back (back of the hand up) swings
+// the shield's elbow edge into the arm: that bend eases into where the shield
+// sat rigid on the forearm before it followed the hand. Bending the other way,
+// twisting and side to side stay free.
+// Always the back of the hand, from the knuckles (the fingers curl and the thumb
+// sits the other way on every hero rig). It was chosen by which side of the
+// forearm shield_attach sat on: the necromancer's animation holds it past the
+// palm side, the stop turned round and pushed his hand up as it bent down,
+// with a steel shield only (2026-10-20). The barbarian's never turned it.
+// Returns how much bend the controller asked that the wrist held back, degrees (0: none).
+float StopShieldWrist(const Hero& h,std::vector<Mat>& newW) {
+    const int k=h.hand[1],sa=h.shieldAttach,l=h.lwr[1],i=h.ind[1],m=h.mid[1],p=h.pnk[1];
+    if(k<0||sa<0||l<0||i<0||m<0||p<0)return 0;
+    // the back of the hand in the hand bone's frame (Fist's left palm, reversed)
+    const V3 back=RotOnly(Cross(Sub(Pos(h.bind[i]),Pos(h.bind[p])),Sub(Pos(h.bind[m]),Pos(h.bind[k]))),InvAffine(h.bind[k]));
+    // the hand as it would be, holding the shield where it sat on the forearm
+    const Mat rigid=Mul(Mul(h.bind[k],InvAffine(h.bind[sa])),newW[sa]);
+    const V3 f=Norm(Sub(Pos(newW[k]),Pos(newW[l])));   // elbow -> wrist
+    const V3 now=Norm(RotOnly(back,newW[k])),stop=Norm(RotOnly(back,rigid));
+    // Bend as the angle off the forearm: easing starts kEase short of the stop
+    // and only approaches it, so the shield slows into place and never reaches the arm.
+    constexpr float kEase=15.0f/57.2958f;
+    const float asked=acosf(std::clamp(Dot(now,f),-1.f,1.f)),at=acosf(std::clamp(Dot(stop,f),-1.f,1.f));
+    const float knee=at-kEase;
+    float given=asked;
+    if(asked>knee) {   // into the easing
+        const V3 w=Sub(now,Scale(f,Dot(now,f)));
+        if(Len(w)>=1e-4f) {
+            given=knee+kEase*(1-expf(-(asked-knee)/kEase));
+            const V3 target=Add(Scale(f,cosf(given)),Scale(Norm(w),sinf(given)));
+            const auto before=newW;
+            TurnAboutSelf(newW[k],RotBetween(now,target));
+            std::vector<char> fromK(h.count,0);fromK[k]=1;Propagate(h,before,newW,fromK,k);   // fingers, L_weapon_attach
+        }
+    }
+#ifdef D2RVR_DEVELOPER
+    // [diag] developer builds only. 90 = hand straight, above 90 = bent back (back of the
+    // hand up), below = bent toward the palm. old_flip: the side the old rule went by
+    // (shield_attach's offset from the forearm, untouched by the turn above); 1 = it
+    // would have turned the stop round.
+    static ULONGLONG reportAt=0;const auto nowMs=GetTickCount64();
+    if(nowMs>=reportAt) {
+        const V3 off=Sub(Pos(newW[sa]),Pos(newW[l])),side=Sub(off,Scale(f,Dot(off,f)));
+        const int oldFlip=Len(side)>1e-3f&&Dot(side,stop)<0?1:0;
+        char line[200];snprintf(line,sizeof line,"Frame shield wrist stop: class=%d asked=%.1f stop=%.1f given=%.1f held=%.1f deg old_flip=%d",
+            h.cls,asked*57.2958f,at*57.2958f,given*57.2958f,(asked-given)*57.2958f,oldFlip);
+        framevr::logging::Write(line);reportAt=nowMs+1000;
+    }
+#endif
+    return (asked-given)*57.2958f;
+}
+#endif
+
 // Where the controller puts that hand's grip point (the middle of the palm), in
 // model space. The hands hang off the eye we see through, so they land where
 // the real ones are; the head bone sits elsewhere (camera height and side are
@@ -848,14 +944,50 @@ Mat TurnAbout(V3 k, float deg) {
 
 // One arm's two-bone IK, the wrist to T: elbow down, a little out to its own
 // side and back - of the body as turned.
-void Reach(const Hero& h, int side, V3 T, bool turn, float c, float s, const std::vector<Mat>& baseW, std::vector<Mat>& newW) {
+void Reach(const Hero& h, int side, V3 T, bool turn, float c, float s, const std::vector<Mat>& baseW, std::vector<Mat>& newW, bool trackedShield=false) {
     const int u = h.upr[side], l = h.lwr[side], k = h.hand[side];
     const V3 S = Pos(newW[u]);
-    const float L1 = Len(Sub(Pos(newW[l]), S)), L2 = Len(Sub(Pos(newW[k]), Pos(newW[l])));
+    float L1 = Len(Sub(Pos(newW[l]), S)), L2 = Len(Sub(Pos(newW[k]), Pos(newW[l])));
+    const std::vector<Mat>* offsets=&baseW;
+    std::vector<Mat> extended;
+#ifdef D2RVR_NATIVE_OPENXR
+    const V3 requested=T;
+    float reachScale=1;
+    if(trackedShield) {
+        const float scale=shield::ReachScale({S.x,S.y,S.z},{T.x,T.y,T.z},L1,L2);
+        reachScale=scale;
+        if(scale>1.f) {
+            extended=newW;
+            std::vector<char> subtree(h.count,0);subtree[u]=1;
+            for(int i=u;i<h.count;++i) {
+                if(i!=u&&h.parent[i]>=0)subtree[i]=subtree[h.parent[i]];
+                if(subtree[i])framevr::body::ScaleArmBone(newW[i].m,{S.x,S.y,S.z},scale);
+            }
+            // Fit the arm skin, preserving the palm, fingers and equipment.
+            for(int row=0;row<3;++row)for(int col=0;col<3;++col)newW[k].m[row*4+col]=extended[k].m[row*4+col];
+            std::vector<char> fromHand(h.count,0);fromHand[k]=1;
+            Propagate(h,extended,newW,fromHand,k);
+            // IK must propagate the extended offsets, otherwise its two
+            // rotations would silently restore the original short forearm.
+            extended=newW;offsets=&extended;
+            L1=Len(Sub(Pos(newW[l]),S));L2=Len(Sub(Pos(newW[k]),Pos(newW[l])));
+        }
+    }
+#endif
     V3 pole = {side == 0 ? -0.5f : 0.5f, -1.0f, -0.3f};
     if (turn) pole = {pole.x * c + pole.z * s, pole.y, -pole.x * s + pole.z * c};
     const V3 E = Elbow(S, L1, L2, T, pole);
-    AimChain(h, u, l, k, E, T, baseW, newW);
+    AimChain(h, u, l, k, E, T, *offsets, newW);
+#ifdef D2RVR_NATIVE_OPENXR
+    if(trackedShield) {
+        static ULONGLONG reportAt=0;const auto now=GetTickCount64();
+        if(now>=reportAt) {
+            char line[180];snprintf(line,sizeof line,"Frame shield reach: extension=%.3f requested=%.3f wrist-error=%.4f model units",
+                reachScale,Len(Sub(requested,S)),Len(Sub(Pos(newW[k]),requested)));
+            framevr::logging::Write(line);reportAt=now+5000;
+        }
+    }
+#endif
 }
 
 // a's rotation part turned toward b's by t (rows blended, made square again,
@@ -891,6 +1023,9 @@ struct StaffHold {
     float dir[3] = {};
     float gap = 0.0f;
     ULONGLONG at = 0;
+#ifdef D2RVR_NATIVE_OPENXR
+    framevr::crossbow::SupportGrip crossbow;
+#endif
 };
 SRWLOCK g_staffLock = SRWLOCK_INIT;
 StaffHold g_staff;
@@ -913,18 +1048,27 @@ void FromModel(V3 o, float c, float s, float out[3]) {
 }
 
 // inReach: the left hand is close enough to the staff to take it. A grip pressed
-// far from it takes nothing until it is let go and pressed again near it.
-float StaffEase(float grip, bool inReach) {
+// far from it takes nothing until pressed again near it. A crossbow's support
+// grip may also engage by entering range while Grip is already held.
+float StaffEase(float grip, bool inReach, bool crossbow=false, bool tracked=true, uint32_t weapon=0, uint32_t generation=0) {
     LARGE_INTEGER f, now;
     QueryPerformanceFrequency(&f); QueryPerformanceCounter(&now);
     AcquireSRWLockExclusive(&g_staffLock);
     const float dt = g_staff.last ? std::clamp((float)((double)(now.QuadPart - g_staff.last) / (double)f.QuadPart), 0.0f, kStaffEaseS) : kStaffEaseS;
     g_staff.last = now.QuadPart;
-    const bool pressed = grip < 0.0f || grip > 0.6f ? true : grip < 0.4f ? false : g_staff.pressed;
-    if (grip < 0.0f) g_staff.on = true;   // no grip from the bridge: always on the staff
-    else if (pressed && !g_staff.pressed) g_staff.on = inReach;
-    else if (!pressed) g_staff.on = false;
-    g_staff.pressed = pressed;
+#ifdef D2RVR_NATIVE_OPENXR
+    if(crossbow) {
+        if(!g_staff.crossbow.Current(weapon,generation)||!tracked||!std::isfinite(grip)||grip<0)g_staff.t=0;
+        g_staff.on=g_staff.crossbow.Step(weapon,generation,tracked,grip,inReach);
+        g_staff.pressed=g_staff.crossbow.pressed;
+    } else
+#endif
+    {
+        const bool pressed = grip < 0.0f || grip > 0.6f ? true : grip < 0.4f ? false : g_staff.pressed;
+        if (grip < 0.0f) g_staff.on = true;   // legacy bridge without grip input
+        else g_staff.on = framevr::crossbow::SupportLatched(pressed,g_staff.pressed,g_staff.on,inReach,crossbow);
+        g_staff.pressed = pressed;
+    }
     g_staff.t = std::clamp(g_staff.t + (g_staff.on ? dt : -dt) / kStaffEaseS, 0.0f, 1.0f);
     const float t = g_staff.t;
     ReleaseSRWLockExclusive(&g_staffLock);
@@ -1130,7 +1274,7 @@ void PoseBody(uintptr_t self, const Hero& h, const Input& in) {
             const Wrist wr = PlanWrist(h, side, baseW, in, c, s);
             // The grip point is the middle of the palm; the wrist bone is half a hand behind it.
             if (wr.ok) T = Sub(T, Scale(wr.point, 0.5f * wr.reach));
-            Reach(h, side, T, turn, c, s, baseW, newW);
+            Reach(h, side, T, turn, c, s, baseW, newW, side==1&&in.leftShield);
             if (wr.ok) {
                 ApplyWrist(newW[k], wr);
                 std::vector<char> fromK(n, 0); fromK[k] = 1;
@@ -1152,6 +1296,16 @@ void PoseBody(uintptr_t self, const Hero& h, const Input& in) {
     // The grip, taken once per weapon while not attacking (see Grip).
     Grip grip;
     AcquireSRWLockShared(&g_gripLock); grip = g_grip; ReleaseSRWLockShared(&g_gripLock);
+#ifdef D2RVR_NATIVE_OPENXR
+    // A previous weapon's valid cache is not a fallback for this one, even
+    // if attacking temporarily prevents learning the new attachment.
+    if(grip.type!=in.weaponType||grip.generation!=HeroGen())grip.ok=false;
+    if(!in.gunStock||!in.staffFreeLeft||in.mode!=2||!(in.handsValid&1u)) {
+        AcquireSRWLockExclusive(&g_staffLock);
+        if(g_staff.crossbow.known){g_staff.crossbow.Reset();g_staff.on=g_staff.pressed=false;g_staff.t=0;g_staff.at=0;}
+        ReleaseSRWLockExclusive(&g_staffLock);
+    }
+#endif
     if ((grip.type != in.weaponType || !grip.ok) && !in.attacking && h.weapon[0] >= 0 && h.weapon[1] >= 0 && h.hand[0] >= 0 && h.hand[1] >= 0) {
         for (int side = 0; side < 2; ++side) {
             grip.attach[side] = Mul(oldW[h.weapon[side]], InvAffine(oldW[h.hand[side]]));
@@ -1169,14 +1323,20 @@ void PoseBody(uintptr_t self, const Hero& h, const Input& in) {
             grip.palm[side][0] = p.x; grip.palm[side][1] = p.y; grip.palm[side][2] = p.z;
         }
         grip.type = in.weaponType;
+        grip.generation=HeroGen();
         grip.ok = true;
-        // A crossbow is placed by where the game's right hand holds it (GunFrame): a grip
-        // taken in a pose with the hands off it (4.48 units apart, not the 0.80 of the
-        // hold) put the model a metre off (2026-10-05). Such a one is not taken; the last
-        // good one stands in for it.
+        // Legacy placement needed a close animated grip. Native controller
+        // placement replaces that position and fixes the stock axis, so the
+        // wide idle/swap pose must not prevent learning its attachment. Hidden
+        // transitional attachments still wait for a visible pose.
         static Grip goodXbow;
-        if (in.gunStock && Len(Sub(pw[0], pw[1])) > 1.0f) {
-            if (goodXbow.ok && goodXbow.type == in.weaponType) grip = goodXbow;
+        bool controllerPlaced=false;
+#ifdef D2RVR_NATIVE_OPENXR
+        controllerPlaced=in.gunFrame&&in.stockAxis!=0&&abs(in.stockAxis)<=3;
+#endif
+        const float mountScale=grip.scale[in.staffHand==0?0:1];
+        if (in.gunStock && !framevr::crossbow::GripCaptureAllowed(Len(Sub(pw[0],pw[1])),controllerPlaced,mountScale)) {
+            if (goodXbow.ok && goodXbow.type == in.weaponType&&goodXbow.generation==HeroGen()) grip = goodXbow;
             else grip.ok = false;
         } else if (in.gunStock) {
             goodXbow = grip;
@@ -1218,8 +1378,9 @@ void PoseBody(uintptr_t self, const Hero& h, const Input& in) {
     // right, yaw about its top, roll about where it points) and moves it along them,
     // cm. Taken from the game's grip, laid along the hand and turned in the bone's
     // own axes, the stock lay askew, the bolts flew along it - to the left - and the
-    // crossbow hung from a point beside the hand (2026-10-05). The shot is the
-    // controller's -Z (vrcam HandRay), whatever the model.
+    // crossbow hung from a point beside the hand (2026-10-05). Native OpenXR now
+    // resolves the actual held bolt helper for support-hand placement and aim;
+    // the historical controller ray remains the fallback for unknown rigs.
     V3 gunF{}, gunU{}, gunR{}, gunAt{}, gunStock{};
     const bool gun = freeStaff && in.gunStock && in.gunFrame && h.hand[0] >= 0 && GunFrame(in, c, s, &gunF, &gunU, &gunR);
     if (gun) {
@@ -1347,6 +1508,26 @@ void PoseBody(uintptr_t self, const Hero& h, const Input& in) {
         // holds it - the left hand goes on it, the bolt along it (vrcam HandRay): the
         // model and what shoots and is taken are one ("they must coincide", 2026-10-05).
         if (gun) { axis = gunStock; origin = gunAt; }
+#ifdef D2RVR_NATIVE_OPENXR
+        if(gun) {
+            CrossbowGeometry geometry;
+            AcquireSRWLockShared(&g_gunBoneLock);geometry=g_crossbowGeometry;ReleaseSRWLockShared(&g_gunBoneLock);
+            if(geometry.hero==self&&geometry.generation==HeroGen()&&geometry.key==uint32_t(in.weaponType)&&
+               geometry.at&&GetTickCount64()-geometry.at<=100) {
+                const Mat bolt=Mul(geometry.boltToAttach,staff);framevr::crossbow::Mat model;memcpy(&model,&bolt,sizeof model);
+                framevr::crossbow::Line line;
+                if(framevr::crossbow::FromBolt(model,line)) {
+                    const float headY=in.haveEye?in.eyeModel[1]:Pos(newW[h.head]).y;
+                    const float upm=framevr::body::UnitsPerMetre(h.eyeY>0?h.eyeY:headY,in.userHeadM,in.scale);
+                    const auto right=ControllerPoint(h,0,in,newW,c,s);
+                    const float ahead=std::max(0.f,in.leftStaffAtM);
+                    const auto point=framevr::crossbow::Support(line,{right.x,right.y,right.z},ahead,upm);
+                    axis={line.direction.x,line.direction.y,line.direction.z};
+                    origin=Sub({point.x,point.y,point.z},Scale(axis,ahead*upm));
+                }
+            }
+        }
+#endif
         const V3 atR = Through(staff, inR);
         const float tR = gun ? 0.0f : Dot(Sub(atR, origin), axis);   // the right palm, along the shaft
         // A crossbow's palms in the game's grip need not lie along its stock: the gap
@@ -1376,7 +1557,8 @@ void PoseBody(uintptr_t self, const Hero& h, const Input& in) {
                                             : std::clamp(Dot(Sub(C, origin), axis), tR - kStaffReach * gap, tR + kStaffReach * gap);
                 inReach = Len(Sub(C, Add(origin, Scale(axis, t)))) <= in.staffGrabM * upm;
             }
-            const float e = (in.handsValid & 2u) ? StaffEase(in.grip[1], inReach) : 1.0f;
+            const float e = gun ? StaffEase(in.grip[1],inReach,true,(in.handsValid&2u)!=0,uint32_t(in.weaponType),HeroGen())
+                               : (in.handsValid & 2u) ? StaffEase(in.grip[1], inReach) : 1.0f;
             leftOnStaff = e >= 0.5f;
             // Held in both hands, the staff is held between them: it runs from
             // the right fist through the left controller, and the right wrist's
@@ -1448,13 +1630,16 @@ void PoseBody(uintptr_t self, const Hero& h, const Input& in) {
             // the pommel, below the right fist), through the palm's middle (wrist to middle knuckle).
             // The same for every shaft laid by its bone's axis (spear, polearm, axe, mace): the game's
             // left hand is not on it either.
-            if ((in.leftHilt || (in.shaftAxis != 0 && !gun)) && h.ind[1] >= 0 && h.pnk[1] >= 0 && h.mid[1] >= 0) {
+            if ((gun || in.leftHilt || in.shaftAxis != 0) && h.ind[1] >= 0 && h.pnk[1] >= 0 && h.mid[1] >= 0) {
                 const Mat toHand = InvAffine(freeHand);
                 alongInHand = RotOnly(Sub(Pos(newW[h.pnk[1]]), Pos(newW[h.ind[1]])), toHand);
                 palmInHand = Through(toHand, Scale(Add(Pos(freeHand), Pos(newW[h.mid[1]])), 0.5f));
             }
             Mat onStaff = freeHand;
-            TurnAboutSelf(onStaff, RotBetween(RotOnly(alongInHand, freeHand), axis));
+            // A support palm can cup the stock from below or rest on top.
+            // Aligning its knuckle line as a fist forces a near-180-degree
+            // wrist turn underneath. Preserve the tracked orientation instead.
+            if(!gun)TurnAboutSelf(onStaff, RotBetween(RotOnly(alongInHand, freeHand), axis));
             // [hands] xbow_left_roll: turned about the shaft on top (a crossbow's stock
             // is held from below, palm up - the controller's own roll left it on the side).
             if (const float deg = in.leftStaffRollDeg; deg != 0.0f) {
@@ -1469,6 +1654,11 @@ void PoseBody(uintptr_t self, const Hero& h, const Input& in) {
             }
             const V3 palmNow = RotOnly(palmInHand, onStaff);
             onStaff.m[12] = onShaft.x - palmNow.x; onStaff.m[13] = onShaft.y - palmNow.y; onStaff.m[14] = onShaft.z - palmNow.z;
+            if(gun) {
+                framevr::crossbow::Mat tracked;memcpy(&tracked,&onStaff,sizeof tracked);
+                tracked=framevr::crossbow::SupportHand(tracked,{palmInHand.x,palmInHand.y,palmInHand.z},{onShaft.x,onShaft.y,onShaft.z});
+                memcpy(&onStaff,&tracked,sizeof onStaff);
+            }
             // [hands] left_staff_x/y/z: the hand moved along its own axes (cm at
             // the hero's scale), set by eye until the fist sits round the shaft.
             // [hands] left_hold_pitch/yaw/roll: the hand turned about its own axes, round its point on the
@@ -1535,7 +1725,9 @@ void PoseBody(uintptr_t self, const Hero& h, const Input& in) {
                 AcquireSRWLockExclusive(&g_gunBoneLock); g_grabLine = g; ReleaseSRWLockExclusive(&g_gunBoneLock);
             }
         }
-    } else if (in.staff && in.mode == 2 && (in.handsValid & 3u) == 3u) {
+    // Waiting for a grip must not opt a free support hand into the legacy
+    // always-two-handed solver, which has no grip-release path.
+    } else if (in.staff && !in.staffFreeLeft && in.mode == 2 && (in.handsValid & 3u) == 3u) {
         const int hold = in.staffHand == 0 ? 0 : 1, wb = h.weapon[hold], other = h.hand[hold ^ 1];
         if (wb >= 0 && other >= 0) {
             auto apply = [](const Mat& m, V3 v) {   // a point through a row-vector matrix
@@ -1597,6 +1789,7 @@ void PoseBody(uintptr_t self, const Hero& h, const Input& in) {
     bool shieldFollowed=false;
     if(in.mode==2&&in.leftShield&&(in.handsValid&2u)&&h.bindOk&&h.weapon[1]>=0&&h.hand[1]>=0) {
         const int wb=h.weapon[1],hand=h.hand[1];
+        StopShieldWrist(h,newW);   // before the shield takes the hand's turn
         bow::Mat wristBind,shieldBind,wristNow,result;
         memcpy(&wristBind,&h.bind[hand],sizeof wristBind);
         memcpy(&shieldBind,&h.bind[wb],sizeof shieldBind);
@@ -1607,6 +1800,16 @@ void PoseBody(uintptr_t self, const Hero& h, const Input& in) {
             const auto before=newW;memcpy(&newW[wb],&result,sizeof result);
             std::vector<char> moved(n,0);moved[wb]=1;Propagate(h,before,newW,moved,wb);
             shieldFollowed=true;
+            // The visible shield hangs on shield_attach, a FOREARM child: give it
+            // the same bind relationship to the tracked hand, so it bends with the wrist.
+            const int sa=h.shieldAttach;bow::Mat attachBind,attachNow;
+            if(sa>=0&&sa!=wb) {
+                memcpy(&attachBind,&h.bind[sa],sizeof attachBind);
+                if(shield::Follow(wristBind,attachBind,wristNow,attachNow)) {
+                    const auto beforeAttach=newW;memcpy(&newW[sa],&attachNow,sizeof attachNow);
+                    std::vector<char> movedAttach(n,0);movedAttach[sa]=1;Propagate(h,beforeAttach,newW,movedAttach,sa);
+                }
+            }
         }
     }
 #endif
@@ -1775,10 +1978,25 @@ void PoseBody(uintptr_t self, const Hero& h, const Input& in) {
         HeroXform hx;Mat model;
         if(in.havePoseStamp&&HeroTransform(&hx)&&hx.self==self&&(hx.parent&0xFFFFFu)==0xFFFFFu&&
            SafeCopy(model.m,reinterpret_cast<const void*>(hx.comp),sizeof model)) {
-            const Mat world=Mul(w,model);
+            // Contact motion follows the right controller, independently of
+            // native inventory slots. A free staff uses its authored attachment.
+            const int contactSide=freeStaff?staffSide:0;
+            const int contactBone=h.weapon[contactSide];
+            const Mat attachment=contactBone>=0?newW[contactBone]:Mat{};
+            const Mat world=Mul(attachment,model);
+            if(gun) {
+                g.crossbow=true;g.crossbowWorld=world;g.weaponKey=in.weaponType;g.heroGeneration=HeroGen();g.crossbowUpm=upm;
+                g.session=gamestate::LocalPlayer();g.equipment=gamestate::HandsKey()^(gamestate::WeaponSet()<<30);g.worldEpoch=in.worldEpoch;
+            }
             const V3 origin=Pos(world),axis=Norm({world.m[4],world.m[5],world.m[6]}),player=Pos(model);
             g.melee={{origin.x,origin.y,origin.z},{axis.x,axis.y,axis.z},{player.x,player.y,player.z},in.poseStamp,in.worldEpoch,HeroGen()};
             g.melee.weaponType=in.weaponType;
+            const auto equipment=gamestate::MeleeEquipment();
+            if(framevr::dualwield::Eligible(h.cls,equipment))g.melee.weaponType=equipment.Type(0);
+            const V3 headAxis=back(Norm({attachment.m[4],attachment.m[5],attachment.m[6]}));
+            const framevr::math::Quat grip{in.rot[0][0],in.rot[0][1],in.rot[0][2],in.rot[0][3]};
+            const auto gripAxis=framevr::math::Rotate(framevr::math::Conjugate(grip),{headAxis.x,headAxis.y,headAxis.z});
+            g.melee.gripAxis[0]=gripAxis.x;g.melee.gripAxis[1]=gripAxis.y;g.melee.gripAxis[2]=gripAxis.z;
             const int row=abs(castingAxis)-1;
             const V3 casting=Scale(Norm({world.m[row*4],world.m[row*4+1],world.m[row*4+2]}),castingAxis<0?-1.f:1.f);
             g.melee.castingAxis[0]=casting.x;g.melee.castingAxis[1]=casting.y;g.melee.castingAxis[2]=casting.z;
@@ -1787,23 +2005,56 @@ void PoseBody(uintptr_t self, const Hero& h, const Input& in) {
         }
 #endif
         AcquireSRWLockExclusive(&g_gunBoneLock); g_gunBone = g; ReleaseSRWLockExclusive(&g_gunBoneLock);
+#ifdef D2RVR_NATIVE_OPENXR
+        g_crossbowHeldAt.store(g.crossbow ? g.at : 0, std::memory_order_relaxed);
+#endif
     }
 
 #ifdef D2RVR_NATIVE_OPENXR
     {
-        MeleeWeaponPose shieldPose{};ULONGLONG at=0;HeroXform hx;Mat model;
-        if(shieldFollowed&&in.havePoseStamp&&h.weapon[1]>=0&&
+        MeleeWeaponPose offhand{};ULONGLONG offAt=0;
+        const auto weapons=gamestate::MeleeEquipment();
+        HeroXform offHx;Mat offModel;
+        if(in.mode==2&&!freeStaff&&in.havePoseStamp&&(in.handsValid&2u)&&h.weapon[1]>=0&&
+           framevr::dualwield::Eligible(h.cls,weapons)&&HeroTransform(&offHx)&&offHx.self==self&&
+           (offHx.parent&0xFFFFFu)==0xFFFFFu&&SafeCopy(offModel.m,reinterpret_cast<const void*>(offHx.comp),sizeof offModel)) {
+            const Mat& attachment=newW[h.weapon[1]];const Mat world=Mul(attachment,offModel);
+            const V3 origin=Pos(world),axis=Norm({world.m[4],world.m[5],world.m[6]}),player=Pos(offModel);
+            if(Len({world.m[4],world.m[5],world.m[6]})>.001f&&
+               std::isfinite(origin.x+origin.y+origin.z+axis.x+axis.y+axis.z+player.x+player.y+player.z)) {
+                offhand={{origin.x,origin.y,origin.z},{axis.x,axis.y,axis.z},{player.x,player.y,player.z},in.poseStamp,in.worldEpoch,HeroGen()};
+                offhand.weaponType=weapons.Type(1);
+                const V3 d=Norm({attachment.m[4],attachment.m[5],attachment.m[6]});
+                const V3 headAxis={-(d.x*c-d.z*s),d.y,-(d.x*s+d.z*c)};
+                const framevr::math::Quat grip{in.rot[1][0],in.rot[1][1],in.rot[1][2],in.rot[1][3]};
+                const auto axisInGrip=framevr::math::Rotate(framevr::math::Conjugate(grip),{headAxis.x,headAxis.y,headAxis.z});
+                offhand.gripAxis[0]=axisInGrip.x;offhand.gripAxis[1]=axisInGrip.y;offhand.gripAxis[2]=axisInGrip.z;
+                offAt=GetTickCount64();
+            }
+        }
+        AcquireSRWLockExclusive(&g_gunBoneLock);g_offhandPose=offhand;g_offhandAt=offAt;ReleaseSRWLockExclusive(&g_gunBoneLock);
+        MeleeWeaponPose shieldPose{};framevr::guard::Pose guardPose{};ULONGLONG at=0;HeroXform hx;Mat model;
+        const int shieldBone=h.shieldAttach>=0?h.shieldAttach:h.weapon[1];
+        if(shieldFollowed&&in.havePoseStamp&&shieldBone>=0&&
            HeroTransform(&hx)&&hx.self==self&&(hx.parent&0xFFFFFu)==0xFFFFFu&&
            SafeCopy(model.m,reinterpret_cast<const void*>(hx.comp),sizeof model)) {
-            const Mat world=Mul(newW[h.weapon[1]],model);
+            const Mat world=Mul(newW[shieldBone],model);
             const V3 origin=Pos(world),axis=Norm({world.m[4],world.m[5],world.m[6]}),player=Pos(model);
             if(Len({world.m[4],world.m[5],world.m[6]})>.3f&&
                std::isfinite(origin.x+origin.y+origin.z+axis.x+axis.y+axis.z+player.x+player.y+player.z)) {
                 shieldPose={{origin.x,origin.y,origin.z},{axis.x,axis.y,axis.z},{player.x,player.y,player.z},in.poseStamp,in.worldEpoch,HeroGen()};
                 at=GetTickCount64();
+                if(in.haveEye) {
+                    const float modelUpm=framevr::body::UnitsPerMetre(h.eyeY>0?h.eyeY:in.eyeModel[1],in.userHeadM,in.scale);
+                    framevr::guard::FromAttachment(world.m,model.m,
+                        {in.eyeModel[0],in.eyeModel[1],in.eyeModel[2]},
+                        {in.hand[1][0],in.hand[1][1],in.hand[1][2]},modelUpm,at,in.worldEpoch,guardPose);
+                }
             }
         }
-        AcquireSRWLockExclusive(&g_gunBoneLock);g_shieldPose=shieldPose;g_shieldAt=at;ReleaseSRWLockExclusive(&g_gunBoneLock);
+        AcquireSRWLockExclusive(&g_gunBoneLock);g_shieldPose=shieldPose;g_shieldAt=at;g_shieldGuardPose=guardPose;
+        g_shieldContext={guardPose,{shieldPose.player[0],shieldPose.player[1],shieldPose.player[2]},self,HeroGen(),gamestate::HandsKey(),gamestate::LocalPlayer()};
+        ReleaseSRWLockExclusive(&g_gunBoneLock);
     }
 #endif
     // [hands] fist: free hands close and open with the controllers' grips.
@@ -2001,6 +2252,228 @@ struct MotionBowRig {
     ULONGLONG lookupAt=0;
 };
 std::map<std::pair<uintptr_t,uintptr_t>,MotionBowRig> g_bowRigs;
+struct CrossbowRig {uintptr_t bones=0;int cog=-1;Mat relative{};uint32_t entity=0;bool entityKnown=false;ULONGLONG lookupAt=0;};
+SRWLOCK g_crossbowRigLock=SRWLOCK_INIT;
+std::map<std::pair<uintptr_t,uintptr_t>,CrossbowRig> g_crossbowRigs;
+
+// The packed Granny model layout is shared with the skeleton reader above:
+// model MeshBindings +0x54 (count/pointer), mesh BoneBindings +0x30,
+// binding stride 0x2c: name +0, OBBMin +8, OBBMax +0x14. Read only bounded
+// metadata belonging to the exact local hero; no asset extraction is needed.
+bool CaptureShield(uintptr_t self,const ShieldContext& context,const HeroXform& hero) {
+    ShieldStage(8);
+    ShieldRenderSource source;source.self=self;source.hero=context.hero;
+    source.parent=hero.entity;source.generation=context.generation;source.equipment=context.equipment;source.session=context.session;
+    if(!Get(self+8,&source.model)||!Get(source.model+8,&source.skeleton)||
+       !Get(source.skeleton+8,&source.count)||source.count<1||source.count>64||
+       !Get(source.skeleton+0xC,&source.bones)||!source.bones)return false;
+    ShieldStage(16);
+    int meshes=0;uintptr_t bindings=0;
+    if(!Get(source.model+0x54,&meshes)||meshes<1||meshes>16||!Get(source.model+0x58,&bindings)||!bindings)return false;
+    ShieldStage(32);
+    uintptr_t nameObject=0,pathPointer=0;Get(self,&nameObject);Get(nameObject+8,&pathPointer);
+    const auto path=Str(pathPointer);
+    const bool shieldPath=path.find("/items/armor/shield/")!=std::string::npos;
+    // The bone names only once a mesh is the shield's: RefreshShield's scan
+    // meets every skeleton in the game, and most have no shield mesh.
+    std::array<std::string,64> names;bool named=false;
+    for(int m=0;m<meshes;++m) {
+        uintptr_t mesh=0,name=0,bounds=0;int count=0;
+        if(!Get(bindings+uintptr_t(m)*8,&mesh)||!Get(mesh,&name)||(!shieldPath&&!framevr::guard::ShieldMesh(Str(name))))continue;
+        for(int i=0;!named&&i<source.count;++i) {
+            uintptr_t boneName=0;if(!Get(source.bones+uintptr_t(i)*0xA4,&boneName))return false;
+            names[i]=Str(boneName);
+        }
+        named=true;
+        ShieldStage(64);
+        if(!Get(mesh+0x30,&count)||count<1||count>16||!Get(mesh+0x34,&bounds)||!bounds)return false;
+        for(int b=0;b<count;++b) {
+            const auto at=bounds+uintptr_t(b)*0x2C;ShieldBound bound;uintptr_t boneName=0;
+            if(!Get(at,&boneName)||!Get(at+8,&bound.low)||!Get(at+0x14,&bound.high))return false;
+            const auto label=Str(boneName);
+            for(int i=0;i<source.count;++i)if(names[i]==label){bound.bone=i;break;}
+            if(bound.bone<0||!framevr::guard::Finite(bound.low)||!framevr::guard::Finite(bound.high))return false;
+            if(source.boundCount==int(source.bounds.size()))return false;
+            source.bounds[source.boundCount++]=bound;
+        }
+    }
+    if(!source.boundCount)return false;
+    ShieldStage(128);
+    {
+        AcquireSRWLockExclusive(&ecs::g_lock);
+        struct Unlock {~Unlock(){ReleaseSRWLockExclusive(&ecs::g_lock);}} unlock;
+        uint32_t index=0,parent=0;uintptr_t components=0;
+        if(!ecs::EntityOf(self,&source.entity)||!ecs::Dense(ecs::g_xs,source.entity,&index)||
+           !Get(ecs::g_xs+0x38,&components)||!components||
+           !Get(components+uintptr_t(index)*kTransformSize+0xC0,&parent)||parent!=hero.entity)return false;
+    }
+    ShieldStage(256);
+    AcquireSRWLockExclusive(&g_gunBoneLock);
+    const bool current=g_shieldContext.pose.at==context.pose.at&&g_shieldContext.hero==context.hero&&
+        g_shieldContext.generation==context.generation&&g_shieldContext.equipment==context.equipment&&g_shieldContext.session==context.session;
+    if(current){g_shieldRenderSource=source;g_shieldEntity=source.entity;ShieldStage(512);}
+    ReleaseSRWLockExclusive(&g_gunBoneLock);
+    return current;
+}
+void RefreshShield(uintptr_t self) {
+    if(self!=g_heroSelf.load())return;
+    ShieldStage(1);
+    ShieldContext context;ShieldRenderSource source;
+    AcquireSRWLockShared(&g_gunBoneLock);context=g_shieldContext;source=g_shieldRenderSource;ReleaseSRWLockShared(&g_gunBoneLock);
+    if(!context.pose.at||context.hero!=self)return;
+    ShieldStage(2);
+    if(source.hero==self&&source.generation==context.generation&&source.equipment==context.equipment&&source.session==context.session) {
+        uintptr_t model=0,skeleton=0,bones=0;int count=0;
+        if(Get(source.self+8,&model)&&model==source.model&&Get(model+8,&skeleton)&&skeleton==source.skeleton&&
+           Get(skeleton+8,&count)&&count==source.count&&Get(skeleton+0xC,&bones)&&bones==source.bones) {
+            AcquireSRWLockExclusive(&ecs::g_lock);
+            uintptr_t existing=0,components=0;uint32_t index=0,parent=0;
+            const bool owned=ecs::SkeletonOf(source.entity,&existing)&&existing==source.self&&
+                ecs::Dense(ecs::g_xs,source.entity,&index)&&Get(ecs::g_xs+0x38,&components)&&components&&
+                Get(components+uintptr_t(index)*kTransformSize+0xC0,&parent)&&parent==source.parent;
+            ReleaseSRWLockExclusive(&ecs::g_lock);if(owned)return;
+        }
+    }
+    // Static shields may not get another pose callback after equipping. Scan
+    // validated skeleton storage only while discovery is pending, once/second.
+    static std::atomic<uint64_t> nextLook{0};auto next=nextLook.load();const auto now=GetTickCount64();
+    if(now<next||!nextLook.compare_exchange_strong(next,now+1000))return;
+    HeroXform hero;if(!HeroTransform(&hero)||hero.self!=self)return;
+    std::vector<uint64_t> components;
+    {
+        AcquireSRWLockExclusive(&ecs::g_lock);
+        struct Unlock {~Unlock(){ReleaseSRWLockExclusive(&ecs::g_lock);}} unlock;
+        uintptr_t begin=0,end=0,data=0;
+        if(!ecs::IsStorage(ecs::g_ss,ecs::g_vtS)||!Get(ecs::g_ss+0x20,&begin)||!Get(ecs::g_ss+0x28,&end)||
+           end<begin||(end-begin)/4>32768||!Get(ecs::g_ss+0x38,&data)||!data)return;
+        components.resize((end-begin)/4*(kSkeletonCompSize/8));
+        if(!SafeCopy(components.data(),reinterpret_cast<void*>(data),components.size()*8))return;
+    }
+    ShieldStage(4);
+    for(size_t i=0;i<components.size();i+=kSkeletonCompSize/8)
+        if(CaptureShield(uintptr_t(components[i]),context,hero))return;
+}
+
+// Runtime model names need not be the asset's full archive path. Recognize
+// the authored helper bones; the caller then requires exact hero ownership.
+CrossbowRig LearnCrossbowRig(uintptr_t bones,int count) {
+    CrossbowRig rig;rig.bones=bones;
+    int cog=-1,bolt=-1,left=-1,right=-1;
+    for(int i=0;i<count;++i) {
+        uintptr_t n=0;if(!Get(bones+uintptr_t(i)*0xA4,&n))break;
+        const auto bone=Str(n);if(bone=="cog")cog=i;if(bone=="bolt_helper")bolt=i;
+        if(bone=="L_bowBend")left=i;if(bone=="R_bowBend")right=i;
+    }
+    if(cog>=0&&bolt>=0)g_crossbowStages.fetch_or(1);
+    bow::Mat inverseCog,inverseBolt,inverseLeft,inverseRight,barrel;
+    if(cog>=0&&bolt>=0&&left>=0&&right>=0&&SafeCopy(&inverseCog,reinterpret_cast<void*>(bones+uintptr_t(cog)*0xA4+0x50),sizeof inverseCog)&&
+       SafeCopy(&inverseBolt,reinterpret_cast<void*>(bones+uintptr_t(bolt)*0xA4+0x50),sizeof inverseBolt)&&
+       SafeCopy(&inverseLeft,reinterpret_cast<void*>(bones+uintptr_t(left)*0xA4+0x50),sizeof inverseLeft)&&
+       SafeCopy(&inverseRight,reinterpret_cast<void*>(bones+uintptr_t(right)*0xA4+0x50),sizeof inverseRight)&&
+       framevr::crossbow::BarrelInCog(inverseCog,inverseBolt,inverseLeft,inverseRight,barrel)) {
+        memcpy(&rig.relative,&barrel,sizeof barrel);rig.cog=cog;
+    }
+    return rig;
+}
+// Read the held crossbow's authored bolt helper through its actual item/root
+// transform. Never apply another player's, inventory preview's or dropped rig.
+void CaptureCrossbow(uintptr_t self) {
+    const auto now=GetTickCount64();
+    uintptr_t model=0,skeleton=0,bones=0;int count=0;
+    if(!Get(self+8,&model)||!Get(model+8,&skeleton)||!Get(skeleton+8,&count)||count<4||count>64||
+       !Get(skeleton+0xC,&bones)||!bones)return;
+    auto& rigs=g_crossbowRigs;
+    const auto key=std::make_pair(self,skeleton);
+    // A rig met for the first time is learned outside the lock: the other
+    // render workers keep posing meanwhile. Most rigs are not crossbows.
+    bool known=false,crossbow=false;
+    AcquireSRWLockShared(&g_crossbowRigLock);
+    if(const auto found=rigs.find(key);found!=rigs.end()&&found->second.bones==bones){known=true;crossbow=found->second.cog>=0;}
+    ReleaseSRWLockShared(&g_crossbowRigLock);
+    if(!known) {
+        const CrossbowRig learned=LearnCrossbowRig(bones,count);crossbow=learned.cog>=0;
+        AcquireSRWLockExclusive(&g_crossbowRigLock);
+        if(rigs.size()>4096)std::erase_if(rigs,[](const auto& entry){return entry.second.cog<0;});
+        if(rigs.size()>4096)rigs.clear();
+        if(const auto found=rigs.find(key);found==rigs.end()||found->second.bones!=bones)rigs.insert_or_assign(key,learned);
+        ReleaseSRWLockExclusive(&g_crossbowRigLock);
+    }
+    if(!crossbow)return;
+    AcquireSRWLockExclusive(&g_crossbowRigLock);struct Unlock {SRWLOCK* lock;~Unlock(){ReleaseSRWLockExclusive(lock);}} unlock{&g_crossbowRigLock};
+    const auto it=rigs.find(key);
+    if(it==rigs.end()||it->second.bones!=bones||it->second.cog<0)return;   // dropped meanwhile: learned again on its next pose
+    auto& rig=it->second;
+    g_crossbowStages.fetch_or(2);
+    // Learn the item even if its skeleton is evaluated before the hero. Static
+    // item poses need not be evaluated again after the hero becomes available.
+    GunBoneOut attach;
+    AcquireSRWLockShared(&g_gunBoneLock);attach=g_gunBone;ReleaseSRWLockShared(&g_gunBoneLock);
+    if(!attach.crossbow||!attach.at||now-attach.at>100||attach.heroGeneration!=HeroGen())return;
+    g_crossbowStages.fetch_or(4);
+    HeroXform hero;if(!HeroTransform(&hero)||hero.self!=attach.hero)return;
+    g_crossbowStages.fetch_or(8);
+    {
+        AcquireSRWLockExclusive(&ecs::g_lock);Unlock ecsUnlock{&ecs::g_lock};
+        uintptr_t existing=0;
+        if(!rig.entityKnown||!ecs::SkeletonOf(rig.entity,&existing)||existing!=self) {
+            rig.entityKnown=false;if(rig.lookupAt&&now-rig.lookupAt<500)return;rig.lookupAt=now;
+            if(!ecs::EntityOf(self,&rig.entity))return;rig.entityKnown=true;
+        }
+        g_crossbowStages.fetch_or(16);
+        uint32_t index=0,parent=0;uintptr_t components=0;
+        if(!ecs::Dense(ecs::g_xs,rig.entity,&index)||!Get(ecs::g_xs+0x38,&components)||!components||
+           !Get(components+uintptr_t(index)*kTransformSize+0xC0,&parent)||parent!=hero.entity)return;
+        g_crossbowStages.fetch_or(32);
+    }
+    // Discovery happens during posing; the game's item attachment is evaluated
+    // later. Do not approximate it as item-local * selected wrist: attachment
+    // overrides/secondary bones are applied by UpdateTransform too.
+    AcquireSRWLockExclusive(&g_gunBoneLock);
+    g_crossbowRenderSource={self,attach.hero,hero.entity,attach.heroGeneration,attach.equipment,count,rig.cog,rig.relative,now};
+    g_crossbowEntity.store(rig.entity);
+    ReleaseSRWLockExclusive(&g_gunBoneLock);
+}
+void RefreshCrossbow(uintptr_t hero) {
+    if(hero!=g_heroSelf.load())return;
+    GunBoneOut attach;
+    AcquireSRWLockShared(&g_gunBoneLock);attach=g_gunBone;ReleaseSRWLockShared(&g_gunBoneLock);
+    // Held again, or a rebuilt hero: a static crossbow posed while none was
+    // held is looked for at once below, not within the second.
+    static std::atomic<uint64_t> holding{0};
+    const uint64_t holdingNow=attach.crossbow?(uint64_t(attach.heroGeneration)<<1)|1:0;
+    const bool newlyHeld=holding.exchange(holdingNow)!=holdingNow;
+    if(!attach.crossbow)return;
+    std::vector<uintptr_t> items;
+    AcquireSRWLockShared(&g_crossbowRigLock);
+    for(const auto& [key,rig]:g_crossbowRigs)if(rig.cog>=0)items.push_back(key.first);
+    ReleaseSRWLockShared(&g_crossbowRigLock);
+    for(auto item:items)CaptureCrossbow(item);
+    AcquireSRWLockShared(&g_gunBoneLock);const auto source=g_crossbowRenderSource;ReleaseSRWLockShared(&g_gunBoneLock);
+    if(source.hero==hero&&source.generation==attach.heroGeneration&&source.equipment==attach.equipment&&
+       source.seen&&GetTickCount64()-source.seen<=100)return;
+    // Also discover static held skeletons that were initialized before our
+    // pose hook ran. Snapshot the same validated ECS storage as EntityOf;
+    // never hold its lock while resolving an item or publishing a pose.
+    static std::atomic<uint64_t> nextLook{0};if(newlyHeld)nextLook.store(0);
+    auto next=nextLook.load();const auto now=GetTickCount64();
+    if(now<next||!nextLook.compare_exchange_strong(next,now+1000))return;
+    std::vector<uint64_t> components;
+    {
+        AcquireSRWLockExclusive(&ecs::g_lock);
+        struct Unlock {~Unlock(){ReleaseSRWLockExclusive(&ecs::g_lock);}} unlock;
+        uintptr_t begin=0,end=0,data=0;
+        if(!ecs::IsStorage(ecs::g_ss,ecs::g_vtS)||!Get(ecs::g_ss+0x20,&begin)||!Get(ecs::g_ss+0x28,&end)||
+           end<begin||(end-begin)/4>32768||!Get(ecs::g_ss+0x38,&data)||!data)return;
+        components.resize((end-begin)/4*(kSkeletonCompSize/8));
+        if(!SafeCopy(components.data(),reinterpret_cast<void*>(data),components.size()*8))return;
+    }
+    for(size_t i=0;i<components.size();i+=kSkeletonCompSize/8) {
+        CaptureCrossbow(uintptr_t(components[i]));
+        AcquireSRWLockShared(&g_gunBoneLock);const auto captured=g_crossbowRenderSource;ReleaseSRWLockShared(&g_gunBoneLock);
+        if(captured.hero==hero&&captured.generation==attach.heroGeneration&&captured.equipment==attach.equipment&&
+           captured.seen&&GetTickCount64()-captured.seen<=100)break;
+    }
+}
 
 void PoseMotionBow(uintptr_t self) {
     GunBoneOut attach;
@@ -2227,14 +2700,150 @@ bool GunBone(float origin[3], float axes[3][3], unsigned maxAgeMs) {
     return true;
 }
 #ifdef D2RVR_NATIVE_OPENXR
-bool MeleeWeapon(MeleeWeaponPose& out) {
+bool MeleeWeapon(MeleeWeaponPose& out,int hand) {
+    if(hand==1) {
+        AcquireSRWLockShared(&g_gunBoneLock);const auto pose=g_offhandPose;const auto at=g_offhandAt;ReleaseSRWLockShared(&g_gunBoneLock);
+        if(!at||GetTickCount64()-at>100||pose.heroGeneration!=HeroGen())return false;
+        out=pose;return true;
+    }
+    if(hand!=0)return false;
     AcquireSRWLockShared(&g_gunBoneLock);const auto g=g_gunBone;ReleaseSRWLockShared(&g_gunBoneLock);
     if(!g.haveMelee||!g.at||GetTickCount64()-g.at>100||g.melee.heroGeneration!=HeroGen())return false;
     out=g.melee;return true;
 }
+void CrossbowRendered(uint32_t entity,uintptr_t component,uintptr_t matrix) {
+    if(entity==UINT32_MAX||entity!=g_crossbowEntity.load(std::memory_order_relaxed))return;
+    GunBoneOut attach;CrossbowRenderSource source;
+    AcquireSRWLockShared(&g_gunBoneLock);attach=g_gunBone;source=g_crossbowRenderSource;
+    const bool sameEntity=entity==g_crossbowEntity.load();ReleaseSRWLockShared(&g_gunBoneLock);
+    const auto now=GetTickCount64();uint32_t parent=0;
+    if(!sameEntity||!attach.crossbow||!attach.at||now-attach.at>100||!source.seen||now-source.seen>100||source.hero!=attach.hero||
+       source.generation!=HeroGen()||source.generation!=attach.heroGeneration||source.equipment!=attach.equipment||
+       !Get(component+0xC0,&parent)||parent!=source.parent)return;
+    {
+        AcquireSRWLockExclusive(&ecs::g_lock);uintptr_t existing=0;
+        const bool owned=ecs::SkeletonOf(entity,&existing)&&existing==source.self;
+        ReleaseSRWLockExclusive(&ecs::g_lock);if(!owned)return;
+    }
+    uintptr_t world=0,matrices=0;int count=0;Mat cog,itemWorld;
+    if(!Get(source.self+0x20,&world)||!Get(world,&count)||count!=source.count||source.cog<0||source.cog>=count||
+       !Get(world+4,&matrices)||!matrices||
+       !SafeCopy(&cog,reinterpret_cast<void*>(matrices+uintptr_t(source.cog)*sizeof(Mat)),sizeof cog)||
+       !SafeCopy(&itemWorld,reinterpret_cast<void*>(matrix),sizeof itemWorld))return;
+    g_crossbowStages.fetch_or(64);
+    const Mat model=Mul(source.relative,cog);
+    bow::Mat boltInItem,rendered,wrist,boltWorld,local;
+    memcpy(&boltInItem,&model,sizeof model);memcpy(&rendered,&itemWorld,sizeof rendered);
+    memcpy(&wrist,&attach.crossbowWorld,sizeof wrist);
+    if(!framevr::crossbow::RenderedGeometry(boltInItem,rendered,wrist,boltWorld,local))return;
+    framevr::crossbow::Line line;if(!framevr::crossbow::FromBolt(boltWorld,line))return;
+    framevr::crossbow::Pose pose;
+    pose.muzzle=framevr::crossbow::Muzzle(line);pose.direction=line.direction;pose.scale=line.scale;
+    pose.player={attach.melee.player[0],attach.melee.player[1],attach.melee.player[2]};
+    pose.at=attach.at;pose.session=attach.session;pose.equipment=attach.equipment;pose.worldEpoch=attach.worldEpoch;
+    pose.heroGeneration=attach.heroGeneration;pose.unitsPerMetre=attach.crossbowUpm;
+    Mat localMatrix;memcpy(&localMatrix,&local,sizeof localMatrix);
+    AcquireSRWLockExclusive(&g_gunBoneLock);
+    if(g_gunBone.at==attach.at&&g_gunBone.heroGeneration==attach.heroGeneration&&g_crossbowEntity.load()==entity) {
+        g_crossbowGeometry={localMatrix,attach.hero,attach.heroGeneration,attach.weaponKey,now};g_crossbowPose=pose;
+        g_crossbowStages.fetch_or(128);
+    }
+    ReleaseSRWLockExclusive(&g_gunBoneLock);
+    static std::atomic<uint32_t> reported{UINT32_MAX};
+    if(reported.exchange(attach.heroGeneration)!=attach.heroGeneration) {
+        Mat itemLocal;float correction=0,angle=0;
+        if(SafeCopy(&itemLocal,reinterpret_cast<void*>(component),sizeof itemLocal)) {
+            const Mat guessed=Mul(Mul(model,itemLocal),attach.crossbowWorld);
+            correction=Len(Sub(Pos(itemWorld),Pos(Mul(itemLocal,attach.crossbowWorld))))/attach.crossbowUpm;
+            angle=acosf(std::clamp(Dot(Norm({guessed.m[8],guessed.m[9],guessed.m[10]}),
+                {line.direction.x,line.direction.y,line.direction.z}),-1.f,1.f))*57.2958f;
+        }
+        char message[200];std::snprintf(message,sizeof message,
+            "Frame crossbow: rendered attachment captured; wrist approximation error %.3f m / %.1f deg, scale %.3f, hero generation %u",
+            correction,angle,line.scale,attach.heroGeneration);framevr::logging::Write(message);
+    }
+}
+void ShieldRendered(uint32_t entity,uintptr_t component,uintptr_t matrix) {
+    if(entity==UINT32_MAX||entity!=g_shieldEntity.load(std::memory_order_relaxed))return;
+    ShieldStage(1024);
+    ShieldContext context;ShieldRenderSource source;
+    AcquireSRWLockShared(&g_gunBoneLock);context=g_shieldContext;source=g_shieldRenderSource;ReleaseSRWLockShared(&g_gunBoneLock);
+    const auto now=GetTickCount64();uint32_t parent=0;
+    if(!context.pose.at||now<context.pose.at||now-context.pose.at>100||source.entity!=entity||source.hero!=context.hero||
+       source.generation!=context.generation||source.generation!=HeroGen()||source.equipment!=context.equipment||source.session!=context.session||
+       !Get(component+0xC0,&parent)||parent!=source.parent)return;
+    {
+        AcquireSRWLockExclusive(&ecs::g_lock);uintptr_t existing=0;
+        const bool owned=ecs::SkeletonOf(entity,&existing)&&existing==source.self;
+        ReleaseSRWLockExclusive(&ecs::g_lock);if(!owned)return;
+    }
+    uintptr_t model=0,world=0,matrices=0;int count=0;Mat itemWorld;
+    if(!Get(source.self+8,&model)||model!=source.model||!Get(source.self+0x20,&world)||
+       !Get(world,&count)||count!=source.count||!Get(world+4,&matrices)||!matrices||
+       !SafeCopy(&itemWorld,reinterpret_cast<void*>(matrix),sizeof itemWorld))return;
+    ShieldStage(2048);
+    framevr::guard::Pose best;float largest=0;
+    for(int i=0;i<source.boundCount;++i) {
+        const auto& bound=source.bounds[i];Mat bone;
+        if(bound.bone<0||bound.bone>=count||!SafeCopy(&bone,reinterpret_cast<void*>(matrices+uintptr_t(bound.bone)*sizeof(Mat)),sizeof bone))continue;
+        const Mat final=Mul(bone,itemWorld);framevr::guard::Pose pose;
+        if(!framevr::guard::FromBounds(final.m,bound.low,bound.high,
+            {context.player.x,context.player.y,context.player.z},context.pose,pose))continue;
+        const auto area=framevr::math::Cross(pose.halfRight,pose.halfUp);
+        const float size=framevr::math::Dot(area,area);
+        if(size>largest){best=pose;largest=size;}
+    }
+    if(!largest)return; // hidden/unsupported mesh keeps the attachment fallback
+    ShieldStage(4096);
+    AcquireSRWLockExclusive(&g_gunBoneLock);
+    const bool current=g_shieldContext.pose.at==context.pose.at&&g_shieldContext.generation==context.generation&&
+        g_shieldContext.equipment==context.equipment&&g_shieldEntity.load()==entity;
+    if(current){g_renderedShieldContext=context;g_renderedShieldContext.pose=best;ShieldStage(8192);}
+    ReleaseSRWLockExclusive(&g_gunBoneLock);
+    static std::atomic<uint32_t> reported{UINT32_MAX};
+    if(current&&reported.exchange(context.generation)!=context.generation) {
+        const auto delta=best.center-context.pose.center;
+        char line[220];std::snprintf(line,sizeof line,
+            "Frame shield surface: rendered mesh captured; %.3f x %.3f m, attachment offset %.3f m, angle %.1f deg, generation %u",
+            2*std::sqrt(framevr::math::Dot(best.halfRight,best.halfRight)),2*std::sqrt(framevr::math::Dot(best.halfUp,best.halfUp)),
+            std::sqrt(framevr::math::Dot(delta,delta)),acosf(std::clamp(std::fabs(framevr::math::Dot(best.normal,context.pose.normal)),0.f,1.f))*57.2958f,context.generation);
+        framevr::logging::Write(line);
+    }
+}
+bool CrossbowPose(framevr::crossbow::Pose& out) {
+    AcquireSRWLockShared(&g_gunBoneLock);const auto pose=g_crossbowPose;ReleaseSRWLockShared(&g_gunBoneLock);
+    if(!pose.at||GetTickCount64()-pose.at>100||pose.heroGeneration!=HeroGen()) {
+        static std::atomic<uint64_t> nextReport{0};const auto now=GetTickCount64();auto next=nextReport.load();
+        if(now>=next&&nextReport.compare_exchange_strong(next,now+5000)) {
+            char message[128];std::snprintf(message,sizeof message,"Frame crossbow: no current held pose; capture stages=0x%X",g_crossbowStages.load());
+            framevr::logging::Write(message);
+        }
+        return false;
+    }
+    out=pose;return true;
+}
 bool ShieldWeapon(MeleeWeaponPose& out) {
     AcquireSRWLockShared(&g_gunBoneLock);const auto pose=g_shieldPose;const auto at=g_shieldAt;ReleaseSRWLockShared(&g_gunBoneLock);
     if(!at||GetTickCount64()-at>100||pose.heroGeneration!=HeroGen())return false;
+    out=pose;return true;
+}
+bool ShieldGuardPose(framevr::guard::Pose& out) {
+    AcquireSRWLockShared(&g_gunBoneLock);auto pose=g_shieldGuardPose;const auto generation=g_shieldPose.heroGeneration;
+    const auto context=g_shieldContext,rendered=g_renderedShieldContext;
+    ReleaseSRWLockShared(&g_gunBoneLock);
+    const auto now=GetTickCount64();
+    if(!pose.at||now<pose.at||now-pose.at>100||generation!=HeroGen())return false;
+    if(rendered.hero==context.hero&&rendered.generation==context.generation&&rendered.equipment==context.equipment&&rendered.session==context.session&&
+       rendered.pose.epoch==pose.epoch&&rendered.pose.at&&now>=rendered.pose.at&&now-rendered.pose.at<=100)pose=rendered.pose;
+    if(devscenarios::DebugDraws()) {
+        static std::atomic<uint64_t> nextReport{0};auto next=nextReport.load();
+        if(now>=next&&nextReport.compare_exchange_strong(next,now+2000)) {
+            char line[200];std::snprintf(line,sizeof line,
+                "Frame shield debug: mesh=%d cumulative_stages=0x%X generation=%u equipment=%u",
+                int(framevr::guard::Measured(pose)),g_shieldStages.load(),generation,context.equipment);
+            framevr::logging::Write(line);
+        }
+    }
     out=pose;return true;
 }
 #endif
@@ -2295,6 +2904,9 @@ void __cdecl Hook(uintptr_t self, float a, float b, bool c) {
 #endif
     Arms(self);
 #ifdef D2RVR_NATIVE_OPENXR
+    if (const ULONGLONG held = g_crossbowHeldAt.load(std::memory_order_relaxed); held && GetTickCount64() - held <= 100) CaptureCrossbow(self);
+    RefreshCrossbow(self);
+    RefreshShield(self);
     PoseMotionBow(self);
 #endif
     if (GetTickCount64() < g_dumpUntil.load()) {

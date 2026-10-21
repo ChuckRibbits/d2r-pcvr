@@ -1,3 +1,4 @@
+#include "melee_weapon.h"
 #include <windows.h>
 #include <D2RLPlugin/api.h>
 #include <cstdio>
@@ -20,14 +21,16 @@
 #include "weapon_skills.h"
 #include "panel_input.h"
 #include "spells.h"
+#include "bow.h"
 #include "../steamvr/attack_speed.h"
-namespace gamestate {uint32_t DataBank();bool MenuOpen();int AttackWeapon();int AttackWsm();}
-namespace melee {void SetAttackCycle(uint64_t session,uint32_t milliseconds);}
+namespace gamestate {framevr::dualwield::Equipment MeleeEquipment();void SetMeleeOrder(uint32_t,uint32_t);uint32_t DataBank();bool MenuOpen();int AttackWeapon(int hand=0);int AttackWsm(int hand=0);uint32_t HandsKey();uint32_t WeaponSet();}
+namespace melee {void SetAttackCycle(uint64_t session,uint32_t milliseconds,int hand=0);}
 namespace nativeui {
 namespace {
 const D2RL::PluginContext* context=nullptr;
 const D2RL::LocalizationService* strings=nullptr;
 const D2RL::DataTableService* tables=nullptr;
+D2RL::Reimplementations::GetLevelIdFromUnitFn getLevelId=nullptr;
 std::map<int,std::string> names;
 bool ready=false;
 bool bindingReady=false;
@@ -72,15 +75,131 @@ const char* SkillKey(int id,char key[80]) {
     if(id>372)return nullptr; // table/localization adapter needed; no fabricated name
     std::snprintf(key,80,"d2r:skillname%d",id+(id>=221&&id<=280?1:0));return key;
 }
+bool Lookup(const char* key,char* text,uint32_t size) {
+    return key&&strings&&strings->getStringByKey&&
+        strings->getStringByKey(context,key,text,size,nullptr)==D2RL::Localization::Result::Success&&text[0];
+}
+// A name lookup that found nothing: retried after 10 s, three times at most.
+std::map<int,ULONGLONG> nameMissAt;
+std::map<int,int> nameMisses;
+// The first of these keys the game knows (spellings differ across the
+// expansion); shift: try id+shift before id. Which key answered is logged once.
+std::string FirstKnown(int id,std::initializer_list<const char*> patterns,int shift) {
+    const ULONGLONG now=GetTickCount64();
+    if(auto m=nameMissAt.find(id);m!=nameMissAt.end()&&(now-m->second<10000||nameMisses[id]>=3))return {};
+    char key[80]{},text[256]{};
+    for(const char* pattern:patterns)for(int s:{shift,0}) {
+        std::snprintf(key,sizeof key,pattern,id+s);
+        if(Lookup(key,text,sizeof text)) {
+            char line[160];std::snprintf(line,sizeof line,"Frame skill names: skill %d from key %s",id,key);
+            framevr::logging::Write(line);
+            return text;
+        }
+        if(!shift)break;
+    }
+    nameMissAt[id]=now;++nameMisses[id];
+    char line[120];std::snprintf(line,sizeof line,"Frame skill names: no name found for skill %d",id);
+    framevr::logging::Write(line);
+    return {};
+}
+// The skill tables' own text: skills.txt row -> its skilldesc row -> the name's
+// string ID. The binary row layouts are not documented in the loader SDK, so
+// where those two fields sit is found once, by matching against the names the
+// string keys already give for the original classes. The Warlock's skills
+// (373-402, new in D2R) have no regular keys and are named this way.
+struct SkillTextLayout { bool ok=false; ULONGLONG retryAt=0; uint32_t descIndex=0,name=0; } layout;
+std::string ById(uint32_t stringId) {
+    char text[256]{};
+    if(!strings||!strings->getStringById||!stringId||stringId>=0xFFFF)return {};
+    if(strings->getStringById(context,stringId,text,sizeof text,nullptr)!=D2RL::Localization::Result::Success||!text[0])return {};
+    return text;
+}
+// The original classes' names from their keys, quietly.
+std::string KnownName(int id) {
+    char key[80]{},text[256]{};
+    if(Lookup(SkillKey(id,key),text,sizeof text))return text;
+    const int shift=id>=221&&id<=280?1:0;
+    for(const char* p:{"d2r:skillname%d","d2r:Skillname%d"})for(int s:{shift,0}){std::snprintf(key,sizeof key,p,id+s);if(Lookup(key,text,sizeof text))return text;}
+    return {};
+}
+bool Tables(D2RL::DataTables::TableId id,D2RL::DataTables::TableView& view) {
+    view={};view.structSize=sizeof view;
+    return tables&&tables->getTable&&tables->getTable(context,D2RL::DataTables::Bank(gamestate::DataBank()),id,&view)==D2RL::DataTables::Result::Success&&
+        view.rows&&view.rowCount&&view.rowSize>=4;
+}
+uint16_t U16(const void* rows,uint32_t rowSize,uint32_t row,uint32_t offset) {
+    uint16_t v=0;Read(reinterpret_cast<uintptr_t>(rows)+uintptr_t(row)*rowSize+offset,v);return v;
+}
+bool DiscoverLayout() {
+    if(layout.ok)return true;
+    const auto now=GetTickCount64();
+    if(now<layout.retryAt)return false;
+    // Tables can load before localization. Retry failed discovery without
+    // repeating the scan on every UI capture; successful layouts stay cached.
+    layout.retryAt=now+10000;
+    using D2RL::DataTables::TableId;
+    D2RL::DataTables::TableView skills,desc;
+    if(!Tables(TableId::Skills,skills)||!Tables(TableId::SkillDesc,desc))return false;   // tried again later
+    std::map<int,std::string> known;   // id -> name, the original classes
+    for(int id=0;id<=280&&id<int(skills.rowCount);++id)if(auto n=KnownName(id);!n.empty())known[id]=n;
+    if(known.size()<30){framevr::logging::Write("Frame skill names: too few known names to read the skill tables");return false;}
+    std::map<std::string,int> byName;for(auto& [id,n]:known)byName[n]=id;
+    // skilldesc: the field whose string is a known skill name in the most rows
+    uint32_t bestName=0;int bestNameHits=0;
+    for(uint32_t o=0;o+2<=desc.rowSize;o+=2) {
+        int hits=0;
+        for(uint32_t r=0;r<desc.rowCount;++r)if(byName.count(ById(U16(desc.rows,desc.rowSize,r,o))))++hits;
+        if(hits>bestNameHits){bestNameHits=hits;bestName=o;}
+    }
+    // skills: the field indexing a skilldesc row that carries the skill's own name
+    uint32_t bestIndex=0;int bestIndexHits=0;
+    for(uint32_t p=0;p+2<=skills.rowSize;p+=2) {
+        int hits=0;
+        for(auto& [id,n]:known) {
+            const uint16_t d=U16(skills.rows,skills.rowSize,uint32_t(id),p);
+            if(d&&d<desc.rowCount&&ById(U16(desc.rows,desc.rowSize,d,bestName))==n)++hits;
+        }
+        if(hits>bestIndexHits){bestIndexHits=hits;bestIndex=p;}
+    }
+    layout.ok=bestNameHits>=20&&bestIndexHits>=int(known.size())*3/4;
+    layout.descIndex=bestIndex;layout.name=bestName;
+    char line[260];std::snprintf(line,sizeof line,
+        "Frame skill names: skill tables %s - skills row %u bytes x %u, desc index at +0x%X (%d/%zu); skilldesc row %u bytes x %u, name at +0x%X (%d)",
+        layout.ok?"read":"NOT read",skills.rowSize,skills.rowCount,bestIndex,bestIndexHits,known.size(),desc.rowSize,desc.rowCount,bestName,bestNameHits);
+    framevr::logging::Write(line);
+    return layout.ok;
+}
+// A skill's name from the tables, or empty.
+std::string FromTables(int id) {
+    if(!DiscoverLayout())return {};
+    using D2RL::DataTables::TableId;
+    D2RL::DataTables::TableView skills,desc;
+    if(!Tables(TableId::Skills,skills)||!Tables(TableId::SkillDesc,desc)||id<0||uint32_t(id)>=skills.rowCount)return {};
+    const uint16_t d=U16(skills.rows,skills.rowSize,uint32_t(id),layout.descIndex);
+    if(!d||d>=desc.rowCount)return {};
+    return ById(U16(desc.rows,desc.rowSize,d,layout.name));
+}
 std::string Name(int id) {
     if(auto i=names.find(id);i!=names.end())return i->second;
-    char key[80]{},text[256]{};const char* k=SkillKey(id,key);
-    if(k&&strings&&strings->getStringByKey(context,k,text,sizeof text,nullptr)==D2RL::Localization::Result::Success)
-        return names.emplace(id,text).first->second;
+    char key[80]{},text[256]{};
+    if(Lookup(SkillKey(id,key),text,sizeof text))return names.emplace(id,text).first->second;
+    if(auto t=FromTables(id);!t.empty())return names.emplace(id,t).first->second;   // the Warlock's, and any key miss
+    // Item-granted Druid skills such as 221 and 225 showed as "Skill 221": the
+    // shifted key is not every skill's. Try the other spellings.
+    if(id>=0&&id<=511) {   // to the end of the class trees, the Warlock's included
+        auto found=FirstKnown(id,{"d2r:skillname%d","d2r:Skillname%d","d2r:skillsname%d","d2r:SkillName%d"},id>=221&&id<=280?1:0);
+        if(!found.empty())return names.emplace(id,found).first->second;
+    }
     std::snprintf(text,sizeof text,"Skill %d",id);return text;
 }
 }
-void Init(const D2RL::PluginContext* c){context=c;c->QueryService(&strings);c->QueryService(&tables);}
+void Init(const D2RL::PluginContext* c){
+    context=c;c->QueryService(&strings);c->QueryService(&tables);
+    const auto core=GetModuleHandleW(L"D2RCore.dll");
+    getLevelId=core?reinterpret_cast<D2RL::Reimplementations::GetLevelIdFromUnitFn>(
+        GetProcAddress(core,MAKEINTRESOURCEA(D2RL::Reimplementations::GetLevelIdFromUnitInfo.ordinal))):nullptr;
+    if(!getLevelId)framevr::logging::Write("Frame navigation: loader level accessor unavailable");
+}
 void Capture(framevr::interaction::Snapshot& s) {
     int reason=1;uintptr_t player=0;uint32_t id=0,clientId=0;
     struct Trace {
@@ -109,7 +228,36 @@ void Capture(framevr::interaction::Snapshot& s) {
     if(!combat::ObserveUiPlayer(player,s.session))return;
     if(!combat::LocalPlayerId(id))return;
     reason=5;if(id!=h[2])return;
-    s.heroClass=h[1]<=6?int32_t(h[1]):-1;
+    s.devClass=framevr::dev::ExpansionClass(h[1],gamestate::DataBank());
+    s.skillClass=h[1]<framevr::skillcategories::Classes.size()?int(h[1]):-1;
+    // The supported loader accessor reads this live, identity-checked UI player.
+    // Copy its current table row/name on the UI thread every capture so warps,
+    // loading gaps and language changes cannot reuse a previous area's label.
+    {
+        const int level=getLevelId?getLevelId(reinterpret_cast<const void*>(player)):0;
+        D2RL::DataTables::RowView row{};row.structSize=sizeof row;
+        auto result=D2RL::DataTables::Result::Unavailable;
+        if(level>0&&tables&&tables->findRowById)
+            result=tables->findRowById(context,D2RL::DataTables::Bank(gamestate::DataBank()),
+                D2RL::DataTables::TableId::Levels,uint32_t(level),&row);
+        if(result==D2RL::DataTables::Result::Success)
+            s.location=framevr::navigation::ReadLocation(level,reinterpret_cast<uintptr_t>(row.row),row.rowSize,
+                [](uintptr_t p,auto& value){return Read(p,value);},
+                [](const char* key,char* text,uint32_t size){return strings&&strings->getStringByKey&&
+                    strings->getStringByKey(context,key,text,size,nullptr)==D2RL::Localization::Result::Success;});
+        // Trace changes, including unavailable data, so a layout/lookup failure
+        // can be distinguished from a loading gap without a memory dump.
+        static int previousLevel=-1;static uint32_t previousSize=0;static auto previousResult=result;
+        static framevr::navigation::Location previous;
+        if(previousLevel!=level||previousSize!=row.rowSize||previousResult!=result||previous!=s.location) {
+            previousLevel=level;previousSize=row.rowSize;previousResult=result;previous=s.location;
+            char line[420];std::snprintf(line,sizeof line,
+                "Frame navigation: level=%d bank=%u table_result=%u row_size=%u act=%d area=%s",
+                level,gamestate::DataBank(),uint32_t(result),row.rowSize,s.location.act,
+                framevr::navigation::AreaLabel(s.location));
+            framevr::logging::Write(line);
+        }
+    }
     spellvr::Feedback(s.session,player,id,!gamestate::MenuOpen()&&(h[3]==1||h[3]==2||h[3]==3));
     auto stat=reinterpret_cast<int(*)(uintptr_t,int,int)>(d2rsig::Addr(abi::StatRva));
     s.health=stat(player,6,0)/256.f;s.maxHealth=stat(player,7,0)/256.f;
@@ -139,9 +287,20 @@ void Capture(framevr::interaction::Snapshot& s) {
     // hand. Skill speed (Fanaticism, Frenzy, Burst of Speed) and slows are not
     // read yet. An unknown class or weapon gives cycle 0, which never gates.
     {
+        const auto equipment=gamestate::MeleeEquipment();
+        if(framevr::dualwield::Eligible(int(h[1]),equipment)&&meleeweapon::Ready()) {
+            const auto right=meleeweapon::Select(player,0,equipment),left=meleeweapon::Select(player,1,equipment);
+            uint32_t rightId=0,leftId=0;
+            if(right&&left&&Read(right+8,rightId)&&Read(left+8,leftId))gamestate::SetMeleeOrder(rightId,leftId);
+        }
         const int weapon=gamestate::AttackWeapon(),wsm=gamestate::AttackWsm(),ias=stat(player,93,0);
         const int frames=weapon>=0?framevr::attackspeed::Frames(int(h[1]),framevr::attackspeed::Weapon(weapon),ias,wsm):0;
         melee::SetAttackCycle(s.session,framevr::attackspeed::Milliseconds(frames));
+        const int offWeapon=gamestate::AttackWeapon(1),offWsm=gamestate::AttackWsm(1);
+        const int offFrames=offWeapon>=0?framevr::attackspeed::Frames(int(h[1]),framevr::attackspeed::Weapon(offWeapon),ias,offWsm):0;
+        melee::SetAttackCycle(s.session,framevr::attackspeed::Milliseconds(offFrames),1);
+        bowvr::SetCrossbowCycle(s.session,gamestate::HandsKey()^(gamestate::WeaponSet()<<30),
+            weapon==int(framevr::attackspeed::Weapon::Crossbow)?framevr::attackspeed::Milliseconds(frames):0);
         static int told[5]={-2,-2,-2,-2,-2};
         const int now[5]={int(h[1]),weapon,ias,wsm,frames};
         if(!std::equal(now,now+5,told)) {
@@ -198,11 +357,13 @@ void Capture(framevr::interaction::Snapshot& s) {
         if(node&&Read(node,row)&&Read(row,rowId)&&rowId==skillId&&
            Read(row+0x24,flags)&&Read(row+0x4e,serverFunction)&&Read(row+0x66,missile)) {
             skill.directed=framevr::spellaim::Directed(flags,missile,serverFunction);
+            skill.missile=serverFunction==0?missile:-1;
             skill.motion=framevr::weaponskills::Bow(skillId)||(skillId==framevr::weaponskills::Smite&&serverFunction==150);
             int16_t start=-1,secondary=-1;
             uint8_t los=255;
             if(Read(row+0x4c,start)&&Read(row+0x68,secondary)&&Read(row+0x231,los))skill.physical=skill.owner==-1&&los==0&&
-                framevr::spellcast::Candidate(h[1],skillId,start,serverFunction,missile,flags,secondary);
+                framevr::spellcast::Candidate(h[1],skillId,start,serverFunction,missile,flags,secondary)&&
+                (skillId!=101||bowvr::HolyReady());
         }
         const auto name=Name(skillId);std::snprintf(skill.name,sizeof skill.name,"%s",name.c_str());
     }

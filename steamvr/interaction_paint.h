@@ -4,10 +4,13 @@ namespace framevr::interaction {
 // Do not display/click obsolete skill contents while a new image is pending.
 // Hover-only changes can retain the previous image; the ray decides the cell.
 struct PaintContext {
+    bool developer=false,devVisible=false;
+    int devClass=-1,devPage=0;
     uint64_t session=0;
     uint32_t activeSet=0;
     int hand=-1;
-    int editor=0,slot=-1,page=0,count=0,bank=-1;
+    int editor=0,slot=-1,page=0,count=0,bank=-1,category=0,skillClass=-1;
+    std::array<int,skillcategories::Count> categoryCounts{};
     bool utility=false,map=false,fresh=false,editable=false,equipmentKnown=false,beltKnown=false;
     std::array<Skill,skills::Count> skills{};
     std::array<Skill,8> options{};
@@ -15,14 +18,27 @@ struct PaintContext {
     std::array<Belt,4> belt{};
     SkillCue cue{},leftCue{};
     controllers::Labels labels{};
+    QuickInventory quick;
+    std::array<QuickItem,8> itemOptions{};
+    navigation::Location location;
+    companions::Roster companions;
+    effects::Status effects;
     bool operator==(const PaintContext&) const=default;
 };
 inline PaintContext Context(const Snapshot& s,const Output& o,bool fresh,const controllers::Labels& labels={}) {
     PaintContext c;c.labels=labels;c.hand=o.wheelHand;c.session=s.session;c.activeSet=s.activeSet;c.editor=o.editor;c.slot=o.editSlot;
+    c.developer=o.developer;c.devVisible=s.developer;c.devClass=s.devClass;c.devPage=o.devPage;
+    c.category=o.editCategory;c.skillClass=o.editClass;c.categoryCounts=o.editCategoryCounts;
     c.page=o.editPage;c.count=o.editCount;c.bank=s.bindingBank;c.utility=o.utility;c.map=o.map;c.fresh=fresh;
     c.editable=s.bindingsEditable;c.equipmentKnown=s.equipmentKnown;c.beltKnown=s.beltKnown;
-    c.skills=s.skills;c.options=o.editOptions;c.sets=s.sets;c.belt=s.belt;c.cue=o.cue;c.leftCue=o.leftCue;return c;
+    c.quick=s.quick;c.itemOptions=o.itemOptions;c.skills=s.skills;c.options=o.editOptions;c.sets=s.sets;c.belt=s.belt;c.cue=o.cue;c.leftCue=o.leftCue;c.location=s.location;c.companions=s.companions;c.effects=s.effects;return c;
+}
+inline bool LocationImageCurrent(const PaintContext& painted,const Snapshot& snapshot) {
+    return painted.fresh&&painted.session==snapshot.session&&painted.location==snapshot.location;
+}
+inline bool CompanionImageCurrent(const PaintContext& painted,const Snapshot& snapshot) {
+    return painted.fresh&&painted.session==snapshot.session&&(snapshot.companions.known||snapshot.effects.known)&&painted.companions==snapshot.companions&&painted.effects==snapshot.effects;
 }
 struct PaintJob {Snapshot snapshot;Output output;int selection=-1;controllers::Labels labels{};};
-struct PaintedAtlas {std::vector<uint8_t> pixels;double paintMs=0;};
+struct PaintedAtlas {std::vector<uint8_t> pixels;double paintMs=0;std::vector<uint8_t> companions;};
 }

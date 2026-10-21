@@ -1,4 +1,5 @@
 #include <windows.h>
+#include "dev_scenarios.h"
 #include <wincodec.h>
 #include "interaction_ui.h"
 #include "interaction_icons.h"
@@ -139,11 +140,11 @@ std::vector<uint8_t> Paint(const Snapshot& s,const Output& o,int selection,const
     auto wheelArt=fiveSectors?HandWheelArt():WheelArt();
     if(!wheelArt.empty()) {
         static const auto cells=[] {
-            std::array<std::vector<int8_t>,2> result;
+            std::array<std::vector<int16_t>,2> result;
             for(int layout=0;layout<2;++layout){
                 result[layout].resize(768*768);
                 for(int y=0;y<768;++y)for(int x=0;x<768;++x)
-                    result[layout][y*768+x]=int8_t(WheelCell((x+.5f)/768,(y+.5f)/768,-1,MenuPage::Spells,layout?0:-1));
+                    result[layout][y*768+x]=int16_t(WheelCell((x+.5f)/768,(y+.5f)/768,-1,MenuPage::Spells,layout?0:-1));
             }
             return result;
         }();
@@ -151,7 +152,7 @@ std::vector<uint8_t> Paint(const Snapshot& s,const Output& o,int selection,const
             auto* p=&wheelArt[(y*768+x)*4];
             const int cell=cells[fiveSectors?1:0][y*768+x];
             const bool active=!o.editor&&!o.utility&&cell==(fiveSectors?0:selection);
-            if(!o.map&&o.editor!=2&&p[3]&&cell>=0&&(!o.utility||cell!=2)&&(cell==o.hover||active)) {
+            if(!o.developer&&!o.map&&o.editor<2&&p[3]&&cell>=0&&(!o.utility||cell!=2)&&(cell==o.hover||active)) {
                 const float amount=cell==o.hover?.26f:.13f;
                 const int gold[]={185,133,55};
                 for(int c=0;c<3;++c)p[c]=uint8_t(p[c]*(1-amount)+gold[c]*amount);
@@ -189,7 +190,7 @@ std::vector<uint8_t> Paint(const Snapshot& s,const Output& o,int selection,const
         } else icon(icons::Get(a.handle?a:b),box);
     };
     const int sectors=handWheel&&!o.utility?5:8;
-    for(int i=0;!o.map&&o.editor!=2&&i<sectors;++i) {
+    for(int i=0;!o.developer&&!o.map&&o.editor<2&&i<sectors;++i) {
         const int slot=handWheel&&!o.utility?skills::HandSlot(o.wheelHand,i):i;
         if(o.utility&&i==2)continue; // Native tabbed menu retains journal access.
         const float sector=2*Pi/sectors;
@@ -250,29 +251,100 @@ std::vector<uint8_t> Paint(const Snapshot& s,const Output& o,int selection,const
         RECT inside{box.left+2,box.top+2,box.right-2,box.bottom-2};fill(inside,RGB(18,16,14));
         inside={box.left+5,box.top+5,box.right-5,box.bottom-5};fill(inside,hot?RGB(65,49,29):RGB(35,29,23));
     };
-    if(o.map) {
+    if(o.developer) {
+        frame({20,28,748,681});
+        const bool available=dev::ValidClass(s.devClass);
+        char title[120];std::snprintf(title,sizeof title,"DEVELOPMENT / %s",available?dev::Presets[s.devClass].name:"OFFLINE EXPANSION");
+        text(title,{38,42,730,85});
+        SelectObject(dc,shortcutFont);
+        text(available?dev::PageHelp[std::clamp(o.devPage,0,dev::PageCount-1)]:"Load an offline expansion character in pcvr-dev.",{38,83,730,101});
+        SelectObject(dc,font);
+        for(int page=0;page<dev::PageCount;++page) {
+            const auto b=DeveloperPageBounds(page);
+            RECT r{LONG(768*b.left),LONG(768*b.top),LONG(768*b.right),LONG(768*b.bottom)};
+            frame(r,o.devPage==page||o.hover==DeveloperPageCell(page));
+            text(dev::PageNames[page],r);
+        }
+        for(int i:dev::Pages[std::clamp(o.devPage,0,dev::PageCount-1)]) {
+            if(i<0)continue;
+            const auto bounds=DeveloperBounds(i);
+            const int x=int(768*bounds.left),y=int(768*bounds.top),right=int(768*bounds.right),bottom=int(768*bounds.bottom);
+            const auto choice=available?dev::ChoiceFor(s.devClass,i):dev::Choices[i];
+            frame({x,y,right,bottom},available&&o.hover==DeveloperCell(i));
+            SetTextColor(dc,available?RGB(235,218,181):RGB(148,137,117));
+            const char* title=i==dev::DebugDrawsChoice?(s.devDebugDraws?"Render debug draws: ON":"Render debug draws: OFF"):
+                              i==dev::TurnsKeepOwnChoice?(s.devTurnsKeepOwn==1?"By turns own picture: NEAR":s.devTurnsKeepOwn==2?"By turns own picture: ALL":
+                                                          s.devTurnsKeepOwn==3?"By turns own picture: FX":s.devTurnsKeepOwn==4?"By turns own picture: NEAR+FX":"By turns own picture: OFF"):choice.name;
+            text(title,{x+8,y+4,right-8,y+29});
+            SelectObject(dc,shortcutFont);text(choice.detail,{x+8,y+29,right-8,bottom-4});SelectObject(dc,font);
+        }
+        SetTextColor(dc,RGB(235,218,181));SelectObject(dc,shortcutFont);
+        text(o.result==Result::Pending?"Working...":o.result==Result::DebugUpdated?(s.devDebugDraws?"Cyan: measured / Amber: fallback. Hit flash: green block, red rejected, pink native skip.":"Debug draws OFF. Blocking behavior is unchanged."):
+             o.result==Result::TurnsUpdated?(s.devTurnsKeepOwn==1?"By turns: the eye not drawn keeps its own picture round near things only.":
+                                         s.devTurnsKeepOwn==2?"By turns: the eye not drawn keeps its own picture wherever both show the same surface.":
+                                         s.devTurnsKeepOwn==3?"By turns: the eye not drawn keeps its own picture where the game's effects are (spells, flames, wings).":
+                                         s.devTurnsKeepOwn==4?"By turns: the eye not drawn keeps its own picture round near things and where the game's effects are.":
+                                         "By turns: the eye not drawn takes the drawn eye's picture wherever it reaches."):
+             o.result==Result::Applied?"Kit added to inventory. Equip it using the native inventory screen.":
+             o.result==Result::Dispatched?"Commands sent. Check character stats / destination in game.":
+             o.result==Result::KitRefused?"Kit could not be added. Check inventory space and the development log.":
+             o.result==Result::Refused?"Action unavailable. Close native menus and retry; see the development log.":
+             "Release reference: VR SETTINGS > RELEASE NOTES. Gear grants keep existing items.",{38,628,730,677});
+        SelectObject(dc,font);
+    } else if(o.map) {
         frame({20,18,748,680});
         text("MAP",{38,27,730,78});
         const RECT content{LONG(MapContent.left*768),LONG(MapContent.top*768),LONG(MapContent.right*768),LONG(MapContent.bottom*768)};
         frame({content.left-4,content.top-4,content.right+4,content.bottom+4});
         text("Waiting for map...",content);
         SelectObject(dc,shortcutFont);text("Hand map + compass: VR Settings > HUD",{38,650,730,677});SelectObject(dc,font);
-    } else if(o.editor==2) {
+    } else if(o.editor==3) {
         frame({20,28,748,681});
-        char title[120];std::snprintf(title,sizeof title,"CHOOSE SKILL  /  %s",handWheel?labels.Slot(o.editSlot).c_str():skills::NativeLabel(o.editSlot));
-        text(title,{38,47,730,88});
-        text(labels.Slot(o.editSlot).c_str(),{38,96,540,143});
+        text("QUICK USE / INVENTORY",{38,47,730,88});
+        SelectObject(dc,shortcutFont);text("Choose an item type. Restocking keeps the assignment.",{38,96,550,143});SelectObject(dc,font);
         frame({568,92,730,146},o.hover==8);text("CLEAR SLOT",{574,98,724,140});
         for(int i=0;i<8;++i) {
             const int x=int(768*(.05f+(i%2)*.46f)),y=int(768*(.23f+(i/2)*.145f));
             frame({x,y,x+337,y+99},o.hover==i&&i<o.editCount);
             if(i>=o.editCount)continue;
+            const auto& item=o.itemOptions[i];
+            icon(icons::Get(item.item),{x+9,y+10,x+88,y+89},item.quantity>0);
+            text(item.name,{x+94,y+9,x+329,y+66});
+            char detail[64];std::snprintf(detail,sizeof detail,"Available: %d",item.quantity);
+            SetTextColor(dc,RGB(169,151,118));text(detail,{x+94,y+68,x+329,y+95});SetTextColor(dc,RGB(235,218,181));
+        }
+        if(!o.editCount)text("No usable items in carried inventory",{56,249,712,430});
+    } else if(o.editor==2) {
+        frame({20,28,748,681});
+        char title[120];std::snprintf(title,sizeof title,"CHOOSE SKILL  /  %s",handWheel?labels.Slot(o.editSlot).c_str():skills::NativeLabel(o.editSlot));
+        text(title,{38,47,730,88});
+        char pageLabel[100];std::snprintf(pageLabel,sizeof pageLabel,"%s  /  Page %d of %d",
+            skillcategories::Name(o.editClass,o.editCategory),o.editPage+1,o.editPages);
+        SelectObject(dc,skillFont);text(pageLabel,{38,96,552,143});SelectObject(dc,font);
+        frame({568,92,730,146},o.hover==8);text("CLEAR SLOT",{574,98,724,140});
+        for(int category=0;category<skillcategories::Count;++category) {
+            const auto b=SkillCategoryBounds(category);
+            RECT r{LONG(768*b.left),LONG(768*b.top),LONG(768*b.right),LONG(768*b.bottom)};
+            const bool available=o.editCategoryCounts[category]>0;
+            frame(r,o.editCategory==category||(available&&o.hover==SkillCategoryCell(category)));
+            SetTextColor(dc,available?RGB(235,218,181):RGB(148,137,117));
+            SelectObject(dc,skillFont);text(skillcategories::Name(o.editClass,category),{r.left+6,r.top+3,r.right-6,r.bottom-20});
+            char count[16];std::snprintf(count,sizeof count,"%d",o.editCategoryCounts[category]);
+            SelectObject(dc,shortcutFont);text(count,{r.left+6,r.bottom-20,r.right-6,r.bottom-3});
+        }
+        SetTextColor(dc,RGB(235,218,181));SelectObject(dc,font);
+        for(int i=0;i<8;++i) {
+            const auto b=SkillOptionBounds(i);
+            const int x=int(768*b.left),y=int(768*b.top),right=int(768*b.right),bottom=int(768*b.bottom);
+            frame({x,y,right,bottom},o.hover==i&&i<o.editCount);
+            if(i>=o.editCount)continue;
             const auto& skill=o.editOptions[i];
-            icon(icons::Get("s"+std::to_string(skill.id)),{x+9,y+10,x+88,y+89});
-            text(skill.name,{x+94,y+9,x+329,y+66});
+            icon(icons::Get("s"+std::to_string(skill.id)),{x+9,y+10,x+79,y+80});
+            text(skill.name,{x+85,y+7,right-8,y+60});
             char detail[64];if(skill.owner==-1)std::snprintf(detail,sizeof detail,"Level %d",skill.level);
             else std::snprintf(detail,sizeof detail,"Item-granted skill");
-            SetTextColor(dc,RGB(169,151,118));text(detail,{x+94,y+68,x+329,y+95});SetTextColor(dc,RGB(235,218,181));
+            SelectObject(dc,shortcutFont);SetTextColor(dc,RGB(169,151,118));
+            text(detail,{x+85,y+63,right-8,bottom-4});SetTextColor(dc,RGB(235,218,181));SelectObject(dc,font);
         }
         if(!o.editCount)text("No active skills available",{56,249,712,430});
     } else if(handWheel&&!o.utility) {
@@ -285,23 +357,43 @@ std::vector<uint8_t> Paint(const Snapshot& s,const Output& o,int selection,const
         text("BASIC ATTACK",{301,368,467,398});
         if(selection<0){const auto prior=SelectObject(dc,shortcutFont);text("ACTIVE",{327,399,441,417});SelectObject(dc,prior);}
     }
+    if(QuickControls(Page(o))) {
+        const auto q=QuickUseBounds,r=RunWalkBounds;
+        RECT box{LONG(q.left*768),LONG(q.top*768),LONG(q.right*768),LONG(q.bottom*768)};
+        frame(box,o.hover==QuickUseCell);
+        SelectObject(dc,shortcutFont);text("QUICK USE",{box.left+6,box.top+6,box.right-6,box.top+24});
+        const auto* item=s.quick.Find(s.quick.assigned);
+        const bool haveIcon=item&&icon(icons::Get(item->item),{box.left+8,box.top+28,box.left+56,box.bottom-24},item->quantity>0);
+        SelectObject(dc,skillFont);
+        const char* name=!s.quick.known?"Unavailable":item?item->name:s.quick.assigned?"Out of stock":"Assign item";
+        text(name,{box.left+(haveIcon?60:8),box.top+26,box.right-8,box.bottom-40});
+        SelectObject(dc,shortcutFont);
+        if(item){char count[32];std::snprintf(count,sizeof count,"x %d",item->quantity);text(count,{box.left+60,box.bottom-44,box.right-8,box.bottom-25});}
+        text("Click: use | Hold: edit",{box.left+6,box.bottom-23,box.right-6,box.bottom-5});
+        RECT run{LONG(r.left*768),LONG(r.top*768),LONG(r.right*768),LONG(r.bottom*768)};
+        frame(run,o.hover==RunWalkCell);SelectObject(dc,skillFont);
+        text("RUN / WALK",{run.left+8,run.top+10,run.right-8,run.bottom-28});
+        SelectObject(dc,shortcutFont);text("Click to toggle",{run.left+8,run.bottom-29,run.right-8,run.bottom-7});SelectObject(dc,font);
+    }
     if(o.editor) {
         char hint[120];std::snprintf(hint,sizeof hint,"Set %s  /  %s",s.activeSet==2?"II":"I",
             o.result==Result::Pending?"Saving...":o.result==Result::Applied?"Assigned":o.result==Result::Refused?"Changed or unavailable; choose the slot again":handWheel?"Click stick to close":"Hold Left Y while editing");
+        if(o.editor==3)std::snprintf(hint,sizeof hint,"Page %d  /  %s",o.editPage+1,
+            o.result==Result::Pending?"Saving...":o.result==Result::Refused?"Item changed or unavailable. Reopen the picker.":"Select to assign; BACK leaves your slot unchanged.");
         fill({29,637,739,680},RGB(22,18,14));text(hint,{35,639,733,678});
     }
-    const char* footer[4]={(o.utility||o.map)?"SPELLS":"EQUIPMENT","MAP","VR SETTINGS",handWheel?"INVENTORY":"EDIT SKILLS"};
+    const char* footer[5]={(o.utility||o.map||o.developer)?"SPELLS":"EQUIPMENT","MAP","VR SETTINGS",handWheel?"INVENTORY":"EDIT SKILLS","DEV"};
     if(o.editor==1){footer[0]="BACK";footer[1]="";footer[2]="DONE";}
-    if(o.editor==2){footer[0]="PREVIOUS";footer[1]="NEXT";footer[2]="BACK";}
+    if(o.editor>=2){footer[0]="PREVIOUS";footer[1]="NEXT";footer[2]="BACK";}
     fill({20,686,749,745},RGB(18,16,14));
     const auto page=Page(o);
-    for(int i=0;i<FooterCount(page);++i) {
-        const auto bounds=FooterBounds(i,page);const int cell=FooterCell(i,page);
+    for(int i=0;i<FooterCount(page,s.developer);++i) {
+        const auto bounds=FooterBounds(i,page,s.developer);const int cell=FooterCell(i,page);
         const RECT box{LONG(bounds.left*768),LONG(bounds.top*768),LONG(bounds.right*768),LONG(bounds.bottom*768)};
-        frame(box,o.hover==cell||(o.map&&cell==12));
+        frame(box,o.hover==cell||(o.map&&cell==12)||(o.developer&&cell==13));
         text(footer[i],{box.left+5,box.top+5,box.right-5,box.bottom-5});
     }
-    if(!o.editor&&!o.utility&&!o.map) {
+    if(!o.developer&&!o.editor&&!o.utility&&!o.map) {
         char active[120];if(handWheel)std::snprintf(active,sizeof active,"Other hand: point + trigger to assign. Click this stick to close.");
         else std::snprintf(active,sizeof active,"ACTIVE: %s",o.cue.known?o.cue.name:"Unknown skill");
         const auto prior=SelectObject(dc,skillFont);SetTextColor(dc,RGB(232,196,119));
@@ -395,6 +487,24 @@ std::vector<uint8_t> Paint(const Snapshot& s,const Output& o,int selection,const
     else std::snprintf(xpLabel,sizeof xpLabel,"XP --");
     RECT xpRect{564,985,972,1006};DrawTextA(dc,xpLabel,-1,&xpRect,DT_CENTER|DT_VCENTER|DT_SINGLELINE|DT_NOPREFIX);
     SelectObject(dc,prior);DeleteObject(xpFont);
+    // A dedicated tile follows the hand navigation display, independent of
+    // the scrolling compass atlas and the player's health/XP panel.
+    const int nx=navigation::AtlasX,ny=navigation::AtlasY;
+    fill({nx,ny,nx+navigation::Width,ny+navigation::Height},RGB(17,16,14));
+    fill({nx,ny,nx+navigation::Width,ny+2},RGB(122,94,51));
+    fill({nx,ny+navigation::Height-2,nx+navigation::Width,ny+navigation::Height},RGB(122,94,51));
+    HFONT actFont=CreateFontW(17,0,0,0,FW_SEMIBOLD,FALSE,FALSE,FALSE,DEFAULT_CHARSET,
+        OUT_DEFAULT_PRECIS,CLIP_DEFAULT_PRECIS,ANTIALIASED_QUALITY,DEFAULT_PITCH,L"Georgia");
+    HFONT areaFont=CreateFontW(19,0,0,0,FW_SEMIBOLD,FALSE,FALSE,FALSE,DEFAULT_CHARSET,
+        OUT_DEFAULT_PRECIS,CLIP_DEFAULT_PRECIS,ANTIALIASED_QUALITY,DEFAULT_PITCH,L"Georgia");
+    const auto beforeLocation=SelectObject(dc,actFont);SetTextColor(dc,RGB(231,202,141));
+    RECT actRect{nx+8,ny+7,nx+navigation::Width-8,ny+29};
+    DrawTextA(dc,navigation::ActLabel(s.location.act),-1,&actRect,DT_CENTER|DT_VCENTER|DT_SINGLELINE|DT_NOPREFIX);
+    SelectObject(dc,areaFont);SetTextColor(dc,RGB(238,231,212));
+    wchar_t area[256]{};MultiByteToWideChar(CP_UTF8,0,navigation::AreaLabel(s.location),-1,area,256);
+    RECT areaRect{nx+8,ny+31,nx+navigation::Width-8,ny+navigation::Height-3};
+    DrawTextW(dc,area,-1,&areaRect,DT_CENTER|DT_WORDBREAK|DT_END_ELLIPSIS|DT_NOPREFIX);
+    SelectObject(dc,beforeLocation);DeleteObject(actFont);DeleteObject(areaFont);
     GdiFlush();std::vector<uint8_t> rgba(size*size*4);const auto* b=static_cast<const uint8_t*>(bits);
     for(int i=0;i<size*size;++i){
         rgba[4*i]=b[4*i+2];rgba[4*i+1]=b[4*i+1];rgba[4*i+2]=b[4*i];
@@ -414,5 +524,8 @@ std::vector<uint8_t> Paint(const Snapshot& s,const Output& o,int selection,const
         }
     }
     SelectObject(dc,oldFont);DeleteObject(font);DeleteObject(shortcutFont);DeleteObject(skillFont);SelectObject(dc,old);DeleteObject(bitmap);DeleteDC(dc);return rgba;
+}
+std::vector<uint8_t> BloodArt(int width,int height) {
+    return width>0&&height>0?DecodeArt(L"D2RVR_BLOOD_VISOR",UINT(width),UINT(height)):std::vector<uint8_t>{};
 }
 }

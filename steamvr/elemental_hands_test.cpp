@@ -14,7 +14,7 @@ struct Sim {
         in.enabled=in.active=in.tracked[0]=in.tracked[1]=true;
         in.context={7,9,11,13};in.at=1000;
         in.hands[0].p={.2f,0,-.5f};in.hands[1].p={-.2f,0,-.5f};
-        snapshot.session=7;snapshot.heroClass=1;snapshot.vitalsKnown=true;snapshot.health=50;
+        snapshot.session=7;snapshot.skillClass=1;snapshot.vitalsKnown=true;snapshot.health=50;
         snapshot.actionKnown=true;snapshot.actionMode=1;
         Bind(0,47);Bind(4,45);Step(0);Step(120);
     }
@@ -44,8 +44,8 @@ int main() {
         Sim s;
         if(reason==0)s.in.enabled=false;
         if(reason==1)s.in.active=false;
-        if(reason==2)s.snapshot.heroClass=0;
-        if(reason==3)s.snapshot.heroClass=-1;
+        if(reason==2)s.snapshot.skillClass=0;
+        if(reason==3)s.snapshot.skillClass=-1;
         if(reason==4)s.snapshot.health=0;
         if(reason==5)s.snapshot.vitalsKnown=false;
         if(reason==6)s.snapshot.session=8;

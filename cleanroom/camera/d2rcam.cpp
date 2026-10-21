@@ -27,6 +27,7 @@
 #include "deferred_draw.h"
 #include "monster_bars.h"
 #include "../sigscan/sigscan.h"
+#include "../pools/pools.h"
 
 #include <D2RLPlugin/api.h>
 
@@ -650,6 +651,7 @@ void SetStereoUiEye(int eye){
 void TraceStereoLabels(int eye){g_traceLabelCount.store(0);g_traceLabelEye.store(eye);}
 void ArmLabelCapture(){g_labelSeen=false;g_waitForLabel=true;}
 bool TakeLabelCapture(){return g_labelSeen.exchange(false);}
+bool LabelCapturePending(){return g_labelSeen.load();}
 bool IsEnabled() { return g_enabled.load(); }
 
 void SetCallbacks(ViewFn view, ProjFn proj) {
@@ -702,6 +704,10 @@ void SetRenderRadius(int rooms) { drawdist::SetRadius(rooms); }
 int  GetRenderRadius() { return drawdist::Radius(); }
 bool  SetModelRadius(float units) { return drawdist::SetModelRadius(units); }
 float GetModelRadius() { return drawdist::ModelRadius(); }
+
+bool GrowPools(unsigned renderMb, unsigned entityMb, char* line, size_t lineSize) {
+	return pools::Grow(renderMb, entityMb, line, lineSize);
+}
 
 Status GetStatus() {
 	const Frame& f = Current();

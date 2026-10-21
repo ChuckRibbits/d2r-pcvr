@@ -120,6 +120,19 @@ int main() {
     expect(framevr::FixedRate(50,31,16,0,0,1024,1024,.5f,.5f,.55f)==5);
     expect(framevr::FixedRate(11,19,16,16,0,800,640,.2f,.5f,.55f)==0);
     expect(framevr::FixedRate(60,60,16,0,0,800,640,.5f,.5f,.55f)==0);
+    // The optional coarser periphery changes only peripheral tiles.
+    expect(framevr::FixedRate(0,0,16,0,0,1024,1024,.5f,.5f,.55f,framevr::Rate4x4)==10);
+    expect(framevr::FixedRate(31,31,16,0,0,1024,1024,.5f,.5f,.55f,framevr::Rate4x4)==0);
+    // Medium keeps the original radii at 2x2; each stronger level coarsens or widens the periphery.
+    const auto medium=framevr::FoveationStrengthPreset(framevr::DefaultFoveationStrength);
+    expect(medium.fixedRadius==.55f&&medium.gazeRadius==.35f&&medium.peripheralRate==2);
+    for(int level=1;level<framevr::FoveationStrengthCount;++level){
+        const auto weaker=framevr::FoveationStrengthPreset(level-1),stronger=framevr::FoveationStrengthPreset(level);
+        expect(stronger.fixedRadius<=weaker.fixedRadius&&stronger.gazeRadius<=weaker.gazeRadius&&stronger.peripheralRate>=weaker.peripheralRate&&
+               (stronger.fixedRadius<weaker.fixedRadius||stronger.peripheralRate>weaker.peripheralRate));
+        expect(stronger.fixedRadius>=.35f&&stronger.gazeRadius>=.30f);
+    }
+    expect(framevr::FoveationStrengthPreset(-1).fixedRadius==.55f&&framevr::FoveationStrengthPreset(9).peripheralRate==2);
     // Both eye label projections and their inverse rays must meet the same
     // creature anchor, including asymmetric FOV and a rotated world view.
     const auto attitude=Multiply(Yaw(.5f),Multiply({std::sin(.15f),0,0,std::cos(.15f)},{0,0,std::sin(.2f),std::cos(.2f)}));

@@ -14,7 +14,7 @@
 // With the sky on, the fog fades into the sky's horizon instead of FogColor.
 //
 // vrcam joins ReShade as an add-on and sets every uniform each frame from
-// d2r_vr.ini [fog] and [sky] - the settings window's sliders. It also switches
+// d2r_pcvr.ini [fog] and [sky] - the settings window's sliders. It also switches
 // the technique on and off. Values typed into ReShade's own UI are overwritten
 // while vrcam is running.
 //
@@ -93,6 +93,48 @@ uniform bool ShowCeilingCut <
 // right eye's present wrote it before the GPU had run the left eye's effect,
 // and the left eye drew the right eye's sky.
 uniform bool SkyOn < hidden = true; > = false;
+uniform bool ArcaneSkyOn < hidden = true; > = false;
+
+// These are prepared from the player's game, never distributed. Without a
+// complete cache the original native weather cards remain installed.
+#ifndef D2R_ARCANE_SKY_CACHE
+ #define D2R_ARCANE_SKY_CACHE 0
+#endif
+#if D2R_ARCANE_SKY_CACHE
+texture2D ArcaneStarsTex < source = "PCVR_Arcane/stars.png"; > { Width = 1024; Height = 512; Format = RGBA8; };
+sampler2D ArcaneStarsSmp { Texture = ArcaneStarsTex; AddressU = WRAP; AddressV = WRAP; };
+texture2D ArcaneCloudsTex < source = "PCVR_Arcane/clouds.png"; > { Width = 512; Height = 512; Format = RGBA8; };
+sampler2D ArcaneCloudsSmp { Texture = ArcaneCloudsTex; AddressU = WRAP; AddressV = WRAP; };
+
+// World-direction triplanar sampling covers all six directions, including
+// below the floating platforms. No flat card edge, longitude seam or pole.
+// Only direction matters: head translation cannot make a nearby star screen.
+float3 ArcaneStars(float3 p, float3 weights)
+{
+    return tex2Dlod(ArcaneStarsSmp, float4(p.yz, 0, 0)).rgb * weights.x
+         + tex2Dlod(ArcaneStarsSmp, float4(p.zx, 0, 0)).rgb * weights.y
+         + tex2Dlod(ArcaneStarsSmp, float4(p.xy, 0, 0)).rgb * weights.z;
+}
+float ArcaneClouds(float3 p, float3 weights)
+{
+    return tex2Dlod(ArcaneCloudsSmp, float4(p.yz, 0, 0)).r * weights.x
+         + tex2Dlod(ArcaneCloudsSmp, float4(p.zx, 0, 0)).r * weights.y
+         + tex2Dlod(ArcaneCloudsSmp, float4(p.xy, 0, 0)).r * weights.z;
+}
+float3 ArcaneSky(float3 dir)
+{
+    float3 weights = pow(abs(dir), 8.0);
+    weights /= max(dot(weights, float3(1, 1, 1)), 0.0001);
+    const float3 maps = ArcaneStars(dir * 1.8 + float3(0.13, 0.37, 0.61), weights);
+    const float stars = dot(maps, float3(0.38, 0.55, 0.8));
+    const float broad = ArcaneClouds(dir * 0.7 + float3(0.1, 0.3, 0.7), weights);
+    const float detail = ArcaneClouds(dir * 2.4 + float3(0.6, 0.8, 0.2), weights);
+    const float density = smoothstep(0.18, 0.78, broad) * (0.25 + 0.75 * detail);
+    const float tint = smoothstep(-0.8, 0.8, dot(dir, normalize(float3(0.6, 0.2, -0.7))));
+    const float3 nebula = lerp(float3(0.025, 0.05, 0.17), float3(0.015, 0.14, 0.11), tint);
+    return float3(0.001, 0.002, 0.006) + nebula * density + stars * float3(0.8, 0.9, 1.0);
+}
+#endif
 // The camera's axes in the world (y up); it looks along -CamBack. 0 = left eye, 1 = right.
 uniform float3 CamRight0 < hidden = true; > = float3(1.0, 0.0, 0.0);
 uniform float3 CamUp0 < hidden = true; > = float3(0.0, 1.0, 0.0);
@@ -149,7 +191,7 @@ sampler2D HudMaskSmp { Texture = HudMaskTex; MinFilter = POINT; MagFilter = POIN
 sampler2D HudMaskOldSmp { Texture = HudMaskOldTex; MinFilter = POINT; MagFilter = POINT; };
 
 // Painted skies (tools/gen_sky.py, or any picture), one pair per act. vrcam sets
-// the file names as preprocessor definitions from d2r_vr.ini [sky] texture_* /
+// the file names as preprocessor definitions from d2r_pcvr.ini [sky] texture_* /
 // cap_* (bare names are looked for in reshade-shaders\Textures); a slot with no
 // picture keeps the act 1 files here and is never sampled. Pictures of another
 // size are scaled to the declared one.
@@ -405,6 +447,9 @@ float3 PaintedSky(float3 dir)
 
 float3 Sky(float3 dir)
 {
+#if D2R_ARCANE_SKY_CACHE
+    if (ArcaneSkyOn) return ArcaneSky(dir);
+#endif
     if (SkyTex > 0.5) return PaintedSky(dir) * SkyBrightness;
     const float h = dir.y;
     float3 c = SkyGradient(h);
@@ -1267,6 +1312,21 @@ float3 VoidGlowAt(float2 uv)
     return lerp(wide, close, saturate(g8.a * 4.0));
 }
 
+// Sky and added-ceiling composition estimate transparent effects' fog from
+// nearby scenery below them. This is not the effects' own depth.
+float ParticleFog(float2 uv, float2 duv)
+{
+    float t = saturate(tex2Dlod(VoidFogSmp, float4(uv, 0, 0)).x);
+    const float down = UpsideDown ? -BUFFER_RCP_HEIGHT : BUFFER_RCP_HEIGHT;
+    float dn = 0.0;
+    [unroll] for (int s = 1; s <= 4; ++s) {
+        const float d = DepthAt(duv + float2(0.0, down * exp2((float)s))).x;
+        dn = dn > 0.0 ? dn : d;
+    }
+    if (dn > 1e-6) t = max(t, FogAmount(dn));
+    return t;
+}
+
 float3 DepthFogWorld(float4 pos, float2 uv, int eye)
 {
     const float3 colour = tex2D(FogColorSmp, uv).rgb;
@@ -1284,16 +1344,20 @@ float3 DepthFogWorld(float4 pos, float2 uv, int eye)
     // ground has single empty pixels (depth 0): each was taken for the void,
     // got the sky, and the sky showed through the fog as dots along the
     // horizon. The void is now only where the pixel AND its neighbours are
-    // empty; the fog takes the farthest of the five (reverse-Z: the smallest),
-    // which also drowns single near pixels the game's dithered transparencies
-    // leave in far ground.
+    // empty; the fog takes the farthest drawn sample (reverse-Z: the smallest
+    // positive depth), which also drowns single near pixels the game's dithered
+    // transparencies leave in far ground. Empty neighbours must not turn a
+    // nearby silhouette into full fog: that cut a black outline through effects
+    // drawn over the pillars behind Tyrael. With no drawn sample, keep zero.
     const float2 px = float2(BUFFER_RCP_WIDTH, BUFFER_RCP_HEIGHT);
     const float d1 = DepthAt(duv + float2(px.x, 0)).x;
     const float d2 = DepthAt(duv - float2(px.x, 0)).x;
     const float d3 = DepthAt(duv + float2(0, px.y)).x;
     const float d4 = DepthAt(duv - float2(0, px.y)).x;
     const float dNear = max(max(d, d1), max(max(d2, d3), d4));
-    const float dFar = min(min(d, d1), min(min(d2, d3), d4));
+    const float dFar = min(min(d > 0.0 ? d : dNear, d1 > 0.0 ? d1 : dNear),
+                           min(min(d2 > 0.0 ? d2 : dNear, d3 > 0.0 ? d3 : dNear),
+                               d4 > 0.0 ? d4 : dNear));
 
     float3 fogColour = FogColor;
     if (SkyOn || CeilOn) {
@@ -1389,16 +1453,7 @@ float3 DepthFogWorld(float4 pos, float2 uv, int eye)
             // the sky's none into the far ground at the horizon, and the foam along the
             // far water's edge stood out of the fog there (2026-10-05).
             float tf = 0.0;
-            if (FogOn && k < 0.999) {
-                tf = saturate(tex2Dlod(VoidFogSmp, float4(uv, 0, 0)).x);
-                const float down = UpsideDown ? -px.y : px.y;
-                float dn = 0.0;
-                [unroll] for (int s2 = 1; s2 <= 4; ++s2) {
-                    const float dd = DepthAt(duv + float2(0.0, down * exp2((float)s2))).x;
-                    dn = dn > 0.0 ? dn : dd;
-                }
-                if (dn > 1e-6) tf = max(tf, FogAmount(dn));
-            }
+            if (FogOn && k < 0.999) tf = ParticleFog(uv, duv);
             // Only what is clearly off black: the near-black spill the game leaves round
             // people and trees over the void, added in full, stood as a pale haze round
             // them (2026-10-05). k fades it in over the same 0.03..0.08 as the void test.
@@ -1419,6 +1474,19 @@ float3 DepthFogWorld(float4 pos, float2 uv, int eye)
         if (SkyOn && !FogFixed) fogColour = (SkyTex > 0.5 ? PaintedSky(fogDir) : SkyGradient(fogDir.y)) * SkyBrightness + dither;
     }
     if (!FogOn) return colour;
+
+    if (!SkyOn && !CeilOn && dNear <= 1e-6) {
+        // In unroofed interiors such as Tal Rasha's Chamber, zero depth belongs
+        // to the background, not to Tyrael's wings drawn over it. Fogging that
+        // whole pixel as infinitely far cut the wings to the pillars' outlines.
+        // Keep the background's original fog and the effect's native light.
+        // Borrowing distance from the ground below (ParticleFog) shaded columns
+        // of the same wing differently and changed its brightness at pillars.
+        // Without the effect's own depth, leave it at its authored brightness;
+        // actual drawn scenery still uses its distance in the path below.
+        if (ShowDistance) return 0.0;
+        return fogColour * FogAmount(dFar) + colour;
+    }
 
     // The depth smeared: the fog of a 3x3 grid FogBlur pixels apart, averaged
     // (the fog, not the depth - an empty pixel is "far", not a zero to average).
@@ -1632,6 +1700,18 @@ uniform float3 BoneZ < hidden = true; > = float3(0.0, 0.0, 1.0);
 uniform float3 PhantomEye0 < hidden = true; > = float3(0.0, 0.0, 0.0);
 uniform float3 PhantomEye1 < hidden = true; > = float3(0.0, 0.0, 0.0);
 
+// Developer shield guard inspection. The CPU supplies the exact guard pose;
+// amber denotes a fallback reference plane, cyan a measured item face.
+uniform bool ShieldDebugOn < hidden = true; > = false;
+uniform bool ShieldDebugHit < hidden = true; > = false;
+uniform float3 ShieldDebugCenter < hidden = true; > = float3(0,0,0);
+uniform float3 ShieldDebugRight < hidden = true; > = float3(0,0,0);
+uniform float3 ShieldDebugUp < hidden = true; > = float3(0,0,0);
+uniform float3 ShieldDebugNormal < hidden = true; > = float3(0,0,0);
+uniform float3 ShieldDebugColor < hidden = true; > = float3(0,1,1);
+uniform float3 ShieldDebugHitFrom < hidden = true; > = float3(0,0,0);
+uniform float3 ShieldDebugHitTo < hidden = true; > = float3(0,0,0);
+
 // A point relative to the eye -> its pixel; z < 0 behind the eye.
 float3 PhantomPixel(float3 v, int eye)
 {
@@ -1664,6 +1744,25 @@ float3 Segment(float3 c, float2 p, float3 a3, float3 b3, int eye, float3 col)
     const float d = length(p - (a.xy + ab * t));
     return lerp(c, col, 1.0 - smoothstep(1.0, 2.5, d));
 }
+float3 ShieldDebug(float3 c, float2 pixel, int eye)
+{
+    if (!ShieldDebugOn) return c;
+    const float3 o = ShieldDebugCenter, r = ShieldDebugRight, u = ShieldDebugUp;
+    const float3 n = ShieldDebugNormal, colour = ShieldDebugColor;
+    c = Segment(c, pixel, o-r-u, o+r-u, eye, colour);
+    c = Segment(c, pixel, o+r-u, o+r+u, eye, colour);
+    c = Segment(c, pixel, o+r+u, o-r+u, eye, colour);
+    c = Segment(c, pixel, o-r+u, o-r-u, eye, colour);
+    c = Segment(c, pixel, o-r*0.15, o+r*0.15, eye, colour);
+    c = Segment(c, pixel, o-u*0.15, o+u*0.15, eye, colour);
+    // Both face directions participate in coverage, so show both normals.
+    c = Segment(c, pixel, o-n, o+n, eye, colour);
+    c = Segment(c, pixel, o+n, o+n*0.75+r*0.15, eye, colour);
+    c = Segment(c, pixel, o+n, o+n*0.75-r*0.15, eye, colour);
+    // Native combat gives a horizontal attacker direction, not an impact point.
+    if (ShieldDebugHit) c = Segment(c, pixel, ShieldDebugHitFrom, ShieldDebugHitTo, eye, colour);
+    return c;
+}
 float3 Phantom(float4 pos, float2 uv, int eye)
 {
     float3 c = tex2D(FogColorSmp, uv).rgb;
@@ -1673,10 +1772,86 @@ float3 Phantom(float4 pos, float2 uv, int eye)
         c = Segment(c, pos.xy, BoneO, BoneY, eye, float3(0.2, 0.4, 1.0));
         c = Segment(c, pos.xy, BoneO, BoneZ, eye, float3(1.0, 0.9, 0.1));
     }
-    return c;
+    return ShieldDebug(c, pos.xy, eye);
 }
 float3 PS_Phantom(float4 pos : SV_Position, float2 uv : TEXCOORD) : SV_Target { return Phantom(pos, uv, 0); }
 float3 PS_PhantomR(float4 pos : SV_Position, float2 uv : TEXCOORD) : SV_Target { return Phantom(pos, uv, 1); }
+
+// Target outline: a glowing edge round the 3D model of the monster the target
+// lock holds, coloured by range. The model is found from depth: each pixel is
+// put back in the world (as the table's edge test does) and, inside a cylinder
+// round the target's cell, the pixels standing above the floor are the model
+// (OutlineShape: radius, lowest and highest height). A pixel whose neighbours
+// fall outside that shape is on its edge, so walls and other monsters in front
+// hide it. vrcam: each eye relative to the hero, in world units; OutlinePos xyz
+// the cylinder's foot relative to the hero, w strength, 0 = none.
+uniform bool OutlineOn < hidden = true; > = false;
+uniform float3 OutlineEye0 < hidden = true; > = float3(0.0, 0.0, 0.0);
+uniform float3 OutlineEye1 < hidden = true; > = float3(0.0, 0.0, 0.0);
+uniform float4 OutlinePos < hidden = true; > = float4(0.0, 0.0, 0.0, 0.0);
+uniform float3 OutlineShape < hidden = true; > = float3(2.6, 0.15, 4.0);
+uniform float3 OutlineColor < hidden = true; > = float3(1.0, 0.2, 0.12);
+uniform float OutlineWidth < hidden = true; > = 1.0;   // how far out a neighbour is looked for, in pixels: the edge's thickness
+uniform float OutlineJump < hidden = true; > = 6.0;    // a neighbour this close in 3D still belongs to the body (world units)
+uniform float OutlineInner < hidden = true; > = 0.05;  // a faint tint over the whole body, a share of the strength
+
+// The world point (relative to the hero) the eye sees at uv; ok = 0 for the sky.
+float3 OutlineWorld(float2 uv, int eye, out float ok)
+{
+    const float d = DepthAt(UpsideDown ? float2(uv.x, 1.0 - uv.y) : uv).x;
+    ok = d > 0.0 ? 1.0 : 0.0;
+    const float2 ndc = float2(uv.x * 2.0 - 1.0, 1.0 - uv.y * 2.0);
+    const float4 sp = eye == 0 ? SkyProj0 : SkyProj1;
+    const float3 v = float3((ndc.x + sp.z) / sp.x, (ndc.y + sp.w) / sp.y, -1.0);
+    const float3 off = eye == 0 ? v.x * CamRight0 + v.y * CamUp0 + v.z * CamBack0
+                                : v.x * CamRight1 + v.y * CamUp1 + v.z * CamBack1;
+    return (eye == 0 ? OutlineEye0 : OutlineEye1) + off * (NearPlane / max(d, 1e-6));
+}
+// Standing above the floor (between the shape's lowest and highest height).
+float Raised(float3 q, float4 o, float3 shape)
+{
+    const float h = q.y - o.y;
+    return step(shape.y, h) * step(h, shape.z);
+}
+// Inside the search cylinder round the target (and not sky).
+float Near(float3 q, float ok, float4 o, float3 shape)
+{
+    return ok * step(length(q.xz - o.xz), shape.x);
+}
+static const float2 kOutlineDirs[8] = { float2(1, 0), float2(-1, 0), float2(0, 1), float2(0, -1),
+                                       float2(0.707, 0.707), float2(-0.707, 0.707), float2(0.707, -0.707), float2(-0.707, -0.707) };
+// Only height edges inside the cylinder count: its own boundary never draws.
+float3 OutlineTint(float3 c, float2 uv, int eye, float3 p, float4 o, float3 shape, float3 colour)
+{
+    if (o.w <= 0.0 || length(p.xz - o.xz) > shape.x) return c;
+    const float centre = Raised(p, o, shape);
+    if (centre <= 0.0) return c;
+    // The glow sits on the model's own edge pixels. A neighbour belongs to the
+    // model when it is raised too and either inside the cylinder or right next
+    // to this pixel in the world; the background behind a monster's head is far
+    // away (a depth jump), so its silhouette edges glow, not just its feet.
+    const float jump = OutlineJump;
+    float edge = 0.0;
+    [unroll] for (int k = 0; k < 8; ++k) {   // one ring of neighbours: a thin line
+        float ok;
+        const float3 q = OutlineWorld(uv + kOutlineDirs[k] * float2(BUFFER_RCP_WIDTH, BUFFER_RCP_HEIGHT) * OutlineWidth, eye, ok);
+        const float model = ok * Raised(q, o, shape) * max(Near(q, ok, o, shape), step(length(q - p), jump));
+        edge += 1.0 - model;
+    }
+    const float a = max(saturate(edge / 3.0), OutlineInner) * o.w;
+    return lerp(c, colour, saturate(a));   // painted over the picture: subtle at low strength
+}
+float3 Outline(float2 uv, int eye)
+{
+    const float3 c = tex2D(FogColorSmp, uv).rgb;
+    if (!OutlineOn) return c;
+    float ok;
+    const float3 p = OutlineWorld(uv, eye, ok);
+    if (ok <= 0.0) return c;
+    return OutlineTint(c, uv, eye, p, OutlinePos, OutlineShape, OutlineColor);
+}
+float3 PS_Outline(float4 pos : SV_Position, float2 uv : TEXCOORD) : SV_Target { return Outline(uv, 0); }
+float3 PS_OutlineR(float4 pos : SV_Position, float2 uv : TEXCOORD) : SV_Target { return Outline(uv, 1); }
 
 float3 PS_GameHud(float4 pos : SV_Position, float2 uv : TEXCOORD) : SV_Target { return GameHud(uv, 1.0); }
 float3 PS_GameHudR(float4 pos : SV_Position, float2 uv : TEXCOORD) : SV_Target { return GameHud(uv, -1.0); }
@@ -1840,6 +2015,7 @@ technique D2R_DepthFog <
     pass { VertexShader = VS_Fullscreen; PixelShader = PS_Peaks; RenderTarget = PeakTex; }
     pass { VertexShader = VS_Fullscreen; PixelShader = PS_DomeSeeds; RenderTarget = DomeSeedTex; }
     pass { VertexShader = VS_Fullscreen; PixelShader = PS_DepthFog; }
+    pass { VertexShader = VS_Fullscreen; PixelShader = PS_Outline; }
     pass { VertexShader = VS_Fullscreen; PixelShader = PS_Hud; }
     pass { VertexShader = VS_Fullscreen; PixelShader = PS_GameHud; }
     pass { VertexShader = VS_Fullscreen; PixelShader = PS_Phantom; }
@@ -1874,6 +2050,7 @@ technique D2R_DepthFog_R <
     pass { VertexShader = VS_Fullscreen; PixelShader = PS_Peaks; RenderTarget = PeakTex; }
     pass { VertexShader = VS_Fullscreen; PixelShader = PS_DomeSeeds; RenderTarget = DomeSeedTex; }
     pass { VertexShader = VS_Fullscreen; PixelShader = PS_DepthFogR; }
+    pass { VertexShader = VS_Fullscreen; PixelShader = PS_OutlineR; }
     pass { VertexShader = VS_Fullscreen; PixelShader = PS_HudR; }
     pass { VertexShader = VS_Fullscreen; PixelShader = PS_GameHudR; }
     pass { VertexShader = VS_Fullscreen; PixelShader = PS_PhantomR; }

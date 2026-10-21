@@ -5,6 +5,7 @@
 #include "quick_cast.h"
 #include "journal.h"
 #include "input.h"
+#include "vr_resolution.h"
 #include <cstdio>
 #include <cstdlib>
 using namespace framevr;
@@ -15,6 +16,102 @@ int main(){
         Check(std::fabs(distance-(main?.70f:.55f)-.30f*preset)<.00001f,"distance presets add 30 cm without changing canvas scale");
         const auto p=panels::AtEyeLevel({0,1.7f,0},math::Yaw(.8f),distance);
         Check(p.position.y==1.7f,"all distance presets retain eye-level anchor");
+    }
+    Check(panels::NearDistance<panels::MenuDistance(0)&&panels::FarDistance>panels::MenuDistance(2,true),
+        "grab limits reach past every preset");
+    {
+        const math::Vec head{0,1.6f,0};
+        const auto base=panels::AtEyeLevel(head,math::Yaw(.5f),panels::MenuDistance(1));
+        auto same=[](math::Vec a,math::Vec b){const auto d=a-b;return math::Dot(d,d)<1e-9f;};
+        auto len=[](math::Vec a){return std::sqrt(math::Dot(a,a));};
+        auto at=[&](math::Vec p,math::Quat q=math::Yaw(1)){return panels::Placement{math::Vec{.2f,1.2f,-.3f}+p,q};};
+        auto where=[&](panels::Offset o){return panels::Apply(base,o);};
+        const math::Quat roll{0,0,std::sin(.35f),std::cos(.35f)};
+        Check(same(where({}).position,base.position),"no grab keeps the default placement");
+        panels::Grab grab;panels::Offset o;
+        Check(!grab.Step(true,false,false,at({}),base,head,o)&&!grab.Step(true,true,false,at({.2f,0,0}),base,head,o)&&
+              same(where(o).position,base.position),"grip started off the panel never grabs");
+        grab.Step(false,true,false,at({}),base,head,o);
+        Check(!grab.Step(true,true,false,at({}),base,head,o)&&!grab.Step(true,true,false,at({.014f,.014f,0}),base,head,o)&&
+              same(where(o).position,base.position),"slack keeps a still grip as Shift");
+        Check(grab.Step(true,true,false,at({.02f,.02f,.02f}),base,head,o)&&same(where(o).position,base.position+math::Vec{.02f,.02f,.02f}),
+              "once moving, the panel catches up with all travel since the press");
+        const math::Vec travel{.1f,.05f,-.1f};
+        Check(grab.Step(true,false,false,at(travel),base,head,o)&&same(where(o).position,base.position+travel),
+              "diagonal travel moves the panel 1:1 in room space, even off the panel");
+        Check(std::fabs(o.yaw)<1e-6f&&std::fabs(o.pitch)<1e-6f,"translation alone does not tilt");
+        for(const math::Vec slide:{math::Vec{.6f,0,0},math::Vec{-.6f,0,0},math::Vec{0,.45f,0},math::Vec{0,-.45f,0},math::Vec{.5f,.3f,0}}){
+            const auto moved=travel+slide;
+            Check(grab.Step(true,true,false,at(moved),base,head,o)&&same(where(o).position,base.position+moved)&&
+                  std::fabs(o.yaw)<1e-6f&&std::fabs(o.pitch)<1e-6f,"sideways and vertical hand travel slides the panel exactly, with no turn");
+        }
+        grab.Step(true,true,false,at(travel),base,head,o);
+        const auto tilted=math::Multiply(math::Yaw(1.3f),panels::Pitch(.2f));
+        grab.Step(true,true,false,at(travel,tilted),base,head,o);
+        Check(std::fabs(o.yaw-.3f)<1e-4f&&std::fabs(o.pitch-.2f)<1e-4f,"heading and pitch follow the hand's change");
+        const auto before=o;
+        grab.Step(true,true,false,at(travel,math::Multiply(tilted,roll)),base,head,o);
+        Check(std::fabs(o.yaw-before.yaw)<1e-4f&&std::fabs(o.pitch-before.pitch)<1e-4f,"hand roll never rolls the panel");
+        Check(std::fabs(math::Rotate(where(o).orientation,{1,0,0}).y)<1e-5f,"panel's horizontal edge stays level");
+        grab.Step(true,true,false,at(travel,math::Multiply(math::Yaw(1),panels::Pitch(1.4f))),base,head,o);
+        Check(o.pitch==panels::MaxTilt,"tilt up is clamped");
+        grab.Step(true,true,false,at(travel,math::Multiply(math::Yaw(1),panels::Pitch(-1.4f))),base,head,o);
+        Check(o.pitch==-panels::MaxTilt,"tilt down is clamped");
+        const auto forward=math::Rotate(base.orientation,{0,0,-1});
+        grab.Step(true,true,false,at(forward*3),base,head,o);
+        Check(std::fabs(len(where(o).position-head)-panels::FarDistance)<1e-4f,"far limit from the head");
+        grab.Step(true,true,false,at(forward*-.6f),base,head,o);
+        Check(std::fabs(len(where(o).position-head)-panels::NearDistance)<1e-4f,"near limit from the head");
+        grab.Step(true,true,false,at(travel),base,head,o);
+        Check(grab.Step(true,true,true,at(travel),base,head,o),"a trigger squeezed while moving is consumed");
+        const auto kept=o;
+        Check(grab.Step(false,true,true,at({}),base,head,o)&&same(o.position,kept.position),"release keeps the place; held trigger stays consumed");
+        Check(!grab.Step(false,true,false,at({}),base,head,o),"trigger release ends the grab");
+        const auto reopened=panels::AtEyeLevel({1,1.5f,2},math::Yaw(-1),panels::MenuDistance(1));
+        Check(same(math::Rotate(math::Conjugate(reopened.orientation),panels::Apply(reopened,o).position-reopened.position),o.position),
+              "a reopened menu keeps its place relative to where you face");
+        o={};grab.Step(true,true,false,at({}),base,head,o);
+        Check(!grab.Step(true,true,true,at({}),base,head,o)&&!grab.Step(true,true,false,at({.3f,0,0}),base,head,o)&&
+              same(where(o).position,base.position),"grip then click stays Shift-click for the whole hold");
+        grab.Step(false,true,false,at({}),base,head,o);
+        Check(!grab.Step(true,true,true,at({}),base,head,o)&&!grab.Step(true,true,true,at({.3f,0,0}),base,head,o)&&
+              same(where(o).position,base.position),"grip during a drag or held click never grabs");
+        grab.Step(false,true,false,at({}),base,head,o);grab.Step(true,true,false,at({}),base,head,o);grab.Suspend();
+        Check(!grab.Step(true,true,false,at({.3f,0,0}),base,head,o)&&same(where(o).position,base.position),"a surface change needs a fresh grip");
+        grab.Step(false,true,false,at({}),base,head,o);grab.Step(true,true,false,at({}),base,head,o);
+        Check(grab.Step(true,true,false,at({.1f,0,0}),base,head,o),"fresh grip after suspension grabs again");
+        {
+            panels::Grab hold;panels::Offset g;const auto press=at({});
+            hold.Step(true,true,false,press,base,head,g);
+            const auto turned=at({.04f,0,0},math::Yaw(1.3f));
+            Check(hold.Step(true,true,false,turned,base,head,g)&&
+                  same(where(g).position,turned.position+math::Rotate(math::Yaw(.3f),base.position-press.position))&&std::fabs(g.yaw-.3f)<1e-5f,
+                  "turning the hand swings the panel about the hand, keeping the grabbed point on the laser");
+        }
+        // Game menus: push/pull only.
+        const float d0=panels::MenuDistance(1);
+        auto distance=[&](panels::Offset p){return len(where(p).position-head);};
+        const auto right=math::Rotate(base.orientation,{1,0,0});
+        panels::Grab push;o={};
+        Check(!push.Step(true,true,false,at({}),base,head,o,d0)&&!push.Step(true,true,false,at(right*.2f+math::Vec{0,.2f,0}),base,head,o,d0)&&
+              same(where(o).position,base.position),"sideways or vertical travel never moves a game menu or ends Shift");
+        Check(push.Step(true,true,false,at(right*.2f+math::Vec{0,.2f,0}+forward*.04f),base,head,o,d0)&&std::fabs(distance(o)-(d0+.04f))<1e-4f,
+              "push catches up with all travel along the axis since the press");
+        push.Step(true,true,false,at(right*-.3f+forward*.25f,tilted),base,head,o,d0);
+        Check(std::fabs(distance(o)-(d0+.25f))<1e-4f&&o.position.x==0&&o.position.y==0&&o.yaw==0&&o.pitch==0,
+              "diagonal travel pushes by its depth only and never tilts");
+        push.Step(true,true,false,at(forward*-.2f),base,head,o,d0);
+        Check(std::fabs(distance(o)-(d0-.2f))<1e-4f,"pull brings it nearer 1:1");
+        push.Step(true,true,false,at(forward*3),base,head,o,d0);
+        Check(std::fabs(distance(o)-panels::FarDistance)<1e-4f,"push stops at the far limit");
+        push.Step(true,true,false,at(forward*-3),base,head,o,d0);
+        Check(std::fabs(distance(o)-panels::NearDistance)<1e-4f,"pull stops at the near limit, still in front");
+        push.Step(false,true,false,at({}),base,head,o,d0);
+        const auto title=panels::AtEyeLevel(head,math::Yaw(.5f),panels::MenuDistance(1,true));
+        Check(std::fabs(len(panels::Apply(title,o).position-head)-(panels::MenuDistance(1,true)-d0+panels::NearDistance))<1e-4f,
+              "the same push/pull carries to the title menu");
+        Check(!push.Step(true,true,false,at({}),base,head,o,d0)&&!push.Step(true,true,true,at({}),base,head,o,d0)&&
+              !push.Step(true,true,false,at(forward*.3f),base,head,o,d0),"grip then click stays Shift-click");
     }
     panels::TooltipDwell dwell;
     Check(dwell.Ready(1,2,100,0,1),"instant tooltip on first hover");
@@ -31,6 +128,12 @@ int main(){
     Check(panels::ItemCursorSnap(false,true,true)&&panels::ItemCursorSnap(true,false,true),"desktop and unrelated cursor queries remain native");
     Check(panels::CursorBoundsCaller(0x7f4b2)&&panels::CursorBoundsCaller(0x14fb2a),
         "native height and tail-called width clamp use full-source bounds");
+    for(auto address:panels::CursorConversionReturns)
+        Check(panels::CursorBoundsCaller(address)&&!panels::UiCanvasCaller(address),
+            "the cursor's window/game conversions use full-source bounds, never the UI band (X stopped at 2100 of 3072)");
+    for(auto address:panels::CursorClampReturns)
+        Check(panels::CursorBoundsCaller(address)&&!panels::UiCanvasCaller(address),"the controller cursor's clamp uses full-source bounds");
+    Check(std::size(panels::CursorConversionReturns)==7&&std::size(panels::CursorClampReturns)==2,"every audited cursor size query is listed");
     for(auto address:panels::UiCanvasReturns)
         Check(!panels::CursorBoundsCaller(address),"cursor bounds cannot enlarge native font/layout canvas");
     for(auto address:{uintptr_t(0),uintptr_t(0x14fb46),uintptr_t(0x667ff1),uintptr_t(0x904b3d)})
@@ -71,9 +174,26 @@ int main(){
         Check(panels::Modal(name)&&panels::OpaqueBackground(name),"management surfaces use the same opaque background in both eyes");
     for(auto name:{"NpcDialogPanel","ScrollSpeechPanel","QuestLogPanelExpansion","GoldTransferPanel","QuantityPanel","HUDPanel","HUDTradeHint","MiniMenuPanel","TooltipsPanel"})
         Check(!panels::OpaqueBackground(name),"dialogue, journal and auxiliary panels do not independently black out the world");
-    for(auto name:{"UISwitcher","VendorPanelLayout","VendorPanelOriginalLayout","TradeLayout","GamblePanel"})
-        Check(panels::UpperBand(name),"tabbed inventory and independent merchant roots center their upper content at eye level");
-    for(auto name:{"WaypointPanel","NpcDialogPanel","ScrollSpeechPanel","QuestLogPanelExpansion","QuantityPanel","ConfirmationPanel","HUDTradeHint","TooltipsPanel"})
+    for(auto name:{"NpcDialogPanel","ScrollSpeechPanel","QuestLogSpeechPanel","QuestLogPanelExpansion","ConfirmationPanel"}) {
+        Check(!panels::BlockWorldEffects(panels::Modal(name),true,panels::OpaqueBackground(name)),
+            "spatial conversations, speech and journals keep sky, fog and cave ceiling behind their transparent UI");
+        Check(panels::BlockWorldEffects(panels::Modal(name),false,panels::OpaqueBackground(name)),
+            "unavailable spatial UI retains flat-menu suppression of world effects");
+    }
+    for(auto name:{"VendorPanelLayout","GamblePanel","WaypointPanel","UISwitcher","BankExpansionLayout"})
+        Check(panels::BlockWorldEffects(panels::Modal(name),true,panels::OpaqueBackground(name)),
+            "opaque management menus keep their black background and suppress world effects");
+    Check(!panels::BlockWorldEffects(false,false,false),"ordinary gameplay retains world effects without spatial UI");
+    Check(!panels::BlockWorldEffects(false,true,true),"a stale opaque flag alone cannot disable gameplay effects");
+    // An NPC conversation may open a merchant without closing all of its
+    // other roots. Any remaining opaque root owns the backdrop until closed.
+    for(bool merchant:{false,true,false})
+        Check(panels::BlockWorldEffects(true,true,panels::OpaqueBackground("NpcDialogPanel")||
+            (merchant&&panels::OpaqueBackground("VendorPanelLayout")))==merchant,
+            "dialogue to merchant to dialogue restores world effects when the opaque root closes");
+    for(auto name:{"UISwitcher","VendorPanelLayout","VendorPanelOriginalLayout","TradeLayout","GamblePanel","NpcDialogPanel","ScrollSpeechPanel"})
+        Check(panels::UpperBand(name),"inventory, merchants and both conversation roots center the same upper content band");
+    for(auto name:{"WaypointPanel","QuestLogPanelExpansion","QuantityPanel","ConfirmationPanel","HUDTradeHint","TooltipsPanel"})
         Check(!panels::UpperBand(name),"unrelated layouts and auxiliary popups cannot independently shift the workspace");
     panels::InputModeLease mode;
     Check(!mode.PreserveController(100,true),"desktop input untouched without VR ownership");
@@ -283,42 +403,31 @@ int main(){
     Check(title.width==1.125f&&title.height==1.125f,"square main menu fits original 2m widescreen envelope");
     const auto missing=panels::Fit(0,0);
     Check(missing.width==wide.width&&missing.height==wide.height,"missing source uses finite widescreen fallback");
-    // The NPC box is a small region of the full UI. Enlarge its pixel pitch,
-    // not its surrounding canvas, and map each displayed choice back to the
-    // original native coordinate after moving the region to eye level.
-    for(auto source:{journal::Rect{0,0,4096,4096},journal::Rect{0,0,1920,1080},journal::Rect{0,0,2160,2400}}) {
-        const auto crop=dialogue::Crop({1740,120,360,240},source.w,source.h);
-        const auto size=dialogue::Size(crop,source.w,source.h);
-        Check(crop.w>0&&crop.h>0,"NPC bounds produce a source region at square, wide and portrait resolutions");
-        Check(std::fabs(size.width/crop.w-4.f*panels::Fit(source.w,source.h).width/source.w)<.00001f,"NPC text has four times the original workspace pixel pitch");
+    // A reported widget box at 2535,498 on a 3072-square source looked valid
+    // but the owner saw only the right edge of the choices. Native widget
+    // coordinates cannot define the sampled region after resize. Exercise the
+    // whole visible surface through the actual ray and source/desktop mapping.
+    for(auto source:{journal::Rect{0,0,1536,1536},journal::Rect{0,0,3072,3072},
+        journal::Rect{0,0,4096,4096},journal::Rect{0,0,3840,2160},journal::Rect{0,0,2160,2400}}) {
+        const auto crop=dialogue::Canvas(source.w,source.h);
+        const auto size=panels::Fit(crop.w,crop.h);
+        Check(std::fabs(size.width/size.height-float(source.w)/source.h)<.00001f,"complete NPC canvas preserves text proportions at each render aspect");
         const auto placed=panels::AtEyeLevel({0,1.65f,0},math::Yaw(.4f),panels::Distance);
-        for(float u:{.02f,.5f,.98f})for(float v:{.02f,.3f,.7f,.98f}) {
-            const auto p=placed.position+math::Rotate(placed.orientation,{(u-.5f)*size.width,(.5f-v)*size.height,0});
+        const auto origin=placed.position+math::Rotate(placed.orientation,{0,panels::UpperBandOffset(size),0});
+        for(float u:{.01f,.2f,.5f,.8f,.99f})for(float v:{.01f,.3f,.7f,.99f}) {
+            const auto p=origin+math::Rotate(placed.orientation,{(u-.5f)*size.width,(.5f-v)*size.height,0});
             const auto front=math::Rotate(placed.orientation,{0,0,1});math::PanelHit hit;math::Vec pixel{};
-            Check(math::IntersectPanel(p+front,front*-1,placed.position,placed.orientation,size.width,size.height,hit),"laser hits the enlarged eye-level NPC surface");
+            Check(math::IntersectPanel(p+front,front*-1,origin,placed.orientation,size.width,size.height,hit),"laser reaches both edges and every part of the complete NPC surface");
             Check(journal::Pixel(crop,hit.u,hit.v,source.w,source.h,pixel)&&
-                std::fabs(pixel.x-(crop.x+u*crop.w)/source.w)<.00001f&&
-                std::fabs(pixel.y-(crop.y+v*crop.h)/source.h)<.00001f,"enlarged NPC choices map back to native dialogue pixels");
+                std::fabs(pixel.x-u)<.00001f&&std::fabs(pixel.y-v)<.00001f,
+                "dialogue rendering and laser use the complete source rather than a shifted widget crop");
+            const int clientX=int(std::round(pixel.x*3839)),clientY=int(std::round(pixel.y*2159));
+            Check(std::abs(resolution::Coordinate(clientX,3840,source.w)-u*(source.w-1))<2&&
+                std::abs(resolution::Coordinate(clientY,2160,source.h)-v*(source.h-1))<2,
+                "NPC laser coordinates survive a desktop-to-VR resolution mismatch without edge truncation");
         }
     }
-    const auto edge=dialogue::Crop({0,0,200,100},3840,2160);
-    Check(edge.x==0&&edge.y==0&&edge.w==208&&edge.h==108,"dialogue border padding clips at source edges");
-    // Captured Charsi bounds at 4096 square. The old design-resolution
-    // conversion began at x=1832, cutting 106 pixels off a box starting at 1726.
-    for(auto native:{journal::Rect{1726,306,300,244},journal::Rect{1698,252,300,244}}) {
-        const auto crop=dialogue::Crop(native,4096,4096);
-        Check(crop.x==native.x-8&&crop.y==native.y-8&&crop.w==316&&crop.h==260,
-            "live Charsi source-pixel rectangle retains the full border and every choice");
-        const auto anotherSource=dialogue::Crop(native,3840,2160);
-        Check(crop.x==anotherSource.x&&crop.y==anotherSource.y&&crop.w==anotherSource.w&&crop.h==anotherSource.h,
-            "source size must not rescale already-resolved native widget coordinates");
-        math::Vec pixel{};
-        Check(journal::Pixel(crop,.5f,.5f,4096,4096,pixel)&&
-            std::fabs(pixel.x-(native.x+native.w*.5f)/4096)<.00001f&&
-            std::fabs(pixel.y-(native.y+native.h*.5f)/4096)<.00001f,
-            "centered NPC laser lands at original dialogue center after crop correction");
-    }
-    Check(!dialogue::Crop({8000,8000,200,100},3840,2160).w&&!dialogue::Crop({0,0,0,100},4096,4096).h,"missing/outside NPC bounds cannot create an invalid XR crop");
+    Check(!dialogue::Canvas(0,3072).w&&!dialogue::Canvas(4096,0).h,"missing NPC source cannot create an invalid XR surface");
     Check(panels::UpperBandOffset(wide)==0,"widescreen tabbed canvas needs no vertical correction");
     Check(std::fabs(panels::UpperBandOffset(square)+.23378906f)<.00001f,"square inventory centers its visible upper band instead of blank lower canvas");
     for(float eyeHeight:{1.15f,1.75f})for(float pitch:{-.6f,0.f,.6f}) {

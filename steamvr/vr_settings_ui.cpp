@@ -2,9 +2,20 @@
 #include <cstdio>
 #include <cstring>
 #include "vr_settings_ui.h"
+#include "release_notes.h"
+// Retain an exact summary fingerprint in the DLL for the release packager.
+extern "C" __declspec(dllexport) const char* D2RPCVR_ReleaseNotesIdentity(){return framevr::releasenotes::ContentMarker;}
 namespace framevr::settings {
-std::vector<uint8_t> Paint(const Model& m,Hit hover,const char* runtimeStatus,const calibration::Flow* body,const controllers::Labels& detected){
-    BITMAPINFO info{};info.bmiHeader.biSize=sizeof(BITMAPINFOHEADER);info.bmiHeader.biWidth=Width;
+static int HelpTextHeight(HDC dc,HFONT font,const char* value,int width) {
+    wchar_t wide[512]{};MultiByteToWideChar(CP_UTF8,0,value,-1,wide,512);
+    const auto old=SelectObject(dc,font);RECT bounds{0,0,width,0};
+    DrawTextW(dc,wide,-1,&bounds,DT_CALCRECT|DT_WORDBREAK|DT_NOPREFIX);
+    SelectObject(dc,old);return int(bounds.bottom);
+}
+std::vector<uint8_t> Paint(const Model& m,Hit hover,const char* runtimeStatus,const calibration::Flow* body,const controllers::Labels& detected,int help,GameVideo game,bool monoAudio,
+                           const PerformanceReadout& performance,bool depthRestart){
+    const bool showHelp=!body&&help!=NoHelp&&HelpText(help)[0];
+    BITMAPINFO info{};info.bmiHeader.biSize=sizeof(BITMAPINFOHEADER);info.bmiHeader.biWidth=AtlasWidth;
     info.bmiHeader.biHeight=-Height;info.bmiHeader.biPlanes=1;info.bmiHeader.biBitCount=32;
     HDC dc=CreateCompatibleDC(nullptr);void* bits=nullptr;
     HBITMAP bitmap=CreateDIBSection(dc,&info,DIB_RGB_COLORS,&bits,nullptr,0);
@@ -61,10 +72,21 @@ std::vector<uint8_t> Paint(const Model& m,Hit hover,const char* runtimeStatus,co
         text("Controls are blocked. The game world remains live.",{80,939,1120,50},false,true,quiet);
     }else{
     text("DIABLO II / VR SETTINGS",{40,33,960,55},true);
-    text("Right-hand laser + trigger",{862,44,378,42},false,true,quiet);
-    const char* tabs[]={"Controls","VR","Video","HUD","Combat"};
-    for(int i=0;i<TabCount;++i)button(Tabs[i],tabs[i],{Kind::Tab,i},int(m.page)==i);
-    if(m.page==Page::Controls){
+    if(monoAudio)text(MonoAudioWarning,{820,44,420,42},false,true,RGB(236,186,96));   // pointing at it explains
+    else text("Point for help; trigger to change",{820,44,420,42},false,true,quiet);
+    for(int i=0;i<TabCount;++i)button(TabBox(i),TabNames[i],{Kind::Tab,i},int(m.page)==i);
+    if(m.page==Page::ReleaseNotes){
+        text(releasenotes::ReleaseTitle,{40,195,1200,45},true);
+        text(releasenotes::Author,{40,241,1200,35});
+        text(releasenotes::ProjectUrl,{40,281,1200,35},false,false,RGB(116,220,219));
+        int y=330;
+        for(const char* line:releasenotes::ReleaseLines){
+            fill({40,y-3,1200,35},(y/36)%2?RGB(19,31,39):RGB(22,36,44));
+            text(line,{54,y,1170,35});y+=36;
+        }
+        char credits[160];std::snprintf(credits,sizeof credits,"Credits: %s",releasenotes::Credits);
+        text(credits,{40,848,1200,28},false,false,quiet);
+    }else if(m.page==Page::Controls){
         text("Each stick opens its hand's wheel. Use the OTHER hand's laser to assign skills.",{40,180,1200,32},false,false,RGB(116,220,219));
         text("LEFT HAND",{58,215,520,40},true);text("RIGHT HAND",{676,215,520,40},true);
         struct Help{const char* key;const char* action;};
@@ -72,7 +94,7 @@ std::vector<uint8_t> Paint(const Model& m,Hit hover,const char* runtimeStatus,co
         const auto leftAlternates=labels.Button(1,3)+" / "+labels.Button(1,4);
         const auto rightFaces=labels.Button(0,1)+" / "+labels.Button(0,2)+" / grip + face";
         const Help left[]={{"Stick","Walk"},{leftFaces.c_str(),"Assigned left-hand skills"},{leftAlternates.c_str(),"Alternate left-hand skills"},{"Trigger","Assigned left-hand skill"},{"Stick click","Toggle left wheel; right laser edits"},{"Grip + stick click","Inventory / character / skills menu"},{"Grip near belt","Grab a potion"}};
-        const Help right[]={{"Stick / click","Turn / toggle right wheel"},{"Trigger","Assigned right skill / grab bow string"},{rightFaces.c_str(),"Interact by default / assigned skills"},{"Dominant grip at shoulder","Either shoulder: swap weapon sets I / II"},{"Trigger at bow string","Nock, pull back, release to shoot"},{"Trigger with javelin","Hold, throw, release in WEAPON mode"},{"Left Grip + Right Trigger","Laser context click in game panels"}};
+        const Help right[]={{"Stick / click","Turn / toggle right wheel"},{"Trigger","Assigned right skill / grab bow string"},{"Hold Right Grip + Right Trigger","Show all nearby loot labels (Alt)"},{rightFaces.c_str(),"Interact by default / assigned skills"},{"Dominant grip at shoulder","Either shoulder: swap weapon sets I / II"},{"Trigger with bow / javelin","Draw & release / throw in WEAPON mode"},{"Left Grip + Right Trigger","Laser context click in game panels"}};
         for(int i=0;i<7;++i)for(int side=0;side<2;++side){
             const auto& h=(side?right:left)[i];const int x=side?658:40,y=252+i*58;
             fill({x,y,582,56},i%2?RGB(19,31,39):RGB(22,36,44));
@@ -88,7 +110,7 @@ std::vector<uint8_t> Paint(const Model& m,Hit hover,const char* runtimeStatus,co
         text(Definitions[ProjectileAimAssist].label,{40,784,875,32});
         text(Definitions[ProjectileAimAssist].detail,{40,816,875,29},false,false,quiet);
         button(AimAssistBox,AimAssistNames[int(m.Get()[ProjectileAimAssist])],{Kind::Change,ProjectileAimAssist,1},false,m.ready&&!m.Busy());
-        const auto panelHelp="Panels: Left Trigger = Ctrl; Right Grip = Shift; Right "+labels.Button(0,2)+" = Back.";
+        const auto panelHelp="Panels: Left Trigger = Ctrl; Right Grip = Shift / push-pull; Right "+labels.Button(0,2)+" = Back.";
         text(panelHelp.c_str(),{40,845,1200,29},false,false,quiet);
     }else{
         if(m.page==Page::VR){
@@ -99,46 +121,91 @@ std::vector<uint8_t> Paint(const Model& m,Hit hover,const char* runtimeStatus,co
             fill(ControllerBox,hover.kind==Kind::ControllerMenu?RGB(63,103,112):RGB(31,48,56));
             const std::string selected=std::string(controllers::Choices[int(m.Get()[ControllerLabels])])+"  \xe2\x96\xbc";
             text(selected.c_str(),{ControllerBox.x,ControllerBox.y+10,ControllerBox.w,37},true,true,RGB(116,220,219));
-        }else text(m.page==Page::Combat?"Tune weapon combat and spell visuals.":m.page==Page::HUD?"Choose how you check your health, mana and navigation.":runtimeStatus,{40,197,1200,42},false,false,quiet);
+        }else if(m.page==Page::HUD){
+            text("Map view",{58,193,210,36},true);
+            text("Rotate map",{675,193,250,36},true);
+            const bool enabled=m.ready&&!m.Busy();
+            button(HudMapViewBox,MapViewNames[m.Get()[MapTopDown]>.5f?1:0],{Kind::Change,MapTopDown,1},false,enabled);
+            button(HudMapRotateBox,m.Get()[MapRotate]>.5f?"On":"Off",{Kind::Change,MapRotate,1},false,enabled);
+        }else if(m.page==Page::Performance&&(DeferOffered(m.Get())||GameVideoWarning(game))){
+            // Warnings in amber under the status, two lines at most: the GPU
+            // wait not deferred (and the button that turns it on), then the
+            // game's own video options; both push the status out.
+            const bool defer=DeferOffered(m.Get());const char* gameWarning=GameVideoWarning(game);
+            const COLORREF warn=RGB(236,186,96);const int width=defer?DeferBox.x-50:1200;
+            text(defer&&gameWarning?DeferWarning:runtimeStatus,{40,181,width,29},false,false,defer&&gameWarning?warn:quiet);
+            text(gameWarning?gameWarning:DeferWarning,{40,209,width,29},false,false,warn);
+            if(defer)button(DeferBox,"Defer GPU wait",{Kind::Change,DeferGpuWait,1},false,m.ready&&!m.Busy());
+        }else text(m.page==Page::Haptics?"Tune vibration for your headset and controllers.":m.page==Page::Combat?"Tune physical combat and offline difficulty.":m.page==Page::Aim?"Choose how the monster you aim at is shown.":
+             m.page==Page::Video?"The mod's added effects. What changes the frame rate is on Perf.":runtimeStatus,{40,197,1200,42},false,false,quiet);
         for(int row=0;row<RowCount(m.page);++row){
             const Key key=RowKey(m.page,row);const auto& d=Definitions[key];const float value=m.Get()[key];const int y=RowY+row*RowStep;
             fill({40,y-4,1200,RowStep},row%2?RGB(19,31,39):RGB(22,36,44));
-            text(d.label,{58,y+1,780,29},true);text(d.detail,{58,y+30,795,28},false,false,quiet);
+            const int textWidth=m.page==Page::Haptics?520:780;const bool applies=RowEnabled(m.Get(),key);
+            text(d.label,{58,y+1,textWidth,29},true,false,applies?RGB(229,234,235):quiet);text(d.detail,{58,y+30,textWidth,28},false,false,quiet);
+            if(m.page==Page::Haptics&&HapticCategory(key)>=0){
+                const auto category=haptics::Category(HapticCategory(key));
+                for(int choice=0;choice<haptics::PreviewCount(category);++choice)
+                    button(TestHapticsBox(row,choice,category),haptics::PreviewLabel(category,choice),{Kind::TestHaptics,HapticCategory(key),choice+1},false,m.CanTestHaptics(HapticCategory(key)));
+            }
             char label[96];
             if(key==Foveation){const char* modes[]={"Off","Fixed","Eye tracked"};std::snprintf(label,sizeof label,"%s",modes[int(value)]);}
+            else if(key==FoveationStrength)std::snprintf(label,sizeof label,"%s",FoveationStrengthNames[int(value)]);
+            else if(key==StereoRendering)std::snprintf(label,sizeof label,"%s",StereoRenderingNames[std::clamp(int(value),0,int(std::size(StereoRenderingNames))-1)]);
             else if(key==VitalsLocation||key==NavigationLocation)std::snprintf(label,sizeof label,"%s",vitals::LocationNames[int(value)]);
             else if(key==RenderResolution)std::snprintf(label,sizeof label,"%s",resolution::Choices[int(value)]);
             else if(key==MenuDistance)std::snprintf(label,sizeof label,"%s",MenuDistanceNames[int(value)]);
             else if(key==TooltipTiming)std::snprintf(label,sizeof label,"%s",TooltipTimingNames[int(value)]);
+            else if(key==TargetHighlight){if(value==0)std::snprintf(label,sizeof label,"Off");else std::snprintf(label,sizeof label,"%.0f%%",value);}
+            else if(key==TargetOutlineColour)std::snprintf(label,sizeof label,"%s",value>.5f?"By range":"Static");
+            else if(key==TargetOutlineHue)std::snprintf(label,sizeof label,"%s %.0f\xc2\xb0",HueName(value),value);
             else if(key==Dominant)std::snprintf(label,sizeof label,"%s",value>.5f?"Left":"Right");
+            else if(key==MeleeRules)std::snprintf(label,sizeof label,"%s",MeleeRulesNames[value>.5f?1:0]);
+            else if(key==OfflinePlayers){if(value==0)std::snprintf(label,sizeof label,"Game default");else std::snprintf(label,sizeof label,"Players %.0f",value);}
+            else if(key==StrainDark)std::snprintf(label,sizeof label,"%s",StrainColorNames[std::clamp(int(std::lround(value)),0,2)]);
+            else if(key==StrainSpeed)std::snprintf(label,sizeof label,"%s",StrainSpeedNames[int(value)]);
+            else if(key==HeartbeatStart){if(value==0)std::snprintf(label,sizeof label,"Off");else std::snprintf(label,sizeof label,"%.0f%% life",value);}
             else if(d.max==1)std::snprintf(label,sizeof label,"%s",value>.5f?"On":"Off");
             else if(key==Snap)std::snprintf(label,sizeof label,"%.0f deg",value);
+            else if(key==VitalsTilt)std::snprintf(label,sizeof label,"%+.6g deg",value);
             else if(key==TurnSpeed)std::snprintf(label,sizeof label,"%.0f deg/s",value);
-            else if(key==MeleeHitSpeed)std::snprintf(label,sizeof label,"%.2f m/s",value);
+            else if(key==MeleeHitSpeed||key==MeleeThrustSpeed||key==ShieldBashSpeed)std::snprintf(label,sizeof label,"%.2f m/s",value);
+            else if(HapticKey(key)){if(value==0)std::snprintf(label,sizeof label,"Off (0%%)");else std::snprintf(label,sizeof label,"%.0f%%",value);}
+            else if(key==LootLabelSize)std::snprintf(label,sizeof label,"%g%%",value);
             else if(key==Waist||key==BeltForward)std::snprintf(label,sizeof label,"%.1f cm",value*100);
             else std::snprintf(label,sizeof label,"%.0f",value);
-            const bool enabled=m.ready&&!m.Busy();
+            const bool enabled=m.ready&&!m.Busy()&&applies;
             button(Decrease(row),"-",{Kind::Change,key,-1},false,enabled);
             button(Increase(row),"+",{Kind::Change,key,1},false,enabled);
-            button(ValueBox(row),label,{d.max==1?Kind::Change:Kind::None,key,1},false,enabled);
-        }
-        if(m.page==Page::Video){
-            text("Applying resolution changes rebuilds the VR view. Desktop restores the game's window size.",{40,716,1200,65},false,false,quiet);
-            text("Headset uses the runtime recommendation, capped at 4096 per side. DLSS: game Options.",{40,795,1200,65},false,false,quiet);
+            button(ValueBox(row),label,{d.max==1||key==StrainDark?Kind::Change:Kind::None,key,1},false,enabled);
         }
         if(m.page==Page::HUD){
-            text("Palm: raise your left hand, turn the palm upward and hold briefly. Release trigger and grip.",{58,575,1160,76},false,false,quiet);
-            text("Minimap & Compass move together. Choose Off to hide both; the wheel map stays available.",{58,670,1160,76},false,false,quiet);
-            text("Menu distance: Close matches the previous build; Medium adds 30 cm; Far adds 60 cm.",{58,765,1160,76},false,false,quiet);
+            text("Palm: raise left hand palm up; release grip/trigger. Status follows the minimap.",{58,854,1160,22},false,false,quiet);
+        }
+        if(m.page==Page::Performance){
+            // The last second's frames, whether the CPU's part fits the
+            // headset's frame, the game's own options, a restart to come.
+            const COLORREF teal=RGB(116,220,219),warn=RGB(236,186,96);
+            const auto line=PerformanceLine(performance),verdict=PerformanceVerdict(performance);
+            text(line.c_str(),{58,PerformanceBox.y+2,1170,30},false,false,performance.valid?teal:quiet);
+            if(!verdict.empty())text(verdict.c_str(),{58,PerformanceBox.y+33,1170,29},false,false,performance.CpuMs()>performance.budgetMs?warn:quiet);
+            const auto gameLine=GameVideoLine(game);
+            text(gameLine.empty()?GameVideoUnsaved:gameLine.c_str(),{58,GameVideoBox.y+2,1170,29},false,false,quiet);
+            if(depthRestart)text(DepthRestartNote,{58,DepthRestartBox.y+2,1170,29},false,false,warn);
         }
         if(m.page==Page::Combat){
-            text("Default: 12.00 m/s. Higher requires faster swings. Adjust in 0.25 steps with no upper limit.",{58,400,1160,76},false,false,quiet);
-            text("A deliberate stroke must also travel at least 18 cm. Slow follow-through cannot deal damage.",{58,500,1160,76},false,false,quiet);
-            text("Apply saves the setting and updates melee immediately. Shield bash and button attacks keep their existing behavior.",{58,600,1160,100},false,false,quiet);
-            text("Elemental effects follow each hand's trigger skill and switch while using a spell shortcut.",{58,730,1160,76},false,false,quiet);
+            text("Defaults: swings 12 m/s with 18 cm travel; thrusts and shield bashes 2 m/s with 12 cm travel. Wrist twisting alone cannot bash. Hover each setting for details.",{58,744,1160,56},false,false,quiet);
+            // The eighth row ends at 738; without the offline adapter its notice replaces the difficulty note.
+            if(m.offlineDifficultyAvailable)
+                text("Difficulty affects new monsters only; existing monsters keep their stats. To apply it throughout the game, Save and Exit, then start a new game with the same character.",{58,806,1160,56},false,false,quiet);
+            else text("Offline scaling adapter unavailable. Game difficulty remains unchanged.",{58,806,1160,30},false,false,quiet);
+        }
+        if(m.page==Page::Haptics){
+            text("0% is Off; 100% is normal. Overall strength scales each category, up to the controller's maximum. Adjust in steps of 10%.",{58,750,1160,56},false,false,quiet);
+            text("Tests match the action's hands and use displayed settings. Apply saves; Close discards edits. Alerts also need the HUD option.",{58,810,1160,56},false,false,quiet);
         }
     }
-    const char* message=!m.ready?"Configuration unavailable; controls help still works.":m.result==Result::Saving?"Saving...":m.result==Result::Saved?"Saved. Changes take effect live.":m.result==Result::Failed?"Save failed. Your edits are still unsaved.":m.result==Result::Conflict?"Settings changed elsewhere. Current values reloaded.":m.Dirty()?"Unsaved changes. Apply saves; Close discards them.":"World remains live. Right B closes this panel.";
+    const char* message=!m.ready?"Configuration unavailable; controls help still works.":m.result==Result::Saving?"Saving...":m.result==Result::Saved?"Saved.":m.result==Result::Failed?"Save failed. Your edits are still unsaved.":m.result==Result::Conflict?"Settings changed elsewhere. Current values reloaded.":m.Dirty()?"Unsaved changes. Apply saves; Close discards them.":"World remains live. Right B closes this panel.";
     text(message,{40,876,1200,38},false,false,m.Dirty()?RGB(241,207,139):quiet);
     button(Recenter,"Reset eye height",{Kind::Recenter});
     button(Calibrate,"Calibrate body",{Kind::Calibrate},false,m.ready&&!m.Busy()&&!m.Dirty());
@@ -149,8 +216,26 @@ std::vector<uint8_t> Paint(const Model& m,Hit hover,const char* runtimeStatus,co
             button(ControllerOption(i),controllers::Choices[i],{Kind::ControllerChoice,i},int(m.Get()[ControllerLabels])==i);
     }
     }
-    GdiFlush();std::vector<uint8_t> rgba(Width*Height*4);const auto* p=static_cast<uint8_t*>(bits);
-    for(int i=0;i<Width*Height;++i){rgba[4*i]=p[4*i+2];rgba[4*i+1]=p[4*i+1];rgba[4*i+2]=p[4*i];rgba[4*i+3]=255;}
+    if(showHelp){
+        fill(HelpCard,RGB(22,36,44));
+        fill({HelpCard.x,HelpCard.y,4,HelpCard.h},RGB(116,220,219));
+        text(HelpTitle(help),{HelpCard.x+24,HelpCard.y+24,HelpCard.w-48,92},true);
+        const int left=HelpCard.x+24,width=HelpCard.w-48,bottom=HelpCard.y+HelpCard.h-24;
+        int y=HelpCard.y+128;
+        text(HelpText(help),{left,y,width,bottom-y});
+        if(const auto choice=HelpChoice(help,help<Count?m.Get()[help]:NAN);choice.name) {
+            y+=HelpTextHeight(dc,normal,HelpText(help),width)+HelpChoiceGap;
+            text(choice.name,{left,y,width,HelpChoiceNameHeight},true,false,RGB(116,220,219));
+            y+=HelpChoiceNameHeight;
+            text(choice.text,{left,y,width,bottom-y});
+        }
+    }
+    GdiFlush();std::vector<uint8_t> rgba(AtlasWidth*Height*4);const auto* p=static_cast<uint8_t*>(bits);
+    for(int y=0;y<Height;++y)for(int x=0;x<AtlasWidth;++x){
+        const int i=y*AtlasWidth+x;
+        if(x>=Width&&!(showHelp&&HelpCard.Contains(float(x),float(y))))continue;
+        rgba[4*i]=p[4*i+2];rgba[4*i+1]=p[4*i+1];rgba[4*i+2]=p[4*i];rgba[4*i+3]=255;
+    }
     SelectObject(dc,oldFont);DeleteObject(normal);DeleteObject(bold);SelectObject(dc,old);DeleteObject(bitmap);DeleteDC(dc);return rgba;
 }
 }

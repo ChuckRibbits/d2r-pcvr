@@ -14,10 +14,146 @@ struct Sim {
         in.hand[0].p={.25f,1.3f,-.4f};in.hand[1].p={-.25f,1.3f,-.4f};
         in.snapshot.session=10;in.snapshot.equipmentKnown=in.snapshot.beltKnown=true;in.snapshot.activeSet=1;
         auto& b=in.snapshot.belt[0];b.known=true;b.count=2;b.revision=4;b.items[0]={42,1,Code('h','p','1')};b.items[1]={43,2,Code('m','p','1')};
+        in.stage.known=true; // identity room-to-world frame
         Step(3);}
     Output Step(int count=1){while(count--){in.time+=.02;in.at=1000000+uint64_t(in.time*1000);in.snapshot.at=in.at;out=e.Step(in);}return out;}
 };
 int main(){
+    // Integration: the quick-use inventory has no skill-category strip.
+    for(int i=0;i<8;++i){
+        const float x=.05f+(i%2)*.46f,y=.23f+(i/2)*.145f;
+        Check(WheelCell(x+.22f,y+.065f,-1,MenuPage::EditItems)==i,"quick-use item rows keep their painted hit regions");
+    }
+    Check(WheelCell(.1f,.21f,-1,MenuPage::EditItems)==-1,"no invisible category buttons in the item picker");
+    auto quick=[](Sim& s) {
+        s.in.wheel=true;s.in.wheelHand=1;s.in.hover=QuickUseCell;
+        s.in.snapshot.quick.known=true;s.in.snapshot.quick.assigned=Code('t','b','k');
+        s.in.snapshot.quick.count=1;
+        s.in.snapshot.quick.items[0]={{91,4,Code('t','b','k')},7,"Tome of Town Portal"};s.Step(3);
+    };
+    {
+        Sim s;quick(s);s.in.trigger=1;s.Step();
+        Check(s.out.request.action==Action::None,"quick use never consumes on initial press");
+        s.Step(5);s.in.trigger=0;s.Step();
+        Check(s.out.request.action==Action::UseItem&&s.out.request.item.handle==91&&!s.out.wheel,"short click dispatches exact carried item once on release");
+        Check(s.Step(3).request.action==Action::None,"released quick use does not repeat");
+    }
+    {
+        Sim s;quick(s);s.in.trigger=1;s.Step(35);
+        Check(s.out.editor==3&&Page(s.out)==MenuPage::EditItems&&s.e.Page()==MenuPage::EditItems,"hold opens item picker");
+        Check(s.out.request.action==Action::None&&s.out.itemOptions[0].quantity==7,"hold exposes actual inventory without use");
+        s.in.trigger=0;s.Step();Check(s.out.request.action==Action::None,"release after hold cannot consume");
+        s.in.hover=0;s.in.trigger=1;s.Step();
+        Check(s.out.request.action==Action::BindItem&&s.out.request.revision==Code('t','b','k'),"picker saves assignment with prior-value guard");
+        s.in.reply={s.out.request.sequence,s.in.session,Result::Applied};s.in.trigger=0;s.Step();
+        Check(s.out.editor==0,"confirmed assignment returns to wheel");
+    }
+    for(int change=0;change<7;++change) {
+        Sim s;quick(s);s.in.trigger=1;s.Step();
+        if(change==0)s.in.hover=-1;
+        if(change==1)s.in.snapshot.quick.known=false;
+        if(change==2)s.in.snapshot.quick.items[0].item.handle++;
+        if(change==3)s.in.snapshot.quick.items[0].quantity=0;
+        if(change==4)s.in.tracked[0]=false;
+        if(change==5)s.in.session++;
+        if(change==6)s.in.wheelHand=0;
+        s.in.trigger=0;s.Step();Check(s.out.request.action==Action::None,"lost pointer/tracking/session or changed/empty item cancels use");
+    }
+    {
+        Sim s;quick(s);s.in.snapshot.quick.assigned=0;s.in.trigger=1;s.Step();s.in.trigger=0;s.Step();
+        Check(s.out.editor==3&&s.out.request.action==Action::None,"empty slot short click opens assignment");
+        s.Step();s.in.hover=8;s.in.trigger=1;s.Step();Check(s.out.request.action==Action::BindItem&&!s.out.request.index&&!s.out.request.item.handle,"clear slot uses explicit empty assignment");
+    }
+    {
+        Sim s;quick(s);s.in.hover=RunWalkCell;s.in.trigger=1;s.Step();
+        Check(s.out.request.action==Action::RunWalk&&!s.out.wheel,"run/walk dispatches native toggle");
+        Check(s.Step(40).request.action==Action::None,"holding run/walk never toggles repeatedly");
+        auto c=Context(s.in.snapshot,s.out,true);s.in.snapshot.quick.items[0].quantity--;
+        Check(c!=Context(s.in.snapshot,s.out,true),"count changes invalidate paint and old click eligibility");
+        for(auto page:{MenuPage::Spells,MenuPage::Equipment}) {
+            Check(WheelCell(.1f,.1f,-1,page,1)==QuickUseCell,"quick slot shares hit and paint bounds");
+            Check(WheelCell(.85f,.07f,-1,page,1)==RunWalkCell,"run/walk shares hit and paint bounds");
+        }
+        for(auto page:{MenuPage::Map,MenuPage::Developer,MenuPage::EditSlots,MenuPage::EditSkills,MenuPage::EditItems})
+            Check(WheelCell(.1f,.1f,-1,page,1)!=QuickUseCell,"hidden quick control never intercepts another page");
+    }
+
+    {
+        Sim s;s.in.wheel=true;s.Step(3);s.in.hover=13;s.in.trigger=1;s.Step();
+        Check(!s.out.developer&&s.out.request.action==Action::None,"retail snapshot cannot open developer page");
+        s.in.snapshot.developer=true;s.in.snapshot.devClass=3;
+        s.in.trigger=0;s.Step();s.in.trigger=1;s.Step();
+        Check(s.out.developer&&s.e.Page()==MenuPage::Developer,"developer footer opens page");
+        Check(!MapWanted(s.in,s.out,s.in.at),"developer page does not capture map");
+        s.in.hover=DeveloperCell(framevr::dev::Level10Choice);s.in.trigger=0;s.Step();s.in.trigger=1;s.Step();
+        const auto r=s.out.request;
+        Check(r.action==Action::Developer&&r.index==framevr::dev::Level10Choice&&s.out.select==-2,"destination requests native dev action, never casts");
+        Check(s.Step(5).request.action==Action::None,"held trigger cannot repeat destination");
+        s.in.reply={r.sequence,r.session,Result::Dispatched};s.in.trigger=0;s.Step();
+        Check(s.out.result==Result::Dispatched,"dispatch remains distinct from applied");
+        s.in.snapshot.devClass=-1;s.in.trigger=1;s.Step();
+        Check(s.out.request.action==Action::None,"unknown/classic class cannot request mutations");
+        s.in.trigger=0;s.Step();s.in.hover=9;s.in.trigger=1;s.Step();
+        Check(!s.out.developer&&!s.out.utility&&!s.out.map,"spells footer leaves dev page");
+        s.in.trigger=0;s.Step();s.in.hover=13;s.in.trigger=1;s.Step();
+        s.in.wheel=false;s.Step();Check(!s.out.developer,"closing wheel resets developer page");
+        const auto tab=FooterBounds(4,MenuPage::Spells,true);
+        Check(WheelCell((tab.left+tab.right)/2,.93f,-1,MenuPage::Spells,0,true)==13,"developer footer hit matches paint bounds");
+        Check(WheelCell(.5f,.45f,-1,MenuPage::Developer,0,true)==-1,"no hidden center spell behind developer page");
+        Check(WheelCell(.25f,.27f,-1,MenuPage::Developer,0,true)==DeveloperCell(framevr::dev::Level10Choice),"developer rows share painter hit boxes");
+        Check(WheelCell(.25f,.27f,-1,MenuPage::Developer,0,false)==-1,"disabled developer page has no actions");
+        for(int i=0;i<int(framevr::dev::Choices.size());++i) {
+            const auto b=DeveloperBounds(i);
+            Check(WheelCell((b.left+b.right)/2,(b.top+b.bottom)/2,-1,MenuPage::Developer,0,true,framevr::dev::PageFor(i))==DeveloperCell(i),"every dev button has its own click target on its page");
+            Check(b.bottom*768<628,"dev buttons do not overlap status text or footer");
+        }
+        Output o;o.developer=true;auto a=Context(s.in.snapshot,o,true);o.developer=false;
+        Check(a!=Context(s.in.snapshot,o,true),"dev page switch invalidates painted atlas");
+        o.developer=true;a=Context(s.in.snapshot,o,true);s.in.snapshot.devClass=0;
+        Check(a!=Context(s.in.snapshot,o,true),"changing class invalidates gear names in the painted atlas");
+        a=Context(s.in.snapshot,o,true);o.devPage=1;
+        Check(a!=Context(s.in.snapshot,o,true),"scenic page invalidates the previous page's paint and click eligibility");
+    }
+    for(int choice=0;choice<int(framevr::dev::Choices.size());++choice) {
+        Sim s;s.in.snapshot.developer=true;s.in.snapshot.devClass=3;s.in.wheel=true;s.Step(3);
+        s.in.hover=13;s.in.trigger=1;s.Step();s.in.trigger=0;s.Step();
+        const int page=framevr::dev::PageFor(choice);
+        const auto tab=DeveloperPageBounds(page);
+        s.in.hover=WheelCell((tab.left+tab.right)/2,(tab.top+tab.bottom)/2,-1,MenuPage::Developer,0,true,s.out.devPage);
+        s.in.trigger=1;s.Step();
+        Check(s.out.devPage==page&&s.out.request.action==Action::None,"developer page tab changes pages without teleporting or granting gear");
+        Check(s.Step(5).request.action==Action::None,"holding a page tab cannot dispatch a command");
+        s.in.trigger=0;s.Step();
+        const auto b=DeveloperBounds(choice);
+        s.in.hover=WheelCell((b.left+b.right)/2,(b.top+b.bottom)/2,-1,MenuPage::Developer,0,true,s.out.devPage);
+        s.in.trigger=1;s.Step();
+        Check(s.out.request.action==Action::Developer&&s.out.request.index==choice&&s.out.select==-2,"dev button requests its action without a spell or footer action");
+        Check(s.Step(5).request.action==Action::None,"held dev button cannot repeat gear or travel");
+    }
+    {
+        Sim s;s.in.snapshot.developer=true;s.in.snapshot.devClass=3;s.in.wheel=true;s.Step(3);
+        s.in.hover=13;s.in.trigger=1;s.Step();s.in.trigger=0;s.Step();
+        s.in.hover=DeveloperPageCell(1);s.in.trigger=1;s.Step();s.in.trigger=0;s.Step();
+        s.in.hover=DeveloperCell(0);s.in.trigger=1;s.Step();
+        Check(s.out.request.action==Action::None,"a stale choice from the previous page cannot grant gear or travel");
+        Check(WheelCell(.25f,.82f,-1,MenuPage::Developer,0,true,1)==-1,"space below scenic rows has no hidden action");
+        s.in.wheel=false;s.in.trigger=0;s.Step();s.in.wheel=true;s.Step();s.in.hover=13;s.in.trigger=1;s.Step();
+        Check(s.out.developer&&s.out.devPage==0,"reopening DEV starts on gear and test controls");
+    }
+    for(int footer=0;footer<5;++footer) {
+        Sim s;s.in.snapshot.developer=true;s.in.snapshot.devClass=3;s.in.wheel=true;s.Step(3);
+        s.in.hover=13;s.in.trigger=1;s.Step();s.in.trigger=0;s.Step();
+        const auto b=FooterBounds(footer,MenuPage::Developer,true);
+        s.in.hover=WheelCell((b.left+b.right)/2,(b.top+b.bottom)/2,-1,MenuPage::Developer,0,true);
+        s.in.trigger=1;s.Step();
+        Check(s.out.request.action==Action::None,"developer footer cannot trigger travel when destinations exceed nine");
+    }
+    for(int cls=0;cls<8;++cls) {
+        Sim s;s.in.snapshot.developer=true;s.in.snapshot.devClass=cls;s.in.wheel=true;s.Step(3);
+        s.in.hover=13;s.in.trigger=1;s.Step();s.in.trigger=0;s.Step();
+        s.in.hover=DeveloperCell(0);s.in.trigger=1;s.Step();
+        Check(s.out.request.action==Action::Developer&&s.out.request.index==0,"each expansion class can request preparation");
+    }
     for(int hand:{0,1})for(float yaw:{0.f,1.2f}) {
         Sim s;s.in.head.q=math::Yaw(yaw);s.Step();
         s.in.hand[hand].p=s.out.belt[0].p;s.in.grip[hand]=1;
@@ -156,8 +292,8 @@ int main(){
         Check(click(11).editor==1&&s.out.select==-2,"editor does not select a combat slot");
         Check(click(2).editor==2&&s.out.editSlot==2&&s.out.editCount==8,"unassigned slot opens available skills");
         Check(click(10).editPage==1&&s.out.editCount==2,"skill pagination bounded by actual skills");
-        Check(WheelCell(.1f,.25f,-1,MenuPage::EditSkills)==0&&WheelCell(.8f,.15f,-1,MenuPage::EditSkills)==8,"skill rows and clear button hit regions");
-        Check(WheelCell(.5f,.25f,-1,MenuPage::EditSkills)==-1,"skill column gap cannot assign");
+        Check(WheelCell(.1f,.34f,-1,MenuPage::EditSkills)==0&&WheelCell(.8f,.15f,-1,MenuPage::EditSkills)==8,"skill rows and clear button hit regions");
+        Check(WheelCell(.5f,.34f,-1,MenuPage::EditSkills)==-1,"skill column gap cannot assign");
         // Choices stay fixed while this page is displayed. Native validation
         // checks the chosen identity, never a list index that can be reordered.
         s.in.snapshot.catalog[0].id=200;
@@ -287,6 +423,22 @@ int main(){
             const auto palm=PalmPanel(hand,head);
             Check(Valid(palm)&&std::fabs(math::Dot(math::Rotate(palm.q,{0,0,1}),PalmNormal(hand))-1)<1e-5f,
                 "palm surface remains valid through head/wrist rotations");
+            for(bool palmFace:{false,true})for(float tilt:{-60.f,-30.f,0.f,30.f,60.f}) {
+                const auto base=palmFace?palm:p;
+                const auto panel=VitalsPanel(hand,head,palmFace,tilt);
+                const auto offset=panel.p-base.p;
+                const auto right=math::Rotate(panel.q,{1,0,0});
+                const auto top=math::Rotate(math::Conjugate(base.q),math::Rotate(panel.q,{0,1,0}));
+                Check(Valid(panel)&&math::Dot(offset,offset)<1e-10f&&
+                    math::Dot(right,math::Rotate(base.q,{1,0,0}))>.99999f,"vitals tilt pivots around the panel center and horizontal axis");
+                Check(std::fabs(top.x)<1e-5f&&std::fabs(top.y-std::cos(tilt*Pi/180))<1e-5f&&
+                    std::fabs(top.z-std::sin(tilt*Pi/180))<1e-5f,"positive tilt brings the top toward the viewer on both wrist and palm");
+            }
+            for(float invalid:{NAN,INFINITY}) {
+                const auto safe=VitalsPanel(hand,head,false,invalid);
+                Check(Valid(safe)&&math::Dot(math::Rotate(safe.q,{0,0,1}),WristNormal(hand))>.99999f,
+                    "invalid tilt retains the original hand face");
+            }
             for(bool palmFace:{false,true})for(bool withVitals:{false,true}) {
                 const auto base=palmFace?palm:p;
                 const auto map=NavigationMapPanel(hand,head,palmFace,withVitals);
@@ -299,6 +451,11 @@ int main(){
                 Check(Valid(compass)&&std::fabs(delta.x)<1e-5f&&std::fabs(delta.z)<1e-5f&&
                     std::fabs(delta.y-(WristMapSize+WristCompassHeight)*.5f-.01f)<1e-5f,
                     "compass and map remain a single coplanar unit with a one-centimeter gap");
+                const auto info=NavigationInfoPanel(hand,head,palmFace,withVitals);
+                const auto infoDelta=math::Rotate(math::Conjugate(compass.q),info.p-compass.p);
+                Check(Valid(info)&&std::fabs(infoDelta.x)<1e-5f&&std::fabs(infoDelta.z)<1e-5f&&
+                    std::fabs(infoDelta.y-(WristCompassHeight+NavigationInfoHeight)*.5f-.006f)<1e-5f,
+                    "area and act sit above the compass on the same wrist or palm face, clear of map and vitals");
             }
         }
     }
@@ -530,6 +687,173 @@ int main(){
         Check(s.Step().cancelPending&&s.out.bottle<0,"non-finite pose discards a held bottle and pending native work");
         s.in.hand[0].p={0,1.6f,-.08f};s.in.hand[0].q={0,0,1,0};
         for(int i=0;i<30;++i)Check(s.Step().request.action==Action::None,"tracking recovery with grip held cannot drink");
+    }
+    {
+        // Thrown bottle: grab, swing away from the belt, release mid-swing.
+        auto toss=[](Sim& s,Vec velocity,int frames=5) {
+            s.in.floorKnown=true;s.in.floor=0;
+            s.in.hand[0].p=s.out.belt[0].p;s.in.grip[0]=1;s.Step();
+            for(int i=0;i<frames;++i){s.in.hand[0].p=s.in.hand[0].p+velocity*.02f;s.Step();}
+            s.in.grip[0]=0;return s.Step();
+        };
+        auto land=[](Sim& s,int& requests,Request& request) {
+            // Up to the 2 s flight cap, then a few frames to prove there is no
+            // repeat, well inside the engine's 1.5 s reply window.
+            for(int i=0,after=-1;i<110&&after<10;++i){auto o=s.Step();if(o.request.action==Action::FeedMerc){++requests;request=o.request;}if(requests)++after;}
+        };
+        {
+            Sim s;const auto belt=s.out.belt[0].p;const auto o=toss(s,{0,1.f,-3.f});
+            Check(o.flying&&o.bottle<0&&o.flightItem.handle==42&&o.flightColumn==0&&o.request.action==Action::None,
+                "a fast release launches the exact bottle without a native request");
+            const auto scene=framevr::potions::MakeScene(s.in,o);
+            Check(scene.count==1&&scene.items[0].code==Code('h','p','1')&&scene.items[0].pose.p.y>1.f,
+                "the flying bottle replaces its belt column instead of duplicating it");
+            int requests=0;Request request;land(s,requests,request);
+            Check(requests==1&&request.item.handle==42&&request.index==0&&request.revision==4,
+                "landing requests the hireling feed once for the exact thrown item");
+            Check(std::fabs(request.point.y)<1e-3f&&request.point.z<belt.z-1.f,"landing point lies on the floor ahead");
+            Check(!s.out.flying&&s.in.snapshot.belt[0].count==2,"landing never edits the belt locally");
+            s.in.reply={request.sequence,s.in.session,Result::Refused};
+            Check(s.Step().feedback==3&&s.out.feedbackHand==0,"a miss or refusal is felt by the throwing hand");
+            Check(framevr::potions::MakeScene(s.in,s.out).count==1,"refused bottle reappears on the belt");
+            s.in.hand[0].p=s.out.belt[0].p;s.in.grip[0]=1;
+            Check(s.Step().bottle==0,"the belt can be used again after a miss");
+        }
+        {
+            Sim s;toss(s,{0,1.f,-3.f});int requests=0;Request request;land(s,requests,request);
+            s.in.reply={request.sequence,s.in.session,Result::Applied};
+            Check(s.Step().feedback==2,"confirmed hireling feed is a success pulse");
+        }
+        {
+            Sim s;const auto o=toss(s,{0,.2f,-.6f},20);int requests=0;Request request;land(s,requests,request);
+            Check(!o.flying&&requests==0,"a slow release still returns the bottle to the belt");
+        }
+        for(const auto code:{Code('m','p','1'),Code('v','p','s')}) {
+            Sim s;s.in.snapshot.belt[0].items[0].code=code;
+            const auto o=toss(s,{0,1.f,-3.f});int requests=0;Request request;land(s,requests,request);
+            Check(!o.flying&&requests==0,"mana and stamina bottles are not thrown");
+        }
+        for(const auto code:{Code('r','v','l'),Code('y','p','s'),Code('w','m','s')}) {
+            Sim s;s.in.snapshot.belt[0].items[0].code=code;
+            const auto o=toss(s,{0,1.f,-3.f});int requests=0;Request request;land(s,requests,request);
+            Check(o.flying&&requests==1&&request.item.code==code,"rejuvenation, antidote and thawing bottles can be thrown");
+        }
+        {
+            Sim s;s.in.hand[0].p=s.out.belt[0].p;s.in.grip[0]=1;s.Step();
+            for(int i=0;i<5;++i){s.in.hand[0].p=s.in.hand[0].p+Vec{0,1.f,-3.f}*.02f;s.Step();}
+            s.in.grip[0]=0;Check(!s.Step().flying,"no throw without a known world floor");
+        }
+        {
+            // A fast flick that ends back at the belt is a re-holster, not a throw.
+            Sim s;s.in.floorKnown=true;s.in.floor=0;
+            s.in.hand[0].p=s.out.belt[0].p;s.in.grip[0]=1;s.Step();
+            s.in.hand[0].p=s.in.hand[0].p+Vec{0,0,-.1f};s.Step();
+            s.in.hand[0].p=s.in.hand[0].p+Vec{0,0,.06f};s.Step();
+            s.in.grip[0]=0;Check(!s.Step().flying,"a release beside its belt slot is never a throw");
+        }
+        {
+            Sim s;toss(s,{0,1.f,-3.f});s.Step(5);
+            auto& b=s.in.snapshot.belt[0];b.items[0]=b.items[1];b.items[1]={};b.count=1;++b.revision;
+            int requests=0;Request request;land(s,requests,request);
+            Check(requests==0,"a bottle used elsewhere mid-flight cannot be fed on landing");
+        }
+        {
+            Sim s;toss(s,{0,1.f,-3.f});s.Step(5);s.in.cancel=true;
+            const auto o=s.Step();s.in.cancel=false;
+            int requests=0;Request request;land(s,requests,request);
+            Check(!o.flying&&requests==0,"cancel discards a bottle in flight");
+        }
+        {
+            Sim s;toss(s,{0,1.f,-3.f});s.in.hand[1].p=s.out.belt[0].p;s.in.grip[1]=1;
+            Check(s.Step().bottle<0,"the belt cannot be grabbed while a bottle is in the air");
+        }
+        // Launch speed follows the real hand: horizontal flight speed measured
+        // from two flying frames (gravity only changes the vertical part).
+        auto launched=[](Sim& s){
+            const auto a=s.out.flight.p;s.Step();const auto b=s.out.flight.p;
+            return std::hypot(b.x-a.x,b.z-a.z)/.02f;
+        };
+        {
+            // A hard throw that slows before the grip opens keeps its peak.
+            Sim s;s.in.floorKnown=true;s.in.floor=0;
+            s.in.hand[0].p=s.out.belt[0].p;s.in.grip[0]=1;s.Step();
+            for(int i=0;i<4;++i){s.in.hand[0].p=s.in.hand[0].p+Vec{0,0,-6.f}*.02f;s.Step();}
+            for(int i=0;i<2;++i){s.in.hand[0].p=s.in.hand[0].p+Vec{0,0,-1.f}*.02f;s.Step();}
+            s.in.grip[0]=0;Check(s.Step().flying,"decelerating release still throws");
+            Check(std::fabs(launched(s)-6.f)<.05f,"launch uses the peak hand speed, not the slowing last frame");
+        }
+        {
+            Sim s;s.in.floorKnown=true;s.in.floor=0;
+            s.in.hand[0].p=s.out.belt[0].p;s.in.grip[0]=1;s.Step();
+            for(int i=0;i<3;++i){s.in.hand[0].p=s.in.hand[0].p+Vec{0,.4f,-16.f}*.02f;s.Step();}
+            s.in.grip[0]=0;Check(s.Step().flying,"a very hard throw is not discarded");
+            Check(std::fabs(launched(s)-16.f)<.1f,"hand speeds above the old 12 m/s limit are kept 1:1");
+        }
+        {
+            Sim s;s.in.floorKnown=true;s.in.floor=0;
+            s.in.hand[0].p=s.out.belt[0].p;s.in.grip[0]=1;s.Step();
+            for(int i=0;i<3;++i){s.in.hand[0].p=s.in.hand[0].p+Vec{0,0,-24.f}*.02f;s.Step();}
+            s.in.grip[0]=0;s.Step();
+            Check(std::fabs(launched(s)-ThrowMaxSpeed)<.1f,"implausible hand speed is capped, keeping its direction");
+        }
+        {
+            // Once released, the bottle is in the world: walking or turning
+            // moves the room under it, never the bottle's world path.
+            auto landing=[&](bool walk,bool turn){
+                Sim s;toss(s,{0,1.f,-3.f});
+                const auto before=s.out.flight.p;
+                if(walk)s.in.stage.anchor=s.in.stage.anchor+Vec{1.5f,0,-2.f};
+                if(turn)s.in.stage.base=math::Yaw(.8f);
+                s.Step();
+                int requests=0;Request request;land(s,requests,request);
+                Check(requests==1,"moving player still lands one request");
+                return std::pair{before,request};
+            };
+            const auto still=landing(false,false),walked=landing(true,false),turned=landing(true,true);
+            for(const auto* moved:{&walked,&turned})
+                Check(std::hypot(moved->second.world.x-still.second.world.x,moved->second.world.z-still.second.world.z)<1e-4f&&
+                      std::fabs(moved->second.world.y-still.second.world.y)<1e-4f,"walking or turning after release never moves the world landing point");
+            Check(std::fabs(walked.second.point.x-(still.second.point.x-1.5f))<1e-3f&&std::fabs(walked.second.point.z-(still.second.point.z+2.f))<1e-3f,
+                "the drawn bottle stays put in the world while the player walks away from it");
+            // Releasing while already turned: room velocity is turned into the world.
+            Sim s;s.in.stage.base=math::Yaw(1.5707963f);toss(s,{0,1.f,-3.f});
+            int requests=0;Request request;land(s,requests,request);
+            const auto expected=math::Rotate(math::Yaw(1.5707963f),still.second.world);
+            Check(requests==1&&std::hypot(request.world.x-expected.x,request.world.z-expected.z)<1e-3f,
+                "room throw direction is mapped by the frame at release");
+        }
+        {
+            Sim s;s.in.stage.known=false;s.in.floorKnown=true;
+            s.in.hand[0].p=s.out.belt[0].p;s.in.grip[0]=1;s.Step();
+            for(int i=0;i<5;++i){s.in.hand[0].p=s.in.hand[0].p+Vec{0,1.f,-3.f}*.02f;s.Step();}
+            s.in.grip[0]=0;Check(!s.Step().flying,"no throw without the room-to-world frame");
+        }
+        {
+            // The runtime's reported controller velocity wins over pose noise.
+            Sim s;s.in.floorKnown=true;s.in.floor=0;
+            s.in.hand[0].p=s.out.belt[0].p;s.in.grip[0]=1;s.Step();
+            s.in.velocityKnown[0]=true;s.in.handVelocity[0]={0,1.f,-8.f};
+            for(int i=0;i<5;++i){s.in.hand[0].p=s.in.hand[0].p+Vec{0,0,-3.f}*.02f;s.Step();} // clear of the belt
+            s.in.grip[0]=0;Check(s.Step().flying,"runtime-velocity throw launches");
+            Check(std::fabs(launched(s)-8.f)<.05f,"runtime controller velocity drives the launch");
+            Sim t;t.in.floorKnown=true;t.in.floor=0;
+            t.in.hand[0].p=t.out.belt[0].p;t.in.grip[0]=1;t.Step();
+            t.in.velocityKnown[0]=true;t.in.handVelocity[0]={0,0,-40.f};
+            for(int i=0;i<5;++i){t.in.hand[0].p=t.in.hand[0].p+Vec{0,0,-.06f};t.Step();} // clear of the belt
+            t.in.grip[0]=0;Check(!t.Step().flying,"a tracking glitch alone never launches a bottle");
+        }
+    }
+    {
+        // Merc low-life cue: only a known, living merc below 50% life.
+        Mercenary m;m.known=true;m.maxHealth=400;
+        m.health=199;Check(MercLow(m),"49.75% life is low");
+        m.health=200;Check(!MercLow(m),"50% life is not low");
+        m.health=0;Check(!MercLow(m),"a dead merc is not low");
+        m.health=50;m.known=false;Check(!MercLow(m),"no cue without a sampled merc");
+        // World points round-trip through the stage frame.
+        Stage st{true,{.3f,1.6f,-.2f},{12.f,1.7f,-40.f},math::Yaw(2.1f)};
+        const Vec world{15.f,.4f,-37.f};const auto back=st.World(st.Room(world));
+        Check(std::fabs(back.x-world.x)<1e-4f&&std::fabs(back.y-world.y)<1e-4f&&std::fabs(back.z-world.z)<1e-4f,"stage room/world mapping is invertible");
     }
     std::puts("Interaction ownership, wheel, holster, item identity and confirmation tests passed");
 }

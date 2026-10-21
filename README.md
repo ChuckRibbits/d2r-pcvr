@@ -1,4 +1,7 @@
-# D2R PCVR
+# D2R VR Unleashed
+
+Previously released as **D2R PCVR**; the repository and download filenames keep
+that identifier.
 
 Play **Diablo II: Resurrected in VR on Windows**, with support for
 **SteamVR and Virtual Desktop (VDXR)**. Use motion controls to swing your
@@ -28,15 +31,16 @@ has not yet been confirmed.
 **No Blizzard game assets are included in this repository, installer or release ZIP.**
 The download contains the mod and licensed third-party components, not the
 game, its executable, models, textures or audio. During installation, required
-item/skill icons and potion models are read from your own installed game into
-local caches. Keep those caches local; do not include them when sharing the mod.
+item/skill icons, potion models and Arcane Sanctuary sky artwork are read from
+your own installed game into local caches. Keep those caches local; do not
+include them when sharing the mod.
 
 **[Download the Windows preview](https://github.com/bearstonem/d2r-pcvr/releases)**
 and follow **[Install and play](INSTALL-WINDOWS.md)**.
 If the release offers **D2R-PCVR-Setup-VERSION.exe**, download and run it for
 graphical setup. It keeps its helpers in
 `%LOCALAPPDATA%\Programs\D2R PCVR`, includes a private Python runtime and
-adds removal under **Windows Settings → Apps → Installed apps → D2R PCVR**.
+adds removal under **Windows Settings → Apps → Installed apps → D2R VR Unleashed**.
 Rerun Setup to update or repair while keeping calibration and video settings.
 
 For the portable option (including v0.3.7), download **d2r-pcvr-windows.zip**,
@@ -73,11 +77,15 @@ This is a PCVR mod: the game runs on your Windows PC and streams to the headset.
 ## In the game
 
 - First-person VR with your character's body, hands and equipment.
-- Optional experimental [Sorceress elemental hand effects](docs/elemental_hands.md), enabled under VR Settings > Combat.
+- Optional experimental [Sorceress elemental hand effects](docs/elemental_hands.md), enabled under VR Settings > Video.
 - Free-swing melee, including with a wheel skill selected, aimed spells, bows and physical javelin throws.
 - Belt potions you can grab and drink, plus wrist health, mana, level and experience progress.
+- A left-hand minimap/compass with current area and act, independent health/mana tilt,
+  and adjustable controller vibration under **VR Settings > Haptics**.
+- Optional summon icons and live companion counts beneath the hand minimap, adapting to your available summons.
 - A **MAP** tab at the bottom of the spell menu, showing explored areas and native markers.
-- Selected Amazon arrow skills work with bow draw/release; selected Paladin Smite works with left-shield contact.
+- Load supported arrow skills into a physical bow quiver, with the selected
+  arrow visible on the string. Selected Paladin Smite works with left-shield contact.
 - Body calibration for your height and arm span, available on first load
   and through **Left Grip + left secondary → Calibrate body**.
 - Weapon-set swapping: reach your right hand over either shoulder and press
@@ -86,7 +94,8 @@ This is a PCVR mod: the game runs on your Windows PC and streams to the headset.
   **Frame Left A / Quest Left X**.
 
 [Watch the earlier wrist HUD demo (v0.3.6, 12 seconds)](https://github.com/bearstonem/d2r-pcvr/releases/download/v0.3.6-windows-preview/d2r-pcvr-wrist-hud-demo.mp4).
-The current preview keeps vitals and XP on the wrist and moves the map into the spell menu.
+The current preview offers wrist or palm placement for vitals and navigation,
+alongside the larger map in the spell menu.
 
 ## Controller reference
 
@@ -122,6 +131,8 @@ Quest left X/Y correspond to Index left A/B; right A/B labels are the same.
 | VR settings / body calibration | Either wheel → VR SETTINGS |
 | Minimap | Either wheel → MAP; movement remains available |
 | Reset height | VR Settings > Reset eye height |
+| Adjust controller vibration | **VR Settings > Haptics**; preview each action and **Apply** to save |
+| Hold to show nearby loot labels (Alt) | Hold **Right Grip + Right Trigger**, grip first; release either to restore normal drop/hover labels |
 | Interact / pick up / talk | Right A by default; requires an aimed interactable |
 | Free melee swing / thrust | Move the equipped weapon through an enemy |
 | Bow draw | Right trigger near the left-hand bow string; draw and release |
@@ -130,6 +141,7 @@ Quest left X/Y correspond to Index left A/B; right A/B labels are the same.
 | Swap weapon sets I / II | Dominant grip over either shoulder; or wheel → EQUIPMENT |
 | Stow / draw weapons | Wheel → EQUIPMENT → Stow / Draw |
 | Grab / drink potion | Grip a belt bottle, bring its opening to the mouth and tip it; release to return unused |
+| Heal your mercenary | Toss a held Health, Rejuvenation, Antidote or Thawing bottle so it lands near its feet; a miss keeps the potion |
 | Quick potion | Wheel → EQUIPMENT → potion, using opposite laser + trigger |
 | Grab wheel potion | Wheel → EQUIPMENT → potion, using the pointing hand's grip |
 | Wrist health / mana / XP | Look at the back of the left wrist |
@@ -157,6 +169,7 @@ Bosses, champions, uniques and their minions keep their bars with either setting
 There is no left-trigger modifier layer. Each hand aims its own spells. Face
 shortcuts do not change either trigger assignment. On a Sorceress, Fire Bolt,
 Fireball, Ice Bolt, Ice Blast and Charged Bolt can fire from both hands simultaneously,
+as can Necromancer Bone Spear and Paladin Holy Bolt,
 each with independent aim and its own Faster Cast Rate timing. Hold the input to repeat. Native
 mana costs apply to each cast, and walking remains available without entering
 the original casting animation. See [hand projectile spells](docs/hand_projectile_spells.md)
@@ -322,7 +335,15 @@ own release, which runs through BodyWalk and FlatVR, visit the
 
 D2R PCVR adds native OpenXR support for SteamVR and Virtual Desktop (VDXR),
 motion combat, the physical bow and potions, VR menus, foveated rendering and
-the guided Windows installer. Licenses for all third-party components are in
+the guided Windows installer.
+
+D2R PCVR has its own plugin identity (`d2r-pcvr-vrcam`, shown as D2R PCVR by
+bearstonem in D2RLoader and in the DLL's file properties) and its own file
+names, `d2rl-pcvr.dll` and `d2r_pcvr.ini`, so its installer no longer replaces
+D2R VR's `d2rl-vrcam.dll` and `d2r_vr.ini`. Releases up to 0.3.15 used D2R VR's
+names; Update / repair carries their settings and calibration over. The two
+mods cannot run in the same game folder at the same time: setup stops and says
+so when D2R VR is installed there. Licenses for all third-party components are in
 [THIRD_PARTY.md](THIRD_PARTY.md).
 
 This project is not affiliated with or endorsed by Blizzard Entertainment.

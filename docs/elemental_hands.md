@@ -1,6 +1,6 @@
 # Sorceress elemental hand effects (prototype)
 
-Enable **VR Settings > Combat > Elemental hand effects**, then **Apply**.
+Enable **VR Settings > Video > Elemental hand effects**, then **Apply**.
 The setting defaults to Off and is saved as `[interactions] elemental_hands=1`.
 Motion combat must also be enabled.
 
@@ -27,6 +27,9 @@ This first implementation uses original procedural shaders and geometry. It
 does not load or distribute game art and adds no dependency. Animation and
 tracked hand poses are frozen once per stereo pair, then projected separately
 through each eye. Each visible hand draws 32 small quads in one draw call.
+With Stereo rendering By turns, the eye not drawn that frame gets the effects
+drawn fresh at its own pose, like the belt's potions, rather than moved with
+the scene's depth.
 
 The auras follow the controller grip poses, including while holding equipment.
 They are composited over the completed VR eye image, without the game's scene
@@ -46,8 +49,8 @@ powershell -NoProfile -ExecutionPolicy Bypass -File steamvr/build_windows.ps1 -T
 
 `elemental-hands-test` exercises independent skill selection, utility overrides,
 class/lifecycle guards, proximity fading and confirmed-cast feedback matching.
-The settings fixtures cover the toggle and INI transactions beyond bit 31; the
-settings change mask now has 64 bits, without changing existing setting indices.
+The settings fixtures cover the toggle, its own change-mask bit, conflicts and
+INI opt-in/opt-out; existing setting indices are unchanged.
 
 `elemental-hands-render-test` uses D3D12 WARP without game assets. It checks all
 three shaders, animation, pulse brightness, stereo disparity, bounded coverage,
@@ -58,7 +61,7 @@ left and right eye columns):
 
 ```powershell
 .\build-frame\windows-native\elemental-hands-render-test.exe .\build-frame\elemental-hands.ppm
-.\build-frame\windows-native\vr-settings-preview.exe .\build-frame\elemental-settings.ppm 4
+.\build-frame\windows-native\vr-settings-preview.exe .\build-frame\elemental-settings.ppm 2
 ```
 
 Headset testing is still required and has not been performed for this prototype.

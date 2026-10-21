@@ -1,6 +1,7 @@
 #include "gameplay.h"
 #include "melee_contact.h"
 #include "skill_pad.h"
+#include "body_tracking.h"
 #include "../vr/shield_pose.h"
 #include "../vr/native_skill_dispatch.h"
 #include <cassert>
@@ -124,6 +125,30 @@ int main() {
     }
     {
         using namespace skel::bow;
+        // A 60 cm authored arm used to stop a shield wrist well short of a
+        // real 85 cm reach. Check forward, lateral and raised targets against
+        // an independent two-segment solver, including calibration/model scale.
+        for(float units:{2.f,4.f,8.f})for(Vec direction:{Vec{0,0,1},Vec{1,0,0},Vec{0,1,0},Normalized(Vec{1,1,1})}) {
+            const Vec shoulder{.2f*units,1.4f*units,.1f*units};
+            const float upper=.32f*units,lower=.28f*units;
+            const Vec wanted=shoulder+direction*(.85f*units);
+            Vec oldTarget=wanted,elbow;
+            assert(body::Knee(shoulder,upper,lower,oldTarget,{0,-1,.2f},elbow));
+            assert(Length(oldTarget-wanted)>.24f*units); // reproduce the old limit
+            const float fit=skel::shield::ReachScale(shoulder,wanted,upper,lower);
+            Vec fittedTarget=wanted;
+            assert(body::Knee(shoulder,upper*fit,lower*fit,fittedTarget,{0,-1,.2f},elbow));
+            assert(Length(fittedTarget-wanted)<.0001f);
+            const Vec nearby=shoulder+direction*(.35f*units);
+            assert(skel::shield::ReachScale(shoulder,nearby,upper,lower)==1); // no permanent growth
+        }
+        assert(skel::shield::ReachScale({},{0,0,100},.3f,.3f)==2);
+        assert(skel::shield::ReachScale({},{NAN,0,0},.3f,.3f)==1);
+        assert(skel::shield::ReachScale({},{0,0,1},0,.3f)==1);
+        assert(skel::shield::ReachScale({},{0,0,1},INFINITY,.3f)==1);
+    }
+    {
+        using namespace skel::bow;
         auto bindWrist=Identity(),bindShield=Identity(),tracked=Identity(),result=Identity();
         Position(bindWrist,{2,1,0});Position(bindShield,{2,1.2f,.1f});
         bindShield.m[0]=-1; // the left attachment is allowed to be mirrored
@@ -131,6 +156,11 @@ int main() {
         assert(skel::shield::Follow(bindWrist,bindShield,tracked,result));
         assert(Length(Position(result)-(Position(tracked)+Vector(tracked,{0,.2f,.1f})))<.0001f);
         assert(Dot({result.m[0],result.m[1],result.m[2]},Cross({result.m[4],result.m[5],result.m[6]},{result.m[8],result.m[9],result.m[10]}))<0);
+        const auto original=result;
+        const Vec movement{.6f,.3f,-.7f};Position(tracked,Position(tracked)+movement);
+        assert(skel::shield::Follow(bindWrist,bindShield,tracked,result));
+        assert(Length(Position(result)-Position(original)-movement)<.0001f);
+        for(int i=0;i<12;++i)assert(std::fabs(result.m[i]-original.m[i])<.0001f); // no shield growth or rotation from reach
         bindWrist.m[0]=0;assert(!skel::shield::Follow(bindWrist,bindShield,tracked,result));
     }
     {
@@ -160,10 +190,10 @@ int main() {
         sample.player={0,0,0};sample.hand.p={0,1,0};sample.blade={{0,.8f,0},{0,1.2f,0},.15f};
         for(int i=0;i<20;++i){sample.time+=.02;assert(!e.Step(sample,sweep));}
         framevr::melee::HitSet hits;int bashes=0;
-        for(int i=0;i<25;++i){sample.time+=.02;sample.hand.p.z-=.04f;sample.blade.base.z-=.04f;sample.blade.tip.z-=.04f;
+        for(int i=0;i<25;++i){sample.time+=.02;sample.hand.p.z-=.05f;sample.blade.base.z-=.05f;sample.blade.tip.z-=.05f;
             if(e.Step(sample,sweep)&&hits.Insert(1,sweep.stroke,UINT32_MAX))++bashes;}
         assert(bashes==1); // keep observing during wind-up: no second bash from this swing
-        for(int i=0;i<10;++i){sample.time+=.02;sample.hand.p.z+=.04f;sample.blade.base.z+=.04f;sample.blade.tip.z+=.04f;
+        for(int i=0;i<10;++i){sample.time+=.02;sample.hand.p.z+=.05f;sample.blade.base.z+=.05f;sample.blade.tip.z+=.05f;
             if(e.Step(sample,sweep)&&hits.Insert(1,sweep.stroke,UINT32_MAX))++bashes;}
         assert(bashes==2);++sample.skillContext;sample.time+=.02;assert(!e.Step(sample,sweep));
         sample.active=false;sample.time+=.02;assert(!e.Step(sample,sweep));

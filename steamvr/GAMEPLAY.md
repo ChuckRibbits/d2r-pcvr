@@ -94,6 +94,9 @@ The build also adds an **in-headset VR settings panel**.
 Hold **Left Grip and press Left Y**, or select **VR SETTINGS** in the wheel.
 The shortcut also works with motion combat disabled. Use the right laser and
 trigger; **Right B**, the shortcut again, or **Close** dismisses the panel.
+Point at a row for a moment to see its help beside the panel. Rows with named
+choices, such as Stereo rendering or Foveated rendering, also explain the
+selected choice, so stepping through them with - and + explains each one.
 The owner verified panel visibility and laser/tab interaction after the
 October 9 Proton layer-conversion fix. Apply/cancel and broader input-ownership
 checks remain pending.
@@ -136,7 +139,7 @@ synthetic timing regression passes, and the owner reported **"works great"** in
 Steam Frame on 2026-10-09 after the sword comparison. Other weapon categories and
 creature sizes still need checks.
 
-Fresh installs enable motion controls in `GAME/d2rloader/plugins/d2r_vr.ini`:
+Fresh installs enable motion controls in `GAME/mods/D2R-PCVR/d2rloader/plugins/d2r_pcvr.ini`:
 
 ```ini
 [gameplay]
@@ -165,7 +168,7 @@ not generate melee velocity. The layout currently assumes a right-handed player.
 | Selected skill / spell | Point right hand and press trigger; supported bow skills also use draw/release as described below |
 | Selected Amazon arrow skill | Draw and release once for the native skill; Multiple Shot emits its fan, Strafe requests its native volley |
 | Selected Smite with a shield | Swing or thrust the left shield through an enemy; keep right trigger released |
-| Quick cast without opening wheel | Hold Left Trigger, point right hand and press a face button; add Left Grip for the alternate four slots (mapping below) |
+| Cast without opening the wheel | Each hand casts its own skills, aimed with that hand: trigger, two face buttons, and same-hand grip + face button for two more ([hand skill layouts](../CONTROLS.md#hand-skill-layouts)) |
 | Melee swing / thrust | Swing the equipped melee weapon through a creature, including with a skill selected; no grip, trigger, or preselected target |
 | Button attack / crossbow | Weapon combat mode, right trigger; native crossbow firing |
 | Nock bow | Bow equipped: bring right hand to string and hold right trigger; no left grip required |
@@ -174,11 +177,13 @@ not generate melee velocity. The layout currently assumes a right-handed player.
 | Cancel active grab/draw | Right B; release inputs before starting again |
 | Physical belt potion | Reach to an original 3D bottle on the front belt and hold **Right Grip** to grab; left-hand grip also works |
 | Drink | Keep grip held, bring the bottle's opening to your mouth and tip nearly horizontal for 0.25 seconds; release to return an unused potion |
+| Heal the mercenary | Toss a held Health, Rejuvenation, Antidote or Thawing bottle (release mid-swing, at least 1.4 m/s) so it lands within 1.5 m of your mercenary's feet. It shatters on landing; a miss leaves the potion on the belt |
 | Quick potion | Left Y → **EQUIPMENT / BELT** → trigger a potion wedge; grip on a potion wedge instead grabs it into the right hand |
 | Swap weapon sets | Reach the swap hand over either shoulder and press its grip; right hand by default, selectable in VR settings. Hip anchors are removed |
 | Seated weapon selection | Utility wheel → **Weapon I** or **Weapon II** |
 | Stow/draw | Utility wheel → **Stow weapons** / **Draw weapons**; native equipped stats stay unchanged |
 | Health/mana | Check the back of your left wrist, or choose **Palm** in **VR Settings > HUD** and hold your left palm upward in front of you briefly. No button required; automatic alerts are off by default |
+| Show all nearby loot labels (Alt) | Hold **Right Grip + Right Trigger**, grip first, to hold the native Show Items action. Release either to restore normal drop/hover labels; listed in **VR Settings > Controls** |
 | Explored minimap | Hold Left Y ? **MAP** in the bottom tabs; point right laser + trigger. **SPELLS** returns to skills; releasing Left Y closes the menu |
 | Quest journal | Open the native tabbed game menu with Left X / Frame Left A, then select Journal. The duplicate wheel entry is removed |
 | Journal controls | Right laser + trigger uses native page controls/act tabs; Right B follows native back; Left X performs native X |
@@ -186,12 +191,40 @@ not generate melee velocity. The layout currently assumes a right-handed player.
 | Walk / snap turn | Sticks; paused while wheel or journal is open |
 | Inventory menu / height reset | Left grip + left stick click / VR Settings > Reset eye height |
 
+Dropped-item names use **VR Settings > HUD > Loot label size**: **45%** by
+default, adjustable from **20% to 150%** in five-percentage-point steps.
+Apply saves `[hud] labels_size` in `d2r_pcvr.ini` and updates it live; existing
+saved sizes are preserved. Text, dark backing bounds and click targets scale
+together; item-quality colors are preserved. **Right Grip + Right
+Trigger** holds the native **Show Items (Alt)** action, with a short vibration
+when the hold starts. All nearby loot labels stay shown while both buttons are
+held, using the game's native Alt range rather than a VR aiming or pickup radius.
+Release either button to restore normal labels for newly dropped or hovered items. It consumes
+the trigger squeeze without casting or shooting, including if you release grip first.
+Hold grip before squeezing the trigger; adding grip to an existing attack does
+not turn that attack into a loot-label hold. Analog hysteresis tolerates squeeze noise.
+Release the combo before casting or starting a grip interaction again.
+Use it outside menus and wheels, with no potion or holster interaction active.
+Normal right-stick clicks still toggle the wheel; native menu hold-to-sort stays
+available. Menus, tracking/focus loss, leaving VR or changing character release
+the command. Release the trigger before starting a fresh hold after an interruption;
+there is no saved toggle or automatic resume.
+The game's native item/filter rules apply. Inventory tooltips and monster labels
+keep their styling.
+
 The minimap and compass form one navigation display on your left hand.
 **VR Settings > HUD > Minimap / compass location** offers **Wrist** (default),
 **Palm**, **Either**, or **Off**. Click **Apply** to save. Both appear and hide
 together, independently of health/mana. When both displays share a hand face,
 navigation sits above the vitals; otherwise it sits directly at the hand anchor.
 The wheel's **MAP** tab remains available even when navigation is **Off**.
+
+The label above the compass shows your current **act (I-V)** and **area name**,
+including named dungeon floors. It follows the same wrist/palm placement and
+visibility as navigation, and updates when you cross a boundary or use a waypoint
+or portal. Area names use the game's current language. While location data is
+unavailable, the label says **Location unavailable** instead of retaining the
+previous area. The label and compass can still appear while map capture is unavailable.
 
 A slim bronze **compass** sits above the minimap. Its fixed
 center marker shows your facing direction; **N** is the top of the native map,
@@ -211,6 +244,14 @@ the left trigger and grip; casting with that hand hides the display. Lower or
 turn your hand to hide it. Losing left-hand tracking or opening a menu hides it
 and requires a new deliberate hold. Navigation has its own location setting, so
 you can keep health/mana on the wrist and navigation in the palm, or vice versa.
+
+**VR Settings > HUD > Health / mana tilt** adjusts the angle of the hand-mounted
+health, mana and XP display from **-60 to +60 degrees**, in **5-degree steps**.
+Positive values lean its top edge toward you; negative values lean it away.
+Click **Apply** to save and use the angle immediately. **0 degrees** restores
+the original angle and is the default for existing profiles. The panel pivots
+around its center on both Wrist and Palm placements (including Either).
+Navigation keeps its own placement, and low-resource popups continue to face you.
 
 **Low health / mana alerts** is a separate toggle, **Off** by default. Leave it
 off for gesture-only vitals. Opting in adds a brief popup near your view and
@@ -238,7 +279,15 @@ health, mana, level and XP progress with the wrist minimap turned off.
 Native in-game menus share a room-anchored surface in front of you. The full
 tabbed character menu, stash, inventory, cube, trade and waypoint surfaces use one opaque
 black background in both eyes. Dialogue and journal panels retain the world
-backdrop. Inventory/equipment, NPC
+backdrop, including any enabled sky, fog and cave ceiling effects. Opening an
+NPC conversation or continuing its speech keeps those effects visible; entering
+a merchant, stash or waypoint retains the shared black management background.
+NPC choices and story text retain the complete native canvas, using the same
+fitted surface and laser coordinates on all supported controllers. Their
+placement stays fixed when speech ends and choices return. The previous
+widget-based magnified crop was removed because it cut off choices after a
+VR resize; readability and selection still need a headset check.
+Inventory/equipment, NPC
 choices and speech, shops, stash, cube, waypoint, skills and character panels
 retain D2R's original artwork, text, prices, grids and tooltips. Inventory and
 shop panes keep their native relative positions; hovering a comparison tooltip
@@ -253,7 +302,26 @@ placement. Title and character-selection screens keep the existing flat panel.
 | Native menu navigation | Sticks or face buttons; triggers and grips map LT/RT/LB/RB in native navigation |
 | Native Ctrl modifier | Hold left trigger while clicking |
 | Native Shift modifier | Hold right grip while clicking |
+| Push / pull the panel | Point at it, hold right grip and move that hand toward or away from you; release to leave it there |
 | Back / close | Right B, or the native close button |
+
+Game menus push and pull only: the panel moves nearer or farther by exactly
+the hand's travel toward or away from it, between 0.40 m and 1.50 m, and
+ignores sideways, vertical and turning movement. It starts only when the right
+laser is on the panel and the hand travels 3 cm toward or away before any
+click, so a still grip followed by a trigger click stays a native Shift-click;
+a trigger squeezed while moving does nothing until released. The laser and
+clicks follow the moved panel. Every in-game and main/title menu reopens at
+that distance until the game is restarted or **VR Settings > HUD > Menu
+distance** is changed. The handheld quest log keeps its left-grip placement.
+
+The VR Settings panel is grabbed like a real window with the same right grip:
+the point you grabbed stays on the end of the laser. Moving the hand without
+turning it slides the panel 1:1 (up, down, left, right, nearer, farther);
+tilting the controller up/down or turning it left/right swings the panel
+around your hand by the same angle, but it never rolls. Tilt stops at 60
+degrees and the panel stays 0.40 m to 1.50 m from your head.
+It reopens in the same place relative to where you face until restart.
 
 Sticks/face buttons select native menu navigation without an idle laser stealing
 focus. Release native controls and deliberately move the ray across the surface
@@ -299,18 +367,60 @@ pending.
 
 ### In-headset VR settings
 
-The panel opens in front of the headset and stays in room space. It has three
+The panel opens in front of the headset and stays in room space. It has nine
 tabs and a **Reset eye height** button:
 
 | Tab | Contents |
 |---|---|
 | Controls | Left/right controller reference for movement, menus, melee, bow, spells, potions, holsters and height reset |
-| VR | Motion combat on/off, seated belt position, dominant hand, smooth/snap turning, smooth turn speed, belt height and forward reach, wrist minimap on/off (default On) |
-| Video | Foveation Off / Fixed / Eye tracked, actual VR source size, added sky, fog, dungeon ceilings, terrain and object draw distances, VR render resolution |
+| VR | Controller labels, motion combat, seated belt position, dominant hand, smooth/snap turning, belt height and reach, weapon skill gestures and ordinary mob bars |
+| Video | Added sky, fog and dungeon ceilings, and the experimental Sorceress elemental hand effects (Off by default) |
+| HUD | Health/mana location and tilt, optional resource alerts, navigation location, menu distance and tooltip timing |
+| Combat | Melee rules, swing hit speed and thrust speed |
+| Aim | Outline for the monster you aim at: strength, static or by-range colors, and the static color |
+| Haptics | Overall strength and separate melee, bow draw, bow/throw release, spell, interaction and resource-alert strengths; tests follow each action's hands |
+| Perf | Everything that changes the frame rate: stereo rendering (Both eyes / By turns, By turns by default), VR render resolution (Headset by default), terrain and object draw distances, foveation Off / Fixed / Eye tracked and its strength, ReShade depth (after a restart) and desktop one eye; the actual VR source size, a Defer GPU wait button while frames wait for the GPU, and warnings while the game's Vertical Sync is on or its anti-aliasing is not FXAA. Under them, each second's frame rate and where the frame's time goes, whether the CPU's part fits the headset's frame, and the game's own graphics options |
+| Notes | The last published release's notes, read-only |
 
-Click **Apply** to save changed values to `d2rloader/plugins/d2r_vr.ini` and
+Added indoor fog defaults to **Off** for new profiles, preserving the game's
+own lighting and effects, including Tyrael's wings. Outdoor fog keeps its
+existing setting. There is currently no indoor-fog toggle in VR Settings.
+Existing saved `[fog] caves` choices are preserved when updating.
+
+**VR Settings > Haptics** tunes vibration for different controllers. Each strength
+ranges from **0% (Off) to 200%**, in **10% steps**, with **100%** as the default.
+Overall strength multiplies the category strength: 50% overall and 50% bow draw
+produce 25% of the original draw amplitude. The controller's maximum amplitude
+still limits strong pulses. **Short melee pulses** is **Off by default**: weapon
+impacts use a 90 ms tap to make contact easier to feel during fast swings;
+shield impacts retain their 45 ms tap. Both use the controller's preferred
+frequency. Turn it On for the original 10 ms / 180 Hz tap on either hand.
+The **Weapon** and **Shield** tests use the same choice, including unsaved edits.
+
+Tests use the displayed, unsaved values and follow gameplay hand ownership:
+**Weapon** tests the right hand, **Shield** the left; bow draw tests both hands
+with the normal asymmetric pull pulses. **Bow** release tests both hands and
+**Throw** only the right. Spells and interactions retain **Test L / Test R**
+because either hand can perform them. Resource alerts have one **Test** on the
+left hand. A test is a sample, not a simulated gameplay action.
+**Apply** saves and updates gameplay feedback; **Close** discards unsaved edits.
+Muting a category stops its active vibration; Overall Off stops both controllers.
+Bow draw covers string proximity, nocking, pulling and full draw. Bow/throw release
+covers shooting and throwing. Melee covers weapon and shield impacts. Interactions
+cover loot, potions, holsters and menu feedback. Resource alerts still require
+**HUD > Low health / mana alerts** to be enabled for automatic warnings.
+
+Supported independent hand spells now give one brief pulse on the casting hand
+after a spell successfully creates its projectiles. A volley gives one pulse,
+and a refused cast gives none. Feedback is discarded when stale, inactive or from
+another character session. The **Spell casts** setting controls this pulse.
+Settings are stored under `[haptics]` as `strength`, `melee`, `bow_draw`,
+`bow_release`, `spells`, `interactions` and `alerts`; missing strength keys default
+to 100. `[haptics] short_melee=0` selects the longer tap; `1` selects the short tap.
+
+Click **Apply** to save changed values to `mods/D2R-PCVR/d2rloader/plugins/d2r_pcvr.ini` and
 reload them live. Closing without Apply discards pending edits. The first Apply
-creates `d2r_vr.ini.before-vr-menu`; later saves retain that original backup.
+creates `d2r_pcvr.ini.before-vr-menu`; later saves retain that original backup.
 Unrelated INI entries are preserved. A conflicting external edit reloads the
 current values instead of overwriting them. Reset eye height is immediate and
 does not require Apply. The controls tab is a reference, not a binding editor.
@@ -328,7 +438,7 @@ source size independently of the physical monitor. See [resolution settings
 and testing notes](VR_RESOLUTION.md). There is no control rebinding here.
 
 First headset check: open/close from the shortcut, then from the wheel; visit all
-three tabs and reset height; cancel an edit and confirm it is discarded; Apply
+six tabs and reset height; cancel an edit and confirm it is discarded; Apply
 a turn-mode change and confirm it persists on reopening; disable motion combat
 and reopen with the shortcut; switch foveation off/fixed/eye tracked and check
 clarity and gaze status. Confirm no menu click attacks, drinks or swaps a weapon,
@@ -371,26 +481,12 @@ release the selection trigger before casting. **BASIC ATTACK** restores the basi
 right-trigger attack or physical bow controls. Free melee swings remain
 available with a skill selected, pausing during casting, menus or potion handling.
 
-Quick casting uses the **same saved bindings**, while keeping the selected
-right-trigger ability. Point with the right hand, hold **Left Trigger**, then
-press one face button. Hold the button to use the native repeat/channel behavior;
-release it to stop. Add **Left Grip** before pressing for the alternate slot.
-
-| VR face button while Left Trigger is held | Native binding | With Left Grip also held |
-|---|---|---|
-| Right A | B | LT + B |
-| Right B | X | LT + X |
-| Left A on Frame / X on Quest | Y | LT + Y |
-| Left B on Frame / Y on Quest | RB | LT + RB |
-
-The wheel shows these VR shortcuts below the skill names. These chords require
-motion controls and apply during gameplay; menus keep their pointer/modifier
-controls. While quick casting, face buttons do not also open inventory/wheel,
-interact, cancel, or open settings, and Left Grip cannot grab a belt potion or
-holster. Entering the layer cancels a drawn bow without shooting. Release and
-press again after changing the alternate-slot grip, tracking interruption or
-weapon swap. Unassigned/unavailable slots cannot cast; costs and timing remain
-native. Candidate host tests pass; headset quick-cast validation is pending.
+There is no left-trigger quick-cast layer. Each hand casts its own wheel
+skills, aimed with that hand: its trigger, its two face buttons, and the same
+hand's grip plus a face button for two more. Hold the input for the native
+repeat/channel behavior; release it to stop. The slots, the native gamepad
+bindings behind them and what happens when both hands cast at once are in
+[hand skill layouts](../CONTROLS.md#hand-skill-layouts).
 
 Equipping a different melee weapon or bow selects weapon mode. Javelins and
 throwing weapons use free-swing contacts; select the native Throw skill to throw.
@@ -415,6 +511,42 @@ consumption. A refused attempt never automatically retries. Confirm HP/mana and
 belt changes in the first test. Success feedback is brief and a grab consumes
 at most once. Weapon swaps similarly wait for the observed equipment set.
 
+A Health, Rejuvenation, Antidote or Thawing bottle released with a deliberate throwing motion,
+away from its belt slot, flies on a ballistic arc and lands on the world floor.
+Its launch velocity is 1:1 with the hand: the fastest controller velocity the
+OpenXR runtime reported in the last 0.12 s before the grip opened (pose
+differences only when the runtime reports none), capped at 20 m/s. Once released
+it is in the world: its arc is integrated in world metres from the release frame,
+against the floor height under the player at release, so walking, turning or
+recentering afterwards never carries it along.
+
+The landing point is checked on the game thread against the live, non-hostile
+hireling. Within 1.5 m of its feet, the UI thread presses the column's native
+belt key while the belt's own "give to mercenary?" query (the check Shift+belt
+uses) answers yes for that one press only, so the native mercenary use, voice
+line and rules apply. It is confirmed by the item leaving the belt. If that
+query cannot be answered (hook unavailable or its native gate set) nothing is
+pressed, so a throw never becomes your drink. A miss, a dead or absent
+mercenary or a changed belt sends nothing and the potion stays belted. Every
+landing plays the game's own glass-break sound (`object_glass_break_1`, whose
+native group picks one of three variants and its HD version) at the player, and
+a confirmed feed plays the game's own `healing` overlay (overlay.txt row 26) on
+the merc through the native set-overlay call. Slow releases still return the
+bottle; mana and stamina potions are never thrown. The log records each
+landing's hireling class and distance (`Frame potion toss:`).
+
+**Hurt merc.** During VR gameplay the local hireling's life is sampled on the
+game thread every 200 ms with the same native stat call as the wrist vitals.
+Below 50% life it is tinted with the game's own `red` state (states.txt row 91,
+a colour shift with no stats) through the native toggle-state call, so the game
+syncs it like any other state. The game shows only the highest-priority tint
+(cold 100 and poison 95 would hide red's 70), so a hook on the native colour
+update applies red's own colour shift last, only on a hireling that has it; a
+chilled or poisoned hurt merc still shows red. The tint clears on recovery, on death (the corpse
+too), for a rehired or resurrected merc, and within about 1.5 s of leaving VR
+gameplay; desktop and flat play never sample or tint. The log records each
+change (`Frame merc:`).
+
 The 18 cm bottle's opening must be within 10.5 cm of the mouth while tipped for
 0.25 seconds; bringing only the controller center to the face does not count.
 Release grip to return an unused bottle. The installer extracts the models
@@ -437,6 +569,7 @@ Optional live configuration (metres below/forward/from the estimated torso):
 seated=0
 navigation_location=0
 vitals_location=0
+vitals_tilt=0
 critical_alerts=0
 waist_below_eyes=0.65
 belt_forward=0.26
@@ -448,6 +581,8 @@ holsters=1
 `3` Off. Older profiles without `navigation_location` start at Wrist if either
 legacy `wrist_map` or `wrist_compass` is enabled, or Off if both are disabled.
 An explicit navigation location takes precedence over those legacy switches.
+`vitals_tilt` is the health/mana/XP panel's tilt offset in degrees, clamped to
+`-60` through `60`; a missing or nonfinite value uses `0`.
 
 Seated mode raises the waist anchors. The belt and hip holsters follow tracked
 position and horizontal facing every frame, including while hands are lowered
@@ -515,13 +650,28 @@ observed native sequence after a physical release; it does not estimate readines
 
 The equipped left shield now follows its authored bind-pose relationship to the
 tracked wrist, including wrist rotation, instead of an attack/walk animation's
-attachment or the main weapon's adjustment. With **Smite** selected, an energetic
+attachment or the main weapon's adjustment. In native first-person VR, reaching
+beyond the model's normal arm length extends the shield arm to follow the
+controller. The palm, fingers and shield retain their size; bringing the hand
+back restores normal arm proportions. Extension is bounded at twice the arm's
+current length for extreme tracking/calibration errors. Contact uses the same
+final shield pose. The owner verified this adjustment in the combined developer
+build; individual class/shield combinations were not specified.
+With **Smite** selected, an energetic
 left-arm swing or thrust that intersects an eligible creature requests one native
 Smite against that creature. A stationary shield cannot bash; one continuous
 stroke requests at most one bash, and a deliberate reversal/settle rearms it.
+**VR Settings > Combat > Shield bash speed** controls this gesture in both melee
+modes (default 2 m/s; 0.75-10 m/s in 0.25 steps; `[gameplay] shield_bash_speed`).
+A bash needs 12 cm of net tracked hand travel within 200 ms and must meet the
+selected speed at contact. Wrist rotation alone cannot arm, power or rearm a bash;
+shield size therefore cannot amplify wrist twisting into an attack. The contact
+sweep covers only the current fast interval, not earlier slow approaches.
+Applying a new bash speed invalidates old queued/posed contacts. Native skill
+selection, mana costs, trigger casts, blocking and parries are unchanged.
 Native reach, walls, resources, animation/cadence, damage, stun and knockback
 remain authoritative. Left-hand haptics acknowledge native acceptance, not proof
-of positive damage. Physical blocking/parrying is still pending.
+of positive damage. Physical blocking and parrying are described under melee rules below.
 
 Contact casting activates only when the native Smite implementation is identified
 from the audited attack/throw dispatch table, an exact bounded entry in the game
@@ -576,28 +726,62 @@ animation delay is involved. A contact can hit each creature once per stroke;
 settling or a deliberate translation/rotation reversal permits another stroke.
 A tracking discontinuity drops that motion and requires 80 ms of fresh coherent
 poses; continued swinging can recover without holding the hand still. Strength
-is judged over recent motion, so small windups cannot lock out later slashes. Weapon
+is judged over recent motion, so small windups cannot lock out later slashes. Swing
 contacts require a coherent 18 cm excursion within 120 ms and at least 12.0 m/s of
 estimated motion at contact, including follow-through. The estimate combines hand
 translation with blade-axis rotation, capped by tracked hand rotation; twisting a
 shaft in place does not power a hit. The sweep follows the rotating blade’s arc
 between the latest poses without replaying earlier unpowered brushes when a
-stroke arms. Shield/Smite gesture thresholds remain unchanged. These weapon
-thresholds are adjustable under **VR Settings > Combat > Melee hit speed**
+stroke arms. Shield/Smite uses its separate hand-travel threshold below. Swing speed
+is adjustable under **VR Settings > Combat > Melee hit speed**
 (minimum 1.5 m/s, no upper cap, 0.25 steps, default 12.0). Apply saves
 `[gameplay] melee_hit_speed` and updates the detector live; changing it clears
-the previous stroke. Stroke travel remains 18 cm. The earlier 1.8 m/s candidate
-was too permissive in owner testing; the firmer default still needs headset testing. Physical controller
-translation/rotation supplies energy, so walking or turning a stationary weapon
+the previous stroke. Swing travel remains 18 cm.
+
+**Thrusts** use a separate forward-motion check in both Unleashed and Classic.
+Push toward the posed weapon tip for at least 12 cm within 200 ms, with at least
+85% of the hand's travel along that axis. Default forward speed is 2.0 m/s,
+adjustable under **VR Settings > Combat > Melee thrust speed** from 0.75 to
+10 m/s in 0.25 steps (`[gameplay] melee_thrust_speed`). Apply updates it live
+and cancels the previous stroke without changing the swing-speed preference.
+The axis comes from the final weapon attachment and its matching tracked grip,
+including weapon adjustments and two-hand posing; controller-forward alone is
+not assumed to point along the blade. Contact uses the latest swept capsule,
+without replaying earlier low-speed brushes. Holding or slowly advancing a
+blade inside an enemy does not keep dealing damage. Pulling back at least 8 cm
+rearms a quick jab without counting the withdrawal as another stab. Thrusts
+share the same per-creature stroke deduplication and Classic hit/cadence rules
+as swings. Automated traces cover 36–144 Hz, dagger/sword/spear lengths,
+repeated jabs, pullbacks, jitter, settings changes and invalid axes; physical
+headset testing of the new thrust detector remains pending.
+
+Physical controller translation/rotation supplies energy, so walking or turning a stationary weapon
 into an enemy does not cause damage. Right trigger remains an explicit native
 button fallback and suppresses simultaneous physical contact attacks.
 
-Confirmed weapon and shield impacts request a single 10 ms haptic tap at 95%
-amplitude and 180 Hz on the next XR input update, replacing the previous 45 ms
-buzz. Events are consumed once rather than held during overlap. A dedicated timer
+Confirmed weapon impacts request a single 90 ms haptic tap; shield impacts keep
+their 45 ms tap. Both use 95% base amplitude and the runtime's preferred
+frequency on the next XR input update.
+**VR Settings > Haptics > Short melee pulses** opts into a 10 ms / 180 Hz tap;
+it is Off by default, and both melee Test and real impacts use the selected pulse.
+Overall and Melee impacts strength scale its amplitude. Events are consumed once
+rather than held during overlap. A dedicated timer
 explicitly stops the vibration at its deadline even if rendering stalls; pulse
 replacement, focus loss and session shutdown cancel pending stops safely.
-This follows owner feedback that the Steam Frame sustained even one short pulse.
+Weaker incidental cues cannot replace a still-active melee pulse. New impacts,
+stronger cues and deliberate settings previews can replace it; mute and explicit
+cancellation still stop it immediately.
+Weapon hits target the right controller; shield bashes target the left. Each
+controller has its own OpenXR vibration action and binding, shared by pulse
+start and stop, to avoid depending on a shared action's hand filtering.
+While motion controls supply focused VR input, the mod suppresses the game's
+XInput pad-0 rumble (including native stop requests) so it cannot compete with
+OpenXR feedback. Those gamepad motor channels represent low/high frequency,
+not VR hand ownership. An existing desktop rumble is cleared once on takeover;
+desktop play, other gamepads and expired VR input pass through normally. The
+game's saved rumble preference is unchanged. Native rumble suppression and
+weapon/shield output requests are logged to distinguish overlapping feedback
+from reversed controller routing. Physical confirmation remains necessary.
 Exact feel and frequency support depend on the controller/runtime and need
 headset validation. Existing saved melee speed choices remain unchanged.
 
@@ -606,32 +790,263 @@ weapon category determines length/radius on the final attachment; native monster
 footprint and legacy artwork height determine its body capsule. Generic class
 support is implemented, but specific weapon axes, small creatures, bosses and
 sloped ground need headset checks. Basic contacts use the main hand; the candidate
-adds selected Smite shield contacts. Other off-hand strikes, physical shield blocks
-and parries remain future work.
+adds selected Smite shield contacts. Barbarians with two melee weapons and
+Assassins with two claws also support independent left/right physical swings
+and thrusts; see
+[physical dual wield](../docs/BARBARIAN_DUAL_WIELD.md). Physical shield blocks
+and parries are below; other classes' off-hand weapon strikes remain future work.
+Dual-claw contacts are basic attacks, not automatic Dragon Claw or charge-up
+skill casts. Release both triggers for independent left/right physical contacts.
+
+Physical weapon contacts also break attackable pots, urns, baskets and barrels
+in either melee mode, including with either Barbarian weapon or Assassin claw.
+The game handles loot, traps and explosions; ordinary button interaction/kicking remains
+available. These contacts do not consume creature hit/recovery/cleave state.
+See [physical breakables](../docs/PHYSICAL_BREAKABLES.md) for scope and validation.
 
 Only a confirmed physical contact overrides legacy melee grid reach. Native
 line-of-sight, hostile relationship, creature life state, damage, elemental
 resistances/immunities, criticals, leech, procs, durability, death and XP still run.
-The existing `contact_hits=1` policy removes local-player random accuracy/block/
-dodge misses. Contact haptics acknowledge native accepted hit flags, including
-hits whose damage an immunity may prevent.
+**Melee rules** (VR Settings > Combat, `[gameplay] melee_rules`, applied live,
+mid-game) choose between two modes for physical swings and trigger/button melee:
 
-**Attack speed** (`[gameplay] attack_speed=1`, the default) restores the basic
-attack's native pace without its animation. A landed hit starts the character's
-normal-attack cycle; contacts before it ends are refused, and a stroke strikes
-only one creature. The cycle uses D2's own formula (`attack_speed.h`): class and
+- **Unleashed** (`0`, the default): every weapon contact strikes each
+  creature once per stroke. No to-hit, block or dodge roll and no attack-speed
+  gate (the `contact_hits` policy). Instead, attack rating and attack speed scale
+  how hard a physical swing lands:
+  - **Attack rating** (`ar_damage`, 1): damage x the native to-hit chance (5-95%,
+    attack rating, defense and level penalty), read where the game's hit check
+    passes it on. `ar_damage_floor` (0) keeps that % of damage at zero chance.
+  - **Recovery** (`swing_recovery_damage`, 1): damage x the share of the native
+    attack cycle (class, weapon, IAS, WSM) since the previous landed stroke, to
+    the power `swing_recovery_curve` (2), at most 1. With 2, flailing at twice
+    the cycle's rate deals half the damage per second (1 would be neutral).
+    `swing_recovery_grace` (100 = none) counts a stroke from that % of the cycle
+    as fully recovered. Every creature one stroke reaches shares the stroke's
+    recovery factor, so flailing does not pay.
+  - **Cleave falloff** (`cleave_falloff`, 25): each further creature one stroke
+    lands on deals that % less than the one before, never below `cleave_min` (25):
+    100%, 75%, 50%, 25%, 25%... 0 turns it off. Creatures count in the order
+    the game resolves them, which follows the blade frame to frame but not
+    within a single frame. A riposte is still a clean hit (no falloff) and
+    counts as one of the stroke's creatures.
+  Leech, crushing blow and other on-hit effects still run on the unscaled hit.
+  `Frame swing damage:` in the log reports scaled hits and the last factors.
+- **Classic** (`1`): native attack rating, monster defense, block and the
+  level penalty decide each attack, and attack speed paces them (below). A rolled
+  miss uses up the attack, as a missed swing animation would.
+
+Missile hit checks (arrows, missile spells) keep `contact_hits` in both modes.
+In Classic, button melee keeps native monster block only where the game checks
+block inside its hit check; `native block/dodge in melee` in `Frame combat:`
+confirms it. Every weapon contact with a hostile creature taps the controller once
+per stroke and creature, whether the attack then lands, misses its roll or is
+refused by attack speed; damage, not the tap, reports the outcome.
+
+**Attack speed** (Classic melee rules) restores the basic
+attack's native pace without its animation. A resolved attack, hit or rolled
+miss, starts the character's normal-attack cycle; contacts before it ends are
+refused, and a stroke attacks only one creature. The cycle uses D2's own formula (`attack_speed.h`): class and
 weapon class (Weapons.txt `wclass`) set the animation length, item IAS reduces
 it with the usual diminishing returns, and the weapon's speed modifier (WSM)
 lengthens or shortens it, so IAS breakpoints apply to swinging as they would to
 clicking. Whiffs, refused contacts and native rejections never start the cycle.
+`missed` in `Frame melee:` counts attacks whose to-hit roll failed.
+Trigger/button melee shares the cycle: each of its native melee hit checks
+starts it (`button_cycles`), so alternating trigger attacks with swings is no
+faster than swinging. A trigger attack started right after a swing is still
+paced only by its own native animation. This needs the combat hooks, which
+`contact_hits=1` (the default) installs.
 Skill speed (Fanaticism, Frenzy, Burst of Speed, werewolf), slows and dual-wield
 attack sequences are not read yet. An unknown class or weapon class (including
 classes outside the original seven) leaves the cycle unknown, which does not
-gate hits. `attack_speed=0` restores unlimited free-swing contacts. The log
+gate hits. Unleashed restores unlimited free-swing contacts. The log
 reports the cycle inputs (`Frame melee attack speed:`) and refused contacts
 (`too_soon`, `extra_targets` in `Frame melee:`). `[debug] melee_trace=1` adds one
 `Frame melee trace:` line per native attack and per refused stroke, with the
 time since the previous landed hit; landed hits are never closer than `cycle`.
+
+### Physical shield blocking, parry and riposte (Unleashed)
+
+With **Unleashed** melee rules and a shield on, blocking is decided by where the
+shield is held, not by the block-chance roll. A monster still has to pass its
+native to-hit roll; then its native block roll (44B930) takes the physical verdict
+instead of a random one. Classic keeps the native roll.
+
+- **Block**: raise the shield's broad face between the attacker and your torso.
+  Walking/running and looking away do not cancel a valid guard. Recognized held
+  meshes use their current rendered bone bounds and native item transform, so
+  wrist rotation and shield size change coverage. The projected face width has
+  a 12 cm torso allowance; nearly edge-on faces are rejected. Height uses the
+  visible face, allowing a lower grip on a tall shield. Unsupported meshes use
+  the posed-attachment fallback. This approximates a native 2D incoming hit,
+  not per-triangle projectile collision; see [shield blocking](../docs/SHIELD_BLOCKING.md).
+  Every block plays `[gameplay] block_sound` (default 398, block_weapon_1) and
+  taps the left controller. Native unblockable damage remains unblockable.
+- **Parry**: a diagonal shield swing across the view, lower right to upper left for
+  a left-hand shield (at least 15 cm within 120 ms, within ~35 degrees of the
+  diagonal), starting in the attacker's downstroke and at most 450 ms
+  (fixed) before the hit, from a melee attacker within 3 m (2026-10-18: tightened
+  from a 750 ms window with a 450 ms lead so a parry is a timed answer, not a
+  held-up guess). A parry swing whose window runs out unspent gives a soft, dull
+  buzz on the shield hand (unlike a block's sharp tap; scaled by the Melee haptic
+  strength), once per swing. A timed swing is judged before face
+  coverage: the swing itself turns the face edge-on, so it needs only the raised
+  shield out on the attacker's side of the eyes (it may finish up to 10 cm behind
+  them along the attack line, e.g. beside the head after a big swing). A monster
+  melee attack always lands (`enemies_always_hit`, default 1), so every attack is
+  judged at its hit frame: parry, else block or hit by the shield's position. Only
+  with `enemies_always_hit=0` can a monster attack miss its native to-hit roll; it
+  then never reaches the block check;
+  a timed swing still parries it at that roll (the native miss is unchanged, and
+  there is no shield wear to restore). Low-level monsters miss most attacks
+  against a stronger hero, which made correct swings look ignored (2026-10-18:
+  two Zombies, 7 hits from dozens of attacks). One parry per swing.
+  **Downstroke** (2026-10-19): resolving as soon as the swing and the attack had
+  both begun staggered monsters that had barely raised their arms. The attack's
+  start (mode change, 34E5F0) to its to-hit roll (the hit frame) is that
+  monster type's wind-up, measured per class and attack mode from its last
+  attack; the swing must start once `[gameplay] parry_downstroke` % of it has
+  passed (default 90, from 60 then 80: parries still came before the blow visibly
+  landed - swings centred 55 ms after the hit frame, 2026-10-19; 0 = anywhere
+  after the attack began, the old rule). An
+  earlier swing is a `windup` miss and only blocks. Until a type's wind-up has
+  been measured once this session, its attacks are not staggered early and the
+  parry is judged at the hit as below. **Parry at hit** (`[gameplay] parry_at_hit`,
+  default 1, 2026-10-19): a downstroke swing resolves at the attacker's hit frame,
+  when the blow makes contact: the parry deflects it (no damage, any wear it caused
+  restored) and the attacker staggers. A swing that does not qualify is no parry;
+  the shield's position at that moment alone decides block or hit, as below.
+  Staggering at the swing itself fired 50-90 ms before the hit (Zombies: swing at
+  281 ms, hit at 330-375 ms) and cut the blow off before it came down. With 0, a
+  downstroke swing staggers the attacker on the next game update, before its hit frame.
+  **Late parry** (`[gameplay] parry_late_ms`, default 200, max 400, 0 = off): the
+  game's hit frame comes before the blow lands on screen - 15 of 24 swings
+  (2026-10-19) started 0-156 ms after a blocked hit, timed to the animation. A
+  parry swing within this long after a blocked melee hit (within 3 m) still parries
+  it: the attacker staggers and the block's wear is restored; the block's strain
+  stands. Act bosses are never parried late either (2026-10-20: the late parry
+  had skipped the act-boss gate, so Andariel could be parried). A hit that landed on you is not undone. Logged as `Frame guard late parry:`
+  and `late_parries` in `Frame guard:`; later swings stay `swing too late`. Hit-frame parries
+  had come a median 516 ms after the swing (2026-10-18). An attack whose to-hit
+  roll has already run is never staggered early; otherwise the to-hit roll or
+  block check above still resolves the parry. The attacker is
+  put into native hit recovery (445E60) on a later game update, any shield wear
+  the game applied for that hit is restored (`shield_wear_refunded` in `Frame
+  guard:` counts it; not every block wears a shield, and none has been observed
+  yet in testing), and `parry_sound` plays (default 236, the Archon Plate equip
+  sound).
+- **Riposte**: the next physical weapon hit on the parried monster within
+  `riposte_ms` (1500) is a clean hit - no attack-rating or recovery penalty - plus
+  `riposte_bonus` % more damage (0), and plays a built-in
+  impact sound (`steamvr/assets/riposte-impact.wav`; `riposte_sound_file` replaces
+  it with a WAV next to the ini). Its volume follows the game's own Master x Combat
+  sliders (re-read from Settings.json when the game saves it), times
+  `riposte_volume` (100).
+- **Guard strain light**: every blocked hit (not a parry) strains the guard by
+  `guard_strain_per_block` % (10). **VR Settings > Combat > Guard strain buildup**
+  selects Slow / Medium / Fast (`guard_strain_speed` 0 / 1 / 2, default Medium).
+  Slow halves strain per block; Fast doubles it. With default tuning, full
+  strain takes about 20 / 10 / 5 blocks in a row. The
+  vignette size, lowering/reset time and blocking rules stay the same. Existing
+  custom `guard_strain_per_block` tuning is multiplied, not overwritten. Strain shows as a soft vignette at the
+  rim of the view (a pale white light by default; VR Settings > Combat > **Guard strain
+  color** switches it to a black shadow, `guard_strain_dark` 1, or hides it, `guard_strain_dark` 2
+  (Off: no light, but strain, guard breaks and chip damage still apply); the black is drawn denser by
+  `guard_strain_dark_density` (2.5) so it hides as much as the light, and
+  `guard_strain_color` takes any RRGGBB hex, default FFF7EA), beneath the blood on
+  the visor, creeping inward as it builds;
+  each block sends one smooth pulse in from the edge. At full strain the guard
+  breaks: the light swells until only `guard_strain_clear` % (10) of the view is
+  clear and breathes slowly (`guard_strain_breathe_ms`, 1600), with one alert tap on
+  the left controller. The shield keeps blocking throughout; the cost is sight.
+  Strain holds while hits keep reaching the shield. Once no hit (block or parry)
+  has reached it for `guard_strain_recover_ms` (1500; 0 = only lowering drains), it
+  drains with the shield still up; the next hit stops the drain and restarts the
+  wait. Lowering it (or a menu, or losing the shield) drains at once, without the
+  wait. Either way full strain drains in `guard_strain_reset_ms` (1500), so a broken guard left alone clears 3 s after the last hit; a broken guard
+  stays broken until the light has fully faded, and raising the shield again part
+  way keeps what is left. Opacity is `guard_strain_light` (100 %, 0 = none; strain
+  still runs). The light's inner blend is
+  `guard_strain_softness` % of the visor radius (45) about a fixed midpoint, so it
+  fades toward the centre with no visible inner rim. Pulses re-trigger without
+  dropping, so rapid blocks hold a swell rather than flashing.
+- **Low-life heartbeat** (Classic and Unleashed; guard strain no longer drives it):
+  **VR Settings > Combat > Heartbeat starts at** (`low_life_heart_start`, 60 %; Off or
+  10-90 % in 10 % steps) sets where it begins. Below that life the heartbeat steps up
+  every 10 % lost, louder and faster, to full loudness and `low_life_heart_bpm_max`
+  (115) below 10 %: a 50 % start gives five steps, at 50, 40, 30, 20 and 10 %. The
+  tempo runs from `low_life_heart_bpm_min` (70); loudness starts at 12 % of full and
+  rises with each step. Applied live. Wiping the visor clean (the last splat) fades
+  the heartbeat out while still hurt; the next hit (the blood visor's own hit size)
+  brings it straight back at its step, and healing to silence clears the wipe. A
+  partial wipe leaves it beating. The beat itself keeps
+  its natural speed and pitch; only the time between beats shortens. A heal winds it
+  down no faster than `low_life_heart_fade_ms` (4000) from full: quieter and slower beat
+  by beat, then silent; so does death or a loading screen. Loudness is
+  `low_life_heartbeat` % (200, 0 = off) on top of the game's
+  Master x Combat volume; above 70 % of full scale the beat bends smoothly toward
+  full scale (a soft limiter) rather than clipping. The built-in beat is a recording embedded in the plugin
+  (`steamvr/assets/guard-heartbeat.wav`); `low_life_heart_file` replaces it with a
+  one-beat 16-bit PCM WAV, next to the ini unless a full path. It plays on its own
+  audio stream, so it never cuts off the riposte or block sounds. The old
+  `guard_strain_heart*` keys are still read when the matching `low_life_heart*` key
+  is absent. The log's `Frame low-life heartbeat: started life=N%` line marks each start.
+- **Shield wear**: the game wears armor only when its wearer is struck: each
+  landed hit picks one armor piece by body-location weight (head 3, torso 5, left
+  hand 4, belt, feet and gloves 2) and gives it a 10% chance to lose 1 durability
+  (SUnitDmg 4526C0 / 441B10). A block never got there, so a raised shield never
+  wore. A physical block gives the shield alone that native roll, and a chip
+  through a broken guard has its struck wear given to the shield instead of a
+  random piece, for `shield_block_wear` % of contacts (22: the shield's native
+  share, 4 of 18 x 10% = 2.2% a contact; 100 = the full 10%; 0 = off). A parry wears nothing. Unblocked hits are
+  untouched. Indestructible and broken handling are the game's own.
+  In this setup the game updated only the server copy of a worn item, so
+  tooltips showed the old durability until a relaunch (its own armor wear
+  too). After every wear on the local player's gear the new value is copied
+  to the client item, so tooltips follow at once.
+- **Guard break**: the moment the guard breaks a bone snap plays
+  (`steamvr/assets/guard-break-bone.wav`) on its own audio stream, at
+  `guard_break_volume` % (100, 0 = off) of the game's Master x Combat volume, through
+  the heartbeat's soft limiter; `guard_break_sound_file` replaces it with a 16-bit PCM
+  WAV. While the guard is broken, a block lands as a **chip** (`guard_break_chip`, 1 in
+  Unleashed): the hit lands natively (damage reduction, resists and absorb; armor
+  wear; when-struck procs; the hero's hit sound) and its physical part is scaled by
+  (1 - chance to block) x `guard_break_chip_scale` (1), on top of the Defense factor.
+  Chance to block is the native rate, a third while running, capped at 75 %.
+  Elemental damage and its effects (poison, chill...) land as normal. The block
+  pulse, haptic and sound still play.
+
+Damage is scaled at the native damage application's final life write (44CE80,
+whose `Set(defender, life, ...)` returns to 44D098), so resistances, criticals and
+leech have already run; only the local player's physical swings are scaled - not
+spells, missiles or thorns.
+
+**Incoming defense (Unleashed):** every monster melee attack and projectile aimed at
+the local player lands - its to-hit roll always succeeds, so only the raised shield
+(or the native block roll without one) stops it. Defense still counts: the native
+chance the attack would have had (the monster's attack rating against your
+Defense and level, clamped 5-95%) scales that attack's damage at the same life
+write, so a 5% chance lands 5% of the hit. The whole attack is scaled, elemental
+riders included (Cold/Lightning/Fire Enchanted, cold melee, poison arrows), and
+after damage reduction, resistances and absorb, so expected damage equals native
+without the hit-or-miss variance. Spells never roll to hit and are unchanged.
+`[gameplay] enemies_always_hit` (default 1) turns the rule off with 0, restoring
+native monster misses at full damage. Classic always uses the native monster
+chance to hit. The log's `Frame incoming defense:` line counts scaled hits.
+`[debug] guard_trace=1` logs every judged hit (`Frame guard trace:`) with the hand
+position, cover angle, swing and attack timing. Its `parry=` field names why a
+raised guard did not parry: `no_swing`, `spent`, `early` (more than 450 ms before
+the hit), `before_attack`, `windup` (before the downstroke), `range` or `side`; `ok` on a parry. `downstroke_at=` is
+when that attack's downstroke opened, in ms after it began (-1: wind-up not measured yet). `Frame guard swing: armed` marks each new parry swing,
+`Frame guard miss:` each monster melee attack that missed its to-hit roll (and
+whether a swing parried it), `Frame guard early parry:` each parry made before
+the hit (`trigger=attack_start` or `swing`), and `Frame guard:` adds
+`incoming_hits`, `incoming_misses`, `miss_parries`, `early_parries` and
+`parry_misses` (parry swings that buzzed). Hard swings (a riposte straight
+after a parry) are tracked up to 20 m/s and 100 rad/s; `Frame melee resets:` and
+`Frame melee stale:` report any swing the tracker discarded, and
+`Frame riposte: window expired unused` any parry whose riposte never landed.
 
 Physical **basic-arrow** release queues one direct native basic attack on the authoritative
 game thread. The attack creates its normal damage-bearing missile and handles
@@ -653,8 +1068,32 @@ This first physical path supports **ordinary basic arrows**, not elemental,
 explosive, magic or guided missile variants. A bow that converts its basic attack
 to a special missile is currently refused before ammo is spent; use its assigned
 native skill through the palette instead. Selected arrow skills gain the candidate
-draw/release adapter above; their flight remains native. Crossbows and other
-skills/spells keep native controls, costs, timings and ground-based collision.
+draw/release adapter above; their flight remains native. Other skills/spells
+retain their existing controls, costs, timings and collision behavior.
+
+For ordinary **basic crossbow bolts**, the held model's `bolt_helper` supplies
+the barrel line and muzzle. The supporting palm sits below that line, including
+the item's attachment transform and weapon adjustments. Native server/client
+creation uses the same frozen muzzle and full barrel direction. Basic bolts
+use the bow's straight 3D flight, swept creature collision and wall checks,
+including upward/downward aim. Their native missile still supplies damage,
+ammunition, lifetime and trigger attack cadence; no second attack or client
+projectile is created. Both eyes share the corrected current/previous mesh
+transforms. The support palm keeps the controller's wrist angle when gripping
+from underneath or above. Special missile skills and unrecognized/stale rigs
+retain their native release behavior. The physical collision limitations below
+also apply to basic crossbow bolts.
+
+Crossbow support is a held grip: release **Left Grip** to free the support hand.
+After a shoulder weapon swap, release the swap grip before grabbing the stock.
+The latch resets when equipment or the hero model changes, and on lost tracking;
+reacquiring tracking while still squeezing does not grab the stock. Waiting for
+a usable attachment keeps the support hand free instead of selecting the older
+always-two-handed pose. Native controller placement accepts wide idle/swap hand
+poses, so switching from a shield set does not require firing first to initialize
+the crossbow. The owner verified the swap/release fix in a headset on 2026-10-15
+and approved merging it. The headset/runtime and individual regression scenarios
+were not specified in that confirmation.
 
 Collision is approximate: creature capsules use native footprint/artwork height,
 and the floor is the launch floor. Walls extend vertically; arrows cannot fly
@@ -682,13 +1121,49 @@ attachment pose, avoiding a newer hand position being applied to an older rig.
 A pull produces light haptic pulses as draw distance changes, plus nock and
 release pulses. Runtime acceptance is logged; that does not prove the user felt
 it. The native arrow is hidden until nocked. Unknown rigs retain their native
-animation plus the crossed-plane arrow and V-string guides.
+string and limb animation; their string does not yet follow the drawing hand.
+The teal V-string overlay is removed for all bow rigs. The nock marker and
+crossed-plane arrow fallback remain available when their native counterparts
+are not driven by the mod.
 
 The palette, neutral bottle and fallback nock/bow guides are lightweight
 OpenXR quads, stereo-positioned but not depth-tested against the game world.
 The held bottle now uses the original 3D model when the local cache is available. Spell/item icons, belt contents/counts
 and health/mana now use the read-only native snapshot and local icon cache.
 Do not describe this prototype as completed physics combat.
+
+## Head-relative sound
+
+Monsters, NPCs, objects and other positioned sounds now come from where they
+are relative to where you look. Turn your head (or the stick) away from a
+monster and its sound moves to the other ear; a looping sound such as the
+Rogue Encampment's stream swings as you turn without you moving.
+
+Stock D2R pans its 3D sounds by their left/right position on the flat
+screen and never moves FMOD's listener, so in VR they stayed tied to the
+fixed camera. The plugin lays each 3D sound's screen offset onto the ground
+(screen-up is ahead) at the game's own distance, and turns FMOD's listener
+with the view every 10 ms, so FMOD re-pans everything that is playing.
+
+- Stereo left/right plus the game's distance falloff; front and back sound
+  alike (no HRTF).
+- Music, ambience, UI sounds and your own hero's sounds stay centred.
+- Not yet: monsters' attack cries (`<monster>_attack_*`, `damage_dealt`)
+  are 2D sounds in the game's sound table and still play centred.
+- If nothing pans at all, check Windows **Mono audio** (Settings >
+  Accessibility > Audio): it folds the PC's sound to mono before Quest Link,
+  Air Link or Virtual Desktop stream it. While it is on, VR Settings shows
+  **Windows Mono audio is on** at its top right on every page; pointing at it
+  explains where to turn it off.
+
+`d2r_pcvr.ini`, read at start:
+
+| `[audio]` key | Default | |
+|---|---|---|
+| `head_follow` | `1` | `0` = the game's own panning (flat-camera frame). |
+| `listener_turn` | `1` | `0` = keep the ground mapping but leave FMOD's listener facing the camera. |
+| `forward_sign` | `-1` | Which screen direction counts as ahead (`-1` = up). |
+| `depth_scale` | `2` | Stretches screen up/down to undo the isometric squash. |
 
 ## Cancellation and performance
 
