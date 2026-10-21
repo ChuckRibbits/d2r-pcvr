@@ -1849,7 +1849,7 @@ float3 OutlineTint(float3 c, float2 uv, int eye, float3 p, float4 o, float3 shap
 // the eye actually sees (the same world point per pixel as the outline), so
 // monsters and walls standing in front hide it. One per cast or bomb in the air:
 // RingPos xyz the centre relative to the hero, w its alpha (0 = none); RingFill
-// how far the fill has closed from the rim inward; RingCol rgb its element's
+// how far the fill has grown from the center outward; RingCol rgb its element's
 // color, w its radius (world units); RingDir a strip instead (Fire Wall): xy its
 // direction on the ground, z its half-length, 0 = a circle.
 uniform bool RingOn < hidden = true; > = false;
@@ -1892,26 +1892,50 @@ float FacingUp(float2 uv, int eye, float3 p, float stepPx)
     const float len = length(n);
     return (ok1 * ok2 > 0.0 && len > 1e-6) ? abs(n.y) / len : 1.0;
 }
+// The landing circles' look: Jeff's tuned values from the DEV window, 2026-10-20.
+// Sizes are shares of the radius; strengths are 0..1. (Its height band,
+// RingFloorTol, comes from vrcam.)
+static const float kCircleOpacity = 0.5;        // the whole circle's strength
+static const float kCircleRim = 0.03;           // rim width
+static const float kCircleRimStrength = 0.95;
+static const float kCircleBase = 0.08;          // a faint tint over the whole circle
+static const float kCircleBand = 0.45;          // the filled part
+static const float kCircleEdgeGlow = 0.5;       // the glow on the fill's moving edge
+static const float kCircleGlowSharp = 18.0;     // how tight that glow is
+static const float kCircleBrighten = 0.3;       // how much that glow lightens the color
+static const float kCircleDot = 0.05;           // the center dot (the exact aim point)
+static const float kCircleDotStrength = 0.9;
+static const float kCircleInnerSize = 0.05;     // a glow from the rim inward
+static const float kCircleInnerOpacity = 0.25;
+static const float kCircleOuterSize = 0.05;     // a glow from the rim outward
+static const float kCircleOuterOpacity = 0.5;
 // One circle over color c, for the ground point p (relative to the hero). A
-// strip measures from its centre line instead of the centre point, so the same
-// rim and fill draw a rounded band. up (FacingUp) keeps the paint on the floor:
-// a monster's legs, a wall or a rock side inside the circle stay unpainted.
+// strip measures from its center line instead of the center point, so the same
+// rim and fill draw a rounded band. The fill is a disc growing from the center
+// to the rim over the cast's time (a Guild Wars 2 style tell). up (FacingUp)
+// keeps the paint on the floor: a monster's legs, a wall or a rock side inside
+// the circle stay unpainted. The color is added as light.
 float3 RingTint(float3 c, float3 p, float4 ring, float fill, float4 col, float4 dir, float up)
 {
     if (ring.w <= 0.0 || abs(p.y - ring.y) > RingFloorTol) return c;
     float2 q = p.xz - ring.xz;
     if (dir.z > 0.0) q -= dir.xy * clamp(dot(q, dir.xy), -dir.z, dir.z);
     const float r = length(q) / max(col.w, 1e-3);
-    if (r > 1.1) return c;
+    if (r > 1.1 + kCircleOuterSize) return c;
     const float aa = 0.02;
-    const float rim = 1.0 - smoothstep(0.03, 0.03 + aa, abs(r - 1.0));          // the outline
+    const float d = 1.0 - r;                                                    // in from the rim
+    const float innerGlow = step(0.0, d) * (1.0 - smoothstep(0.0, kCircleInnerSize + 1e-3, d));
+    const float outerGlow = step(0.0, -d) * (1.0 - smoothstep(0.0, kCircleOuterSize, -d));
+    const float rim = 1.0 - smoothstep(kCircleRim, kCircleRim + aa, abs(r - 1.0));   // the outline
     const float inner = 1.0 - smoothstep(1.0 - aa, 1.0, r);                     // inside the circle
-    const float front = 1.0 - fill;                                             // fill edge, moving inward
-    const float filled = inner * smoothstep(front - aa, front, r);              // the band from the rim to it
-    const float glow = inner * exp(-abs(r - front) * 18.0) * step(0.001, fill);
-    const float centre = 1.0 - smoothstep(0.05, 0.05 + aa, r);                  // the exact aim point
-    const float a = saturate(0.12 * inner + 0.35 * filled + 0.6 * glow + 0.9 * rim + 0.9 * centre) * ring.w * smoothstep(0.55, 0.8, up);
-    return lerp(c, col.rgb + 0.35 * glow, a);
+    const float front = fill;                                                   // fill edge, moving outward
+    const float filled = inner * (1.0 - smoothstep(front, front + aa, r));      // the disc from the center to it
+    const float glow = inner * exp(-abs(r - front) * kCircleGlowSharp) * step(0.001, fill);
+    const float aim = 1.0 - smoothstep(kCircleDot, kCircleDot + aa, r);         // the exact aim point
+    const float a = saturate(kCircleBase * inner + kCircleBand * filled + kCircleEdgeGlow * glow + kCircleRimStrength * rim +
+                             kCircleDotStrength * aim + kCircleInnerOpacity * innerGlow + kCircleOuterOpacity * outerGlow) *
+                    ring.w * kCircleOpacity * smoothstep(0.55, 0.8, up);
+    return saturate(c + saturate(col.rgb + kCircleBrighten * glow) * a * 1.3);
 }
 float3 Outline(float2 uv, int eye)
 {

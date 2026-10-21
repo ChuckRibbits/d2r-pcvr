@@ -9020,7 +9020,11 @@ void OnBeginEffects(reshade::api::effect_runtime* rt, reshade::api::command_list
                 const float dir[4] = {mark.dirX, mark.dirY, mark.halfLength * 2.0f, 0.0f};
                 snprintf(n, sizeof n, "RingDir%d", k); SetFloats(rt, n, dir, 4);
             }
-            SetFloat(rt, "RingFloorTol", 0.5f * std::max(1.0f, ViewHeight()) / UserEyeHeightM());
+            // Paint only the floor within this height of it (meters), so a circle does not
+            // climb the legs of monsters inside it. Jeff's tuned value from the DEV window,
+            // 2026-10-20, like the rest of the look (D2R_DepthFog.fx, kCircle*).
+            constexpr float kCircleHeightM = 0.15f;
+            SetFloat(rt, "RingFloorTol", kCircleHeightM * std::max(1.0f, ViewHeight()) / UserEyeHeightM());
         }
         if (count > 0) {
             const float upm = std::max(1.0f, ViewHeight()) / UserEyeHeightM();
