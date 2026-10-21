@@ -1881,7 +1881,7 @@ void Input() {
         }
     }
     // Bow path laser color (VR Settings > Aim > Bow path laser); Off keeps the last.
-    if(const float hue=vrsettings::Read().values[settings::BowLaser];hue>=0&&hue!=bowLaserHue&&!bowLaserAtlasPending&&atlasUploads.size()<3) {
+    if(const float hue=hudSettings.values[settings::BowLaser];hue>=0&&hue!=bowLaserHue&&!bowLaserAtlasPending&&atlasUploads.size()<3) {
         if(UploadAtlas(bowLaserChain,atlasFormat,bowlaser::AtlasWidth,bowlaser::AtlasHeight,bowlaser::Paint(hue),true,&bowLaserAtlasPending))bowLaserHue=hue;
     }
     // Guard strain light (Unleashed shield): blocks strain the guard, light

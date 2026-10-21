@@ -7,10 +7,10 @@
 // direction a release would fly. Physical arrows have no gravity, so the line
 // is the real path. It stops where the flight meets the launch floor; walls
 // and monsters are tested only by the flight itself, so the line otherwise
-// ends at MaxLength. Room metres throughout; yaw and scale keep it straight.
+// ends at MaxLength. Room meters throughout; yaw and scale keep it straight.
 namespace framevr::bowlaser {
 using math::Vec;
-inline constexpr float MaxLength=15; // metres, without a wall or monster test
+inline constexpr float MaxLength=15; // meters, without a wall or monster test
 struct Path {Vec start{},end{};float length=0;bool floor=false;};
 // Shown only while a release now would shoot: the same full-draw gate and
 // forward check as the bow's release.
