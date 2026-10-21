@@ -2896,8 +2896,8 @@ extern std::atomic<uint32_t> g_meleeTurnEpoch;
 namespace aimsettings {
 std::atomic<ULONGLONG> at{0};
 std::atomic<uint32_t> bits{0};
-std::atomic<float> armOutCm{20.0f};
-std::atomic<float> hue[3]{45.0f, 210.0f, 120.0f};   // the outline colors: right hand, left hand, eyes (0 = By range)
+std::atomic<float> hue[2]{45.0f, 210.0f};   // the outline colors: right hand, left hand (0 = By range)
+std::atomic<float> spanM{1.6f};   // VR Settings > Controller span (arm_span_m), set with or without Body calibration
 constexpr framevr::settings::Key keys[] = {framevr::settings::TargetHighlight, framevr::settings::SpellLock,
                                            framevr::settings::StaffPoint, framevr::settings::SpellLockBow,
                                            framevr::settings::GroundSkills, framevr::settings::GroundToTarget,
@@ -2911,10 +2911,9 @@ void Refresh() {
     uint32_t b = 0;
     for (int i = 0; i < KeyCount; ++i) if (values[keys[i]] > .5f) b |= 1u << i;
     bits.store(b);
-    armOutCm.store(values[framevr::settings::TargetArmOut]);
     hue[0].store(values[framevr::settings::HighlightRight]);
     hue[1].store(values[framevr::settings::HighlightLeft]);
-    hue[2].store(values[framevr::settings::HighlightEyes]);
+    spanM.store(values[framevr::settings::ArmSpan]);
     at.store(now);
 }
 }
@@ -2923,10 +2922,19 @@ bool AimOn(framevr::settings::Key key) {
     for (int i = 0; i < aimsettings::KeyCount; ++i) if (aimsettings::keys[i] == key) return (aimsettings::bits.load() >> i) & 1;
     return false;
 }
-// VR Settings > Aim > Hand aims when held out, cm (0: always the hand).
-float AimArmOutCm() { aimsettings::Refresh(); return aimsettings::armOutCm.load(); }
-// VR Settings > Outline: the color of a source's outline (aimrules::Source), 0 = By range.
-float OutlineHue(int source) { aimsettings::Refresh(); return aimsettings::hue[std::clamp(source, 0, 2)].load(); }
+// How far a hand is held out from the head before it points, cm: the arm counts as
+// pointing once held out a tenth of the player's span (Jeff: 15 cm on a 1.5 m span).
+float AimArmOutCm() { aimsettings::Refresh(); return framevr::armpointing::ArmOutCm(aimsettings::spanM.load()); }
+// VR Settings > Aim > Right / Left hand color: the color of a source's outline
+// (aimrules::Source), 0 = By range. The eyes have no color of their own: their
+// monster is shown in the color of the hand that would cast at it - the bow hand
+// (left) while a bow is the equipped weapon, else VR Settings > Dominant hand.
+float OutlineHue(int source) {
+    aimsettings::Refresh();
+    if (source == framevr::aimrules::Eyes)
+        source = gamestate::WeaponType() == D2RVR_TYPE_BOW || AimOn(framevr::settings::Dominant) ? framevr::aimrules::Left : framevr::aimrules::Right;
+    return aimsettings::hue[std::clamp(source, 0, 1)].load();
+}
 #ifdef D2RVR_NATIVE_OPENXR
 // Staff aim: a staff levelled out like a wand (its shaft within ~35 degrees of
 // flat) fires out of its top; held upright (the usual way) up its shaft is up,
@@ -3332,7 +3340,7 @@ bool HeadHeading(float& gx, float& gy) {
 
 // The aim rules (aimrules: one table of how each skill uses the aimed monster).
 // A target for each hand while that arm is held out (armpointing: horizontal
-// reach from the head against VR Settings > Aim > Hand aims when held out, with
+// reach from the head against a tenth of the player's span (AimArmOutCm), with
 // hysteresis; a hand resting in the lap does not point), and one for the eyes,
 // each inside its cone on the grid, the nearest first (targetcone), never past
 // the game's reach (aimreach). A cast takes them in its button's order
@@ -3376,7 +3384,7 @@ void Tick(const targetlock::Snapshot* s) {
         const float reach = tracked ? std::hypot(o[0], o[2]) : 0.f;
         if (tracked) on = framevr::armpointing::Update(arm[h], reach, d[1], armOut);
         else arm[h].on = false;
-        // Telemetry: "Frame aim hands:" each change, with why (reach against Hand aims when held out, or no tracking)
+        // Telemetry: "Frame aim hands:" each change, with why (reach against the arm-out, a tenth of the span, or no tracking)
         if (on != g_pointing[h].load())
             LogF("Frame aim hands: %s %s (%s %.0f cm, arm out %.0f cm)", h ? "left" : "right", on ? "pointing" : "down",
                  tracked ? "reach" : "no tracking, reach", reach * 100.f, armOut);
@@ -3419,7 +3427,7 @@ bool Resolve(int button, bool bow, float& x, float& y, float& distance, int* sou
     }
     return false;
 }
-// The outlines to draw: Both hands (VR Settings > Outline > Monster highlights)
+// The outlines to draw: Both hands (VR Settings > Aim > Monster highlights)
 // the right hand's monster and the left's - a held button's own while it is
 // held - and with neither, the eyes'; Dominant hand that hand's, else the
 // eyes'. How many (0-2). The render thread.
@@ -8962,7 +8970,7 @@ void OnBeginEffects(reshade::api::effect_runtime* rt, reshade::api::command_list
         // that shape's edge. xyz centre relative to the hero, w strength;
         // shape = radius, lowest and highest height (world units). Up to two
         // (aimtargets::ShownTargets: each hand's, else the eyes'), each in its
-        // own source's color (VR Settings > Outline).
+        // own source's color (VR Settings > Aim; the eyes take the casting hand's).
         SkyView sv[2];
         AcquireSRWLockShared(&g_skyLock); sv[0] = g_skyView[0]; sv[1] = g_skyView[1]; ReleaseSRWLockShared(&g_skyLock);
         aimtargets::Shown shown[2];

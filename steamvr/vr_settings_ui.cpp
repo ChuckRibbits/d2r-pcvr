@@ -135,7 +135,7 @@ std::vector<uint8_t> Paint(const Model& m,Hit hover,const char* runtimeStatus,co
             text(defer&&gameWarning?DeferWarning:runtimeStatus,{40,181,width,29},false,false,defer&&gameWarning?warn:quiet);
             text(gameWarning?gameWarning:DeferWarning,{40,209,width,29},false,false,warn);
             if(defer)button(VideoDeferBox,"Defer GPU wait",{Kind::Change,DeferGpuWait,1},false,m.ready&&!m.Busy());
-        }else text(m.page==Page::Haptics?"Tune vibration for your headset and controllers.":m.page==Page::Combat?"Tune physical combat and offline difficulty.":m.page==Page::Aim?"Choose how your target is picked and used by skills and ground skills.":m.page==Page::Outline?"Choose how the monsters you aim at are outlined.":runtimeStatus,{40,197,1200,42},false,false,quiet);
+        }else text(m.page==Page::Haptics?"Tune vibration for your headset and controllers.":m.page==Page::Combat?"Tune physical combat and offline difficulty.":m.page==Page::Aim?"Choose how your target is picked, shown and used by skills and ground skills.":runtimeStatus,{40,197,1200,42},false,false,quiet);
         for(int row=0;row<RowCount(m.page);++row){
             const Key key=RowKey(m.page,row);const auto& d=Definitions[key];const float value=m.Get()[key];const int y=RowY+row*RowStep;
             fill({40,y-4,1200,RowStep},row%2?RGB(19,31,39):RGB(22,36,44));
@@ -163,7 +163,6 @@ std::vector<uint8_t> Paint(const Model& m,Hit hover,const char* runtimeStatus,co
             else if(key==StrainDark)std::snprintf(label,sizeof label,"%s",StrainColorNames[std::clamp(int(std::lround(value)),0,2)]);
             else if(key==StrainSpeed)std::snprintf(label,sizeof label,"%s",StrainSpeedNames[int(value)]);
             else if(key==HeartbeatStart){if(value==0)std::snprintf(label,sizeof label,"Off");else std::snprintf(label,sizeof label,"%.0f%% life",value);}
-            else if(key==TargetArmOut){if(value==0)std::snprintf(label,sizeof label,"Always");else std::snprintf(label,sizeof label,"%.0f cm",value);}
             else if(d.max==1)std::snprintf(label,sizeof label,"%s",value>.5f?"On":"Off");
             else if(key==Snap)std::snprintf(label,sizeof label,"%.0f deg",value);
             else if(key==VitalsTilt)std::snprintf(label,sizeof label,"%+.6g deg",value);

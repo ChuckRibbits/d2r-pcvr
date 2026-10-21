@@ -12,10 +12,10 @@
 #include "haptic_strength.h"
 
 namespace framevr::settings {
-enum class Page { Controls, VR, Video, HUD, Combat, Aim, Outline, Haptics, ReleaseNotes };
+enum class Page { Controls, VR, Video, HUD, Combat, Aim, Haptics, ReleaseNotes };
 enum Key { Motion, Seated, Dominant, Snap, TurnSpeed, Waist, BeltForward,
            Foveation, Sky, Fog, Ceiling, DrawDistance, ObjectDistance,
-           EyeHeight, ArmSpan, BodyCalibration, SkillGestures, WristMap, WristCompass, ControllerLabels, WeaponSkillIndicators, PlanarSpellAim, VitalsLocation, CriticalAlerts, RenderResolution, NavigationLocation, SmoothTurn, OrdinaryMobBars, MenuDistance, TooltipTiming, ProjectileAimAssist, MeleeHitSpeed, VitalsTilt, HapticStrength, HapticMelee, HapticBowDraw, HapticBowRelease, HapticSpell, HapticInteraction, HapticAlert, HapticShortMelee, BloodVisor, BloodWipe, MeleeRules, MeleeThrustSpeed, LootLabelSize, CompanionCounts, StrainDark, OfflinePlayers, ShieldBashSpeed, StrainSpeed, DesktopOneEye, MapTopDown, MapRotate, FoveationStrength, StereoRendering, DeferGpuWait, TargetHighlight, HeartbeatStart, SpellLock, StaffPoint, GroundSkills, LandingCircles, TargetArmOut, SpellLockBow, GroundToTarget, AimHighlights, HighlightRight, HighlightLeft, HighlightEyes, Count };
+           EyeHeight, ArmSpan, BodyCalibration, SkillGestures, WristMap, WristCompass, ControllerLabels, WeaponSkillIndicators, PlanarSpellAim, VitalsLocation, CriticalAlerts, RenderResolution, NavigationLocation, SmoothTurn, OrdinaryMobBars, MenuDistance, TooltipTiming, ProjectileAimAssist, MeleeHitSpeed, VitalsTilt, HapticStrength, HapticMelee, HapticBowDraw, HapticBowRelease, HapticSpell, HapticInteraction, HapticAlert, HapticShortMelee, BloodVisor, BloodWipe, MeleeRules, MeleeThrustSpeed, LootLabelSize, CompanionCounts, StrainDark, OfflinePlayers, ShieldBashSpeed, StrainSpeed, DesktopOneEye, MapTopDown, MapRotate, FoveationStrength, StereoRendering, DeferGpuWait, TargetHighlight, HeartbeatStart, SpellLock, StaffPoint, GroundSkills, LandingCircles, SpellLockBow, GroundToTarget, AimHighlights, HighlightRight, HighlightLeft, Count };
 // One bit per setting, 128 wide: two words, since MSVC has no 128-bit integer.
 struct ChangeMask {
     static constexpr int Bits=128;
@@ -104,18 +104,16 @@ inline constexpr std::array<Definition,Count> Definitions{{
     {"Staff aims where your arm points", "Upright: along your arm. Levelled out: from the staff's top", L"gameplay",L"staff_point",1,0,1,1},
     {"Ground skills land where you aim", "Blizzard, Meteor, traps, bombs: on the aimed monster, else the floor you point at", L"gameplay",L"ground_skills",1,0,1,1},
     {"Landing circles", "Where and when a ground skill will hit, in its element's color", L"gameplay",L"landing_circles",1,0,1,1},
-    {"Hand aims when held out", "Arm out this far: the monster your hand points at; closer, the one you look at", L"gameplay",L"target_arm_out_cm",20,0,50,5},
     {"Bow skills go to the aimed monster", "Multiple Shot, Guided Arrow...: Off, archers aim on purpose", L"gameplay",L"spell_lock_bow",0,0,1,1},
     {"Ground skills go to the aimed monster", "On: the aimed monster when there is one. Off: always the floor you point at", L"gameplay",L"ground_to_target",1,0,1,1},
     {"Monster highlights", "Dominant hand: its monster only. Both hands: each hand's own", L"gameplay",L"aim_highlights",1,0,1,1},
     {"Right hand color", "The right hand's monster: By range, or one color", L"gameplay",L"highlight_right_hue",45,0,360,15},
     {"Left hand color", "The left hand's monster: By range, or one color", L"gameplay",L"highlight_left_hue",210,0,360,15},
-    {"Eyes color", "The monster you look at, with no hand on one: By range, or one color", L"gameplay",L"highlight_eyes_hue",120,0,360,15},
 }};
 using Values=std::array<float,Count>;
 inline bool HapticKey(Key key){return key>=HapticStrength&&key<=HapticAlert;}
-// An outline's color per source (right hand, left hand, eyes): 0 By range, else its hue.
-inline bool HighlightKey(Key key){return key==HighlightRight||key==HighlightLeft||key==HighlightEyes;}
+// An outline's color per source (right hand, left hand; the eyes take the hand that would cast): 0 By range, else its hue.
+inline bool HighlightKey(Key key){return key==HighlightRight||key==HighlightLeft;}
 inline int HapticCategory(Key key){return key>=HapticMelee&&key<=HapticAlert?key-HapticMelee:-1;}
 inline haptics::Sample HapticSample(const Values& values,haptics::Category category,int hand=0){return haptics::SampleFor(category,values[HapticShortMelee]>.5f,hand);}
 inline haptics::Strengths HapticLevels(const Values& values){
@@ -130,7 +128,6 @@ inline float Normalize(Key key,float value){
     if(!std::isfinite(value))return d.defaultValue;
     if(key==OfflinePlayers&&(value<0||value>8||std::floor(value)!=value))return 0;
     if(key==HeartbeatStart)return std::clamp(std::round(value/10)*10,d.min,d.max);   // 0 = Off, else a 10% step
-    if(key==TargetArmOut)return std::clamp(std::round(value/5)*5,d.min,d.max);   // 5 cm steps, 0 = always the hand
     if(HighlightKey(key))return std::clamp(std::round(value/15)*15,d.min,d.max);   // 0 = By range, else a hue in 15-degree steps
     if(key==VitalsTilt)return vitals::NormalizeTilt(value);
     if(HapticKey(key))return haptics::NormalizeStrength(value);
@@ -153,9 +150,9 @@ struct Rect {
     bool Contains(float px,float py)const{return px>=x&&px<x+w&&py>=y&&py<y+h;}
 };
 constexpr int Width=1280,Height=1024;
-constexpr int TabCount=9;
-inline constexpr const char* TabNames[TabCount]={"Controls","VR","Video","HUD","Combat","Aim","Outline","Haptics","Release Notes"};
-constexpr Rect Tabs[TabCount]={{40,114,146,60},{198,114,62,60},{272,114,102,60},{386,114,86,60},{484,114,134,60},{630,114,78,60},{720,114,128,60},{860,114,132,60},{1004,114,236,60}};
+constexpr int TabCount=8;
+inline constexpr const char* TabNames[TabCount]={"Controls","VR","Video","HUD","Combat","Aim","Haptics","Release Notes"};
+constexpr Rect Tabs[TabCount]={{40,114,160,60},{212,114,96,60},{320,114,124,60},{456,114,112,60},{580,114,150,60},{742,114,96,60},{850,114,146,60},{1008,114,232,60}};
 inline Rect TabBox(int index){return Tabs[index];}
 constexpr Rect Apply{965,918,275,68},Close{650,918,275,68},Recenter{40,918,270,68},Calibrate{330,918,300,68};
 constexpr int RowY=242,RowStep=62;
@@ -256,13 +253,12 @@ inline Rect ControllerOption(int option){return {865,233+option*58,375,58};}
 inline Rect Decrease(int row){return {865,RowY+row*RowStep,64,52};}
 inline Rect Increase(int row){return {1176,RowY+row*RowStep,64,52};}
 inline Rect ValueBox(int row){return {942,RowY+row*RowStep,221,52};}
-inline int RowCount(Page page){return page==Page::Haptics?2+haptics::CategoryCount:page==Page::Combat?8:page==Page::Aim?7:page==Page::Outline?5:page==Page::VR?10:page==Page::Video?10:page==Page::HUD?10:0;}
+inline int RowCount(Page page){return page==Page::Haptics?2+haptics::CategoryCount:page==Page::Combat?8:page==Page::Aim?10:page==Page::VR?10:page==Page::Video?10:page==Page::HUD?10:0;}
 inline Key RowKey(Page page,int row){
     constexpr Key hapticRows[]={HapticStrength,HapticMelee,HapticShortMelee,HapticBowDraw,HapticBowRelease,HapticSpell,HapticInteraction,HapticAlert};
     if(page==Page::Haptics)return hapticRows[row];
     if(page==Page::Combat)return row==0?MeleeRules:row==1?MeleeHitSpeed:row==2?MeleeThrustSpeed:row==3?ShieldBashSpeed:row==4?StrainDark:row==5?StrainSpeed:row==6?OfflinePlayers:HeartbeatStart;
-    if(page==Page::Aim)return row==0?TargetArmOut:row==1?SpellLock:row==2?SpellLockBow:row==3?StaffPoint:row==4?GroundSkills:row==5?GroundToTarget:LandingCircles;   // hand reach, spell lock, bow skills, staff, ground skills, ground target, circles
-    if(page==Page::Outline)return row==0?TargetHighlight:row==1?AimHighlights:row==2?HighlightRight:row==3?HighlightLeft:HighlightEyes;   // strength, which hands, each source's color
+    if(page==Page::Aim)return row==0?SpellLock:row==1?SpellLockBow:row==2?StaffPoint:row==3?TargetHighlight:row==4?AimHighlights:row==5?HighlightRight:row==6?HighlightLeft:row==7?GroundSkills:row==8?GroundToTarget:LandingCircles;   // spell lock, bow skills, staff, the outline: strength, which hands, each hand's color; then ground skills, their target, circles
     constexpr Key hud[]={VitalsLocation,VitalsTilt,CriticalAlerts,NavigationLocation,MenuDistance,TooltipTiming,BloodVisor,BloodWipe,LootLabelSize,CompanionCounts};
     if(page==Page::HUD)return hud[row];
     constexpr Key video[]={Foveation,FoveationStrength,Sky,Fog,Ceiling,DrawDistance,ObjectDistance,RenderResolution,DesktopOneEye,StereoRendering};
