@@ -1,6 +1,7 @@
 // Synthetic UI preview; does not load the game or its configuration.
 #include "vr_settings_ui.h"
 #include "release_notes.h"
+#include "latest_worker.h"
 #include <windows.h>
 #include <cstdio>
 #include <cstdlib>
@@ -94,6 +95,26 @@ int main(int argc,char** argv){
         std::puts("All help text fits; help leaves every control pixel unchanged and unused space transparent");
     }
     framevr::calibration::Flow body;body.Begin();body.phase=framevr::calibration::Phase::Hold;body.hint=framevr::calibration::Hint::Pose;body.progress=.55f;
+    // --worker-check: the transport paints VR Settings on a background painter;
+    // every page, with a hover and a help card, and the calibration page must
+    // come out there exactly as on this thread.
+    if(argc>3&&std::strcmp(argv[3],"--worker-check")==0){
+        struct Job {Model model;Hit hover;int help=NoHelp;bool calibrating=false;};
+        const auto paint=[&](const Job& j){
+            return Paint(j.model,j.hover,"Foveated shading available.",j.calibrating?&body:nullptr,
+                         framevr::controllers::Labels{{framevr::controllers::Layout::Touch,framevr::controllers::Layout::Touch}},j.help,GameVideo{true,false},true);
+        };
+        framevr::LatestWorker<Job,std::vector<uint8_t>> worker(paint);
+        if(!worker.Start())return 20;
+        for(int tab=0;tab<=TabCount;++tab){
+            Job job;job.model=m;job.calibrating=tab==TabCount;
+            if(!job.calibrating){job.model.Click({Kind::Tab,tab});job.hover={Kind::Tab,(tab+1)%TabCount};job.help=tab%2?HelpClose:NoHelp;}
+            const auto here=paint(job);const auto id=worker.Submit(job);std::vector<uint8_t> there;
+            for(int wait=0;wait<5000&&!worker.Take(id,there);++wait)Sleep(1);
+            if(here.size()!=AtlasWidth*Height*4||there!=here){std::fprintf(stderr,"Background paint differs: %s\n",job.calibrating?"calibration":TabNames[tab]);return 21;}
+        }
+        worker.Stop();std::puts("VR Settings pages and calibration paint identically on the background painter");return 0;
+    }
     // --game-video: the Video page as with Vertical Sync on and TAA; --deferred: the GPU wait already deferred.
     if(argc>3&&std::strcmp(argv[3],"--deferred")==0){Snapshot d=s;d.values[DeferGpuWait]=1;m.Open(d);m.Click({Kind::Tab,page});}
     const GameVideo game=argc>3&&std::strcmp(argv[3],"--game-video")==0?GameVideo{true,true}:GameVideo{};
