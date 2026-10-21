@@ -340,8 +340,8 @@ int main(){
     {Model aim;aim.Open(s);aim.Click({Kind::Tab,int(Page::Aim)});
         Check(RowKey(Page::Aim,0)==SpellLock&&RowKey(Page::Aim,1)==SpellLockBow&&RowKey(Page::Aim,2)==StaffPoint,"spell lock, bow skills, then staff aim");
         Check(RowKey(Page::Aim,3)==TargetHighlight&&RowKey(Page::Aim,4)==AimHighlights&&RowKey(Page::Aim,5)==HighlightRight&&RowKey(Page::Aim,6)==HighlightLeft,"then the outline: strength, which hands, each hand's color");
-        Check(s.values[SpellLock]==1&&s.values[StaffPoint]==1&&s.values[SpellLockBow]==0,"spell lock and staff aim On, bow skills Off");
-        Check(RowCount(Page::Aim)==9&&RowKey(Page::Aim,7)==GroundToTarget&&RowKey(Page::Aim,8)==LandingCircles&&s.values[GroundToTarget]==1&&s.values[LandingCircles]==1,"the ground target and landing circles follow, On by default");
+        Check(s.values[SpellLock]==0&&s.values[StaffPoint]==1&&s.values[SpellLockBow]==0,"spell and bow targeting Off by default, staff aim On");
+        Check(RowCount(Page::Aim)==9&&RowKey(Page::Aim,7)==GroundToTarget&&RowKey(Page::Aim,8)==LandingCircles&&s.values[GroundToTarget]==0&&s.values[LandingCircles]==1,"the ground target (Off by default) and landing circles (On) follow");
         Check(HelpAt(Page::Aim,(ValueBox(8).x+5.f)/Width,(ValueBox(8).y+5.f)/Height)==LandingCircles&&HelpAt(Page::Aim,(ValueBox(7).x+5.f)/Width,(ValueBox(7).y+5.f)/Height)==GroundToTarget,"the circles and ground target rows explain themselves");
         {auto off=s.values;off[SpellLock]=0;off[SpellLockBow]=0;off[TargetHighlight]=0;Check(RowEnabled(off,GroundToTarget)&&RowEnabled(off,LandingCircles),"the ground target and circles are never greyed");}
         Check(HelpAt(Page::Aim,(ValueBox(2).x+5.f)/Width,(ValueBox(2).y+5.f)/Height)==StaffPoint&&HelpAt(Page::Aim,(ValueBox(0).x+5.f)/Width,(ValueBox(0).y+5.f)/Height)==SpellLock,"the spell and staff rows explain themselves");
