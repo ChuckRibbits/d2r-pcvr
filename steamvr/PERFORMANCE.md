@@ -1,5 +1,30 @@
 # VR performance investigations
 
+## Render thread waits, October 20
+
+**By turns' passes built in the background.** The passes that turn and move
+the eye not drawn were built on the render thread at the first turned eye of
+every OpenXR session: 9 shader compiles at optimisation level 3 and 7
+pipelines, under the transport lock. Timed on the owner's PC (RTX 5090,
+Ryzen 9 5950X), that took about 215 ms in a new process (107 ms compiling, the
+rest the driver building the pipelines for the first time) and 112 ms at every
+later session. A session starts at each game entry, resolution change and
+graphics Apply. The shaders now compile once a process, and a background worker
+builds the passes once when a session is set up. The render thread's own build
+then takes about 3 ms.
+
+**The transport lock costs no frame time.** The render thread holds the
+transport lock through the OpenXR frame wait, begin and end. The earlier notes
+below suggested that other threads stall on it. A private counting build
+measured 8 minutes of By turns play (town, melee, bow, spells, VR Settings).
+Other threads waited 1.5-4.1 s per 10 s in total, mostly during the frame wait,
+and all of that waiting was on the mod's own 1 kHz update thread: melee
+sampling 107 s, the bow's world epoch 19 s, shield, bow and spell shots under
+1 s. The game's threads waited twice (about 0 ms), and the render thread about
+0.4 ms per 10 s. The update thread waits for the very poses it then reads,
+which the frame publishes when it releases the lock, so nothing arrives later.
+The frame loop was left as it is.
+
 ## Replay removed, October 20
 
 Replay left VR Settings > Video > Stereo rendering. Walks on the owner's PC

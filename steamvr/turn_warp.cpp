@@ -4,6 +4,9 @@
 #include <climits>
 #include <cstdio>
 #include <cstring>
+#include <mutex>
+#include <string>
+#include <vector>
 
 namespace framevr {
 using Microsoft::WRL::ComPtr;
@@ -196,19 +199,55 @@ constexpr float Ahead=1e-3f;   // the depth shader's: a grid point's depth-buffe
 // interface (Interface's `at`), then four an eye for Effects (its layer's
 // two targets, the two between).
 constexpr UINT GridDescriptors=8,SlotDescriptors=2*GridDescriptors+1,InterfaceDescriptors=2*SlotDescriptors,EffectsDescriptors=InterfaceDescriptors+4;
+// The shaders' bytecode, compiled once a process: the compiles were about 106
+// of the 112 ms Initialize took on the render thread at every new session
+// (RTX 5090 / Ryzen 9 5950X, 2026-10-20). Copied out of the compiler's blobs,
+// which must not outlive d3dcompiler_47. A shader that fails to compile stays
+// failed for the process; its pass is then unavailable as before.
+struct Compiled {
+    bool compiler=false;
+    std::vector<uint8_t> vs,ps,layer,depthVs,depthPs,nearVs,nearReduce,nearSpread,effectsReduce;
+    std::string errors,depthErrors,nearErrors,effectsErrors;   // the first failure's messages of each group
+};
+const Compiled& Shaders() {
+    static std::once_flag once;static Compiled c;
+    std::call_once(once,[]{
+        const HMODULE module=LoadLibraryW(L"d3dcompiler_47.dll");
+        const auto compile=module?reinterpret_cast<decltype(&D3DCompile)>(GetProcAddress(module,"D3DCompile")):nullptr;
+        if(compile)try {
+            c.compiler=true;
+            const auto build=[&](const char* source,size_t size,const char* name,const char* entry,const char* target,std::vector<uint8_t>& out,std::string* errors) {
+                ComPtr<ID3DBlob> code,messages;
+                if(SUCCEEDED(compile(source,size,name,nullptr,nullptr,entry,target,D3DCOMPILE_OPTIMIZATION_LEVEL3,0,&code,&messages))) {
+                    const auto* p=static_cast<const uint8_t*>(code->GetBufferPointer());out.assign(p,p+code->GetBufferSize());return;
+                }
+                if(errors&&errors->empty()&&messages)*errors=static_cast<const char*>(messages->GetBufferPointer());
+            };
+            build(Shader,sizeof(Shader)-1,"turn-warp","VS","vs_5_0",c.vs,&c.errors);
+            build(Shader,sizeof(Shader)-1,"turn-warp","PS","ps_5_0",c.ps,&c.errors);
+            build(Shader,sizeof(Shader)-1,"turn-warp","Layer","ps_5_0",c.layer,nullptr);
+            build(DepthShader,sizeof(DepthShader)-1,"turn-depth","VS","vs_5_0",c.depthVs,&c.depthErrors);
+            build(DepthShader,sizeof(DepthShader)-1,"turn-depth","PS","ps_5_0",c.depthPs,&c.depthErrors);
+            build(NearShader,sizeof(NearShader)-1,"turn-near","VS","vs_5_0",c.nearVs,&c.nearErrors);
+            build(NearShader,sizeof(NearShader)-1,"turn-near","Reduce","ps_5_0",c.nearReduce,&c.nearErrors);
+            build(NearShader,sizeof(NearShader)-1,"turn-near","Spread","ps_5_0",c.nearSpread,&c.nearErrors);
+            build(EffectsShader,sizeof(EffectsShader)-1,"turn-effects","Reduce","ps_5_0",c.effectsReduce,&c.effectsErrors);
+        }catch(...) {}   // out of memory: what did not finish stays unavailable
+        if(module)FreeLibrary(module);
+    });
+    return c;
+}
+D3D12_SHADER_BYTECODE Code(const std::vector<uint8_t>& code){return {code.data(),code.size()};}
 }
 bool TurnWarp::Initialize(ID3D12Device* device,DXGI_FORMAT targetFormat,void (*log)(const char*)) {
     if(pipeline)return true;
     auto fail=[&](const char* why){*this={};if(log){char b[160];std::snprintf(b,sizeof b,"Frame OpenXR: turning the eye not drawn unavailable (%s); by turns it goes at its own pose",why);log(b);}return false;};
-    struct Library {HMODULE module;~Library(){if(module)FreeLibrary(module);}} compiler{LoadLibraryW(L"d3dcompiler_47.dll")};
-    const auto compile=compiler.module?reinterpret_cast<decltype(&D3DCompile)>(GetProcAddress(compiler.module,"D3DCompile")):nullptr;
+    const auto& shaders=Shaders();
     const auto d12=GetModuleHandleW(L"d3d12.dll");
     const auto serialize=d12?reinterpret_cast<decltype(&D3D12SerializeRootSignature)>(GetProcAddress(d12,"D3D12SerializeRootSignature")):nullptr;
-    if(!compile||!serialize)return fail("no shader compiler or root serializer");
-    ComPtr<ID3DBlob> vs,ps,lps,errors,signature;
-    const auto v=compile(Shader,sizeof(Shader)-1,"turn-warp",nullptr,nullptr,"VS","vs_5_0",D3DCOMPILE_OPTIMIZATION_LEVEL3,0,&vs,&errors);
-    const auto p=compile(Shader,sizeof(Shader)-1,"turn-warp",nullptr,nullptr,"PS","ps_5_0",D3DCOMPILE_OPTIMIZATION_LEVEL3,0,&ps,&errors);
-    if(FAILED(v)||FAILED(p)){if(log&&errors)log(static_cast<const char*>(errors->GetBufferPointer()));return fail("shader compile failed");}
+    if(!shaders.compiler||!serialize)return fail("no shader compiler or root serializer");
+    ComPtr<ID3DBlob> errors,signature;
+    if(shaders.vs.empty()||shaders.ps.empty()){if(log&&!shaders.errors.empty())log(shaders.errors.c_str());return fail("shader compile failed");}
     D3D12_DESCRIPTOR_RANGE range{D3D12_DESCRIPTOR_RANGE_TYPE_SRV,1,0,0,0};
     D3D12_ROOT_PARAMETER parameters[2]{};
     parameters[0].ParameterType=D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
@@ -224,7 +263,7 @@ bool TurnWarp::Initialize(ID3D12Device* device,DXGI_FORMAT targetFormat,void (*l
        FAILED(device->CreateRootSignature(0,signature->GetBufferPointer(),signature->GetBufferSize(),IID_PPV_ARGS(&root))))
         return fail("no root signature");
     D3D12_GRAPHICS_PIPELINE_STATE_DESC state{};
-    state.pRootSignature=root.Get();state.VS={vs->GetBufferPointer(),vs->GetBufferSize()};state.PS={ps->GetBufferPointer(),ps->GetBufferSize()};
+    state.pRootSignature=root.Get();state.VS=Code(shaders.vs);state.PS=Code(shaders.ps);
     state.BlendState.RenderTarget[0].RenderTargetWriteMask=D3D12_COLOR_WRITE_ENABLE_ALL;
     state.SampleMask=UINT_MAX;state.RasterizerState.FillMode=D3D12_FILL_MODE_SOLID;
     state.RasterizerState.CullMode=D3D12_CULL_MODE_NONE;state.RasterizerState.DepthClipEnable=TRUE;
@@ -232,8 +271,8 @@ bool TurnWarp::Initialize(ID3D12Device* device,DXGI_FORMAT targetFormat,void (*l
     state.NumRenderTargets=1;state.RTVFormats[0]=targetFormat;state.SampleDesc.Count=1;
     if(FAILED(device->CreateGraphicsPipelineState(&state,IID_PPV_ARGS(&pipeline))))return fail("no pipeline for the eye format");
     // The interface pass is optional: without it By turns leaves the interface in the picture.
-    if(SUCCEEDED(compile(Shader,sizeof(Shader)-1,"turn-warp",nullptr,nullptr,"Layer","ps_5_0",D3DCOMPILE_OPTIMIZATION_LEVEL3,0,&lps,nullptr))) {
-        D3D12_GRAPHICS_PIPELINE_STATE_DESC layer=state;layer.PS={lps->GetBufferPointer(),lps->GetBufferSize()};
+    if(!shaders.layer.empty()) {
+        D3D12_GRAPHICS_PIPELINE_STATE_DESC layer=state;layer.PS=Code(shaders.layer);
         auto& blend=layer.BlendState.RenderTarget[0];
         blend.BlendEnable=TRUE;blend.SrcBlend=D3D12_BLEND_ONE;blend.DestBlend=D3D12_BLEND_SRC_ALPHA;blend.BlendOp=D3D12_BLEND_OP_ADD;
         blend.SrcBlendAlpha=D3D12_BLEND_ZERO;blend.DestBlendAlpha=D3D12_BLEND_ONE;blend.BlendOpAlpha=D3D12_BLEND_OP_ADD;
@@ -254,10 +293,8 @@ bool TurnWarp::Initialize(ID3D12Device* device,DXGI_FORMAT targetFormat,void (*l
         if(log){char b[160];std::snprintf(b,sizeof b,"Frame OpenXR: by turns - moving the eye with the scene depth unavailable (%s)",why);log(b);}
         return true;
     };
-    ComPtr<ID3DBlob> dvs,dps;errors.Reset();signature.Reset();
-    const auto dv=compile(DepthShader,sizeof(DepthShader)-1,"turn-depth",nullptr,nullptr,"VS","vs_5_0",D3DCOMPILE_OPTIMIZATION_LEVEL3,0,&dvs,&errors);
-    const auto dp=compile(DepthShader,sizeof(DepthShader)-1,"turn-depth",nullptr,nullptr,"PS","ps_5_0",D3DCOMPILE_OPTIMIZATION_LEVEL3,0,&dps,&errors);
-    if(FAILED(dv)||FAILED(dp)){if(log&&errors)log(static_cast<const char*>(errors->GetBufferPointer()));return depthFail("shader compile failed");}
+    errors.Reset();signature.Reset();
+    if(shaders.depthVs.empty()||shaders.depthPs.empty()){if(log&&!shaders.depthErrors.empty())log(shaders.depthErrors.c_str());return depthFail("shader compile failed");}
     D3D12_DESCRIPTOR_RANGE both{D3D12_DESCRIPTOR_RANGE_TYPE_SRV,GridDescriptors,0,0,0};   // a picture, its depth; this eye's own and its depth; the near blocks; the effects blocks
     D3D12_ROOT_PARAMETER depthParameters[2]{};
     depthParameters[0].ParameterType=D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
@@ -269,7 +306,7 @@ bool TurnWarp::Initialize(ID3D12Device* device,DXGI_FORMAT targetFormat,void (*l
     if(FAILED(serialize(&depthDesc,D3D_ROOT_SIGNATURE_VERSION_1,&signature,&errors))||
        FAILED(device->CreateRootSignature(0,signature->GetBufferPointer(),signature->GetBufferSize(),IID_PPV_ARGS(&depthRoot))))
         return depthFail("no root signature");
-    state.pRootSignature=depthRoot.Get();state.VS={dvs->GetBufferPointer(),dvs->GetBufferSize()};state.PS={dps->GetBufferPointer(),dps->GetBufferSize()};
+    state.pRootSignature=depthRoot.Get();state.VS=Code(shaders.depthVs);state.PS=Code(shaders.depthPs);
     state.DepthStencilState.DepthEnable=TRUE;state.DepthStencilState.DepthWriteMask=D3D12_DEPTH_WRITE_MASK_ALL;
     state.DepthStencilState.DepthFunc=D3D12_COMPARISON_FUNC_GREATER;state.DSVFormat=DXGI_FORMAT_D32_FLOAT;
     if(FAILED(device->CreateGraphicsPipelineState(&state,IID_PPV_ARGS(&depthPipeline))))return depthFail("no pipeline");
@@ -282,11 +319,9 @@ bool TurnWarp::Initialize(ID3D12Device* device,DXGI_FORMAT targetFormat,void (*l
         if(log){char b[192];std::snprintf(b,sizeof b,"Frame OpenXR: by turns - finding near things unavailable (%s); \"near things only\" keeps the drawn eye's picture",why);log(b);}
         return true;
     };
-    ComPtr<ID3DBlob> nvs,nreduce,nspread;errors.Reset();signature.Reset();
-    if(FAILED(compile(NearShader,sizeof(NearShader)-1,"turn-near",nullptr,nullptr,"VS","vs_5_0",D3DCOMPILE_OPTIMIZATION_LEVEL3,0,&nvs,&errors))||
-       FAILED(compile(NearShader,sizeof(NearShader)-1,"turn-near",nullptr,nullptr,"Reduce","ps_5_0",D3DCOMPILE_OPTIMIZATION_LEVEL3,0,&nreduce,&errors))||
-       FAILED(compile(NearShader,sizeof(NearShader)-1,"turn-near",nullptr,nullptr,"Spread","ps_5_0",D3DCOMPILE_OPTIMIZATION_LEVEL3,0,&nspread,&errors))) {
-        if(log&&errors)log(static_cast<const char*>(errors->GetBufferPointer()));
+    errors.Reset();signature.Reset();
+    if(shaders.nearVs.empty()||shaders.nearReduce.empty()||shaders.nearSpread.empty()) {
+        if(log&&!shaders.nearErrors.empty())log(shaders.nearErrors.c_str());
         return nearFail("shader compile failed");
     }
     D3D12_ROOT_PARAMETER nearParameters[2]{};
@@ -296,24 +331,23 @@ bool TurnWarp::Initialize(ID3D12Device* device,DXGI_FORMAT targetFormat,void (*l
        FAILED(device->CreateRootSignature(0,signature->GetBufferPointer(),signature->GetBufferSize(),IID_PPV_ARGS(&nearRoot))))
         return nearFail("no root signature");
     D3D12_GRAPHICS_PIPELINE_STATE_DESC nearState{};
-    nearState.pRootSignature=nearRoot.Get();nearState.VS={nvs->GetBufferPointer(),nvs->GetBufferSize()};nearState.PS={nreduce->GetBufferPointer(),nreduce->GetBufferSize()};
+    nearState.pRootSignature=nearRoot.Get();nearState.VS=Code(shaders.nearVs);nearState.PS=Code(shaders.nearReduce);
     nearState.BlendState.RenderTarget[0].RenderTargetWriteMask=D3D12_COLOR_WRITE_ENABLE_ALL;
     nearState.SampleMask=UINT_MAX;nearState.RasterizerState=state.RasterizerState;
     nearState.PrimitiveTopologyType=D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
     nearState.NumRenderTargets=1;nearState.RTVFormats[0]=DXGI_FORMAT_R32_FLOAT;nearState.SampleDesc.Count=1;
     if(FAILED(device->CreateGraphicsPipelineState(&nearState,IID_PPV_ARGS(&reducePipeline))))return nearFail("no pipeline");
-    nearState.PS={nspread->GetBufferPointer(),nspread->GetBufferSize()};
+    nearState.PS=Code(shaders.nearSpread);
     if(FAILED(device->CreateGraphicsPipelineState(&nearState,IID_PPV_ARGS(&spreadPipeline))))return nearFail("no pipeline");
     heap.Type=D3D12_DESCRIPTOR_HEAP_TYPE_RTV;heap.NumDescriptors=UINT(nears.size());
     if(FAILED(device->CreateDescriptorHeap(&heap,IID_PPV_ARGS(&nearTargets))))return nearFail("no target heap");
     // The effects pass is optional too: without it "effects" keeps none.
-    ComPtr<ID3DBlob> ereduce;errors.Reset();
-    if(FAILED(compile(EffectsShader,sizeof(EffectsShader)-1,"turn-effects",nullptr,nullptr,"Reduce","ps_5_0",D3DCOMPILE_OPTIMIZATION_LEVEL3,0,&ereduce,&errors))) {
-        if(log&&errors)log(static_cast<const char*>(errors->GetBufferPointer()));
+    if(shaders.effectsReduce.empty()) {
+        if(log&&!shaders.effectsErrors.empty())log(shaders.effectsErrors.c_str());
         if(log)log("Frame OpenXR: by turns - finding the game's effects unavailable (shader compile failed)");
         return true;
     }
-    nearState.PS={ereduce->GetBufferPointer(),ereduce->GetBufferSize()};
+    nearState.PS=Code(shaders.effectsReduce);
     auto& larger=nearState.BlendState.RenderTarget[0];
     larger.BlendEnable=TRUE;larger.SrcBlend=larger.DestBlend=D3D12_BLEND_ONE;larger.BlendOp=D3D12_BLEND_OP_MAX;
     larger.SrcBlendAlpha=larger.DestBlendAlpha=D3D12_BLEND_ONE;larger.BlendOpAlpha=D3D12_BLEND_OP_MAX;

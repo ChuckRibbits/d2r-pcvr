@@ -521,6 +521,13 @@ std::array<bool,2> turnKept{};
 bool turnImagesFailed=false,turnWarpTried=false;
 DXGI_FORMAT turnFormat=DXGI_FORMAT_UNKNOWN;
 TurnWarp turnWarp;
+// Built once in the background as a session is set up, long before a frame
+// first turns an eye: that compiles its shaders for the process and has the
+// driver build its pipelines once. On the render thread these held it about
+// 215 ms in a new process and 112 ms at every later session; then about 3 ms
+// (RTX 5090 / Ryzen 9 5950X, 2026-10-20).
+struct TurnWarmJob {ComPtr<ID3D12Device> device;DXGI_FORMAT format=DXGI_FORMAT_UNKNOWN;};
+LatestWorker<TurnWarmJob,bool> turnCompiler([](const TurnWarmJob& job){TurnWarp warm;return warm.Initialize(job.device.Get(),job.format,nullptr);});
 // By turns: each eye's scene depth as drawn, beside its kept image (KeepDepth).
 bool keepDepth=false;
 struct KeptDepth {ComPtr<ID3D12Resource> texture;DXGI_FORMAT format=DXGI_FORMAT_UNKNOWN;float scale[2]{1,1};bool ok=false;};
@@ -1158,6 +1165,9 @@ bool Initialize(reshade::api::command_queue* rq,reshade::api::swapchain* swap) {
     tracking.data->version=D2RVR_SHARED_VERSION;pad.data->version=BW_PAD_MIRROR_VERSION;actions.data->version=D2RVR_ACTIONS_VERSION;
     gameSwapchain=swap;
     char b[160];std::snprintf(b,sizeof b,"Frame OpenXR: D3D12 session ready, eyes %ux%u format %d (game format %d)",width,height,int(eyeFormat),int(format));Say(b);
+    // Only for a session that started: a failed one is shut down at once, and
+    // that would wait here for the warm-up.
+    if(turnCompiler.Start())turnCompiler.Submit({device,turnFormat});   // else the first turned eye builds it all
     return true;
 }
 void UpdateControllerLabels() {
@@ -3754,7 +3764,7 @@ void Shutdown(bool preserveResolution) {
     if(!preserveResolution)hud::NativeSession(false);
     if(!preserveResolution)resolution::Restore();
     windowFocus.Cancel();
-    EndPair();ClearInput();interactionPainter.Stop();bloodPainter.Stop();strainPainter.Stop();settingsPainter.Stop();interaction::icons::Shutdown();
+    EndPair();ClearInput();interactionPainter.Stop();bloodPainter.Stop();strainPainter.Stop();settingsPainter.Stop();turnCompiler.Stop();interaction::icons::Shutdown();
     // Completion is mandatory before destroying our commands/resources, even
     // when ordinary frame submission uses queue ordering without a CPU wait.
     if(fence&&!WaitGpu())failed=true;
