@@ -6610,7 +6610,7 @@ void ShieldGuardTick() {
     pose.coverScale=framevr::guard::CoverScale(holy);
     static bool holyWas=false;
     if(holy!=holyWas) {
-        holyWas=holy;char line[160];snprintf(line,sizeof line,"Frame guard: Holy Shield coverage %s (x%.1f about the shield's centre)",
+        holyWas=holy;char line[160];snprintf(line,sizeof line,"Frame guard: Holy Shield coverage %s (x%.1f about the shield's center)",
             holy?"on":"off",holy?framevr::guard::HolyShieldCover:1.f);
         framevr::logging::Write(line);
     }
@@ -6832,10 +6832,16 @@ void PushArms() {
 #ifdef D2RVR_NATIVE_OPENXR
     in.forearmTwist = in.wrist;   // a hand turned by the controller turns its forearm too
     in.shieldTrace = g_set.shieldTrace.load();
-    {const auto v = vrsettings::Read().values; in.shieldGripCm = v[framevr::settings::ShieldGrip];
-     in.shieldOutCm = v[framevr::settings::ShieldOut]; in.shieldUpCm = v[framevr::settings::ShieldUp];
-     in.shieldFollowPct = skel::shield::FollowSetting(v[framevr::settings::ShieldFollow]);   // 0..100 in 10% steps
-     in.shieldRollDeg = skel::shield::RollSetting(v[framevr::settings::ShieldRoll]);}       // -180..+180 in 5-degree steps
+    {// VR Settings > Shield: one settings snapshot every 200 ms, not one per frame
+     static float grip = 0, out = 0, up = 0, follow = skel::shield::kFollowDefaultPct, roll = 0;
+     static ULONGLONG readAt = 0; const ULONGLONG now = GetTickCount64();
+     if (!readAt || now - readAt > 200) {
+         readAt = now; const auto v = vrsettings::Read().values;
+         grip = v[framevr::settings::ShieldGrip]; out = v[framevr::settings::ShieldOut]; up = v[framevr::settings::ShieldUp];
+         follow = skel::shield::FollowSetting(v[framevr::settings::ShieldFollow]);   // 0..100 in 10% steps
+         roll = skel::shield::RollSetting(v[framevr::settings::ShieldRoll]);         // -180..+180 in 5-degree steps
+     }
+     in.shieldGripCm = grip; in.shieldOutCm = out; in.shieldUpCm = up; in.shieldFollowPct = follow; in.shieldRollDeg = roll;}
 #endif
     in.wristDeg[0] = g_set.wristPitch.load(); in.wristDeg[1] = g_set.wristYaw.load(); in.wristDeg[2] = g_set.wristRoll.load();
     float yaw = 0.0f;
