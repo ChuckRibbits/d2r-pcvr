@@ -1079,7 +1079,7 @@ creature twice. Native lifetime remains in charge; there is no damage multiplier
 for drawing farther. Both eyes share the same flying-arrow transform per pair.
 
 **Bow path laser** (**VR Settings > Aim > Bow path laser**, `[bow] path_laser_hue`,
-Gold 45° by default): at full draw, while a release would shoot a physical
+Off by default): at full draw, while a release would shoot a physical
 arrow (basic or quiver), a faint line runs from the arrow's tip along the
 release's own direction. The one row chooses Off or the line's hue in
 15-degree steps, wrapping through Off in both directions (345°, Off, 0°);
