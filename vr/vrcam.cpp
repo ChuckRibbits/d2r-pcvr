@@ -3256,6 +3256,15 @@ bool HandWorldTheta(float* theta) {
     return true;
 }
 
+#ifdef D2RVR_NATIVE_OPENXR
+// A skill cast the aim rules aim themselves (a row in aim_rules.h). A skill the
+// table does not know (rule Native: the Warlock's, self skills) keeps the game's
+// hand aim: its point 20 cells along the hand and the hero turned to the hand
+// (Jeff, 2026-10-20: Warlock spells without a rule went behind him).
+bool RulesAimCast() {
+    return framevr::NativeSkillCasting() && framevr::aimrules::Of(framevr::AimRulesSkill(), framevr::AimRulesDirected()) != framevr::aimrules::Use::Native;
+}
+#endif
 // The aiming hand as a unit vector on the game's grid. The grid's axes are the
 // world's x and z (measured 2026-10-02: 0 deg, not mirrored, agreement 0.98);
 // what the walk teaches overrides that once it is sure.
@@ -3763,7 +3772,7 @@ void HookUnitFacing(void* unit, float* out) {
     }
     if (!out || (uintptr_t)_ReturnAddress() != d2rsig::Addr(RVA_AIM_FACING_RET) || !AimByVector()) return;
 #ifdef D2RVR_NATIVE_OPENXR
-    if (framevr::NativeSkillCasting()) return;   // the aim rules: the hero faces the cast, not the raw hand
+    if (RulesAimCast()) return;   // the aim rules: the hero faces the cast, not the raw hand
 #endif
     float gx, gy;
     if (!HandGridDir(&gx, &gy)) return;
@@ -3807,13 +3816,14 @@ float* HookAttackPoint(void* mgr, float* out, void* unit, uint64_t from, uint64_
 #ifdef D2RVR_NATIVE_OPENXR
     selectedSpell=framevr::SpellSelected();
 #endif
-    // A skill's point is the aim rules' (above) or the game's own, never 20
-    // cells along the hand: that pushed curses and corpse skills off their target.
-    if (!out || !AimByVector() || selectedSpell || (w != 3 && w != 4 && !thrown && !StaffAim()) || !HandGridDir(&gx, &gy)) return r;
+    // A skill the aim rules aim keeps their point (above), never 20 cells along
+    // the hand: that pushed curses and corpse skills off their target. Others: upstream's.
+    if (selectedSpell && RulesAimCast()) return r;
+    if (!out || !AimByVector() || (!selectedSpell && w != 3 && w != 4 && !thrown && !StaffAim()) || !HandGridDir(&gx, &gy)) return r;
     float f[2]; memcpy(f, &from, sizeof f);
     // A crossbow or a staff aims finer held in both hands: the point farther out.
     float range = g_set.aimRange.load();
-    if (StaffAim()) {
+    if (!selectedSpell && StaffAim()) {
         const bool xbow = type == D2RVR_TYPE_CROSSBOW;
         bool leftOn = true;   // both controllers, the staff between them: always both
 #if D2RVR_FIRST_PERSON
@@ -3866,7 +3876,7 @@ uint64_t HookAttackTarget(void* self, void* unit, float* dir, int* outX, int* ou
     // walking calls keep the stick, or the hero would walk after the hand
     bool skillCast = false;   // a skill's vector is the aim rules' (below) or the game's, not the raw hand
 #ifdef D2RVR_NATIVE_OPENXR
-    skillCast = framevr::NativeSkillCasting();
+    skillCast = RulesAimCast();
 #endif
     if (dir && !skillCast && caller == d2rsig::Rva(RVA_ATTACK_POINT_RET) && AimByVector() && HandGridDir(&use[0], &use[1])) {
         d = use;
