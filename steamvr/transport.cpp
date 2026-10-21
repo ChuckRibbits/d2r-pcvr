@@ -1985,7 +1985,7 @@ void Input() {
         // up / down zooms it and does nothing else; left / right still turns.
         const bool shown=wristMapShown&&mapSupported&&interaction::NavigationWanted(interactionInput,interactionOutput,interactionInput.at);
         wristMapLooked=shown&&mapzoom::Looking(interactionInput.head.p,interactionInput.head.q,wristMapCenter,wristMapLooked);
-        mapzoom::Input in;in.time=interactionInput.time;in.looking=MinimapLooked();in.saved=hudSettings.values[settings::MapZoom];
+        mapzoom::Input in;in.time=interactionInput.time;in.looking=MinimapLooked();
         in.stick=controls.ry/32767.f;
         const auto zoom=mapZoom.Step(in);
         if(zoom.owned)controls.ry=0;
@@ -1999,14 +1999,6 @@ void Input() {
         if(zoom.stopped&&mapZoomLogged){
             char line[80];std::snprintf(line,sizeof line,"Frame map zoom: stop at %.2fx%s",zoom.zoom,wristMapLooked?"":" (looked away)");Say(line);
             mapZoomLogged=false;
-        }
-        // Saved like an Apply, never under an open settings panel or calibration's own save.
-        if(zoom.save&&!settingsModel.open&&!bodyCalibration.Active()) {
-            const auto request=mapzoom::SaveRequest(vrsettings::Read(),zoom.zoom);
-            if(request.changed&&vrsettings::Submit(request)) {
-                mapZoom.Submitted(in.time);
-                char line[80];std::snprintf(line,sizeof line,"Frame map zoom: %.2fx saved",zoom.zoom);Say(line);
-            }
         }
     }
     gamestate::MenuMap(mapSupported&&interaction::MapWanted(interactionInput,interactionOutput,interactionInput.at));

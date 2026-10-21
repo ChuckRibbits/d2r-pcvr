@@ -226,9 +226,9 @@ glance at the edge does not flicker), the right stick's up / down zooms it:
 up zooms in about your hero, up to 4x; down zooms out to 1x, the whole native
 map, where it stops. A light tick marks each quarter step, a firmer one either
 end. While you look at the map, right stick up / down does nothing else; left /
-right still turns. Wrist, palm and the wheel's **MAP** share one zoom, saved as
-`[interactions] minimap_zoom` when the stick returns to the center or you look
-away.
+right still turns. Wrist, palm and the wheel's **MAP** share one zoom. It is not
+saved: it lasts until the game closes, and every game starts at 1x, so a player
+who has forgotten the control still sees the whole map.
 
 The label above the compass shows your current **act (I-V)** and **area name**,
 including named dungeon floors. It follows the same wrist/palm placement and

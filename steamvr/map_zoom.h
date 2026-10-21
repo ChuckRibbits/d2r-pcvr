@@ -1,6 +1,5 @@
 #pragma once
 #include "frame_math.h"
-#include "vr_settings.h"
 #include <algorithm>
 #include <cmath>
 
@@ -11,15 +10,16 @@
 // or the map going away, gives the stick back the same frame.
 // Jeff, 2026-10-21: "the map zoom in and out should not be buttons. When
 // looking at the map, the right stick up and down zooms in and out."
+// The zoom lasts while the game runs and is not saved: "Restarting should
+// reset the map to default levels in case people forget how to zoom in and out."
 namespace framevr::mapzoom {
 // 1 is the whole native map in the frame, as before: the source is the game's
 // own corner map, so there is nothing further out to zoom to. Pulling down
 // until it stops is the way home.
-constexpr float Min=settings::Definitions[settings::MapZoom].min,Max=settings::Definitions[settings::MapZoom].max;
+constexpr float Min=1,Max=4;
 constexpr float Doublings=1.5f;   // per second at full stick: 1x to 4x in 1.3 s
 constexpr float Dead=.3f;         // stick travel ignored, either way
 constexpr float Notch=.25f;       // a light tick each quarter crossed; a firmer one at either stop
-constexpr double SaveWait=5;      // a save not seen back by then failed: the stored zoom leads again
 // Looking at the map: its center within LookIn degrees of the head's forward
 // starts it, and it lasts until past LookOut, so a glance at the map's edge
 // does not flicker the stick between map and game.
@@ -38,7 +38,6 @@ struct Input {
     double time=0;
     bool looking=false;   // the wrist / palm map is shown and looked at (Looking)
     float stick=0;        // right stick: up +1, down -1
-    float saved=Min;      // [interactions] minimap_zoom
 };
 struct Output {
     bool owned=false;     // the right stick's up / down is the map's this frame
@@ -46,43 +45,29 @@ struct Output {
     bool started=false,stopped=false;   // a zoom gesture's edges, for the log
     float zoom=Min;
     int tick=0;           // 1 a quarter crossed, 2 a stop reached
-    bool save=false;      // a changed zoom waits to be saved
 };
 class Gesture {
-    bool zooming=false,unsaved=false,submitted=false;
-    double last=0,submittedAt=0;
+    bool zooming=false;
+    double last=0;
     float zoom=Min;
 public:
-    // Tracking or focus lost: no gesture continues. The zoom stays.
+    // Tracking or focus lost: no gesture continues. The zoom stays until the game closes.
     void Reset(){zooming=false;last=0;}
-    void Submitted(double time){submitted=true;submittedAt=time;}
     float Zoom()const{return zoom;}
     Output Step(const Input& in) {
         Output out;
         const double dt=last>0&&in.time>last?std::min(in.time-last,.1):0;
         last=in.time;
-        const float saved=Clamp(in.saved);
-        if(unsaved&&!zooming&&(std::fabs(saved-zoom)<1e-4f||(submitted&&in.time-submittedAt>SaveWait)))unsaved=submitted=false;
-        if(!zooming&&!unsaved)zoom=saved;   // an INI edit or another copy's save shows too
         const float y=in.looking&&std::isfinite(in.stick)?std::clamp(in.stick,-1.f,1.f):0;
         const bool now=std::fabs(y)>=Dead;
         out.started=now&&!zooming;out.stopped=!now&&zooming;zooming=now;
         if(now&&dt>0) {
             const float before=zoom;
             zoom=Clamp(zoom*std::exp2(std::copysign((std::fabs(y)-Dead)/(1-Dead),y)*Doublings*float(dt)));
-            if(zoom!=before) {
-                unsaved=true;submitted=false;
-                out.tick=zoom==Min||zoom==Max?2:NotchOf(zoom)!=NotchOf(before)?1:0;
-            }
+            if(zoom!=before)out.tick=zoom==Min||zoom==Max?2:NotchOf(zoom)!=NotchOf(before)?1:0;
         }
-        out.owned=in.looking;out.zooming=zooming;out.zoom=zoom;out.save=unsaved&&!zooming&&!submitted;
+        out.owned=in.looking;out.zooming=zooming;out.zoom=zoom;
         return out;
     }
 };
-// The zoom saved like any VR setting: one changed key on the current values.
-inline settings::Request SaveRequest(const settings::Snapshot& s,float zoom) {
-    if(!s.ready||s.result==settings::Result::Saving)return {};
-    auto values=s.values;values[settings::MapZoom]=Clamp(zoom);
-    return {s.values,values,settings::Changed(s.values,values),s.sequence+1};
-}
 }

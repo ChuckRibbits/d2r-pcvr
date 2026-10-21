@@ -2,9 +2,7 @@
 #include <windows.h>
 #include "../vr/settings_menu.h"
 #include "body_calibration.h"
-#include "map_zoom.h"
 #include <cstdio>
-#include <cwchar>
 #include <cstdlib>
 #include <string>
 using namespace framevr::settings;
@@ -355,13 +353,6 @@ int main(){
         model.Open(vrsettings::Read());model.Click({Kind::Change,CompanionCounts,enabled?1:-1});request=model.Click({Kind::Apply});
         Check(vrsettings::Submit(request)&&vrsettings::Poll(name),"save companion count preference");
         Check(vrsettings::Read().values[CompanionCounts]==enabled&&Int(path,L"interactions",L"companion_counts")==enabled&&Int(path,L"custom",L"keep")==12345,"companion preference survives reload without touching other settings");
-    }
-    Check(vrsettings::Read().values[MapZoom]==1,"old profiles show the whole minimap");
-    {
-        const auto zoomed=framevr::mapzoom::SaveRequest(vrsettings::Read(),2.35f);
-        Check(zoomed.changed==(ChangeMask{1}<<MapZoom)&&vrsettings::Submit(zoomed)&&vrsettings::Poll(name),"map zoom saves through the normal transaction");
-        wchar_t text[32]{};GetPrivateProfileStringW(L"interactions",L"minimap_zoom",L"",text,32,name);
-        Check(vrsettings::Read().values[MapZoom]==2.35f&&std::wcstof(text,nullptr)==2.35f&&Int(path,L"custom",L"keep")==12345,"minimap zoom survives reload without touching other settings");
     }
     model.Open(vrsettings::Read());model.Click({Kind::Change,Motion,-1});request=model.Click({Kind::Apply});
     Check(DeleteFileW(name)&&vrsettings::Submit(request)&&!vrsettings::Poll(name),"missing file fails safely");

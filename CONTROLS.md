@@ -436,8 +436,8 @@ Change its view under **VR Settings > HUD**, then press **Apply**:
 Both are saved like any setting. Isometric with north up is the default.
 
 To zoom, look at the wrist or palm map (its center within about 22 degrees
-of where your head points) and push the right stick up to zoom in about your hero, up to 4x, or down
-to zoom out; 1x, the whole native map, is the lowest. A light tick marks each
-quarter and a firmer one either end. The wheel's MAP tab shows the same zoom,
-which is remembered (`[interactions] minimap_zoom`). Looking away gives the
-right stick back at once.
+of where your head points) and push the right stick up to zoom in about your
+hero, up to 4x, or down to zoom out; 1x, the whole native map, is the lowest. A
+light tick marks each quarter and a firmer one either end. The wheel's MAP tab
+shows the same zoom. The zoom lasts until the game closes; every game starts at
+1x. Looking away gives the right stick back at once.
