@@ -96,7 +96,7 @@ inline constexpr std::array<Definition,Count> Definitions{{
     {"Map view", "Isometric or Top-down wrist minimap", L"interactions",L"map_top_down",0,0,1,1},
     {"Rotate map", "Top-down only: keep your facing direction at the top", L"interactions",L"map_rotate",0,0,1,1},
     {"Foveation strength", "Higher levels shade a larger edge area more coarsely", L"render",L"foveation_strength",1,0,3,1},
-    {"Stereo rendering", "By turns: one eye a frame; Replay: one CPU pass for both eyes", L"stereo",L"rendering",1,0,2,1},
+    {"Stereo rendering", "Both eyes: each frame twice; By turns: one eye a frame", L"stereo",L"rendering",1,0,1,1},
     {"Defer GPU wait", "Start the next frame while the GPU finishes the last", L"render",L"defer_gpu_wait",0,0,1,1},
     {"Monster outline", "Outline strength for the monster you aim at; Off by default", L"gameplay",L"target_outline_pct",0,0,100,10},
     {"Monster outline colors", "Static: one color. By range: red near, orange mid-range, yellow far", L"gameplay",L"target_outline_by_range",0,0,1,1},
@@ -174,7 +174,12 @@ inline constexpr const char* MeleeRulesNames[]={"Unleashed","Classic"};
 inline constexpr const char* StrainColorNames[]={"White","Black"};
 inline constexpr const char* StrainSpeedNames[]={"Slow","Medium","Fast"};
 inline constexpr const char* FoveationStrengthNames[]={"Low","Medium","High","Maximum"};
-inline constexpr const char* StereoRenderingNames[]={"Both eyes","By turns","Replay"};
+// Replay (one CPU pass for both eyes) left the choices on 2026-10-20: on the
+// owner's PC it halved the CPU work a frame but not the frame time - the right
+// eye's GPU work waits for the whole left pass - so it stayed at 45 Hz like
+// Both eyes, while By turns ran 74-90 (steamvr/PERFORMANCE.md). A profile
+// saved with it (2) is out of range and goes by turns.
+inline constexpr const char* StereoRenderingNames[]={"Both eyes","By turns"};
 // Every stereo rendering choice ends each frame waiting for the GPU unless
 // the wait is deferred ([render] defer_gpu_wait): then about half the frame
 // rate. While it is not deferred, the Video page warns and offers a button

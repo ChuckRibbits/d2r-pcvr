@@ -367,6 +367,7 @@ aim across the panel. A small hand tremor will not change methods.
 | Context / alternate click | Left Grip + Right Trigger (hold grip first) |
 | Native Ctrl-click shortcut | Hold Left Trigger, then click with Right Trigger; the game chooses drop, sell or transfer for the current panel |
 | Native Shift modifier | Hold Right Grip while using the laser |
+| Push / pull the panel | Point at the panel, hold Right Grip and move that hand toward or away from you; release to leave it there. The VR Settings panel can also be moved and tilted this way |
 | Back / close | Right B, or point and click the panel's close/back button |
 | Tabs / page controls | Point and click the native on-screen controls |
 

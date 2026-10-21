@@ -833,6 +833,9 @@ void LoadSettings() {
     framevr::ConfigureDeferredWait(IniB(L"render",L"defer_gpu_wait",false));
     framevr::ConfigureSymmetricProjection(IniB(L"render",L"symmetric_projection",true));
     framevr::ConfigureTurnsFromDrawnEye(IniB(L"stereo",L"turns_from_drawn_eye",true));
+    framevr::ConfigureTurnsKeepOwn(int(IniF(L"stereo",L"turns_keep_own",3)));
+    framevr::ConfigureTurnsKeepNear(IniF(L"stereo",L"turns_keep_gap",48),IniF(L"stereo",L"turns_keep_reach",96));
+    framevr::ConfigureTurnsKeepEffects(IniF(L"stereo",L"turns_effects_level",0.02f),IniF(L"stereo",L"turns_effects_reach",32));
     framevr::ConfigureEyeTracking(IniB(L"render",L"eye_tracked_foveation",false));
     framevr::ConfigureGameplay(IniB(L"gameplay",L"motion_controls",false));
     framevr::ConfigureQuiver(IniB(L"bow",L"quiver",true),IniB(L"bow",L"quiver_preview",true));
@@ -5054,7 +5057,8 @@ bool TurnSafe(bool& moved, bool& snapped) {
 }
 // Stereo rendering: Replay (vr/stereo_replay.h): one CPU pass, the right eye
 // from its lists - first person in the world, no capture waiting for a pair of
-// two passes. The settle counts every pair, replayed or not.
+// two passes. The settle counts every pair, replayed or not. No longer a
+// choice (vr_settings.h): StereoRendering is never 2 and this never wanted.
 bool ReplayWanted() {
     if (framevr::StereoRendering() != 2) return false;
     static bool told = false;   // once a ready stretch: what else holds it back
@@ -8688,8 +8692,8 @@ void TryRegister() {
     if (!reshade::register_addon(g_self)) return;
     framevr::resources::Register();
 #ifdef D2RVR_NATIVE_OPENXR
-    // before the game makes its device: the replay reads its upload buffers from their creation
-    stereoreplay::Register(&Log, g_replaySettings);
+    // (Stereo rendering: Replay is no longer a choice, so the replay is not
+    // registered: its resource, list and present hooks ran in every mode.)
     framevr::scenedepth::Register(&Log);
     framevr::lightbounds::Register(&Log);
 #endif

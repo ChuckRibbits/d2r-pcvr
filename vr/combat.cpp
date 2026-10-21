@@ -598,7 +598,9 @@ int GuardedBlock(uintptr_t game,uintptr_t attacker,uintptr_t defender,int avoid,
             // haptics did, 2026-10-16): the game's block sound at the hero.
             melee::QueueBlockSound();
             WearShield(game,defender);   // the blow met the shield; a parry spares it
-            if(g==Guard::Block&&inReach) {
+            // Act bosses: no late parry either (Parryable gates Judge only; a
+            // blocked hit is how a late parry starts - Andariel, 2026-10-20).
+            if(g==Guard::Block&&inReach&&Parryable(rank)) {
                 std::lock_guard lock(guardMutex);framevr::guard::NoteBlock(guard.state,GetTickCount64());
                 guard.blockMonster=monster;guard.blockDurability=durability;   // durability before this hit, for a late parry's refund
             }

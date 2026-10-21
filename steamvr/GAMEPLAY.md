@@ -302,7 +302,26 @@ placement. Title and character-selection screens keep the existing flat panel.
 | Native menu navigation | Sticks or face buttons; triggers and grips map LT/RT/LB/RB in native navigation |
 | Native Ctrl modifier | Hold left trigger while clicking |
 | Native Shift modifier | Hold right grip while clicking |
+| Push / pull the panel | Point at it, hold right grip and move that hand toward or away from you; release to leave it there |
 | Back / close | Right B, or the native close button |
+
+Game menus push and pull only: the panel moves nearer or farther by exactly
+the hand's travel toward or away from it, between 0.40 m and 1.50 m, and
+ignores sideways, vertical and turning movement. It starts only when the right
+laser is on the panel and the hand travels 3 cm toward or away before any
+click, so a still grip followed by a trigger click stays a native Shift-click;
+a trigger squeezed while moving does nothing until released. The laser and
+clicks follow the moved panel. Every in-game and main/title menu reopens at
+that distance until the game is restarted or **VR Settings > HUD > Menu
+distance** is changed. The handheld quest log keeps its left-grip placement.
+
+The VR Settings panel is grabbed like a real window with the same right grip:
+the point you grabbed stays on the end of the laser. Moving the hand without
+turning it slides the panel 1:1 (up, down, left, right, nearer, farther);
+tilting the controller up/down or turning it left/right swings the panel
+around your hand by the same angle, but it never rolls. Tilt stops at 60
+degrees and the panel stays 0.40 m to 1.50 m from your head.
+It reopens in the same place relative to where you face until restart.
 
 Sticks/face buttons select native menu navigation without an idle laser stealing
 focus. Release native controls and deliberately move the ray across the surface
@@ -355,7 +374,7 @@ tabs and a **Reset eye height** button:
 |---|---|
 | Controls | Left/right controller reference for movement, menus, melee, bow, spells, potions, holsters and height reset |
 | VR | Controller labels, motion combat, seated belt position, dominant hand, smooth/snap turning, belt height and reach, weapon skill gestures and ordinary mob bars |
-| Video | Foveation Off / Fixed / Eye tracked and its strength (Low / Medium / High / Maximum), actual VR source size, added sky, fog, dungeon ceilings, terrain and object draw distances, VR render resolution (Headset by default), desktop one eye, stereo rendering (Both eyes / By turns / Replay, By turns by default), a Defer GPU wait button while frames wait for the GPU, and warnings while the game's Vertical Sync is on or its anti-aliasing is not FXAA |
+| Video | Foveation Off / Fixed / Eye tracked and its strength (Low / Medium / High / Maximum), actual VR source size, added sky, fog, dungeon ceilings, terrain and object draw distances, VR render resolution (Headset by default), desktop one eye, stereo rendering (Both eyes / By turns, By turns by default), a Defer GPU wait button while frames wait for the GPU, and warnings while the game's Vertical Sync is on or its anti-aliasing is not FXAA |
 | HUD | Health/mana location and tilt, optional resource alerts, navigation location, menu distance and tooltip timing |
 | Combat | Melee rules, swing hit speed and thrust speed |
 | Haptics | Overall strength and separate melee, bow draw, bow/throw release, spell, interaction and resource-alert strengths; tests follow each action's hands |
@@ -982,7 +1001,8 @@ instead of a random one. Classic keeps the native roll.
   (2026-10-19) started 0-156 ms after a blocked hit, timed to the animation. A
   parry swing within this long after a blocked melee hit (within 3 m) still parries
   it: the attacker staggers and the block's wear is restored; the block's strain
-  stands. A hit that landed on you is not undone. Logged as `Frame guard late parry:`
+  stands. Act bosses are never parried late either (2026-10-20: the late parry
+  had skipped the act-boss gate, so Andariel could be parried). A hit that landed on you is not undone. Logged as `Frame guard late parry:`
   and `late_parries` in `Frame guard:`; later swings stay `swing too late`. Hit-frame parries
   had come a median 516 ms after the swing (2026-10-18). An attack whose to-hit
   roll has already run is never staggered early; otherwise the to-hit roll or
