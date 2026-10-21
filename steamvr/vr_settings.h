@@ -15,7 +15,7 @@ namespace framevr::settings {
 enum class Page { Controls, VR, Video, HUD, Combat, Aim, Haptics, ReleaseNotes };
 enum Key { Motion, Seated, Dominant, Snap, TurnSpeed, Waist, BeltForward,
            Foveation, Sky, Fog, Ceiling, DrawDistance, ObjectDistance,
-           EyeHeight, ArmSpan, BodyCalibration, SkillGestures, WristMap, WristCompass, ControllerLabels, WeaponSkillIndicators, PlanarSpellAim, VitalsLocation, CriticalAlerts, RenderResolution, NavigationLocation, SmoothTurn, OrdinaryMobBars, MenuDistance, TooltipTiming, ProjectileAimAssist, MeleeHitSpeed, VitalsTilt, HapticStrength, HapticMelee, HapticBowDraw, HapticBowRelease, HapticSpell, HapticInteraction, HapticAlert, HapticShortMelee, BloodVisor, BloodWipe, MeleeRules, MeleeThrustSpeed, LootLabelSize, CompanionCounts, StrainDark, OfflinePlayers, ShieldBashSpeed, StrainSpeed, DesktopOneEye, MapTopDown, MapRotate, FoveationStrength, StereoRendering, DeferGpuWait, TargetHighlight, HeartbeatStart, SpellLock, StaffPoint, GroundSkills, LandingCircles, SpellLockBow, GroundToTarget, AimHighlights, HighlightRight, HighlightLeft, Count };
+           EyeHeight, ArmSpan, BodyCalibration, SkillGestures, WristMap, WristCompass, ControllerLabels, WeaponSkillIndicators, PlanarSpellAim, VitalsLocation, CriticalAlerts, RenderResolution, NavigationLocation, SmoothTurn, OrdinaryMobBars, MenuDistance, TooltipTiming, ProjectileAimAssist, MeleeHitSpeed, VitalsTilt, HapticStrength, HapticMelee, HapticBowDraw, HapticBowRelease, HapticSpell, HapticInteraction, HapticAlert, HapticShortMelee, BloodVisor, BloodWipe, MeleeRules, MeleeThrustSpeed, LootLabelSize, CompanionCounts, StrainDark, OfflinePlayers, ShieldBashSpeed, StrainSpeed, DesktopOneEye, MapTopDown, MapRotate, FoveationStrength, StereoRendering, DeferGpuWait, TargetHighlight, HeartbeatStart, SpellLock, StaffPoint, LandingCircles, SpellLockBow, GroundToTarget, AimHighlights, HighlightRight, HighlightLeft, Count };
 // One bit per setting, 128 wide: two words, since MSVC has no 128-bit integer.
 struct ChangeMask {
     static constexpr int Bits=128;
@@ -102,7 +102,6 @@ inline constexpr std::array<Definition,Count> Definitions{{
     {"Heartbeat starts at", "Life % where the heartbeat begins; louder and faster every 10% lower", L"gameplay",L"low_life_heart_start",60,0,90,10},
     {"Spells go to the aimed monster", "Its button's hand's monster, then the other hand's, then the one you look at", L"gameplay",L"spell_lock",1,0,1,1},
     {"Staff aims where your arm points", "Upright: along your arm. Levelled out: from the staff's top", L"gameplay",L"staff_point",1,0,1,1},
-    {"Ground skills land where you aim", "Blizzard, Meteor, traps, bombs: on the aimed monster, else the floor you point at", L"gameplay",L"ground_skills",1,0,1,1},
     {"Landing circles", "Where and when a ground skill will hit, in its element's color", L"gameplay",L"landing_circles",1,0,1,1},
     {"Bow skills go to the aimed monster", "Multiple Shot, Guided Arrow...: Off, archers aim on purpose", L"gameplay",L"spell_lock_bow",0,0,1,1},
     {"Ground skills go to the aimed monster", "On: the aimed monster when there is one. Off: always the floor you point at", L"gameplay",L"ground_to_target",1,0,1,1},
@@ -245,7 +244,6 @@ inline const char* GameVideoWarning(GameVideo game) {
 // Strength only applies while foveated rendering is selected; Off greys it out.
 inline bool RowEnabled(const Values& values,Key key){
     if(key==DeferGpuWait)return DeferOffered(values);   // the button only turns it on
-    if(key==GroundToTarget)return values[GroundSkills]>.5f;   // only while ground skills land where you aim
     if(key==AimHighlights||HighlightKey(key))return values[TargetHighlight]>0;   // only while the monster outline shows
     return key!=FoveationStrength||values[Foveation]>.5f;
 }
@@ -253,12 +251,12 @@ inline Rect ControllerOption(int option){return {865,233+option*58,375,58};}
 inline Rect Decrease(int row){return {865,RowY+row*RowStep,64,52};}
 inline Rect Increase(int row){return {1176,RowY+row*RowStep,64,52};}
 inline Rect ValueBox(int row){return {942,RowY+row*RowStep,221,52};}
-inline int RowCount(Page page){return page==Page::Haptics?2+haptics::CategoryCount:page==Page::Combat?8:page==Page::Aim?10:page==Page::VR?10:page==Page::Video?10:page==Page::HUD?10:0;}
+inline int RowCount(Page page){return page==Page::Haptics?2+haptics::CategoryCount:page==Page::Combat?8:page==Page::Aim?9:page==Page::VR?10:page==Page::Video?10:page==Page::HUD?10:0;}
 inline Key RowKey(Page page,int row){
     constexpr Key hapticRows[]={HapticStrength,HapticMelee,HapticShortMelee,HapticBowDraw,HapticBowRelease,HapticSpell,HapticInteraction,HapticAlert};
     if(page==Page::Haptics)return hapticRows[row];
     if(page==Page::Combat)return row==0?MeleeRules:row==1?MeleeHitSpeed:row==2?MeleeThrustSpeed:row==3?ShieldBashSpeed:row==4?StrainDark:row==5?StrainSpeed:row==6?OfflinePlayers:HeartbeatStart;
-    if(page==Page::Aim)return row==0?SpellLock:row==1?SpellLockBow:row==2?StaffPoint:row==3?TargetHighlight:row==4?AimHighlights:row==5?HighlightRight:row==6?HighlightLeft:row==7?GroundSkills:row==8?GroundToTarget:LandingCircles;   // spell lock, bow skills, staff, the outline: strength, which hands, each hand's color; then ground skills, their target, circles
+    if(page==Page::Aim)return row==0?SpellLock:row==1?SpellLockBow:row==2?StaffPoint:row==3?TargetHighlight:row==4?AimHighlights:row==5?HighlightRight:row==6?HighlightLeft:row==7?GroundToTarget:LandingCircles;   // spell lock, bow skills, staff, the outline: strength, which hands, each hand's color; then the ground target, circles
     constexpr Key hud[]={VitalsLocation,VitalsTilt,CriticalAlerts,NavigationLocation,MenuDistance,TooltipTiming,BloodVisor,BloodWipe,LootLabelSize,CompanionCounts};
     if(page==Page::HUD)return hud[row];
     constexpr Key video[]={Foveation,FoveationStrength,Sky,Fog,Ceiling,DrawDistance,ObjectDistance,RenderResolution,DesktopOneEye,StereoRendering};

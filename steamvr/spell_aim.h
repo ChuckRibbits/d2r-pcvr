@@ -84,7 +84,7 @@ inline bool Point(float x,float y,math::Vec direction,float& targetX,float& targ
 // point: the aimed monster, else the floor point aimed at. Fire Blast is no
 // special case, and the bone walls no longer have their own placement.
 inline bool GroundTarget(int skill) { return aimrules::Of(skill, false) == aimrules::Use::Ground; }
-// The landing circle's colour by element: 0 fire, 1 cold, 2 lightning, 3 poison/other.
+// The landing circle's color by element: 0 fire, 1 cold, 2 lightning, 3 poison/other.
 enum Element { Fire, Cold, Lightning, Other };
 inline Element ElementOf(int skill) {
     switch(skill) {

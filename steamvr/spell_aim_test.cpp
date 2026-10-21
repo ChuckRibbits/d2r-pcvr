@@ -132,7 +132,7 @@ int main() {
     Check(spellaim::GroundTarget(251)&&spellaim::GroundTarget(261)&&spellaim::GroundTarget(59)&&spellaim::GroundTarget(56)&&
           !spellaim::GroundTarget(36)&&!spellaim::GroundTarget(64)&&!spellaim::GroundTarget(-1),"traps, Blizzard and Meteor are ground-target skills; bolts and orbs are not");
     Check(spellaim::ElementOf(59)==spellaim::Cold&&spellaim::ElementOf(251)==spellaim::Fire&&spellaim::ElementOf(261)==spellaim::Lightning,
-          "circle colours: Blizzard cold, Fire Blast fire, Charged Bolt Sentry lightning");
+          "circle colors: Blizzard cold, Fire Blast fire, Charged Bolt Sentry lightning");
     {
         float gx=0,gy=0;
         const auto down45=math::Normalized(math::Vec{1,-1,0});

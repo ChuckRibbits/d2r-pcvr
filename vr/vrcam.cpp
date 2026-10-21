@@ -2900,7 +2900,7 @@ std::atomic<float> hue[2]{45.0f, 210.0f};   // the outline colors: right hand, l
 std::atomic<float> spanM{1.6f};   // VR Settings > Controller span (arm_span_m), set with or without Body calibration
 constexpr framevr::settings::Key keys[] = {framevr::settings::TargetHighlight, framevr::settings::SpellLock,
                                            framevr::settings::StaffPoint, framevr::settings::SpellLockBow,
-                                           framevr::settings::GroundSkills, framevr::settings::GroundToTarget,
+                                           framevr::settings::GroundToTarget,
                                            framevr::settings::LandingCircles, framevr::settings::AimHighlights,
                                            framevr::settings::Dominant};
 constexpr int KeyCount = int(std::size(keys));
@@ -3514,7 +3514,7 @@ namespace mobaim {
 bool Wanted() {
     return g_enabled.load() && g_inWorld.load() &&
         (TargetHighlightOn() || AimOn(framevr::settings::SpellLock) || AimOn(framevr::settings::SpellLockBow) ||
-         (AimOn(framevr::settings::GroundSkills) && AimOn(framevr::settings::GroundToTarget)));
+         AimOn(framevr::settings::GroundToTarget));
 }
 void Tick() {
     const bool wanted = Wanted();

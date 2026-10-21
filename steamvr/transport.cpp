@@ -3472,11 +3472,7 @@ bool BowSkillActive() {
     return skill.known&&skill.available&&weaponskills::Bow(skill.id);
 }
 int GroundSpellSkill() {
-    // VR Settings > Aim > Ground skills land where you aim, read before our
-    // lock; Fire Blast like every other ground skill. Off: none aims at the
-    // ground - Fire Blast flies the fixed heading distance and the game places
-    // the rest, as without this setting.
-    if(vrsettings::Read().values[settings::GroundSkills]<=.5f)return -1;
+    // Every ground skill lands where it is aimed, Fire Blast like the rest.
     std::lock_guard lock(mutex);
     const int slot=motionOutput.skill;
     const auto now=GetTickCount64();
@@ -3540,15 +3536,13 @@ bool AimRulesDirected() {
     const auto* skill=CastSkillRow();return skill&&skill->directed;
 }
 // A skill the rules place at a point: ground skills, curses, Corpse Explosion,
-// Charge, Teleport... With VR Settings > Aim > Ground skills land where you aim
-// Off (read before our lock), the game places ground skills.
+// Charge, Teleport...
 int PointSpellSkill() {
-    const bool ground=vrsettings::Read().values[settings::GroundSkills]>.5f;
     std::lock_guard lock(mutex);
     const auto* skill=CastSkillRow();
     if(!skill)return -1;
     const auto use=aimrules::Of(skill->id,skill->directed);
-    return aimrules::Placed(use)&&(ground||use!=aimrules::Use::Ground)?skill->id:-1;
+    return aimrules::Placed(use)?skill->id:-1;
 }
 bool MeleeSample(uint32_t poseStamp,melee::Sample& sample,int hand) {
     std::lock_guard lock(mutex);

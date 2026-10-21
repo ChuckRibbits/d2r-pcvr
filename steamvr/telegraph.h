@@ -27,7 +27,7 @@ struct Mark {
     uint64_t cast=0,flight=0; // ms; flight is the expected time to land
     uint64_t landed=0;        // ms; 0 until the burst is seen
     uint32_t sequence=0;
-    int element=0;            // spellaim::Element: the circle's colour
+    int element=0;            // spellaim::Element: the circle's color
     float radius=RadiusCells; // cells; for a strip, its half-width
     float dirX=0,dirY=0;      // a strip's direction on the grid (unit)
     float halfLength=0;       // cells; 0 = a circle

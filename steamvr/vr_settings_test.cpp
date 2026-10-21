@@ -292,9 +292,9 @@ int main(){
         Check(RowKey(Page::Aim,0)==SpellLock&&RowKey(Page::Aim,1)==SpellLockBow&&RowKey(Page::Aim,2)==StaffPoint,"spell lock, bow skills, then staff aim");
         Check(RowKey(Page::Aim,3)==TargetHighlight&&RowKey(Page::Aim,4)==AimHighlights&&RowKey(Page::Aim,5)==HighlightRight&&RowKey(Page::Aim,6)==HighlightLeft,"then the outline: strength, which hands, each hand's color");
         Check(s.values[SpellLock]==1&&s.values[StaffPoint]==1&&s.values[SpellLockBow]==0,"spell lock and staff aim On, bow skills Off");
-        Check(RowCount(Page::Aim)==10&&RowKey(Page::Aim,7)==GroundSkills&&RowKey(Page::Aim,8)==GroundToTarget&&RowKey(Page::Aim,9)==LandingCircles&&s.values[GroundSkills]==1&&s.values[GroundToTarget]==1&&s.values[LandingCircles]==1,"ground skills, their target and landing circles follow, On by default");
-        Check(HelpAt(Page::Aim,(ValueBox(9).x+5.f)/Width,(ValueBox(9).y+5.f)/Height)==LandingCircles&&HelpAt(Page::Aim,(ValueBox(8).x+5.f)/Width,(ValueBox(8).y+5.f)/Height)==GroundToTarget,"the circles and ground target rows explain themselves");
-        {auto off=s.values;off[GroundSkills]=0;Check(!RowEnabled(off,GroundToTarget)&&RowEnabled(s.values,GroundToTarget),"the ground target greys out while ground skills are Off");}
+        Check(RowCount(Page::Aim)==9&&RowKey(Page::Aim,7)==GroundToTarget&&RowKey(Page::Aim,8)==LandingCircles&&s.values[GroundToTarget]==1&&s.values[LandingCircles]==1,"the ground target and landing circles follow, On by default");
+        Check(HelpAt(Page::Aim,(ValueBox(8).x+5.f)/Width,(ValueBox(8).y+5.f)/Height)==LandingCircles&&HelpAt(Page::Aim,(ValueBox(7).x+5.f)/Width,(ValueBox(7).y+5.f)/Height)==GroundToTarget,"the circles and ground target rows explain themselves");
+        {auto off=s.values;off[SpellLock]=0;off[SpellLockBow]=0;off[TargetHighlight]=0;Check(RowEnabled(off,GroundToTarget)&&RowEnabled(off,LandingCircles),"the ground target and circles are never greyed");}
         Check(HelpAt(Page::Aim,(ValueBox(2).x+5.f)/Width,(ValueBox(2).y+5.f)/Height)==StaffPoint&&HelpAt(Page::Aim,(ValueBox(0).x+5.f)/Width,(ValueBox(0).y+5.f)/Height)==SpellLock,"the spell and staff rows explain themselves");
         Check(s.values[TargetHighlight]==0,"the monster outline is Off by default");
         Check(s.values[AimHighlights]==1&&s.values[HighlightRight]==45&&s.values[HighlightLeft]==210,"both hands; gold right, blue left by default");
