@@ -19,6 +19,7 @@
 namespace framevr::telegraph {
 inline constexpr float CellsPerSecond=14.f;   // first guess, measured: 31 cells in 2.4 s, 22 in 1.6 s
 inline constexpr float RadiusCells=2.5f;      // approximate burst area
+inline constexpr float ShockWebCells=6.f;    // Shock Web's ~9 bombs land 2-8 cells round the aim, most within 6
 inline constexpr float MatchCells=12.f;       // a burst farther than this from every circle ends the oldest
 inline constexpr uint64_t MinFlightMs=250,LateMs=1500,FadeMs=350,ThrowMs=280;
 inline constexpr int MaxMarks=6;              // D2R_DepthFog.fx draws RingPos0..5
@@ -40,6 +41,7 @@ struct Mark {
 struct Flight {int skill;uint32_t launch,land;};
 inline constexpr Flight Flights[]={
     {251,385,386},   // Fire Blast: "bomb in air", "bomb on ground"
+    {256,388,389},   // Shock Web: its bombs in the air, the webs on the ground
 };
 inline constexpr int FlightCount=int(sizeof Flights/sizeof Flights[0]);
 // The game's missile velocity (its set-velocity call) in cells per second: the
@@ -65,7 +67,9 @@ inline int FlightOf(uint32_t missile,bool& landing) {
 // ThrowMs after the cast and flies CellsPerSecond (measured 2026-10-19, 11
 // throws: 0.27-0.30 s, then 45 cells in 3.20 s, 11 in 0.78 s); cells is the
 // throw's distance. Faster attacks shorten the wind-up, so the launch missile
-// re-times it (Board::Launched).
+// re-times it (Board::Launched). Shock Web the same (2026-10-21, 3 throws: its
+// bombs leave 0.27-0.30 s after the cast at ~15 cells/s, 41-47 cells in 2.8-3.2 s,
+// and land 2-8 cells round the aim, each a web for ~3.6 s).
 struct Area {uint64_t showMs;float radius,halfLength;};
 inline uint64_t FlightMs(float cells) {
     if(!std::isfinite(cells))return MinFlightMs;
@@ -74,12 +78,13 @@ inline uint64_t FlightMs(float cells) {
 inline Area ForSkill(int skill,float cells=0) {
     switch(skill) {
         case 251: return {ThrowMs+FlightMs(cells),RadiusCells,0};   // Fire Blast: until the bomb lands
+        case 256: return {ThrowMs+FlightMs(cells),ShockWebCells,0};   // Shock Web: thrown like Fire Blast, a wider spread
         case 59: return {4100,7.f,0};      // Blizzard
         case 56: return {2650,5.f,0};      // Meteor: fills until it lands
         case 51: return {700,.75f,5.f};    // Fire Wall: a strip across the cast
         case 234: return {3500,7.f,0};     // Fissure
         case 244: return {900,2.5f,0};     // Volcano (not measured yet)
-        default: return {700,2.f,0};       // traps, Shock Web, Hydra
+        default: return {700,2.f,0};       // traps, Hydra
     }
 }
 struct Draw {bool on=false;float fill=0,alpha=0;bool burst=false;};

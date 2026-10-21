@@ -64,6 +64,7 @@ int main() {
     Check(placed.Place(60,50,20100,600,2,2.5f),"another point at once is its own circle");
     // Measured areas: Blizzard wide and long, Meteor filling until it lands, Fire Wall a strip.
     Check(ForSkill(59).radius==7.f&&ForSkill(59).showMs==4100&&ForSkill(59).halfLength==0,"Blizzard: 7 cells for the 4.1 s storm");
+    { bool landing=true;Check(ForSkill(256,28).showMs==ThrowMs+2000&&ForSkill(256).radius==ShockWebCells&&FlightOf(388,landing)>=0&&!landing&&FlightOf(389,landing)>=0&&landing,"Shock Web: thrown and timed like Fire Blast, a 6-cell spread"); }
     Check(ForSkill(56).showMs==2650&&ForSkill(56).radius==5.f,"Meteor: 5 cells, full when it lands at 2.65 s");
     Check(ForSkill(51).halfLength==5.f&&ForSkill(51).radius<1.f,"Fire Wall: a narrow 10-cell strip");
     Board wall;
