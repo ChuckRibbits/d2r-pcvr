@@ -36,6 +36,7 @@
 #include "dropped_item_labels.h"
 #include "window_focus.h"
 #include "gameplay.h"
+#include "bow_laser.h"
 #include "hand_controls.h"
 #include "interaction_ui.h"
 #include "sewer_prompt_art.h"
@@ -1005,14 +1006,19 @@ bool UploadAtlas(XrSwapchain& chain,DXGI_FORMAT eyeFormat,int atlasWidth,int atl
     XrSwapchainImageReleaseInfo ri{XR_TYPE_SWAPCHAIN_IMAGE_RELEASE_INFO};
     return Check(pReleaseSwapchainImage(chain,&ri),"release static atlas atlas");
 }
+// Menu laser and dot in cyan, then the faint gold bow path laser: a steady
+// beam (to the floor), a beam fading out toward its far end (row 128), and its
+// end dot. A beam quad's top edge is its far end.
 bool SetupPointer(DXGI_FORMAT eyeFormat) {
-    std::vector<uint8_t> pixels(64*96*4);
-    for(int y=0;y<96;++y)for(int x=0;x<64;++x) {
-        auto* p=pixels.data()+(y*64+x)*4;p[0]=40;p[1]=210;p[2]=255;
-        const float radius=std::hypot((x-31.5f)/30.f,(y-63.5f)/30.f);
-        p[3]=y<32?200:uint8_t(std::clamp((1-radius)*10,0.f,1.f)*255);
+    std::vector<uint8_t> pixels(64*256*4);
+    for(int y=0;y<256;++y)for(int x=0;x<64;++x) {
+        auto* p=pixels.data()+(y*64+x)*4;
+        const bool gold=y>=96;p[0]=gold?255:40;p[1]=gold?200:210;p[2]=gold?90:255;
+        const float radius=std::hypot((x-31.5f)/30.f,(y-(y<192?63.5f:223.5f))/30.f);
+        const float dot=std::clamp((1-radius)*10,0.f,1.f);
+        p[3]=y<32?200:y<96?uint8_t(dot*255):y<128?96:y<192?uint8_t(96*(y-128)/63):uint8_t(dot*150);
     }
-    return UploadAtlas(pointerChain,eyeFormat,64,96,pixels);
+    return UploadAtlas(pointerChain,eyeFormat,64,256,pixels);
 }
 // Static text atlas: allocated/uploaded once, never repainted in the frame loop.
 // Native skill icons, names and belt counts require a separate read-only UI adapter.
@@ -3123,6 +3129,7 @@ void EndPair() {
     const uint32_t contentLimit=padQuads&&capacity>1?capacity-1:capacity;
     XrCompositionLayerQuad palette{XR_TYPE_COMPOSITION_LAYER_QUAD},bottle{XR_TYPE_COMPOSITION_LAYER_QUAD},chosen{XR_TYPE_COMPOSITION_LAYER_QUAD};
     std::array<XrCompositionLayerQuad,2> arrow{{{XR_TYPE_COMPOSITION_LAYER_QUAD},{XR_TYPE_COMPOSITION_LAYER_QUAD}}};
+    XrCompositionLayerQuad bowLaser{XR_TYPE_COMPOSITION_LAYER_QUAD},bowLaserEnd{XR_TYPE_COMPOSITION_LAYER_QUAD};
     XrCompositionLayerQuad nock{XR_TYPE_COMPOSITION_LAYER_QUAD},bowHint{XR_TYPE_COMPOSITION_LAYER_QUAD},activeSkill{XR_TYPE_COMPOSITION_LAYER_QUAD},leftActiveSkill{XR_TYPE_COMPOSITION_LAYER_QUAD};
     const bool gameplayVisible=layer&&!panelMode&&motionControls.load()&&motionInput.active&&gameplayChain&&motionOutput.rayValid;
     auto motionQuad=[&](XrCompositionLayerQuad& q,XrPosef pose,float w,float h,XrRect2Di rect,XrSwapchain chain) {
@@ -3272,6 +3279,32 @@ void EndPair() {
         motionQuad(bowHint,XrPose({bow.p+math::Vec{0,-.25f,0},Q(head.orientation)}),.24f,.045f,
             {{576,768+hint*85},{448,85}},gameplayChain);
     }
+    // Bow path laser: the release's own tail and direction, in room space like
+    // the arrow guide; resolveBow only yaws and scales it, so it stays straight.
+    // Added after the bow's own quads, so it can never displace them.
+    bool bowLaserShown=false,bowLaserFloor=false;float bowLaserLength=0;
+    if(gameplayVisible&&!settingsModel.open&&!interactionOutput.wheel&&pointerChain&&motionOutput.bowPhysical&&
+       vrsettings::Read().values[settings::BowLaser]>.5f&&
+       bowlaser::Shown(motionOutput.bowCharged,motionOutput.rayDirection,motionOutput.bowForward)) {
+        const auto now=GetTickCount64();
+        const bool floorKnown=stageWorld.valid&&stageWorld.upm>0&&now>=stageWorld.at&&now-stageWorld.at<=250;
+        const auto path=bowlaser::Trace(motionInput.hand[0].p,motionOutput.rayDirection,floorKnown,
+            floorKnown?stageWorld.origin.y-stageWorld.eyeHeight/stageWorld.upm:0);
+        if(path.length>.05f) {
+            const auto mid=path.start+motionOutput.rayDirection*(path.length*.5f);
+            const auto orient=math::BeamOrientation(motionOutput.rayDirection,V(head.position)-mid);
+            const auto before=count;
+            motionQuad(bowLaser,XrPose({mid,orient}),.004f,path.length,{{0,path.floor?96:128},{64,path.floor?32:64}},pointerChain);
+            if(path.floor)motionQuad(bowLaserEnd,XrPose({path.end,Q(head.orientation)}),.05f,.05f,{{0,192},{64,64}},pointerChain);
+            bowLaserShown=count>before;bowLaserLength=path.length;bowLaserFloor=path.floor;
+        }
+    }
+    static bool bowLaserWasShown=false;static ULONGLONG bowLaserReportAt=0;
+    if(bowLaserShown&&!bowLaserWasShown&&GetTickCount64()>=bowLaserReportAt) {
+        char message[96];std::snprintf(message,sizeof message,"Frame bow laser: shown (length %.1f m%s)",bowLaserLength,bowLaserFloor?", floor":"");
+        Say(message);bowLaserReportAt=GetTickCount64()+2000;
+    }
+    bowLaserWasShown=bowLaserShown;
     XrCompositionLayerQuad book{XR_TYPE_COMPOSITION_LAYER_QUAD};
     if(layer&&!settingsModel.open&&!bodyCalibration.Active()&&spatialMode&&(journalMode?journalPlacement.Placed():workspacePlaced)&&uiEye.copied&&uiCrop[2]>0) {
         const auto size=UiSurfaceSize();

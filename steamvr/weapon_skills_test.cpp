@@ -67,6 +67,7 @@ int main() {
     }
     for(int id:{6,7,11,12,16,21,22,26,27,31}) {
         Sim s;s.Select(id);s.Draw();assert(s.out.skill==-1&&!s.out.attack&&!s.out.bowRelease);
+        assert(s.out.bowDrawing&&!s.out.bowPhysical); // a native bow skill shows no path laser
         s.in.trigger=0;s.Step();assert(s.out.nativeBowRelease&&s.out.skill==2&&!s.out.bowRelease&&!s.out.attack);
         assert(s.out.rayDirection.z<-.99f);s.in.hand[0].p.x+=.1f;s.Step();assert(s.out.rayDirection.z<-.99f);
         s.Step(5);assert(!s.out.nativeBowRelease&&s.out.skill==-1);s.Step(30);assert(s.out.skill==-1);

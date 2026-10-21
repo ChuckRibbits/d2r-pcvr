@@ -100,8 +100,11 @@ int main() {
         Check(s.Step(3).meleeContact,"new weapon needs no grip release/activation");
     }
     {
-        Sim s;s.Nock();s.Move({0,1.3f,0},10);s.in.trigger=0;
-        auto shot=s.Step();Check(shot.bowRelease&&!shot.attack&&shot.feedback==2,"draw release shoots");
+        Sim s;s.Nock();s.Move({0,1.3f,0},10);
+        Check(s.out.bowDrawing&&s.out.bowCharged&&s.out.bowPhysical,"a basic draw is a physical arrow for the path laser");
+        s.in.trigger=0;
+        auto shot=s.Step();
+        Check(!shot.bowPhysical,"no path laser after release");Check(shot.bowRelease&&!shot.attack&&shot.feedback==2,"draw release shoots");
         Check(shot.rayDirection.z<-.99f&&std::fabs(shot.rayOrigin.z+.5f)<.001,"arrow aims from string through bow hand");
         s.in.hand[0].p.x+=.1f;shot=s.Step();Check(shot.rayDirection.z<-.99f,"release direction stays latched through input pulse");
         Check(!s.Step(5).bowRelease&&!s.out.attack,"release event cannot become a held attack");

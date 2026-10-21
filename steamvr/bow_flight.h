@@ -13,6 +13,7 @@ namespace framevr::bowflight {
 using math::Vec;
 inline constexpr float ArrowLength=.75f; // same tail/tip as the tracked draw guide
 inline constexpr float JavelinLength=1.5f,JavelinGrip=.6f;
+inline constexpr float FloorClearance=.015f; // a flight stops this far above its launch floor
 enum class Kind : uint32_t { Arrow=0,Javelin=1,Spell=2,Crossbow=31 };
 inline float Length(Vec v) { return std::sqrt(math::Dot(v,v)); }
 inline bool Finite(Vec v) { return std::isfinite(v.x)&&std::isfinite(v.y)&&std::isfinite(v.z); }

@@ -298,7 +298,7 @@ int Collision(uintptr_t game,uintptr_t unit) {
     });
     // Until terrain-height queries are available, use the launch floor. Walls
     // extend vertically; this deliberately does not permit shooting over them.
-    const float floor=a.flight.shot.player.y+.015f;
+    const float floor=a.flight.shot.player.y+FloorClearance;
     if(from.y<=floor)stop=0;
     else if(to.y<=floor)stop=std::min(stop,(from.y-floor)/(from.y-to.y));
     struct Touch {float fraction;uintptr_t unit;uint32_t id;};
