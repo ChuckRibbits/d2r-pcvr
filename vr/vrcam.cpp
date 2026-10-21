@@ -3626,6 +3626,12 @@ bool NativeSpellAim(float playerX,float playerY,framevr::spellaim::Cast& cast) {
 }
 bool NativeSpellAimDecide(float playerX,float playerY,framevr::spellaim::Cast& cast) {
     const auto c=aimtargets::Now();
+    if(framevr::aimrules::Stable(c.skill)) {   // the Warlock: upstream's hand aim, nothing of the rules
+        float o[3],d[3];g_note.by="stable";
+        cast.directed=g_spellAimReady.load()&&g_enabled.load()&&!gamestate::MenuOpen()&&framevr::DirectedSpellActive()&&
+            HandRay(o,d)&&framevr::spellaim::Horizontal({d[0],d[1],d[2]},cast.x,cast.y);
+        return cast.directed;
+    }
     float mx=0,my=0,md=0;uint32_t id=0;
     // Only when the game's own unit is found here (the game thread): otherwise
     // the rule's heading or spot below (Guided Arrow flew into a wall).
@@ -6853,7 +6859,7 @@ void BowTick() {
         // other hand's, else the one looked at - fly at its chest, flat when
         // spells are planar.
         float mx=0,my=0,md=0;int source=-1;
-        if(AimOn(framevr::settings::SpellLock)&&aimtargets::Resolve(hand,false,mx,my,md,&source)) {
+        if(AimOn(framevr::settings::SpellLock)&&!framevr::aimrules::Stable(shot.skill)&&aimtargets::Resolve(hand,false,mx,my,md,&source)) {
             using framevr::math::Vec;
             const Vec target=framevr::bowflight::RenderGround(shot,Vec{mx*2.0f,0.0f,my*2.0f})+Vec{0.0f,1.0f,0.0f};
             Vec to=target-shot.origin;

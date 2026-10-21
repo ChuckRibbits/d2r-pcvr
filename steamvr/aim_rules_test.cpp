@@ -20,6 +20,7 @@ int main() {
     Check(right.at[0]==Right&&right.at[1]==Left&&right.at[2]==Eyes,"a right button: right, left, eyes");
     Check(left.at[0]==Left&&left.at[1]==Right&&left.at[2]==Eyes,"a left button: left, right, eyes");
     Check(bow.at[0]==Left&&bow.at[1]==Right,"a bow skill on a right button: the bow hand first");
+    Check(Stable(373)&&Stable(402)&&!Stable(372)&&!Stable(403)&&Of(395,true)==Use::Native&&Of(388,false)==Use::Native,"the Warlock keeps upstream's aim: no rule, even for his missiles");
     std::puts("aim rules ok");
     return 0;
 }
