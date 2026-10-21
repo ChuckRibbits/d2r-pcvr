@@ -914,17 +914,19 @@ void LoadSettings() {
     // Combat > Guard strain color: Black) darkens the rim instead, denser by
     // guard_strain_dark_density (2.5; 1 = the same curve as the light): at equal
     // opacity a dark rim over D2's dark scenes hides far less than a pale one.
+    // guard_strain_dark 2 (Guard strain color: Off) hides the light; strain still runs.
+    const int strainLook=std::clamp(int(std::lround(IniF(L"gameplay",L"guard_strain_dark",0))),0,2);   // 0 white, 1 black, 2 off
     framevr::ConfigureGuardStrain(IniF(L"gameplay",L"guard_strain_per_block",10)/100.f,
                                   IniF(L"gameplay",L"guard_strain_reset_ms",1500)/1000.f,
                                   IniF(L"gameplay",L"guard_strain_clear",10)/100.f,
                                   IniF(L"gameplay",L"guard_strain_breathe_ms",1600)/1000.f,
                                   IniF(L"gameplay",L"guard_strain_softness",45)/100.f,
-                                  IniF(L"gameplay",L"guard_strain_light",100)/100.f,
-                                  IniB(L"gameplay",L"guard_strain_dark",false)?0u:
+                                  strainLook==2?0.f:IniF(L"gameplay",L"guard_strain_light",100)/100.f,
+                                  strainLook==1?0u:
                                   [] {wchar_t hex[16];GetPrivateProfileStringW(L"gameplay",L"guard_strain_color",L"FFF7EA",hex,16,g_iniPath);
                                       wchar_t* end=nullptr;const unsigned long v=wcstoul(hex[0]==L'#'?hex+1:hex,&end,16);
                                       return end&&end!=hex&&!*end&&v<=0xFFFFFFul?uint32_t(v):0xFFF7EAu;}(),
-                                  IniB(L"gameplay",L"guard_strain_dark",false)?
+                                  strainLook==1?
                                       std::clamp(IniF(L"gameplay",L"guard_strain_dark_density",2.5f),1.f,6.f):1.f);
     // Strain also recedes with the shield still up once no hit has reached it for
     // guard_strain_recover_ms (1500), at the guard_strain_reset_ms rate (1500): clear 3 s after the

@@ -177,7 +177,8 @@ doesn't reduce them; resistances still matter.
   keeps blocking; the cost is sight, then chip damage (below). It fades once
   no hit has reached your shield for a moment, even held up, and is gone about
   3 seconds after the last hit; lowering the shield starts the fade at once.
-  **Combat > Guard strain color** switches the light to a black shadow.
+  **Combat > Guard strain color** switches the light to a black shadow, or
+  Off to hide it (strain, guard breaks and chip damage still apply).
   **Guard strain buildup** selects Slow / Medium / Fast: about 20 / 10 / 5
   normal-monster blocks to full strain with default tuning (an act boss: about
   6 / 3 / 2). Medium keeps the original rate.

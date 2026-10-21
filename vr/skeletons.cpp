@@ -847,13 +847,19 @@ void ApplyWrist(Mat& hand, const Wrist& r) {
 }
 
 #ifdef D2RVR_NATIVE_OPENXR
-// The shield wrist's stop. The hand bending toward the shield's side of the
-// forearm (back of the hand up) swings the shield's elbow edge into the arm:
-// that bend eases into where the shield sat rigid on the forearm before it
-// followed the hand. Bending the other way, twisting and side to side stay free.
+// The shield wrist's stop. The hand bending back (back of the hand up) swings
+// the shield's elbow edge into the arm: that bend eases into where the shield
+// sat rigid on the forearm before it followed the hand. Bending the other way,
+// twisting and side to side stay free.
+// Always the back of the hand, from the knuckles (the fingers curl and the thumb
+// sits the other way on every hero rig). It was chosen by which side of the
+// forearm shield_attach sat on: the necromancer's animation holds it past the
+// palm side, the stop turned round and pushed his hand up as it bent down,
+// with a steel shield only (2026-10-20). The barbarian's never turned it.
 // Returns how much bend the controller asked that the wrist held back, degrees (0: none);
-// side (if given): -1 when the shield's bone puts it on the palm's side, else +1.
-float StopShieldWrist(const Hero& h,std::vector<Mat>& newW,int* side=nullptr) {
+// sideOut (if given): -1 when the shield's bone puts it on the palm's side, else +1 -
+// for the shield's placement, never to turn the stop round.
+float StopShieldWrist(const Hero& h,std::vector<Mat>& newW,int* sideOut=nullptr) {
     const int k=h.hand[1],sa=h.shieldAttach,l=h.lwr[1],i=h.ind[1],m=h.mid[1],p=h.pnk[1];
     if(k<0||sa<0||l<0||i<0||m<0||p<0)return 0;
     // the back of the hand in the hand bone's frame (Fist's left palm, reversed)
@@ -861,29 +867,47 @@ float StopShieldWrist(const Hero& h,std::vector<Mat>& newW,int* side=nullptr) {
     // the hand as it would be, holding the shield where it sat on the forearm
     const Mat rigid=Mul(Mul(h.bind[k],InvAffine(h.bind[sa])),newW[sa]);
     const V3 f=Norm(Sub(Pos(newW[k]),Pos(newW[l])));   // elbow -> wrist
-    V3 now=Norm(RotOnly(back,newW[k])),stop=Norm(RotOnly(back,rigid));
-    // the shield's side of the forearm: the back of the hand's, unless its bone says otherwise.
+    const V3 now=Norm(RotOnly(back,newW[k])),stop=Norm(RotOnly(back,rigid));
+    // the shield's side of the forearm, for its placement only (the stop above stays
+    // the back of the hand's): the back of the hand's, unless its bone says otherwise.
     // 2026-10-20: decided from the bind pose, once per model. Read each frame, an
     // attach bone near the forearm's line flipped the side as the arm moved, and
-    // the stop - and the shield following the hand - jumped across the wrist.
-    const V3 fb=Norm(Sub(Pos(h.bind[k]),Pos(h.bind[l]))),ob=Sub(Pos(h.bind[sa]),Pos(h.bind[l]));
-    const V3 off=Sub(ob,Scale(fb,Dot(ob,fb)));
-    const bool palm=Len(off)>.05f*Len(Sub(Pos(h.bind[k]),Pos(h.bind[l])))&&Dot(off,RotOnly(back,h.bind[k]))<0;
-    if(side)*side=palm?-1:1;
-    if(palm){now=Scale(now,-1);stop=Scale(stop,-1);}
+    // the shield following the hand jumped across the wrist.
+    if(sideOut) {
+        const V3 fb=Norm(Sub(Pos(h.bind[k]),Pos(h.bind[l]))),ob=Sub(Pos(h.bind[sa]),Pos(h.bind[l]));
+        const V3 off=Sub(ob,Scale(fb,Dot(ob,fb)));
+        *sideOut=Len(off)>.05f*Len(Sub(Pos(h.bind[k]),Pos(h.bind[l])))&&Dot(off,RotOnly(back,h.bind[k]))<0?-1:1;
+    }
     // Bend as the angle off the forearm: easing starts kEase short of the stop
     // and only approaches it, so the shield slows into place and never reaches the arm.
     constexpr float kEase=15.0f/57.2958f;
     const float asked=acosf(std::clamp(Dot(now,f),-1.f,1.f)),at=acosf(std::clamp(Dot(stop,f),-1.f,1.f));
     const float knee=at-kEase;
-    if(asked<=knee)return 0;   // short of the easing
-    const float given=knee+kEase*(1-expf(-(asked-knee)/kEase));
-    const V3 w=Sub(now,Scale(f,Dot(now,f)));
-    if(Len(w)<1e-4f)return 0;
-    const V3 target=Add(Scale(f,cosf(given)),Scale(Norm(w),sinf(given)));
-    const auto before=newW;
-    TurnAboutSelf(newW[k],RotBetween(now,target));
-    std::vector<char> fromK(h.count,0);fromK[k]=1;Propagate(h,before,newW,fromK,k);   // fingers, L_weapon_attach
+    float given=asked;
+    if(asked>knee) {   // into the easing
+        const V3 w=Sub(now,Scale(f,Dot(now,f)));
+        if(Len(w)>=1e-4f) {
+            given=knee+kEase*(1-expf(-(asked-knee)/kEase));
+            const V3 target=Add(Scale(f,cosf(given)),Scale(Norm(w),sinf(given)));
+            const auto before=newW;
+            TurnAboutSelf(newW[k],RotBetween(now,target));
+            std::vector<char> fromK(h.count,0);fromK[k]=1;Propagate(h,before,newW,fromK,k);   // fingers, L_weapon_attach
+        }
+    }
+#ifdef D2RVR_DEVELOPER
+    // [diag] developer builds only. 90 = hand straight, above 90 = bent back (back of the
+    // hand up), below = bent toward the palm. old_flip: the side the old rule went by
+    // (shield_attach's offset from the forearm, untouched by the turn above); 1 = it
+    // would have turned the stop round.
+    static ULONGLONG reportAt=0;const auto nowMs=GetTickCount64();
+    if(nowMs>=reportAt) {
+        const V3 off=Sub(Pos(newW[sa]),Pos(newW[l])),side=Sub(off,Scale(f,Dot(off,f)));
+        const int oldFlip=Len(side)>1e-3f&&Dot(side,stop)<0?1:0;
+        char line[200];snprintf(line,sizeof line,"Frame shield wrist stop: class=%d asked=%.1f stop=%.1f given=%.1f held=%.1f deg old_flip=%d",
+            h.cls,asked*57.2958f,at*57.2958f,given*57.2958f,(asked-given)*57.2958f,oldFlip);
+        framevr::logging::Write(line);reportAt=nowMs+1000;
+    }
+#endif
     return (asked-given)*57.2958f;
 }
 #endif

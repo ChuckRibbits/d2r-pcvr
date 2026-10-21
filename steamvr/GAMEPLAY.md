@@ -1027,7 +1027,8 @@ instead of a random one. Classic keeps the native roll.
   vignette size, lowering/reset time and blocking rules stay the same. Existing
   custom `guard_strain_per_block` tuning is multiplied, not overwritten. Strain shows as a soft vignette at the
   rim of the view (a pale white light by default; VR Settings > Combat > **Guard strain
-  color** switches it to a black shadow, `guard_strain_dark`, drawn denser by
+  color** switches it to a black shadow, `guard_strain_dark` 1, or hides it, `guard_strain_dark` 2
+  (Off: no light, but strain, guard breaks and chip damage still apply); the black is drawn denser by
   `guard_strain_dark_density` (2.5) so it hides as much as the light, and
   `guard_strain_color` takes any RRGGBB hex, default FFF7EA), beneath the blood on
   the visor, creeping inward as it builds;
