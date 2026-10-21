@@ -50,6 +50,8 @@ int main(int argc,char** argv) {
         if(framevr::ReadText(at(page-4),name,cap,copy)!=3||std::strcmp(name,"cog"))return 25;
         std::memset(text+page-4,'x',4);   // runs on into the unreadable page
         if(framevr::ReadText(at(page-4),name,cap,copy)!=-1)return 26;
+        std::memcpy(text+page-3,"a\x01z",3);copies=0;   // junk: refused where met, the next page never read
+        if(framevr::ReadText(at(page-3),name,cap,copy)!=-1||copies!=1)return 29;
         if(framevr::ReadText(0x1000,name,cap,copy)!=-1)return 27;
         if(!VirtualFree(text,0,MEM_RELEASE))return 28;
     }
@@ -57,6 +59,6 @@ int main(int argc,char** argv) {
     RemoveVectoredExceptionHandler(observer);
     // A caller may request a result file when stdout is not forwarded.
     FILE* f=argc>1?std::fopen(argv[1],"w"):stdout;if(!f)return 8;
-    std::fputs("Checked local copies succeed; inaccessible, freed, null, read-only and boundary-crossing buffers fail without entering application exception handlers; strings are copied a page at a time and never past their own page.\n",f);
+    std::fputs("Checked local copies succeed; inaccessible, freed, null, read-only and boundary-crossing buffers fail without entering application exception handlers; strings are copied a page at a time, never past their own page or a byte that is not printable.\n",f);
     if(f!=stdout)std::fclose(f);return 0;
 }

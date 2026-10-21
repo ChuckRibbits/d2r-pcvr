@@ -82,9 +82,7 @@ bool SafeWrite(void* dst, const void* src, size_t n) {
 std::string Str(uintptr_t p) {
     char buf[96];
     const int n = framevr::ReadText(p, buf, int(sizeof buf), SafeCopy);
-    if (n < 0) return {};
-    for (int i = 0; i < n; ++i) if (buf[i] < 32 || buf[i] > 126) return {};
-    return std::string(buf, n);
+    return n < 0 ? std::string() : std::string(buf, n);
 }
 
 SRWLOCK g_lock = SRWLOCK_INIT;
@@ -352,10 +350,11 @@ struct CrossbowGeometry {Mat boltToAttach{};uintptr_t hero=0;uint32_t generation
 CrossbowGeometry g_crossbowGeometry;
 framevr::crossbow::Pose g_crossbowPose;
 std::atomic<unsigned> g_crossbowStages{0};
-// The hero's last weapon pose held a crossbow. Only then is every posed rig
-// searched for its helper bones; a static crossbow posed before that is found
-// by RefreshCrossbow's scan of the skeleton storage.
-std::atomic<bool> g_crossbowHeld{false};
+// When the hero's last weapon pose held a crossbow, else 0. Only within 100 ms
+// of one, as the capture itself requires, is every posed rig searched for its
+// helper bones; a static crossbow posed outside that is found by
+// RefreshCrossbow's scan of the skeleton storage.
+std::atomic<ULONGLONG> g_crossbowHeldAt{0};
 struct CrossbowRenderSource {
     uintptr_t self=0,hero=0;uint32_t parent=0,generation=0,equipment=0;
     int count=0,cog=-1;Mat relative{};ULONGLONG seen=0;
@@ -2007,7 +2006,7 @@ void PoseBody(uintptr_t self, const Hero& h, const Input& in) {
 #endif
         AcquireSRWLockExclusive(&g_gunBoneLock); g_gunBone = g; ReleaseSRWLockExclusive(&g_gunBoneLock);
 #ifdef D2RVR_NATIVE_OPENXR
-        g_crossbowHeld.store(g.crossbow, std::memory_order_relaxed);
+        g_crossbowHeldAt.store(g.crossbow ? g.at : 0, std::memory_order_relaxed);
 #endif
     }
 
@@ -2438,6 +2437,11 @@ void RefreshCrossbow(uintptr_t hero) {
     if(hero!=g_heroSelf.load())return;
     GunBoneOut attach;
     AcquireSRWLockShared(&g_gunBoneLock);attach=g_gunBone;ReleaseSRWLockShared(&g_gunBoneLock);
+    // Held again, or a rebuilt hero: a static crossbow posed while none was
+    // held is looked for at once below, not within the second.
+    static std::atomic<uint64_t> holding{0};
+    const uint64_t holdingNow=attach.crossbow?(uint64_t(attach.heroGeneration)<<1)|1:0;
+    const bool newlyHeld=holding.exchange(holdingNow)!=holdingNow;
     if(!attach.crossbow)return;
     std::vector<uintptr_t> items;
     AcquireSRWLockShared(&g_crossbowRigLock);
@@ -2450,7 +2454,8 @@ void RefreshCrossbow(uintptr_t hero) {
     // Also discover static held skeletons that were initialized before our
     // pose hook ran. Snapshot the same validated ECS storage as EntityOf;
     // never hold its lock while resolving an item or publishing a pose.
-    static std::atomic<uint64_t> nextLook{0};auto next=nextLook.load();const auto now=GetTickCount64();
+    static std::atomic<uint64_t> nextLook{0};if(newlyHeld)nextLook.store(0);
+    auto next=nextLook.load();const auto now=GetTickCount64();
     if(now<next||!nextLook.compare_exchange_strong(next,now+1000))return;
     std::vector<uint64_t> components;
     {
@@ -2899,7 +2904,7 @@ void __cdecl Hook(uintptr_t self, float a, float b, bool c) {
 #endif
     Arms(self);
 #ifdef D2RVR_NATIVE_OPENXR
-    if (g_crossbowHeld.load(std::memory_order_relaxed)) CaptureCrossbow(self);
+    if (const ULONGLONG held = g_crossbowHeldAt.load(std::memory_order_relaxed); held && GetTickCount64() - held <= 100) CaptureCrossbow(self);
     RefreshCrossbow(self);
     RefreshShield(self);
     PoseMotionBow(self);
