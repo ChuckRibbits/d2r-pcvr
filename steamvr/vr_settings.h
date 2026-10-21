@@ -16,7 +16,7 @@ namespace framevr::settings {
 enum class Page { Controls, VR, Video, HUD, Combat, Aim, Haptics, Performance, ReleaseNotes };
 enum Key { Motion, Seated, Dominant, Snap, TurnSpeed, Waist, BeltForward,
            Foveation, Sky, Fog, Ceiling, DrawDistance, ObjectDistance,
-           EyeHeight, ArmSpan, BodyCalibration, SkillGestures, WristMap, WristCompass, ControllerLabels, WeaponSkillIndicators, PlanarSpellAim, VitalsLocation, CriticalAlerts, RenderResolution, NavigationLocation, SmoothTurn, OrdinaryMobBars, MenuDistance, TooltipTiming, ProjectileAimAssist, MeleeHitSpeed, VitalsTilt, HapticStrength, HapticMelee, HapticBowDraw, HapticBowRelease, HapticSpell, HapticInteraction, HapticAlert, HapticShortMelee, BloodVisor, BloodWipe, MeleeRules, MeleeThrustSpeed, LootLabelSize, CompanionCounts, StrainDark, OfflinePlayers, ShieldBashSpeed, StrainSpeed, DesktopOneEye, MapTopDown, MapRotate, FoveationStrength, StereoRendering, DeferGpuWait, TargetHighlight, TargetOutlineColour, TargetOutlineHue, HeartbeatStart, ReShadeDepth, MapGripZoom, MapZoom, Count };
+           EyeHeight, ArmSpan, BodyCalibration, SkillGestures, WristMap, WristCompass, ControllerLabels, WeaponSkillIndicators, PlanarSpellAim, VitalsLocation, CriticalAlerts, RenderResolution, NavigationLocation, SmoothTurn, OrdinaryMobBars, MenuDistance, TooltipTiming, ProjectileAimAssist, MeleeHitSpeed, VitalsTilt, HapticStrength, HapticMelee, HapticBowDraw, HapticBowRelease, HapticSpell, HapticInteraction, HapticAlert, HapticShortMelee, BloodVisor, BloodWipe, MeleeRules, MeleeThrustSpeed, LootLabelSize, CompanionCounts, StrainDark, OfflinePlayers, ShieldBashSpeed, StrainSpeed, DesktopOneEye, MapTopDown, MapRotate, FoveationStrength, StereoRendering, DeferGpuWait, TargetHighlight, TargetOutlineColour, TargetOutlineHue, HeartbeatStart, ReShadeDepth, MapZoom, Count };
 // One bit per setting, 128 wide: two words, since MSVC has no 128-bit integer.
 struct ChangeMask {
     static constexpr int Bits=128;
@@ -105,8 +105,7 @@ inline constexpr std::array<Definition,Count> Definitions{{
     {"Static color", "The outline's color around the color wheel", L"gameplay",L"target_outline_hue",45,0,345,15},
     {"Heartbeat starts at", "Life % where the heartbeat begins; louder and faster every 10% lower", L"gameplay",L"low_life_heart_start",60,0,90,10},
     {"ReShade depth", "ReShade's Generic Depth add-on; applies after restarting the game", L"render",L"reshade_depth",1,0,1,1},
-    {"Grip zoom", "Looking at a minimap, hold that hand's grip and push its stick", L"interactions",L"minimap_grip_zoom",1,0,1,1},
-    // Not a row: grip zoom saves it (map_zoom.h). 1 fits the whole native map, as before.
+    // Not a row: the right stick zooms while you look at the wrist map, and saves it (map_zoom.h). 1 fits the whole native map, as before.
     {"Minimap zoom", "Wrist, palm and wheel minimap magnification", L"interactions",L"minimap_zoom",1,1,4,.05f},
 }};
 using Values=std::array<float,Count>;
@@ -153,7 +152,7 @@ inline Rect TabBox(int index){return Tabs[index];}
 constexpr Rect Apply{965,918,275,68},Close{650,918,275,68},Recenter{40,918,270,68},Calibrate{330,918,300,68};
 constexpr int RowY=242,RowStep=62;
 constexpr Rect ControllerBox{865,181,375,52};
-constexpr Rect HudMapViewBox{200,181,190,52},HudMapRotateBox{600,181,150,52},HudMapZoomBox{942,181,221,52};
+constexpr Rect HudMapViewBox{280,181,275,52},HudMapRotateBox{942,181,221,52};
 inline constexpr const char* MapViewNames[]={"Isometric","Top-down"};
 inline constexpr const char* MenuDistanceNames[]={"Close","Medium","Far"};
 inline constexpr const char* TooltipTimingNames[]={"Instant","Short","Original"};
@@ -345,7 +344,6 @@ inline Hit HitTest(Page page,float u,float v,bool controllerMenu=false){
     if(page==Page::Controls&&AimAssistBox.Contains(x,y))return {Kind::Change,ProjectileAimAssist,1};
     if(page==Page::HUD&&HudMapViewBox.Contains(x,y))return {Kind::Change,MapTopDown,1};
     if(page==Page::HUD&&HudMapRotateBox.Contains(x,y))return {Kind::Change,MapRotate,1};
-    if(page==Page::HUD&&HudMapZoomBox.Contains(x,y))return {Kind::Change,MapGripZoom,1};
     if(page==Page::Performance&&DeferBox.Contains(x,y))return {Kind::Change,DeferGpuWait,1};
     for(int r=0;r<RowCount(page);++r){
         const auto key=RowKey(page,r);

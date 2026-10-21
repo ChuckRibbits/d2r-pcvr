@@ -356,10 +356,10 @@ int main(){
         Check(vrsettings::Submit(request)&&vrsettings::Poll(name),"save companion count preference");
         Check(vrsettings::Read().values[CompanionCounts]==enabled&&Int(path,L"interactions",L"companion_counts")==enabled&&Int(path,L"custom",L"keep")==12345,"companion preference survives reload without touching other settings");
     }
-    Check(vrsettings::Read().values[MapZoom]==1&&vrsettings::Read().values[MapGripZoom]==1,"old profiles show the whole minimap with grip zoom on");
+    Check(vrsettings::Read().values[MapZoom]==1,"old profiles show the whole minimap");
     {
         const auto zoomed=framevr::mapzoom::SaveRequest(vrsettings::Read(),2.35f);
-        Check(zoomed.changed==(ChangeMask{1}<<MapZoom)&&vrsettings::Submit(zoomed)&&vrsettings::Poll(name),"grip zoom saves through the normal transaction");
+        Check(zoomed.changed==(ChangeMask{1}<<MapZoom)&&vrsettings::Submit(zoomed)&&vrsettings::Poll(name),"map zoom saves through the normal transaction");
         wchar_t text[32]{};GetPrivateProfileStringW(L"interactions",L"minimap_zoom",L"",text,32,name);
         Check(vrsettings::Read().values[MapZoom]==2.35f&&std::wcstof(text,nullptr)==2.35f&&Int(path,L"custom",L"keep")==12345,"minimap zoom survives reload without touching other settings");
     }

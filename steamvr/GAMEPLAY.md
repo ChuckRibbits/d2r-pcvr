@@ -185,7 +185,7 @@ not generate melee velocity. The layout currently assumes a right-handed player.
 | Health/mana | Check the back of your left wrist, or choose **Palm** in **VR Settings > HUD** and hold your left palm upward in front of you briefly. No button required; automatic alerts are off by default |
 | Show all nearby loot labels (Alt) | Hold **Right Grip + Right Trigger**, grip first, to hold the native Show Items action. Release either to restore normal drop/hover labels; listed in **VR Settings > Controls** |
 | Explored minimap | Hold Left Y ? **MAP** in the bottom tabs; point right laser + trigger. **SPELLS** returns to skills; releasing Left Y closes the menu |
-| Zoom a minimap | Look at the wrist / palm map or the wheel's **MAP** tab, hold the grip of the hand showing it and push that hand's stick forward / back. Release grip to walk / turn again |
+| Zoom the minimap | Look at the wrist / palm map; right stick up zooms in, down zooms out. Left / right still turns; looking away returns the stick |
 | Quest journal | Open the native tabbed game menu with Left X / Frame Left A, then select Journal. The duplicate wheel entry is removed |
 | Journal controls | Right laser + trigger uses native page controls/act tabs; Right B follows native back; Left X performs native X |
 | Inventory drop / sort | Native X (Quest Left X / Frame Left A) / press and hold right stick click; right-stick click no longer swaps in gameplay |
@@ -220,18 +220,15 @@ together, independently of health/mana. When both displays share a hand face,
 navigation sits above the vitals; otherwise it sits directly at the hand anchor.
 The wheel's **MAP** tab remains available even when navigation is **Off**.
 
-**Grip zoom** (**VR Settings > HUD**, On by default) zooms the minimap. While
-the wrist or palm map, or the wheel's **MAP** tab, is shown, press and hold the
-grip of the hand showing it: Left Grip for wrist and palm, the wheel hand's grip
-for **MAP**. That hand's stick then zooms instead of walking or turning: forward
-zooms in about your hero, up to 4x; back zooms out to 1x, the whole native map,
-where it stops. A light tick marks each quarter step, a firmer one either end.
-Wrist, palm and **MAP** share one zoom, saved as `[interactions] minimap_zoom`
-when you release grip. Releasing grip, or the map going away, returns the stick
-to walking or turning at once. Only a grip pressed while the map is shown
-counts: a grip already held, a held bottle or holster, or a casting hand never
-zooms, and a stick already pushed waits for centre first. In Palm placement a
-grip closed over the shown palm map keeps it up; grip still cannot raise it.
+**Zoom:** while the wrist or palm map is shown and you look at it (its center
+within about 22 degrees of where your head points; it holds until about 30, so a
+glance at the edge does not flicker), the right stick's up / down zooms it:
+up zooms in about your hero, up to 4x; down zooms out to 1x, the whole native
+map, where it stops. A light tick marks each quarter step, a firmer one either
+end. While you look at the map, right stick up / down does nothing else; left /
+right still turns. Wrist, palm and the wheel's **MAP** share one zoom, saved as
+`[interactions] minimap_zoom` when the stick returns to the center or you look
+away.
 
 The label above the compass shows your current **act (I-V)** and **area name**,
 including named dungeon floors. It follows the same wrist/palm placement and

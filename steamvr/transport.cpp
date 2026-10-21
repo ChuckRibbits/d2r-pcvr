@@ -486,10 +486,17 @@ bool MapTopDownOn(){return vrsettings::Read().values[settings::MapTopDown]>.5f;}
 bool MapTurnOn(){return vrsettings::Read().values[settings::MapRotate]>.5f;}
 bool mapSupported=false;
 constexpr uint32_t mapSide=512;
-// Grip + stick zoom of that map (map_zoom.h). mapShown: a map quad, wrist or
-// wheel, went into the last frame's layers - the one being looked at.
+// Right-stick zoom of that map while it is looked at (map_zoom.h). wristMapShown:
+// the wrist / palm map quad went into the last frame's layers, centered at
+// wristMapCenter (interaction space, like interactionInput.head).
 mapzoom::Gesture mapZoom;
-bool mapShown=false;
+bool wristMapShown=false,wristMapLooked=false;
+math::Vec wristMapCenter{};
+uint64_t mapZoomLogAt=0;
+bool mapZoomLogged=false;
+// True while the player looks at the shown wrist / palm map: the right stick's
+// up / down then zooms the map and is cleared for everything else that frame.
+bool MinimapLooked(){return wristMapLooked;}
 // Desktop mirror: in stereo the game window presents alternating eye frames,
 // so the monitor flickers between both eyes (double vision). After the headset
 // takes each right frame, the left eye image (still acquired until EndPair) is
@@ -761,7 +768,7 @@ void ClearInput() {
     lootlabels::display.Clear();
     lootLabelShortcut.Suspend();
     meleeImpactAt[0]=meleeImpactAt[1]=shieldImpactAt=parryMissAt=0;
-    wristHeading.Reset();compassFrame=false;mapZoom.Reset();
+    wristHeading.Reset();compassFrame=false;mapZoom.Reset();wristMapLooked=false;
     panelinput::WorldInput(false);
     gamestate::MenuMap(false);
     menuControls.Suspend();menuNavigation.Reset();nativeMenuPad={};laserClick={};panelinput::UseController();
@@ -1822,7 +1829,6 @@ void Input() {
     interactionInput.criticalAlerts=hudSettings.values[settings::CriticalAlerts]>.5f;
     interactionInput.leftCasting=handOutput.spells[1]>=0||(handOutput.slot>=0&&handOutput.hand==1);
     interactionInput.leftTrigger=controls.lt/255.f;
-    interactionInput.gripZoom=hudSettings.values[settings::MapGripZoom]>.5f;
     // A thrown bottle lands on the world floor in room space. Without a recent
     // view frame (menus, loading) throwing is off; a release re-belts as before.
     {
@@ -1974,26 +1980,32 @@ void Input() {
     }
     if(interactionOutput.settings){OpenSettings();settingsOwned=true;interactionInput.active=motionInput.active=false;}
     {
-        // Minimap zoom: while a map is drawn, a grip pressed on the hand showing
-        // it (left for wrist / palm, the wheel's hand for MAP) takes that stick
-        // from walking / turning until the grip opens or the map goes.
-        mapzoom::Input in;in.time=interactionInput.time;in.enabled=interactionInput.gripZoom;in.saved=hudSettings.values[settings::MapZoom];
-        const auto now=interactionInput.at;
-        if(mapShown&&mapSupported)in.hand=interaction::MenuMapWanted(interactionInput,interactionOutput,now)?(interactionInput.wheelHand>=0?interactionInput.wheelHand:1):
-            interaction::NavigationWanted(interactionInput,interactionOutput,now)?1:-1;
-        if(in.hand>=0)in.busy=(interactionOutput.owner[in.hand]!=interaction::Owner::Combat&&interactionOutput.owner[in.hand]!=interaction::Owner::Wheel)||
-            interactionOutput.bottleHand==in.hand||handInput.trigger[in.hand]>.2f||(in.hand==1&&interactionInput.leftCasting);
-        for(int h=0;h<2;++h)in.grip[h]=motionInput.grip[h];
-        in.stick[0]=controls.ry/32767.f;in.stick[1]=controls.ly/32767.f;
+        // Minimap zoom: while the wrist / palm map is shown (the wrist turned
+        // toward you, or the palm raised) and you look at it, the right stick's
+        // up / down zooms it and does nothing else; left / right still turns.
+        const bool shown=wristMapShown&&mapSupported&&interaction::NavigationWanted(interactionInput,interactionOutput,interactionInput.at);
+        wristMapLooked=shown&&mapzoom::Looking(interactionInput.head.p,interactionInput.head.q,wristMapCenter,wristMapLooked);
+        mapzoom::Input in;in.time=interactionInput.time;in.looking=MinimapLooked();in.saved=hudSettings.values[settings::MapZoom];
+        in.stick=controls.ry/32767.f;
         const auto zoom=mapZoom.Step(in);
-        if(zoom.engaged){if(zoom.hand)controls.lx=controls.ly=0;else controls.rx=controls.ry=0;}
-        if(zoom.tick)MotionPulse(zoom.hand,haptics::Category::Interaction,zoom.tick==2?.35f:.15f,zoom.tick==2?30000000:12000000);
+        if(zoom.owned)controls.ry=0;
+        if(zoom.tick)MotionPulse(0,haptics::Category::Interaction,zoom.tick==2?.35f:.15f,zoom.tick==2?30000000:12000000);
+        // One line a gesture: a start at most every half second, and its stop.
+        const uint64_t tick=GetTickCount64();
+        if(zoom.started&&tick>=mapZoomLogAt){
+            char line[80];std::snprintf(line,sizeof line,"Frame map zoom: start at %.2fx (%s)",zoom.zoom,in.stick>0?"in":"out");Say(line);
+            mapZoomLogAt=tick+500;mapZoomLogged=true;
+        }
+        if(zoom.stopped&&mapZoomLogged){
+            char line[80];std::snprintf(line,sizeof line,"Frame map zoom: stop at %.2fx%s",zoom.zoom,wristMapLooked?"":" (looked away)");Say(line);
+            mapZoomLogged=false;
+        }
         // Saved like an Apply, never under an open settings panel or calibration's own save.
         if(zoom.save&&!settingsModel.open&&!bodyCalibration.Active()) {
             const auto request=mapzoom::SaveRequest(vrsettings::Read(),zoom.zoom);
             if(request.changed&&vrsettings::Submit(request)) {
                 mapZoom.Submitted(in.time);
-                char line[80];std::snprintf(line,sizeof line,"Frame minimap: zoom %.2fx saved",zoom.zoom);Say(line);
+                char line[80];std::snprintf(line,sizeof line,"Frame map zoom: %.2fx saved",zoom.zoom);Say(line);
             }
         }
     }
@@ -3171,9 +3183,8 @@ void EndPair() {
         interactionInput.snapshot,interactionOutput,interaction::Fresh(interactionInput.snapshot,interactionInput.session,interactionInput.at),controllerLabels))
         motionQuad(palette,palettePose,paletteWidth,paletteHeight,{{0,0},{768,768}},interactionChain);
     XrCompositionLayerQuad menuMap{XR_TYPE_COMPOSITION_LAYER_QUAD};
-    mapShown=false;
+    wristMapShown=false;
     if(palette.subImage.swapchain&&mapEye.copied&&interaction::MenuMapWanted(interactionInput,interactionOutput,GetTickCount64())) {
-        mapShown=true;
         const auto bounds=interaction::MapContent;
         auto pose=MotionPose(palettePose);
         pose.p=pose.p+math::Rotate(pose.q,{((bounds.left+bounds.right)*.5f-.5f)*paletteWidth,
@@ -3225,8 +3236,12 @@ void EndPair() {
                 interaction::CompanionImageCurrent(companionPaintContext,interactionInput.snapshot);
             const int companionRows=companionsReady?wriststatus::Rows(interactionInput.snapshot.companions,interactionInput.snapshot.effects):0;
             const float footer=interaction::CompanionSpace(companionRows);
-            if(mapEye.copied){mapShown=true;motionQuad(wristMap,interactionPose(interaction::NavigationMapPanel(interactionInput.hand[1],interactionInput.head,palm,withVitals,footer)),
-                interaction::WristMapSize,interaction::WristMapSize,{{0,0},{int32_t(mapSide),int32_t(mapSide)}},mapEye.chain);}
+            if(mapEye.copied){
+                const auto mapPanel=interaction::NavigationMapPanel(interactionInput.hand[1],interactionInput.head,palm,withVitals,footer);
+                wristMapShown=true;wristMapCenter=mapPanel.p;
+                motionQuad(wristMap,interactionPose(mapPanel),
+                    interaction::WristMapSize,interaction::WristMapSize,{{0,0},{int32_t(mapSide),int32_t(mapSide)}},mapEye.chain);
+            }
             auto compassPose=interaction::NavigationCompassPanel(interactionInput.hand[1],interactionInput.head,palm,withVitals,footer);
             motionQuad(wristCompass,interactionPose(compassPose),interaction::WristCompassWidth,interaction::WristCompassHeight,
                 {{compass::Crop(wristHeading.bearing),0},{compass::Window,compass::StripHeight}},compassChain);

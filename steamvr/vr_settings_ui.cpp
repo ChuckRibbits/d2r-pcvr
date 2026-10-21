@@ -122,13 +122,11 @@ std::vector<uint8_t> Paint(const Model& m,Hit hover,const char* runtimeStatus,co
             const std::string selected=std::string(controllers::Choices[int(m.Get()[ControllerLabels])])+"  \xe2\x96\xbc";
             text(selected.c_str(),{ControllerBox.x,ControllerBox.y+10,ControllerBox.w,37},true,true,RGB(116,220,219));
         }else if(m.page==Page::HUD){
-            text("Map view",{58,193,140,36},true);
-            text("Rotate map",{420,193,175,36},true);
-            text(Definitions[MapGripZoom].label,{780,193,160,36},true);
+            text("Map view",{58,193,210,36},true);
+            text("Rotate map",{675,193,250,36},true);
             const bool enabled=m.ready&&!m.Busy();
             button(HudMapViewBox,MapViewNames[m.Get()[MapTopDown]>.5f?1:0],{Kind::Change,MapTopDown,1},false,enabled);
             button(HudMapRotateBox,m.Get()[MapRotate]>.5f?"On":"Off",{Kind::Change,MapRotate,1},false,enabled);
-            button(HudMapZoomBox,m.Get()[MapGripZoom]>.5f?"On":"Off",{Kind::Change,MapGripZoom,1},false,enabled);
         }else if(m.page==Page::Performance&&(DeferOffered(m.Get())||GameVideoWarning(game))){
             // Warnings in amber under the status, two lines at most: the GPU
             // wait not deferred (and the button that turns it on), then the

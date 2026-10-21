@@ -1,81 +1,81 @@
 #pragma once
+#include "frame_math.h"
 #include "vr_settings.h"
 #include <algorithm>
 #include <cmath>
 
 // Minimap zoom. The wrist / palm map and the wheel's MAP tab are one 512x512
-// image of the game's corner map, centred on the hero, so they share one zoom.
-// While a map is shown, a grip pressed on the hand that shows it (the left
-// hand for wrist and palm, the wheel's hand for its MAP tab) takes that hand's
-// stick: forward zooms in, back zooms out. The stick goes back to walking or
-// turning the frame the grip opens or the map goes away.
-// Jeff, 2026-10-19: "Zoom in and out on the map when looking at the map. Maybe
-// grip button and joystick does zoom."
+// image of the game's corner map, centered on the hero, so they share one zoom.
+// While you look at the wrist or palm map, the right stick's up / down is the
+// map's: up zooms in, down zooms out. Left / right still turns. Looking away,
+// or the map going away, gives the stick back the same frame.
+// Jeff, 2026-10-21: "the map zoom in and out should not be buttons. When
+// looking at the map, the right stick up and down zooms in and out."
 namespace framevr::mapzoom {
 // 1 is the whole native map in the frame, as before: the source is the game's
-// own corner map, so there is nothing further out to zoom to. Pulling back
+// own corner map, so there is nothing further out to zoom to. Pulling down
 // until it stops is the way home.
 constexpr float Min=settings::Definitions[settings::MapZoom].min,Max=settings::Definitions[settings::MapZoom].max;
 constexpr float Doublings=1.5f;   // per second at full stick: 1x to 4x in 1.3 s
-constexpr float Grip=.6f;         // a held grip, as the interaction engine reads it
 constexpr float Dead=.3f;         // stick travel ignored, either way
 constexpr float Notch=.25f;       // a light tick each quarter crossed; a firmer one at either stop
 constexpr double SaveWait=5;      // a save not seen back by then failed: the stored zoom leads again
+// Looking at the map: its center within LookIn degrees of the head's forward
+// starts it, and it lasts until past LookOut, so a glance at the map's edge
+// does not flicker the stick between map and game.
+constexpr float LookIn=22,LookOut=30;
 inline float Clamp(float z){return std::isfinite(z)?std::clamp(z,Min,Max):Min;}
 inline int NotchOf(float z){return int(std::floor((Clamp(z)-Min)/Notch+1e-4f));}
+// head: the headset pose; panel: the shown map's center, in the same space.
+inline bool Looking(math::Vec headP,math::Quat headQ,math::Vec panel,bool was) {
+    const auto toward=panel-headP;
+    const float distance2=math::Dot(toward,toward);
+    if(!std::isfinite(distance2)||distance2<1e-4f)return false;
+    const float cosine=math::Dot(math::Rotate(headQ,{0,0,-1}),toward*(1/std::sqrt(distance2)));
+    return std::isfinite(cosine)&&cosine>std::cos((was?LookOut:LookIn)*.0174532925f);
+}
 struct Input {
     double time=0;
-    bool enabled=false;
-    int hand=-1;          // the hand showing the map now drawn (0 right, 1 left); -1 none
-    bool busy=false;      // that hand holds a bottle or holster, or is casting: its grip is not ours
-    float grip[2]{},stick[2]{};   // stick: forward +1, back -1
+    bool looking=false;   // the wrist / palm map is shown and looked at (Looking)
+    float stick=0;        // right stick: up +1, down -1
     float saved=Min;      // [interactions] minimap_zoom
 };
 struct Output {
-    bool engaged=false;   // the stick of `hand` is the zoom's this frame
-    int hand=-1;
+    bool owned=false;     // the right stick's up / down is the map's this frame
+    bool zooming=false;   // the stick is pushed past the dead zone
+    bool started=false,stopped=false;   // a zoom gesture's edges, for the log
     float zoom=Min;
     int tick=0;           // 1 a quarter crossed, 2 a stop reached
     bool save=false;      // a changed zoom waits to be saved
 };
 class Gesture {
-    bool gripWas[2]{},engaged=false,centred=false,unsaved=false,submitted=false;
-    int hand=-1;
+    bool zooming=false,unsaved=false,submitted=false;
     double last=0,submittedAt=0;
     float zoom=Min;
 public:
-    // Tracking or focus lost: a held grip must be released and pressed again. The zoom stays.
-    void Reset(){gripWas[0]=gripWas[1]=true;engaged=centred=false;hand=-1;last=0;}
+    // Tracking or focus lost: no gesture continues. The zoom stays.
+    void Reset(){zooming=false;last=0;}
     void Submitted(double time){submitted=true;submittedAt=time;}
     float Zoom()const{return zoom;}
     Output Step(const Input& in) {
         Output out;
-        const bool grips[2]={in.grip[0]>Grip,in.grip[1]>Grip};
-        const bool pressed[2]={grips[0]&&!gripWas[0],grips[1]&&!gripWas[1]};
-        gripWas[0]=grips[0];gripWas[1]=grips[1];
         const double dt=last>0&&in.time>last?std::min(in.time-last,.1):0;
         last=in.time;
         const float saved=Clamp(in.saved);
-        if(unsaved&&!engaged&&(std::fabs(saved-zoom)<1e-4f||(submitted&&in.time-submittedAt>SaveWait)))unsaved=submitted=false;
-        if(!engaged&&!unsaved)zoom=saved;   // an INI edit or another copy's save shows too
-        if(engaged&&(!in.enabled||in.hand!=hand||!grips[hand]))engaged=false;
-        // Only a grip pressed while the map shows: a bottle held in that hand, or
-        // a grip already down for something else, never turns into a zoom.
-        if(!engaged&&in.enabled&&in.hand>=0&&in.hand<2&&!in.busy&&pressed[in.hand]){engaged=true;hand=in.hand;centred=false;}
-        if(engaged) {
-            const float y=std::isfinite(in.stick[hand])?std::clamp(in.stick[hand],-1.f,1.f):0;
-            // A stick already pushed (walking) when the grip closed waits for the centre first.
-            if(std::fabs(y)<Dead)centred=true;
-            else if(centred&&dt>0) {
-                const float before=zoom;
-                zoom=Clamp(zoom*std::exp2(std::copysign((std::fabs(y)-Dead)/(1-Dead),y)*Doublings*float(dt)));
-                if(zoom!=before) {
-                    unsaved=true;submitted=false;
-                    out.tick=zoom==Min||zoom==Max?2:NotchOf(zoom)!=NotchOf(before)?1:0;
-                }
+        if(unsaved&&!zooming&&(std::fabs(saved-zoom)<1e-4f||(submitted&&in.time-submittedAt>SaveWait)))unsaved=submitted=false;
+        if(!zooming&&!unsaved)zoom=saved;   // an INI edit or another copy's save shows too
+        const float y=in.looking&&std::isfinite(in.stick)?std::clamp(in.stick,-1.f,1.f):0;
+        const bool now=std::fabs(y)>=Dead;
+        out.started=now&&!zooming;out.stopped=!now&&zooming;zooming=now;
+        if(now&&dt>0) {
+            const float before=zoom;
+            zoom=Clamp(zoom*std::exp2(std::copysign((std::fabs(y)-Dead)/(1-Dead),y)*Doublings*float(dt)));
+            if(zoom!=before) {
+                unsaved=true;submitted=false;
+                out.tick=zoom==Min||zoom==Max?2:NotchOf(zoom)!=NotchOf(before)?1:0;
             }
         }
-        out.engaged=engaged;out.hand=engaged?hand:-1;out.zoom=zoom;out.save=unsaved&&!engaged&&!submitted;
+        out.owned=in.looking;out.zooming=zooming;out.zoom=zoom;out.save=unsaved&&!zooming&&!submitted;
         return out;
     }
 };

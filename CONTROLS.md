@@ -66,7 +66,7 @@ Quest left X/Y correspond to Index left A/B; right A/B labels are the same.
 | VR settings / body calibration | Either wheel → VR SETTINGS |
 | Explain a VR setting | Point the right-hand laser at its label or controls for about half a second. Help appears beside the panel and disappears when you point away; no click needed |
 | Minimap | Either wheel → MAP; movement remains available |
-| Zoom a minimap | Look at the wrist / palm map (or a wheel's MAP tab), hold the grip of the hand showing it and push that hand's stick forward to zoom in, back to zoom out; pull back until it stops for the whole map. Release grip to walk / turn again. **HUD > Grip zoom** turns this off |
+| Zoom the minimap | Look at the wrist / palm map and push the right stick up to zoom in, down to zoom out; down until it stops shows the whole map. While you look at it, right stick up / down does nothing else; left / right still turns |
 | Reset height | VR Settings > Reset eye height |
 | Adjust controller vibration | **VR Settings > Haptics**: overall strength plus separate melee, bow draw, bow/throw release, spell, interaction and resource-alert strengths. Tests match each action's hands; **Apply** saves |
 | Hold to show all nearby loot labels (Alt) | Hold **Right Grip + Right Trigger** during gameplay, grip first. Labels stay shown while both are held; release either to restore normal drop/hover labels. Uses the native Alt range, independently of where you aim. No cast or shot accompanies the combo. Also listed in **VR Settings > Controls** |
@@ -432,13 +432,12 @@ Change its view under **VR Settings > HUD**, then press **Apply**:
   are left out in top-down, since they would turn 45 degrees with the floor.
 - **Rotate map: Off / On** (top-down only). On turns the map so the way you face
   is up; Off keeps north up.
-- **Grip zoom: On / Off.** While a minimap is in view, hold the grip of the hand
-  showing it (left for wrist and palm, the wheel's hand for MAP) and push that
-  hand's stick forward to zoom in about your hero, up to 4x, or back to zoom out.
-  1x, the whole native map, is the lowest; a light tick marks each quarter and a
-  firmer one either end. The zoom is remembered (`[interactions] minimap_zoom`).
-  The stick only zooms while that grip is held and the map is shown; a grip
-  already held for something else, a held bottle or a casting hand never zooms.
 
-All three are saved like any setting. Isometric with north up and grip zoom On
-are the defaults.
+Both are saved like any setting. Isometric with north up is the default.
+
+To zoom, look at the wrist or palm map (its center within about 22 degrees
+of where your head points) and push the right stick up to zoom in about your hero, up to 4x, or down
+to zoom out; 1x, the whole native map, is the lowest. A light tick marks each
+quarter and a firmer one either end. The wheel's MAP tab shows the same zoom,
+which is remembered (`[interactions] minimap_zoom`). Looking away gives the
+right stick back at once.
