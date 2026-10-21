@@ -3265,7 +3265,9 @@ void EndPair() {
     if(layer&&(settingsModel.open||bodyCalibration.Active())&&settingsImageReady){
         // Extend to the right, without moving or shrinking any control. Input
         // still intersects the original panel. Calibration uses only that crop.
-        const bool showHelp=!bodyCalibration.Active()&&settingsHelpVisible!=settings::NoHelp&&settingsPaintHelp==settingsHelpVisible;
+        // The card while help is wanted and the picture shown has one: from one
+        // card to the next, the old stays until the new is painted, not a narrow frame.
+        const bool showHelp=!bodyCalibration.Active()&&settingsHelpVisible!=settings::NoHelp&&settingsPaintHelp!=settings::NoHelp;
         const int pixels=showHelp?settings::AtlasWidth:settings::Width;
         const float fullWidth=settingsWidth*pixels/settings::Width;
         auto pose=settingsPose;
