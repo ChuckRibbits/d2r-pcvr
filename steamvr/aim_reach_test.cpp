@@ -26,5 +26,6 @@ int main() {
     Check(!Update(a,.13f,0,20),"and then lets go");
     Check(Update(b,.31f,-.9f,40),"pointing steeply down needs 3/4 of the reach");
     State always;Check(Update(always,0,0,0),"0 cm: the hand always points");
+    Check(Near(armpointing::ArmOutCm(1.5f),15)&&Near(armpointing::ArmOutCm(1.6f),16),"the arm-out is a tenth of the span: 15 cm on 1.5 m, 16 cm on the default 1.6 m");
     std::puts("aim reach tests passed");
 }

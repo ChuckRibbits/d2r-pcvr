@@ -289,39 +289,32 @@ int main(){
         Check(speed.Click({Kind::Apply}).changed==(ChangeMask{1}<<StrainSpeed),"buildup edits preserve combat rules, difficulty and colour");
     }
     {Model aim;aim.Open(s);aim.Click({Kind::Tab,int(Page::Aim)});
-        Check(RowCount(Page::Aim)==4&&RowKey(Page::Aim,0)==TargetArmOut&&RowKey(Page::Aim,1)==SpellLock&&RowKey(Page::Aim,2)==SpellLockBow&&RowKey(Page::Aim,3)==StaffPoint,"hand reach, spell lock, bow skills, then staff aim");
-        Check(s.values[SpellLock]==1&&s.values[StaffPoint]==1&&s.values[SpellLockBow]==0&&s.values[TargetArmOut]==20,"spell lock and staff aim On, bow skills Off, the hand from 20 cm");
-        Check(HelpAt(Page::Aim,(ValueBox(3).x+5.f)/Width,(ValueBox(3).y+5.f)/Height)==StaffPoint&&HelpAt(Page::Aim,(ValueBox(0).x+5.f)/Width,(ValueBox(0).y+5.f)/Height)==TargetArmOut,"the staff and hand rows explain themselves");
-        Check(Normalize(TargetArmOut,22)==20&&Normalize(TargetArmOut,23)==25&&Normalize(TargetArmOut,-5)==0&&Normalize(TargetArmOut,80)==50&&Normalize(TargetArmOut,NAN)==20,"hand reach snaps to 5 cm, 0-50");
-        {Model reach;reach.Open(s);reach.Click({Kind::Tab,int(Page::Aim)});
-            reach.Click(At(Page::Aim,Increase(0)));Check(reach.Get()[TargetArmOut]==25,"plus reaches 5 cm farther");
-            for(int i=0;i<10;++i)reach.Click(At(Page::Aim,Decrease(0)));Check(reach.Get()[TargetArmOut]==0,"0 (always the hand) is the lower bound");
-            Check(reach.Click({Kind::Apply}).changed==(ChangeMask{1}<<TargetArmOut),"hand reach saves only its own setting");}
-    }
-    {Model outline;outline.Open(s);outline.Click({Kind::Tab,int(Page::Outline)});
-        Check(s.values[TargetHighlight]==0&&RowKey(Page::Outline,0)==TargetHighlight,"the monster outline is Off by default, first on the Outline page");
-        Check(RowCount(Page::Outline)==5&&RowKey(Page::Outline,1)==AimHighlights&&RowKey(Page::Outline,2)==HighlightRight&&RowKey(Page::Outline,3)==HighlightLeft&&RowKey(Page::Outline,4)==HighlightEyes,"strength, which hands, then each source's color");
-        Check(s.values[AimHighlights]==1&&s.values[HighlightRight]==45&&s.values[HighlightLeft]==210&&s.values[HighlightEyes]==120,"both hands; gold right, blue left, green eyes by default");
-        Check(Normalize(HighlightLeft,200)==195&&Normalize(HighlightLeft,203)==210&&Normalize(HighlightEyes,-5)==0&&Normalize(HighlightEyes,400)==360&&Normalize(HighlightRight,NAN)==45,"colors snap to 15 degrees, 0 (By range) to 360");
-        Check(!RowEnabled(s.values,AimHighlights)&&!RowEnabled(s.values,HighlightRight)&&!RowEnabled(s.values,HighlightEyes),"highlights grey out while the outline is Off");
+        Check(RowCount(Page::Aim)==7&&RowKey(Page::Aim,0)==SpellLock&&RowKey(Page::Aim,1)==SpellLockBow&&RowKey(Page::Aim,2)==StaffPoint,"spell lock, bow skills, then staff aim");
+        Check(RowKey(Page::Aim,3)==TargetHighlight&&RowKey(Page::Aim,4)==AimHighlights&&RowKey(Page::Aim,5)==HighlightRight&&RowKey(Page::Aim,6)==HighlightLeft,"then the outline: strength, which hands, each hand's color");
+        Check(s.values[SpellLock]==1&&s.values[StaffPoint]==1&&s.values[SpellLockBow]==0,"spell lock and staff aim On, bow skills Off");
+        Check(HelpAt(Page::Aim,(ValueBox(2).x+5.f)/Width,(ValueBox(2).y+5.f)/Height)==StaffPoint&&HelpAt(Page::Aim,(ValueBox(0).x+5.f)/Width,(ValueBox(0).y+5.f)/Height)==SpellLock,"the spell and staff rows explain themselves");
+        Check(s.values[TargetHighlight]==0,"the monster outline is Off by default");
+        Check(s.values[AimHighlights]==1&&s.values[HighlightRight]==45&&s.values[HighlightLeft]==210,"both hands; gold right, blue left by default");
+        Check(Normalize(HighlightLeft,200)==195&&Normalize(HighlightLeft,203)==210&&Normalize(HighlightRight,-5)==0&&Normalize(HighlightRight,400)==360&&Normalize(HighlightRight,NAN)==45,"colors snap to 15 degrees, 0 (By range) to 360");
+        Check(!RowEnabled(s.values,AimHighlights)&&!RowEnabled(s.values,HighlightRight)&&!RowEnabled(s.values,HighlightLeft),"highlights grey out while the outline is Off");
         {auto on=s.values;on[TargetHighlight]=50;Check(RowEnabled(on,AimHighlights)&&RowEnabled(on,HighlightLeft),"and come back with it");}
         Check(HelpChoices(AimHighlights)==2&&std::strcmp(HelpChoice(AimHighlights,0).name,"Dominant hand")==0&&std::strcmp(HelpChoice(AimHighlights,1).name,"Both hands")==0,"the highlights row names its two choices");
-        {Model colors;auto lit=s;lit.values[TargetHighlight]=50;colors.Open(lit);colors.Click({Kind::Tab,int(Page::Outline)});
-            colors.Click(At(Page::Outline,ValueBox(1)));Check(colors.Get()[AimHighlights]==0,"selecting the highlights value switches to Dominant hand");
-            colors.Click(At(Page::Outline,ValueBox(1)));Check(colors.Get()[AimHighlights]==1,"and back to Both hands");
-            for(int i=0;i<30;++i)colors.Click(At(Page::Outline,Increase(2)));
+        {Model colors;auto lit=s;lit.values[TargetHighlight]=50;colors.Open(lit);colors.Click({Kind::Tab,int(Page::Aim)});
+            colors.Click(At(Page::Aim,ValueBox(4)));Check(colors.Get()[AimHighlights]==0,"selecting the highlights value switches to Dominant hand");
+            colors.Click(At(Page::Aim,ValueBox(4)));Check(colors.Get()[AimHighlights]==1,"and back to Both hands");
+            for(int i=0;i<30;++i)colors.Click(At(Page::Aim,Increase(5)));
             Check(colors.Get()[HighlightRight]==360,"the wheel ends at 360 degrees");
-            for(int i=0;i<30;++i)colors.Click(At(Page::Outline,Decrease(2)));
+            for(int i=0;i<30;++i)colors.Click(At(Page::Aim,Decrease(5)));
             Check(colors.Get()[HighlightRight]==0,"and starts at By range");
-            colors.Click(At(Page::Outline,Increase(2)));Check(colors.Get()[HighlightRight]==15,"the first hue past By range");
+            colors.Click(At(Page::Aim,Increase(5)));Check(colors.Get()[HighlightRight]==15,"the first hue past By range");
             float rgb[3];HueRgb(45,rgb);Check(rgb[0]==1&&rgb[1]==.75f&&rgb[2]==0,"45 degrees is gold");}
-        {Model dark;dark.Open(s);dark.Click({Kind::Tab,int(Page::Outline)});
-            dark.Click(At(Page::Outline,Increase(3)));Check(dark.Get()[HighlightLeft]==210&&!dark.Dirty(),"a greyed color does not change");}
-        Check(HelpAt(Page::Outline,(ValueBox(0).x+5.f)/Width,(ValueBox(0).y+5.f)/Height)==TargetHighlight&&HelpAt(Page::Outline,(ValueBox(4).x+5.f)/Width,(ValueBox(4).y+5.f)/Height)==HighlightEyes,"the outline rows explain themselves");
-        outline.Click(At(Page::Outline,Increase(0)));Check(outline.Get()[TargetHighlight]==10,"plus turns the outline on at 10%");
-        outline.Click(At(Page::Outline,Decrease(0)));outline.Click(At(Page::Outline,Decrease(0)));Check(outline.Get()[TargetHighlight]==0,"Off is the lower bound");
-        outline.Click(At(Page::Outline,Increase(0)));outline.Click(At(Page::Outline,Increase(0)));
-        const auto request=outline.Click({Kind::Apply});
+        {Model dark;dark.Open(s);dark.Click({Kind::Tab,int(Page::Aim)});
+            dark.Click(At(Page::Aim,Increase(6)));Check(dark.Get()[HighlightLeft]==210&&!dark.Dirty(),"a greyed color does not change");}
+        Check(HelpAt(Page::Aim,(ValueBox(3).x+5.f)/Width,(ValueBox(3).y+5.f)/Height)==TargetHighlight&&HelpAt(Page::Aim,(ValueBox(6).x+5.f)/Width,(ValueBox(6).y+5.f)/Height)==HighlightLeft,"the outline rows explain themselves");
+        aim.Click(At(Page::Aim,Increase(3)));Check(aim.Get()[TargetHighlight]==10,"plus turns the outline on at 10%");
+        aim.Click(At(Page::Aim,Decrease(3)));aim.Click(At(Page::Aim,Decrease(3)));Check(aim.Get()[TargetHighlight]==0,"Off is the lower bound");
+        aim.Click(At(Page::Aim,Increase(3)));aim.Click(At(Page::Aim,Increase(3)));
+        const auto request=aim.Click({Kind::Apply});
         Check(request.changed==(ChangeMask{1}<<TargetHighlight)&&request.values[TargetHighlight]==20,"the outline strength changes nothing else");
     }
     {   // Windows Mono audio: the title row warns on every page; pointing at it explains
