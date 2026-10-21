@@ -135,7 +135,7 @@ std::vector<uint8_t> Paint(const Model& m,Hit hover,const char* runtimeStatus,co
             text(defer&&gameWarning?DeferWarning:runtimeStatus,{40,181,width,29},false,false,defer&&gameWarning?warn:quiet);
             text(gameWarning?gameWarning:DeferWarning,{40,209,width,29},false,false,warn);
             if(defer)button(VideoDeferBox,"Defer GPU wait",{Kind::Change,DeferGpuWait,1},false,m.ready&&!m.Busy());
-        }else text(m.page==Page::Haptics?"Tune vibration for your headset and controllers.":m.page==Page::Combat?"Tune physical combat and offline difficulty.":m.page==Page::Aim?"Choose how your target is picked, shown and used by spells and ground skills.":runtimeStatus,{40,197,1200,42},false,false,quiet);
+        }else text(m.page==Page::Haptics?"Tune vibration for your headset and controllers.":m.page==Page::Combat?"Tune physical combat and offline difficulty.":m.page==Page::Aim?"Choose how your target is picked and used by skills and ground skills.":m.page==Page::Outline?"Choose how the monsters you aim at are outlined.":runtimeStatus,{40,197,1200,42},false,false,quiet);
         for(int row=0;row<RowCount(m.page);++row){
             const Key key=RowKey(m.page,row);const auto& d=Definitions[key];const float value=m.Get()[key];const int y=RowY+row*RowStep;
             fill({40,y-4,1200,RowStep},row%2?RGB(19,31,39):RGB(22,36,44));
@@ -155,12 +155,12 @@ std::vector<uint8_t> Paint(const Model& m,Hit hover,const char* runtimeStatus,co
             else if(key==MenuDistance)std::snprintf(label,sizeof label,"%s",MenuDistanceNames[int(value)]);
             else if(key==TooltipTiming)std::snprintf(label,sizeof label,"%s",TooltipTimingNames[int(value)]);
             else if(key==TargetHighlight){if(value==0)std::snprintf(label,sizeof label,"Off");else std::snprintf(label,sizeof label,"%.0f%%",value);}
-            else if(key==TargetOutlineColour)std::snprintf(label,sizeof label,"%s",value>.5f?"By range":"Static");
-            else if(key==TargetOutlineHue)std::snprintf(label,sizeof label,"%s %.0f\xc2\xb0",HueName(value),value);
+            else if(key==AimHighlights)std::snprintf(label,sizeof label,"%s",HighlightsNames[value>.5f?1:0]);
+            else if(HighlightKey(key)){if(value==0)std::snprintf(label,sizeof label,"By range");else std::snprintf(label,sizeof label,"%s %.0f\xc2\xb0",HueName(value),value);}
             else if(key==Dominant)std::snprintf(label,sizeof label,"%s",value>.5f?"Left":"Right");
             else if(key==MeleeRules)std::snprintf(label,sizeof label,"%s",MeleeRulesNames[value>.5f?1:0]);
             else if(key==OfflinePlayers){if(value==0)std::snprintf(label,sizeof label,"Game default");else std::snprintf(label,sizeof label,"Players %.0f",value);}
-            else if(key==StrainDark)std::snprintf(label,sizeof label,"%s",StrainColorNames[value>.5f?1:0]);
+            else if(key==StrainDark)std::snprintf(label,sizeof label,"%s",StrainColorNames[std::clamp(int(std::lround(value)),0,2)]);
             else if(key==StrainSpeed)std::snprintf(label,sizeof label,"%s",StrainSpeedNames[int(value)]);
             else if(key==HeartbeatStart){if(value==0)std::snprintf(label,sizeof label,"Off");else std::snprintf(label,sizeof label,"%.0f%% life",value);}
             else if(key==TargetArmOut){if(value==0)std::snprintf(label,sizeof label,"Always");else std::snprintf(label,sizeof label,"%.0f cm",value);}
@@ -176,7 +176,7 @@ std::vector<uint8_t> Paint(const Model& m,Hit hover,const char* runtimeStatus,co
             const bool enabled=m.ready&&!m.Busy()&&applies;
             button(Decrease(row),"-",{Kind::Change,key,-1},false,enabled);
             button(Increase(row),"+",{Kind::Change,key,1},false,enabled);
-            button(ValueBox(row),label,{d.max==1?Kind::Change:Kind::None,key,1},false,enabled);
+            button(ValueBox(row),label,{d.max==1||key==StrainDark?Kind::Change:Kind::None,key,1},false,enabled);
         }
         if(m.page==Page::HUD){
             text("Palm: raise left hand palm up; release grip/trigger. Status follows the minimap.",{58,854,1160,22},false,false,quiet);

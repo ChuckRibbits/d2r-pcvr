@@ -236,6 +236,7 @@ add_executable(deferred-draw-test deferred_draw_test.cpp)
 add_executable(monster-bars-test monster_bars_test.cpp)
 add_executable(aim-reach-test aim_reach_test.cpp)
 add_executable(telegraph-test telegraph_test.cpp)
+add_executable(aim-rules-test aim_rules_test.cpp)
 add_executable(target-cone-test target_cone_test.cpp)
 add_executable(gaze-test gaze_test.cpp)
 add_executable(window-focus-test window_focus_test.cpp)
@@ -281,7 +282,7 @@ foreach(test_target IN ITEMS memory-test hook-metrics-test active-keys-test reso
     portal-billboard-test shrine-trace-test shrine-placement-test composition-layers-test projectile-rules-test environment-cutaway-test roof-materials-test stereo-prop-physics-test
     combat-rules-test shield-guard-test guard-strain-test heartbeat-test logging-test melee-contact-test melee-weapon-test breakables-test offline-difficulty-test attack-speed-test world-coordinates-test bow-flight-test spell-cast-test spell-aim-assist-test
     interaction-test dev-scenarios-test native-belt-test wrist-hud-test navigation-info-test companions-test active-effects-test dropped-item-labels-test show-items-command-test native-hud-test render-resolution-test render-pointer-test scene-depth-test game-device-only-test controller-bindings-test journal-test native-panels-test
-    vr-settings-test vr-settings-store-test controller-labels-test math-test deferred-draw-test monster-bars-test telegraph-test aim-reach-test target-cone-test gaze-test window-focus-test callback-ticket-test local-player-test shield-block-test)
+    vr-settings-test vr-settings-store-test controller-labels-test math-test deferred-draw-test monster-bars-test telegraph-test aim-reach-test aim-rules-test target-cone-test gaze-test window-focus-test callback-ticket-test local-player-test shield-block-test)
   # These fixtures use assert for their checks, including in Release builds.
   if(MSVC)
     target_compile_options(${test_target} PRIVATE /UNDEBUG)
@@ -295,7 +296,7 @@ set_tests_properties(dev-scenarios-test PROPERTIES TIMEOUT 10)
 add_test(NAME interaction-developer-tab-test COMMAND interaction-preview "${CMAKE_CURRENT_BINARY_DIR}/developer.png" --developer-check)
 add_test(NAME sewer-prompt-art-test COMMAND interaction-preview "${CMAKE_CURRENT_BINARY_DIR}/sewer-prompt.png" --sewer-prompt-check)
 set_tests_properties(sewer-prompt-art-test PROPERTIES TIMEOUT 10)
-add_test(NAME settings-release-notes-test COMMAND vr-settings-preview "${CMAKE_CURRENT_BINARY_DIR}/release-notes.bmp" 7 --release-notes-check)
+add_test(NAME settings-release-notes-test COMMAND vr-settings-preview "${CMAKE_CURRENT_BINARY_DIR}/release-notes.bmp" 8 --release-notes-check)
 add_test(NAME ui-blit-typed COMMAND ui-blit-test)
 add_test(NAME ui-blit-typeless COMMAND ui-blit-test --typeless)
 add_test(NAME ui-blit-typeless-black COMMAND ui-blit-test black --typeless)
@@ -313,6 +314,7 @@ add_test(NAME interaction-hand-wheels-test COMMAND interaction-preview "${CMAKE_
 add_test(NAME wrist-compass-art-test COMMAND interaction-preview "${CMAKE_CURRENT_BINARY_DIR}/wrist-compass-preview.png" --compass-check)
 add_test(NAME navigation-info-art-test COMMAND interaction-preview "${CMAKE_CURRENT_BINARY_DIR}/navigation-info-preview.png" --navigation-check)
 add_test(NAME vr-settings-help-art-test COMMAND vr-settings-preview "${CMAKE_CURRENT_BINARY_DIR}/settings-help.bmp" 4 --help-check)
+add_test(NAME vr-settings-worker-paint-test COMMAND vr-settings-preview "${CMAKE_CURRENT_BINARY_DIR}/settings-worker.bmp" 0 --worker-check)
 add_test(NAME companions-art-test COMMAND interaction-preview "${CMAKE_CURRENT_BINARY_DIR}/companions-preview.png" --companions-check)
 
 add_test(NAME active-effects-art-test COMMAND interaction-preview "${CMAKE_CURRENT_BINARY_DIR}/active-effects-preview.png" --effects-check)

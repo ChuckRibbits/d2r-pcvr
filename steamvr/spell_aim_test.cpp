@@ -6,7 +6,7 @@ using namespace framevr;
 static void Check(bool b,const char* why){if(!b){std::fprintf(stderr,"FAIL: %s\n",why);std::exit(1);}}
 int main() {
     Check(spellaim::TrackedAim(84)&&spellaim::TrackedAim(101)&&spellaim::TrackedAim(78)&&spellaim::TrackedAim(88),"bone skills and Holy Bolt use the tracked casting hand");
-    Check(!spellaim::TrackedAim(47)&&!spellaim::BonePlacement(84)&&!spellaim::BonePlacement(101),"Sorceress aim and projectile flight are separate from bone placement");
+    Check(!spellaim::TrackedAim(47)&&spellaim::GroundTarget(78)&&spellaim::GroundTarget(88)&&!spellaim::GroundTarget(84)&&!spellaim::GroundTarget(101),"Bone Wall and Bone Prison land like every ground skill; Bone Spear and Bone Spirit fly");
     for(int yaw=0;yaw<360;yaw+=5)for(float floor:{-5.f,0.f,8.f}) {
         const float angle=yaw*.01745329252f;
         const math::Vec direction{std::cos(angle),-1,std::sin(angle)};

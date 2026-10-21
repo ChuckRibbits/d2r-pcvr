@@ -5,12 +5,14 @@
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
+#include <mutex>
 #include "projectiles.h"
 #include "projectile_rules.h"
 #include "sigscan.h"
 #include "memory.h"
 #include "logging.h"
 #include "combat.h"
+#include "melee.h"
 #include "bow.h"
 #include "crossbow.h"
 #include "../steamvr/telegraph.h"
@@ -85,12 +87,28 @@ struct Scope {
     }
     ~Scope(){creation=saved;}
 };
+// Telemetry: "Frame missile flight:" where each of the local hero's missiles
+// really ends - its last position before it is gone - and how far it flew
+// (Jeff, 2026-10-20: Cold Arrow looked short). Watched from its server
+// creation, followed by FollowFlights on the game thread.
+struct Flight {uint32_t unit=0,missile=0;float ox=0,oy=0,x=0,y=0;bool seen=false;ULONGLONG at=0;};
+std::mutex flightMutex;
+Flight flights[32];
+void WatchFlight(uintptr_t created,uint32_t missile,int ox,int oy) {
+    uint32_t id=0;
+    if(!created||!Read(created+8,id)||!id)return;
+    std::lock_guard lock(flightMutex);
+    Flight* slot=&flights[0];
+    for(auto& f:flights)if(!f.unit){slot=&f;break;}else if(f.at<slot->at)slot=&f;   // a free slot, else the oldest
+    *slot={id,missile,float(ox),float(oy),float(ox),float(oy),false,GetTickCount64()};
+}
 // Read-only diagnostics at actual native missile creation, separate from the
 // earlier aim resolver. Do not claim a correct flight from the input ray alone.
 void ReportSpell(uintptr_t params,int side,uintptr_t created) {
     uintptr_t owner=0;uint32_t missile=0,flags=0;int points[4]{};
     if(!enabled.load()||!Read(params+0x20,missile)||missile==0||
        !Read(params+8,owner)||!IsLocalOwner(owner))return;
+    if(side==1&&created&&Read(params+0x24,points))WatchFlight(created,missile,points[0],points[1]);   // every one, not just the logged
     static std::atomic<ULONGLONG> reported[2]{};
     const auto now=GetTickCount64();auto before=reported[side].load();
     if(now-before<1000||!reported[side].compare_exchange_strong(before,now))return;
@@ -257,6 +275,29 @@ void Install() {
     }
     allReady=releaseIn&&speedHooksReady.load();
 }
+// The game thread (targetlock's scan, every 100 ms): each watched missile's
+// position while it lasts; once it is gone, one line with where it ended.
+void FollowFlights() {
+    uintptr_t game=0,self=0;
+    if(!melee::LocalServer(game,self))return;
+    const auto now=GetTickCount64();
+    std::lock_guard lock(flightMutex);
+    for(auto& f:flights) {
+        if(!f.unit)continue;
+        const uintptr_t unit=melee::ServerUnit(game,3,f.unit);
+        uintptr_t path=0;uint32_t pos[2]{};
+        if(unit&&Read(unit+0x38,path)&&path>0x10000&&Read(path,pos)&&pos[0]&&pos[1]) {
+            f.x=pos[0]/65536.f;f.y=pos[1]/65536.f;f.seen=true;
+            if(now-f.at<15000)continue;
+        }
+        if(!f.seen&&now-f.at<300)continue;   // not in the server's hash yet
+        char line[200];snprintf(line,sizeof line,"Frame missile flight: missile %u from %.0f,%.0f ended at %.0f,%.0f, %.1f cells in %llu ms%s",
+            f.missile,f.ox,f.oy,f.x,f.y,std::hypot(f.x-f.ox,f.y-f.oy),(unsigned long long)(now-f.at),f.seen?"":" (never seen in flight)");
+        framevr::logging::Write(line);
+        f={};
+    }
+}
+
 void Report() {
     const unsigned c=accelerated[0].exchange(0),s=accelerated[1].exchange(0),r=released.exchange(0);
     const unsigned oc=observed[0].exchange(0),os=observed[1].exchange(0);

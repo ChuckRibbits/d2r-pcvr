@@ -58,17 +58,19 @@ inline const char* HelpText(int id) {
         case CompanionCounts:return "Shows companion counts and effects currently affecting your character below the left-hand minimap. This includes received buffs, auras and harmful effects, not just assigned skills. It follows Minimap & Compass placement.";
         case OfflinePlayers:return "Uses native offline Players 1-8 scaling for tougher monsters and increased experience and loot. Apply affects newly spawned monsters; existing monsters keep their current stats. For all monsters to use the new value, Save and Exit, then start a new game with the same character. Game default follows the game's own setting. Works with every class and either melee mode. Does not change Normal, Nightmare or Hell, or your desktop preference.";
         case StrainSpeed:return "How quickly blocked hits build the shield strain vignette in Unleashed. Strain starts fading a moment after hits stop, or as soon as you lower the shield; full strain is gone about 3 seconds after the last hit.";
-        case StrainDark:return "The color of the edge effect as repeated blocks strain your guard in Unleashed. It clears when hits stop for a few seconds or you lower your shield.";
-        case TargetOutlineColour:return "Static: every outline in the Static color below. By range: red near, orange mid-range, yellow far, so you can tell at a glance how close the monster you aim at is. Select the value to switch.";
-        case TargetOutlineHue:return "The Static color, around the color wheel 15 degrees at a time; gold by default. A color unlike the monster's own reads best: red is hard to see on red monsters.";
-        case TargetHighlight:return "A thin, steady outline round the monster you are aiming at. Off by default; the percentage sets how strongly it shows. Monster outline color chooses gold or a color by distance. While your arm is held out, the monster your hand points at is chosen; when your hand points at none, the monster you look at is. Only monsters in your line of sight count. The outline is a guide only: it does not change how attacks or spells aim.";
-        case SpellLock:return "Straight spells (bolts, Fireball) and spells the game aims itself (Lightning, Chain Lightning) go to the aimed monster, outlined or not: the one your hand points at with your arm held out, else the one you look at, never one farther than the game lets a skill reach. Only when it is within about 50 degrees of where you cast; otherwise they go where you aim. Flat when Planar spell aim is On.";
+        case StrainDark:return "The color of the edge effect as repeated blocks strain your guard in Unleashed, or Off to hide it. It clears when hits stop for a few seconds or you lower your shield. Off hides only the effect: strain, guard breaks and chip damage still apply.";
+        case TargetHighlight:return "A thin, steady outline round the monsters you aim at. Off by default; the percentage sets how strongly it shows. A hand held out picks the monster it points at; with no hand on one, the monster you look at is outlined. Monster highlights and the colors below choose which are shown and how. Only monsters in your line of sight count. A guide only: it does not change how skills aim.";
+        case AimHighlights:return "Which aimed monsters are outlined. A button you hold keeps showing the monster its cast took until you let go. Greyed out while the Monster outline is Off.";
+        case HighlightRight:return "The outline color of the monster your right hand points at. By range: red near, orange mid-range, yellow far. Otherwise one color around the color wheel, 15 degrees at a time; gold by default. A color unlike the monster's own reads best. Greyed out while the Monster outline is Off.";
+        case HighlightLeft:return "The outline color of the monster your left hand points at. By range: red near, orange mid-range, yellow far. Otherwise one color around the color wheel, 15 degrees at a time; blue by default. A color unlike the monster's own reads best. Greyed out while the Monster outline is Off.";
+        case HighlightEyes:return "The outline color of the monster you look at, shown when no hand points at one. By range: red near, orange mid-range, yellow far. Otherwise one color around the color wheel, 15 degrees at a time; green by default. Greyed out while the Monster outline is Off.";
+        case SpellLock:return "Skills go to the aimed monster, outlined or not: the monster of the hand whose button casts (arm held out), else the other hand's, else the one you look at, kept until you let go. Bolts fly at it, curses and Corpse Explosion land on it, Charge and seekers go for it; Teleport and Leap go where you point. Never farther than the game lets a skill reach. With no monster, skills go where that arm points, else the other, else where you look.";
         case StaffPoint:return "A staff held upright would cast along its shaft, straight up. With this On, an upright staff casts along your arm, from your shoulder through your hand, so a bent wrist, knuckles to the side or a hand overhead still cast where you reach. Levelled out like a wand (within about 35 degrees of flat), it casts from its top as before.";
-        case GroundSkills:return "Skills cast at a point on the ground land on the aimed monster (pointed at, else looked at; shown or not); with none, on the floor where your hand points, and at the horizon or above as far as the game lets a skill be cast. Covers Assassin Fire Blast and traps, Sorceress Blizzard, Meteor, Fire Wall and Hydra, and Druid Fissure and Volcano. Off: the original aim (Fire Blast flies a fixed distance).";
+        case GroundSkills:return "Skills cast at a point on the ground land on the aimed monster (the casting hand's, else the other hand's, else the one you look at; shown or not); with none, on the floor where that arm points, else the other, else where you look, and at the horizon or above as far as the game lets a skill be cast. Covers Assassin Fire Blast and traps, Sorceress Blizzard, Meteor, Fire Wall and Hydra, Druid Fissure and Volcano, and Bone Wall (in front of the monster) and Bone Prison. Off: the game's own aim.";
         case LandingCircles:return "Shows where a ground skill will hit, in its element's color: fire orange, cold blue, lightning yellow. The circle fills from the rim inward until the skill lands: a Fire Blast bomb over its flight, timed by the game's own missile, Meteor over its fall, Blizzard while the ice falls. Fire Wall shows as a strip across your aim. It lies on the floor only, never on monsters' legs or walls.";
-        case TargetArmOut:return "How far your hand has to be held out from your head before it picks the monster. Held out at least this far, the monster your hand points at is the target; closer, as when your hand rests in your lap, the monster you look at is. 0 cm: always the hand. Default: 20 cm. It chooses the target for the outline and for spells.";
-        case SpellLockBow:return "Bow and crossbow skills cast from a button (Multiple Shot, Guided Arrow...) go to the aimed monster too, like spells. Off by default: archers aim on purpose. Strafe always picks its own targets, and a bow you draw and release yourself always shoots where you aim it.";
-        case GroundToTarget:return "With Ground skills land where you aim On, a ground skill lands on the aimed monster when there is one (pointed at, else looked at), never past the game's reach. Off: it always lands on the floor where your hand points, even with a monster aimed at. Greyed out while Ground skills land where you aim is Off.";
+        case TargetArmOut:return "How far a hand has to be held out from your head before it counts as pointing. Held out at least this far, it picks the monster it points at and aims the skills its button casts; closer, as when it rests in your lap, the monster you look at and your gaze take over. 0 cm: always the hands. Default: 20 cm. Each hand counts on its own.";
+        case SpellLockBow:return "Bow and crossbow skills cast from a button (Multiple Shot, Guided Arrow...) go to the aimed monster too, the bow hand's first. Off by default: archers aim on purpose. Strafe always picks its own targets, and a bow you draw and release yourself always shoots where you aim it.";
+        case GroundToTarget:return "With Ground skills land where you aim On, a ground skill lands on the aimed monster when there is one (the casting hand's, else the other hand's, else the one you look at), never past the game's reach. Off: it always lands on the floor you aim at, even with a monster aimed at. Greyed out while Ground skills land where you aim is Off.";
         case HeartbeatStart:return "The life percentage where the low-life heartbeat begins. Below it the heartbeat steps up every 10% of life you lose, louder and faster, until it is at full strength below 10%. 60% is the default; Off silences it. Healing winds it back down beat by beat; wiping the visor clean fades it until the next hit. Works in Unleashed and Classic.";
         case MeleeHitSpeed:return "Minimum weapon movement speed for a swing to count as a strike. Lower it for easier swings; raise it to require faster movement. Default: 12 m/s. Both melee modes use this value. Shield bash has its own threshold.";
         case ShieldBashSpeed:return "Minimum tracked hand speed for a physical shield bash, including assigned Smite. Default: 2 m/s. Move the hand at least 12 cm in one deliberate stroke; wrist twisting alone does not attack. The speed must still be met at contact. Applies in both melee modes; blocking, parries and trigger attacks are unchanged.";
@@ -102,12 +104,12 @@ struct ChoiceHelp {const char* name=nullptr;const char* text=nullptr;};
 constexpr int HelpChoiceGap=18,HelpChoiceNameHeight=40;   // on the card: above the name, the name's line
 inline int HelpChoices(int id) {
     switch(id) {
-        case Foveation:case MenuDistance:case TooltipTiming:case StrainSpeed:case ProjectileAimAssist:return 3;
+        case Foveation:case MenuDistance:case TooltipTiming:case StrainSpeed:case ProjectileAimAssist:case StrainDark:return 3;
         case FoveationStrength:case VitalsLocation:case NavigationLocation:return 4;
         case StereoRendering:return int(std::size(StereoRenderingNames));
         case RenderResolution:return int(std::size(resolution::Choices));
         case ControllerLabels:return int(controllers::Choice::Count);
-        case Dominant:case MeleeRules:case StrainDark:case MapTopDown:return 2;
+        case Dominant:case MeleeRules:case MapTopDown:case AimHighlights:return 2;
         default:return 0;
     }
 }
@@ -186,6 +188,11 @@ inline ChoiceHelp HelpChoice(int id,float value) {
                 "Item details appear after the laser rests on an item for 300 ms.",
                 "Item details use the game's own timing."};
             return {TooltipTimingNames[c],text[c]};}
+        case AimHighlights:{
+            static constexpr const char* text[]={
+                "One outline: the monster your dominant hand (VR > Dominant hand) points at, else the one you look at.",
+                "Each hand's monster has its own outline in its own color; with neither hand on one, the monster you look at."};
+            return {HighlightsNames[c],text[c]};}
         case Dominant:{
             static constexpr const char* names[]={"Right","Left"};
             static constexpr const char* text[]={
@@ -206,7 +213,8 @@ inline ChoiceHelp HelpChoice(int id,float value) {
         case StrainDark:{
             static constexpr const char* text[]={
                 "A pale glow at the edges of your view.",
-                "A dark vignette at the edges of your view."};
+                "A dark vignette at the edges of your view.",
+                "No vignette. Strain still builds and can break your guard; you just do not see it."};
             return {StrainColorNames[c],text[c]};}
         default:return {};
     }

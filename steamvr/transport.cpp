@@ -76,6 +76,7 @@
 #include "profile.h"
 #include "../vr/skeletons.h"
 #include "spell_aim.h"
+#include "aim_rules.h"
 
 namespace gamestate {uint32_t WeaponType();uint32_t HandsKey();uint32_t WeaponSet();uint32_t WeaponClass();uint32_t TwoHanded();uint64_t LocalPlayer();uint32_t MenuEpoch();}
 namespace gamecmd {void RequestPotion(int slot);void CancelPotion();}
@@ -318,6 +319,30 @@ settings::GameVideo GameVideoOptions(ULONGLONG now) {
     return seen;
 }
 ULONGLONG settingsPaintAt=0;
+// VR Settings and body calibration are painted on a worker: GDI text over the
+// whole 1744 x 1024 page, with a new bitmap and fonts each time, held the frame
+// thread on every hover change. The frame thread uploads the finished picture,
+// and the painted state is what that picture shows, so a click still waits for
+// the page it lands on.
+struct SettingsPaintJob {
+    settings::Model model;settings::Hit hover;std::string status;controllers::Labels detected;
+    int help=settings::NoHelp;settings::GameVideo game{};bool monoAudio=false;
+    bool calibrating=false;calibration::Flow body;
+};
+struct SettingsPainted {std::vector<uint8_t> pixels;double paintMs=0;};
+LatestWorker<SettingsPaintJob,SettingsPainted> settingsPainter([](const SettingsPaintJob& job) {
+    const auto start=hookmetrics::Nanos();
+    auto pixels=job.calibrating?settings::Paint(job.model,{},"",&job.body):
+        settings::Paint(job.model,job.hover,job.status.c_str(),nullptr,job.detected,job.help,job.game,job.monoAudio);
+    return SettingsPainted{std::move(pixels),double(hookmetrics::Nanos()-start)/1e6};
+});
+struct SettingsPicture {
+    uint64_t revision=~0ull;int hover=-1,status=-1,help=settings::NoHelp,game=-1;
+    bool operator==(const SettingsPicture&)const=default;
+};
+SettingsPicture settingsRequested;   // what the outstanding settings request paints
+int calibrationRequestedKey=-1;      // the same for calibration
+uint64_t settingsPaintRequest=0;
 XrPosef settingsPose{};
 constexpr float settingsWidth=.95f,settingsHeight=settingsWidth*settings::Height/settings::Width;
 DXGI_FORMAT atlasFormat=DXGI_FORMAT_R8G8B8A8_UNORM_SRGB;
@@ -983,6 +1008,7 @@ bool SetupGameplay(DXGI_FORMAT eyeFormat) {
     if(!interactionPainter.Start())Say("Frame UI: background painter unavailable; interaction artwork cannot refresh");
     if(!bloodPainter.Start())Say("Frame blood visor: background painter unavailable; blood stays hidden");
     if(!strainPainter.Start())Say("Frame guard strain: background painter unavailable; the light stays hidden");
+    if(!settingsPainter.Start())Say("Frame VR settings: background painter unavailable; VR Settings and calibration cannot be shown");
     const auto compassPixels=compass::Paint();
     compassAtlasReady=!compassPixels.empty()&&UploadAtlas(compassChain,eyeFormat,compass::Width,compass::Height,compassPixels);
     if(!compassAtlasReady)Say("Frame wrist compass: static atlas unavailable");
@@ -1415,7 +1441,7 @@ void ResetSettingsInput() {
     ReleasePanelInput();
 }
 void OpenSettings() {
-    settingsImageReady=false;settingsPaintRevision=~0ull;settingsPaintAt=0;
+    settingsImageReady=false;settingsPaintRevision=~0ull;settingsPaintAt=0;settingsPaintRequest=0;settingsRequested={};
     settingsModel.Open(vrsettings::Read());settingsOpen=true;settingsSession=gamestate::LocalPlayer();
     const auto q=math::Yaw(math::Heading(Q(head.orientation)));
     settingsBase={V(head.position)+math::Rotate(q,{0,-.06f,-1.05f}),q};
@@ -1429,11 +1455,26 @@ void CloseSettings() {
 void OpenBodyCalibration() {
     if(settingsModel.open)CloseSettings();
     bodyCalibration.Begin();calibrationRelease.Consume();calibrationPrompted=true;
-    calibrationSession=gamestate::LocalPlayer();calibrationPaintKey=-1;
-    settingsOpen=true;settingsImageReady=false;settingsPaintAt=0;
+    calibrationSession=gamestate::LocalPlayer();calibrationPaintKey=calibrationRequestedKey=-1;
+    settingsOpen=true;settingsImageReady=false;settingsPaintAt=0;settingsPaintRequest=0;
     const auto q=math::Yaw(math::Heading(Q(head.orientation)));
     settingsPose=XrPose({V(head.position)+math::Rotate(q,{0,-.06f,-1.05f}),q});
     ResetSettingsInput();Say("Frame body calibration: started; upright T-pose + both triggers; Right B cancels");
+}
+// Uploads the picture last asked of the settings painter once it is done;
+// true if it was uploaded.
+bool TakeSettingsPicture() {
+    SettingsPainted painted;
+    if(!settingsPaintRequest||settingsAtlasPending||atlasUploads.size()>=3||!settingsPainter.Take(settingsPaintRequest,painted))return false;
+    settingsPaintRequest=0;
+    const auto uploadStart=Milliseconds();
+    const bool uploaded=!painted.pixels.empty()&&UploadAtlas(settingsChain,atlasFormat,settings::AtlasWidth,settings::Height,painted.pixels,true,&settingsAtlasPending);
+    static ULONGLONG reportAt=0;const auto now=GetTickCount64();
+    if(uploaded&&now>=reportAt) {
+        char message[160];std::snprintf(message,sizeof message,"Frame VR settings: page painted in %.2f ms on the background painter, uploaded in %.2f ms",
+            painted.paintMs,Milliseconds()-uploadStart);Say(message);reportAt=now+5000;
+    }
+    return uploaded;
 }
 void CalibrationInput() {
     if(!bodyCalibration.Active())return;
@@ -1468,11 +1509,11 @@ void CalibrationInput() {
     }
     const int key=int(bodyCalibration.hint)*100+int(bodyCalibration.progress*20);
     const auto now=GetTickCount64();
-    if(key!=calibrationPaintKey&&now>=settingsPaintAt&&!settingsAtlasPending&&atlasUploads.size()<3){
-        auto pixels=settings::Paint(settingsModel,{},"",&bodyCalibration);
-        if(!pixels.empty()&&UploadAtlas(settingsChain,atlasFormat,settings::AtlasWidth,settings::Height,pixels,true,&settingsAtlasPending))calibrationPaintKey=key;
-        settingsPaintAt=now+100;
+    if(key!=calibrationPaintKey&&now>=settingsPaintAt&&!settingsPaintRequest){
+        SettingsPaintJob job;job.model=settingsModel;job.calibrating=true;job.body=bodyCalibration;
+        settingsPaintRequest=settingsPainter.Submit(std::move(job));calibrationRequestedKey=key;settingsPaintAt=now+100;
     }
+    if(TakeSettingsPicture())calibrationPaintKey=calibrationRequestedKey;
 }
 // Windows Mono audio (HKCU Software\Microsoft\Multimedia\Audio,
 // AccessibilityMonoMixState 1) for the title row's warning, read at most every
@@ -1539,14 +1580,20 @@ void SettingsPointer(const settings::InputGate::Edges& edges,bool grip) {
     const int help=settingsHelpVisible=settingsHelp.Step(helpTarget,now);
     const auto game=GameVideoOptions(now);
     const int warnings=game.Code()|(monoAudio?4:0);
-    if(now>=settingsPaintAt&&!settingsAtlasPending&&atlasUploads.size()<3&&
-       (settingsPaintRevision!=settingsModel.revision||settingsPaintHover!=hover||settingsPaintStatus!=status||settingsPaintHelp!=help||settingsPaintGame!=warnings)){
+    // One request at a time, at most every 100 ms as when it was painted here.
+    // Each picture is shown when done, even if the pointer moved on meanwhile:
+    // the painted state names what it shows, and the next request catches up.
+    const SettingsPicture wanted{settingsModel.revision,hover,status,help,warnings};
+    const SettingsPicture painted{settingsPaintRevision,settingsPaintHover,settingsPaintStatus,settingsPaintHelp,settingsPaintGame};
+    if(!(wanted==painted)&&now>=settingsPaintAt&&!settingsPaintRequest){
         char resolutionStatus[160];resolution::Describe(resolutionStatus,sizeof resolutionStatus,{width,height});
-        auto pixels=settings::Paint(settingsModel,settingsHover,settingsModel.page==settings::Page::Video?resolutionStatus:descriptions[status],nullptr,detectedControllers,help,game,monoAudio);
-        if(!pixels.empty()&&UploadAtlas(settingsChain,atlasFormat,settings::AtlasWidth,settings::Height,pixels,true,&settingsAtlasPending)){
-            settingsPaintRevision=settingsModel.revision;settingsPaintHover=hover;settingsPaintStatus=status;settingsPaintHelp=help;settingsPaintGame=warnings;
-        }
-        settingsPaintAt=now+100;
+        settingsPaintRequest=settingsPainter.Submit({settingsModel,settingsHover,settingsModel.page==settings::Page::Video?resolutionStatus:descriptions[status],
+                                                    detectedControllers,help,game,monoAudio});
+        settingsRequested=wanted;settingsPaintAt=now+100;
+    }
+    if(TakeSettingsPicture()) {
+        settingsPaintRevision=settingsRequested.revision;settingsPaintHover=settingsRequested.hover;settingsPaintStatus=settingsRequested.status;
+        settingsPaintHelp=settingsRequested.help;settingsPaintGame=settingsRequested.game;
     }
 }
 void Input() {
@@ -1985,6 +2032,13 @@ void Input() {
     motionOutput.shieldContact=motionInput.active&&!motionOutput.block&&!motionInput.quickCast&&motionInput.trigger<.2f&&
         motionInput.shieldEquipped&&gestureSettings[settings::SkillGestures]>.5f&&quickFresh&&shieldSkill.available&&shieldSkill.motion&&shieldSkill.id==weaponskills::Smite;
     if(motionOutput.skill>=0&&(!quickFresh||!quickSnapshot.skills[motionOutput.skill].available))motionOutput.skill=-1;
+    // Bow skills leave the bow: the arrow is in the left hand's model, so the
+    // target, the lock and the shot follow the bow whichever button casts. A
+    // drawn string (or the shot just loosed) keeps its own line.
+    if(motionInput.weapon==gameplay::Weapon::Bow&&motionOutput.skill>=0&&motionInput.tracked[1]&&
+       weaponskills::Bow(quickSnapshot.skills[motionOutput.skill].id)&&gameplay::Length(motionOutput.rayOrigin-motionInput.hand[1].p)>.05f) {
+        motionOutput.rayOrigin=motionInput.hand[1].p;motionOutput.rayDirection=gameplay::BowForward(motionInput.hand[1]);motionOutput.rayValid=true;
+    }
     {
         crossbow::Pose pose;
         const bool ready=motionControls.load()&&motionInput.weapon==gameplay::Weapon::Crossbow&&bowvr::MotionReady()&&
@@ -3220,7 +3274,9 @@ void EndPair() {
     if(layer&&(settingsModel.open||bodyCalibration.Active())&&settingsImageReady){
         // Extend to the right, without moving or shrinking any control. Input
         // still intersects the original panel. Calibration uses only that crop.
-        const bool showHelp=!bodyCalibration.Active()&&settingsHelpVisible!=settings::NoHelp&&settingsPaintHelp==settingsHelpVisible;
+        // The card while help is wanted and the picture shown has one: from one
+        // card to the next, the old stays until the new is painted, not a narrow frame.
+        const bool showHelp=!bodyCalibration.Active()&&settingsHelpVisible!=settings::NoHelp&&settingsPaintHelp!=settings::NoHelp;
         const int pixels=showHelp?settings::AtlasWidth:settings::Width;
         const float fullWidth=settingsWidth*pixels/settings::Width;
         auto pose=settingsPose;
@@ -3430,7 +3486,6 @@ int GroundSpellSkill() {
     if(!skill.known||!skill.available)return -1;
     return spellaim::GroundTarget(skill.id)?skill.id:-1;
 }
-bool GroundSpellActive(){return GroundSpellSkill()>=0;}
 bool GameplayRay(float outOrigin[3],float outDirection[3]) {
     std::lock_guard lock(mutex);
     if(!motionControls.load()||!motionOutput.rayValid||!motionInput.active||GetTickCount64()-motionAt>150)return false;
@@ -3440,6 +3495,60 @@ bool GameplayRay(float outOrigin[3],float outDirection[3]) {
     outOrigin[0]=o.x;outOrigin[1]=o.y;outOrigin[2]=o.z;
     outDirection[0]=d.x;outDirection[1]=d.y;outDirection[2]=d.z;
     return true;
+}
+// Aim rules: each hand's own aim, in GameplayRay's frame (the head's turn
+// undone). The left hand holding a bow aims along the bow (the arrow is in
+// its model).
+bool HandAimRay(int hand,float outOrigin[3],float outDirection[3]) {
+    std::lock_guard lock(mutex);
+    if(hand<0||hand>1||!motionControls.load()||!motionInput.active||GetTickCount64()-motionAt>150)return false;
+    math::Vec p,d;
+    if(hand==1&&motionInput.weapon==gameplay::Weapon::Bow&&motionInput.tracked[1]){p=motionInput.hand[1].p;d=gameplay::BowForward(motionInput.hand[1]);}
+    else if(handAimTracked[hand]){p=handAim[hand].p;d=math::Rotate(handAim[hand].q,{0,0,-1});}
+    else return false;
+    const auto undo=math::Conjugate(math::Yaw(math::Heading(Q(head.orientation))));
+    const auto o=math::Rotate(undo,p-V(head.position)),r=math::Rotate(undo,d);
+    outOrigin[0]=o.x;outOrigin[1]=o.y;outOrigin[2]=o.z;
+    outDirection[0]=r.x;outDirection[1]=r.y;outDirection[2]=r.z;
+    return std::isfinite(o.x+o.y+o.z+r.x+r.y+r.z);
+}
+int CastButtonHand() {
+    std::lock_guard lock(mutex);
+    return motionControls.load()&&handOutput.slot>=0?handOutput.hand:-1;
+}
+bool HandSpellHeld(int hand) {
+    std::lock_guard lock(mutex);
+    return hand>=0&&hand<2&&motionControls.load()&&handOutput.spells[hand]>=0;
+}
+namespace {
+// The fresh native cast's skill row, or nullptr.
+const interaction::Skill* CastSkillRow() {
+    const int slot=motionOutput.skill;
+    const auto now=GetTickCount64();
+    if(!motionControls.load()||slot<0||slot>=skills::Count||!gameplay::CastingSkill(motionInput,motionOutput,now-motionAt)||
+       !interaction::Fresh(interactionInput.snapshot,gamestate::LocalPlayer(),now))return nullptr;
+    const auto& skill=interactionInput.snapshot.skills[slot];
+    return skill.known&&skill.available&&skill.id>=0?&skill:nullptr;
+}
+}
+int AimRulesSkill() {
+    std::lock_guard lock(mutex);
+    const auto* skill=CastSkillRow();return skill?skill->id:-1;
+}
+bool AimRulesDirected() {
+    std::lock_guard lock(mutex);
+    const auto* skill=CastSkillRow();return skill&&skill->directed;
+}
+// A skill the rules place at a point: ground skills, curses, Corpse Explosion,
+// Charge, Teleport... With VR Settings > Aim > Ground skills land where you aim
+// Off (read before our lock), the game places ground skills.
+int PointSpellSkill() {
+    const bool ground=vrsettings::Read().values[settings::GroundSkills]>.5f;
+    std::lock_guard lock(mutex);
+    const auto* skill=CastSkillRow();
+    if(!skill)return -1;
+    const auto use=aimrules::Of(skill->id,skill->directed);
+    return aimrules::Placed(use)&&(ground||use!=aimrules::Use::Ground)?skill->id:-1;
 }
 bool MeleeSample(uint32_t poseStamp,melee::Sample& sample,int hand) {
     std::lock_guard lock(mutex);
@@ -3706,14 +3815,15 @@ void Shutdown(bool preserveResolution) {
     if(!preserveResolution)hud::NativeSession(false);
     if(!preserveResolution)resolution::Restore();
     windowFocus.Cancel();
-    EndPair();ClearInput();interactionPainter.Stop();bloodPainter.Stop();strainPainter.Stop();interaction::icons::Shutdown();
+    EndPair();ClearInput();interactionPainter.Stop();bloodPainter.Stop();strainPainter.Stop();settingsPainter.Stop();interaction::icons::Shutdown();
     // Completion is mandatory before destroying our commands/resources, even
     // when ordinary frame submission uses queue ordering without a CPU wait.
     if(fence&&!WaitGpu())failed=true;
     if(uiEye.chain&&pDestroySwapchain)pDestroySwapchain(uiEye.chain);uiEye={};journalMode=spatialMode=workspacePlaced=false;hud::UiFrame(false,false,0);uiSupported=false;uiBlit={};potionModels.Reset();potionScene={};
     if(mapEye.chain&&pDestroySwapchain)pDestroySwapchain(mapEye.chain);mapEye={};mapSupported=false;mapBlit={};gamestate::MenuMap(false);hud::MenuMapCapture(false);
     settingsModel.Close();settingsOpen=false;settingsInputGate.Suspend();settingsPaintRevision=~0ull;settingsAtlasPending=settingsImageReady=false;
-    bodyCalibration.Cancel();calibrationRelease={};calibrationPrompted=floorSpace=false;calibrationSession=0;calibrationPaintKey=-1;
+    settingsPaintRequest=0;settingsRequested={};
+    bodyCalibration.Cancel();calibrationRelease={};calibrationPrompted=floorSpace=false;calibrationSession=0;calibrationPaintKey=calibrationRequestedKey=-1;
     if(settingsChain&&pDestroySwapchain)pDestroySwapchain(settingsChain);settingsChain=XR_NULL_HANDLE;
     atlasUploads.clear();atlasStagingFree.clear();interactionPaintKey=~0ull;interactionPrefetchSession=0;interactionPrefetchRevision=~0u;interactions.Reset();interactionstate::Cancel();
     interactionPaintRequest=0;interactionRequestedKey=~0ull;interactionPaintValid=false;interactionPaintContext={};interactionRequestedContext={};interactionPaintAt=0;
