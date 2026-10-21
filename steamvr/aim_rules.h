@@ -14,8 +14,12 @@ enum class Use {
     Spot,     // Teleport, Leap, golems, Raise Skeleton: the free-aim spot, never the target
     CorpseAtTarget,   // Corpse Explosion, Poison Explosion: at the target, else the free-aim spot
 };
+// The Warlock's skills (373-402, class 7, new in D2R) keep upstream's aim, with no
+// target, rule or placement, until he is tested (Jeff, 2026-10-20: too buggy).
+inline bool Stable(int skill){return skill>=373&&skill<=402;}
 // directed: the game's own "aimed" flag for the skill (spellaim::Directed).
 inline Use Of(int skill,bool directed) {
+    if(Stable(skill))return Use::Native;
     switch(skill) {
         // ground skills
         case 251: case 256: case 261: case 262: case 271: case 272: case 276: case 257: case 273:   // Assassin
