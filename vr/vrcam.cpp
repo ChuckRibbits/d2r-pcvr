@@ -30,6 +30,8 @@
 #include "../steamvr/interact_press.h"
 #include "../steamvr/sewer_interaction.h"
 #include "../steamvr/dropped_item_labels.h"
+#include "../steamvr/arm_pointing.h"
+#include "../steamvr/aim_reach.h"
 #include <tlhelp32.h>
 #include <intrin.h>
 #include <xinput.h>
@@ -105,6 +107,8 @@ namespace gamestate {bool OpaqueMenuOpen();}
 #include "xinput_rumble.h"
 #include "native_panels.h"
 #include "spell_aim.h"
+#include "telegraph.h"
+#include "aim_rules.h"
 #include "skill_pad.h"
 #include "spell_aim_signatures.h"
 #include "settings_menu.h"
@@ -2888,13 +2892,75 @@ bool ShooterActive();
 #ifdef D2RVR_NATIVE_OPENXR
 extern std::atomic<uint32_t> g_meleeTurnEpoch;
 #endif
-bool HandRay(float* o, float* d,bool forceGround=true) {
+// The Aim settings, read by the update, render and game threads: one settings
+// snapshot every 200 ms, not one per call (HandRay runs several times a frame).
+namespace aimsettings {
+std::atomic<ULONGLONG> at{0};
+std::atomic<uint32_t> bits{0};
+std::atomic<float> hue[2]{45.0f, 210.0f};   // the outline colors: right hand, left hand (0 = By range)
+std::atomic<float> spanM{1.6f};   // VR Settings > Controller span (arm_span_m), set with or without Body calibration
+constexpr framevr::settings::Key keys[] = {framevr::settings::TargetHighlight, framevr::settings::SpellLock,
+                                           framevr::settings::StaffPoint, framevr::settings::SpellLockBow,
+                                           framevr::settings::GroundToTarget,
+                                           framevr::settings::LandingCircles, framevr::settings::AimHighlights,
+                                           framevr::settings::Dominant};
+constexpr int KeyCount = int(std::size(keys));
+void Refresh() {
+    const ULONGLONG now = GetTickCount64();
+    if (now - at.load() <= 200) return;
+    const auto values = vrsettings::Read().values;
+    uint32_t b = 0;
+    for (int i = 0; i < KeyCount; ++i) if (values[keys[i]] > .5f) b |= 1u << i;
+    bits.store(b);
+    hue[0].store(values[framevr::settings::HighlightRight]);
+    hue[1].store(values[framevr::settings::HighlightLeft]);
+    spanM.store(values[framevr::settings::ArmSpan]);
+    at.store(now);
+}
+}
+bool AimOn(framevr::settings::Key key) {
+    aimsettings::Refresh();
+    for (int i = 0; i < aimsettings::KeyCount; ++i) if (aimsettings::keys[i] == key) return (aimsettings::bits.load() >> i) & 1;
+    return false;
+}
+// How far a hand is held out from the head before it points, cm: the arm counts as
+// pointing once held out a tenth of the player's span (Jeff: 15 cm on a 1.5 m span).
+float AimArmOutCm() { aimsettings::Refresh(); return framevr::armpointing::ArmOutCm(aimsettings::spanM.load()); }
+// VR Settings > Aim > Right / Left hand color: the color of a source's outline
+// (aimrules::Source), 0 = By range. The eyes have no color of their own: their
+// monster is shown in the color of the hand that would cast at it - the bow hand
+// (left) while a bow is the equipped weapon, else VR Settings > Dominant hand.
+float OutlineHue(int source) {
+    aimsettings::Refresh();
+    if (source == framevr::aimrules::Eyes)
+        source = gamestate::WeaponType() == D2RVR_TYPE_BOW || AimOn(framevr::settings::Dominant) ? framevr::aimrules::Left : framevr::aimrules::Right;
+    return aimsettings::hue[std::clamp(source, 0, 1)].load();
+}
 #ifdef D2RVR_NATIVE_OPENXR
+// Staff aim: a staff levelled out like a wand (its shaft within ~35 degrees of
+// flat) fires out of its top; held upright (the usual way) up its shaft is up,
+// so with Staff aims where your hand points it fires where the arm points.
+bool StaffLevelled() {
+    skel::MeleeWeaponPose pose;
+    if(!skel::MeleeWeapon(pose)||pose.weaponType!=D2RVR_TYPE_STAFF||pose.worldEpoch!=g_meleeTurnEpoch.load())return false;
+    const float* a=pose.castingAxis;
+    const float len=std::sqrt(a[0]*a[0]+a[1]*a[1]+a[2]*a[2]);
+    return len>1e-4f&&std::fabs(a[1])/len<0.57f;
+}
+bool StaffByHand() {
+    return gamestate::WeaponType()==D2RVR_TYPE_STAFF&&AimOn(framevr::settings::StaffPoint)&&!StaffLevelled();
+}
+#endif
+bool HandRay(float* o, float* d,bool forceGround=true,int forHand=-1) {
+#ifdef D2RVR_NATIVE_OPENXR
+    // forHand -1: the casting hand (GameplayRay); 0 or 1: that hand (the aim rules).
+    const bool left=forHand>=0?forHand==1:framevr::LeftHandAiming();
     // The menu aim pose can differ greatly from the weapon's shaft. Use the
     // final posed weapon in its captured WORLD frame, not a bone from one
     // frame combined with a newer headset yaw from another.
     const auto castingType=gamestate::WeaponType();
-    if(g_eyeOk.load()&&!framevr::spellaim::TrackedAim(framevr::NativeCastSkill())&&!framevr::LeftHandAiming()&&framevr::SpellSelected()&&
+    const bool staffByHand=StaffByHand();
+    if(g_eyeOk.load()&&!framevr::spellaim::TrackedAim(framevr::NativeCastSkill())&&!left&&(forHand==0||framevr::SpellSelected())&&!staffByHand&&
        (castingType==D2RVR_TYPE_WAND||castingType==D2RVR_TYPE_STAFF||castingType==D2RVR_TYPE_SCEPTER||castingType==D2RVR_TYPE_ORB)) {
         skel::MeleeWeaponPose pose;
         if(skel::MeleeWeapon(pose)&&pose.weaponType==castingType&&pose.worldEpoch==g_meleeTurnEpoch.load()) {
@@ -2915,7 +2981,19 @@ bool HandRay(float* o, float* d,bool forceGround=true) {
         d[0]=crossbow.direction.x;d[1]=crossbow.direction.y;d[2]=crossbow.direction.z;return true;
     }
     float motionOrigin[3],motionDirection[3];
-    if(g_eyeOk.load()&&framevr::GameplayRay(motionOrigin,motionDirection)) {
+    // An upright staff or an empty hand: along the arm, from the casting hand's
+    // shoulder through the hand, so a bent wrist, knuckles to the side or a
+    // hand overhead all aim where the arm reaches. The empty hand's own pointer
+    // tilts up from the fist, and every ground skill flew to full reach. The
+    // shoulders sit about 17 cm to either side of and 22 cm below the eyes.
+    // A hand's own aim (the rules) always: its target and its cast agree.
+    const bool arm=(staffByHand||castingType==D2RVR_TYPE_UNARMED)&&(forHand>=0||framevr::SpellSelected());
+    if(g_eyeOk.load()&&(forHand>=0?framevr::HandAimRay(forHand,motionOrigin,motionDirection):framevr::GameplayRay(motionOrigin,motionDirection))) {
+        if(arm) {
+            const float a[3]={motionOrigin[0]-(left?-.17f:.17f),motionOrigin[1]+.22f,motionOrigin[2]};
+            const float al=std::sqrt(a[0]*a[0]+a[1]*a[1]+a[2]*a[2]);
+            if(al>.15f)for(int i=0;i<3;++i)motionDirection[i]=a[i]/al;
+        }
         AcquireSRWLockShared(&g_stickLock);const StickFrame f=g_stickFrame;ReleaseSRWLockShared(&g_stickLock);
         if(!f.valid)return false;
         const float scale=std::max(1.0f,ViewHeight())/UserEyeHeightM();
@@ -2948,7 +3026,7 @@ bool HandRay(float* o, float* d,bool forceGround=true) {
     }
     const D2RVR_Shared* sh = g_shared;
     const bool staff = StaffAim();
-    const int hand = staff ? 0 : AimHand();
+    const int hand = forHand >= 0 ? forHand : staff ? 0 : AimHand();
     if (!sh || sh->version != D2RVR_SHARED_VERSION || !sh->headValid || !(sh->handsValid & (1u << hand)) || !g_eyeOk.load()) return false;
     AcquireSRWLockShared(&g_stickLock); const StickFrame f = g_stickFrame; ReleaseSRWLockShared(&g_stickLock);
     if (!f.valid) return false;
@@ -3182,6 +3260,15 @@ bool HandWorldTheta(float* theta) {
     return true;
 }
 
+#ifdef D2RVR_NATIVE_OPENXR
+// A skill cast the aim rules aim themselves (a row in aim_rules.h). A skill the
+// table does not know (rule Native: the Warlock's, self skills) keeps the game's
+// hand aim: its point 20 cells along the hand and the hero turned to the hand
+// (Jeff, 2026-10-20: Warlock spells without a rule went behind him).
+bool RulesAimCast() {
+    return framevr::NativeSkillCasting() && framevr::aimrules::Of(framevr::AimRulesSkill(), framevr::AimRulesDirected()) != framevr::aimrules::Use::Native;
+}
+#endif
 // The aiming hand as a unit vector on the game's grid. The grid's axes are the
 // world's x and z (measured 2026-10-02: 0 deg, not mirrored, agreement 0.98);
 // what the walk teaches overrides that once it is sure.
@@ -3246,25 +3333,6 @@ float TargetOutlineStrength() {
     return strength.load();
 }
 bool TargetHighlightOn() { return TargetOutlineStrength() > 0.0f; }
-// Aim source: deliberate pointing beats looking. The aiming hand counts as
-// pointing while held out from the body (horizontal reach from the head, in
-// metres, with hysteresis); a hand resting in the lap does not.
-constexpr float kPointOnM = 0.40f, kPointOffM = 0.34f;
-// Pointing steeply down (at something by the feet) the arm cannot reach out as
-// far; a shorter reach counts while the ray dips this much.
-constexpr float kPointDownOnM = 0.30f, kPointDownOffM = 0.25f, kPointDownDip = -0.75f;
-std::atomic<bool> g_pointing{false};
-bool HandPointing() {
-    float o[3], d[3];
-    bool now = false;
-    if (g_eyeOk.load() && framevr::GameplayRay(o, d)) {
-        const float reach = std::hypot(o[0], o[2]);
-        const bool down = d[1] < kPointDownDip;
-        now = reach >= (g_pointing.load() ? (down ? kPointDownOffM : kPointOffM) : (down ? kPointDownOnM : kPointOnM));
-    }
-    if (now != g_pointing.exchange(now)) LogF("Frame aim source: %s", now ? "hand pointing (arm out)" : "where you look");
-    return now;
-}
 // The left eye in render-world units and its forward direction.
 bool HeadGaze(float eye[3], float forward[3]) {
     AcquireSRWLockShared(&g_skyLock); const SkyView s = g_skyView[0]; ReleaseSRWLockShared(&g_skyLock);
@@ -3272,15 +3340,7 @@ bool HeadGaze(float eye[3], float forward[3]) {
     for (int i = 0; i < 3; ++i) { eye[i] = s.hero[i] + s.eyeRel[i]; forward[i] = -s.axes[6 + i]; }
     return std::isfinite(eye[0] + eye[1] + eye[2] + forward[0] + forward[1] + forward[2]);
 }
-// The two aims for the target lock, as headings on the grid: the pointing
-// hand's (when the arm is out) and the head's. The lock tries the hand first and
-// the head when the hand is on no monster, so a seated player with the hands
-// held out in front can still turn the head to another monster.
-bool HandHeading(float& gx, float& gy) {
-    float theta = 0;
-    if (!HandPointing() || !HandWorldTheta(&theta)) return false;
-    gx = cosf(theta); gy = sinf(theta); return true;
-}
+// The head's aim for the target lock, as a heading on the grid.
 bool HeadHeading(float& gx, float& gy) {
     float eye[3], forward[3];
     if (!HeadGaze(eye, forward) || std::hypot(forward[0], forward[2]) < 1e-3f) return false;
@@ -3288,82 +3348,343 @@ bool HeadHeading(float& gx, float& gy) {
     return true;
 }
 
-// Target lock: the hostile monster being aimed at - pointed at deliberately
-// with the hand, else looked at - inside the cone on the grid, the nearest first
-// (targetcone). Chosen on vrcam's update thread from the game thread's list;
-// read by the outline.
+// The aim rules (aimrules: one table of how each skill uses the aimed monster).
+// A target for each hand while that arm is held out (armpointing: horizontal
+// reach from the head against a tenth of the player's span (AimArmOutCm), with
+// hysteresis; a hand resting in the lap does not point), and one for the eyes,
+// each inside its cone on the grid, the nearest first (targetcone), never past
+// the game's reach (aimreach). A cast takes them in its button's order
+// (aimrules::For: its own hand, the other hand, the eyes; a bow skill the bow
+// hand first) and keeps the one it took until the button is let go, so the
+// target cannot jump mid-cast. Picked on vrcam's update thread from the game
+// thread's list; read by the casts and the outline.
+namespace aimtargets {
+struct Pick { std::atomic<uint32_t> id{0}; std::atomic<ULONGLONG> at{0}; };
+Pick g_pick[3];                      // aimrules::Source: right, left, eyes
+std::atomic<bool> g_pointing[2]{};   // that arm is held out
+std::atomic<uint32_t> g_held[2]{};   // the target a held button took, 0 none
+std::atomic<int> g_heldSource[2]{};
+const char* SourceName(int source) { return source == 0 ? "right hand" : source == 1 ? "left hand" : "eyes"; }
+bool Pointing(int hand) { return hand >= 0 && hand < 2 && g_pointing[hand].load(); }
+void Store(int k, const targetlock::Snapshot* s, int i) {
+    if (!s || i < 0) { g_pick[k].id.store(0); return; }
+    const auto& t = s->targets[i];
+    if (t.id != g_pick[k].id.load()) {
+        static ULONGLONG lastLog[3] = {};
+        if (GetTickCount64() - lastLog[k] > 1000) {
+            lastLog[k] = GetTickCount64();
+            LogF("Frame target lock: %s on monster id %u at %.1f %.1f, %.1f cells (%d hostile near)", SourceName(k), t.id, t.x, t.y,
+                 std::hypot(t.x - s->heroX, t.y - s->heroY), s->count);
+        }
+    }
+    g_pick[k].id.store(t.id); g_pick[k].at.store(GetTickCount64());
+}
+// vrcam's update thread (mobaim::Tick). No snapshot: no target is wanted, but
+// each arm's pointing still decides where a cast goes.
+void Tick(const targetlock::Snapshot* s) {
+    static framevr::armpointing::State arm[2];
+    for (int b = 0; b < 2; ++b)   // a released button lets its target go now, not at its next cast (else the next press keeps the old monster)
+        if (framevr::CastButtonHand() != b && !framevr::HandSpellHeld(b))
+            if (const uint32_t was = g_held[b].exchange(0)) LogF("Frame aim hold: %s button let go of monster %u", b ? "left" : "right", was);
+    const float armOut = AimArmOutCm();
+    for (int h = 0; h < 2; ++h) {
+        float o[3], d[3];
+        bool on = false;
+        const bool tracked = g_eyeOk.load() && framevr::HandAimRay(h, o, d);
+        const float flat = tracked ? std::hypot(d[0], d[2]) : 0.f;   // reach out along where the hand points, not to the side
+        const float reach = flat > 1e-3f ? (o[0] * d[0] + o[2] * d[2]) / flat : 0.f;
+        if (tracked) on = framevr::armpointing::Update(arm[h], reach, d[1], armOut);
+        else arm[h].on = false;
+        // Telemetry: "Frame aim hands:" each change, with why (reach against the arm-out, a tenth of the span, or no tracking)
+        if (on != g_pointing[h].load())
+            LogF("Frame aim hands: %s %s (%s %.0f cm, arm out %.0f cm, %.0f deg below level)", h ? "left" : "right", on ? "pointing" : "down",
+                 tracked ? "reach" : "no tracking, reach", reach * 100.f, armOut, tracked ? std::asin(std::clamp(-d[1], -1.f, 1.f)) * 57.2958f : 0.f);
+        g_pointing[h].store(on);
+        int i = -1;   // each hand's pick uses the same aim as its cast (pointer, arm line, weapon shaft, bow)
+        if (s && on && HandRay(o, d, true, h) && std::hypot(d[0], d[2]) > 1e-3f)
+            i = framevr::targetcone::Pick(s->targets, s->count, s->heroX, s->heroY, d[0], d[2], g_pick[h].id.load());
+        Store(h, s, i);
+    }
+    float gx = 0, gy = 0;
+    Store(framevr::aimrules::Eyes, s, s && HeadHeading(gx, gy) ? framevr::targetcone::Pick(s->targets, s->count, s->heroX, s->heroY, gx, gy, g_pick[2].id.load()) : -1);
+}
+// The target for a cast from this button's hand (bow: a bow skill), with where
+// it came from. Any thread.
+bool Resolve(int button, bool bow, float& x, float& y, float& distance, int* source = nullptr, uint32_t* idOut = nullptr) {
+    const auto s = targetlock::Get();
+    const ULONGLONG now = GetTickCount64();
+    if (!s.at || now - s.at > 500) return false;
+    const int b = button == 1 ? 1 : 0;
+    auto find = [&](uint32_t id) {
+        for (int i = 0; i < s.count; ++i) if (s.targets[i].id == id) { x = s.targets[i].x; y = s.targets[i].y; return true; }
+        return false;
+    };
+    const bool held = framevr::CastButtonHand() == b || framevr::HandSpellHeld(b);
+    if (!held) g_held[b].store(0);
+    if (const uint32_t keep = g_held[b].load(); keep && find(keep)) {   // a dead or out-of-reach target lets go
+        distance = std::hypot(x - s.heroX, y - s.heroY);
+        if (source) *source = g_heldSource[b].load();
+        if (idOut) *idOut = keep;
+        return true;
+    }
+    for (const auto src : framevr::aimrules::For(b, bow).at) {
+        const uint32_t id = g_pick[src].id.load();
+        if (!id || now - g_pick[src].at.load() > 300 || !find(id)) continue;
+        distance = std::hypot(x - s.heroX, y - s.heroY);
+        if (held) { g_held[b].store(id); g_heldSource[b].store(src); }
+        if (source) *source = src;
+        if (idOut) *idOut = id;
+        return true;
+    }
+    return false;
+}
+// The outlines to draw: Both hands (VR Settings > Aim > Monster highlights)
+// the right hand's monster and the left's - a held button's own while it is
+// held - and with neither, the eyes'; Dominant hand that hand's, else the
+// eyes'. How many (0-2). The render thread.
+struct Shown { float x = 0, y = 0, distance = 0; int source = 0; uint32_t id = 0; };
+int ShownTargets(Shown out[2]) {
+    const auto s = targetlock::Get();
+    const ULONGLONG now = GetTickCount64();
+    if (!s.at || now - s.at > 500) return 0;
+    auto idOf = [&](int src) -> uint32_t {
+        if (src < 2 && (framevr::CastButtonHand() == src || framevr::HandSpellHeld(src)))
+            if (const uint32_t held = g_held[src].load()) return held;
+        return now - g_pick[src].at.load() <= 300 ? g_pick[src].id.load() : 0;
+    };
+    auto fill = [&](uint32_t id, int src, Shown& o) {
+        for (int i = 0; i < s.count; ++i) if (s.targets[i].id == id) {
+            o.x = s.targets[i].x; o.y = s.targets[i].y; o.distance = std::hypot(o.x - s.heroX, o.y - s.heroY);
+            o.source = src; o.id = id; return true;
+        }
+        return false;
+    };
+    const bool both = AimOn(framevr::settings::AimHighlights);
+    // the bow hand is the main hand while a bow is out: first, so a monster both hands are on shows its color
+    const int dominant = gamestate::WeaponType() == D2RVR_TYPE_BOW || AimOn(framevr::settings::Dominant) ? 1 : 0;
+    int n = 0;
+    uint32_t first = 0;
+    for (int k = 0; k < 2; ++k) {
+        const int h = k == 0 ? dominant : 1 - dominant;
+        if (!both && h != dominant) continue;
+        const uint32_t id = idOf(h);
+        if (id && id != first && fill(id, h, out[n])) { first = id; ++n; }
+    }
+    if (n == 0) if (const uint32_t id = idOf(framevr::aimrules::Eyes); id && fill(id, framevr::aimrules::Eyes, out[n])) ++n;
+    // Telemetry: "Frame aim outline:" whenever what is outlined changes
+    static uint64_t shownKey = ~0ull;
+    uint64_t key = n;
+    for (int k = 0; k < n; ++k) key = key * 1000003ull + out[k].id * 4ull + uint64_t(out[k].source);
+    if (key != shownKey) {
+        shownKey = key;
+        if (n == 0) LogF("Frame aim outline: none (%s)", both ? "both hands" : "dominant hand");
+        else LogF("Frame aim outline: %d - %s %.1f cells%s%s%s (%s)", n, SourceName(out[0].source), out[0].distance,
+                  n > 1 ? ", " : "", n > 1 ? SourceName(out[1].source) : "", n > 1 ? " too" : "", both ? "both hands" : "dominant hand");
+    }
+    return n;
+}
+// No target: where the button's arm points, else the other arm, else the eyes
+// (3D, so a lazy bolt follows the head). forceGround tilts it down as HandRay does.
+bool FreeAimRay(int button, bool bow, float* o, float* d, bool forceGround, const char** how = nullptr) {
+    const int first = bow || button == 1 ? 1 : 0;
+    for (const int h : {first, 1 - first})
+        if (Pointing(h) && HandRay(o, d, forceGround, h)) { if (how) *how = SourceName(h); return true; }
+    float eye[3], f[3];
+    if (!HeadGaze(eye, f)) return false;
+    const float horizontal = std::hypot(f[0], f[2]);
+    if (forceGround) {
+        if (horizontal < 1e-3f) return false;
+        f[1] = std::min(f[1], -.08f * horizontal);
+    }
+    const float length = std::sqrt(f[0] * f[0] + f[1] * f[1] + f[2] * f[2]);
+    if (!std::isfinite(length) || length < 1e-3f) return false;
+    for (int i = 0; i < 3; ++i) { o[i] = eye[i]; d[i] = f[i] / length; }
+    if (how) *how = "eyes";
+    return true;
+}
+// The cast now: its button's hand, a bow skill, its skill and rule.
+struct Cast { int button = 0; bool bow = false; int skill = -1; framevr::aimrules::Use use = framevr::aimrules::Use::Native; };
+Cast Now() {
+    Cast c;
+    const int b = framevr::CastButtonHand();
+    c.button = b >= 0 ? b : framevr::LeftHandAiming() ? 1 : 0;
+    c.bow = framevr::BowSkillActive();
+    c.skill = framevr::AimRulesSkill();
+    c.use = framevr::aimrules::Of(c.skill, framevr::AimRulesDirected());
+    return c;
+}
+// VR Settings > Aim: does the aimed monster count for this kind of cast (bow
+// skills have their own switch: archers aim on purpose; ground skills theirs)?
+bool SwitchOn(const Cast& c) {
+    return AimOn(c.use == framevr::aimrules::Use::Ground ? framevr::settings::GroundToTarget :
+                 c.bow ? framevr::settings::SpellLockBow : framevr::settings::SpellLock);
+}
+// The cast takes the aimed monster: its rule takes one and its switch is On.
+bool TargetsOn(const Cast& c) { return framevr::aimrules::TakesTarget(c.use) && SwitchOn(c); }
+}
+// Kept only while something uses a target: the outline or a spell lock.
 namespace mobaim {
-std::atomic<uint32_t> g_id{0};
-std::atomic<float> g_x{0}, g_y{0}, g_distance{0};
-std::atomic<ULONGLONG> g_at{0};
 bool Wanted() {
-    return g_enabled.load() && g_inWorld.load() && TargetHighlightOn();
+    return g_enabled.load() && g_inWorld.load() &&
+        (TargetHighlightOn() || AimOn(framevr::settings::SpellLock) || AimOn(framevr::settings::SpellLockBow) ||
+         AimOn(framevr::settings::GroundToTarget));
 }
 void Tick() {
     const bool wanted = Wanted();
     targetlock::Pump(wanted);
-    if (!wanted || gamestate::MenuOpen()) { g_id.store(0); return; }
     const auto s = targetlock::Get();
-    if (!s.at || GetTickCount64() - s.at > 500) { g_id.store(0); return; }
-    // the hand first; a hand on no monster frees the lock for the head
-    float gx = 0, gy = 0;
-    int i = HandHeading(gx, gy) ? framevr::targetcone::Pick(s.targets, s.count, s.heroX, s.heroY, gx, gy, g_id.load()) : -1;
-    if (i < 0 && HeadHeading(gx, gy)) i = framevr::targetcone::Pick(s.targets, s.count, s.heroX, s.heroY, gx, gy, g_id.load());
-    const uint32_t was = g_id.load();
-    if (i < 0) { g_id.store(0); return; }
-    const auto& t = s.targets[i];
-    g_x.store(t.x); g_y.store(t.y);
-    g_distance.store(std::hypot(t.x - s.heroX, t.y - s.heroY));
-    g_at.store(GetTickCount64());
-    g_id.store(t.id);
-    if (t.id != was) {
-        static ULONGLONG lastLog = 0;
-        if (GetTickCount64() - lastLog > 1000) {
-            lastLog = GetTickCount64();
-            LogF("Frame target lock: monster id %u at %.1f %.1f, %.1f cells (%d hostile near)", t.id, t.x, t.y, g_distance.load(), s.count);
-        }
-    }
-}
-// The current target while fresh.
-bool Get(float& x, float& y, float& distance) {
-    if (!g_id.load() || GetTickCount64() - g_at.load() > 300) return false;
-    x = g_x.load(); y = g_y.load(); distance = g_distance.load();
-    return true;
+    const bool fresh = wanted && !gamestate::MenuOpen() && s.at && GetTickCount64() - s.at <= 500;
+    aimtargets::Tick(fresh ? &s : nullptr);
 }
 }
 
+// Telemetry: one "Frame aim cast:" line per cast (any thread that resolves a cast;
+// the game thread), filled by the aim functions and written by NativeSpellAim.
+struct AimNote { const char* by = "none"; int source = -1; uint32_t id = 0; float distance = 0; const char* unit = "-"; };
+thread_local AimNote g_note;
+// A cast's heading: the aim rules decide - the table and the button's order
+// (aimtargets). Toward the aimed monster when the cast takes it, else the free
+// aim. Native OpenXR poses already use world X/Z == grid X/Y. The legacy
+// walk-learned calibration can confuse a cast vector with the opposite travel
+// direction while backpedaling; it must not rotate spell aim.
 bool DirectedSpellAim(float& gx,float& gy) {
     float origin[3],direction[3];
-    // Native OpenXR poses already use world X/Z == grid X/Y. The legacy
-    // walk-learned calibration can confuse a cast vector with the opposite
-    // travel direction while backpedaling; it must not rotate spell aim.
-    return g_spellAimReady.load()&&g_enabled.load()&&!gamestate::MenuOpen()&&
-        framevr::DirectedSpellActive()&&HandRay(origin,direction)&&
-        framevr::spellaim::Horizontal({direction[0],direction[1],direction[2]},gx,gy);
-}
-bool NativeSpellAim(float playerX,float playerY,framevr::spellaim::Cast& cast) {
-    if(framevr::spellaim::BonePlacement(framevr::NativeCastSkill())) {
-        if(!g_spellAimReady.load()||!g_enabled.load()||gamestate::MenuOpen()||!g_eyeOk.load())return false;
-        float o[3],d[3];
-        if(!HandRay(o,d,false))return false;
-        AcquireSRWLockShared(&g_skyLock);const auto view=g_skyView[0];ReleaseSRWLockShared(&g_skyLock);
-        if(!view.axes_ok||!view.proj_ok||!framevr::spellaim::GroundPoint(playerX,playerY,
-           {o[0]-view.hero[0],o[1]-view.hero[1],o[2]-view.hero[2]},
-           {d[0],d[1],d[2]},cast.x,cast.y))return false;
-        cast.directed=cast.contactPoint=true;return true;
+    if(!(g_spellAimReady.load()&&g_enabled.load()&&!gamestate::MenuOpen()&&
+         (framevr::DirectedSpellActive()||framevr::PointSpellSkill()>=0)))return false;
+    const auto c=aimtargets::Now();
+    const char* how="free aim";
+    if(!aimtargets::FreeAimRay(c.button,c.bow,origin,direction,true,&how)||
+       !framevr::spellaim::Horizontal({direction[0],direction[1],direction[2]},gx,gy))return false;
+    float mx=0,my=0,md=0;int source=-1;uint32_t id=0;
+    if(aimtargets::TargetsOn(c)&&aimtargets::Resolve(c.button,c.bow,mx,my,md,&source,&id)) {
+        const auto s=targetlock::Get();
+        const float tx=mx-s.heroX,ty=my-s.heroY,tl=std::hypot(tx,ty);
+        if(tl>.5f){gx=tx/tl;gy=ty/tl;how=aimtargets::SourceName(source);}
+        g_note.id=id;g_note.distance=md;g_note.source=source;
     }
-    cast.directed=DirectedSpellAim(cast.x,cast.y);return cast.directed;
+    g_note.by=how;
+    return true;
+}
+// A skill the rules place at a point (aimrules::Placed: ground skills - Fire
+// Blast, whose bomb bursts where its flight ends, traps, Blizzard, Meteor, Bone
+// Wall and Prison - curses, Corpse Explosion, Charge, Teleport...): on the aimed
+// monster when it takes one (aimrules::FrontOfTarget cells short of it: Bone
+// Wall rises in front), else where the free aim meets the floor. The true ray,
+// not HandRay's forced downward tilt (at least 8%), which kept every throw
+// within about 30 cells; a level or upward ray (the horizon, the sky) goes to
+// the full reach. Never past the game's reach (aimreach). Render-world units;
+// g_lookAt[1] is the hero's feet.
+bool PointSpellAim(float playerX,float playerY,float& targetX,float& targetY) {
+    const int skill=framevr::PointSpellSkill();
+    if(!g_spellAimReady.load()||!g_enabled.load()||gamestate::MenuOpen()||skill<0)return false;
+    const auto c=aimtargets::Now();
+    float dx=0,dy=0,mx=0,my=0,md=0;
+    const char* how="free aim";
+    int source=-1;uint32_t targetId=0;
+    if(aimtargets::TargetsOn(c)&&aimtargets::Resolve(c.button,c.bow,mx,my,md,&source,&targetId)&&std::hypot(mx-playerX,my-playerY)>=.01f) {
+        dx=mx-playerX;dy=my-playerY;
+        how=aimtargets::SourceName(source);
+        const float front=framevr::aimrules::FrontOfTarget(skill),l=std::hypot(dx,dy);
+        if(front>0&&l>front+framevr::spellaim::GroundMinDistance){dx*=(l-front)/l;dy*=(l-front)/l;}
+        g_note.source=source;g_note.id=targetId;
+    } else {
+        float o[3],d[3],L[3],fx=0,fy=0;
+        if(!aimtargets::FreeAimRay(c.button,c.bow,o,d,false,&how))return false;
+        AcquireSRWLockShared(&g_lookLock);memcpy(L,g_lookAt,sizeof L);ReleaseSRWLockShared(&g_lookLock);
+        if(framevr::spellaim::GroundPoint({o[0],o[1],o[2]},{d[0],d[1],d[2]},L[1],.5f,playerX,playerY,fx,fy,framevr::aimreach::CornerCells)){dx=fx-playerX;dy=fy-playerY;}
+        else {   // the ray never meets the floor: as far as the reach goes along its heading
+            if(!framevr::spellaim::Horizontal({d[0],d[1],d[2]},dx,dy))return false;
+            dx*=framevr::aimreach::CornerCells*2;dy*=framevr::aimreach::CornerCells*2;
+        }
+    }
+    const float wanted=std::hypot(dx,dy);
+    if(wanted<framevr::spellaim::GroundMinDistance&&wanted>.001f){dx*=framevr::spellaim::GroundMinDistance/wanted;dy*=framevr::spellaim::GroundMinDistance/wanted;}
+    if(!framevr::aimreach::Clamp(dx,dy))return false;
+    targetX=playerX+dx;targetY=playerY+dy;
+    g_note.by=how;g_note.distance=std::hypot(dx,dy);
+    static ULONGLONG lastLog=0;
+    if(GetTickCount64()-lastLog>1000) {
+        lastLog=GetTickCount64();
+        if(c.use==framevr::aimrules::Use::Ground)LogF("Frame ground aim: skill %d by %s, %.1f cells (wanted %.1f; game reach %.0f)",skill,how,std::hypot(dx,dy),wanted,framevr::aimreach::Along(dx,dy));
+        else LogF("Frame point aim: skill %d by %s, %.1f cells (wanted %.1f; game reach %.0f)",skill,how,std::hypot(dx,dy),wanted,framevr::aimreach::Along(dx,dy));
+    }
+    return true;
+}
+// A skill handed the monster itself (aimrules::WantsUnit) is left to the game's
+// own target query, which HookSpellControllerTarget and HookSpellHoverTarget
+// answer with this monster for this skill.
+namespace worldobj { uintptr_t ClientMonster(uint32_t id); }
+std::atomic<int> g_unitSkill{-1};
+std::atomic<uint32_t> g_unitId{0};
+std::atomic<ULONGLONG> g_unitAt{0};
+uintptr_t RulesUnit(int skill) {
+    if(skill<0||skill!=g_unitSkill.load()||GetTickCount64()-g_unitAt.load()>500)return 0;
+    const uintptr_t unit=worldobj::ClientMonster(g_unitId.load());
+    static ULONGLONG told=0;
+    if(GetTickCount64()-told>2000){told=GetTickCount64();LogF("Frame aim rules: skill %d handed monster id %u (%s)",skill,g_unitId.load(),unit?"found":"not near: the game's own pick");}
+    return unit;
+}
+bool NativeSpellAimDecide(float playerX,float playerY,framevr::spellaim::Cast& cast);
+// Telemetry: "Frame aim cast:" - every cast the aim rules see, at most one line
+// per skill per 250 ms: the rule, the button, the target and where it came
+// from, a unit hand-off, and the point or heading sent to the game.
+bool NativeSpellAim(float playerX,float playerY,framevr::spellaim::Cast& cast) {
+    g_note={};
+    const bool directed=NativeSpellAimDecide(playerX,playerY,cast);
+    const auto c=aimtargets::Now();
+    static ULONGLONG told=0;static int toldSkill=-2;
+    if(c.skill>=0&&(c.skill!=toldSkill||GetTickCount64()-told>250)) {
+        told=GetTickCount64();toldSkill=c.skill;
+        static const char* kRule[]={"native","heading","ground","curse","attack","spot","corpse"};
+        const int rule=int(c.use);
+        LogF("Frame aim cast: skill=%d rule=%s button=%s bow=%d target=%s id=%u dist=%.1f unit=%s by=%s sent=%s %.1f,%.1f%s",
+             c.skill,rule>=0&&rule<7?kRule[rule]:"?",c.button?"left":"right",c.bow?1:0,
+             g_note.source<0?"none":aimtargets::SourceName(g_note.source),g_note.id,g_note.distance,g_note.unit,g_note.by,
+             !directed?"game":cast.contactPoint?"point":"heading",cast.contactPoint?cast.x-playerX:cast.x,cast.contactPoint?cast.y-playerY:cast.y,
+             cast.contactPoint?" (cells from the hero)":"");
+    }
+    return directed;
+}
+bool NativeSpellAimDecide(float playerX,float playerY,framevr::spellaim::Cast& cast) {
+    const auto c=aimtargets::Now();
+    if(framevr::aimrules::Stable(c.skill)) {   // the Warlock: upstream's hand aim, nothing of the rules
+        float o[3],d[3];g_note.by="stable";
+        cast.directed=g_spellAimReady.load()&&g_enabled.load()&&!gamestate::MenuOpen()&&framevr::DirectedSpellActive()&&
+            HandRay(o,d)&&framevr::spellaim::Horizontal({d[0],d[1],d[2]},cast.x,cast.y);
+        return cast.directed;
+    }
+    float mx=0,my=0,md=0;uint32_t id=0;
+    // Only when the game's own unit is found here (the game thread): otherwise
+    // the rule's heading or spot below (Guided Arrow flew into a wall).
+    if(c.skill>=0&&framevr::aimrules::WantsUnit(c.skill)&&aimtargets::SwitchOn(c)) {
+        if(aimtargets::Resolve(c.button,c.bow,mx,my,md,&g_note.source,&id)&&worldobj::ClientMonster(id)) {
+            g_unitSkill.store(c.skill);g_unitId.store(id);g_unitAt.store(GetTickCount64());
+            g_note.unit="handed";g_note.id=id;g_note.distance=md;g_note.by="unit";
+            cast.directed=false;return false;
+        }
+        if(id)g_note.unit="not found";
+    }
+    // Placed skills (ground skills - Bone Wall and Prison too - curses,
+    // Teleport...): the point; the rest a heading.
+    cast.directed=DirectedSpellAim(cast.x,cast.y);
+    float pointX=0,pointY=0;
+    if(cast.directed&&PointSpellAim(playerX,playerY,pointX,pointY)) {
+        cast.x=pointX;cast.y=pointY;cast.contactPoint=true;
+    }
+    return cast.directed;
 }
 uintptr_t NearbySewerInteraction();
 uintptr_t HookSpellControllerTarget(uintptr_t manager,int id) {
     if(g_spellCast.directed&&uintptr_t(_ReturnAddress())==d2rsig::Addr(spellaimabi::ControllerCallRva+5))return 0;
     const auto target=OrigSpellControllerTarget(manager,id);
+    if(const uintptr_t unit=RulesUnit(id))return unit;   // the aim rules: the aimed monster itself
     // Interact's common query feeds BOTH the native prompt and its action.
     // Other skills and every target already selected by the game keep priority.
     return !target&&id==357?NearbySewerInteraction():target;
 }
 uintptr_t HookSpellHoverTarget(int player) {
     if(g_spellCast.directed&&uintptr_t(_ReturnAddress())==d2rsig::Addr(spellaimabi::HoverCallRva+5))return 0;
+    if(const uintptr_t unit=RulesUnit(framevr::NativeCastSkill()))return unit;
     return OrigSpellHoverTarget(player);
 }
 bool IsHeroUnit(const void* unit);
@@ -3468,6 +3789,9 @@ void HookUnitFacing(void* unit, float* out) {
         g_logicFacingAt.store(QpcUs());
     }
     if (!out || (uintptr_t)_ReturnAddress() != d2rsig::Addr(RVA_AIM_FACING_RET) || !AimByVector()) return;
+#ifdef D2RVR_NATIVE_OPENXR
+    if (RulesAimCast()) return;   // the aim rules: the hero faces the cast, not the raw hand
+#endif
     float gx, gy;
     if (!HandGridDir(&gx, &gy)) return;
     static ULONGLONG told = 0;
@@ -3510,6 +3834,9 @@ float* HookAttackPoint(void* mgr, float* out, void* unit, uint64_t from, uint64_
 #ifdef D2RVR_NATIVE_OPENXR
     selectedSpell=framevr::SpellSelected();
 #endif
+    // A skill the aim rules aim keeps their point (above), never 20 cells along
+    // the hand: that pushed curses and corpse skills off their target. Others: upstream's.
+    if (selectedSpell && RulesAimCast()) return r;
     if (!out || !AimByVector() || (!selectedSpell && w != 3 && w != 4 && !thrown && !StaffAim()) || !HandGridDir(&gx, &gy)) return r;
     float f[2]; memcpy(f, &from, sizeof f);
     // A crossbow or a staff aims finer held in both hands: the point farther out.
@@ -3565,7 +3892,11 @@ uint64_t HookAttackTarget(void* self, void* unit, float* dir, int* outX, int* ou
     float theta = 0.0f;
     // only the aim function's own call (0x144845, returns to 0x14484A): the
     // walking calls keep the stick, or the hero would walk after the hand
-    if (dir && caller == d2rsig::Rva(RVA_ATTACK_POINT_RET) && AimByVector() && HandGridDir(&use[0], &use[1])) {
+    bool skillCast = false;   // a skill's vector is the aim rules' (below) or the game's, not the raw hand
+#ifdef D2RVR_NATIVE_OPENXR
+    skillCast = RulesAimCast();
+#endif
+    if (dir && !skillCast && caller == d2rsig::Rva(RVA_ATTACK_POINT_RET) && AimByVector() && HandGridDir(&use[0], &use[1])) {
         d = use;
         turned = true;
     }
@@ -4257,6 +4588,19 @@ uint64_t HookMapClick(void* unit, int type, int x, int y, uint64_t flags) {
        framevr::spellaim::ControllerPoint(cast,px,py,tx,ty)) {
         g_spellCommand={reinterpret_cast<uintptr_t>(unit),tx,ty};
         x=tx;y=ty;
+        // Every ground skill, Fire Blast included: a circle at the cast point, in
+        // the element's color, for the skill's time (telegraph::ForSkill; Fire
+        // Blast's from its throw distance, then re-timed by its own missiles in
+        // projectiles.cpp). A strip (Fire Wall) lies square to the line from the
+        // hero to the cast point.
+        const int skill=framevr::GroundSpellSkill();
+        if(skill>=0) {
+            const float ax=float(tx)-px,ay=float(ty)-py;
+            const auto area=framevr::telegraph::ForSkill(skill,std::hypot(ax,ay));
+            if(framevr::telegraph::Current().Place(float(tx),float(ty),GetTickCount64(),area.showMs,framevr::spellaim::ElementOf(skill),
+                                                   area.radius,-ay,ax,area.halfLength,skill))
+                LogF("Frame landing circle: skill %d at %d,%d (element %d)",skill,tx,ty,int(framevr::spellaim::ElementOf(skill)));
+        }
     }
 #endif
     if (unit && (type == 0 || type == 1 || type == 3 || type == 4) && !(flags & 0xFF) &&
@@ -6512,7 +6856,8 @@ void BowTick() {
         // Free-hand casting uses its own complete tracked aim pose instead.
         skel::MeleeWeaponPose pose;
         const auto type=gamestate::WeaponType();
-        if(hand==0&&!framevr::spellaim::TrackedAim(shot.skill)&&(type==D2RVR_TYPE_STAFF||type==D2RVR_TYPE_WAND||type==D2RVR_TYPE_SCEPTER||type==D2RVR_TYPE_ORB)&&
+        const bool staffByHand=hand==0&&StaffByHand();
+        if(hand==0&&!framevr::spellaim::TrackedAim(shot.skill)&&!staffByHand&&(type==D2RVR_TYPE_STAFF||type==D2RVR_TYPE_WAND||type==D2RVR_TYPE_SCEPTER||type==D2RVR_TYPE_ORB)&&
            skel::MeleeWeapon(pose)&&pose.worldEpoch==g_meleeTurnEpoch.load()) {
             using framevr::math::Vec;
             const Vec p={pose.origin[0]/shot.unitsPerMetre,pose.origin[1]/shot.unitsPerMetre,pose.origin[2]/shot.unitsPerMetre};
@@ -6526,6 +6871,39 @@ void BowTick() {
         shot.planar=planar||framevr::spellcast::NativePath(shot.skill);
         shot.aimAssist=int(spellSettings.values[framevr::settings::ProjectileAimAssist]);
         shot.direction=spellAim[hand].Update(shot.session,shot.epoch,shot.direction,trackedDirection,shot.planar);
+        // An upright staff: along the arm, from the right shoulder (17 cm right
+        // of and 22 cm below the eyes) through the hand, as HandRay.
+        if(staffByHand) {
+            AcquireSRWLockShared(&g_stickLock);const StickFrame f=g_stickFrame;ReleaseSRWLockShared(&g_stickLock);
+            if(f.valid) {
+                using framevr::math::Vec;
+                const float m=1/shot.unitsPerMetre;
+                const Vec shoulder{g_eyeWorld[0].load()*m+.17f*f.camR[0],g_eyeWorld[1].load()*m-.22f,g_eyeWorld[2].load()*m+.17f*f.camR[2]};
+                Vec a=shot.origin-shoulder;
+                if(shot.planar)a.y=0;   // flat when spells are planar
+                const float al=framevr::bowflight::Length(a);
+                if(al>.15f)shot.direction=a*(1/al);
+            }
+        }
+        // Spells go to the aimed monster (the aim rules): this hand's, else the
+        // other hand's, else the one looked at - fly at its chest, flat when
+        // spells are planar.
+        float mx=0,my=0,md=0;int source=-1;
+        if(AimOn(framevr::settings::SpellLock)&&!framevr::aimrules::Stable(shot.skill)&&aimtargets::Resolve(hand,false,mx,my,md,&source)) {
+            using framevr::math::Vec;
+            const Vec target=framevr::bowflight::RenderGround(shot,Vec{mx*2.0f,0.0f,my*2.0f})+Vec{0.0f,1.0f,0.0f};
+            Vec to=target-shot.origin;
+            if(shot.planar)to.y=0;
+            const float len=framevr::bowflight::Length(to);
+            if(len>.3f) {
+                shot.direction=to*(1/len);
+                // one steerer per shot: VR Settings' Projectile aim assist would
+                // bend it again, perhaps toward another monster
+                shot.aimAssist=0;
+                static ULONGLONG told=0;
+                if(GetTickCount64()-told>2000){told=GetTickCount64();LogF("Frame spell lock: hand skill %d to the %s target, %.1f cells (aim assist skipped)",shot.skill,aimtargets::SourceName(source),md);}
+            }
+        }
         bowvr::Submit(shot);
     }
 }
@@ -7678,6 +8056,41 @@ void Gather() {
     }
 }
 
+// The aim rules: the game's own client unit of a monster, by its id (the target
+// lock knows the server's), from the rooms near the hero - the walk above, for
+// monsters (type 1) still standing. The game thread. 0: not found.
+uintptr_t ClientMonster(uint32_t id) {
+    if (!id) return 0;
+    uintptr_t hero = 0, path = 0, room = 0, nearRooms = 0;
+    uint32_t nNear = 0;
+    if (!combat::LocalPlayerUnit(hero))
+        for (const uintptr_t u : {(uintptr_t)g_heroUnit.load(), (uintptr_t)g_heroSeen.load(), (uintptr_t)gamestate::LocalPlayer()})
+            if (u > 0x10000 && IsHeroUnit((void*)u)) { hero = u; break; }
+    static ULONGLONG told = 0;
+    const bool tell = GetTickCount64() - told > 3000;
+    if (!hero || !Rd(hero + 0x38, &path) || !Rd(path + 0x20, &room) || !Rd(room, &nearRooms) || !Rd(room + 0x40, &nNear) ||
+        !nearRooms || !nNear || nNear > 64) {
+        if (tell) { told = GetTickCount64(); LogF("Frame aim rules: monster id %u: %s", id, hero ? "the hero's rooms unreadable" : "hero unit not found"); }
+        return 0;
+    }
+    char seen[160] = {};
+    int monsters = 0;
+    for (uint32_t r = 0; r < nNear; ++r) {
+        uintptr_t rm = 0, u = 0;
+        if (!Rd(nearRooms + r * 8, &rm) || !Rd(rm + 0xA8, &u)) continue;
+        for (int k = 0; u && k < 512; ++k) {
+            uint32_t header[4] = {};   // type, class, id, mode
+            uintptr_t next = 0;
+            Rd(u, &header); Rd(u + 0x158, &next);
+            if (header[0] == 1 && header[2] == id && header[3] != 0 && header[3] != 12) return u;
+            if (header[0] == 1 && tell && monsters++ < 8) snprintf(seen + strlen(seen), sizeof seen - strlen(seen), " %u/m%u", header[2], header[3]);
+            u = next;
+        }
+    }
+    if (tell) { told = GetTickCount64(); LogF("Frame aim rules: monster id %u not among the hero's rooms (%u rooms, %d monsters:%s)", id, nNear, monsters, seen); }
+    return 0;
+}
+
 int Lights(Light* out) {
     AcquireSRWLockShared(&g_lock);
     const int n = g_count;
@@ -7934,15 +8347,20 @@ bool ShieldDebugWanted() {
     return false;
 #endif
 }
-// The glowing edge round the monster the target lock holds (D2R_DepthFog.fx
-// PS_Outline), never over an open menu.
+// The glowing edges round the aimed monsters (D2R_DepthFog.fx PS_Outline),
+// never over an open menu.
 bool OutlineWanted() {
 #ifdef D2RVR_NATIVE_OPENXR
-    float x, y, d;
-    return g_enabled.load() && g_inWorld.load() && !gamestate::MenuOpen() && mobaim::Get(x, y, d);
+    aimtargets::Shown shown[2];
+    return g_enabled.load() && g_inWorld.load() && !gamestate::MenuOpen() && TargetHighlightOn() && aimtargets::ShownTargets(shown) > 0;
 #else
     return false;
 #endif
+}
+// Landing circles (same pass): while any ground skill's circle is showing.
+bool RingWanted() {
+    return g_enabled.load() && g_inWorld.load() && !gamestate::MenuOpen() && AimOn(framevr::settings::LandingCircles) &&
+        framevr::telegraph::AnyOn(framevr::telegraph::Current().Get(), GetTickCount64());
 }
 
 // The frame stamp strip (D2R_DepthFog.fx PS_Stamp): whenever the camera turns
@@ -8038,7 +8456,7 @@ void OnFinishEffects(reshade::api::effect_runtime* rt, reshade::api::command_lis
     if (!g_tech[0].handle) { hud::SetPictureReady(false); return; }
     // Off while a menu is open: the fog lies over the whole picture, the
     // inventory and trade panels included, and darkened them.
-    const bool want = FogWanted() || g_skyPalette.load() >= 0 || g_arcaneSky.load() || CeilWanted() || HudWanted() || StampWanted() || hud::PictureWanted() || TableKeyWanted() || PhantomWanted() || BoneAxesWanted() || ShieldDebugWanted() || OutlineWanted();
+    const bool want = FogWanted() || g_skyPalette.load() >= 0 || g_arcaneSky.load() || CeilWanted() || HudWanted() || StampWanted() || hud::PictureWanted() || TableKeyWanted() || PhantomWanted() || BoneAxesWanted() || ShieldDebugWanted() || OutlineWanted() || RingWanted();
     // The toolbar and the map are taken out of the game's picture to be drawn
     // back at their own size only while this effect runs, and is new enough to.
     {
@@ -8240,7 +8658,7 @@ void OnBeginEffects(reshade::api::effect_runtime* rt, reshade::api::command_list
         renderscale::Frame(rt, s);
 #ifdef D2RVR_NATIVE_OPENXR
         const bool ownDepth=g_enabled.load()&&g_inWorld.load()&&framevr::Active()&&
-            (FogWanted()||g_set.skyOn.load()||g_arcaneSky.load()||CeilWanted()||TableKeyWanted()||OutlineWanted());
+            (FogWanted()||g_set.skyOn.load()||g_arcaneSky.load()||CeilWanted()||TableKeyWanted()||OutlineWanted()||RingWanted());
         const bool turnDepth=g_enabled.load()&&g_inWorld.load()&&framevr::Active()&&framevr::TurnDepthWanted();
         framevr::scenedepth::Bind(rt,cl,ownDepth,turnDepth,stereoreplay::RightEffects(),s);
         SetBool(rt,"OwnDepth",ownDepth);
@@ -8571,19 +8989,23 @@ void OnBeginEffects(reshade::api::effect_runtime* rt, reshade::api::command_list
         }
     }
 #endif
-    {   // Target outline: a cylinder round the locked monster's cell on the hero's
+    {   // Target outlines: a cylinder round each aimed monster's cell on the hero's
         // floor (render = grid*2 + floor height x shear); the pixels inside it
         // standing above the floor are its model, and the shader glows along
         // that shape's edge. xyz centre relative to the hero, w strength;
-        // shape = radius, lowest and highest height (world units).
+        // shape = radius, lowest and highest height (world units). Up to two
+        // (aimtargets::ShownTargets: each hand's, else the eyes'), each in its
+        // own source's color (VR Settings > Aim; the eyes take the casting hand's).
         SkyView sv[2];
         AcquireSRWLockShared(&g_skyLock); sv[0] = g_skyView[0]; sv[1] = g_skyView[1]; ReleaseSRWLockShared(&g_skyLock);
-        float mx = 0, my = 0, md = 0;
-        const bool on = OutlineWanted() && sv[0].proj_ok && sv[0].axes_ok && mobaim::Get(mx, my, md);
-        SetBool(rt, "OutlineOn", on);
-        float mob[4] = {0.0f, 0.0f, 0.0f, 0.0f};
-        if (on) {
-            const float upm = std::max(1.0f, ViewHeight()) / UserEyeHeightM();
+        aimtargets::Shown shown[2];
+        const bool view = sv[0].proj_ok && sv[0].axes_ok;
+        const int count = OutlineWanted() && view ? aimtargets::ShownTargets(shown) : 0;
+        const bool rings = RingWanted() && view;
+        SetBool(rt, "OutlineOn", count > 0);
+        SetBool(rt, "RingOn", rings);
+        float mob[2][4] = {};
+        if (count > 0 || rings) {
             for (int e = 0; e < 2; ++e) {
                 const SkyView& s = sv[e].axes_ok && sv[e].proj_ok ? sv[e] : sv[0];
                 char n[16];
@@ -8593,23 +9015,61 @@ void OnBeginEffects(reshade::api::effect_runtime* rt, reshade::api::command_list
                 snprintf(n, sizeof n, "CamUp%d", e); SetFloats(rt, n, s.axes + 3, 3);
                 snprintf(n, sizeof n, "CamBack%d", e); SetFloats(rt, n, s.axes + 6, 3);
             }
+        }
+        if (rings) {   // landing circles: each one's cell, put on the floor the hero stood on when it was cast
+            using namespace framevr::telegraph;
+            static uint32_t anchored[MaxMarks] = {};
+            static float floorY[MaxMarks] = {};
+            const auto marks = Current().Get();
+            const auto now = GetTickCount64();
+            const float shear = framevr::coordinates::GroundShear;
+            for (int k = 0; k < MaxMarks; ++k) {
+                const auto& mark = marks[k];
+                const auto draw = Sample(mark, now);
+                if (draw.on && mark.sequence != anchored[k]) { anchored[k] = mark.sequence; floorY[k] = sv[0].hero[1]; }
+                // xyz: centre relative to the hero; w: alpha (0 = not drawn)
+                const float ring[4] = {mark.x * 2.0f + floorY[k] * shear - sv[0].hero[0], floorY[k] - sv[0].hero[1],
+                                       mark.y * 2.0f + floorY[k] * shear - sv[0].hero[2], draw.on ? draw.alpha : 0.0f};
+                char n[16];
+                snprintf(n, sizeof n, "RingPos%d", k); SetFloats(rt, n, ring, 4);
+                snprintf(n, sizeof n, "RingFill%d", k); SetFloat(rt, n, draw.fill);
+                // rgb its element's color (fire orange, cold blue, lightning yellow, other green), w its radius
+                static const float kElement[4][3] = {{1.0f, 0.45f, 0.05f}, {0.3f, 0.7f, 1.0f}, {1.0f, 0.92f, 0.35f}, {0.4f, 1.0f, 0.3f}};
+                const int el = mark.element >= 0 && mark.element < 4 ? mark.element : 0;
+                const float col[4] = {kElement[el][0], kElement[el][1], kElement[el][2], mark.radius * 2.0f};
+                snprintf(n, sizeof n, "RingCol%d", k); SetFloats(rt, n, col, 4);
+                // a strip: its direction (grid x/y are world x/z) and half-length in world units; 0 = a circle
+                const float dir[4] = {mark.dirX, mark.dirY, mark.halfLength * 2.0f, 0.0f};
+                snprintf(n, sizeof n, "RingDir%d", k); SetFloats(rt, n, dir, 4);
+            }
+            // Paint only the floor within this height of it (meters), so a circle does not
+            // climb the legs of monsters inside it. Jeff's tuned value from the DEV window,
+            // 2026-10-20, like the rest of the look (D2R_DepthFog.fx, kCircle*).
+            constexpr float kCircleHeightM = 0.15f;
+            SetFloat(rt, "RingFloorTol", kCircleHeightM * std::max(1.0f, ViewHeight()) / UserEyeHeightM());
+        }
+        if (count > 0) {
+            const float upm = std::max(1.0f, ViewHeight()) / UserEyeHeightM();
             const float floor = sv[0].hero[1], shear = framevr::coordinates::GroundShear;
-            mob[0] = mx * 2.0f + floor * shear - sv[0].hero[0];
-            mob[2] = my * 2.0f + floor * shear - sv[0].hero[2];
-            mob[3] = TargetOutlineStrength();   // steady, no pulse
-            // gold, or by range: near red, mid orange, far yellow
+            // By range: near red, mid orange, far yellow; else the source's own hue
             static const float kBands[3][3] = {{1.0f, 0.2f, 0.12f}, {1.0f, 0.55f, 0.1f}, {1.0f, 0.92f, 0.25f}};
-            const auto settingsNow = vrsettings::Read();
-            const auto& values = settingsNow.values;
-            float wheel[3];
-            framevr::settings::HueRgb(values[framevr::settings::TargetOutlineHue], wheel);
-            SetFloats(rt, "OutlineColor", values[framevr::settings::TargetOutlineColour] > .5f ? kBands[framevr::targetcone::Band(md)] : wheel, 3);
             // Tuned in the headset (2026-10-18): a 5 unit search circle (a long monster
             // whole), the body from 0.38 m below the floor level (feet on slopes) to 3 m up.
             const float mobShape[3] = {5.0f, -0.38f * upm, 3.0f * upm};
-            SetFloats(rt, "OutlineShape", mobShape, 3);
+            for (int k = 0; k < count; ++k) {
+                const auto& t = shown[k];
+                mob[k][0] = t.x * 2.0f + floor * shear - sv[0].hero[0];
+                mob[k][2] = t.y * 2.0f + floor * shear - sv[0].hero[2];
+                mob[k][3] = TargetOutlineStrength();   // steady, no pulse
+                const float hue = OutlineHue(t.source);
+                float wheel[3];
+                framevr::settings::HueRgb(hue, wheel);
+                SetFloats(rt, k ? "Outline2Color" : "OutlineColor", hue <= 0 ? kBands[framevr::targetcone::Band(t.distance)] : wheel, 3);
+                SetFloats(rt, k ? "Outline2Shape" : "OutlineShape", mobShape, 3);
+            }
         }
-        SetFloats(rt, "OutlinePos", mob, 4);
+        SetFloats(rt, "OutlinePos", mob[0], 4);
+        SetFloats(rt, "Outline2Pos", mob[1], 4);
     }
 #ifdef D2RVR_NATIVE_OPENXR
     {
@@ -8931,7 +9391,7 @@ DWORD WINAPI UpdateThread(void*) {
         flog::Tick(g_set.frameLog.load());
         gamecmd::Tick();   // skills, potions, Alt... held in BodyWalk: pressed on the UI thread
 #ifdef D2RVR_NATIVE_OPENXR
-        mobaim::Tick();    // target lock: the monster the hand points at, else the one looked at
+        mobaim::Tick();    // the aim rules' targets: each hand's held out, and the one looked at
 #endif
         FloorPointerTick();   // F3: the mouse pointer on the game's ground, as the head moves
         CrosshairDepthTick();   // F2's crosshair: nearer as the camera looks down

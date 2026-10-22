@@ -3,6 +3,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <limits>
 #include <string>
 using namespace framevr::settings;
@@ -348,21 +349,34 @@ int main(){
         Check(speed.Click({Kind::Apply}).changed==(ChangeMask{1}<<StrainSpeed),"buildup edits preserve combat rules, difficulty and colour");
     }
     {Model aim;aim.Open(s);aim.Click({Kind::Tab,int(Page::Aim)});
-        Check(s.values[TargetHighlight]==0&&RowKey(Page::Aim,0)==TargetHighlight,"the monster outline is Off by default, first on the Aim page");
-        Check(RowCount(Page::Aim)==3&&RowKey(Page::Aim,1)==TargetOutlineColour&&RowKey(Page::Aim,2)==TargetOutlineHue,"strength, colors, then the static color");
-        Check(s.values[TargetOutlineColour]==0&&s.values[TargetOutlineHue]==45,"static gold (45 degrees) by default");
-        {Model colors;colors.Open(s);colors.Click({Kind::Tab,int(Page::Aim)});
-            colors.Click(At(Page::Aim,ValueBox(1)));Check(colors.Get()[TargetOutlineColour]==1,"selecting the colors value switches to By range");
-            colors.Click(At(Page::Aim,ValueBox(1)));Check(colors.Get()[TargetOutlineColour]==0,"and back to Static");
-            for(int i=0;i<30;++i)colors.Click(At(Page::Aim,Increase(2)));
-            Check(colors.Get()[TargetOutlineHue]==345,"the wheel ends at 345 degrees");
-            for(int i=0;i<30;++i)colors.Click(At(Page::Aim,Decrease(2)));
-            Check(colors.Get()[TargetOutlineHue]==0,"and starts at red");
+        Check(RowKey(Page::Aim,0)==SpellLock&&RowKey(Page::Aim,1)==SpellLockBow&&RowKey(Page::Aim,2)==StaffPoint,"spell lock, bow skills, then staff aim");
+        Check(RowKey(Page::Aim,3)==TargetHighlight&&RowKey(Page::Aim,4)==AimHighlights&&RowKey(Page::Aim,5)==HighlightRight&&RowKey(Page::Aim,6)==HighlightLeft,"then the outline: strength, which hands, each hand's color");
+        Check(s.values[SpellLock]==0&&s.values[StaffPoint]==1&&s.values[SpellLockBow]==0,"spell and bow targeting Off by default, staff aim On");
+        Check(RowCount(Page::Aim)==9&&RowKey(Page::Aim,7)==GroundToTarget&&RowKey(Page::Aim,8)==LandingCircles&&s.values[GroundToTarget]==0&&s.values[LandingCircles]==1,"the ground target (Off by default) and landing circles (On) follow");
+        Check(HelpAt(Page::Aim,(ValueBox(8).x+5.f)/Width,(ValueBox(8).y+5.f)/Height)==LandingCircles&&HelpAt(Page::Aim,(ValueBox(7).x+5.f)/Width,(ValueBox(7).y+5.f)/Height)==GroundToTarget,"the circles and ground target rows explain themselves");
+        {auto off=s.values;off[SpellLock]=0;off[SpellLockBow]=0;off[TargetHighlight]=0;Check(RowEnabled(off,GroundToTarget)&&RowEnabled(off,LandingCircles),"the ground target and circles are never greyed");}
+        Check(HelpAt(Page::Aim,(ValueBox(2).x+5.f)/Width,(ValueBox(2).y+5.f)/Height)==StaffPoint&&HelpAt(Page::Aim,(ValueBox(0).x+5.f)/Width,(ValueBox(0).y+5.f)/Height)==SpellLock,"the spell and staff rows explain themselves");
+        Check(s.values[TargetHighlight]==0,"the monster outline is Off by default");
+        Check(s.values[AimHighlights]==1&&s.values[HighlightRight]==45&&s.values[HighlightLeft]==210,"both hands; gold right, blue left by default");
+        Check(Normalize(HighlightLeft,200)==195&&Normalize(HighlightLeft,203)==210&&Normalize(HighlightRight,-5)==0&&Normalize(HighlightRight,400)==360&&Normalize(HighlightRight,NAN)==45,"colors snap to 15 degrees, 0 (By range) to 360");
+        Check(!RowEnabled(s.values,AimHighlights)&&!RowEnabled(s.values,HighlightRight)&&!RowEnabled(s.values,HighlightLeft),"highlights grey out while the outline is Off");
+        {auto on=s.values;on[TargetHighlight]=50;Check(RowEnabled(on,AimHighlights)&&RowEnabled(on,HighlightLeft),"and come back with it");}
+        Check(HelpChoices(AimHighlights)==2&&std::strcmp(HelpChoice(AimHighlights,0).name,"Dominant hand")==0&&std::strcmp(HelpChoice(AimHighlights,1).name,"Both hands")==0,"the highlights row names its two choices");
+        {Model colors;auto lit=s;lit.values[TargetHighlight]=50;colors.Open(lit);colors.Click({Kind::Tab,int(Page::Aim)});
+            colors.Click(At(Page::Aim,ValueBox(4)));Check(colors.Get()[AimHighlights]==0,"selecting the highlights value switches to Dominant hand");
+            colors.Click(At(Page::Aim,ValueBox(4)));Check(colors.Get()[AimHighlights]==1,"and back to Both hands");
+            for(int i=0;i<30;++i)colors.Click(At(Page::Aim,Increase(5)));
+            Check(colors.Get()[HighlightRight]==360,"the wheel ends at 360 degrees");
+            for(int i=0;i<30;++i)colors.Click(At(Page::Aim,Decrease(5)));
+            Check(colors.Get()[HighlightRight]==0,"and starts at By range");
+            colors.Click(At(Page::Aim,Increase(5)));Check(colors.Get()[HighlightRight]==15,"the first hue past By range");
             float rgb[3];HueRgb(45,rgb);Check(rgb[0]==1&&rgb[1]==.75f&&rgb[2]==0,"45 degrees is gold");}
-        Check(HelpAt(Page::Aim,(ValueBox(0).x+5.f)/Width,(ValueBox(0).y+5.f)/Height)==TargetHighlight,"the Aim row explains the outline");
-        aim.Click(At(Page::Aim,Increase(0)));Check(aim.Get()[TargetHighlight]==10,"plus turns the outline on at 10%");
-        aim.Click(At(Page::Aim,Decrease(0)));aim.Click(At(Page::Aim,Decrease(0)));Check(aim.Get()[TargetHighlight]==0,"Off is the lower bound");
-        aim.Click(At(Page::Aim,Increase(0)));aim.Click(At(Page::Aim,Increase(0)));
+        {Model dark;dark.Open(s);dark.Click({Kind::Tab,int(Page::Aim)});
+            dark.Click(At(Page::Aim,Increase(6)));Check(dark.Get()[HighlightLeft]==210&&!dark.Dirty(),"a greyed color does not change");}
+        Check(HelpAt(Page::Aim,(ValueBox(3).x+5.f)/Width,(ValueBox(3).y+5.f)/Height)==TargetHighlight&&HelpAt(Page::Aim,(ValueBox(6).x+5.f)/Width,(ValueBox(6).y+5.f)/Height)==HighlightLeft,"the outline rows explain themselves");
+        aim.Click(At(Page::Aim,Increase(3)));Check(aim.Get()[TargetHighlight]==10,"plus turns the outline on at 10%");
+        aim.Click(At(Page::Aim,Decrease(3)));aim.Click(At(Page::Aim,Decrease(3)));Check(aim.Get()[TargetHighlight]==0,"Off is the lower bound");
+        aim.Click(At(Page::Aim,Increase(3)));aim.Click(At(Page::Aim,Increase(3)));
         const auto request=aim.Click({Kind::Apply});
         Check(request.changed==(ChangeMask{1}<<TargetHighlight)&&request.values[TargetHighlight]==20,"the outline strength changes nothing else");
     }
