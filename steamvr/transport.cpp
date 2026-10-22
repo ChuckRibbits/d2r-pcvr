@@ -40,6 +40,7 @@
 #include "hand_controls.h"
 #include "interaction_ui.h"
 #include "sewer_prompt_art.h"
+#include "notice_card_art.h"
 #include "blood_screen.h"
 #include "guard_strain.h"
 #include "guard_strain_paint.h"
@@ -82,7 +83,7 @@
 
 namespace gamestate {uint32_t WeaponType();uint32_t HandsKey();uint32_t WeaponSet();uint32_t WeaponClass();uint32_t TwoHanded();uint64_t LocalPlayer();uint32_t MenuEpoch();}
 namespace gamecmd {void RequestPotion(int slot);void CancelPotion();}
-namespace gamestate {void MenuMap(bool wanted);}
+namespace gamestate {void MenuMap(bool wanted);uint32_t QuestNotices();bool NoticePanelOpen();bool NoticeText(int kind,char* out,uint32_t size);}
 namespace gamestate {bool LeftShield();framevr::dualwield::Equipment MeleeEquipment();}
 namespace combat {float GameVolume();}
 
@@ -159,6 +160,20 @@ uint64_t bloodPaintKey=~0ull,bloodRequestedKey=~0ull,bloodPaintRequest=0;
 uint32_t bloodShown=0; // splats in the uploaded image
 ULONGLONG bloodPaintAt=0;
 bool bloodAtlasPending=false,bloodImageReady=false;
+// Quest / level-up notices: a card standing in the room for a few seconds
+// instead of the native panel at the eyes (notice_card.h). Each card is
+// painted once, in the background, when it comes up.
+struct NoticeJob {char text[256]{};};
+LatestWorker<NoticeJob,std::vector<uint8_t>> noticePainter([](const NoticeJob& job) {
+    std::vector<uint8_t> pixels;notice::Paint(job.text,pixels);return pixels;
+});
+XrSwapchain noticeChain=XR_NULL_HANDLE;
+notice::Watch noticeWatch;
+notice::Cards noticeCards;
+notice::Card noticeCard;
+panels::Placement noticePlacement{};
+uint64_t noticePaintRequest=0,noticeRequestedSequence=0,noticePaintedSequence=0;
+bool noticeAtlasPending=false,noticeImageReady=false;
 // Guard strain light: soft white at the rim, directly beneath the blood. Fed by
 // the game thread's blocks and the guard tick; painted small in the background.
 strain::Engine guardStrain;
@@ -1031,6 +1046,7 @@ bool SetupPointer(DXGI_FORMAT eyeFormat) {
 bool SetupGameplay(DXGI_FORMAT eyeFormat) {
     if(!interactionPainter.Start())Say("Frame UI: background painter unavailable; interaction artwork cannot refresh");
     if(!bloodPainter.Start())Say("Frame blood visor: background painter unavailable; blood stays hidden");
+    if(!noticePainter.Start())Say("Frame notices: background painter unavailable; quest and level-up cards stay hidden");
     if(!strainPainter.Start())Say("Frame guard strain: background painter unavailable; the light stays hidden");
     if(!settingsPainter.Start())Say("Frame VR settings: background painter unavailable; VR Settings and calibration cannot be shown");
     const auto compassPixels=compass::Paint();
@@ -1856,6 +1872,29 @@ void Input() {
         interactionInput.hand[i]={motionInput.hand[i].p,motionInput.hand[i].q};
         interactionInput.handVelocity[i]=handVelocity[i];interactionInput.velocityKnown[i]=handVelocityKnown[i];}
     interactionOutput=interactions.Step(interactionInput);
+    // Quest / level-up notices: queue a card per message, paint the current one.
+    {
+        const auto now=GetTickCount64();
+        const auto& xp=interactionInput.snapshot.experience;
+        const bool levelKnown=interaction::Fresh(interactionInput.snapshot,interactionInput.session,interactionInput.at)&&xp.Valid();
+        noticeWatch.Step(interactionInput.session,levelKnown,xp.level,gamestate::QuestNotices(),gamestate::NoticePanelOpen(),now,[&](int kind) {
+            noticeCards.Push(kind,now);
+            char line[80];std::snprintf(line,sizeof line,"Frame notices: %s card queued",
+                kind==notice::Quest?"quest":kind==notice::Skills?"skill points":"stat points");Say(line);
+        });
+        noticeCard=noticeCards.Step(now);
+        // A text the UI thread has not read yet is tried again next frame.
+        NoticeJob job;
+        if(noticeCard.kind>=0&&noticeCard.sequence!=noticeRequestedSequence&&gamestate::NoticeText(noticeCard.kind,job.text,sizeof job.text)) {
+            noticePaintRequest=noticePainter.Submit(job);noticeRequestedSequence=noticeCard.sequence;
+        }
+        std::vector<uint8_t> painted;
+        if(noticePaintRequest&&!noticeAtlasPending&&atlasUploads.size()<3&&noticePainter.Take(noticePaintRequest,painted)) {
+            if(!painted.empty()&&UploadAtlas(noticeChain,atlasFormat,notice::Width,notice::Height,painted,true,&noticeAtlasPending))
+                noticePaintedSequence=noticeRequestedSequence;
+            noticePaintRequest=0;
+        }
+    }
     // Blood on the visor follows life bands; a side-to-side scrub at the face
     // wipes what healing has uncovered. A scrubbing hand is not a weapon.
     {
@@ -3176,6 +3215,10 @@ void EndPair() {
         XrSwapchainImageReleaseInfo release{XR_TYPE_SWAPCHAIN_IMAGE_RELEASE_INFO};
         bowLaserImageReady=Check(pReleaseSwapchainImage(bowLaserChain,&release),"release bow laser");bowLaserAtlasPending=false;
     }
+    if(noticeAtlasPending) {
+        XrSwapchainImageReleaseInfo release{XR_TYPE_SWAPCHAIN_IMAGE_RELEASE_INFO};
+        noticeImageReady=Check(pReleaseSwapchainImage(noticeChain,&release),"release notice card");noticeAtlasPending=false;
+    }
     // Tabbed, trade and waypoint menus use the same black background in both eyes.
     // Submit just their shared opaque quad: no different cached world per eye.
     const bool blackMenu=opaqueMenuMode&&workspacePlaced&&uiEye.copied&&uiCrop[2]>0&&!settingsModel.open&&!bodyCalibration.Active();
@@ -3310,6 +3353,17 @@ void EndPair() {
                 {{sewerprompt::AtlasX,sewerprompt::AtlasY},{sewerprompt::Width,sewerprompt::Height}},gameplayChain);
             sewerHintShown=count>before;
         }
+    }
+    // The quest / level-up card stays where it came up, like the native
+    // dialogue surfaces; opaque menus and VR Settings hold it back.
+    XrCompositionLayerQuad noticeQuad{XR_TYPE_COMPOSITION_LAYER_QUAD};
+    if(noticeImageReady&&noticeChain&&noticeCard.kind>=0&&noticePaintedSequence==noticeCard.sequence&&
+       layer&&!panelMode&&!blackMenu&&!settingsModel.open&&!bodyCalibration.Active()) {
+        if(noticeCard.place)noticePlacement=notice::Place(V(head.position),Q(head.orientation));
+        const auto before=count;
+        motionQuad(noticeQuad,XrPose({noticePlacement.position,noticePlacement.orientation}),notice::PanelWidth,notice::PanelHeight,
+            {{0,0},{notice::Width,notice::Height}},noticeChain);
+        if(count>before){noticeCards.Shown(GetTickCount64());noticeCard.place=false;}
     }
     static bool sewerHintWasShown=false;
     if(sewerHintShown!=sewerHintWasShown){Say(sewerHintShown?"Frame sewer prompt: shown":"Frame sewer prompt: hidden");sewerHintWasShown=sewerHintShown;}
@@ -3934,7 +3988,7 @@ void Shutdown(bool preserveResolution) {
     if(!preserveResolution)hud::NativeSession(false);
     if(!preserveResolution)resolution::Restore();
     windowFocus.Cancel();
-    EndPair();ClearInput();interactionPainter.Stop();bloodPainter.Stop();strainPainter.Stop();settingsPainter.Stop();turnCompiler.Stop();interaction::icons::Shutdown();
+    EndPair();ClearInput();interactionPainter.Stop();bloodPainter.Stop();strainPainter.Stop();noticePainter.Stop();settingsPainter.Stop();turnCompiler.Stop();interaction::icons::Shutdown();
     // Completion is mandatory before destroying our commands/resources, even
     // when ordinary frame submission uses queue ordering without a CPU wait.
     if(fence&&!WaitGpu())failed=true;
@@ -3957,6 +4011,8 @@ void Shutdown(bool preserveResolution) {
     if(strainChain&&pDestroySwapchain)pDestroySwapchain(strainChain);strainChain=XR_NULL_HANDLE;
     if(bowLaserChain&&pDestroySwapchain)pDestroySwapchain(bowLaserChain);bowLaserChain=XR_NULL_HANDLE;
     bowLaserHue=-1;bowLaserAtlasPending=bowLaserImageReady=false;
+    if(noticeChain&&pDestroySwapchain)pDestroySwapchain(noticeChain);noticeChain=XR_NULL_HANDLE;
+    noticeWatch={};noticeCards.Clear();noticeCard={};noticePaintRequest=noticeRequestedSequence=noticePaintedSequence=0;noticeAtlasPending=noticeImageReady=false;
     heartStream.Stop();heartPlaying=false;heartLevel.Reset();heartAt=0;heartHush.Reset();heartHealth=-1;
     guardStrain.Reset();strainOutput={};strainPaintKey=~0ull;strainPaintSession=0;strainPaintAt=0;strainAtlasPending=strainImageReady=strainSlotReported=false;
     if(pointerChain&&pDestroySwapchain)pDestroySwapchain(pointerChain);pointerChain=XR_NULL_HANDLE;
