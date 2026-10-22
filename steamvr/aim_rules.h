@@ -82,6 +82,9 @@ inline float FrontOfTarget(int skill){return skill==78?3.f:0.f;}
 // home in on it (Guided Arrow, Bone Spirit), Fist of the Heavens strikes it,
 // Attract and Taunt need a unit, and the travelling attacks (Charge, Leap
 // Attack, Dragon Flight) and Zeal fight it. With no monster they keep their rule.
+// Only a skill whose rule the rules aim reaches the hand-off (RulesAim): Fist of
+// the Heavens and Zeal have no row, so they are handed only if the game flags
+// them as aimed (Of's default); otherwise the game picks, as before.
 inline bool WantsUnit(int skill){
     switch(skill){case 22: case 93: case 121: case 86: case 137: case 106: case 107: case 143: case 275: return true;default: return false;}
 }
