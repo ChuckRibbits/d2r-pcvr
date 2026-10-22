@@ -151,7 +151,11 @@ void __cdecl SyncBanksCallback(const PluginContext* ctx, void* token) noexcept {
 void __cdecl DistressSoundCallback(const PluginContext*, void* user) noexcept {
     const int sound = int(reinterpret_cast<uintptr_t>(user));
     if (sound > 0) {
-        bowvr::PlayHeroSound(sound);
+        const bool played = bowvr::PlayHeroSound(sound);
+        char line[128];
+        std::snprintf(line, sizeof line, "Frame companion AI: distress voice sound %d playback %s",
+            sound, played ? "succeeded" : "FAILED");
+        framevr::logging::Write(line);
     }
 }
 
@@ -202,6 +206,10 @@ void __cdecl CompanionGameThreadTick(const PluginContext*, void*) noexcept {
         if (sound <= 1) {
             sound = (sound == 0) ? 0 : framevr::companionai::GetArchetypeDistressSound(uint16_t(classId));
         }
+        char line[128];
+        std::snprintf(line, sizeof line, "Frame companion AI: requesting distress cue (class=%u sound=%d)",
+            classId, sound);
+        framevr::logging::Write(line);
         if (sound > 0 && g_threads && g_threads->runOnUiThread) {
             g_threads->runOnUiThread(g_ctx, &DistressSoundCallback, reinterpret_cast<void*>(uintptr_t(sound)));
         }
