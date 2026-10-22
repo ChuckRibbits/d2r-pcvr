@@ -16,6 +16,7 @@
 #include "native_ui_signatures.h"
 #include "spells.h"
 #include "melee.h"
+#include "melee_weapon.h"
 #include "combat.h"
 #include "projectiles.h"
 #include "sigscan.h"
@@ -28,7 +29,7 @@
 #include "../steamvr/quiver_impact.h"
 #include "../steamvr/spell_aim_assist.h"
 #include "../steamvr/holy_bolt.h"
-namespace gamestate {uint64_t LocalPlayer();bool MenuOpen();uint32_t HandsKey();uint32_t WeaponSet();uint32_t WeaponType();}
+namespace gamestate {uint64_t LocalPlayer();bool MenuOpen();uint32_t HandsKey();uint32_t WeaponSet();uint32_t WeaponType();framevr::dualwield::Equipment MeleeEquipment();}
 namespace bowvr {
 namespace {
 using namespace framevr::bowflight;
@@ -113,6 +114,7 @@ std::atomic<unsigned> holyAllowed{0},holyRejected{0};
 std::atomic<unsigned> previewCreated{0},previewRefused{0},previewRecovered{0},previewAbandoned{0},uiRecovered{0};
 std::atomic<unsigned> gameRecovered{0};
 std::atomic<unsigned> quiverShots{0},quiverFallbacks{0},quiverRefused{0};
+std::atomic<unsigned> doubleThrows[2]{},throwRefused{0};
 struct Launch {
     Shot shot{};uintptr_t game=0,player=0;int slot=-1;
     framevr::aimassist::Homing homing{};
@@ -207,7 +209,7 @@ int End(size_t slot,Arrow& a,uintptr_t game,uintptr_t unit) {
 // Spells and quiver arrows keep their native server missile at the physical
 // contact, so splash, explosions and secondary missiles start at the impact.
 bool MoveSpell(Arrow& a,Vec point) {
-    if(a.flight.shot.kind!=Kind::Spell&&!SkillArrow(a.flight.shot))return true;
+    if(a.flight.shot.kind!=Kind::Spell&&!SkillRelease(a.flight.shot))return true;
     const auto grid=GridPoint(a.flight.shot,point)*a.flight.shot.unitsPerMetre;
     const int x=int(grid.x*.5f),y=int(grid.z*.5f);
     const auto room=reinterpret_cast<uintptr_t(*)(uintptr_t,int,int)>(d2rsig::Addr(RoomPointRva))(a.room,x,y);
@@ -379,6 +381,10 @@ int Collision(uintptr_t game,uintptr_t unit) {
 uintptr_t Shoot(uintptr_t game,int missile,uintptr_t player,int skill,int level,int extra,
                 int offsetX,int offsetY,int targetX,int targetY,int ammo) {
     if(launch.slot>=0&&launch.game==game&&launch.player==player) {
+        // A thrown weapon flies as the missile the native Throw names for it
+        // (knives 36, axes 35, javelins 1, 37 or 371; #221).
+        // Created() then takes this shot for the flight.
+        if(missile>=0)ResolveThrown(launch.shot,uint32_t(missile));
         if(missile!=int(MissileId(launch.shot)))return 0; // before native costs
         Vec p{};if(!Position(player,p))return 0;
         const auto& shot=launch.shot;
@@ -393,6 +399,11 @@ uintptr_t Shoot(uintptr_t game,int missile,uintptr_t player,int skill,int level,
         if(x<1||y<1||targetX<1||targetY<1||x>65534||y>65534||targetX>65534||targetY>65534)return 0;
     }
     return originalShoot(game,missile,player,skill,level,extra,offsetX,offsetY,targetX,targetY,ammo);
+}
+// A basic throw of the hand's weapon: the native Throw, or Left Hand Throw.
+void ThrowWeapon(uintptr_t game,uintptr_t player,int hand) {
+    if(hand==1)spellvr::ThrowLeft(game,player);
+    else reinterpret_cast<int(*)(uintptr_t,uintptr_t,int,int)>(d2rsig::Addr(ThrowRva))(game,player,2,1);
 }
 void __cdecl Apply(const D2RL::PluginContext*,void* token) noexcept {
     std::array<Shot,4> batch;size_t n=0;
@@ -431,11 +442,27 @@ void __cdecl Apply(const D2RL::PluginContext*,void* token) noexcept {
         if(spell&&!spellvr::Prepare(shot,game,player))continue;
         // A quiver arrow the game cannot start (skill missing, wrong state)
         // still leaves the bow as the basic arrow that was drawn.
-        bool quiverArrow=SkillArrow(shot);
+        // A javelin skill flies the javelin's model: the hand holds it at the javelin's grip.
+        if(SkillJavelin(shot))Grip(shot,1);
+        bool quiverArrow=SkillRelease(shot);
         if(quiverArrow&&!spellvr::PrepareArrow(shot,game,player)) {
             shot.skill=shot.owner=shot.missile=-1;shot.level=0;quiverArrow=false;++quiverRefused;
         }
-        if(!spell&&(javelin?gamestate::WeaponType()!=D2RVR_TYPE_JAVELIN:crossbow?
+        // With a throwing weapon in each hand, the native weapon selector is
+        // scoped to the throwing hand's weapon: Double Throw throws it, and
+        // Shoot uses up that stack (#224). Only Double Throw throws left.
+        uintptr_t thrown=0;
+        if(javelin) {
+            const auto weapons=gamestate::MeleeEquipment();uint32_t id=0;
+            if(framevr::dualwield::ThrownType(weapons.Type(shot.hand)))thrown=meleeweapon::Select(player,shot.hand,weapons);
+            if(thrown&&(!Read(thrown+8,id)||id!=weapons.displayed[shot.hand]))thrown=0;
+        }
+        bool doubleThrow=DoubleThrow(shot);
+        if(doubleThrow&&(!thrown||!spellvr::PrepareThrow(shot,game,player))) {
+            shot.skill=shot.owner=-1;shot.level=0;doubleThrow=false;++quiverRefused;
+        }
+        if(javelin&&shot.hand!=0&&(shot.hand!=1||!thrown||!spellvr::ThrowReady())){++refused;++throwRefused;continue;}
+        if(!spell&&(javelin?gamestate::WeaponType()!=D2RVR_TYPE_JAVELIN&&gamestate::WeaponType()!=D2RVR_TYPE_THROWING:crossbow?
            (gamestate::WeaponType()!=D2RVR_TYPE_CROSSBOW||
             reinterpret_cast<int(*)(uintptr_t,int*)>(d2rsig::Addr(MissileTypeRva))(player,&level)!=31):
            (!reinterpret_cast<int(*)(uintptr_t)>(d2rsig::Addr(IsBowRva))(player)||
@@ -462,6 +489,17 @@ void __cdecl Apply(const D2RL::PluginContext*,void* token) noexcept {
         if(spell) {
             spellvr::Cast(shot,game,player);
             if(launch.created)spellvr::Fired(shot,game,player);
+        } else if(doubleThrow) {
+            // Its start pays mana; srvdofunc 74 throws the scoped weapon through
+            // Shoot. Refused (mana, town), the hand still throws its weapon.
+            meleeweapon::Scope selected(player,thrown);
+            spellvr::Cast(shot,game,player);
+            if(launch.created)++doubleThrows[shot.hand];
+            else {
+                ++quiverFallbacks;
+                launch.shot.skill=launch.shot.owner=-1;launch.shot.level=0;
+                ThrowWeapon(game,player,shot.hand);
+            }
         } else if(quiverArrow) {
             // The skill's own start/dispatch pays mana and creates its missile
             // through Shoot, which takes the frozen bow vector like a basic arrow.
@@ -472,9 +510,14 @@ void __cdecl Apply(const D2RL::PluginContext*,void* token) noexcept {
                 // drawn arrow flies as a basic attack instead of a dud.
                 ++quiverFallbacks;
                 launch.shot.skill=launch.shot.owner=launch.shot.missile=-1;launch.shot.level=0;
-                reinterpret_cast<int(*)(uintptr_t,uintptr_t,int,int)>(d2rsig::Addr(AttackRva))(game,player,0,1);
+                // ... and a javelin as a basic throw of the weapon in hand.
+                if(javelin)reinterpret_cast<int(*)(uintptr_t,uintptr_t,int,int)>(d2rsig::Addr(ThrowRva))(game,player,2,1);
+                else reinterpret_cast<int(*)(uintptr_t,uintptr_t,int,int)>(d2rsig::Addr(AttackRva))(game,player,0,1);
             }
-        } else reinterpret_cast<int(*)(uintptr_t,uintptr_t,int,int)>(d2rsig::Addr(javelin?ThrowRva:AttackRva))(game,player,javelin?2:0,1);
+        } else if(javelin) {
+            meleeweapon::Scope selected(player,thrown);   // none unless a weapon in each hand
+            ThrowWeapon(game,player,shot.hand);
+        } else reinterpret_cast<int(*)(uintptr_t,uintptr_t,int,int)>(d2rsig::Addr(AttackRva))(game,player,0,1);
         if(!launch.created)++refused;
         if(crossbow)crossbowCadence.Landed(shot.session,fireAt,launch.created?crossbowCycle:100);
         if(crossbow&&launch.created){++crossbowFired;crossbowCycleMs=crossbowCycle;}
@@ -499,7 +542,7 @@ void VisualParams(const Shot& shot,float distance,uintptr_t hero,std::array<uint
     Param(params,0,uint32_t(0x21));Param(params,8,hero);Param(params,0x10,hero);
     Param(params,0x20,MissileId(shot));
     Param(params,0x24,x);Param(params,0x28,y);Param(params,0x2c,tx);Param(params,0x30,ty);
-    const bool skill=withSkill&&(shot.kind==Kind::Spell||SkillArrow(shot));
+    const bool skill=withSkill&&(shot.kind==Kind::Spell||SkillRelease(shot));
     Param(params,0x3c,skill?shot.skill:0);
     Param(params,0x40,skill?std::max(shot.level,1):1);
 }
@@ -649,7 +692,7 @@ void ClientTick(uintptr_t unit,float dt) {
         }
         for(size_t i=0;!retirement&&i<usedSlots.load(std::memory_order_relaxed);++i)if(arrows[i].client==unit&&arrows[i].clientId==header[2]) {
             slot=i;alive=arrows[i].flight.alive&&arrows[i].flight.shot.session==current.session&&enabled.load();
-            spellEnd=!alive&&(arrows[i].flight.shot.kind==Kind::Spell||SkillArrow(arrows[i].flight.shot))&&
+            spellEnd=!alive&&(arrows[i].flight.shot.kind==Kind::Spell||SkillRelease(arrows[i].flight.shot))&&
                 arrows[i].flight.shot.session==current.session&&enabled.load();
             if(spellEnd)ended=arrows[i].flight;
             if(!alive){arrows[i].client=0;arrows[i].visualBinding.Clear();Recount();}break;
@@ -722,7 +765,7 @@ uintptr_t Transform(uintptr_t out,uint32_t entity,uintptr_t component) {
         for(auto& a:UsedArrows())if(!held&&a.visualBinding.Matches(entity)&&a.flight.shot.session==current.session) {
             if(a.renderAt!=at||a.rendered[15]!=1) {
                 a.previous=a.rendered;
-                if(a.flight.shot.kind==Kind::Spell) {
+                if(a.flight.shot.kind==Kind::Spell||(SkillJavelin(a.flight.shot)&&ParticleJavelin(a.flight.shot.missile))) {
                     if(!Read(out,a.rendered))continue;
                     SpellMatrix(a.flight,at,a.rendered.data());
                 } else if(SkillArrow(a.flight.shot))QuiverMatrix(a.flight,at,a.rendered.data());
@@ -781,7 +824,7 @@ bool PreviewReady() {
 }
 bool MotionReady(){return enabled.load()&&ready.load();}
 bool DirectCrossbow(){return launch.slot>=0&&launch.shot.kind==Kind::Crossbow;}
-uint32_t QuiverLaunchMissile(){return launch.slot>=0&&SkillArrow(launch.shot)?MissileId(launch.shot):0;}
+uint32_t QuiverLaunchMissile(){return launch.slot>=0&&SkillRelease(launch.shot)?MissileId(launch.shot):0;}
 void SetCrossbowCycle(uint64_t session,uint32_t equipment,uint32_t milliseconds) {
     std::lock_guard lock(mutex);crossbowRate={session,GetTickCount64(),equipment,milliseconds};
 }
@@ -1059,7 +1102,7 @@ bool Visual(uint32_t entity,uintptr_t unit,bool hasReleasePoint,bool isRoot) {
             (creatingVisual==int(i)&&a.flight.shot.session==visualSession&&a.flight.shot.sequence==visualSequence)||
             (crossbow&&a.flight.shot.kind==Kind::Crossbow&&a.flight.shot.session==crossbow->session&&a.flight.shot.sequence==crossbow->sequence))) {
             const bool wasBound=a.visualBinding.Bound();
-            const bool rooted=a.flight.shot.kind==Kind::Spell||SkillArrow(a.flight.shot);
+            const bool rooted=a.flight.shot.kind==Kind::Spell||SkillArrow(a.flight.shot)||(SkillJavelin(a.flight.shot)&&ParticleJavelin(a.flight.shot.missile));
             const bool bound=rooted?a.visualBinding.BindRoot(entity,isRoot):a.visualBinding.Bind(entity,hasReleasePoint);
             // Descendant release components still need removal even though
             // only the root owns the spell transform.
@@ -1078,7 +1121,7 @@ bool OwnsVisual(uintptr_t unit) {
        (preview.active&&previewCreatingSession==current.session&&previewCreatingMissile==h[1])))return true;
     for(size_t i=0;i<usedSlots.load(std::memory_order_relaxed);++i) {
         const auto& a=arrows[i];
-        if((a.flight.shot.kind==Kind::Spell||SkillArrow(a.flight.shot))&&a.flight.shot.sequence&&a.flight.shot.session==current.session&&
+        if((a.flight.shot.kind==Kind::Spell||SkillRelease(a.flight.shot))&&a.flight.shot.sequence&&a.flight.shot.session==current.session&&
            h[1]==MissileId(a.flight.shot)&&((a.client==unit&&a.clientId==h[2])||
            (creatingVisual==int(i)&&a.flight.shot.sequence==visualSequence&&a.flight.shot.session==visualSession)))return true;
     }
@@ -1121,6 +1164,11 @@ void Report() {
         const auto shots=quiverShots.exchange(0),fallbacks=quiverFallbacks.exchange(0),refusedStart=quiverRefused.exchange(0);
         if(shots||fallbacks||refusedStart) {
             char line[192];snprintf(line,sizeof line,"Frame bow quiver: skill arrows=%u basic fallbacks after refusal=%u unprepared=%u",shots,fallbacks,refusedStart);
+            framevr::logging::Write(line);
+        }
+        const auto right=doubleThrows[0].exchange(0),left=doubleThrows[1].exchange(0),refusedThrow=throwRefused.exchange(0);
+        if(right||left||refusedThrow) {
+            char line[160];snprintf(line,sizeof line,"Frame double throw: right=%u left=%u left throws refused=%u",right,left,refusedThrow);
             framevr::logging::Write(line);
         }
     }

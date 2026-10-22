@@ -6943,7 +6943,7 @@ void BowTick() {
     crossbowvr::Gate(bowvr::MotionReady()&&gate.active&&gamestate::WeaponType()==D2RVR_TYPE_CROSSBOW,gate.session,gate.equipment,gate.epoch);
     bowvr::Update(gate,reinterpret_cast<uintptr_t>(hero));
     framevr::bowflight::Shot shot;
-    if(framevr::TakeBowShot(shot))bowvr::Submit(shot);
+    while(framevr::TakeBowShot(shot))bowvr::Submit(shot);   // both hands may throw at once (Double Throw)
     if(framevr::TakeCrossbowShot(shot))bowvr::Submit(shot);
     static framevr::spellcast::PlanarAim spellAim[2];
     const auto spellSettings=vrsettings::Read();

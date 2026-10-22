@@ -87,7 +87,7 @@ Quest left X/Y correspond to Index left A/B; right A/B labels are the same.
 | See where a drawn arrow will fly | At full draw a faint line runs from the arrow's tip along its straight flight, with a brighter dot where it would reach the floor; otherwise it fades out at 15 m. It does not stop at walls or monsters. Basic arrows and Magic, Fire, Cold, Ice, Exploding, Immolation and Freezing Arrow; not Multiple Shot, Guided Arrow, Strafe or crossbows. **VR Settings > Aim > Bow path laser** chooses Off or its color, 15 degrees at a time around the color wheel (Off by default; the first step is red 0°); stepping past 345° goes to Off and on to 0°, in either direction |
 | Fire a crossbow | Equip bolts and assign **Attack** to Right Trigger; aim and fire while moving. |
 | Support a crossbow | Hold Left Grip near the stock; release to free the hand. After a shoulder swap, release the swap grip before grabbing the stock again |
-| Javelin throw | Clear the right trigger skill for basic weapon mode; hold trigger, throw, release |
+| Javelin, throwing knife or axe throw | Right trigger on Attack, Throw or nothing; hold the trigger, throw, release |
 | Cancel a physical attack / draw | Open either wheel, then release the held controls |
 | Swap weapon sets I / II | Dominant grip over either shoulder; or wheel → EQUIPMENT |
 | Stow / draw weapons | Wheel → EQUIPMENT → Stow / Draw |
@@ -338,6 +338,25 @@ The selected skill also changes the nocked arrow's model and particles. Set
 `[bow] quiver_preview=0` to keep the basic nocked model while still firing skill
 arrows. Model swaps wait for the native client update to retire the previous
 arrow; a brief basic fallback can appear while the new model loads.
+
+**Javelin skills.** With a javelin in hand, the hand throw carries Poison
+Javelin, Lightning Bolt, Plague Javelin or Lightning Fury: bind one to the right
+trigger (it arms the throw), or press a face button bound to one to load it
+into every following throw, like the bow quiver (press again for basic throws).
+The skill's own mana cost, damage, clouds and lightning apply, and each throw
+uses up a javelin. If the game refuses it, a basic javelin flies instead.
+Poison and Plague Javelin fly the javelin model; Lightning Bolt and Fury fly as
+their lightning. `[bow] quiver=0` turns this off too.
+
+**Double Throw.** A Barbarian with a throwing weapon in each hand can bind
+Double Throw to the right trigger, or load it from a face button the same way.
+Each hand then throws its own weapon: the right with the right trigger, the
+left with the left trigger, together or one after the other. While it is armed
+the left trigger throws instead of casting its own skill. Each throw is one
+native Double Throw of that hand's weapon, with its attack bonus, mana and
+quantity. The game's own Double Throw throws both weapons for one mana cost;
+here each hand's throw pays it. If the game refuses it, the hand throws its
+weapon as a basic throw.
 
 Face-button skills never replace gesture skills. Ordinary melee swings remain
 basic attacks for skills without a supported physical adapter; assigning a
