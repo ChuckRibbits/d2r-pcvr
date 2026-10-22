@@ -2905,8 +2905,9 @@ std::atomic<uint32_t> bits{0};
 std::atomic<float> hue[2]{45.0f, 210.0f};   // the outline colors: right hand, left hand (0 = By range)
 std::atomic<float> spanM{1.6f};   // VR Settings > Controller span (arm_span_m), set with or without Body calibration
 std::atomic<int> ground{0};       // VR Settings > Aim > Ground skills: 0 the game's aim, 1 where you point, 2 the aimed monster
-constexpr framevr::settings::Key keys[] = {framevr::settings::TargetHighlight, framevr::settings::SpellLock,
-                                           framevr::settings::StaffPoint, framevr::settings::SpellLockBow,
+std::atomic<int> lock{0};         // Skills go to the aimed monster: bits 1 spells, 2 bow skills
+constexpr framevr::settings::Key keys[] = {framevr::settings::TargetHighlight,
+                                           framevr::settings::StaffPoint,
                                            framevr::settings::LandingCircles, framevr::settings::AimHighlights,
                                            framevr::settings::Dominant};
 constexpr int KeyCount = int(std::size(keys));
@@ -2921,6 +2922,7 @@ void Refresh() {
     hue[1].store(values[framevr::settings::HighlightLeft]);
     spanM.store(values[framevr::settings::ArmSpan]);
     ground.store(std::clamp(int(values[framevr::settings::GroundAim]), 0, 2));
+    lock.store(int(values[framevr::settings::SpellLock]) & 3);
     at.store(now);
 }
 }
@@ -2930,6 +2932,8 @@ bool AimOn(framevr::settings::Key key) {
     return false;
 }
 int GroundAimMode() { aimsettings::Refresh(); return aimsettings::ground.load(); }
+bool SpellsLocked() { aimsettings::Refresh(); return (aimsettings::lock.load() & 1) != 0; }
+bool BowSkillsLocked() { aimsettings::Refresh(); return (aimsettings::lock.load() & 2) != 0; }
 // How far a hand is held out from the head before it points, cm: the arm counts as
 // pointing once held out a tenth of the player's span (Jeff: 15 cm on a 1.5 m span).
 float AimArmOutCm() { aimsettings::Refresh(); return framevr::armpointing::ArmOutCm(aimsettings::spanM.load()); }
@@ -3530,7 +3534,7 @@ Cast Now() {
 }
 // VR Settings > Aim: the options for each kind of cast (aimrules::Switches).
 framevr::aimrules::Switches Options() {
-    return {AimOn(framevr::settings::SpellLock), AimOn(framevr::settings::SpellLockBow), GroundAimMode()};
+    return {SpellsLocked(), BowSkillsLocked(), GroundAimMode()};
 }
 // Do the rules aim this cast at all? Off, it aims as before them (UpstreamSpellAim).
 bool RulesOn(const Cast& c) { return framevr::aimrules::RulesAim(c.use, c.bow, Options()); }
@@ -3554,7 +3558,7 @@ bool RulesAimCast() {
 namespace mobaim {
 bool Wanted() {
     return g_enabled.load() && g_inWorld.load() &&
-        (TargetHighlightOn() || AimOn(framevr::settings::SpellLock) || AimOn(framevr::settings::SpellLockBow) ||
+        (TargetHighlightOn() || SpellsLocked() || BowSkillsLocked() ||
          GroundAimMode() == 2);
 }
 void Tick() {
@@ -6937,7 +6941,7 @@ void BowTick() {
         // other hand's, else the one looked at - fly at its chest, flat when
         // spells are planar.
         float mx=0,my=0,md=0;int source=-1;
-        if(AimOn(framevr::settings::SpellLock)&&!framevr::aimrules::Stable(shot.skill)&&aimtargets::Resolve(hand,false,mx,my,md,&source)) {
+        if(SpellsLocked()&&!framevr::aimrules::Stable(shot.skill)&&aimtargets::Resolve(hand,false,mx,my,md,&source)) {
             using framevr::math::Vec;
             const Vec target=framevr::bowflight::RenderGround(shot,Vec{mx*2.0f,0.0f,my*2.0f})+Vec{0.0f,1.0f,0.0f};
             Vec to=target-shot.origin;

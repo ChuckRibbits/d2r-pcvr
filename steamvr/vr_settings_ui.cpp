@@ -13,6 +13,41 @@ static int HelpTextHeight(HDC dc,HFONT font,const char* value,int width) {
     DrawTextW(dc,wide.c_str(),-1,&bounds,DT_CALCRECT|DT_WORDBREAK|DT_NOPREFIX);
     SelectObject(dc,old);return int(bounds.bottom);
 }
+// The value shown for a setting (c: the character, for Skills go to the aimed monster).
+static void ValueLabel(Key key,float value,const Context& c,char* label,size_t size) {
+    if(key==SpellLock)std::snprintf(label,size,"%s",BowSkillClass(c)?SpellLockNames[int(value)&3]:LockSpells(value)?"On":"Off");
+    else if(key==Foveation){const char* modes[]={"Off","Fixed","Eye tracked"};std::snprintf(label,size,"%s",modes[int(value)]);}
+    else if(key==FoveationStrength)std::snprintf(label,size,"%s",FoveationStrengthNames[int(value)]);
+    else if(key==StereoRendering)std::snprintf(label,size,"%s",StereoRenderingNames[std::clamp(int(value),0,int(std::size(StereoRenderingNames))-1)]);
+    else if(key==VitalsLocation||key==NavigationLocation)std::snprintf(label,size,"%s",vitals::LocationNames[int(value)]);
+    else if(key==RenderResolution)std::snprintf(label,size,"%s",resolution::Choices[int(value)]);
+    else if(key==MenuDistance)std::snprintf(label,size,"%s",MenuDistanceNames[int(value)]);
+    else if(key==TooltipTiming)std::snprintf(label,size,"%s",TooltipTimingNames[int(value)]);
+    else if(key==TargetHighlight){if(value==0)std::snprintf(label,size,"Off");else std::snprintf(label,size,"%.0f%%",value);}
+    else if(key==AimHighlights)std::snprintf(label,size,"%s",HighlightsNames[value>.5f?1:0]);
+    else if(key==GroundAim)std::snprintf(label,size,"%s",GroundAimNames[std::clamp(int(value),0,2)]);
+    else if(HighlightKey(key)){   // its hand, on a shared row
+        const char* hand=key==HighlightLeft?"L":"R";
+        if(value==0)std::snprintf(label,size,"%s By range",hand);else std::snprintf(label,size,"%s %s %.0f\xc2\xb0",hand,HueName(value),value);
+    }
+    else if(key==BowLaser){if(value<0)std::snprintf(label,size,"Off");else std::snprintf(label,size,"%s %.0f\xc2\xb0",HueName(value),value);}
+    else if(key==Dominant)std::snprintf(label,size,"%s",value>.5f?"Left":"Right");
+    else if(key==MeleeRules)std::snprintf(label,size,"%s",MeleeRulesNames[value>.5f?1:0]);
+    else if(key==OfflinePlayers){if(value==0)std::snprintf(label,size,"Game default");else std::snprintf(label,size,"Players %.0f",value);}
+    else if(key==StrainDark)std::snprintf(label,size,"%s",StrainColorNames[std::clamp(int(std::lround(value)),0,2)]);
+    else if(key==StrainSpeed)std::snprintf(label,size,"%s",StrainSpeedNames[int(value)]);
+    else if(key==HeartbeatStart){if(value==0)std::snprintf(label,size,"Off");else std::snprintf(label,size,"%.0f%% life",value);}
+    else if(key==EnemySight){if(value==100)std::snprintf(label,size,"100%% (Default)");else std::snprintf(label,size,"%.0f%%",value);}
+    else if(Definitions[key].max==1)std::snprintf(label,size,"%s",value>.5f?"On":"Off");
+    else if(key==Snap)std::snprintf(label,size,"%.0f deg",value);
+    else if(key==VitalsTilt)std::snprintf(label,size,"%+.6g deg",value);
+    else if(key==TurnSpeed)std::snprintf(label,size,"%.0f deg/s",value);
+    else if(key==MeleeHitSpeed||key==MeleeThrustSpeed||key==ShieldBashSpeed)std::snprintf(label,size,"%.2f m/s",value);
+    else if(HapticKey(key)){if(value==0)std::snprintf(label,size,"Off (0%%)");else std::snprintf(label,size,"%.0f%%",value);}
+    else if(key==LootLabelSize)std::snprintf(label,size,"%g%%",value);
+    else if(key==Waist||key==BeltForward)std::snprintf(label,size,"%.1f cm",value*100);
+    else std::snprintf(label,size,"%.0f",value);
+}
 std::vector<uint8_t> Paint(const Model& m,Hit hover,const char* runtimeStatus,const calibration::Flow* body,const controllers::Labels& detected,int help,GameVideo game,bool monoAudio,
                            const PerformanceReadout& performance,bool depthRestart){
     const bool showHelp=!body&&help!=NoHelp&&HelpText(help)[0];
@@ -137,51 +172,29 @@ std::vector<uint8_t> Paint(const Model& m,Hit hover,const char* runtimeStatus,co
             text(defer&&gameWarning?DeferWarning:runtimeStatus,{40,181,width,29},false,false,defer&&gameWarning?warn:quiet);
             text(gameWarning?gameWarning:DeferWarning,{40,209,width,29},false,false,warn);
             if(defer)button(DeferBox,"Defer GPU wait",{Kind::Change,DeferGpuWait,1},false,m.ready&&!m.Busy());
-        }else text(m.page==Page::Haptics?"Tune vibration for your headset and controllers.":m.page==Page::Combat?"Tune physical combat and offline difficulty.":m.page==Page::Aim?"Choose how your target is picked, shown and used by skills and ground skills, and the bow path laser.":
+        }else text(m.page==Page::Haptics?"Tune vibration for your headset and controllers.":m.page==Page::Combat?"Tune physical combat and offline difficulty.":m.page==Page::Aim?"Choose how your skills find their target and what you see of it. Rows for other classes stay hidden.":
              m.page==Page::Video?"The mod's added effects. What changes the frame rate is on Perf.":runtimeStatus,{40,197,1200,42},false,false,quiet);
-        for(int row=0;row<RowCount(m.page);++row){
-            const Key key=RowKey(m.page,row);const auto& d=Definitions[key];const float value=m.Get()[key];const int y=RowY+row*RowStep;
+        const RowList rows=m.Rows();
+        for(int row=0;row<rows.count;++row){
+            const Key key=rows[row];const int y=RowY+row*RowStep;
             fill({40,y-4,1200,RowStep},row%2?RGB(19,31,39):RGB(22,36,44));
-            const int textWidth=m.page==Page::Haptics?520:780;const bool applies=RowEnabled(m.Get(),key);
-            text(d.label,{58,y+1,textWidth,29},true,false,applies?RGB(229,234,235):quiet);text(d.detail,{58,y+30,textWidth,28},false,false,quiet);
+            const bool paired=Paired(key),applies=RowEnabled(m.Get(),key);
+            const int textWidth=m.page==Page::Haptics?520:paired?PairLeft-70:780;
+            text(RowLabel(key,m.context),{58,y+1,textWidth,29},true,false,applies?RGB(229,234,235):quiet);text(RowDetail(key),{58,y+30,textWidth,28},false,false,quiet);
             if(m.page==Page::Haptics&&HapticCategory(key)>=0){
                 const auto category=haptics::Category(HapticCategory(key));
                 for(int choice=0;choice<haptics::PreviewCount(category);++choice)
                     button(TestHapticsBox(row,choice,category),haptics::PreviewLabel(category,choice),{Kind::TestHaptics,HapticCategory(key),choice+1},false,m.CanTestHaptics(HapticCategory(key)));
             }
-            char label[96];
-            if(key==Foveation){const char* modes[]={"Off","Fixed","Eye tracked"};std::snprintf(label,sizeof label,"%s",modes[int(value)]);}
-            else if(key==FoveationStrength)std::snprintf(label,sizeof label,"%s",FoveationStrengthNames[int(value)]);
-            else if(key==StereoRendering)std::snprintf(label,sizeof label,"%s",StereoRenderingNames[std::clamp(int(value),0,int(std::size(StereoRenderingNames))-1)]);
-            else if(key==VitalsLocation||key==NavigationLocation)std::snprintf(label,sizeof label,"%s",vitals::LocationNames[int(value)]);
-            else if(key==RenderResolution)std::snprintf(label,sizeof label,"%s",resolution::Choices[int(value)]);
-            else if(key==MenuDistance)std::snprintf(label,sizeof label,"%s",MenuDistanceNames[int(value)]);
-            else if(key==TooltipTiming)std::snprintf(label,sizeof label,"%s",TooltipTimingNames[int(value)]);
-            else if(key==TargetHighlight){if(value==0)std::snprintf(label,sizeof label,"Off");else std::snprintf(label,sizeof label,"%.0f%%",value);}
-            else if(key==AimHighlights)std::snprintf(label,sizeof label,"%s",HighlightsNames[value>.5f?1:0]);
-            else if(key==GroundAim)std::snprintf(label,sizeof label,"%s",GroundAimNames[std::clamp(int(value),0,2)]);
-            else if(HighlightKey(key)){if(value==0)std::snprintf(label,sizeof label,"By range");else std::snprintf(label,sizeof label,"%s %.0f\xc2\xb0",HueName(value),value);}
-            else if(key==BowLaser){if(value<0)std::snprintf(label,sizeof label,"Off");else std::snprintf(label,sizeof label,"%s %.0f\xc2\xb0",HueName(value),value);}
-            else if(key==Dominant)std::snprintf(label,sizeof label,"%s",value>.5f?"Left":"Right");
-            else if(key==MeleeRules)std::snprintf(label,sizeof label,"%s",MeleeRulesNames[value>.5f?1:0]);
-            else if(key==OfflinePlayers){if(value==0)std::snprintf(label,sizeof label,"Game default");else std::snprintf(label,sizeof label,"Players %.0f",value);}
-            else if(key==StrainDark)std::snprintf(label,sizeof label,"%s",StrainColorNames[std::clamp(int(std::lround(value)),0,2)]);
-            else if(key==StrainSpeed)std::snprintf(label,sizeof label,"%s",StrainSpeedNames[int(value)]);
-            else if(key==HeartbeatStart){if(value==0)std::snprintf(label,sizeof label,"Off");else std::snprintf(label,sizeof label,"%.0f%% life",value);}
-            else if(key==EnemySight){if(value==100)std::snprintf(label,sizeof label,"100%% (Default)");else std::snprintf(label,sizeof label,"%.0f%%",value);}
-            else if(d.max==1)std::snprintf(label,sizeof label,"%s",value>.5f?"On":"Off");
-            else if(key==Snap)std::snprintf(label,sizeof label,"%.0f deg",value);
-            else if(key==VitalsTilt)std::snprintf(label,sizeof label,"%+.6g deg",value);
-            else if(key==TurnSpeed)std::snprintf(label,sizeof label,"%.0f deg/s",value);
-            else if(key==MeleeHitSpeed||key==MeleeThrustSpeed||key==ShieldBashSpeed)std::snprintf(label,sizeof label,"%.2f m/s",value);
-            else if(HapticKey(key)){if(value==0)std::snprintf(label,sizeof label,"Off (0%%)");else std::snprintf(label,sizeof label,"%.0f%%",value);}
-            else if(key==LootLabelSize)std::snprintf(label,sizeof label,"%g%%",value);
-            else if(key==Waist||key==BeltForward)std::snprintf(label,sizeof label,"%.1f cm",value*100);
-            else std::snprintf(label,sizeof label,"%.0f",value);
             const bool enabled=m.ready&&!m.Busy()&&applies;
-            button(Decrease(row),"-",{Kind::Change,key,-1},false,enabled);
-            button(Increase(row),"+",{Kind::Change,key,1},false,enabled);
-            button(ValueBox(row),label,{d.max==1||key==StrainDark?Kind::Change:Kind::None,key,1},false,enabled);
+            char label[96];
+            for(int side=0;side<(paired?2:1);++side){   // a paired row: a stepper each, left and right
+                const Key k=side?PairOf(key):key;
+                ValueLabel(k,m.Get()[k],m.context,label,sizeof label);
+                button(paired?PairDecrease(row,side):Decrease(row),"-",{Kind::Change,k,-1},false,enabled);
+                button(paired?PairIncrease(row,side):Increase(row),"+",{Kind::Change,k,1},false,enabled);
+                button(paired?PairValue(row,side):ValueBox(row),label,{ValueSteps(k)?Kind::Change:Kind::None,k,1},false,enabled);
+            }
         }
         if(m.page==Page::HUD){
             text("Palm: raise left hand palm up; release grip/trigger. Status follows the minimap.",{58,854,1160,22},false,false,quiet);

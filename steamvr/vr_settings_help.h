@@ -65,10 +65,9 @@ inline const char* HelpText(int id) {
         case AimHighlights:return "Which aimed monsters are outlined. A button you hold keeps showing the monster its cast took until you let go. Greyed out while the Monster outline is Off.";
         case HighlightRight:return "The outline color of the monster your right hand points at, and of the monster you look at when the right hand would cast at it (Dominant hand Right, no bow equipped). By range: red near, orange mid-range, yellow far. Otherwise one color around the color wheel, 15 degrees at a time; gold by default. A color unlike the monster's own reads best. Greyed out while the Monster outline is Off.";
         case HighlightLeft:return "The outline color of the monster your left hand points at, and of the monster you look at when the left hand would cast at it (a bow equipped, or Dominant hand Left). By range: red near, orange mid-range, yellow far. Otherwise one color around the color wheel, 15 degrees at a time; blue by default. A color unlike the monster's own reads best. Greyed out while the Monster outline is Off.";
-        case SpellLock:return "Spells go to the aimed monster, outlined or not: the one your casting hand points at (arm held out a tenth of your Controller span), else the other hand's, else the one you look at, kept until you let go. Bolts fly at it; curses and Corpse Explosion land on it; Teleport and Leap go where you point. With no monster, where that arm points, else the other, else where you look. Off: spells aim along your casting hand, as before.";
+        case SpellLock:return "Skills take the monster your casting hand points at (arm held out a tenth of your Controller span), else the other hand's, else the one you look at, and keep it until you let go. Bolts fly at it; curses and Corpse Explosion land on it. With no monster, where that arm points, else where you look.";
         case StaffPoint:return "A staff held upright would cast along its shaft, straight up. With this On, an upright staff casts along your arm, from your shoulder through your hand, so a bent wrist, knuckles to the side or a hand overhead still cast where you reach. Levelled out like a wand (within about 35 degrees of flat), it casts from its top as before.";
         case LandingCircles:return "Shows where a ground skill will hit once the game accepts the cast, in its element's color: fire orange, cold blue, lightning yellow. The circle fills from the centre outward until the skill lands: a Fire Blast bomb over its flight, Meteor over its fall, Blizzard while the ice falls. Fire Wall shows as a strip across your aim. Floor only, never monsters' legs or walls. Greyed out while Ground skills is Game.";
-        case SpellLockBow:return "Bow and crossbow skills cast from a button (Multiple Shot, Guided Arrow...) go to the aimed monster too, the bow hand's first. Off by default: archers aim on purpose. Strafe always picks its own targets, and a bow you draw and release yourself always shoots where you aim it.";
         case GroundAim:return "Where ground skills land: Fire Blast and traps, Blizzard, Meteor, Fire Wall, Hydra, Fissure, Volcano, Bone Wall and Bone Prison. Aimed at the horizon or above, as far as the game lets a skill be cast.";
         case BowLaser:return "At full draw a faint line runs from the arrow's tip along the path a release would fly, ending in a brighter dot at the floor or fading out after 15 m. It doesn't stop at walls or monsters. Shown for basic arrows and Magic, Fire, Cold, Ice, Exploding, Immolation and Freezing Arrow; not Multiple Shot, Guided Arrow, Strafe or crossbows. Off by default, else its color in 15-degree steps from red 0; past 345 comes Off, both ways.";
         case HeartbeatStart:return "The life percentage where the low-life heartbeat begins. Below it the heartbeat steps up every 10% of life you lose, louder and faster, until it is at full strength below 10%. 60% is the default; Off silences it. Healing winds it back down beat by beat; wiping the visor clean fades it until the next hit. Works in Unleashed and Classic.";
@@ -116,6 +115,7 @@ inline int HelpChoices(int id) {
         case ControllerLabels:return int(controllers::Choice::Count);
         case Dominant:case MeleeRules:case MapTopDown:case AimHighlights:return 2;
         case GroundAim:return int(std::size(GroundAimNames));
+        case SpellLock:return int(std::size(SpellLockNames));
         default:return 0;
     }
 }
@@ -194,6 +194,13 @@ inline ChoiceHelp HelpChoice(int id,float value) {
                 "Item details appear after the laser rests on an item for 300 ms.",
                 "Item details use the game's own timing."};
             return {TooltipTimingNames[c],text[c]};}
+        case SpellLock:{
+            static constexpr const char* text[]={
+                "Spells and bow skills aim along the casting hand, as before.",
+                "Spells go to the aimed monster; bow skills aim as before.",
+                "Bow skills cast from a button go to the aimed monster, the bow hand's first; spells aim as before.",
+                "Spells and bow skills go to the aimed monster."};
+            return {SpellLockNames[c],text[c]};}
         case GroundAim:{
             static constexpr const char* text[]={
                 "The game aims ground skills its own way, as before: Bone Wall and Prison where your hand points at the floor.",
@@ -231,7 +238,7 @@ inline ChoiceHelp HelpChoice(int id,float value) {
         default:return {};
     }
 }
-inline int HelpAt(Page page,float u,float v,bool controllerMenu=false,const Values* values=nullptr,bool monoAudio=false) {
+inline int HelpAt(Page page,float u,float v,bool controllerMenu=false,const Values* values=nullptr,bool monoAudio=false,const Context* context=nullptr) {
     if(!std::isfinite(u)||!std::isfinite(v)||u<0||u>=1||v<0||v>=1)return NoHelp;
     if(monoAudio&&MonoAudioBox.Contains(u*Width,v*Height))return HelpMonoAudio;
     // Do not explain controls hidden behind an open dropdown.
@@ -256,8 +263,9 @@ inline int HelpAt(Page page,float u,float v,bool controllerMenu=false,const Valu
         if(Rect{40,728,1200,52}.Contains(x,y))return PlanarSpellAim;
         if(Rect{40,790,1200,52}.Contains(x,y))return ProjectileAimAssist;
     }
-    for(int row=0;row<RowCount(page);++row)
-        if(Rect{40,RowY+row*RowStep-4,1200,RowStep}.Contains(x,y))return RowKey(page,row);
+    const RowList rows=Rows(page,values?*values:Defaults(),context?*context:Context{});
+    for(int row=0;row<rows.count;++row)   // a paired row: its right half explains the right setting
+        if(Rect{40,RowY+row*RowStep-4,1200,RowStep}.Contains(x,y))return Paired(rows[row])&&x>=PairX(1)-PairGap/2?PairOf(rows[row]):rows[row];
     return NoHelp;
 }
 class HoverHelp {

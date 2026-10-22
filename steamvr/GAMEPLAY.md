@@ -383,6 +383,28 @@ tabs and a **Reset eye height** button:
 | Perf | Everything that changes the frame rate: stereo rendering (Both eyes / By turns, By turns by default), VR render resolution (Headset by default), terrain and object draw distances, foveation Off / Fixed / Eye tracked and its strength, ReShade depth (after a restart) and desktop one eye; the actual VR source size, a Defer GPU wait button while frames wait for the GPU, and warnings while the game's Vertical Sync is on or its anti-aliasing is not FXAA. Under them, each second's frame rate and where the frame's time goes, whether the CPU's part fits the headset's frame, and the game's own graphics options |
 | Notes | The last published release's notes, read-only |
 
+Pages show only the rows that can apply to the character the panel is open
+for. Another class's rows are left out:
+- elemental hand effects are the Sorceress's;
+- Ground skills and Landing circles are for the Sorceress, Assassin, Druid and Necromancer;
+- the bow path laser is the Amazon's, or any class's with a bow in hand;
+- staff aim is the Sorceress's and Druid's, or any class's with a staff in hand.
+
+**Skills go to the aimed monster** offers Spells, Bow skills or Both to an
+Amazon. Other classes see **Spells go to the aimed monster**, On or Off, and
+keep the Amazon's bow skills choice. Rows that only matter with another
+row's choice also stay hidden until they do:
+- the outline's highlights and hand colors while Monster outline is Off;
+- Landing circles while Ground skills is Game;
+- foveation strength while foveated rendering is Off;
+- the snap angle or smooth turn speed of the turning mode not chosen;
+- the standing belt drop while seated;
+- the face wipe without blood on the visor.
+
+Settings that belong together share a row, with a stepper each: **Hand colors**
+(left hand, right hand) and **Guard strain** (color, buildup). The title and
+character screens show every class's rows.
+
 Added indoor fog defaults to **Off** for new profiles, preserving the game's
 own lighting and effects, including Tyrael's wings. Outdoor fog keeps its
 existing setting. There is currently no indoor-fog toggle in VR Settings.
@@ -945,7 +967,7 @@ instead of a random one. Classic keeps the native roll.
   sliders (re-read from Settings.json when the game saves it), times
   `riposte_volume` (100).
 - **Guard strain light**: every blocked hit (not a parry) strains the guard by
-  `guard_strain_per_block` % (10). **VR Settings > Combat > Guard strain buildup**
+  `guard_strain_per_block` % (10). **VR Settings > Combat > Guard strain** (right stepper: buildup)
   selects Slow / Medium / Fast (`guard_strain_speed` 0 / 1 / 2, default Medium).
   Slow halves strain per block; Fast doubles it. With default tuning, full
   strain takes about 20 / 10 / 5 blocks in a row. The
