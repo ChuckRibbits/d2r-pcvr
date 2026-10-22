@@ -94,9 +94,9 @@ All 55 checks still used `mesh=0`. Developer discovery stages stopped at `0x1F`
 not verification of runtime mesh-size capture. Keep the measured capture issue
 open separately; the fallback correction does not repair that discovery path.
 
-The shield pose blocking reads is the steadied one (`vr/shield_steady.h`: 0.8 degree / 1.5 mm
-dead zones and speed-based smoothing, so the controller's tremor doesn't move the
-guard while fast blocks pass at once).
+The shield pose blocking reads is the steadied one (`vr/shield_steady.h`: 1 degree / 1.5 mm
+dead zones, so the controller's tremor doesn't move the guard; real moves pass in
+the same frame).
 
 Holy Shield (state 101): while the local Paladin has it, coverage grows 1.6x
 about the shield's center - the measured face's width and height, or the

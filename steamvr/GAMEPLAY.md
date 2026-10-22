@@ -698,16 +698,14 @@ forearm's line, and the shield jumped across the wrist.
 
 **Steady shield.** The controller's own tremor shook the shield as much as the
 hand (about 1-2 degrees and 1.6 cm a second of back-and-forth while held still,
-at every Shield follows), so the placed shield is steadied last of all
-(`vr/shield_steady.h`): turns under 0.8 degrees and moves under 1.5 mm are
-dropped (past them only the excess passes, so it never jumps), then smoothing
-that is strong when the shield moves slowly and lets go as it speeds up (One Euro:
-1.7 Hz at rest, plus 0.1 Hz per degree a second), so a fast block or bash keeps
-up. Rotation and position are filtered separately; a pause over 250 ms restarts
-it. In the headset the held-still shake fell from 2.1 to 0.3 degrees a second and
-the position jitter went away. There is no setting. The guard pose blocking reads
-is this bone, so blocking uses the steady shield. `Frame shield steady: on` is
-logged once.
+at every Shield follows), so the placed shield ignores changes under 1 degree
+and 1.5 mm (`vr/shield_steady.h`). The dead zones are soft: past them only the
+excess passes, so the shield never jumps at their edge, and any real move goes
+through in the same frame. (A smoothing filter tried first trailed behind when
+walking side to side, then snapped back.) Rotation and position are separate;
+a pause over 250 ms restarts it. There is no setting. The guard pose blocking
+reads is this bone, so blocking uses the steady shield. `Frame shield steady: on`
+is logged once.
 
 `[debug] shield_trace=1` (off by default)
 logs the held shield's pose chain at 5 Hz, and at once when it jumps:

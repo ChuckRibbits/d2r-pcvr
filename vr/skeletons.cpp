@@ -1904,7 +1904,7 @@ void PoseBody(uintptr_t self, const Hero& h, const Input& in) {
                         newW[sa].m[12]+=move.x;newW[sa].m[13]+=move.y;newW[sa].m[14]+=move.z;
                     }
                     // Steadied last of all (shield_steady.h): the controller's tremor
-                    // shook the shield; fast moves still pass at once. The guard pose
+                    // shook the shield; dead zones drop it, real moves pass at once. The guard pose
                     // blocking reads is this bone, so it is the steady one too.
                     {
                         static steady::Filter steadied;static LARGE_INTEGER last{};
@@ -1915,7 +1915,7 @@ void PoseBody(uintptr_t self, const Hero& h, const Input& in) {
                         steadied.Apply(m,dt,std::max(1e-4f,Len(Sub(Pos(newW[hand]),Pos(newW[l]))))/26.f,steady::Shield);   // forearm ~26 cm
                         memcpy(&newW[sa],&m,sizeof m);
                         static bool told=false;
-                        if(!told){told=true;framevr::logging::Write("Frame shield steady: on (dead zones 0.8 deg and 1.5 mm, smoothing eases off with speed)");}
+                        if(!told){told=true;framevr::logging::Write("Frame shield steady: on (dead zones 1 degree and 1.5 mm)");}
                     }
                     seatTrace.bone=sa;seatTrace.side=side;seatTrace.heldBack=heldBack;seatTrace.frame=placed?frame:shield::Frame{};
                     if(in.shieldTrace){bow::Vec axis;float angle;seatTrace.bend=shield::TurnBetween(strapped,wristFrame,axis,angle)?angle*57.2958f:-1;}

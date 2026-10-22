@@ -5,13 +5,12 @@
 
 // The held shield, steadied. Measured in the headset (2026-10-21): the shield
 // shook exactly as much as the controller (~1-2 deg/s and ~1.6 cm/s of
-// back-and-forth while held still, the same at every Shield follows), so the
-// placed shield itself is smoothed, after everything else:
-//   a dead zone: changes smaller than it are dropped (soft: the part beyond
-//     it still passes, so the shield never jumps when the edge is crossed);
-//   speed-based smoothing (One Euro, Casiez et al. 2012): slow movement is
-//     smoothed hard, fast movement barely at all, so a quick block is not late.
-// Rotation and position are filtered separately; each row's scale is kept.
+// back-and-forth while held still, the same at every Shield follows). So the
+// placed shield ignores changes smaller than a dead zone, in turn and in
+// position. Soft: past the dead zone only the excess passes, so the shield
+// never jumps at its edge, and any real move goes through in the same frame
+// (a smoothing filter tried first trailed behind when walking side to side,
+// then snapped back). Rotation and position separately; each row's scale kept.
 namespace skel::steady {
 struct Quat {float w=1,x=0,y=0,z=0;};
 inline float Dot(Quat a,Quat b){return a.w*b.w+a.x*b.x+a.y*b.y+a.z*b.z;}
@@ -39,25 +38,18 @@ inline Quat Slerp(Quat a,Quat b,float t) {
     const float th=std::acos(d),s=std::sin(th),wa=std::sin((1-t)*th)/s,wb=std::sin(t*th)/s;
     return {a.w*wa+b.w*wb,a.x*wa+b.x*wb,a.y*wa+b.y*wb,a.z*wa+b.z*wb};
 }
-// One Euro's smoothing factor for a cutoff (Hz) over dt (s); 1 = no smoothing.
-inline float Alpha(float cutoffHz,float dt) {
-    if(!(cutoffHz>0)||!std::isfinite(cutoffHz))return 1;
-    const float tau=1/(6.2831853f*cutoffHz);return 1/(1+tau/dt);
-}
 struct Settings {
-    float angleDeadDeg=0;   // rotation dead zone, degrees
+    float angleDeadDeg=0;   // turn dead zone, degrees
     float moveDeadCm=0;     // position dead zone, cm
-    float cutoffHz=0;       // slowest smoothing cutoff; 0 = no smoothing (dead zone only)
-    float beta=0;           // cutoff added per deg/s of turn (and per cm/s / 3 of travel)
 };
-// The values tuned in the headset (2026-10-21, Paladin with shields): 0.8 deg and
-// 1.5 mm dead zones, 1.7 Hz slowest cutoff, beta 0.1. Held still the shake fell
-// from 2.1 to 0.3 deg/s and the position jitter went away; fast blocks kept up.
-inline constexpr Settings Shield{.8f,.15f,10.f/6,.1f};
+// Tuned in the headset (2026-10-22, Paladin with shields): held still, the
+// shake roughly halved and the position jitter went away, and the shield stays
+// on the arm while walking.
+inline constexpr Settings Shield{1.f,.15f};
 struct Filter {
-    bool ok=false;Quat q;bow::Vec p{};float turnSpeed=0,moveSpeed=0;
-    void Reset(){ok=false;turnSpeed=moveSpeed=0;}
-    // m: the shield's model-space matrix, filtered in place. unitsPerCm: model
+    bool ok=false;Quat q;bow::Vec p{};
+    void Reset(){ok=false;}
+    // m: the shield's model-space matrix, steadied in place. unitsPerCm: model
     // units in a cm. dt: seconds since the last call; a gap (or a first call) restarts.
     void Apply(bow::Mat& m,float dt,float unitsPerCm,const Settings& s) {
         float scale[3],r[3][3];
@@ -67,18 +59,11 @@ struct Filter {
             for(int c=0;c<3;++c)r[i][c]=m.m[i*4+c]/scale[i];
         }
         const Quat qIn=FromRows(r);const bow::Vec pIn{m.m[12],m.m[13],m.m[14]};
-        if(!ok||!(dt>0)||dt>.25f||!(unitsPerCm>0)){q=qIn;p=pIn;turnSpeed=moveSpeed=0;ok=true;return;}
-        const float dAlpha=Alpha(1,dt);   // the speed estimate's own smoothing (1 Hz)
-        // rotation
+        if(!ok||!(dt>0)||dt>.25f||!(unitsPerCm>0)){q=qIn;p=pIn;ok=true;return;}
         const float turn=AngleDeg(q,qIn);
-        turnSpeed+=dAlpha*(turn/dt-turnSpeed);
-        Quat target=turn>s.angleDeadDeg?Slerp(q,qIn,(turn-s.angleDeadDeg)/turn):q;
-        q=Normalized(Slerp(q,target,Alpha(s.cutoffHz>0?s.cutoffHz+s.beta*turnSpeed:0,dt)));
-        // position
+        if(turn>s.angleDeadDeg)q=Normalized(Slerp(q,qIn,(turn-s.angleDeadDeg)/turn));
         const bow::Vec d=pIn-p;const float dist=bow::Length(d)/unitsPerCm;   // cm
-        moveSpeed+=dAlpha*(dist/dt-moveSpeed);
-        const bow::Vec pTarget=dist>s.moveDeadCm?p+d*((dist-s.moveDeadCm)/dist):p;
-        p=p+(pTarget-p)*Alpha(s.cutoffHz>0?s.cutoffHz+s.beta*moveSpeed/3:0,dt);
+        if(dist>s.moveDeadCm)p=p+d*((dist-s.moveDeadCm)/dist);
         ToRows(q,r);
         for(int i=0;i<3;++i)for(int c=0;c<3;++c)m.m[i*4+c]=r[i][c]*scale[i];
         m.m[12]=p.x;m.m[13]=p.y;m.m[14]=p.z;
