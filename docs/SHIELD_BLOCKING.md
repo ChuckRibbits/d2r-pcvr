@@ -98,9 +98,9 @@ The shield pose blocking reads is the steadied one (`vr/shield_steady.h`: 1 degr
 dead zones, so the controller's tremor doesn't move the guard; real moves pass in
 the same frame).
 
-Holy Shield (state 101): while the local Paladin has it, coverage grows 1.6x
-about the shield's center - the measured face's width and height, or the
-fallback's lateral proxy - because blocks are expected to land on the glow drawn
+Holy Shield (state 101): while the local Paladin has it, the covered width grows
+1.6x about the shield's center - the measured face's extent across the attack, or
+the fallback's lateral proxy; the raised-height check uses the real shield - because blocks are expected to land on the glow drawn
 around the shield. The glow's size is not in the tables (states.txt names its
 overlay; Overlay.txt gives only a light radius), so 1.6 is a visual estimate
 (`HolyShieldCover` in `steamvr/shield_guard.h`). The state comes from the

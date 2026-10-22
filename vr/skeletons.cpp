@@ -1908,14 +1908,15 @@ void PoseBody(uintptr_t self, const Hero& h, const Input& in) {
                     // blocking reads is this bone, so it is the steady one too.
                     {
                         static steady::Filter steadied;static LARGE_INTEGER last{};
-                        LARGE_INTEGER now,freq;QueryPerformanceCounter(&now);QueryPerformanceFrequency(&freq);
+                        static LARGE_INTEGER freq{};if(!freq.QuadPart)QueryPerformanceFrequency(&freq);
+                        LARGE_INTEGER now;QueryPerformanceCounter(&now);
                         const float dt=last.QuadPart?float(double(now.QuadPart-last.QuadPart)/double(freq.QuadPart)):0.f;
                         last=now;
                         bow::Mat m;memcpy(&m,&newW[sa],sizeof m);
                         steadied.Apply(m,dt,std::max(1e-4f,Len(Sub(Pos(newW[hand]),Pos(newW[l]))))/26.f,steady::Shield);   // forearm ~26 cm
                         memcpy(&newW[sa],&m,sizeof m);
                         static bool told=false;
-                        if(!told){told=true;framevr::logging::Write("Frame shield steady: on (dead zones 1 degree and 1.5 mm)");}
+                        if(!told){told=true;char line[120];snprintf(line,sizeof line,"Frame shield steady: on (dead zones %.1f degree and %.1f mm)",steady::Shield.angleDeadDeg,steady::Shield.moveDeadCm*10);framevr::logging::Write(line);}
                     }
                     seatTrace.bone=sa;seatTrace.side=side;seatTrace.heldBack=heldBack;seatTrace.frame=placed?frame:shield::Frame{};
                     if(in.shieldTrace){bow::Vec axis;float angle;seatTrace.bend=shield::TurnBetween(strapped,wristFrame,axis,angle)?angle*57.2958f:-1;}

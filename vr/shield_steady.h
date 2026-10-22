@@ -4,7 +4,7 @@
 #include "bow_pose.h"
 
 // The held shield, steadied. Measured in the headset (2026-10-21): the shield
-// shook exactly as much as the controller (~1-2 deg/s and ~1.6 cm/s of
+// shook about as much as the controller (~1-2 deg/s and ~1.6-1.9 cm/s of
 // back-and-forth while held still, the same at every Shield follows). So the
 // placed shield ignores changes smaller than a dead zone, in turn and in
 // position. Soft: past the dead zone only the excess passes, so the shield
@@ -42,9 +42,9 @@ struct Settings {
     float angleDeadDeg=0;   // turn dead zone, degrees
     float moveDeadCm=0;     // position dead zone, cm
 };
-// Tuned in the headset (2026-10-22, Paladin with shields): held still, the
-// shake roughly halved and the position jitter went away, and the shield stays
-// on the arm while walking.
+// Tuned in the headset (2026-10-21/22, Paladin, then a Barbarian with a shield):
+// held still, the turn shake fell by half or more and the position jitter went
+// away, and the shield stays on the arm while walking side to side.
 inline constexpr Settings Shield{1.f,.15f};
 struct Filter {
     bool ok=false;Quat q;bow::Vec p{};
@@ -58,6 +58,9 @@ struct Filter {
             if(!(scale[i]>1e-6f)||!std::isfinite(scale[i])){Reset();return;}
             for(int c=0;c<3;++c)r[i][c]=m.m[i*4+c]/scale[i];
         }
+        // A mirrored bone (det < 0): steady its rotation and keep the mirror in the scale.
+        const float det=r[0][0]*(r[1][1]*r[2][2]-r[1][2]*r[2][1])-r[0][1]*(r[1][0]*r[2][2]-r[1][2]*r[2][0])+r[0][2]*(r[1][0]*r[2][1]-r[1][1]*r[2][0]);
+        if(det<0){scale[2]=-scale[2];for(int c=0;c<3;++c)r[2][c]=-r[2][c];}
         const Quat qIn=FromRows(r);const bow::Vec pIn{m.m[12],m.m[13],m.m[14]};
         if(!ok||!(dt>0)||dt>.25f||!(unitsPerCm>0)){q=qIn;p=pIn;ok=true;return;}
         const float turn=AngleDeg(q,qIn);

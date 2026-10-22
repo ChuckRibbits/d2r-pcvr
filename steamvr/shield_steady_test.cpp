@@ -39,6 +39,15 @@ int main() {
     // A gap restarts: after 0.5 s the shield is taken as it is.
     {Filter f;bow::Mat m=Held(0,0);f.Apply(m,dt,cm,Shield);
      m=Held(.5f,.05f*cm);f.Apply(m,.5f,cm,Shield);Check(Near(Yaw(m),.5f,.01f)&&Near(m.m[12],.05f*cm),"a gap restarts the filter");}
+    // Round trips through every quaternion branch (trace <= 0): half turns about x, y and z.
+    {const float rs[3][3][3]={{{1,0,0},{0,-1,0},{0,0,-1}},{{-1,0,0},{0,1,0},{0,0,-1}},{{-1,0,0},{0,-1,0},{0,0,1}}};
+     for(const auto& r:rs){float b[3][3];ToRows(FromRows(r),b);
+         for(int i=0;i<3;++i)for(int j=0;j<3;++j)Check(Near(r[i][j],b[i][j]),"half-turn round trip");}}
+    // A mirrored bone keeps its mirror and is still steadied.
+    {Filter f;bow::Mat m=Held(0,0);for(int c=0;c<3;++c)m.m[8+c]=-m.m[8+c];f.Apply(m,dt,cm,Shield);
+     for(int i=1;i<20;++i){m=Held(i%2?.6f:0.f,0);for(int c=0;c<3;++c)m.m[8+c]=-m.m[8+c];f.Apply(m,dt,cm,Shield);
+         const float det=m.m[0]*(m.m[5]*m.m[10]-m.m[6]*m.m[9])-m.m[1]*(m.m[4]*m.m[10]-m.m[6]*m.m[8])+m.m[2]*(m.m[4]*m.m[9]-m.m[5]*m.m[8]);
+         Check(det<0&&Near(Yaw(m),0,.01f)&&Near(m.m[10],-1.2f),"mirrored bone: mirror kept, shiver dropped");}}
     // A degenerate matrix resets and passes through.
     {Filter f;bow::Mat z;f.Apply(z,dt,cm,Shield);Check(!f.ok,"degenerate matrix rejected");}
     std::puts("Shield steady: dead zones drop the shiver, real moves pass in the same frame, gaps and Off passed");

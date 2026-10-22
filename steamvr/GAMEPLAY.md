@@ -670,8 +670,8 @@ arm. **VR Settings > Shield** now means the same directions on every class:
 toward the hand (-10 to 40 cm), **Out** moves it away from the arm on the
 shield's side (the back of the hand, or the palm if the bind pose hangs it
 there) and **Up** toward the thumb (-30 to +30 cm each), in 1 cm steps scaled by
-the model's forearm; all 0 by default (with Shield follows at 100%, main's exact
-position); about 3 / 2 / 2
+the model's forearm; all 0 by default (the original position when Shield follows is
+100%); about 3 / 2 / 2
 cm suits a buckler and large shields need more (`[gameplay] shield_grip_cm`,
 `shield_out_cm`, `shield_up_cm`). The posed shield is also the guard pose that
 blocking, parrying and bashing read, so the shield blocks where it is shown.
@@ -696,8 +696,8 @@ decided from the bind pose (the same every frame), never from the live bones:
 read from the live bones, it flipped when the shield's bone sat near the
 forearm's line, and the shield jumped across the wrist.
 
-**Steady shield.** The controller's own tremor shook the shield as much as the
-hand (about 1-2 degrees and 1.6 cm a second of back-and-forth while held still,
+**Steady shield.** The controller's own tremor shook the shield about as much as
+the hand (about 1-2 degrees and 1.6-1.9 cm a second of back-and-forth while held still,
 at every Shield follows), so the placed shield ignores changes under 1 degree
 and 1.5 mm (`vr/shield_steady.h`). The dead zones are soft: past them only the
 excess passes, so the shield never jumps at their edge, and any real move goes
@@ -726,7 +726,7 @@ restart the jump check, so spawning never prints a JUMP.
 - `wrist`, `elbow`: the model's hand and forearm bones, the same way.
 - `seat`: the shield's attach bone from the wrist in the arm's frame (along,
   out, up), cm. It moves with Grip / Out / Up, not the wrist or the roll.
-- `shield`: the shield's attach bone, model space from the eye, and its angles.
+- `shield`: the shield's attach bone (after the steady shield's dead zones), model space from the eye, and its angles.
 - `side`: the side of the forearm the shield is on (`back` of the hand or
   `palm`); `stop`: degrees of wrist bend the shield stop held back.
 - `follow`, `roll`: the settings in use; `bend`: degrees between the forearm and
