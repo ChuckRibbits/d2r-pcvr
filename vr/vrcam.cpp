@@ -2527,6 +2527,8 @@ bool VrViewInner(const d2rcam::WorldView& in, float out[16]) {
     if (!g_enabled.load() || !in.lookAtValid) return false;
     const float* G = in.gameView;   // row-major, v * M: column i is the game camera's axis i in the world
     const float* L = in.lookAt;
+    const float gameForward[3] = {-G[2], -G[6], -G[10]};
+    billboards::SetGameForward(gameForward);   // auras keep its lift (vr/overlay_view.h)
     V3 fwd, ahead, right, up, eye, hang;
     float yaw = 0.0f;
     if (TableView()) {
