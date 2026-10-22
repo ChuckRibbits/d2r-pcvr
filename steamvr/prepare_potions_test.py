@@ -2,7 +2,7 @@
 import math
 import struct
 import unittest
-from prepare_potions import encode
+from prepare_potions import encode,encode_arrow,ARROW_LENGTH,FILES
 from potion_assets import Granny,texture,decode
 
 class PotionTests(unittest.TestCase):
@@ -16,6 +16,21 @@ class PotionTests(unittest.TestCase):
         self.assertAlmostEqual(v[2][0],0);self.assertAlmostEqual(v[2][1],.09);self.assertAlmostEqual(v[2][2],0)
         self.assertAlmostEqual(v[0][1],-.09);self.assertEqual(v[0][-1],1)
         self.assertEqual(struct.unpack_from('<3I',result,32+3*36),(0,1,2))
+
+    def test_arrow_along_y_centred_and_scaled(self):
+        # The game's arrow: along +Z, tip at +1, tail at -.98, a little off its axis.
+        verts=[(.5,.2,-.984,0,0,-1,0,0),(.6,.2,1.,0,1,0,1,0),(.5,.3,1.,1,0,0,1,1)]
+        result=encode_arrow([('shaft',verts,[0,1,2])],(4,4,78,[bytes(16)]))
+        self.assertEqual(struct.unpack_from('<8I',result),(0x31525650,1,3,3,4,4,78,1))
+        v=list(struct.iter_unpack('<9f',result[32:32+3*36]))
+        self.assertAlmostEqual(v[1][1]-v[0][1],ARROW_LENGTH,places=5)   # tip +Y, ARROW_LENGTH from the tail
+        self.assertAlmostEqual(v[0][1]+v[1][1],0,places=5)   # centred
+        self.assertEqual(v[0][-1],0)   # no glass
+        self.assertEqual(tuple(round(x,5) for x in v[1][3:6]),(0,0,-1))   # +Y normal turned with the mesh
+        self.assertEqual(tuple(round(x,5) for x in v[0][3:6]),(0,-1,0))   # the tail's -Z normal points back down the arrow
+        self.assertIn('arw.pvr',FILES)
+        with self.assertRaises(ValueError):encode_arrow([('flat',[(0,0,0,0,1,0,0,0)]*3,[0,1,2])],(4,4,78,[bytes(16)]))
+        with self.assertRaises(ValueError):encode_arrow([('wide',[(0,0,-1,0,1,0,0,0),(5,0,1,0,1,0,0,0),(0,0,0,0,1,0,0,0)],[0,1,2])],(4,4,78,[bytes(16)]))
 
     def test_texture_relative_offset_mips_and_truncation(self):
         data=bytearray(68)

@@ -77,6 +77,7 @@ This is a PCVR mod: the game runs on your Windows PC and streams to the headset.
 ## In the game
 
 - First-person VR with your character's body, hands and equipment.
+- Optional experimental [Sorceress elemental hand effects](docs/elemental_hands.md), enabled under VR Settings > Video.
 - Free-swing melee, including with a wheel skill selected, aimed spells, bows and physical javelin throws.
 - Belt potions you can grab and drink, plus wrist health, mana, level and experience progress.
 - A left-hand minimap/compass with current area and act, independent health/mana tilt,
@@ -131,7 +132,7 @@ Quest left X/Y correspond to Index left A/B; right A/B labels are the same.
 | Minimap | Either wheel → MAP; movement remains available |
 | Reset height | VR Settings > Reset eye height |
 | Adjust controller vibration | **VR Settings > Haptics**; preview each action and **Apply** to save |
-| Hold to show nearby loot labels (Alt) | Hold **Right Grip + Right Trigger**, grip first; release either to restore normal drop/hover labels |
+| Hold to show nearby loot labels (Alt) | Hold the **right stick down**; let go to restore normal drop/hover labels. Push it **up** to toggle running / walking |
 | Interact / pick up / talk | Right A by default; requires an aimed interactable |
 | Free melee swing / thrust | Move the equipped weapon through an enemy |
 | Bow draw | Right trigger near the left-hand bow string; draw and release |

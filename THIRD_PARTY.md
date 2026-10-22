@@ -27,14 +27,15 @@ The native OpenXR adaptation uses current-eye color/depth bindings, tracked
 resource states and device lifetimes to keep square shadow maps out of fog/sky
 sampling.
 
-The stereo replay (VR Settings > Video > Stereo rendering: Replay) in
-`vr/stereo_replay.*`, `vr/ecl_hook.*`, `steamvr/replay_camera.h`,
-`steamvr/replay_groups.h` and `steamvr/replay_pause.h` adapts upstream's
+The stereo replay in `vr/stereo_replay.*`, `vr/ecl_hook.*`,
+`steamvr/replay_camera.h`, `steamvr/replay_groups.h` and `steamvr/replay_pause.h`
+adapts upstream's
 "one pass, two pictures" renderer (`camfix` and `replay` in `vr/vrcam.cpp`,
 `vr/ecl_hook.*`, `vr/replay_groups.h`, `vr/replay_pause.h`) at
 `8bd1d3bc7f9f8a7d5fc2f49d250d57988ec6256e` (MIT, copyright 2026 BodyWalkVR).
 Upstream's DLSS predication, held queue signals, stall guard and stack dump
-are not included.
+are not included. Replay is no longer a Stereo rendering choice (removed in
+v0.3.24); the adapted code remains in the tree.
 
 Native renderer/entity pool growth, its allocator checks, signatures and snapshot
 test are adapted from Sergious / BodyWalkVR

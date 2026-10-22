@@ -54,13 +54,13 @@ Quest left X/Y correspond to Index left A/B; right A/B labels are the same.
 
 | Action | VR control |
 | --- | --- |
-| Walk / turn | Left stick / right stick, including with a wheel open; snap by default, with optional smooth turning |
+| Walk / turn | Left stick / right stick sideways, including with a wheel open; snap by default, with optional smooth turning |
 | Open or close a hand wheel | Click that hand's thumbstick; it stays open without holding |
 | Switch to the other wheel | Click the other thumbstick |
 | Assign a button | Opposite hand's laser + trigger: select a wedge, then a skill |
 | Use an inventory item | Either wheel > **QUICK USE**: point with the opposite hand and briefly click its trigger; use happens on release |
 | Assign / change quick-use item | Hold the trigger over **QUICK USE** for 0.65 seconds, then select a carried scroll, tome or other usable item. An empty slot also opens the picker on a short click. **CLEAR SLOT** removes the assignment |
-| Toggle running / walking | Either wheel > **RUN / WALK**, using the opposite hand's laser + trigger |
+| Toggle running / walking | Push the right stick up (once per push; outside wheels), or either wheel > **RUN / WALK**, using the opposite hand's laser + trigger |
 | Finish editing | Click the wheel hand's stick again, or select CLOSE in its center |
 | Inventory / character / skills / journal | Left Grip + left stick click; or either wheel > INVENTORY; native tabs retain their controls |
 | VR settings / body calibration | Either wheel → VR SETTINGS |
@@ -68,19 +68,24 @@ Quest left X/Y correspond to Index left A/B; right A/B labels are the same.
 | Minimap | Either wheel → MAP; movement remains available |
 | Reset height | VR Settings > Reset eye height |
 | Adjust controller vibration | **VR Settings > Haptics**: overall strength plus separate melee, bow draw, bow/throw release, spell, interaction and resource-alert strengths. Tests match each action's hands; **Apply** saves |
-| Hold to show all nearby loot labels (Alt) | Hold **Right Grip + Right Trigger** during gameplay, grip first. Labels stay shown while both are held; release either to restore normal drop/hover labels. Uses the native Alt range, independently of where you aim. No cast or shot accompanies the combo. Also listed in **VR Settings > Controls** |
+| Hold to show all nearby loot labels (Alt) | Hold the **right stick down** during gameplay, outside wheels. Labels stay shown while it is held; let go to restore normal drop/hover labels. Uses the native Alt range, independently of where you aim. A mostly vertical push never turns you. Also listed in **VR Settings > Controls** |
 | Interact / pick up / talk | Right A by default; requires an aimed interactable. One press acts on one target: press again for each item, including loot a chest just dropped |
 | Free melee swing / thrust | Move the equipped weapon through an enemy |
 | Physical dual wield | Equip two supported melee weapons on a Barbarian or two claws on an Assassin; release both triggers and swing or thrust with either hand. Active skills retain their button bindings |
 | Break pots / barrels | Swing a held melee weapon through them with its trigger released. Either Barbarian weapon or Assassin claw works; ordinary button interaction/kicking remains available |
 | Choose melee rules / motion thresholds | **VR Settings > Combat**: Unleashed or Classic, Melee hit speed, and Melee thrust speed |
 | Bone Spear | Assign either hand's trigger or shortcut; aim with that controller and hold to repeat while moving. **Projectile aim assist** under Controls applies to Bone Spear too; Strong adds gentle homing |
-| Bone Wall / Bone Prison | Aim down at the desired ground location and cast. Level/upward aim places bones six cells ahead; native placement rules still apply |
+| Bone Wall / Bone Prison | Aim with the casting controller: the wall or prison lands where its ray meets the floor (six cells ahead when level). With **VR Settings > Aim > Ground skills** on Aimed monster, Bone Prison lands on the aimed monster and Bone Wall rises 3 cells in front of it. Native placement rules still apply |
 | Holy Bolt | Aim with either casting controller, including up/down with Planar spell aiming Off. Light assists at launch; Strong also adds gentle homing toward undead/demons. Directly aim at your mercenary to heal; native damage/healing rules apply |
-| See which monster you are aiming at | **VR Settings > Aim > Monster outline** (Off by default; 10-100% sets its brightness) draws a thin, steady outline round it, in one static color (**Static color**, any hue; gold by default) or, with **Monster outline colors: By range**, red near, orange mid-range, yellow far. With your arm held out, the monster your hand points at is chosen; otherwise the one you look at. Walls in between rule a monster out. A guide only: it does not change how attacks or spells aim |
+| See which monsters you are aiming at | **VR Settings > Aim > Monster outline** (Off by default; 10-100% sets its brightness) draws a thin, steady outline round each hand's monster: a hand held out picks the monster it points at; with no hand on one, the monster you look at is outlined. **Monster highlights**: Both hands (default) outlines each hand's monster, Dominant hand only that hand's (**VR > Dominant hand**; the bow hand while a bow is out, whose color also wins when both hands are on one monster). **Hand colors** (one row: its left stepper is the left hand's, its right stepper the right hand's) each choose By range (red near, orange mid-range, yellow far) or one hue; gold and blue by default. The monster you look at takes the color of the hand that would cast at it: the left (bow) hand with a bow equipped, else your dominant hand. A button you hold keeps showing the monster its cast took. Walls in between rule a monster out. A guide only: it does not change how skills aim |
+| Send skills to that monster | **VR Settings > Aim > Skills go to the aimed monster** (Off by default; Spells, Bow skills or Both. A class without bow skills sees it as **Spells go to the aimed monster**, On or Off): a spell takes the monster of the hand whose button casts it (arm held out in front of you, along where it points, at least a tenth of your Controller span: 15 cm on a 1.5 m span; a hand pointing within 45 degrees of straight down, or hanging at your side, is resting), else the other hand's, else the one you look at, and keeps it until you let go. Bolts and Lightning fly at it; curses and Corpse Explosion land on it; Guided Arrow, Bone Spirit, Fist of the Heavens, Charge, Leap Attack and Zeal are handed the monster itself; Teleport, Leap, golems and raises go where you point. With no monster, a spell goes where its hand's arm points, else the other arm, else where you look. Only monsters within the game's own cast reach count (50 cells on either axis, less a margin). Off, spells aim along the casting hand as before. With Bow skills or Both, bow skills take the bow hand's monster first, aimed from the bow hand. The Warlock's skills are left out for now: they keep the hand aim they had before these settings |
+| Cast with a staff | **VR Settings > Aim > Staff aims where your arm points** (Off by default): an upright staff casts along your arm, shoulder through hand; levelled out like a wand, it casts from its top |
+| Aim ground skills | **VR Settings > Aim > Ground skills** sets where Fire Blast, Shock Web and the other traps (Blade Sentinel, Mind Blast...), Blizzard, Meteor, Fire Wall, Hydra, Fissure, Volcano, Bone Wall and Bone Prison land. **Game** (default): the game's own aim, as before. **Where you point**: on the floor where the casting hand points, held out or not (else the other arm, else where you look); aimed at the horizon or above, as far as the game lets a skill be cast (45 cells along an axis, more diagonally). **Aimed monster**: on the monster the casting hand, the other hand or your eyes aim at, else where you point |
+| See where a ground skill will hit | **VR Settings > Aim > Landing circles** (default On; with Ground skills on Where you point or Aimed monster): once the game accepts the cast, a circle in the element's color fills from the centre outward until the skill lands (a bomb over its flight, timed by the game's own missile, Meteor over its fall, Blizzard while the ice falls); Fire Wall shows as a strip across your aim. It paints the floor only, not monsters' legs or walls |
 | Increase offline difficulty | **VR Settings > Combat > Offline difficulty**: Game default or Players 1-8; higher counts make monsters tougher and increase rewards |
 | Bow draw | Right trigger near the left-hand bow string; draw and release |
-| Fire a crossbow | Equip bolts and assign **Attack** to Right Trigger; aim and fire while moving. Release Right Grip so the loot-label combo does not consume the trigger |
+| See where a drawn arrow will fly | At full draw a faint line runs from the arrow's tip along its straight flight, with a brighter dot where it would reach the floor; otherwise it fades out at 15 m. It does not stop at walls or monsters. Basic arrows and Magic, Fire, Cold, Ice, Exploding, Immolation and Freezing Arrow; not Multiple Shot, Guided Arrow, Strafe or crossbows. **VR Settings > Aim > Bow path laser** chooses Off or its color, 15 degrees at a time around the color wheel (Off by default; the first step is red 0°); stepping past 345° goes to Off and on to 0°, in either direction |
+| Fire a crossbow | Equip bolts and assign **Attack** to Right Trigger; aim and fire while moving. |
 | Support a crossbow | Hold Left Grip near the stock; release to free the hand. After a shoulder swap, release the swap grip before grabbing the stock again |
 | Javelin throw | Clear the right trigger skill for basic weapon mode; hold trigger, throw, release |
 | Cancel a physical attack / draw | Open either wheel, then release the held controls |
@@ -176,9 +181,9 @@ doesn't reduce them; resistances still matter.
   keeps blocking; the cost is sight, then chip damage (below). It fades once
   no hit has reached your shield for a moment, even held up, and is gone about
   3 seconds after the last hit; lowering the shield starts the fade at once.
-  **Combat > Guard strain color** switches the light to a black shadow, or
+  **Combat > Guard strain** (left stepper: color) switches the light to a black shadow, or
   Off to hide it (strain, guard breaks and chip damage still apply).
-  **Guard strain buildup** selects Slow / Medium / Fast: about 20 / 10 / 5
+  Its right stepper (buildup) selects Slow / Medium / Fast: about 20 / 10 / 5
   normal-monster blocks to full strain with default tuning (an act boss: about
   6 / 3 / 2). Medium keeps the original rate.
   This changes how quickly it builds, not how much of your view it covers.

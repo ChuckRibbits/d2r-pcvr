@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Cache original 3D potion meshes and textures from the installed game.
+"""Cache original 3D potion meshes and textures, and the arrow's, from the installed game.
 
 Standard-library Python; Battle.net also needs CascLib on Windows. Cache contains Blizzard
 assets and stays in the user's installation, never in the mod's release.
@@ -13,8 +13,14 @@ from pathlib import Path
 from game_assets import open_assets
 from potion_assets import Granny, texture
 
-VERSION = 1
+VERSION = 2   # the cache; 2 adds the arrow
+FORMAT = 1    # each .pvr file's layout
 CODES = tuple(f'{kind}p{tier}' for kind in 'hm' for tier in range(1, 6)) + ('rvs','rvl','yps','wms','vps')
+# The basic arrow, drawn on the bow while the game's own nocked arrow is not
+# showing (in town the game stops drawing missiles).
+ARROW = 'arw'
+ARROW_LENGTH = .75   # metres: bowflight::ArrowLength, tail at the nock
+FILES = tuple(code + '.pvr' for code in CODES + (ARROW,))
 
 
 def encode(meshes, tex):
@@ -33,14 +39,41 @@ def encode(meshes, tex):
     normalized = [((v[0]-x)*scale, (v[1]-(ymin+ymax)*.5)*scale, (v[2]-z)*scale, *v[3:]) for v in vertices]
     if any(abs(v[a]) > .16 for v in normalized for a in (0,2)):
         raise ValueError('Unexpected potion width')
+    return pack(normalized, indices, tex)
+
+
+def pack(vertices, indices, tex):
     w,h,fmt,mips=tex
-    result = bytearray(struct.pack('<8I', 0x31525650, VERSION, len(vertices), len(indices), w,h,fmt,len(mips)))
-    for v in normalized:
+    result = bytearray(struct.pack('<8I', 0x31525650, FORMAT, len(vertices), len(indices), w,h,fmt,len(mips)))
+    for v in vertices:
         result.extend(struct.pack('<9f', *v))
     result.extend(struct.pack('<' + 'I'*len(indices), *indices))
     for mip in mips:
         result.extend(struct.pack('<I',len(mip)));result.extend(mip)
     return bytes(result)
+
+
+def encode_arrow(meshes, tex):
+    """The arrow along +Y (the game authors it along +Z, tip at +1, tail at
+    -.98), centred, ARROW_LENGTH long: the renderer places it by its middle."""
+    vertices, indices = [], []
+    for _, verts, ix in meshes:
+        indices.extend(i + len(vertices) for i in ix)
+        vertices.extend(verts)
+    if not vertices or len(vertices) > 32768 or len(indices) > 131072:
+        raise ValueError('Unsupported arrow geometry')
+    lo = [min(v[a] for v in vertices) for a in range(3)]
+    hi = [max(v[a] for v in vertices) for a in range(3)]
+    if hi[2] - lo[2] < .01:
+        raise ValueError('Unsupported arrow geometry')
+    scale = ARROW_LENGTH / (hi[2] - lo[2])
+    centre = [(lo[a] + hi[a]) * .5 for a in range(3)]
+    # (x, y, z) -> (x, z, -y): a quarter turn about x takes +Z to +Y.
+    turned = [((v[0]-centre[0])*scale, (v[2]-centre[2])*scale, -(v[1]-centre[1])*scale,
+               v[3], v[5], -v[4], v[6], v[7], 0.) for v in vertices]
+    if any(abs(v[a]) > .06 for v in turned for a in (0, 2)):
+        raise ValueError('Unexpected arrow width')
+    return pack(turned, indices, tex)
 
 
 def prepare(game, destination=None, force=False, casclib=None):
@@ -53,7 +86,7 @@ def prepare(game, destination=None, force=False, casclib=None):
             try:
                 previous=json.loads(metadata.read_text())
                 if previous['version']==VERSION and previous['build']==assets.build_hash and all(
-                    hashlib.sha256((destination/(code+'.pvr')).read_bytes()).hexdigest()==previous['sha256'][code] for code in CODES):
+                    hashlib.sha256((destination/(code+'.pvr')).read_bytes()).hexdigest()==previous['sha256'][code] for code in CODES+(ARROW,)):
                     return previous
             except (ValueError,KeyError,OSError):
                 pass
@@ -66,8 +99,13 @@ def prepare(game, destination=None, force=False, casclib=None):
             albedo=next(t['path'].lower() for t in unit['dependencies']['textures'] if t['path'].lower().endswith('_alb.texture'))
             output[code]=encode(Granny(assets.read(model)).meshes(),texture(assets.read(albedo)))
             sources[code]={'model':model,'albedo':albedo}
+        unit=json.loads(assets.read('data/hd/missiles/arrow.json'))
+        model=unit['dependencies']['models'][0]['path'].lower().replace('.model','_lod0.model')
+        albedo=next(t['path'].lower() for t in unit['dependencies']['textures'] if t['path'].lower().endswith('_alb.texture'))
+        output[ARROW]=encode_arrow(Granny(assets.read(model)).meshes(),texture(assets.read(albedo)))
+        sources[ARROW]={'model':model,'albedo':albedo}
         # Decode/validate all assets before replacing any live cache files.
-        result={'version':VERSION,'build':assets.build_hash,'models':len(output),'sources':sources,
+        result={'version':VERSION,'build':assets.build_hash,'models':len(CODES),'arrow':True,'sources':sources,
                 'sha256':{code:hashlib.sha256(data).hexdigest() for code,data in output.items()}}
         for code,data in output.items():
             temp=destination/(code+'.pvr.tmp');temp.write_bytes(data);os.replace(temp,destination/(code+'.pvr'))

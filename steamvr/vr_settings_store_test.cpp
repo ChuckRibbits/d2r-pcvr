@@ -14,6 +14,15 @@ int main(){
     Check(WritePrivateProfileStringW(L"custom",L"keep",L"12345",name),"write unrelated key");
     Check(WritePrivateProfileStringW(L"render",L"rings",L"6",name),"write existing setting");
     vrsettings::Poll(name);auto before=vrsettings::Read();
+    Check(before.values[ElementalHands]==0,"missing elemental setting defaults off");
+    for(int enabled:{1,0}) {
+        Model effects;effects.Open(vrsettings::Read());effects.Click({Kind::Change,ElementalHands,1});
+        auto request=effects.Click({Kind::Apply});auto malformed=request;malformed.changed|=ChangeMask{1}<<(ChangeMask::Bits-1);
+        Check(!vrsettings::Submit(malformed),"unsupported high change bits rejected");
+        Check(vrsettings::Submit(request)&&vrsettings::Poll(name),"elemental setting saves through its own mask bit");
+        Check(vrsettings::Read().values[ElementalHands]==enabled&&Int(path,L"interactions",L"elemental_hands")==enabled&&
+            Int(path,L"custom",L"keep")==12345,"elemental opt-in/out round trips and preserves unrelated keys");
+    }
     Check(before.values[MapTopDown]==0&&before.values[MapRotate]==0,"missing map preferences retain the existing view");
     Check(WritePrivateProfileStringW(L"interactions",L"map_top_down",L"1",name)&&
           WritePrivateProfileStringW(L"interactions",L"map_rotate",L"1",name),"write existing wrist-map choices");
@@ -69,6 +78,15 @@ int main(){
         const auto saved=vrsettings::Read();
         Check(saved.values[OfflinePlayers]==choice&&Int(path,L"gameplay",L"offline_players")==choice,"difficulty survives reload");
         Check(Changed(saved.values,current.values)==request.changed&&Int(path,L"custom",L"keep")==12345,"difficulty preserves other settings");
+    }
+    Check(before.values[EnemySight]==100,"missing enemy sight distance preserves 100% game default");
+    for(int choice:{150,200,300,100}){
+        const auto current=vrsettings::Read();auto values=current.values;values[EnemySight]=float(choice);
+        const Request request{current.values,values,Changed(current.values,values),current.sequence+1};
+        Check(vrsettings::Submit(request)&&vrsettings::Poll(name),"save enemy sight distance preference");
+        const auto saved=vrsettings::Read();
+        Check(saved.values[EnemySight]==choice&&Int(path,L"gameplay",L"enemy_sight_pct")==choice,"enemy sight distance survives reload");
+        Check(Changed(saved.values,current.values)==request.changed&&Int(path,L"custom",L"keep")==12345,"enemy sight distance preserves other settings");
     }
     {const auto current=vrsettings::Read();vrsettings::SetOfflineDifficultyAvailable(true);const auto live=vrsettings::Read();
         Check(live.offlineDifficultyAvailable&&live.revision>current.revision&&live.values==current.values,"runtime capability is separate from saved preferences");}
