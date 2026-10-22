@@ -433,6 +433,9 @@ uint64_t bowSequence=0;
 bowflight::Shot bowPending{},bowReadyShot{},bowPreviewPose{};
 bool bowPreviewVisible=false;
 bool bowNeedsWorld=false,bowHasShot=false;
+// Double Throw (#224): the left hand's own release, beside the right's.
+bowflight::Shot throwLeftPending{},throwLeftReady{};
+bool leftNeedsWorld=false,leftHasShot=false,leftThrowArmed=false;
 // The latest centre-view stage-to-world frame (View, eye<0). Input reads it
 // for the room height of the world floor and to place a thrown bottle's
 // landing point in world metres; both run under the transport mutex.
@@ -796,7 +799,7 @@ void ClearInput() {
     elementalState.Reset();elementalScene={};
     journalPlacement.LoseTracking();
     meleePoses.Clear();offhandPoses.Clear();CancelShieldCast();
-    bowNeedsWorld=bowHasShot=false;
+    bowNeedsWorld=bowHasShot=leftNeedsWorld=leftHasShot=false;
     skel::SetMotionBow(false,false,0);
     ReleaseUiKey();
     ReleasePanelInput();
@@ -1435,6 +1438,7 @@ void MotionPattern(haptics::Category category,const haptics::Pattern& pattern,co
 }
 void MotionFeedback(const gameplay::Output& out) {
     static double lastPull=0;static float previousDraw=0;
+    if(out.leftFeedback)MotionPulse(1,haptics::MotionCategory(out.leftFeedback,false,true),out.leftFeedback==2?.65f:.45f,45000000);
     const unsigned event=out.feedback;
     if(event) {
         const auto category=haptics::MotionCategory(event,out.bowReady,out.javelinReady);
@@ -1480,7 +1484,7 @@ void ResetSettingsInput() {
     panelinput::WorldInput(false);
     gamestate::MenuMap(false);
     motion.Cancel();motionOutput={};interactions.Reset();interactionstate::Cancel();
-    meleePoses.Clear();offhandPoses.Clear();CancelShieldCast();++meleeEpoch;bowNeedsWorld=bowHasShot=false;
+    meleePoses.Clear();offhandPoses.Clear();CancelShieldCast();++meleeEpoch;bowNeedsWorld=bowHasShot=leftNeedsWorld=leftHasShot=false;
     skel::SetMotionBow(false,false,0);gamecmd::CancelPotion();menuTriggerGate.consumed=true;
     settingsInputGate.Consume();ReleaseUiKey();
     ReleasePanelInput();
@@ -1810,7 +1814,8 @@ void Input() {
     }
     motionInput.trigger=controls.rt/255.f;
     for(int h=0;h<2;++h){
-        handInput.trigger[h]=h?controls.lt/255.f:controls.rt/255.f;handInput.grip[h]=motionInput.grip[h];
+        // Double Throw's left trigger throws the left hand's weapon, not its skill.
+        handInput.trigger[h]=h?(leftThrowArmed?0:controls.lt/255.f):controls.rt/255.f;handInput.grip[h]=motionInput.grip[h];
         handInput.click[h]=(controls.buttons&(h?menus::LeftStick:menus::RightStick))!=0;
         if(h==1&&motionInput.grip[1]>.6f)handInput.click[h]=false;
         handInput.face[h][0]=(controls.buttons&(h?menus::X:menus::A))!=0;
@@ -2106,6 +2111,11 @@ void Input() {
                 quiverArrow={rightSkill.id,rightSkill.owner,rightSkill.missile};
         }
         if(quiverArrow.Active()){motionInput.bowSlot=-1;motionInput.bowSkill=-1;}
+        // Double Throw (#224): with a throwing weapon in each hand, the left
+        // trigger arms the left hand's own throw instead of its skill.
+        leftThrowArmed=thrown&&motionOutput.javelinReady&&quiverArrow.skill==weaponskills::DoubleThrow&&
+            dualwield::ThrownPair(skel::HeroClass(),gamestate::MeleeEquipment());
+        if(leftThrowArmed&&requested==shieldSlot){requested=-1;handOutput.interact=false;}
     }
     const bool requestedKnown=requested>=0&&quickFresh&&quickSnapshot.skills[requested].known&&quickSnapshot.skills[requested].available;
     handOutput.interact=requestedKnown&&quickSnapshot.skills[requested].id==357;
@@ -2117,6 +2127,7 @@ void Input() {
     castHand=quick||handOutput.interact?handOutput.hand:0;
     motionInput.skillContext=bindingContext^bindingLayout;
     motionInput.shieldEquipped=gamestate::LeftShield()&&::melee::ShieldReady();
+    motionInput.leftThrow=leftThrowArmed;motionInput.leftTrigger=controls.lt/255.f;
     motionOutput=motion.Step(motionInput);motionAt=GetTickCount64();
     motionOutput.shieldContact=motionInput.active&&!motionOutput.block&&!motionInput.quickCast&&motionInput.trigger<.2f&&
         motionInput.shieldEquipped&&gestureSettings[settings::SkillGestures]>.5f&&quickFresh&&shieldSkill.available&&shieldSkill.motion&&shieldSkill.id==weaponskills::Smite;
@@ -2203,6 +2214,11 @@ void Input() {
         motionInput.weapon==gameplay::Weapon::Bow,motionInput.shieldEquipped):leftCue.temporary?"Left hand shortcut":"Left hand: point & trigger");
     leftCue.expanded=leftCue.temporary;
     leftCue.busy=shieldCast.issued&&!shieldCast.cancelled;
+    if(leftThrowArmed&&!leftCue.temporary) {
+        // Double Throw: the left trigger throws the left hand's weapon.
+        leftCue.id=quiverArrow.skill;leftCue.owner=quiverArrow.owner;leftCue.known=leftCue.available=true;
+        std::snprintf(leftCue.name,sizeof leftCue.name,"%s",cue.name);std::snprintf(leftCue.hint,sizeof leftCue.hint,"Throw");
+    }
 
     panelinput::WorldInput(motionInput.active&&motionInput.tracked[0]&&motionInput.tracked[1]&&motionInput.aimTracked);
     if(!motionInput.active||motionOutput.block||!motionOutput.rayValid)handOutput.interact=false;
@@ -2305,7 +2321,7 @@ void Input() {
         shieldPoses.Push(s.sampleStamp,sample);
     }
     skel::SetMotionBow(motionInput.active&&motionOutput.bowReady,motionOutput.bowDrawing,motionOutput.draw,s.rightHand,s.leftHand,s.sampleStamp);
-    if(!motionInput.active||(!motionOutput.bowReady&&!motionOutput.javelinReady))bowNeedsWorld=bowHasShot=false;
+    if(!motionInput.active||(!motionOutput.bowReady&&!motionOutput.javelinReady))bowNeedsWorld=bowHasShot=leftNeedsWorld=leftHasShot=false;
     if(motionOutput.bowRelease||motionOutput.javelinRelease) {
         bowPending={};bowPending.origin=motionInput.hand[0].p;bowPending.direction=motionOutput.rayDirection;
         if(motionOutput.javelinRelease) {
@@ -2325,6 +2341,17 @@ void Input() {
         bowPending.session=gamestate::LocalPlayer();bowPending.equipment=motionInput.equipment;
         bowPending.epoch=(meleeEpoch<<32)|bowWorldEpoch;bowPending.sequence=++bowSequence;
         bowNeedsWorld=true;
+    }
+    if(motionOutput.leftRelease&&leftThrowArmed) {
+        // Double Throw: the left hand throws its own weapon (the launch
+        // scopes the native weapon selector to it).
+        auto& p=throwLeftPending;p={};p.kind=bowflight::Kind::Javelin;p.hand=1;
+        p.origin=motionOutput.leftOrigin;p.direction=motionOutput.leftDirection;p.draw=motionOutput.leftDraw;
+        p.skill=quiverArrow.skill;p.owner=quiverArrow.owner;
+        p.at=GetTickCount64();p.stamp=s.sampleStamp;p.session=gamestate::LocalPlayer();p.equipment=motionInput.equipment;
+        p.epoch=(meleeEpoch<<32)|bowWorldEpoch;p.sequence=++bowSequence;
+        leftNeedsWorld=true;
+        char line[120];std::snprintf(line,sizeof line,"Frame double throw: left release carries skill=%d",p.skill);Say(line);
     }
     MotionFeedback(motionOutput);
     // One sharp tap per confirmed impact. Consume the event once; do not
@@ -3092,7 +3119,7 @@ void ResetHeight() {
     std::lock_guard lock(mutex);
     ++meleeEpoch;motion.Cancel();motionOutput={};gamecmd::CancelPotion();
     meleePoses.Clear();offhandPoses.Clear();CancelShieldCast();
-    bowNeedsWorld=bowHasShot=false;
+    bowNeedsWorld=bowHasShot=leftNeedsWorld=leftHasShot=false;
     skel::SetMotionBow(false,false,0);
     if(!valid||!haveOrigin)return;
     origin=math::ResetHeight(origin,V(head.position));
@@ -3102,7 +3129,7 @@ void Recenter() {
     std::lock_guard lock(mutex);
     ++meleeEpoch;motion.Cancel();motionOutput={};gamecmd::CancelPotion();
     meleePoses.Clear();offhandPoses.Clear();CancelShieldCast();
-    bowNeedsWorld=bowHasShot=false;
+    bowNeedsWorld=bowHasShot=leftNeedsWorld=leftHasShot=false;
     skel::SetMotionBow(false,false,0);
     if(!valid)return;
     origin=V(head.position);haveOrigin=true;
@@ -3875,7 +3902,7 @@ void SpellVisualCast(const bowflight::Shot& shot) {
 void SetBowWorldEpoch(uint32_t epoch) {
     std::lock_guard lock(mutex);
     if(bowWorldEpoch==epoch)return;
-    bowWorldEpoch=epoch;bowNeedsWorld=bowHasShot=false;CancelShieldCast();
+    bowWorldEpoch=epoch;bowNeedsWorld=bowHasShot=leftNeedsWorld=leftHasShot=false;CancelShieldCast();
     elementalState.Reset();elementalScene={};
     if(motionInput.weapon==gameplay::Weapon::Bow||motionInput.weapon==gameplay::Weapon::Javelin){motion.Cancel();motionOutput={};}
 }
@@ -3888,8 +3915,10 @@ bowflight::Gate BowGate() {
 }
 bool TakeBowShot(bowflight::Shot& shot) {
     std::lock_guard lock(mutex);
-    if(!bowHasShot)return false;
-    bowHasShot=false;shot=bowReadyShot;return true;
+    // The older release first: the bow refuses an older sequence after a newer one.
+    if(bowHasShot&&(!leftHasShot||bowReadyShot.sequence<throwLeftReady.sequence)){bowHasShot=false;shot=bowReadyShot;return true;}
+    if(leftHasShot){leftHasShot=false;shot=throwLeftReady;return true;}
+    return false;
 }
 bool TakeCrossbowShot(bowflight::Shot& shot) {
     std::lock_guard lock(mutex);const auto now=GetTickCount64();
@@ -3975,10 +4004,16 @@ bool View(float out[16],const float hero[3],float eyeHeight,float userEyeHeight,
     bowvr::PublishPreviewPose(bowPreviewPose,previewGate,bowPreviewVisible,bowRenderTime.load());
     // Resolve the release once in the SAME stage-to-world frame as this view.
     // Absolute room poses avoid mixing an old weapon bone with a newer head yaw.
+    const bowflight::Gate releaseGate{motionControls.load()&&motionInput.active&&(motionOutput.bowReady||motionOutput.javelinReady),
+        gamestate::LocalPlayer(),(meleeEpoch<<32)|bowWorldEpoch,motionAt,motionInput.equipment};
+    if(leftNeedsWorld) {
+        leftNeedsWorld=false;
+        const auto shot=resolveBow(throwLeftPending);
+        if(bowflight::Allowed(shot,releaseGate,GetTickCount64())){throwLeftReady=shot;leftHasShot=true;}
+    }
     if(bowNeedsWorld) {
         bowNeedsWorld=false;
-        const bowflight::Gate gate{motionControls.load()&&motionInput.active&&(motionOutput.bowReady||motionOutput.javelinReady),
-            gamestate::LocalPlayer(),(meleeEpoch<<32)|bowWorldEpoch,motionAt,motionInput.equipment};
+        const auto& gate=releaseGate;
         const auto shot=resolveBow(bowPending);
         if(bowflight::Allowed(shot,gate,GetTickCount64())){bowReadyShot=shot;bowHasShot=true;}
         else if(bowflight::SkillRelease(shot)) {

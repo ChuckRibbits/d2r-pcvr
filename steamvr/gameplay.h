@@ -45,6 +45,8 @@ struct Input {
     bool active=false, tracked[2]{}, aimTracked=false, palette=false, cancel=false;
     Pose head{}, hand[2]{}, aim{};
     float grip[2]{}, trigger=0;
+    // Double Throw (#224): the left trigger arms the left hand's own throw.
+    bool leftThrow=false; float leftTrigger=0;
     Weapon weapon=Weapon::Unknown;
     MeleeStyle meleeStyle=MeleeStyle::OneHand;
     uint32_t equipment=0;
@@ -71,6 +73,11 @@ struct Output {
     unsigned feedback=0; // 1 select/nock, 2 attack/release, 3 drink request, 4 string nearby, 5 draw ready, 6 melee ready
     Vec rayOrigin{}, rayDirection{}, nockPoint{}, bowForward{};
     float draw=0;
+    // The left hand's throw (Double Throw): released this step, from where, which way.
+    bool leftRelease=false;
+    unsigned leftFeedback=0; // 1 armed, 2 released
+    Vec leftOrigin{},leftDirection{};
+    float leftDraw=0;
 };
 inline Vec BowForward(Pose hand) {
     // Match the existing bow grip convention: knuckles point through the bow,
@@ -99,6 +106,29 @@ inline bool RouteCrossbow(const Input& in,Output& out,bool rightHand,bool ready,
        !(out.attack||(out.skill>=0&&skillAvailable&&skillId==0)))return false;
     out.attack=false;out.skill=-1;return true;
 }
+// One hand's physical throw: armed by its held trigger, it leaves the hand on
+// release after deliberate travel, with the hand's recent velocity.
+struct HandThrow {
+    bool armed=false;
+    Vec start{},velocity{};
+    double at=0,velocityAt=0;
+    float travel=0;
+    void Arm(Vec hand,double time){*this={};armed=true;at=time;start=hand;}
+    // One step; true when the release throws (direction and draw are set).
+    bool Step(Vec hand,Vec delta,double dt,double time,bool released,Vec& direction,float& draw) {
+        if(!armed)return false;
+        travel=std::max(travel,Length(hand-start));
+        const auto v=delta*(1/float(dt));
+        // Store recent deliberate room-space motion, including the
+        // release frame. A short grace period tolerates finger timing
+        // without turning a stationary drop into a delayed throw.
+        if(Length(v)>=1.4f&&Length(v)<=12.f){velocity=v;velocityAt=time;}
+        if(!released)return false;
+        armed=false;
+        if(time-at<.08||time-at>3||travel<.18f||!velocityAt||time-velocityAt>.08)return false;
+        direction=math::Normalized(velocity);draw=std::clamp(Length(velocity)/5.f,0.f,1.f);return true;
+    }
+};
 
 class Engine {
     bool primed=false, triggerWas=false, gripWas=false, blockedTrigger=true;
@@ -111,10 +141,8 @@ class Engine {
     uint32_t equipment=0;
     Weapon weapon=Weapon::Unknown;
     float nockGap=0;
-    bool throwing=false;
-    Vec throwStart{},throwVelocity{};
-    double throwAt=0,velocityAt=0;
-    float throwTravel=0;
+    HandThrow throwing,leftThrowing;
+    bool leftTriggerWas=false;
     int drawSkill=-1,drawOwner=-1;
     uint64_t drawContext=0;
     bool nativeBowTrigger=false;
@@ -143,20 +171,24 @@ public:
             Cancel();primed=true;previousTime=in.time;previousHand=in.hand[0].p;previousRotation=in.hand[0].q;previousLeft=in.hand[1].p;
             if(changed&&!in.handBindings&&(in.weapon==Weapon::Bow||in.weapon==Weapon::Melee||in.weapon==Weapon::Javelin))selection=-1;
             weapon=in.weapon;equipment=in.equipment;triggerWas=trigger;gripWas=grip;
+            leftTriggerWas=in.leftThrow&&in.leftTrigger>.55f;
             out.block=true;return out;
         }
-        const Vec handDelta=in.hand[0].p-previousHand;
+        const Vec handDelta=in.hand[0].p-previousHand,leftDelta=in.hand[1].p-previousLeft;
         previousTime=in.time;previousHand=in.hand[0].p;previousRotation=in.hand[0].q;previousLeft=in.hand[1].p;
         const bool triggerEdge=trigger&&!triggerWas, gripEdge=grip&&!gripWas;
         const bool released=!trigger&&triggerWas;
         triggerWas=trigger;gripWas=grip;
+        const bool leftTrigger=in.leftThrow&&in.leftTrigger>(leftTriggerWas?.20f:.55f);
+        const bool leftEdge=leftTrigger&&!leftTriggerWas,leftReleased=!leftTrigger&&leftTriggerWas;
+        leftTriggerWas=leftTrigger;
         if(!trigger)blockedTrigger=false;
         if(!grip)blockedGrip=false;
         out.palette=in.palette;
         out.rayOrigin=in.aim.p;out.rayDirection=math::Rotate(in.aim.q,{0,0,-1});out.rayValid=true;
 
         if(in.palette) {
-            drawing=throwing=nativeBowTrigger=false;skillPulse.Cancel();pulseUntil=0;blockedTrigger=true;
+            drawing=nativeBowTrigger=false;throwing=leftThrowing={};skillPulse.Cancel();pulseUntil=0;blockedTrigger=true;
             if(bottle<0&&triggerEdge) {
                 if(in.hover>=0&&in.hover<8) {selection=in.hover;out.feedback=1;}
                 else if(in.hover==8) {selection=-1;out.feedback=1;}
@@ -167,7 +199,7 @@ public:
             }
         }
         if(bottle>=0) {
-            blockedTrigger=true;drawing=throwing=nativeBowTrigger=false;skillPulse.Cancel();pulseUntil=0;
+            blockedTrigger=true;drawing=nativeBowTrigger=false;throwing=leftThrowing={};skillPulse.Cancel();pulseUntil=0;
             if(!grip) {bottle=-1;bottleSpent=false;drinkStart=0;}
             else {
                 out.bottle=bottle;
@@ -183,7 +215,7 @@ public:
         }
         if(in.palette) {out.block=true;return out;}
         if(in.quickCast) {
-            drawing=throwing=nativeBowTrigger=false;skillPulse.Cancel();bowWasCharged=false;pulseUntil=shotAimUntil=0;blockedTrigger=true;
+            drawing=nativeBowTrigger=false;throwing=leftThrowing={};skillPulse.Cancel();bowWasCharged=false;pulseUntil=shotAimUntil=0;blockedTrigger=true;
             if(in.quickSkill>=0&&in.quickSkill<skills::Count)out.skill=in.quickSkill;
             return out; // preserve selected trigger skill; no melee or bow release
         }
@@ -198,35 +230,25 @@ public:
 
         // 2026-10-19: under hand bindings the right trigger always holds a slot.
         // Nothing, Attack or Throw there leaves it to the hand's own throw, and
-        // so does a javelin skill, which the throw then carries (#224); any
-        // other skill keeps the trigger (it was unreachable with javelins).
+        // so does a javelin skill or Double Throw, which the throw then
+        // carries (#224); any other skill keeps the trigger (it was
+        // unreachable with javelins).
         const bool handThrow=selection<0||(in.handBindings&&(in.selectedSkill<0||
-            in.selectedSkill==weaponskills::Attack||in.selectedSkill==weaponskills::Throw||weaponskills::JavelinSkill(in.selectedSkill)));
+            in.selectedSkill==weaponskills::Attack||in.selectedSkill==weaponskills::Throw||weaponskills::JavelinSkill(in.selectedSkill)||
+            in.selectedSkill==weaponskills::DoubleThrow));
         if(in.weapon==Weapon::Javelin&&handThrow) {
             out.javelinReady=true;
-            if(triggerEdge) {
-                throwing=true;throwAt=in.time;throwStart=in.hand[0].p;
-                throwVelocity={};velocityAt=0;throwTravel=0;out.feedback=1;
+            if(triggerEdge){throwing.Arm(in.hand[0].p,in.time);out.feedback=1;}
+            if(throwing.Step(in.hand[0].p,handDelta,dt,in.time,released,out.rayDirection,out.draw)) {
+                out.javelinRelease=true;out.feedback=2;out.rayOrigin=in.hand[0].p;
             }
-            if(throwing) {
-                throwTravel=std::max(throwTravel,Length(in.hand[0].p-throwStart));
-                const auto velocity=handDelta*(1/float(dt));
-                // Store recent deliberate room-space motion, including the
-                // release frame. A short grace period tolerates finger timing
-                // without turning a stationary drop into a delayed throw.
-                if(Length(velocity)>=1.4f&&Length(velocity)<=12.f) {
-                    throwVelocity=velocity;velocityAt=in.time;
+            // Double Throw: the left hand throws its own weapon the same way.
+            if(in.leftThrow) {
+                if(leftEdge){leftThrowing.Arm(in.hand[1].p,in.time);out.leftFeedback=1;}
+                if(leftThrowing.Step(in.hand[1].p,leftDelta,dt,in.time,leftReleased,out.leftDirection,out.leftDraw)) {
+                    out.leftRelease=true;out.leftFeedback=2;out.leftOrigin=in.hand[1].p;
                 }
-                if(released) {
-                    if(in.time-throwAt>=.08&&in.time-throwAt<=3&&throwTravel>=.18f&&
-                       velocityAt&&in.time-velocityAt<=.08) {
-                        out.javelinRelease=true;out.feedback=2;
-                        out.rayOrigin=in.hand[0].p;out.rayDirection=math::Normalized(throwVelocity);
-                        out.draw=std::clamp(Length(throwVelocity)/5.f,0.f,1.f);
-                    }
-                    throwing=false;
-                }
-            }
+            } else leftThrowing={};
             out.meleeContact=!trigger&&!out.javelinRelease;
             return out; // only the release spends ammunition; never hold A
         }

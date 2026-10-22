@@ -348,6 +348,16 @@ uses up a javelin. If the game refuses it, a basic javelin flies instead.
 Poison and Plague Javelin fly the javelin model; Lightning Bolt and Fury fly as
 their lightning. `[bow] quiver=0` turns this off too.
 
+**Double Throw.** A Barbarian with a throwing weapon in each hand can bind
+Double Throw to the right trigger, or load it from a face button the same way.
+Each hand then throws its own weapon: the right with the right trigger, the
+left with the left trigger, together or one after the other. While it is armed
+the left trigger throws instead of casting its own skill. Each throw is one
+native Double Throw of that hand's weapon, with its attack bonus, mana and
+quantity. The game's own Double Throw throws both weapons for one mana cost;
+here each hand's throw pays it. If the game refuses it, the hand throws its
+weapon as a basic throw.
+
 Face-button skills never replace gesture skills. Ordinary melee swings remain
 basic attacks for skills without a supported physical adapter; assigning a
 spell does not cast it on every swing. Physical skill gestures can be disabled

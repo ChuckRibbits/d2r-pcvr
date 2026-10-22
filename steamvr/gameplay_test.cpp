@@ -125,8 +125,8 @@ int main() {
     }
     // Hand bindings always give the right trigger a slot (a javelin in the
     // hand): Attack, Throw or nothing there throws.
-    // A javelin skill there arms the throw too, which then carries it (#224).
-    for(const int bound:{weaponskills::Attack,weaponskills::Throw,-1,36,15,35}) {
+    // A javelin skill or Double Throw there arms the throw too, which then carries it (#224).
+    for(const int bound:{weaponskills::Attack,weaponskills::Throw,-1,36,15,35,weaponskills::DoubleThrow}) {
         Sim s;s.in.handBindings=true;s.in.weapon=Weapon::Javelin;s.engine.Select(0);
         s.in.selectedSkill=bound;s.in.selectedAvailable=true;s.Step(3);
         const bool hand=bound!=36;
@@ -136,6 +136,31 @@ int main() {
         s.Move({.25f,1.55f,-.2f},10);s.Move({.25f,1.55f,-.75f},5);
         s.in.trigger=0;
         Check(s.Step().javelinRelease==hand,"hand bindings: deliberate throw releases only when the trigger is the hand's");
+    }
+    // Double Throw (#224): the left trigger throws the left hand's own weapon,
+    // together with the right hand or apart, and only while it is armed.
+    for(const bool armed:{false,true})for(const bool together:{false,true}) {
+        Sim s;s.in.handBindings=true;s.in.weapon=Weapon::Javelin;s.engine.Select(0);
+        s.in.selectedSkill=weaponskills::DoubleThrow;s.in.selectedAvailable=true;s.in.leftThrow=armed;s.Step(3);
+        s.in.trigger=together?1.f:0.f;s.in.leftTrigger=1;s.Step();
+        Check(s.out.leftFeedback==(armed?1u:0u)&&!s.out.attack&&s.out.skill<0,"the left trigger arms the left throw only with Double Throw");
+        const Vec right=s.in.hand[0].p,left=s.in.hand[1].p;
+        for(int i=1;i<=6;++i){s.in.hand[0].p=right+Vec{0,0,-.1f*i};s.in.hand[1].p=left+Vec{0,0,-.1f*i};s.Step();}
+        s.in.trigger=s.in.leftTrigger=0;s.Step();
+        Check(s.out.javelinRelease==together,"the right hand throws only with its own trigger");
+        Check(s.out.leftRelease==armed,"the left hand throws only while armed");
+        if(armed)Check(s.out.leftDirection.z<-.99f&&Length(s.out.leftOrigin-s.in.hand[1].p)<1e-5f&&s.out.leftFeedback==2,
+            "from the left hand, along its own motion");
+        Check(!s.Step(10).leftRelease,"a left throw releases once");
+    }
+    for(int kind=0;kind<3;++kind) {
+        Sim s;s.in.weapon=Weapon::Javelin;s.in.leftThrow=true;s.Step(3);s.in.leftTrigger=1;s.Step();
+        const Vec left=s.in.hand[1].p;
+        for(int i=1;i<=6;++i){s.in.hand[1].p=left+Vec{0,0,-.1f*i};s.Step();}
+        if(kind==1){s.in.leftThrow=false;s.Step();s.in.leftThrow=true;} // Double Throw unarmed mid-throw
+        if(kind==2){s.in.palette=true;s.Step();s.in.palette=false;}
+        s.in.leftTrigger=kind==0?.4f:0.f; // a partial release keeps holding
+        Check(!s.Step().leftRelease&&!s.Step(3).leftRelease,"a partial release, unarming or the wheel never throw the left weapon");
     }
     for(int kind=0;kind<4;++kind) {
         Sim s;s.in.weapon=Weapon::Javelin;s.Step(3);s.in.trigger=1;s.Step();
