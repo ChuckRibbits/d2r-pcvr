@@ -15,6 +15,7 @@ inline bool Valid(Pose p) {
     const float n=p.q.x*p.q.x+p.q.y*p.q.y+p.q.z*p.q.z+p.q.w*p.q.w;
     return Finite(p.p)&&std::isfinite(n)&&n>.9f&&n<1.1f;
 }
+// Javelin: any thrown weapon - javelins, throwing knives and axes (#221).
 enum class Weapon { Unknown, Melee, Bow, Crossbow, Other, Javelin };
 // Input gating and posed contact recognition must agree: real wrist-led
 // slashes exceed 35 rad/s. A stricter upstream limit continually cancels

@@ -174,7 +174,7 @@ not generate melee velocity. The layout currently assumes a right-handed player.
 | Button attack / crossbow | Weapon combat mode, right trigger; native crossbow firing |
 | Nock bow | Bow equipped: bring right hand to string and hold right trigger; no left grip required |
 | Draw and shoot | Pull string hand back at least 12 cm (28 cm total separation), then release trigger |
-| Throw a javelin | Javelin equipped in WEAPON mode, right trigger bound to Attack, Throw or nothing: hold right trigger, make a deliberate throwing motion, release to throw along the hand's motion. Native basic throw consumes ammunition; trigger-free jabs stay available |
+| Throw a javelin, throwing knife or axe | Any javelin, throwing knife or throwing axe equipped in WEAPON mode, right trigger bound to Attack, Throw or nothing: hold right trigger, make a deliberate throwing motion, release to throw along the hand's motion. The game's own Throw fires the weapon's own missile and consumes its quantity; a knife flies point first, an axe tumbles end over end. Trigger-free jabs and swings stay available |
 | Cancel active grab/draw | Right B; release inputs before starting again |
 | Physical belt potion | Reach to an original 3D bottle on the front belt and hold **Right Grip** to grab; left-hand grip also works |
 | Drink | Keep grip held, bring the bottle's opening to your mouth and tip nearly horizontal for 0.25 seconds; release to return an unused potion |
@@ -524,8 +524,9 @@ repeat/channel behavior; release it to stop. The slots, the native gamepad
 bindings behind them and what happens when both hands cast at once are in
 [hand skill layouts](../CONTROLS.md#hand-skill-layouts).
 
-Equipping a different melee weapon or bow selects weapon mode. Javelins and
-throwing weapons use free-swing contacts; select the native Throw skill to throw.
+Equipping a different melee weapon or bow selects weapon mode. Javelins,
+throwing knives and throwing axes swing with the right trigger released and
+throw by hand with it held (see the controls table above).
 Full 3D spell projectiles, reliable terrain-aware destinations and spell-family
 adapters remain pending behind the same simple point-and-trigger control.
 
@@ -1297,7 +1298,7 @@ waist potion belt with counts and original models, and wrist health/mana UI.
 Remaining work includes headset validation of drinking, accurate world target/loot highlights, responsive
 point-and-trigger projectile casting/ground reticle, refined weapon/body collider
 dimensions and two-hand grips, bowstring and arrow meshes, crossbow loading,
-physical weapon throwing, haptic success signals,
+haptic success signals,
 left-handed and accessible button mappings. Each needs game/headset validation.
 
 ## Physical basic-arrow test (2026-10-09)

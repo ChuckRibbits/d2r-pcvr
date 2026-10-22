@@ -1456,11 +1456,11 @@ gameplay::Weapon MotionWeapon() {
     switch(gamestate::WeaponType()) {
         case D2RVR_TYPE_BOW:return gameplay::Weapon::Bow;
         case D2RVR_TYPE_CROSSBOW:return gameplay::Weapon::Crossbow;
-        case D2RVR_TYPE_JAVELIN:return gameplay::Weapon::Javelin;
+        case D2RVR_TYPE_JAVELIN:case D2RVR_TYPE_THROWING:return gameplay::Weapon::Javelin;   // thrown by hand, swung with the trigger released
         case D2RVR_TYPE_UNARMED:case D2RVR_TYPE_SWORD:case D2RVR_TYPE_AXE:case D2RVR_TYPE_MACE:
         case D2RVR_TYPE_SCEPTER:case D2RVR_TYPE_WAND:case D2RVR_TYPE_STAFF:case D2RVR_TYPE_POLEARM:
         case D2RVR_TYPE_SPEAR:case D2RVR_TYPE_DAGGER:case D2RVR_TYPE_CLAW:
-        case D2RVR_TYPE_ORB:case D2RVR_TYPE_THROWING:return gameplay::Weapon::Melee;
+        case D2RVR_TYPE_ORB:return gameplay::Weapon::Melee;
         case D2RVR_TYPE_UNKNOWN:return gameplay::Weapon::Unknown;
         default:return gamestate::WeaponClass()==D2RVR_WEAPON_MELEE?gameplay::Weapon::Melee:gameplay::Weapon::Other;
     }
@@ -2296,8 +2296,9 @@ void Input() {
     if(motionOutput.bowRelease||motionOutput.javelinRelease) {
         bowPending={};bowPending.origin=motionInput.hand[0].p;bowPending.direction=motionOutput.rayDirection;
         if(motionOutput.javelinRelease) {
+            // At the hand; the launch moves it back to the weapon's tail once
+            // the native Throw names the weapon's missile (bowflight::ResolveThrown).
             bowPending.kind=bowflight::Kind::Javelin;
-            bowPending.origin=bowPending.origin-bowPending.direction*bowflight::JavelinGrip;
         } else if(quiverArrow.Active()) {
             bowPending.skill=quiverArrow.skill;bowPending.owner=quiverArrow.owner;bowPending.missile=quiverArrow.missile;
         }

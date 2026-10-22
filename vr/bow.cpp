@@ -379,6 +379,10 @@ int Collision(uintptr_t game,uintptr_t unit) {
 uintptr_t Shoot(uintptr_t game,int missile,uintptr_t player,int skill,int level,int extra,
                 int offsetX,int offsetY,int targetX,int targetY,int ammo) {
     if(launch.slot>=0&&launch.game==game&&launch.player==player) {
+        // A thrown weapon flies as the missile the native Throw names for it
+        // (knives 36, axes 35, javelins 1, 37 or 371; #221).
+        // Created() then takes this shot for the flight.
+        if(missile>=0)ResolveThrown(launch.shot,uint32_t(missile));
         if(missile!=int(MissileId(launch.shot)))return 0; // before native costs
         Vec p{};if(!Position(player,p))return 0;
         const auto& shot=launch.shot;
@@ -435,7 +439,7 @@ void __cdecl Apply(const D2RL::PluginContext*,void* token) noexcept {
         if(quiverArrow&&!spellvr::PrepareArrow(shot,game,player)) {
             shot.skill=shot.owner=shot.missile=-1;shot.level=0;quiverArrow=false;++quiverRefused;
         }
-        if(!spell&&(javelin?gamestate::WeaponType()!=D2RVR_TYPE_JAVELIN:crossbow?
+        if(!spell&&(javelin?gamestate::WeaponType()!=D2RVR_TYPE_JAVELIN&&gamestate::WeaponType()!=D2RVR_TYPE_THROWING:crossbow?
            (gamestate::WeaponType()!=D2RVR_TYPE_CROSSBOW||
             reinterpret_cast<int(*)(uintptr_t,int*)>(d2rsig::Addr(MissileTypeRva))(player,&level)!=31):
            (!reinterpret_cast<int(*)(uintptr_t)>(d2rsig::Addr(IsBowRva))(player)||
