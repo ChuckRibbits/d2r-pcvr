@@ -127,7 +127,8 @@ Legacy aim modes cannot replace that stick or hold stand-still Shift during a
 VR skill cast. The owner reports that casting still stops character movement;
 this input fix does not remove the game's animation/state restrictions.
 Teeth keeps its native fan, centered on the weapon's horizontal direction.
-Ground placements, buffs, summons and corpse-only skills keep native targeting.
+Ground placements, buffs, summons and corpse-only skills keep native targeting
+(unless VR Settings > Aim turns the aim rules on; see the Aim page).
 Host tests and native signature/table checks pass; this aim correction still
 needs a headset check with Teeth. Immediate hand-origin **3D** spell flight/contact
 remains pending: missiles still use the native ground plane, animation, effects,
@@ -268,6 +269,17 @@ still apply outside active headset gameplay. Labels and tooltips outside the
 toolbar strip remain visible. Verify both eyes and the game's different UI
 safe-area sizes when testing this fix in a headset.
 
+Quest updates and level-ups no longer hang in front of your eyes. In the
+headset the game's notification box ("Quest has been updated", "You've
+leveled up") is hidden, and its message appears on a small card in the room
+instead: about a metre ahead where you were looking, a little below eye
+level. Each card stays put for 3 seconds; a level-up shows its skill-point
+and stat-point cards one after the other. The text is the game's own, in its
+current language. The hidden box keeps its native timing. Cards wait while
+an opaque menu or VR Settings is open and are dropped after 10 seconds.
+Placement, readability, and whether ≡ still opens the quest page while the
+hidden box is up still need a headset check.
+
 The Map tab preserves your selected spell and uses the native explored areas
 and markers. Choose the left or right corner minimap layout in game options;
 full-screen automap capture is unsupported. When neither the wrist nor the Map
@@ -374,14 +386,36 @@ tabs and a **Reset eye height** button:
 |---|---|
 | Controls | Left/right controller reference for movement, menus, melee, bow, spells, potions, holsters and height reset |
 | VR | Controller labels, motion combat, seated belt position, dominant hand, smooth/snap turning, belt height and reach, weapon skill gestures and ordinary mob bars |
-| Video | Added sky, fog and dungeon ceilings |
+| Video | Added sky, fog and dungeon ceilings, and the experimental Sorceress elemental hand effects (Off by default) |
 | HUD | Health/mana location and tilt, optional resource alerts, navigation location, menu distance and tooltip timing |
 | Combat | Melee rules, swing hit speed and thrust speed |
-| Aim | Outline for the monster you aim at: strength, static or by-range colors, and the static color |
+| Aim | Whether spells and bow skills go to the aimed monster, the staff aiming where your arm points, and the aimed monster's outline: strength, which hands show it, and each hand's color (by range or one hue), where ground skills land (the game's aim, where you point or the aimed monster), and landing circles. Every option that changes how a cast aims is Off (Game) by default |
 | Shield | Where a held shield sits on the forearm: grip offset, out and up (all 0 by default), how far it follows the wrist, and its roll about the forearm |
 | Haptics | Overall strength and separate melee, bow draw, bow/throw release, spell, interaction and resource-alert strengths; tests follow each action's hands |
 | Perf | Everything that changes the frame rate: stereo rendering (Both eyes / By turns, By turns by default), VR render resolution (Headset by default), terrain and object draw distances, foveation Off / Fixed / Eye tracked and its strength, ReShade depth (after a restart) and desktop one eye; the actual VR source size, a Defer GPU wait button while frames wait for the GPU, and warnings while the game's Vertical Sync is on or its anti-aliasing is not FXAA. Under them, each second's frame rate and where the frame's time goes, whether the CPU's part fits the headset's frame, and the game's own graphics options |
 | Notes | The last published release's notes, read-only |
+
+Pages show only the rows that can apply to the character the panel is open
+for. Another class's rows are left out:
+- elemental hand effects are the Sorceress's;
+- Ground skills and Landing circles are for the Sorceress, Assassin, Druid and Necromancer;
+- the bow path laser is the Amazon's, or any class's with a bow in hand;
+- staff aim is the Sorceress's and Druid's, or any class's with a staff in hand.
+
+**Skills go to the aimed monster** offers Spells, Bow skills or Both to an
+Amazon. Other classes see **Spells go to the aimed monster**, On or Off, and
+keep the Amazon's bow skills choice. Rows that only matter with another
+row's choice also stay hidden until they do:
+- the outline's highlights and hand colors while Monster outline is Off;
+- Landing circles while Ground skills is Game;
+- foveation strength while foveated rendering is Off;
+- the snap angle or smooth turn speed of the turning mode not chosen;
+- the standing belt drop while seated;
+- the face wipe without blood on the visor.
+
+Settings that belong together share a row, with a stepper each: **Hand colors**
+(left hand, right hand) and **Guard strain** (color, buildup). The title and
+character screens show every class's rows.
 
 Added indoor fog defaults to **Off** for new profiles, preserving the game's
 own lighting and effects, including Tyrael's wings. Outdoor fog keeps its
@@ -1023,7 +1057,7 @@ instead of a random one. Classic keeps the native roll.
   sliders (re-read from Settings.json when the game saves it), times
   `riposte_volume` (100).
 - **Guard strain light**: every blocked hit (not a parry) strains the guard by
-  `guard_strain_per_block` % (10). **VR Settings > Combat > Guard strain buildup**
+  `guard_strain_per_block` % (10). **VR Settings > Combat > Guard strain** (right stepper: buildup)
   selects Slow / Medium / Fast (`guard_strain_speed` 0 / 1 / 2, default Medium).
   Slow halves strain per block; Fast doubles it. With default tuning, full
   strain takes about 20 / 10 / 5 blocks in a row. The
@@ -1149,6 +1183,22 @@ to a special missile is currently refused before ammo is spent; use its assigned
 native skill through the palette instead. Selected arrow skills gain the candidate
 draw/release adapter above; their flight remains native. Other skills/spells
 retain their existing controls, costs, timings and collision behavior.
+
+**Bow path laser** (**VR Settings > Aim > Bow path laser**, `[bow] path_laser_hue`,
+Off by default): at full draw, while a release would shoot a physical
+arrow (basic, or Magic, Fire, Cold, Ice, Exploding, Immolation or Freezing
+Arrow), a faint line runs from the arrow's tip along the
+release's own direction. The one row chooses Off or the line's hue in
+15-degree steps, wrapping through Off in both directions (345°, Off, 0°);
+any negative saved value is Off (written as -15). The end dot is the same
+hue, brighter. The line has its own small atlas, repainted only when the
+color changes. Arrows have no gravity, so the line is the path. It
+stops with a dot where the flight would meet the launch floor, with the
+flight's own clearance, and otherwise fades out at 15 m: it is drawn over the
+scene and does not stop at walls or monsters, which only the flight tests.
+Multiple Shot, Guided Arrow, Strafe and crossbows show no line. The first line of each draw logs
+`Frame bow laser: shown (length N m)` (`, floor` added when it ends on the
+floor), at most every 2 seconds.
 
 For ordinary **basic crossbow bolts**, the held model's `bolt_helper` supplies
 the barrel line and muzzle. The supporting palm sits below that line, including

@@ -7,6 +7,7 @@
 #include "latest_worker.h"
 #include "wrist_compass.h"
 #include "sewer_prompt_art.h"
+#include "notice_card_art.h"
 #include <cstdio>
 #include <cstring>
 #include <limits>
@@ -46,6 +47,23 @@ int main(int argc,char** argv) {
         SelectObject(dc,old);DeleteObject(bitmap);DeleteDC(dc);
         if(!fits||!SavePng(argv[1],rgba,prompt::Width,prompt::Height))return 121;
         std::puts("Sewer entry prompt painted; both lines fit");return 0;
+    }
+    if(argc>2&&!std::strcmp(argv[2],"--notice-card-check")) {
+        // Synthetic messages of the native lengths, with the Start glyph.
+        namespace notice=framevr::notice;
+        const char* messages[]={"Quest log changed. Press \xEE\x80\x9D to open the quest.",
+            "Level gained. Press \xEE\x80\x9D to spend the new Skill Points.",
+            "A deliberately long message that has to wrap onto a second line and shrink a little, "
+            "press \xEE\x80\x9D to continue reading it."};
+        std::vector<uint8_t> gallery;
+        for(const char* message:messages) {
+            char text[256]{};std::snprintf(text,sizeof text,"%s",message);notice::StartGlyph(text);
+            std::vector<uint8_t> card;
+            if(!notice::Paint(text,card)||card.size()!=size_t(notice::Width)*notice::Height*4)return 125;
+            gallery.insert(gallery.end(),card.begin(),card.end());
+        }
+        if(!SavePng(argv[1],gallery,notice::Width,notice::Height*3))return 126;
+        std::puts("Notice cards painted; every message fits");return 0;
     }
     if(argc>2&&!std::strcmp(argv[2],"--quick-use-check")) {
         if(argc>3){wchar_t path[32768]{};MultiByteToWideChar(CP_UTF8,0,argv[3],-1,path,32768);icons::Directory(path);}

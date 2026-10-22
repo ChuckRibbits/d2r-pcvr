@@ -61,6 +61,7 @@ struct Input {
 struct Output {
     bool attack=false, block=false, palette=false, bowDrawing=false, rayValid=false;
     bool bowReady=false, bowInReach=false, bowCharged=false;
+    bool bowPhysical=false; // a release now is a physical arrow, not a native bow skill
     bool meleeContact=false,bowRelease=false,javelinRelease=false,javelinReady=false;
     bool nativeBowRelease=false,shieldContact=false;
     float meleeSpeed=0;
@@ -272,7 +273,7 @@ public:
                 }
                 drawing=false;
             }
-            out.bowDrawing=drawing;out.draw=std::clamp((gap-nockGap)/.45f,0.f,1.f);
+            out.bowDrawing=drawing;out.bowPhysical=drawing&&!skillBow;out.draw=std::clamp((gap-nockGap)/.45f,0.f,1.f);
             if(drawing||in.time<shotAimUntil) {
                 out.rayOrigin=drawing?in.hand[1].p:shotOrigin;
                 out.rayDirection=drawing?(gap>.05f?math::Normalized(line):out.bowForward):shotDirection;

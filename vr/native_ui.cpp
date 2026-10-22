@@ -17,6 +17,7 @@
 #include "controller_bindings.h"
 #include "skill_slots.h"
 #include "spell_aim.h"
+#include "aim_rules.h"
 #include "spell_cast.h"
 #include "weapon_skills.h"
 #include "panel_input.h"
@@ -357,6 +358,13 @@ void Capture(framevr::interaction::Snapshot& s) {
         if(node&&Read(node,row)&&Read(row,rowId)&&rowId==skillId&&
            Read(row+0x24,flags)&&Read(row+0x4e,serverFunction)&&Read(row+0x66,missile)) {
             skill.directed=framevr::spellaim::Directed(flags,missile,serverFunction);
+            // Telemetry: "Frame skill row:" once per skill the aim rules do not know (the Warlock's
+            // 373-402 first): its game flags, to give it the right rule (aim_rules.h)
+            if(static bool seen[512]{};skillId>=0&&skillId<512&&!seen[skillId]&&framevr::aimrules::Of(skillId,skill.directed)==framevr::aimrules::Use::Native&&(skillId<357||skillId>372)) {
+                seen[skillId]=true;char line[200];
+                std::snprintf(line,sizeof line,"Frame skill row: skill %d flags 0x%08x server function %d missile %d directed %d",skillId,flags,int(serverFunction),int(missile),int(skill.directed));
+                framevr::logging::Write(line);
+            }
             skill.missile=serverFunction==0?missile:-1;
             skill.motion=framevr::weaponskills::Bow(skillId)||(skillId==framevr::weaponskills::Smite&&serverFunction==150);
             int16_t start=-1,secondary=-1;
