@@ -128,7 +128,9 @@ capacity in a full Paladin kit.
 The throwing kit, for any class, is one normal stack of each thrown weapon
 missile: a Javelin, a Pilum, a Glaive, Throwing Knives and Throwing Axes
 (14 inventory cells). Equip one in the right hand and throw it by hand with the
-right trigger on Attack, Throw or nothing; the kit leaves bindings alone.
+right trigger on Attack, Throw or nothing; the kit leaves bindings alone. A
+Barbarian can equip the knives in one hand and the axes in the other to test
+Double Throw.
 
 ## Shield debug draws
 

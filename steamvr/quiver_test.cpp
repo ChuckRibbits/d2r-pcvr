@@ -124,6 +124,8 @@ int main() {
               "each with its own missile");
         Check(!weaponskills::Loadable(15,38,false)&&!weaponskills::Loadable(7,12,true)&&!weaponskills::Loadable(15,1,true)&&!weaponskills::Loadable(10,-1,true),
               "no javelin skill on a bow, no arrow skill on a javelin, no stranger missile, no melee Jab");
+        Check(weaponskills::Loadable(weaponskills::DoubleThrow,-1,true)&&!weaponskills::Loadable(weaponskills::DoubleThrow,-1,false),
+              "Double Throw (no missile of its own) rides a throw, never a bow");
         q.Step(7,-1,-1,-1,-1,true);
         r=q.Step(7,2,25,-1,43,true,true);Check(r.consumed&&r.change==Quiver::Change::Loaded&&q.Current().skill==25,"a thrown weapon loads Plague Javelin");
         q.Step(7,-1,-1,-1,-1,true,true);

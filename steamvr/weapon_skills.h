@@ -4,7 +4,7 @@
 #include <cstdint>
 
 namespace framevr::weaponskills {
-inline constexpr int Attack=0,Throw=2,Smite=97,Strafe=26;
+inline constexpr int Attack=0,Throw=2,Smite=97,Strafe=26,DoubleThrow=140;
 enum class Action { Native, Arrow, Volley, Shield };
 inline Action Classify(int skill) {
     switch(skill) {
@@ -48,9 +48,11 @@ inline bool JavelinMissile(int missile) {
         default:return false;
     }
 }
-// What a physical release can carry: a bow's arrow skills, a thrown weapon's javelin skills.
+// What a physical release can carry: a bow's arrow skills; a thrown weapon's
+// javelin skills, and the Barbarian's Double Throw (Skills.txt srvdofunc 74,
+// no srvmissile: each throw flies the throwing hand's own weapon).
 inline bool Loadable(int skill,int missile,bool javelin) {
-    return javelin?JavelinSkill(skill)&&JavelinMissile(missile):QuiverSkill(skill)&&QuiverMissile(missile);
+    return javelin?(JavelinSkill(skill)&&JavelinMissile(missile))||skill==DoubleThrow:QuiverSkill(skill)&&QuiverMissile(missile);
 }
 // Bow quiver: pressing a face button assigned to a quiver skill loads that
 // skill into every following nocked arrow instead of casting it. Pressing the

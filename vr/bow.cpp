@@ -16,6 +16,7 @@
 #include "native_ui_signatures.h"
 #include "spells.h"
 #include "melee.h"
+#include "melee_weapon.h"
 #include "combat.h"
 #include "projectiles.h"
 #include "sigscan.h"
@@ -28,7 +29,7 @@
 #include "../steamvr/quiver_impact.h"
 #include "../steamvr/spell_aim_assist.h"
 #include "../steamvr/holy_bolt.h"
-namespace gamestate {uint64_t LocalPlayer();bool MenuOpen();uint32_t HandsKey();uint32_t WeaponSet();uint32_t WeaponType();}
+namespace gamestate {uint64_t LocalPlayer();bool MenuOpen();uint32_t HandsKey();uint32_t WeaponSet();uint32_t WeaponType();framevr::dualwield::Equipment MeleeEquipment();}
 namespace bowvr {
 namespace {
 using namespace framevr::bowflight;
@@ -113,6 +114,7 @@ std::atomic<unsigned> holyAllowed{0},holyRejected{0};
 std::atomic<unsigned> previewCreated{0},previewRefused{0},previewRecovered{0},previewAbandoned{0},uiRecovered{0};
 std::atomic<unsigned> gameRecovered{0};
 std::atomic<unsigned> quiverShots{0},quiverFallbacks{0},quiverRefused{0};
+std::atomic<unsigned> doubleThrows[2]{},throwRefused{0};
 struct Launch {
     Shot shot{};uintptr_t game=0,player=0;int slot=-1;
     framevr::aimassist::Homing homing{};
@@ -398,6 +400,11 @@ uintptr_t Shoot(uintptr_t game,int missile,uintptr_t player,int skill,int level,
     }
     return originalShoot(game,missile,player,skill,level,extra,offsetX,offsetY,targetX,targetY,ammo);
 }
+// A basic throw of the hand's weapon: the native Throw, or Left Hand Throw.
+void ThrowWeapon(uintptr_t game,uintptr_t player,int hand) {
+    if(hand==1)spellvr::ThrowLeft(game,player);
+    else reinterpret_cast<int(*)(uintptr_t,uintptr_t,int,int)>(d2rsig::Addr(ThrowRva))(game,player,2,1);
+}
 void __cdecl Apply(const D2RL::PluginContext*,void* token) noexcept {
     std::array<Shot,4> batch;size_t n=0;
     {std::lock_guard lock(mutex);
@@ -441,6 +448,20 @@ void __cdecl Apply(const D2RL::PluginContext*,void* token) noexcept {
         if(quiverArrow&&!spellvr::PrepareArrow(shot,game,player)) {
             shot.skill=shot.owner=shot.missile=-1;shot.level=0;quiverArrow=false;++quiverRefused;
         }
+        // With a throwing weapon in each hand, the native weapon selector is
+        // scoped to the throwing hand's weapon: Double Throw throws it, and
+        // Shoot uses up that stack (#224). Only Double Throw throws left.
+        uintptr_t thrown=0;
+        if(javelin) {
+            const auto weapons=gamestate::MeleeEquipment();uint32_t id=0;
+            if(framevr::dualwield::ThrownType(weapons.Type(shot.hand)))thrown=meleeweapon::Select(player,shot.hand,weapons);
+            if(thrown&&(!Read(thrown+8,id)||id!=weapons.displayed[shot.hand]))thrown=0;
+        }
+        bool doubleThrow=DoubleThrow(shot);
+        if(doubleThrow&&(!thrown||!spellvr::PrepareThrow(shot,game,player))) {
+            shot.skill=shot.owner=-1;shot.level=0;doubleThrow=false;++quiverRefused;
+        }
+        if(javelin&&shot.hand!=0&&(shot.hand!=1||!thrown||!spellvr::ThrowReady())){++refused;++throwRefused;continue;}
         if(!spell&&(javelin?gamestate::WeaponType()!=D2RVR_TYPE_JAVELIN&&gamestate::WeaponType()!=D2RVR_TYPE_THROWING:crossbow?
            (gamestate::WeaponType()!=D2RVR_TYPE_CROSSBOW||
             reinterpret_cast<int(*)(uintptr_t,int*)>(d2rsig::Addr(MissileTypeRva))(player,&level)!=31):
@@ -468,6 +489,17 @@ void __cdecl Apply(const D2RL::PluginContext*,void* token) noexcept {
         if(spell) {
             spellvr::Cast(shot,game,player);
             if(launch.created)spellvr::Fired(shot,game,player);
+        } else if(doubleThrow) {
+            // Its start pays mana; srvdofunc 74 throws the scoped weapon through
+            // Shoot. Refused (mana, town), the hand still throws its weapon.
+            meleeweapon::Scope selected(player,thrown);
+            spellvr::Cast(shot,game,player);
+            if(launch.created)++doubleThrows[shot.hand];
+            else {
+                ++quiverFallbacks;
+                launch.shot.skill=launch.shot.owner=-1;launch.shot.level=0;
+                ThrowWeapon(game,player,shot.hand);
+            }
         } else if(quiverArrow) {
             // The skill's own start/dispatch pays mana and creates its missile
             // through Shoot, which takes the frozen bow vector like a basic arrow.
@@ -482,7 +514,10 @@ void __cdecl Apply(const D2RL::PluginContext*,void* token) noexcept {
                 if(javelin)reinterpret_cast<int(*)(uintptr_t,uintptr_t,int,int)>(d2rsig::Addr(ThrowRva))(game,player,2,1);
                 else reinterpret_cast<int(*)(uintptr_t,uintptr_t,int,int)>(d2rsig::Addr(AttackRva))(game,player,0,1);
             }
-        } else reinterpret_cast<int(*)(uintptr_t,uintptr_t,int,int)>(d2rsig::Addr(javelin?ThrowRva:AttackRva))(game,player,javelin?2:0,1);
+        } else if(javelin) {
+            meleeweapon::Scope selected(player,thrown);   // none unless a weapon in each hand
+            ThrowWeapon(game,player,shot.hand);
+        } else reinterpret_cast<int(*)(uintptr_t,uintptr_t,int,int)>(d2rsig::Addr(AttackRva))(game,player,0,1);
         if(!launch.created)++refused;
         if(crossbow)crossbowCadence.Landed(shot.session,fireAt,launch.created?crossbowCycle:100);
         if(crossbow&&launch.created){++crossbowFired;crossbowCycleMs=crossbowCycle;}
@@ -1129,6 +1164,11 @@ void Report() {
         const auto shots=quiverShots.exchange(0),fallbacks=quiverFallbacks.exchange(0),refusedStart=quiverRefused.exchange(0);
         if(shots||fallbacks||refusedStart) {
             char line[192];snprintf(line,sizeof line,"Frame bow quiver: skill arrows=%u basic fallbacks after refusal=%u unprepared=%u",shots,fallbacks,refusedStart);
+            framevr::logging::Write(line);
+        }
+        const auto right=doubleThrows[0].exchange(0),left=doubleThrows[1].exchange(0),refusedThrow=throwRefused.exchange(0);
+        if(right||left||refusedThrow) {
+            char line[160];snprintf(line,sizeof line,"Frame double throw: right=%u left=%u left throws refused=%u",right,left,refusedThrow);
             framevr::logging::Write(line);
         }
     }

@@ -58,10 +58,13 @@ inline void Grip(Shot& s,uint32_t missile) {
     if(s.kind!=Kind::Javelin||s.gripped)return;
     s.origin=s.origin-s.direction*ThrownFor(missile).grip;s.gripped=true;
 }
-// The native Throw named the thrown weapon's missile (a basic throw; a javelin
-// skill names its own missile up front).
+// Double Throw (#224): a throw that carries the skill but flies the hand's own
+// weapon, the missile its native function names, as a basic throw does.
+inline bool DoubleThrow(const Shot& s){return s.kind==Kind::Javelin&&s.skill==weaponskills::DoubleThrow;}
+// The native Throw (or Double Throw) named the thrown weapon's missile; a
+// javelin skill names its own missile up front.
 inline bool ResolveThrown(Shot& s,uint32_t missile) {
-    if(s.kind!=Kind::Javelin||s.skill>=0||s.missile>0||!ThrownMissile(missile))return false;
+    if(s.kind!=Kind::Javelin||(s.skill>=0&&!DoubleThrow(s))||s.missile>0||!ThrownMissile(missile))return false;
     s.missile=int(missile);Grip(s,missile);return true;
 }
 // A quiver arrow: a physical bow release that carries a single-missile arrow
@@ -69,7 +72,7 @@ inline bool ResolveThrown(Shot& s,uint32_t missile) {
 // native missile, its costs, damage and hit effects.
 inline bool SkillArrow(const Shot& s){return s.kind==Kind::Arrow&&s.skill>=0;}
 // A thrown weapon that carries a javelin skill (#224): the skill's own missile.
-inline bool SkillJavelin(const Shot& s){return s.kind==Kind::Javelin&&s.skill>=0;}
+inline bool SkillJavelin(const Shot& s){return s.kind==Kind::Javelin&&s.skill>=0&&!DoubleThrow(s);}
 // A physical release carrying a skill: a quiver arrow or a javelin skill.
 inline bool SkillRelease(const Shot& s){return SkillArrow(s)||SkillJavelin(s);}
 // Lightning Bolt and Lightning Fury have no mesh (lightning_javelin

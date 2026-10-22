@@ -167,6 +167,11 @@ int main() {
         auto stranger=skill;stranger.missile=12;Check(!Valid(stranger),"a javelin cannot carry an arrow skill's missile");
         auto refused=Release();refused.kind=Kind::Javelin;Grip(refused,1);
         Check(ResolveThrown(refused,371)&&Length(refused.origin-(hand-refused.direction*JavelinGrip))<1e-5f,"a refused skill's basic throw is not gripped twice");
+        // Double Throw carries its skill but flies the hand's own weapon, named by the native.
+        Shot both=Release();both.kind=Kind::Javelin;both.skill=framevr::weaponskills::DoubleThrow;both.hand=1;
+        Check(DoubleThrow(both)&&!SkillJavelin(both)&&!SkillRelease(both)&&Valid(both)&&MissileId(both)==1,"Double Throw is a throw, not a skill missile");
+        Check(ResolveThrown(both,35)&&MissileId(both)==35&&Length(both.origin-(hand-both.direction*.08f))<1e-5f,"its axe is named, and gripped once");
+        Check(!ResolveThrown(both,36)&&MissileId(both)==35,"named once");
         auto det=[](const float* m){return m[0]*(m[5]*m[10]-m[6]*m[9])-m[4]*(m[1]*m[10]-m[2]*m[9])+m[8]*(m[1]*m[6]-m[2]*m[5]);};
         for(const Vec d:{Vec{0,0,-1},Vec{1,0,0},Vec{0,1,0},Vec{.6f,0,.8f}}) {
             Flight knife;knife.shot=Release();knife.shot.kind=Kind::Javelin;knife.shot.direction=d;ResolveThrown(knife.shot,36);knife.alive=true;knife.distance=3;
