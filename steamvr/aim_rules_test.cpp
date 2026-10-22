@@ -33,6 +33,7 @@ int main() {
               "Ground skills Where you point: placed by the rules, never on a monster; other casts untouched");
         Check(RulesAim(Use::Ground,false,monster)&&MonsterSwitch(Use::Ground,false,monster),"Ground skills Aimed monster: on the monster");
         Check(!RulesAim(Use::Native,false,{true,true,2}),"a skill without a rule (the Warlock's, self skills) is never the rules'");
+        Check(!Any(off)&&Any(spells)&&Any(bows)&&Any(point)&&Any(monster),"any option On wakes the rules; all Off, none of them runs");
     }
     std::puts("aim rules ok");
     return 0;

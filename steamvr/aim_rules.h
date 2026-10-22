@@ -59,6 +59,9 @@ inline bool Circle(Use use){return use==Use::Ground;}
 // VR Settings > Aim: Spells and Bow skills go to the aimed monster, and Ground
 // skills (0 the game's own aim, 1 where you point, 2 the aimed monster).
 struct Switches {bool spells=false,bowSkills=false;int ground=0;};
+// Any option On: the rules can aim some cast. All Off, nothing of them runs:
+// no arm tracking, transport reads or hand-offs (cost while Off).
+inline bool Any(const Switches& s){return s.spells||s.bowSkills||s.ground>0;}
 // The rules aim a cast only with its kind's option On. Off (the defaults),
 // every cast aims as it did before them: the casting hand's ray, Bone Wall and
 // Prison on their own floor point, ground skills by the game (#159 review).
