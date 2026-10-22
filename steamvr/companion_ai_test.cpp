@@ -527,12 +527,12 @@ int main() {
         assert(!IsCriticalHealth(-5.0f, 100.0f));
         assert(!IsCriticalHealth(50.0f, 0.0f));   // Invalid max life
 
-        // Recovery triggers at or above 70% life (hysteresis)
-        assert(IsHealthRecovered(70.0f, 100.0f));
+        // Recovery triggers at or above 50% life (synchronized with MercLowHealth / red tint off)
+        assert(IsHealthRecovered(50.0f, 100.0f));
         assert(IsHealthRecovered(75.0f, 100.0f));
         assert(IsHealthRecovered(100.0f, 100.0f));
-        assert(!IsHealthRecovered(69.9f, 100.0f));
-        assert(!IsHealthRecovered(50.0f, 100.0f));
+        assert(!IsHealthRecovered(49.9f, 100.0f));
+        assert(!IsHealthRecovered(25.0f, 100.0f));
     }
 
     // =========================================================================
@@ -579,8 +579,11 @@ int main() {
         assert(controller.Update(35.0f, 100.0f, 10500));
         assert(controller.IsInRetreat());
 
-        // Health recovers to 72% (>= 70% recovery threshold): exits retreat!
-        assert(!controller.Update(72.0f, 100.0f, 12000));
+        // Health recovers to 51% (>= 50% recovery threshold synchronized with MercLowHealth): exits retreat!
+        assert(!controller.Update(51.0f, 100.0f, 12000));
+        assert(!controller.IsInRetreat());
+        // While health is >= 50% (red tint off), distress cue never plays even after cooldown
+        assert(!controller.Update(60.0f, 100.0f, 25000));
         assert(!controller.IsInRetreat());
 
         // Drop to 40% life: enters retreat again

@@ -274,7 +274,15 @@ std::vector<uint8_t> Paint(const Snapshot& s,const Output& o,int selection,const
             SetTextColor(dc,available?RGB(235,218,181):RGB(148,137,117));
             const char* title=i==dev::DebugDrawsChoice?(s.devDebugDraws?"Render debug draws: ON":"Render debug draws: OFF"):
                               i==dev::TurnsKeepOwnChoice?(s.devTurnsKeepOwn==1?"By turns own picture: NEAR":s.devTurnsKeepOwn==2?"By turns own picture: ALL":
-                                                          s.devTurnsKeepOwn==3?"By turns own picture: FX":s.devTurnsKeepOwn==4?"By turns own picture: NEAR+FX":"By turns own picture: OFF"):choice.name;
+                                                          s.devTurnsKeepOwn==3?"By turns own picture: FX":s.devTurnsKeepOwn==4?"By turns own picture: NEAR+FX":"By turns own picture: OFF"):
+                              i==dev::MercTypeChoice?(
+                                  !s.merc.known ? "Mercenary: None" :
+                                  s.merc.classId==271 ? "Mercenary: Act I Rogue" :
+                                  s.merc.classId==338 ? "Mercenary: Act II Desert Guard" :
+                                  s.merc.classId==359 ? "Mercenary: Act III Iron Wolf" :
+                                  (s.merc.classId==560||s.merc.classId==561) ? "Mercenary: Act V Barbarian" :
+                                  "Mercenary: Active"
+                              ):choice.name;
             text(title,{x+8,y+4,right-8,y+29});
             SelectObject(dc,shortcutFont);text(choice.detail,{x+8,y+29,right-8,bottom-4});SelectObject(dc,font);
         }

@@ -485,6 +485,13 @@ unsigned PeelCount() {
     return g_peelEvents.load();
 }
 
+void ResetArchetype() {
+    g_watchdog.Reset();
+    g_formationController.Reset();
+    g_retreatController.Reset();
+    g_bodyguardController.Reset();
+}
+
 void ConfigureDistressSound(int soundId) {
     g_distressSound.store(soundId);
 }

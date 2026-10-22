@@ -30,7 +30,7 @@ inline constexpr float UnstuckFlankDistance = 2.2f;      // Lateral flank offset
 // Phase 3: Survival, Self-Preservation & Potion Interaction Synergy
 // CriticalHealthRatio is synchronized with MercLowHealth (0.50f / 50% life in interactions.h) for the red hurt tint
 inline constexpr float CriticalHealthRatio = 0.50f;       // Trigger tactical retreat below 50% life (when merc turns red)
-inline constexpr float RecoveryHealthRatio = 0.70f;       // Exit tactical retreat when healed to >= 70% life (or on potion)
+inline constexpr float RecoveryHealthRatio = 0.50f;       // Exit tactical retreat when healed to >= 50% life (synchronized with MercLowHealth / red tint off)
 inline constexpr uint64_t DistressCueCooldownMs = 8000;   // Minimum interval between audible distress cues (8s)
 inline constexpr float ReceivingStanceDistance = 6.5f;    // ~2.6m in front of player (sub-tiles)
 inline constexpr float ReceivingStanceAngleDeg = 20.0f;   // +20 deg forward flank for clear throw trajectory
@@ -163,15 +163,15 @@ struct TacticalRetreatController {
                 return false;
             }
 
-            // Periodic distress reminder while still in critical danger
-            if (nowMs - lastDistressCueMs >= DistressCueCooldownMs) {
+            // Periodic distress reminder while still in critical danger (must be red / < 50% life)
+            if (IsCriticalHealth(health, maxHealth) && nowMs - lastDistressCueMs >= DistressCueCooldownMs) {
                 lastDistressCueMs = nowMs;
                 return true;
             }
             return false;
         }
 
-        // Check entry into critical retreat (< 25% HP)
+        // Check entry into critical retreat (< 50% HP)
         if (IsCriticalHealth(health, maxHealth)) {
             inRetreat = true;
             retreatStartMs = nowMs;

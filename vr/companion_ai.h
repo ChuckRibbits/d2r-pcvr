@@ -16,5 +16,6 @@ void ConfigurePeel(bool enabled);
 void OnPotionReceived();
 bool IsInTacticalRetreat();
 unsigned PeelCount();
+void ResetArchetype();
 }
 
