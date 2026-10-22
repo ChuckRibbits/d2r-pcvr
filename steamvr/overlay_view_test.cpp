@@ -27,9 +27,11 @@ int main() {
     // local = -direction * 3 + (0, 0.1, 0).
     const portal::Vec flat{-.612f,-.5f,-.612f};
     portal::Vec v;
-    Check(Upright(flat,v)&&v.x==0&&v.z==0&&v.y==flat.y,"flat camera: vertical part kept exactly");
+    Check(Upright(flat,v)&&v.x==0&&v.z==0&&v.y==flat.y*Lift,"flat camera: Lift of the vertical part kept");
     const portal::Vec spawn{-3*v.x,.1f-3*v.y,-3*v.z};
-    Check(spawn.x==0&&spawn.z==0&&Near(spawn.y,1.6f),"the spawn push becomes a straight lift, as on the flat screen");
+    Check(spawn.x==0&&spawn.z==0&&Near(spawn.y,.55f),"the spawn push becomes a straight lift");
+    // The full lift was 1.5 units; about 20 cm (~1.05 units at 5.25 per metre) lower.
+    Check(Near(1.5f-(spawn.y-.1f),1.05f),"lowered about 20 cm");
     const portal::Vec vrView{.895f,-.442f,.056f};
     const float len=std::sqrt(vrView.x*vrView.x+vrView.y*vrView.y+vrView.z*vrView.z);
     Check(Near(-3*vrView.x,-2.686f,.01f)&&Near(.1f-3*vrView.y,1.425f,.01f),"captured push is -3 x view direction");
