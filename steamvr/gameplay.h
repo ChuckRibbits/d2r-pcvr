@@ -47,6 +47,7 @@ struct Input {
     float grip[2]{}, trigger=0;
     // Double Throw (#224): the left trigger arms the left hand's own throw.
     bool leftThrow=false; float leftTrigger=0;
+    float throwLift=0; // degrees above the hand's path (VR Settings > Aim > Throw lift)
     Weapon weapon=Weapon::Unknown;
     MeleeStyle meleeStyle=MeleeStyle::OneHand;
     uint32_t equipment=0;
@@ -105,6 +106,15 @@ inline bool RouteCrossbow(const Input& in,Output& out,bool rightHand,bool ready,
     if(!ready||!rightHand||!in.active||in.weapon!=Weapon::Crossbow||out.block||!out.rayValid||
        !(out.attack||(out.skill>=0&&skillAvailable&&skillId==0)))return false;
     out.attack=false;out.skill=-1;return true;
+}
+// Raises a direction by degrees (negative lowers it), keeping its heading;
+// never past straight up or down. A throw's hand path dips as it is let go.
+inline Vec Lift(Vec d,float degrees) {
+    const float flat=std::sqrt(d.x*d.x+d.z*d.z);
+    if(!(flat>1e-4f)||!std::isfinite(degrees)||degrees==0)return d;
+    const float pitch=std::clamp(std::atan2(d.y,flat)+degrees*(3.14159265f/180),-1.55f,1.55f);
+    const float scale=std::cos(pitch)/flat;
+    return {d.x*scale,std::sin(pitch),d.z*scale};
 }
 // One hand's physical throw: armed by its held trigger, it leaves the hand on
 // release after deliberate travel, with the hand's recent velocity.
@@ -240,13 +250,13 @@ public:
             out.javelinReady=true;
             if(triggerEdge){throwing.Arm(in.hand[0].p,in.time);out.feedback=1;}
             if(throwing.Step(in.hand[0].p,handDelta,dt,in.time,released,out.rayDirection,out.draw)) {
-                out.javelinRelease=true;out.feedback=2;out.rayOrigin=in.hand[0].p;
+                out.javelinRelease=true;out.feedback=2;out.rayOrigin=in.hand[0].p;out.rayDirection=Lift(out.rayDirection,in.throwLift);
             }
             // Double Throw: the left hand throws its own weapon the same way.
             if(in.leftThrow) {
                 if(leftEdge){leftThrowing.Arm(in.hand[1].p,in.time);out.leftFeedback=1;}
                 if(leftThrowing.Step(in.hand[1].p,leftDelta,dt,in.time,leftReleased,out.leftDirection,out.leftDraw)) {
-                    out.leftRelease=true;out.leftFeedback=2;out.leftOrigin=in.hand[1].p;
+                    out.leftRelease=true;out.leftFeedback=2;out.leftOrigin=in.hand[1].p;out.leftDirection=Lift(out.leftDirection,in.throwLift);
                 }
             } else leftThrowing={};
             out.meleeContact=!trigger&&!out.javelinRelease;
