@@ -414,6 +414,171 @@ inline Vec2 CalculateDoorwayClearance(Vec2 playerPos, float forwardX, float forw
     };
 }
 
+// Phase 4: Active Bodyguard Instinct ("Peeling" & Blind-Spot Coverage)
+inline constexpr float BlindSpotCosThreshold = 0.5735764f;   // cos(55 deg) for 110 deg FOV
+inline constexpr float EmergencyPeelDistance = 10.0f;        // ~4m: urgent peeling if player is struck
+inline constexpr float BlindSpotAmbushDistance = 18.0f;      // ~7.2m: blind-spot flank threat
+inline constexpr float UrgentThreatScoreThreshold = 200.0f;  // Threshold to trigger bodyguard intervention
+inline constexpr uint64_t BodyguardPeelCooldownMs = 1000;     // Rate limit for commanding peel moves
+
+struct ThreatCandidate {
+    uint32_t unitId = 0;
+    uint32_t classId = 0;
+    Vec2 pos{};           // Sub-tile coordinates
+    float distance = 0.0f; // Distance to player (sub-tiles)
+    float cosAngle = 0.0f; // Dot product with player forward
+    bool isBlindSpot = false; // Outside player's ~110 deg FOV
+    bool isRear = false;      // Behind player (cosAngle < 0)
+    bool clearLine = false;   // Direct line of sight
+    float score = 0.0f;       // Threat priority score
+};
+
+// Evaluates a threat candidate relative to player position and look heading
+inline ThreatCandidate EvaluateThreat(uint32_t unitId, uint32_t classId, Vec2 monsterPos, Vec2 playerPos,
+                                     float forwardX, float forwardY, bool clearLine, bool playerHitRecovery) {
+    ThreatCandidate t{};
+    t.unitId = unitId;
+    t.classId = classId;
+    t.pos = monsterPos;
+    t.clearLine = clearLine;
+
+    const float dx = monsterPos.x - playerPos.x;
+    const float dy = monsterPos.y - playerPos.y;
+    t.distance = std::hypot(dx, dy);
+
+    const float fLen = std::hypot(forwardX, forwardY);
+    const float nx = (std::isfinite(fLen) && fLen >= 1e-4f) ? (forwardX / fLen) : 0.0f;
+    const float ny = (std::isfinite(fLen) && fLen >= 1e-4f) ? (forwardY / fLen) : -1.0f;
+
+    if (t.distance >= 1e-3f) {
+        const float vx = dx / t.distance;
+        const float vy = dy / t.distance;
+        t.cosAngle = std::clamp(nx * vx + ny * vy, -1.0f, 1.0f);
+    } else {
+        t.cosAngle = 1.0f;
+    }
+
+    t.isBlindSpot = t.cosAngle < BlindSpotCosThreshold;
+    t.isRear = t.cosAngle < 0.0f;
+
+    // Scoring:
+    // Priority 1: Player in hit recovery / stun and enemy is within close range
+    if (playerHitRecovery && t.distance <= EmergencyPeelDistance) {
+        t.score = 1000.0f - t.distance * 10.0f;
+        if (t.clearLine) t.score += 50.0f;
+    }
+    // Priority 2: Imminent blind-spot ambush (< 10 sub-tiles behind/flank)
+    else if (t.isBlindSpot && t.distance <= 10.0f) {
+        t.score = 500.0f - t.distance * 10.0f;
+        if (t.isRear) t.score += 100.0f;
+        if (t.clearLine) t.score += 50.0f;
+    }
+    // Priority 3: Approaching flanker (< 18 sub-tiles in blind spot)
+    else if (t.isBlindSpot && t.distance <= BlindSpotAmbushDistance) {
+        t.score = 250.0f - t.distance * 5.0f;
+        if (t.isRear) t.score += 50.0f;
+        if (t.clearLine) t.score += 25.0f;
+    }
+    // Priority 4: Standard frontal combatant
+    else {
+        t.score = 50.0f - t.distance;
+        if (t.clearLine) t.score += 10.0f;
+    }
+
+    return t;
+}
+
+// Computes interception position for bodyguard peeling
+inline Vec2 CalculateInterceptPosition(Vec2 playerPos, Vec2 monsterPos, Archetype archetype) {
+    const float dx = monsterPos.x - playerPos.x;
+    const float dy = monsterPos.y - playerPos.y;
+    const float dist = std::hypot(dx, dy);
+
+    if (dist < 1e-3f) {
+        return playerPos;
+    }
+
+    const float nx = dx / dist;
+    const float ny = dy / dist;
+
+    if (archetype == Archetype::MeleeVanguard) {
+        // Melee companion steps into the path between monster and player, ~2.0 sub-tiles from monster
+        const float offsetFromMonster = std::min(2.0f, dist * 0.5f);
+        return {
+            monsterPos.x - nx * offsetFromMonster,
+            monsterPos.y - ny * offsetFromMonster
+        };
+    } else {
+        // Ranged companion maintains stand-off distance (~4.5 sub-tiles) with clear line of fire
+        const float standoff = std::clamp(dist * 0.7f, 3.5f, 6.0f);
+        return {
+            playerPos.x + nx * (dist - standoff),
+            playerPos.y + ny * (dist - standoff)
+        };
+    }
+}
+
+// Bodyguard controller managing blind-spot threat interception and emergency peeling
+struct BodyguardController {
+    uint32_t activeTargetId = 0;
+    uint64_t lastPeelMs = 0;
+    Vec2 lastInterceptPos{};
+    bool inPeelAction = false;
+
+    // Evaluates a set of threat candidates and selects the primary peel target
+    bool SelectPrimaryThreat(std::span<const ThreatCandidate> candidates, ThreatCandidate& outBest) {
+        float highestScore = -1.0f;
+        int bestIdx = -1;
+
+        for (size_t i = 0; i < candidates.size(); ++i) {
+            if (candidates[i].score > highestScore) {
+                highestScore = candidates[i].score;
+                bestIdx = int(i);
+            }
+        }
+
+        if (bestIdx >= 0 && highestScore >= UrgentThreatScoreThreshold) {
+            outBest = candidates[bestIdx];
+            return true;
+        }
+
+        return false;
+    }
+
+    // Evaluates whether an interception movement should be dispatched
+    bool Evaluate(const ThreatCandidate& threat, Vec2 compPos, Vec2 playerPos,
+                  Archetype archetype, uint64_t nowMs, Vec2& outTarget) {
+        const Vec2 intercept = CalculateInterceptPosition(playerPos, threat.pos, archetype);
+        const float distToIntercept = std::hypot(compPos.x - intercept.x, compPos.y - intercept.y);
+
+        // If already within 2.5 sub-tiles of intercept position: companion is actively screening
+        if (distToIntercept <= 2.5f) {
+            activeTargetId = threat.unitId;
+            inPeelAction = true;
+            return false;
+        }
+
+        // Rate limit reposition commands unless target changed
+        if (threat.unitId != activeTargetId || (nowMs - lastPeelMs >= BodyguardPeelCooldownMs)) {
+            activeTargetId = threat.unitId;
+            lastPeelMs = nowMs;
+            lastInterceptPos = intercept;
+            outTarget = intercept;
+            inPeelAction = true;
+            return true;
+        }
+
+        return false;
+    }
+
+    void Reset() {
+        activeTargetId = 0;
+        lastPeelMs = 0;
+        lastInterceptPos = {};
+        inPeelAction = false;
+    }
+};
+
 // Checks if animMode indicates active attack or skill cast
 inline bool IsCombatMode(uint32_t animMode) {
     return animMode >= 4 && animMode <= 8;

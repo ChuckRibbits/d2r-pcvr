@@ -216,3 +216,41 @@ Phase 3 implements companion self-preservation instinct, audible audio alerts, a
 
 5. **Adaptive Rescue Watchdog:**
    - When in retreat, `StuckWatchdog` adapts with a more urgent threshold (`RetreatStuckDistanceThreshold = 15.0f` sub-tiles, `RetreatStuckTimeoutMs = 4000ms`), rescuing the companion to the receiving stance in front of the player if trapped behind barriers while critically wounded.
+
+---
+
+## 8. Phase 4 Implementation Summary: Active Bodyguard Instinct ("Peeling" & Blind-Spot Coverage)
+
+Phase 4 introduces proactive bodyguard threat scoring and active spatial peeling to protect the player's blind spots in VR:
+
+1. **VR Field-of-View & Blind-Spot Evaluation:**
+   - Evaluates hostiles relative to the player's live HMD forward vector:
+     - **Forward Cone:** ~110° FOV (`cosAngle >= 0.5735764f`).
+     - **Blind Spots:** 250° peripheral and rear sectors (`cosAngle < 0.5735764f`).
+     - **Direct Rear Sector:** Enemy behind the player's back (`cosAngle < 0.0f`).
+   - Hostiles inside the blind spots are invisible to the player in VR and receive high threat priority.
+
+2. **Hierarchical Threat Scoring (`EvaluateThreat`):**
+   - **Emergency Stun / Hit Recovery Relief (Score: 1000 - dist * 10):**
+     - When the player enters hit recovery (`PLRMODE_GETHIT = 4`), knocked down, or stunned, any enemy within close range (<= 10 sub-tiles / ~4m) receives immediate maximum peeling priority (+50 bonus if unobstructed line of sight).
+   - **Imminent Blind-Spot Ambush (Score: 500 - dist * 10):**
+     - Flankers closing within 10 sub-tiles in the player's blind spots receive urgent intervention (+100 if rear, +50 if clear line).
+   - **Approaching Flankers (Score: 250 - dist * 5):**
+     - Monsters closing within 18 sub-tiles in blind spots (+50 if rear, +25 if clear line).
+   - **Standard Frontal Threats (Score: 50 - dist):**
+     - Low priority since the player already sees and handles them in front.
+
+3. **Archetype Intercept Positioning (`CalculateInterceptPosition`):**
+   - Rather than blindly running into the monster's exact coordinate:
+     - **Melee Vanguard (Act 2 Guard, Act 5 Barbarian):** Takes an intercept stance 2.0 sub-tiles in front of the monster on the vector toward the player, physically interposing between the attacker and the player to block charges and absorb melee blows.
+     - **Ranged Overwatch (Act 1 Rogue, Act 3 Iron Wolf):** Holds a stand-off distance 8.0 sub-tiles away along the lateral flank (+/-90° perpendicular vector), establishing a clean shooting corridor without obstructing the player's line of retreat.
+
+4. **Smooth Native Pathing (`PathMoveRva` at `0x381890`):**
+   - Bodyguard peeling commands are dispatched directly to the unit's native pathing state machine via `pathMoveFn(compPath, hireling, targetRoom, targetX, targetY)`.
+   - The companion smoothly walks or runs to intercept the flanking monster with 100% native animation and collision physics, never teleporting.
+   - Guarded by a rate limiter (`BodyguardPeelCooldownMs = 1000ms`) and hysteresis deadband (3.0 sub-tiles) to prevent thrashing between multiple threats.
+
+5. **Configuration & Live Telemetry:**
+   - Configurable via `[gameplay] companion_peel=1` in `d2r_pcvr.ini` (1 = enabled, 0 = disabled).
+   - Monitored live via `PeelCount()` and periodic console logging (`Frame companion AI: bodyguard peeling threat ... -> intercept (X, Y)`).
+

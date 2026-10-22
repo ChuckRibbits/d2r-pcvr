@@ -170,6 +170,12 @@ bool HirelingVitals(uint32_t hint, float& health, float& maxHealth, uint32_t& cl
     unitId = 12345;
     return true;
 }
+int Hostiles(Hostile* out, int max, float range, float& heroX, float& heroY) {
+    (void)out; (void)max; (void)range;
+    heroX = 50.0f;
+    heroY = 50.0f;
+    return 0;
+}
 } // namespace melee
 
 namespace bowvr {
@@ -647,6 +653,120 @@ int main() {
         assert(GetArchetypeDistressSound(MonStatsIndex::Barbarian2) == 3015);
         // Unknown/Fallback -> Paladin "Help!" (3171)
         assert(GetArchetypeDistressSound(9999) == 3171);
+    }
+
+    // =========================================================================
+    // 17. Phase 4: Blind-Spot Threat Detection & Classification Tests
+    // =========================================================================
+    {
+        using namespace framevr::companionai;
+        const Vec2 playerPos{ 100.0f, 100.0f };
+        const float forwardX = 0.0f;
+        const float forwardY = -1.0f; // Looking North (-Y)
+
+        // Monster 1: Directly ahead at distance 8 sub-tiles (North, 0 deg)
+        const auto tAhead = EvaluateThreat(1, 10, { 100.0f, 92.0f }, playerPos, forwardX, forwardY, true, false);
+        assert(!tAhead.isBlindSpot);
+        assert(!tAhead.isRear);
+        assert(tAhead.cosAngle > 0.99f);
+
+        // Monster 2: Front-right flank at 45 deg (inside 110 deg FOV)
+        const auto tFlankFront = EvaluateThreat(2, 10, { 105.6f, 94.4f }, playerPos, forwardX, forwardY, true, false);
+        assert(!tFlankFront.isBlindSpot);
+        assert(!tFlankFront.isRear);
+
+        // Monster 3: Pure right flank at 90 deg (outside 110 deg FOV -> blind spot)
+        const auto tSide = EvaluateThreat(3, 10, { 108.0f, 100.0f }, playerPos, forwardX, forwardY, true, false);
+        assert(tSide.isBlindSpot);
+        assert(!tSide.isRear); // cosAngle == 0.0f
+
+        // Monster 4: Directly behind at distance 6 sub-tiles (South, 180 deg)
+        const auto tBehind = EvaluateThreat(4, 10, { 100.0f, 106.0f }, playerPos, forwardX, forwardY, true, false);
+        assert(tBehind.isBlindSpot);
+        assert(tBehind.isRear); // cosAngle == -1.0f
+        assert(tBehind.distance == 6.0f);
+    }
+
+    // =========================================================================
+    // 18. Phase 4: Threat Scoring & Priority Tests
+    // =========================================================================
+    {
+        using namespace framevr::companionai;
+        const Vec2 playerPos{ 100.0f, 100.0f };
+        const float forwardX = 0.0f;
+        const float forwardY = -1.0f;
+
+        // Frontal monster at distance 8: normal score (~40-60)
+        const auto tFront = EvaluateThreat(1, 10, { 100.0f, 92.0f }, playerPos, forwardX, forwardY, true, false);
+        // Blind-spot monster at distance 8: high score (> 400)
+        const auto tBlind = EvaluateThreat(2, 10, { 108.0f, 100.0f }, playerPos, forwardX, forwardY, true, false);
+        // Rear ambush monster at distance 6: very high score (> 500)
+        const auto tRear = EvaluateThreat(3, 10, { 100.0f, 106.0f }, playerPos, forwardX, forwardY, true, false);
+        // Emergency peel: player in hit recovery with attacker at distance 4 (> 900)
+        const auto tEmergency = EvaluateThreat(4, 10, { 100.0f, 96.0f }, playerPos, forwardX, forwardY, true, true);
+
+        assert(tBlind.score > tFront.score);
+        assert(tRear.score > tBlind.score);
+        assert(tEmergency.score > tRear.score);
+        assert(tEmergency.score >= 900.0f);
+    }
+
+    // =========================================================================
+    // 19. Phase 4: Interception Position Calculation Tests
+    // =========================================================================
+    {
+        using namespace framevr::companionai;
+        const Vec2 playerPos{ 100.0f, 100.0f };
+        const Vec2 monsterPos{ 100.0f, 108.0f }; // 8 sub-tiles behind player
+
+        // Melee Vanguard: positions screening between monster and player (~2.0 sub-tiles from monster)
+        const Vec2 interceptMelee = CalculateInterceptPosition(playerPos, monsterPos, Archetype::MeleeVanguard);
+        assert(interceptMelee.x == 100.0f);
+        assert(interceptMelee.y > playerPos.y);  // Behind player toward monster
+        assert(interceptMelee.y < monsterPos.y); // Between player and monster
+        assert(std::fabs(monsterPos.y - interceptMelee.y - 2.0f) < 1e-3f);
+
+        // Ranged Overwatch: maintains stand-off distance
+        const Vec2 interceptRanged = CalculateInterceptPosition(playerPos, monsterPos, Archetype::RangedOverwatch);
+        assert(interceptRanged.x == 100.0f);
+        assert(interceptRanged.y > playerPos.y);
+        assert(interceptRanged.y < monsterPos.y);
+    }
+
+    // =========================================================================
+    // 20. Phase 4: Bodyguard Controller Selection & Cooldown Tests
+    // =========================================================================
+    {
+        using namespace framevr::companionai;
+        BodyguardController controller;
+        const Vec2 playerPos{ 100.0f, 100.0f };
+        const Vec2 compPos{ 100.0f, 97.0f }; // Companion is currently 3 sub-tiles ahead
+
+        ThreatCandidate candidates[3];
+        candidates[0] = EvaluateThreat(1, 10, { 100.0f, 85.0f }, playerPos, 0.0f, -1.0f, true, false); // Frontal (dist 15)
+        candidates[1] = EvaluateThreat(2, 20, { 100.0f, 108.0f }, playerPos, 0.0f, -1.0f, true, false); // Rear ambush (dist 8)
+        candidates[2] = EvaluateThreat(3, 30, { 110.0f, 100.0f }, playerPos, 0.0f, -1.0f, true, false); // Flanker (dist 10)
+
+        ThreatCandidate best{};
+        assert(controller.SelectPrimaryThreat(candidates, best));
+        assert(best.unitId == 2); // Rear ambush must be prioritized!
+
+        Vec2 targetMove{};
+        // First evaluation: commands reposition toward intercept
+        assert(controller.Evaluate(best, compPos, playerPos, Archetype::MeleeVanguard, 1000, targetMove));
+        assert(controller.inPeelAction);
+        assert(controller.activeTargetId == 2);
+
+        // Immediate subsequent tick with same threat: cooldown prevents command spam
+        assert(!controller.Evaluate(best, compPos, playerPos, Archetype::MeleeVanguard, 1200, targetMove));
+
+        // After cooldown expires (1100ms > BodyguardPeelCooldownMs): allows update if still far
+        assert(controller.Evaluate(best, compPos, playerPos, Archetype::MeleeVanguard, 2100, targetMove));
+
+        // When companion reaches intercept position (within 2.5 sub-tiles): no further move commanded
+        const Vec2 arrivedPos = CalculateInterceptPosition(playerPos, best.pos, Archetype::MeleeVanguard);
+        assert(!controller.Evaluate(best, arrivedPos, playerPos, Archetype::MeleeVanguard, 2500, targetMove));
+        assert(controller.inPeelAction);
     }
 
     return 0;

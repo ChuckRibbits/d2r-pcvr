@@ -21,6 +21,7 @@ using namespace D2RL;
 using ModeFn = int(*)();
 using RelocateFn = int(*)(uintptr_t game, uintptr_t unit, uintptr_t room, int x, int y, int unk1, int unk2);
 using RoomPointFn = uintptr_t(*)(uintptr_t room, int x, int y);
+using PathMoveFn = int(*)(uintptr_t path, uintptr_t unit, uintptr_t room, int x, int y);
 
 struct BankState {
     const void* rows = nullptr;
@@ -35,6 +36,7 @@ const ThreadService* g_threads = nullptr;
 ModeFn mode = nullptr;
 RelocateFn relocateFn = nullptr;
 RoomPointFn roomPointFn = nullptr;
+PathMoveFn pathMoveFn = nullptr;
 
 std::atomic<bool> g_enabled{true};
 std::atomic<bool> g_installed{false};
@@ -42,6 +44,8 @@ std::atomic<bool> g_anyModified{false};
 std::atomic<int> g_lastAppliedRange{framevr::companionai::DefaultDetectRange};
 std::atomic<unsigned> g_unstuckEvents{0};
 std::atomic<unsigned> g_tacticalMoveEvents{0};
+std::atomic<unsigned> g_peelEvents{0};
+std::atomic<bool> g_peelEnabled{true};
 std::atomic<uint32_t> g_lastHirelingId{0};
 std::atomic<float> g_cachedForwardX{0.0f};
 std::atomic<float> g_cachedForwardY{-1.0f};
@@ -56,6 +60,7 @@ BankState g_banks[3]{}; // Classic, Lod, Rotw
 framevr::companionai::StuckWatchdog g_watchdog;
 framevr::companionai::TacticalFormationController g_formationController;
 framevr::companionai::TacticalRetreatController g_retreatController;
+framevr::companionai::BodyguardController g_bodyguardController;
 
 template <class T>
 bool Read(uintptr_t p, T& out) {
@@ -287,6 +292,68 @@ void __cdecl CompanionGameThreadTick(const PluginContext*, void*) noexcept {
             return;
         }
     }
+
+    // 6. Active Bodyguard Instinct ("Peeling" & Blind-Spot Defense)
+    if (!inRetreat && g_peelEnabled.load()) {
+        const float fx = g_cachedForwardX.load();
+        const float fy = g_cachedForwardY.load();
+
+        uint32_t playerMode = 0;
+        Read(player + 0xc, playerMode);
+        const bool playerHitRecovery = (playerMode == 4 || playerMode == 18);
+
+        melee::Hostile hostiles[16]{};
+        float heroGridX = 0.0f, heroGridY = 0.0f;
+        const int hostileCount = melee::Hostiles(hostiles, 16, 12.0f, heroGridX, heroGridY);
+
+        if (hostileCount > 0) {
+            framevr::companionai::ThreatCandidate candidates[16]{};
+            size_t validCandidates = 0;
+
+            for (int i = 0; i < hostileCount && validCandidates < 16; ++i) {
+                // Hostiles coordinates are grid cells (1 grid cell = 2 sub-tiles)
+                const framevr::companionai::Vec2 mPos{ hostiles[i].x * 2.0f, hostiles[i].y * 2.0f };
+                candidates[validCandidates++] = framevr::companionai::EvaluateThreat(
+                    hostiles[i].id, hostiles[i].classId, mPos, plyrPos, fx, fy,
+                    hostiles[i].clear, playerHitRecovery);
+            }
+
+            framevr::companionai::ThreatCandidate primaryThreat{};
+            if (g_bodyguardController.SelectPrimaryThreat(std::span(candidates, validCandidates), primaryThreat)) {
+                const auto arch = framevr::companionai::GetHirelingArchetype(uint16_t(classId));
+                framevr::companionai::Vec2 interceptPos{};
+
+                if (g_bodyguardController.Evaluate(primaryThreat, compPos, plyrPos, arch, nowMs, interceptPos)) {
+                    int targetX = int(std::round(interceptPos.x));
+                    int targetY = int(std::round(interceptPos.y));
+
+                    uintptr_t targetRoom = 0;
+                    if (roomPointFn) {
+                        targetRoom = roomPointFn(playerRoom, targetX, targetY);
+                    }
+                    if (!targetRoom) {
+                        targetRoom = playerRoom;
+                    }
+
+                    uintptr_t compPath = 0;
+                    if (pathMoveFn && Read(hireling + 0x38, compPath) && compPath && targetRoom) {
+                        pathMoveFn(compPath, hireling, targetRoom, targetX, targetY);
+                        g_peelEvents.fetch_add(1, std::memory_order_relaxed);
+                        char line[180];
+                        std::snprintf(line, sizeof line,
+                            "Frame companion AI: bodyguard peeling threat (id=%u class=%u dist=%.1f blindSpot=%d score=%.0f) -> intercept (%d, %d)",
+                            primaryThreat.unitId, primaryThreat.classId, primaryThreat.distance,
+                            primaryThreat.isBlindSpot ? 1 : 0, primaryThreat.score, targetX, targetY);
+                        framevr::logging::Write(line);
+                    }
+                }
+            } else {
+                g_bodyguardController.Reset();
+            }
+        } else {
+            g_bodyguardController.Reset();
+        }
+    }
 }
 } // namespace
 
@@ -314,10 +381,13 @@ void Install() {
     if (!roomPointFn && d2rsig::Check(abi::RoomPointRva, abi::RoomPointSig, sizeof(abi::RoomPointSig))) {
         roomPointFn = reinterpret_cast<RoomPointFn>(d2rsig::Addr(abi::RoomPointRva));
     }
+    if (!pathMoveFn && d2rsig::Check(abi::PathMoveRva, abi::PathMoveSig, sizeof(abi::PathMoveSig))) {
+        pathMoveFn = reinterpret_cast<PathMoveFn>(d2rsig::Addr(abi::PathMoveRva));
+    }
 
     if (mode && relocateFn && roomPointFn) {
         g_installed.store(true);
-        framevr::logging::Write("Frame companion AI: verified native mode, relocate and room-point signatures; companion AI ready");
+        framevr::logging::Write("Frame companion AI: verified native mode, relocate, room-point and path-move signatures; companion AI ready");
     }
 }
 
@@ -370,12 +440,13 @@ void Report() {
     const int applied = g_lastAppliedRange.load();
     const unsigned unstuck = g_unstuckEvents.exchange(0);
     const unsigned tactical = g_tacticalMoveEvents.exchange(0);
+    const unsigned peels = g_peelEvents.exchange(0);
 
-    if (applied != reportedRange || unstuck > 0 || tactical > 0) {
-        char line[160];
+    if (applied != reportedRange || unstuck > 0 || tactical > 0 || peels > 0) {
+        char line[180];
         std::snprintf(line, sizeof line,
-            "Frame companion AI: detect_range=%d sub-tiles unstuck_relocations=%u tactical_moves=%u",
-            applied, unstuck, tactical);
+            "Frame companion AI: detect_range=%d sub-tiles unstuck_relocations=%u tactical_moves=%u bodyguard_peels=%u",
+            applied, unstuck, tactical, peels);
         framevr::logging::Write(line);
         reportedRange = applied;
     }
@@ -392,6 +463,7 @@ void Shutdown() {
     g_watchdog.Reset();
     g_formationController.Reset();
     g_retreatController.Reset();
+    g_bodyguardController.Reset();
     g_potionReceived.store(false);
     std::lock_guard lock(g_ticketMutex);
     g_syncTicket.Cancel();
@@ -409,8 +481,16 @@ unsigned TacticalMoveCount() {
     return g_tacticalMoveEvents.load();
 }
 
+unsigned PeelCount() {
+    return g_peelEvents.load();
+}
+
 void ConfigureDistressSound(int soundId) {
     g_distressSound.store(soundId);
+}
+
+void ConfigurePeel(bool enabled) {
+    g_peelEnabled.store(enabled);
 }
 
 void OnPotionReceived() {

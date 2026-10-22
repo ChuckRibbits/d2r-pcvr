@@ -12,7 +12,9 @@ bool IsEnabled();
 unsigned UnstuckCount();
 unsigned TacticalMoveCount();
 void ConfigureDistressSound(int soundId);
+void ConfigurePeel(bool enabled);
 void OnPotionReceived();
 bool IsInTacticalRetreat();
+unsigned PeelCount();
 }
 
