@@ -80,8 +80,8 @@ Open either hand's wheel and choose **DEV**. Its tabs are grouped by purpose:
 
 - **Character:** level 10, 30, 60 and 90 presets; heal life/mana.
 - **Equipment:** starter primary/alternate gear, class unique primary/alternate
-  gear, crossbow + bolts, bow + arrows, a small shield, **Render debug draws**
-  and **By turns own picture**.
+  gear, crossbow + bolts, bow + arrows, a small shield, **Render debug draws**,
+  **By turns own picture** and a **Throwing kit**.
 - **Act I - II:** towns, combat areas and inspection destinations.
 - **Act III:** Kurast regions, sewer entrances, jungle areas and bosses.
 - **Act IV - V:** later-act combat areas and filming locations.
@@ -124,6 +124,11 @@ Native unique selection and random rolls apply. The separate crossbow kit is
 Leadcrow plus 250 bolts; the bow kit is Windforce plus 250 arrows. The small
 shield is a Pelta Lunata buckler. It is separate to avoid exceeding inventory
 capacity in a full Paladin kit.
+
+The throwing kit, for any class, is one normal stack of each thrown weapon
+missile: a Javelin, a Pilum, a Glaive, Throwing Knives and Throwing Axes
+(14 inventory cells). Equip one in the right hand and throw it by hand with the
+right trigger on Attack, Throw or nothing; the kit leaves bindings alone.
 
 ## Shield debug draws
 

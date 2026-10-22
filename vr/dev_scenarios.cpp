@@ -166,10 +166,10 @@ void __cdecl Gear(const PluginContext*,void* callbackToken) noexcept {
         const bool ammo=framevr::dev::Ammo(codes[i]);
         auto& spec=specs[count++];spec.structSize=sizeof spec;
         spec.code=Items::MakeItemCode(codes[i][0],codes[i][1],codes[i][2]);
-        const bool normal=ammo||framevr::dev::StarterKit(r.index);
+        const bool normal=ammo||framevr::dev::NormalKit(r.index);
         spec.quality=normal?Items::Quality::Normal:Items::Quality::Unique;spec.qualityRecordId=Items::RandomQualityRecord;
         spec.flags=normal?0:Items::ItemCreateFlagBit(Items::ItemCreateFlag::AllowDuplicateUnique);
-        spec.itemLevel=framevr::dev::StarterKit(r.index)?1:99;spec.seedMode=Items::SeedMode::Random;
+        spec.itemLevel=framevr::dev::NormalKit(r.index)?1:99;spec.seedMode=Items::SeedMode::Random;
         spec.quantity=spec.durability=Items::DefaultValue;spec.stateFlags=Items::ItemStateIdentified;
         if(ammo)spec.quantity=250;
         spec.destination.structSize=sizeof spec.destination;
