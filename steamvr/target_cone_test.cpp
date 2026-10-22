@@ -11,8 +11,10 @@ int main() {
     Check(Pick(line,3,100,100,0,1,0)==-1,"nobody inside the cone, no target");
     const Target walled[]={{1,105,100,false},{2,115,100,true}};
     Check(Pick(walled,2,100,100,1,0,0)==1,"a mob behind a wall is skipped");
-    const Target far[]={{1,100+RangeCells+1,100,true}};
-    Check(Pick(far,1,100,100,1,0,0)==-1,"a mob past range is never picked");
+    const Target far[]={{1,100+framevr::aimreach::GameCells+1,100,true}};
+    Check(Pick(far,1,100,100,1,0,0)==-1,"a mob past the game's reach is never picked");
+    const Target corner[]={{1,140,140,true}};   // 40 cells on each axis: 56.6 cells away, still inside the game's square
+    Check(Pick(corner,1,100,100,1,1,0)==0,"the reach is the game's square, not a circle");
     // Two mobs side by side, 20 degrees apart either way of +x at 10 cells.
     const Target pair[]={{1,109.4f,103.4f,true},{2,109.4f,96.6f,true}};
     Check(Pick(pair,2,100,100,1,0,1)==0&&Pick(pair,2,100,100,1,0,2)==1,"between two equal mobs the current one stays");

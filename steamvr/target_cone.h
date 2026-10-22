@@ -1,4 +1,5 @@
 #pragma once
+#include "aim_reach.h"
 #include <cmath>
 #include <cstdint>
 
@@ -10,7 +11,6 @@ namespace framevr::targetcone {
 // one behind it). The current target keeps a small margin only, so turning the
 // head or hand to another monster moves the lock at once.
 constexpr float HalfAngleDeg=30.f;
-constexpr float RangeCells=40.f;   // as far as a directed spell aims (spellaim::AimDistance)
 constexpr float DistanceWeight=1.f;   // degrees per cell
 constexpr float KeepMargin=3.f;       // score the current target is let off
 constexpr float NearCells=12.f,MidCells=24.f; // colour bands: near / mid / far
@@ -19,6 +19,8 @@ struct Target {uint32_t id;float x,y;bool clear;};
 
 // Index of the chosen target, or -1. dir is the aim heading on the grid
 // (need not be normalized); current is the previous target's id, 0 = none.
+// Only monsters within the game's reach count (aimreach): never one a skill
+// could not be cast at.
 inline int Pick(const Target* targets,int count,float heroX,float heroY,float dirX,float dirY,uint32_t current) {
     const float length=std::hypot(dirX,dirY);
     if(!targets||count<=0||!std::isfinite(length)||length<1e-4f)return -1;
@@ -28,7 +30,7 @@ inline int Pick(const Target* targets,int count,float heroX,float heroY,float di
         const auto& t=targets[i];
         if(!t.clear)continue; // a wall between: a shot would not reach it
         const float dx=t.x-heroX,dy=t.y-heroY,d=std::hypot(dx,dy);
-        if(d>RangeCells)continue;
+        if(!aimreach::Within(dx,dy))continue;
         const float c=d<.5f?1.f:std::fmax(-1.f,std::fmin(1.f,(dx*dirX+dy*dirY)/d)); // on the hero: in any cone
         const float angle=std::acos(c)*180.f/3.14159265f;
         if(angle>HalfAngleDeg)continue;

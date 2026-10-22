@@ -411,14 +411,13 @@ button to close. Use the game's left or right corner minimap layout. The Map
 tab temporarily opens the automap when needed and restores its previous
 visibility afterward. Left stick click still toggles the normal map. Health,
 mana, level and XP progress remain on your left wrist.
-For the full Quest and Steam Frame mappings, including all eight quick-cast
-shortcuts and the game's A/B/X/Y/LB/RB/LT/RT menu prompts, see
+For the full Quest and Steam Frame mappings, including each hand's skill slots
+and the game's A/B/X/Y/LB/RB/LT/RT menu prompts, see
 **[Controller reference](CONTROLS.md)**. Use a stick or face button for native
 navigation; release it and deliberately re-aim the laser to resume pointing
 and dragging. Laser dragging works in inventory, stash and merchant panels.
 Free swings pause while casting, using menus or handling a potion. Selecting
-a wheel skill changes the right-trigger action; its displayed quick-cast
-binding also remains available.
+a wheel wedge edits that slot's skill.
 
 ## If something goes wrong
 

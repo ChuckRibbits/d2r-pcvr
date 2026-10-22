@@ -54,8 +54,10 @@ static Items::Result __cdecl RemoveToken(const PluginContext*,PlayerHandle playe
     ++tokenRemoves;tokenLive=false;return Items::Result::Success;
 }
 static Items::Result __cdecl ItemsCall(const PluginContext*,const Items::Transaction* t,Items::TransactionResult* r) noexcept {
-    ++itemCalls;assert(t->player==local&&(t->outputCount==1||t->outputCount==2||(t->outputCount>=6&&t->outputCount<=10)));
+    ++itemCalls;assert(t->player==local&&(t->outputCount==1||t->outputCount==2||(t->outputCount>=5&&t->outputCount<=10)));
     if(t->outputCount==1)assert(t->outputs[0].code==Items::MakeItemCode("buc"));
+    if(t->outputCount==5){constexpr const char* kit[]={"jav","pil","glv","tkf","tax"};   // the throwing kit
+        for(unsigned i=0;i<5;++i)assert(t->outputs[i].code==Items::MakeItemCode(kit[i][0],kit[i][1],kit[i][2]));}
     if(t->outputCount==2) {
         const bool bow=t->outputs[0].code==Items::MakeItemCode("6lw");
         assert(bow||t->outputs[0].code==Items::MakeItemCode("lxb"));
@@ -190,7 +192,7 @@ int main(){
                 assert(commands[start+PreparationCount+i]==expected);
             }
         }
-        for(int choice:{1,2,CrossbowChoice,BowChoice,SmallShieldChoice,StarterPrimaryChoice,StarterAlternateChoice}) {
+        for(int choice:{1,2,CrossbowChoice,BowChoice,SmallShieldChoice,StarterPrimaryChoice,StarterAlternateChoice,ThrowingChoice}) {
             const auto commandCount=commands.size();
             devscenarios::Request(Make(choice));assert(tasks.back().game);Run(tasks.size()-1);
             assert(devscenarios::Status().result==Result::Applied&&!tokenLive);
@@ -223,9 +225,15 @@ int main(){
     assert(Presets[6].primaryWeapons[0]==std::string_view("9tw")&&Presets[6].primaryWeapons[1]==std::string_view("7wb"));
     // Extra test weapons never replace the Paladin's large shield.
     for(int choice:{1,2})assert(Kit(3,choice)[1]==std::string_view("pa9"));
+    // The throwing kit: one of each thrown missile, the same for every class, on the equipment page.
+    assert(IsKit(ThrowingChoice)&&NormalKit(ThrowingChoice)&&!NormalKit(BowChoice)&&PageFor(ThrowingChoice)==1);
+    for(int cls=0;cls<8;++cls) {
+        std::vector<std::string_view> codes;for(const char* code:Kit(cls,ThrowingChoice))if(code)codes.push_back(code);
+        assert((codes==std::vector<std::string_view>{"jav","pil","glv","tkf","tax"}));
+    }
     // Failed standalone kits clean up only the generated exchange token.
     failItems=true;
-    for(int choice:{CrossbowChoice,BowChoice,SmallShieldChoice}) {
+    for(int choice:{CrossbowChoice,BowChoice,SmallShieldChoice,ThrowingChoice}) {
         const auto beforeCleanup=tokenRemoves;
         devscenarios::Request(Make(choice));Run(tasks.size()-1);
         assert(devscenarios::Status().result==Result::KitRefused&&!tokenLive&&tokenRemoves==beforeCleanup+1);

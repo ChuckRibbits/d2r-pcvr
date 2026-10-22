@@ -1,4 +1,5 @@
 #include "map_zoom.h"
+#include "stick_gestures.h"
 #include <cstdio>
 #include <cstdlib>
 using namespace framevr;
@@ -46,6 +47,32 @@ int main(){
         s.in.looking=true;const float z=s.Step().zoom;s.g.Reset();
         Check(s.g.Zoom()==z,"a reset (tracking or focus lost) keeps the zoom");
         Check(s.Step().zooming&&s.out.started,"after a reset a held stick starts a new gesture");
+    }
+    {
+        // The map and the world gestures share the stick's up / down, as transport.cpp
+        // runs them: the world gestures first (allowed unless the map was looked at),
+        // then the zoom with whatever the gestures left.
+        stickgestures::Gestures world;mapzoom::Gesture zoom;mapzoom::Input in;in.time=1;
+        int runs=0;bool loot=false;
+        auto Frame=[&](bool looking,float y){
+            const auto r=world.Step(mapzoom::WorldGestures(true,looking),0,y);
+            runs+=r.toggleRun;loot=r.showLoot;
+            in.time+=.02;in.looking=looking;in.stick=r.owned?0:y;return zoom.Step(in);
+        };
+        for(int i=0;i<5;++i)Frame(false,0);
+        for(int i=0;i<50;++i)Frame(true,1);
+        Check(runs==0&&zoom.Zoom()>2,"pushing up at the looked-at map zooms and never toggles running");
+        for(int i=0;i<30;++i)Frame(true,-1);
+        Check(!loot&&zoom.Zoom()<2,"pulling down at the map zooms out and shows no loot labels");
+        const float z=zoom.Zoom();
+        for(int i=0;i<10;++i)Frame(false,1);
+        Check(runs==0&&zoom.Zoom()==z,"a push still held after looking away does not run");
+        Frame(false,0);Frame(false,1);
+        Check(runs==1&&zoom.Zoom()==z,"after the stick returns to the centre, up runs / walks as before");
+        Frame(false,0);
+        for(int i=0;i<5;++i)Frame(false,-1);
+        Check(loot,"held down away from the map shows the loot labels");
+        Frame(true,-1);Check(!loot,"looking at the map drops the loot labels");
     }
     {
         mapzoom::Gesture g;Check(g.Zoom()==1,"every game starts at the whole map");

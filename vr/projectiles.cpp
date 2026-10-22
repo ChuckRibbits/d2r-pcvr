@@ -2,16 +2,21 @@
 // release-point handoff. Kept separate from posing the held bow.
 #include <windows.h>
 #include <atomic>
+#include <cmath>
 #include <cstdint>
 #include <cstdio>
+#include <cstring>
+#include <mutex>
 #include "projectiles.h"
 #include "projectile_rules.h"
 #include "sigscan.h"
 #include "memory.h"
 #include "logging.h"
 #include "combat.h"
+#include "melee.h"
 #include "bow.h"
 #include "crossbow.h"
+#include "../steamvr/telegraph.h"
 
 namespace gamestate {uint64_t LocalPlayer();}
 
@@ -67,6 +72,10 @@ uint32_t LocalArrowParams(uintptr_t params) {
 // Nesting an unrelated projectile temporarily clears it; unrelated path calls
 // never inherit a previous arrow. No game-owned table or request is edited.
 struct Creation {int side=-1;float multiplier=1;uintptr_t changedPath=0;uint32_t missile=0;};
+// A ground skill's launch missile (telegraph::Flights) being created on the
+// server: the velocity the game sets for it, live for this build and level.
+struct FlightWatch {uint32_t missile=0;int velocity=0;uintptr_t unit=0;};
+thread_local FlightWatch flightWatch;
 thread_local Creation creation;
 struct Scope {
     Creation saved;
@@ -79,18 +88,67 @@ struct Scope {
     }
     ~Scope(){creation=saved;}
 };
+// Telemetry: "Frame missile flight:" where each of the local hero's missiles
+// really ends - its last position before it is gone - and how far it flew
+// (Jeff, 2026-10-20: Cold Arrow looked short). Watched from its server
+// creation, followed by FollowFlights on the game thread.
+struct Flight {uint32_t unit=0,missile=0;float ox=0,oy=0,x=0,y=0;bool seen=false;ULONGLONG at=0;};
+std::mutex flightMutex;
+Flight flights[32];
+void WatchFlight(uintptr_t created,uint32_t missile,int ox,int oy) {
+    uint32_t id=0;
+    if(!created||!Read(created+8,id)||!id)return;
+    std::lock_guard lock(flightMutex);
+    Flight* slot=&flights[0];
+    for(auto& f:flights)if(!f.unit){slot=&f;break;}else if(f.at<slot->at)slot=&f;   // a free slot, else the oldest
+    *slot={id,missile,float(ox),float(oy),float(ox),float(oy),false,GetTickCount64()};
+}
 // Read-only diagnostics at actual native missile creation, separate from the
 // earlier aim resolver. Do not claim a correct flight from the input ray alone.
 void ReportSpell(uintptr_t params,int side,uintptr_t created) {
     uintptr_t owner=0;uint32_t missile=0,flags=0;int points[4]{};
     if(!enabled.load()||!Read(params+0x20,missile)||missile==0||
        !Read(params+8,owner)||!IsLocalOwner(owner))return;
+    if(side==1&&created&&Read(params+0x24,points))WatchFlight(created,missile,points[0],points[1]);   // every one, not just the logged
     static std::atomic<ULONGLONG> reported[2]{};
     const auto now=GetTickCount64();auto before=reported[side].load();
     if(now-before<1000||!reported[side].compare_exchange_strong(before,now))return;
     if(!Read(params,flags)||!Read(params+0x24,points))return;
     char line[240];snprintf(line,sizeof line,"Frame spell missile: %s id %u, flags %x, origin %d,%d target %d,%d, created %s",
         side?"server":"client",missile,flags,points[0],points[1],points[2],points[3],created?"yes":"no");
+    framevr::logging::Write(line);
+}
+// A ground skill's missiles as the server actually created them (telegraph::
+// Flights: Fire Blast's bomb so far): the launch re-times its circle from the
+// moment it really leaves the hand, the landing ends it and teaches the speed.
+// The circle itself is placed at the cast, like every ground skill's (vrcam).
+void Telegraph(uintptr_t params,uintptr_t unit) {
+    uintptr_t owner=0;uint32_t missile=0;int points[4]{};bool landing=false;
+    if(!unit||!enabled.load()||!Read(params+0x20,missile))return;
+    const int flight=framevr::telegraph::FlightOf(missile,landing);
+    if(flight<0||!Read(params+8,owner)||!IsLocalOwner(owner)||!Read(params+0x24,points))return;
+    auto& board=framevr::telegraph::Current();
+    const auto now=GetTickCount64();
+    const int skill=framevr::telegraph::Flights[flight].skill;
+    char line[240];
+    if(!landing) {
+        const int velocity=flightWatch.unit==unit?flightWatch.velocity:0;
+        const float live=framevr::telegraph::CellsPerSecondOf(velocity);
+        const float speed=board.Launched(flight,float(points[0]),float(points[1]),float(points[2]),float(points[3]),now,live);
+        snprintf(line,sizeof line,"Frame landing circle: skill %d missile from %d,%d to %d,%d (%.1f cells)%s, timed at %.1f cells/s (%s, game velocity %d)",skill,
+            points[0],points[1],points[2],points[3],std::hypot(float(points[2]-points[0]),float(points[3]-points[1])),
+            speed>0?"":" - no circle to time",speed>0?speed:board.Speed(flight),
+            framevr::telegraph::SaneSpeed(live)?"live":"last flown",velocity);
+    } else {
+        const auto mark=board.Landed(flight,float(points[0]),float(points[1]),now);
+        if(mark.cast)snprintf(line,sizeof line,"Frame landing circle: skill %d landed at %d,%d, %.1f cells from its circle %.0f,%.0f, %llu ms after the cast "
+            "(%llu after launch); next guess %.1f cells/s",skill,points[0],points[1],std::hypot(points[0]-mark.x,points[1]-mark.y),mark.x,mark.y,
+            (unsigned long long)(now-mark.cast),(unsigned long long)(mark.launched?now-mark.launched:0),board.Speed(flight));
+        else snprintf(line,sizeof line,"Frame landing circle: skill %d landed at %d,%d with no circle showing",skill,points[0],points[1]);
+    }
+    // A Shock Web throws ~9 bombs: its lines with no circle at most once a second (#160 review).
+    static ULONGLONG orphanAt=0;
+    if(std::strstr(line,"no circle")){if(now-orphanAt<1000)return;orphanAt=now;}
     framevr::logging::Write(line);
 }
 uintptr_t Client(uintptr_t params,int flags) {
@@ -110,13 +168,25 @@ uintptr_t Server(uintptr_t game,uintptr_t params) {
     std::array<uint8_t,0x98> boltParams{};framevr::crossbow::Launch bolt;
     const bool crossbow=enabled.load()&&!bowvr::DirectCrossbow()&&crossbowvr::Prepare(params,boltParams,bolt,true);
     if(crossbow)params=reinterpret_cast<uintptr_t>(boltParams.data());
+    const FlightWatch outer=flightWatch;
+    {   // a ground skill's launch missile: watch the velocity the game gives it
+        uint32_t missile=0;bool landing=false;
+        flightWatch={enabled.load()&&Read(params+0x20,missile)&&framevr::telegraph::FlightOf(missile,landing)>=0&&!landing?missile:0u};
+    }
     Scope scope(params,1);const auto unit=originalServer(game,params);
     if(crossbow)crossbowvr::ServerDone(bolt,unit&&bowvr::AdoptCrossbow(game,unit,bolt.flight));
     ReportSpell(params,1,unit);
+    Telegraph(params,unit);
+    flightWatch=outer;
     if(unit)bowvr::Created(game,params,unit);
     return unit;
 }
 void Velocity(uintptr_t path,int native,uintptr_t source,int line) {
+    if(flightWatch.missile&&native>0) {   // the last positive value set during creation is its velocity
+        uintptr_t unit=0,back=0;uint32_t type=~0u,missile=~0u;
+        if(Read(path+0x40,unit)&&Read(unit,type)&&type==3&&Read(unit+4,missile)&&missile==flightWatch.missile&&Read(unit+0x38,back)&&back==path)
+            {flightWatch.velocity=native;flightWatch.unit=unit;}
+    }
     int adjusted=native;
     // Native creation first clears velocity, then sets the final value. Only
     // the latter is scaled, once per path per creation; slow-missile and later
@@ -149,7 +219,7 @@ bool HasComponent(uintptr_t storage,uint32_t entity) {
 void Release(uintptr_t assets,uintptr_t definition,uint32_t entity,uintptr_t unit) {
     uint32_t type=~0u,missile=~0u;
     if(enabled.load()&&Read(unit,type)&&type==3&&Read(unit+4,missile)&&
-       (framevr::bowflight::BasicMissile(missile)||missile==31||bowvr::OwnsVisual(unit))) {
+       (framevr::bowflight::BasicMissile(missile)||framevr::bowflight::ThrownMissile(missile)||missile==31||bowvr::OwnsVisual(unit))) {
         const auto owner=reinterpret_cast<uintptr_t(*)(uintptr_t)>(d2rsig::Addr(OwnerRva))(unit);
         const auto registry=d2rsig::Addr(RegistryRva);
         if(EntityAlive(registry,entity)) {
@@ -159,7 +229,7 @@ void Release(uintptr_t assets,uintptr_t definition,uint32_t entity,uintptr_t uni
             // Ice Bolt's child has no release component, so absence alone
             // can bind that child and subtract its authored height twice.
             bool root=false;
-            if(!framevr::bowflight::BasicMissile(missile)&&missile!=31) {
+            if(!framevr::bowflight::BasicMissile(missile)&&!framevr::bowflight::ThrownMissile(missile)&&missile!=31) {
                 const auto transforms=reinterpret_cast<uintptr_t(*)(uintptr_t)>(d2rsig::Addr(TransformStorageRva))(registry);
                 root=VisualRoot(definition,transforms,entity,[](uintptr_t p,auto& value){return Read(p,value);});
             }
@@ -209,6 +279,29 @@ void Install() {
     }
     allReady=releaseIn&&speedHooksReady.load();
 }
+// The game thread (targetlock's scan, every 100 ms): each watched missile's
+// position while it lasts; once it is gone, one line with where it ended.
+void FollowFlights() {
+    uintptr_t game=0,self=0;
+    if(!melee::LocalServer(game,self))return;
+    const auto now=GetTickCount64();
+    std::lock_guard lock(flightMutex);
+    for(auto& f:flights) {
+        if(!f.unit)continue;
+        const uintptr_t unit=melee::ServerUnit(game,3,f.unit);
+        uintptr_t path=0;uint32_t pos[2]{};
+        if(unit&&Read(unit+0x38,path)&&path>0x10000&&Read(path,pos)&&pos[0]&&pos[1]) {
+            f.x=pos[0]/65536.f;f.y=pos[1]/65536.f;f.seen=true;
+            if(now-f.at<15000)continue;
+        }
+        if(!f.seen&&now-f.at<300)continue;   // not in the server's hash yet
+        char line[200];snprintf(line,sizeof line,"Frame missile flight: missile %u from %.0f,%.0f ended at %.0f,%.0f, %.1f cells in %llu ms%s",
+            f.missile,f.ox,f.oy,f.x,f.y,std::hypot(f.x-f.ox,f.y-f.oy),(unsigned long long)(now-f.at),f.seen?"":" (never seen in flight)");
+        framevr::logging::Write(line);
+        f={};
+    }
+}
+
 void Report() {
     const unsigned c=accelerated[0].exchange(0),s=accelerated[1].exchange(0),r=released.exchange(0);
     const unsigned oc=observed[0].exchange(0),os=observed[1].exchange(0);

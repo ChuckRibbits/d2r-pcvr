@@ -24,6 +24,12 @@ constexpr float Notch=.25f;       // a light tick each quarter crossed; a firmer
 // starts it, and it lasts until past LookOut, so a glance at the map's edge
 // does not flicker the stick between map and game.
 constexpr float LookIn=22,LookOut=30;
+// The right stick's up / down has two owners: this map while it is looked at,
+// otherwise the world gestures (stick_gestures.h: up runs / walks, down shows
+// loot labels). Looking at the map drops a world push, so zooming never toggles
+// running; a stick still held when the look ends must come back to the centre
+// before it counts in the world again.
+inline bool WorldGestures(bool world,bool mapLooked){return world&&!mapLooked;}
 inline float Clamp(float z){return std::isfinite(z)?std::clamp(z,Min,Max):Min;}
 inline int NotchOf(float z){return int(std::floor((Clamp(z)-Min)/Notch+1e-4f));}
 // head: the headset pose; panel: the shown map's center, in the same space.
