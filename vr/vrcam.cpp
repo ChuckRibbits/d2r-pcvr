@@ -2899,9 +2899,9 @@ std::atomic<ULONGLONG> at{0};
 std::atomic<uint32_t> bits{0};
 std::atomic<float> hue[2]{45.0f, 210.0f};   // the outline colors: right hand, left hand (0 = By range)
 std::atomic<float> spanM{1.6f};   // VR Settings > Controller span (arm_span_m), set with or without Body calibration
+std::atomic<int> ground{0};       // VR Settings > Aim > Ground skills: 0 the game's aim, 1 where you point, 2 the aimed monster
 constexpr framevr::settings::Key keys[] = {framevr::settings::TargetHighlight, framevr::settings::SpellLock,
                                            framevr::settings::StaffPoint, framevr::settings::SpellLockBow,
-                                           framevr::settings::GroundToTarget,
                                            framevr::settings::LandingCircles, framevr::settings::AimHighlights,
                                            framevr::settings::Dominant};
 constexpr int KeyCount = int(std::size(keys));
@@ -2915,6 +2915,7 @@ void Refresh() {
     hue[0].store(values[framevr::settings::HighlightRight]);
     hue[1].store(values[framevr::settings::HighlightLeft]);
     spanM.store(values[framevr::settings::ArmSpan]);
+    ground.store(std::clamp(int(values[framevr::settings::GroundAim]), 0, 2));
     at.store(now);
 }
 }
@@ -2923,6 +2924,7 @@ bool AimOn(framevr::settings::Key key) {
     for (int i = 0; i < aimsettings::KeyCount; ++i) if (aimsettings::keys[i] == key) return (aimsettings::bits.load() >> i) & 1;
     return false;
 }
+int GroundAimMode() { aimsettings::Refresh(); return aimsettings::ground.load(); }
 // How far a hand is held out from the head before it points, cm: the arm counts as
 // pointing once held out a tenth of the player's span (Jeff: 15 cm on a 1.5 m span).
 float AimArmOutCm() { aimsettings::Refresh(); return framevr::armpointing::ArmOutCm(aimsettings::spanM.load()); }
@@ -2986,8 +2988,10 @@ bool HandRay(float* o, float* d,bool forceGround=true,int forHand=-1) {
     // hand overhead all aim where the arm reaches. The empty hand's own pointer
     // tilts up from the fist, and every ground skill flew to full reach. The
     // shoulders sit about 17 cm to either side of and 22 cm below the eyes.
-    // A hand's own aim (the rules) always: its target and its cast agree.
-    const bool arm=(staffByHand||castingType==D2RVR_TYPE_UNARMED)&&(forHand>=0||framevr::SpellSelected());
+    // A hand's own aim (the rules) always: its target and its cast agree. The
+    // empty hand's arm line is the rules' only (forHand): with their Aim
+    // options Off it casts along its own pointer, as before (#159 review).
+    const bool arm=(staffByHand&&(forHand>=0||framevr::SpellSelected()))||(castingType==D2RVR_TYPE_UNARMED&&forHand>=0);
     if(g_eyeOk.load()&&(forHand>=0?framevr::HandAimRay(forHand,motionOrigin,motionDirection):framevr::GameplayRay(motionOrigin,motionDirection))) {
         if(arm) {
             const float a[3]={motionOrigin[0]-(left?-.17f:.17f),motionOrigin[1]+.22f,motionOrigin[2]};
@@ -3260,15 +3264,6 @@ bool HandWorldTheta(float* theta) {
     return true;
 }
 
-#ifdef D2RVR_NATIVE_OPENXR
-// A skill cast the aim rules aim themselves (a row in aim_rules.h). A skill the
-// table does not know (rule Native: the Warlock's, self skills) keeps the game's
-// hand aim: its point 20 cells along the hand and the hero turned to the hand
-// (Jeff, 2026-10-20: Warlock spells without a rule went behind him).
-bool RulesAimCast() {
-    return framevr::NativeSkillCasting() && framevr::aimrules::Of(framevr::AimRulesSkill(), framevr::AimRulesDirected()) != framevr::aimrules::Use::Native;
-}
-#endif
 // The aiming hand as a unit vector on the game's grid. The grid's axes are the
 // world's x and z (measured 2026-10-02: 0 deg, not mirrored, agreement 0.98);
 // what the walk teaches overrides that once it is sure.
@@ -3303,6 +3298,20 @@ using SpellCommandFn=int(*)(framevr::spellaim::NativeCommand*);
 SpellCommandFn OrigSpellCommand=nullptr;
 thread_local framevr::spellaim::CommandAim g_spellCommand;
 std::atomic<bool> g_spellCommandReady{false};
+// A ground skill's landing circle, held from the VR MapClick that placed the
+// cast until the game's own command check accepts it: a refused cast (no mana,
+// a cooldown, a held repeat) shows none (#160 review).
+struct LandingCircle {int skill=-1,x=0,y=0;float ax=0,ay=0;};
+thread_local LandingCircle g_landing;
+void ShowLandingCircle(const LandingCircle& c) {
+    // For the skill's time (telegraph::ForSkill; Fire Blast's from its throw
+    // distance, then re-timed by its own missiles in projectiles.cpp). A strip
+    // (Fire Wall) lies square to the line from the hero to the cast point.
+    const auto area=framevr::telegraph::ForSkill(c.skill,std::hypot(c.ax,c.ay));
+    if(framevr::telegraph::Current().Place(float(c.x),float(c.y),GetTickCount64(),area.showMs,framevr::spellaim::ElementOf(c.skill),
+                                           area.radius,-c.ay,c.ax,area.halfLength,c.skill))
+        LogF("Frame landing circle: skill %d at %d,%d (element %d)",c.skill,c.x,c.y,int(framevr::spellaim::ElementOf(c.skill)));
+}
 int HookSpellCommand(framevr::spellaim::NativeCommand* command) {
     // Only the current local VR MapClick owns this stack command. An unrelated
     // validation on this thread must not inherit target suppression.
@@ -3310,6 +3319,7 @@ int HookSpellCommand(framevr::spellaim::NativeCommand* command) {
     const int oldX=command->x,oldY=command->y;
     const bool changed=framevr::spellaim::ApplyCommand(g_spellCommand,*command);
     const int result=OrigSpellCommand(command);
+    if(changed&&result&&g_landing.skill>=0){ShowLandingCircle(g_landing);g_landing={};}   // accepted (every logged VR cast: check 1)
     if(changed) {
         static std::atomic<ULONGLONG> reported{0};
         const auto now=GetTickCount64();auto before=reported.load();
@@ -3513,21 +3523,34 @@ Cast Now() {
     c.use = framevr::aimrules::Of(c.skill, framevr::AimRulesDirected());
     return c;
 }
-// VR Settings > Aim: does the aimed monster count for this kind of cast (bow
-// skills have their own switch: archers aim on purpose; ground skills theirs)?
-bool SwitchOn(const Cast& c) {
-    return AimOn(c.use == framevr::aimrules::Use::Ground ? framevr::settings::GroundToTarget :
-                 c.bow ? framevr::settings::SpellLockBow : framevr::settings::SpellLock);
+// VR Settings > Aim: the options for each kind of cast (aimrules::Switches).
+framevr::aimrules::Switches Options() {
+    return {AimOn(framevr::settings::SpellLock), AimOn(framevr::settings::SpellLockBow), GroundAimMode()};
 }
+// Do the rules aim this cast at all? Off, it aims as before them (UpstreamSpellAim).
+bool RulesOn(const Cast& c) { return framevr::aimrules::RulesAim(c.use, c.bow, Options()); }
+// Does the aimed monster count for this kind of cast (bow skills have their own
+// switch: archers aim on purpose; ground skills theirs)?
+bool SwitchOn(const Cast& c) { return framevr::aimrules::MonsterSwitch(c.use, c.bow, Options()); }
 // The cast takes the aimed monster: its rule takes one and its switch is On.
 bool TargetsOn(const Cast& c) { return framevr::aimrules::TakesTarget(c.use) && SwitchOn(c); }
 }
+#ifdef D2RVR_NATIVE_OPENXR
+// A skill cast the aim rules aim themselves: a row in aim_rules.h, with its VR
+// Settings > Aim option On (aimtargets::RulesOn). Any other (rule Native: the
+// Warlock's, self skills; or its option Off) keeps the game's hand aim: its
+// point 20 cells along the hand and the hero turned to the hand (Jeff,
+// 2026-10-20: Warlock spells without a rule went behind him).
+bool RulesAimCast() {
+    return framevr::NativeSkillCasting() && aimtargets::RulesOn(aimtargets::Now());
+}
+#endif
 // Kept only while something uses a target: the outline or a spell lock.
 namespace mobaim {
 bool Wanted() {
     return g_enabled.load() && g_inWorld.load() &&
         (TargetHighlightOn() || AimOn(framevr::settings::SpellLock) || AimOn(framevr::settings::SpellLockBow) ||
-         AimOn(framevr::settings::GroundToTarget));
+         GroundAimMode() == 2);
 }
 void Tick() {
     const bool wanted = Wanted();
@@ -3589,7 +3612,11 @@ bool PointSpellAim(float playerX,float playerY,float& targetX,float& targetY) {
         g_note.source=source;g_note.id=targetId;
     } else {
         float o[3],d[3],L[3],fx=0,fy=0;
-        if(!aimtargets::FreeAimRay(c.button,c.bow,o,d,false,&how))return false;
+        // A ground skill takes its button's hand while it aims down, held out or
+        // not: a Bone Wall aimed steeply near the feet took the other, outstretched
+        // arm (#160 review). Other placed skills: the free aim.
+        if(c.use==framevr::aimrules::Use::Ground&&!c.bow&&g_eyeOk.load()&&HandRay(o,d,false,c.button)&&d[1]<0)how=aimtargets::SourceName(c.button);
+        else if(!aimtargets::FreeAimRay(c.button,c.bow,o,d,false,&how))return false;
         AcquireSRWLockShared(&g_lookLock);memcpy(L,g_lookAt,sizeof L);ReleaseSRWLockShared(&g_lookLock);
         if(framevr::spellaim::GroundPoint({o[0],o[1],o[2]},{d[0],d[1],d[2]},L[1],.5f,playerX,playerY,fx,fy,framevr::aimreach::CornerCells)){dx=fx-playerX;dy=fy-playerY;}
         else {   // the ray never meets the floor: as far as the reach goes along its heading
@@ -3628,10 +3655,12 @@ bool NativeSpellAimDecide(float playerX,float playerY,framevr::spellaim::Cast& c
 // Telemetry: "Frame aim cast:" - every cast the aim rules see, at most one line
 // per skill per 250 ms: the rule, the button, the target and where it came
 // from, a unit hand-off, and the point or heading sent to the game.
+bool UpstreamSpellAim(float playerX,float playerY,framevr::spellaim::Cast& cast);
 bool NativeSpellAim(float playerX,float playerY,framevr::spellaim::Cast& cast) {
     g_note={};
-    const bool directed=NativeSpellAimDecide(playerX,playerY,cast);
     const auto c=aimtargets::Now();
+    // The aim rules only with this kind of cast's Aim option On; Off, as before them.
+    const bool directed=aimtargets::RulesOn(c)?NativeSpellAimDecide(playerX,playerY,cast):UpstreamSpellAim(playerX,playerY,cast);
     static ULONGLONG told=0;static int toldSkill=-2;
     if(c.skill>=0&&(c.skill!=toldSkill||GetTickCount64()-told>250)) {
         told=GetTickCount64();toldSkill=c.skill;
@@ -3644,6 +3673,25 @@ bool NativeSpellAim(float playerX,float playerY,framevr::spellaim::Cast& cast) {
              cast.contactPoint?" (cells from the hero)":"");
     }
     return directed;
+}
+// A cast the aim rules leave alone (its Aim option Off, or no rule): the aim
+// from before them. Bone Wall and Prison on the casting hand's floor point (six
+// cells ahead when level), directed skills along the casting hand, the rest
+// (Blizzard, Meteor, curses...) to the game.
+bool UpstreamSpellAim(float playerX,float playerY,framevr::spellaim::Cast& cast) {
+    g_note.by="hand (rules off)";
+    if(!g_spellAimReady.load()||!g_enabled.load()||gamestate::MenuOpen())return false;
+    float o[3],d[3];
+    if(framevr::spellaim::BonePlacement(framevr::NativeCastSkill())) {
+        if(!g_eyeOk.load()||!HandRay(o,d,false))return false;
+        AcquireSRWLockShared(&g_skyLock);const auto view=g_skyView[0];ReleaseSRWLockShared(&g_skyLock);
+        if(!view.axes_ok||!view.proj_ok||!framevr::spellaim::GroundPoint(playerX,playerY,
+           {o[0]-view.hero[0],o[1]-view.hero[1],o[2]-view.hero[2]},
+           {d[0],d[1],d[2]},cast.x,cast.y))return false;
+        cast.directed=cast.contactPoint=true;return true;
+    }
+    cast.directed=framevr::DirectedSpellActive()&&HandRay(o,d)&&framevr::spellaim::Horizontal({d[0],d[1],d[2]},cast.x,cast.y);
+    return cast.directed;
 }
 bool NativeSpellAimDecide(float playerX,float playerY,framevr::spellaim::Cast& cast) {
     const auto c=aimtargets::Now();
@@ -3684,7 +3732,9 @@ uintptr_t HookSpellControllerTarget(uintptr_t manager,int id) {
 }
 uintptr_t HookSpellHoverTarget(int player) {
     if(g_spellCast.directed&&uintptr_t(_ReturnAddress())==d2rsig::Addr(spellaimabi::HoverCallRva+5))return 0;
-    if(const uintptr_t unit=RulesUnit(framevr::NativeCastSkill()))return unit;
+    // Only just after a hand-off: no transport lock on every hover query (#159 review).
+    if(g_unitSkill.load()>=0&&GetTickCount64()-g_unitAt.load()<=500)
+        if(const uintptr_t unit=RulesUnit(framevr::NativeCastSkill()))return unit;
     return OrigSpellHoverTarget(player);
 }
 bool IsHeroUnit(const void* unit);
@@ -4577,8 +4627,9 @@ uint64_t HookMapClick(void* unit, int type, int x, int y, uint64_t flags) {
     if(g_enabled.load()&&g_inWorld.load()&&(gamestate::MenuOpen()||panelinput::BlocksWorld()))return 0;
     struct CommandScope {
         framevr::spellaim::CommandAim previous=g_spellCommand;
-        CommandScope(){g_spellCommand={};}
-        ~CommandScope(){g_spellCommand=previous;}
+        LandingCircle landing=g_landing;
+        CommandScope(){g_spellCommand={};g_landing={};}
+        ~CommandScope(){g_spellCommand=previous;g_landing=landing;}
     } scope;
     const auto caller=uintptr_t(_ReturnAddress());
     float px=0,py=0;int tx=0,ty=0;framevr::spellaim::Cast cast;
@@ -4588,19 +4639,11 @@ uint64_t HookMapClick(void* unit, int type, int x, int y, uint64_t flags) {
        framevr::spellaim::ControllerPoint(cast,px,py,tx,ty)) {
         g_spellCommand={reinterpret_cast<uintptr_t>(unit),tx,ty};
         x=tx;y=ty;
-        // Every ground skill, Fire Blast included: a circle at the cast point, in
-        // the element's color, for the skill's time (telegraph::ForSkill; Fire
-        // Blast's from its throw distance, then re-timed by its own missiles in
-        // projectiles.cpp). A strip (Fire Wall) lies square to the line from the
-        // hero to the cast point.
-        const int skill=framevr::GroundSpellSkill();
-        if(skill>=0) {
-            const float ax=float(tx)-px,ay=float(ty)-py;
-            const auto area=framevr::telegraph::ForSkill(skill,std::hypot(ax,ay));
-            if(framevr::telegraph::Current().Place(float(tx),float(ty),GetTickCount64(),area.showMs,framevr::spellaim::ElementOf(skill),
-                                                   area.radius,-ay,ax,area.halfLength,skill))
-                LogF("Frame landing circle: skill %d at %d,%d (element %d)",skill,tx,ty,int(framevr::spellaim::ElementOf(skill)));
-        }
+        // Every ground skill the mod places (VR Settings > Aim > Ground skills
+        // not Game), Fire Blast included: a circle at the cast point, in the
+        // element's color, once the game accepts the cast (HookSpellCommand).
+        const int skill=GroundAimMode()>0?framevr::GroundSpellSkill():-1;
+        if(skill>=0)g_landing={skill,tx,ty,float(tx)-px,float(ty)-py};
     }
 #endif
     if (unit && (type == 0 || type == 1 || type == 3 || type == 4) && !(flags & 0xFF) &&

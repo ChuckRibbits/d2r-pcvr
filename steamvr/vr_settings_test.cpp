@@ -351,10 +351,24 @@ int main(){
     {Model aim;aim.Open(s);aim.Click({Kind::Tab,int(Page::Aim)});
         Check(RowKey(Page::Aim,0)==SpellLock&&RowKey(Page::Aim,1)==SpellLockBow&&RowKey(Page::Aim,2)==StaffPoint,"spell lock, bow skills, then staff aim");
         Check(RowKey(Page::Aim,3)==TargetHighlight&&RowKey(Page::Aim,4)==AimHighlights&&RowKey(Page::Aim,5)==HighlightRight&&RowKey(Page::Aim,6)==HighlightLeft,"then the outline: strength, which hands, each hand's color");
-        Check(s.values[SpellLock]==0&&s.values[StaffPoint]==1&&s.values[SpellLockBow]==0,"spell and bow targeting Off by default, staff aim On");
-        Check(RowCount(Page::Aim)==9&&RowKey(Page::Aim,7)==GroundToTarget&&RowKey(Page::Aim,8)==LandingCircles&&s.values[GroundToTarget]==0&&s.values[LandingCircles]==1,"the ground target (Off by default) and landing circles (On) follow");
-        Check(HelpAt(Page::Aim,(ValueBox(8).x+5.f)/Width,(ValueBox(8).y+5.f)/Height)==LandingCircles&&HelpAt(Page::Aim,(ValueBox(7).x+5.f)/Width,(ValueBox(7).y+5.f)/Height)==GroundToTarget,"the circles and ground target rows explain themselves");
-        {auto off=s.values;off[SpellLock]=0;off[SpellLockBow]=0;off[TargetHighlight]=0;Check(RowEnabled(off,GroundToTarget)&&RowEnabled(off,LandingCircles),"the ground target and circles are never greyed");}
+        // Every option that changes how a cast aims is Off by default: the casts aim as before the aim rules (#159 review).
+        Check(s.values[SpellLock]==0&&s.values[StaffPoint]==0&&s.values[SpellLockBow]==0,"spell and bow targeting and staff aim Off by default");
+        Check(RowCount(Page::Aim)==9&&RowKey(Page::Aim,7)==GroundAim&&RowKey(Page::Aim,8)==LandingCircles&&s.values[GroundAim]==0&&s.values[LandingCircles]==1,
+              "Ground skills (the game's own aim by default) and landing circles (On) follow");
+        Check(std::wstring(Definitions[GroundAim].key)==L"ground_aim"&&Definitions[GroundAim].max==2&&std::strcmp(GroundAimNames[0],"Game")==0&&
+              std::strcmp(GroundAimNames[1],"Where you point")==0&&std::strcmp(GroundAimNames[2],"Aimed monster")==0,"one [gameplay] ground_aim row: Game, Where you point, Aimed monster");
+        Check(HelpAt(Page::Aim,(ValueBox(8).x+5.f)/Width,(ValueBox(8).y+5.f)/Height)==LandingCircles&&HelpAt(Page::Aim,(ValueBox(7).x+5.f)/Width,(ValueBox(7).y+5.f)/Height)==GroundAim,"the circles and ground skills rows explain themselves");
+        Check(HelpChoices(GroundAim)==3&&std::strcmp(HelpChoice(GroundAim,1).name,"Where you point")==0,"the ground skills row names its three choices");
+        {auto off=s.values;off[SpellLock]=0;off[SpellLockBow]=0;off[TargetHighlight]=0;
+            Check(RowEnabled(off,GroundAim)&&!RowEnabled(off,LandingCircles),"Ground skills is never greyed; circles grey out while the game aims ground skills");
+            off[GroundAim]=1;Check(RowEnabled(off,LandingCircles),"and come back once the mod places them");}
+        {Model ground;ground.Open(s);ground.Click({Kind::Tab,int(Page::Aim)});
+            ground.Click(At(Page::Aim,Increase(7)));Check(ground.Get()[GroundAim]==1,"plus: Where you point");
+            ground.Click(At(Page::Aim,Increase(7)));Check(ground.Get()[GroundAim]==2,"then Aimed monster");
+            ground.Click(At(Page::Aim,Increase(7)));Check(ground.Get()[GroundAim]==0,"and round to Game");
+            ground.Click(At(Page::Aim,Decrease(7)));Check(ground.Get()[GroundAim]==2,"minus from Game: Aimed monster");
+            Check(ground.Click({Kind::Apply}).changed==(ChangeMask{1}<<GroundAim),"Apply saves only the ground row");
+            Check(Normalize(GroundAim,1.5f)==0&&Normalize(GroundAim,3)==0&&Normalize(GroundAim,NAN)==0&&Normalize(GroundAim,2)==2,"a malformed ground_aim reads as Game");}
         Check(HelpAt(Page::Aim,(ValueBox(2).x+5.f)/Width,(ValueBox(2).y+5.f)/Height)==StaffPoint&&HelpAt(Page::Aim,(ValueBox(0).x+5.f)/Width,(ValueBox(0).y+5.f)/Height)==SpellLock,"the spell and staff rows explain themselves");
         Check(s.values[TargetHighlight]==0,"the monster outline is Off by default");
         Check(s.values[AimHighlights]==1&&s.values[HighlightRight]==45&&s.values[HighlightLeft]==210,"both hands; gold right, blue left by default");

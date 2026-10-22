@@ -56,6 +56,22 @@ inline bool Placed(Use use){return use==Use::Ground||use==Use::Curse||use==Use::
 inline bool TakesTarget(Use use){return use==Use::Heading||use==Use::Ground||use==Use::Curse||use==Use::Attack||use==Use::CorpseAtTarget;}
 // A landing circle shows where it will hit.
 inline bool Circle(Use use){return use==Use::Ground;}
+// VR Settings > Aim: Spells and Bow skills go to the aimed monster, and Ground
+// skills (0 the game's own aim, 1 where you point, 2 the aimed monster).
+struct Switches {bool spells=false,bowSkills=false;int ground=0;};
+// The rules aim a cast only with its kind's option On. Off (the defaults),
+// every cast aims as it did before them: the casting hand's ray, Bone Wall and
+// Prison on their own floor point, ground skills by the game (#159 review).
+inline bool RulesAim(Use use,bool bow,const Switches& s) {
+    if(use==Use::Native)return false;
+    if(use==Use::Ground)return s.ground>0;
+    return bow?s.bowSkills:s.spells;
+}
+// The aimed monster counts for the cast (with TakesTarget).
+inline bool MonsterSwitch(Use use,bool bow,const Switches& s) {
+    if(use==Use::Ground)return s.ground==2;
+    return bow?s.bowSkills:s.spells;
+}
 // Cells short of the target, toward the caster: Bone Wall rises in front of the
 // monster, Bone Prison (and every other skill) on it (Jeff, 2026-10-20).
 inline float FrontOfTarget(int skill){return skill==78?3.f:0.f;}

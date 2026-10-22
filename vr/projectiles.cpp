@@ -5,6 +5,7 @@
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
+#include <cstring>
 #include <mutex>
 #include "projectiles.h"
 #include "projectile_rules.h"
@@ -145,6 +146,9 @@ void Telegraph(uintptr_t params,uintptr_t unit) {
             (unsigned long long)(now-mark.cast),(unsigned long long)(mark.launched?now-mark.launched:0),board.Speed(flight));
         else snprintf(line,sizeof line,"Frame landing circle: skill %d landed at %d,%d with no circle showing",skill,points[0],points[1]);
     }
+    // A Shock Web throws ~9 bombs: its lines with no circle at most once a second (#160 review).
+    static ULONGLONG orphanAt=0;
+    if(std::strstr(line,"no circle")){if(now-orphanAt<1000)return;orphanAt=now;}
     framevr::logging::Write(line);
 }
 uintptr_t Client(uintptr_t params,int flags) {

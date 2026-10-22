@@ -3,13 +3,14 @@
 #include <cstring>
 #include "vr_settings_ui.h"
 #include "release_notes.h"
+#include "wide_text.h"
 // Retain an exact summary fingerprint in the DLL for the release packager.
 extern "C" __declspec(dllexport) const char* D2RPCVR_ReleaseNotesIdentity(){return framevr::releasenotes::ContentMarker;}
 namespace framevr::settings {
 static int HelpTextHeight(HDC dc,HFONT font,const char* value,int width) {
-    wchar_t wide[512]{};MultiByteToWideChar(CP_UTF8,0,value,-1,wide,512);
+    const auto wide=framevr::WideText(value);
     const auto old=SelectObject(dc,font);RECT bounds{0,0,width,0};
-    DrawTextW(dc,wide,-1,&bounds,DT_CALCRECT|DT_WORDBREAK|DT_NOPREFIX);
+    DrawTextW(dc,wide.c_str(),-1,&bounds,DT_CALCRECT|DT_WORDBREAK|DT_NOPREFIX);
     SelectObject(dc,old);return int(bounds.bottom);
 }
 std::vector<uint8_t> Paint(const Model& m,Hit hover,const char* runtimeStatus,const calibration::Flow* body,const controllers::Labels& detected,int help,GameVideo game,bool monoAudio,
@@ -26,9 +27,9 @@ std::vector<uint8_t> Paint(const Model& m,Hit hover,const char* runtimeStatus,co
     auto oldFont=SelectObject(dc,normal);
     auto fill=[&](Rect r,COLORREF c){RECT rect{r.x,r.y,r.x+r.w,r.y+r.h};auto brush=CreateSolidBrush(c);FillRect(dc,&rect,brush);DeleteObject(brush);};
     auto text=[&](const char* value,Rect r,bool strong=false,bool center=false,COLORREF color=RGB(229,234,235)){
-        wchar_t wide[512]{};MultiByteToWideChar(CP_UTF8,0,value,-1,wide,512);
+        const auto wide=framevr::WideText(value);
         SelectObject(dc,strong?bold:normal);SetTextColor(dc,color);RECT rect{r.x,r.y,r.x+r.w,r.y+r.h};
-        DrawTextW(dc,wide,-1,&rect,DT_WORDBREAK|DT_NOPREFIX|(center?DT_CENTER:DT_LEFT));
+        DrawTextW(dc,wide.c_str(),-1,&rect,DT_WORDBREAK|DT_NOPREFIX|(center?DT_CENTER:DT_LEFT));
     };
     const COLORREF quiet=RGB(154,174,182);
     const auto labels=controllers::Resolve(controllers::Choice(int(m.Get()[ControllerLabels])),detected);
@@ -158,6 +159,7 @@ std::vector<uint8_t> Paint(const Model& m,Hit hover,const char* runtimeStatus,co
             else if(key==TooltipTiming)std::snprintf(label,sizeof label,"%s",TooltipTimingNames[int(value)]);
             else if(key==TargetHighlight){if(value==0)std::snprintf(label,sizeof label,"Off");else std::snprintf(label,sizeof label,"%.0f%%",value);}
             else if(key==AimHighlights)std::snprintf(label,sizeof label,"%s",HighlightsNames[value>.5f?1:0]);
+            else if(key==GroundAim)std::snprintf(label,sizeof label,"%s",GroundAimNames[std::clamp(int(value),0,2)]);
             else if(HighlightKey(key)){if(value==0)std::snprintf(label,sizeof label,"By range");else std::snprintf(label,sizeof label,"%s %.0f\xc2\xb0",HueName(value),value);}
             else if(key==Dominant)std::snprintf(label,sizeof label,"%s",value>.5f?"Left":"Right");
             else if(key==MeleeRules)std::snprintf(label,sizeof label,"%s",MeleeRulesNames[value>.5f?1:0]);

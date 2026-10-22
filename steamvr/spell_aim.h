@@ -10,6 +10,9 @@ namespace framevr::spellaim {
 // These skills are aimed with the casting controller, not the decorative
 // shaft of a wand/scepter or the hero's animated facing.
 inline bool TrackedAim(int skill){return skill==78||skill==84||skill==88||skill==101;}
+// Bone Wall and Bone Prison's own floor placement (GroundPoint below, six
+// cells ahead when level) while the aim rules leave ground skills to the game.
+inline bool BonePlacement(int skill){return skill==78||skill==88;}
 struct Cast {bool directed=false;float x=0,y=0;bool contactPoint=false;};
 struct Scope {
     Cast& current;Cast previous;

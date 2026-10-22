@@ -7,6 +7,8 @@ static void Check(bool b,const char* why){if(!b){std::fprintf(stderr,"FAIL: %s\n
 int main() {
     Check(spellaim::TrackedAim(84)&&spellaim::TrackedAim(101)&&spellaim::TrackedAim(78)&&spellaim::TrackedAim(88),"bone skills and Holy Bolt use the tracked casting hand");
     Check(!spellaim::TrackedAim(47)&&spellaim::GroundTarget(78)&&spellaim::GroundTarget(88)&&!spellaim::GroundTarget(84)&&!spellaim::GroundTarget(101),"Bone Wall and Bone Prison land like every ground skill; Bone Spear and Bone Spirit fly");
+    Check(spellaim::BonePlacement(78)&&spellaim::BonePlacement(88)&&!spellaim::BonePlacement(84)&&!spellaim::BonePlacement(101),
+          "with ground skills left to the game, Bone Wall and Prison keep their own floor placement");
     for(int yaw=0;yaw<360;yaw+=5)for(float floor:{-5.f,0.f,8.f}) {
         const float angle=yaw*.01745329252f;
         const math::Vec direction{std::cos(angle),-1,std::sin(angle)};

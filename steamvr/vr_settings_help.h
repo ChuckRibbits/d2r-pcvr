@@ -65,11 +65,11 @@ inline const char* HelpText(int id) {
         case AimHighlights:return "Which aimed monsters are outlined. A button you hold keeps showing the monster its cast took until you let go. Greyed out while the Monster outline is Off.";
         case HighlightRight:return "The outline color of the monster your right hand points at, and of the monster you look at when the right hand would cast at it (Dominant hand Right, no bow equipped). By range: red near, orange mid-range, yellow far. Otherwise one color around the color wheel, 15 degrees at a time; gold by default. A color unlike the monster's own reads best. Greyed out while the Monster outline is Off.";
         case HighlightLeft:return "The outline color of the monster your left hand points at, and of the monster you look at when the left hand would cast at it (a bow equipped, or Dominant hand Left). By range: red near, orange mid-range, yellow far. Otherwise one color around the color wheel, 15 degrees at a time; blue by default. A color unlike the monster's own reads best. Greyed out while the Monster outline is Off.";
-        case SpellLock:return "Skills go to the aimed monster, outlined or not: the monster of the hand whose button casts (arm held out at least a tenth of your Controller span from your head: 15 cm on a 1.5 m span), else the other hand's, else the one you look at, kept until you let go. Bolts fly at it, curses and Corpse Explosion land on it, Charge and seekers go for it; Teleport and Leap go where you point. Never farther than the game lets a skill reach. With no monster, skills go where that arm points, else the other, else where you look.";
+        case SpellLock:return "Spells go to the aimed monster, outlined or not: the one your casting hand points at (arm held out a tenth of your Controller span), else the other hand's, else the one you look at, kept until you let go. Bolts fly at it; curses and Corpse Explosion land on it; Teleport and Leap go where you point. With no monster, where that arm points, else the other, else where you look. Off: spells aim along your casting hand, as before.";
         case StaffPoint:return "A staff held upright would cast along its shaft, straight up. With this On, an upright staff casts along your arm, from your shoulder through your hand, so a bent wrist, knuckles to the side or a hand overhead still cast where you reach. Levelled out like a wand (within about 35 degrees of flat), it casts from its top as before.";
-        case LandingCircles:return "Shows where a ground skill will hit, in its element's color: fire orange, cold blue, lightning yellow. The circle fills from the rim inward until the skill lands: a Fire Blast bomb over its flight, timed by the game's own missile, Meteor over its fall, Blizzard while the ice falls. Fire Wall shows as a strip across your aim. It lies on the floor only, never on monsters' legs or walls.";
+        case LandingCircles:return "Shows where a ground skill will hit once the game accepts the cast, in its element's color: fire orange, cold blue, lightning yellow. The circle fills from the centre outward until the skill lands: a Fire Blast bomb over its flight, Meteor over its fall, Blizzard while the ice falls. Fire Wall shows as a strip across your aim. Floor only, never monsters' legs or walls. Greyed out while Ground skills is Game.";
         case SpellLockBow:return "Bow and crossbow skills cast from a button (Multiple Shot, Guided Arrow...) go to the aimed monster too, the bow hand's first. Off by default: archers aim on purpose. Strafe always picks its own targets, and a bow you draw and release yourself always shoots where you aim it.";
-        case GroundToTarget:return "Skills cast at a point on the ground always land where you aim: Assassin Fire Blast and traps, Sorceress Blizzard, Meteor, Fire Wall and Hydra, Druid Fissure and Volcano, and Bone Wall and Bone Prison. On: on the aimed monster when there is one (the casting hand's, else the other hand's, else the one you look at; shown or not), Bone Wall in front of it. Off, or with no monster: on the floor where that arm points, else the other, else where you look; at the horizon or above, as far as the game lets a skill be cast.";
+        case GroundAim:return "Where ground skills land: Fire Blast and traps, Blizzard, Meteor, Fire Wall, Hydra, Fissure, Volcano, Bone Wall and Bone Prison. Aimed at the horizon or above, as far as the game lets a skill be cast.";
         case HeartbeatStart:return "The life percentage where the low-life heartbeat begins. Below it the heartbeat steps up every 10% of life you lose, louder and faster, until it is at full strength below 10%. 60% is the default; Off silences it. Healing winds it back down beat by beat; wiping the visor clean fades it until the next hit. Works in Unleashed and Classic.";
         case MeleeHitSpeed:return "Minimum weapon movement speed for a swing to count as a strike. Lower it for easier swings; raise it to require faster movement. Default: 12 m/s. Both melee modes use this value. Shield bash has its own threshold.";
         case ShieldBashSpeed:return "Minimum tracked hand speed for a physical shield bash, including assigned Smite. Default: 2 m/s. Move the hand at least 12 cm in one deliberate stroke; wrist twisting alone does not attack. The speed must still be met at contact. Applies in both melee modes; blocking, parries and trigger attacks are unchanged.";
@@ -113,6 +113,7 @@ inline int HelpChoices(int id) {
         case RenderResolution:return int(std::size(resolution::Choices));
         case ControllerLabels:return int(controllers::Choice::Count);
         case Dominant:case MeleeRules:case MapTopDown:case AimHighlights:return 2;
+        case GroundAim:return int(std::size(GroundAimNames));
         default:return 0;
     }
 }
@@ -191,6 +192,12 @@ inline ChoiceHelp HelpChoice(int id,float value) {
                 "Item details appear after the laser rests on an item for 300 ms.",
                 "Item details use the game's own timing."};
             return {TooltipTimingNames[c],text[c]};}
+        case GroundAim:{
+            static constexpr const char* text[]={
+                "The game aims ground skills its own way, as before: Bone Wall and Prison where your hand points at the floor.",
+                "On the floor where your casting hand points, held out or not, with a landing circle.",
+                "On the monster your hands or eyes aim at (Bone Wall in front of it), else where you point, with a landing circle."};
+            return {GroundAimNames[c],text[c]};}
         case AimHighlights:{
             static constexpr const char* text[]={
                 "One outline: the monster your dominant hand (VR > Dominant hand) points at, else the one you look at.",

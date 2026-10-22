@@ -2058,8 +2058,10 @@ void Input() {
     if(motionOutput.skill>=0&&(!quickFresh||!quickSnapshot.skills[motionOutput.skill].available))motionOutput.skill=-1;
     // Bow skills leave the bow: the arrow is in the left hand's model, so the
     // target, the lock and the shot follow the bow whichever button casts. A
-    // drawn string (or the shot just loosed) keeps its own line.
-    if(motionInput.weapon==gameplay::Weapon::Bow&&motionOutput.skill>=0&&motionInput.tracked[1]&&
+    // drawn string (or the shot just loosed) keeps its own line. Only with VR
+    // Settings > Aim > Bow skills go to the aimed monster: Off, a bow skill
+    // aims along its button's hand, as before the aim rules (#159 review).
+    if(gestureSettings[settings::SpellLockBow]>.5f&&motionInput.weapon==gameplay::Weapon::Bow&&motionOutput.skill>=0&&motionInput.tracked[1]&&
        weaponskills::Bow(quickSnapshot.skills[motionOutput.skill].id)&&gameplay::Length(motionOutput.rayOrigin-motionInput.hand[1].p)>.05f) {
         motionOutput.rayOrigin=motionInput.hand[1].p;motionOutput.rayDirection=gameplay::BowForward(motionInput.hand[1]);motionOutput.rayValid=true;
     }

@@ -1,6 +1,7 @@
 #include "aim_rules.h"
 #include <cstdio>
 #include <cstdlib>
+#include <initializer_list>
 using namespace framevr::aimrules;
 static void Check(bool b,const char* why){if(!b){std::fprintf(stderr,"FAIL: %s\n",why);std::exit(1);}}
 int main() {
@@ -21,6 +22,18 @@ int main() {
     Check(left.at[0]==Left&&left.at[1]==Right&&left.at[2]==Eyes,"a left button: left, right, eyes");
     Check(bow.at[0]==Left&&bow.at[1]==Right,"a bow skill on a right button: the bow hand first");
     Check(Stable(373)&&Stable(402)&&!Stable(372)&&!Stable(403)&&Of(395,true)==Use::Native&&Of(388,false)==Use::Native,"the Warlock keeps upstream's aim: no rule, even for his missiles");
+    {
+        const Switches off{},spells{true,false,0},bows{false,true,0},point{false,false,1},monster{false,false,2};
+        for(const Use use:{Use::Native,Use::Heading,Use::Ground,Use::Curse,Use::Attack,Use::Spot,Use::CorpseAtTarget})
+            for(const bool bow:{false,true})Check(!RulesAim(use,bow,off)&&!MonsterSwitch(use,bow,off),"every option Off: no cast is aimed by the rules");
+        Check(RulesAim(Use::Heading,false,spells)&&RulesAim(Use::Curse,false,spells)&&!RulesAim(Use::Heading,true,spells)&&!RulesAim(Use::Ground,false,spells),
+              "Spells: spells only, not bow skills or ground skills");
+        Check(RulesAim(Use::Heading,true,bows)&&!RulesAim(Use::Heading,false,bows)&&MonsterSwitch(Use::Heading,true,bows),"Bow skills: bow skills only");
+        Check(RulesAim(Use::Ground,false,point)&&!MonsterSwitch(Use::Ground,false,point)&&!RulesAim(Use::Heading,false,point),
+              "Ground skills Where you point: placed by the rules, never on a monster; other casts untouched");
+        Check(RulesAim(Use::Ground,false,monster)&&MonsterSwitch(Use::Ground,false,monster),"Ground skills Aimed monster: on the monster");
+        Check(!RulesAim(Use::Native,false,{true,true,2}),"a skill without a rule (the Warlock's, self skills) is never the rules'");
+    }
     std::puts("aim rules ok");
     return 0;
 }

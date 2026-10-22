@@ -7,7 +7,7 @@
 
 // Landing circles for ground skills: a circle at the point each cast was
 // aimed at, placed the same way for every ground skill, Fire Blast included.
-// Its fill closes from the rim inward over the skill's time (ForSkill) and then
+// Its fill grows from the centre outward over the skill's time (ForSkill) and then
 // it fades. A skill whose missiles are known (Flights) is then timed by the
 // game itself (attack speed, skill levels and gear change the throw, so
 // nothing is hard-coded but the first guess): the launch missile re-times the
