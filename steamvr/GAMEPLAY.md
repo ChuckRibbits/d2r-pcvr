@@ -867,7 +867,20 @@ mid-game) choose between two modes for physical swings and trigger/button melee:
     the game resolves them, which follows the blade frame to frame but not
     within a single frame. A riposte is still a clean hit (no falloff) and
     counts as one of the stroke's creatures.
-  Leech, crushing blow and other on-hit effects still run on the unscaled hit.
+  - **On-hit effects** come only from a stroke that waited a full native attack
+    cycle (the breakpoint, from the previous landed stroke on the same recovery
+    clock: per hand when dual wielding, one shared clock for a shapeshift
+    form's two claws), and only on the first creature that stroke lands on.
+    That covers life and mana leech, critical and deadly strike, crushing blow,
+    open wounds, freeze, slow, knockback, flee, blind, prevent monster heal,
+    defense lowered per hit and chance to cast on striking or attack (curses
+    included). Every other contact still lands its scaled damage, with no
+    on-hit effects. `swing_recovery_grace` does not shorten the wait. A riposte
+    always carries them; an unknown cycle counts as full. Elemental damage and
+    its effects (chill, poison) and on-kill effects are unchanged. The game's
+    own roll sites are checked at start (`Frame on-hit gate:`); a part not
+    found stays native. `[debug] melee_trace=1` adds `onhit=1/0` to each
+    traced contact.
   `Frame swing damage:` in the log reports scaled hits and the last factors.
 - **Classic** (`1`): native attack rating, monster defense, block and the
   level penalty decide each attack, and attack speed paces them (below). A rolled
