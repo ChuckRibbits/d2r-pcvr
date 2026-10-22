@@ -1,8 +1,8 @@
 #pragma once
 #include "portal_billboard.h"
 
-// Effects the game attaches to a unit (Paladin auras and other overlays)
-// push their particles toward the camera when they spawn: local point =
+// Paladin aura overlays (data/hd/vfx/particles/overlays/paladin/, also used
+// by monsters and hirelings with those auras) push their particles toward the camera when they spawn: local point =
 // -view.direction * k (Holy Freeze: k = 3), baked into each particle. On the
 // flat screen that slides a particle along its own line of sight, so it only
 // changes draw order and keeps the ring under the hero. In VR the push is
@@ -10,11 +10,12 @@
 // effect spawned with the game's view, which left the ring a constant
 // direction off the feet. These effects get a straight-down view direction
 // from the game camera's own vertical part, so they lose the sideways part
-// and keep a smaller lift (Lift).
+// and keep a smaller lift (Lift). Other overlays (shrine symbols, Bone Armor,
+// curses) keep their native view direction until each is checked in VR.
 namespace billboards::overlay_view {
-// data/hd/vfx/particles/overlays/..., any case or separator.
+// data/hd/vfx/particles/overlays/paladin/..., any case or separator.
 inline bool Asset(std::string_view path) {
-    constexpr std::string_view prefix="data/hd/vfx/particles/overlays/";
+    constexpr std::string_view prefix="data/hd/vfx/particles/overlays/paladin/";
     constexpr std::string_view suffix=".particles";
     if(path.size()<=prefix.size()+suffix.size()||path.size()>159)return false;
     auto lower=[](char c){return c>='A'&&c<='Z'?char(c+'a'-'A'):(c=='\\'?'/':c);};

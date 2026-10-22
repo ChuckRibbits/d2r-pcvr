@@ -79,27 +79,27 @@ bool ShrineDefinition(uint64_t definition) {
     }
     return e.shrine;
 }
-// Unit overlays (overlay_view.h). The game camera's direction is written on
-// the render thread each frame and read by PopcornFX workers.
+// Paladin aura overlays (overlay_view.h). The game camera's direction is
+// written on the render thread each frame and read by PopcornFX workers.
 SRWLOCK forwardLock=SRWLOCK_INIT;
 portal::Vec gameForward{};ULONGLONG forwardAt=0;
 std::atomic<bool> overlayReported{false};std::atomic<ULONGLONG> overlayLogAt{0};
+std::atomic<int> overlayLogBudget{12};
 struct OverlayEntry {uint64_t definition=0;ULONGLONG at=0;bool overlay=false;char path[160]{};};
 const OverlayEntry& OverlayDefinition(uint64_t definition) {
     thread_local OverlayEntry cache[32];
     auto& e=cache[(definition>>6)%32];const auto now=GetTickCount64();
     if(e.definition!=definition||now-e.at>1000) {
         e.definition=definition;e.at=now;e.path[0]=0;
-        // Shrine symbols keep their own correction (shrine_placement.h).
-        e.overlay=portal::DefinitionPath(ReadAt,definition,gameBase,e.path)&&
-            overlay_view::Asset(e.path)&&!shrine_placement::Asset(e.path);
+        e.overlay=portal::DefinitionPath(ReadAt,definition,gameBase,e.path)&&overlay_view::Asset(e.path);
     }
     return e;
 }
-// Overlays take the game camera's vertical part as view.direction, for every
-// view: an effect that spawns with the flat camera's view is pushed sideways
-// in VR too.
+// Aura overlays take part of the game camera's vertical as view.direction,
+// for every view: an effect that spawns with the flat camera's view is
+// pushed sideways in VR too.
 void CorrectOverlayView(void* output,const void* context) {
+    framevr::hookmetrics::Scope measured(framevr::hookmetrics::PortalView);
     if(!portalReady.load()||!wanted||!wanted())return;
     portal::Vec forward,value;ULONGLONG at;
     AcquireSRWLockShared(&forwardLock);forward=gameForward;at=forwardAt;ReleaseSRWLockShared(&forwardLock);
@@ -118,19 +118,23 @@ void CorrectOverlayView(void* output,const void* context) {
             if(portal::Resolve(ReadAt,c,i,gameBase,instance))entry=&OverlayDefinition(instance.definition);
         }
         if(!entry||!entry->overlay)continue;
-        portal::Vec native{};
-        if(!ReadAt(&native,out.data+12ull*i,sizeof native)||
-           !framevr::WriteMemory(reinterpret_cast<void*>(out.data+12ull*i),&value,sizeof value))continue;
-        // Frame aura: the direction the effect asked for and what it got, every 5 s at most.
-        const auto now=GetTickCount64();auto last=overlayLogAt.load();
-        if(logger&&now-last>=5000&&overlayLogAt.compare_exchange_strong(last,now)) {
+        // Frame aura: the direction the effect asked for and what it got, at
+        // most every 5 s and 12 times per session.
+        portal::Vec native{};bool log=false;
+        if(logger&&overlayLogBudget.load(std::memory_order_relaxed)>0) {
+            const auto now=GetTickCount64();auto last=overlayLogAt.load();
+            log=now-last>=5000&&overlayLogAt.compare_exchange_strong(last,now)&&
+                ReadAt(&native,out.data+12ull*i,sizeof native)&&overlayLogBudget.fetch_sub(1)>0;
+        }
+        if(!framevr::WriteMemory(reinterpret_cast<void*>(out.data+12ull*i),&value,sizeof value))continue;
+        if(log) {
             char line[360];
             std::snprintf(line,sizeof line,"Frame aura: overlay view direction native=(%.3f,%.3f,%.3f) -> (0,%.3f,0), no sideways push; asset=%s",
                 native.x,native.y,native.z,value.y,entry->path);
             logger(line);
         }
         if(!overlayReported.exchange(true)&&logger)
-            logger("VR overlays: auras and other unit overlays keep the game camera's lift without the sideways push toward the camera");
+            logger("VR overlays: Paladin aura overlays keep a small lift without the sideways push toward the camera");
     }
 }
 #endif

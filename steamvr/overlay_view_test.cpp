@@ -1,5 +1,4 @@
 #include "../vr/overlay_view.h"
-#include "../vr/shrine_placement.h"
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -9,18 +8,21 @@ void Check(bool ok,const char* why){if(!ok){std::fprintf(stderr,"FAIL: %s\n",why
 bool Near(float a,float b,float e=1e-3f){return std::fabs(a-b)<=e;}
 int main() {
     using namespace overlay_view;
-    // Scope: effects attached to units, any case or separator.
-    Check(Asset("data/hd/vfx/particles/overlays/paladin/holyfreeze/FX_holyfreeze_overlay.particles"),"Holy Freeze overlay");
+    // Scope: Paladin aura overlays (the headset-checked family), any case or separator.
+    for(auto p:{"data/hd/vfx/particles/overlays/paladin/holyfreeze/FX_holyfreeze_overlay.particles",
+        "data/hd/vfx/particles/overlays/paladin/aura_resistcold/FX_resistcold_overlay.particles",
+        "data/hd/vfx/particles/overlays/paladin/convictionfront/FX_Conviction_Overlay.particles",
+        "data/hd/vfx/particles/overlays/paladin/blessedaimback/FX_BlessedAimOverlay.particles"})
+        Check(Asset(p),"Paladin aura overlay");
     Check(Asset("DATA\\HD\\VFX\\PARTICLES\\OVERLAYS\\PALADIN\\AURA_HOLYFIRE_FRONT\\FX_HOLYFIRE_OVERLAY.PARTICLES"),"case and separators");
     for(auto p:{"data/hd/vfx/particles/objects/vfx_only/town_portal/vfx_town_portal_newstuff.particles",
         "data/hd/vfx/particles/missiles/fireball/vfx_fireball.particles",
-        "data/hd/vfx/particles/overlays/.particles",
+        "data/hd/vfx/particles/overlays/common/shrine_mana_regen/vfx_shrine_mana_regen.particles",
+        "data/hd/vfx/particles/overlays/necro/bonearmor_front/vfx_bonearmor_front.particles",
+        "data/hd/vfx/particles/overlays/paladin/.particles",
         "data/hd/vfx/particles/overlays/paladin/aura.particles.extra",
-        "data/hd/vfx/particles/overlays/../missiles/x.particles"})
-        Check(!Asset(p),"portals, missiles and malformed paths keep their native view direction");
-    // Shrine symbols are overlays too; billboards.cpp leaves them to shrine_placement.
-    Check(shrine_placement::Asset("data/hd/vfx/particles/overlays/common/shrine_mana_regen/vfx_shrine_mana_regen.particles"),
-        "shrine symbols keep their own correction");
+        "data/hd/vfx/particles/overlays/paladin/../necro/x.particles"})
+        Check(!Asset(p),"portals, missiles, shrine symbols, other overlays and malformed paths keep their native view direction");
 
     // Headset capture 2026-10-21: the flat camera direction, and Holy Freeze
     // spawning with the VR view (0.895,-0.442,0.056) -> local (-2.686,1.425,-0.167):
@@ -43,5 +45,5 @@ int main() {
         portal::Vec{std::numeric_limits<float>::quiet_NaN(),-1,0},portal::Vec{0,-std::numeric_limits<float>::infinity(),0}}) {
         Check(!Upright(f,keep)&&keep.x==8&&keep.y==9&&keep.z==10,"invalid game camera rejected without a replacement");
     }
-    std::puts("Overlay view: scope, captured aura pushes, kept lift and camera guards passed");
+    std::puts("Overlay view: Paladin aura scope, captured aura pushes, kept lift and camera guards passed");
 }
