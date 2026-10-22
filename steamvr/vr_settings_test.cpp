@@ -60,12 +60,23 @@ int main(){
         Check(HelpCard.x>=Width&&HelpCard.y+HelpCard.h<Apply.y,"help never covers controls or footer");
     }
     Snapshot s;s.ready=true;
+    {Model effects;effects.Open(s);effects.Click({Kind::Tab,int(Page::Video)});
+        Check(s.values[ElementalHands]==0,"experimental hand effects default off");
+        const auto hit=At(Page::Video,ValueBox(3));
+        Check(hit.index==ElementalHands&&hit.kind==Kind::Change,"elemental hand toggle hit target");
+        effects.Click(hit);const auto request=effects.Click({Kind::Apply});
+        Check(request.changed==(ChangeMask{1}<<ElementalHands)&&request.values[ElementalHands]==1,"the elemental toggle saves alone");
+        auto external=request.base;external[Motion]=1;
+        Check(!Conflict(external,request.base,request.changed),"its edit tolerates unrelated setting changes");
+        external[ElementalHands]=1;Check(Conflict(external,request.base,request.changed),"its conflicts are detected");
+    }
     {
         Check(RowCount(Page::Performance)==8&&RowKey(Page::Performance,4)==Foveation&&RowKey(Page::Performance,5)==FoveationStrength&&
               RowKey(Page::Performance,1)==RenderResolution&&RowKey(Page::Performance,7)==DesktopOneEye,"strength sits directly under foveated rendering");
         Check(RowKey(Page::Performance,0)==StereoRendering&&RowKey(Page::Performance,2)==DrawDistance&&RowKey(Page::Performance,3)==ObjectDistance&&
               RowKey(Page::Performance,6)==ReShadeDepth,"everything that changes the frame rate is on the Perf page");
-        Check(RowCount(Page::Video)==3&&RowKey(Page::Video,0)==Sky&&RowKey(Page::Video,1)==Fog&&RowKey(Page::Video,2)==Ceiling,"the Video page keeps the mod's effects");
+        Check(RowCount(Page::Video)==4&&RowKey(Page::Video,0)==Sky&&RowKey(Page::Video,1)==Fog&&RowKey(Page::Video,2)==Ceiling&&
+              RowKey(Page::Video,3)==ElementalHands,"the Video page keeps the mod's effects");
         const auto last=Increase(RowCount(Page::Performance)-1);
         Check(last.y+last.h<PerformanceBox.y&&PerformanceBox.y+PerformanceBox.h<=GameVideoBox.y&&GameVideoBox.y+GameVideoBox.h<=DepthRestartBox.y&&
               DepthRestartBox.y+DepthRestartBox.h<876,"Perf rows, then its numbers, end above the save status");

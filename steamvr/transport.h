@@ -82,6 +82,7 @@ void ConfigureHeartbeat(float volume,float bpmMin,float bpmMax,float fadeSeconds
 // optional 16-bit PCM WAV (empty: the built-in bone snap) played once as the guard breaks.
 void ConfigureGuardBreakSound(float volume,const wchar_t* file);
 void SpellCast(int hand,uint64_t session); // one successful hand spell, not each projectile
+void SpellVisualCast(const bowflight::Shot&); // confirmed hand cast; cosmetic only
 bool TakeBowShot(bowflight::Shot& shot);
 bool TakeCrossbowShot(bowflight::Shot& shot);
 bool CrossbowHeld(const bowflight::Shot& shot);
