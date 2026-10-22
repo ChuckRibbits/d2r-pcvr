@@ -2199,6 +2199,16 @@ void Input() {
     const uint32_t hidden=interactionOutput.stowed?3u:journalMode?2u:interactionOutput.bottleHand>=0?1u<<interactionOutput.bottleHand:0;
     skel::SetInteractionHidden(hidden);
     potionScene=potions::MakeScene(interactionInput,interactionOutput);
+    // The game's arrow on the bow while the game's own nocked arrow is not
+    // showing (in town the game stops drawing missiles): tail at the nock or
+    // drawing hand, along the draw. Without the cached model, the draw guide.
+    if(potionModels.HasArrow()&&!panelMode&&motionControls.load()&&motionInput.active&&motionOutput.rayValid&&motionOutput.bowReady&&
+       !bowvr::PreviewReady()&&(motionOutput.bowDrawing||motionOutput.bowInReach)) {
+        const auto tail=motionOutput.bowDrawing?motionInput.hand[0].p:motionOutput.nockPoint;
+        const auto direction=motionOutput.bowDrawing?motionOutput.rayDirection:motionOutput.bowForward;
+        const auto middle=tail+direction*(bowflight::ArrowLength*.5f);
+        potions::AddArrow(potionScene,{middle,math::BeamOrientation(direction,V(head.position)-middle)});
+    }
     elements::Input elementalInput;
     elementalInput.context={interactionInput.session,(meleeEpoch<<32)|bowWorldEpoch,motionInput.skillContext,motionInput.equipment};
     elementalInput.at=interactionInput.at;
@@ -3372,7 +3382,7 @@ void EndPair() {
         const auto center=motionOutput.bowDrawing?motionInput.hand[0].p:motionOutput.nockPoint;
         // The game's bow mesh supplies the string. Do not draw the teal
         // V-string guide over it, even when its rig cannot follow the hand.
-        if(!bowvr::PreviewReady()&&(motionOutput.bowDrawing||motionOutput.bowInReach)) {
+        if(!bowvr::PreviewReady()&&!potionModels.HasArrow()&&(motionOutput.bowDrawing||motionOutput.bowInReach)) {
             const auto direction=motionOutput.bowDrawing?motionOutput.rayDirection:motionOutput.bowForward;
             const auto mid=center+direction*(bowflight::ArrowLength*.5f);
             const auto orient=math::BeamOrientation(direction,V(head.position)-mid);

@@ -13,6 +13,7 @@ public:
     bool Initialize(ID3D12Device*,ID3D12CommandQueue*,DXGI_FORMAT,uint32_t width,uint32_t height,
                     void (*log)(const char*),const std::filesystem::path& directory={});
     bool Ready() const;
+    bool HasArrow() const;   // the cache's arrow loaded: Scene items with ArrowCode draw it
     void Reset();
     // Caller waited the eye's copy fence before reusing its RTV/depth resource.
     bool Render(ID3D12GraphicsCommandList*,ID3D12Resource*,unsigned eye,

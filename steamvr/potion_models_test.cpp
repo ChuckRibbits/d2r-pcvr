@@ -43,6 +43,8 @@ int main(int argc,char** argv){try {
                 item.pose={{(float(col)-2)*.19f,(1-float(row))*.255f,-.85f},math::Yaw(.55f)};
                 item.highlight=col==0;
             }
+            // Under the potions, the cached arrow pointing right (along its +Y).
+            if(row==2&&models.HasArrow())potions::AddArrow(scene,{{0,-.47f,-.85f},math::BeamOrientation({1,0,0},{0,0,1})});
             if(!models.Render(list.Get(),targets[eye].Get(),eye,view,{-.65f,.65f,-.53f,.53f},scene))throw std::runtime_error("render");
         }
         D3D12_RESOURCE_BARRIER barrier{};barrier.Type=D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;barrier.Transition={targets[eye].Get(),D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES,D3D12_RESOURCE_STATE_RENDER_TARGET,D3D12_RESOURCE_STATE_COPY_SOURCE};list->ResourceBarrier(1,&barrier);
