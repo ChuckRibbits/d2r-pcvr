@@ -66,10 +66,10 @@ Quest left X/Y correspond to Index left A/B; right A/B labels are the same.
 | VR settings / body calibration | Either wheel → VR SETTINGS |
 | Explain a VR setting | Point the right-hand laser at its label or controls for about half a second. Help appears beside the panel and disappears when you point away; no click needed |
 | Minimap | Either wheel → MAP; movement remains available |
-| Zoom the minimap | Look at the wrist / palm map and push the right stick up to zoom in, down to zoom out; down until it stops shows the whole map. While you look at it, right stick up / down does nothing else (no run / walk toggle, no loot labels); left / right still turns |
+| Zoom the minimap | Look at the wrist / palm map and push the right stick up to zoom in, down to zoom out; down until it stops shows the whole map. While you look at it, right stick up / down does nothing else (no run / walk toggle, no loot labels); left / right still turns, except during a zoom push |
 | Reset height | VR Settings > Reset eye height |
 | Adjust controller vibration | **VR Settings > Haptics**: overall strength plus separate melee, bow draw, bow/throw release, spell, interaction and resource-alert strengths. Tests match each action's hands; **Apply** saves |
-| Hold to show all nearby loot labels (Alt) | Hold the **right stick down** during gameplay, outside wheels. Labels stay shown while it is held; let go to restore normal drop/hover labels. Uses the native Alt range, independently of where you aim. A mostly vertical push never turns you. Also listed in **VR Settings > Controls** |
+| Hold to show all nearby loot labels (Alt) | Hold the **right stick down** during gameplay, outside wheels and while not looking at the wrist map. Labels stay shown while it is held; let go to restore normal drop/hover labels. Uses the native Alt range, independently of where you aim. A mostly vertical push never turns you. Also listed in **VR Settings > Controls** |
 | Interact / pick up / talk | Right A by default; requires an aimed interactable. One press acts on one target: press again for each item, including loot a chest just dropped |
 | Free melee swing / thrust | Move the equipped weapon through an enemy |
 | Physical dual wield | Equip two supported melee weapons on a Barbarian or two claws on an Assassin; release both triggers and swing or thrust with either hand. Active skills retain their button bindings |
@@ -461,8 +461,12 @@ Both are saved like any setting. Isometric with north up is the default.
 
 To zoom, look at the wrist or palm map (its center within about 22 degrees
 of where your head points) and push the right stick up to zoom in about your
-hero, up to 4x, or down to zoom out; 1x, the whole native map, is the lowest. A
-light tick marks each quarter and a firmer one either end. The wheel's MAP tab
-shows the same zoom. The zoom lasts until the game closes; every game starts at
-1x. Looking away gives the right stick back at once; a push still held then must
-return to the centre before it toggles running or shows loot labels.
+hero, up to 4x, or down to zoom out; 1x, the whole native map, is the lowest.
+Only a mostly vertical push zooms, and during it left / right does not turn
+until the stick is back near the center. A light tick marks each quarter step
+(faster as it zooms in) and a firmer one either end. The wheel's MAP tab shows
+the same zoom; change it at the wrist. The zoom is not saved: every new game
+starts at 1x. Looking away gives the right stick back from the next frame; a
+push still held then must return to the center before it toggles running or
+shows loot labels. A push already held when you look at the map zooms it
+straight away.

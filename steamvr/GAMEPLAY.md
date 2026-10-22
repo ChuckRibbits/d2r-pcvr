@@ -184,9 +184,9 @@ not generate melee velocity. The layout currently assumes a right-handed player.
 | Seated weapon selection | Utility wheel → **Weapon I** or **Weapon II** |
 | Stow/draw | Utility wheel → **Stow weapons** / **Draw weapons**; native equipped stats stay unchanged |
 | Health/mana | Check the back of your left wrist, or choose **Palm** in **VR Settings > HUD** and hold your left palm upward in front of you briefly. No button required; automatic alerts are off by default |
-| Show all nearby loot labels (Alt) | Hold the **right stick down** to hold the native Show Items action; let go to restore normal drop/hover labels. Push it **up** to toggle running / walking. Listed in **VR Settings > Controls** |
+| Show all nearby loot labels (Alt) | Hold the **right stick down** to hold the native Show Items action; let go to restore normal drop/hover labels. Push it **up** to toggle running / walking. Neither while you look at the wrist / palm map, which they zoom instead. Listed in **VR Settings > Controls** |
 | Explored minimap | Hold Left Y ? **MAP** in the bottom tabs; point right laser + trigger. **SPELLS** returns to skills; releasing Left Y closes the menu |
-| Zoom the minimap | Look at the wrist / palm map; right stick up zooms in, down zooms out. No run / walk toggle or loot labels meanwhile; left / right still turns; looking away returns the stick |
+| Zoom the minimap | Look at the wrist / palm map; right stick up zooms in, down zooms out. No run / walk toggle or loot labels meanwhile; left / right still turns, except during a zoom push; looking away returns the stick |
 | Quest journal | Open the native tabbed game menu with Left X / Frame Left A, then select Journal. The duplicate wheel entry is removed |
 | Journal controls | Right laser + trigger uses native page controls/act tabs; Right B follows native back; Left X performs native X |
 | Inventory drop / sort | Native X (Quest Left X / Frame Left A) / press and hold right stick click; right-stick click no longer swaps in gameplay |
@@ -227,11 +227,14 @@ The wheel's **MAP** tab remains available even when navigation is **Off**.
 within about 22 degrees of where your head points; it holds until about 30, so a
 glance at the edge does not flicker), the right stick's up / down zooms it:
 up zooms in about your hero, up to 4x; down zooms out to 1x, the whole native
-map, where it stops. A light tick marks each quarter step, a firmer one either
-end. While you look at the map, right stick up / down does nothing else (it does not
-toggle running or show loot labels); left / right still turns. Wrist, palm and the wheel's **MAP** share one zoom. It is not
-saved: it lasts until the game closes, and every game starts at 1x, so a player
-who has forgotten the control still sees the whole map.
+map, where it stops. Only a mostly vertical push zooms, and during it left /
+right does not turn until the stick is back near the center. A light tick marks
+each quarter step (faster as it zooms in), a firmer one either end. While you
+look at the map, right stick up / down does nothing else (it does not toggle
+running or show loot labels); left / right still turns. Wrist and palm share one
+zoom, and the wheel's **MAP** tab shows it (change it at the wrist). It is not
+saved: every new game starts at 1x, so a player who has forgotten the control
+still sees the whole map.
 
 The label above the compass shows your current **act (I-V)** and **area name**,
 including named dungeon floors. It follows the same wrist/palm placement and

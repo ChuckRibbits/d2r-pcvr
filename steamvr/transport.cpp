@@ -2052,13 +2052,19 @@ void Input() {
     {
         // Minimap zoom: while the wrist / palm map is shown (the wrist turned
         // toward you, or the palm raised) and you look at it, the right stick's
-        // up / down zooms it and does nothing else; left / right still turns.
+        // up / down zooms it and does nothing else; left / right still turns,
+        // except during a zoom push. Each new game starts at 1x.
+        static uint64_t mapZoomSession=0;
+        if(mapzoom::NewGame(mapZoomSession,interactionInput.session)&&mapZoom.Zoom()!=mapzoom::Min) {
+            mapZoom.NewGame();Say("Frame map zoom: new game, back to 1.00x");
+        }
         const bool shown=wristMapShown&&mapSupported&&interaction::NavigationWanted(interactionInput,interactionOutput,interactionInput.at);
         wristMapLooked=shown&&mapzoom::Looking(interactionInput.head.p,interactionInput.head.q,wristMapCenter,wristMapLooked);
         mapzoom::Input in;in.time=interactionInput.time;in.looking=MinimapLooked();
-        in.stick=controls.ry/32767.f;
+        in.stick=controls.ry/32767.f;in.x=controls.rx/32767.f;
         const auto zoom=mapZoom.Step(in);
         if(zoom.owned)controls.ry=0;
+        if(zoom.turnOwned)controls.rx=0;
         if(zoom.tick)MotionPulse(0,haptics::Category::Interaction,zoom.tick==2?.35f:.15f,zoom.tick==2?30000000:12000000);
         // One line a gesture: a start at most every half second, and its stop.
         const uint64_t tick=GetTickCount64();

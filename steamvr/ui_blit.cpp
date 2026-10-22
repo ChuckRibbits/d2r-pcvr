@@ -41,7 +41,7 @@ float Dart(float2 v,float2 dir,float2 across,float r) {
     return step(along,r)*step(-.65*r+.9*wide,along)*step(wide,(r-along)*.42);
 }
 // 2 inside the arrow, 1 on its rim, 0 elsewhere; grown with the map's zoom,
-// so it keeps covering the game's X
+// so it stays the same size relative to the map and the game's X
 float ArrowCoverage(float2 pixel,float side,float angle,float grow) {
     float2 v=pixel-side*.5;
     float2 dir=float2(sin(angle),-cos(angle)),across=float2(cos(angle),sin(angle));

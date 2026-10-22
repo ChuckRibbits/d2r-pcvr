@@ -36,8 +36,35 @@ int main(){
         s.in.stick=.6f;s.Step(10);const float z=s.out.zoom;Check(z>1,"part-way stick zooms in");
         s.in.stick=.2f;Check(s.Step(10).zoom==z&&s.ends==1,"inside the dead zone the zoom holds and the gesture ends");
         Check(s.out.owned,"the stick still belongs to the map while it is looked at");
-        s.in.looking=false;s.in.stick=1;Check(!s.Step().owned&&s.out.zoom==z,"looking away gives the stick back the same frame");
-        Check(s.Step(50).zoom==z&&s.g.Zoom()==z,"the zoom stays while the game runs");
+        s.in.looking=false;s.in.stick=1;Check(!s.Step().owned&&!s.out.turnOwned&&s.out.zoom==z,"looking away gives the stick back");
+        Check(s.Step(50).zoom==z&&s.g.Zoom()==z,"the zoom stays for this game");
+    }
+    {
+        // Only a mostly vertical push zooms, and it holds the turn until the center.
+        Sim s;s.in.looking=true;
+        s.in.x=.8f;s.in.stick=.35f;s.Step(10);
+        Check(!s.out.zooming&&!s.out.turnOwned&&s.out.zoom==1,"a sideways turn flick with some up does not zoom");
+        s.in.stick=.6f;s.Step(10);
+        Check(!s.out.zooming&&!s.out.turnOwned&&s.out.zoom==1,"a turn that drifts up stays a turn");
+        s.in.x=0;s.in.stick=0;s.Step();
+        s.in.x=.4f;s.in.stick=1;s.Step(10);
+        Check(s.out.zooming&&s.out.turnOwned&&s.out.zoom>1,"a slightly diagonal push zooms and does not turn");
+        s.in.x=.9f;s.in.stick=.1f;s.Step();
+        Check(!s.out.zooming&&s.out.turnOwned,"sliding sideways mid-push still turns nothing");
+        s.in.x=.1f;s.in.stick=.1f;s.Step();
+        Check(!s.out.turnOwned,"back near the center the stick turns again");
+        s.in.x=.9f;s.in.stick=0;Check(!s.Step().turnOwned,"then a sideways push turns");
+    }
+    {
+        // A new game (a new local player) goes back to the whole map.
+        uint64_t seen=0;
+        Check(mapzoom::NewGame(seen,7)&&seen==7,"the first game counts as new");
+        Check(!mapzoom::NewGame(seen,7),"the same game is not new");
+        Check(!mapzoom::NewGame(seen,0)&&seen==7,"between games nothing changes yet");
+        Check(mapzoom::NewGame(seen,9)&&!mapzoom::NewGame(seen,9),"another player is a new game");
+        Sim s;s.in.looking=true;s.in.stick=1;s.Step(30);
+        Check(s.g.Zoom()>1,"zoomed in");
+        s.g.NewGame();Check(s.g.Zoom()==1,"a new game starts at 1x");
     }
     {
         Sim s;s.in.looking=true;s.in.stick=-1;s.Step(10);
@@ -68,14 +95,14 @@ int main(){
         for(int i=0;i<10;++i)Frame(false,1);
         Check(runs==0&&zoom.Zoom()==z,"a push still held after looking away does not run");
         Frame(false,0);Frame(false,1);
-        Check(runs==1&&zoom.Zoom()==z,"after the stick returns to the centre, up runs / walks as before");
+        Check(runs==1&&zoom.Zoom()==z,"after the stick returns to the center, up runs / walks as before");
         Frame(false,0);
         for(int i=0;i<5;++i)Frame(false,-1);
         Check(loot,"held down away from the map shows the loot labels");
         Frame(true,-1);Check(!loot,"looking at the map drops the loot labels");
     }
     {
-        mapzoom::Gesture g;Check(g.Zoom()==1,"every game starts at the whole map");
+        mapzoom::Gesture g;Check(g.Zoom()==1,"the first game starts at the whole map");
         mapzoom::Input in;in.time=1;in.looking=true;g.Step(in);in.stick=NAN;in.time+=.02;
         Check(!g.Step(in).zooming&&g.Zoom()==1,"a lost stick reading does nothing");
         Check(mapzoom::Clamp(.5f)==1&&mapzoom::Clamp(5)==4&&mapzoom::Clamp(2.5f)==2.5f&&mapzoom::Clamp(INFINITY)==1,"zoom clamps to 1x-4x");
