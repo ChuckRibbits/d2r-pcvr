@@ -303,7 +303,7 @@ int main(){
         thrust.Click(hit);Check(thrust.Get()[MeleeThrustSpeed]==2.25f,"thrust speed adjusts in quarter steps");
         const auto request=thrust.Click({Kind::Apply});
         Check(request.changed==(ChangeMask{1}<<MeleeThrustSpeed),"thrust edit does not change swing speed or combat rules");
-        Check(RowCount(Page::Combat)==8&&RowKey(Page::Combat,3)==ShieldBashSpeed,"eight Combat rows retain independent bash speed; parry window is fixed");
+        Check(RowCount(Page::Combat)==9&&RowKey(Page::Combat,3)==ShieldBashSpeed,"nine Combat rows retain independent bash speed; parry window is fixed");
         Check(Normalize(MeleeThrustSpeed,NAN)==2&&Normalize(MeleeThrustSpeed,0)==.75f&&Normalize(MeleeThrustSpeed,99)==10,"thrust speed has finite usable bounds");
     }
     {Model strain;strain.Open(s);strain.Click({Kind::Tab,int(Page::Combat)});
@@ -365,7 +365,7 @@ int main(){
         Check(!MonoAudioBox.Contains(float(TabBox(0).x),float(TabBox(0).y))&&MonoAudioBox.y+MonoAudioBox.h<=TabBox(0).y,"the warning stays above the tabs");
     }
     {Model heart;heart.Open(s);heart.Click({Kind::Tab,int(Page::Combat)});
-        Check(s.values[HeartbeatStart]==60&&RowKey(Page::Combat,7)==HeartbeatStart,"heartbeat start is the last Combat row, 60% by default");
+        Check(s.values[HeartbeatStart]==60&&RowKey(Page::Combat,7)==HeartbeatStart,"heartbeat start is the eighth Combat row, 60% by default");
         Check(ValueBox(7).y+ValueBox(7).h<744,"heartbeat row avoids Combat notes");
         Check(Normalize(HeartbeatStart,NAN)==60&&Normalize(HeartbeatStart,45)==50&&Normalize(HeartbeatStart,-5)==0&&Normalize(HeartbeatStart,100)==90,"heartbeat start snaps to 10% steps, 0-90");
         heart.Click(At(Page::Combat,Decrease(7)));Check(heart.Get()[HeartbeatStart]==50,"minus lowers the start by 10%");
@@ -374,6 +374,16 @@ int main(){
         for(int i=0;i<10;++i)heart.Click(At(Page::Combat,Increase(7)));
         Check(heart.Get()[HeartbeatStart]==90,"90% is the upper bound");
         Check(heart.Click({Kind::Apply}).changed==(ChangeMask{1}<<HeartbeatStart),"heartbeat start saves only its own setting");
+    }
+    {Model sight;sight.Open(s);sight.Click({Kind::Tab,int(Page::Combat)});
+        Check(s.values[EnemySight]==100&&RowKey(Page::Combat,8)==EnemySight,"enemy sight distance is the ninth Combat row, 100% by default");
+        Check(ValueBox(8).y+ValueBox(8).h<804,"enemy sight row avoids Combat footer");
+        Check(Normalize(EnemySight,NAN)==100&&Normalize(EnemySight,145)==150&&Normalize(EnemySight,50)==100&&Normalize(EnemySight,350)==300,"enemy sight snaps to 10% steps, 100-300");
+        sight.Click(At(Page::Combat,Decrease(8)));Check(sight.Get()[EnemySight]==100,"100% is the lower bound");
+        sight.Click(At(Page::Combat,Increase(8)));Check(sight.Get()[EnemySight]==110,"plus raises enemy sight by 10%");
+        for(int i=0;i<25;++i)sight.Click(At(Page::Combat,Increase(8)));
+        Check(sight.Get()[EnemySight]==300,"300% is the upper bound");
+        Check(sight.Click({Kind::Apply}).changed==(ChangeMask{1}<<EnemySight),"enemy sight saves only its own setting");
     }
     {Model difficulty;difficulty.Open(s);difficulty.Click({Kind::Tab,int(Page::Combat)});
         Check(s.values[OfflinePlayers]==0&&RowKey(Page::Combat,6)==OfflinePlayers,"difficulty preserves native settings by default");

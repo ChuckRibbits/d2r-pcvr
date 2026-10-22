@@ -70,6 +70,15 @@ int main(){
         Check(saved.values[OfflinePlayers]==choice&&Int(path,L"gameplay",L"offline_players")==choice,"difficulty survives reload");
         Check(Changed(saved.values,current.values)==request.changed&&Int(path,L"custom",L"keep")==12345,"difficulty preserves other settings");
     }
+    Check(before.values[EnemySight]==100,"missing enemy sight distance preserves 100% game default");
+    for(int choice:{150,200,300,100}){
+        const auto current=vrsettings::Read();auto values=current.values;values[EnemySight]=float(choice);
+        const Request request{current.values,values,Changed(current.values,values),current.sequence+1};
+        Check(vrsettings::Submit(request)&&vrsettings::Poll(name),"save enemy sight distance preference");
+        const auto saved=vrsettings::Read();
+        Check(saved.values[EnemySight]==choice&&Int(path,L"gameplay",L"enemy_sight_pct")==choice,"enemy sight distance survives reload");
+        Check(Changed(saved.values,current.values)==request.changed&&Int(path,L"custom",L"keep")==12345,"enemy sight distance preserves other settings");
+    }
     {const auto current=vrsettings::Read();vrsettings::SetOfflineDifficultyAvailable(true);const auto live=vrsettings::Read();
         Check(live.offlineDifficultyAvailable&&live.revision>current.revision&&live.values==current.values,"runtime capability is separate from saved preferences");}
     Check(before.values[HapticShortMelee]==0,"missing short-melee preference selects the compatible longer pulse");

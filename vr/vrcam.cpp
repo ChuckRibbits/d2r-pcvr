@@ -110,6 +110,7 @@ namespace gamestate {bool OpaqueMenuOpen();}
 #include "settings_menu.h"
 #include "../steamvr/reshade_addons.h"
 #include "offline_difficulty.h"
+#include "enemy_sight.h"
 #include "projectiles.h"
 #include "combat.h"
 #include "interactionstate.h"
@@ -980,6 +981,8 @@ void LoadSettings() {
 #ifdef D2RVR_NATIVE_OPENXR
     offlinedifficulty::Configure(int(framevr::settings::Normalize(framevr::settings::OfflinePlayers,
         IniF(L"gameplay",L"offline_players",0))),g_set.platform.load()==1);
+    enemysight::Configure(int(framevr::settings::Normalize(framevr::settings::EnemySight,
+        IniF(L"gameplay",L"enemy_sight_pct",100))),g_set.platform.load()==1);
 #endif
 #if D2RVR_FIRST_PERSON
     g_set.flatView.store(std::clamp((int)IniF(L"mode", L"flat_view", 3.0f), 1, 3));
@@ -9026,6 +9029,9 @@ DWORD WINAPI UpdateThread(void*) {
 #ifdef D2RVR_NATIVE_OPENXR
             offlinedifficulty::Install();
             offlinedifficulty::Report();
+            enemysight::Install();
+            enemysight::Tick();
+            enemysight::Report();
             roofcutaway::Tick();
             roofmaterials::Install(&Log, +[]() { return g_set.platform.load() == 1; });
             propphysics::Tick();
@@ -9242,6 +9248,7 @@ D2RL_PLUGIN_EXPORT bool D2RLoaderLoadPlugin(const PluginContext* ctx) noexcept {
     gamestate::Init(ctx);
     gamecmd::Init(ctx);
 #ifdef D2RVR_NATIVE_OPENXR
+    enemysight::Init(ctx);
     melee::Init(ctx);
     bowvr::Init(ctx);
 #endif
@@ -9254,6 +9261,7 @@ D2RL_PLUGIN_EXPORT bool D2RLoaderLoadPlugin(const PluginContext* ctx) noexcept {
 D2RL_PLUGIN_EXPORT void D2RLoaderUnloadPlugin() noexcept {
     if (g_standDown) return;   // nothing was started
 #ifdef D2RVR_NATIVE_OPENXR
+    enemysight::Shutdown();
     framevr::scenedepth::Shutdown();
 #endif
     g_enabled.store(false);
