@@ -55,6 +55,8 @@ int main(){
             Check(HelpText(key)[0]&&HelpTitle(key)[0],"every visible row has help");
             Check(HitTest(Page(p),100.f/Width,v).kind==Kind::None,"hovering or clicking a label does not edit settings");
         }
+        // Help converts at its own length (wide_text.h); keep it short enough for its card.
+        for(int id=0;id<=HelpLast;++id)Check(std::string(HelpText(id)).size()<450,"every help text is short enough for its card");
         Check(HelpAt(Page::VR,900.f/Width,250.f/Height,true)==NoHelp,"dropdown blocks help for covered settings");
         Check(HelpAt(Page::Controls,100.f/Width,750.f/Height)==PlanarSpellAim,"controls page label has help");
         Check(HelpAt(Page::HUD,1000.f/Width,950.f/Height)==HelpApply,"footer buttons have help");
@@ -348,12 +350,31 @@ int main(){
         speed.Click(At(Page::Combat,Increase(5)));Check(speed.Get()[StrainSpeed]==2,"Fast is the upper bound");
         Check(speed.Click({Kind::Apply}).changed==(ChangeMask{1}<<StrainSpeed),"buildup edits preserve combat rules, difficulty and colour");
     }
+    {Model laser;laser.Open(s);laser.Click({Kind::Tab,int(Page::Aim)});
+        const auto& d=Definitions[BowLaser];
+        Check(RowKey(Page::Aim,9)==BowLaser&&s.values[BowLaser]==LaserOff&&!LaserOn(s.values),"the bow path laser is last on the Aim page, Off by default");
+        Check(std::wstring(d.section)==L"bow"&&std::wstring(d.key)==L"path_laser_hue"&&d.step==15,"one [bow] path_laser_hue value in 15-degree steps");
+        laser.Click(At(Page::Aim,Increase(9)));Check(laser.Get()[BowLaser]==0&&LaserOn(laser.Get()),"plus from Off is the first color, red 0 degrees");
+        laser.Click(At(Page::Aim,Increase(9)));Check(laser.Get()[BowLaser]==15,"plus steps 15 degrees");
+        for(int i=0;i<22;++i)laser.Click(At(Page::Aim,Increase(9)));
+        Check(laser.Get()[BowLaser]==345,"the last color is 345 degrees");
+        laser.Click(At(Page::Aim,Increase(9)));Check(laser.Get()[BowLaser]==LaserOff&&!LaserOn(laser.Get()),"past the last color comes Off");
+        laser.Click(At(Page::Aim,Increase(9)));Check(laser.Get()[BowLaser]==0,"then the first color");
+        laser.Click(At(Page::Aim,Decrease(9)));Check(laser.Get()[BowLaser]==LaserOff,"back from the first color is Off");
+        laser.Click(At(Page::Aim,Decrease(9)));Check(laser.Get()[BowLaser]==345,"and back from Off the last color");
+        for(int i=0;i<25;++i)laser.Click(At(Page::Aim,Increase(9)));
+        Check(laser.Get()[BowLaser]==345,"Off and 24 colors make a whole turn");
+        laser.Click(At(Page::Aim,ValueBox(9)));Check(laser.Get()[BowLaser]==345,"the value box is no toggle");
+        const auto save=laser.Click({Kind::Apply});
+        Check(save.changed==(ChangeMask{1}<<BowLaser)&&save.values[BowLaser]==345,"Apply saves only the laser");
+        Check(Normalize(BowLaser,-1)==LaserOff&&Normalize(BowLaser,-200)==LaserOff&&Normalize(BowLaser,400)==345&&Normalize(BowLaser,NAN)==LaserOff,
+              "any negative saved value is Off; others stay on the wheel");}
     {Model aim;aim.Open(s);aim.Click({Kind::Tab,int(Page::Aim)});
         Check(RowKey(Page::Aim,0)==SpellLock&&RowKey(Page::Aim,1)==SpellLockBow&&RowKey(Page::Aim,2)==StaffPoint,"spell lock, bow skills, then staff aim");
         Check(RowKey(Page::Aim,3)==TargetHighlight&&RowKey(Page::Aim,4)==AimHighlights&&RowKey(Page::Aim,5)==HighlightRight&&RowKey(Page::Aim,6)==HighlightLeft,"then the outline: strength, which hands, each hand's color");
         // Every option that changes how a cast aims is Off by default: the casts aim as before the aim rules (#159 review).
         Check(s.values[SpellLock]==0&&s.values[StaffPoint]==0&&s.values[SpellLockBow]==0,"spell and bow targeting and staff aim Off by default");
-        Check(RowCount(Page::Aim)==9&&RowKey(Page::Aim,7)==GroundAim&&RowKey(Page::Aim,8)==LandingCircles&&s.values[GroundAim]==0&&s.values[LandingCircles]==1,
+        Check(RowCount(Page::Aim)==10&&RowKey(Page::Aim,7)==GroundAim&&RowKey(Page::Aim,8)==LandingCircles&&s.values[GroundAim]==0&&s.values[LandingCircles]==1,
               "Ground skills (the game's own aim by default) and landing circles (On) follow");
         Check(std::wstring(Definitions[GroundAim].key)==L"ground_aim"&&Definitions[GroundAim].max==2&&std::strcmp(GroundAimNames[0],"Game")==0&&
               std::strcmp(GroundAimNames[1],"Where you point")==0&&std::strcmp(GroundAimNames[2],"Aimed monster")==0,"one [gameplay] ground_aim row: Game, Where you point, Aimed monster");

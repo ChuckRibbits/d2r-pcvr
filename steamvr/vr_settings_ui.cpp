@@ -137,7 +137,7 @@ std::vector<uint8_t> Paint(const Model& m,Hit hover,const char* runtimeStatus,co
             text(defer&&gameWarning?DeferWarning:runtimeStatus,{40,181,width,29},false,false,defer&&gameWarning?warn:quiet);
             text(gameWarning?gameWarning:DeferWarning,{40,209,width,29},false,false,warn);
             if(defer)button(DeferBox,"Defer GPU wait",{Kind::Change,DeferGpuWait,1},false,m.ready&&!m.Busy());
-        }else text(m.page==Page::Haptics?"Tune vibration for your headset and controllers.":m.page==Page::Combat?"Tune physical combat and offline difficulty.":m.page==Page::Aim?"Choose how your target is picked, shown and used by skills and ground skills.":
+        }else text(m.page==Page::Haptics?"Tune vibration for your headset and controllers.":m.page==Page::Combat?"Tune physical combat and offline difficulty.":m.page==Page::Aim?"Choose how your target is picked, shown and used by skills and ground skills, and the bow path laser.":
              m.page==Page::Video?"The mod's added effects. What changes the frame rate is on Perf.":runtimeStatus,{40,197,1200,42},false,false,quiet);
         for(int row=0;row<RowCount(m.page);++row){
             const Key key=RowKey(m.page,row);const auto& d=Definitions[key];const float value=m.Get()[key];const int y=RowY+row*RowStep;
@@ -161,6 +161,7 @@ std::vector<uint8_t> Paint(const Model& m,Hit hover,const char* runtimeStatus,co
             else if(key==AimHighlights)std::snprintf(label,sizeof label,"%s",HighlightsNames[value>.5f?1:0]);
             else if(key==GroundAim)std::snprintf(label,sizeof label,"%s",GroundAimNames[std::clamp(int(value),0,2)]);
             else if(HighlightKey(key)){if(value==0)std::snprintf(label,sizeof label,"By range");else std::snprintf(label,sizeof label,"%s %.0f\xc2\xb0",HueName(value),value);}
+            else if(key==BowLaser){if(value<0)std::snprintf(label,sizeof label,"Off");else std::snprintf(label,sizeof label,"%s %.0f\xc2\xb0",HueName(value),value);}
             else if(key==Dominant)std::snprintf(label,sizeof label,"%s",value>.5f?"Left":"Right");
             else if(key==MeleeRules)std::snprintf(label,sizeof label,"%s",MeleeRulesNames[value>.5f?1:0]);
             else if(key==OfflinePlayers){if(value==0)std::snprintf(label,sizeof label,"Game default");else std::snprintf(label,sizeof label,"Players %.0f",value);}
