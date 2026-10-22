@@ -90,7 +90,7 @@ class InstallationTests(unittest.TestCase):
                     (out / name).write_bytes(b'local generated fixture')
                 return {'images': ['fixture.png'], 'icons': 1}
             def potions(game, output, **kwargs):
-                for name in [code + '.pvr' for code in install.POTION_CODES] + ['cache.json']:
+                for name in list(install.POTION_FILES) + ['cache.json']:
                     (Path(output) / name).write_bytes(b'local potion fixture')
                 return {'models': len(install.POTION_CODES)}
             def spell_sprites(game, output, **kwargs):
@@ -147,6 +147,7 @@ class InstallationTests(unittest.TestCase):
                 self.assertEqual((icon_dir / 'fixture.png').read_bytes(), b'local generated fixture')
                 self.assertEqual((potion_dir / 'hp1.pvr').read_bytes(), b'local potion fixture')
                 self.assertTrue((potion_dir / 'rvl.pvr').is_file())
+                self.assertTrue((potion_dir / 'arw.pvr').is_file())
                 self.assertEqual((mod_plugins / 'd2r_vr_spell_sprites' / install.SPELL_SPRITES).read_bytes(), b'local sprite fixture')
                 for name, data in arcane.items():
                     self.assertEqual((mod / name).read_bytes(), data)

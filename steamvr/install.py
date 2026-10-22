@@ -14,7 +14,7 @@ import tempfile
 import urllib.request
 import zipfile
 from prepare_icons import prepare as prepare_icons
-from prepare_potions import prepare as prepare_potions, CODES as POTION_CODES
+from prepare_potions import prepare as prepare_potions, CODES as POTION_CODES, FILES as POTION_FILES
 from prepare_spell_sprites import prepare as prepare_spell_sprites, FILE as SPELL_SPRITES
 import prepare_arcane_sky
 import prepare_sewer_backdrop
@@ -416,7 +416,7 @@ def main():
         except (OSError, ValueError, KeyError, IndexError) as error:
             print(f'Native potion models unavailable; retaining icon fallback: {error}')
         else:
-            for name in [code + '.pvr' for code in POTION_CODES] + ['cache.json']:
+            for name in list(POTION_FILES) + ['cache.json']:
                 payload[mod_identity.PLUGIN.parent / 'd2r_vr_potions' / safe_relative(name)] = (Path(temporary) / name).read_bytes()
             print(f"Prepared {result['models']} original 3D potion models from your installed game.")
     with tempfile.TemporaryDirectory(prefix='d2r-vr-spell-sprites-') as temporary:

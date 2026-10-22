@@ -68,6 +68,11 @@ int main(){
         Sim s;quick(s);s.in.hover=RunWalkCell;s.in.trigger=1;s.Step();
         Check(s.out.request.action==Action::RunWalk&&!s.out.wheel,"run/walk dispatches native toggle");
         Check(s.Step(40).request.action==Action::None,"holding run/walk never toggles repeatedly");
+        Sim stick;stick.in.runWalk=true;stick.Step();
+        Check(stick.out.request.action==Action::RunWalk&&stick.out.feedback==1&&stick.out.feedbackHand==0,"right stick up toggles run / walk without the wheel");
+        stick.in.runWalk=false;Check(stick.Step().request.action==Action::None,"once per push");
+        Sim stale;stale.in.snapshot.session=99;stale.in.runWalk=true;stale.Step();
+        Check(stale.out.request.action==Action::None&&stale.out.feedback==3,"an unknown character buzzes instead");
         auto c=Context(s.in.snapshot,s.out,true);s.in.snapshot.quick.items[0].quantity--;
         Check(c!=Context(s.in.snapshot,s.out,true),"count changes invalidate paint and old click eligibility");
         for(auto page:{MenuPage::Spells,MenuPage::Equipment}) {

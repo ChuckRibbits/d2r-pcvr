@@ -17,7 +17,7 @@ namespace framevr::settings {
 enum class Page { Controls, VR, Video, HUD, Combat, Aim, Shield, Haptics, Performance, ReleaseNotes };
 enum Key { Motion, Seated, Dominant, Snap, TurnSpeed, Waist, BeltForward,
            Foveation, Sky, Fog, Ceiling, DrawDistance, ObjectDistance,
-           EyeHeight, ArmSpan, BodyCalibration, SkillGestures, WristMap, WristCompass, ControllerLabels, WeaponSkillIndicators, PlanarSpellAim, VitalsLocation, CriticalAlerts, RenderResolution, NavigationLocation, SmoothTurn, OrdinaryMobBars, MenuDistance, TooltipTiming, ProjectileAimAssist, MeleeHitSpeed, VitalsTilt, HapticStrength, HapticMelee, HapticBowDraw, HapticBowRelease, HapticSpell, HapticInteraction, HapticAlert, HapticShortMelee, BloodVisor, BloodWipe, MeleeRules, MeleeThrustSpeed, LootLabelSize, CompanionCounts, StrainDark, OfflinePlayers, ShieldBashSpeed, StrainSpeed, DesktopOneEye, MapTopDown, MapRotate, FoveationStrength, StereoRendering, DeferGpuWait, TargetHighlight, HeartbeatStart, SpellLock, StaffPoint, LandingCircles, GroundAim, AimHighlights, HighlightRight, HighlightLeft, ReShadeDepth, ElementalHands, EnemySight, BowLaser, ShieldGrip, ShieldOut, ShieldUp, ShieldFollow, ShieldRoll, Count };
+           EyeHeight, ArmSpan, BodyCalibration, SkillGestures, WristMap, WristCompass, ControllerLabels, WeaponSkillIndicators, PlanarSpellAim, VitalsLocation, CriticalAlerts, RenderResolution, NavigationLocation, SmoothTurn, OrdinaryMobBars, MenuDistance, TooltipTiming, ProjectileAimAssist, MeleeHitSpeed, VitalsTilt, HapticStrength, HapticMelee, HapticBowDraw, HapticBowRelease, HapticSpell, HapticInteraction, HapticAlert, HapticShortMelee, BloodVisor, BloodWipe, MeleeRules, MeleeThrustSpeed, LootLabelSize, CompanionCounts, StrainDark, OfflinePlayers, ShieldBashSpeed, StrainSpeed, DesktopOneEye, MapTopDown, MapRotate, FoveationStrength, StereoRendering, DeferGpuWait, TargetHighlight, HeartbeatStart, SpellLock, StaffPoint, LandingCircles, GroundAim, AimHighlights, HighlightRight, HighlightLeft, ReShadeDepth, ElementalHands, EnemySight, BowLaser, ThrowLift, ShieldGrip, ShieldOut, ShieldUp, ShieldFollow, ShieldRoll, Count };
 // One bit per setting, 128 wide: two words, since MSVC has no 128-bit integer.
 struct ChangeMask {
     static constexpr int Bits=128;
@@ -115,6 +115,8 @@ inline constexpr std::array<Definition,Count> Definitions{{
     {"Enemy sight distance", "Offline monster detection range; 100% is game default", L"gameplay",L"enemy_sight_pct",enemysight::DefaultPercent,enemysight::MinPercent,enemysight::MaxPercent,enemysight::StepPercent},
     // Off (LaserOff, below), else the line's hue; steps wrap through Off.
     {"Bow path laser", "A faint line along a drawn arrow's flight: Off or its color", L"bow",L"path_laser_hue",-15,-15,345,15},
+    // Degrees above the throwing hand's path; a release follows through low.
+    {"Throw lift", "Thrown weapons leave above the hand's path; - lowers them", L"gameplay",L"throw_lift_deg",10,-10,30,5},
     {"Shield grip offset", "Slides the shield along the forearm so the hand reaches its grip", L"gameplay",L"shield_grip_cm",0,-10,40,1},
     {"Shield out from the arm", "Moves the shield away from the forearm (+) or into it (-)", L"gameplay",L"shield_out_cm",0,-30,30,1},
     {"Shield up", "Moves the shield across the forearm, square to Out", L"gameplay",L"shield_up_cm",0,-30,30,1},
@@ -331,7 +333,7 @@ inline bool RowEnabled(const Values& values,Key key){
 // weapon not in hand, are left out. An unknown class (-1: the title and
 // character screens) shows every row.
 namespace heroclass {enum {Amazon=0,Sorceress=1,Necromancer=2,Paladin=3,Barbarian=4,Druid=5,Assassin=6};}
-struct Context {int heroClass=-1;bool bow=false,staff=false;bool operator==(const Context&)const=default;};
+struct Context {int heroClass=-1;bool bow=false,staff=false,thrown=false;bool operator==(const Context&)const=default;};
 inline bool ClassIs(const Context& c,int heroClass){return c.heroClass<0||c.heroClass==heroClass;}
 // Bow skills are the Amazon's.
 inline bool BowSkillClass(const Context& c){return ClassIs(c,heroclass::Amazon);}
@@ -349,6 +351,7 @@ inline bool RowShown(Key key,const Values& v,const Context& c){
         case GroundAim:return GroundSkillClass(c);
         case LandingCircles:return GroundSkillClass(c)&&v[GroundAim]>.5f;     // ground skills the mod places
         case BowLaser:return c.heroClass<0||c.heroClass==heroclass::Amazon||c.bow;
+        case ThrowLift:return c.heroClass<0||c.heroClass==heroclass::Amazon||c.heroClass==heroclass::Barbarian||c.thrown;
         case StaffPoint:return c.heroClass<0||c.staff||c.heroClass==heroclass::Sorceress||c.heroClass==heroclass::Druid;
         case ElementalHands:return ClassIs(c,heroclass::Sorceress);
         case FoveationStrength:return v[Foveation]>.5f;
@@ -395,14 +398,14 @@ inline Rect PairDecrease(int row,int side){return {PairX(side),RowY+row*RowStep,
 inline Rect PairValue(int row,int side){return {PairX(side)+56,RowY+row*RowStep,238,52};}
 inline Rect PairIncrease(int row,int side){return {PairX(side)+298,RowY+row*RowStep,52,52};}
 // Every row a page can show, in order (Rows leaves out those that cannot apply).
-inline int CatalogCount(Page page){return page==Page::Haptics?2+haptics::CategoryCount:page==Page::Combat?8:page==Page::Aim?8:page==Page::Shield?5:page==Page::VR?10:page==Page::Video?4:page==Page::Performance?8:page==Page::HUD?10:0;}
+inline int CatalogCount(Page page){return page==Page::Haptics?2+haptics::CategoryCount:page==Page::Combat?8:page==Page::Aim?9:page==Page::Shield?5:page==Page::VR?10:page==Page::Video?4:page==Page::Performance?8:page==Page::HUD?10:0;}
 inline Key CatalogKey(Page page,int row){
     constexpr Key hapticRows[]={HapticStrength,HapticMelee,HapticShortMelee,HapticBowDraw,HapticBowRelease,HapticSpell,HapticInteraction,HapticAlert};
     if(page==Page::Haptics)return hapticRows[row];
     constexpr Key combat[]={MeleeRules,MeleeHitSpeed,MeleeThrustSpeed,ShieldBashSpeed,StrainDark,OfflinePlayers,HeartbeatStart,EnemySight};   // StrainDark: with StrainSpeed
     if(page==Page::Combat)return combat[row];
-    // the aimed monster, the staff, the outline: strength, which hands, their colors; the ground skills, circles, the bow path laser
-    constexpr Key aim[]={SpellLock,StaffPoint,TargetHighlight,AimHighlights,HighlightLeft,GroundAim,LandingCircles,BowLaser};   // HighlightLeft: with HighlightRight
+    // the aimed monster, the staff, the outline: strength, which hands, their colors; the ground skills, circles, the bow path laser, the throws
+    constexpr Key aim[]={SpellLock,StaffPoint,TargetHighlight,AimHighlights,HighlightLeft,GroundAim,LandingCircles,BowLaser,ThrowLift};   // HighlightLeft: with HighlightRight
     if(page==Page::Aim)return aim[row];
     if(page==Page::Shield)return Key(ShieldGrip+row);   // Grip, Out, Up, Follows, Roll: every class can carry a shield
     constexpr Key hud[]={VitalsLocation,VitalsTilt,CriticalAlerts,NavigationLocation,MenuDistance,TooltipTiming,BloodVisor,BloodWipe,LootLabelSize,CompanionCounts};

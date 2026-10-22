@@ -118,6 +118,20 @@ int main() {
         r=fresh(3,11,40,true);Check(r.consumed&&q.Current().skill==11,"next press loads");
         for(int i=0;i<3;++i){r=q.Step(5,3,11,-1,40,false);Check(r.consumed&&r.change==Quiver::Change::None&&q.Current().skill==11,"stale frame mid-press: no native cast, no second toggle");}
         r=q.Step(6,-1,-1,-1,-1,true);Check(!q.Current().Active(),"character/session change empties the quiver");
+        // #224: a thrown weapon loads the javelin skills the same way, and only those.
+        for(int id:{15,20,25,35})Check(weaponskills::JavelinSkill(id)&&!weaponskills::QuiverSkill(id),"the four javelin skills ride a throw, not a bow");
+        Check(weaponskills::Loadable(15,38,true)&&weaponskills::Loadable(20,205,true)&&weaponskills::Loadable(25,43,true)&&weaponskills::Loadable(35,206,true),
+              "each with its own missile");
+        Check(!weaponskills::Loadable(15,38,false)&&!weaponskills::Loadable(7,12,true)&&!weaponskills::Loadable(15,1,true)&&!weaponskills::Loadable(10,-1,true),
+              "no javelin skill on a bow, no arrow skill on a javelin, no stranger missile, no melee Jab");
+        Check(weaponskills::Loadable(weaponskills::DoubleThrow,-1,true)&&!weaponskills::Loadable(weaponskills::DoubleThrow,-1,false),
+              "Double Throw (no missile of its own) rides a throw, never a bow");
+        q.Step(7,-1,-1,-1,-1,true);
+        r=q.Step(7,2,25,-1,43,true,true);Check(r.consumed&&r.change==Quiver::Change::Loaded&&q.Current().skill==25,"a thrown weapon loads Plague Javelin");
+        q.Step(7,-1,-1,-1,-1,true,true);
+        r=q.Step(7,3,7,-1,12,true,true);Check(!r.consumed&&q.Current().skill==25,"Fire Arrow stays native with a javelin in hand");
+        q.Step(7,-1,-1,-1,-1,true,true);
+        r=q.Step(7,2,25,-1,43,true,true);Check(r.change==Quiver::Change::Unloaded&&!q.Current().Active(),"the same button again: basic throws");
         r=q.Step(6,3,7,-1,12,true);Check(r.consumed&&q.Current().skill==7,"new character starts empty and loads normally");
     }
     {
