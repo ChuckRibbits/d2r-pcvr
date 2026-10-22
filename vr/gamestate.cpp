@@ -37,6 +37,7 @@
 #include "target_lock.h"
 #include "journal_ui.h"
 #include "../steamvr/native_panels.h"
+#include "../steamvr/notice_card.h"
 #include "../steamvr/callback_ticket.h"
 #include "../steamvr/native_hud.h"
 #include "../steamvr/attack_speed.h"
@@ -111,11 +112,27 @@ bool ProtectToolbarUpdate() {
     framevr::logging::Write("Frame HUD: hidden toolbar notification guard installed");
     return true;
 }
+// The quest / level-up NotificationPanel would hang at the eyes in XR. It stays
+// open but hidden, so its timers and Start action keep working; the transport
+// shows its message on a card in the room (notice_card.h).
+framevr::nativehud::VisibilityOverride g_noticeVisibility;
+void MaintainNotice(const PluginContext* ctx) {
+    const bool hide=hud::NativeToolbarHidden();
+    if(!hide&&!g_noticeVisibility.hidden)return;
+    Widgets::WidgetHandle panel=0;
+    const bool found=g_widgets->findPanel(ctx,"NotificationPanel",&panel)==Widgets::Result::Success&&panel;
+    const bool previous=g_noticeVisibility.hidden;
+    g_noticeVisibility.Update(hide,found,[&](bool visible){
+        return g_widgets->setWidgetVisible(ctx,panel,visible)==Widgets::Result::Success;
+    });
+    if(!previous&&g_noticeVisibility.hidden)framevr::logging::Write("Frame notices: native NotificationPanel hidden; its message goes to the room card");
+}
 // UI-thread-only refreshes; native menu handlers may rebuild/show HUDPanel.
 framevr::CallbackTicket g_toolbarTicket;
 bool g_toolbarUpdating=false;
 void MaintainToolbar(const PluginContext* ctx) {
     if(g_toolbarUpdating||!g_widgets||!g_widgets->findPanel||!g_widgets->setWidgetVisible)return;
+    MaintainNotice(ctx);
     const bool hide=hud::NativeToolbarHidden()&&ProtectToolbarUpdate();
     if(!hide&&!g_toolbarVisibility.hidden)return;
     g_toolbarUpdating=true;
@@ -164,6 +181,11 @@ std::atomic<bool> g_journalOnly{false};
 std::atomic<bool> g_opaqueMenu{false};
 std::atomic<bool> g_upperBandMenu{false};
 std::atomic<bool> g_npcChoices{false};
+std::atomic<uint32_t> g_questNotices{0};   // quest updates while the notification panel is hidden
+std::atomic<bool> g_noticePanel{false};     // the native NotificationPanel is open (hidden or not)
+std::mutex noticeMutex;
+char noticeTexts[framevr::notice::Kinds][256]{};
+uint64_t noticeTextsAt=0;   // UI thread only
 std::mutex npcChoicesMutex;
 int32_t npcChoicesRect[4]{};
 uint64_t npcChoicesAt=0;
@@ -207,6 +229,7 @@ bool IsCrossbow(const std::string& c) {
 // type index for a short bow, a light crossbow, a short sword and a hand axe
 // at once. Each kind's ItemTypes index then maps to a BodyWalk tab.
 const DataTableService* g_tables = nullptr;
+const LocalizationService* g_strings = nullptr;
 std::atomic<uint32_t> g_type{D2RVR_TYPE_UNKNOWN};
 std::atomic<uint32_t> g_held{0};   // bit 0: something in the right hand's slot (body location 4), bit 1: the left's (5)
 int g_typeOffset = -2;                       // -2 not tried yet, -1 failed
@@ -478,6 +501,20 @@ std::atomic<uint64_t> g_player{0};   // the local player's handle, as the SDK gi
 void CalibrateObjectLights();   // the Objects table's light fields, below
 extern int g_objLitOffset;
 
+// On the UI thread: the notification texts in the game's language, for the
+// room card. Re-read now and then, so a language change follows.
+void ReadNoticeTexts() {
+    const auto now=GetTickCount64();
+    if(!g_strings||!g_strings->getStringByKey||(noticeTextsAt&&now-noticeTextsAt<5000))return;
+    noticeTextsAt=now;
+    char texts[framevr::notice::Kinds][256]{};
+    for(int k=0;k<framevr::notice::Kinds;++k) {
+        if(g_strings->getStringByKey(g_ctx,framevr::notice::Keys[k],texts[k],sizeof texts[k],nullptr)!=Localization::Result::Success)texts[k][0]=0;
+        framevr::notice::StartGlyph(texts[k]);
+    }
+    std::lock_guard lock(noticeMutex);std::memcpy(noticeTexts,texts,sizeof texts);
+}
+
 // On the UI thread: the two hands of the active set.
 void __cdecl ReadItems(const PluginContext* ctx, void* token) noexcept {
     {std::lock_guard lock(g_readMutex);if(!g_readTicket.Claim(reinterpret_cast<uintptr_t>(token)))return;}
@@ -487,6 +524,7 @@ void __cdecl ReadItems(const PluginContext* ctx, void* token) noexcept {
 #ifdef D2RVR_NATIVE_OPENXR
     panelinput::MaintainWorldController(havePlayer,g_menu.load()!=0);
     MaintainToolbar(ctx);
+    ReadNoticeTexts();
     const auto now=GetTickCount64(),mapAt=g_menuMapAt.load();
     const bool mapWanted=mapAt&&now>=mapAt&&now-mapAt<400;
     const int mapAction=g_menuMapLease.Step(havePlayer?player:0,now,mapWanted,g_menu.load()!=0,g_autoMap.load()!=0);
@@ -678,6 +716,7 @@ SharedEvents::UiMessageAction __cdecl OnUiMessage(const PluginContext* ctx, cons
         else if (!strcmp(command, "ClosePanel") || !strcmp(command, "UnloadPanel")) g_panels.erase(text);
         else if (!strcmp(command, "UnloadAll") || !strcmp(command, "CloseAll")) g_panels.clear();
         g_autoMap.store(g_panels.count("AutoMap") ? 1 : 0);
+        g_noticePanel.store(g_panels.count("NotificationPanel") != 0);
         g_upperBandMenu.store(std::any_of(g_panels.begin(),g_panels.end(),
             [](const auto& name){return framevr::panels::UpperBand(name);}));
         g_opaqueMenu.store(std::any_of(g_panels.begin(),g_panels.end(),
@@ -710,6 +749,14 @@ SharedEvents::UiMessageAction __cdecl OnUiMessage(const PluginContext* ctx, cons
         framevr::resolution::OptionsApplied();
     if(!strcmp(target,"PanelManager")||!strcmp(target,"HUDPanel")||
        (!strcmp(target,"SystemMessage")&&!strcmp(command,"ResolutionChanged")))RefreshToolbarAfterMessage(ctx);
+    // A quest update opens the NotificationPanel and sets the journal's alert
+    // in the same UI tick (2026-10 logs); a queued one finds the panel open.
+    // The journal may set the alert for its own reasons, so only an alert
+    // beside the open panel counts, and none while the journal is up.
+    if(!strcmp(target,"QuestLogPanelMessage")&&!strcmp(command,"SetQuestAlert")&&hud::NativeToolbarHidden()&&
+       g_panels.count("NotificationPanel")&&std::none_of(g_panels.begin(),g_panels.end(),
+           [](const std::string& name){return name.find("QuestLog")!=std::string::npos;}))
+        g_questNotices.fetch_add(1);
 #endif
     if (g_state) {
         strncpy_s(g_state->lastUi, key.c_str(), _TRUNCATE);
@@ -797,6 +844,7 @@ void Init(const PluginContext* ctx) {
     g_items = Query<ItemService>(ctx);
     g_events = Query<SharedEventService>(ctx);
     g_tables = Query<DataTableService>(ctx);
+    g_strings = Query<LocalizationService>(ctx);
     char b[160];
     snprintf(b, sizeof b, "gamestate: threads %s, inventory %s, items %s, events %s", g_threads ? "ok" : "MISSING",
              g_inventory ? "ok" : "MISSING", g_items ? "ok" : "MISSING", g_events ? "ok" : "MISSING");
@@ -880,6 +928,14 @@ int ObjectLight(uint32_t txt, uint32_t mode, float rgb[3]) {
     return o.lit[mode];
 }
 
+uint32_t QuestNotices(){return g_questNotices.load();}
+bool NoticePanelOpen(){return g_noticePanel.load();}
+bool NoticeText(int kind,char* out,uint32_t size) {
+    if(kind<0||kind>=framevr::notice::Kinds||!out||!size)return false;
+    std::lock_guard lock(noticeMutex);
+    if(!noticeTexts[kind][0])return false;
+    snprintf(out,size,"%s",noticeTexts[kind]);return true;
+}
 bool JournalOnly(){return g_journalOnly.load();}
 bool OpaqueMenuOpen(){return g_opaqueMenu.load();}
 bool UpperBandMenuOpen(){return g_upperBandMenu.load();}

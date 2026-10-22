@@ -269,6 +269,17 @@ still apply outside active headset gameplay. Labels and tooltips outside the
 toolbar strip remain visible. Verify both eyes and the game's different UI
 safe-area sizes when testing this fix in a headset.
 
+Quest updates and level-ups no longer hang in front of your eyes. In the
+headset the game's notification box ("Quest has been updated", "You've
+leveled up") is hidden, and its message appears on a small card in the room
+instead: about a metre ahead where you were looking, a little below eye
+level. Each card stays put for 3 seconds; a level-up shows its skill-point
+and stat-point cards one after the other. The text is the game's own, in its
+current language. The hidden box keeps its native timing. Cards wait while
+an opaque menu or VR Settings is open and are dropped after 10 seconds.
+Placement, readability, and whether ≡ still opens the quest page while the
+hidden box is up still need a headset check.
+
 The Map tab preserves your selected spell and uses the native explored areas
 and markers. Choose the left or right corner minimap layout in game options;
 full-screen automap capture is unsupported. When neither the wrist nor the Map
