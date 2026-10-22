@@ -415,7 +415,7 @@ From the checkout in PowerShell:
 ```powershell
 .\steamvr\setup_windows_tools.ps1
 .\steamvr\build_windows.ps1 -Test
-.\deps\python\python.exe -m unittest install_test prepare_icons_test prepare_potions_test profile_report_test stream_report_test
+.\deps\python\python.exe -m unittest install_test prepare_icons_test prepare_potions_test prepare_spell_sprites_test profile_report_test stream_report_test
 .\deps\python\python.exe steamvr/ngx_abi_test.py --clang .\deps\llvm-mingw-20260616-ucrt-x86_64\bin\clang++.exe
 ```
 

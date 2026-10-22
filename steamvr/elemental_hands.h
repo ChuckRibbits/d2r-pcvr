@@ -17,6 +17,17 @@ inline Element Classify(int skill) {
     default: return Element::None;
     }
 }
+// The spell effect whose own textures a hand shows (the renderer's sprite
+// looks). Other skills take the closest look of their element.
+enum class Look { FireBolt, Fireball, ChargedBolt, IceBolt, IceBlast };
+inline Look SpellLook(int skill,Element element) {
+    switch(skill) {
+    case 47: case 56: return Look::Fireball;
+    case 45: case 55: case 59: case 64: return Look::IceBlast;
+    default: break;
+    }
+    return element==Element::Fire?Look::FireBolt:element==Element::Cold?Look::IceBolt:Look::ChargedBolt;
+}
 struct Context {
     uint64_t session=0,epoch=0,binding=0;
     uint32_t equipment=0;
@@ -39,6 +50,7 @@ struct Hand {
     interaction::Pose pose;
     Element element=Element::None;
     float opacity=0,pulse=0;
+    int skill=-1;
 };
 struct Scene {
     std::array<Hand,2> hands{};
@@ -86,7 +98,7 @@ public:
             if(element==Element::None){previous[h]={};cast[h]={};continue;}
             auto& old=previous[h];
             if(old.slot!=slot||old.skill!=skill.id||old.owner!=skill.owner)old={slot,skill.id,skill.owner,in.at};
-            auto& hand=scene.hands[h];hand.pose=in.hands[h];hand.element=element;
+            auto& hand=scene.hands[h];hand.pose=in.hands[h];hand.element=element;hand.skill=skill.id;
             const auto delta=hand.pose.p-in.head.p;
             const float distance=std::sqrt(math::Dot(delta,delta));
             // Fade out near the face before the aura can fill the view.

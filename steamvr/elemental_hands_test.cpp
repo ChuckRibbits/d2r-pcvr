@@ -1,10 +1,29 @@
 #include "elemental_hands.h"
+#include "spell_sprites.h"
 #include <cstdio>
 #include <cstdlib>
 #include <limits>
 using namespace framevr;
 using namespace elements;
 static void Check(bool value,const char* message){if(!value){std::fprintf(stderr,"FAIL: %s\n",message);std::exit(1);}}
+// A synthetic sprite cache (no game data); corrupt picks one defect.
+static std::vector<uint8_t> Cache(int corrupt=0) {
+    std::vector<uint8_t> d;
+    auto put=[&](uint32_t v){d.insert(d.end(),reinterpret_cast<uint8_t*>(&v),reinterpret_cast<uint8_t*>(&v)+4);};
+    put(0x31505353);put(1);put(sprites::Count);
+    for(unsigned i=0;i<sprites::Count;++i) {
+        const uint32_t format=sprites::Ramp(i)?29:i==sprites::FrozenOrb?77:80,width=corrupt==3&&i==sprites::SoftFlame?6:8;
+        put(corrupt==1&&i==sprites::Flash?5:i);put(width);put(4);put(corrupt==2&&i==sprites::FlameRamp?80:format);put(2);
+        for(uint32_t m=0;m<2;++m) {
+            const auto bytes=uint32_t(sprites::MipBytes(format,std::max(1u,width>>m),std::max(1u,4u>>m)))+(corrupt==4&&m==1?1:0);
+            put(bytes);d.insert(d.end(),bytes,uint8_t(i));
+        }
+    }
+    if(corrupt==5)d.push_back(0);
+    if(corrupt==6)d.pop_back();
+    if(corrupt==7)d[0]^=1;
+    return d;
+}
 struct Sim {
     Input in;
     interaction::Snapshot snapshot;
@@ -30,9 +49,26 @@ int main() {
     for(int id:{39,40,44,45,50,55,59,60,64})Check(Classify(id)==Element::Cold,"active cold mapping");
     for(int id:{38,42,48,49,53,57})Check(Classify(id)==Element::Lightning,"active lightning mapping");
     for(int id:{-1,0,37,43,54,58,61,63,65,219,357,4095})Check(Classify(id)==Element::None,"utility/passive/unknown neutral");
+    Check(SpellLook(36,Element::Fire)==Look::FireBolt&&SpellLook(47,Element::Fire)==Look::Fireball&&
+          SpellLook(38,Element::Lightning)==Look::ChargedBolt&&SpellLook(39,Element::Cold)==Look::IceBolt&&
+          SpellLook(45,Element::Cold)==Look::IceBlast,"each hand spell shows its own effect");
+    Check(SpellLook(51,Element::Fire)==Look::FireBolt&&SpellLook(49,Element::Lightning)==Look::ChargedBolt&&
+          SpellLook(44,Element::Cold)==Look::IceBolt&&SpellLook(64,Element::Cold)==Look::IceBlast,"other skills take their element's look");
+    {
+        const auto textures=sprites::Parse(Cache());
+        Check(textures.size()==sprites::Count&&textures[sprites::FlameRamp].format==29&&textures[sprites::FrozenOrb].format==77&&
+              textures[sprites::Flash].format==80&&textures[sprites::Flash].mips.size()==2&&textures[sprites::Flash].mips[1].size()==8,
+              "spell sprite cache parses");
+        for(int corrupt=1;corrupt<8;++corrupt) {
+            bool rejected=false;
+            try{sprites::Parse(Cache(corrupt));}catch(const std::exception&){rejected=true;}
+            Check(rejected,"malformed spell sprite cache rejected");
+        }
+    }
     {
         Sim s;Check(s.scene.hands[0].element==Element::Fire&&s.scene.hands[1].element==Element::Cold&&
             s.scene.hands[0].opacity==1&&s.scene.hands[1].opacity==1,"independent trigger elements reach idle visibility");
+        Check(s.scene.hands[0].skill==47&&s.scene.hands[1].skill==45,"each hand carries its spell");
         Check(s.scene.hands[0].pose.p.x==.2f&&s.scene.hands[1].pose.p.x==-.2f,"room hand positions preserved");
         s.Bind(1,49);s.in.casting[0]=1;s.Step();s.Step(120);
         Check(s.scene.hands[0].element==Element::Lightning&&s.scene.hands[1].element==Element::Cold,"shortcut affects only its own hand");
@@ -104,5 +140,5 @@ int main() {
         s.state.Accepted(0,s.Event(0));s.Step(151);Check(s.scene.hands[0].pulse==0,"input stall clears pending feedback");
         s.state.Accepted(0,s.Event(0));--s.in.at;s.Step(0);Check(s.scene.hands[0].pulse==0,"clock rollback clears pending feedback");
     }
-    std::puts("Elemental hand state: skill selection, independent hands, lifecycle, proximity and confirmed-cast feedback passed");
+    std::puts("Elemental hand state: skill selection, spell looks, sprite cache, independent hands, lifecycle, proximity and confirmed-cast feedback passed");
 }
