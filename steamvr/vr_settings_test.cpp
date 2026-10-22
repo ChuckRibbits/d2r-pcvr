@@ -323,7 +323,7 @@ int main(){
         thrust.Click(hit);Check(thrust.Get()[MeleeThrustSpeed]==2.25f,"thrust speed adjusts in quarter steps");
         const auto request=thrust.Click({Kind::Apply});
         Check(request.changed==(ChangeMask{1}<<MeleeThrustSpeed),"thrust edit does not change swing speed or combat rules");
-        Check(RowCount(Page::Combat)==8&&RowKey(Page::Combat,3)==ShieldBashSpeed,"eight Combat rows retain independent bash speed; parry window is fixed");
+        Check(RowCount(Page::Combat)==9&&RowKey(Page::Combat,3)==ShieldBashSpeed,"nine Combat rows retain independent bash speed; parry window is fixed");
         Check(Normalize(MeleeThrustSpeed,NAN)==2&&Normalize(MeleeThrustSpeed,0)==.75f&&Normalize(MeleeThrustSpeed,99)==10,"thrust speed has finite usable bounds");
     }
     {Model strain;strain.Open(s);strain.Click({Kind::Tab,int(Page::Combat)});
@@ -509,6 +509,22 @@ int main(){
         for(int i=0;i<25;++i)sight.Click(At(sight,Page::Combat,Increase(7)));
         Check(sight.Get()[EnemySight]==300,"300% is the upper bound");
         Check(sight.Click({Kind::Apply}).changed==(ChangeMask{1}<<EnemySight),"enemy sight saves only its own setting");
+    }
+    {Model companion;companion.Open(s);companion.Click({Kind::Tab,int(Page::Combat)});
+        Check(s.values[CompanionAi]==1&&RowKey(Page::Combat,8)==CompanionAi,"companion AI is the ninth Combat row, Enabled by default");
+        Check(ValueBox(8).y+ValueBox(8).h<=800,"companion AI row avoids Combat footer");
+        Check(Normalize(CompanionAi,NAN)==1&&Normalize(CompanionAi,0)==0&&Normalize(CompanionAi,1)==1&&Normalize(CompanionAi,2)==1,"companion AI normalizes to binary choice");
+        Check(std::string(HelpChoice(CompanionAi,1).name)=="Enabled"&&std::string(HelpChoice(CompanionAi,0).name)=="Legacy","companion AI choices are named Enabled and Legacy");
+        companion.Click(At(companion,Page::Combat,ValueBox(8)));
+        Check(companion.Get()[CompanionAi]==0,"clicking value toggles to Legacy (0)");
+        companion.Click(At(companion,Page::Combat,ValueBox(8)));
+        Check(companion.Get()[CompanionAi]==1,"clicking value toggles back to Enabled (1)");
+        companion.Click(At(companion,Page::Combat,Decrease(8)));
+        Check(companion.Get()[CompanionAi]==0,"decrease selects Legacy (0)");
+        companion.Click(At(companion,Page::Combat,Increase(8)));
+        Check(companion.Get()[CompanionAi]==1,"increase selects Enabled (1)");
+        companion.Click(At(companion,Page::Combat,Decrease(8)));
+        Check(companion.Click({Kind::Apply}).changed==(ChangeMask{1}<<CompanionAi),"companion AI saves only its own setting");
     }
     {Model difficulty;difficulty.Open(s);difficulty.Click({Kind::Tab,int(Page::Combat)});
         Check(s.values[OfflinePlayers]==0&&RowKey(Page::Combat,5)==OfflinePlayers,"difficulty preserves native settings by default");
