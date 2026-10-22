@@ -8,6 +8,7 @@
 using namespace framevr::interaction;
 namespace math=framevr::math;
 static void Check(bool b,const char* s){if(!b){std::fprintf(stderr,"FAIL: %s\n",s);std::exit(1);}}
+static float distance(Vec a,Vec b){return std::sqrt(math::Dot(a-b,a-b));}
 struct Sim {
     Engine e;Input in;Output out;
     Sim(){in.active=true;in.tracked[0]=in.tracked[1]=true;in.session=10;in.epoch=1;in.head.p={0,1.7f,0};
@@ -607,6 +608,49 @@ int main(){
         s.in.trigger=1;s.in.grip[0]=0;Check(s.Step().block,"held trigger after bottle drop stays blocked");
         auto snap=s.in.snapshot;snap.belt[0].items[0]={43,2,Code('m','p','1')};snap.belt[0].items[1]={};
         Check(PotionGone(snap,request),"authoritative removal can acknowledge native use");
+        Check(!s.out.discard.active,"without a known world floor an emptied bottle vanishes as before");
+    }
+    {
+        // An emptied bottle let go of falls into the world with the hand's motion.
+        auto drink=[](Sim& s) {
+            s.in.floorKnown=true;s.in.floor=.05f;
+            s.in.stage={true,{0,1.7f,0},{100.f,3.f,-50.f},math::Yaw(.5f)};
+            s.in.hand[0].p=s.out.belt[0].p;s.Step();s.in.grip[0]=1;s.Step();
+            s.in.hand[0].q=math::Multiply({0,0,-.70710678f,.70710678f},{.70710678f,0,0,.70710678f});
+            s.in.hand[0].p={-.115f,1.6f,-.08f};
+            Request request;for(int i=0;i<30;++i){auto o=s.Step();if(o.request.action==Action::Potion)request=o.request;}
+            Check(request.action==Action::Potion,"sip before letting go");
+            s.in.snapshot.belt[0].items[0]={43,2,Code('m','p','1')};s.in.snapshot.belt[0].items[1]={};++s.in.snapshot.belt[0].revision;
+            s.in.reply={request.sequence,10,Result::Applied};
+            Check(s.Step().bottleEmpty&&!s.out.discard.active,"an emptied bottle stays in the hand while gripped");
+        };
+        Sim s;drink(s);
+        // 2 m/s along room +x, turning 2 rad/s about room +y, still moving as the grip opens.
+        auto swing=[](Sim& t){t.in.hand[0].p=t.in.hand[0].p+Vec{.04f,0,0};t.in.hand[0].q=math::Multiply(math::Yaw(.04f),t.in.hand[0].q);};
+        for(int i=0;i<8;++i){swing(s);s.Step();}
+        swing(s);s.in.grip[0]=0;const auto hand=s.in.hand[0];const auto o=s.Step();
+        Check(o.discard.active&&o.discard.code==Code('h','p','1')&&o.bottle<0&&o.request.action==Action::None,
+            "letting go of an emptied bottle discards it into the world, without a native request");
+        const auto start=s.in.stage.World(framevr::potions::Center(hand.p,hand.q));
+        Check(distance(o.discard.p,start)<1e-4f,"it starts where it was held, in world metres");
+        const auto q=math::Multiply(s.in.stage.base,framevr::potions::HeldRotation(hand.q));
+        Check(std::fabs(std::fabs(q.x*o.discard.q.x+q.y*o.discard.q.y+q.z*o.discard.q.z+q.w*o.discard.q.w)-1)<1e-4f,"with the held model's world orientation");
+        Check(distance(o.discard.v,math::Rotate(s.in.stage.base,{2,0,0}))<.01f,"keeping the hand's speed, turned into the world");
+        Check(distance(o.discard.w,math::Rotate(s.in.stage.base,{0,2,0}))<.05f,"and the hand's spin");
+        Check(std::fabs(o.discard.floor-(3.f+.05f-1.7f))<1e-4f,"above the world floor under the player");
+        Check(!s.Step().discard.active,"the discard is reported once");
+        Sim still;drink(still);still.in.grip[0]=0;
+        Check(still.Step().discard.active&&distance(still.out.discard.v,{})<.01f&&distance(still.out.discard.w,{})<.01f,
+            "a still hand just lets it fall");
+        Sim frameless;drink(frameless);frameless.in.stage.known=false;frameless.in.grip[0]=0;
+        Check(!frameless.Step().discard.active,"no discard without the room-to-world frame");
+        Sim full;full.in.floorKnown=true;full.in.hand[0].p=full.out.belt[0].p;full.Step();full.in.grip[0]=1;full.Step();
+        full.in.grip[0]=0;Check(!full.Step().discard.active,"a full bottle let go of returns to the belt, never discarded");
+        // Spin follows the shorter way round, in the poses' frame.
+        Check(distance(Spin({0,0,0,1},math::Yaw(.1f),.05f),{0,2,0})<1e-3f,"turn rate from two poses");
+        const auto flipped=math::Yaw(-.1f);
+        Check(distance(Spin({0,0,0,1},{-flipped.x,-flipped.y,-flipped.z,-flipped.w},.05f),{0,-2,0})<1e-3f,"either quaternion sign");
+        Check(distance(Spin({0,0,0,1},{0,0,0,1},.05f),{})<1e-6f&&distance(Spin({0,0,0,1},math::Yaw(1),0),{})<1e-6f,"no turn, or no time");
     }
     {
         Sim s;auto scene=framevr::potions::MakeScene(s.in,s.out);

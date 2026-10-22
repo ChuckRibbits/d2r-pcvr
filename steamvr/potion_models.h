@@ -14,6 +14,7 @@ public:
                     void (*log)(const char*),const std::filesystem::path& directory={});
     bool Ready() const;
     bool HasArrow() const;   // the cache's arrow loaded: Scene items with ArrowCode draw it
+    float Radius(uint32_t code) const; // widest horizontal extent of that model, metres; 0 unknown
     void Reset();
     // Caller waited the eye's copy fence before reusing its RTV/depth resource.
     bool Render(ID3D12GraphicsCommandList*,ID3D12Resource*,unsigned eye,

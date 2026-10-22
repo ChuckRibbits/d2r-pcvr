@@ -123,6 +123,7 @@ namespace gamestate {bool OpaqueMenuOpen();}
 #include "melee.h"
 #include "target_lock.h"
 #include "bow.h"
+#include "wall_cells.h"
 #include "crossbow.h"
 #include "memory.h"
 #include "environment_cutaway.h"
@@ -844,6 +845,7 @@ void LoadSettings() {
     framevr::ConfigureQuiver(IniB(L"bow",L"quiver",true),IniB(L"bow",L"quiver_preview",true));
     framevr::ConfigureInteractions(IniB(L"interactions",L"seated",false),IniF(L"interactions",L"waist_below_eyes",.65f),
         IniF(L"interactions",L"belt_forward",.26f),IniF(L"interactions",L"dominant_hand",0)==1?1:0);
+    framevr::ConfigureBottlePhysics(IniB(L"interactions",L"bottle_physics",true));
     projectiles::Configure(IniB(L"gameplay",L"motion_controls",false),IniF(L"gameplay",L"arrow_speed",2.f),IniB(L"gameplay",L"arrow_direct_release",true));
     bowvr::Configure(IniB(L"gameplay",L"motion_controls",false));
     combat::Configure(IniB(L"gameplay",L"motion_controls",false)&&IniB(L"gameplay",L"contact_hits",true));
@@ -9760,6 +9762,7 @@ D2RL_PLUGIN_EXPORT bool D2RLoaderLoadPlugin(const PluginContext* ctx) noexcept {
     enemysight::Init(ctx);
     melee::Init(ctx);
     bowvr::Init(ctx);
+    wallcells::Init(ctx);
 #endif
     if (HANDLE h = CreateThread(nullptr, 0, UpdateThread, nullptr, 0, &g_updateThreadId)) CloseHandle(h);
     if (!ctx->RegisterConsoleCommand("vrcam", &CmdVrcam, "vrcam - the camera: off / first person / third person (F12)"))
