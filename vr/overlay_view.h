@@ -25,9 +25,10 @@ inline bool Asset(std::string_view path) {
 }
 // Share of the game camera's lift kept. The full lift (k * 0.5 = 1.5 units,
 // about 29 cm, for k = 3) floats the ring above the floor in VR, where the
-// push is no longer along the line of sight; 0.3 lowers it about 20 cm
-// (headset test 2026-10-21, ~5.25 units per metre).
-constexpr float Lift=.3f;
+// push is no longer along the line of sight; 0.475 lowers it about 15 cm
+// (headset tests 2026-10-21: 20 cm lower, then 5 cm back up; ~5.25 units
+// per metre).
+constexpr float Lift=.475f;
 // gameForward: the game camera's own view direction this frame (world, unit
 // length, looking down). The replacement keeps only Lift of its vertical part.
 inline bool Upright(portal::Vec gameForward,portal::Vec& result) {
