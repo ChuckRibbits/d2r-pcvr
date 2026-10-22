@@ -1,5 +1,6 @@
 #pragma once
 #include <cstdint>
+#include "aim_reach.h"
 
 // How each skill uses the aimed monster, and which hand's target it takes
 // (Jeff, 2026-10-20). One table, so
@@ -79,15 +80,24 @@ inline bool MonsterSwitch(Use use,bool bow,const Switches& s) {
 // monster, Bone Prison (and every other skill) on it (Jeff, 2026-10-20).
 inline float FrontOfTarget(int skill){return skill==78?3.f:0.f;}
 // Skills the game should be handed the monster itself, when there is one: seekers
-// home in on it (Guided Arrow, Bone Spirit), Fist of the Heavens strikes it,
-// Attract and Taunt need a unit, and the travelling attacks (Charge, Leap
-// Attack, Dragon Flight) and Zeal fight it. With no monster they keep their rule.
-// Only a skill whose rule the rules aim reaches the hand-off (RulesAim): Fist of
-// the Heavens and Zeal have no row, so they are handed only if the game flags
-// them as aimed (Of's default); otherwise the game picks, as before.
+// home in on it (Guided Arrow, Bone Spirit), Attract and Taunt need a unit, and
+// the travelling attacks (Charge, Leap Attack, Dragon Flight) fight it. With no
+// monster they keep their rule. Only a skill the rules aim reaches the hand-off
+// (RulesAim). Fist of the Heavens and Zeal stay with the game's own pick: the
+// game marks both as needing a target, not as aimed, so they have no rule.
 inline bool WantsUnit(int skill){
-    switch(skill){case 22: case 93: case 121: case 86: case 137: case 106: case 107: case 143: case 275: return true;default: return false;}
+    switch(skill){case 22: case 93: case 86: case 137: case 107: case 143: case 275: return true;default: return false;}
 }
+// The monster handed to the game for a unit skill answers the game's target
+// queries for this long after the cast (RulesUnit).
+inline constexpr unsigned long long HandOffMs=500;
+inline bool HandOffLive(int skill,unsigned long long at,unsigned long long now){return skill>=0&&now-at<=HandOffMs;}
+// Letting go of a button drops the hand-off its own cast made while it was held.
+// A cast made with the button already up (-1) keeps the HandOffMs expiry.
+inline bool DropOnRelease(int handedButton,int released){return handedButton>=0&&handedButton==released;}
+// A held target stays while the scan still finds it and it is inside the game's
+// own cast reach (aimreach): the scan reaches past it.
+inline bool KeepHeld(bool found,float dx,float dy){return found&&aimreach::Within(dx,dy);}
 
 // Where the target comes from: the right hand (0), the left hand (1), the eyes (2).
 enum Source {Right=0,Left=1,Eyes=2};

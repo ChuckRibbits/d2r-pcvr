@@ -16,7 +16,13 @@ int main() {
     Check(TakesTarget(Use::Attack)&&!TakesTarget(Use::Spot)&&!TakesTarget(Use::Native),"travel spots never take the target");
     Check(Circle(Use::Ground)&&!Circle(Use::Curse),"curses are instant: no landing circle");
     Check(FrontOfTarget(78)==3&&FrontOfTarget(88)==0&&FrontOfTarget(59)==0,"Bone Wall in front of the target, Bone Prison on it");
-    Check(WantsUnit(22)&&WantsUnit(121)&&WantsUnit(107)&&WantsUnit(106)&&!WantsUnit(36)&&!WantsUnit(54)&&!WantsUnit(66),"seekers, Fist of the Heavens, Charge and Zeal get the monster; bolts, Teleport and curses do not");
+    Check(WantsUnit(22)&&WantsUnit(93)&&WantsUnit(107)&&!WantsUnit(36)&&!WantsUnit(54)&&!WantsUnit(66),"seekers and Charge get the monster; bolts, Teleport and curses do not");
+    Check(!WantsUnit(121)&&!WantsUnit(106),"Fist of the Heavens and Zeal stay with the game's own pick");
+    Check(HandOffLive(22,1000,1500)&&!HandOffLive(22,1000,1501)&&!HandOffLive(-1,1000,1000),"a hand-off answers for 500 ms, and none is never live");
+    Check(DropOnRelease(0,0)&&DropOnRelease(1,1)&&!DropOnRelease(0,1)&&!DropOnRelease(-1,0)&&!DropOnRelease(-1,1),
+          "letting go drops only that button's own hand-off; one cast with the button up waits out its 500 ms");
+    Check(KeepHeld(true,10,-44)&&KeepHeld(true,45,45)&&!KeepHeld(true,45.5f,0)&&!KeepHeld(true,0,-46)&&!KeepHeld(false,1,1),
+          "a held target stays inside 45 cells on either axis, corners too, and lets go past it or once it is gone");
     const auto right=For(0,false),left=For(1,false),bow=For(0,true);
     Check(right.at[0]==Right&&right.at[1]==Left&&right.at[2]==Eyes,"a right button: right, left, eyes");
     Check(left.at[0]==Left&&left.at[1]==Right&&left.at[2]==Eyes,"a left button: left, right, eyes");

@@ -697,7 +697,7 @@ int Hostiles(Hostile* out,int max,float range,float& heroX,float& heroY) {
     constexpr int Cap=128;
     max=std::min(max,Cap);
     uintptr_t units[Cap]{};float distance[Cap]{};
-    int n=0;unsigned visited=0;
+    int n=0,inRange=0;unsigned visited=0;
     for(uintptr_t unit:buckets) {
         for(unsigned chain=0;unit&&chain<256&&visited++<4096;++chain) {
             uintptr_t next=0;uint32_t header[4]{};Vec pos{};
@@ -706,6 +706,7 @@ int Hostiles(Hostile* out,int max,float range,float& heroX,float& heroY) {
             if(d>=0&&d<=range&&
                reinterpret_cast<int(*)(uintptr_t,uintptr_t,uintptr_t)>(d2rsig::Addr(RelationRva))(game,self,unit)&&
                !(MonsterFlags(unit)&(kMonNpc|kMonInTown))) {   // not town residents
+                ++inRange;
                 const int slot=framevr::targetcone::NearestSlot(distance,n,max,d);
                 if(slot>=0){units[slot]=unit;distance[slot]=d;out[slot]={header[2],header[1],pos.x*.5f,pos.z*.5f,false};if(slot==n)++n;}
             }
@@ -713,6 +714,13 @@ int Hostiles(Hostile* out,int max,float range,float& heroX,float& heroY) {
         }
     }
     for(int i=0;i<n;++i)out[i].clear=reinterpret_cast<int(*)(uintptr_t,uintptr_t,int)>(d2rsig::Addr(LineRva))(self,units[i],0x804)==0;
+    // Telemetry: a crowd bigger than the list, at most every 5 s.
+    static ULONGLONG crowdLogged=0;
+    if(inRange>n&&GetTickCount64()-crowdLogged>5000) {
+        crowdLogged=GetTickCount64();
+        char line[128];snprintf(line,sizeof line,"Frame target lock: kept the nearest %d of %d hostiles in range",n,inRange);
+        framevr::logging::Write(line);
+    }
     return n;
 }
 bool HirelingVitals(uint32_t hint,float& health,float& maxHealth,uint32_t& classId,uint32_t& unitId) {

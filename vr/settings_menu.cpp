@@ -13,7 +13,7 @@ std::mutex mutex;
 Snapshot published;
 Request queued;
 bool busy=false;
-std::atomic<bool> depthActive{true},depthChanged{false};
+std::atomic<bool> depthActive{true},depthChanged{false},legacyHighlight{false};
 float Value(const wchar_t* path,const wchar_t* section,const wchar_t* key,float fallback){
     wchar_t def[64],text[128];std::swprintf(def,64,L"%.6g",double(fallback));
     GetPrivateProfileStringW(section,key,def,text,128,path);
@@ -22,6 +22,7 @@ float Value(const wchar_t* path,const wchar_t* section,const wchar_t* key,float 
 }
 Values Load(const wchar_t* path){
     Values v{},raw{};
+    bool legacy=false;
     for(int i=0;i<Count;++i){
         const auto& d=Definitions[i];
         // Legacy separate switches are read only for migration. Both off stays
@@ -34,7 +35,9 @@ Values Load(const wchar_t* path){
                              HighlightKey(Key(i))?LegacyHighlight(Key(i),Value(path,L"gameplay",L"target_outline_by_range",-1),Value(path,L"gameplay",L"target_outline_hue",-1)):
                              d.defaultValue;
         raw[i]=Value(path,d.section,d.key,fallback);v[i]=Normalize(Key(i),raw[i]);
+        if(HighlightKey(Key(i))&&fallback!=d.defaultValue&&Value(path,d.section,d.key,-1)<0)legacy=true;   // no own key: the old color counted
     }
+    legacyHighlight.store(legacy);
     v[SmoothTurn]=SmoothTurning(raw[Snap],Value(path,L"turn",L"smooth",-1))?1.f:0.f;
     v[Snap]=SnapDegrees(raw[Snap]);
     // A malformed/future record must prompt again, not silently become valid
@@ -87,6 +90,7 @@ Result Save(const wchar_t* path,const Request& r){
 framevr::settings::Snapshot Read(){std::lock_guard lock(mutex);return published;}
 void SetReShadeDepth(bool active){depthActive.store(active);depthChanged.store(true);}
 bool ReShadeDepthActive(){return depthActive.load();}
+bool LegacyHighlightUsed(){return legacyHighlight.load();}
 void SetOfflineDifficultyAvailable(bool available){
     std::lock_guard lock(mutex);
     if(published.offlineDifficultyAvailable!=available){published.offlineDifficultyAvailable=available;++published.revision;}

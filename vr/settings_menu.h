@@ -12,4 +12,6 @@ void SetOfflineDifficultyAvailable(bool available);
 // [render] reshade_depth, and what a saved change waits for a restart against.
 void SetReShadeDepth(bool active);
 bool ReShadeDepthActive();
+// A hand's outline color came from the old single color (LegacyHighlight) at the last load.
+bool LegacyHighlightUsed();
 }

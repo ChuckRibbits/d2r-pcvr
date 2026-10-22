@@ -3428,8 +3428,9 @@ void Tick(const targetlock::Snapshot* s) {
         if (framevr::CastButtonHand() != b && !framevr::HandSpellHeld(b)) {
             if (const uint32_t was = g_held[b].exchange(0)) LogF("Frame aim hold: %s button let go of monster %u", b ? "left" : "right", was);
             // and the monster its cast handed the game: a quick recast picks again, not the old one for 500 ms
-            if (g_unitButton.load() == b && g_unitSkill.exchange(-1) >= 0)
-                LogF("Frame aim hold: %s button let go of the monster handed for skill casts (id %u)", b ? "left" : "right", g_unitId.load());
+            if (framevr::aimrules::DropOnRelease(g_unitButton.load(), b))
+                if (const int was = g_unitSkill.exchange(-1); framevr::aimrules::HandOffLive(was, g_unitAt.load(), GetTickCount64()))
+                    LogF("Frame aim hold: %s button let go of the monster handed for skill %d (id %u)", b ? "left" : "right", was, g_unitId.load());
         }
     const float armOut = AimArmOutCm();
     for (int h = 0; h < 2; ++h) {
@@ -3467,12 +3468,13 @@ bool Resolve(int button, bool bow, float& x, float& y, float& distance, int* sou
     const bool held = framevr::CastButtonHand() == b || framevr::HandSpellHeld(b);
     if (!held) g_held[b].store(0);
     // A held target lets go once it dies, leaves the scan, or walks out of the
-    // game's own cast reach (aimreach): the scan reaches a little past it.
+    // game's own cast reach (aimrules::KeepHeld): the scan reaches past it.
     auto kept = [&](uint32_t id) {
-        if (!find(id)) return false;
-        if (framevr::aimreach::Within(x - s.heroX, y - s.heroY)) return true;
-        if (g_held[b].compare_exchange_strong(id, 0))
-            LogF("Frame aim hold: %s button let go of monster %u, out of the game's reach (%.1f cells)", b ? "left" : "right", id, std::hypot(x - s.heroX, y - s.heroY));
+        const bool found = find(id);
+        if (framevr::aimrules::KeepHeld(found, x - s.heroX, y - s.heroY)) return true;
+        if (found && g_held[b].compare_exchange_strong(id, 0))
+            LogF("Frame aim hold: %s button let go of monster %u, out of the game's reach (%.1f cells on its longer axis, %.0f allowed)", b ? "left" : "right", id,
+                 (std::max)(std::fabs(x - s.heroX), std::fabs(y - s.heroY)), framevr::aimreach::GameCells);
         return false;
     };
     if (const uint32_t keep = g_held[b].load(); keep && kept(keep)) {   // a dead or out-of-reach target lets go
@@ -3600,8 +3602,14 @@ bool Wanted() {
 void Tick() {
     const bool wanted = Wanted();
     targetlock::Pump(wanted);
+    static bool toldLegacy = false;   // once a session: the old single outline color still serves a hand
+    if (!toldLegacy && vrsettings::LegacyHighlightUsed()) {
+        toldLegacy = true;
+        LogF("Frame aim outline: a hand's color comes from the old single outline color ([gameplay] target_outline_by_range / target_outline_hue) until it is changed");
+    }
     // Nothing aims by the rules or outlines a monster: no arm tracking at all.
-    const bool resting = !wanted && !framevr::aimrules::Any(aimtargets::Options());
+    // From the settings alone, so loading screens and menus don't flip it.
+    const bool resting = !TargetHighlightOn() && !framevr::aimrules::Any(aimtargets::Options());
     static bool rested = false;
     if (resting != rested) {
         rested = resting;
@@ -3695,7 +3703,7 @@ bool PointSpellAim(float playerX,float playerY,float& targetX,float& targetY) {
 // answer with this monster for this skill.
 namespace worldobj { uintptr_t ClientMonster(uint32_t id); }
 uintptr_t RulesUnit(int skill) {
-    if(skill<0||skill!=g_unitSkill.load()||GetTickCount64()-g_unitAt.load()>500)return 0;
+    if(skill!=g_unitSkill.load()||!framevr::aimrules::HandOffLive(skill,g_unitAt.load(),GetTickCount64()))return 0;
     const uintptr_t unit=worldobj::ClientMonster(g_unitId.load());
     static ULONGLONG told=0;
     if(GetTickCount64()-told>2000){told=GetTickCount64();LogF("Frame aim rules: skill %d handed monster id %u (%s)",skill,g_unitId.load(),unit?"found":"not near: the game's own pick");}
@@ -3763,9 +3771,10 @@ bool NativeSpellAimDecide(float playerX,float playerY,framevr::spellaim::Cast& c
             cast.directed=false;return false;
         }
         if(id)g_note.unit="not found";
-        // Nothing handed this time: the hooks must not answer with the last
-        // hand-off's monster (a recast within 500 ms took the old one).
-        if(g_unitSkill.exchange(-1)>=0&&!id)g_note.unit="none (last hand-off dropped)";
+        // Nothing handed this time: the game's target queries must not keep
+        // answering with the last hand-off's monster for up to 500 ms.
+        if(const int was=g_unitSkill.exchange(-1);!id&&framevr::aimrules::HandOffLive(was,g_unitAt.load(),GetTickCount64()))
+            g_note.unit="none (last hand-off dropped)";
     }
     // Placed skills (ground skills - Bone Wall and Prison too - curses,
     // Teleport...): the point; the rest a heading.

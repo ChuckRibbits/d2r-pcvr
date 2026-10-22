@@ -104,7 +104,7 @@ inline constexpr std::array<Definition,Count> Definitions{{
     {"Monster outline", "Outline strength for the monster you aim at; Off by default", L"gameplay",L"target_outline_pct",0,0,100,10},
     {"Heartbeat starts at", "Life % where the heartbeat begins; louder and faster every 10% lower", L"gameplay",L"low_life_heart_start",60,0,90,10},
     {"Skills go to the aimed monster", "The hand's monster, else the other hand's, else where you look", L"gameplay",L"spell_lock",0,0,3,1},
-    {"Staff aims where your arm points", "Upright: along your arm. Levelled out: from the staff's top", L"gameplay",L"staff_point",0,0,1,1},
+    {"Staff aims where your arm points", "Upright: along your arm. Leveled out: from the staff's top", L"gameplay",L"staff_point",0,0,1,1},
     {"Landing circles", "Where and when a ground skill will hit, in its element's color", L"gameplay",L"landing_circles",1,0,1,1},
     {"Ground skills", "The game's own aim, the floor you point at, or the aimed monster", L"gameplay",L"ground_aim",0,0,2,1},
     {"Monster highlights", "Dominant hand: its monster only. Both hands: each hand's own", L"gameplay",L"aim_highlights",1,0,1,1},
