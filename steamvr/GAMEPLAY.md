@@ -1073,7 +1073,8 @@ retain their existing controls, costs, timings and collision behavior.
 
 **Bow path laser** (**VR Settings > Combat > Bow path laser**, `[bow] path_laser_hue`,
 Off by default): at full draw, while a release would shoot a physical
-arrow (basic or quiver), a faint line runs from the arrow's tip along the
+arrow (basic, or Magic, Fire, Cold, Ice, Exploding, Immolation or Freezing
+Arrow), a faint line runs from the arrow's tip along the
 release's own direction. The one row chooses Off or the line's hue in
 15-degree steps, wrapping through Off in both directions (345°, Off, 0°);
 any negative saved value is Off (written as -15). The end dot is the same
@@ -1082,7 +1083,7 @@ color changes. Arrows have no gravity, so the line is the path. It
 stops with a dot where the flight would meet the launch floor, with the
 flight's own clearance, and otherwise fades out at 15 m: it is drawn over the
 scene and does not stop at walls or monsters, which only the flight tests.
-Native bow skills and crossbows show no line. The first line of each draw logs
+Multiple Shot, Guided Arrow, Strafe and crossbows show no line. The first line of each draw logs
 `Frame bow laser: shown (length N m)` (`, floor` added when it ends on the
 floor), at most every 2 seconds.
 
