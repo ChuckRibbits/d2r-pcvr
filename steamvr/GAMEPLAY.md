@@ -1072,7 +1072,7 @@ native skill through the palette instead. Selected arrow skills gain the candida
 draw/release adapter above; their flight remains native. Other skills/spells
 retain their existing controls, costs, timings and collision behavior.
 
-**Bow path laser** (**VR Settings > Combat > Bow path laser**, `[bow] path_laser_hue`,
+**Bow path laser** (**VR Settings > Aim > Bow path laser**, `[bow] path_laser_hue`,
 Off by default): at full draw, while a release would shoot a physical
 arrow (basic, or Magic, Fire, Cold, Ice, Exploding, Immolation or Freezing
 Arrow), a faint line runs from the arrow's tip along the
