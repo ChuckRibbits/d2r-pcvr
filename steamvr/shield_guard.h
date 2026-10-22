@@ -143,7 +143,9 @@ inline bool InGuard(Vec hand,bool leftShield,bool raised,const Tuning& t) {retur
 inline Rejection PositionRejection(const Pose& p,bool leftShield,bool raised,const Tuning& t) {
     if(!Measured(p))return PositionRejection(p.hand,leftShield,raised,t);
     const float margin=raised?t.hold:0;
-    const float height=(std::fabs(p.halfRight.y)+std::fabs(p.halfUp.y))*p.coverScale;
+    // The real shield's height, not Holy Shield's glow: coverScale widens what
+    // a raised shield covers (Coverage) but never what counts as raised.
+    const float height=std::fabs(p.halfRight.y)+std::fabs(p.halfUp.y);
     // A tower shield can cover the torso with its grip below the old hand
     // cutoff. Use the visible surface, still relative to this pose's eyes.
     if(p.center.y+height<p.eye.y-.50f-margin)return Rejection::TooLow;

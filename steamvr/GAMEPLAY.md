@@ -670,7 +670,8 @@ arm. **VR Settings > Shield** now means the same directions on every class:
 toward the hand (-10 to 40 cm), **Out** moves it away from the arm on the
 shield's side (the back of the hand, or the palm if the bind pose hangs it
 there) and **Up** toward the thumb (-30 to +30 cm each), in 1 cm steps scaled by
-the model's forearm; all 0 by default, the original position; about 3 / 2 / 2
+the model's forearm; all 0 by default (with Shield follows at 100%, main's exact
+position); about 3 / 2 / 2
 cm suits a buckler and large shields need more (`[gameplay] shield_grip_cm`,
 `shield_out_cm`, `shield_up_cm`). The posed shield is also the guard pose that
 blocking, parrying and bashing read, so the shield blocks where it is shown.
@@ -690,11 +691,12 @@ on the outside of the forearm; +90 suits a controller held palm down (the face
 outward instead of lying on the forearm like a tray), while with the thumb up it
 lays the shield flat under the wrist.
 
-The side of the forearm the shield is on - for the wrist stop and for Out - is
-decided once from the bind pose: read each frame, it flipped when the shield's
-bone sat near the forearm's line, and the shield jumped across the wrist.
+The side of the forearm the shield is on (for Out only; the wrist stop is unchanged) is
+decided from the bind pose (the same every frame), never from the live bones:
+read from the live bones, it flipped when the shield's bone sat near the
+forearm's line, and the shield jumped across the wrist.
 
-`[debug] shield_trace=1` (on by default in developer builds, off for players)
+`[debug] shield_trace=1` (off by default)
 logs the held shield's pose chain at 5 Hz, and at once when it jumps:
 
 `Frame shield trace: t=1234567 face=35 hand=(-21.0,-38.5,-30.2|12,-35,80) wrist=(-19.8,-41.0,-27.5|10,-33,78) elbow=(-24.1,-48.7,-3.0|5,-20,70) seat=(-3.0,6.1,2.0) shield=(-15.9,-43.1,-31.8|-80,10,15) side=back stop=0 follow=50% roll=0 bend=24 turn=3.2deg`
@@ -712,7 +714,7 @@ restart the jump check, so spawning never prints a JUMP.
   cm (at the user's scale), then its heading, pitch and roll in degrees.
 - `wrist`, `elbow`: the model's hand and forearm bones, the same way.
 - `seat`: the shield's attach bone from the wrist in the arm's frame (along,
-  out, up), cm. It moves with the Shield settings and the roll, not the wrist.
+  out, up), cm. It moves with Grip / Out / Up, not the wrist or the roll.
 - `shield`: the shield's attach bone, model space from the eye, and its angles.
 - `side`: the side of the forearm the shield is on (`back` of the hand or
   `palm`); `stop`: degrees of wrist bend the shield stop held back.

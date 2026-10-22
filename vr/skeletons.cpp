@@ -1903,7 +1903,7 @@ void PoseBody(uintptr_t self, const Hero& h, const Input& in) {
                         newW[sa].m[12]+=move.x;newW[sa].m[13]+=move.y;newW[sa].m[14]+=move.z;
                     }
                     seatTrace.bone=sa;seatTrace.side=side;seatTrace.heldBack=heldBack;seatTrace.frame=placed?frame:shield::Frame{};
-                    {bow::Vec axis;float angle;seatTrace.bend=shield::TurnBetween(strapped,wristFrame,axis,angle)?angle*57.2958f:-1;}
+                    if(in.shieldTrace){bow::Vec axis;float angle;seatTrace.bend=shield::TurnBetween(strapped,wristFrame,axis,angle)?angle*57.2958f:-1;}
                     std::vector<char> movedAttach(n,0);movedAttach[sa]=1;Propagate(h,beforeAttach,newW,movedAttach,sa);
                 }
             }

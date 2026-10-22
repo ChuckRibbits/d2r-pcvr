@@ -1428,11 +1428,7 @@ void LoadSettings() {
     g_set.spearShaftAxis.store(std::clamp((int)IniF(L"hands", L"spear_shaft_axis", -2.0f), -3, 3));
     g_set.bodyYawDeg.store(std::clamp(IniF(L"body", L"yaw", 0.0f), -180.0f, 180.0f));
     g_set.wrist.store(IniB(L"hands", L"wrist", true));
-#ifdef D2RVR_DEVELOPER
-    g_set.shieldTrace.store(IniB(L"debug", L"shield_trace", true));   // off for players unless asked for
-#else
-    g_set.shieldTrace.store(IniB(L"debug", L"shield_trace", false));
-#endif
+    g_set.shieldTrace.store(IniB(L"debug", L"shield_trace", false));   // off unless asked for (5 Hz lines)
     g_set.wristPitch.store(std::clamp(IniF(L"hands", L"pitch", 0.0f), -180.0f, 180.0f));
     g_set.wristYaw.store(std::clamp(IniF(L"hands", L"yaw", 0.0f), -180.0f, 180.0f));
     g_set.wristRoll.store(std::clamp(IniF(L"hands", L"roll", 0.0f), -180.0f, 180.0f));
@@ -6606,12 +6602,14 @@ void ShieldGuardTick() {
     const bool posed=eligible&&skel::ShieldGuardPose(pose)&&pose.epoch==epoch;
     pose.epoch=epoch; // invalidate cached coverage across a snap turn
     // Holy Shield: blocks land on its larger glow, mesh surface or fallback alike.
-    const bool holy=eligible&&effectstate::HolyShield(gamestate::LocalPlayer());
+    // Logged when Holy Shield itself starts or ends, not when a menu or the
+    // view turns the guard off and on.
+    const bool holyActive=effectstate::HolyShield(gamestate::LocalPlayer()),holy=eligible&&holyActive;
     pose.coverScale=framevr::guard::CoverScale(holy);
     static bool holyWas=false;
-    if(holy!=holyWas) {
-        holyWas=holy;char line[160];snprintf(line,sizeof line,"Frame guard: Holy Shield coverage %s (x%.1f about the shield's center)",
-            holy?"on":"off",holy?framevr::guard::HolyShieldCover:1.f);
+    if(holyActive!=holyWas) {
+        holyWas=holyActive;char line[160];snprintf(line,sizeof line,"Frame guard: Holy Shield coverage %s (x%.1f about the shield's center)",
+            holyActive?"on":"off",holyActive?framevr::guard::HolyShieldCover:1.f);
         framevr::logging::Write(line);
     }
     // Coverage, height and scale all come from the completed shield pose.

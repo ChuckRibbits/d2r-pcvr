@@ -388,6 +388,12 @@ int main() {
         for(const float bad:{NAN,.5f,4.f}){Pose b=p;b.coverScale=bad;assert(!Valid(b)&&Coverage(b,ahead,t)==Rejection::InvalidSurface);}
         Pose turned=p;turned.normal={1,0,0};turned.coverScale=CoverScale(true);turned.center.x=0;
         turned.halfRight={0,0,.13f};assert(Coverage(turned,ahead,t)==Rejection::OutsideCoverage);   // edge-on stays open
+        // Only the width grows: a shield held too low (or high) to count as raised stays so under Holy Shield.
+        Pose low=p;low.center.x=0;low.center.y=low.eye.y-.50f-.13f-.04f;
+        assert(Measured(low)&&PositionRejection(low,true,false,t)==Rejection::TooLow);
+        low.coverScale=CoverScale(true);assert(PositionRejection(low,true,false,t)==Rejection::TooLow);
+        Pose high=p;high.center.x=0;high.center.y=high.eye.y+.15f+.13f+.04f;high.coverScale=CoverScale(true);
+        assert(PositionRejection(high,true,false,t)==Rejection::TooHigh);
     }
     std::puts("Shield guard: rendered bounds, coverage, calibration, movement, parries, debug placement and expiry passed");
 }
