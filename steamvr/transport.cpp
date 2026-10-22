@@ -1564,6 +1564,14 @@ void SettingsPointer(const settings::InputGate::Edges& edges,bool grip) {
     if(!settingsModel.open)return;
     const bool monoAudio=MonoAudioOn(GetTickCount64());
     settingsModel.Observe(vrsettings::Read());settingsHover={};pointerVisible=pointerHit=false;
+    {   // the character, for rows that only apply to some classes or weapons
+        settings::Context context;
+        const auto bindings=interactionstate::Read();
+        if(interaction::Fresh(bindings,gamestate::LocalPlayer(),GetTickCount64()))context.heroClass=bindings.skillClass;
+        const auto weapon=gamestate::WeaponType();
+        context.bow=weapon==D2RVR_TYPE_BOW;context.staff=weapon==D2RVR_TYPE_STAFF;
+        settingsModel.SetContext(context);
+    }
     int helpTarget=settings::NoHelp;
     const auto previousPage=settingsModel.page;
     const bool previousMenu=settingsModel.controllerMenu;
@@ -1575,8 +1583,8 @@ void SettingsPointer(const settings::InputGate::Edges& edges,bool grip) {
         pointerHit=math::IntersectPanel(ray,direction,V(settingsPose.position),Q(settingsPose.orientation),settingsWidth,settingsHeight,hit);
         beamLength=pointerHit?hit.distance:1.5f;const auto mid=ray+direction*(beamLength*.5f);
         beamPose=XrPose({mid,math::BeamOrientation(direction,V(head.position)-mid)});pointerVisible=true;
-        if(pointerHit){settingsHover=settings::HitTest(settingsModel.page,hit.u,hit.v,settingsModel.controllerMenu);dotPose=settingsPose;
-            helpTarget=settings::HelpAt(settingsModel.page,hit.u,hit.v,settingsModel.controllerMenu,&settingsModel.Get(),monoAudio);
+        if(pointerHit){const auto rows=settingsModel.Rows();settingsHover=settings::HitTest(settingsModel.page,hit.u,hit.v,settingsModel.controllerMenu,&rows);dotPose=settingsPose;
+            helpTarget=settings::HelpAt(settingsModel.page,hit.u,hit.v,settingsModel.controllerMenu,&settingsModel.Get(),monoAudio,&settingsModel.context);
             const auto p=hit.point+math::Rotate(Q(settingsPose.orientation),{0,0,.004f});dotPose.position={p.x,p.y,p.z};}
     }
     const bool grabbing=GrabPanel(settingsPose,settingsBase,settingsOffset,grip&&pointerVisible,pointerHit,Float(trigger,0)>.2f,aim.pose);
@@ -2070,7 +2078,7 @@ void Input() {
     // drawn string (or the shot just loosed) keeps its own line. Only with VR
     // Settings > Aim > Bow skills go to the aimed monster: Off, a bow skill
     // aims along its button's hand, as before the aim rules (#159 review).
-    if(gestureSettings[settings::SpellLockBow]>.5f&&motionInput.weapon==gameplay::Weapon::Bow&&motionOutput.skill>=0&&motionInput.tracked[1]&&
+    if(settings::LockBowSkills(gestureSettings[settings::SpellLock])&&motionInput.weapon==gameplay::Weapon::Bow&&motionOutput.skill>=0&&motionInput.tracked[1]&&
        weaponskills::Bow(quickSnapshot.skills[motionOutput.skill].id)&&gameplay::Length(motionOutput.rayOrigin-motionInput.hand[1].p)>.05f) {
         motionOutput.rayOrigin=motionInput.hand[1].p;motionOutput.rayDirection=gameplay::BowForward(motionInput.hand[1]);motionOutput.rayValid=true;
     }
