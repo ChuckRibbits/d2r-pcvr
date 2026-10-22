@@ -13,7 +13,11 @@ namespace framevr::potions {
 using Microsoft::WRL::ComPtr;
 namespace {
 constexpr const char* Codes[]={"hp1","hp2","hp3","hp4","hp5","mp1","mp2","mp3","mp4","mp5","rvs","rvl","yps","wms","vps"};
-constexpr unsigned Count=15;   // the potions, all required; then the arrow, optional
+constexpr unsigned Count=15;   // the potions, all required; then the extras, each optional
+// The arrow (the bow's), then the traps and bombs thrown by hand (#224, toss::Model).
+constexpr const char* Extras[]={"arw","tfb","tsw","tbs","tst","twk"};
+constexpr float ExtraExtent[]={.45f,.1f,.1f,.1f,.1f,.1f};
+constexpr unsigned ExtraCount=6;
 struct Vertex {float p[3],n[3],uv[2],glass;};
 struct Asset {std::vector<Vertex> vertices;std::vector<uint32_t> indices;unsigned w,h,format;std::vector<std::vector<uint8_t>> mips;};
 void Require(bool condition,const char* error){if(!condition)throw std::runtime_error(error);}
@@ -67,14 +71,16 @@ struct Models::Impl {
     ComPtr<ID3D12DescriptorHeap> srv,rtv,dsv;
     ComPtr<ID3D12Resource> depth[2];
     struct Mesh {ComPtr<ID3D12Resource> vertices,indices,texture;D3D12_VERTEX_BUFFER_VIEW vb{};D3D12_INDEX_BUFFER_VIEW ib{};uint32_t code=0,count=0;};
-    Mesh meshes[Count+1];unsigned meshCount=Count;   // the arrow last, when loaded
+    Mesh meshes[Count+ExtraCount];unsigned meshCount=Count;   // the extras loaded follow the potions
+    bool arrow=false;unsigned tosses=0;
     uint32_t width=0,height=0,srvStride=0,rtvStride=0,dsvStride=0;
     DXGI_FORMAT format=DXGI_FORMAT_UNKNOWN;bool encode=false;
 };
 Models::Models()=default;Models::~Models()=default;
 void Models::Reset(){impl.reset();}
 bool Models::Ready() const {return impl!=nullptr;}
-bool Models::HasArrow() const {return impl&&impl->meshCount>Count;}
+bool Models::HasArrow() const {return impl&&impl->arrow;}
+unsigned Models::Tosses() const {return impl?impl->tosses:0;}
 bool Models::Initialize(ID3D12Device* device,ID3D12CommandQueue* queue,DXGI_FORMAT format,uint32_t w,uint32_t h,void (*log)(const char*),const std::filesystem::path& directory) {
     if(impl)return true;
     try {
@@ -82,11 +88,16 @@ bool Models::Initialize(ID3D12Device* device,ID3D12CommandQueue* queue,DXGI_FORM
         Require(format==DXGI_FORMAT_R8G8B8A8_UNORM||format==DXGI_FORMAT_R8G8B8A8_UNORM_SRGB||format==DXGI_FORMAT_B8G8R8A8_UNORM||format==DXGI_FORMAT_B8G8R8A8_UNORM_SRGB,"potion renderer requires SDR eye target");
         p->encode=format==DXGI_FORMAT_R8G8B8A8_UNORM||format==DXGI_FORMAT_B8G8R8A8_UNORM;
         const auto folder=directory.empty()?Directory():directory;
-        std::vector<Asset> assets(Count);
-        for(unsigned i=0;i<Count;++i)assets[i]=Load(folder/(std::string(Codes[i])+".pvr"));
-        // The arrow is optional: an older cache, or one without it, keeps the bow's draw guide.
+        std::vector<Asset> assets(Count);std::vector<uint32_t> codes;
+        const auto code=[](const char* c){return interaction::Code(c[0],c[1],c[2]);};
+        for(unsigned i=0;i<Count;++i){assets[i]=Load(folder/(std::string(Codes[i])+".pvr"));codes.push_back(code(Codes[i]));}
+        // The extras are optional: an older cache, or one without them, keeps the
+        // bow's draw guide and throws traps with nothing in the hand.
         std::string arrowNote;
-        try{assets.push_back(Load(folder/"arw.pvr",.45f));}catch(const std::exception& e){arrowNote=e.what();}
+        for(unsigned i=0;i<ExtraCount;++i) {
+            try{assets.push_back(Load(folder/(std::string(Extras[i])+".pvr"),ExtraExtent[i]));codes.push_back(code(Extras[i]));if(i)++p->tosses;else p->arrow=true;}
+            catch(const std::exception& e){if(!i)arrowNote=e.what();}
+        }
         p->meshCount=unsigned(assets.size());
         struct Lib {HMODULE h=LoadLibraryW(L"d3dcompiler_47.dll");~Lib(){if(h)FreeLibrary(h);}} compiler;
         auto compile=compiler.h?reinterpret_cast<decltype(&D3DCompile)>(GetProcAddress(compiler.h,"D3DCompile")):nullptr;
@@ -131,7 +142,7 @@ float4 PS(Out v):SV_Target {
         state.DepthStencilState.DepthEnable=TRUE;state.DepthStencilState.DepthWriteMask=D3D12_DEPTH_WRITE_MASK_ALL;state.DepthStencilState.DepthFunc=D3D12_COMPARISON_FUNC_GREATER_EQUAL;
         state.PrimitiveTopologyType=D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;state.NumRenderTargets=1;state.RTVFormats[0]=format;state.DSVFormat=DXGI_FORMAT_D32_FLOAT;state.SampleDesc.Count=1;
         Check(device->CreateGraphicsPipelineState(&state,IID_PPV_ARGS(&p->pipeline)),"potion pipeline creation failed");
-        D3D12_DESCRIPTOR_HEAP_DESC heap{};heap.Type=D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;heap.NumDescriptors=Count+1;heap.Flags=D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
+        D3D12_DESCRIPTOR_HEAP_DESC heap{};heap.Type=D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;heap.NumDescriptors=Count+ExtraCount;heap.Flags=D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
         Check(device->CreateDescriptorHeap(&heap,IID_PPV_ARGS(&p->srv)),"potion texture descriptors failed");p->srvStride=device->GetDescriptorHandleIncrementSize(heap.Type);
         heap.NumDescriptors=2;heap.Flags=D3D12_DESCRIPTOR_HEAP_FLAG_NONE;heap.Type=D3D12_DESCRIPTOR_HEAP_TYPE_RTV;
         Check(device->CreateDescriptorHeap(&heap,IID_PPV_ARGS(&p->rtv)),"potion target descriptors failed");p->rtvStride=device->GetDescriptorHandleIncrementSize(heap.Type);
@@ -146,7 +157,7 @@ float4 PS(Out v):SV_Target {
         Check(device->CreateCommandList(0,D3D12_COMMAND_LIST_TYPE_DIRECT,allocator.Get(),nullptr,IID_PPV_ARGS(&list)),"potion upload list failed");
         std::vector<ComPtr<ID3D12Resource>> uploads;
         for(unsigned i=0;i<p->meshCount;++i) {
-            const auto& a=assets[i];auto& m=p->meshes[i];m.code=i<Count?interaction::Code(Codes[i][0],Codes[i][1],Codes[i][2]):ArrowCode;m.count=unsigned(a.indices.size());
+            const auto& a=assets[i];auto& m=p->meshes[i];m.code=codes[i];m.count=unsigned(a.indices.size());
             m.vertices=Buffer(device,a.vertices.data(),a.vertices.size()*sizeof(Vertex));m.indices=Buffer(device,a.indices.data(),a.indices.size()*4);
             m.vb={m.vertices->GetGPUVirtualAddress(),UINT(a.vertices.size()*sizeof(Vertex)),sizeof(Vertex)};m.ib={m.indices->GetGPUVirtualAddress(),UINT(a.indices.size()*4),DXGI_FORMAT_R32_UINT};
             D3D12_RESOURCE_DESC tex=depth;tex.Width=a.w;tex.Height=a.h;tex.MipLevels=UINT16(a.mips.size());tex.Format=DXGI_FORMAT(a.format);tex.Flags=D3D12_RESOURCE_FLAG_NONE;
@@ -183,6 +194,7 @@ float4 PS(Out v):SV_Target {
         if(log) {
             std::string text="Frame potions: 15 original 3D potion models ready; stereo belt and grip rendering active";
             text+=HasArrow()?"; the game's arrow model ready for the bow":"; arrow model unavailable ("+arrowNote+"), the bow keeps its draw guide";
+            text+="; "+std::to_string(Tosses())+" of 5 thrown trap models";
             log(text.c_str());
         }
         return true;

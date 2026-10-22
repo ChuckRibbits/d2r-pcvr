@@ -48,6 +48,8 @@ struct Input {
     // Double Throw (#224): the left trigger arms the left hand's own throw.
     bool leftThrow=false; float leftTrigger=0;
     float throwLift=0; // degrees above the hand's path (VR Settings > Aim > Throw lift)
+    // The right trigger's skill is a trap or bomb thrown to place (toss::Skill, #224).
+    bool toss=false;
     Weapon weapon=Weapon::Unknown;
     MeleeStyle meleeStyle=MeleeStyle::OneHand;
     uint32_t equipment=0;
@@ -79,6 +81,10 @@ struct Output {
     unsigned leftFeedback=0; // 1 armed, 2 released
     Vec leftOrigin{},leftDirection{};
     float leftDraw=0;
+    // A trap or bomb thrown to place: in the hand while armed; released this
+    // step from tossOrigin at tossVelocity (room metres, m/s).
+    bool tossHeld=false,tossRelease=false;
+    Vec tossOrigin{},tossVelocity{};
 };
 inline Vec BowForward(Pose hand) {
     // Match the existing bow grip convention: knuckles point through the bow,
@@ -123,6 +129,9 @@ struct HandThrow {
     Vec start{},velocity{};
     double at=0,velocityAt=0;
     float travel=0;
+    // The fastest recent sample (the hand is already slowing as it lets go),
+    // for a throw whose distance is its speed: a tossed trap's arc.
+    Vec peak{};double peakAt=0;
     void Arm(Vec hand,double time){*this={};armed=true;at=time;start=hand;}
     // One step; true when the release throws (direction and draw are set).
     bool Step(Vec hand,Vec delta,double dt,double time,bool released,Vec& direction,float& draw) {
@@ -133,12 +142,17 @@ struct HandThrow {
         // release frame. A short grace period tolerates finger timing
         // without turning a stationary drop into a delayed throw.
         if(Length(v)>=1.4f&&Length(v)<=12.f){velocity=v;velocityAt=time;}
+        if(Length(v)>=1.4f&&Length(v)<=30.f&&(time-peakAt>.12||Length(v)>=Length(peak))){peak=v;peakAt=time;}
         if(!released)return false;
         armed=false;
         if(time-at<.08||time-at>3||travel<.18f||!velocityAt||time-velocityAt>.08)return false;
         direction=math::Normalized(velocity);draw=std::clamp(Length(velocity)/5.f,0.f,1.f);return true;
     }
 };
+// A tossed trap: a press this short and still casts where you point; held this
+// long and still, it casts natively as before (repeating).
+inline constexpr double TossHold=.35;
+inline constexpr float TossStill=.06f,TossMaxSpeed=20.f;
 
 class Engine {
     bool primed=false, triggerWas=false, gripWas=false, blockedTrigger=true;
@@ -151,7 +165,8 @@ class Engine {
     uint32_t equipment=0;
     Weapon weapon=Weapon::Unknown;
     float nockGap=0;
-    HandThrow throwing,leftThrowing;
+    HandThrow throwing,leftThrowing,tossing;
+    bool tossNative=false; // a still hold: the native cast holds as before
     bool leftTriggerWas=false;
     int drawSkill=-1,drawOwner=-1;
     uint64_t drawContext=0;
@@ -198,7 +213,7 @@ public:
         out.rayOrigin=in.aim.p;out.rayDirection=math::Rotate(in.aim.q,{0,0,-1});out.rayValid=true;
 
         if(in.palette) {
-            drawing=nativeBowTrigger=false;throwing=leftThrowing={};skillPulse.Cancel();pulseUntil=0;blockedTrigger=true;
+            drawing=nativeBowTrigger=tossNative=false;throwing=leftThrowing=tossing={};skillPulse.Cancel();pulseUntil=0;blockedTrigger=true;
             if(bottle<0&&triggerEdge) {
                 if(in.hover>=0&&in.hover<8) {selection=in.hover;out.feedback=1;}
                 else if(in.hover==8) {selection=-1;out.feedback=1;}
@@ -209,7 +224,7 @@ public:
             }
         }
         if(bottle>=0) {
-            blockedTrigger=true;drawing=nativeBowTrigger=false;throwing=leftThrowing={};skillPulse.Cancel();pulseUntil=0;
+            blockedTrigger=true;drawing=nativeBowTrigger=tossNative=false;throwing=leftThrowing=tossing={};skillPulse.Cancel();pulseUntil=0;
             if(!grip) {bottle=-1;bottleSpent=false;drinkStart=0;}
             else {
                 out.bottle=bottle;
@@ -225,7 +240,7 @@ public:
         }
         if(in.palette) {out.block=true;return out;}
         if(in.quickCast) {
-            drawing=nativeBowTrigger=false;throwing=leftThrowing={};skillPulse.Cancel();bowWasCharged=false;pulseUntil=shotAimUntil=0;blockedTrigger=true;
+            drawing=nativeBowTrigger=tossNative=false;throwing=leftThrowing=tossing={};skillPulse.Cancel();bowWasCharged=false;pulseUntil=shotAimUntil=0;blockedTrigger=true;
             if(in.quickSkill>=0&&in.quickSkill<skills::Count)out.skill=in.quickSkill;
             return out; // preserve selected trigger skill; no melee or bow release
         }
@@ -261,6 +276,29 @@ public:
             } else leftThrowing={};
             out.meleeContact=!trigger&&!out.javelinRelease;
             return out; // only the release spends ammunition; never hold A
+        }
+
+        // A trap or bomb thrown to place (#224). A quick press casts where you
+        // point; held still it casts natively as before, repeating; thrown, it
+        // goes where its arc lands. The release makes one native press.
+        if(in.toss&&selection>=0&&in.weapon!=Weapon::Bow&&in.weapon!=Weapon::Crossbow) {
+            if(triggerEdge){tossing.Arm(in.hand[0].p,in.time);tossNative=false;skillPulse.Cancel();out.feedback=1;}
+            const bool armed=tossing.armed;
+            Vec direction{};float draw=0;
+            if(tossing.Step(in.hand[0].p,handDelta,dt,in.time,released,direction,draw)) {
+                out.tossRelease=true;out.feedback=2;out.tossOrigin=in.hand[0].p;
+                out.tossVelocity=Lift(math::Normalized(tossing.peak),in.throwLift)*std::min(Length(tossing.peak),TossMaxSpeed);
+                skillPulse.Start(selection,in.selectedSkill,in.selectedOwner,in.skillContext,in.time);
+            } else if(armed&&released&&tossing.travel<TossStill) {
+                skillPulse.Start(selection,in.selectedSkill,in.selectedOwner,in.skillContext,in.time);
+            }
+            if(trigger&&tossing.armed&&in.time-tossing.at>=TossHold&&tossing.travel<TossStill){tossNative=true;tossing={};}
+            if(!trigger)tossNative=false;
+            out.tossHeld=tossing.armed;
+            if(tossNative)out.skill=selection;
+            else if(const int pulsed=skillPulse.Get(selection,in.selectedSkill,in.selectedOwner,in.skillContext,in.time);pulsed>=0)out.skill=pulsed;
+            out.meleeContact=!trigger&&!out.tossHeld;
+            return out;
         }
 
         if(in.weapon==Weapon::Bow&&(in.handBindings||selection<0||skillBow)) {

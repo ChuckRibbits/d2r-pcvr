@@ -3661,6 +3661,25 @@ uintptr_t RulesUnit(int skill) {
     return unit;
 }
 bool NativeSpellAimDecide(float playerX,float playerY,framevr::spellaim::Cast& cast);
+// A trap or bomb thrown to place (#224): where its arc landed, whatever the Aim
+// options, never past the game's reach. A quick press or a still hold has no
+// landing and casts as before.
+bool TossAim(int skill,float playerX,float playerY,framevr::spellaim::Cast& cast) {
+    float x=0,y=0;
+    if(!g_spellAimReady.load()||!g_enabled.load()||gamestate::MenuOpen()||!framevr::TossTarget(skill,x,y))return false;
+    float dx=x-playerX,dy=y-playerY;
+    const float wanted=std::hypot(dx,dy);
+    if(wanted<framevr::spellaim::GroundMinDistance&&wanted>.001f){dx*=framevr::spellaim::GroundMinDistance/wanted;dy*=framevr::spellaim::GroundMinDistance/wanted;}
+    if(!framevr::aimreach::Clamp(dx,dy))return false;
+    cast.x=playerX+dx;cast.y=playerY+dy;cast.directed=cast.contactPoint=true;
+    g_note.by="toss";g_note.distance=std::hypot(dx,dy);
+    static ULONGLONG lastLog=0;
+    if(GetTickCount64()-lastLog>250) {
+        lastLog=GetTickCount64();
+        LogF("Frame toss aim: skill %d where its arc landed, %.1f cells (thrown %.1f; game reach %.0f)",skill,g_note.distance,wanted,framevr::aimreach::Along(dx,dy));
+    }
+    return true;
+}
 // Telemetry: "Frame aim cast:" - every cast the aim rules see, at most one line
 // per skill per 250 ms: the rule, the button, the target and where it came
 // from, a unit hand-off, and the point or heading sent to the game.
@@ -3668,8 +3687,10 @@ bool UpstreamSpellAim(float playerX,float playerY,framevr::spellaim::Cast& cast)
 bool NativeSpellAim(float playerX,float playerY,framevr::spellaim::Cast& cast) {
     g_note={};
     const auto c=aimtargets::Now();
-    // The aim rules only with this kind of cast's Aim option On; Off, as before them.
-    const bool directed=aimtargets::RulesOn(c)?NativeSpellAimDecide(playerX,playerY,cast):UpstreamSpellAim(playerX,playerY,cast);
+    // A thrown trap first; then the aim rules only with this kind of cast's Aim
+    // option On; Off, as before them.
+    const bool directed=TossAim(c.skill,playerX,playerY,cast)||
+        (aimtargets::RulesOn(c)?NativeSpellAimDecide(playerX,playerY,cast):UpstreamSpellAim(playerX,playerY,cast));
     static ULONGLONG told=0;static int toldSkill=-2;
     if(c.skill>=0&&(c.skill!=toldSkill||GetTickCount64()-told>250)) {
         told=GetTickCount64();toldSkill=c.skill;

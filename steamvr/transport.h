@@ -63,6 +63,9 @@ int CastButtonHand();        // the hand whose button holds a native cast now, -
 bool HandSpellHeld(int hand); // that hand's physical spell button is held
 int PointSpellSkill();       // the cast skill when the aim rules place it at a point, else -1
 int AimRulesSkill();         // the cast skill (any), -1 none; with its game "directed" flag
+// A trap or bomb thrown to place (#224): where its arc landed, in grid cells,
+// for that skill's cast (skill -1: any) just after the throw.
+bool TossTarget(int skill,float& x,float& y);
 bool AimRulesDirected();
 bool MeleeSample(uint32_t poseStamp,melee::Sample& sample,int hand=0);
 bool ShieldSample(uint32_t poseStamp,melee::Sample& sample);

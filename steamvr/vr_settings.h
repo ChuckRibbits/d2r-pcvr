@@ -345,7 +345,7 @@ inline bool RowShown(Key key,const Values& v,const Context& c){
         case GroundAim:return GroundSkillClass(c);
         case LandingCircles:return GroundSkillClass(c)&&v[GroundAim]>.5f;     // ground skills the mod places
         case BowLaser:return c.heroClass<0||c.heroClass==heroclass::Amazon||c.bow;
-        case ThrowLift:return c.heroClass<0||c.heroClass==heroclass::Amazon||c.heroClass==heroclass::Barbarian||c.thrown;
+        case ThrowLift:return c.heroClass<0||c.heroClass==heroclass::Amazon||c.heroClass==heroclass::Barbarian||c.heroClass==heroclass::Assassin||c.thrown;
         case StaffPoint:return c.heroClass<0||c.staff||c.heroClass==heroclass::Sorceress||c.heroClass==heroclass::Druid;
         case ElementalHands:return ClassIs(c,heroclass::Sorceress);
         case FoveationStrength:return v[Foveation]>.5f;

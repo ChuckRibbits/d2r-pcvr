@@ -3,12 +3,18 @@
 #include "interactions.h"
 namespace framevr::potions {
 struct Instance {interaction::Pose pose;uint32_t code=0;bool empty=false,highlight=false;};
-struct Scene {std::array<Instance,7> items{};unsigned count=0;};   // four belt bottles, one held, one thrown, the arrow
+struct Scene {std::array<Instance,8> items{};unsigned count=0;};   // four belt bottles, one held, one thrown, the arrow, a trap
 // The game's arrow (the cache's arw.pvr), along its pose's +Y, placed by its middle.
 inline constexpr uint32_t ArrowCode=interaction::Code('a','r','w');
 inline bool AddArrow(Scene& s,interaction::Pose middle) {
     if(s.count>=s.items.size()||!interaction::Valid(middle))return false;
     s.items[s.count++]={middle,ArrowCode,false,false};return true;
+}
+// A trap or bomb in the throwing hand (#224, toss::Model), held in the grip like a bottle.
+inline bool AddHeld(Scene& s,interaction::Pose hand,uint32_t code) {
+    if(!code||s.count>=s.items.size()||!interaction::Valid(hand))return false;
+    hand.p=Center(hand.p,hand.q);hand.q=HeldRotation(hand.q);
+    s.items[s.count++]={hand,code,false,false};return true;
 }
 inline Scene MakeScene(const interaction::Input& in,const interaction::Output& out) {
     Scene s;
