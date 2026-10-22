@@ -47,21 +47,36 @@ struct Shot {
     int aimAssist=0;
     bool planar=true;
     float boltLength=0; // authored held-bolt size, metres
+    bool gripped=false; // a thrown weapon's origin moved from the hand to its tail
 };
 // A thrown weapon's missile: the one the native Throw named, else the javelin.
 inline uint32_t ThrownId(const Shot& s) {return s.missile>0&&ThrownMissile(uint32_t(s.missile))?uint32_t(s.missile):1u;}
 inline float ProjectileLength(const Shot& s) {return s.kind==Kind::Spell?0:s.kind==Kind::Crossbow?s.boltLength:s.kind==Kind::Javelin?ThrownFor(ThrownId(s)).length:ArrowLength;}
-// The native Throw named the thrown weapon's missile: the release, made at the
-// throwing hand, starts at that weapon's tail (its grip behind the hand).
+// A release made at the throwing hand starts at the weapon's tail: its grip,
+// for the model it flies as (missile), behind the hand. Once.
+inline void Grip(Shot& s,uint32_t missile) {
+    if(s.kind!=Kind::Javelin||s.gripped)return;
+    s.origin=s.origin-s.direction*ThrownFor(missile).grip;s.gripped=true;
+}
+// The native Throw named the thrown weapon's missile (a basic throw; a javelin
+// skill names its own missile up front).
 inline bool ResolveThrown(Shot& s,uint32_t missile) {
-    if(s.kind!=Kind::Javelin||s.missile>0||!ThrownMissile(missile))return false;
-    s.missile=int(missile);s.origin=s.origin-s.direction*ThrownFor(missile).grip;return true;
+    if(s.kind!=Kind::Javelin||s.skill>=0||s.missile>0||!ThrownMissile(missile))return false;
+    s.missile=int(missile);Grip(s,missile);return true;
 }
 // A quiver arrow: a physical bow release that carries a single-missile arrow
 // skill. It keeps the arrow's draw, length and flight; the skill supplies the
 // native missile, its costs, damage and hit effects.
 inline bool SkillArrow(const Shot& s){return s.kind==Kind::Arrow&&s.skill>=0;}
-inline uint32_t MissileId(const Shot& s){return s.kind==Kind::Spell||SkillArrow(s)?uint32_t(s.missile):s.kind==Kind::Javelin?ThrownId(s):uint32_t(s.kind);}
+// A thrown weapon that carries a javelin skill (#224): the skill's own missile.
+inline bool SkillJavelin(const Shot& s){return s.kind==Kind::Javelin&&s.skill>=0;}
+// A physical release carrying a skill: a quiver arrow or a javelin skill.
+inline bool SkillRelease(const Shot& s){return SkillArrow(s)||SkillJavelin(s);}
+// Lightning Bolt and Lightning Fury have no mesh (lightning_javelin
+// particles): like spells they follow their root. Poison and Plague Javelin
+// fly the javelin model, as a basic throw does.
+inline bool ParticleJavelin(int missile){return missile==205||missile==206;}
+inline uint32_t MissileId(const Shot& s){return s.kind==Kind::Spell||SkillRelease(s)?uint32_t(s.missile):s.kind==Kind::Javelin?ThrownId(s):uint32_t(s.kind);}
 inline bool BasicMissile(uint32_t id){return id<=1||id==31;}
 // What the client allocator returned for one of our visual requests. Only the
 // requested missile is kept; any other live missile unit we created is still a
@@ -81,7 +96,7 @@ inline Vec RenderGround(const Shot& shot,Vec gridWorld) {
     return coordinates::RenderGround(gridWorld*(1/shot.unitsPerMetre),shot.player.y);
 }
 inline bool Valid(const Shot& s) {
-    const bool kind=(BasicMissile(uint32_t(s.kind))&&(!SkillArrow(s)||(weaponskills::QuiverSkill(s.skill)&&weaponskills::QuiverMissile(s.missile))))||
+    const bool kind=(BasicMissile(uint32_t(s.kind))&&(!SkillRelease(s)||weaponskills::Loadable(s.skill,s.missile,s.kind==Kind::Javelin)))||
         (s.kind==Kind::Spell&&spellcast::Supported(s.skill)&&s.hand>=0&&s.hand<2&&s.slot>=0&&s.slot<10);
     return kind&&s.session&&s.sequence&&Finite(s.origin)&&Finite(s.direction)&&Finite(s.player)&&
         std::isfinite(s.unitsPerMetre)&&s.unitsPerMetre>=1&&s.unitsPerMetre<=12&&

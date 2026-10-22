@@ -339,6 +339,15 @@ The selected skill also changes the nocked arrow's model and particles. Set
 arrows. Model swaps wait for the native client update to retire the previous
 arrow; a brief basic fallback can appear while the new model loads.
 
+**Javelin skills.** With a javelin in hand, the hand throw carries Poison
+Javelin, Lightning Bolt, Plague Javelin or Lightning Fury: bind one to the right
+trigger (it arms the throw), or press a face button bound to one to load it
+into every following throw, like the bow quiver (press again for basic throws).
+The skill's own mana cost, damage, clouds and lightning apply, and each throw
+uses up a javelin. If the game refuses it, a basic javelin flies instead.
+Poison and Plague Javelin fly the javelin model; Lightning Bolt and Fury fly as
+their lightning. `[bow] quiver=0` turns this off too.
+
 Face-button skills never replace gesture skills. Ordinary melee swings remain
 basic attacks for skills without a supported physical adapter; assigning a
 spell does not cast it on every swing. Physical skill gestures can be disabled

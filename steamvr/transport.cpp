@@ -2061,6 +2061,9 @@ void Input() {
         // unloads it once per press, instead of a native animated cast.
         const bool bow=quiverEnabled.load()&&motionInput.active&&gestureSettings[settings::SkillGestures]>.5f&&
             motionInput.weapon==gameplay::Weapon::Bow&&quickFresh;
+        // A thrown weapon loads javelin skills the same way (#224).
+        const bool thrown=quiverEnabled.load()&&motionInput.active&&gestureSettings[settings::SkillGestures]>.5f&&
+            motionInput.weapon==gameplay::Weapon::Javelin&&quickFresh;
         // Raw buttons, not the native single-owner cast: loading works while
         // the right trigger holds the string, and with the bow hand gripped.
         const auto press=handOutput.wheel<0&&!handInput.occupied?skills::QuiverFace(handInput,[&](int slot){
@@ -2068,8 +2071,8 @@ void Input() {
         const bool face=press.slot>=0;
         const auto& held=quickSnapshot.skills[face?press.slot:0];
         const auto step=quiver.Step(gamestate::LocalPlayer(),press.slot,held.id,held.owner,held.missile,
-            bow&&face&&held.known&&held.available);
-        if(face&&press.slot!=quiverReportedSlot&&motionInput.weapon==gameplay::Weapon::Bow) {
+            (bow||thrown)&&face&&held.known&&held.available,thrown);
+        if(face&&press.slot!=quiverReportedSlot&&(motionInput.weapon==gameplay::Weapon::Bow||motionInput.weapon==gameplay::Weapon::Javelin)) {
             // Every bow face press says who owns it and why, so a headset
             // report can be matched to the exact eligibility check.
             char line[320];std::snprintf(line,sizeof line,
@@ -2090,9 +2093,17 @@ void Input() {
         if(bow) {
             // A loaded skill wins; otherwise a quiver skill on the left trigger
             // (the bow's gesture skill) uses the same physical release.
-            if(quiver.Current().Active())quiverArrow=quiver.Current();
+            const auto& loaded=quiver.Current();
+            if(loaded.Active()&&weaponskills::Loadable(loaded.skill,loaded.missile,false))quiverArrow=loaded;
             else if(shieldSkill.known&&shieldSkill.available&&weaponskills::QuiverSkill(shieldSkill.id)&&weaponskills::QuiverMissile(shieldSkill.missile))
                 quiverArrow={shieldSkill.id,shieldSkill.owner,shieldSkill.missile};
+        } else if(thrown) {
+            // A loaded javelin skill wins; otherwise a javelin skill on the right
+            // trigger (which arms the hand's throw) rides the throw.
+            const auto& loaded=quiver.Current();
+            if(loaded.Active()&&weaponskills::Loadable(loaded.skill,loaded.missile,true))quiverArrow=loaded;
+            else if(rightSkill.known&&rightSkill.available&&weaponskills::Loadable(rightSkill.id,rightSkill.missile,true))
+                quiverArrow={rightSkill.id,rightSkill.owner,rightSkill.missile};
         }
         if(quiverArrow.Active()){motionInput.bowSlot=-1;motionInput.bowSkill=-1;}
     }
@@ -2163,12 +2174,14 @@ void Input() {
     } else {
         std::snprintf(cue.name,sizeof cue.name,"Skill unavailable");std::snprintf(cue.hint,sizeof cue.hint,"Refresh assignments");
     }
-    if(quiverArrow.Active()&&!cue.temporary&&motionInput.weapon==gameplay::Weapon::Bow) {
+    if(quiverArrow.Active()&&!cue.temporary&&(motionInput.weapon==gameplay::Weapon::Bow||motionInput.weapon==gameplay::Weapon::Javelin)) {
+        const bool javelin=motionInput.weapon==gameplay::Weapon::Javelin;
         const char* name=nullptr;
         for(const auto& skill:quickSnapshot.skills)if(skill.known&&skill.id==quiverArrow.skill&&skill.owner==quiverArrow.owner){name=skill.name;break;}
         cue.id=quiverArrow.skill;cue.owner=quiverArrow.owner;cue.known=cue.available=true;
-        std::snprintf(cue.name,sizeof cue.name,"%s",name?name:"Skill arrow");
-        std::snprintf(cue.hint,sizeof cue.hint,"%s",quiver.Current().Active()?"Loaded: draw & release":"Draw & release");
+        std::snprintf(cue.name,sizeof cue.name,"%s",name?name:javelin?"Javelin skill":"Skill arrow");
+        std::snprintf(cue.hint,sizeof cue.hint,"%s",javelin?(quiver.Current().Active()?"Loaded: throw":"Throw"):
+            quiver.Current().Active()?"Loaded: draw & release":"Draw & release");
     }
     cue.busy=(shieldCast.issued&&!shieldCast.cancelled)||(cue.id==weaponskills::Strafe&&quickFresh&&quickSnapshot.actionKnown&&quickSnapshot.actionMode==16&&
         volleyRequestedAt&&motionAt>=volleyRequestedAt&&motionAt-volleyRequestedAt<10000);
@@ -2299,10 +2312,11 @@ void Input() {
             // At the hand; the launch moves it back to the weapon's tail once
             // the native Throw names the weapon's missile (bowflight::ResolveThrown).
             bowPending.kind=bowflight::Kind::Javelin;
+            if(quiverArrow.Active()){bowPending.skill=quiverArrow.skill;bowPending.owner=quiverArrow.owner;bowPending.missile=quiverArrow.missile;}
         } else if(quiverArrow.Active()) {
             bowPending.skill=quiverArrow.skill;bowPending.owner=quiverArrow.owner;bowPending.missile=quiverArrow.missile;
         }
-        if(motionOutput.bowRelease&&(quiverArrow.Active()||quiver.Current().Active())) {
+        if((motionOutput.bowRelease||motionOutput.javelinRelease)&&(quiverArrow.Active()||quiver.Current().Active())) {
             char line[200];std::snprintf(line,sizeof line,"Frame bow quiver: release carries skill=%d missile=%d (loaded=%d)",
                 quiverArrow.skill,quiverArrow.missile,quiver.Current().skill);
             Say(line);
@@ -3967,7 +3981,7 @@ bool View(float out[16],const float hero[3],float eyeHeight,float userEyeHeight,
             gamestate::LocalPlayer(),(meleeEpoch<<32)|bowWorldEpoch,motionAt,motionInput.equipment};
         const auto shot=resolveBow(bowPending);
         if(bowflight::Allowed(shot,gate,GetTickCount64())){bowReadyShot=shot;bowHasShot=true;}
-        else if(bowflight::SkillArrow(shot)) {
+        else if(bowflight::SkillRelease(shot)) {
             char line[200];std::snprintf(line,sizeof line,"Frame bow quiver: release rejected skill=%d missile=%d valid=%d",
                 shot.skill,shot.missile,int(bowflight::Valid(shot)));
             Say(line);

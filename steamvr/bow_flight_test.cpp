@@ -157,6 +157,16 @@ int main() {
         Shot arrow=Release();Check(!ResolveThrown(arrow,36)&&MissileId(arrow)==0,"never an arrow");
         Shot javelin=Release();javelin.kind=Kind::Javelin;Check(ResolveThrown(javelin,1)&&Length(javelin.origin-(hand-javelin.direction*JavelinGrip))<1e-5f,
               "a javelin keeps its grip");
+        // #224: a javelin skill flies its own missile from the javelin's grip; a basic resolution never touches it.
+        Shot skill=Release();skill.kind=Kind::Javelin;skill.skill=15;skill.missile=38;
+        Check(SkillJavelin(skill)&&SkillRelease(skill)&&!SkillArrow(skill)&&MissileId(skill)==38&&Valid(skill),"Poison Javelin flies missile 38");
+        Check(!ResolveThrown(skill,1)&&MissileId(skill)==38,"the native Throw cannot rename a skill's missile");
+        Grip(skill,1);Grip(skill,1);Check(Length(skill.origin-(hand-skill.direction*JavelinGrip))<1e-5f&&skill.gripped,"gripped at the javelin's grip, once");
+        Check(ProjectileLength(skill)==JavelinLength&&!ParticleJavelin(38)&&ParticleJavelin(205)&&ParticleJavelin(206),
+              "Poison and Plague Javelin fly the javelin model; Lightning Bolt and Fury are particles");
+        auto stranger=skill;stranger.missile=12;Check(!Valid(stranger),"a javelin cannot carry an arrow skill's missile");
+        auto refused=Release();refused.kind=Kind::Javelin;Grip(refused,1);
+        Check(ResolveThrown(refused,371)&&Length(refused.origin-(hand-refused.direction*JavelinGrip))<1e-5f,"a refused skill's basic throw is not gripped twice");
         auto det=[](const float* m){return m[0]*(m[5]*m[10]-m[6]*m[9])-m[4]*(m[1]*m[10]-m[2]*m[9])+m[8]*(m[1]*m[6]-m[2]*m[5]);};
         for(const Vec d:{Vec{0,0,-1},Vec{1,0,0},Vec{0,1,0},Vec{.6f,0,.8f}}) {
             Flight knife;knife.shot=Release();knife.shot.kind=Kind::Javelin;knife.shot.direction=d;ResolveThrown(knife.shot,36);knife.alive=true;knife.distance=3;

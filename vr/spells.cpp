@@ -106,7 +106,7 @@ bool Prepare(Shot& shot,uintptr_t game,uintptr_t player) {
     return shot.level>0;
 }
 bool PrepareArrow(Shot& shot,uintptr_t game,uintptr_t player) {
-    if(!ready.load()||!SkillArrow(shot))return false;
+    if(!ready.load()||!SkillRelease(shot))return false;
     uint32_t mode=0;uintptr_t list=0;
     if(!Read(player+0xc,mode)||(mode!=1&&mode!=2&&mode!=3)||!Read(player+0x100,list)||!list)return false;
     // Same compiled Skills row fields as Prepare: srvdofunc 0 with the
@@ -115,7 +115,7 @@ bool PrepareArrow(Shot& shot,uintptr_t game,uintptr_t player) {
     int16_t id=-1,action=-1,missile=-1;
     if(!node||!Read(node,row)||!Read(row,id)||id!=shot.skill||!Read(row+0x4e,action)||action!=0||
        !Read(row+0x66,missile)||missile!=shot.missile||
-       !framevr::weaponskills::QuiverSkill(id)||!framevr::weaponskills::QuiverMissile(missile))return false;
+       !framevr::weaponskills::Loadable(id,missile,shot.kind==Kind::Javelin))return false;
     shot.level=reinterpret_cast<int(*)(uintptr_t,uintptr_t,int,int)>(d2rsig::Addr(SkillLevelRva))(player,node,1,0);
     return shot.level>0;
 }

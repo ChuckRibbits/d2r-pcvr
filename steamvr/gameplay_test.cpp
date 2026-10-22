@@ -125,7 +125,8 @@ int main() {
     }
     // Hand bindings always give the right trigger a slot (a javelin in the
     // hand): Attack, Throw or nothing there throws.
-    for(const int bound:{weaponskills::Attack,weaponskills::Throw,-1,36}) {
+    // A javelin skill there arms the throw too, which then carries it (#224).
+    for(const int bound:{weaponskills::Attack,weaponskills::Throw,-1,36,15,35}) {
         Sim s;s.in.handBindings=true;s.in.weapon=Weapon::Javelin;s.engine.Select(0);
         s.in.selectedSkill=bound;s.in.selectedAvailable=true;s.Step(3);
         const bool hand=bound!=36;
