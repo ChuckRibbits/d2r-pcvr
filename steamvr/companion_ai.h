@@ -28,8 +28,9 @@ inline constexpr float UnstuckForwardDistance = 2.5f;    // Distance ahead of pl
 inline constexpr float UnstuckFlankDistance = 2.2f;      // Lateral flank offset (sub-tiles, ~0.9m)
 
 // Phase 3: Survival, Self-Preservation & Potion Interaction Synergy
-inline constexpr float CriticalHealthRatio = 0.25f;       // Trigger tactical retreat below 25% life
-inline constexpr float RecoveryHealthRatio = 0.50f;       // Exit tactical retreat when healed to >= 50% life
+// CriticalHealthRatio is synchronized with MercLowHealth (0.50f / 50% life in interactions.h) for the red hurt tint
+inline constexpr float CriticalHealthRatio = 0.50f;       // Trigger tactical retreat below 50% life (when merc turns red)
+inline constexpr float RecoveryHealthRatio = 0.70f;       // Exit tactical retreat when healed to >= 70% life (or on potion)
 inline constexpr uint64_t DistressCueCooldownMs = 8000;   // Minimum interval between audible distress cues (8s)
 inline constexpr float ReceivingStanceDistance = 6.5f;    // ~2.6m in front of player (sub-tiles)
 inline constexpr float ReceivingStanceAngleDeg = 20.0f;   // +20 deg forward flank for clear throw trajectory
@@ -47,6 +48,23 @@ namespace MonStatsIndex {
     inline constexpr uint16_t IronWolf = 359;    // Act 3 Hireling
     inline constexpr uint16_t Barbarian1 = 560;  // Act 5 Hireling
     inline constexpr uint16_t Barbarian2 = 561;  // Act 5 Hireling (alternative)
+}
+
+// Maps hireling class to native sounds.txt emote row for audible distress cries
+inline int GetArchetypeDistressSound(uint16_t classId) {
+    switch (classId) {
+        case MonStatsIndex::Rogue:      // 271 (Act 1 Rogue Scout) -> Amazon "Help!" emote
+            return 2937; // amazon_chat_a_1 (HD redirect: amazon_chat_a_hd1 10050)
+        case MonStatsIndex::Desert:     // 338 (Act 2 Desert Spearman) -> Paladin "Help!" emote
+            return 3171; // paladin_chat_a_1 (HD redirect: paladin_chat_a_hd1 10292)
+        case MonStatsIndex::IronWolf:   // 359 (Act 3 Iron Wolf) -> Necromancer "Help!" emote
+            return 3093; // necromancer_chat_a_1 (HD redirect: necromancer_chat_a_hd1 10259)
+        case MonStatsIndex::Barbarian1: // 560
+        case MonStatsIndex::Barbarian2: // 561 (Act 5 Barbarian) -> Barbarian "Help!" emote
+            return 3015; // barbarian_chat_a_1 (HD redirect: barbarian_chat_a_hd1 10115)
+        default:
+            return 3171; // Default to Paladin help
+    }
 }
 
 enum class Archetype {

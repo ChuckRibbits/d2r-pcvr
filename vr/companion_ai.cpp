@@ -47,7 +47,7 @@ std::atomic<float> g_cachedForwardX{0.0f};
 std::atomic<float> g_cachedForwardY{-1.0f};
 std::atomic<bool> g_gameThreadPending{false};
 std::atomic<uint64_t> g_lastDispatchMs{0};
-std::atomic<int> g_distressSound{398};
+std::atomic<int> g_distressSound{1}; // 1 = auto per-archetype emote voice
 std::atomic<bool> g_potionReceived{false};
 
 std::mutex g_ticketMutex;
@@ -194,26 +194,60 @@ void __cdecl CompanionGameThreadTick(const PluginContext*, void*) noexcept {
     const bool wasInRetreat = g_retreatController.IsInRetreat();
     const bool potionHealed = g_potionReceived.exchange(false);
     const bool playDistressCue = g_retreatController.Update(health, maxHealth, nowMs, potionHealed);
+    const bool inRetreat = g_retreatController.IsInRetreat();
+    const bool enteredRetreat = !wasInRetreat && inRetreat;
 
     if (playDistressCue) {
-        const int sound = g_distressSound.load();
+        int sound = g_distressSound.load();
+        if (sound <= 1) {
+            sound = (sound == 0) ? 0 : framevr::companionai::GetArchetypeDistressSound(uint16_t(classId));
+        }
         if (sound > 0 && g_threads && g_threads->runOnUiThread) {
             g_threads->runOnUiThread(g_ctx, &DistressSoundCallback, reinterpret_cast<void*>(uintptr_t(sound)));
         }
     }
 
-    if (g_retreatController.IsInRetreat() != wasInRetreat) {
+    if (inRetreat != wasInRetreat) {
         char line[160];
         std::snprintf(line, sizeof line,
             "Frame companion AI: tactical retreat %s (class=%u life %.0f/%.0f = %.1f%%)",
-            g_retreatController.IsInRetreat() ? "ENTERED" : "RECOVERED",
+            inRetreat ? "ENTERED" : "RECOVERED",
             classId, health, maxHealth, maxHealth > 0 ? (health * 100.0f / maxHealth) : 0.0f);
         framevr::logging::Write(line);
     }
 
-    const bool inRetreat = g_retreatController.IsInRetreat();
+    // 4. On entering retreat: disengage combat and fall back to receiving stance immediately
+    if (enteredRetreat) {
+        const float fx = g_cachedForwardX.load();
+        const float fy = g_cachedForwardY.load();
+        const auto stancePos = framevr::companionai::CalculateReceivingStancePosition(plyrPos, fx, fy);
+        int targetX = int(std::round(stancePos.x));
+        int targetY = int(std::round(stancePos.y));
 
-    // 4. Watchdog update (Emergency catch-up for severe geometry traps only)
+        uintptr_t targetRoom = 0;
+        if (roomPointFn) {
+            targetRoom = roomPointFn(playerRoom, targetX, targetY);
+        }
+        if (!targetRoom) {
+            targetRoom = playerRoom;
+            targetX = int(std::round(px));
+            targetY = int(std::round(py));
+        }
+
+        if (relocateFn && targetRoom) {
+            relocateFn(game, hireling, targetRoom, targetX, targetY, 1, 0);
+            g_tacticalMoveEvents.fetch_add(1, std::memory_order_relaxed);
+            g_formationController.Reset();
+            char line[160];
+            std::snprintf(line, sizeof line,
+                "Frame companion AI: tactical retreat disengage; companion relocated to receiving stance (%d, %d)",
+                targetX, targetY);
+            framevr::logging::Write(line);
+            return;
+        }
+    }
+
+    // 5. Watchdog update (Emergency catch-up for severe geometry traps only)
     if (g_watchdog.Update(animMode, compPos, plyrPos, nowMs, inRetreat)) {
         const float fx = g_cachedForwardX.load();
         const float fy = g_cachedForwardY.load();

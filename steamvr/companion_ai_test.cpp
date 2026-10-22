@@ -512,21 +512,21 @@ int main() {
     {
         using namespace framevr::companionai;
 
-        // Critical health triggers below 25% life
-        assert(IsCriticalHealth(24.0f, 100.0f));
+        // Critical health triggers below 50% life (synchronized with MercLowHealth .5f)
+        assert(IsCriticalHealth(49.0f, 100.0f));
         assert(IsCriticalHealth(1.0f, 100.0f));
-        assert(!IsCriticalHealth(25.0f, 100.0f));
         assert(!IsCriticalHealth(50.0f, 100.0f));
+        assert(!IsCriticalHealth(70.0f, 100.0f));
         assert(!IsCriticalHealth(0.0f, 100.0f));  // Dead companion is not in tactical retreat
         assert(!IsCriticalHealth(-5.0f, 100.0f));
         assert(!IsCriticalHealth(50.0f, 0.0f));   // Invalid max life
 
-        // Recovery triggers at or above 50% life (hysteresis)
-        assert(IsHealthRecovered(50.0f, 100.0f));
+        // Recovery triggers at or above 70% life (hysteresis)
+        assert(IsHealthRecovered(70.0f, 100.0f));
         assert(IsHealthRecovered(75.0f, 100.0f));
         assert(IsHealthRecovered(100.0f, 100.0f));
-        assert(!IsHealthRecovered(49.9f, 100.0f));
-        assert(!IsHealthRecovered(25.0f, 100.0f));
+        assert(!IsHealthRecovered(69.9f, 100.0f));
+        assert(!IsHealthRecovered(50.0f, 100.0f));
     }
 
     // =========================================================================
@@ -561,24 +561,24 @@ int main() {
         assert(!controller.Update(100.0f, 100.0f, 1000));
         assert(!controller.IsInRetreat());
 
-        // Companion takes heavy damage (20% HP < 25%): enters retreat, fires distress cue
-        assert(controller.Update(20.0f, 100.0f, 2000));
+        // Companion takes heavy damage (45% HP < 50%): enters retreat, fires distress cue
+        assert(controller.Update(45.0f, 100.0f, 2000));
         assert(controller.IsInRetreat());
 
         // Subsequent update while still critical (2 seconds later): no repeat cue (within 8s cooldown)
-        assert(!controller.Update(20.0f, 100.0f, 4000));
+        assert(!controller.Update(45.0f, 100.0f, 4000));
         assert(controller.IsInRetreat());
 
         // 8.5 seconds after initial cue, still critical: fires repeat distress reminder
-        assert(controller.Update(15.0f, 100.0f, 10500));
+        assert(controller.Update(35.0f, 100.0f, 10500));
         assert(controller.IsInRetreat());
 
-        // Health recovers to 55% (>= 50% recovery threshold): exits retreat!
-        assert(!controller.Update(55.0f, 100.0f, 12000));
+        // Health recovers to 72% (>= 70% recovery threshold): exits retreat!
+        assert(!controller.Update(72.0f, 100.0f, 12000));
         assert(!controller.IsInRetreat());
 
-        // Drop to 10% life: enters retreat again
-        assert(controller.Update(10.0f, 100.0f, 15000));
+        // Drop to 40% life: enters retreat again
+        assert(controller.Update(40.0f, 100.0f, 15000));
         assert(controller.IsInRetreat());
 
         // Player throws potion: OnPotionConsumed immediately cancels retreat
@@ -629,6 +629,24 @@ int main() {
         // After 4.0s (RetreatStuckTimeoutMs), triggers urgent rescue!
         assert(watchdog.Update(2, stuckPos, playerPos, 5100, true));
         assert(watchdog.isStuck);
+    }
+
+    // =========================================================================
+    // 16. Phase 3: Archetype Distress Sound Mapping Tests
+    // =========================================================================
+    {
+        using namespace framevr::companionai;
+        // Rogue Scout (271) -> Amazon "Help!" (2937)
+        assert(GetArchetypeDistressSound(MonStatsIndex::Rogue) == 2937);
+        // Desert Spearman (338) -> Paladin "Help!" (3171)
+        assert(GetArchetypeDistressSound(MonStatsIndex::Desert) == 3171);
+        // Iron Wolf (359) -> Necromancer "Help!" (3093)
+        assert(GetArchetypeDistressSound(MonStatsIndex::IronWolf) == 3093);
+        // Barbarian (560, 561) -> Barbarian "Help!" (3015)
+        assert(GetArchetypeDistressSound(MonStatsIndex::Barbarian1) == 3015);
+        assert(GetArchetypeDistressSound(MonStatsIndex::Barbarian2) == 3015);
+        // Unknown/Fallback -> Paladin "Help!" (3171)
+        assert(GetArchetypeDistressSound(9999) == 3171);
     }
 
     return 0;

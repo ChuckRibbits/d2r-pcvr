@@ -716,8 +716,10 @@ bool HirelingVitals(uint32_t hint,float& health,float& maxHealth,uint32_t& class
     // rehire) walk for it, at most once a second while none is found.
     // Offline the only live, non-hostile hireling is the player's own; the
     // walk takes the nearest if a mod ever adds more.
+    static uint32_t cachedHirelingId=0;
+    if(!hint&&cachedHirelingId)hint=cachedHirelingId;
     uintptr_t best=hint?Hireling(game,self,hint,true):0;
-    if(best)unitId=hint;
+    if(best){unitId=hint;cachedHirelingId=hint;}
     else {
         static uint64_t walkedAt=0;const auto now=GetTickCount64();
         if(now-walkedAt<1000)return false;
@@ -725,8 +727,9 @@ bool HirelingVitals(uint32_t hint,float& health,float& maxHealth,uint32_t& class
         if(!EachFriendly(game,self,[&](uintptr_t unit,uint32_t id,Vec pos){
             const float d=std::hypot(pos.x-selfPos.x,pos.z-selfPos.z);uint32_t header[3]{};
             if(IsHireling(id)&&(bestDistance<0||d<bestDistance)&&Read(unit,header)){bestDistance=d;best=unit;unitId=header[2];}
-        })||!best)return false;
+        })||!best){cachedHirelingId=0;return false;}
         walkedAt=0; // found: later samples use the direct lookup
+        cachedHirelingId=unitId;
     }
     uint32_t header[2]{};
     if(!Read(best,header))return false;
