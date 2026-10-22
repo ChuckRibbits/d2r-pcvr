@@ -54,13 +54,13 @@ Quest left X/Y correspond to Index left A/B; right A/B labels are the same.
 
 | Action | VR control |
 | --- | --- |
-| Walk / turn | Left stick / right stick, including with a wheel open; snap by default, with optional smooth turning |
+| Walk / turn | Left stick / right stick sideways, including with a wheel open; snap by default, with optional smooth turning |
 | Open or close a hand wheel | Click that hand's thumbstick; it stays open without holding |
 | Switch to the other wheel | Click the other thumbstick |
 | Assign a button | Opposite hand's laser + trigger: select a wedge, then a skill |
 | Use an inventory item | Either wheel > **QUICK USE**: point with the opposite hand and briefly click its trigger; use happens on release |
 | Assign / change quick-use item | Hold the trigger over **QUICK USE** for 0.65 seconds, then select a carried scroll, tome or other usable item. An empty slot also opens the picker on a short click. **CLEAR SLOT** removes the assignment |
-| Toggle running / walking | Either wheel > **RUN / WALK**, using the opposite hand's laser + trigger |
+| Toggle running / walking | Push the right stick up (once per push; outside wheels), or either wheel > **RUN / WALK**, using the opposite hand's laser + trigger |
 | Finish editing | Click the wheel hand's stick again, or select CLOSE in its center |
 | Inventory / character / skills / journal | Left Grip + left stick click; or either wheel > INVENTORY; native tabs retain their controls |
 | VR settings / body calibration | Either wheel → VR SETTINGS |
@@ -68,7 +68,7 @@ Quest left X/Y correspond to Index left A/B; right A/B labels are the same.
 | Minimap | Either wheel → MAP; movement remains available |
 | Reset height | VR Settings > Reset eye height |
 | Adjust controller vibration | **VR Settings > Haptics**: overall strength plus separate melee, bow draw, bow/throw release, spell, interaction and resource-alert strengths. Tests match each action's hands; **Apply** saves |
-| Hold to show all nearby loot labels (Alt) | Hold **Right Grip + Right Trigger** during gameplay, grip first. Labels stay shown while both are held; release either to restore normal drop/hover labels. Uses the native Alt range, independently of where you aim. No cast or shot accompanies the combo. Also listed in **VR Settings > Controls** |
+| Hold to show all nearby loot labels (Alt) | Hold the **right stick down** during gameplay, outside wheels. Labels stay shown while it is held; let go to restore normal drop/hover labels. Uses the native Alt range, independently of where you aim. A mostly vertical push never turns you. Also listed in **VR Settings > Controls** |
 | Interact / pick up / talk | Right A by default; requires an aimed interactable. One press acts on one target: press again for each item, including loot a chest just dropped |
 | Free melee swing / thrust | Move the equipped weapon through an enemy |
 | Physical dual wield | Equip two supported melee weapons on a Barbarian or two claws on an Assassin; release both triggers and swing or thrust with either hand. Active skills retain their button bindings |
@@ -85,7 +85,7 @@ Quest left X/Y correspond to Index left A/B; right A/B labels are the same.
 | Increase offline difficulty | **VR Settings > Combat > Offline difficulty**: Game default or Players 1-8; higher counts make monsters tougher and increase rewards |
 | Bow draw | Right trigger near the left-hand bow string; draw and release |
 | See where a drawn arrow will fly | At full draw a faint line runs from the arrow's tip along its straight flight, with a brighter dot where it would reach the floor; otherwise it fades out at 15 m. It does not stop at walls or monsters. Basic arrows and Magic, Fire, Cold, Ice, Exploding, Immolation and Freezing Arrow; not Multiple Shot, Guided Arrow, Strafe or crossbows. **VR Settings > Aim > Bow path laser** chooses Off or its color, 15 degrees at a time around the color wheel (Off by default; the first step is red 0°); stepping past 345° goes to Off and on to 0°, in either direction |
-| Fire a crossbow | Equip bolts and assign **Attack** to Right Trigger; aim and fire while moving. Release Right Grip so the loot-label combo does not consume the trigger |
+| Fire a crossbow | Equip bolts and assign **Attack** to Right Trigger; aim and fire while moving. |
 | Support a crossbow | Hold Left Grip near the stock; release to free the hand. After a shoulder swap, release the swap grip before grabbing the stock again |
 | Javelin throw | Clear the right trigger skill for basic weapon mode; hold trigger, throw, release |
 | Cancel a physical attack / draw | Open either wheel, then release the held controls |
