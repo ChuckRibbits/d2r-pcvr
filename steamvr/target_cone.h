@@ -13,9 +13,19 @@ namespace framevr::targetcone {
 constexpr float HalfAngleDeg=30.f;
 constexpr float DistanceWeight=1.f;   // degrees per cell
 constexpr float KeepMargin=3.f;       // score the current target is let off
-constexpr float NearCells=12.f,MidCells=24.f; // colour bands: near / mid / far
+constexpr float NearCells=12.f,MidCells=24.f; // color bands: near / mid / far
 constexpr int MaxTargets=64;
 struct Target {uint32_t id;float x,y;bool clear;};
+
+// Keeping the nearest max of a stream: where a candidate at distance d goes in
+// a list of n (distances), or -1. Below max it is appended (n); full, it
+// replaces the farthest when nearer than it.
+inline int NearestSlot(const float* distance,int n,int max,float d) {
+    if(n<max)return n;
+    int farthest=-1;
+    for(int i=0;i<n;++i)if(farthest<0||distance[i]>distance[farthest])farthest=i;
+    return farthest>=0&&d<distance[farthest]?farthest:-1;
+}
 
 // Index of the chosen target, or -1. dir is the aim heading on the grid
 // (need not be normalized); current is the previous target's id, 0 = none.

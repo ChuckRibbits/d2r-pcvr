@@ -25,6 +25,13 @@ int main() {
     const Target edge[]={{1,104,102.2f,true},{2,112,100,true}};   // ~29 degrees at 4.6 cells vs 0 degrees at 12
     Check(Pick(edge,2,100,100,1,0,0)==1,"the mob being aimed at beats a nearer one at the edge");
     Check(Pick(line,3,100,100,0,0,0)==-1,"no heading, no target");
-    Check(Band(4)==0&&Band(18)==1&&Band(30)==2,"colour bands by distance");
+    Check(Band(4)==0&&Band(18)==1&&Band(30)==2,"color bands by distance");
+    {   // a stream of monsters in hash order, kept 3: the nearest 3 stay
+        float kept[3]{};int n=0;
+        for(float d:{30.f,5.f,20.f,40.f,10.f,1.f}){const int slot=NearestSlot(kept,n,3,d);if(slot>=0){kept[slot]=d;if(slot==n)++n;}}
+        float sum=0;for(int i=0;i<n;++i)sum+=kept[i];
+        Check(n==3&&sum==16.f,"the nearest 3 of the stream are kept (1, 5 and 10)");
+        Check(NearestSlot(kept,3,3,50)==-1,"a farther one is dropped when full");
+    }
     std::puts("target cone tests passed");
 }
