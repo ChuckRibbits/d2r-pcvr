@@ -120,6 +120,16 @@ using Values=std::array<float,Count>;
 inline bool HapticKey(Key key){return key>=HapticStrength&&key<=HapticAlert;}
 // An outline's color per source (right hand, left hand; the eyes take the hand that would cast): 0 By range, else its hue.
 inline bool HighlightKey(Key key){return key==HighlightRight||key==HighlightLeft;}
+// Before the per-hand colors (v0.3.21-v0.3.24) one outline color served every
+// monster: [gameplay] target_outline_by_range (1 By range) and target_outline_hue
+// (0-345; -1 when a key is missing). Until a hand's own color is saved they keep
+// the player's choice: By range for both hands, else the old hue as the right
+// hand's color (the old red 0 becomes 360, since 0 now means By range).
+inline float LegacyHighlight(Key key,float byRange,float hue){
+    if(byRange>.5f)return 0;
+    if(key==HighlightRight&&std::isfinite(hue)&&hue>=0){const float snapped=std::round(hue/15)*15;return snapped<=0?360.f:std::min(snapped,360.f);}
+    return Definitions[key].defaultValue;
+}
 inline int HapticCategory(Key key){return key>=HapticMelee&&key<=HapticAlert?key-HapticMelee:-1;}
 inline haptics::Sample HapticSample(const Values& values,haptics::Category category,int hand=0){return haptics::SampleFor(category,values[HapticShortMelee]>.5f,hand);}
 inline haptics::Strengths HapticLevels(const Values& values){

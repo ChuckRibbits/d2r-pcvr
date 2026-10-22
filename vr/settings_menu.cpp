@@ -27,8 +27,12 @@ Values Load(const wchar_t* path){
         // Legacy separate switches are read only for migration. Both off stays
         // off; either enabled becomes the combined wrist display. An explicit
         // navigation_location takes precedence without rewriting old keys.
+        // The old single outline color reaches the per-hand colors the same way
+        // (LegacyHighlight): a hand's own key, once saved, wins.
         const float fallback=i==NavigationLocation?(v[WristMap]>.5f||v[WristCompass]>.5f?0.f:3.f):
-                             i==ReShadeDepth?(depthActive.load()?1.f:0.f):d.defaultValue;
+                             i==ReShadeDepth?(depthActive.load()?1.f:0.f):
+                             HighlightKey(Key(i))?LegacyHighlight(Key(i),Value(path,L"gameplay",L"target_outline_by_range",-1),Value(path,L"gameplay",L"target_outline_hue",-1)):
+                             d.defaultValue;
         raw[i]=Value(path,d.section,d.key,fallback);v[i]=Normalize(Key(i),raw[i]);
     }
     v[SmoothTurn]=SmoothTurning(raw[Snap],Value(path,L"turn",L"smooth",-1))?1.f:0.f;
