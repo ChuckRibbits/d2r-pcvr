@@ -40,11 +40,12 @@ float Dart(float2 v,float2 dir,float2 across,float r) {
     float along=dot(v,dir),wide=abs(dot(v,across));
     return step(along,r)*step(-.65*r+.9*wide,along)*step(wide,(r-along)*.42);
 }
-// 2 inside the arrow, 1 on its rim, 0 elsewhere
-float ArrowCoverage(float2 pixel,float side,float angle) {
+// 2 inside the arrow, 1 on its rim, 0 elsewhere; grown with the map's zoom,
+// so it keeps covering the game's X
+float ArrowCoverage(float2 pixel,float side,float angle,float grow) {
     float2 v=pixel-side*.5;
     float2 dir=float2(sin(angle),-cos(angle)),across=float2(cos(angle),sin(angle));
-    float r=side*ArrowSize;
+    float r=side*ArrowSize*grow;
     return Dart(v,dir,across,r)+Dart(v+dir*r*(RimScale-1)*.3,dir,across,r*RimScale);
 }
 // The hero's marker: the game's blue X, which is not at the captured map's
@@ -94,7 +95,7 @@ float4 PS(float4 position:SV_Position):SV_Target {
     const float heading=topDown?bearing-.78539816:bearing;
     float arrow=0;
     float2 heroAt=0;float markerReach=0;
-    if(mapSide&&(mapFlags&1))arrow=ArrowCoverage(position.xy,mapSide,turning?0:heading);
+    if(mapSide&&(mapFlags&1))arrow=ArrowCoverage(position.xy,mapSide,turning?0:heading,max(zoom,1.0));
     if(arrow>1.5)return float4(1,.62,.12,1);   // the arrow: a gold dart (linear light)
     if(arrow>.5)return float4(.006,.006,.006,1);   // its dark rim
     if(mapSide) {
@@ -118,7 +119,7 @@ float4 PS(float4 position:SV_Position):SV_Target {
         // inside upstream's bronze frame (v0.3.18)
         const float inner=mapSide-2*min(20.0,mapSide/8.0);
         float scale=inner/float(max(w,h));
-        // zoom: the map bigger about the hero (map_zoom.h), the frame and arrow as they are
+        // zoom: the map and the arrow bigger about the hero (map_zoom.h), the frame as it is
         float2 v=(pixel-mapSide*.5)/max(zoom,1.0);
         if(turning)v=float2(v.x*cos(heading)-v.y*sin(heading),v.x*sin(heading)+v.y*cos(heading));
         // top-down to isometric: (x-y, (x+y)/2), sized so the whole slanted map still fits
