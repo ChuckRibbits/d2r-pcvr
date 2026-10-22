@@ -422,7 +422,7 @@ void __cdecl Apply(const D2RL::PluginContext*,void* token) noexcept {
                             riposte=onHit!=combat::OnHit::Allowed&&combat::RiposteDue(header[2]);
                         }
                         const bool effects=onHit==combat::OnHit::Allowed||riposte;
-                        const uintptr_t onHitSaved=combat::GateOnHit(effects?0:player);
+                        const auto onHitSaved=combat::GateOnHit(effects?combat::OnHitScope{}:combat::OnHitScope{player,unit});
                         {
                             meleeweapon::Scope selected(player,weapon);
                             reinterpret_cast<int(*)(uintptr_t,uintptr_t,int,int)>(d2rsig::Addr(AttackRva))(local.game,player,0,1);

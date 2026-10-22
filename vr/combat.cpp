@@ -153,7 +153,7 @@ std::atomic<int> lastChance{-1};std::atomic<float> lastRecovery{1},lastFactor{1}
 //   433D20(curse), returning to 44BE61: skipped.
 // - defense lowered per hit (item_damagetargetac 120): 44C030 sets the
 //   defender's armorclass (31), returning to 44C155: skipped.
-thread_local uintptr_t onHitGated=0;   // the attacker whose on-hit effects are off (0 = none)
+thread_local uintptr_t onHitGated=0,onHitTarget=0;   // the attacker whose on-hit effects on this target are off (0 = none)
 thread_local Seed noCritRoll;
 constexpr uint64_t TriggerRva=0x44d570,CurseRva=0x433d20,PreventHealReturn=0x44be61,DefensePerHitReturn=0x44c155;
 constexpr uint64_t CritSeedReturn[3]={0x44c2e6,0x44c33e,0x44c392};   // weapon mastery, critical strike, deadly strike
@@ -192,16 +192,17 @@ TriggerFn originalTrigger=nullptr;CurseFn originalCurse=nullptr;
 bool triggerIn=false,curseIn=false,critGate=false,leechGate=false,defenseGate=false,onHitLogged=false;
 std::atomic<unsigned> gatedMeleeDamage{0},gatedMeleeAttack{0},gatedLeech{0},gatedCrits{0},gatedHeal{0},gatedDefense{0};
 uint32_t Trigger(uintptr_t game,int event,uintptr_t unit,uintptr_t source,uintptr_t damage) {
-    if(onHitGated&&unit==onHitGated&&(event==DoMeleeDamage||event==DoMeleeAttack)) {
+    // domeleedamage / domeleeattack: unit = the attacker, source = its defender.
+    if(onHitGated&&unit==onHitGated&&source==onHitTarget&&(event==DoMeleeDamage||event==DoMeleeAttack)) {
         ++(event==DoMeleeDamage?gatedMeleeDamage:gatedMeleeAttack);return 0;
     }
     return originalTrigger(game,event,unit,source,damage);
 }
 uintptr_t Curse(uintptr_t curse) {
-    // Prevent monster heal from a gated swing (the curse record names its caster at +0).
-    uintptr_t caster=0;
+    // Prevent monster heal from a gated swing (the curse record names its caster at +0, its target at +8).
+    uintptr_t units[2]{};
     if(onHitGated&&reinterpret_cast<uintptr_t>(_ReturnAddress())==d2rsig::Addr(PreventHealReturn)&&
-       framevr::ReadMemory(&caster,reinterpret_cast<const void*>(curse),sizeof caster)&&caster==onHitGated){++gatedHeal;return 0;}
+       framevr::ReadMemory(units,reinterpret_cast<const void*>(curse),sizeof units)&&units[0]==onHitGated&&units[1]==onHitTarget){++gatedHeal;return 0;}
     return originalCurse(curse);
 }
 // The riposte's own sound: a WAV next to d2r_vr.ini, played from memory at
@@ -302,7 +303,7 @@ template<class T> bool Read(uintptr_t p,T& out) {
 }
 void SetStat(uintptr_t unit,int stat,int value,int layer) {
     // Unleashed on-hit gate: a gated swing does not lower the target's Defense.
-    if(stat==31&&onHitGated&&defenseGate&&reinterpret_cast<uintptr_t>(_ReturnAddress())==d2rsig::Addr(DefensePerHitReturn)) {
+    if(stat==31&&onHitGated&&unit==onHitTarget&&defenseGate&&reinterpret_cast<uintptr_t>(_ReturnAddress())==d2rsig::Addr(DefensePerHitReturn)) {
         ++gatedDefense;return;
     }
     // The life write of a forced monster hit on the local player: its native
@@ -389,7 +390,7 @@ uint64_t HitChance(uintptr_t game,uintptr_t attacker,uintptr_t defender,int chan
 }
 uint64_t ApplyDamage(uintptr_t game,uintptr_t attacker,uintptr_t defender,int flag,uintptr_t damage) {
     // Unleashed on-hit gate: a gated swing leeches nothing (450C90 reads these two).
-    if(onHitGated&&attacker==onHitGated&&!flag&&leechGate&&damage) {
+    if(onHitGated&&attacker==onHitGated&&defender==onHitTarget&&!flag&&leechGate&&damage) {
         int32_t leech[2]{};const int32_t none[2]{};
         if(framevr::ReadMemory(leech,reinterpret_cast<const void*>(damage+0x120),sizeof leech)&&(leech[0]||leech[1])&&
            framevr::WriteMemory(reinterpret_cast<void*>(damage+0x120),none,sizeof none))++gatedLeech;
@@ -827,7 +828,11 @@ void NoteRiposte(uint32_t monster) {
     riposteMonster=monster;riposteUntil=GetTickCount64()+riposteMs.load();
 }
 bool RiposteDue(uint32_t monster) {return monster!=NoSwing&&riposteMonster.load()==monster&&GetTickCount64()<riposteUntil.load();}
-uintptr_t GateOnHit(uintptr_t attacker) {const auto was=onHitGated;onHitGated=attacker;return was;}
+OnHitScope GateOnHit(OnHitScope scope) {
+    const OnHitScope was{onHitGated,onHitTarget};
+    onHitGated=scope.attacker&&scope.target?scope.attacker:0;onHitTarget=onHitGated?scope.target:0;
+    return was;
+}
 void ConfigureRiposte(float bonus,uint32_t windowMs,float volume,const wchar_t* soundFile) {
     riposteBonus=std::clamp(bonus,0.f,4.f);riposteMs=windowMs;
     {std::lock_guard lock(riposteSoundMutex);const float v=std::clamp(volume,0.f,4.f);if(riposteExtra!=v){riposteExtra=v;riposteGain=-1;}}
