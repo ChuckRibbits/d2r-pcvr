@@ -32,6 +32,26 @@ inline bool QuiverMissile(int missile) {
         default:return false;
     }
 }
+// Javelin skills (#224): Skills.txt srvstfunc 4 with one srvmissile, the
+// same native shape as Fire Arrow, and a javelin used up per throw: Poison
+// Javelin (missile 38, poisonjav), Lightning Bolt (205, lightningjavelin),
+// Plague Javelin (43, plaguejavelin) and Lightning Fury (206, lightningfury).
+inline bool JavelinSkill(int skill) {
+    switch(skill) {
+        case 15:case 20:case 25:case 35:return true;
+        default:return false;
+    }
+}
+inline bool JavelinMissile(int missile) {
+    switch(missile) {
+        case 38:case 205:case 43:case 206:return true;
+        default:return false;
+    }
+}
+// What a physical release can carry: a bow's arrow skills, a thrown weapon's javelin skills.
+inline bool Loadable(int skill,int missile,bool javelin) {
+    return javelin?JavelinSkill(skill)&&JavelinMissile(missile):QuiverSkill(skill)&&QuiverMissile(missile);
+}
 // Bow quiver: pressing a face button assigned to a quiver skill loads that
 // skill into every following nocked arrow instead of casting it. Pressing the
 // loaded skill's button again returns to basic arrows; another skill swaps.
@@ -53,15 +73,15 @@ public:
     const Loaded& Current() const {return loaded;}
     void Clear(){loaded={};held=-1;owned=false;}
     // slot: the face button currently held (-1 for none); its native assignment
-    // follows. eligible: a bow is ready and the feature is enabled. A press
-    // keeps its first owner until released: a stale frame mid-press neither
-    // leaks a native cast nor toggles again.
-    Result Step(uint64_t world,int slot,int skill,int owner,int missile,bool eligible) {
+    // follows. eligible: a bow (or, javelin, a thrown weapon) is ready and the
+    // feature is enabled. A press keeps its first owner until released: a stale
+    // frame mid-press neither leaks a native cast nor toggles again.
+    Result Step(uint64_t world,int slot,int skill,int owner,int missile,bool eligible,bool javelin=false) {
         if(world!=session){session=world;Clear();}
         Result out;
         if(slot<0){held=-1;owned=false;return out;}
         if(slot==held){out.consumed=owned;return out;}
-        held=slot;owned=eligible&&QuiverSkill(skill)&&QuiverMissile(missile);
+        held=slot;owned=eligible&&Loadable(skill,missile,javelin);
         if(!owned)return out;
         out.consumed=true;
         if(loaded.skill==skill&&loaded.owner==owner){loaded={};out.change=Change::Unloaded;}

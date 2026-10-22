@@ -207,7 +207,7 @@ int End(size_t slot,Arrow& a,uintptr_t game,uintptr_t unit) {
 // Spells and quiver arrows keep their native server missile at the physical
 // contact, so splash, explosions and secondary missiles start at the impact.
 bool MoveSpell(Arrow& a,Vec point) {
-    if(a.flight.shot.kind!=Kind::Spell&&!SkillArrow(a.flight.shot))return true;
+    if(a.flight.shot.kind!=Kind::Spell&&!SkillRelease(a.flight.shot))return true;
     const auto grid=GridPoint(a.flight.shot,point)*a.flight.shot.unitsPerMetre;
     const int x=int(grid.x*.5f),y=int(grid.z*.5f);
     const auto room=reinterpret_cast<uintptr_t(*)(uintptr_t,int,int)>(d2rsig::Addr(RoomPointRva))(a.room,x,y);
@@ -435,7 +435,9 @@ void __cdecl Apply(const D2RL::PluginContext*,void* token) noexcept {
         if(spell&&!spellvr::Prepare(shot,game,player))continue;
         // A quiver arrow the game cannot start (skill missing, wrong state)
         // still leaves the bow as the basic arrow that was drawn.
-        bool quiverArrow=SkillArrow(shot);
+        // A javelin skill flies the javelin's model: the hand holds it at the javelin's grip.
+        if(SkillJavelin(shot))Grip(shot,1);
+        bool quiverArrow=SkillRelease(shot);
         if(quiverArrow&&!spellvr::PrepareArrow(shot,game,player)) {
             shot.skill=shot.owner=shot.missile=-1;shot.level=0;quiverArrow=false;++quiverRefused;
         }
@@ -476,7 +478,9 @@ void __cdecl Apply(const D2RL::PluginContext*,void* token) noexcept {
                 // drawn arrow flies as a basic attack instead of a dud.
                 ++quiverFallbacks;
                 launch.shot.skill=launch.shot.owner=launch.shot.missile=-1;launch.shot.level=0;
-                reinterpret_cast<int(*)(uintptr_t,uintptr_t,int,int)>(d2rsig::Addr(AttackRva))(game,player,0,1);
+                // ... and a javelin as a basic throw of the weapon in hand.
+                if(javelin)reinterpret_cast<int(*)(uintptr_t,uintptr_t,int,int)>(d2rsig::Addr(ThrowRva))(game,player,2,1);
+                else reinterpret_cast<int(*)(uintptr_t,uintptr_t,int,int)>(d2rsig::Addr(AttackRva))(game,player,0,1);
             }
         } else reinterpret_cast<int(*)(uintptr_t,uintptr_t,int,int)>(d2rsig::Addr(javelin?ThrowRva:AttackRva))(game,player,javelin?2:0,1);
         if(!launch.created)++refused;
@@ -503,7 +507,7 @@ void VisualParams(const Shot& shot,float distance,uintptr_t hero,std::array<uint
     Param(params,0,uint32_t(0x21));Param(params,8,hero);Param(params,0x10,hero);
     Param(params,0x20,MissileId(shot));
     Param(params,0x24,x);Param(params,0x28,y);Param(params,0x2c,tx);Param(params,0x30,ty);
-    const bool skill=withSkill&&(shot.kind==Kind::Spell||SkillArrow(shot));
+    const bool skill=withSkill&&(shot.kind==Kind::Spell||SkillRelease(shot));
     Param(params,0x3c,skill?shot.skill:0);
     Param(params,0x40,skill?std::max(shot.level,1):1);
 }
@@ -653,7 +657,7 @@ void ClientTick(uintptr_t unit,float dt) {
         }
         for(size_t i=0;!retirement&&i<usedSlots.load(std::memory_order_relaxed);++i)if(arrows[i].client==unit&&arrows[i].clientId==header[2]) {
             slot=i;alive=arrows[i].flight.alive&&arrows[i].flight.shot.session==current.session&&enabled.load();
-            spellEnd=!alive&&(arrows[i].flight.shot.kind==Kind::Spell||SkillArrow(arrows[i].flight.shot))&&
+            spellEnd=!alive&&(arrows[i].flight.shot.kind==Kind::Spell||SkillRelease(arrows[i].flight.shot))&&
                 arrows[i].flight.shot.session==current.session&&enabled.load();
             if(spellEnd)ended=arrows[i].flight;
             if(!alive){arrows[i].client=0;arrows[i].visualBinding.Clear();Recount();}break;
@@ -726,7 +730,7 @@ uintptr_t Transform(uintptr_t out,uint32_t entity,uintptr_t component) {
         for(auto& a:UsedArrows())if(!held&&a.visualBinding.Matches(entity)&&a.flight.shot.session==current.session) {
             if(a.renderAt!=at||a.rendered[15]!=1) {
                 a.previous=a.rendered;
-                if(a.flight.shot.kind==Kind::Spell) {
+                if(a.flight.shot.kind==Kind::Spell||(SkillJavelin(a.flight.shot)&&ParticleJavelin(a.flight.shot.missile))) {
                     if(!Read(out,a.rendered))continue;
                     SpellMatrix(a.flight,at,a.rendered.data());
                 } else if(SkillArrow(a.flight.shot))QuiverMatrix(a.flight,at,a.rendered.data());
@@ -785,7 +789,7 @@ bool PreviewReady() {
 }
 bool MotionReady(){return enabled.load()&&ready.load();}
 bool DirectCrossbow(){return launch.slot>=0&&launch.shot.kind==Kind::Crossbow;}
-uint32_t QuiverLaunchMissile(){return launch.slot>=0&&SkillArrow(launch.shot)?MissileId(launch.shot):0;}
+uint32_t QuiverLaunchMissile(){return launch.slot>=0&&SkillRelease(launch.shot)?MissileId(launch.shot):0;}
 void SetCrossbowCycle(uint64_t session,uint32_t equipment,uint32_t milliseconds) {
     std::lock_guard lock(mutex);crossbowRate={session,GetTickCount64(),equipment,milliseconds};
 }
@@ -1063,7 +1067,7 @@ bool Visual(uint32_t entity,uintptr_t unit,bool hasReleasePoint,bool isRoot) {
             (creatingVisual==int(i)&&a.flight.shot.session==visualSession&&a.flight.shot.sequence==visualSequence)||
             (crossbow&&a.flight.shot.kind==Kind::Crossbow&&a.flight.shot.session==crossbow->session&&a.flight.shot.sequence==crossbow->sequence))) {
             const bool wasBound=a.visualBinding.Bound();
-            const bool rooted=a.flight.shot.kind==Kind::Spell||SkillArrow(a.flight.shot);
+            const bool rooted=a.flight.shot.kind==Kind::Spell||SkillArrow(a.flight.shot)||(SkillJavelin(a.flight.shot)&&ParticleJavelin(a.flight.shot.missile));
             const bool bound=rooted?a.visualBinding.BindRoot(entity,isRoot):a.visualBinding.Bind(entity,hasReleasePoint);
             // Descendant release components still need removal even though
             // only the root owns the spell transform.
@@ -1082,7 +1086,7 @@ bool OwnsVisual(uintptr_t unit) {
        (preview.active&&previewCreatingSession==current.session&&previewCreatingMissile==h[1])))return true;
     for(size_t i=0;i<usedSlots.load(std::memory_order_relaxed);++i) {
         const auto& a=arrows[i];
-        if((a.flight.shot.kind==Kind::Spell||SkillArrow(a.flight.shot))&&a.flight.shot.sequence&&a.flight.shot.session==current.session&&
+        if((a.flight.shot.kind==Kind::Spell||SkillRelease(a.flight.shot))&&a.flight.shot.sequence&&a.flight.shot.session==current.session&&
            h[1]==MissileId(a.flight.shot)&&((a.client==unit&&a.clientId==h[2])||
            (creatingVisual==int(i)&&a.flight.shot.sequence==visualSequence&&a.flight.shot.session==visualSession)))return true;
     }

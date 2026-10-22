@@ -197,10 +197,11 @@ public:
         }
 
         // 2026-10-19: under hand bindings the right trigger always holds a slot.
-        // Nothing, Attack or Throw there leaves it to the hand's own throw;
-        // any other skill keeps the trigger (it was unreachable with javelins).
+        // Nothing, Attack or Throw there leaves it to the hand's own throw, and
+        // so does a javelin skill, which the throw then carries (#224); any
+        // other skill keeps the trigger (it was unreachable with javelins).
         const bool handThrow=selection<0||(in.handBindings&&(in.selectedSkill<0||
-            in.selectedSkill==weaponskills::Attack||in.selectedSkill==weaponskills::Throw));
+            in.selectedSkill==weaponskills::Attack||in.selectedSkill==weaponskills::Throw||weaponskills::JavelinSkill(in.selectedSkill)));
         if(in.weapon==Weapon::Javelin&&handThrow) {
             out.javelinReady=true;
             if(triggerEdge) {
