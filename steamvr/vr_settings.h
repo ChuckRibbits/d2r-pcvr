@@ -8,6 +8,7 @@
 #include <string>
 #include <string_view>
 #include "controller_labels.h"
+#include "enemy_sight.h"
 #include "hand_vitals.h"
 #include "vr_resolution.h"
 #include "haptic_strength.h"
@@ -16,7 +17,7 @@ namespace framevr::settings {
 enum class Page { Controls, VR, Video, HUD, Combat, Aim, Haptics, Performance, ReleaseNotes };
 enum Key { Motion, Seated, Dominant, Snap, TurnSpeed, Waist, BeltForward,
            Foveation, Sky, Fog, Ceiling, DrawDistance, ObjectDistance,
-           EyeHeight, ArmSpan, BodyCalibration, SkillGestures, WristMap, WristCompass, ControllerLabels, WeaponSkillIndicators, PlanarSpellAim, VitalsLocation, CriticalAlerts, RenderResolution, NavigationLocation, SmoothTurn, OrdinaryMobBars, MenuDistance, TooltipTiming, ProjectileAimAssist, MeleeHitSpeed, VitalsTilt, HapticStrength, HapticMelee, HapticBowDraw, HapticBowRelease, HapticSpell, HapticInteraction, HapticAlert, HapticShortMelee, BloodVisor, BloodWipe, MeleeRules, MeleeThrustSpeed, LootLabelSize, CompanionCounts, StrainDark, OfflinePlayers, ShieldBashSpeed, StrainSpeed, DesktopOneEye, MapTopDown, MapRotate, FoveationStrength, StereoRendering, DeferGpuWait, TargetHighlight, HeartbeatStart, SpellLock, StaffPoint, LandingCircles, SpellLockBow, GroundAim, AimHighlights, HighlightRight, HighlightLeft, ReShadeDepth, ElementalHands, Count };
+           EyeHeight, ArmSpan, BodyCalibration, SkillGestures, WristMap, WristCompass, ControllerLabels, WeaponSkillIndicators, PlanarSpellAim, VitalsLocation, CriticalAlerts, RenderResolution, NavigationLocation, SmoothTurn, OrdinaryMobBars, MenuDistance, TooltipTiming, ProjectileAimAssist, MeleeHitSpeed, VitalsTilt, HapticStrength, HapticMelee, HapticBowDraw, HapticBowRelease, HapticSpell, HapticInteraction, HapticAlert, HapticShortMelee, BloodVisor, BloodWipe, MeleeRules, MeleeThrustSpeed, LootLabelSize, CompanionCounts, StrainDark, OfflinePlayers, ShieldBashSpeed, StrainSpeed, DesktopOneEye, MapTopDown, MapRotate, FoveationStrength, StereoRendering, DeferGpuWait, TargetHighlight, HeartbeatStart, SpellLock, StaffPoint, LandingCircles, SpellLockBow, GroundAim, AimHighlights, HighlightRight, HighlightLeft, ReShadeDepth, ElementalHands, EnemySight, Count };
 // One bit per setting, 128 wide: two words, since MSVC has no 128-bit integer.
 struct ChangeMask {
     static constexpr int Bits=128;
@@ -112,6 +113,7 @@ inline constexpr std::array<Definition,Count> Definitions{{
     {"Left hand color", "The left hand's monster: By range, or one color", L"gameplay",L"highlight_left_hue",210,0,360,15},
     {"ReShade depth", "ReShade's Generic Depth add-on; applies after restarting the game", L"render",L"reshade_depth",1,0,1,1},
     {"Elemental hand effects", "Sorceress: fire, frost and lightning around each hand (experimental)", L"interactions",L"elemental_hands",0,0,1,1},
+    {"Enemy sight distance", "Offline monster detection range; 100% is game default", L"gameplay",L"enemy_sight_pct",enemysight::DefaultPercent,enemysight::MinPercent,enemysight::MaxPercent,enemysight::StepPercent},
 }};
 using Values=std::array<float,Count>;
 inline bool HapticKey(Key key){return key>=HapticStrength&&key<=HapticAlert;}
@@ -132,6 +134,7 @@ inline float Normalize(Key key,float value){
     if(key==OfflinePlayers&&(value<0||value>8||std::floor(value)!=value))return 0;
     if(key==HeartbeatStart)return std::clamp(std::round(value/10)*10,d.min,d.max);   // 0 = Off, else a 10% step
     if(HighlightKey(key))return std::clamp(std::round(value/15)*15,d.min,d.max);   // 0 = By range, else a hue in 15-degree steps
+    if(key==EnemySight)return float(enemysight::NormalizePercent(value));
     if(key==VitalsTilt)return vitals::NormalizeTilt(value);
     if(HapticKey(key))return haptics::NormalizeStrength(value);
     if((key==ControllerLabels||key==VitalsLocation||key==NavigationLocation||key==RenderResolution||key==MenuDistance||key==TooltipTiming||key==ProjectileAimAssist||key==GroundAim||key==StrainSpeed||key==StrainDark||key==FoveationStrength||key==StereoRendering)&&(value<d.min||value>d.max||value!=std::round(value)))return d.defaultValue;
@@ -317,11 +320,11 @@ inline Rect ControllerOption(int option){return {865,233+option*58,375,58};}
 inline Rect Decrease(int row){return {865,RowY+row*RowStep,64,52};}
 inline Rect Increase(int row){return {1176,RowY+row*RowStep,64,52};}
 inline Rect ValueBox(int row){return {942,RowY+row*RowStep,221,52};}
-inline int RowCount(Page page){return page==Page::Haptics?2+haptics::CategoryCount:page==Page::Combat?8:page==Page::Aim?9:page==Page::VR?10:page==Page::Video?4:page==Page::Performance?8:page==Page::HUD?10:0;}
+inline int RowCount(Page page){return page==Page::Haptics?2+haptics::CategoryCount:page==Page::Combat?9:page==Page::Aim?9:page==Page::VR?10:page==Page::Video?4:page==Page::Performance?8:page==Page::HUD?10:0;}
 inline Key RowKey(Page page,int row){
     constexpr Key hapticRows[]={HapticStrength,HapticMelee,HapticShortMelee,HapticBowDraw,HapticBowRelease,HapticSpell,HapticInteraction,HapticAlert};
     if(page==Page::Haptics)return hapticRows[row];
-    if(page==Page::Combat)return row==0?MeleeRules:row==1?MeleeHitSpeed:row==2?MeleeThrustSpeed:row==3?ShieldBashSpeed:row==4?StrainDark:row==5?StrainSpeed:row==6?OfflinePlayers:HeartbeatStart;
+    if(page==Page::Combat)return row==0?MeleeRules:row==1?MeleeHitSpeed:row==2?MeleeThrustSpeed:row==3?ShieldBashSpeed:row==4?StrainDark:row==5?StrainSpeed:row==6?OfflinePlayers:row==7?HeartbeatStart:EnemySight;
     if(page==Page::Aim)return row==0?SpellLock:row==1?SpellLockBow:row==2?StaffPoint:row==3?TargetHighlight:row==4?AimHighlights:row==5?HighlightRight:row==6?HighlightLeft:row==7?GroundAim:LandingCircles;   // spell lock, bow skills, staff, the outline: strength, which hands, each hand's color; then the ground target, circles
     constexpr Key hud[]={VitalsLocation,VitalsTilt,CriticalAlerts,NavigationLocation,MenuDistance,TooltipTiming,BloodVisor,BloodWipe,LootLabelSize,CompanionCounts};
     if(page==Page::HUD)return hud[row];

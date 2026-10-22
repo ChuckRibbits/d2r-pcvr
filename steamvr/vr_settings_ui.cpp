@@ -167,6 +167,7 @@ std::vector<uint8_t> Paint(const Model& m,Hit hover,const char* runtimeStatus,co
             else if(key==StrainDark)std::snprintf(label,sizeof label,"%s",StrainColorNames[std::clamp(int(std::lround(value)),0,2)]);
             else if(key==StrainSpeed)std::snprintf(label,sizeof label,"%s",StrainSpeedNames[int(value)]);
             else if(key==HeartbeatStart){if(value==0)std::snprintf(label,sizeof label,"Off");else std::snprintf(label,sizeof label,"%.0f%% life",value);}
+            else if(key==EnemySight){if(value==100)std::snprintf(label,sizeof label,"100%% (Default)");else std::snprintf(label,sizeof label,"%.0f%%",value);}
             else if(d.max==1)std::snprintf(label,sizeof label,"%s",value>.5f?"On":"Off");
             else if(key==Snap)std::snprintf(label,sizeof label,"%.0f deg",value);
             else if(key==VitalsTilt)std::snprintf(label,sizeof label,"%+.6g deg",value);
@@ -196,11 +197,10 @@ std::vector<uint8_t> Paint(const Model& m,Hit hover,const char* runtimeStatus,co
             if(depthRestart)text(DepthRestartNote,{58,DepthRestartBox.y+2,1170,29},false,false,warn);
         }
         if(m.page==Page::Combat){
-            text("Defaults: swings 12 m/s with 18 cm travel; thrusts and shield bashes 2 m/s with 12 cm travel. Wrist twisting alone cannot bash. Hover each setting for details.",{58,744,1160,56},false,false,quiet);
-            // The eighth row ends at 738; without the offline adapter its notice replaces the difficulty note.
+            // The ninth row ends at 800; without the offline adapter its notice replaces the difficulty note.
             if(m.offlineDifficultyAvailable)
-                text("Difficulty affects new monsters only; existing monsters keep their stats. To apply it throughout the game, Save and Exit, then start a new game with the same character.",{58,806,1160,56},false,false,quiet);
-            else text("Offline scaling adapter unavailable. Game difficulty remains unchanged.",{58,806,1160,30},false,false,quiet);
+                text("Difficulty affects new monsters only; existing monsters keep their stats. To apply it throughout the game, Save and Exit, then start a new game with the same character.",{58,804,1160,56},false,false,quiet);
+            else text("Offline scaling adapter unavailable. Game difficulty remains unchanged.",{58,804,1160,30},false,false,quiet);
         }
         if(m.page==Page::Haptics){
             text("0% is Off; 100% is normal. Overall strength scales each category, up to the controller's maximum. Adjust in steps of 10%.",{58,750,1160,56},false,false,quiet);
