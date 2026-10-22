@@ -123,6 +123,55 @@ uint64_t OpensAt(const AttackSeen& a) {   // attackMutex held
 template<class T> bool Read(uintptr_t p,T& out) {
     return p>0x10000&&framevr::ReadMemory(&out,reinterpret_cast<const void*>(p),sizeof out);
 }
+// [gameplay] player_flinch (0, the default; Unleashed only, Classic always
+// flinches natively; applied live): in Unleashed the local hero never enters
+// the game's hit recovery (GetHit, player mode 4)
+// or its block animation (mode 9) when struck. Both lock out casts, button
+// skills and movement for their FHR/FBR frames: in VR a stun-lock the body
+// cannot follow (Cal, 2026-10-22). Refused at the mode setter (SetMode below)
+// for the hero's server and client units; the mode stays what it was.
+// Knockback (mode 19) stays native and is only counted. 1 = native flinching.
+std::atomic<bool> noFlinch{true};
+std::atomic<unsigned> flinchRefused[2]{},knockbacks{0};   // [0] GetHit, [1] Block
+#ifdef D2RVR_DEVELOPER
+// Developer builds: the game code that asked for a refused flinch, so the
+// refusal can move up to the game's own hit-recovery decision. Each distinct
+// call chain is logged once, at most 8 a session: every game frame's RVA (this
+// build), the function it sits in and that function's first 16 bytes.
+std::mutex flinchProbeMutex;std::array<uint64_t,8> flinchChains{};unsigned flinchChainCount=0;
+void ProbeFlinch(uintptr_t unit,int mode,uintptr_t caller) {
+    {std::lock_guard lock(flinchProbeMutex);if(flinchChainCount>=flinchChains.size())return;}
+    const uintptr_t base=d2rsig::Addr(SetModeRva)-d2rsig::Rva(SetModeRva);
+    const auto inGame=[&](uintptr_t pc){return base&&pc>=base&&pc-base<0x4000000;};
+    void* frames[12]{};
+    const unsigned n=RtlCaptureStackBackTrace(0,12,frames,nullptr);
+    uint64_t key=uint64_t(mode);unsigned keyed=0;
+    for(unsigned k=0;k<n&&keyed<4;++k)if(const auto pc=reinterpret_cast<uintptr_t>(frames[k]);inGame(pc)){key=key*1000003+(pc-base);++keyed;}
+    {
+        std::lock_guard lock(flinchProbeMutex);
+        for(unsigned k=0;k<flinchChainCount;++k)if(flinchChains[k]==key)return;
+        if(flinchChainCount>=flinchChains.size())return;
+        flinchChains[flinchChainCount++]=key;
+    }
+    uint32_t prior=0;Read(unit+0xc,prior);uintptr_t back=0;Read(unit+0xd8,back);
+    char line[1600];
+    int len=snprintf(line,sizeof line,"Frame flinch probe: mode=%s prior_mode=%u unit_d8=%d caller=0x%llx frames:",
+        mode==9?"block":"gethit",prior,int(back>0x10000),(unsigned long long)(inGame(caller)?caller-base:0));
+    for(unsigned k=0;k<n&&len>0&&len<int(sizeof line)-120;++k) {
+        const auto pc=reinterpret_cast<uintptr_t>(frames[k]);
+        if(!inGame(pc))continue;
+        len+=snprintf(line+len,sizeof line-len," 0x%llx",(unsigned long long)(pc-base));
+        DWORD64 image=0;
+        if(const auto fe=RtlLookupFunctionEntry(pc,&image,nullptr);fe&&image==base) {
+            uint8_t sig[16]{};Read(base+fe->BeginAddress,sig);
+            len+=snprintf(line+len,sizeof line-len,"(fn 0x%x:",unsigned(fe->BeginAddress));
+            for(uint8_t b:sig)len+=snprintf(line+len,sizeof line-len,"%02x",b);
+            len+=snprintf(line+len,sizeof line-len,")");
+        }
+    }
+    framevr::logging::Write(line);
+}
+#endif
 void ObserveServer(uintptr_t game,uintptr_t unit) {
     uint32_t id=0,header[3]{};uintptr_t back=0;
     if(!game||!combat::LocalPlayerId(id)||!Read(unit,header)||header[0]!=0||header[2]!=id||!Read(unit+0xd8,back)||back!=game)return;
@@ -438,7 +487,21 @@ void Init(const D2RL::PluginContext* ctx) {
 }
 void QueueAttackParry(uint32_t monster);
 int SetMode(uintptr_t unit,int mode) {
-    if(AttackMode(mode)) {
+    // The local hero's flinch (player modes GetHit 4, Block 9; Knockback 19 counted).
+    if(mode==4||mode==9||mode==19) {
+        uint32_t header[3]{},id=0;
+        if(Read(unit,header)&&header[0]==0&&combat::LocalPlayerId(id)&&header[2]==id) {
+            if(mode==19)++knockbacks;
+            else if(noFlinch.load(std::memory_order_relaxed)) {
+                ++flinchRefused[mode==9];
+#ifdef D2RVR_DEVELOPER
+                ProbeFlinch(unit,mode,reinterpret_cast<uintptr_t>(_ReturnAddress()));
+#endif
+                return 0;   // refused: the hero keeps the mode it had
+            }
+        }
+    }
+    if(AttackMode(mode)&&parryReady.load(std::memory_order_relaxed)) {
         uint32_t header[3]{};uintptr_t back=0;
         if(Read(unit,header)&&header[0]==1&&Read(unit+0xd8,back)&&back>0x10000) { // a server monster starting an attack
             const auto now=GetTickCount64();
@@ -763,11 +826,12 @@ void Install() {
         if(!parryReady.load()&&HitRecoveryRva&&d2rsig::Check(HitRecoveryRva,HitRecoverySig,sizeof HitRecoverySig)) {
             parryReady=true;framevr::logging::Write("Frame guard: native hit recovery verified; perfect parry ready");
         }
-        // The mode setter: monster attack starts (the parry).
-        if(parryReady.load()&&!setModeIn) {
+        // The mode setter: monster attack starts (the parry) and the hero's
+        // refused flinch (player_flinch), so it goes in without the parry too.
+        if(!setModeIn) {
             setModeIn=d2rsig::Hook(SetModeRva,SetModeSig,sizeof SetModeSig,reinterpret_cast<void*>(&SetMode),reinterpret_cast<void**>(&originalSetMode));
-            framevr::logging::Write(setModeIn?"Frame guard: unit mode setter hooked; monster attack starts timed for the parry":
-                                              "Frame guard: mode setter signature mismatch; parry falls back to its window alone");
+            framevr::logging::Write(setModeIn?"Frame guard: unit mode setter hooked; monster attack starts timed for the parry; hero flinch refusable":
+                                              "Frame guard: mode setter signature mismatch; parry falls back to its window alone; the hero flinches natively");
         }
         return;
     }
@@ -794,6 +858,7 @@ void ConfigureAttackSpeed(bool enabled,bool traceHits){attackSpeed=enabled;trace
 void ConfigureSwingRecovery(bool on,float curve,float grace){swingRecovery=on;recoveryCurve=curve;recoveryGrace=grace;}
 void ConfigureCleave(float step,float floor){cleaveStep=step;cleaveFloor=floor;}
 void ConfigureAttackRating(bool native){attackRating=native;combat::ConfigureMeleeRolls(native);}
+void ConfigurePlayerFlinch(bool native){noFlinch=!native;}
 void ConfigureBlockSound(int sound) {
     static bool loaded=false; // settings thread only
     const int previous=blockSound.exchange(sound);
@@ -839,6 +904,17 @@ void Report() {
     if(const auto pd=parried.exchange(0),pr=parryRefused.exchange(0),pf=parryRepaired.exchange(0),as=attackStarts.exchange(0),dv=deflected.exchange(0);pd||pr||pf||dv) {
         char line[220];snprintf(line,sizeof line,"Frame guard: parry hit recovery applied=%u deflected=%u refused=%u shield_wear_refunded=%u monster_attack_starts=%u",pd,dv,pr,pf,as);
         framevr::logging::Write(line);
+    }
+    {
+        const auto gh=flinchRefused[0].exchange(0),bl=flinchRefused[1].exchange(0),kb=knockbacks.exchange(0);
+#ifdef D2RVR_DEVELOPER
+        if(gh||bl||kb) {
+            char line[160];snprintf(line,sizeof line,"Frame flinch: refused gethit=%u block=%u knockback_native=%u",gh,bl,kb);
+            framevr::logging::Write(line);
+        }
+#else
+        (void)gh;(void)bl;(void)kb;
+#endif
     }
     const auto ss=shieldSweeps.exchange(0),sr=shieldRequests.exchange(0),sa=shieldAccepted.exchange(0),sf=shieldRejected.exchange(0);
     if(ss||sr||sa||sf) {
