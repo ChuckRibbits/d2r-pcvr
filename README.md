@@ -78,7 +78,7 @@ This is a PCVR mod: the game runs on your Windows PC and streams to the headset.
 
 - First-person VR with your character's body, hands and equipment.
 - Optional experimental [Sorceress elemental hand effects](docs/elemental_hands.md), enabled under VR Settings > Video.
-- Free-swing melee, including with a wheel skill selected, aimed spells, bows and physical javelin throws.
+- Free-swing melee, including with a wheel skill selected, aimed spells, bows and physical javelin, throwing knife and axe throws.
 - Belt potions you can grab and drink, plus wrist health, mana, level and experience progress.
 - A left-hand minimap/compass with current area and act, independent health/mana tilt,
   and adjustable controller vibration under **VR Settings > Haptics**.
@@ -136,7 +136,7 @@ Quest left X/Y correspond to Index left A/B; right A/B labels are the same.
 | Interact / pick up / talk | Right A by default; requires an aimed interactable |
 | Free melee swing / thrust | Move the equipped weapon through an enemy |
 | Bow draw | Right trigger near the left-hand bow string; draw and release |
-| Javelin throw | Clear the right trigger skill for basic weapon mode; hold trigger, throw, release |
+| Javelin, throwing knife or axe throw | Right trigger on Attack, Throw or nothing; hold the trigger, throw, release |
 | Cancel a physical attack / draw | Open either wheel, then release the held controls |
 | Swap weapon sets I / II | Dominant grip over either shoulder; or wheel → EQUIPMENT |
 | Stow / draw weapons | Wheel → EQUIPMENT → Stow / Draw |

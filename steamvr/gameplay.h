@@ -15,6 +15,7 @@ inline bool Valid(Pose p) {
     const float n=p.q.x*p.q.x+p.q.y*p.q.y+p.q.z*p.q.z+p.q.w*p.q.w;
     return Finite(p.p)&&std::isfinite(n)&&n>.9f&&n<1.1f;
 }
+// Javelin: any thrown weapon - javelins, throwing knives and axes (#221).
 enum class Weapon { Unknown, Melee, Bow, Crossbow, Other, Javelin };
 // Input gating and posed contact recognition must agree: real wrist-led
 // slashes exceed 35 rad/s. A stricter upstream limit continually cancels
@@ -195,7 +196,12 @@ public:
             drawing=nativeBowTrigger=false;skillPulse.Cancel();blockedTrigger=true;out.block=true;return out;
         }
 
-        if(in.weapon==Weapon::Javelin&&selection<0) {
+        // 2026-10-19: under hand bindings the right trigger always holds a slot.
+        // Nothing, Attack or Throw there leaves it to the hand's own throw;
+        // any other skill keeps the trigger (it was unreachable with javelins).
+        const bool handThrow=selection<0||(in.handBindings&&(in.selectedSkill<0||
+            in.selectedSkill==weaponskills::Attack||in.selectedSkill==weaponskills::Throw));
+        if(in.weapon==Weapon::Javelin&&handThrow) {
             out.javelinReady=true;
             if(triggerEdge) {
                 throwing=true;throwAt=in.time;throwStart=in.hand[0].p;

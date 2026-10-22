@@ -219,7 +219,7 @@ bool HasComponent(uintptr_t storage,uint32_t entity) {
 void Release(uintptr_t assets,uintptr_t definition,uint32_t entity,uintptr_t unit) {
     uint32_t type=~0u,missile=~0u;
     if(enabled.load()&&Read(unit,type)&&type==3&&Read(unit+4,missile)&&
-       (framevr::bowflight::BasicMissile(missile)||missile==31||bowvr::OwnsVisual(unit))) {
+       (framevr::bowflight::BasicMissile(missile)||framevr::bowflight::ThrownMissile(missile)||missile==31||bowvr::OwnsVisual(unit))) {
         const auto owner=reinterpret_cast<uintptr_t(*)(uintptr_t)>(d2rsig::Addr(OwnerRva))(unit);
         const auto registry=d2rsig::Addr(RegistryRva);
         if(EntityAlive(registry,entity)) {
@@ -229,7 +229,7 @@ void Release(uintptr_t assets,uintptr_t definition,uint32_t entity,uintptr_t uni
             // Ice Bolt's child has no release component, so absence alone
             // can bind that child and subtract its authored height twice.
             bool root=false;
-            if(!framevr::bowflight::BasicMissile(missile)&&missile!=31) {
+            if(!framevr::bowflight::BasicMissile(missile)&&!framevr::bowflight::ThrownMissile(missile)&&missile!=31) {
                 const auto transforms=reinterpret_cast<uintptr_t(*)(uintptr_t)>(d2rsig::Addr(TransformStorageRva))(registry);
                 root=VisualRoot(definition,transforms,entity,[](uintptr_t p,auto& value){return Read(p,value);});
             }

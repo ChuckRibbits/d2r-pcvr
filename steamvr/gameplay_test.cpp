@@ -123,6 +123,19 @@ int main() {
         s.engine.Select(2);s.Step(3);Check(s.out.meleeContact,"selected skill preserves javelin jabs");
         s.in.trigger=1;Check(s.Step().skill==2&&!s.out.javelinRelease,"selected skill retains its trigger binding");
     }
+    // Hand bindings always give the right trigger a slot (a javelin in the
+    // hand): Attack, Throw or nothing there throws.
+    for(const int bound:{weaponskills::Attack,weaponskills::Throw,-1,36}) {
+        Sim s;s.in.handBindings=true;s.in.weapon=Weapon::Javelin;s.engine.Select(0);
+        s.in.selectedSkill=bound;s.in.selectedAvailable=true;s.Step(3);
+        const bool hand=bound!=36;
+        Check(s.out.javelinReady==hand,"hand bindings: Attack, Throw or nothing arms the hand's throw, another skill keeps the trigger");
+        s.in.trigger=1;s.Step();
+        Check(hand?s.out.skill<0&&!s.out.attack:s.out.skill==0,"hand bindings: a throw never also presses the native trigger skill");
+        s.Move({.25f,1.55f,-.2f},10);s.Move({.25f,1.55f,-.75f},5);
+        s.in.trigger=0;
+        Check(s.Step().javelinRelease==hand,"hand bindings: deliberate throw releases only when the trigger is the hand's");
+    }
     for(int kind=0;kind<4;++kind) {
         Sim s;s.in.weapon=Weapon::Javelin;s.Step(3);s.in.trigger=1;s.Step();
         if(kind==0)s.Move({.25f,1.25f,-.45f},10); // weak reposition, not a throw
