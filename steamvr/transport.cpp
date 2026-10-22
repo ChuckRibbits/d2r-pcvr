@@ -1591,6 +1591,7 @@ void SettingsPointer(const settings::InputGate::Edges& edges,bool grip) {
         if(interaction::Fresh(bindings,gamestate::LocalPlayer(),GetTickCount64()))context.heroClass=bindings.skillClass;
         const auto weapon=gamestate::WeaponType();
         context.bow=weapon==D2RVR_TYPE_BOW;context.staff=weapon==D2RVR_TYPE_STAFF;
+        context.thrown=weapon==D2RVR_TYPE_JAVELIN||weapon==D2RVR_TYPE_THROWING;
         settingsModel.SetContext(context);
     }
     int helpTarget=settings::NoHelp;
@@ -2128,6 +2129,7 @@ void Input() {
     motionInput.skillContext=bindingContext^bindingLayout;
     motionInput.shieldEquipped=gamestate::LeftShield()&&::melee::ShieldReady();
     motionInput.leftThrow=leftThrowArmed;motionInput.leftTrigger=controls.lt/255.f;
+    motionInput.throwLift=gestureSettings[settings::ThrowLift];
     motionOutput=motion.Step(motionInput);motionAt=GetTickCount64();
     motionOutput.shieldContact=motionInput.active&&!motionOutput.block&&!motionInput.quickCast&&motionInput.trigger<.2f&&
         motionInput.shieldEquipped&&gestureSettings[settings::SkillGestures]>.5f&&quickFresh&&shieldSkill.available&&shieldSkill.motion&&shieldSkill.id==weaponskills::Smite;

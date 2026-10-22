@@ -162,6 +162,28 @@ int main() {
         s.in.leftTrigger=kind==0?.4f:0.f; // a partial release keeps holding
         Check(!s.Step().leftRelease&&!s.Step(3).leftRelease,"a partial release, unarming or the wheel never throw the left weapon");
     }
+    {
+        // Throw lift: degrees above the hand's path, heading kept, never past vertical.
+        const auto pitch=[](Vec d){return std::atan2(d.y,std::sqrt(d.x*d.x+d.z*d.z))*180/3.14159265f;};
+        for(const Vec d:{Vec{0,0,-1},Vec{.6f,0,.8f},math::Normalized(Vec{.3f,-.5f,-.8f})}) {
+            for(const float lift:{-10.f,10.f,30.f}) {
+                const Vec up=Lift(d,lift);
+                Check(std::fabs(pitch(up)-(pitch(d)+lift))<.01f&&std::fabs(Length(up)-1)<1e-5f,"lift adds its angle and keeps a unit direction");
+                Check(std::fabs(up.x*d.z-up.z*d.x)<1e-5f&&up.x*d.x+up.z*d.z>0,"keeping the heading");
+            }
+            Check(Lift(d,0).y==d.y&&Lift(d,NAN).y==d.y,"Off (or a bad value) follows the hand");
+        }
+        Check(pitch(Lift(Vec{0,0,-1},120))<89&&Lift(Vec{0,1,0},10).y==1,"never past straight up; straight up stays");
+        for(const bool left:{false,true}) {
+            Sim s;s.in.weapon=Weapon::Javelin;s.in.leftThrow=left;s.in.throwLift=15;s.Step(3);
+            (left?s.in.leftTrigger:s.in.trigger)=1;s.Step();
+            const Vec start=s.in.hand[left].p;
+            for(int i=1;i<=6;++i){s.in.hand[left].p=start+Vec{0,0,-.1f*i};s.Step();}
+            (left?s.in.leftTrigger:s.in.trigger)=0;s.Step();
+            const Vec d=left?s.out.leftDirection:s.out.rayDirection;
+            Check((left?s.out.leftRelease:s.out.javelinRelease)&&std::fabs(pitch(d)-15)<.01f&&d.z<0,"either hand's throw leaves 15 degrees above its level path");
+        }
+    }
     for(int kind=0;kind<4;++kind) {
         Sim s;s.in.weapon=Weapon::Javelin;s.Step(3);s.in.trigger=1;s.Step();
         if(kind==0)s.Move({.25f,1.25f,-.45f},10); // weak reposition, not a throw

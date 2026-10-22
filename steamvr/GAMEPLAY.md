@@ -1120,6 +1120,13 @@ color changes. Arrows have no gravity, so the line is the path. It
 stops with a dot where the flight would meet the launch floor, with the
 flight's own clearance, and otherwise fades out at 15 m: it is drawn over the
 scene and does not stop at walls or monsters, which only the flight tests.
+
+**Throw lift** (**VR Settings > Aim > Throw lift**, `[gameplay] throw_lift_deg`,
+10° by default): a thrown javelin, knife or axe leaves along the throwing
+hand's recent motion, which dips as the hand follows through. Every throw,
+from either hand and with any javelin skill or Double Throw, leaves this many
+degrees above that path, keeping its heading; -10° to 30° in 5° steps, Off at
+0°. Shown for the Amazon and Barbarian, or any class holding a thrown weapon.
 Multiple Shot, Guided Arrow, Strafe and crossbows show no line. The first line of each draw logs
 `Frame bow laser: shown (length N m)` (`, floor` added when it ends on the
 floor), at most every 2 seconds.
