@@ -34,6 +34,7 @@
 #include "swapchain_format.h"
 #include "input.h"
 #include "dropped_item_labels.h"
+#include "stick_gestures.h"
 #include "window_focus.h"
 #include "gameplay.h"
 #include "bow_laser.h"
@@ -476,7 +477,7 @@ XrPosef head{};
 math::Vec origin{};
 bool haveOrigin=false;
 GripStickButton leftMenuButton;
-lootlabels::Shortcut lootLabelShortcut;
+stickgestures::Gestures rightStickGestures;   // right stick up: run / walk; down: loot labels
 MenuTriggerGate menuTriggerGate;
 PressEdge inventoryButton,menuButton;
 float lastRecenter=0;
@@ -780,7 +781,7 @@ void ClearInput() {
     hapticPulses.Cancel();
     spellHaptics.Clear();
     lootlabels::display.Clear();
-    lootLabelShortcut.Suspend();
+    rightStickGestures.Reset();
     meleeImpactAt[0]=meleeImpactAt[1]=shieldImpactAt=parryMissAt=0;
     wristHeading.Reset();compassFrame=false;
     panelinput::WorldInput(false);
@@ -1796,23 +1797,18 @@ void Input() {
     handInput.occupied=interactionOutput.bottle>=0||interactionOutput.owner[0]==interaction::Owner::Holster||interactionOutput.owner[1]==interaction::Owner::Holster;
     const auto lootNow=GetTickCount64(),lootSession=gamestate::LocalPlayer();
     const bool lootWorld=motionHeadTracked&&!nativeUi&&!settingsOwned&&!settingsChord&&inWorld&&inWorld()&&lootSession;
-    const bool lootAllowed=lootWorld&&!settingsOwned&&!settingsChord&&motionInput.tracked[0]&&
-        !handInput.occupied&&handControls.Wheel()<0;
-    const bool lootHeld=lootLabelShortcut.Step(lootSession,inputEpoch,lootNow,lootAllowed,
-        controls.rt/255.f,motionInput.grip[0]);
+    // Right stick up toggles run / walk; down, held, shows the loot labels
+    // (Show items, Alt). Not while a wheel is open. A vertical push turns nothing.
+    const auto rightStick=rightStickGestures.Step(lootWorld&&handControls.Wheel()<0,controls.rx/32767.f,controls.ry/32767.f);
+    if(rightStick.owned)controls.rx=controls.ry=0;
+    const bool lootHeld=rightStick.showLoot;
     const bool wasLootHeld=lootlabels::display.ShowAll(lootNow);
     lootlabels::display.Refresh(lootSession,lootNow,lootWorld,lootHeld);
     if(lootHeld!=wasLootHeld) {
-        Say(lootHeld?"Frame loot labels: Show Items (Alt) held":"Frame loot labels: normal drop/hover behavior");
+        Say(lootHeld?"Frame loot labels: Show Items (Alt) held (right stick down)":"Frame loot labels: normal drop/hover behavior");
         if(lootHeld)MotionPulse(0,haptics::Category::Interaction,.45f,45000000);
     }
-    // The world shortcut owns the whole trigger squeeze, including if grip is
-    // released first. A consumed grip also needs its own physical release so
-    // it cannot reappear as a potion grab or shoulder swap. Native panel
-    // trigger/Shift actions and ordinary stick clicks retain their bindings.
-    lootLabelShortcut.Filter(controls,motionInput.grip[0],nativeUi);
     motionInput.trigger=controls.rt/255.f;
-    handInput.occupied|=lootLabelShortcut.Consumed(nativeUi)||lootLabelShortcut.GripConsumed(nativeUi);
     for(int h=0;h<2;++h){
         handInput.trigger[h]=h?controls.lt/255.f:controls.rt/255.f;handInput.grip[h]=motionInput.grip[h];
         handInput.click[h]=(controls.buttons&(h?menus::LeftStick:menus::RightStick))!=0;
@@ -1846,6 +1842,8 @@ void Input() {
     interactionInput.spell=motion.Selection()>=0;interactionInput.wheel=motionInput.palette;interactionInput.cancel=motionInput.cancel;
     interactionInput.quickCast=handOutput.slot>=0||handOutput.spells[0]>=0||handOutput.spells[1]>=0;
     interactionInput.wheelHand=handOutput.wheel;
+    interactionInput.runWalk=rightStick.toggleRun;
+    if(rightStick.toggleRun)Say("Frame right stick: up - run / walk toggle requested");
     interactionInput.reservedLeft=(controls.buttons&menus::LeftStick)!=0;interactionInput.trigger=handOutput.wheel==0?controls.lt/255.f:controls.rt/255.f;interactionInput.hover=motionInput.hover;
     const auto hudSettings=vrsettings::Read();
     interactionInput.navigationLocation=vitals::Location(int(hudSettings.values[settings::NavigationLocation]));

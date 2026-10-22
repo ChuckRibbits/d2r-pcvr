@@ -372,6 +372,7 @@ struct Input {
     double time=0;
     uint64_t session=0,epoch=0,at=0; // at shares the native snapshot's monotonic clock
     bool active=false,tracked[2]{},wheel=false,cancel=false,reservedLeft=false,spell=false,quickCast=false;
+    bool runWalk=false;   // right stick pushed up this step: toggle running / walking
     vitals::Location navigationLocation=vitals::Location::Wrist;
     vitals::Location vitalsLocation=vitals::Location::Wrist;
     float vitalsTilt=0;
@@ -592,6 +593,11 @@ public:
         const auto shoulder=shoulderSwap.Step(reach);out.block=out.block||shoulder.block;
         if(shoulder.swap&&request(Action::Equip,3-int(in.snapshot.activeSet))){
             pendingHand=dominant;out.feedback=1;out.feedbackHand=dominant;
+        }
+        // Right stick up: the wheel's RUN / WALK without opening it.
+        if(in.runWalk&&!wheel) {
+            if(fresh&&request(Action::RunWalk,0)){pendingHand=0;out.feedback=1;out.feedbackHand=0;}
+            else {out.feedback=3;out.feedbackHand=0;}
         }
         if(wheel) {
             out.wheel=true;out.utility=utility;out.map=map;out.hover=in.hover;out.block=true;

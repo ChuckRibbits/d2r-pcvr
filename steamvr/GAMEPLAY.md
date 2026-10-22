@@ -184,7 +184,7 @@ not generate melee velocity. The layout currently assumes a right-handed player.
 | Seated weapon selection | Utility wheel → **Weapon I** or **Weapon II** |
 | Stow/draw | Utility wheel → **Stow weapons** / **Draw weapons**; native equipped stats stay unchanged |
 | Health/mana | Check the back of your left wrist, or choose **Palm** in **VR Settings > HUD** and hold your left palm upward in front of you briefly. No button required; automatic alerts are off by default |
-| Show all nearby loot labels (Alt) | Hold **Right Grip + Right Trigger**, grip first, to hold the native Show Items action. Release either to restore normal drop/hover labels; listed in **VR Settings > Controls** |
+| Show all nearby loot labels (Alt) | Hold the **right stick down** to hold the native Show Items action; let go to restore normal drop/hover labels. Push it **up** to toggle running / walking. Listed in **VR Settings > Controls** |
 | Explored minimap | Hold Left Y ? **MAP** in the bottom tabs; point right laser + trigger. **SPELLS** returns to skills; releasing Left Y closes the menu |
 | Quest journal | Open the native tabbed game menu with Left X / Frame Left A, then select Journal. The duplicate wheel entry is removed |
 | Journal controls | Right laser + trigger uses native page controls/act tabs; Right B follows native back; Left X performs native X |
@@ -196,14 +196,16 @@ Dropped-item names use **VR Settings > HUD > Loot label size**: **45%** by
 default, adjustable from **20% to 150%** in five-percentage-point steps.
 Apply saves `[hud] labels_size` in `d2r_pcvr.ini` and updates it live; existing
 saved sizes are preserved. Text, dark backing bounds and click targets scale
-together; item-quality colors are preserved. **Right Grip + Right
-Trigger** holds the native **Show Items (Alt)** action, with a short vibration
-when the hold starts. All nearby loot labels stay shown while both buttons are
-held, using the game's native Alt range rather than a VR aiming or pickup radius.
-Release either button to restore normal labels for newly dropped or hovered items. It consumes
-the trigger squeeze without casting or shooting, including if you release grip first.
-Hold grip before squeezing the trigger; adding grip to an existing attack does
-not turn that attack into a loot-label hold. Analog hysteresis tolerates squeeze noise.
+together; item-quality colors are preserved. Holding the **right stick down**
+holds the native **Show Items (Alt)** action, with a short vibration when the
+hold starts. All nearby loot labels stay shown while the stick is held, using
+the game's native Alt range rather than a VR aiming or pickup radius. Let go to
+restore normal labels for newly dropped or hovered items. Pushing the right
+stick **up** toggles running / walking, once per push, like the wheel's
+RUN / WALK. Its sideways pushes keep turning: a push counts only when mostly
+vertical, and from then until the stick is back near the centre it turns
+nothing. Neither works while a wheel, menu or VR Settings is open; a stick
+still held when they close must return to the centre first.
 Release the combo before casting or starting a grip interaction again.
 Use it outside menus and wheels, with no potion or holster interaction active.
 Normal right-stick clicks still toggle the wheel; native menu hold-to-sort stays
