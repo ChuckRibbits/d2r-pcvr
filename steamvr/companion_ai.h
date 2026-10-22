@@ -27,6 +27,16 @@ inline constexpr uint64_t StuckSampleIntervalMs = 1000;  // Interval between dis
 inline constexpr float UnstuckForwardDistance = 2.5f;    // Distance ahead of player (sub-tiles, ~1m)
 inline constexpr float UnstuckFlankDistance = 2.2f;      // Lateral flank offset (sub-tiles, ~0.9m)
 
+// Phase 3: Survival, Self-Preservation & Potion Interaction Synergy
+inline constexpr float CriticalHealthRatio = 0.25f;       // Trigger tactical retreat below 25% life
+inline constexpr float RecoveryHealthRatio = 0.50f;       // Exit tactical retreat when healed to >= 50% life
+inline constexpr uint64_t DistressCueCooldownMs = 8000;   // Minimum interval between audible distress cues (8s)
+inline constexpr float ReceivingStanceDistance = 6.5f;    // ~2.6m in front of player (sub-tiles)
+inline constexpr float ReceivingStanceAngleDeg = 20.0f;   // +20 deg forward flank for clear throw trajectory
+inline constexpr float ReceivingStanceDeadband = 2.0f;    // Deadband to avoid fidgeting in receiving stance
+inline constexpr float RetreatStuckDistanceThreshold = 15.0f; // Distance threshold for stuck check in retreat
+inline constexpr uint64_t RetreatStuckTimeoutMs = 4000;   // Faster rescue timeout when trapped while critical (4s)
+
 // Native hireling class IDs (MonStats rows: roguehire, act2hire, act3hire, act5hire1, act5hire2)
 inline constexpr uint16_t HirelingRows[] = { 271, 338, 359, 560, 561 };
 inline constexpr size_t HirelingRowCount = sizeof(HirelingRows) / sizeof(HirelingRows[0]);
@@ -81,6 +91,96 @@ inline bool IsLeashExceeded(float distanceToPlayer, bool inCombat, int baseMaxDi
     return distanceToPlayer > leash;
 }
 
+// Phase 3: Survival, Self-Preservation & Potion Interaction Synergy
+inline bool IsCriticalHealth(float health, float maxHealth, float threshold = CriticalHealthRatio) {
+    return maxHealth > 0.0f && health > 0.0f && (health / maxHealth) < threshold;
+}
+
+inline bool IsHealthRecovered(float health, float maxHealth, float threshold = RecoveryHealthRatio) {
+    return maxHealth > 0.0f && (health / maxHealth) >= threshold;
+}
+
+// Computes receiving stance position in front of player for throwing potions
+inline Vec2 CalculateReceivingStancePosition(Vec2 playerPos, float forwardX, float forwardY,
+                                            float distance = ReceivingStanceDistance,
+                                            float angleDeg = ReceivingStanceAngleDeg,
+                                            bool rightFlank = true) {
+    const float len = std::hypot(forwardX, forwardY);
+    const float nx = (std::isfinite(len) && len >= 1e-4f) ? (forwardX / len) : 0.0f;
+    const float ny = (std::isfinite(len) && len >= 1e-4f) ? (forwardY / len) : -1.0f;
+    const float rx = -ny;
+    const float ry = nx;
+
+    const float rad = (rightFlank ? angleDeg : -angleDeg) * 0.0174532925f;
+    const float cosA = std::cos(rad);
+    const float sinA = std::sin(rad);
+    const float dirX = nx * cosA + rx * sinA;
+    const float dirY = ny * cosA + ry * sinA;
+
+    return {
+        playerPos.x + dirX * distance,
+        playerPos.y + dirY * distance
+    };
+}
+
+// Tactical retreat controller managing critical HP retreat, distress sound cues, and potion healing exit
+struct TacticalRetreatController {
+    bool inRetreat = false;
+    uint64_t retreatStartMs = 0;
+    uint64_t lastDistressCueMs = 0;
+    bool potionReceived = false;
+
+    // Evaluates health state and returns true if a distress sound cue should be played.
+    bool Update(float health, float maxHealth, uint64_t nowMs, bool potionHealed = false) {
+        if (potionHealed) {
+            potionReceived = true;
+        }
+
+        if (inRetreat) {
+            // Exit retreat if health recovered above 50% or potion was confirmed
+            if (potionReceived || IsHealthRecovered(health, maxHealth)) {
+                inRetreat = false;
+                retreatStartMs = 0;
+                potionReceived = false;
+                return false;
+            }
+
+            // Periodic distress reminder while still in critical danger
+            if (nowMs - lastDistressCueMs >= DistressCueCooldownMs) {
+                lastDistressCueMs = nowMs;
+                return true;
+            }
+            return false;
+        }
+
+        // Check entry into critical retreat (< 25% HP)
+        if (IsCriticalHealth(health, maxHealth)) {
+            inRetreat = true;
+            retreatStartMs = nowMs;
+            lastDistressCueMs = nowMs;
+            potionReceived = false;
+            return true; // Play distress cue immediately on entering retreat
+        }
+
+        return false;
+    }
+
+    void OnPotionConsumed() {
+        potionReceived = true;
+        inRetreat = false;
+        retreatStartMs = 0;
+    }
+
+    void Reset() {
+        inRetreat = false;
+        retreatStartMs = 0;
+        lastDistressCueMs = 0;
+        potionReceived = false;
+    }
+
+    bool IsInRetreat() const { return inRetreat; }
+};
+
 // Computes safe catch-up position on the player's front flank (visible in peripheral FOV)
 inline Vec2 CalculateUnstuckPosition(Vec2 playerPos, float forwardX, float forwardY,
                                     float fwdDist = UnstuckForwardDistance,
@@ -112,13 +212,16 @@ struct StuckWatchdog {
     // companionPos: current sub-tile position of companion
     // playerPos: current sub-tile position of player
     // nowMs: current GetTickCount64() timestamp
+    // inRetreat: whether companion is in critical health tactical retreat (< 25% HP)
     // Returns true ONCE when unstuck action should be executed.
-    bool Update(uint32_t animMode, Vec2 companionPos, Vec2 playerPos, uint64_t nowMs) {
+    bool Update(uint32_t animMode, Vec2 companionPos, Vec2 playerPos, uint64_t nowMs, bool inRetreat = false) {
         constexpr uint32_t MONMODE_WALK = 2;
         const float distToPlayer = std::hypot(companionPos.x - playerPos.x, companionPos.y - playerPos.y);
+        const float minDistance = inRetreat ? RetreatStuckDistanceThreshold : StuckMinDistanceThreshold;
+        const uint64_t timeoutMs = inRetreat ? RetreatStuckTimeoutMs : StuckTimeoutMs;
 
         // Only consider stuck if companion is in WALK mode and not already near player
-        if (animMode != MONMODE_WALK || distToPlayer < StuckMinDistanceThreshold) {
+        if (animMode != MONMODE_WALK || distToPlayer < minDistance) {
             stuckStartMs = 0;
             lastSampleMs = nowMs;
             lastSamplePos = companionPos;
@@ -148,7 +251,7 @@ struct StuckWatchdog {
             }
         }
 
-        if (stuckStartMs > 0 && (nowMs - stuckStartMs) >= StuckTimeoutMs) {
+        if (stuckStartMs > 0 && (nowMs - stuckStartMs) >= timeoutMs) {
             stuckStartMs = 0; // reset after trigger
             lastSampleMs = nowMs;
             lastSamplePos = companionPos;
@@ -305,7 +408,7 @@ struct TacticalFormationController {
     bool inTacticalMove = false;
 
     bool Evaluate(uint32_t animMode, Vec2 compPos, Vec2 playerPos, float forwardX, float forwardY,
-                  uint16_t classId, uint64_t nowMs, Vec2& outTarget) {
+                  uint16_t classId, uint64_t nowMs, Vec2& outTarget, bool inRetreat = false) {
         // Priority 1: Emergency personal space bubble (< 1.5m)
         if (CheckPersonalSpaceViolation(playerPos, compPos)) {
             outTarget = CalculatePersonalSpaceEvasion(playerPos, compPos, forwardX, forwardY);
@@ -324,13 +427,31 @@ struct TacticalFormationController {
             return true;
         }
 
-        // Priority 3: When companion is in combat mode, allow free combat
+        // Priority 3: Tactical retreat receiving stance (< 25% critical HP)
+        // Companion prioritizes falling back to player's forward arc and holding receiving stance for potions
+        if (inRetreat) {
+            const Vec2 receivingPos = CalculateReceivingStancePosition(playerPos, forwardX, forwardY);
+            const float distToStance = std::hypot(compPos.x - receivingPos.x, compPos.y - receivingPos.y);
+
+            if (distToStance > ReceivingStanceDeadband) {
+                outTarget = receivingPos;
+                lastTargetPos = outTarget;
+                lastMoveMs = nowMs;
+                inTacticalMove = true;
+                return true;
+            }
+            // Within deadband: hold stance stably, no unnecessary fidgeting
+            inTacticalMove = false;
+            return false;
+        }
+
+        // Priority 4: When companion is in combat mode, allow free combat
         if (IsCombatMode(animMode)) {
             inTacticalMove = false;
             return false;
         }
 
-        // Priority 4: Formation anchor repositioning
+        // Priority 5: Formation anchor repositioning
         if (nowMs - lastMoveMs >= TacticalMoveIntervalMs) {
             const Archetype arch = GetHirelingArchetype(classId);
             const Vec2 anchor = CalculateFormationAnchor(playerPos, forwardX, forwardY, arch);

@@ -172,6 +172,14 @@ bool HirelingVitals(uint32_t hint, float& health, float& maxHealth, uint32_t& cl
 }
 } // namespace melee
 
+namespace bowvr {
+int lastHeroSound = 0;
+bool PlayHeroSound(int sound) {
+    lastHeroSound = sound;
+    return true;
+}
+} // namespace bowvr
+
 int main() {
     using namespace framevr::companionai;
 
@@ -496,6 +504,131 @@ int main() {
         // 5. Throttling: subsequent non-emergency check before 500ms must not re-dispatch
         Vec2 throttledTarget{};
         assert(!controller.Evaluate(1, driftedPos, playerPos, 0.0f, -1.0f, MonStatsIndex::Desert, 4200, throttledTarget));
+    }
+
+    // =========================================================================
+    // 11. Phase 3: Critical Health & Recovery Evaluation Tests
+    // =========================================================================
+    {
+        using namespace framevr::companionai;
+
+        // Critical health triggers below 25% life
+        assert(IsCriticalHealth(24.0f, 100.0f));
+        assert(IsCriticalHealth(1.0f, 100.0f));
+        assert(!IsCriticalHealth(25.0f, 100.0f));
+        assert(!IsCriticalHealth(50.0f, 100.0f));
+        assert(!IsCriticalHealth(0.0f, 100.0f));  // Dead companion is not in tactical retreat
+        assert(!IsCriticalHealth(-5.0f, 100.0f));
+        assert(!IsCriticalHealth(50.0f, 0.0f));   // Invalid max life
+
+        // Recovery triggers at or above 50% life (hysteresis)
+        assert(IsHealthRecovered(50.0f, 100.0f));
+        assert(IsHealthRecovered(75.0f, 100.0f));
+        assert(IsHealthRecovered(100.0f, 100.0f));
+        assert(!IsHealthRecovered(49.9f, 100.0f));
+        assert(!IsHealthRecovered(25.0f, 100.0f));
+    }
+
+    // =========================================================================
+    // 12. Phase 3: Receiving Stance Math Tests
+    // =========================================================================
+    {
+        using namespace framevr::companionai;
+        const Vec2 playerPos{ 100.0f, 100.0f };
+
+        // Player facing -Y (0, -1)
+        const Vec2 receivingR = CalculateReceivingStancePosition(playerPos, 0.0f, -1.0f, ReceivingStanceDistance, ReceivingStanceAngleDeg, true);
+        const float distR = std::hypot(receivingR.x - playerPos.x, receivingR.y - playerPos.y);
+        assert(std::fabs(distR - ReceivingStanceDistance) < 1e-3f);
+        assert(receivingR.y < playerPos.y); // Ahead in front of player
+        assert(receivingR.x > playerPos.x); // Right flank (+20 deg)
+
+        const Vec2 receivingL = CalculateReceivingStancePosition(playerPos, 0.0f, -1.0f, ReceivingStanceDistance, ReceivingStanceAngleDeg, false);
+        const float distL = std::hypot(receivingL.x - playerPos.x, receivingL.y - playerPos.y);
+        assert(std::fabs(distL - ReceivingStanceDistance) < 1e-3f);
+        assert(receivingL.y < playerPos.y); // Ahead in front of player
+        assert(receivingL.x < playerPos.x); // Left flank (-20 deg)
+    }
+
+    // =========================================================================
+    // 13. Phase 3: Tactical Retreat Controller & Distress Cue State Machine Tests
+    // =========================================================================
+    {
+        using namespace framevr::companionai;
+        TacticalRetreatController controller;
+
+        // Healthy companion: no retreat, no distress cue
+        assert(!controller.Update(100.0f, 100.0f, 1000));
+        assert(!controller.IsInRetreat());
+
+        // Companion takes heavy damage (20% HP < 25%): enters retreat, fires distress cue
+        assert(controller.Update(20.0f, 100.0f, 2000));
+        assert(controller.IsInRetreat());
+
+        // Subsequent update while still critical (2 seconds later): no repeat cue (within 8s cooldown)
+        assert(!controller.Update(20.0f, 100.0f, 4000));
+        assert(controller.IsInRetreat());
+
+        // 8.5 seconds after initial cue, still critical: fires repeat distress reminder
+        assert(controller.Update(15.0f, 100.0f, 10500));
+        assert(controller.IsInRetreat());
+
+        // Health recovers to 55% (>= 50% recovery threshold): exits retreat!
+        assert(!controller.Update(55.0f, 100.0f, 12000));
+        assert(!controller.IsInRetreat());
+
+        // Drop to 10% life: enters retreat again
+        assert(controller.Update(10.0f, 100.0f, 15000));
+        assert(controller.IsInRetreat());
+
+        // Player throws potion: OnPotionConsumed immediately cancels retreat
+        controller.OnPotionConsumed();
+        assert(!controller.IsInRetreat());
+    }
+
+    // =========================================================================
+    // 14. Phase 3: Tactical Formation Controller Integration with Retreat
+    // =========================================================================
+    {
+        using namespace framevr::companionai;
+        TacticalFormationController controller;
+        const Vec2 playerPos{ 100.0f, 100.0f };
+        Vec2 target{};
+
+        // Companion in combat mode (4=Attack), but inRetreat=true:
+        // Must OVERRIDE combat freedom and command movement toward receiving stance!
+        const Vec2 combatPos{ 112.0f, 95.0f };
+        assert(controller.Evaluate(4, combatPos, playerPos, 0.0f, -1.0f, MonStatsIndex::Desert, 1000, target, true));
+        const float distToTarget = std::hypot(target.x - playerPos.x, target.y - playerPos.y);
+        assert(std::fabs(distToTarget - ReceivingStanceDistance) < 1e-3f);
+        assert(target.y < playerPos.y); // Ahead of player
+
+        // When companion reaches receiving stance (within ReceivingStanceDeadband):
+        // Controller holds stance steadily (no jitter) so player can throw potion easily
+        controller.Reset();
+        const Vec2 stancePos = CalculateReceivingStancePosition(playerPos, 0.0f, -1.0f);
+        const Vec2 closeToStance{ stancePos.x + 0.5f, stancePos.y + 0.5f };
+        assert(!controller.Evaluate(1, closeToStance, playerPos, 0.0f, -1.0f, MonStatsIndex::Desert, 2000, target, true));
+    }
+
+    // =========================================================================
+    // 15. Phase 3: Stuck Watchdog in Retreat
+    // =========================================================================
+    {
+        using namespace framevr::companionai;
+        StuckWatchdog watchdog;
+        const Vec2 playerPos{ 100.0f, 100.0f };
+        const Vec2 stuckPos{ 118.0f, 100.0f }; // 18 sub-tiles away (> 15 retreat threshold)
+
+        // Initial sample
+        assert(!watchdog.Update(2, stuckPos, playerPos, 1000, true));
+        // Samples every 1s with no displacement
+        assert(!watchdog.Update(2, stuckPos, playerPos, 2000, true));
+        assert(!watchdog.Update(2, stuckPos, playerPos, 3000, true));
+        assert(!watchdog.Update(2, stuckPos, playerPos, 4000, true));
+        // After 4.0s (RetreatStuckTimeoutMs), triggers urgent rescue!
+        assert(watchdog.Update(2, stuckPos, playerPos, 5100, true));
+        assert(watchdog.isStuck);
     }
 
     return 0;

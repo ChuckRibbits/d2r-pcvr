@@ -8,6 +8,7 @@
 #include "../steamvr/companion_ai.h"
 #include "../steamvr/callback_ticket.h"
 #include "../steamvr/logging.h"
+#include "bow.h"
 #include "companion_ai_signatures.h"
 #include "enemy_sight.h"
 #include "melee.h"
@@ -46,12 +47,15 @@ std::atomic<float> g_cachedForwardX{0.0f};
 std::atomic<float> g_cachedForwardY{-1.0f};
 std::atomic<bool> g_gameThreadPending{false};
 std::atomic<uint64_t> g_lastDispatchMs{0};
+std::atomic<int> g_distressSound{398};
+std::atomic<bool> g_potionReceived{false};
 
 std::mutex g_ticketMutex;
 framevr::CallbackTicket g_syncTicket;
 BankState g_banks[3]{}; // Classic, Lod, Rotw
 framevr::companionai::StuckWatchdog g_watchdog;
 framevr::companionai::TacticalFormationController g_formationController;
+framevr::companionai::TacticalRetreatController g_retreatController;
 
 template <class T>
 bool Read(uintptr_t p, T& out) {
@@ -70,6 +74,9 @@ bool ReadPosition(uintptr_t unit, float& x, float& y) {
 int EffectiveDetectRange() {
     if (!g_enabled.load()) return framevr::companionai::DefaultDetectRange;
     if (!mode || mode() != 0) return framevr::companionai::DefaultDetectRange;
+    if (g_retreatController.IsInRetreat()) {
+        return framevr::companionai::DefaultDetectRange;
+    }
     return framevr::companionai::ComputeCompanionDetectRange(enemysight::AppliedPercent());
 }
 
@@ -141,6 +148,13 @@ void __cdecl SyncBanksCallback(const PluginContext* ctx, void* token) noexcept {
     SyncBanks(ctx);
 }
 
+void __cdecl DistressSoundCallback(const PluginContext*, void* user) noexcept {
+    const int sound = int(reinterpret_cast<uintptr_t>(user));
+    if (sound > 0) {
+        bowvr::PlayHeroSound(sound);
+    }
+}
+
 void __cdecl CompanionGameThreadTick(const PluginContext*, void*) noexcept {
     g_gameThreadPending.store(false);
     uintptr_t game = 0, player = 0;
@@ -176,14 +190,38 @@ void __cdecl CompanionGameThreadTick(const PluginContext*, void*) noexcept {
     const framevr::companionai::Vec2 compPos{ cx, cy };
     const framevr::companionai::Vec2 plyrPos{ px, py };
 
-    // 3. Watchdog update (Emergency catch-up for severe geometry traps only, > 25 sub-tiles)
-    if (g_watchdog.Update(animMode, compPos, plyrPos, nowMs)) {
-        // Emergency catch-up: relocate to player's front-right flank (visible in peripheral view)
+    // 3. Tactical retreat state & distress cue
+    const bool wasInRetreat = g_retreatController.IsInRetreat();
+    const bool potionHealed = g_potionReceived.exchange(false);
+    const bool playDistressCue = g_retreatController.Update(health, maxHealth, nowMs, potionHealed);
+
+    if (playDistressCue) {
+        const int sound = g_distressSound.load();
+        if (sound > 0 && g_threads && g_threads->runOnUiThread) {
+            g_threads->runOnUiThread(g_ctx, &DistressSoundCallback, reinterpret_cast<void*>(uintptr_t(sound)));
+        }
+    }
+
+    if (g_retreatController.IsInRetreat() != wasInRetreat) {
+        char line[160];
+        std::snprintf(line, sizeof line,
+            "Frame companion AI: tactical retreat %s (class=%u life %.0f/%.0f = %.1f%%)",
+            g_retreatController.IsInRetreat() ? "ENTERED" : "RECOVERED",
+            classId, health, maxHealth, maxHealth > 0 ? (health * 100.0f / maxHealth) : 0.0f);
+        framevr::logging::Write(line);
+    }
+
+    const bool inRetreat = g_retreatController.IsInRetreat();
+
+    // 4. Watchdog update (Emergency catch-up for severe geometry traps only)
+    if (g_watchdog.Update(animMode, compPos, plyrPos, nowMs, inRetreat)) {
         const float fx = g_cachedForwardX.load();
         const float fy = g_cachedForwardY.load();
-        const auto frontFlankPos = framevr::companionai::CalculateUnstuckPosition(plyrPos, fx, fy);
-        int targetX = int(std::round(frontFlankPos.x));
-        int targetY = int(std::round(frontFlankPos.y));
+        const auto targetPos = inRetreat
+            ? framevr::companionai::CalculateReceivingStancePosition(plyrPos, fx, fy)
+            : framevr::companionai::CalculateUnstuckPosition(plyrPos, fx, fy);
+        int targetX = int(std::round(targetPos.x));
+        int targetY = int(std::round(targetPos.y));
 
         uintptr_t targetRoom = 0;
         if (roomPointFn) {
@@ -201,8 +239,8 @@ void __cdecl CompanionGameThreadTick(const PluginContext*, void*) noexcept {
             g_formationController.Reset();
             char line[160];
             std::snprintf(line, sizeof line,
-                "Frame companion AI: emergency catch-up triggered (dist=%.1f); companion relocated to front flank (%d, %d)",
-                std::hypot(compPos.x - plyrPos.x, compPos.y - plyrPos.y), targetX, targetY);
+                "Frame companion AI: emergency catch-up triggered (dist=%.1f inRetreat=%d); companion relocated to (%d, %d)",
+                std::hypot(compPos.x - plyrPos.x, compPos.y - plyrPos.y), inRetreat ? 1 : 0, targetX, targetY);
             framevr::logging::Write(line);
             return;
         }
@@ -311,6 +349,8 @@ void Shutdown() {
     g_lastAppliedRange.store(framevr::companionai::DefaultDetectRange);
     g_watchdog.Reset();
     g_formationController.Reset();
+    g_retreatController.Reset();
+    g_potionReceived.store(false);
     std::lock_guard lock(g_ticketMutex);
     g_syncTicket.Cancel();
 }
@@ -325,6 +365,20 @@ unsigned UnstuckCount() {
 
 unsigned TacticalMoveCount() {
     return g_tacticalMoveEvents.load();
+}
+
+void ConfigureDistressSound(int soundId) {
+    g_distressSound.store(soundId);
+}
+
+void OnPotionReceived() {
+    g_potionReceived.store(true);
+    g_retreatController.OnPotionConsumed();
+    framevr::logging::Write("Frame companion AI: potion received; companion exiting tactical retreat");
+}
+
+bool IsInTacticalRetreat() {
+    return g_retreatController.IsInRetreat();
 }
 
 } // namespace companionai

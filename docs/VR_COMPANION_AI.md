@@ -183,3 +183,31 @@ Phase 2 establishes spatial intelligence, player personal space boundaries, and 
 4. **Personal Space Bubble & Doorway Clearance:**
    - Implemented `CheckPersonalSpaceViolation` (3.75 sub-tiles / ~1.5m) and `IsDoorwayObstructed`.
    - Native hireling AI moves smoothly around the player without artificial hitching.
+
+---
+
+## 7. Phase 3 Implementation Summary: Survival, Tactical Retreat & Potion Synergy
+
+Phase 3 implements companion self-preservation instinct, audible audio alerts, and seamless coordination with physical VR potion throwing:
+
+1. **Critical Health Tactical Retreat (< 25% HP):**
+   - Implemented `TacticalRetreatController` (`CriticalHealthRatio = 0.25f`): when companion life drops below 25%, they cease suicidal offensive engagements and fall back toward the player.
+   - Hysteresis recovery (`RecoveryHealthRatio = 0.50f`): the companion remains in defensive retreat until life recovers to at least 50% HP or until a potion is confirmed received, preventing rapid oscillating state transitions.
+   - Aggro de-escalation: while in retreat, `EffectiveDetectRange()` clamps to default (25 sub-tiles) so the companion does not acquire new distant targets while heavily wounded.
+
+2. **Audible Distress Alerts:**
+   - When entering tactical retreat, the companion immediately triggers an audible sound cue via `bowvr::PlayHeroSound(g_distressSound.load())` dispatched to the UI thread, alerting the player without requiring HUD inspection.
+   - Repeats periodic reminders every 8.0 seconds (`DistressCueCooldownMs = 8000`) if the companion remains critically low in danger.
+   - Configurable via `[gameplay] companion_distress_sound` in `d2r_pcvr.ini` (default `398` `block_weapon_1`; `0` to mute).
+
+3. **Receiving Stance for Physical Potion Throwing:**
+   - Implemented `CalculateReceivingStancePosition`: positions the retreating companion ~2.6m ahead (6.5 sub-tiles) at a gentle +20° forward flank angle.
+   - Within the player's primary VR FOV, providing a clean, unobstructed throwing arc to pluck potions from the 3D belt and toss them.
+   - Evaluated by `TacticalFormationController` with a 2.0 sub-tile deadband (`ReceivingStanceDeadband`), holding stance stably without erratic sprinting or evasive zig-zagging while the player aims the potion throw.
+
+4. **Healing Acknowledgment & Potion Consumption Synergy:**
+   - Hooked `interactionstate::Apply` for `Action::FeedMerc`: when a thrown potion hits the companion's feet and native consumption is confirmed, `companionai::OnPotionReceived()` immediately signals recovery.
+   - The companion exits tactical retreat, plays the native healing overlay (`HealOverlay = 26`) and vanilla speech acknowledgement ("Thanks!"), and transitions smoothly back to combat stance.
+
+5. **Adaptive Rescue Watchdog:**
+   - When in retreat, `StuckWatchdog` adapts with a more urgent threshold (`RetreatStuckDistanceThreshold = 15.0f` sub-tiles, `RetreatStuckTimeoutMs = 4000ms`), rescuing the companion to the receiving stance in front of the player if trapped behind barriers while critically wounded.

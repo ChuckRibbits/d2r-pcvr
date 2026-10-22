@@ -11,5 +11,8 @@ void Shutdown();
 bool IsEnabled();
 unsigned UnstuckCount();
 unsigned TacticalMoveCount();
+void ConfigureDistressSound(int soundId);
+void OnPotionReceived();
+bool IsInTacticalRetreat();
 }
 

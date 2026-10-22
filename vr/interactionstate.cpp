@@ -13,6 +13,7 @@
 #include "melee.h"
 #include "bow.h"
 #include "companions.h"
+#include "companion_ai.h"
 #include "active_effects.h"
 namespace gamestate {uint32_t WeaponSet();uint64_t LocalPlayer();bool MenuOpen();}
 namespace gamecmd {bool ExecuteUiCommand(uint32_t);}
@@ -155,6 +156,7 @@ void Publish(Snapshot s) {
             // The game's own healing overlay on the merc, with its "thanks".
             if(threads&&threads->runOnGameThread&&merc.unitId)
                 threads->runOnGameThread(context,&PlayHeal,reinterpret_cast<void*>(uintptr_t(merc.unitId)));
+            companionai::OnPotionReceived();
         }
         else if(waiting.action==Action::FeedMerc&&result==Result::Refused)
             framevr::logging::Write("Frame potion toss: native mercenary belt use did not consume the thrown item");
