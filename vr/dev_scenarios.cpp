@@ -10,11 +10,8 @@
 #include <cstdio>
 #include <atomic>
 #include "interactionstate.h"
-#include "melee.h"
-#include "companion_ai.h"
 #include "../steamvr/dev_scenarios.h"
 #include "../steamvr/logging.h"
-#include "../steamvr/memory.h"
 namespace gamestate {uint64_t LocalPlayer();bool MenuOpen();}
 namespace framevr {void SetTurnsKeepOwn(int);int TurnsKeepOwn();}   // transport: [stereo] turns_keep_own
 
@@ -113,6 +110,19 @@ void __cdecl Commands(const PluginContext*,void* token) noexcept {
         Finish(r,Result::Refused,claim);return;
     }
     bool accepted=true;
+    if(r.index==framevr::dev::UnlockQuestsChoice) {
+        const auto send=[&](const char* command) {
+            if(!Current(claim))return false;
+            if(r.session!=gamestate::LocalPlayer()||!execute(command)) {
+                char line[160];std::snprintf(line,sizeof line,"Frame development: quest unlock dispatch refused at %s",command);
+                framevr::logging::Write(line);return false;
+            }
+            return true;
+        };
+        accepted=send("cheat quests")&&send("cheat waypoints");
+        Finish(r,accepted?Result::Dispatched:Result::Refused,claim);
+        return;
+    }
     if(const int level=framevr::dev::LevelFor(r.index)) {
         const int cls=interactionstate::Read().devClass;
         if(!framevr::dev::ValidClass(cls)){Finish(r,Result::Refused,claim);return;}
@@ -219,60 +229,6 @@ void __cdecl Gear(const PluginContext*,void* callbackToken) noexcept {
     }
     Finish(r,ok?Result::Applied:Result::KitRefused,claim);
 }
-void __cdecl MercenaryType(const PluginContext*, void* token) noexcept {
-    const auto claim = reinterpret_cast<uintptr_t>(token);
-    framevr::interaction::Request r;
-    if (!Claim(claim, r)) return;
-    if (!Valid(r)) { Finish(r, Result::Refused, claim); return; }
-
-    uintptr_t game = 0, player = 0;
-    if (!melee::LocalServer(game, player)) {
-        Finish(r, Result::Refused, claim);
-        return;
-    }
-
-    float health = 0.0f, maxHealth = 0.0f;
-    uint32_t classId = 0, unitId = 0;
-    if (!melee::HirelingVitals(0, health, maxHealth, classId, unitId) || !unitId) {
-        char line[180];
-        std::snprintf(line, sizeof line,
-            "Frame development: no active hireling to switch; hire one from Kashya (Act I), Greiz (Act II), Asheara (Act III), or Qual-Kehk (Act V)");
-        framevr::logging::Write(line);
-        Finish(r, Result::Refused, claim);
-        return;
-    }
-
-    uint32_t nextClassId = 271; // Default to Act 1 Rogue
-    if (classId == 271) {
-        nextClassId = 338; // Act 2 Desert Guard
-    } else if (classId == 338) {
-        nextClassId = 359; // Act 3 Iron Wolf
-    } else if (classId == 359) {
-        nextClassId = 560; // Act 5 Barbarian
-    } else if (classId == 560 || classId == 561) {
-        nextClassId = 271; // Act 1 Rogue
-    }
-
-    const auto hireling = melee::ServerUnit(game, 1, unitId);
-    if (!hireling) {
-        Finish(r, Result::Refused, claim);
-        return;
-    }
-
-    framevr::WriteMemory(reinterpret_cast<void*>(hireling + 0x4), &nextClassId, sizeof(nextClassId));
-    companionai::ResetArchetype();
-
-    char line[180];
-    std::snprintf(line, sizeof line,
-        "Frame development: hireling unit %u switched archetype %u -> %u (%s)",
-        unitId, classId, nextClassId,
-        nextClassId == 271 ? "Act I Rogue Scout" :
-        nextClassId == 338 ? "Act II Desert Spearman" :
-        nextClassId == 359 ? "Act III Iron Wolf" : "Act V Barbarian");
-    framevr::logging::Write(line);
-
-    Finish(r, Result::MercUpdated, claim);
-}
 }
 void Init(const D2RL::PluginContext* ctx) {
     context=ctx;enabled=Metadata(ctx);debugDraws=false;
@@ -290,9 +246,7 @@ bool DebugDraws(){return enabled&&debugDraws.load();}
 void Capture(framevr::interaction::Snapshot& s){s.developer=enabled;s.devDebugDraws=DebugDraws();s.devTurnsKeepOwn=enabled?framevr::TurnsKeepOwn():0;}
 void Request(const framevr::interaction::Request& r) {
     const bool valid=Valid(r);
-    const auto run=threads?(framevr::dev::IsKit(r.index)?threads->runOnGameThread:
-                            r.index==framevr::dev::MercTypeChoice?threads->runOnGameThread:
-                            threads->runOnUiThread):nullptr;
+    const auto run=threads?(framevr::dev::IsKit(r.index)?threads->runOnGameThread:threads->runOnUiThread):nullptr;
     uintptr_t claim;
     {
         std::lock_guard lock(mutex);if(scheduled||queued.action!=Action::None)return;
@@ -304,9 +258,7 @@ void Request(const framevr::interaction::Request& r) {
     if(!valid||!run){Finish(r,Result::Refused,claim);return;}
     // Scheduling is an external call too. Keep status/cancellation readable
     // even if a loader callback runs or pumps the UI before this returns.
-    const auto callback = framevr::dev::IsKit(r.index) ? Gear :
-                          (r.index == framevr::dev::MercTypeChoice ? MercenaryType : Commands);
-    if(run(context,callback,reinterpret_cast<void*>(claim))!=D2RL::Threads::Result::Success) {
+    if(run(context,framevr::dev::IsKit(r.index)?Gear:Commands,reinterpret_cast<void*>(claim))!=D2RL::Threads::Result::Success) {
         {std::lock_guard lock(mutex);if(claim==ticket)queued={};}
         Finish(r,Result::Refused,claim);
     }

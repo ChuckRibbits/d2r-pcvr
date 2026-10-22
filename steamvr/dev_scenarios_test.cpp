@@ -24,24 +24,6 @@ namespace framevr::logging {void Write(const char*){}}
 static int keepOwn=3;
 namespace framevr {void SetTurnsKeepOwn(int mode){keepOwn=mode;}int TurnsKeepOwn(){return keepOwn;}}
 
-static uint32_t testMercHeader[4] = { 1, 271, 42, 2 };
-static bool testMercPresent = true;
-namespace melee {
-bool LocalServer(uintptr_t& game, uintptr_t& player) { game = 1; player = 1; return true; }
-uintptr_t ServerUnit(uintptr_t game, int type, uint32_t id) {
-    return testMercPresent ? reinterpret_cast<uintptr_t>(testMercHeader) : 0;
-}
-bool HirelingVitals(uint32_t hint, float& health, float& maxHealth, uint32_t& classId, uint32_t& unitId) {
-    if (!testMercPresent) return false;
-    health = 100.0f; maxHealth = 100.0f;
-    classId = testMercHeader[1];
-    unitId = testMercHeader[2];
-    return true;
-}
-}
-namespace companionai {
-void ResetArchetype() {}
-}
 static Threads::Result Queue(Threads::Callback callback,void* data,bool game) {
     assert(devscenarios::Status().result==Result::Pending);
     if(failQueue)return Threads::Result::Unavailable;
@@ -250,33 +232,16 @@ int main(){
         std::vector<std::string_view> codes;for(const char* code:Kit(cls,ThrowingChoice))if(code)codes.push_back(code);
         assert((codes==std::vector<std::string_view>{"jav","pil","glv","tkf","tax"}));
     }
-    // Mercenary archetype switch cycling: Act I (271) -> Act II (338) -> Act III (359) -> Act V (560) -> Act I (271)
-    assert(ValidChoice(MercTypeChoice)&&PageFor(MercTypeChoice)==0&&SlotFor(MercTypeChoice)==5);
-    testMercHeader[1] = 271; testMercPresent = true;
-    devscenarios::Request(Make(MercTypeChoice));
-    assert(tasks.back().game);
+    // Unlock quests & waypoints button: sends cheat quests and cheat waypoints via console
+    assert(ValidChoice(UnlockQuestsChoice)&&PageFor(UnlockQuestsChoice)==0&&SlotFor(UnlockQuestsChoice)==5);
+    const auto beforeQuestCommands = commands.size();
+    devscenarios::Request(Make(UnlockQuestsChoice));
+    assert(!tasks.back().game); // Runs on UI thread like all console commands
     Run(tasks.size() - 1);
-    assert(devscenarios::Status().result == Result::MercUpdated);
-    assert(testMercHeader[1] == 338); // Switched to Act II
-
-    devscenarios::Request(Make(MercTypeChoice));
-    Run(tasks.size() - 1);
-    assert(devscenarios::Status().result == Result::MercUpdated && testMercHeader[1] == 359); // Switched to Act III
-
-    devscenarios::Request(Make(MercTypeChoice));
-    Run(tasks.size() - 1);
-    assert(devscenarios::Status().result == Result::MercUpdated && testMercHeader[1] == 560); // Switched to Act V
-
-    devscenarios::Request(Make(MercTypeChoice));
-    Run(tasks.size() - 1);
-    assert(devscenarios::Status().result == Result::MercUpdated && testMercHeader[1] == 271); // Switched back to Act I
-
-    // When no mercenary exists: Refused
-    testMercPresent = false;
-    devscenarios::Request(Make(MercTypeChoice));
-    Run(tasks.size() - 1);
-    assert(devscenarios::Status().result == Result::Refused);
-    testMercPresent = true;
+    assert(devscenarios::Status().result == Result::Dispatched);
+    assert(commands.size() == beforeQuestCommands + 2);
+    assert(commands[beforeQuestCommands] == "cheat quests");
+    assert(commands[beforeQuestCommands + 1] == "cheat waypoints");
 
     // Failed standalone kits clean up only the generated exchange token.
     failItems=true;
