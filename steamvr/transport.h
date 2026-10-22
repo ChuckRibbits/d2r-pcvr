@@ -52,8 +52,18 @@ bool CrossbowAiming();
 bool NativeAimOwnership(); // hand casting or wheel: preserve locomotion, suppress legacy aim modes
 bool NativeSkillCasting(); // any active trigger/quick cast; retain native locomotion input
 bool DirectedSpellActive(); // fresh native assignment, actually casting (wheel or quick shortcut)
+bool BowSkillActive();   // a bow or crossbow skill is being cast from a button (bow ready)
+int GroundSpellSkill();   // a ground skill (spellaim::GroundTarget) being cast that lands where it is aimed: its id, or -1
 int NativeCastSkill(); // current fresh native cast id, -1 when idle/blocked/stale
 bool GameplayRay(float origin[3],float direction[3]);
+// Aim rules: each hand's own aim in GameplayRay's frame - the controller's
+// pointer, or the bow's forward for the left hand holding a bow.
+bool HandAimRay(int hand,float origin[3],float direction[3]);
+int CastButtonHand();        // the hand whose button holds a native cast now, -1 none
+bool HandSpellHeld(int hand); // that hand's physical spell button is held
+int PointSpellSkill();       // the cast skill when the aim rules place it at a point, else -1
+int AimRulesSkill();         // the cast skill (any), -1 none; with its game "directed" flag
+bool AimRulesDirected();
 bool MeleeSample(uint32_t poseStamp,melee::Sample& sample,int hand=0);
 bool ShieldSample(uint32_t poseStamp,melee::Sample& sample);
 bool RequestShieldSkill(const melee::Sample& sample,uint32_t target,math::Vec gridTarget);
@@ -82,6 +92,7 @@ void ConfigureHeartbeat(float volume,float bpmMin,float bpmMax,float fadeSeconds
 // optional 16-bit PCM WAV (empty: the built-in bone snap) played once as the guard breaks.
 void ConfigureGuardBreakSound(float volume,const wchar_t* file);
 void SpellCast(int hand,uint64_t session); // one successful hand spell, not each projectile
+void SpellVisualCast(const bowflight::Shot&); // confirmed hand cast; cosmetic only
 bool TakeBowShot(bowflight::Shot& shot);
 bool TakeCrossbowShot(bowflight::Shot& shot);
 bool CrossbowHeld(const bowflight::Shot& shot);

@@ -93,6 +93,10 @@ class InstallationTests(unittest.TestCase):
                 for name in [code + '.pvr' for code in install.POTION_CODES] + ['cache.json']:
                     (Path(output) / name).write_bytes(b'local potion fixture')
                 return {'models': len(install.POTION_CODES)}
+            def spell_sprites(game, output, **kwargs):
+                for name in (install.SPELL_SPRITES, 'cache.json'):
+                    (Path(output) / name).write_bytes(b'local sprite fixture')
+                return {'textures': 11}
             arcane_name = 'D2R-PCVR.mpq/data/hd/env/vis/act2_arcane_day.json'
             arcane = {arcane_name: b'local visual fixture',
                       'reshade/reshade-shaders/Textures/PCVR_Arcane/stars.png': b'local star fixture'}
@@ -105,6 +109,7 @@ class InstallationTests(unittest.TestCase):
                     patch.object(install, 'COMPILER_HASH', hashlib.sha256(compiler.read_bytes()).hexdigest()), \
                     patch.object(install, 'prepare_icons', side_effect=icons), \
                     patch.object(install, 'prepare_potions', side_effect=potions), \
+                    patch.object(install, 'prepare_spell_sprites', side_effect=spell_sprites), \
                     patch.object(install.prepare_arcane_sky, 'prepare', return_value=arcane), \
                     patch.object(install.prepare_sewer_backdrop, 'prepare', return_value=sewers):
                 unapproved_hashes = ('0' * 64, '1' * 64)
@@ -142,6 +147,7 @@ class InstallationTests(unittest.TestCase):
                 self.assertEqual((icon_dir / 'fixture.png').read_bytes(), b'local generated fixture')
                 self.assertEqual((potion_dir / 'hp1.pvr').read_bytes(), b'local potion fixture')
                 self.assertTrue((potion_dir / 'rvl.pvr').is_file())
+                self.assertEqual((mod_plugins / 'd2r_vr_spell_sprites' / install.SPELL_SPRITES).read_bytes(), b'local sprite fixture')
                 for name, data in arcane.items():
                     self.assertEqual((mod / name).read_bytes(), data)
                 for name, data in sewers.items():
@@ -223,6 +229,7 @@ class InstallationTests(unittest.TestCase):
                 self.assertEqual((icon_dir / 'manifest.tsv').read_text(), 'old local cache')
                 self.assertEqual((potion_dir / 'hp1.pvr').read_bytes(), b'previous potion')
                 self.assertFalse((potion_dir / 'rvl.pvr').exists())
+                self.assertFalse((mod_plugins / 'd2r_vr_spell_sprites' / install.SPELL_SPRITES).exists())
                 self.assertFalse((mod_plugins / 'openxr_loader.dll').exists())
                 self.assertFalse((mod_plugins / 'd2rl-pcvr.dll').exists())
                 self.assertFalse((mod / 'reshade/ReShade64.dll').exists())
@@ -394,6 +401,7 @@ class RenameMigrationTests(unittest.TestCase):
                 patch.object(install, 'COMPILER_HASH', self.hashes['COMPILER_HASH']), \
                 patch.object(install, 'prepare_icons', side_effect=ValueError('fixture: no game archives')), \
                 patch.object(install, 'prepare_potions', side_effect=ValueError('fixture: no game archives')), \
+                patch.object(install, 'prepare_spell_sprites', side_effect=ValueError('fixture: no game archives')), \
                 patch.object(install.prepare_arcane_sky, 'prepare', side_effect=ValueError('fixture: no game archives')), \
                 patch.object(install.prepare_sewer_backdrop, 'prepare', side_effect=ValueError('fixture: no game archives')), \
                 patch.object(sys, 'argv', self.argv + list(extra)), contextlib.redirect_stdout(output):

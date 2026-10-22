@@ -9,4 +9,6 @@ void Install();
 void Report();
 bool Ready();
 uintptr_t CreateVisual(uintptr_t params);
+// Telemetry ("Frame missile flight:"): where the local hero's missiles end. The game thread.
+void FollowFlights();
 }

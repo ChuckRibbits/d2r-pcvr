@@ -13,6 +13,8 @@
 #ifdef D2RVR_NATIVE_OPENXR
 #include "memory.h"
 #include "shrine_placement.h"
+#include "overlay_view.h"
+#include <cstdio>
 #endif
 
 namespace billboards {
@@ -76,6 +78,64 @@ bool ShrineDefinition(uint64_t definition) {
             shrine_placement::Asset(path)};
     }
     return e.shrine;
+}
+// Paladin aura overlays (overlay_view.h). The game camera's direction is
+// written on the render thread each frame and read by PopcornFX workers.
+SRWLOCK forwardLock=SRWLOCK_INIT;
+portal::Vec gameForward{};ULONGLONG forwardAt=0;
+std::atomic<bool> overlayReported{false};std::atomic<ULONGLONG> overlayLogAt{0};
+std::atomic<int> overlayLogBudget{12};
+struct OverlayEntry {uint64_t definition=0;ULONGLONG at=0;bool overlay=false;char path[160]{};};
+const OverlayEntry& OverlayDefinition(uint64_t definition) {
+    thread_local OverlayEntry cache[32];
+    auto& e=cache[(definition>>6)%32];const auto now=GetTickCount64();
+    if(e.definition!=definition||now-e.at>1000) {
+        e.definition=definition;e.at=now;e.path[0]=0;
+        e.overlay=portal::DefinitionPath(ReadAt,definition,gameBase,e.path)&&overlay_view::Asset(e.path);
+    }
+    return e;
+}
+// Aura overlays take part of the game camera's vertical as view.direction,
+// for every view: an effect that spawns with the flat camera's view is
+// pushed sideways in VR too.
+void CorrectOverlayView(void* output,const void* context) {
+    framevr::hookmetrics::Scope measured(framevr::hookmetrics::PortalView);
+    if(!portalReady.load()||!wanted||!wanted())return;
+    portal::Vec forward,value;ULONGLONG at;
+    AcquireSRWLockShared(&forwardLock);forward=gameForward;at=forwardAt;ReleaseSRWLockShared(&forwardLock);
+    if(!at||GetTickCount64()-at>250||!overlay_view::Upright(forward,value))return;
+    struct Stream {uint64_t data;uint32_t count,stride;};
+    Stream out{};portal::Context c{};
+    if(!Read(&out,output,sizeof out)||!Read(&c,context,sizeof c)||
+       !out.data||!out.count||out.count>1024||out.stride!=12)return;
+    int32_t lastId=-1;const OverlayEntry* entry=nullptr;
+    for(uint32_t i=0;i<out.count;++i) {
+        int32_t id=c.instance;
+        if(id<0&&(i>=c.count||!ReadAt(&id,c.indices+4ull*i,4)))continue;
+        if(id<0)continue;
+        if(id!=lastId) {
+            lastId=id;entry=nullptr;portal::Instance instance{};
+            if(portal::Resolve(ReadAt,c,i,gameBase,instance))entry=&OverlayDefinition(instance.definition);
+        }
+        if(!entry||!entry->overlay)continue;
+        // Frame aura: the direction the effect asked for and what it got, at
+        // most every 5 s and 12 times per session.
+        portal::Vec native{};bool log=false;
+        if(logger&&overlayLogBudget.load(std::memory_order_relaxed)>0) {
+            const auto now=GetTickCount64();auto last=overlayLogAt.load();
+            log=now-last>=5000&&overlayLogAt.compare_exchange_strong(last,now)&&
+                ReadAt(&native,out.data+12ull*i,sizeof native)&&overlayLogBudget.fetch_sub(1)>0;
+        }
+        if(!framevr::WriteMemory(reinterpret_cast<void*>(out.data+12ull*i),&value,sizeof value))continue;
+        if(log) {
+            char line[360];
+            std::snprintf(line,sizeof line,"Frame aura: overlay view direction native=(%.3f,%.3f,%.3f) -> (0,%.3f,0), no sideways push; asset=%s",
+                native.x,native.y,native.z,value.y,entry->path);
+            logger(line);
+        }
+        if(!overlayReported.exchange(true)&&logger)
+            logger("VR overlays: Paladin aura overlays keep a small lift without the sideways push toward the camera");
+    }
 }
 #endif
 #if defined(D2RVR_DEVELOPER) && defined(D2RVR_NATIVE_OPENXR)
@@ -265,6 +325,9 @@ void ViewDirection(void* out,const void* in,const void* context) {
     FinishShrineTrace(trace);
 #endif
     CorrectScriptView(out,in,context,true);
+#ifdef D2RVR_NATIVE_OPENXR
+    CorrectOverlayView(out,context);
+#endif
 }
 void ViewPosition(void* out,const void* in,const void* context) {
 #if defined(D2RVR_DEVELOPER) && defined(D2RVR_NATIVE_OPENXR)
@@ -297,6 +360,15 @@ void SetCenter(const float position[3]) {
     ReleaseSRWLockExclusive(&centerLock);
 }
 void ConfigurePortalCenters(bool enabled) {centerEnabled.store(enabled);}
+void SetGameForward(const float forward[3]) {
+#ifdef D2RVR_NATIVE_OPENXR
+    AcquireSRWLockExclusive(&forwardLock);
+    gameForward={forward[0],forward[1],forward[2]};forwardAt=GetTickCount64();
+    ReleaseSRWLockExclusive(&forwardLock);
+#else
+    (void)forward;
+#endif
+}
 void Install(void (*log)(const char*),bool (*active)()) {
     if(installed&&portalReady.load()&&originalLocalPosition)return;logger=log;wanted=active;
     using namespace signatures;

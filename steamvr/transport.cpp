@@ -36,6 +36,7 @@
 #include "dropped_item_labels.h"
 #include "window_focus.h"
 #include "gameplay.h"
+#include "bow_laser.h"
 #include "hand_controls.h"
 #include "interaction_ui.h"
 #include "sewer_prompt_art.h"
@@ -51,6 +52,7 @@
 #include "xinput_rumble.h"
 #include "interaction_icons.h"
 #include "potion_models.h"
+#include "elemental_hands_renderer.h"
 #include "vr_settings_ui.h"
 #include "../vr/settings_menu.h"
 #include "journal.h"
@@ -75,6 +77,8 @@
 #include "d2rcam.h"
 #include "profile.h"
 #include "../vr/skeletons.h"
+#include "spell_aim.h"
+#include "aim_rules.h"
 
 namespace gamestate {uint32_t WeaponType();uint32_t HandsKey();uint32_t WeaponSet();uint32_t WeaponClass();uint32_t TwoHanded();uint64_t LocalPlayer();uint32_t MenuEpoch();}
 namespace gamecmd {void RequestPotion(int slot);void CancelPotion();}
@@ -169,6 +173,10 @@ XrSwapchain strainChain=XR_NULL_HANDLE;
 uint64_t strainPaintKey=~0ull,strainPaintSession=0;
 ULONGLONG strainPaintAt=0;
 bool strainAtlasPending=false,strainImageReady=false,strainSlotReported=false;
+// Bow path laser: its own small atlas, repainted only when its color changes.
+XrSwapchain bowLaserChain=XR_NULL_HANDLE;
+float bowLaserHue=-1;
+bool bowLaserAtlasPending=false,bowLaserImageReady=false;
 // Low-life heartbeat: its own waveOut stream, since PlaySound plays one sound
 // per process and would cut off the riposte. Frame thread only. Each buffer is
 // one beat period; the next is queued just before the current one ends, so
@@ -548,6 +556,9 @@ UiBlit uiBlit;
 UiBlit mapBlit; // Own descriptors: native menu and map copies may share a frame.
 potions::Models potionModels;
 potions::Scene potionScene;
+elements::Renderer elementalRenderer;
+elements::State elementalState;
+elements::Scene elementalScene;
 panels::MouseGate panelMouse;
 menus::ReleaseGate menuControls;
 menus::Navigation menuNavigation;
@@ -766,6 +777,7 @@ void ClearInput() {
     ++meleeEpoch;motion.Cancel();motionOutput={};motionAt=0;gamecmd::CancelPotion();
     interactions.Reset();interactionOutput={};interactionstate::Cancel();skel::SetInteractionHidden(0);
     potionScene={};
+    elementalState.Reset();elementalScene={};
     journalPlacement.LoseTracking();
     meleePoses.Clear();offhandPoses.Clear();CancelShieldCast();
     bowNeedsWorld=bowHasShot=false;
@@ -1161,6 +1173,7 @@ bool Initialize(reshade::api::command_queue* rq,reshade::api::swapchain* swap) {
     if(!SetupGameplay(eyeFormat))Say("Frame gameplay: palette atlas unavailable; motion controls remain disabled");
     potionModels.Initialize(device.Get(),queue.Get(),eyeFormat,width,height,&Say);
     turnFormat=eyeFormat;
+    elementalRenderer.Initialize(device.Get(),queue.Get(),eyeFormat,width,height,&Say);
     if(!tracking.Open(D2RVR_SHARED_NAME)||!pad.Open(BW_PAD_MIRROR_NAME)||!actions.Open(D2RVR_ACTIONS_NAME)) return false;
     tracking.data->version=D2RVR_SHARED_VERSION;pad.data->version=BW_PAD_MIRROR_VERSION;actions.data->version=D2RVR_ACTIONS_VERSION;
     gameSwapchain=swap;
@@ -1551,6 +1564,14 @@ void SettingsPointer(const settings::InputGate::Edges& edges,bool grip) {
     if(!settingsModel.open)return;
     const bool monoAudio=MonoAudioOn(GetTickCount64());
     settingsModel.Observe(vrsettings::Read());settingsHover={};pointerVisible=pointerHit=false;
+    {   // the character, for rows that only apply to some classes or weapons
+        settings::Context context;
+        const auto bindings=interactionstate::Read();
+        if(interaction::Fresh(bindings,gamestate::LocalPlayer(),GetTickCount64()))context.heroClass=bindings.skillClass;
+        const auto weapon=gamestate::WeaponType();
+        context.bow=weapon==D2RVR_TYPE_BOW;context.staff=weapon==D2RVR_TYPE_STAFF;
+        settingsModel.SetContext(context);
+    }
     int helpTarget=settings::NoHelp;
     const auto previousPage=settingsModel.page;
     const bool previousMenu=settingsModel.controllerMenu;
@@ -1562,8 +1583,8 @@ void SettingsPointer(const settings::InputGate::Edges& edges,bool grip) {
         pointerHit=math::IntersectPanel(ray,direction,V(settingsPose.position),Q(settingsPose.orientation),settingsWidth,settingsHeight,hit);
         beamLength=pointerHit?hit.distance:1.5f;const auto mid=ray+direction*(beamLength*.5f);
         beamPose=XrPose({mid,math::BeamOrientation(direction,V(head.position)-mid)});pointerVisible=true;
-        if(pointerHit){settingsHover=settings::HitTest(settingsModel.page,hit.u,hit.v,settingsModel.controllerMenu);dotPose=settingsPose;
-            helpTarget=settings::HelpAt(settingsModel.page,hit.u,hit.v,settingsModel.controllerMenu,&settingsModel.Get(),monoAudio);
+        if(pointerHit){const auto rows=settingsModel.Rows();settingsHover=settings::HitTest(settingsModel.page,hit.u,hit.v,settingsModel.controllerMenu,&rows);dotPose=settingsPose;
+            helpTarget=settings::HelpAt(settingsModel.page,hit.u,hit.v,settingsModel.controllerMenu,&settingsModel.Get(),monoAudio,&settingsModel.context);
             const auto p=hit.point+math::Rotate(Q(settingsPose.orientation),{0,0,.004f});dotPose.position={p.x,p.y,p.z};}
     }
     const bool grabbing=GrabPanel(settingsPose,settingsBase,settingsOffset,grip&&pointerVisible,pointerHit,Float(trigger,0)>.2f,aim.pose);
@@ -1875,6 +1896,10 @@ void Input() {
             bloodPaintRequest=0;
         }
     }
+    // Bow path laser color (VR Settings > Combat > Bow path laser); Off keeps the last.
+    if(const float hue=hudSettings.values[settings::BowLaser];hue>=0&&hue!=bowLaserHue&&!bowLaserAtlasPending&&atlasUploads.size()<3) {
+        if(UploadAtlas(bowLaserChain,atlasFormat,bowlaser::AtlasWidth,bowlaser::AtlasHeight,bowlaser::Paint(hue),true,&bowLaserAtlasPending))bowLaserHue=hue;
+    }
     // Guard strain light (Unleashed shield): blocks strain the guard, light
     // creeps in from the rim; it drains with the shield lowered, or raised with
     // no hit on it for guard_strain_recover_ms.
@@ -2048,6 +2073,15 @@ void Input() {
     motionOutput.shieldContact=motionInput.active&&!motionOutput.block&&!motionInput.quickCast&&motionInput.trigger<.2f&&
         motionInput.shieldEquipped&&gestureSettings[settings::SkillGestures]>.5f&&quickFresh&&shieldSkill.available&&shieldSkill.motion&&shieldSkill.id==weaponskills::Smite;
     if(motionOutput.skill>=0&&(!quickFresh||!quickSnapshot.skills[motionOutput.skill].available))motionOutput.skill=-1;
+    // Bow skills leave the bow: the arrow is in the left hand's model, so the
+    // target, the lock and the shot follow the bow whichever button casts. A
+    // drawn string (or the shot just loosed) keeps its own line. Only with VR
+    // Settings > Aim > Bow skills go to the aimed monster: Off, a bow skill
+    // aims along its button's hand, as before the aim rules (#159 review).
+    if(settings::LockBowSkills(gestureSettings[settings::SpellLock])&&motionInput.weapon==gameplay::Weapon::Bow&&motionOutput.skill>=0&&motionInput.tracked[1]&&
+       weaponskills::Bow(quickSnapshot.skills[motionOutput.skill].id)&&gameplay::Length(motionOutput.rayOrigin-motionInput.hand[1].p)>.05f) {
+        motionOutput.rayOrigin=motionInput.hand[1].p;motionOutput.rayDirection=gameplay::BowForward(motionInput.hand[1]);motionOutput.rayValid=true;
+    }
     {
         crossbow::Pose pose;
         const bool ready=motionControls.load()&&motionInput.weapon==gameplay::Weapon::Crossbow&&bowvr::MotionReady()&&
@@ -2126,6 +2160,19 @@ void Input() {
     const uint32_t hidden=interactionOutput.stowed?3u:journalMode?2u:interactionOutput.bottleHand>=0?1u<<interactionOutput.bottleHand:0;
     skel::SetInteractionHidden(hidden);
     potionScene=potions::MakeScene(interactionInput,interactionOutput);
+    elements::Input elementalInput;
+    elementalInput.context={interactionInput.session,(meleeEpoch<<32)|bowWorldEpoch,motionInput.skillContext,motionInput.equipment};
+    elementalInput.at=interactionInput.at;
+    elementalInput.enabled=hudSettings.values[settings::ElementalHands]>.5f;
+    elementalInput.active=motionInput.active&&!interactionOutput.wheel&&!interactionOutput.stowed&&!journalMode;
+    elementalInput.head=interactionInput.head;
+    for(int h=0;h<2;++h) {
+        elementalInput.hands[h]=interactionInput.hand[h];elementalInput.tracked[h]=interactionInput.tracked[h];
+        elementalInput.occupied[h]=interactionOutput.bottleHand==h||interactionOutput.owner[h]!=interaction::Owner::Combat;
+        elementalInput.casting[h]=handOutput.spells[h]>=0?handOutput.spells[h]:handOutput.slot>=0&&handOutput.hand==h?handOutput.slot:-1;
+        elementalInput.activation[h]=handOutput.activation[h];
+    }
+    elementalScene=elementalState.Step(elementalInput,interactionInput.snapshot);
     if(interactionInput.active) {
         const bool snapshotFresh=interaction::Fresh(interactionInput.snapshot,interactionInput.session,interactionInput.at);
         if(snapshotFresh&&(interactionPrefetchSession!=interactionInput.session||interactionPrefetchRevision!=interactionInput.snapshot.revision)) {
@@ -2670,6 +2717,11 @@ bool TurnEye(int i) {
     if(turned&&interactionInput.active&&potionModels.Ready())
         potionModels.Render(e.commands.Get(),image,unsigned(i),{V(now.pose.position),Q(now.pose.orientation)},
             {now.fov.angleLeft,now.fov.angleRight,now.fov.angleDown,now.fov.angleUp},potionScene);
+    // The elemental hands likewise: Copy draws them after the image is kept.
+    if(turned&&!panelMode&&!spatialMode&&!settingsModel.open&&interactionInput.active&&
+       elements::Current(elementalScene,gamestate::LocalPlayer(),GetTickCount64()))
+        elementalRenderer.Render(e.commands.Get(),image,unsigned(i),{V(now.pose.position),Q(now.pose.orientation)},
+            {now.fov.angleLeft,now.fov.angleRight,now.fov.angleDown,now.fov.angleUp},elementalScene);
     if(!Hr(e.commands->Close(),"close turn list")||!turned){failed=true;return false;}
     ID3D12CommandList* lists[]={e.commands.Get()};queue->ExecuteCommandLists(1,lists);
     if(!Hr(queue->Signal(fence.Get(),++fenceValue),"signal turn fence")){failed=true;return false;}
@@ -2738,6 +2790,12 @@ bool Copy(ID3D12Resource* src,Eye& e,reshade::api::command_queue* rq) {
         const auto& v=views[eye];
         potionModels.Render(e.commands.Get(),dest,eye,{V(v.pose.position),Q(v.pose.orientation)},
             {v.fov.angleLeft,v.fov.angleRight,v.fov.angleDown,v.fov.angleUp},potionScene);
+    }
+    if(!panelMode&&!spatialMode&&!settingsModel.open&&interactionInput.active&&
+       elements::Current(elementalScene,gamestate::LocalPlayer(),GetTickCount64())) {
+        const auto& v=views[eye];
+        elementalRenderer.Render(e.commands.Get(),dest,eye,{V(v.pose.position),Q(v.pose.orientation)},
+            {v.fov.angleLeft,v.fov.angleRight,v.fov.angleDown,v.fov.angleUp},elementalScene);
     }
     if(gpu){
         e.commands->EndQuery(gpuProfile.heap.Get(),D3D12_QUERY_TYPE_TIMESTAMP,eye*5+4);
@@ -3114,6 +3172,10 @@ void EndPair() {
         XrSwapchainImageReleaseInfo release{XR_TYPE_SWAPCHAIN_IMAGE_RELEASE_INFO};
         strainImageReady=Check(pReleaseSwapchainImage(strainChain,&release),"release guard strain light");strainAtlasPending=false;
     }
+    if(bowLaserAtlasPending) {
+        XrSwapchainImageReleaseInfo release{XR_TYPE_SWAPCHAIN_IMAGE_RELEASE_INFO};
+        bowLaserImageReady=Check(pReleaseSwapchainImage(bowLaserChain,&release),"release bow laser");bowLaserAtlasPending=false;
+    }
     // Tabbed, trade and waypoint menus use the same black background in both eyes.
     // Submit just their shared opaque quad: no different cached world per eye.
     const bool blackMenu=opaqueMenuMode&&workspacePlaced&&uiEye.copied&&uiCrop[2]>0&&!settingsModel.open&&!bodyCalibration.Active();
@@ -3123,6 +3185,7 @@ void EndPair() {
     const uint32_t contentLimit=padQuads&&capacity>1?capacity-1:capacity;
     XrCompositionLayerQuad palette{XR_TYPE_COMPOSITION_LAYER_QUAD},bottle{XR_TYPE_COMPOSITION_LAYER_QUAD},chosen{XR_TYPE_COMPOSITION_LAYER_QUAD};
     std::array<XrCompositionLayerQuad,2> arrow{{{XR_TYPE_COMPOSITION_LAYER_QUAD},{XR_TYPE_COMPOSITION_LAYER_QUAD}}};
+    XrCompositionLayerQuad bowLaser{XR_TYPE_COMPOSITION_LAYER_QUAD},bowLaserEnd{XR_TYPE_COMPOSITION_LAYER_QUAD};
     XrCompositionLayerQuad nock{XR_TYPE_COMPOSITION_LAYER_QUAD},bowHint{XR_TYPE_COMPOSITION_LAYER_QUAD},activeSkill{XR_TYPE_COMPOSITION_LAYER_QUAD},leftActiveSkill{XR_TYPE_COMPOSITION_LAYER_QUAD};
     const bool gameplayVisible=layer&&!panelMode&&motionControls.load()&&motionInput.active&&gameplayChain&&motionOutput.rayValid;
     auto motionQuad=[&](XrCompositionLayerQuad& q,XrPosef pose,float w,float h,XrRect2Di rect,XrSwapchain chain) {
@@ -3272,6 +3335,34 @@ void EndPair() {
         motionQuad(bowHint,XrPose({bow.p+math::Vec{0,-.25f,0},Q(head.orientation)}),.24f,.045f,
             {{576,768+hint*85},{448,85}},gameplayChain);
     }
+    // Bow path laser: the release's own tail and direction, in room space like
+    // the arrow guide; resolveBow only yaws and scales it, so it stays straight.
+    // Added after the bow's own quads, so it can never displace them.
+    bool bowLaserShown=false,bowLaserFloor=false;float bowLaserLength=0;
+    if(gameplayVisible&&!settingsModel.open&&!interactionOutput.wheel&&bowLaserImageReady&&motionOutput.bowPhysical&&
+       settings::LaserOn(vrsettings::Read().values)&&
+       bowlaser::Shown(motionOutput.bowCharged,motionOutput.rayDirection,motionOutput.bowForward)) {
+        const auto now=GetTickCount64();
+        const bool floorKnown=stageWorld.valid&&stageWorld.upm>0&&now>=stageWorld.at&&now-stageWorld.at<=250;
+        const auto path=bowlaser::Trace(motionInput.hand[0].p,motionOutput.rayDirection,floorKnown,
+            floorKnown?stageWorld.origin.y-stageWorld.eyeHeight/stageWorld.upm:0);
+        if(path.length>.05f) {
+            const auto mid=path.start+motionOutput.rayDirection*(path.length*.5f);
+            const auto orient=math::BeamOrientation(motionOutput.rayDirection,V(head.position)-mid);
+            const auto before=count;
+            using namespace bowlaser;
+            motionQuad(bowLaser,XrPose({mid,orient}),.004f,path.length,
+                path.floor?XrRect2Di{{0,SteadyY},{AtlasWidth,SteadyHeight}}:XrRect2Di{{0,FadeY},{AtlasWidth,FadeHeight}},bowLaserChain);
+            if(path.floor)motionQuad(bowLaserEnd,XrPose({path.end,Q(head.orientation)}),.05f,.05f,{{0,DotY},{DotSize,DotSize}},bowLaserChain);
+            bowLaserShown=count>before;bowLaserLength=path.length;bowLaserFloor=path.floor;
+        }
+    }
+    static bool bowLaserWasShown=false;static ULONGLONG bowLaserReportAt=0;
+    if(bowLaserShown&&!bowLaserWasShown&&GetTickCount64()>=bowLaserReportAt) {
+        char message[96];std::snprintf(message,sizeof message,"Frame bow laser: shown (length %.1f m%s)",bowLaserLength,bowLaserFloor?", floor":"");
+        Say(message);bowLaserReportAt=GetTickCount64()+2000;
+    }
+    bowLaserWasShown=bowLaserShown;
     XrCompositionLayerQuad book{XR_TYPE_COMPOSITION_LAYER_QUAD};
     if(layer&&!settingsModel.open&&!bodyCalibration.Active()&&spatialMode&&(journalMode?journalPlacement.Placed():workspacePlaced)&&uiEye.copied&&uiCrop[2]>0) {
         const auto size=UiSurfaceSize();
@@ -3489,6 +3580,26 @@ bool DirectedSpellActive() {
     return skill.known&&skill.available&&skill.id>=0&&(skill.directed||
         (motionOutput.bowReady&&weaponskills::Bow(skill.id)&&skill.id!=weaponskills::Strafe));
 }
+bool BowSkillActive() {
+    std::lock_guard lock(mutex);
+    const int slot=motionOutput.skill;
+    const auto now=GetTickCount64();
+    if(!motionControls.load()||!motionOutput.bowReady||!gameplay::CastingSkill(motionInput,motionOutput,now-motionAt)||
+       !interaction::Fresh(interactionInput.snapshot,gamestate::LocalPlayer(),now))return false;
+    const auto& skill=interactionInput.snapshot.skills[slot];
+    return skill.known&&skill.available&&weaponskills::Bow(skill.id);
+}
+int GroundSpellSkill() {
+    // Every ground skill lands where it is aimed, Fire Blast like the rest.
+    std::lock_guard lock(mutex);
+    const int slot=motionOutput.skill;
+    const auto now=GetTickCount64();
+    if(!motionControls.load()||!gameplay::CastingSkill(motionInput,motionOutput,now-motionAt)||
+       !interaction::Fresh(interactionInput.snapshot,gamestate::LocalPlayer(),now))return -1;
+    const auto& skill=interactionInput.snapshot.skills[slot];
+    if(!skill.known||!skill.available)return -1;
+    return spellaim::GroundTarget(skill.id)?skill.id:-1;
+}
 bool GameplayRay(float outOrigin[3],float outDirection[3]) {
     std::lock_guard lock(mutex);
     if(!motionControls.load()||!motionOutput.rayValid||!motionInput.active||GetTickCount64()-motionAt>150)return false;
@@ -3498,6 +3609,58 @@ bool GameplayRay(float outOrigin[3],float outDirection[3]) {
     outOrigin[0]=o.x;outOrigin[1]=o.y;outOrigin[2]=o.z;
     outDirection[0]=d.x;outDirection[1]=d.y;outDirection[2]=d.z;
     return true;
+}
+// Aim rules: each hand's own aim, in GameplayRay's frame (the head's turn
+// undone). The left hand holding a bow aims along the bow (the arrow is in
+// its model).
+bool HandAimRay(int hand,float outOrigin[3],float outDirection[3]) {
+    std::lock_guard lock(mutex);
+    if(hand<0||hand>1||!motionControls.load()||!motionInput.active||GetTickCount64()-motionAt>150)return false;
+    math::Vec p,d;
+    if(hand==1&&motionInput.weapon==gameplay::Weapon::Bow&&motionInput.tracked[1]){p=motionInput.hand[1].p;d=gameplay::BowForward(motionInput.hand[1]);}
+    else if(handAimTracked[hand]){p=handAim[hand].p;d=math::Rotate(handAim[hand].q,{0,0,-1});}
+    else return false;
+    const auto undo=math::Conjugate(math::Yaw(math::Heading(Q(head.orientation))));
+    const auto o=math::Rotate(undo,p-V(head.position)),r=math::Rotate(undo,d);
+    outOrigin[0]=o.x;outOrigin[1]=o.y;outOrigin[2]=o.z;
+    outDirection[0]=r.x;outDirection[1]=r.y;outDirection[2]=r.z;
+    return std::isfinite(o.x+o.y+o.z+r.x+r.y+r.z);
+}
+int CastButtonHand() {
+    std::lock_guard lock(mutex);
+    return motionControls.load()&&handOutput.slot>=0?handOutput.hand:-1;
+}
+bool HandSpellHeld(int hand) {
+    std::lock_guard lock(mutex);
+    return hand>=0&&hand<2&&motionControls.load()&&handOutput.spells[hand]>=0;
+}
+namespace {
+// The fresh native cast's skill row, or nullptr.
+const interaction::Skill* CastSkillRow() {
+    const int slot=motionOutput.skill;
+    const auto now=GetTickCount64();
+    if(!motionControls.load()||slot<0||slot>=skills::Count||!gameplay::CastingSkill(motionInput,motionOutput,now-motionAt)||
+       !interaction::Fresh(interactionInput.snapshot,gamestate::LocalPlayer(),now))return nullptr;
+    const auto& skill=interactionInput.snapshot.skills[slot];
+    return skill.known&&skill.available&&skill.id>=0?&skill:nullptr;
+}
+}
+int AimRulesSkill() {
+    std::lock_guard lock(mutex);
+    const auto* skill=CastSkillRow();return skill?skill->id:-1;
+}
+bool AimRulesDirected() {
+    std::lock_guard lock(mutex);
+    const auto* skill=CastSkillRow();return skill&&skill->directed;
+}
+// A skill the rules place at a point: ground skills, curses, Corpse Explosion,
+// Charge, Teleport...
+int PointSpellSkill() {
+    std::lock_guard lock(mutex);
+    const auto* skill=CastSkillRow();
+    if(!skill)return -1;
+    const auto use=aimrules::Of(skill->id,skill->directed);
+    return aimrules::Placed(use)?skill->id:-1;
 }
 bool MeleeSample(uint32_t poseStamp,melee::Sample& sample,int hand) {
     std::lock_guard lock(mutex);
@@ -3626,10 +3789,17 @@ void ConfigureGuardBreakSound(float volume,const wchar_t* file) {
 }
 bool OwnsControllerRumble() {return motionControls.load()&&controllerRumbleLease.Owns(GetTickCount64());}
 void SpellCast(int hand,uint64_t session) {spellHaptics.Publish(hand,session,GetTickCount64());}
+void SpellVisualCast(const bowflight::Shot& shot) {
+    if(shot.kind!=bowflight::Kind::Spell)return;
+    std::lock_guard lock(mutex);
+    elementalState.Accepted(shot.hand,{{shot.session,shot.epoch,shot.binding,shot.equipment},
+        GetTickCount64(),shot.activation,shot.slot,shot.skill,shot.owner});
+}
 void SetBowWorldEpoch(uint32_t epoch) {
     std::lock_guard lock(mutex);
     if(bowWorldEpoch==epoch)return;
     bowWorldEpoch=epoch;bowNeedsWorld=bowHasShot=false;CancelShieldCast();
+    elementalState.Reset();elementalScene={};
     if(motionInput.weapon==gameplay::Weapon::Bow||motionInput.weapon==gameplay::Weapon::Javelin){motion.Cancel();motionOutput={};}
 }
 uint64_t BowRenderTime(){return bowRenderTime.load();}
@@ -3769,6 +3939,7 @@ void Shutdown(bool preserveResolution) {
     // when ordinary frame submission uses queue ordering without a CPU wait.
     if(fence&&!WaitGpu())failed=true;
     if(uiEye.chain&&pDestroySwapchain)pDestroySwapchain(uiEye.chain);uiEye={};journalMode=spatialMode=workspacePlaced=false;hud::UiFrame(false,false,0);uiSupported=false;uiBlit={};potionModels.Reset();potionScene={};
+    elementalRenderer.Reset();elementalState.Reset();elementalScene={};
     if(mapEye.chain&&pDestroySwapchain)pDestroySwapchain(mapEye.chain);mapEye={};mapSupported=false;mapBlit={};gamestate::MenuMap(false);hud::MenuMapCapture(false);
     settingsModel.Close();settingsOpen=false;settingsInputGate.Suspend();settingsPainted={};settingsAtlasPending=settingsImageReady=false;
     settingsPaintRequest=0;settingsRequested={};
@@ -3784,6 +3955,8 @@ void Shutdown(bool preserveResolution) {
     if(bloodChain&&pDestroySwapchain)pDestroySwapchain(bloodChain);bloodChain=XR_NULL_HANDLE;
     bloodScreen.Reset();bloodOutput={};bloodShown=0;bloodPaintKey=bloodRequestedKey=~0ull;bloodPaintRequest=0;bloodPaintAt=0;bloodAtlasPending=bloodImageReady=false;
     if(strainChain&&pDestroySwapchain)pDestroySwapchain(strainChain);strainChain=XR_NULL_HANDLE;
+    if(bowLaserChain&&pDestroySwapchain)pDestroySwapchain(bowLaserChain);bowLaserChain=XR_NULL_HANDLE;
+    bowLaserHue=-1;bowLaserAtlasPending=bowLaserImageReady=false;
     heartStream.Stop();heartPlaying=false;heartLevel.Reset();heartAt=0;heartHush.Reset();heartHealth=-1;
     guardStrain.Reset();strainOutput={};strainPaintKey=~0ull;strainPaintSession=0;strainPaintAt=0;strainAtlasPending=strainImageReady=strainSlotReported=false;
     if(pointerChain&&pDestroySwapchain)pDestroySwapchain(pointerChain);pointerChain=XR_NULL_HANDLE;
