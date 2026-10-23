@@ -55,6 +55,19 @@ restores the old behaviour.
   tick, at most every 80 ms. The weapons exist only while bottles or
   [knockable props](KNOCKABLE_PROPS.md) are in the world. Those props
   share this world, so bottles and props knock each other too.
+- **Thrown potions.** A Health, Rejuvenation, Antidote or Thawing bottle
+  thrown toward the hireling flies in this world too while bottle physics is
+  on. The engine hands the release over (`Output::toss`, an id with the same
+  pose, velocity and spin as a discard). `World::Toss` makes it a body like
+  the dropped ones, with contact events on, which weapons never touch. Its
+  first begin-touch with anything (the floor, a wall, a support plate or a
+  prop) lands it there: the body goes, and the engine sends the hireling
+  feed request with that point. While it flies, the engine draws the
+  bottle's body pose. If no body follows within 0.2 s (the world was busy
+  with moving props on another floor), the throw flies the old ballistic arc.
+  A body that touches nothing lands where it is after 3 s.
+- **Leaving the hand.** For 0.3 s after release, a dropped bottle passes
+  through weapons and fists, so the hand that let go does not shove it.
 - **Drawing.** `potions::AddDropped` puts up to six empty-looking models into
   the potion scene, mapped back to room space through the current stage
   frame. The scene grew by six entries.

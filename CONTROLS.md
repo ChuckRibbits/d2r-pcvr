@@ -94,7 +94,7 @@ Quest left X/Y correspond to Index left A/B; right A/B labels are the same.
 | Grab / drink potion | Grip a belt bottle, bring its opening to the mouth and tip it; release to return unused |
 | Drop the empty bottle | Open your hand after drinking; it falls, bounces and rolls on the floor (visual only). Swing a weapon or shield into it to knock it away |
 | Knock over cups, plates, vases, stools | Swing a weapon, punch or block into the level's small props; they fall and roll where they land until the area reloads (visual only) |
-| Heal your mercenary | Toss a held Health, Rejuvenation, Antidote or Thawing bottle so it lands near its feet; a miss keeps the potion |
+| Heal your mercenary | Toss a held Health, Rejuvenation, Antidote or Thawing bottle so it lands near its feet; with bottle physics it flies as a real body and breaks where it first hits. A miss keeps the potion |
 | Quick potion | Wheel → EQUIPMENT → potion, using opposite laser + trigger |
 | Grab wheel potion | Wheel → EQUIPMENT → potion, using the pointing hand's grip |
 | Wrist health / mana / XP | Look at the back of the left wrist |

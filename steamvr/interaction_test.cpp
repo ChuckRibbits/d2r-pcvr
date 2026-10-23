@@ -774,6 +774,46 @@ int main(){
             Check(s.Step().feedback==2,"confirmed hireling feed is a success pulse");
         }
         {
+            // In the physics world: the release is handed over, the flight
+            // follows the body, and it lands where the body first touched.
+            Sim s;s.in.physicsThrows=true;const auto o=toss(s,{0,1.f,-3.f});
+            Check(o.toss.active&&o.toss.id&&o.toss.code==Code('h','p','1')&&o.flying&&o.flightId==o.toss.id&&o.request.action==Action::None,
+                "a physics throw hands the release to the world and flies it");
+            Check(distance(o.toss.v,{0,1.f,-3.f})<.05f&&std::fabs(o.toss.floor)<1e-4f,"with the hand's speed and the floor under the player");
+            Check(!s.Step().toss.active,"the release is handed over once");
+            const auto id=o.toss.id;
+            s.in.tossed={id,false,{.3f,1.1f,-2.5f},{0,0,0,1}};
+            Check(s.Step().flying&&distance(s.out.flight.p,{.3f,1.1f,-2.5f})<1e-4f&&s.out.request.action==Action::None,
+                "while the body flies the bottle is drawn there, and nothing is requested");
+            for(int i=0;i<100;++i)Check(s.Step().request.action==Action::None,"no landing while the body is still in the air, past the arc's own landing time");
+            s.in.tossed={id,true,{.5f,.8f,-3.1f},{0,0,0,1}};
+            const auto l=s.Step();
+            Check(l.request.action==Action::FeedMerc&&distance(l.request.world,{.5f,.8f,-3.1f})<1e-4f&&!l.flying,
+                "it lands where the body first touched something: one feed request there");
+            Check(s.Step().request.action==Action::None,"one request per throw");
+        }
+        {
+            // The world never takes it: the arc, as without physics.
+            Sim s;s.in.physicsThrows=true;const auto o=toss(s,{0,1.f,-3.f});
+            Check(o.toss.active,"handed over");
+            int requests=0;Request request;land(s,requests,request);
+            Check(requests==1&&std::fabs(request.point.y)<1e-3f,"no body within the pickup time: it lands on the arc");
+        }
+        {
+            // A body that never touches anything lands where it is after the flight limit.
+            Sim s;s.in.physicsThrows=true;const auto o=toss(s,{0,1.f,-3.f});
+            s.in.tossed={o.toss.id,false,{1,2,-6},{0,0,0,1}};
+            int requests=0;Request request;
+            for(int i=0;i<200&&!requests;++i)if(s.Step().request.action==Action::FeedMerc){++requests;request=s.out.request;}
+            Check(requests==1&&distance(request.world,{1,2,-6})<1e-4f,"after the flight limit it lands where the body is");
+        }
+        {
+            // Another body's report never lands this one.
+            Sim s;s.in.physicsThrows=true;const auto o=toss(s,{0,1.f,-3.f});
+            s.in.tossed={o.toss.id+7,true,{0,0,0},{0,0,0,1}};
+            Check(s.Step().request.action==Action::None,"a stale body's landing is ignored");
+        }
+        {
             Sim s;const auto o=toss(s,{0,.2f,-.6f},20);int requests=0;Request request;land(s,requests,request);
             Check(!o.flying&&requests==0,"a slow release still returns the bottle to the belt");
         }

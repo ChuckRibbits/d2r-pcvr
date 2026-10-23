@@ -131,7 +131,9 @@ inline const char* PotionName(Potion type) {
     return names[unsigned(type)<=unsigned(Potion::Stamina)?unsigned(type):0];
 }
 // A released Health/Rejuvenation/Antidote/Thawing bottle flies in room metres and lands on the
-// world floor. Only its landing point leaves the engine; the game thread
+// world floor. With the physics world (Input::physicsThrows) it flies as a
+// body there instead and lands where it first touches anything: a wall, a
+// table, a prop or the floor. Only its landing point leaves the engine; the game thread
 // decides whether it fell at the hireling's feet, and the native belt key's
 // mercenary use (not an item edit) gives the potion to the mercenary.
 // Launch speed is the PEAK hand speed in the last ThrowWindow before the grip
@@ -141,6 +143,7 @@ inline const char* PotionName(Potion type) {
 constexpr float ThrowGravity=9.81f,ThrowMinSpeed=1.4f,ThrowMaxSpeed=20.f,ThrowGlitchSpeed=30.f,ThrowClearOfBelt=.15f;
 constexpr float ThrowMaxSpin=30.f; // rad/s; a wrist flick, not a tracking jump
 constexpr double ThrowWindow=.12,ThrowMaxFlight=3.;
+constexpr double TossPickup=.2; // the physics world takes a throw within this, else it flies the arc
 // Hand turn between two poses as an angular velocity (rad/s, the poses' frame).
 inline Vec Spin(Quat from,Quat to,float dt) {
     Quat d=math::Multiply(to,math::Conjugate(from));
@@ -395,6 +398,10 @@ struct Input {
     int hover=-1,wheelHand=-1;
     Snapshot snapshot{};
     Reply reply{};
+    // Throws fly in the physics world (bottles::World), which reports the
+    // body of the last one: id, pose in world metres, and whether it landed.
+    bool physicsThrows=false;
+    struct Tossed {uint64_t id=0;bool landed=false;Vec p{};Quat q{0,0,0,1};} tossed{};
 };
 struct Output {
     bool developer=false;
@@ -415,6 +422,11 @@ struct Output {
     // hand's motion in world metres (Stage::World), and the floor under the
     // player. It falls into the world as a physics body, drawn only.
     struct Discard {bool active=false;Vec p{},v{},w{};Quat q{0,0,0,1};float floor=0;uint32_t code=0;} discard{};
+    // A bottle thrown this step, for the physics world (Input::physicsThrows):
+    // the same release as a discard, named by id. flightId is the physics
+    // throw the flying bottle follows, 0 on the arc.
+    struct Toss {bool active=false;uint64_t id=0;Vec p{},v{},w{};Quat q{0,0,0,1};float floor=0;uint32_t code=0;} toss{};
+    uint64_t flightId=0;
     Pose body{},belt[4]{},holster[2]{};
     Request request{};
     int editor=0,editSlot=-1,editPage=0,editPages=1,editCount=0,editCategory=0,editClass=-1;
@@ -483,7 +495,9 @@ class Engine {
     }
     // p, v and q are in WORLD metres/orientation; stage is the latest frame
     // used to draw it, kept through a brief loss of the view frame.
-    struct Flight {bool active=false;double start=0,land=0;Vec p{},v{};Quat q{0,0,0,1};int column=-1,hand=-1;Item item{};uint32_t revision=0;Stage stage{};} flight;
+    struct Flight {bool active=false;double start=0,land=0;Vec p{},v{};Quat q{0,0,0,1};int column=-1,hand=-1;Item item{};uint32_t revision=0;Stage stage{};
+                   uint64_t id=0;double arc=0;} flight; // id: the physics throw it follows (0 = the arc); arc: the arc's landing time
+    uint64_t tossSerial=0;
     struct Motion {double at=0;Vec v{},w{};};
     std::array<Motion,32> motion{};unsigned motionNext=0;
     Vec bottleWas{};Quat bottleTurnWas{0,0,0,1};bool bottleTracked=false;
@@ -522,7 +536,7 @@ class Engine {
     }
     // Grip released with recent deliberate motion, away from the belt: launch.
     // A slow or still release keeps the original behaviour (back to the belt).
-    bool Throw(const Input& in,bool fresh,Vec slot) {
+    bool Throw(const Input& in,bool fresh,Vec slot,Output& out) {
         Vec throwVelocity{};
         if(spent||!in.floorKnown||!in.stage.known||!fresh||!SameBelt(in.snapshot,held)||!Throwable(PotionType(held.item.code))||
            !PeakVelocity(in.time,throwVelocity))return false;
@@ -537,6 +551,11 @@ class Engine {
         if(land<=0)return false;
         flight={true,in.time,in.time+land,worldP,worldV,math::Multiply(stage.base,potions::HeldRotation(hand.q)),
             bottle,bottleHand,held.item,held.revision,stage};
+        if(in.physicsThrows) {
+            flight.id=++tossSerial;flight.arc=flight.land;flight.land=in.time+ThrowMaxFlight;
+            out.toss={true,flight.id,worldP,worldV,math::Rotate(stage.base,ReleaseSpin(in.time)),flight.q,
+                stage.anchor.y+(in.floor-stage.origin.y),held.item.code};
+        }
         return true;
     }
 public:
@@ -798,7 +817,7 @@ public:
                 if(math::Dot(v,v)<=ThrowGlitchSpeed*ThrowGlitchSpeed){motion[motionNext]={in.time,v,w};motionNext=(motionNext+1)%motion.size();}
             }
             bottleWas=handNow;bottleTurnWas=turnNow;bottleTracked=true;
-            if(!grips[bottleHand]&&Throw(in,fresh,out.belt[bottle].p)) {Drop();rearm=true;out.feedback=1;out.feedbackHand=flight.hand;}
+            if(!grips[bottleHand]&&Throw(in,fresh,out.belt[bottle].p,out)) {Drop();rearm=true;out.feedback=1;out.feedbackHand=flight.hand;}
             else if(!grips[bottleHand]||(!spent&&(!fresh||!SameBelt(in.snapshot,held)))) {if(!grips[bottleHand])Discard(in,out);Drop();rearm=true;}
             else {
                 out.bottle=bottle;out.bottleHand=bottleHand;out.bottleItem=held.item;out.bottleEmpty=consumed;owner[bottleHand]=Owner::Bottle;
@@ -810,21 +829,28 @@ public:
         }
         if(flight.active) {
             if(in.stage.known)flight.stage=in.stage; // follow walking/turning for drawing only
-            if(in.time>=flight.land) {
+            // The physics world never took it (unavailable now): the arc after all.
+            const bool carried=flight.id&&in.tossed.id==flight.id;
+            if(flight.id&&!carried&&in.time-flight.start>=TossPickup){flight.id=0;flight.land=flight.arc;}
+            if((carried&&in.tossed.landed)||in.time>=flight.land) {
                 // Landed: one exact-item request. A miss or a dead/absent
                 // hireling is refused natively-side and the bottle stays belted.
                 const float t=float(flight.land-flight.start);
+                const Vec where=carried?in.tossed.p:Ballistic(flight.p,flight.v,t);
                 const Request landed{Action::FeedMerc,0,session,now,flight.column,flight.item,flight.revision};
                 if(fresh&&SameBelt(in.snapshot,landed)&&request(Action::FeedMerc,flight.column,flight.item,flight.revision)) {
-                    pending.world=Ballistic(flight.p,flight.v,t);pending.point=flight.stage.Room(pending.world);
+                    pending.world=where;pending.point=flight.stage.Room(pending.world);
                     out.request=pending;pendingHand=flight.hand;
                 } else out.feedback=3;
                 out.feedbackHand=flight.hand;flight={};
             } else {
                 const float t=float(in.time-flight.start),spin=t*9.f; // tumble end over end
-                out.flying=true;out.flightColumn=flight.column;out.flightItem=flight.item;
-                const Quat world=math::Multiply(flight.q,{std::sin(spin*.5f),0,0,std::cos(spin*.5f)});
-                out.flight={flight.stage.Room(Ballistic(flight.p,flight.v,t)),math::Multiply(math::Conjugate(flight.stage.base),world)};
+                out.flying=true;out.flightColumn=flight.column;out.flightItem=flight.item;out.flightId=flight.id;
+                if(carried)out.flight={flight.stage.Room(in.tossed.p),math::Multiply(math::Conjugate(flight.stage.base),in.tossed.q)};
+                else {
+                    const Quat world=math::Multiply(flight.q,{std::sin(spin*.5f),0,0,std::cos(spin*.5f)});
+                    out.flight={flight.stage.Room(Ballistic(flight.p,flight.v,t)),math::Multiply(math::Conjugate(flight.stage.base),world)};
+                }
             }
         }
         out.developer=developer;out.devPage=devPage;out.stowed=stowed;out.result=result;

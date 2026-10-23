@@ -1714,6 +1714,21 @@ void StepDroppedBottles() {
         else std::snprintf(line,sizeof line,"Frame dropped bottles: release refused (physics %s)",droppedBottles->Ready()?"ready":"unavailable");
         Say(line);
     }
+    // A thrown potion: a body until it first touches anything. Without the
+    // world now (another floor while props move) the engine flies the arc.
+    if(bottlesOn&&out.toss.active&&world) {
+        if(!droppedBottles)droppedBottles=std::make_unique<bottles::World>();
+        const auto& d=out.toss;
+        const bottles::Release release{in.session,in.time,d.p,d.v,d.w,d.q,d.floor,upm,bottles::Radius(potionModels.Radius(d.code)),d.code};
+        const bool tossed=droppedBottles->Ready()&&droppedBottles->Toss(release,d.id);
+        char line[200];
+        std::snprintf(line,sizeof line,"Frame potion toss: %s at %.1f m/s, turning %.1f rad/s",tossed?"thrown into the physics world":"physics unavailable, the arc",
+            std::sqrt(math::Dot(d.v,d.v)),std::sqrt(math::Dot(d.w,d.w)));
+        Say(line);
+    }
+    // Landed, cancelled or back on the arc: the body goes.
+    bottles::Thrown thrown;
+    if(droppedBottles&&droppedBottles->Tossed(thrown)&&(!out.flying||out.flightId!=thrown.id))droppedBottles->EndToss();
     // Props are looked for around the player while physical melee can reach them.
     const bool wantProps=propsOn&&world&&motionControls.load()&&stageWorld.valid;
     if(wantProps) {
@@ -1755,6 +1770,9 @@ void StepDroppedBottles() {
     }
     droppedBottles->Weapons(weapons);
     droppedBottles->Advance(in.time,in.stage.anchor);
+    // Draw a thrown potion where this frame's steps left it.
+    if(interactionOutput.flying&&interactionOutput.flightId&&droppedBottles->Tossed(thrown)&&thrown.id==interactionOutput.flightId&&!thrown.landed)
+        interactionOutput.flight={in.stage.Room(thrown.p),math::Multiply(math::Conjugate(in.stage.base),thrown.q)};
     // A light tick in the hand whose weapon struck a bottle or a prop.
     for(int slot=0;slot<bottles::Colliders;++slot) {
         const float speed=droppedBottles->Struck(slot);const int hand=slot?1:0;const auto now=GetTickCount64();
@@ -2007,6 +2025,14 @@ void Input() {
     for(int i=0;i<2;++i){interactionInput.tracked[i]=motionInput.tracked[i];interactionInput.grip[i]=motionInput.grip[i];
         interactionInput.hand[i]={motionInput.hand[i].p,motionInput.hand[i].q};
         interactionInput.handVelocity[i]=handVelocity[i];interactionInput.velocityKnown[i]=handVelocityKnown[i];}
+    // Thrown potions fly in the bottles' physics world while it is on; the
+    // engine follows the last one's body and lands it where it first touches.
+    interactionInput.physicsThrows=bottlePhysics.load();
+    {
+        bottles::Thrown thrown;
+        interactionInput.tossed=droppedBottles&&droppedBottles->Tossed(thrown)?
+            interaction::Input::Tossed{thrown.id,thrown.landed,thrown.p,thrown.q}:interaction::Input::Tossed{};
+    }
     interactionOutput=interactions.Step(interactionInput);
     StepDroppedBottles();
     // Quest / level-up notices: queue a card per message, paint the current one.
