@@ -730,7 +730,7 @@ float4 GameLight(float3 p, float3 nrm, float3 v)
 }
 
 // Their light on drawn world points (p: less the hero / floorY)
-float3 SceneLight(float3 p)
+float3 SceneLight(float3 p, float3 nrm)
 {
     float3 sum = float3(0.0, 0.0, 0.0);
     [loop] for (int i = 0; i < 16; ++i) {
@@ -741,13 +741,18 @@ float3 SceneLight(float3 p)
         const float rad = max(CeilTorchRadius * L.w / 19.0, 1.0);
         if (dist >= rad * 2.0) continue;
         const float k = dist / rad;
+        const float3 l = dv / max(dist, 1e-3);
+        const float NdotL = saturate(dot(nrm, l));
         const float flicker = 0.93 + 0.07 * sin(Timer * 0.011 + i * 2.3) * sin(Timer * 0.0037 + i * 1.1);
-        const float fall = Falloff(k) * flicker * GameLightCol[i].w;
+        // Inverse-square quadratic falloff tuned for 1.5x-2x wider reach and distinct bright focal spot
+        const float atten = (1.0 / (1.0 + 0.12 * dist + 0.008 * dist * dist)) * Falloff(k);
+        const float fall = atten * flicker * GameLightCol[i].w * (0.35 + 0.65 * NdotL);
         const float3 col = lerp(GameLightCol[i].rgb, float3(1.0, 0.58, 0.22), saturate(CeilTorchWarm));
-        sum += col * fall;
+        sum += col * fall * 2.6;
     }
-    return sum * CeilTorchBright;
+        return sum * CeilTorchBright;
 }
+float3 SceneLight(float3 p) { return SceneLight(p, float3(0.0, 1.0, 0.0)); }
 
 // The far wall (2026-10-07, the user: "paint the void in the distance - the cave's
 // texture round the hero, 200 away"): past the floor's edge the void stayed black under
@@ -1503,7 +1508,16 @@ float3 DepthFogWorld(float4 pos, float2 uv, int eye)
                                          : v.x * CamRight1 + v.y * CamUp1 + v.z * CamBack1) * (NearPlane / d);
             const float3 eP = eye == 0 ? CeilEye0 : CeilEye1;
             const float3 worldP = eP + off;
-            const float3 lit = SceneLight(worldP);
+
+            // Reconstruct surface normal from screen derivatives of world position
+            const float3 dX = ddx(worldP);
+            const float3 dY = ddy(worldP);
+            const float3 nrm = cross(dX, dY);
+            const float nLen = length(nrm);
+            float3 N = (nLen > 1e-5) ? (nrm / nLen) : float3(0.0, 1.0, 0.0);
+            if (dot(N, off) > 0.0) N = -N;
+
+            const float3 lit = SceneLight(worldP, N);
             litColour += colour * lit * 1.2 + lit * 0.05;
         }
     }

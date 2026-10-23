@@ -58,10 +58,11 @@ Pixel VS(uint vertex:SV_VertexID,uint particle:SV_InstanceID) {
         p=rotate(local)+translation.xyz;
         float2 size;
         if(options.y>4.5) {
-            p+=up.xyz*(phase*.16);
-            p+=rotate(float3(sin(options.x*5+seed)*.012,0,0));
-            size=float2(.055,.110)*(1-phase*.45);
-            if(particle%3==0)size*=.35;
+            size=float2(.055,.100)*(1.0-phase*.35);
+            p=translation.xyz+up.xyz*(size.y*.55);
+            p+=up.xyz*(phase*.12);
+            p+=rotate(float3(sin(options.x*5+seed)*.010,0,0));
+            if(particle%3==0)size*=.45;
             o.life=sin(phase*3.14159265);
         } else if(options.y<1.5) {
             p+=up.xyz*(phase*.085);
@@ -138,18 +139,47 @@ Pixel VS(uint vertex:SV_VertexID,uint sprite:SV_InstanceID) {
     Pixel o;o.uv=corner*float2(.5,-.5)+.5;o.data=float4(0,1+pulse,0,0);o.mode=1;
     float3 p=around(0,0,0);float2 size=0;
     if(look>4.5) { // Torch flame & rising embers
-        if(sprite==0) { // Core torch flame
-            o.mode=0;o.data.x=0;o.data.z=t*.7;
-            p+=up.xyz*.035;
-            size=float2(.065,.120);
-        } else if(sprite==1) { // Secondary dancing flame tongue
-            o.mode=0;o.data.x=1;o.data.z=t*1.2;
-            p+=up.xyz*(.025+sin(t*8+seed)*.01);
-            size=float2(.045,.085);
-        } else { // Rising embers & sparks
-            const float phase=frac(t*.65+hash(seed));
-            p=around(hash(seed+1)*Tau,.030*hash(seed+2),0)+up.xyz*(.03+phase*.24);
-            size=.0085*(1-phase*.6);o.data.y*=(1-phase)*1.6;
+        const float3 viewDir=dot(translation.xyz,translation.xyz)>1e-4?normalize(translation.xyz):float3(0,0,-1);
+        const float3 sDir=cross(viewDir,up.xyz);
+        const float3 h1=dot(sDir,sDir)>1e-6?normalize(sDir):float3(1,0,0);
+        const float3 h2=cross(up.xyz,h1);
+
+        if(sprite==0) { // Core roaring flame pillar rooted right on the club head
+            o.mode=0;o.data.x=0;o.data.z=t*1.20;
+            o.data.y=1.45+pulse*.4;
+            size=float2(.070,.125);
+            p=translation.xyz+up.xyz*(size.y*.45);
+        } else if(sprite==1) { // 3D swirling flame tongue (front/right)
+            o.mode=0;o.data.x=1;o.data.z=t*1.55+seed;
+            o.data.y=1.20+pulse*.3;
+            size=float2(.060,.110);
+            const float a=t*3.2+seed;
+            p=translation.xyz+up.xyz*(size.y*.50)+(h1*cos(a)+h2*sin(a))*.010;
+        } else if(sprite==2) { // 3D counter-swirling flame tongue (back/left)
+            o.mode=0;o.data.x=0;o.data.z=-t*1.10+seed;
+            o.data.y=1.15+pulse*.3;
+            size=float2(.056,.105);
+            const float a=-t*2.8+seed+3.14159;
+            p=translation.xyz+up.xyz*(size.y*.50)+(h1*cos(a)+h2*sin(a))*.010;
+        } else if(sprite==3) { // Leaping high flame tip
+            o.mode=0;o.data.x=1;o.data.z=t*2.20+seed;
+            o.data.y=(1.0+pulse*.3)*(.85+.15*sin(t*11.0+seed));
+            size=float2(.042,.085);
+            const float a=t*4.5+seed;
+            p=translation.xyz+up.xyz*(.060+sin(t*10.0+seed)*.010)+(h1*cos(a)+h2*sin(a))*.006;
+        } else if(sprite==4) { // Bright combustion core right at the head
+            o.mode=1;
+            o.data.y=(1.10+pulse*.4)*(.92+.08*sin(t*7.0+seed));
+            size=float2(.080,.085);
+            p=translation.xyz+up.xyz*(size.y*.15);
+        } else { // Rising embers & fiery sparks
+            const float phase=frac(t*.75+hash(seed));
+            const float a=hash(seed+1.0)*Tau+phase*3.0;
+            const float r=(.006+.020*hash(seed+2.0))*(1.0+phase*.8);
+            size=float2(1,1)*.011*(1.0-phase*.6);
+            p=translation.xyz+up.xyz*(.01+phase*.26)+(h1*cos(a)+h2*sin(a))*r;
+            o.mode=1;
+            o.data.y=(1.0-phase*.75)*2.5;
         }
     } else if(look<.5||look<1.5&&sprite>3) { // Fire Bolt, and Fireball's embers
         if(sprite==0){o.mode=0;p+=up.xyz*.008;size=float2(.018,.026);}

@@ -62,6 +62,7 @@ static const float CeilScale=10, CeilHeight=20, CeilHalo=1, HudTop=0, SkyTex=0, 
 static const bool GameLightsOn=false;
 static const float CeilTorchBright=1, CeilTorchRadius=20, CeilTorchWarm=0.45;
 float3 SceneLight(float3 p) { return 0; }
+float3 SceneLight(float3 p, float3 nrm) { return 0; }
 static const int FogColorSmp=0, VoidFogSmp=1, HudMaskSmp=2;
 float4 Sample(int samplerId) {
     if(samplerId==FogColorSmp) return samples[fixture].colour;

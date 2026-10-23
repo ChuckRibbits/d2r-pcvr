@@ -13,8 +13,8 @@ using math::Quat;
 
 // Default geometry for a one-handed club torch:
 // OpenXR grip coordinates: +Y points up along handle/knuckles, -Z forward.
-// The torch head is situated at the top of the handle (~44cm along shaft).
-inline constexpr Vec DefaultShaftOffset{0.0f, 0.44f, -0.06f};
+// The torch head is situated at the top of the handle (~56cm along shaft).
+inline constexpr Vec DefaultShaftOffset{0.0f, 0.48f, -0.29f};
 
 // Dedicated skill identifier for handheld torch flame rendering
 inline constexpr int TorchSkill = 999;
