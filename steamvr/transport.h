@@ -43,6 +43,7 @@ void ConfigureGameplay(bool enabled);
 void ConfigureQuiver(bool enabled,bool preview); // [bow] quiver, quiver_preview
 void ConfigureInteractions(bool seated,float waistBelowEyes,float beltForward,int dominantHand);
 void ConfigureBottlePhysics(bool on); // [interactions] bottle_physics: emptied bottles fall into the world
+void ConfigurePropPhysics(bool on);   // [interactions] prop_physics: weapons knock the level's small props about
 void PublishSewerPrompt(const sewerprompt::Target&); // Values only; XR follows no game pointers.
 // Current motion-combat aim in the existing head-yaw-relative hand frame.
 bool SettingsOpen();

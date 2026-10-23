@@ -1,5 +1,6 @@
 #pragma once
 #include "frame_math.h"
+#include "props.h"
 #include "world_coordinates.h"
 #include <algorithm>
 #include <array>
@@ -10,8 +11,10 @@
 
 // Emptied potion bottles let go of in the world: Box3D rigid bodies that fall,
 // bounce and roll on the floor under the player and against the game's wall
-// cells. Purely visual; nothing here reaches the game. Positions are rendered
-// world metres (interaction::Stage::World), y up.
+// cells. The level's own small props near the player (props.h) share the
+// world: frozen where the game placed them until a weapon or a moving body
+// reaches them, then simulated until they rest again. Nothing here reaches
+// the game. Positions are rendered world metres (interaction::Stage::World), y up.
 namespace framevr::bottles {
 using math::Vec;
 using math::Quat;
@@ -107,6 +110,54 @@ inline bool Valid(const Collider& c) {
     const Vec d=c.tip-c.base;
     return c.active&&Finite(c.base)&&Finite(c.tip)&&std::isfinite(c.radius)&&c.radius>0&&math::Dot(d,d)<=3*3;
 }
+// A level prop near the player (props::Seen in world metres): its model's
+// origin, rotation and per-axis scale, the model's scaled bounds around that
+// origin, and what it rests on.
+struct Prop {
+    uint32_t entity=0;
+    uint16_t kind=0;
+    props::Shape shape=props::Shape::Round;
+    props::Material material=props::Material::Ceramic;
+    Vec p{};Quat q{0,0,0,1};Vec scale{1,1,1};
+    props::Box bounds{};
+    props::Support support{};
+    float unitsPerMetre=0; // the scale it was given in: its matrix goes back with the same
+};
+struct PropScan {
+    uint64_t session=0,serial=0;
+    float floor=0,unitsPerMetre=0;
+    Vec centre{};   // the player, where the props were looked for
+    unsigned count=0;
+    std::array<Prop,props::MaxSeen> props{};
+    unsigned lost=0;
+    std::array<uint32_t,props::MaxLost> lostEntities{};
+};
+inline bool Valid(const Prop& p) {
+    const Vec size=p.bounds.hi-p.bounds.lo;
+    const float n=p.q.x*p.q.x+p.q.y*p.q.y+p.q.z*p.q.z+p.q.w*p.q.w;
+    const float largest=std::max({size.x,size.y,size.z}),smallest=std::min({size.x,size.y,size.z});
+    return p.entity&&Finite(p.p)&&Finite(p.scale)&&props::Finite(p.bounds.lo)&&props::Finite(p.bounds.hi)&&
+        std::isfinite(n)&&std::fabs(n-1)<.01f&&largest<=props::MaxExtent&&smallest>=props::MinExtent&&
+        std::isfinite(p.unitsPerMetre)&&p.unitsPerMetre>=1&&p.unitsPerMetre<=12&&
+        std::isfinite(p.support.y)&&std::isfinite(p.support.x0)&&std::isfinite(p.support.z0)&&
+        std::isfinite(p.support.x1)&&std::isfinite(p.support.z1);
+}
+// A prop that moved: where to draw it now. Resting means it has stopped and
+// is frozen again.
+struct Moved {
+    uint32_t entity=0;
+    Vec p{};Quat q{0,0,0,1};Vec scale{1,1,1};
+    float unitsPerMetre=0;
+    bool resting=false;
+};
+// A prop a weapon or a moving body set going, for the log and the hand.
+struct Knock {uint32_t entity=0;uint16_t kind=0;int slot=-1;float speed=0;};
+inline constexpr double PropMoveLimit=12;  // seconds a prop may move before it is frozen where it is
+inline constexpr float PropRestSpeed=.03f; // m/s, and turning under 0.3 rad/s ...
+inline constexpr double PropRestTime=.6;   // ... this long: at rest
+inline constexpr double PropDriftTime=.5;  // or moved under PropDrift, turning under PropDriftTurn,
+inline constexpr float PropDrift=.015f,PropDriftTurn=.07f; // over this long: settling in place
+inline constexpr float WakeMargin=.01f;    // metres a weapon may pass from a prop and still set it going
 // Where the game thread should sample walls: around the bottles, on their floor.
 struct WallRequest {
     uint64_t session=0;
@@ -137,10 +188,22 @@ public:
     void Weapons(const std::array<Collider,Colliders>&);
     // The fastest a weapon struck a bottle since the last call (m/s), cleared.
     float Struck(int slot);
+    // The level props near the player. New ones are added frozen where the
+    // game has them; frozen ones no longer listed (out of reach) are removed;
+    // moving ones stay until they rest. Lost entities are removed at once.
+    // Another game, floor or scale restarts the world once nothing moves.
+    void Props(const PropScan&);
     // Interpolated poses between the last two steps.
     unsigned Show(std::array<Shown,MaxBottles>& out) const;
+    // The props moving now, and those that came to rest in the last Advance.
+    unsigned Moving(std::array<Moved,props::MaxMoving>& out) const;
+    // Props set going since the last call, cleared.
+    unsigned Knocks(std::array<Knock,props::MaxMoving>& out);
+    unsigned Frozen() const;   // props waiting where they are
+    unsigned Supports() const; // static surfaces under them
+    bool Idle() const;         // no bottles and no props
     bool WallsWanted(WallRequest&) const;
-    unsigned Count() const;
+    unsigned Count() const; // bottles
     unsigned Shapes() const; // static wall boxes, for diagnostics
     unsigned Pushers() const; // weapon bodies in the world
     void Reset();

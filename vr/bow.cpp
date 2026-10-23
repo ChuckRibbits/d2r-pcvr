@@ -16,6 +16,7 @@
 #include "native_ui_signatures.h"
 #include "spells.h"
 #include "melee.h"
+#include "prop_scan.h"
 #include "melee_weapon.h"
 #include "combat.h"
 #include "projectiles.h"
@@ -738,6 +739,7 @@ void ClientKill(uintptr_t unit) {
 }
 uintptr_t Transform(uintptr_t out,uint32_t entity,uintptr_t component) {
     const auto result=originalTransform(out,entity,component);
+    propscan::Transformed();
     skel::CrossbowRendered(entity,component,out);
     skel::ShieldRendered(entity,component,out);
     if(!renderCount.load(std::memory_order_relaxed))return result;

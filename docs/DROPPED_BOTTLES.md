@@ -1,7 +1,8 @@
 # Dropped empty bottles (Box3D)
 
 Status: first physics prototype; the owner verified it working in the headset
-(2026-10-22, offline character, isolated developer build).
+(2026-10-22, offline character, isolated developer build). The weapon hits
+below were verified the same day ("that works great").
 
 After drinking, opening the hand lets the empty bottle fall into the world.
 It keeps the hand's velocity and turn, bounces, rolls and stops at the game's
@@ -51,7 +52,9 @@ restores the old behaviour.
   warp or recentre), is placed without sweeping. Radii are clamped to
   2-8 cm, which thins the shield's 15 cm creature capsule. Box3D hit events
   report the approach speed; above 1 m/s that hand gets a short Melee-category
-  tick, at most every 80 ms. The weapons exist only while bottles do.
+  tick, at most every 80 ms. The weapons exist only while bottles or
+  [knockable props](KNOCKABLE_PROPS.md) are in the world. Those props
+  share this world, so bottles and props knock each other too.
 - **Drawing.** `potions::AddDropped` puts up to six empty-looking models into
   the potion scene, mapped back to room space through the current stage
   frame. The scene grew by six entries.
