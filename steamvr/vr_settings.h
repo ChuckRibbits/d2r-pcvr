@@ -14,10 +14,10 @@
 #include "haptic_strength.h"
 
 namespace framevr::settings {
-enum class Page { Controls, VR, Video, HUD, Combat, Aim, Haptics, Performance, ReleaseNotes };
+enum class Page { Controls, VR, Video, HUD, Combat, Aim, Shield, Haptics, Performance, ReleaseNotes };
 enum Key { Motion, Seated, Dominant, Snap, TurnSpeed, Waist, BeltForward,
            Foveation, Sky, Fog, Ceiling, DrawDistance, ObjectDistance,
-           EyeHeight, ArmSpan, BodyCalibration, SkillGestures, WristMap, WristCompass, ControllerLabels, WeaponSkillIndicators, PlanarSpellAim, VitalsLocation, CriticalAlerts, RenderResolution, NavigationLocation, SmoothTurn, OrdinaryMobBars, MenuDistance, TooltipTiming, ProjectileAimAssist, MeleeHitSpeed, VitalsTilt, HapticStrength, HapticMelee, HapticBowDraw, HapticBowRelease, HapticSpell, HapticInteraction, HapticAlert, HapticShortMelee, BloodVisor, BloodWipe, MeleeRules, MeleeThrustSpeed, LootLabelSize, CompanionCounts, StrainDark, OfflinePlayers, ShieldBashSpeed, StrainSpeed, DesktopOneEye, MapTopDown, MapRotate, FoveationStrength, StereoRendering, DeferGpuWait, TargetHighlight, HeartbeatStart, SpellLock, StaffPoint, LandingCircles, GroundAim, AimHighlights, HighlightRight, HighlightLeft, ReShadeDepth, ElementalHands, EnemySight, BowLaser, ThrowLift, BottlePhysics, PropPhysics, CompanionAi, Count };
+           EyeHeight, ArmSpan, BodyCalibration, SkillGestures, WristMap, WristCompass, ControllerLabels, WeaponSkillIndicators, PlanarSpellAim, VitalsLocation, CriticalAlerts, RenderResolution, NavigationLocation, SmoothTurn, OrdinaryMobBars, MenuDistance, TooltipTiming, ProjectileAimAssist, MeleeHitSpeed, VitalsTilt, HapticStrength, HapticMelee, HapticBowDraw, HapticBowRelease, HapticSpell, HapticInteraction, HapticAlert, HapticShortMelee, BloodVisor, BloodWipe, MeleeRules, MeleeThrustSpeed, LootLabelSize, CompanionCounts, StrainDark, OfflinePlayers, ShieldBashSpeed, StrainSpeed, DesktopOneEye, MapTopDown, MapRotate, FoveationStrength, StereoRendering, DeferGpuWait, TargetHighlight, HeartbeatStart, SpellLock, StaffPoint, LandingCircles, GroundAim, AimHighlights, HighlightRight, HighlightLeft, ReShadeDepth, ElementalHands, EnemySight, BowLaser, ThrowLift, BottlePhysics, PropPhysics, CompanionAi, ShieldGrip, ShieldOut, ShieldUp, ShieldFollow, ShieldRoll, AimFollowsView, Count };
 // One bit per setting, 128 wide: two words, since MSVC has no 128-bit integer.
 struct ChangeMask {
     static constexpr int Bits=128;
@@ -104,7 +104,7 @@ inline constexpr std::array<Definition,Count> Definitions{{
     {"Monster outline", "Outline strength for the monster you aim at; Off by default", L"gameplay",L"target_outline_pct",0,0,100,10},
     {"Heartbeat starts at", "Life % where the heartbeat begins; louder and faster every 10% lower", L"gameplay",L"low_life_heart_start",60,0,90,10},
     {"Skills go to the aimed monster", "The hand's monster, else the other hand's, else where you look", L"gameplay",L"spell_lock",0,0,3,1},
-    {"Staff aims where your arm points", "Upright: along your arm. Levelled out: from the staff's top", L"gameplay",L"staff_point",0,0,1,1},
+    {"Staff aims where your arm points", "Upright: along your arm. Leveled out: from the staff's top", L"gameplay",L"staff_point",0,0,1,1},
     {"Landing circles", "Where and when a ground skill will hit, in its element's color", L"gameplay",L"landing_circles",1,0,1,1},
     {"Ground skills", "The game's own aim, the floor you point at, or the aimed monster", L"gameplay",L"ground_aim",0,0,2,1},
     {"Monster highlights", "Dominant hand: its monster only. Both hands: each hand's own", L"gameplay",L"aim_highlights",1,0,1,1},
@@ -120,11 +120,28 @@ inline constexpr std::array<Definition,Count> Definitions{{
     {"Bottle physics", "Emptied bottles roll; thrown potions and traps stop at walls", L"interactions",L"bottle_physics",1,0,1,1},
     {"Knockable props", "Weapons and hands knock the level's cups, plates and vases about", L"interactions",L"prop_physics",1,0,1,1},
     {"Enhanced VR Mercenary", "Tactical positioning, dynamic detection range, elastic leash and anti-stuck watchdog", L"gameplay",L"companion_ai",1,0,1,1},
+    {"Shield grip offset", "Slides the shield along the forearm so the hand reaches its grip", L"gameplay",L"shield_grip_cm",0,-10,40,1},
+    {"Shield out from the arm", "Moves the shield away from the forearm (+) or into it (-)", L"gameplay",L"shield_out_cm",0,-30,30,1},
+    {"Shield up", "Moves the shield across the forearm, square to Out", L"gameplay",L"shield_up_cm",0,-30,30,1},
+    {"Shield follows", "0% strapped to the forearm; 100% turns with the wrist", L"gameplay",L"shield_follow_pct",50,0,100,10},
+    {"Shield roll", "Turns the shield around the forearm; + toward the little finger", L"gameplay",L"shield_roll_deg",0,-180,180,5},
+    // The eyes' 17-degree tunnel, the hands' 30-degree wedge, a raised hand alone (targetcone, aimrules::Tries).
+    {"Aim follows your view", "Only monsters ahead of you; a raised hand aims alone", L"gameplay",L"aim_follows_view",0,0,1,1},
 }};
 using Values=std::array<float,Count>;
 inline bool HapticKey(Key key){return key>=HapticStrength&&key<=HapticAlert;}
 // An outline's color per source (right hand, left hand; the eyes take the hand that would cast): 0 By range, else its hue.
 inline bool HighlightKey(Key key){return key==HighlightRight||key==HighlightLeft;}
+// Before the per-hand colors (v0.3.21-v0.3.24) one outline color served every
+// monster: [gameplay] target_outline_by_range (1 By range) and target_outline_hue
+// (0-345; -1 when a key is missing). Until a hand's own color is saved they keep
+// the player's choice: By range for both hands, else the old hue as the right
+// hand's color (the old red 0 becomes 360, since 0 now means By range).
+inline float LegacyHighlight(Key key,float byRange,float hue){
+    if(byRange>.5f)return 0;
+    if(key==HighlightRight&&std::isfinite(hue)&&hue>=0){const float snapped=std::round(hue/15)*15;return snapped<=0?360.f:std::min(snapped,360.f);}
+    return Definitions[key].defaultValue;
+}
 inline int HapticCategory(Key key){return key>=HapticMelee&&key<=HapticAlert?key-HapticMelee:-1;}
 inline haptics::Sample HapticSample(const Values& values,haptics::Category category,int hand=0){return haptics::SampleFor(category,values[HapticShortMelee]>.5f,hand);}
 inline haptics::Strengths HapticLevels(const Values& values){
@@ -143,6 +160,7 @@ inline float Normalize(Key key,float value){
     if(key==OfflinePlayers&&(value<0||value>8||std::floor(value)!=value))return 0;
     if(key==BowLaser&&value<0)return LaserOff;
     if(key==HeartbeatStart)return std::clamp(std::round(value/10)*10,d.min,d.max);   // 0 = Off, else a 10% step
+    if(key==ShieldFollow||key==ShieldRoll)return std::clamp(std::round(value/d.step)*d.step,d.min,d.max)+0.f;   // whole steps, as skel::shield::FollowSetting / RollSetting
     if(HighlightKey(key))return std::clamp(std::round(value/15)*15,d.min,d.max);   // 0 = By range, else a hue in 15-degree steps
     if(key==EnemySight)return float(enemysight::NormalizePercent(value));
     if(key==VitalsTilt)return vitals::NormalizeTilt(value);
@@ -166,9 +184,9 @@ struct Rect {
     bool Contains(float px,float py)const{return px>=x&&px<x+w&&py>=y&&py<y+h;}
 };
 constexpr int Width=1280,Height=1024;
-constexpr int TabCount=9;
-inline constexpr const char* TabNames[TabCount]={"Controls","VR","Video","HUD","Combat","Aim","Haptics","Perf","Notes"};
-constexpr Rect Tabs[TabCount]={{40,114,160,60},{212,114,96,60},{320,114,124,60},{456,114,112,60},{580,114,150,60},{742,114,96,60},{850,114,146,60},{1008,114,104,60},{1124,114,116,60}};
+constexpr int TabCount=10;
+inline constexpr const char* TabNames[TabCount]={"Controls","VR","Video","HUD","Combat","Aim","Shield","Haptics","Perf","Notes"};
+constexpr Rect Tabs[TabCount]={{40,114,144,60},{194,114,80,60},{284,114,108,60},{402,114,96,60},{508,114,136,60},{654,114,84,60},{748,114,116,60},{874,114,132,60},{1016,114,100,60},{1126,114,114,60}};
 inline Rect TabBox(int index){return Tabs[index];}
 constexpr Rect Apply{965,918,275,68},Close{650,918,275,68},Recenter{40,918,270,68},Calibrate{330,918,300,68};
 constexpr int RowY=242,RowStep=62;
@@ -340,11 +358,15 @@ inline bool GroundSkillClass(const Context& c){
     return c.heroClass<0||c.heroClass==heroclass::Sorceress||c.heroClass==heroclass::Assassin||
            c.heroClass==heroclass::Druid||c.heroClass==heroclass::Necromancer;
 }
+// Something takes the aimed monster: the outline, Skills go to the aimed monster,
+// or Ground skills on Aimed monster (the target lock's scan runs: mobaim::Wanted).
+inline bool AimedMonsterUsed(const Values& v){return v[TargetHighlight]>0||v[SpellLock]>0||v[GroundAim]>1.5f;}
 // A row that cannot apply is left out rather than greyed: one that only
 // matters with another row's choice, or for another class or weapon.
 inline bool RowShown(Key key,const Values& v,const Context& c){
     switch(key){
         case AimHighlights:case HighlightLeft:return v[TargetHighlight]>0;   // the outline's own rows
+        case AimFollowsView:return AimedMonsterUsed(v);
         case GroundAim:return GroundSkillClass(c);
         case LandingCircles:return GroundSkillClass(c)&&v[GroundAim]>.5f;     // ground skills the mod places
         case BowLaser:return c.heroClass<0||c.heroClass==heroclass::Amazon||c.bow;
@@ -395,15 +417,17 @@ inline Rect PairDecrease(int row,int side){return {PairX(side),RowY+row*RowStep,
 inline Rect PairValue(int row,int side){return {PairX(side)+56,RowY+row*RowStep,238,52};}
 inline Rect PairIncrease(int row,int side){return {PairX(side)+298,RowY+row*RowStep,52,52};}
 // Every row a page can show, in order (Rows leaves out those that cannot apply).
-inline int CatalogCount(Page page){return page==Page::Haptics?2+haptics::CategoryCount:page==Page::Combat?9:page==Page::Aim?9:page==Page::VR?10:page==Page::Video?6:page==Page::Performance?8:page==Page::HUD?10:0;}
+inline int CatalogCount(Page page){return page==Page::Haptics?2+haptics::CategoryCount:page==Page::Combat?9:page==Page::Aim?10:page==Page::Shield?5:page==Page::VR?10:page==Page::Video?6:page==Page::Performance?8:page==Page::HUD?10:0;}
 inline Key CatalogKey(Page page,int row){
     constexpr Key hapticRows[]={HapticStrength,HapticMelee,HapticShortMelee,HapticBowDraw,HapticBowRelease,HapticSpell,HapticInteraction,HapticAlert};
     if(page==Page::Haptics)return hapticRows[row];
     constexpr Key combat[]={MeleeRules,MeleeHitSpeed,MeleeThrustSpeed,ShieldBashSpeed,StrainDark,OfflinePlayers,HeartbeatStart,EnemySight,CompanionAi};   // StrainDark: with StrainSpeed
     if(page==Page::Combat)return combat[row];
     // the aimed monster, the staff, the outline: strength, which hands, their colors; the ground skills, circles, the bow path laser, the throws
-    constexpr Key aim[]={SpellLock,StaffPoint,TargetHighlight,AimHighlights,HighlightLeft,GroundAim,LandingCircles,BowLaser,ThrowLift};   // HighlightLeft: with HighlightRight
+    // AimFollowsView below every row that brings it, so turning one on moves no row above the pointer
+    constexpr Key aim[]={SpellLock,StaffPoint,TargetHighlight,AimHighlights,HighlightLeft,GroundAim,LandingCircles,AimFollowsView,BowLaser,ThrowLift};   // HighlightLeft: with HighlightRight
     if(page==Page::Aim)return aim[row];
+    if(page==Page::Shield)return Key(ShieldGrip+row);   // Grip, Out, Up, Follows, Roll: every class can carry a shield
     constexpr Key hud[]={VitalsLocation,VitalsTilt,CriticalAlerts,NavigationLocation,MenuDistance,TooltipTiming,BloodVisor,BloodWipe,LootLabelSize,CompanionCounts};
     if(page==Page::HUD)return hud[row];
     constexpr Key video[]={Sky,Fog,Ceiling,ElementalHands,BottlePhysics,PropPhysics};

@@ -223,6 +223,21 @@ int main(){
     vrsettings::Poll(name);Check(vrsettings::Read().values[NavigationLocation]==0,"fractional location falls back to Wrist");
     Check(WritePrivateProfileStringW(L"interactions",L"navigation_location",nullptr,name)&&
         WritePrivateProfileStringW(L"interactions",L"wrist_map",L"1",name)&&WritePrivateProfileStringW(L"interactions",L"wrist_compass",L"1",name),"restore legacy defaults");
+    // The old single outline color keeps the player's choice in the per-hand colors.
+    Check(WritePrivateProfileStringW(L"gameplay",L"target_outline_by_range",L"1",name),"write old By range outline");
+    vrsettings::Poll(name);
+    Check(vrsettings::Read().values[HighlightRight]==0&&vrsettings::Read().values[HighlightLeft]==0,"old By range: both hands By range");
+    Check(WritePrivateProfileStringW(L"gameplay",L"target_outline_by_range",L"0",name)&&WritePrivateProfileStringW(L"gameplay",L"target_outline_hue",L"120",name),"write old custom hue");
+    vrsettings::Poll(name);
+    Check(vrsettings::Read().values[HighlightRight]==120&&vrsettings::Read().values[HighlightLeft]==210,"old custom hue: the right hand's color, the left keeps Azure");
+    Check(WritePrivateProfileStringW(L"gameplay",L"target_outline_hue",L"0",name),"write old red");
+    vrsettings::Poll(name);
+    Check(vrsettings::Read().values[HighlightRight]==360,"old red 0 stays red (360), not By range");
+    Check(WritePrivateProfileStringW(L"gameplay",L"highlight_right_hue",L"300",name),"save a right hand color");
+    vrsettings::Poll(name);
+    Check(vrsettings::Read().values[HighlightRight]==300,"a saved hand color wins over the old one");
+    Check(WritePrivateProfileStringW(L"gameplay",L"highlight_right_hue",nullptr,name)&&WritePrivateProfileStringW(L"gameplay",L"target_outline_hue",nullptr,name)&&
+          WritePrivateProfileStringW(L"gameplay",L"target_outline_by_range",nullptr,name),"remove the outline colors");
     vrsettings::Poll(name);before=vrsettings::Read();
     Model model;model.Open(before);model.Click({Kind::Change,Foveation,1});model.Click({Kind::Change,Motion,1});
     model.Click({Kind::Change,OrdinaryMobBars,1});

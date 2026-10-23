@@ -18,6 +18,7 @@
 #include "wall_cells.h"
 #include "prop_scan.h"
 #include "../steamvr/melee_hand_state.h"
+#include "../steamvr/target_cone.h"
 #include "bow.h"
 #include "combat.h"
 #include "combat_rules.h"
@@ -69,6 +70,9 @@ std::atomic<unsigned> tooSoon{0},extraTargets{0},missed{0},buttonAttacks{0};
 framevr::attackspeed::Cadence cadence; // Classic shares one native attack cycle across hands/buttons.
 std::atomic<bool> swingRecovery{false};std::atomic<float> recoveryCurve{2},recoveryGrace{1};
 std::atomic<float> cleaveStep{0},cleaveFloor{.25f};
+// Unleashed on-hit gate, per resolved contact (developer builds report it).
+enum OnHitReason {OnHitAllowed,OnHitUnknownCycle,OnHitRiposte,OnHitNotFull,OnHitCleave,OnHitReasons};
+std::array<std::atomic<unsigned>,OnHitReasons> onHitWhy{};
 std::array<HandCombat,2> hands;
 std::mutex queueMutex;std::array<Engine,3> engines;HitSet shieldHits;
 using Request=breakables::Strike;
@@ -125,6 +129,55 @@ uint64_t OpensAt(const AttackSeen& a) {   // attackMutex held
 template<class T> bool Read(uintptr_t p,T& out) {
     return p>0x10000&&framevr::ReadMemory(&out,reinterpret_cast<const void*>(p),sizeof out);
 }
+// [gameplay] player_flinch (0, the default; Unleashed only, Classic always
+// flinches natively; applied live): in Unleashed the local hero never enters
+// the game's hit recovery (GetHit, player mode 4)
+// or its block animation (mode 9) when struck. Both lock out casts, button
+// skills and movement for their FHR/FBR frames: in VR a stun-lock the body
+// cannot follow (Cal, 2026-10-22). Refused at the mode setter (SetMode below)
+// for the hero's server and client units; the mode stays what it was.
+// Knockback (mode 19) stays native and is only counted. 1 = native flinching.
+std::atomic<bool> noFlinch{true};
+std::atomic<unsigned> flinchRefused[2]{},knockbacks{0};   // [0] GetHit, [1] Block
+#ifdef D2RVR_DEVELOPER
+// Developer builds: the game code that asked for a refused flinch, so the
+// refusal can move up to the game's own hit-recovery decision. Each distinct
+// call chain is logged once, at most 8 a session: every game frame's RVA (this
+// build), the function it sits in and that function's first 16 bytes.
+std::mutex flinchProbeMutex;std::array<uint64_t,8> flinchChains{};unsigned flinchChainCount=0;
+void ProbeFlinch(uintptr_t unit,int mode,uintptr_t caller) {
+    {std::lock_guard lock(flinchProbeMutex);if(flinchChainCount>=flinchChains.size())return;}
+    const uintptr_t base=d2rsig::Addr(SetModeRva)-d2rsig::Rva(SetModeRva);
+    const auto inGame=[&](uintptr_t pc){return base&&pc>=base&&pc-base<0x4000000;};
+    void* frames[12]{};
+    const unsigned n=RtlCaptureStackBackTrace(0,12,frames,nullptr);
+    uint64_t key=uint64_t(mode);unsigned keyed=0;
+    for(unsigned k=0;k<n&&keyed<4;++k)if(const auto pc=reinterpret_cast<uintptr_t>(frames[k]);inGame(pc)){key=key*1000003+(pc-base);++keyed;}
+    {
+        std::lock_guard lock(flinchProbeMutex);
+        for(unsigned k=0;k<flinchChainCount;++k)if(flinchChains[k]==key)return;
+        if(flinchChainCount>=flinchChains.size())return;
+        flinchChains[flinchChainCount++]=key;
+    }
+    uint32_t prior=0;Read(unit+0xc,prior);uintptr_t back=0;Read(unit+0xd8,back);
+    char line[1600];
+    int len=snprintf(line,sizeof line,"Frame flinch probe: mode=%s prior_mode=%u unit_d8=%d caller=0x%llx frames:",
+        mode==9?"block":"gethit",prior,int(back>0x10000),(unsigned long long)(inGame(caller)?caller-base:0));
+    for(unsigned k=0;k<n&&len>0&&len<int(sizeof line)-120;++k) {
+        const auto pc=reinterpret_cast<uintptr_t>(frames[k]);
+        if(!inGame(pc))continue;
+        len+=snprintf(line+len,sizeof line-len," 0x%llx",(unsigned long long)(pc-base));
+        DWORD64 image=0;
+        if(const auto fe=RtlLookupFunctionEntry(pc,&image,nullptr);fe&&image==base) {
+            uint8_t sig[16]{};Read(base+fe->BeginAddress,sig);
+            len+=snprintf(line+len,sizeof line-len,"(fn 0x%x:",unsigned(fe->BeginAddress));
+            for(uint8_t b:sig)len+=snprintf(line+len,sizeof line-len,"%02x",b);
+            len+=snprintf(line+len,sizeof line-len,")");
+        }
+    }
+    framevr::logging::Write(line);
+}
+#endif
 void ObserveServer(uintptr_t game,uintptr_t unit) {
     uint32_t id=0,header[3]{};uintptr_t back=0;
     if(!game||!combat::LocalPlayerId(id)||!Read(unit,header)||header[0]!=0||header[2]!=id||!Read(unit+0xd8,back)||back!=game)return;
@@ -284,10 +337,10 @@ void TraceRefusal(int kind,const Request& r,uint32_t target) {
         (unsigned long long)cadence.Remaining(r.session,r.at),cycleMs.load());
     framevr::logging::Write(line);
 }
-void TraceHit(const Request& r,uint32_t target,const char* outcome,uint64_t since,uint32_t cycle) {
+void TraceHit(const Request& r,uint32_t target,const char* outcome,uint64_t since,uint32_t cycle,bool onHit) {
     if(!trace.load())return;
-    char line[260];snprintf(line,sizeof line,"Frame melee trace: hand=%s stroke=%llu target=%u %s since_last_landed=%lld ms cycle=%u ms %s=%.1f m/s",
-        r.sample.handIndex?"left":"right",(unsigned long long)r.sweep.stroke,target,outcome,since==UINT64_MAX?-1LL:(long long)since,cycle,r.sweep.thrust?"thrust":"swing",r.sweep.speed);
+    char line[280];snprintf(line,sizeof line,"Frame melee trace: hand=%s stroke=%llu target=%u %s since_last_landed=%lld ms cycle=%u ms %s=%.1f m/s onhit=%d",
+        r.sample.handIndex?"left":"right",(unsigned long long)r.sweep.stroke,target,outcome,since==UINT64_MAX?-1LL:(long long)since,cycle,r.sweep.thrust?"thrust":"swing",r.sweep.speed,int(onHit));
     framevr::logging::Write(line);
 }
 // Every weapon contact with a hostile creature feels struck: one tap per
@@ -386,13 +439,16 @@ void __cdecl Apply(const D2RL::PluginContext*,void* token) noexcept {
                         const auto since=recoveryClock.Since(r.session,r.at);
                         // Unleashed: the stroke's first landed contact measures how
                         // recovered it is; every creature that stroke reaches shares it.
+                        // Kept with swing_recovery_damage off too: the on-hit gate reads it.
                         float recovery=1;bool strokeStart=false;
-                        if(swingRecovery.load(std::memory_order_relaxed)&&!attackSpeed.load()) {
+                        if(!attackSpeed.load()) {
                             if(state.strokeSession==r.session&&state.strokeId==r.sweep.stroke)recovery=state.strokeRecovery;
                             else {
                                 cycle=cycleSession.load()==r.session?(speedHand?offCycleMs.load():cycleMs.load()):0;
-                                recovery=combat::RecoveryFactor(since,cycle,recoveryCurve.load(std::memory_order_relaxed),
-                                                                recoveryGrace.load(std::memory_order_relaxed));strokeStart=true;
+                                if(swingRecovery.load(std::memory_order_relaxed))
+                                    recovery=combat::RecoveryFactor(since,cycle,recoveryCurve.load(std::memory_order_relaxed),
+                                                                    recoveryGrace.load(std::memory_order_relaxed));
+                                strokeStart=true;
                             }
                         }
                         if(!hits.Insert(r.session,r.sweep.stroke,header[2]))continue;
@@ -410,10 +466,23 @@ void __cdecl Apply(const D2RL::PluginContext*,void* token) noexcept {
                             cleave=combat::CleaveFactor(state.cleaveLanded,step,cleaveFloor.load(std::memory_order_relaxed));cleaveTracked=true;
                         }
                         const float swingRecoverySaved=combat::SwingRecovery(recovery*cleave);
+                        // Unleashed on-hit gate (Cal, 2026-10-21): on-hit effects only on a full-cycle
+                        // stroke's first landed contact; a riposte has earned them. Classic: native.
+                        auto onHit=combat::OnHit::Allowed;bool riposte=false;
+                        if(!attackSpeed.load()) {
+                            onHit=combat::OnHitGate(strokeStart,since,cycle);
+                            riposte=onHit!=combat::OnHit::Allowed&&combat::RiposteDue(header[2]);
+                        }
+                        const bool effects=onHit==combat::OnHit::Allowed||riposte;
+                        const auto onHitSaved=combat::GateOnHit(effects?combat::OnHitScope{}:combat::OnHitScope{player,unit});
                         {
                             meleeweapon::Scope selected(player,weapon);
                             reinterpret_cast<int(*)(uintptr_t,uintptr_t,int,int)>(d2rsig::Addr(AttackRva))(local.game,player,0,1);
                         }
+                        combat::GateOnHit(onHitSaved);
+                        if(contact.resolved&&!attackSpeed.load())
+                            ++onHitWhy[riposte?OnHitRiposte:onHit==combat::OnHit::CleaveFollowUp?OnHitCleave:
+                                       onHit==combat::OnHit::NotFullCycle?OnHitNotFull:cycle?OnHitAllowed:OnHitUnknownCycle];
                         combat::SwingRecovery(swingRecoverySaved);
                         combat::PhysicalSwing(swing);
                         combat::NativeRolls(rolls);
@@ -422,7 +491,7 @@ void __cdecl Apply(const D2RL::PluginContext*,void* token) noexcept {
                         if(contact.resolved&&attackSpeed.load()){cadence.Landed(r.session,r.at,cycle);landed.Insert(r.session,r.sweep.stroke,0);}
                         if(contact.resolved&&strokeStart){state.recovery.Landed(r.session,r.at,cycle);state.strokeSession=r.session;state.strokeId=r.sweep.stroke;state.strokeRecovery=recovery;}
                         if(contact.resolved&&cleaveTracked)++state.cleaveLanded;
-                        TraceHit(r,header[2],contact.accepted?"LANDED":contact.resolved?"MISSED (roll)":"native rejected",since,cycle);
+                        TraceHit(r,header[2],contact.accepted?"LANDED":contact.resolved?"MISSED (roll)":"native rejected",since,cycle,effects);
                         contact=saved;
                         if(!dual)break; // Both blades may strike this creature in the same batch.
                     }
@@ -440,7 +509,21 @@ void Init(const D2RL::PluginContext* ctx) {
 }
 void QueueAttackParry(uint32_t monster);
 int SetMode(uintptr_t unit,int mode) {
-    if(AttackMode(mode)) {
+    // The local hero's flinch (player modes GetHit 4, Block 9; Knockback 19 counted).
+    if(mode==4||mode==9||mode==19) {
+        uint32_t header[3]{},id=0;
+        if(Read(unit,header)&&header[0]==0&&combat::LocalPlayerId(id)&&header[2]==id) {
+            if(mode==19)++knockbacks;
+            else if(noFlinch.load(std::memory_order_relaxed)) {
+                ++flinchRefused[mode==9];
+#ifdef D2RVR_DEVELOPER
+                ProbeFlinch(unit,mode,reinterpret_cast<uintptr_t>(_ReturnAddress()));
+#endif
+                return 0;   // refused: the hero keeps the mode it had
+            }
+        }
+    }
+    if(AttackMode(mode)&&parryReady.load(std::memory_order_relaxed)) {
         uint32_t header[3]{};uintptr_t back=0;
         if(Read(unit,header)&&header[0]==1&&Read(unit+0xd8,back)&&back>0x10000) { // a server monster starting an attack
             const auto now=GetTickCount64();
@@ -692,20 +775,35 @@ int Hostiles(Hostile* out,int max,float range,float& heroX,float& heroY) {
     heroX=selfPos.x*.5f;heroY=selfPos.z*.5f;
     uintptr_t buckets[128]{};
     if(!Read(game+0x4c6*8,buckets))return -1;
-    int n=0;unsigned visited=0;
+    // The NEAREST max within range, not the first in hash order: in a crowd a
+    // far monster must not push out a near one. Line of sight only for the
+    // ones kept.
+    constexpr int Cap=128;
+    max=std::min(max,Cap);
+    uintptr_t units[Cap]{};float distance[Cap]{};
+    int n=0,inRange=0;unsigned visited=0;
     for(uintptr_t unit:buckets) {
-        for(unsigned chain=0;unit&&chain<256&&visited++<4096&&n<max;++chain) {
+        for(unsigned chain=0;unit&&chain<256&&visited++<4096;++chain) {
             uintptr_t next=0;uint32_t header[4]{};Vec pos{};
             if(!Read(unit+0x158,next)||!Read(unit,header))break;
-            if(header[0]==1&&header[3]!=0&&header[3]!=12&&Position(unit,pos)&&
-               std::hypot(pos.x*.5f-heroX,pos.z*.5f-heroY)<=range&&
+            const float d=header[0]==1&&header[3]!=0&&header[3]!=12&&Position(unit,pos)?std::hypot(pos.x*.5f-heroX,pos.z*.5f-heroY):-1.f;
+            if(d>=0&&d<=range&&
                reinterpret_cast<int(*)(uintptr_t,uintptr_t,uintptr_t)>(d2rsig::Addr(RelationRva))(game,self,unit)&&
                !(MonsterFlags(unit)&(kMonNpc|kMonInTown))) {   // not town residents
-                const bool clear=reinterpret_cast<int(*)(uintptr_t,uintptr_t,int)>(d2rsig::Addr(LineRva))(self,unit,0x804)==0;
-                out[n++]={header[2],header[1],pos.x*.5f,pos.z*.5f,clear};
+                ++inRange;
+                const int slot=framevr::targetcone::NearestSlot(distance,n,max,d);
+                if(slot>=0){units[slot]=unit;distance[slot]=d;out[slot]={header[2],header[1],pos.x*.5f,pos.z*.5f,false};if(slot==n)++n;}
             }
             unit=next;
         }
+    }
+    for(int i=0;i<n;++i)out[i].clear=reinterpret_cast<int(*)(uintptr_t,uintptr_t,int)>(d2rsig::Addr(LineRva))(self,units[i],0x804)==0;
+    // Telemetry: a crowd bigger than the list, at most every 5 s.
+    static ULONGLONG crowdLogged=0;
+    if(inRange>n&&GetTickCount64()-crowdLogged>5000) {
+        crowdLogged=GetTickCount64();
+        char line[128];snprintf(line,sizeof line,"Frame target lock: kept the nearest %d of %d hostiles in range",n,inRange);
+        framevr::logging::Write(line);
     }
     return n;
 }
@@ -768,11 +866,12 @@ void Install() {
         if(!parryReady.load()&&HitRecoveryRva&&d2rsig::Check(HitRecoveryRva,HitRecoverySig,sizeof HitRecoverySig)) {
             parryReady=true;framevr::logging::Write("Frame guard: native hit recovery verified; perfect parry ready");
         }
-        // The mode setter: monster attack starts (the parry).
-        if(parryReady.load()&&!setModeIn) {
+        // The mode setter: monster attack starts (the parry) and the hero's
+        // refused flinch (player_flinch), so it goes in without the parry too.
+        if(!setModeIn) {
             setModeIn=d2rsig::Hook(SetModeRva,SetModeSig,sizeof SetModeSig,reinterpret_cast<void*>(&SetMode),reinterpret_cast<void**>(&originalSetMode));
-            framevr::logging::Write(setModeIn?"Frame guard: unit mode setter hooked; monster attack starts timed for the parry":
-                                              "Frame guard: mode setter signature mismatch; parry falls back to its window alone");
+            framevr::logging::Write(setModeIn?"Frame guard: unit mode setter hooked; monster attack starts timed for the parry; hero flinch refusable":
+                                              "Frame guard: mode setter signature mismatch; parry falls back to its window alone; the hero flinches natively");
         }
         return;
     }
@@ -799,6 +898,7 @@ void ConfigureAttackSpeed(bool enabled,bool traceHits){attackSpeed=enabled;trace
 void ConfigureSwingRecovery(bool on,float curve,float grace){swingRecovery=on;recoveryCurve=curve;recoveryGrace=grace;}
 void ConfigureCleave(float step,float floor){cleaveStep=step;cleaveFloor=floor;}
 void ConfigureAttackRating(bool native){attackRating=native;combat::ConfigureMeleeRolls(native);}
+void ConfigurePlayerFlinch(bool native){noFlinch=!native;}
 void ConfigureBlockSound(int sound) {
     static bool loaded=false; // settings thread only
     const int previous=blockSound.exchange(sound);
@@ -847,6 +947,17 @@ void Report() {
         char line[220];snprintf(line,sizeof line,"Frame guard: parry hit recovery applied=%u deflected=%u refused=%u shield_wear_refunded=%u monster_attack_starts=%u",pd,dv,pr,pf,as);
         framevr::logging::Write(line);
     }
+    {
+        const auto gh=flinchRefused[0].exchange(0),bl=flinchRefused[1].exchange(0),kb=knockbacks.exchange(0);
+#ifdef D2RVR_DEVELOPER
+        if(gh||bl||kb) {
+            char line[160];snprintf(line,sizeof line,"Frame flinch: refused gethit=%u block=%u knockback_native=%u",gh,bl,kb);
+            framevr::logging::Write(line);
+        }
+#else
+        (void)gh;(void)bl;(void)kb;
+#endif
+    }
     const auto ss=shieldSweeps.exchange(0),sr=shieldRequests.exchange(0),sa=shieldAccepted.exchange(0),sf=shieldRejected.exchange(0);
     if(ss||sr||sa||sf) {
         char line[180];snprintf(line,sizeof line,"Frame shield: energetic sweeps=%u cast requests=%u native completed=%u refused=%u",ss,sr,sa,sf);
@@ -873,6 +984,16 @@ void Report() {
             framevr::logging::Write(why);
         }
     }
+#ifdef D2RVR_DEVELOPER
+    {   // Unleashed on-hit gate: resolved contacts with their effects, and gated ones by reason.
+        unsigned w[OnHitReasons];bool any=false;for(int k=0;k<OnHitReasons;++k){w[k]=onHitWhy[k].exchange(0);any|=w[k]!=0;}
+        if(any) {
+            char why[240];snprintf(why,sizeof why,"Frame on-hit gate: with effects=%u (unknown_cycle=%u riposte=%u) gated not_full_cycle=%u cleave_follow_up=%u",
+                w[OnHitAllowed]+w[OnHitUnknownCycle]+w[OnHitRiposte],w[OnHitUnknownCycle],w[OnHitRiposte],w[OnHitNotFull],w[OnHitCleave]);
+            framevr::logging::Write(why);
+        }
+    }
+#endif
     const auto early=tooSoon.exchange(0),extra=extraTargets.exchange(0),m=missed.exchange(0),button=buttonAttacks.exchange(0);
     if(!s&&!c&&!g&&!d.discontinuities&&!d.recovering&&!retries&&!early&&!extra&&!m&&!button)return;
     char line[760];snprintf(line,sizeof line,"Frame melee: sweep samples=%u physical contacts=%u native accepted=%u missed=%u rejected=%u missing server=%u intersections=%u stale=%u walls=%u pose resets=%u recovering=%u callbacks=%u abandoned=%u pending_ms=%llu missing_player=%u position_mismatch=%u nearby=%u missing_body=%u attack_speed=%d cycle_ms=%u too_soon=%u extra_targets=%u button_cycles=%u",s,c,a,m,r,g,i,x,w,d.discontinuities,d.recovering,callbacks,retries,(unsigned long long)age,missing,mismatch,monsters,bodies,

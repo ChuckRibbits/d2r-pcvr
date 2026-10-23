@@ -48,6 +48,15 @@ float SwingRecovery(float factor);
 void ConfigureArDamage(bool on,float floor);
 // Game thread: a parry flinched this monster; its next physical hit within the window is a riposte.
 void NoteRiposte(uint32_t monster);
+// True while a riposte on this monster is due (its window open, not yet landed). Thread-safe.
+bool RiposteDue(uint32_t monster);
+// Game thread (melee.cpp), around one physical swing's native attack: this
+// attacker's on-hit effects against this target are off for the call
+// (Unleashed on-hit gate): domeleedamage/domeleeattack events (item procs, CTC,
+// crushing blow, open wounds...), life/mana leech, critical and deadly strike,
+// prevent monster heal and defense lowered per hit. {} = none. Returns the previous scope.
+struct OnHitScope {uintptr_t attacker=0,target=0;};
+OnHitScope GateOnHit(OnHitScope scope);
 // A parry swing made during the monster's downstroke (opensAt, melee::ParryOpens)
 // resolves at once, before its hit frame. ParryArmed: an unspent recent swing (cheap gate,
 // thread-safe). Game thread: EarlyParry judges this attacking monster unit
