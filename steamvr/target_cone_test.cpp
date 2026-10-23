@@ -33,5 +33,25 @@ int main() {
         Check(n==3&&sum==16.f,"the nearest 3 of the stream are kept (1, 5 and 10)");
         Check(NearestSlot(kept,3,3,50)==-1,"a farther one is dropped when full");
     }
+    // Aim follows your view: the eyes catch within 17 degrees, keep to 30
+    Check(TunnelDeg==17&&KeepDeg==30&&KeepDeg==HalfAngleDeg,"the tunnel is 17 degrees, the kept wedge the cone's 30");
+    const Target tunnelPair[]={{1,110,100,true},{2,110,103.6f,true}};   // 0 and ~20 degrees, 10 cells out
+    Check(PickTunnel(tunnelPair,2,100,100,1,0,0)==0,"the tunnel catches the one straight ahead");
+    Check(PickTunnel(tunnelPair+1,1,100,100,1,0,0)==-1,"20 degrees out is not caught");
+    const Target tunnelEdge[]={{3,110,102.7f,true}};   // ~15 degrees
+    Check(PickTunnel(tunnelEdge,1,100,100,1,0,0)==0,"15 degrees out is caught");
+    Check(PickTunnel(tunnelPair+1,1,100,100,1,0,2)==0,"a caught one is kept while inside 30 degrees");
+    Check(PickTunnel(tunnelPair,2,100,100,1,0,2)==0,"a new one in the tunnel takes over from one kept outside it");
+    Check(PickTunnel(tunnelPair,2,100,100,0.985f,0.174f,2)==1&&PickTunnel(tunnelPair,2,100,100,0.985f,0.174f,0)==0,
+          "both in the tunnel (heading 10 degrees): the current one keeps Pick's margin");
+    const Target tunnelFar[]={{2,110,108.4f,true}};   // ~40 degrees
+    Check(PickTunnel(tunnelFar,1,100,100,1,0,2)==-1,"past 30 degrees it lets go");
+    Check(PickTunnel(tunnelPair+1,1,100,100,1,0,2,10,5)==-1,"a kept wedge narrower than the tunnel counts as the tunnel");
+    Check(PickTunnel(walled,2,100,100,1,0,0)==1&&PickTunnel(far,1,100,100,1,0,0)==-1&&PickTunnel(line,3,100,100,0,0,0)==-1,
+          "walls, the game's reach and no heading rule out as in Pick");
+    // and the hands: only monsters within 30 degrees of the head's heading
+    Check(std::fabs(AngleOff(10,3.64f,1,0)-20)<.2f&&AngleOff(0,0,1,0)==0&&AngleOff(5,0,0,0)==180,"angle off the heading");
+    Check(std::fabs(AngleOff(-10,0,1,0)-180)<.01f&&std::fabs(AngleOff(0,10,1,0)-90)<.01f,"beside is 90, behind is 180");
+    Check(AngleOff(10,5.7f,1,0)<=KeepDeg&&AngleOff(10,5.8f,1,0)>KeepDeg,"30 degrees is the edge");
     std::puts("target cone tests passed");
 }

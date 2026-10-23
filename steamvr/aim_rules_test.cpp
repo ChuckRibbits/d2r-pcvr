@@ -27,6 +27,9 @@ int main() {
     Check(right.at[0]==Right&&right.at[1]==Left&&right.at[2]==Eyes,"a right button: right, left, eyes");
     Check(left.at[0]==Left&&left.at[1]==Right&&left.at[2]==Eyes,"a left button: left, right, eyes");
     Check(bow.at[0]==Left&&bow.at[1]==Right,"a bow skill on a right button: the bow hand first");
+    Check(Tries(false,false)==3&&Tries(false,true)==3,"Aim follows your view Off: every cast tries its hand, the other hand, the eyes");
+    Check(Tries(true,false)==3&&Tries(true,true)==1,"On: a raised, pointing first hand tries its own monster only; a lowered one the whole order");
+    Check(EyesOutlined(false,true)&&EyesOutlined(true,false)&&!EyesOutlined(true,true),"On, the eyes' monster is not outlined while a hand points");
     Check(Stable(373)&&Stable(402)&&!Stable(372)&&!Stable(403)&&Of(395,true)==Use::Native&&Of(388,false)==Use::Native,"the Warlock keeps upstream's aim: no rule, even for his missiles");
     {
         const Switches off{},spells{true,false,0},bows{false,true,0},point{false,false,1},monster{false,false,2};

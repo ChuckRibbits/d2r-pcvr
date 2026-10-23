@@ -2909,7 +2909,7 @@ std::atomic<int> lock{0};         // Skills go to the aimed monster: bits 1 spel
 constexpr framevr::settings::Key keys[] = {framevr::settings::TargetHighlight,
                                            framevr::settings::StaffPoint,
                                            framevr::settings::LandingCircles, framevr::settings::AimHighlights,
-                                           framevr::settings::Dominant};
+                                           framevr::settings::Dominant, framevr::settings::AimFollowsView};
 constexpr int KeyCount = int(std::size(keys));
 void Refresh() {
     const ULONGLONG now = GetTickCount64();
@@ -2934,6 +2934,9 @@ bool AimOn(framevr::settings::Key key) {
 int GroundAimMode() { aimsettings::Refresh(); return aimsettings::ground.load(); }
 bool SpellsLocked() { aimsettings::Refresh(); return (aimsettings::lock.load() & 1) != 0; }
 bool BowSkillsLocked() { aimsettings::Refresh(); return (aimsettings::lock.load() & 2) != 0; }
+// VR Settings > Aim > Aim follows your view (Off by default): the eyes' tunnel,
+// the hands' wedge and a raised hand aiming alone (aimtargets).
+bool FollowsView() { return AimOn(framevr::settings::AimFollowsView); }
 // How far a hand is held out from the head before it points, cm: the arm counts as
 // pointing once held out a tenth of the player's span (Jeff: 15 cm on a 1.5 m span).
 float AimArmOutCm() { aimsettings::Refresh(); return framevr::armpointing::ArmOutCm(aimsettings::spanM.load()); }
@@ -3433,6 +3436,19 @@ void Tick(const targetlock::Snapshot* s) {
                     LogF("Frame aim hold: %s button let go of the monster handed for skill %d (id %u)", b ? "left" : "right", was, g_unitId.load());
         }
     const float armOut = AimArmOutCm();
+    // Aim follows your view: the hands pick only monsters within KeepDeg of the
+    // head's heading (the others skipped as one behind a wall is). Off, or no
+    // head heading (then the eyes pick nothing either): s itself.
+    static targetlock::Snapshot ahead;
+    const targetlock::Snapshot* hs = s;
+    const bool follows = FollowsView();
+    if (float hx = 0, hy = 0; follows && s && HeadHeading(hx, hy)) {
+        ahead = *s;
+        for (int i = 0; i < ahead.count && i < framevr::targetcone::MaxTargets; ++i)
+            if (framevr::targetcone::AngleOff(ahead.targets[i].x - s->heroX, ahead.targets[i].y - s->heroY, hx, hy) > framevr::targetcone::KeepDeg)
+                ahead.targets[i].clear = false;
+        hs = &ahead;
+    }
     for (int h = 0; h < 2; ++h) {
         float o[3], d[3];
         bool on = false;
@@ -3448,11 +3464,15 @@ void Tick(const targetlock::Snapshot* s) {
         g_pointing[h].store(on);
         int i = -1;   // each hand's pick uses the same aim as its cast (pointer, arm line, weapon shaft, bow)
         if (s && on && HandRay(o, d, true, h) && std::hypot(d[0], d[2]) > 1e-3f)
-            i = framevr::targetcone::Pick(s->targets, s->count, s->heroX, s->heroY, d[0], d[2], g_pick[h].id.load());
+            i = framevr::targetcone::Pick(hs->targets, hs->count, hs->heroX, hs->heroY, d[0], d[2], g_pick[h].id.load());
         Store(h, s, i);
     }
     float gx = 0, gy = 0;
-    Store(framevr::aimrules::Eyes, s, s && HeadHeading(gx, gy) ? framevr::targetcone::Pick(s->targets, s->count, s->heroX, s->heroY, gx, gy, g_pick[2].id.load()) : -1);
+    int eyes = -1;   // Aim follows your view: caught in the 17-degree tunnel, kept to 30 (Telemetry: "Frame target lock: eyes")
+    if (s && HeadHeading(gx, gy))
+        eyes = follows ? framevr::targetcone::PickTunnel(s->targets, s->count, s->heroX, s->heroY, gx, gy, g_pick[2].id.load())
+                       : framevr::targetcone::Pick(s->targets, s->count, s->heroX, s->heroY, gx, gy, g_pick[2].id.load());
+    Store(framevr::aimrules::Eyes, s, eyes);
 }
 // The target for a cast from this button's hand (bow: a bow skill), with where
 // it came from. Any thread.
@@ -3483,7 +3503,12 @@ bool Resolve(int button, bool bow, float& x, float& y, float& distance, int* sou
         if (idOut) *idOut = keep;
         return true;
     }
-    for (const auto src : framevr::aimrules::For(b, bow).at) {
+    // Aim follows your view: a raised, pointing first hand tries only its own
+    // monster; with none the cast goes where it points (FreeAimRay).
+    const auto order = framevr::aimrules::For(b, bow);
+    const int tries = framevr::aimrules::Tries(FollowsView(), Pointing(order.at[0]));
+    for (int k = 0; k < tries; ++k) {
+        const auto src = order.at[k];
         const uint32_t id = g_pick[src].id.load();
         if (!id || now - g_pick[src].at.load() > 300 || !find(id)) continue;
         distance = std::hypot(x - s.heroX, y - s.heroY);
@@ -3492,6 +3517,15 @@ bool Resolve(int button, bool bow, float& x, float& y, float& distance, int* sou
         if (idOut) *idOut = id;
         return true;
     }
+    // Telemetry: "Frame aim rules:" when a raised hand's cast passed over another source's monster, at most once a second
+    static std::atomic<ULONGLONG> toldAlone{0};
+    for (int k = tries; k < 3; ++k)
+        if (const auto src = order.at[k]; g_pick[src].id.load() && now - g_pick[src].at.load() <= 300 && now - toldAlone.load() > 1000) {
+            toldAlone.store(now);
+            LogF("Frame aim rules: %s raised with no monster of its own: the cast goes where it points, not to the %s's monster %u (aim follows your view)",
+                 SourceName(order.at[0]), SourceName(src), g_pick[src].id.load());
+            break;
+        }
     return false;
 }
 // The outlines to draw: Both hands (VR Settings > Aim > Monster highlights)
@@ -3526,7 +3560,9 @@ int ShownTargets(Shown out[2]) {
         const uint32_t id = idOf(h);
         if (id && id != first && fill(id, h, out[n])) { first = id; ++n; }
     }
-    if (n == 0) if (const uint32_t id = idOf(framevr::aimrules::Eyes); id && fill(id, framevr::aimrules::Eyes, out[n])) ++n;
+    // Aim follows your view: while the hand whose color the eyes' monster takes points, it is not outlined (that hand's cast never takes it)
+    const bool eyes = framevr::aimrules::EyesOutlined(FollowsView(), Pointing(dominant));
+    if (n == 0 && eyes) if (const uint32_t id = idOf(framevr::aimrules::Eyes); id && fill(id, framevr::aimrules::Eyes, out[n])) ++n;
     // Telemetry: "Frame aim outline:" whenever what is outlined changes
     static uint64_t shownKey = ~0ull;
     uint64_t key = n;
@@ -3607,8 +3643,18 @@ void Tick() {
         toldLegacy = true;
         LogF("Frame aim outline: a hand's color comes from the old single outline color ([gameplay] target_outline_by_range / target_outline_hue) until it is changed");
     }
+    // Telemetry: "Frame aim rules:" when Aim follows your view is turned on or off (nothing while it stays Off)
+    static bool followed = false;
+    if (const bool follows = FollowsView(); follows != followed) {
+        followed = follows;
+        if (follows) LogF("Frame aim rules: aim follows your view on - the eyes catch within %.0f deg of the head and keep to %.0f, the hands pick within %.0f, a raised hand aims alone",
+                          framevr::targetcone::TunnelDeg, framevr::targetcone::KeepDeg, framevr::targetcone::KeepDeg);
+        else LogF("Frame aim rules: aim follows your view off");
+    }
     // Nothing aims by the rules or outlines a monster: no arm tracking at all.
     // From the settings alone, so loading screens and menus don't flip it.
+    // Aim follows your view is not counted (aimrules::Any): it only changes which
+    // monster the picks take, so with nothing using them it has nothing to do.
     const bool resting = !TargetHighlightOn() && !framevr::aimrules::Any(aimtargets::Options());
     static bool rested = false;
     if (resting != rested) {

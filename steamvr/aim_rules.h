@@ -61,7 +61,9 @@ inline bool Circle(Use use){return use==Use::Ground;}
 // skills (0 the game's own aim, 1 where you point, 2 the aimed monster).
 struct Switches {bool spells=false,bowSkills=false;int ground=0;};
 // Any option On: the rules can aim some cast. All Off, nothing of them runs:
-// no arm tracking, transport reads or hand-offs (cost while Off).
+// no arm tracking, transport reads or hand-offs (cost while Off). Aim follows
+// your view is not one of them: it only changes which monster the picks take
+// (Tries, targetcone::PickTunnel), so alone it has nothing to do.
 inline bool Any(const Switches& s){return s.spells||s.bowSkills||s.ground>0;}
 // The rules aim a cast only with its kind's option On. Off (the defaults),
 // every cast aims as it did before them: the casting hand's ray, Bone Wall and
@@ -108,4 +110,13 @@ inline Order For(int buttonHand,bool bowSkill) {
     if(bowSkill||buttonHand==1)return {{Left,Right,Eyes}};
     return {{Right,Left,Eyes}};
 }
+// VR Settings > Aim > Aim follows your view (Off by default): a raised hand aims
+// alone. While the first hand of a cast's order is held out and pointing, the
+// cast tries that hand's monster only: with none it goes where the hand points,
+// never to the other hand's or the eyes' monster. A lowered hand, or the row
+// Off, tries the whole order as before. How many of For's sources to try.
+inline int Tries(bool followsView,bool firstPointing){return followsView&&firstPointing?1:3;}
+// The outline shows the eyes' monster only while the hand that would cast at it
+// (the one whose color it takes) is not aiming alone.
+inline bool EyesOutlined(bool followsView,bool handPointing){return !(followsView&&handPointing);}
 }

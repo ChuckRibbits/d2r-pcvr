@@ -383,9 +383,10 @@ int main(){
         Check(s.values[ThrowLift]==10&&std::wstring(Definitions[ThrowLift].key)==L"throw_lift_deg"&&Definitions[ThrowLift].min==-10&&
               Definitions[ThrowLift].max==30&&Definitions[ThrowLift].step==5,"[gameplay] throw_lift_deg: 10 degrees up by default, -10 to 30 in 5s");
         auto lit=s.values;lit[TargetHighlight]=50;lit[GroundAim]=1;
-        Check(RowCount(Page::Aim,lit)==9&&RowKey(Page::Aim,3,lit)==AimHighlights&&RowKey(Page::Aim,4,lit)==HighlightLeft&&
-              RowKey(Page::Aim,5,lit)==GroundAim&&RowKey(Page::Aim,6,lit)==LandingCircles&&RowKey(Page::Aim,7,lit)==BowLaser,
-              "the outline brings its hands and colors, a placed ground skill its circles");
+        Check(RowCount(Page::Aim,lit)==10&&RowKey(Page::Aim,3,lit)==AimHighlights&&RowKey(Page::Aim,4,lit)==HighlightLeft&&
+              RowKey(Page::Aim,5,lit)==GroundAim&&RowKey(Page::Aim,6,lit)==LandingCircles&&RowKey(Page::Aim,7,lit)==AimFollowsView&&
+              RowKey(Page::Aim,8,lit)==BowLaser,
+              "the outline brings its hands and colors and Aim follows your view, a placed ground skill its circles");
         Check(Paired(HighlightLeft)&&PairOf(HighlightLeft)==HighlightRight&&std::strcmp(RowLabel(HighlightLeft,{}),"Hand colors")==0,"one row for both hands' colors");
         // Every option that changes how a cast aims is Off by default: the casts aim as before the aim rules (#159 review).
         Check(s.values[SpellLock]==0&&s.values[StaffPoint]==0&&s.values[GroundAim]==0&&s.values[LandingCircles]==1,
@@ -424,7 +425,7 @@ int main(){
                   HelpAt(Page::Aim,(PairValue(4,1).x+5.f)/Width,(PairValue(4,1).y+5.f)/Height,false,&colors.Get())==HighlightRight,"each side explains its own hand");
             float rgb[3];HueRgb(45,rgb);Check(rgb[0]==1&&rgb[1]==.75f&&rgb[2]==0,"45 degrees is gold");}
         Check(HelpAt(Page::Aim,(ValueBox(2).x+5.f)/Width,(ValueBox(2).y+5.f)/Height)==TargetHighlight,"the outline row explains itself");
-        aim.Click(At(aim,Page::Aim,Increase(2)));Check(aim.Get()[TargetHighlight]==10&&aim.Rows().count==8,"plus turns the outline on at 10%, with its rows");
+        aim.Click(At(aim,Page::Aim,Increase(2)));Check(aim.Get()[TargetHighlight]==10&&aim.Rows().count==9,"plus turns the outline on at 10%, with its rows");
         aim.Click(At(aim,Page::Aim,Decrease(2)));aim.Click(At(aim,Page::Aim,Decrease(2)));Check(aim.Get()[TargetHighlight]==0,"Off is the lower bound");
         aim.Click(At(aim,Page::Aim,Increase(2)));aim.Click(At(aim,Page::Aim,Increase(2)));
         const auto request=aim.Click({Kind::Apply});
@@ -445,6 +446,26 @@ int main(){
         Check(std::strcmp(RowLabel(SpellLock,sorc.context),"Spells go to the aimed monster")==0,"a class without bow skills sees its spells only");
         sorc.Click(At(sorc,Page::Aim,Increase(0)));Check(sorc.Get()[SpellLock]==3,"its plus turns spells on and keeps the Amazon's bow skills");
         sorc.Click(At(sorc,Page::Aim,ValueBox(0)));Check(sorc.Get()[SpellLock]==2,"and the value box off again");
+    }
+    {   // Aim follows your view: one On/Off row, Off by default, shown once something takes the aimed monster
+        const auto& d=Definitions[AimFollowsView];
+        Check(std::wstring(d.section)==L"gameplay"&&std::wstring(d.key)==L"aim_follows_view"&&d.defaultValue==0&&d.min==0&&d.max==1&&d.step==1&&
+              Defaults()[AimFollowsView]==0&&std::strcmp(d.label,"Aim follows your view")==0,"[gameplay] aim_follows_view: On or Off, Off by default");
+        auto v=Defaults();
+        Check(!RowShown(AimFollowsView,v,{}),"left out while nothing takes the aimed monster");
+        v[GroundAim]=1;Check(!RowShown(AimFollowsView,v,{}),"Ground skills on Where you point take no monster");
+        for(const Key k:{TargetHighlight,SpellLock,GroundAim}){
+            auto w=Defaults();w[k]=k==GroundAim?2.f:k==TargetHighlight?50.f:1.f;
+            Check(RowShown(AimFollowsView,w,{}),"the outline, Skills go to the aimed monster or Ground skills on Aimed monster bring it");
+        }
+        auto spells=Defaults();spells[SpellLock]=1;
+        Check(RowCount(Page::Aim,spells)==7&&RowKey(Page::Aim,3,spells)==GroundAim&&RowKey(Page::Aim,4,spells)==AimFollowsView&&RowKey(Page::Aim,5,spells)==BowLaser,
+              "below every row that brings it");
+        Check(std::string(HelpText(AimFollowsView)).size()<450&&std::strstr(HelpText(AimFollowsView),"17 degrees")&&std::strstr(HelpText(AimFollowsView),"Off by default"),
+              "its help names the tunnel and fits the card");
+        Model m;auto on=s;on.values[SpellLock]=1;m.Open(on);m.Click({Kind::Tab,int(Page::Aim)});
+        m.Click(At(m,Page::Aim,ValueBox(4)));Check(m.Get()[AimFollowsView]==1,"its value box turns it On");
+        Check(m.Click({Kind::Apply}).changed==(ChangeMask{1}<<AimFollowsView),"Apply saves only it");
     }
     {   // Rows follow the character: another class's or weapon's are left out; unknown (the menus) shows them all
         const auto v=Defaults();

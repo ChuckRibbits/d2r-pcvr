@@ -17,7 +17,7 @@ namespace framevr::settings {
 enum class Page { Controls, VR, Video, HUD, Combat, Aim, Haptics, Performance, ReleaseNotes };
 enum Key { Motion, Seated, Dominant, Snap, TurnSpeed, Waist, BeltForward,
            Foveation, Sky, Fog, Ceiling, DrawDistance, ObjectDistance,
-           EyeHeight, ArmSpan, BodyCalibration, SkillGestures, WristMap, WristCompass, ControllerLabels, WeaponSkillIndicators, PlanarSpellAim, VitalsLocation, CriticalAlerts, RenderResolution, NavigationLocation, SmoothTurn, OrdinaryMobBars, MenuDistance, TooltipTiming, ProjectileAimAssist, MeleeHitSpeed, VitalsTilt, HapticStrength, HapticMelee, HapticBowDraw, HapticBowRelease, HapticSpell, HapticInteraction, HapticAlert, HapticShortMelee, BloodVisor, BloodWipe, MeleeRules, MeleeThrustSpeed, LootLabelSize, CompanionCounts, StrainDark, OfflinePlayers, ShieldBashSpeed, StrainSpeed, DesktopOneEye, MapTopDown, MapRotate, FoveationStrength, StereoRendering, DeferGpuWait, TargetHighlight, HeartbeatStart, SpellLock, StaffPoint, LandingCircles, GroundAim, AimHighlights, HighlightRight, HighlightLeft, ReShadeDepth, ElementalHands, EnemySight, BowLaser, ThrowLift, Count };
+           EyeHeight, ArmSpan, BodyCalibration, SkillGestures, WristMap, WristCompass, ControllerLabels, WeaponSkillIndicators, PlanarSpellAim, VitalsLocation, CriticalAlerts, RenderResolution, NavigationLocation, SmoothTurn, OrdinaryMobBars, MenuDistance, TooltipTiming, ProjectileAimAssist, MeleeHitSpeed, VitalsTilt, HapticStrength, HapticMelee, HapticBowDraw, HapticBowRelease, HapticSpell, HapticInteraction, HapticAlert, HapticShortMelee, BloodVisor, BloodWipe, MeleeRules, MeleeThrustSpeed, LootLabelSize, CompanionCounts, StrainDark, OfflinePlayers, ShieldBashSpeed, StrainSpeed, DesktopOneEye, MapTopDown, MapRotate, FoveationStrength, StereoRendering, DeferGpuWait, TargetHighlight, HeartbeatStart, SpellLock, StaffPoint, LandingCircles, GroundAim, AimHighlights, HighlightRight, HighlightLeft, ReShadeDepth, ElementalHands, EnemySight, BowLaser, ThrowLift, AimFollowsView, Count };
 // One bit per setting, 128 wide: two words, since MSVC has no 128-bit integer.
 struct ChangeMask {
     static constexpr int Bits=128;
@@ -117,6 +117,8 @@ inline constexpr std::array<Definition,Count> Definitions{{
     {"Bow path laser", "A faint line along a drawn arrow's flight: Off or its color", L"bow",L"path_laser_hue",-15,-15,345,15},
     // Degrees above the throwing hand's path; a release follows through low.
     {"Throw lift", "Thrown weapons leave above the hand's path; - lowers them", L"gameplay",L"throw_lift_deg",10,-10,30,5},
+    // The eyes' 17-degree tunnel, the hands' 30-degree wedge, a raised hand alone (targetcone, aimrules::Tries).
+    {"Aim follows your view", "Only monsters ahead of you; a raised hand aims alone", L"gameplay",L"aim_follows_view",0,0,1,1},
 }};
 using Values=std::array<float,Count>;
 inline bool HapticKey(Key key){return key>=HapticStrength&&key<=HapticAlert;}
@@ -347,11 +349,15 @@ inline bool GroundSkillClass(const Context& c){
     return c.heroClass<0||c.heroClass==heroclass::Sorceress||c.heroClass==heroclass::Assassin||
            c.heroClass==heroclass::Druid||c.heroClass==heroclass::Necromancer;
 }
+// Something takes the aimed monster: the outline, Skills go to the aimed monster,
+// or Ground skills on Aimed monster (the target lock's scan runs: mobaim::Wanted).
+inline bool AimedMonsterUsed(const Values& v){return v[TargetHighlight]>0||v[SpellLock]>0||v[GroundAim]>1.5f;}
 // A row that cannot apply is left out rather than greyed: one that only
 // matters with another row's choice, or for another class or weapon.
 inline bool RowShown(Key key,const Values& v,const Context& c){
     switch(key){
         case AimHighlights:case HighlightLeft:return v[TargetHighlight]>0;   // the outline's own rows
+        case AimFollowsView:return AimedMonsterUsed(v);
         case GroundAim:return GroundSkillClass(c);
         case LandingCircles:return GroundSkillClass(c)&&v[GroundAim]>.5f;     // ground skills the mod places
         case BowLaser:return c.heroClass<0||c.heroClass==heroclass::Amazon||c.bow;
@@ -402,14 +408,15 @@ inline Rect PairDecrease(int row,int side){return {PairX(side),RowY+row*RowStep,
 inline Rect PairValue(int row,int side){return {PairX(side)+56,RowY+row*RowStep,238,52};}
 inline Rect PairIncrease(int row,int side){return {PairX(side)+298,RowY+row*RowStep,52,52};}
 // Every row a page can show, in order (Rows leaves out those that cannot apply).
-inline int CatalogCount(Page page){return page==Page::Haptics?2+haptics::CategoryCount:page==Page::Combat?8:page==Page::Aim?9:page==Page::VR?10:page==Page::Video?4:page==Page::Performance?8:page==Page::HUD?10:0;}
+inline int CatalogCount(Page page){return page==Page::Haptics?2+haptics::CategoryCount:page==Page::Combat?8:page==Page::Aim?10:page==Page::VR?10:page==Page::Video?4:page==Page::Performance?8:page==Page::HUD?10:0;}
 inline Key CatalogKey(Page page,int row){
     constexpr Key hapticRows[]={HapticStrength,HapticMelee,HapticShortMelee,HapticBowDraw,HapticBowRelease,HapticSpell,HapticInteraction,HapticAlert};
     if(page==Page::Haptics)return hapticRows[row];
     constexpr Key combat[]={MeleeRules,MeleeHitSpeed,MeleeThrustSpeed,ShieldBashSpeed,StrainDark,OfflinePlayers,HeartbeatStart,EnemySight};   // StrainDark: with StrainSpeed
     if(page==Page::Combat)return combat[row];
     // the aimed monster, the staff, the outline: strength, which hands, their colors; the ground skills, circles, the bow path laser, the throws
-    constexpr Key aim[]={SpellLock,StaffPoint,TargetHighlight,AimHighlights,HighlightLeft,GroundAim,LandingCircles,BowLaser,ThrowLift};   // HighlightLeft: with HighlightRight
+    // AimFollowsView below every row that brings it, so turning one on moves no row above the pointer
+    constexpr Key aim[]={SpellLock,StaffPoint,TargetHighlight,AimHighlights,HighlightLeft,GroundAim,LandingCircles,AimFollowsView,BowLaser,ThrowLift};   // HighlightLeft: with HighlightRight
     if(page==Page::Aim)return aim[row];
     constexpr Key hud[]={VitalsLocation,VitalsTilt,CriticalAlerts,NavigationLocation,MenuDistance,TooltipTiming,BloodVisor,BloodWipe,LootLabelSize,CompanionCounts};
     if(page==Page::HUD)return hud[row];
