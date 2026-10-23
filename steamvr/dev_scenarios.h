@@ -23,8 +23,9 @@ inline constexpr int TurnsKeepOwnChoice=37;
 inline constexpr int ThrowingChoice=38;
 inline constexpr int PotionsChoice=39;
 inline constexpr int UnlockQuestsChoice=40;
+inline constexpr int TorchChoice=41;
 inline constexpr int PageSize=14;
-inline constexpr std::array<Choice,41> Choices{{
+inline constexpr std::array<Choice,42> Choices{{
     {"Level 90", "All class skills rank 20 / test attributes", nullptr},
     {"Primary gear", "Class-specific unique equipment", nullptr},
     {"Alternate gear", "Equipment for the other class abilities", nullptr},
@@ -73,6 +74,7 @@ inline constexpr std::array<Choice,41> Choices{{
     {"Throwing kit", "Javelin, Pilum, Glaive, knives and axes", nullptr},
     {"Potion kit", "Health, Rejuvenation, Antidote, Thawing / belt them to throw", nullptr},
     {"Unlock Quests & Waypoints", "Complete quests through Act V / unlock all waypoints", nullptr},
+    {"Torch kit", "One-hand club torch / test lighting and melee", nullptr},
 }};
 // Stable action IDs are independent of their presentation order.
 inline constexpr int PageCount=5;
@@ -86,7 +88,7 @@ inline constexpr const char* PageHelp[]={
 };
 inline constexpr std::array<std::array<int,PageSize>,PageCount> Pages{{
     {{Level10Choice,Level30Choice,Level60Choice,0,HealChoice,UnlockQuestsChoice,-1,-1,-1,-1,-1,-1,-1,-1}},
-    {{StarterPrimaryChoice,StarterAlternateChoice,1,2,CrossbowChoice,BowChoice,SmallShieldChoice,DebugDrawsChoice,TurnsKeepOwnChoice,ThrowingChoice,PotionsChoice,-1,-1,-1}},
+    {{StarterPrimaryChoice,StarterAlternateChoice,1,2,CrossbowChoice,BowChoice,SmallShieldChoice,DebugDrawsChoice,TurnsKeepOwnChoice,ThrowingChoice,PotionsChoice,TorchChoice,-1,-1}},
     {{4,11,14,15,16,5,3,8,9,-1,-1,-1,-1,-1}},
     {{17,UpperKurastChoice,KurastSewersChoice,18,19,26,27,-1,-1,-1,-1,-1,-1,-1}},
     {{6,7,20,21,22,23,24,25,-1,-1,-1,-1,-1,-1}}
@@ -226,6 +228,7 @@ inline std::array<const char*,10> Kit(int cls,int choice){
     // Potion toss tests, any class: the four kinds the hireling takes from a
     // throw (Health, Rejuvenation, Antidote, Thawing), for the belt. 10 cells.
     if(ValidClass(cls)&&choice==PotionsChoice)return {"hp5","hp5","hp5","hp5","rvl","rvl","yps","yps","wms","wms"};
+    if(ValidClass(cls)&&choice==TorchChoice)return {"clb"};
     if(!ValidClass(cls)||(choice!=1&&choice!=2))return {};
     const auto& p=Presets[cls];const bool caster=choice==2&&cls!=0&&cls!=4;
     const auto& weapons=choice==1?p.primaryWeapons:p.alternateWeapons;
@@ -238,7 +241,7 @@ inline bool Ammo(std::string_view code){return code=="aqv"||code=="cqv";}
 inline bool ValidChoice(int choice){return choice>=0&&choice<int(Choices.size());}
 inline bool StarterKit(int choice){return choice==StarterPrimaryChoice||choice==StarterAlternateChoice;}
 // Normal quality at item level 1, usable at once; the other kits roll uniques at 99.
-inline bool NormalKit(int choice){return StarterKit(choice)||choice==ThrowingChoice||choice==PotionsChoice;}
+inline bool NormalKit(int choice){return StarterKit(choice)||choice==ThrowingChoice||choice==PotionsChoice||choice==TorchChoice;}
 inline bool IsKit(int choice){return choice==1||choice==2||choice==CrossbowChoice||choice==BowChoice||choice==SmallShieldChoice||NormalKit(choice);}
 inline bool Isolated(std::string_view mod,std::string_view metadata){return mod==Mod&&metadata==ModInfo;}
 }

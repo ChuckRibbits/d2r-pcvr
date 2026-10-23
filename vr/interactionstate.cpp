@@ -47,7 +47,7 @@ constexpr int GlassBreak=2587;
 uint64_t issuedAt=0,cancelEpoch=0;
 bool scheduled=false;
 template<class T>const T* Service(const PluginContext* c) {const T* p=nullptr;return c->QueryService(&p)==ServiceQueryResult::Success?p:nullptr;}
-Item Copy(const Items::ItemInfo& i){return {i.handle,i.runtimeId,i.code,uint32_t(i.quality),i.qualityRecordId};}
+Item Copy(const Items::ItemInfo& i){return {i.handle,i.runtimeId,i.code,uint32_t(i.quality),i.qualityRecordId,i.socketedItemCount};}
 void __cdecl PlayHeal(const PluginContext*,void* unit) noexcept {
     const bool played=melee::HirelingOverlay(uint32_t(reinterpret_cast<uintptr_t>(unit)),HealOverlay);
     framevr::logging::Write(played?"Frame potion toss: native healing overlay played on the mercenary":
