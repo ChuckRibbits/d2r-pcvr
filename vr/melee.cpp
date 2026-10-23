@@ -287,8 +287,9 @@ void TraceRefusal(int kind,const Request& r,uint32_t target) {
 }
 void TraceHit(const Request& r,uint32_t target,const char* outcome,uint64_t since,uint32_t cycle,bool onHit) {
     if(!trace.load())return;
-    char line[280];snprintf(line,sizeof line,"Frame melee trace: hand=%s stroke=%llu target=%u %s since_last_landed=%lld ms cycle=%u ms %s=%.1f m/s onhit=%d",
-        r.sample.handIndex?"left":"right",(unsigned long long)r.sweep.stroke,target,outcome,since==UINT64_MAX?-1LL:(long long)since,cycle,r.sweep.thrust?"thrust":"swing",r.sweep.speed,int(onHit));
+    char line[300];snprintf(line,sizeof line,"Frame melee trace: hand=%s stroke=%llu target=%u %s since_last_landed=%lld ms cycle=%u ms %s=%.1f m/s onhit=%d would_hit=%d",
+        r.sample.handIndex?"left":"right",(unsigned long long)r.sweep.stroke,target,outcome,since==UINT64_MAX?-1LL:(long long)since,cycle,r.sweep.thrust?"thrust":"swing",r.sweep.speed,int(onHit),
+        combat::LastSwingWouldHit());
     framevr::logging::Write(line);
 }
 // Every weapon contact with a hostile creature feels struck: one tap per

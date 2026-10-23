@@ -881,6 +881,11 @@ mid-game) choose between two modes for physical swings and trigger/button melee:
     own roll sites are checked at start (`Frame on-hit gate:`); a part not
     found stays native. `[debug] melee_trace=1` adds `onhit=1/0` to each
     traced contact.
+  - **Would-have-hit gate:** a contact's effects other than its damage also
+    need the swing's native roll to have hit (below, *Would-have-hit gate*),
+    so a full-cycle stroke at 60% attack rating chance carries them about 60%
+    of the time, as natively. `would_hit=1/0` (-1: not gated, e.g. a riposte)
+    ends each `melee_trace` contact line.
   `Frame swing damage:` in the log reports scaled hits and the last factors.
 - **Classic** (`1`): native attack rating, monster defense, block and the
   level penalty decide each attack, and attack speed paces them (below). A rolled
@@ -1084,6 +1089,39 @@ without the hit-or-miss variance. Spells never roll to hit and are unchanged.
 `[gameplay] enemies_always_hit` (default 1) turns the rule off with 0, restoring
 native monster misses at full damage. Classic always uses the native monster
 chance to hit. The log's `Frame incoming defense:` line counts scaled hits.
+
+**Would-have-hit gate (Unleashed):** contact always lands, both ways - a monster's
+melee hit or missile on you (`enemies_always_hit`) and your physical swing - and
+its damage follows the Unleashed formula above. Every other effect of that attack
+delivers natively: only when the attack's native to-hit roll would have hit. The
+verdict is the game's own, not an average: the forced hit check still advances the
+attacker's real random seed once, and that roll against the clamped chance is what
+the game would have compared. On a would-miss contact:
+- **Off:** the attacker's on-hit procs (crushing blow, open wounds, freeze, slow,
+  knockback, chance to cast on striking, curses such as Amplify from a monster's
+  hit, Iron Maiden on a cursed attacker), the struck unit's when-struck effects
+  (chance to cast when struck, damage taken goes to mana, attacker takes lightning
+  damage, Frozen Armor, Life Tap's heal), life/mana/stamina leech and drain, mana
+  burn, chill, freeze and stun lengths, absorb heal, monster mods' on-hit
+  effects, Thorns' damage return, prevent monster heal, defense lowered per hit,
+  and item wear (your armor when struck, your weapon when you strike).
+- **As a miss:** effects the game fires on a miss as well - chance to cast on
+  attack and attacked-in-melee (attacker takes damage, Shiver Armor) - run as if
+  the attack had missed.
+- **Unchanged:** critical and deadly strike (they multiply the damage, which the
+  chance already scales), blocks, parries, chip, guard strain and the block's
+  shield wear (designed), spells and enchantment procs (never roll to hit),
+  on-kill effects. A riposte is a clean hit and always carries its effects.
+- **Damage over time** - poison and burn - is damage that never reaches the scaled
+  life write: it takes the hit's own factor (Defense, or attack rating x recovery
+  x cleave, a riposte's bonus) on every contact.
+On average every effect then lands as often as natively. Arrows, throws and
+trigger/button attacks are not covered. Each part is checked against the build
+at start (`Frame would-hit gate: verdict= events= effects= ...`); a part not
+found stays as before (its effects on every contact). `Frame would-hit gate:
+incoming would hit= would miss= swings ...` counts verdicts; developer builds add
+what was switched off (`Frame would-hit gate native:`). `Frame guard native:`
+ends in `would_hit=1/0`.
 `[debug] guard_trace=1` logs every judged hit (`Frame guard trace:`) with the hand
 position, cover angle, swing and attack timing. Its `parry=` field names why a
 raised guard did not parry: `no_swing`, `spent`, `early` (more than 450 ms before
