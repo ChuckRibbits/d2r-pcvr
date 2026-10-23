@@ -89,7 +89,7 @@
 namespace gamestate {uint32_t WeaponType();uint32_t HandsKey();uint32_t WeaponSet();uint32_t WeaponClass();uint32_t TwoHanded();uint64_t LocalPlayer();uint32_t MenuEpoch();}
 namespace gamecmd {void RequestPotion(int slot);void CancelPotion();}
 namespace gamestate {void MenuMap(bool wanted);uint32_t QuestNotices();bool NoticePanelOpen();bool NoticeText(int kind,char* out,uint32_t size);}
-namespace gamestate {bool LeftShield();framevr::dualwield::Equipment MeleeEquipment();}
+namespace gamestate {bool LeftShield();bool RightThrowingPotion();framevr::dualwield::Equipment MeleeEquipment();}
 namespace combat {float GameVolume();}
 
 namespace framevr {
@@ -1612,7 +1612,7 @@ void SettingsPointer(const settings::InputGate::Edges& edges,bool grip) {
         if(interaction::Fresh(bindings,gamestate::LocalPlayer(),GetTickCount64()))context.heroClass=bindings.skillClass;
         const auto weapon=gamestate::WeaponType();
         context.bow=weapon==D2RVR_TYPE_BOW;context.staff=weapon==D2RVR_TYPE_STAFF;
-        context.thrown=weapon==D2RVR_TYPE_JAVELIN||weapon==D2RVR_TYPE_THROWING;
+        context.thrown=weapon==D2RVR_TYPE_JAVELIN||weapon==D2RVR_TYPE_THROWING||gamestate::RightThrowingPotion();   // a throwing potion's toss is lifted too
         settingsModel.SetContext(context);
     }
     int helpTarget=settings::NoHelp;
@@ -2299,7 +2299,11 @@ void Input() {
     motionInput.shieldEquipped=gamestate::LeftShield()&&::melee::ShieldReady();
     motionInput.leftThrow=leftThrowArmed;motionInput.leftTrigger=controls.lt/255.f;
     motionInput.throwLift=gestureSettings[settings::ThrowLift];
-    motionInput.toss=gestureSettings[settings::SkillGestures]>.5f&&quickFresh&&rightSkill.known&&rightSkill.available&&toss::Skill(rightSkill.id);
+    // A throwing potion in the right hand, with Attack or Throw on the right
+    // trigger, is tossed the same way: the game's own Throw lands it at the spot.
+    const bool tossReady=gestureSettings[settings::SkillGestures]>.5f&&quickFresh&&rightSkill.known&&rightSkill.available;
+    motionInput.potion=tossReady&&gamestate::RightThrowingPotion()&&weaponskills::PotionThrow(rightSkill.id);
+    motionInput.toss=tossReady&&(toss::Skill(rightSkill.id)||motionInput.potion);
     motionOutput=motion.Step(motionInput);motionAt=GetTickCount64();
     if(motionOutput.tossHeld)tossLanding={};   // a new trap in hand: nothing placed yet
     const auto& tossStage=interactionInput.stage;
@@ -2327,7 +2331,8 @@ void Input() {
             landed=traced||toss::Landing(tossStage,tossFloor,stageWorld.upm,motionOutput.tossOrigin,motionOutput.tossVelocity,x,y,carry);
         }
         if(landed)tossLanding={rightSkill.id,x,y,motionAt,gamestate::LocalPlayer()};
-        char line[220];std::snprintf(line,sizeof line,"Frame toss: skill=%d thrown at %.1f m/s (running %.1f m/s), %s %.1f,%.1f",rightSkill.id,
+        char line[240];std::snprintf(line,sizeof line,"Frame toss: skill=%d%s thrown at %.1f m/s (running %.1f m/s), %s %.1f,%.1f",rightSkill.id,
+            motionInput.potion?" (throwing potion)":"",
             gameplay::Length(motionOutput.tossVelocity),gameplay::Length(carry),
             !landed?"no landing (room unknown), cast where you point":traced?"first hit at cells":"lands on the floor at cells",x,y);
         Say(line);

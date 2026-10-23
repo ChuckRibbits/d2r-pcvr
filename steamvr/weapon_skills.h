@@ -2,6 +2,7 @@
 #include <cmath>
 #include "skill_slots.h"
 #include <cstdint>
+#include <string_view>
 
 namespace framevr::weaponskills {
 inline constexpr int Attack=0,Throw=2,Smite=97,Strafe=26,DoubleThrow=140;
@@ -48,6 +49,18 @@ inline bool JavelinMissile(int missile) {
         default:return false;
     }
 }
+// Throwing potions (Weapons.txt type tpot): Rancid Gas, Oil, Choking Gas,
+// Exploding, Strangling Gas and Fulminating Potion. Their missiles (Missiles.txt
+// 44-49, CollideType 6) pass over monsters, stop at walls and burst where they
+// land, so a hand throw picks the spot like a tossed trap (toss.h). By item
+// code, for when the game's ItemTypes has no tpot row (gamestate.cpp).
+inline bool ThrowingPotion(std::string_view code) {
+    while(!code.empty()&&code.back()==' ')code.remove_suffix(1);
+    return code=="gps"||code=="ops"||code=="gpm"||code=="opm"||code=="gpl"||code=="opl";
+}
+// The right trigger's skills that throw the potion in hand: Throw, or Attack
+// (Skills.txt leaves tpot out of Attack, so the game is expected to throw).
+inline bool PotionThrow(int skill){return skill==Attack||skill==Throw;}
 // What a physical release can carry: a bow's arrow skills; a thrown weapon's
 // javelin skills, and the Barbarian's Double Throw (Skills.txt srvdofunc 74,
 // no srvmissile: each throw flies the throwing hand's own weapon).
