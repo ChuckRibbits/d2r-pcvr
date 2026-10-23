@@ -4,7 +4,7 @@
 #include <cstdint>
 
 namespace framevr::weaponskills {
-inline constexpr int Attack=0,Throw=2,Smite=97,Strafe=26,DoubleThrow=140;
+inline constexpr int Attack=0,Throw=2,Smite=97,Strafe=26,DoubleThrow=140,Werewolf=223,Werebear=228;
 enum class Action { Native, Arrow, Volley, Shield };
 inline Action Classify(int skill) {
     switch(skill) {
@@ -113,14 +113,14 @@ class Pulse {
     double started=0,until=0;
 public:
     void Cancel(){*this=Pulse{};}
-    bool Start(int nextSlot,int nextId,int nextOwner,uint64_t nextContext,double now) {
+    bool Start(int nextSlot,int nextId,int nextOwner,uint64_t nextContext,double now,double hold=0) {
         if(nextSlot<0||nextSlot>=skills::Count||nextId<0||!std::isfinite(now)||now<until)return false;
         // Shield contact uses the left trigger's alternate bank. SkillPad
         // needs 50 ms at the native consumer before exposing its button; a
         // 65 ms producer pulse can disappear between the game's polls.
         // Allow bank preparation plus two native ticks and XR scheduling.
         // FinishShieldSkill still cancels immediately when Smite executes.
-        const double duration=nextId==Smite?.180:.065;
+        const double duration=hold>0?hold:nextId==Smite?.180:.065;
         slot=nextSlot;id=nextId;owner=nextOwner;context=nextContext;started=now;until=now+duration;return true;
     }
     int Get(int currentSlot,int currentId,int currentOwner,uint64_t currentContext,double now) {

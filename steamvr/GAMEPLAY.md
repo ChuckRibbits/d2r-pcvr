@@ -1701,6 +1701,30 @@ without failures. The final free-swing run recorded 58 physical contacts and
 58 native accepted hits with no rejections; the owner reported "works great."
 Arrow/spell live verification remains open.
 
+### Druid shapeshift gestures
+
+A Druid changes form by performing the transformation, in either melee rules
+mode, while **VR Settings > VR > Weapon skill gestures** is on (as the other
+gesture skills):
+
+- **Werewolf:** cross both arms over your chest (each hand on the opposite side),
+  bow forward over them, then wrench upright while flinging both arms up and
+  outward.
+- **Werebear:** hold both hands above your head for a moment, then slam them
+  down together to waist height or lower.
+
+The gesture presses the controller button the shape skill is assigned to, so the
+skill must be on one of the ten slots; the native cast, mana, cooldown and the
+transformation itself stay native. Performing the gesture again while
+transformed casts the skill again, which returns you to human form; a 1.5 s
+cooldown after each cast stops one sloppy performance from casting twice. A
+performance is ignored while a hand is busy (trigger squeezed, bottle held, bow
+drawn, face wipe), while menus or the wheel are open, and without the skill on a
+button (the log says which skill was not assigned). Both controllers pulse once
+when the cast is issued. Thresholds live in `shapeshift::Tuning`
+(`steamvr/shapeshift_gesture.h`); `shapeshift-gesture-test` walks both
+performances, lazy and partial versions, loot stooping and overhead swings.
+
 ### Ice Bolt visual height correction
 
 New or missing combat preferences default to **Planar spell aiming: Off** and
