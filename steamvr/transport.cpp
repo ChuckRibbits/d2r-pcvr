@@ -54,6 +54,8 @@
 #include "xinput_rumble.h"
 #include "interaction_icons.h"
 #include "potion_models.h"
+#include "dropped_bottles.h"
+#include "../vr/wall_cells.h"
 #include "elemental_hands_renderer.h"
 #include "vr_settings_ui.h"
 #include "../vr/settings_menu.h"
@@ -575,6 +577,10 @@ UiBlit uiBlit;
 UiBlit mapBlit; // Own descriptors: native menu and map copies may share a frame.
 potions::Models potionModels;
 potions::Scene potionScene;
+// Emptied bottles let go of: Box3D bodies, made on the first one ([interactions] bottle_physics).
+std::unique_ptr<bottles::World> droppedBottles;
+std::atomic<bool> bottlePhysics{true};
+uint64_t droppedSession=0;
 elements::Renderer elementalRenderer;
 elements::State elementalState;
 elements::Scene elementalScene;
@@ -795,7 +801,7 @@ void ClearInput() {
     settingsInputGate.Suspend();
     ++meleeEpoch;motion.Cancel();motionOutput={};motionAt=0;gamecmd::CancelPotion();
     interactions.Reset();interactionOutput={};interactionstate::Cancel();skel::SetInteractionHidden(0);
-    potionScene={};
+    potionScene={};if(droppedBottles)droppedBottles->Reset();
     elementalState.Reset();elementalScene={};
     journalPlacement.LoseTracking();
     meleePoses.Clear();offhandPoses.Clear();CancelShieldCast();
@@ -1655,6 +1661,40 @@ void SettingsPointer(const settings::InputGate::Edges& edges,bool grip) {
     }
     if(TakeSettingsPicture())settingsPainted=settingsRequested;
 }
+// An emptied bottle let go of falls into the world as a Box3D body: onto the
+// floor under the player, against the game's wall cells around it. It stays
+// until its time is up or the player leaves it behind. Drawn only.
+void StepDroppedBottles() {
+    const auto& in=interactionInput;const auto& out=interactionOutput;
+    if(!bottlePhysics.load()||!in.session||in.session!=droppedSession) {
+        if(droppedBottles)droppedBottles->Reset();
+        droppedSession=in.session;
+        if(!bottlePhysics.load())return;
+    }
+    const float upm=stageWorld.upm;
+    const bool world=in.floorKnown&&in.stage.known&&upm>=1&&upm<=12;
+    const float floor=world?in.stage.anchor.y+(in.floor-in.stage.origin.y):0;
+    // Walls ready before the bottle leaves the hand.
+    if(world&&out.bottleEmpty&&out.bottleHand>=0)
+        wallcells::Want({in.session,in.stage.World(in.hand[out.bottleHand].p),floor,upm},in.at);
+    if(out.discard.active&&world) {
+        if(!droppedBottles)droppedBottles=std::make_unique<bottles::World>();
+        const auto& d=out.discard;
+        const bottles::Release release{in.session,in.time,d.p,d.v,d.w,d.q,d.floor,upm,bottles::Radius(potionModels.Radius(d.code)),d.code};
+        const bool dropped=droppedBottles->Ready()&&droppedBottles->Drop(release);
+        char line[200];
+        if(dropped)std::snprintf(line,sizeof line,"Frame dropped bottles: let go at %.1f m/s, turning %.1f rad/s, radius %.1f cm; %u in the world",
+            std::sqrt(math::Dot(d.v,d.v)),std::sqrt(math::Dot(d.w,d.w)),release.radius*100,droppedBottles->Count());
+        else std::snprintf(line,sizeof line,"Frame dropped bottles: release refused (physics %s)",droppedBottles->Ready()?"ready":"unavailable");
+        Say(line);
+    }
+    if(!droppedBottles||!droppedBottles->Count()||!in.stage.known)return; // menus and loading hold them still
+    bottles::Patch patch;
+    if(wallcells::Latest(patch))droppedBottles->Walls(patch);
+    droppedBottles->Advance(in.time,in.stage.anchor);
+    bottles::WallRequest want;
+    if(droppedBottles->WallsWanted(want))wallcells::Want(want,in.at);
+}
 void Input() {
     gazeValid=false;
     if(!tracking.data) return;
@@ -1876,6 +1916,7 @@ void Input() {
         interactionInput.hand[i]={motionInput.hand[i].p,motionInput.hand[i].q};
         interactionInput.handVelocity[i]=handVelocity[i];interactionInput.velocityKnown[i]=handVelocityKnown[i];}
     interactionOutput=interactions.Step(interactionInput);
+    StepDroppedBottles();
     // Quest / level-up notices: queue a card per message, paint the current one.
     {
         const auto now=GetTickCount64();
@@ -2228,6 +2269,12 @@ void Input() {
     const uint32_t hidden=interactionOutput.stowed?3u:journalMode?2u:interactionOutput.bottleHand>=0?1u<<interactionOutput.bottleHand:0;
     skel::SetInteractionHidden(hidden);
     potionScene=potions::MakeScene(interactionInput,interactionOutput);
+    if(droppedBottles&&droppedBottles->Count()&&interactionInput.stage.known) {
+        const auto& stage=interactionInput.stage;
+        std::array<bottles::Shown,bottles::MaxBottles> shown{};
+        for(unsigned i=0,n=droppedBottles->Show(shown);i<n;++i)
+            potions::AddDropped(potionScene,{stage.Room(shown[i].p),math::Multiply(math::Conjugate(stage.base),shown[i].q)},shown[i].code);
+    }
     // The game's arrow on the bow while the game's own nocked arrow is not
     // showing (in town the game stops drawing missiles): tail at the nock or
     // drawing hand, along the draw. Without the cached model, the draw guide.
@@ -3640,6 +3687,7 @@ void ConfigureInteractions(bool seated,float waist,float forward,int dominant) {
        c.beltForward==previous.beltForward&&c.dominant==previous.dominant)return;
     std::lock_guard lock(mutex);interactions.Configure(c);interactionstate::Cancel();previous=c;configured=true;
 }
+void ConfigureBottlePhysics(bool on){bottlePhysics=on;}
 bool SettingsOpen(){return settingsOpen.load();}
 bool SpellSelected() {
     std::lock_guard lock(mutex);

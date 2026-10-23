@@ -178,6 +178,7 @@ not generate melee velocity. The layout currently assumes a right-handed player.
 | Cancel active grab/draw | Right B; release inputs before starting again |
 | Physical belt potion | Reach to an original 3D bottle on the front belt and hold **Right Grip** to grab; left-hand grip also works |
 | Drink | Keep grip held, bring the bottle's opening to your mouth and tip nearly horizontal for 0.25 seconds; release to return an unused potion |
+| Drop the empty bottle | Open your hand after drinking: the bottle falls, bounces and rolls on the floor (visual only) |
 | Heal the mercenary | Toss a held Health, Rejuvenation, Antidote or Thawing bottle (release mid-swing, at least 1.4 m/s) so it lands within 1.5 m of your mercenary's feet. It shatters on landing; a miss leaves the potion on the belt |
 | Quick potion | Left Y → **EQUIPMENT / BELT** → trigger a potion wedge; grip on a potion wedge instead grabs it into the right hand |
 | Swap weapon sets | Reach the swap hand over either shoulder and press its grip; right hand by default, selectable in VR settings. Hip anchors are removed |
@@ -572,6 +573,22 @@ the merc through the native set-overlay call. Slow releases still return the
 bottle; mana and stamina potions are never thrown. The log records each
 landing's hireling class and distance (`Frame potion toss:`).
 
+**Emptied bottles.** Letting go of a bottle you have drunk from no longer makes
+it vanish: it leaves the hand with the hand's speed and turn and falls into the
+world. It bounces and rolls on the floor under the player and stops at the
+game's walls and closed doors near it, as a [Box3D](https://github.com/erincatto/box3d)
+rigid body (a cylinder the model's height and width). Up to six lie in the
+world; each goes after 20 seconds, or once you are 12 m away. This is purely
+visual. Nothing is sent to the game, and an emptied bottle has no item behind
+it. The floor is the one under you when you let go, flat like the floor
+thrown potions land on, so stairs and slopes are not followed. Walls are the
+game's wall cells (the same missile-barrier test as physical arrows), sampled
+on the game thread around the bottle every half second and standing 6 m high.
+Like the belt, the bottles draw over the scene with their own depth, so
+monsters and walls do not hide them. `[interactions] bottle_physics=0` restores
+the old vanishing bottle. The log notes each release (`Frame dropped bottles:`)
+and wall sampling every ten seconds while bottles are in the world.
+
 **Hurt merc.** During VR gameplay the local hireling's life is sampled on the
 game thread every 200 ms with the same native stat call as the wrist vitals.
 Below 50% life it is tinted with the game's own `red` state (states.txt row 91,
@@ -612,6 +629,7 @@ waist_below_eyes=0.65
 belt_forward=0.26
 hip_width=0.28
 holsters=1
+bottle_physics=1
 ```
 
 `vitals_location` and `navigation_location`: `0` Wrist, `1` Palm, `2` Either,
