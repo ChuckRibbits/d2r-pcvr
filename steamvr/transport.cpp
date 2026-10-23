@@ -54,6 +54,9 @@
 #include "xinput_rumble.h"
 #include "interaction_icons.h"
 #include "potion_models.h"
+#include "dropped_bottles.h"
+#include "../vr/wall_cells.h"
+#include "../vr/prop_scan.h"
 #include "elemental_hands_renderer.h"
 #include "vr_settings_ui.h"
 #include "../vr/settings_menu.h"
@@ -579,6 +582,19 @@ UiBlit uiBlit;
 UiBlit mapBlit; // Own descriptors: native menu and map copies may share a frame.
 potions::Models potionModels;
 potions::Scene potionScene;
+// Emptied bottles let go of: Box3D bodies, made on the first one ([interactions] bottle_physics).
+std::unique_ptr<bottles::World> droppedBottles;
+std::atomic<bool> bottlePhysics{true};
+uint64_t droppedSession=0;
+// The level's small props share that world ([interactions] prop_physics).
+std::atomic<bool> propPhysics{true};
+bool propsWanted=false;
+uint64_t propPoseSerial=0;
+// The weapons that push them, posed on the vrcam update thread.
+struct BottleWeaponPose {melee::Blade blade{};ULONGLONG at=0;bool valid=false;};
+std::mutex bottleWeaponMutex;
+std::array<BottleWeaponPose,bottles::Colliders> bottleWeapons{};
+ULONGLONG bottleStruckAt[2]{};
 elements::Renderer elementalRenderer;
 elements::State elementalState;
 elements::Scene elementalScene;
@@ -799,7 +815,7 @@ void ClearInput() {
     settingsInputGate.Suspend();
     ++meleeEpoch;motion.Cancel();motionOutput={};motionAt=0;gamecmd::CancelPotion();
     interactions.Reset();interactionOutput={};interactionstate::Cancel();skel::SetInteractionHidden(0);
-    potionScene={};
+    potionScene={};if(droppedBottles)droppedBottles->Reset();
     elementalState.Reset();elementalScene={};
     journalPlacement.LoseTracking();
     meleePoses.Clear();offhandPoses.Clear();CancelShieldCast();
@@ -1659,6 +1675,122 @@ void SettingsPointer(const settings::InputGate::Edges& edges,bool grip) {
     }
     if(TakeSettingsPicture())settingsPainted=settingsRequested;
 }
+// An emptied bottle let go of falls into the world as a Box3D body: onto the
+// floor under the player, against the game's wall cells around it. It stays
+// until its time is up or the player leaves it behind. Drawn only.
+// The level's catalogued small props near the player join the same world,
+// frozen until a weapon or a moving body reaches them; the renderer is given
+// their new matrices while they move (vr/prop_scan.cpp).
+bottles::Prop Metres(const props::Seen& s,float upm) {
+    bottles::Prop p;props::Placement at;
+    if(!props::Decompose(s.world,at)||!(upm>=1))return p;
+    p.entity=s.entity;p.kind=s.kind;p.shape=s.shape;p.material=s.material;
+    p.p=at.p*(1/upm);p.q=at.q;p.scale=at.scale;
+    const auto scaled=[&](math::Vec v){return math::Vec{v.x*at.scale.x/upm,v.y*at.scale.y/upm,v.z*at.scale.z/upm};};
+    p.bounds={scaled(s.local.lo),scaled(s.local.hi)};
+    p.support=s.support;
+    p.support.y/=upm;p.support.x0/=upm;p.support.z0/=upm;p.support.x1/=upm;p.support.z1/=upm;
+    p.unitsPerMetre=upm;
+    return p;
+}
+void StepDroppedBottles() {
+    const auto& in=interactionInput;const auto& out=interactionOutput;
+    const bool bottlesOn=bottlePhysics.load(),propsOn=propPhysics.load();
+    if((!bottlesOn&&!propsOn)||!in.session||in.session!=droppedSession) {
+        if(droppedBottles)droppedBottles->Reset();
+        droppedSession=in.session;propsWanted=false;
+        if(!bottlesOn&&!propsOn)return;
+    }
+    const float upm=stageWorld.upm;
+    const bool world=in.floorKnown&&in.stage.known&&upm>=1&&upm<=12;
+    const float floor=world?in.stage.anchor.y+(in.floor-in.stage.origin.y):0;
+    // Walls ready before the bottle leaves the hand.
+    if(bottlesOn&&world&&out.bottleEmpty&&out.bottleHand>=0)
+        wallcells::Want({in.session,in.stage.World(in.hand[out.bottleHand].p),floor,upm},in.at);
+    if(bottlesOn&&out.discard.active&&world) {
+        if(!droppedBottles)droppedBottles=std::make_unique<bottles::World>();
+        const auto& d=out.discard;
+        const bottles::Release release{in.session,in.time,d.p,d.v,d.w,d.q,d.floor,upm,bottles::Radius(potionModels.Radius(d.code)),d.code};
+        const bool dropped=droppedBottles->Ready()&&droppedBottles->Drop(release);
+        char line[200];
+        if(dropped)std::snprintf(line,sizeof line,"Frame dropped bottles: let go at %.1f m/s, turning %.1f rad/s, radius %.1f cm; %u in the world",
+            std::sqrt(math::Dot(d.v,d.v)),std::sqrt(math::Dot(d.w,d.w)),release.radius*100,droppedBottles->Count());
+        else std::snprintf(line,sizeof line,"Frame dropped bottles: release refused (physics %s)",droppedBottles->Ready()?"ready":"unavailable");
+        Say(line);
+    }
+    // Props are looked for around the player while physical melee can reach them.
+    const bool wantProps=propsOn&&world&&motionControls.load()&&stageWorld.valid;
+    if(wantProps) {
+        const auto& w=stageWorld;
+        propscan::Want({in.session,{w.hero.x,w.hero.y,w.hero.z},w.hero.y,upm},in.at);
+    }
+    props::Scan found;
+    if(propscan::Latest(found)&&wantProps) {
+        if(!droppedBottles)droppedBottles=std::make_unique<bottles::World>();
+        bottles::PropScan scan;
+        scan.session=found.session?in.session:0;scan.serial=found.serial;scan.unitsPerMetre=found.upm;
+        scan.floor=found.upm>=1?found.floor/found.upm:0;
+        scan.centre={stageWorld.hero.x/upm,stageWorld.hero.y/upm,stageWorld.hero.z/upm};
+        for(unsigned i=0;i<std::min<unsigned>(found.count,props::MaxSeen);++i)
+            if(const auto p=Metres(found.seen[i],found.upm);p.entity)scan.props[scan.count++]=p;
+        scan.lost=found.lost;scan.lostEntities=found.lostEntities;
+        if(droppedBottles->Ready())droppedBottles->Props(scan);
+    }
+    if(propsWanted&&!wantProps&&droppedBottles)droppedBottles->Props({}); // frozen props go; moving ones finish
+    propsWanted=wantProps;
+    if(!droppedBottles||droppedBottles->Idle()||!in.stage.known)return; // menus and loading hold them still
+    bottles::Patch patch;
+    if(wallcells::Latest(patch))droppedBottles->Walls(patch);
+    std::array<bottles::Collider,bottles::Colliders> weapons{};
+    {
+        std::lock_guard lock(bottleWeaponMutex);const auto now=GetTickCount64();
+        for(int i=0;i<bottles::Colliders;++i) {
+            const auto& w=bottleWeapons[i];
+            if(w.valid&&now>=w.at&&now-w.at<=100)weapons[i]={true,w.blade.base,w.blade.tip,w.blade.radius};
+        }
+    }
+    // A hand without a weapon capsule (empty, or the off hand without dual
+    // wielding or a shield) still pushes, as a fist at the controller.
+    for(int h=0;h<2&&motionControls.load();++h) {
+        if(weapons[size_t(h)].active||!in.tracked[h]||out.bottleHand==h)continue;
+        const auto p=in.stage.World(in.hand[h].p);
+        const auto forward=math::Rotate(in.stage.base,math::Rotate(in.hand[h].q,{0,0,-1}));
+        weapons[size_t(h)]={true,p-forward*.03f,p+forward*.08f,.045f};
+    }
+    droppedBottles->Weapons(weapons);
+    droppedBottles->Advance(in.time,in.stage.anchor);
+    // A light tick in the hand whose weapon struck a bottle or a prop.
+    for(int slot=0;slot<bottles::Colliders;++slot) {
+        const float speed=droppedBottles->Struck(slot);const int hand=slot?1:0;const auto now=GetTickCount64();
+        if(speed>1&&now-bottleStruckAt[hand]>=80) {
+            bottleStruckAt[hand]=now;
+            MotionPulse(hand,haptics::Category::Melee,std::clamp(.12f+speed*.02f,.12f,.35f),15000000);
+        }
+    }
+    // Moving props: their matrices for the renderer's next transform pass.
+    std::array<bottles::Moved,props::MaxMoving> moved{};
+    if(const unsigned n=droppedBottles->Moving(moved)) {
+        props::Poses poses;poses.serial=++propPoseSerial;
+        for(unsigned i=0;i<n;++i) {
+            poses.poses[poses.count].entity=moved[i].entity;
+            props::Compose({moved[i].p*moved[i].unitsPerMetre,moved[i].q,moved[i].scale},poses.poses[poses.count++].world);
+        }
+        propscan::Publish(poses);
+    }
+    // Each weapon knock is logged; knocks by moving bottles and props are counted.
+    std::array<bottles::Knock,props::MaxMoving> knocks{};
+    unsigned struck=0,chained=0;
+    for(unsigned i=0,n=droppedBottles->Knocks(knocks);i<n;++i) {
+        static const char* const by[]{"right hand","left hand","shield"};
+        if(knocks[i].slot<0){++chained;continue;}
+        char line[160];++struck;
+        std::snprintf(line,sizeof line,"Frame props: knocked a %s (%s, %.1f m/s)",propscan::KindName(knocks[i].kind),by[knocks[i].slot%3],knocks[i].speed);
+        Say(line);
+    }
+    if(struck||chained)propscan::CountKnocks(struck,chained);
+    bottles::WallRequest want;
+    if(droppedBottles->WallsWanted(want))wallcells::Want(want,in.at);
+}
 void Input() {
     gazeValid=false;
     if(!tracking.data) return;
@@ -1880,6 +2012,7 @@ void Input() {
         interactionInput.hand[i]={motionInput.hand[i].p,motionInput.hand[i].q};
         interactionInput.handVelocity[i]=handVelocity[i];interactionInput.velocityKnown[i]=handVelocityKnown[i];}
     interactionOutput=interactions.Step(interactionInput);
+    StepDroppedBottles();
     // Quest / level-up notices: queue a card per message, paint the current one.
     {
         const auto now=GetTickCount64();
@@ -2244,6 +2377,12 @@ void Input() {
     const uint32_t hidden=interactionOutput.stowed?3u:journalMode?2u:interactionOutput.bottleHand>=0?1u<<interactionOutput.bottleHand:0;
     skel::SetInteractionHidden(hidden);
     potionScene=potions::MakeScene(interactionInput,interactionOutput);
+    if(droppedBottles&&droppedBottles->Count()&&interactionInput.stage.known) {
+        const auto& stage=interactionInput.stage;
+        std::array<bottles::Shown,bottles::MaxBottles> shown{};
+        for(unsigned i=0,n=droppedBottles->Show(shown);i<n;++i)
+            potions::AddDropped(potionScene,{stage.Room(shown[i].p),math::Multiply(math::Conjugate(stage.base),shown[i].q)},shown[i].code);
+    }
     // The trap or bomb in the throwing hand while a toss is armed (#224).
     if(motionOutput.tossHeld&&motionInput.active&&!panelMode)
         potions::AddHeld(potionScene,{motionInput.hand[0].p,motionInput.hand[0].q},toss::Model(interactionInput.snapshot.skills[skills::TriggerSlot(0)].id));
@@ -3658,6 +3797,13 @@ void ConfigureInteractions(bool seated,float waist,float forward,int dominant) {
     if(configured&&c.seated==previous.seated&&c.waistBelowEyes==previous.waistBelowEyes&&
        c.beltForward==previous.beltForward&&c.dominant==previous.dominant)return;
     std::lock_guard lock(mutex);interactions.Configure(c);interactionstate::Cancel();previous=c;configured=true;
+}
+void ConfigureBottlePhysics(bool on){bottlePhysics=on;}
+void ConfigurePropPhysics(bool on){propPhysics=on;propscan::Configure(on);}
+void BottleWeapon(int slot,const melee::Blade* blade) {
+    if(slot<0||slot>=bottles::Colliders)return;
+    std::lock_guard lock(bottleWeaponMutex);
+    bottleWeapons[slot]=blade?BottleWeaponPose{*blade,GetTickCount64(),true}:BottleWeaponPose{};
 }
 bool SettingsOpen(){return settingsOpen.load();}
 bool SpellSelected() {

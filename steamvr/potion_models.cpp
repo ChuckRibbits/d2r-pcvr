@@ -70,7 +70,7 @@ struct Models::Impl {
     ComPtr<ID3D12PipelineState> pipeline;
     ComPtr<ID3D12DescriptorHeap> srv,rtv,dsv;
     ComPtr<ID3D12Resource> depth[2];
-    struct Mesh {ComPtr<ID3D12Resource> vertices,indices,texture;D3D12_VERTEX_BUFFER_VIEW vb{};D3D12_INDEX_BUFFER_VIEW ib{};uint32_t code=0,count=0;};
+    struct Mesh {ComPtr<ID3D12Resource> vertices,indices,texture;D3D12_VERTEX_BUFFER_VIEW vb{};D3D12_INDEX_BUFFER_VIEW ib{};uint32_t code=0,count=0;float radius=0;};
     Mesh meshes[Count+ExtraCount];unsigned meshCount=Count;   // the extras loaded follow the potions
     bool arrow=false;unsigned tosses=0;
     uint32_t width=0,height=0,srvStride=0,rtvStride=0,dsvStride=0;
@@ -81,6 +81,12 @@ void Models::Reset(){impl.reset();}
 bool Models::Ready() const {return impl!=nullptr;}
 bool Models::HasArrow() const {return impl&&impl->arrow;}
 unsigned Models::Tosses() const {return impl?impl->tosses:0;}
+float Models::Radius(uint32_t code) const {
+    if(!impl)return 0;
+    code=(code&0xffffff)|(uint32_t(' ')<<24);
+    for(unsigned i=0;i<impl->meshCount;++i)if(impl->meshes[i].code==code)return impl->meshes[i].radius;
+    return 0;
+}
 bool Models::Initialize(ID3D12Device* device,ID3D12CommandQueue* queue,DXGI_FORMAT format,uint32_t w,uint32_t h,void (*log)(const char*),const std::filesystem::path& directory) {
     if(impl)return true;
     try {
@@ -158,6 +164,7 @@ float4 PS(Out v):SV_Target {
         std::vector<ComPtr<ID3D12Resource>> uploads;
         for(unsigned i=0;i<p->meshCount;++i) {
             const auto& a=assets[i];auto& m=p->meshes[i];m.code=codes[i];m.count=unsigned(a.indices.size());
+            for(const auto& v:a.vertices)m.radius=std::max(m.radius,std::hypot(v.p[0],v.p[2])); // about the model's +Y
             m.vertices=Buffer(device,a.vertices.data(),a.vertices.size()*sizeof(Vertex));m.indices=Buffer(device,a.indices.data(),a.indices.size()*4);
             m.vb={m.vertices->GetGPUVirtualAddress(),UINT(a.vertices.size()*sizeof(Vertex)),sizeof(Vertex)};m.ib={m.indices->GetGPUVirtualAddress(),UINT(a.indices.size()*4),DXGI_FORMAT_R32_UINT};
             D3D12_RESOURCE_DESC tex=depth;tex.Width=a.w;tex.Height=a.h;tex.MipLevels=UINT16(a.mips.size());tex.Format=DXGI_FORMAT(a.format);tex.Flags=D3D12_RESOURCE_FLAG_NONE;
