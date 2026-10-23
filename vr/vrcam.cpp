@@ -109,6 +109,7 @@ namespace gamestate {bool OpaqueMenuOpen();}
 #include "spell_aim.h"
 #include "telegraph.h"
 #include "aim_rules.h"
+#include "aim_trace.h"
 #include "skill_pad.h"
 #include "spell_aim_signatures.h"
 #include "settings_menu.h"
@@ -3747,7 +3748,7 @@ bool PointSpellAim(float playerX,float playerY,float& targetX,float& targetY) {
 // A skill handed the monster itself (aimrules::WantsUnit) is left to the game's
 // own target query, which HookSpellControllerTarget and HookSpellHoverTarget
 // answer with this monster for this skill.
-namespace worldobj { uintptr_t ClientMonster(uint32_t id); }
+namespace worldobj { uintptr_t ClientMonster(uint32_t id); void TraceHandOffMiss(uint32_t id, float x, float y, float heroX, float heroY); }
 uintptr_t RulesUnit(int skill) {
     if(skill!=g_unitSkill.load()||!framevr::aimrules::HandOffLive(skill,g_unitAt.load(),GetTickCount64()))return 0;
     const uintptr_t unit=worldobj::ClientMonster(g_unitId.load());
@@ -3765,6 +3766,10 @@ bool NativeSpellAim(float playerX,float playerY,framevr::spellaim::Cast& cast) {
     const auto c=aimtargets::Now();
     // The aim rules only with this kind of cast's Aim option On; Off, as before them.
     const bool directed=aimtargets::RulesOn(c)?NativeSpellAimDecide(playerX,playerY,cast):UpstreamSpellAim(playerX,playerY,cast);
+    if(framevr::aimtrace::WallSkill(c.skill)) {   // telemetry "Frame wall trace:" (projectiles): Bone Wall, Bone Prison
+        const bool point=directed&&cast.contactPoint;
+        projectiles::WallCast(c.skill,point?cast.x:playerX,point?cast.y:playerY,point);
+    }
     static ULONGLONG told=0;static int toldSkill=-2;
     if(c.skill>=0&&(c.skill!=toldSkill||GetTickCount64()-told>250)) {
         told=GetTickCount64();toldSkill=c.skill;
@@ -3816,7 +3821,12 @@ bool NativeSpellAimDecide(float playerX,float playerY,framevr::spellaim::Cast& c
             g_note.unit="handed";g_note.id=id;g_note.distance=md;g_note.by="unit";
             cast.directed=false;return false;
         }
-        if(id)g_note.unit="not found";
+        if(id) {
+            g_note.unit="not found";
+            // Telemetry "Frame hand-off miss:": where the server has it, what the client rooms list
+            const auto lock=targetlock::Get();
+            worldobj::TraceHandOffMiss(id,mx,my,lock.heroX,lock.heroY);
+        }
         // Nothing handed this time: the game's target queries must not keep
         // answering with the last hand-off's monster for up to 500 ms.
         if(const int was=g_unitSkill.exchange(-1);!id&&framevr::aimrules::HandOffLive(was,g_unitAt.load(),GetTickCount64()))
@@ -8210,13 +8220,18 @@ void Gather() {
 // The aim rules: the game's own client unit of a monster, by its id (the target
 // lock knows the server's), from the rooms near the hero - the walk above, for
 // monsters (type 1) still standing. The game thread. 0: not found.
-uintptr_t ClientMonster(uint32_t id) {
-    if (!id) return 0;
-    uintptr_t hero = 0, path = 0, room = 0, nearRooms = 0;
-    uint32_t nNear = 0;
+uintptr_t AimHero() {
+    uintptr_t hero = 0;
     if (!combat::LocalPlayerUnit(hero))
         for (const uintptr_t u : {(uintptr_t)g_heroUnit.load(), (uintptr_t)g_heroSeen.load(), (uintptr_t)gamestate::LocalPlayer()})
             if (u > 0x10000 && IsHeroUnit((void*)u)) { hero = u; break; }
+    return hero;
+}
+uintptr_t ClientMonster(uint32_t id) {
+    if (!id) return 0;
+    uintptr_t path = 0, room = 0, nearRooms = 0;
+    uint32_t nNear = 0;
+    const uintptr_t hero = AimHero();
     static ULONGLONG told = 0;
     const bool tell = GetTickCount64() - told > 3000;
     if (!hero || !Rd(hero + 0x38, &path) || !Rd(path + 0x20, &room) || !Rd(room, &nearRooms) || !Rd(room + 0x40, &nNear) ||
@@ -8240,6 +8255,83 @@ uintptr_t ClientMonster(uint32_t id) {
     }
     if (tell) { told = GetTickCount64(); LogF("Frame aim rules: monster id %u not among the hero's rooms (%u rooms, %d monsters:%s)", id, nNear, monsters, seen); }
     return 0;
+}
+
+// Telemetry: "Frame hand-off miss:" a unit hand-off (Bone Spirit...) whose
+// monster ClientMonster did not find (PR #254, 2026-10-22: 7 of 8 Bone Spirit
+// casts, one 6 cells away). The server's place of it and of the hero (the
+// target lock's scan, melee::Hostiles) against what the client lists: the
+// hero's near rooms (ClientMonster's walk), each with its monsters (id, place
+// from the path at +0x38: cell at +2/+6, fraction at +0/+4, as the Fallen's
+// torches above; mode), and the rooms near those (the lights' second ring),
+// searched for the id too. Room bounds have no proven offset: each room's
+// monsters' span stands in. The game thread; on a miss only, once a second.
+void TraceHandOffMiss(uint32_t id, float tx, float ty, float serverHeroX, float serverHeroY) {
+    static ULONGLONG last = 0;
+    if (!framevr::aimtrace::Due(last, GetTickCount64(), framevr::aimtrace::MissGapMs)) return;
+    const uintptr_t hero = AimHero();
+    uintptr_t path = 0, room = 0, nearRooms = 0;
+    uint32_t nNear = 0;
+    uint16_t hp[4] = {};
+    const bool heroAt = hero && Rd(hero + 0x38, &path) && Rd(path, &hp);
+    const float hx = hp[1] + hp[0] / 65536.0f, hy = hp[3] + hp[2] / 65536.0f;
+    if (!heroAt || !Rd(path + 0x20, &room) || !Rd(room, &nearRooms) || !Rd(room + 0x40, &nNear) || !nearRooms || !nNear || nNear > 64) {
+        LogF("Frame hand-off miss: monster %u at %.1f,%.1f (server): %s", id, tx, ty, hero ? "the hero's rooms unreadable" : "hero unit not found");
+        return;
+    }
+    uintptr_t rooms[128];
+    uint32_t nRooms = 0;
+    auto addRoom = [&](uintptr_t rm) {
+        if (!rm || nRooms >= 128) return;
+        for (uint32_t k = 0; k < nRooms; ++k) if (rooms[k] == rm) return;
+        rooms[nRooms++] = rm;
+    };
+    for (uint32_t r = 0; r < nNear; ++r) { uintptr_t rm = 0; if (Rd(nearRooms + r * 8, &rm)) addRoom(rm); }
+    const uint32_t ring1 = nRooms;
+    for (uint32_t r = 0; r < ring1; ++r) {
+        uintptr_t list = 0;
+        uint32_t cnt = 0;
+        if (!Rd(rooms[r], &list) || !Rd(rooms[r] + 0x40, &cnt) || !list || cnt > 64) continue;
+        for (uint32_t q = 0; q < cnt; ++q) { uintptr_t rm = 0; if (Rd(list + q * 8, &rm)) addRoom(rm); }
+    }
+    LogF("Frame hand-off miss: monster %u at %.1f,%.1f (server), the hero at %.1f,%.1f (server) / %.1f,%.1f (client), %.1f cells apart; %u near rooms, %u with the next ring",
+         id, tx, ty, serverHeroX, serverHeroY, hx, hy, std::hypot(tx - serverHeroX, ty - serverHeroY), ring1, nRooms);
+    int foundRoom = -1;
+    uint32_t foundMode = 0, nearestId = 0, nearestRoom = 0;
+    float foundX = 0, foundY = 0, nearestX = 0, nearestY = 0, nearestD = -1;
+    for (uint32_t r = 0; r < nRooms; ++r) {
+        uintptr_t u = 0;
+        if (!Rd(rooms[r] + 0xA8, &u)) continue;
+        char seen[150] = {};
+        int units = 0, monsters = 0;
+        float x0 = 0, x1 = 0, y0 = 0, y1 = 0;
+        for (int k = 0; u && k < 512; ++k, ++units) {
+            uint32_t header[4] = {};   // type, class, id, mode
+            uintptr_t next = 0, up = 0;
+            uint16_t p[4] = {};
+            Rd(u, &header); Rd(u + 0x158, &next);
+            if (header[0] == 1 && Rd(u + 0x38, &up) && Rd(up, &p)) {
+                const float x = p[1] + p[0] / 65536.0f, y = p[3] + p[2] / 65536.0f;
+                if (!monsters++) { x0 = x1 = x; y0 = y1 = y; }
+                else { x0 = (std::min)(x0, x); x1 = (std::max)(x1, x); y0 = (std::min)(y0, y); y1 = (std::max)(y1, y); }
+                if (header[2] == id) { foundRoom = int(r); foundMode = header[3]; foundX = x; foundY = y; }
+                const float d = std::hypot(x - tx, y - ty);
+                if (nearestD < 0 || d < nearestD) { nearestD = d; nearestId = header[2]; nearestX = x; nearestY = y; nearestRoom = r; }
+                if (monsters <= 6) { const size_t used = strlen(seen); snprintf(seen + used, sizeof seen - used, " %u@%.1f,%.1f/m%u", header[2], x, y, header[3]); }
+            }
+            u = next;
+        }
+        if (r < ring1 && r < 9)
+            LogF("Frame hand-off miss: room %u: %d units, %d monsters (span x %.1f-%.1f, y %.1f-%.1f):%s%s", r, units, monsters, x0, x1, y0, y1,
+                 monsters ? seen : " none", monsters > 6 ? " ..." : "");
+    }
+    if (foundRoom >= 0)
+        LogF("Frame hand-off miss: monster %u IS in %s room %d at %.1f,%.1f mode %u (%.1f cells from its server place)%s", id,
+             foundRoom < int(ring1) ? "near" : "next-ring", foundRoom, foundX, foundY, foundMode, std::hypot(foundX - tx, foundY - ty),
+             foundRoom < int(ring1) ? " - dying/dead, or listed since" : " - ClientMonster walks the near rooms only");
+    else
+        LogF("Frame hand-off miss: monster %u in none of the %u rooms; nearest client monster %u at %.1f,%.1f (%s room %u), %.1f cells from its server place", id,
+             nRooms, nearestId, nearestX, nearestY, nearestRoom < ring1 ? "near" : "next-ring", nearestRoom, nearestD);
 }
 
 int Lights(Light* out) {

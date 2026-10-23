@@ -248,6 +248,7 @@ add_executable(monster-bars-test monster_bars_test.cpp)
 add_executable(aim-reach-test aim_reach_test.cpp)
 add_executable(telegraph-test telegraph_test.cpp)
 add_executable(aim-rules-test aim_rules_test.cpp)
+add_executable(aim-trace-test aim_trace_test.cpp)
 add_executable(target-cone-test target_cone_test.cpp)
 add_executable(gaze-test gaze_test.cpp)
 add_executable(window-focus-test window_focus_test.cpp)
@@ -293,7 +294,7 @@ foreach(test_target IN ITEMS memory-test hook-metrics-test active-keys-test reso
     portal-billboard-test shrine-trace-test shrine-placement-test overlay-view-test composition-layers-test projectile-rules-test environment-cutaway-test roof-materials-test stereo-prop-physics-test
     combat-rules-test shield-guard-test guard-strain-test heartbeat-test logging-test melee-contact-test melee-weapon-test breakables-test offline-difficulty-test enemy-sight-test attack-speed-test world-coordinates-test bow-flight-test bow-laser-test spell-cast-test spell-aim-assist-test
     interaction-test dev-scenarios-test native-belt-test wrist-hud-test navigation-info-test companions-test active-effects-test dropped-item-labels-test stick-gestures-test show-items-command-test native-hud-test render-resolution-test render-pointer-test scene-depth-test game-device-only-test controller-bindings-test journal-test native-panels-test
-    vr-settings-test vr-settings-store-test controller-labels-test math-test deferred-draw-test monster-bars-test telegraph-test aim-reach-test aim-rules-test target-cone-test gaze-test window-focus-test callback-ticket-test local-player-test shield-block-test)
+    vr-settings-test vr-settings-store-test controller-labels-test math-test deferred-draw-test monster-bars-test telegraph-test aim-reach-test aim-rules-test aim-trace-test target-cone-test gaze-test window-focus-test callback-ticket-test local-player-test shield-block-test)
   # These fixtures use assert for their checks, including in Release builds.
   if(MSVC)
     target_compile_options(${test_target} PRIVATE /UNDEBUG)

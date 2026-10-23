@@ -29,6 +29,7 @@ void __cdecl Refresh(const PluginContext*,void*) noexcept {
     }
     {std::lock_guard lock(mutex);latest=s;}
     projectiles::FollowFlights();   // telemetry: where the hero's missiles end (game thread)
+    projectiles::FollowWalls();     // telemetry: what a Bone Wall/Prison cast leaves (only after one)
     static int told=-2;
     if((n<0)!=(told<0)||(n>0)!=(told>0)) {
         told=n;

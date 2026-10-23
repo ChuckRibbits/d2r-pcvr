@@ -17,6 +17,7 @@
 #include "bow.h"
 #include "crossbow.h"
 #include "../steamvr/telegraph.h"
+#include "../steamvr/aim_trace.h"
 
 namespace gamestate {uint64_t LocalPlayer();}
 
@@ -106,6 +107,73 @@ void WatchFlight(uintptr_t created,uint32_t missile,int ox,int oy) {
     for(auto& f:flights)if(!f.unit){slot=&f;break;}else if(f.at<slot->at)slot=&f;   // a free slot, else the oldest
     *slot={id,missile,float(ox),float(oy),float(ox),float(oy),false,GetTickCount64()};
 }
+// Telemetry: "Frame wall trace:" what a Bone Wall (78) or Bone Prison (88)
+// cast leaves near its cast point; their footprint and lifetime are unproven
+// (PR #254, 2026-10-22). A cast (vrcam WallCast) asks; the game thread
+// (FollowWalls) opens a 6 s window, at most 3 casts a game (aimtrace::Window).
+// Every 100 ms of it, it walks the server's unit tables with no filter: the
+// monsters' (game+0x4c6*8, 128 buckets chained at +0x158, as melee::Hostiles)
+// and the objects' (game+0x546*8, as breakables::Apply). It logs each unit that
+// appears within 10 cells of the cast point, and when it is gone; and each
+// missile 207 the hero creates in the window (ReportSpell), followed by id
+// (melee::ServerUnit(game,3,id), as FollowFlights). Nothing runs without a cast.
+struct WallAsk {int skill=-1;float x=0,y=0;bool point=false;ULONGLONG at=0;};
+std::mutex wallMutex;
+WallAsk wallAsk;
+std::atomic<bool> wallAsked{false};
+std::atomic<ULONGLONG> wallUntil{0};   // the open window's end, for ReportSpell's cheap check
+framevr::aimtrace::Window wallWindow;
+framevr::aimtrace::Tracker<128> wallUnits;   // the baseline within 20 cells, then the new ones
+float wallHeroX=0,wallHeroY=0;
+int wallLines=0,wallCut=0;
+constexpr int WallLineCap=40;   // new/gone lines a window; the rest counted
+bool WallLine() {
+    if(wallLines<WallLineCap){++wallLines;return true;}
+    ++wallCut;return false;
+}
+// A missile 207 created by the hero inside the window: logged and followed.
+void WallMissile(uintptr_t created,uintptr_t params) {
+    const auto now=GetTickCount64();
+    if(now>=wallUntil.load())return;   // no window: nothing
+    uint32_t id=0;int points[4]{};
+    if(!Read(created+8,id)||!id||!Read(params+0x24,points))return;
+    ULONGLONG start=0;float cx=0,cy=0,hx=0,hy=0;
+    {
+        std::lock_guard lock(wallMutex);
+        if(!wallWindow.Open(now))return;
+        wallUnits.Seen(3,id,now,float(points[0]),float(points[1]));
+        start=wallWindow.start;cx=wallWindow.x;cy=wallWindow.y;hx=wallHeroX;hy=wallHeroY;
+    }
+    // Its heading against the hero->cast line (0: along it, 90: across it).
+    const float ax=float(points[2]-points[0]),ay=float(points[3]-points[1]),bx=cx-hx,by=cy-hy;
+    const float la=std::hypot(ax,ay),lb=std::hypot(bx,by);
+    const float angle=la>0&&lb>0?std::acos(std::clamp((ax*bx+ay*by)/(la*lb),-1.f,1.f))*57.29578f:-1.f;
+    char line[240];snprintf(line,sizeof line,"Frame wall trace: +%llu ms missile 207 id %u created at %d,%d (%.1f cells from the cast) toward %d,%d, %.0f deg from the hero->cast line",
+        (unsigned long long)(now-start),id,points[0],points[1],std::hypot(points[0]-cx,points[1]-cy),points[2],points[3],angle);
+    framevr::logging::Write(line);
+}
+// The server's monster and object tables, every unit: f(header,x,y) in cells.
+// Paths: a monster's (and any non-object's) place at path+0 (fraction, cell;
+// melee::Position), an object's at path+0x10/+0x14 (breakables::Inspect).
+template<class F> void EachServerUnit(uintptr_t game,F f) {
+    constexpr uint32_t Tables[]={0x4c6,0x546};
+    unsigned visited=0;
+    for(const uint32_t table:Tables) {
+        uintptr_t buckets[128]{};
+        if(!Read(game+uintptr_t(table)*8,buckets))continue;
+        for(uintptr_t unit:buckets)for(unsigned chain=0;unit&&chain<256&&visited++<8192;++chain) {
+            uintptr_t next=0,path=0;uint32_t h[4]{};
+            if(!Read(unit+0x158,next)||!Read(unit,h))break;
+            float x=0,y=0;
+            if(Read(unit+0x38,path)&&path>0x10000) {
+                if(h[0]==2){int32_t s[2]{};if(Read(path+0x10,s)){x=float(s[0]);y=float(s[1]);}}
+                else{uint16_t p[4]{};if(Read(path,p)){x=p[1]+p[0]/65536.f;y=p[3]+p[2]/65536.f;}}
+            }
+            if(x>0&&y>0)f(h,x,y);
+            unit=next;
+        }
+    }
+}
 // Read-only diagnostics at actual native missile creation, separate from the
 // earlier aim resolver. Do not claim a correct flight from the input ray alone.
 void ReportSpell(uintptr_t params,int side,uintptr_t created) {
@@ -113,6 +181,7 @@ void ReportSpell(uintptr_t params,int side,uintptr_t created) {
     if(!enabled.load()||!Read(params+0x20,missile)||missile==0||
        !Read(params+8,owner)||!IsLocalOwner(owner))return;
     if(side==1&&created&&Read(params+0x24,points))WatchFlight(created,missile,points[0],points[1]);   // every one, not just the logged
+    if(side==1&&created&&missile==207)WallMissile(created,params);   // every one, inside a wall window only
     static std::atomic<ULONGLONG> reported[2]{};
     const auto now=GetTickCount64();auto before=reported[side].load();
     if(now-before<1000||!reported[side].compare_exchange_strong(before,now))return;
@@ -313,6 +382,83 @@ void FollowFlights() {
         framevr::logging::Write(line);
         wrote=now;count=0;ended[0]=0;
     }
+}
+void WallCast(int skill,float x,float y,bool point) {
+    if(!framevr::aimtrace::WallSkill(skill)||!std::isfinite(x)||!std::isfinite(y))return;
+    if(GetTickCount64()<wallUntil.load())return;   // a window open: this cast is inside it
+    {std::lock_guard lock(wallMutex);wallAsk={skill,x,y,point,GetTickCount64()};}
+    wallAsked=true;
+}
+void FollowWalls() {
+    if(!wallAsked.load()&&!wallUntil.load())return;   // no cast asked, no window: nothing runs
+    uintptr_t game=0,self=0;
+    if(!melee::LocalServer(game,self))return;
+    using namespace framevr::aimtrace;
+    const auto now=GetTickCount64();
+    char line[256];
+    std::lock_guard lock(wallMutex);
+    wallWindow.Game(game);
+    if(wallAsked.exchange(false)) {
+        const WallAsk ask=wallAsk;
+        const int before=wallWindow.used;
+        uint16_t p[4]{};uintptr_t path=0;
+        if(now-ask.at<1000&&Read(self+0x38,path)&&Read(path,p)&&wallWindow.Arm(ask.skill,now,ask.x,ask.y)) {
+            wallUntil=now+WindowMs;wallUnits.Clear();wallLines=wallCut=0;
+            wallHeroX=p[1]+p[0]/65536.f;wallHeroY=p[3]+p[2]/65536.f;   // melee::Position's read, in cells
+            int base=0;
+            EachServerUnit(game,[&](const uint32_t* h,float x,float y){
+                if(Within(x,y,ask.x,ask.y,BaseCells)){wallUnits.Base(h[0],h[2]);++base;}
+            });
+            snprintf(line,sizeof line,"Frame wall trace: cast %d/%d, skill %d at %.1f,%.1f (%s), the hero at %.1f,%.1f (%.1f cells); %d units already within %.0f cells; watching %.0f s",
+                wallWindow.used,CastsPerGame,ask.skill,ask.x,ask.y,ask.point?"the aimed point":"the hero's place: the game aimed it",
+                wallHeroX,wallHeroY,std::hypot(ask.x-wallHeroX,ask.y-wallHeroY),base,BaseCells,WindowMs/1000.0);
+            framevr::logging::Write(line);
+        } else if(before>=CastsPerGame&&!wallWindow.Open(now)) {
+            static uintptr_t toldGame=0;
+            if(toldGame!=game){toldGame=game;framevr::logging::Write("Frame wall trace: 3 casts traced this game; no more until the next game");}
+        }
+    }
+    if(wallWindow.Closed(now)) {
+        int left=0;char ids[120]{};
+        for(int i=0;i<wallUnits.count;++i) {
+            const auto& u=wallUnits.units[i];
+            if(u.base)continue;
+            const size_t used=std::strlen(ids);
+            if(left++<6)snprintf(ids+used,sizeof ids-used," %u/%u",u.type,u.id);
+        }
+        snprintf(line,sizeof line,"Frame wall trace: skill %d window over, %d new units still there (type/id:%s%s); %d lines cut",
+            wallWindow.skill,left,left?ids:" none",left>6?" ...":"",wallCut);
+        framevr::logging::Write(line);
+        wallUntil=0;wallUnits.Clear();
+        return;
+    }
+    if(!wallWindow.start){wallUntil=0;return;}   // none open (a new game dropped it): idle again
+    if(!wallWindow.SampleDue(now))return;
+    const ULONGLONG start=wallWindow.start;const float cx=wallWindow.x,cy=wallWindow.y;
+    wallUnits.Begin();
+    EachServerUnit(game,[&](const uint32_t* h,float x,float y){
+        if(wallUnits.Find(h[0],h[2])<0&&!Within(x,y,cx,cy,NearCells))return;
+        if(!wallUnits.Seen(h[0],h[2],now,x,y)||!WallLine())return;
+        snprintf(line,sizeof line,"Frame wall trace: +%llu ms new type %u class %u id %u mode %u at %.1f,%.1f (%.1f cells from the cast: %+.1f,%+.1f)",
+            (unsigned long long)(now-start),h[0],h[1],h[2],h[3],x,y,std::hypot(x-cx,y-cy),x-cx,y-cy);
+        framevr::logging::Write(line);
+    });
+    for(int i=0;i<wallUnits.count;++i) {   // the missiles: by id (not in the tables walked)
+        auto& u=wallUnits.units[i];
+        if(u.type!=3)continue;
+        const uintptr_t unit=melee::ServerUnit(game,3,u.id);
+        uintptr_t path=0;uint32_t pos[2]{},h[3]{};
+        if(unit&&Read(unit,h)&&h[0]==3&&h[2]==u.id) {
+            u.seen=true;
+            if(Read(unit+0x38,path)&&path>0x10000&&Read(path,pos)&&pos[0]&&pos[1]){u.x=pos[0]/65536.f;u.y=pos[1]/65536.f;}
+        }
+    }
+    wallUnits.Gone([&](const Unit& u){
+        if(!WallLine())return;
+        snprintf(line,sizeof line,"Frame wall trace: +%llu ms gone type %u id %u, last at %.1f,%.1f, %llu ms after it appeared",
+            (unsigned long long)(now-start),u.type,u.id,u.x,u.y,(unsigned long long)(now-u.at));
+        framevr::logging::Write(line);
+    });
 }
 
 void Report() {
