@@ -94,9 +94,9 @@ The build also adds an **in-headset VR settings panel**.
 Hold **Left Grip and press Left Y**, or select **VR SETTINGS** in the wheel.
 The shortcut also works with motion combat disabled. Use the right laser and
 trigger; **Right B**, the shortcut again, or **Close** dismisses the panel.
-Point at a row for a moment to see its help beside the panel. Rows with named
-choices, such as Stereo rendering or Foveated rendering, also explain the
-selected choice, so stepping through them with - and + explains each one.
+Point at a row for a moment to see its help on the card under the rows. Point
+at one of a row's choices, such as Eyes drawn per frame or Lower detail at
+edges, and the card explains that choice.
 The owner verified panel visibility and laser/tab interaction after the
 October 9 Proton layer-conversion fix. Apply/cancel and broader input-ownership
 checks remain pending.
@@ -128,7 +128,7 @@ VR skill cast. The owner reports that casting still stops character movement;
 this input fix does not remove the game's animation/state restrictions.
 Teeth keeps its native fan, centered on the weapon's horizontal direction.
 Ground placements, buffs, summons and corpse-only skills keep native targeting
-(unless VR Settings > Aim turns the aim rules on; see the Aim page).
+(unless VR Settings > Aim turns the aim rules on; see the Aim page below).
 Host tests and native signature/table checks pass; this aim correction still
 needs a headset check with Teeth. Immediate hand-origin **3D** spell flight/contact
 remains pending: missiles still use the native ground plane, animation, effects,
@@ -182,19 +182,19 @@ not generate melee velocity. The layout currently assumes a right-handed player.
 | Drop the empty bottle | Open your hand after drinking: the bottle falls, bounces and rolls on the floor (visual only); hit it with your weapon or shield to knock it away |
 | Heal the mercenary | Toss a held Health, Rejuvenation, Antidote or Thawing bottle (release mid-swing, at least 1.4 m/s) so it lands within 1.5 m of your mercenary's feet. It shatters on landing (with bottle physics, where it first touches a wall, table, prop or the floor); a miss leaves the potion on the belt |
 | Quick potion | Left Y → **EQUIPMENT / BELT** → trigger a potion wedge; grip on a potion wedge instead grabs it into the right hand |
-| Swap weapon sets | Reach the swap hand over either shoulder and press its grip; right hand by default, selectable in VR settings. Hip anchors are removed |
+| Swap weapon sets | Reach the swap hand over either shoulder and press its grip; right hand by default, selectable in VR Settings > Body > Dominant hand. Hip anchors are removed |
 | Seated weapon selection | Utility wheel → **Weapon I** or **Weapon II** |
 | Stow/draw | Utility wheel → **Stow weapons** / **Draw weapons**; native equipped stats stay unchanged |
-| Health/mana | Check the back of your left wrist, or choose **Palm** in **VR Settings > HUD** and hold your left palm upward in front of you briefly. No button required; automatic alerts are off by default |
-| Show all nearby loot labels (Alt) | Hold the **right stick down** to hold the native Show Items action; let go to restore normal drop/hover labels. Push it **up** to toggle running / walking. Listed in **VR Settings > Controls** |
+| Health/mana | Check the back of your left wrist, or choose **Palm** in **VR Settings > Wrist > Life and mana** and hold your left palm upward in front of you briefly. No button required; automatic alerts are off by default |
+| Show all nearby loot labels (Alt) | Hold the **right stick down** to hold the native Show Items action; let go to restore normal drop/hover labels. Push it **up** to toggle running / walking. Listed in **VR Settings > Guide** |
 | Explored minimap | Hold Left Y ? **MAP** in the bottom tabs; point right laser + trigger. **SPELLS** returns to skills; releasing Left Y closes the menu |
 | Quest journal | Open the native tabbed game menu with Left X / Frame Left A, then select Journal. The duplicate wheel entry is removed |
 | Journal controls | Right laser + trigger uses native page controls/act tabs; Right B follows native back; Left X performs native X |
 | Inventory drop / sort | Native X (Quest Left X / Frame Left A) / press and hold right stick click; right-stick click no longer swaps in gameplay |
 | Walk / snap turn | Sticks; paused while wheel or journal is open |
-| Inventory menu / height reset | Left grip + left stick click / VR Settings > Reset eye height |
+| Inventory menu / height reset | Left grip + left stick click / VR Settings > Body > Height and arm span > Set eye height |
 
-Dropped-item names use **VR Settings > HUD > Loot label size**: **45%** by
+Dropped-item names use **VR Settings > Interface > Loot name size**: **45%** by
 default, adjustable from **20% to 150%** in five-percentage-point steps.
 Apply saves `[hud] labels_size` in `d2r_pcvr.ini` and updates it live; existing
 saved sizes are preserved. Text, dark backing bounds and click targets scale
@@ -218,8 +218,8 @@ The game's native item/filter rules apply. Inventory tooltips and monster labels
 keep their styling.
 
 The minimap and compass form one navigation display on your left hand.
-**VR Settings > HUD > Minimap / compass location** offers **Wrist** (default),
-**Palm**, **Either**, or **Off**. Click **Apply** to save. Both appear and hide
+**VR Settings > Wrist > Map and compass** offers **Wrist** (default),
+**Palm**, **Wrist or palm**, or **Off**. Click **Apply** to save. Both appear and hide
 together, independently of health/mana. When both displays share a hand face,
 navigation sits above the vitals; otherwise it sits directly at the hand anchor.
 The wheel's **MAP** tab remains available even when navigation is **Off**.
@@ -241,8 +241,8 @@ palm-up hold and casting guards as health/mana below. Both navigation elements
 hide while a wheel or menu is open; low-resource alerts never summon them.
 The compass shows direction only; it does not add destination or quest markers.
 
-**VR Settings > HUD > Health / mana location** offers **Wrist** (default),
-**Palm**, **Either**, or **Off**. Click **Apply** to save. Palm mode puts the
+**VR Settings > Wrist > Life and mana** offers **Wrist** (default),
+**Palm**, **Wrist or palm**, or **Off**. Click **Apply** to save. Palm mode puts the
 health/mana and XP display just above your left palm: raise it in front of you,
 turn the palm upward toward your eyes, and hold for a quarter second. Release
 the left trigger and grip; casting with that hand hides the display. Lower or
@@ -250,7 +250,7 @@ turn your hand to hide it. Losing left-hand tracking or opening a menu hides it
 and requires a new deliberate hold. Navigation has its own location setting, so
 you can keep health/mana on the wrist and navigation in the palm, or vice versa.
 
-**VR Settings > HUD > Health / mana tilt** adjusts the angle of the hand-mounted
+**VR Settings > Wrist > Life and mana tilt** adjusts the angle of the hand-mounted
 health, mana and XP display from **-60 to +60 degrees**, in **5-degree steps**.
 Positive values lean its top edge toward you; negative values lean it away.
 Click **Apply** to save and use the angle immediately. **0 degrees** restores
@@ -328,7 +328,7 @@ laser is on the panel and the hand travels 3 cm toward or away before any
 click, so a still grip followed by a trigger click stays a native Shift-click;
 a trigger squeezed while moving does nothing until released. The laser and
 clicks follow the moved panel. Every in-game and main/title menu reopens at
-that distance until the game is restarted or **VR Settings > HUD > Menu
+that distance until the game is restarted or **VR Settings > Interface > Menu
 distance** is changed. The handheld quest log keeps its left-grip placement.
 
 The VR Settings panel is grabbed like a real window with the same right grip:
@@ -383,44 +383,56 @@ pending.
 
 ### In-headset VR settings
 
-The panel opens in front of the headset and stays in room space. It has ten
-tabs and a **Reset eye height** button:
+The panel opens in front of the headset and stays in room space. A rail on its
+left lists **Presets** and eleven pages; **Guide** and **What's new** open from
+the links at its top right. Point the right laser at anything to read about it
+on the help card under the rows, and pull the trigger to press. A number (cm,
+m/s, %, degrees, distances) has a bar: grab its value and drag left or right,
+or step it with - and +; it stops at its ends. A list (< and >, or a color)
+goes round from its last choice to its first. Changes stay a draft until
+**Apply**; **Close** with a draft asks first (Discard, Keep editing, or Apply and
+close). A changed row's card offers **Undo** and **Default**, and **Reset page**
+sets the page's rows back to their defaults, with **Undo reset** for 6 seconds.
 
-| Tab | Contents |
+| Page | Contents |
 |---|---|
-| Controls | Left/right controller reference for movement, menus, melee, bow, spells, potions, holsters and height reset |
-| VR | Controller labels, motion combat, seated belt position, dominant hand, smooth/snap turning, belt height and reach, weapon skill gestures and ordinary mob bars |
-| Video | Added sky, fog and dungeon ceilings, and the experimental Sorceress elemental hand effects (Off by default) |
-| HUD | Health/mana location and tilt, optional resource alerts, navigation location, menu distance and tooltip timing |
-| Combat | Melee rules, swing hit speed and thrust speed |
-| Aim | Whether spells and bow skills go to the aimed monster, the staff aiming where your arm points, and the aimed monster's outline: strength, which hands show it, and each hand's color (by range or one hue), where ground skills land (the game's aim, where you point or the aimed monster), landing circles, and whether the aim follows your view (the eyes' 17-degree tunnel, the hands within 30 degrees of your head, a raised hand aiming alone). Every option that changes how a cast aims is Off (Game) by default |
-| Shield | Where a held shield sits on the forearm: grip offset, out and up (all 0 by default), how far it follows the wrist, and its roll about the forearm |
-| Haptics | Overall strength and separate melee, bow draw, bow/throw release, spell, interaction and resource-alert strengths; tests follow each action's hands |
-| Perf | Everything that changes the frame rate: stereo rendering (Both eyes / By turns, By turns by default), VR render resolution (Headset by default), terrain and object draw distances, foveation Off / Fixed / Eye tracked and its strength, ReShade depth (after a restart) and desktop one eye; the actual VR source size, a Defer GPU wait button while frames wait for the GPU, and warnings while the game's Vertical Sync is on or its anti-aliasing is not FXAA. Under them, each second's frame rate and where the frame's time goes, whether the CPU's part fits the headset's frame, and the game's own graphics options |
-| Notes | The last published release's notes, read-only |
+| Presets | Comfort, Classic, Full VR and Smooth frames: each sets only the rows it lists; pointing at one shows what it would change |
+| Body | Dominant hand, smooth turning with its snap angle or turn speed, seated play, the belt's height and reach, and **Height and arm span** (**Calibrate body**, **Set eye height**) |
+| Combat | Motion combat, melee rules, swing and stab speed to hit, skills on bash and bow, skill icons on weapons and thrown weapon lift |
+| Aim | Whether skills go to the aimed monster, spell aim assist, keeping spell shots level, aiming a staff along the arm, aiming with your view (the eyes' 17-degree tunnel, the hands within 30 degrees of your head, a raised hand aiming alone), where ground skills land (the game's aim, where you point or the aimed monster) and landing circles. Every option that changes how a cast aims is Off (Game's aim) by default |
+| Targets | The aimed monster's outline: its strength, which hands show it, and each hand's outline color (By range or one color, shown as a swatch); the arrow path line |
+| Shield | Bash speed to hit, the guard strain edge and buildup, and where a held shield sits on the forearm: along, out and across (all 0 by default), wrist turn and roll |
+| Wrist | Life and mana location and tilt, map and compass location, map view, turning the map with you, buffs and companions |
+| Interface | Menu distance, item details delay, button names, loot name size, weak monster bars and one eye on the monitor |
+| Survival | The low life and mana alert, heartbeat, blood on the visor and wiping it, offline difficulty, monster sight range and the smarter mercenary |
+| World | Outdoor sky, distance fog, dungeon ceilings, rolling bottles, knockable props, and the experimental Sorceress spell glow on hands (Off by default) |
+| Vibration | Overall vibration and separate melee, short melee taps, bow draw, bow/throw release, spell, loot/potion/menu and alert strengths; **Feel it** on a row's card |
+| Performance | Everything that changes the frame rate: eyes drawn per frame (Both / One by turns, One by turns by default), render resolution (Headset size by default), lower detail at edges (Off / Fixed / Eye tracked) and its edge detail reduction, terrain and scenery distances, the ReShade depth add-on (after a restart); the actual VR source size, a Defer GPU wait button while frames wait for the GPU, and warnings while the game's Vertical Sync is on or its anti-aliasing is not FXAA. Under them, each second's frame rate and where the frame's time goes, whether the CPU's part fits the headset's frame, and the game's own graphics options |
+| Guide | Left/right controller reference for movement, menus, melee, bow, spells, potions and game menus, in the button names Interface > Button names chooses |
+| What's new | The last published release's notes, read-only |
 
 Pages show only the rows that can apply to the character the panel is open
 for. Another class's rows are left out:
-- elemental hand effects are the Sorceress's;
-- Ground skills and Landing circles are for the Sorceress, Assassin, Druid and Necromancer;
-- the bow path laser is the Amazon's, or any class's with a bow in hand;
+- spell glow on hands is the Sorceress's;
+- Ground skill aim and Landing circles are for the Sorceress, Assassin, Druid and Necromancer;
+- the arrow path line is the Amazon's, or any class's with a bow in hand;
 - staff aim is the Sorceress's and Druid's, or any class's with a staff in hand.
 
 **Skills go to the aimed monster** offers Spells, Bow skills or Both to an
 Amazon. Other classes see **Spells go to the aimed monster**, On or Off, and
 keep the Amazon's bow skills choice. Rows that only matter with another
 row's choice also stay hidden until they do:
-- the outline's highlights and hand colors while Monster outline is Off;
-- Landing circles while Ground skills is Game;
-- Aim follows your view until the outline, Skills go to the aimed monster or
-  Ground skills on Aimed monster is on;
-- foveation strength while foveated rendering is Off;
+- Outlines shown and both hands' outline colors while Monster outline is Off;
+- Landing circles while Ground skill aim is Game's aim;
+- Aim with your view until the outline, Skills go to the aimed monster or
+  Ground skill aim on Monster is on;
+- Edge detail reduction while Lower detail at edges is Off;
 - the snap angle or smooth turn speed of the turning mode not chosen;
 - the standing belt drop while seated;
-- the face wipe without blood on the visor.
+- Wipe blood by hand without blood on the visor.
 
-Settings that belong together share a row, with a stepper each: **Hand colors**
-(left hand, right hand) and **Guard strain** (color, buildup). The title and
+Each setting has its own row: the left and right hand's outline colors, and the
+guard strain's edge and buildup, are separate rows. The title and
 character screens show every class's rows.
 
 Added indoor fog defaults to **Off** for new profiles, preserving the game's
@@ -428,28 +440,24 @@ own lighting and effects, including Tyrael's wings. Outdoor fog keeps its
 existing setting. There is currently no indoor-fog toggle in VR Settings.
 Existing saved `[fog] caves` choices are preserved when updating.
 
-**VR Settings > Haptics** tunes vibration for different controllers. Each strength
+**VR Settings > Vibration** tunes vibration for different controllers. Each strength
 ranges from **0% (Off) to 200%**, in **10% steps**, with **100%** as the default.
-Overall strength multiplies the category strength: 50% overall and 50% bow draw
+Overall vibration multiplies the category strength: 50% overall and 50% bow draw
 produce 25% of the original draw amplitude. The controller's maximum amplitude
-still limits strong pulses. **Short melee pulses** is **Off by default**: weapon
+still limits strong pulses. **Short melee taps** is **Off by default**: weapon
 impacts use a 90 ms tap to make contact easier to feel during fast swings;
 shield impacts retain their 45 ms tap. Both use the controller's preferred
 frequency. Turn it On for the original 10 ms / 180 Hz tap on either hand.
-The **Weapon** and **Shield** tests use the same choice, including unsaved edits.
 
-Tests use the displayed, unsaved values and follow gameplay hand ownership:
-**Weapon** tests the right hand, **Shield** the left; bow draw tests both hands
-with the normal asymmetric pull pulses. **Bow** release tests both hands and
-**Throw** only the right. Spells and interactions retain **Test L / Test R**
-because either hand can perform them. Resource alerts have one **Test** on the
-left hand. A test is a sample, not a simulated gameplay action.
-**Apply** saves and updates gameplay feedback; **Close** discards unsaved edits.
+Pointing at a strength row shows **Feel it** on its help card: a sample of that
+action at the strength shown, unsaved edits included, on the hands the action
+uses in play. A test is a sample, not a simulated gameplay action.
+**Apply** saves and updates gameplay feedback; **Close** asks before it drops unsaved edits.
 Muting a category stops its active vibration; Overall Off stops both controllers.
 Bow draw covers string proximity, nocking, pulling and full draw. Bow/throw release
 covers shooting and throwing. Melee covers weapon and shield impacts. Interactions
 cover loot, potions, holsters and menu feedback. Resource alerts still require
-**HUD > Low health / mana alerts** to be enabled for automatic warnings.
+**Survival > Low life and mana alert** to be enabled for automatic warnings.
 
 Supported independent hand spells now give one brief pulse on the casting hand
 after a spell successfully creates its projectiles. A volley gives one pulse,
@@ -464,7 +472,7 @@ reload them live. Closing without Apply discards pending edits. The first Apply
 creates `d2r_pcvr.ini.before-vr-menu`; later saves retain that original backup.
 Unrelated INI entries are preserved. A conflicting external edit reloads the
 current values instead of overwriting them. Reset eye height is immediate and
-does not require Apply. The controls tab is a reference, not a binding editor.
+does not require Apply. The Guide is a reference, not a binding editor.
 
 Movement and combat inputs are blocked while the panel is open; **the world
 continues running**. Release held triggers/grips before resuming gameplay. The
@@ -607,7 +615,7 @@ bottles it meets, and a hit gives that hand a light tick (the melee haptic
 strength applies). Slow pushes roll a bottle; a hard swing sends it flying.
 The shield uses a thinner capsule than its creature test. A warp or recentre
 moves a weapon without sweeping it through bottles. `[interactions]
-bottle_physics=0` (VR Settings > Video > Bottle physics: Off) restores the old vanishing bottle, and thrown potions fly the old arc. The log notes each release (`Frame dropped bottles:`)
+bottle_physics=0` (VR Settings > World > Roll and break bottles: Off) restores the old vanishing bottle, and thrown potions fly the old arc. The log notes each release (`Frame dropped bottles:`)
 and wall sampling every ten seconds while bottles are in the world.
 
 **Knockable props.** The level's own small props within 3 m (cups, plates,
@@ -625,7 +633,7 @@ through the cabinet. Inside a room or building (a mantle or ledge that is part
 of it), the surface ends 3 cm past the row of props on it. A prop on another
 prop (a cup on a plate) falls when that one is knocked away. At most 12 move at
 once; a new weapon hit then freezes the one moving longest. This is purely
-visual. VR Settings > Video > Knockable props (`[interactions] prop_physics`) turns it off; see [knockable
+visual. VR Settings > World > Knock over small props (`[interactions] prop_physics`) turns it off; see [knockable
 props](../docs/KNOCKABLE_PROPS.md). The log notes each weapon knock (`Frame
 props: knocked a cup ...`) and a summary every ten seconds.
 
@@ -719,7 +727,7 @@ occlusion and the bottle art is a functional placeholder.
 Select a supported skill on the wheel, release the selection trigger, then use
 the weapon's familiar motion. The gold **ACTIVE** border/badge identifies the
 persistent selection independently of the hovered wedge. Weapon-side indicators
-are off by default; enable **VR Settings > Controls > Weapon skill indicators**
+are off by default; enable **VR Settings > Combat > Skill icons on weapons**
 and Apply to restore them. When enabled with the wheel closed, a small native
 skill icon follows the weapon hand. Its name and action hint
 appear briefly on change, or while busy/unavailable. Quick casting temporarily
@@ -835,7 +843,7 @@ With **Smite** selected, an energetic
 left-arm swing or thrust that intersects an eligible creature requests one native
 Smite against that creature. A stationary shield cannot bash; one continuous
 stroke requests at most one bash, and a deliberate reversal/settle rearms it.
-**VR Settings > Combat > Shield bash speed** controls this gesture in both melee
+**VR Settings > Shield > Bash speed to hit** controls this gesture in both melee
 modes (default 2 m/s; 0.75-10 m/s in 0.25 steps; `[gameplay] shield_bash_speed`).
 A bash needs 12 cm of net tracked hand travel within 200 ms and must meet the
 selected speed at contact. Wrist rotation alone cannot arm, power or rearm a bash;
@@ -907,7 +915,7 @@ translation with blade-axis rotation, capped by tracked hand rotation; twisting 
 shaft in place does not power a hit. The sweep follows the rotating blade’s arc
 between the latest poses without replaying earlier unpowered brushes when a
 stroke arms. Shield/Smite uses its separate hand-travel threshold below. Swing speed
-is adjustable under **VR Settings > Combat > Melee hit speed**
+is adjustable under **VR Settings > Combat > Swing speed to hit**
 (minimum 1.5 m/s, no upper cap, 0.25 steps, default 12.0). Apply saves
 `[gameplay] melee_hit_speed` and updates the detector live; changing it clears
 the previous stroke. Swing travel remains 18 cm.
@@ -915,7 +923,7 @@ the previous stroke. Swing travel remains 18 cm.
 **Thrusts** use a separate forward-motion check in both Unleashed and Classic.
 Push toward the posed weapon tip for at least 12 cm within 200 ms, with at least
 85% of the hand's travel along that axis. Default forward speed is 2.0 m/s,
-adjustable under **VR Settings > Combat > Melee thrust speed** from 0.75 to
+adjustable under **VR Settings > Combat > Stab speed to hit** from 0.75 to
 10 m/s in 0.25 steps (`[gameplay] melee_thrust_speed`). Apply updates it live
 and cancels the previous stroke without changing the swing-speed preference.
 The axis comes from the final weapon attachment and its matching tracked grip,
@@ -936,7 +944,7 @@ button fallback and suppresses simultaneous physical contact attacks.
 Confirmed weapon impacts request a single 90 ms haptic tap; shield impacts keep
 their 45 ms tap. Both use 95% base amplitude and the runtime's preferred
 frequency on the next XR input update.
-**VR Settings > Haptics > Short melee pulses** opts into a 10 ms / 180 Hz tap;
+**VR Settings > Vibration > Short melee taps** opts into a 10 ms / 180 Hz tap;
 it is Off by default, and both melee Test and real impacts use the selected pulse.
 Overall and Melee impacts strength scale its amplitude. Events are consumed once
 rather than held during overlap. A dedicated timer
@@ -1118,14 +1126,14 @@ instead of a random one. Classic keeps the native roll.
   sliders (re-read from Settings.json when the game saves it), times
   `riposte_volume` (100).
 - **Guard strain light**: every blocked hit (not a parry) strains the guard by
-  `guard_strain_per_block` % (10). **VR Settings > Combat > Guard strain** (right stepper: buildup)
+  `guard_strain_per_block` % (10). **VR Settings > Shield > Guard strain buildup**
   selects Slow / Medium / Fast (`guard_strain_speed` 0 / 1 / 2, default Medium).
   Slow halves strain per block; Fast doubles it. With default tuning, full
   strain takes about 20 / 10 / 5 blocks in a row. The
   vignette size, lowering/reset time and blocking rules stay the same. Existing
   custom `guard_strain_per_block` tuning is multiplied, not overwritten. Strain shows as a soft vignette at the
-  rim of the view (a pale white light by default; VR Settings > Combat > **Guard strain
-  color** switches it to a black shadow, `guard_strain_dark` 1, or hides it, `guard_strain_dark` 2
+  rim of the view (a pale white light by default; VR Settings > Shield > **Guard strain
+  edge** switches it to a dark shadow (Dark edge), `guard_strain_dark` 1, or hides it (Off), `guard_strain_dark` 2
   (Off: no light, but strain, guard breaks and chip damage still apply); the black is drawn denser by
   `guard_strain_dark_density` (2.5) so it hides as much as the light, and
   `guard_strain_color` takes any RRGGBB hex, default FFF7EA), beneath the blood on
@@ -1146,7 +1154,7 @@ instead of a random one. Classic keeps the native roll.
   fades toward the centre with no visible inner rim. Pulses re-trigger without
   dropping, so rapid blocks hold a swell rather than flashing.
 - **Low-life heartbeat** (Classic and Unleashed; guard strain no longer drives it):
-  **VR Settings > Combat > Heartbeat starts at** (`low_life_heart_start`, 60 %; Off or
+  **VR Settings > Survival > Heartbeat starts at** (`low_life_heart_start`, 60 %; Off or
   10-90 % in 10 % steps) sets where it begins. Below that life the heartbeat steps up
   every 10 % lost, louder and faster, to full loudness and `low_life_heart_bpm_max`
   (115) below 10 %: a 50 % start gives five steps, at 50, 40, 30, 20 and 10 %. The
@@ -1245,7 +1253,7 @@ native skill through the palette instead. Selected arrow skills gain the candida
 draw/release adapter above; their flight remains native. Other skills/spells
 retain their existing controls, costs, timings and collision behavior.
 
-**Bow path laser** (**VR Settings > Aim > Bow path laser**, `[bow] path_laser_hue`,
+**Arrow path line** (**VR Settings > Targets > Arrow path line**, `[bow] path_laser_hue`,
 Off by default): at full draw, while a release would shoot a physical
 arrow (basic, or Magic, Fire, Cold, Ice, Exploding, Immolation or Freezing
 Arrow), a faint line runs from the arrow's tip along the
@@ -1258,7 +1266,7 @@ stops with a dot where the flight would meet the launch floor, with the
 flight's own clearance, and otherwise fades out at 15 m: it is drawn over the
 scene and does not stop at walls or monsters, which only the flight tests.
 
-**Throw lift** (**VR Settings > Aim > Throw lift**, `[gameplay] throw_lift_deg`,
+**Thrown weapon lift** (**VR Settings > Combat > Thrown weapon lift**, `[gameplay] throw_lift_deg`,
 10° by default): a thrown javelin, knife or axe leaves along the throwing
 hand's recent motion, which dips as the hand follows through. Every throw,
 from either hand and with any javelin skill or Double Throw, and every tossed
@@ -1351,7 +1359,7 @@ with the view every 10 ms, so FMOD re-pans everything that is playing.
 - If nothing pans at all, check Windows **Mono audio** (Settings >
   Accessibility > Audio): it folds the PC's sound to mono before Quest Link,
   Air Link or Virtual Desktop stream it. While it is on, VR Settings shows
-  **Windows Mono audio is on** at its top right on every page; pointing at it
+  **Windows Mono audio is on** at its top on every page; pointing at it
   explains where to turn it off.
 
 `d2r_pcvr.ini`, read at start:
@@ -1522,8 +1530,8 @@ Arrow/spell live verification remains open.
 
 ### Ice Bolt visual height correction
 
-New or missing combat preferences default to **Planar spell aiming: Off** and
-**Projectile aim assist: Strong**. Players can still choose planar aiming, Light
+New or missing combat preferences default to **Aim > Keep spell shots level: Off** and
+**Aim > Spell aim assist: Strong**. Players can still choose level shots, Light
 assistance or Off in VR Settings; explicit saved preferences are preserved.
 
 Hand-cast Ice Bolt uses the same airborne flight/planar aiming path as Fireball;

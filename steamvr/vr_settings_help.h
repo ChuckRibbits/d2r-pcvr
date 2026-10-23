@@ -3,18 +3,28 @@
 #include <iterator>
 
 namespace framevr::settings {
-// Keep the existing panel's pixel and physical size. Help occupies an extra,
-// transparent strip on its right in the same atlas/composition layer.
-constexpr int HelpGap=24,HelpWidth=440,AtlasWidth=Width+HelpGap+HelpWidth;
-constexpr Rect HelpCard{Width+HelpGap,242,HelpWidth-24,612};
+// The help card's subjects: a Key, or one of these ids (layout::Build's card,
+// layout::HelpAt). The card is inside the panel.
 constexpr int NoHelp=-1,HelpApply=Count,HelpClose=Count+1,HelpRecenter=Count+2,HelpCalibrate=Count+3,HelpMonoAudio=Count+4,
-              HelpPerformance=Count+5,HelpGameVideo=Count+6,HelpLast=HelpGameVideo;
+              HelpPerformance=Count+5,HelpGameVideo=Count+6;
+// The menu's own subjects after those; HelpLast ends the range. Tabs and presets take one
+// id each: HelpTabFirst + View, HelpPresetFirst + content::PresetTable index (their words
+// come from the content tables).
+constexpr int HelpResetPage=HelpGameVideo+1,HelpUndoReset=HelpGameVideo+2,HelpGuide=HelpGameVideo+3,HelpWhatsNew=HelpGameVideo+4,
+              HelpPresets=HelpGameVideo+5,HelpDiscard=HelpGameVideo+6,HelpKeepEditing=HelpGameVideo+7,HelpApplyClose=HelpGameVideo+8,
+              HelpPending=HelpGameVideo+9,HelpTabFirst=HelpGameVideo+10,HelpPresetFirst=HelpTabFirst+int(View::Count),
+              MaxPresets=8,HelpLast=HelpPresetFirst+MaxPresets-1;
+// Close asks before it drops a draft (main's Close discarded it).
+inline constexpr const char* CloseAsksHelp="Back to the game. If some changes are not applied, Close asks first. Right B does the same as Close.";
 inline const char* HelpTitle(int id) {
     if(id>=0&&id<Count)return Definitions[id].label;
     switch(id){case HelpApply:return "Apply";case HelpClose:return "Close";
-        case HelpRecenter:return "Reset eye height";case HelpCalibrate:return "Calibrate body";
+        case HelpRecenter:return "Set eye height";case HelpCalibrate:return "Calibrate body";
         case HelpMonoAudio:return "Windows Mono audio";
-        case HelpPerformance:return "Frame times now";case HelpGameVideo:return "The game's graphics options";default:return "";}
+        case HelpPerformance:return "Frame times now";case HelpGameVideo:return "The game's graphics options";
+        case HelpResetPage:return "Reset page";case HelpUndoReset:return "Undo reset";case HelpGuide:return "Controller guide";
+        case HelpWhatsNew:return "What's new";case HelpPresets:return "Presets";case HelpDiscard:return "Discard changes";
+        case HelpKeepEditing:return "Keep editing";case HelpApplyClose:return "Apply and close";case HelpPending:return "Not applied";default:return "";}
 }
 inline const char* HelpText(int id) {
     switch(id) {
@@ -68,7 +78,7 @@ inline const char* HelpText(int id) {
         case SpellLock:return "Skills take the monster your casting hand points at (arm held out a tenth of your Controller span), else the other hand's, else the one you look at, and keep it until you let go or it walks out of the game's reach. Bolts fly at it; curses and Corpse Explosion land on it. With no monster, where that arm points, else where you look.";
         case AimFollowsView:return "On, the aimed monster follows your head: your eyes catch one within 17 degrees of where you face and keep it to 30 until another comes within 17; a hand picks only within 30 degrees. A casting hand held out and pointing aims alone: its own monster, else where it points. The one you look at loses its outline while your main hand points. Charge, Leap Attack, Dragon Flight and Whirlwind also take the other hand's outlined monster. Off by default.";
         case StaffPoint:return "A staff held upright would cast along its shaft, straight up. With this On, an upright staff casts along your arm, from your shoulder through your hand, so a bent wrist, knuckles to the side or a hand overhead still cast where you reach. Leveled out like a wand (within about 35 degrees of flat), it casts from its top as before. The Warlock's skills keep the staff's own aim.";
-        case LandingCircles:return "Shows where a ground skill will hit once the game accepts the cast, in its element's color: fire orange, cold blue, lightning yellow. The circle fills from the centre outward until the skill lands: a Fire Blast bomb over its flight, Meteor over its fall, Blizzard while the ice falls. Fire Wall shows as a strip across your aim. Floor only, never monsters' legs or walls. Greyed out while Ground skills is Game.";
+        case LandingCircles:return "Shows where a ground skill will hit once the game accepts the cast, in its element's color: fire orange, cold blue, lightning yellow. The circle fills from the center outward until the skill lands: a Fire Blast bomb over its flight, Meteor over its fall, Blizzard while the ice falls. Fire Wall shows as a strip across your aim. Floor only, never monsters' legs or walls. Greyed out while Ground skills is Game.";
         case GroundAim:return "Where ground skills land: Fire Blast and traps, Blizzard, Meteor, Fire Wall, Hydra, Fissure, Volcano, Bone Wall and Bone Prison. Aimed at the horizon or above, as far as the game lets a skill be cast.";
         case BowLaser:return "At full draw a faint line runs from the arrow's tip along the path a release would fly, ending in a brighter dot at the floor or fading out after 15 m. It doesn't stop at walls or monsters. Shown for basic arrows and Magic, Fire, Cold, Ice, Exploding, Immolation and Freezing Arrow; not Multiple Shot, Guided Arrow, Strafe or crossbows. Off by default, else its color in 15-degree steps from red 0; past 345 comes Off, both ways.";
         case ThrowLift:return "A thrown javelin, knife or axe leaves along your hand's motion, which tends to dip as you let go. This raises every throw above that path by the angle shown, 10 degrees by default, keeping its direction left or right. Minus values lower it; Off follows the hand exactly. Both hands, every throw and javelin skill, and the Assassin's thrown traps.";
@@ -83,7 +93,7 @@ inline const char* HelpText(int id) {
         case MeleeHitSpeed:return "Minimum weapon movement speed for a swing to count as a strike. Lower it for easier swings; raise it to require faster movement. Default: 12 m/s. Both melee modes use this value. Shield bash has its own threshold.";
         case ShieldBashSpeed:return "Minimum tracked hand speed for a physical shield bash, including assigned Smite. Default: 2 m/s. Move the hand at least 12 cm in one deliberate stroke; wrist twisting alone does not attack. The speed must still be met at contact. Applies in both melee modes; blocking, parries and trigger attacks are unchanged.";
         case MeleeThrustSpeed:return "Minimum forward speed for a stab along your weapon's tip. Default: 2 m/s. Move forward at least 12 cm, then pull back before stabbing again. This is separate from swing speed and applies in both melee modes.";
-        case LootLabelSize:return "Scales dropped-item names. 45% restores their original size; higher values make them larger. The darker background stays. Hold Right Grip, then Right Trigger, to reveal nearby loot names; release either to restore normal labels.";
+        case LootLabelSize:return "Scales dropped-item names. 45% restores their original size; higher values make them larger. The darker background stays. Hold the right stick down to show all nearby loot names; release it to restore normal labels.";
         case HapticStrength:return "Overall vibration strength for both controllers. 0% disables vibration; 100% is normal. This multiplies each category's strength, up to the controller's maximum. Different headsets can feel different at the same percentage.";
         case HapticMelee:return "Strength of physical weapon and shield impacts. Weapon tests vibrate the right controller; Shield tests vibrate the left. Tests use the values shown here before you Apply.";
         case HapticShortMelee:return "Off uses longer, more noticeable melee taps. On uses very brief 10 ms pulses at 180 Hz. Some controllers barely reproduce these short pulses, so leave this Off if impacts feel weak or disappear.";
@@ -104,7 +114,16 @@ inline const char* HelpText(int id) {
         case HelpClose:return "Returns to the game and discards changes you have not applied. Right B also closes this panel. The world continues running while VR Settings is open.";
         case HelpRecenter:return "Resets the current eye-height reference for your play position. This is separate from measuring your body and does not replace your saved body calibration.";
         case HelpCalibrate:return "Guides you through measuring standing eye height and controller span in a T-pose. Apply or discard pending settings first. Hold both triggers when prompted; Right B cancels.";
-        case HelpMonoAudio:return "Windows is set to Mono audio, which mixes every sound to the centre before it reaches the headset, so sounds cannot follow your head and stick turns. Turn it off in Windows Settings > Accessibility > Audio > Mono audio; the change applies at once.";
+        case HelpResetPage:return "Sets every row you can see on this page back to its default. Nothing is saved until you press Apply.";
+        case HelpUndoReset:return "Puts back the values this page had before you pressed Reset page. It goes away after 6 seconds; the bar shows the time left.";
+        case HelpGuide:return "Which button does what, for each hand.";
+        case HelpWhatsNew:return "Changes in this version of the mod.";
+        case HelpPresets:return "Set many rows at once for a play style. Nothing is saved until you press Apply.";
+        case HelpDiscard:return "Closes the menu and puts every changed row back to its applied value.";
+        case HelpKeepEditing:return "Back to the menu. Your changes stay a draft until you press Apply.";
+        case HelpApplyClose:return "Saves your changes, then closes the menu once they are saved.";
+        case HelpPending:return "Changes waiting for Apply. Press one to go to it.";
+        case HelpMonoAudio:return "Windows is set to Mono audio, which mixes every sound to the center before it reaches the headset, so sounds cannot follow your head and stick turns. Turn it off in Windows Settings > Accessibility > Audio > Mono audio; the change applies at once.";
         default:break;
     }
     // Future settings retain at least their inline explanation until richer
@@ -112,188 +131,4 @@ inline const char* HelpText(int id) {
     if(id>=0&&id<Count)return Definitions[id].detail;
     return "";
 }
-// Rows with named choices: the one selected now and what it does, under the
-// row's general help, so stepping through the choices explains each one.
-struct ChoiceHelp {const char* name=nullptr;const char* text=nullptr;};
-constexpr int HelpChoiceGap=18,HelpChoiceNameHeight=40;   // on the card: above the name, the name's line
-inline int HelpChoices(int id) {
-    switch(id) {
-        case Foveation:case MenuDistance:case TooltipTiming:case StrainSpeed:case ProjectileAimAssist:case StrainDark:return 3;
-        case FoveationStrength:case VitalsLocation:case NavigationLocation:return 4;
-        case StereoRendering:return int(std::size(StereoRenderingNames));
-        case RenderResolution:return int(std::size(resolution::Choices));
-        case ControllerLabels:return int(controllers::Choice::Count);
-        case Dominant:case MeleeRules:case MapTopDown:case AimHighlights:case CompanionAi:return 2;
-        case GroundAim:return int(std::size(GroundAimNames));
-        case SpellLock:return int(std::size(SpellLockNames));
-        default:return 0;
-    }
-}
-inline ChoiceHelp HelpChoice(int id,float value) {
-    const int count=HelpChoices(id);
-    if(!count||!std::isfinite(value))return {};
-    const int c=std::clamp(int(std::lround(value)),0,count-1);
-    switch(id) {
-        case Foveation:{
-            static constexpr const char* names[]={"Off","Fixed","Eye tracked"};
-            static constexpr const char* text[]={
-                "Every pixel is shaded at full quality. Choose this if the edges look coarse or your GPU has time to spare.",
-                "Shading is reduced toward the edges of the lenses, where you see least sharply. The full-quality centre stays straight ahead.",
-                "The full-quality area follows your gaze, on headsets that share eye tracking such as the Steam Frame. While no gaze samples arrive, the whole view uses full quality."};
-            return {names[c],text[c]};}
-        case FoveationStrength:{
-            static constexpr const char* text[]={
-                "A large full-quality centre; the edges are only lightly reduced. The smallest saving.",
-                "The default balance between edge detail and GPU time.",
-                "The same edge area as Medium, shaded more coarsely.",
-                "The coarsest edges and a smaller full-quality centre. The largest saving, and the most visible."};
-            return {FoveationStrengthNames[c],text[c]};}
-        case StereoRendering:{
-            static constexpr const char* text[]={
-                "The game draws each frame twice, once per eye, from the same moment. Accurate 3D, and the most CPU and GPU work per frame.",
-                "One eye per frame, alternating; the other eye's last image is turned to your head and moved with the scene's depth. About half the drawing work, but moving monsters can look doubled and the edges of nearby things may smear."};
-            return {StereoRenderingNames[c],text[c]};}
-        case RenderResolution:{
-            static constexpr const char* text[]={
-                "Each eye uses the game window's size, so the monitor resolution sets the headset image.",
-                "Each eye uses the size the VR runtime recommends for your headset, capped at 4096 pixels per side.",
-                "Each eye is drawn at this fixed size, whatever your monitor or headset. Larger sizes are sharper and cost more GPU time."};
-            return {resolution::Choices[c],text[std::min(c,2)]};}
-        case ControllerLabels:{
-            static constexpr const char* text[]={
-                "Detects the active controllers and uses their button names.",
-                "Uses Meta Quest Touch button names, whatever is detected.",
-                "Uses Valve Index button names, whatever is detected.",
-                "Uses Steam Frame button names, whatever is detected.",
-                "Uses neutral names that fit any controller."};
-            return {controllers::Choices[c],text[c]};}
-        case ProjectileAimAssist:{
-            static constexpr const char* text[]={
-                "Spells fly exactly where your hand aims them.",
-                "A launch aimed within 4 degrees of a monster is turned toward it.",
-                "A launch within 12 degrees is turned to the monster's centre, and the spell gently homes in flight. Charged Bolt gets the launch correction only."};
-            return {AimAssistNames[c],text[c]};}
-        case VitalsLocation:{
-            static constexpr const char* text[]={
-                "Shown when you turn your left wrist toward your face, like checking a watch.",
-                "Shown when you raise your left palm toward you with grip and trigger released.",
-                "Either gesture shows it.",
-                "Health and mana are not shown on your hand."};
-            return {vitals::LocationNames[c],text[c]};}
-        case NavigationLocation:{
-            static constexpr const char* text[]={
-                "Shown when you turn your left wrist toward your face, like checking a watch.",
-                "Shown when you raise your left palm toward you with grip and trigger released.",
-                "Either gesture shows it.",
-                "The minimap and compass are not shown on your hand."};
-            return {vitals::LocationNames[c],text[c]};}
-        case MapTopDown:{
-            static constexpr const char* text[]={
-                "The game's own slanted map, with NPC and exit names.",
-                "Rooms straightened into a floor plan. NPC and exit names are hidden so their text is not turned with the floor. Rotate map can keep your facing at the top."};
-            return {MapViewNames[c],text[c]};}
-        case MenuDistance:{
-            static constexpr const char* text[]={
-                "Panels appear 55 cm in front of you, the main menu 70 cm.",
-                "Panels appear 85 cm in front of you, the main menu 1 m.",
-                "Panels appear 1.15 m in front of you, the main menu 1.3 m."};
-            return {MenuDistanceNames[c],text[c]};}
-        case TooltipTiming:{
-            static constexpr const char* text[]={
-                "Item details appear as soon as the laser reaches an item.",
-                "Item details appear after the laser rests on an item for 300 ms.",
-                "Item details use the game's own timing."};
-            return {TooltipTimingNames[c],text[c]};}
-        case SpellLock:{
-            static constexpr const char* text[]={
-                "Spells and bow skills aim along the casting hand, as before.",
-                "Spells go to the aimed monster; bow skills aim as before.",
-                "Bow skills cast from a button go to the aimed monster, the bow hand's first; spells aim as before.",
-                "Spells and bow skills go to the aimed monster."};
-            return {SpellLockNames[c],text[c]};}
-        case GroundAim:{
-            static constexpr const char* text[]={
-                "The game aims ground skills its own way, as before: Bone Wall and Prison where your hand points at the floor.",
-                "On the floor where your casting hand points, held out or not, with a landing circle.",
-                "On the monster your hands or eyes aim at (Bone Wall in front of it), else where you point, with a landing circle."};
-            return {GroundAimNames[c],text[c]};}
-        case AimHighlights:{
-            static constexpr const char* text[]={
-                "One outline: the monster your dominant hand (VR > Dominant hand) points at, else the one you look at.",
-                "Each hand's monster has its own outline in its own color; with neither hand on one, the monster you look at."};
-            return {HighlightsNames[c],text[c]};}
-        case CompanionAi:{
-            static constexpr const char* names[]={"Legacy","Enabled"};
-            static constexpr const char* text[]={
-                "Restores vanilla mercenary AI constants and original pathfinding behavior.",
-                "Enables dynamic combat detection range scaling, elastic combat tether (40 sub-tiles), and anti-stuck watchdog repositioning to your rear flank."};
-            return {names[c],text[c]};}
-        case Dominant:{
-            static constexpr const char* names[]={"Right","Left"};
-            static constexpr const char* text[]={
-                "Reach your right hand over either shoulder and grip to swap weapon sets.",
-                "Reach your left hand over either shoulder and grip to swap weapon sets."};
-            return {names[c],text[c]};}
-        case MeleeRules:{
-            static constexpr const char* text[]={
-                "Each deliberate stroke hits every enemy it reaches, once. Damage = normal damage x hit chance (70% means 70% damage, never a miss) x recovery (25% at half an attack cycle since your last landed stroke, 100% at a full one) x cleave (100%, 75%, 50%, then 25% per target). Ripostes skip these. Adds shield blocks and parries.",
-                "The game's own rules: each stroke rolls to hit, attack speed limits how often you can hit, and each stroke hits one target."};
-            return {MeleeRulesNames[c],text[c]};}
-        case StrainSpeed:{
-            static constexpr const char* text[]={
-                "Half the strain per block: about 20 blocks to full strain without lowering your shield.",
-                "The original rate: about 10 blocks to full strain.",
-                "Twice the strain per block: about 5 blocks to full strain."};
-            return {StrainSpeedNames[c],text[c]};}
-        case StrainDark:{
-            static constexpr const char* text[]={
-                "A pale glow at the edges of your view.",
-                "A dark vignette at the edges of your view.",
-                "No vignette. Strain still builds and can break your guard; you just do not see it."};
-            return {StrainColorNames[c],text[c]};}
-        default:return {};
-    }
-}
-inline int HelpAt(Page page,float u,float v,bool controllerMenu=false,const Values* values=nullptr,bool monoAudio=false,const Context* context=nullptr) {
-    if(!std::isfinite(u)||!std::isfinite(v)||u<0||u>=1||v<0||v>=1)return NoHelp;
-    if(monoAudio&&MonoAudioBox.Contains(u*Width,v*Height))return HelpMonoAudio;
-    // Do not explain controls hidden behind an open dropdown.
-    if(page==Page::VR&&controllerMenu)return NoHelp;
-    const float x=u*Width,y=v*Height;
-    if(Apply.Contains(x,y))return HelpApply;
-    if(Close.Contains(x,y))return HelpClose;
-    if(Recenter.Contains(x,y))return HelpRecenter;
-    if(Calibrate.Contains(x,y))return HelpCalibrate;
-    if(page==Page::VR&&ControllerBox.Contains(x,y))return ControllerLabels;
-    if(page==Page::Performance){
-        if(DeferBox.Contains(x,y)&&(!values||DeferOffered(*values)))return DeferGpuWait;
-        if(PerformanceBox.Contains(x,y))return HelpPerformance;
-        if(GameVideoBox.Contains(x,y))return HelpGameVideo;
-    }
-    if(page==Page::HUD){
-        if(Rect{40,181,570,52}.Contains(x,y))return MapTopDown;
-        if(Rect{650,181,590,52}.Contains(x,y))return MapRotate;
-    }
-    if(page==Page::Controls) {
-        if(Rect{40,666,1200,52}.Contains(x,y))return WeaponSkillIndicators;
-        if(Rect{40,728,1200,52}.Contains(x,y))return PlanarSpellAim;
-        if(Rect{40,790,1200,52}.Contains(x,y))return ProjectileAimAssist;
-    }
-    const RowList rows=Rows(page,values?*values:Defaults(),context?*context:Context{});
-    for(int row=0;row<rows.count;++row)   // a paired row: its right half explains the right setting
-        if(Rect{40,RowY+row*RowStep-4,1200,RowStep}.Contains(x,y))return Paired(rows[row])&&x>=PairX(1)-PairGap/2?PairOf(rows[row]):rows[row];
-    return NoHelp;
-}
-class HoverHelp {
-    int target=NoHelp;
-    uint64_t since=0;
-public:
-    static constexpr uint64_t DelayMs=450;
-    void Clear(){target=NoHelp;since=0;}
-    int Step(int next,uint64_t now) {
-        if(next==NoHelp){Clear();return NoHelp;}
-        if(next!=target||now<since){target=next;since=now;}
-        return now-since>=DelayMs?target:NoHelp;
-    }
-};
 }
