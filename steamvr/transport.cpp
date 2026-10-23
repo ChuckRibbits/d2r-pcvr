@@ -581,6 +581,11 @@ potions::Scene potionScene;
 std::unique_ptr<bottles::World> droppedBottles;
 std::atomic<bool> bottlePhysics{true};
 uint64_t droppedSession=0;
+// The weapons that push them, posed on the vrcam update thread.
+struct BottleWeaponPose {melee::Blade blade{};ULONGLONG at=0;bool valid=false;};
+std::mutex bottleWeaponMutex;
+std::array<BottleWeaponPose,bottles::Colliders> bottleWeapons{};
+ULONGLONG bottleStruckAt[2]{};
 elements::Renderer elementalRenderer;
 elements::State elementalState;
 elements::Scene elementalScene;
@@ -1691,7 +1696,24 @@ void StepDroppedBottles() {
     if(!droppedBottles||!droppedBottles->Count()||!in.stage.known)return; // menus and loading hold them still
     bottles::Patch patch;
     if(wallcells::Latest(patch))droppedBottles->Walls(patch);
+    std::array<bottles::Collider,bottles::Colliders> weapons{};
+    {
+        std::lock_guard lock(bottleWeaponMutex);const auto now=GetTickCount64();
+        for(int i=0;i<bottles::Colliders;++i) {
+            const auto& w=bottleWeapons[i];
+            if(w.valid&&now>=w.at&&now-w.at<=100)weapons[i]={true,w.blade.base,w.blade.tip,w.blade.radius};
+        }
+    }
+    droppedBottles->Weapons(weapons);
     droppedBottles->Advance(in.time,in.stage.anchor);
+    // A light tick in the hand whose weapon struck a bottle.
+    for(int slot=0;slot<bottles::Colliders;++slot) {
+        const float speed=droppedBottles->Struck(slot);const int hand=slot?1:0;const auto now=GetTickCount64();
+        if(speed>1&&now-bottleStruckAt[hand]>=80) {
+            bottleStruckAt[hand]=now;
+            MotionPulse(hand,haptics::Category::Melee,std::clamp(.12f+speed*.02f,.12f,.35f),15000000);
+        }
+    }
     bottles::WallRequest want;
     if(droppedBottles->WallsWanted(want))wallcells::Want(want,in.at);
 }
@@ -3688,6 +3710,11 @@ void ConfigureInteractions(bool seated,float waist,float forward,int dominant) {
     std::lock_guard lock(mutex);interactions.Configure(c);interactionstate::Cancel();previous=c;configured=true;
 }
 void ConfigureBottlePhysics(bool on){bottlePhysics=on;}
+void BottleWeapon(int slot,const melee::Blade* blade) {
+    if(slot<0||slot>=bottles::Colliders)return;
+    std::lock_guard lock(bottleWeaponMutex);
+    bottleWeapons[slot]=blade?BottleWeaponPose{*blade,GetTickCount64(),true}:BottleWeaponPose{};
+}
 bool SettingsOpen(){return settingsOpen.load();}
 bool SpellSelected() {
     std::lock_guard lock(mutex);

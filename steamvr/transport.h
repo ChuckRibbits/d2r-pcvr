@@ -66,6 +66,9 @@ int PointSpellSkill();       // the cast skill when the aim rules place it at a 
 int AimRulesSkill();         // the cast skill (any), -1 none; with its game "directed" flag
 bool AimRulesDirected();
 bool MeleeSample(uint32_t poseStamp,melee::Sample& sample,int hand=0);
+// The posed melee capsule (world metres) that also pushes dropped bottles:
+// slot 0 right hand, 1 left hand, 2 shield. Null clears it. Any thread.
+void BottleWeapon(int slot,const melee::Blade* blade);
 bool ShieldSample(uint32_t poseStamp,melee::Sample& sample);
 bool RequestShieldSkill(const melee::Sample& sample,uint32_t target,math::Vec gridTarget);
 int TakeShieldTarget(uint32_t& target); // 1 physical target, -1 cancelled cast, 0 native fallback

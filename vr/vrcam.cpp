@@ -6967,7 +6967,7 @@ void MeleeContactHand(int hand) {
     if(!g_enabled.load()||!g_inWorld.load()||ThirdPerson()||Overhead()||!g_eyeOk.load()||
        gamestate::MenuOpen()||!skel::MeleeWeapon(pose,hand)||!pose.weaponType||pose.worldEpoch!=g_meleeTurnEpoch.load()||
        !framevr::MeleeSample(pose.poseStamp,sample,hand)) {
-        melee::CancelWeapon(hand);return;
+        melee::CancelWeapon(hand);framevr::BottleWeapon(hand,nullptr);return;
     }
     const float upm=std::max(1.f,ViewHeight())/UserEyeHeightM();
     using framevr::math::Vec;
@@ -6986,20 +6986,20 @@ void MeleeContactHand(int hand) {
     // The checked UI-thread accessor refreshes the native local unit across
     // warps. Do not gate swings on aim-hook traffic or camera proximity.
     uintptr_t nativeHero=0;
-    if(!combat::LocalPlayerUnit(nativeHero)){melee::CancelWeapon(hand);return;}
+    if(!combat::LocalPlayerUnit(nativeHero)){melee::CancelWeapon(hand);framevr::BottleWeapon(hand,nullptr);return;}
     combat::ObserveLocalPlayer(nativeHero);
     sample.epoch=(sample.epoch<<32)|pose.worldEpoch;
     sample.unitsPerMetre=upm;sample.player={pose.player[0]/upm,pose.player[1]/upm,pose.player[2]/upm};
     sample.blade.base={pose.origin[0]/upm,pose.origin[1]/upm,pose.origin[2]/upm};
     sample.blade.tip=sample.blade.base+Vec{pose.axis[0],pose.axis[1],pose.axis[2]}*length;
     sample.thrustAxis=framevr::melee::TrackingThrustAxis({pose.gripAxis[0],pose.gripAxis[1],pose.gripAxis[2]},sample.hand.q);
-    sample.blade.radius=radius;melee::Submit(sample);
+    sample.blade.radius=radius;framevr::BottleWeapon(hand,&sample.blade);melee::Submit(sample);
 }
 void MeleeContactTick(){MeleeContactHand(0);MeleeContactHand(1);}
 void ShieldContactTick() {
     framevr::melee::Sample sample;skel::MeleeWeaponPose pose;
     if(!g_enabled.load()||!g_inWorld.load()||ThirdPerson()||Overhead()||!g_eyeOk.load()||gamestate::MenuOpen()||!gamestate::LeftShield()) {
-        melee::CancelShield();return;
+        melee::CancelShield();framevr::BottleWeapon(2,nullptr);return;
     }
     const bool hook=melee::ShieldReady(),posed=skel::ShieldWeapon(pose);
     const bool epoch=posed&&pose.worldEpoch==g_meleeTurnEpoch.load();
@@ -7009,7 +7009,7 @@ void ShieldContactTick() {
         char line[180];snprintf(line,sizeof line,"Frame shield ready: hook=%d posed=%d epoch=%d input=%d contact=%d",hook,posed,epoch,input,input&&sample.active);
         framevr::logging::Write(line);reportAt=now+5000;
     }
-    if(!hook||!input){melee::CancelShield();return;}
+    if(!hook||!input){melee::CancelShield();framevr::BottleWeapon(2,nullptr);return;}
     const float upm=std::max(1.f,ViewHeight())/UserEyeHeightM();
     sample.epoch=(sample.epoch<<32)|pose.worldEpoch;sample.unitsPerMetre=upm;
     sample.player={pose.player[0]/upm,pose.player[1]/upm,pose.player[2]/upm};
@@ -7018,6 +7018,7 @@ void ShieldContactTick() {
     // Conservative shield-sized capsule around the visible attachment. Native
     // Smite still checks reach and walls; a resting shield cannot power a hit.
     sample.blade={center-axis*.20f,center+axis*.20f,.15f};
+    framevr::BottleWeapon(2,&sample.blade);
     melee::Submit(sample);
 }
 // Unleashed physical guard: independent of Smite. Not eligible (first person,

@@ -92,7 +92,7 @@ Quest left X/Y correspond to Index left A/B; right A/B labels are the same.
 | Swap weapon sets I / II | Dominant grip over either shoulder; or wheel → EQUIPMENT |
 | Stow / draw weapons | Wheel → EQUIPMENT → Stow / Draw |
 | Grab / drink potion | Grip a belt bottle, bring its opening to the mouth and tip it; release to return unused |
-| Drop the empty bottle | Open your hand after drinking; it falls, bounces and rolls on the floor (visual only) |
+| Drop the empty bottle | Open your hand after drinking; it falls, bounces and rolls on the floor (visual only). Swing a weapon or shield into it to knock it away |
 | Heal your mercenary | Toss a held Health, Rejuvenation, Antidote or Thawing bottle so it lands near its feet; a miss keeps the potion |
 | Quick potion | Wheel → EQUIPMENT → potion, using opposite laser + trigger |
 | Grab wheel potion | Wheel → EQUIPMENT → potion, using the pointing hand's grip |

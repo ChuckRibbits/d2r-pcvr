@@ -41,6 +41,17 @@ restores the old behaviour.
   floor's shear is removed, as for arrows. Unchanged cells rebuild nothing;
   opened doors remove their box. With unknown signatures the sampler logs
   once and bottles keep the floor only.
+- **Weapons.** While physical melee is active, the render side's posed
+  melee capsules (each hand's weapon or fist, and the shield) reach the
+  transport through `BottleWeapon`. Each becomes a kinematic Box3D capsule.
+  Before each frame's steps, `b3Body_SetTargetTransform` moves it to its new
+  pose over exactly those steps and wakes the bottles it touches. Afterwards
+  it stops, so a pose that stops arriving (older than 100 ms) never coasts.
+  A new or resized weapon, or a move over 0.75 m or faster than 30 m/s (a
+  warp or recentre), is placed without sweeping. Radii are clamped to
+  2-8 cm, which thins the shield's 15 cm creature capsule. Box3D hit events
+  report the approach speed; above 1 m/s that hand gets a short Melee-category
+  tick, at most every 80 ms. The weapons exist only while bottles do.
 - **Drawing.** `potions::AddDropped` puts up to six empty-looking models into
   the potion scene, mapped back to room space through the current stage
   frame. The scene grew by six entries.
@@ -51,7 +62,10 @@ restores the old behaviour.
   walls they have rolled behind; the belt and thrown bottles have the same
   limit.
 - The floor is flat. Stairs, slopes and raised ground are not followed.
-- Monsters, the player's body and hands do not collide with bottles.
+- Monsters and the player's body do not collide with bottles. Weapons only
+  push them while physical melee is active (not with a bow, menus or a held
+  potion), and the left hand only when dual wielding or holding a shield.
+  The weapon capsules are the melee categories' sizes, not the meshes.
 - At most six bottles; each is removed after 20 s or 12 m from the player.
   Menus and loading pause them in place.
 
@@ -61,7 +75,10 @@ restores the old behaviour.
 cell mapping at several floor heights, release validation, a dropped bottle
 bouncing and settling on the floor, a throw stopping at a wall and coming back,
 unchanged/foreign/opened wall patches, the six-bottle cap, floor change,
-range, lifetime and pause handling. `interaction-test` covers the release
+range, lifetime and pause handling. Weapon cases: a blade swept through a
+sleeping bottle pushes it ahead and reports one hit; putting the weapon away
+removes it; a 4 m warp passes a bottle untouched; a weapon whose pose stops
+changing stays put; malformed capsules are refused. `interaction-test` covers the release
 hand-off: world pose, velocity and spin through a turned stage frame, a still
 release, no frame, and a full bottle that is never discarded.
 

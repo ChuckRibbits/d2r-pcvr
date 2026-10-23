@@ -1,6 +1,7 @@
 #include "dropped_bottles.h"
 #include <box3d/box3d.h>
 #include <algorithm>
+#include <utility>
 
 namespace framevr::bottles {
 namespace {
@@ -19,6 +20,7 @@ constexpr float GlassFriction=.5f,GlassBounce=.3f,GlassRolling=.015f,Density=400
 constexpr float FloorFriction=.7f,FloorBounce=.2f,WallFriction=.4f,WallBounce=.25f;
 constexpr float FloorHalf=40; // the ground box around the physics origin, metres
 constexpr int Sides=24,MaxSteps=8;
+constexpr float WeaponFriction=.4f;
 }
 struct World::Impl {
     b3WorldId world=b3_nullWorldId;
@@ -36,6 +38,9 @@ struct World::Impl {
     bool havePatch=false;
     std::array<Rect,MaxRects> rects{};
     unsigned rectCount=0;
+    // Weapons are kinematic capsules along local +Y, driven to each new pose.
+    struct Pusher {b3BodyId body=b3_nullBodyId;b3ShapeId shape=b3_nullShapeId;float length=0,radius=0,struck=0;Collider target{};};
+    std::array<Pusher,Colliders> pushers{};
     Impl() {
         auto def=b3DefaultWorldDef();
         def.gravity={0,-9.81f,0};
@@ -51,7 +56,53 @@ struct World::Impl {
     }
     void Clear() {
         while(count)Remove(count-1);
+        for(auto& p:pushers){Destroy(p.body);p.shape=b3_nullShapeId;}
         Destroy(walls);Destroy(ground);rectCount=0;timed=false;accumulator=0;
+    }
+    b3WorldTransform Target(const Collider& c,float& length) const {
+        const Vec d=c.tip-c.base;length=std::sqrt(math::Dot(d,d));
+        const b3Quat q=length>1e-4f?b3ComputeQuatBetweenUnitVectors({0,1,0},B(d*(1/length))):b3Quat{{0,0,0},1};
+        b3WorldTransform t{};t.p=B(c.base-origin);t.q=q;return t;
+    }
+    // Before this call's steps: each weapon heads for its pose over time
+    // seconds. A new or resized one, or a warp, is placed without sweeping.
+    void Drive(float time) {
+        for(auto& p:pushers) {
+            if(!Valid(p.target)){Destroy(p.body);p.shape=b3_nullShapeId;continue;}
+            float length=0;const auto target=Target(p.target,length);
+            const float radius=std::clamp(p.target.radius,MinColliderRadius,MaxColliderRadius);
+            if(B3_IS_NULL(p.body)||!b3Body_IsValid(p.body)||std::fabs(length-p.length)>.01f||std::fabs(radius-p.radius)>.005f) {
+                Destroy(p.body);
+                auto def=b3DefaultBodyDef();def.type=b3_kinematicBody;def.position=target.p;def.rotation=target.q;
+                p.body=b3CreateBody(world,&def);
+                auto shape=b3DefaultShapeDef();shape.enableHitEvents=true;shape.baseMaterial.friction=WeaponFriction;
+                const b3Capsule capsule{{0,0,0},{0,std::max(length,.001f),0},radius};
+                p.shape=b3CreateCapsuleShape(p.body,&shape,&capsule);
+                p.length=length;p.radius=radius;continue;
+            }
+            const auto now=b3Body_GetTransform(p.body);
+            const Vec base=F(now.p),tip=base+math::Rotate(F(now.q),{0,length,0});
+            const Vec toBase=F(target.p)-base,toTip=(F(target.p)+math::Rotate(F(target.q),{0,length,0}))-tip;
+            const float moved=std::sqrt(std::max(math::Dot(toBase,toBase),math::Dot(toTip,toTip)));
+            if(moved>ColliderJump||moved>ColliderMaxSpeed*time) {
+                b3Body_SetTransform(p.body,target.p,target.q);
+                b3Body_SetLinearVelocity(p.body,{0,0,0});b3Body_SetAngularVelocity(p.body,{0,0,0});
+            } else b3Body_SetTargetTransform(p.body,target,time,true);
+        }
+    }
+    // A weapon stops where it is until its next pose: never coast on.
+    void Halt() {
+        for(auto& p:pushers)if(!B3_IS_NULL(p.body)&&b3Body_IsValid(p.body)) {
+            b3Body_SetLinearVelocity(p.body,{0,0,0});b3Body_SetAngularVelocity(p.body,{0,0,0});
+        }
+    }
+    void Hits() {
+        const auto events=b3World_GetContactEvents(world);
+        for(int i=0;i<events.hitCount;++i) {
+            const auto& e=events.hitEvents[i];
+            for(auto& p:pushers)if(!B3_IS_NULL(p.shape)&&(B3_ID_EQUALS(e.shapeIdA,p.shape)||B3_ID_EQUALS(e.shapeIdB,p.shape)))
+                p.struck=std::max(p.struck,e.approachSpeed);
+        }
     }
     void Restart(const Release& r) {
         Clear();
@@ -127,10 +178,14 @@ void World::Advance(double time,Vec player) {
     double dt=time-m.last;m.last=time;
     if(!(dt>=0)||dt>.25)dt=Step; // a pause or clock jump resumes in place
     m.accumulator+=dt;
+    int planned=0;
+    for(double left=m.accumulator;left>=Step&&planned<MaxSteps;left-=Step)++planned;
+    if(planned)m.Drive(float(planned*Step));
     int steps=0;
     while(m.accumulator>=Step&&steps<MaxSteps) {
         for(unsigned i=0;i<m.count;++i){m.bottles[i].p0=m.bottles[i].p1;m.bottles[i].q0=m.bottles[i].q1;}
         b3World_Step(m.world,float(Step),4);
+        m.Hits();
         for(unsigned i=0;i<m.count;++i) {
             const auto t=b3Body_GetTransform(m.bottles[i].body);
             m.bottles[i].p1=F(t.p);m.bottles[i].q1=F(t.q);
@@ -138,6 +193,7 @@ void World::Advance(double time,Vec player) {
         m.accumulator-=Step;++steps;
     }
     if(steps==MaxSteps)m.accumulator=0;
+    if(steps)m.Halt();
     for(unsigned i=m.count;i-->0;) {
         const auto& b=m.bottles[i];
         const Vec p=m.origin+b.p1;
@@ -161,7 +217,17 @@ bool World::WallsWanted(WallRequest& out) const {
     out={m.session,m.origin+m.bottles[pick].p1,m.floor,m.upm};
     return true;
 }
+void World::Weapons(const std::array<Collider,Colliders>& colliders) {
+    for(int i=0;i<Colliders;++i)impl->pushers[i].target=colliders[i];
+}
+float World::Struck(int slot) {
+    if(slot<0||slot>=Colliders)return 0;
+    return std::exchange(impl->pushers[slot].struck,0.f);
+}
+unsigned World::Pushers() const {
+    unsigned n=0;for(const auto& p:impl->pushers)n+=!B3_IS_NULL(p.body);return n;
+}
 unsigned World::Count() const {return impl->count;}
 unsigned World::Shapes() const {return impl->rectCount;}
-void World::Reset() {auto& m=*impl;m.Clear();m.session=0;m.havePatch=false;m.patch={};}
+void World::Reset() {auto& m=*impl;m.Clear();m.session=0;m.havePatch=false;m.patch={};for(auto& p:m.pushers)p={};}
 }

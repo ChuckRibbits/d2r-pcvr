@@ -91,6 +91,22 @@ inline float Radius(float modelRadius) {
     return std::isfinite(modelRadius)&&modelRadius>0?std::clamp(modelRadius,MinRadius,MaxRadius):DefaultRadius;
 }
 struct Shown {Vec p{};Quat q{0,0,0,1};uint32_t code=0;};
+// A held weapon, shield or fist that pushes bottles: a capsule from base to
+// tip in world metres, the same posed capsule physical melee tests creatures
+// with. Slots: right hand, left hand, shield.
+struct Collider {
+    bool active=false;
+    Vec base{},tip{};
+    float radius=0;
+};
+inline constexpr int Colliders=3;
+inline constexpr float MinColliderRadius=.02f,MaxColliderRadius=.08f; // a shield's fat creature capsule pushes from too far
+inline constexpr float ColliderJump=.75f;  // metres in one frame: a warp or recentre, moved without sweeping
+inline constexpr float ColliderMaxSpeed=30; // m/s, the same: never swept faster
+inline bool Valid(const Collider& c) {
+    const Vec d=c.tip-c.base;
+    return c.active&&Finite(c.base)&&Finite(c.tip)&&std::isfinite(c.radius)&&c.radius>0&&math::Dot(d,d)<=3*3;
+}
 // Where the game thread should sample walls: around the bottles, on their floor.
 struct WallRequest {
     uint64_t session=0;
@@ -115,11 +131,18 @@ public:
     // than Range from the player, are removed. Beyond the sampled cells there
     // are no walls, only the floor.
     void Advance(double time,Vec player);
+    // Where the weapons are now. The next Advance moves each one there over
+    // the steps it takes, pushing and waking the bottles in its way; a slot
+    // without a valid collider is removed. Only while bottles lie in the world.
+    void Weapons(const std::array<Collider,Colliders>&);
+    // The fastest a weapon struck a bottle since the last call (m/s), cleared.
+    float Struck(int slot);
     // Interpolated poses between the last two steps.
     unsigned Show(std::array<Shown,MaxBottles>& out) const;
     bool WallsWanted(WallRequest&) const;
     unsigned Count() const;
     unsigned Shapes() const; // static wall boxes, for diagnostics
+    unsigned Pushers() const; // weapon bodies in the world
     void Reset();
 };
 }
