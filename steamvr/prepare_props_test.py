@@ -55,7 +55,8 @@ class PropCatalogTests(unittest.TestCase):
     def test_only_plain_catalogued_props(self):
         preset = {'entities': [
             entity(7, 'a/cup01.model'),
-            entity(8, 'a/cup01.model', extra=('PhysicsBodyDefinitionComponent',)),   # collides natively
+            entity(8, 'a/cup01.model', extra=('VfxDefinitionComponent',)),           # it emits something
+            entity(13, 'a/cup01.model', extra=('WallTransparencyComponent',)),       # fades with the walls: kept
             entity(9, 'a/table01.model'),                                            # not a prop
             entity(0, 'a/plate02.model'),                                            # no id
             entity(2**32, 'a/plate02.model'),
@@ -63,7 +64,13 @@ class PropCatalogTests(unittest.TestCase):
             entity(11, 'a/plate02.model', position=(1, 'x', 2)),
             entity(12, 'a/skull03.model', position=(10.25, 0.5, 4.75)),
         ]}
-        self.assertEqual(list(props.entities(preset)), [(7, 'cup', (1.5, 2.25, -3.0)), (12, 'skull', (10.25, 0.5, 4.75))])
+        static = entity(14, 'a/chair02.model')
+        static['components'].append({'type': 'PhysicsBodyDefinitionComponent', 'bodytype': 'static'})
+        moving = entity(15, 'a/chair02.model')
+        moving['components'].append({'type': 'PhysicsBodyDefinitionComponent', 'bodytype': 'kinematic'})
+        preset['entities'] += [static, moving]
+        self.assertEqual([(i, k) for i, k, _ in props.entities(preset)], [(7, 'cup'), (13, 'cup'), (12, 'skull'), (14, 'chair')])
+        self.assertEqual(next(props.entities(preset))[2], (1.5, 2.25, -3.0))
         self.assertEqual(list(props.entities([])), [])
 
     def test_encoding_sorted_unique_with_kinds(self):

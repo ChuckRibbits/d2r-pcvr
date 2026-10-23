@@ -1765,15 +1765,17 @@ void StepDroppedBottles() {
         }
         propscan::Publish(poses);
     }
+    // Each weapon knock is logged; knocks by moving bottles and props are counted.
     std::array<bottles::Knock,props::MaxMoving> knocks{};
+    unsigned struck=0,chained=0;
     for(unsigned i=0,n=droppedBottles->Knocks(knocks);i<n;++i) {
         static const char* const by[]{"right hand","left hand","shield"};
-        char line[160];
-        if(knocks[i].slot>=0)std::snprintf(line,sizeof line,"Frame props: knocked a %s (%s, %.1f m/s)",propscan::KindName(knocks[i].kind),
-            by[knocks[i].slot%3],knocks[i].speed);
-        else std::snprintf(line,sizeof line,"Frame props: a %s was knocked by something moving",propscan::KindName(knocks[i].kind));
+        if(knocks[i].slot<0){++chained;continue;}
+        char line[160];++struck;
+        std::snprintf(line,sizeof line,"Frame props: knocked a %s (%s, %.1f m/s)",propscan::KindName(knocks[i].kind),by[knocks[i].slot%3],knocks[i].speed);
         Say(line);
     }
+    if(struck||chained)propscan::CountKnocks(struck,chained);
     bottles::WallRequest want;
     if(droppedBottles->WallsWanted(want))wallcells::Want(want,in.at);
 }

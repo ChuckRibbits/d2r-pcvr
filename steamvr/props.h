@@ -20,8 +20,8 @@ using math::Quat;
 
 // ---- The catalog (d2r_vr_props/props.bin) ----
 enum class Shape:uint8_t {Round,Box,Ball};
-enum class Material:uint8_t {Ceramic,Glass,Metal,Wood,Paper,Bone,Wicker,Food,Cloth};
-inline constexpr unsigned Shapes=3,Materials=9;
+enum class Material:uint8_t {Ceramic,Glass,Metal,Wood,Paper,Bone,Wicker,Food,Cloth,Furniture,Stone,Sack};
+inline constexpr unsigned Shapes=3,Materials=12;
 struct Kind {char name[28]{};Shape shape=Shape::Round;Material material=Material::Ceramic;};
 struct Entry {uint32_t id=0;float x=0,y=0,z=0;uint16_t kind=0;};
 inline constexpr uint32_t CatalogMagic=0x31505250,CatalogFormat=1; // 'PRP1'
@@ -68,18 +68,21 @@ public:
 };
 
 // How each material falls and bounces. Densities are for the solid hull, so
-// hollow vessels are given less than their clay.
+// hollow vessels (and chairs, mostly air) are given less than their stuff.
 struct Physical {float density,friction,bounce,rolling;};
 inline constexpr std::array<Physical,Materials> Properties{{
-    {600,.6f,.15f,.02f},  // ceramic
+    {600,.6f,.15f,.04f},  // ceramic
     {500,.5f,.3f,.015f},  // glass, like the dropped bottles
-    {900,.4f,.25f,.02f},  // metal
+    {900,.4f,.25f,.03f},  // metal
     {500,.6f,.2f,.03f},   // wood
     {400,.7f,.05f,.05f},  // paper
     {600,.6f,.2f,.04f},   // bone
     {150,.7f,.1f,.04f},   // wicker
     {800,.6f,.1f,.04f},   // food
     {100,.9f,0,.1f},      // cloth
+    {80,.6f,.1f,.1f},     // furniture
+    {1500,.6f,.1f,.05f},  // stone
+    {350,.9f,0,.2f},      // a filled sack
 }};
 
 // ---- The renderer's matrices ----
@@ -132,12 +135,13 @@ struct Support {
     float y=0,x0=0,z0=0,x1=0,z1=0;
     bool operator==(const Support&) const=default;
 };
-inline constexpr float FloorTouch=.05f,AboveTop=.03f,OnTop=.02f,SideTolerance=.01f; // metres
+inline constexpr float FloorTouch=.05f,AboveTop=.03f,SideTolerance=.01f; // metres
 inline constexpr float SupportReach=1.5f; // metres either side of the prop at most
 // Among the bounds of the entities around a prop (not other props), the most
 // specific one under it: the smallest footprint containing its centre whose
-// height range holds its bottom. On top of that entity the surface is its
-// top; lower down (a shelf inside a cabinet) it is the prop's own bottom.
+// height range holds its bottom. The surface is that entity's top, or the
+// prop's own bottom where that is lower (a shelf inside a cabinet, or a prop
+// sunk a little into the top): never above the prop, which would pop it up.
 // Nothing found leaves a plane just past the prop's own footprint.
 inline Support FindSupport(const Box& prop,std::span<const Box> around,float floor,float unitsPerMetre) {
     const float u=unitsPerMetre,bottom=prop.lo.y;
@@ -156,7 +160,7 @@ inline Support FindSupport(const Box& prop,std::span<const Box> around,float flo
         const float hx=(prop.hi.x-prop.lo.x)*.75f,hz=(prop.hi.z-prop.lo.z)*.75f;
         return {false,bottom,cx-hx,cz-hz,cx+hx,cz+hz};
     }
-    const float y=bottom>=best->hi.y-OnTop*u?best->hi.y:bottom;
+    const float y=std::min(bottom,best->hi.y);
     return {false,std::max(y,floor),std::max(best->lo.x,cx-reach),std::max(best->lo.z,cz-reach),
             std::min(best->hi.x,cx+reach),std::min(best->hi.z,cz+reach)};
 }
@@ -188,7 +192,7 @@ inline bool Overlap(const Box& a,const Box& b) {
 inline constexpr unsigned MaxSeen=64;   // nearest props simulated, frozen until touched
 inline constexpr unsigned MaxMoving=12; // props moving at once
 inline constexpr unsigned MaxLost=16;
-inline constexpr float MaxExtent=.8f,MinExtent=.01f; // metres: a prop's largest and smallest size
+inline constexpr float MaxExtent=1.2f,MinExtent=.01f; // metres: a prop's largest (a chair) and smallest size
 // A prop near the player, as the renderer has it now (render units).
 struct Seen {
     uint32_t entity=0;

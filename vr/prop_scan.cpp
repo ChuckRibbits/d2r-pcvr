@@ -273,6 +273,8 @@ std::mutex poseMutex;
 props::Poses pending{};
 uint64_t applied=0; // the write pass only
 std::atomic<unsigned> scans{0},failed{0},seenProps{0},matchedProps{0},writes{0},settles{0},lost{0},boundsRefused{0},passes{0};
+std::atomic<unsigned> struckKnocks{0},chainedKnocks{0},mostSeen{0};
+uint64_t reportedAt=0; // Report's caller only
 std::atomic<uint32_t> scanMicros{0};
 
 void Lose(size_t i) {
@@ -369,7 +371,7 @@ bool Latest(props::Scan& out) {
     job=0;
     if(f.idPool>=0)idPool=f.idPool;
     if(f.boundsPool>=0)boundsPool=f.boundsPool;
-    if(f.ok){++scans;scanMicros=uint32_t(f.ms*1000);seenProps=f.scan.count;matchedProps=f.matched;}
+    if(f.ok){++scans;scanMicros=uint32_t(f.ms*1000);seenProps=f.scan.count;matchedProps=f.matched;if(f.scan.count>mostSeen)mostSeen=f.scan.count;}
     else ++failed;
     lastWhy=f.why;
     out=f.scan;
@@ -408,14 +410,18 @@ void Transformed() {
     if(passAt.load(std::memory_order_relaxed)!=at){passAt=at;Pass();}
     passing.store(false,std::memory_order_release);
 }
+void CountKnocks(unsigned byWeapons,unsigned byMovingThings) {struckKnocks+=byWeapons;chainedKnocks+=byMovingThings;}
 void Report() {
+    const auto now=GetTickCount64();
+    if(reportedAt&&now>=reportedAt&&now-reportedAt<10000)return;
+    reportedAt=now;
     const auto s=scans.exchange(0),x=failed.exchange(0),w=writes.exchange(0),t=settles.exchange(0),l=lost.exchange(0),
-        b=boundsRefused.exchange(0),p=passes.exchange(0);
+        b=boundsRefused.exchange(0),p=passes.exchange(0),k=struckKnocks.exchange(0),c=chainedKnocks.exchange(0),most=mostSeen.exchange(0);
     if(!s&&!x&&!w&&!l)return;
-    char line[400];
-    std::snprintf(line,sizeof line,"Frame props: scans=%u failed=%u (last %.1f ms%s%s) nearby props=%u catalogued=%u; storages ids=%d bounds=%d; "
-        "write passes=%u moves=%u settles=%u lost=%u bounds refused=%u",s,x,scanMicros.load()/1000.,*lastWhy?", ":"",lastWhy,
-        seenProps.load(),matchedProps.load(),idPool,boundsPool,p,w,t,l,b);
+    char line[480];
+    std::snprintf(line,sizeof line,"Frame props: ten seconds: scans=%u failed=%u (last %.1f ms%s%s) props in reach now=%u most=%u, catalogued within 6 m=%u; "
+        "storages ids=%d bounds=%d; knocks by weapons=%u by moving things=%u; write passes=%u moves=%u settles=%u lost=%u bounds refused=%u",
+        s,x,scanMicros.load()/1000.,*lastWhy?", ":"",lastWhy,seenProps.load(),most,matchedProps.load(),idPool,boundsPool,k,c,p,w,t,l,b);
     logging::Write(line);
 }
 }

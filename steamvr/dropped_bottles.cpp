@@ -27,6 +27,14 @@ constexpr float WeaponFriction=.4f;
 // Level props: twelve-sided round ones; surfaces under them 2 cm thick.
 constexpr int PropSides=12,WakeSamples=6;
 constexpr float MinHalf=.008f,SurfaceHalf=.01f,SurfaceFriction=.6f,SurfaceBounce=.1f,RestTurn=.3f;
+// Props packed against each other (books on a shelf) touch at their bounds:
+// shapes a little inside them do not start overlapping.
+constexpr float Inset=.002f,InsetShare=.05f;
+// Only a body moving this fast sets a frozen neighbour going, so a settling
+// prop does not wake the row it leans on.
+constexpr float WakeMoverSpeed=.3f;
+// Overlaps resolve at this speed (m/s), gently, instead of popping apart.
+constexpr float ContactSpeed=1;
 }
 struct World::Impl {
     b3WorldId world=b3_nullWorldId;
@@ -56,6 +64,7 @@ struct World::Impl {
         props::Box reach{}; // frozen: the shape's bounds in physics space
         bool moving=false,rested=false;
         double since=0,still=0;
+        Vec anchor{};Quat turned{0,0,0,1};double anchoredAt=0; // where it was at the start of the drift window
         Vec p0{},p1{};Quat q0{0,0,0,1},q1{0,0,0,1};
     };
     std::vector<Piece> pieces;
@@ -67,6 +76,7 @@ struct World::Impl {
         auto def=b3DefaultWorldDef();
         def.gravity={0,-9.81f,0};
         def.workerCount=1; // serial: Box3D starts no threads in the game process
+        def.contactSpeed=ContactSpeed;
         world=b3CreateWorld(&def);
     }
     ~Impl() {if(b3World_IsValid(world))b3DestroyWorld(world);}
@@ -172,7 +182,8 @@ struct World::Impl {
         Piece piece;piece.prop=prop;
         piece.centre=(prop.bounds.lo+prop.bounds.hi)*.5f;
         const Vec h=(prop.bounds.hi-prop.bounds.lo)*.5f;
-        piece.half={std::max(h.x,MinHalf),std::max(h.y,MinHalf),std::max(h.z,MinHalf)};
+        auto inset=[](float v){return std::max(MinHalf,v-std::min(Inset,v*InsetShare));};
+        piece.half={inset(h.x),inset(h.y),inset(h.z)};
         auto def=b3DefaultBodyDef();
         def.type=b3_staticBody;def.position=B(prop.p-origin);def.rotation=B(prop.q);
         def.linearDamping=.05f;def.angularDamping=.1f;
@@ -239,10 +250,12 @@ struct World::Impl {
         b3Body_SetType(p.body,b3_dynamicBody);
         b3Body_SetAwake(p.body,true);
         p.moving=true;p.rested=false;p.since=time;p.still=0;
+        const auto t=b3Body_GetTransform(p.body);p.anchor=F(t.p);p.turned=F(t.q);p.anchoredAt=time;
         knocks.push_back({p.prop.entity,p.prop.kind,slot,speed});
     }
     // Before the steps: a weapon about to pass within reach of a frozen prop,
-    // or a moving body about to reach one, sets it going.
+    // or a fast body about to reach one, sets it going. With as many moving
+    // as allowed, a weapon still does: the prop moving longest is frozen.
     void Wake(float time,double now) {
         if(pieces.empty())return;
         unsigned moving=MovingCount();
@@ -264,18 +277,16 @@ struct World::Impl {
                          time>0?std::min(moved,ColliderJump)/time:0,i};
         }
         std::vector<props::Box> movers;
-        for(unsigned i=0;i<count;++i)if(b3Body_IsAwake(bottles[i].body)) {
-            const auto box=b3Body_ComputeAABB(bottles[i].body);const Vec v=F(b3Body_GetLinearVelocity(bottles[i].body));
-            const float grow=std::sqrt(math::Dot(v,v))*time+WakeMargin;
+        auto mover=[&](b3BodyId body) {
+            const Vec v=F(b3Body_GetLinearVelocity(body));const float speed=std::sqrt(math::Dot(v,v));
+            if(!b3Body_IsAwake(body)||speed<WakeMoverSpeed)return;
+            const auto box=b3Body_ComputeAABB(body);const float grow=speed*time+WakeMargin;
             movers.push_back({F(box.lowerBound)-Vec{grow,grow,grow},F(box.upperBound)+Vec{grow,grow,grow}});
-        }
-        for(const auto& p:pieces)if(p.moving) {
-            const auto box=b3Body_ComputeAABB(p.body);const Vec v=F(b3Body_GetLinearVelocity(p.body));
-            const float grow=std::sqrt(math::Dot(v,v))*time+WakeMargin;
-            movers.push_back({F(box.lowerBound)-Vec{grow,grow,grow},F(box.upperBound)+Vec{grow,grow,grow}});
-        }
+        };
+        for(unsigned i=0;i<count;++i)mover(bottles[i].body);
+        for(const auto& p:pieces)if(p.moving)mover(p.body);
         for(auto& p:pieces) {
-            if(p.moving||moving>=props::MaxMoving)continue;
+            if(p.moving)continue;
             const auto t=b3Body_GetTransform(p.body);const Vec at=F(t.p);const Quat q=F(t.q);
             int slot=-1;float speed=0;
             for(unsigned s=0;s<n&&slot<0;++s)for(int k=0;k<WakeSamples;++k) {
@@ -284,8 +295,15 @@ struct World::Impl {
                     slot=sweeps[s].slot;speed=sweeps[s].speed;break;
                 }
             }
-            const bool bumped=slot<0&&std::any_of(movers.begin(),movers.end(),[&](const props::Box& b){return props::Overlap(b,p.reach);});
+            const bool bumped=slot<0&&moving<props::MaxMoving&&
+                std::any_of(movers.begin(),movers.end(),[&](const props::Box& b){return props::Overlap(b,p.reach);});
             if(slot<0&&!bumped)continue;
+            if(moving>=props::MaxMoving) {
+                Piece* oldest=nullptr;
+                for(auto& o:pieces)if(o.moving&&(!oldest||o.since<oldest->since))oldest=&o;
+                if(!oldest)continue;
+                Freeze(*oldest);--moving;
+            }
             Knocked(p,slot,speed,now);++moving;
             if(slot>=0)pushers[slot].struck=std::max(pushers[slot].struck,speed);
         }
@@ -296,8 +314,9 @@ struct World::Impl {
         p.p0=p.p1=F(t.p);p.q0=p.q1=F(t.q);
         p.moving=false;p.rested=true;p.reach=Reach(p);
     }
-    // After the steps: a moving prop that has stopped, or moved too long or
-    // too far away, is frozen where it is.
+    // After the steps: a moving prop that has stopped, or barely shifted over
+    // the last drift window (settling in place), or moved too long or too far
+    // away, is frozen where it is.
     void Settle(double now,double elapsed) {
         for(auto& p:pieces) {
             if(!p.moving)continue;
@@ -315,7 +334,14 @@ struct World::Impl {
             p.still=math::Dot(v,v)<PropRestSpeed*PropRestSpeed&&math::Dot(w,w)<RestTurn*RestTurn?p.still+elapsed:0;
             const Vec world=origin+at;
             const bool away=std::hypot(world.x-player.x,world.z-player.z)>Range;
-            if(!b3Body_IsAwake(p.body)||p.still>=PropRestTime||now-p.since>PropMoveLimit||away)Freeze(p);
+            bool settled=false;
+            if(now-p.anchoredAt>=PropDriftTime) {
+                const Vec d=at-p.anchor;const Quat q=F(t.q);
+                const float dot=std::fabs(q.x*p.turned.x+q.y*p.turned.y+q.z*p.turned.z+q.w*p.turned.w);
+                settled=math::Dot(d,d)<PropDrift*PropDrift&&2*std::acos(std::min(1.f,dot))<PropDriftTurn;
+                p.anchor=at;p.turned=q;p.anchoredAt=now;
+            }
+            if(!b3Body_IsAwake(p.body)||p.still>=PropRestTime||settled||now-p.since>PropMoveLimit||away)Freeze(p);
         }
     }
 };

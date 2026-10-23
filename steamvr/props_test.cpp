@@ -83,6 +83,8 @@ int main() {
         assert(s.x0==0&&s.z0==0&&s.x1==1.2f&&s.z1==.8f);
         // Just above the top (on a plate): still the table's top.
         s=FindSupport(at(cup,{.3f,.765f,.2f}),around,floor,1);assert(std::fabs(s.y-.75f)<1e-5f);
+        // Sunk a little into it: the surface stays under the prop.
+        s=FindSupport(at(cup,{.3f,.74f,.2f}),around,floor,1);assert(std::fabs(s.y-.74f)<1e-5f);
         // On a shelf inside a cabinet: the prop's own height.
         const Box cabinet{{2,0,0},{3,2,.5f}};
         const std::array<Box,2> shelves{room,cabinet};

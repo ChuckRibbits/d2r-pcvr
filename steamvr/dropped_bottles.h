@@ -155,6 +155,8 @@ struct Knock {uint32_t entity=0;uint16_t kind=0;int slot=-1;float speed=0;};
 inline constexpr double PropMoveLimit=12;  // seconds a prop may move before it is frozen where it is
 inline constexpr float PropRestSpeed=.03f; // m/s, and turning under 0.3 rad/s ...
 inline constexpr double PropRestTime=.6;   // ... this long: at rest
+inline constexpr double PropDriftTime=.5;  // or moved under PropDrift, turning under PropDriftTurn,
+inline constexpr float PropDrift=.015f,PropDriftTurn=.07f; // over this long: settling in place
 inline constexpr float WakeMargin=.01f;    // metres a weapon may pass from a prop and still set it going
 // Where the game thread should sample walls: around the bottles, on their floor.
 struct WallRequest {

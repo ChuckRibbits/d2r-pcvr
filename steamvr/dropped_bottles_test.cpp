@@ -286,6 +286,51 @@ int main() {
         world.Props(PropScan{});
         assert(world.Frozen()==0);
     }
+    // A row of books touching on a shelf: knocking one settles, without the
+    // row waking itself over and over.
+    {
+        World world;const Vec player{0,0,0};
+        const props::Support shelf{false,1,-.5f,-.2f,.5f,.2f};
+        PropScan row=Scan(player,{});
+        for(int i=0;i<8;++i) {
+            Prop book=Cup(200+i,{-.21f+i*.06f,1,0},shelf);book.shape=props::Shape::Box;book.material=props::Material::Paper;
+            book.bounds={{-.03f,0,-.1f},{.03f,.22f,.1f}};row.props[row.count++]=book;
+        }
+        world.Props(row);
+        std::array<Collider,Colliders> weapons{};double t=0;
+        std::array<Knock,props::MaxMoving> knocks{};unsigned knocked=0;
+        for(int i=0;i<6;++i) {
+            weapons[0]=Blade({-.21f,1.15f,-.4f+i*.05f},{-.21f,1.15f,-.1f+i*.05f},.02f);
+            world.Weapons(weapons);t+=1/90.;world.Advance(t,player);knocked+=world.Knocks(knocks);
+        }
+        weapons[0]={};world.Weapons(weapons);
+        assert(knocked>=1);
+        for(int i=0;i<90*6;++i){t+=1/90.;world.Advance(t,player);knocked+=world.Knocks(knocks);}
+        assert(Moves(world).empty()&&world.Frozen()==8);
+        assert(knocked<=8); // each at most once: no wake-and-freeze loop
+    }
+    // With as many moving as allowed, a weapon still sets another going.
+    {
+        World world;const Vec player{0,0,0};
+        PropScan many=Scan(player,{});
+        for(unsigned i=0;i<props::MaxMoving;++i)many.props[many.count++]=Cup(300+i,{float(i)*.5f,0,0});
+        many.props[many.count++]=Cup(399,{0,0,3});
+        world.Props(many);
+        std::array<Collider,Colliders> weapons{};double t=0;
+        std::array<Knock,props::MaxMoving> knocks{};
+        // Knock all the row hard, along z, one after another.
+        for(unsigned i=0;i<props::MaxMoving;++i)for(int k=0;k<4;++k) {
+            const float x=float(i)*.5f,z=-.3f+k*.15f;
+            weapons[0]=Blade({x-.2f,.05f,z},{x+.2f,.05f,z});world.Weapons(weapons);t+=1/90.;world.Advance(t,player);world.Knocks(knocks);
+        }
+        assert(Moves(world).size()>=props::MaxMoving-2);
+        weapons[0]=Blade({-.2f,.05f,2.7f},{.2f,.05f,2.7f});world.Weapons(weapons);t+=1/90.;world.Advance(t,player);
+        weapons[0]=Blade({-.2f,.05f,3.f},{.2f,.05f,3.f});world.Weapons(weapons);t+=1/90.;world.Advance(t,player);
+        bool last=false;
+        for(unsigned i=0,n=world.Knocks(knocks);i<n;++i)last|=knocks[i].entity==399;
+        assert(last);
+        assert(Moves(world).size()<=props::MaxMoving);
+    }
     // No more than MaxMoving props move at once.
     {
         World world;const Vec player{0,0,0};

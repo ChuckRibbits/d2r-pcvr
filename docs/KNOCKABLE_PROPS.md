@@ -1,9 +1,13 @@
 # Knockable level props (Box3D)
 
-Status: first version; not headset-tested yet.
+Status: second version. The first, tested in the headset by the owner on
+2026-10-22, worked but not for everything. Books on a shelf woke each other
+without end, which used up the moving-prop limit, and props inside
+buildings were missing from the catalog.
 
 The level's own small props near the player (cups, plates, bowls, vases,
-jugs, bottles, books, skulls, baskets, pails and similar) can be knocked about
+jugs, bottles, books, skulls, baskets, pails, stools, chairs, sacks, cloths
+and similar) can be knocked about
 with swords, other melee weapons, fists, the shield, or a dropped bottle.
 A prop stays exactly where the game placed it until something reaches it. It
 then falls, bounces and rolls in the same Box3D world as the
@@ -18,11 +22,15 @@ everything returns to its place when the area loads again.
 - **Catalog** (`steamvr/prepare_props.py`, at install). Every HD level preset
   (`data/hd/env/preset/**.json`) lists its entities with an `id`. The
   installer reads the player's own game files and keeps each entity that is
-  only a transform and a model (nothing that lights, emits, animates or
-  collides natively) whose model name is one of about 70 kinds. It writes the
-  id, the preset position and the kind to `d2r_vr_props/props.bin` beside the
-  plugin. That is about 20,000 props from 2,100 presets in roughly 14 seconds
-  on Steam 3.3.93787. The catalog is cached by game build and never shipped.
+  only a transform and a model, whose model name is one of 98 kinds. Nothing
+  that lights, emits or animates is kept. Props that fade with the walls
+  (most props inside buildings) are kept, and so are props with a static
+  native body (many vases, pails and chairs): only the HD renderer's debris
+  and ragdolls touch that body, and it stays where it was. The installer
+  writes the id, the preset position and the kind to
+  `d2r_vr_props/props.bin` beside the plugin. That is about 26,000 props
+  from 2,100 presets in roughly 14 seconds on Steam 3.3.93787. The catalog
+  is cached by game build and never shipped.
   Candles, lanterns and lamps are left out because their flames are separate
   entities.
 - **Scan** (`vr/prop_scan.cpp`, a worker thread, twice a second). The HD
@@ -37,32 +45,42 @@ everything returns to its place when the area loads again.
 
   Entities within 3 m of the player and between 0.5 m below and 2.5 m above
   the floor become props when their id and their local position both match
-  the catalog. The prop must be between 1 cm and 80 cm in size, have a rigid
+  the catalog. The prop must be between 1 cm and 1.2 m in size, have a rigid
   matrix (no mirroring or shear), and belong to a level preset. At most the
   64 nearest are kept. All reads are guarded copies; nothing is called in the
   game.
 - **What a prop rests on.** Tables, shelves and counters mostly have no
   native collision. Among the level entities' bounds around each prop
   (excluding other props), the smallest footprint under its centre whose
-  height range holds the prop's base is its support. On top of that entity the
-  surface is the entity's top; lower down (a shelf inside a cabinet) it is the
-  prop's own base. The surface is a 2 cm static plate over that footprint,
+  height range holds the prop's base is its support. The surface is that
+  entity's top, or the prop's own base where that is lower (a shelf inside a
+  cabinet, or a prop sunk a little into the top), so the surface never pops
+  the prop up. The surface is a 2 cm static plate over that footprint,
   reaching at most 1.5 m either side of the prop. A prop on the floor rests on
   the bottles' ground. With nothing found, a plate just past the prop's own
   footprint holds it until it is pushed off.
 - **Physics** (`steamvr/dropped_bottles.*`). Each prop is a static Box3D body
-  in the shape of its model's bounds: an upright cylinder for vessels and
-  plates, a box for books, skulls, tools and pillows, a sphere for apples and
-  potatoes. Its material sets density, friction, bounce and rolling
-  resistance. Before each frame's steps, a weapon capsule swept from its last
-  pose to its new one (six samples), passing within 1 cm of a prop, sets that
-  prop going. So does a bottle or another prop about to reach it. The prop
-  turns dynamic and the hand gets the usual light tick. At most 12 move at
-  once. A moving prop is frozen again (static, where it is) when it has moved
-  under 3 cm/s for 0.6 s, when Box3D puts it to sleep, after 12 s, or 12 m
-  from the player. One that falls through everything is set back on the
-  floor. A new floor, game or scale restarts the world only once no prop is
-  moving.
+  in the shape of its model's bounds, 2 mm (at most 5%) inside them so
+  props packed together do not start overlapping. Vessels and plates are
+  upright cylinders. Books, skulls, tools, pillows, cloths, sacks and
+  furniture are boxes, and apples and potatoes are spheres. Its material sets
+  density, friction, bounce and rolling resistance; chairs and stools count
+  as mostly air. Overlaps resolve at 1 m/s, so nothing pops apart.
+  - **Waking.** Before each frame's steps, a weapon capsule swept from its
+    last pose to its new one (six samples), passing within 1 cm of a prop,
+    sets that prop going. So does a bottle or another prop moving faster than
+    0.3 m/s and about to reach it; a prop settling slowly does not wake the
+    row it leans on. The prop turns dynamic and the hand gets the usual light
+    tick.
+  - **The limit.** At most 12 move at once. A weapon reaching another prop
+    then freezes the one that has moved longest.
+  - **Freezing.** A moving prop is frozen again (static, where it is) after
+    it has moved under 3 cm/s for 0.6 s, or less than 1.5 cm and 4 degrees
+    over half a second. It is also frozen when Box3D puts it to sleep, after
+    12 s, or 12 m from the player. One that falls through everything is set
+    back on the floor.
+  - **Restarts.** A new floor, game or scale restarts the world only once no
+    prop is moving.
 - **Drawing.** While a prop moves, the transport sends its interpolated pose
   as a renderer matrix, composed with the prop's own scale and its own units
   per metre. Inside the renderer's transform pass (the existing
@@ -107,7 +125,10 @@ everything returns to its place when the area loads again.
 - a lost moving prop goes at once;
 - another floor waits for moving props;
 - invalid props are refused;
-- no more than 12 move at once.
+- no more than 12 move at once;
+- a row of eight touching books on a shelf, one of them knocked, all settle
+  with each knocked at most once (without the fixes they never settle);
+- with 12 moving, a weapon still sets a 13th going.
 
 `prepare_props_test.py` covers kinds, plain-entity filtering, encoding and the
 cache.
@@ -118,5 +139,6 @@ with the shield and punch a vase. Knock a cup off the table edge, then walk
 away and back. Check that the props and their shadows move, that nothing
 smears in DLSS, and that leaving and re-entering the area puts everything
 back. The log has `Frame props: catalog of ...` at start, then
-`Frame props: scans=...` every ten seconds and `Frame props: knocked a ...`
-per knock.
+`Frame props: ten seconds: ...` (props in reach, the storages found, knocks
+by weapons and by moving things, writes) and `Frame props: knocked a ...`
+per weapon knock.

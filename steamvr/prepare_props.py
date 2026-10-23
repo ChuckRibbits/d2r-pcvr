@@ -20,21 +20,25 @@ import struct
 from pathlib import Path
 from game_assets import open_assets
 
-VERSION = 1   # the cache
+VERSION = 2   # the cache; 2 adds wall-faded props, static native bodies, furniture and cloth
 FORMAT = 1    # props.bin layout, read by steamvr/props.h
 MAGIC = 0x31505250   # 'PRP1'
 FILES = ('props.bin',)
 PRESETS = 'data/hd/env/preset/'
 # A prop is placed on its own: a transform and a model, nothing that lights,
-# emits, animates or collides natively, so moving its matrix moves all of it.
+# emits or animates, so moving its matrix moves all of it. Fading with walls
+# that cut away is kept. A static native body is allowed: only the HD
+# renderer's own debris and ragdolls touch it, and it stays where it was.
 PLAIN = {'TransformDefinitionComponent', 'ModelPlatformTierComponent', 'ModelDefinitionComponent'}
+ALLOWED = PLAIN | {'WallTransparencyComponent'}
 SHAPES = ('round', 'box', 'ball')
-MATERIALS = ('ceramic', 'glass', 'metal', 'wood', 'paper', 'bone', 'wicker', 'food', 'cloth')
+MATERIALS = ('ceramic', 'glass', 'metal', 'wood', 'paper', 'bone', 'wicker', 'food', 'cloth', 'furniture', 'stone', 'sack')
 # Model name without its number -> collision shape and material. Candles,
 # lanterns and lamps are left out: their flames are separate entities.
 KINDS = {
     **{name: ('round', 'ceramic') for name in (
         'cup', 'mug', 'plate', 'plate_small', 'act1_plate', 'act2_plate', 'offering_plate', 'serving_platter',
+        'plate_stack', 'bowl_set', 'bowl_stack', 'bowl_stack_small', 'stack_o_bowls', 'fruit_bowl',
         'bowl', 'bowl_angled', 'dish', 'jug', 'stoneware_jug', 'pitcher', 'jar', 'canopic_jar',
         'urn', 'act2_urn', 'expansion_urn', 'offering_urn', 'pot', 'town_pot', 'chamber_pot',
         'vase', 'vase_small', 'vase_white', 'vase_purple', 'vase_red', 'vase_brown', 'vase_blue')},
@@ -43,13 +47,18 @@ KINDS = {
     **{name: ('round', 'metal') for name in ('pail', 'bucket', 'pan', 'kettle')},
     **{name: ('box', 'metal') for name in ('knife', 'tool_knife', 'tool_spoon', 'hammer')},
     **{name: ('box', 'paper') for name in (
-        'book', 'book_green', 'book_red', 'book_orange', 'book_open', 'arcane_book', 'scrolls')},
-    **{name: ('box', 'bone') for name in ('skull', 'skull_single', 'animal_skull', 'skull_animal', 'bone', 'shinbone')},
-    **{name: ('round', 'wicker') for name in ('basket', 'basket_woven', 'basket_dirty', 'act3_basket', 'plate_woven')},
+        'book', 'book_green', 'book_red', 'book_orange', 'book_open', 'arcane_book', 'scrolls', 'book_stack',
+        'package_brown', 'package_yellow', 'package_white')},
+    **{name: ('box', 'bone') for name in ('skull', 'skull_single', 'animal_skull', 'skull_animal', 'skull_ornate', 'bone', 'shinbone')},
+    **{name: ('round', 'wicker') for name in ('basket', 'basket_woven', 'basket_dirty', 'act3_basket', 'plate_woven', 'basket_stack')},
     **{name: ('ball', 'food') for name in ('apple', 'potato')},
     'fish': ('box', 'food'),
-    **{name: ('box', 'cloth') for name in ('pillow', 'pillow_blue', 'pillow_red', 'pillow_green', 'pillow_purple')},
-    'crate': ('box', 'wood'),
+    **{name: ('box', 'cloth') for name in (
+        'pillow', 'pillow_blue', 'pillow_red', 'pillow_green', 'pillow_purple', 'cloth_folded', 'crumpled_cloth', 'rag')},
+    **{name: ('box', 'wood') for name in ('crate', 'container', 'figurine_box', 'firewood', 'firewood_log')},
+    **{name: ('box', 'furniture') for name in ('chair', 'stool', 'act1_stool', 'barstool')},
+    **{name: ('box', 'stone') for name in ('tablet', 'tablet_small')},
+    **{name: ('box', 'sack') for name in ('sack', 'sack_small')},
 }
 NUMBER = re.compile(r'_?\d+$')
 
@@ -63,13 +72,17 @@ def kind_of(model):
     return stem if stem in KINDS else None
 
 
+def static_body(component):
+    return component.get('type') == 'PhysicsBodyDefinitionComponent' and component.get('bodytype') == 'static'
+
+
 def entities(preset):
     """(id, kind, position) for each plain catalogued prop in one preset."""
     for entity in preset.get('entities', []) if isinstance(preset, dict) else []:
         if not isinstance(entity, dict):
             continue
         components = [c for c in entity.get('components', []) if isinstance(c, dict)]
-        if not components or any(c.get('type') not in PLAIN for c in components):
+        if not components or any(c.get('type') not in ALLOWED and not static_body(c) for c in components):
             continue
         model = next((c.get('filename') for c in components if c.get('type') == 'ModelDefinitionComponent'), None)
         transform = next((c for c in components if c.get('type') == 'TransformDefinitionComponent'), None)
