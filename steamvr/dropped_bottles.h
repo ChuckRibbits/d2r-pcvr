@@ -75,7 +75,7 @@ struct Release {
 };
 inline constexpr float Height=.18f;           // potion models are normalized to this
 inline constexpr float MinRadius=.02f,MaxRadius=.08f,DefaultRadius=.045f;
-inline constexpr float MaxSpeed=25,MaxSpin=40; // beyond a real hand's release
+inline constexpr float MaxSpeed=32,MaxSpin=40; // beyond a real hand's release (20 m/s) carried by a run (10 m/s)
 inline constexpr unsigned MaxBottles=6;        // the oldest goes first
 inline constexpr double Lifetime=20;           // seconds after release
 inline constexpr float Range=12;               // metres from the player before it is forgotten

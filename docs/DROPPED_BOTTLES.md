@@ -16,7 +16,11 @@ restores the old behaviour.
   opens on a confirmed-empty bottle, the engine reports one `Output::discard`.
   It carries the held model's world pose (the same `Stage::World` mapping
   thrown potions use), the hand velocity and the floor under the player. The
-  velocity is the peak in the last 0.12 s, capped at 20 m/s. Turn is the mean
+  velocity is the peak in the last 0.12 s, capped at 20 m/s, plus the player's
+  own world velocity when running or walking (`interaction::Carry`: the stage
+  anchor's motion smoothed over 0.1 s, reset by jumps faster than 10 m/s or
+  gaps over 0.25 s). A bottle let go of mid-run moves on with you rather than
+  dropping straight down. Turn is the mean
   hand angular velocity over that window, from pose differences, capped at
   30 rad/s. A full bottle released still returns to the belt.
 - **Physics** (`steamvr/dropped_bottles.*`). [Box3D](https://github.com/erincatto/box3d)

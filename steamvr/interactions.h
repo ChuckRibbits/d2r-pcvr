@@ -144,6 +144,29 @@ constexpr float ThrowGravity=9.81f,ThrowMinSpeed=1.4f,ThrowMaxSpeed=20.f,ThrowGl
 constexpr float ThrowMaxSpin=30.f; // rad/s; a wrist flick, not a tracking jump
 constexpr double ThrowWindow=.12,ThrowMaxFlight=3.;
 constexpr double TossPickup=.2; // the physics world takes a throw within this, else it flies the arc
+// The player's own motion through the world (running, walking): the stage
+// frame's velocity in world metres per second. A throw or a let-go bottle
+// carries it, as anything thrown carries its thrower's speed. Whether a
+// release is a throw still depends on the hand alone. A jump faster than any
+// run (a waypoint, a portal, a recentre) or a gap in the frames resets it.
+constexpr float CarryMaxSpeed=10.f;
+constexpr double CarryTime=.1,CarryGap=.25;
+struct Carry {
+    bool known=false;
+    Vec velocity{};
+    double at=0;
+    Vec was{};
+    bool have=false;
+    void Reset() {*this={};}
+    void Update(double time,Vec anchor) {
+        if(!std::isfinite(time)||!std::isfinite(anchor.x)||!std::isfinite(anchor.y)||!std::isfinite(anchor.z)){Reset();return;}
+        if(!have||!(time>at)||time-at>CarryGap){*this={};have=true;at=time;was=anchor;return;}
+        const float dt=float(time-at);const Vec v=(anchor-was)*(1/dt);
+        at=time;was=anchor;
+        if(math::Dot(v,v)>CarryMaxSpeed*CarryMaxSpeed){known=false;velocity={};return;}
+        velocity=known?velocity+(v-velocity)*std::min(1.f,dt/float(CarryTime)):v;known=true;
+    }
+};
 // Hand turn between two poses as an angular velocity (rad/s, the poses' frame).
 inline Vec Spin(Quat from,Quat to,float dt) {
     Quat d=math::Multiply(to,math::Conjugate(from));
@@ -402,6 +425,7 @@ struct Input {
     // body of the last one: id, pose in world metres, and whether it landed.
     bool physicsThrows=false;
     struct Tossed {uint64_t id=0;bool landed=false;Vec p{};Quat q{0,0,0,1};} tossed{};
+    Vec carry{}; // the player's own world velocity (Carry), zero when unknown
 };
 struct Output {
     bool developer=false;
@@ -530,7 +554,7 @@ class Engine {
         if(!consumed||!in.floorKnown||!in.stage.known)return;
         const auto& hand=in.hand[bottleHand];const auto& stage=in.stage;
         Vec v{};PeakVelocity(in.time,v,0);
-        out.discard={true,stage.World(potions::Center(hand.p,hand.q)),math::Rotate(stage.base,v),
+        out.discard={true,stage.World(potions::Center(hand.p,hand.q)),math::Rotate(stage.base,v)+in.carry,
             math::Rotate(stage.base,ReleaseSpin(in.time)),math::Multiply(stage.base,potions::HeldRotation(hand.q)),
             stage.anchor.y+(in.floor-stage.origin.y),held.item.code};
     }
@@ -546,7 +570,7 @@ class Engine {
         // Release: freeze the bottle into the world. The floor under the
         // player at release is the landing plane (yaw-only frame: heights map 1:1).
         const auto& stage=in.stage;
-        const Vec worldP=stage.World(p),worldV=math::Rotate(stage.base,throwVelocity);
+        const Vec worldP=stage.World(p),worldV=math::Rotate(stage.base,throwVelocity)+in.carry;
         const double land=LandingTime(worldP,worldV,stage.anchor.y+(in.floor-stage.origin.y));
         if(land<=0)return false;
         flight={true,in.time,in.time+land,worldP,worldV,math::Multiply(stage.base,potions::HeldRotation(hand.q)),

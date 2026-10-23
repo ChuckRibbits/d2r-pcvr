@@ -553,7 +553,11 @@ A Health, Rejuvenation, Antidote or Thawing bottle released with a deliberate th
 away from its belt slot, flies on a ballistic arc and lands on the world floor.
 Its launch velocity is 1:1 with the hand: the fastest controller velocity the
 OpenXR runtime reported in the last 0.12 s before the grip opened (pose
-differences only when the runtime reports none), capped at 20 m/s. Once released
+differences only when the runtime reports none), capped at 20 m/s, plus your
+own speed through the world when running or walking (measured from the
+player's position frame to frame, smoothed over 0.1 s; a waypoint, portal or
+other jump faster than 10 m/s is not counted). Running never turns a slow
+release into a throw: that still depends on the hand alone. Once released
 it is in the world: its arc is integrated in world metres from the release frame,
 against the floor height under the player at release, so walking, turning or
 recentering afterwards never carries it along. With bottle physics on

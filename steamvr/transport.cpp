@@ -582,6 +582,7 @@ potions::Scene potionScene;
 std::unique_ptr<bottles::World> droppedBottles;
 std::atomic<bool> bottlePhysics{true};
 uint64_t droppedSession=0;
+interaction::Carry playerCarry; // the player's world velocity, for throws and let-go bottles
 // The level's small props share that world ([interactions] prop_physics).
 std::atomic<bool> propPhysics{true};
 bool propsWanted=false;
@@ -2019,6 +2020,10 @@ void Input() {
             // Same mapping as resolveBow in View: room metres to world metres.
             interactionInput.stage={true,w.origin,{w.hero.x/w.upm,(w.hero.y+w.eyeHeight)/w.upm,w.hero.z/w.upm},w.base};
         }
+        // Running carries what you throw or let go of.
+        if(interactionInput.floorKnown)playerCarry.Update(interactionInput.time,interactionInput.stage.anchor);
+        else playerCarry.Reset();
+        interactionInput.carry=playerCarry.known?playerCarry.velocity:math::Vec{};
     }
     if(!interactionPaintValid||interactionPaintContext!=interaction::Context(interactionInput.snapshot,interactionOutput,
         interaction::Fresh(interactionInput.snapshot,interactionInput.session,interactionInput.at),controllerLabels))interactionInput.hover=-1;
