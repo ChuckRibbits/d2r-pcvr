@@ -66,6 +66,7 @@ struct Sample {
     Vec thrustAxis{}; // posed base-to-tip axis in absolute tracking space
     int skillSlot=-1,skillOwner=-1;
     uint64_t skillContext=0;
+    int strikeSkill=-1; // weapon lanes: the hand's trigger skill its strikes cast (strike_skills.h), -1 basic
 };
 inline int Lane(const Sample& s){return s.shield?1:s.handIndex==1?2:0;}
 // The renderer may finish posing an older input after a newer XR sample has
@@ -93,7 +94,7 @@ public:
                e.sample.weapons.displayed[0]!=current.weapons.displayed[0]||e.sample.weapons.displayed[1]!=current.weapons.displayed[1]||
                e.sample.minShieldBashSpeed!=current.minShieldBashSpeed||
                e.sample.skillSlot!=current.skillSlot||e.sample.skillOwner!=current.skillOwner||e.sample.skillContext!=current.skillContext||
-               now<e.sample.time||now-e.sample.time>.1)return false;
+               e.sample.strikeSkill!=current.strikeSkill||now<e.sample.time||now-e.sample.time>.1)return false;
             out=e.sample;return true;
         }
         return false;

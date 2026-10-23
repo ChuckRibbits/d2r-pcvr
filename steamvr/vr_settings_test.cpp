@@ -815,5 +815,19 @@ int main(){
     m.Click(At(m,Page::HUD,ValueBox(9)));
     Check(m.Get()[CompanionCounts]==0&&m.Get()[NavigationLocation]==0,"companion toggle is independent of map placement");
     Check(m.Click({Kind::Apply}).changed==(ChangeMask{1}<<CompanionCounts),"companion toggle uses its own high change-mask bit");
+    {   // Class tab: one hero class's options, shown only while that class is played
+        Check(TabCount==11&&std::strcmp(TabNames[int(Page::Class)],"Class")==0&&Page(int(Page::Class)+1)==Page::Haptics,"the Class tab sits between Shield and Haptics");
+        for(int i=0;i<TabCount;++i)Check(TabBox(i).x>=40&&TabBox(i).x+TabBox(i).w<=1240&&(i==0||TabBox(i).x>=TabBox(i-1).x+TabBox(i-1).w+6),"the eleven tabs fit the panel without overlapping");
+        Check(RowCount(Page::Class)==0&&RowCount(Page::Class,s.values,{heroclass::Paladin})==0,"no class or another class: the Class page is empty");
+        Check(RowCount(Page::Class,s.values,{heroclass::Druid})==1&&RowKey(Page::Class,0,s.values,{heroclass::Druid})==LeftHandStrikes,"a Druid sees left-hand strikes");
+        Check(s.values[LeftHandStrikes]==0&&std::wstring(Definitions[LeftHandStrikes].key)==L"left_hand_strikes"&&HelpText(LeftHandStrikes)[0]!=0&&
+              HelpChoices(LeftHandStrikes)==3,"left-hand strikes: own trigger skill by default, three explained choices");
+        for(int p=0;p<TabCount;++p)if(Page(p)!=Page::Class)for(int row=0;row<RowCount(Page(p),s.values,{heroclass::Druid});++row)
+            Check(RowKey(Page(p),row,s.values,{heroclass::Druid})!=LeftHandStrikes,"left-hand strikes only on the Class page");
+        Model shape;shape.Open(s);shape.SetContext({heroclass::Druid});shape.Click({Kind::Tab,int(Page::Class)});
+        Check(shape.page==Page::Class&&shape.Rows().count==1,"the Class tab opens the Druid's row");
+        shape.Click(At(shape,Page::Class,Increase(0)));Check(shape.Get()[LeftHandStrikes]==1,"the increase arrow picks Same as right");
+        Check(shape.Click({Kind::Apply}).changed==(ChangeMask{1}<<LeftHandStrikes),"left-hand strikes save only their own setting");
+    }
     std::puts("VR settings draft, persistence requests, conflicts, hit regions and input-gating tests passed");
 }

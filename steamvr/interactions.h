@@ -211,6 +211,7 @@ struct Skill {
     int32_t owner=-1;
     int32_t missile=-1; // native srvmissile of the assigned skill, -1 if none
     bool known=false,available=false,directed=false,motion=false,physical=false;
+    bool strike=false; // a melee skill physical strikes cast, its compiled row confirmed (strike_skills.h)
     char name[64]{};
     bool operator==(const Skill&) const = default;
 };

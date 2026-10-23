@@ -160,6 +160,7 @@ target_include_directories(composition-layers-test PRIVATE ${OPENXR_SDK}/include
 target_link_libraries(composition-layers-test PRIVATE framevr-runtime)
 add_executable(projectile-rules-test projectile_rules_test.cpp)
 add_executable(combat-rules-test combat_rules_test.cpp)
+add_executable(strike-skills-test strike_skills_test.cpp)
 add_executable(shield-guard-test shield_guard_test.cpp)
 add_executable(guard-strain-test guard_strain_test.cpp)
 add_executable(heartbeat-test heartbeat_test.cpp)
@@ -312,7 +313,7 @@ set_tests_properties(light-bounds-test PROPERTIES TIMEOUT 30)
 foreach(test_target IN ITEMS memory-test hook-metrics-test active-keys-test resource-descriptions-test latest-worker-test haptic-pulse-test thread-stats-test
     gameplay-test weapon-skills-test quick-cast-test hand-controls-test elemental-hands-test skill-pad-test interact-press-test sewer-interaction-test notice-card-test mod-layout-test spell-aim-test bow-pose-test crossbow-pose-test body-tracking-test shapeshift-form-test shield-steady-test body-calibration-test shoulder-swap-test blood-screen-test
     portal-billboard-test shrine-trace-test shrine-placement-test overlay-view-test composition-layers-test projectile-rules-test environment-cutaway-test roof-materials-test stereo-prop-physics-test dropped-bottles-test props-test
-    combat-rules-test shield-guard-test guard-strain-test heartbeat-test logging-test melee-contact-test melee-weapon-test breakables-test offline-difficulty-test enemy-sight-test attack-speed-test world-coordinates-test bow-flight-test bow-laser-test spell-cast-test spell-aim-assist-test
+    combat-rules-test strike-skills-test shield-guard-test guard-strain-test heartbeat-test logging-test melee-contact-test melee-weapon-test breakables-test offline-difficulty-test enemy-sight-test attack-speed-test world-coordinates-test bow-flight-test bow-laser-test spell-cast-test spell-aim-assist-test
     interaction-test dev-scenarios-test native-belt-test wrist-hud-test navigation-info-test companions-test active-effects-test dropped-item-labels-test stick-gestures-test show-items-command-test native-hud-test render-resolution-test render-pointer-test scene-depth-test game-device-only-test controller-bindings-test journal-test native-panels-test
     vr-settings-test vr-settings-store-test controller-labels-test math-test deferred-draw-test monster-bars-test telegraph-test aim-reach-test aim-rules-test target-cone-test gaze-test window-focus-test callback-ticket-test local-player-test shield-block-test companion-ai-test)
   # These fixtures use assert for their checks, including in Release builds.
@@ -332,7 +333,7 @@ add_test(NAME sewer-prompt-art-test COMMAND interaction-preview "${CMAKE_CURRENT
 set_tests_properties(sewer-prompt-art-test PROPERTIES TIMEOUT 10)
 add_test(NAME notice-card-art-test COMMAND interaction-preview "${CMAKE_CURRENT_BINARY_DIR}/notice-cards.png" --notice-card-check)
 set_tests_properties(notice-card-art-test PROPERTIES TIMEOUT 10)
-add_test(NAME settings-release-notes-test COMMAND vr-settings-preview "${CMAKE_CURRENT_BINARY_DIR}/release-notes.bmp" 9 --release-notes-check)
+add_test(NAME settings-release-notes-test COMMAND vr-settings-preview "${CMAKE_CURRENT_BINARY_DIR}/release-notes.bmp" 10 --release-notes-check)
 add_test(NAME ui-blit-typed COMMAND ui-blit-test)
 add_test(NAME ui-blit-typeless COMMAND ui-blit-test --typeless)
 add_test(NAME ui-blit-typeless-black COMMAND ui-blit-test black --typeless)
@@ -351,7 +352,7 @@ add_test(NAME wrist-compass-art-test COMMAND interaction-preview "${CMAKE_CURREN
 add_test(NAME navigation-info-art-test COMMAND interaction-preview "${CMAKE_CURRENT_BINARY_DIR}/navigation-info-preview.png" --navigation-check)
 add_test(NAME vr-settings-help-art-test COMMAND vr-settings-preview "${CMAKE_CURRENT_BINARY_DIR}/settings-help.bmp" 4 --help-check)
 add_test(NAME vr-settings-worker-paint-test COMMAND vr-settings-preview "${CMAKE_CURRENT_BINARY_DIR}/settings-worker.bmp" 0 --worker-check)
-add_test(NAME vr-settings-performance-lines-test COMMAND vr-settings-preview "${CMAKE_CURRENT_BINARY_DIR}/settings-performance.bmp" 8 --performance-check)
+add_test(NAME vr-settings-performance-lines-test COMMAND vr-settings-preview "${CMAKE_CURRENT_BINARY_DIR}/settings-performance.bmp" 9 --performance-check)
 add_test(NAME companions-art-test COMMAND interaction-preview "${CMAKE_CURRENT_BINARY_DIR}/companions-preview.png" --companions-check)
 
 add_test(NAME active-effects-art-test COMMAND interaction-preview "${CMAKE_CURRENT_BINARY_DIR}/active-effects-preview.png" --effects-check)

@@ -391,7 +391,39 @@ basic attacks for skills without a supported physical adapter; assigning a
 spell does not cast it on every swing. Physical skill gestures can be disabled
 under **VR settings → VR → Weapon skill gestures** (on by default), retaining
 button casting and basic physical attacks. This implementation supports the
-existing Smite and bow adapters; it does not generalize arbitrary melee skills.
+existing Smite and bow adapters, and melee skill strikes (below).
+
+**Melee skill strikes.** A supported melee skill on a hand's trigger is that
+hand's strike skill: a weapon or claw strike that lands casts it on the
+creature it struck, with the skill's own mana, damage and effects, and no
+animation. So far the Druid's single-hit form skills: **Maul** and **Feral
+Rage** (their stacks build per landed cast), **Rabies**, **Fire Claws** and
+**Hunger**. **VR Settings > Class > Left-hand strikes** picks the left claw's
+skill: its own trigger's (default), the right trigger's (a skill sits on one
+trigger only, so this puts it on both claws), or basic attacks. In
+Unleashed only a stroke that waited a full attack cycle casts, on the first
+creature it lands on; faster strokes and the rest of a cleave stay basic
+attacks. In Classic every paced strike casts. Without mana, outside the form
+or with the wrong weapon, the strike lands as a basic attack (no mana also
+plays the character's mana warning). In Werewolf and Werebear form each
+strike that is one native attack (a full-cycle stroke in Unleashed, every
+paced strike in Classic) plays the form's growl as the native attack would
+(85% / 80% of the time), and Rabies and Hunger their bite. Holding the trigger still casts the
+skill natively. **Weapon skill gestures** Off keeps strikes basic.
+
+**Fury: a swipe flurry.** Werewolf **Fury** is one cast of up to five hits
+(two at skill level 1), and you deliver them. The swipe that casts it
+(the rule above) pays its mana and lands hit 1; in Unleashed each of the
+next swipes that lands, from a claw carrying Fury, lands the next hit on
+whatever it struck, with Fury's own damage and on-hit effects and no further
+mana, however fast you swing. No swipe is lost; only one swipe's
+follow-through can't take a second hit. Once the hits are spent, the next
+full-cycle swipe casts Fury again. In Classic each follow-up waits 70% of an
+attack cycle after the previous Fury hit (Fury's own pace); a swipe before
+that is a basic attack and doesn't delay it. One Fury hit per swipe; the
+rest of a cleave stays basic. The unused hits lapse after two attack cycles
+without one, or when the form changes or another skill is cast. Only the
+casting swipe growls.
 
 Turning gestures off or changing equipment/assignments cancels an in-progress
 skill draw. Shield contact and its trigger fallback cannot duplicate a cast.

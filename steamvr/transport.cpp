@@ -37,6 +37,7 @@
 #include "stick_gestures.h"
 #include "window_focus.h"
 #include "gameplay.h"
+#include "strike_skills.h"
 #include "bow_laser.h"
 #include "hand_controls.h"
 #include "interaction_ui.h"
@@ -2533,11 +2534,24 @@ void Input() {
         const bool dual=!claws&&dualwield::Eligible(skel::HeroClass(),weapons);
         if(dual)sample.weapons=weapons;
         sample.claws=claws;
+        // Melee-skill contact adapter: each hand's strikes carry its own trigger
+        // skill when that is a confirmed strike skill (strike_skills.h). The
+        // assignment identity rides the sample, so a rebind drops a queued stroke.
+        // [gameplay] left_hand_strikes (Class tab) picks the left hand's: its own, the right's, or none.
+        const auto strike=[&](int hand) {
+            const int trigger=strikeskills::StrikeTrigger(hand,strikeskills::LeftChoice(gestureSettings[settings::LeftHandStrikes]));
+            const int slot=skills::TriggerSlot(trigger<0?hand:trigger);const auto& skill=quickSnapshot.skills[slot];
+            sample.skillSlot=slot;sample.skillOwner=skill.owner;sample.skillContext=motionInput.skillContext;
+            sample.strikeSkill=trigger<0?-1:strikeskills::Armed(gestureSettings[settings::SkillGestures]>.5f,quickFresh,
+                skill.known,skill.available,skill.strike,skill.id);
+        };
+        strike(0);
         meleePoses.Push(s.sampleStamp,sample);
         sample.hand=motionInput.hand[1];sample.handIndex=1;
         sample.active=sample.active&&(dual||claws)&&controls.lt<51&&controls.rt<51;
+        strike(1);
         offhandPoses.Push(s.sampleStamp,sample);
-        sample.weapons={};sample.claws=false;
+        sample.weapons={};sample.claws=false;sample.strikeSkill=-1;
         sample.hand=motionInput.hand[1];sample.shield=true;sample.active=motionInput.active&&motionOutput.shieldContact;
         sample.skillSlot=shieldSlot;sample.skillOwner=shieldSkill.owner;sample.skillContext=motionInput.skillContext;
         shieldPoses.Push(s.sampleStamp,sample);
