@@ -171,7 +171,9 @@ bool Active();
 bool VrGameplay(uint64_t now);
 bool SpatialMenu();
 // mapNorth is the unmodified native camera's horizontal heading (map-up).
+// scaleHeight: the eye height the world's scale is taken from (units per metre over
+// userEyeHeight), 0 = eyeHeight; a druid's form stands its eyes apart from it.
 bool View(float out[16], const float hero[3], float eyeHeight,
-          float userEyeHeight, float bodyHeading, float recenterYaw, int eye, float mapNorth);
+          float userEyeHeight, float bodyHeading, float recenterYaw, int eye, float mapNorth, float scaleHeight = 0);
 bool Projection(float out[16], float nearWorld, int eye);
 }

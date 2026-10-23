@@ -59,6 +59,7 @@ struct Sample {
     bool shield=false;
     int handIndex=0;
     dualwield::Equipment weapons{}; // populated only for physical dual wield
+    bool claws=false; // a druid's shapeshift form: both paws strike, one shared recovery
     float minWeaponSpeed=12.f;
     float minThrustSpeed=2.f;
     float minShieldBashSpeed=2.f;
@@ -87,7 +88,7 @@ public:
             const auto& e=entries[(next+entries.size()-1-age)%entries.size()];
             if(e.stamp!=stamp)continue;
             if(!e.sample.active||e.sample.epoch!=current.epoch||e.sample.equipment!=current.equipment||
-               e.sample.shield!=current.shield||e.sample.handIndex!=current.handIndex||
+               e.sample.shield!=current.shield||e.sample.claws!=current.claws||e.sample.handIndex!=current.handIndex||
                e.sample.weapons.id[0]!=current.weapons.id[0]||e.sample.weapons.id[1]!=current.weapons.id[1]||
                e.sample.weapons.displayed[0]!=current.weapons.displayed[0]||e.sample.weapons.displayed[1]!=current.weapons.displayed[1]||
                e.sample.minShieldBashSpeed!=current.minShieldBashSpeed||
@@ -194,7 +195,7 @@ public:
         const float handTravel=Length(in.hand.p-previous.hand.p),playerTravel=Length(in.player-previous.player);
         const float bladeTravel=std::max(Length(in.blade.base-previous.blade.base),Length(in.blade.tip-previous.blade.tip));
         const bool stateChanged=in.epoch!=previous.epoch||in.equipment!=previous.equipment||
-           in.shield!=previous.shield||in.handIndex!=previous.handIndex||in.weapons.id[0]!=previous.weapons.id[0]||in.weapons.id[1]!=previous.weapons.id[1]||
+           in.shield!=previous.shield||in.claws!=previous.claws||in.handIndex!=previous.handIndex||in.weapons.id[0]!=previous.weapons.id[0]||in.weapons.id[1]!=previous.weapons.id[1]||
            in.weapons.displayed[0]!=previous.weapons.displayed[0]||in.weapons.displayed[1]!=previous.weapons.displayed[1]||
            in.minWeaponSpeed!=previous.minWeaponSpeed||in.minThrustSpeed!=previous.minThrustSpeed||in.minShieldBashSpeed!=previous.minShieldBashSpeed||in.skillSlot!=previous.skillSlot||in.skillOwner!=previous.skillOwner||in.skillContext!=previous.skillContext||
            std::fabs(in.unitsPerMetre-previous.unitsPerMetre)>.05f;
