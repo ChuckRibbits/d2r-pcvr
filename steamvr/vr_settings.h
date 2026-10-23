@@ -96,7 +96,8 @@ inline constexpr std::array<Definition,Count> Definitions{{
     {"Shield bash speed", "Hand speed for bash / Smite; wrist twisting never attacks", L"gameplay",L"shield_bash_speed",2,.75f,10,.25f},
     {"Guard strain buildup", "How quickly repeated blocks build the vignette; same size", L"gameplay",L"guard_strain_speed",1,0,2,1},
     {"Desktop shows one eye", "Monitor shows the left eye only; one extra GPU copy per frame", L"render",L"desktop_one_eye",1,0,1,1},
-    {"Map view", "Isometric or Top-down wrist minimap", L"interactions",L"map_top_down",0,0,1,1},
+    // 0 Isometric, 1 Top-down (the corner map, as before); 2 Full map, 3 Full top-down: the game's full map, zoomed from its widest (wrist_full_map.h)
+    {"Map view", "The minimap Isometric or Top-down, or the game's full map", L"interactions",L"map_top_down",0,0,3,1},
     {"Rotate map", "Top-down only: keep your facing direction at the top", L"interactions",L"map_rotate",0,0,1,1},
     {"Foveation strength", "Higher levels shade a larger edge area more coarsely", L"render",L"foveation_strength",1,0,3,1},
     {"Stereo rendering", "Both eyes: each frame twice; By turns: one eye a frame", L"stereo",L"rendering",1,0,1,1},
@@ -192,7 +193,9 @@ constexpr Rect Apply{965,918,275,68},Close{650,918,275,68},Recenter{40,918,270,6
 constexpr int RowY=242,RowStep=62;
 constexpr Rect ControllerBox{865,181,375,52};
 constexpr Rect HudMapViewBox{280,181,275,52},HudMapRotateBox{942,181,221,52};
-inline constexpr const char* MapViewNames[]={"Isometric","Top-down"};
+inline constexpr const char* MapViewNames[]={"Isometric","Top-down","Full map","Full top-down"};
+inline bool MapViewTopDown(float view){return view==1||view==3;}
+inline bool MapViewFull(float view){return view>=2;}
 inline constexpr const char* MenuDistanceNames[]={"Close","Medium","Far"};
 inline constexpr const char* TooltipTimingNames[]={"Instant","Short","Original"};
 constexpr Rect WeaponIndicatorsBox{942,666,221,52},PlanarSpellAimBox{942,728,221,52},AimAssistBox{942,790,221,52};
@@ -550,6 +553,7 @@ public:
             else if(key==FoveationStrength||key==StereoRendering)draft[key]=std::clamp(draft[key]+float(hit.delta),d.min,d.max);
             else if(key==SpellLock)draft[key]=LockStep(draft[key],hit.delta,context);
             else if(key==ProjectileAimAssist||key==StrainDark||key==GroundAim)draft[key]=float((int(draft[key])+(hit.delta<0?2:1))%3);   // cycles
+            else if(key==MapTopDown)draft[key]=float((int(draft[key])+(hit.delta<0?3:1))%4);   // Isometric, Top-down, Full map, Full top-down, round
             else if(key==BowLaser){   // round the wheel through Off: ... 345, Off, 0, 15 ... both ways
                 const float next=draft[key]+hit.delta*d.step;
                 draft[key]=Normalize(key,next>d.max?d.min:next<d.min?d.max:next);

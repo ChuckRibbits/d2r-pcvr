@@ -1,4 +1,7 @@
 #include "map_zoom.h"
+#include "wrist_full_map.h"
+#include <algorithm>
+#include <cmath>
 #include "stick_gestures.h"
 #include <cstdio>
 #include <cstdlib>
@@ -107,6 +110,57 @@ int main(){
         Check(!g.Step(in).zooming&&g.Zoom()==1,"a lost stick reading does nothing");
         Check(mapzoom::Clamp(.5f)==1&&mapzoom::Clamp(5)==4&&mapzoom::Clamp(2.5f)==2.5f&&mapzoom::Clamp(INFINITY)==1,"zoom clamps to 1x-4x");
         Check(mapzoom::NotchOf(1)==0&&mapzoom::NotchOf(1.26f)==1&&mapzoom::NotchOf(4)==12,"quarter notches");
+        Check(mapzoom::NotchOf(4.9f)==12&&mapzoom::NotchOf(5)==13&&mapzoom::NotchOf(16)==24&&mapzoom::NotchOf(99)==24,"past 4x a notch per whole step");
+    }
+    {
+        // Map view = Full map: the same gesture zooms to 16x; turned off, back under 4x at once.
+        Sim s;s.in.looking=true;s.in.max=mapzoom::FullMax;s.in.stick=1;s.Step(200);
+        Check(s.out.zoom==mapzoom::FullMax&&s.stops==1,"the full map zooms in to 16x and stops there with one firm tick");
+        Check(s.ticks<=24,"the ticks stay a count, not a buzz");
+        s.in.max=mapzoom::Max;s.in.stick=0;s.Step();
+        Check(s.out.zoom==mapzoom::Max&&s.g.Zoom()==mapzoom::Max,"the corner map's ceiling takes the zoom back to 4x");
+        s.in.max=NAN;s.Step();Check(s.out.zoom==mapzoom::Max,"an unreadable ceiling is the corner map's");
+    }
+    {
+        namespace fm=framevr::fullmap;
+        // the box: the layer's width, its 16:9 band from the top
+        const auto b=fm::FullBox(2112,2304);
+        Check(b.left==0&&b.top==0&&b.right==2112&&b.bottom==1188,"the full map's box on the 2112x2304 layer");
+        Check(fm::IsFullBox(0,0,2112,1188,2112,2304)&&fm::IsFullBox(0,0,2112,1187,2112,2304)&&fm::IsFullBox(0,0,2112,1189,2112,2304),"a pixel either way");
+        Check(!fm::IsFullBox(0,53,639,412,2112,2304)&&!fm::IsFullBox(0,0,2112,2304,2112,2304)&&!fm::IsFullBox(22,501,682,924,2112,2304),"the corner map, the whole layer and a panel are not it");
+        Check(!fm::IsFullBox(0,0,1920,1080,1920,1080)&&!fm::IsFullBox(0,0,2112,1188,0,0),"never on a 16:9 layer (that is the whole screen)");
+        Check(fm::Active(true,true,0,true)&&!fm::Active(false,true,0,true)&&!fm::Active(true,false,0,true)&&!fm::Active(true,true,1,true)&&!fm::Active(true,true,0,false),
+              "only with the setting on, the wrist capturing, the full layout and the map open");
+        // the game's zoom: its own rounding, the step at or below, never under its floor
+        Check(fm::GameRounded(.5f)==.5f&&fm::GameRounded(.3f)==.25f&&fm::GameRounded(.01f)==.125f&&fm::GameRounded(0)==0&&fm::GameRounded(NAN)==0,"the game's rounding");
+        Check(fm::GameStep(.125f)==.125f&&fm::GameStep(.2f)==.125f&&fm::GameStep(.25f)==.25f&&fm::GameStep(.3f)==.25f&&fm::GameStep(.05f)==.125f&&fm::GameStep(2.f)==2.f&&fm::GameStep(NAN)==.125f,"the step at or below");
+        Check(fm::ZoomArg(.5f,.125f,true)==.125f&&fm::ZoomArg(.5f,1.f,true)==1.f&&fm::ZoomArg(.5f,.3f,true)==.25f,"the gates hold: the step for the wanted zoom");
+        Check(fm::ZoomArg(.5f,.125f,false)==.5f&&fm::ZoomArg(.5f,0.f,true)==.5f&&fm::ZoomArg(0.f,.125f,true)==0.f&&fm::ZoomArg(100.f,.125f,true)==100.f,"no gates, nothing wanted or an insane game value: the game's own");
+        // the span: at 1x the fill, at the widest game zoom
+        for(bool turning:{false,true})for(bool topDown:{false,true}) {
+            const float fill=fm::WristFill(2112,1188,turning,topDown);
+            Check(std::fabs(fm::Span(2112,1188,turning,topDown,1,fm::Base)-fill)<1e-3f,"1x: the fill at game zoom 0.125");
+            // smooth: what one wrist pixel covers of the level (span / side / drawn zoom) falls as 1/magnify,
+            // whatever step the game drew at, so a step never jumps, and the step keeps the
+            // magnification on the wrist under 2 (sharp)
+            for(float m=1;m<=mapzoom::FullMax;m*=1.07f) {
+                const float drawn=fm::GameStep(fm::Base*m),span=fm::Span(2112,1188,turning,topDown,m,drawn);
+                const float world=span/drawn,expected=fill/fm::Base/m;
+                Check(std::fabs(world-expected)<expected*1e-4f,"the level shown follows the zoom exactly");
+                Check(span<=fill*1.0001f&&span>fill/2-1e-3f,"the share is never magnified 2x or more");
+                // a share still drawn at the step below (the hook a frame behind) shows the same level
+                const float before=std::max(drawn-.125f,fm::Base),late=fm::Span(2112,1188,turning,topDown,m,before);
+                Check(std::fabs(late/before-expected)<expected*1e-4f,"a share a step behind shows the same level");
+            }
+            Check(fm::Span(2112,1188,turning,topDown,1,0)>fill&&fm::Span(2112,1188,turning,topDown,0.f,fm::Base)==fill&&fm::Span(0,0,turning,topDown,1,fm::Base)==0,
+                  "no hook: the game's own 0.5 shown wider (never past the box); nonsense: 1x");
+        }
+        // the arrow from the X, as the shader sizes it
+        Check(fm::ArrowRadius(512,1188,0,false)==512*fm::ArrowSize,"no X: the corner map's size");
+        Check(std::fabs(fm::ArrowRadius(512,1188,30,false)-30*512/1188.f*1.2f)<1e-4f,"the X's reach on the wrist, 1.2 times");
+        Check(fm::ArrowRadius(512,594,30,false)>fm::ArrowRadius(512,1188,30,false),"it grows as the wrist zooms in");
+        Check(fm::ArrowRadius(512,100,40,true)==512*fm::ArrowMax&&fm::ArrowRadius(512,4000,2,false)==512*fm::ArrowMin,"within its floor and cap");
+        Check(fm::WristTaps(512,512)==1&&fm::WristTaps(1188,512)==3&&fm::WristTaps(4000,512)==4,"taps a pixel");
     }
     return 0;
 }

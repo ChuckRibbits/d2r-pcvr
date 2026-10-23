@@ -20,7 +20,11 @@ namespace framevr::mapzoom {
 // own corner map, so there is nothing further out to zoom to. Pulling down
 // until it stops is the way home.
 constexpr float Min=1,Max=4;
-constexpr float Doublings=1.5f;   // per second at full stick: 1x to 4x in 1.3 s
+// Map view = Full map / Full top-down (wrist_full_map.h): 1 is the game's full map at
+// its widest, and the game redraws it closer as you zoom in, so it stays sharp to 16x.
+constexpr float FullMax=16;
+static_assert(FullMax>=Max);
+constexpr float Doublings=1.5f;   // per second at full stick: 1x to 4x in 1.3 s, to 16x in 2.7 s
 constexpr float Dead=.3f;         // stick travel ignored, either way
 constexpr float Notch=.25f;       // a light tick each quarter step (faster as it zooms in); a firmer one at either stop
 // Looking at the map: its center within LookIn degrees of the head's forward
@@ -41,8 +45,12 @@ inline bool NewGame(uint64_t& seen,uint64_t session) {
     if(session)seen=session;
     return fresh;
 }
-inline float Clamp(float z){return std::isfinite(z)?std::clamp(z,Min,Max):Min;}
-inline int NotchOf(float z){return int(std::floor((Clamp(z)-Min)/Notch+1e-4f));}
+inline float Clamp(float z,float max=Max){return std::isfinite(z)?std::clamp(z,Min,max):Min;}
+// A quarter step up to 4x; past it (the full map) a whole step, so the ticks do not buzz.
+inline int NotchOf(float z){
+    z=Clamp(z,FullMax);
+    return z<=Max?int(std::floor((z-Min)/Notch+1e-4f)):int((Max-Min)/Notch)+int(std::floor(z-Max+1e-4f));
+}
 // head: the headset pose; panel: the shown map's center, in the same space.
 inline bool Looking(math::Vec headP,math::Quat headQ,math::Vec panel,bool was) {
     const auto toward=panel-headP;
@@ -56,6 +64,7 @@ struct Input {
     bool looking=false;   // the wrist / palm map is shown and looked at (Looking)
     float stick=0;        // right stick: up +1, down -1
     float x=0;            // right stick: right +1, left -1
+    float max=Max;        // the closest zoom: Max, or FullMax on the full map
 };
 struct Output {
     bool owned=false;     // the right stick's up / down is the map's this frame
@@ -89,10 +98,13 @@ public:
         else if(std::hypot(x,y)<stickgestures::Centre)held=false;
         const bool now=held&&std::fabs(y)>=Dead;
         out.started=now&&!zooming;out.stopped=!now&&zooming;zooming=now;
+        // a lower ceiling (the full map turned off) brings the zoom back under it at once
+        const float top=std::isfinite(in.max)?std::clamp(in.max,Min,FullMax):Max;
+        zoom=Clamp(zoom,top);
         if(now&&dt>0) {
             const float before=zoom;
-            zoom=Clamp(zoom*std::exp2(std::copysign((std::fabs(y)-Dead)/(1-Dead),y)*Doublings*float(dt)));
-            if(zoom!=before)out.tick=zoom==Min||zoom==Max?2:NotchOf(zoom)!=NotchOf(before)?1:0;
+            zoom=Clamp(zoom*std::exp2(std::copysign((std::fabs(y)-Dead)/(1-Dead),y)*Doublings*float(dt)),top);
+            if(zoom!=before)out.tick=zoom==Min||zoom==top?2:NotchOf(zoom)!=NotchOf(before)?1:0;
         }
         out.owned=in.looking;out.turnOwned=held;out.zooming=zooming;out.zoom=zoom;
         return out;

@@ -166,7 +166,7 @@ std::vector<uint8_t> Paint(const Model& m,Hit hover,const char* runtimeStatus,co
             text("Map view",{58,193,210,36},true);
             text("Rotate map",{675,193,250,36},true);
             const bool enabled=m.ready&&!m.Busy();
-            button(HudMapViewBox,MapViewNames[m.Get()[MapTopDown]>.5f?1:0],{Kind::Change,MapTopDown,1},false,enabled);
+            button(HudMapViewBox,MapViewNames[std::clamp(int(m.Get()[MapTopDown]),0,3)],{Kind::Change,MapTopDown,1},false,enabled);
             button(HudMapRotateBox,m.Get()[MapRotate]>.5f?"On":"Off",{Kind::Change,MapRotate,1},false,enabled);
         }else if(m.page==Page::Performance&&(DeferOffered(m.Get())||GameVideoWarning(game))){
             // Warnings in amber under the status, two lines at most: the GPU

@@ -48,6 +48,7 @@
 #include "heartbeat.h"
 #include "wrist_compass.h"
 #include "map_zoom.h"
+#include "wrist_full_map.h"
 #include "interaction_paint.h"
 #include "latest_worker.h"
 #include "haptic_pulse.h"
@@ -516,7 +517,9 @@ Eye uiEye;
 Eye mapEye;
 // The wrist map's view: Isometric (the game's) or Top-down, and on the
 // top-down map whether it turns with you. Configured under VR Settings > HUD.
-bool MapTopDownOn(){return vrsettings::Read().values[settings::MapTopDown]>.5f;}
+bool MapTopDownOn(){return settings::MapViewTopDown(vrsettings::Read().values[settings::MapTopDown]);}
+// Map view = Full map / Full top-down: the wrist shows the game's full map (wrist_full_map.h)
+bool MapFullOn(){return settings::MapViewFull(vrsettings::Read().values[settings::MapTopDown]);}
 bool MapTurnOn(){return vrsettings::Read().values[settings::MapRotate]>.5f;}
 bool mapSupported=false;
 constexpr uint32_t mapSide=512;
@@ -2231,7 +2234,13 @@ void Input() {
         wristMapLooked=shown&&mapzoom::Looking(interactionInput.head.p,interactionInput.head.q,wristMapCenter,wristMapLooked);
         mapzoom::Input in;in.time=interactionInput.time;in.looking=MinimapLooked();
         in.stick=controls.ry/32767.f;in.x=controls.rx/32767.f;
+        // Map view = Full map: zoomed in from the game's widest view, to 16x; the game is asked
+        // for the zoom that keeps it sharp (wrist_full_map.h). Off: nothing asked, the hooks idle.
+        const bool fullMap=MapFullOn();
+        fullmap::g_on.store(fullMap,std::memory_order_relaxed);
+        in.max=fullMap?mapzoom::FullMax:mapzoom::Max;
         const auto zoom=mapZoom.Step(in);
+        fullmap::g_wanted.store(fullMap?fullmap::Base*zoom.zoom:0.f,std::memory_order_relaxed);
         if(zoom.owned)controls.ry=0;
         if(zoom.turnOwned)controls.rx=0;
         if(zoom.tick)MotionPulse(0,haptics::Category::Interaction,zoom.tick==2?.35f:.15f,zoom.tick==2?30000000:12000000);
@@ -2242,7 +2251,11 @@ void Input() {
             mapZoomLogAt=tick+500;mapZoomLogged=true;
         }
         if(zoom.stopped&&mapZoomLogged){
-            char line[80];std::snprintf(line,sizeof line,"Frame map zoom: stop at %.2fx%s",zoom.zoom,wristMapLooked?"":" (looked away)");Say(line);
+            char line[160];
+            if(fullMap)std::snprintf(line,sizeof line,"Frame map zoom: stop at %.2fx%s (full map: game zoom %.3f asked, %.3f drawn)",zoom.zoom,wristMapLooked?"":" (looked away)",
+                                     fullmap::GameStep(fullmap::Base*zoom.zoom),fullmap::g_applied.load(std::memory_order_relaxed));
+            else std::snprintf(line,sizeof line,"Frame map zoom: stop at %.2fx%s",zoom.zoom,wristMapLooked?"":" (looked away)");
+            Say(line);
             mapZoomLogged=false;
         }
     }
@@ -3155,7 +3168,8 @@ bool Copy(ID3D12Resource* src,Eye& e,reshade::api::command_queue* rq) {
 bool CopyMap(reshade::api::command_queue* rq) {
     if(!mapSupported||mapEye.copied||!interaction::MapWanted(interactionInput,interactionOutput,GetTickCount64()))return true;
     uint32_t w=0,h=0;
-    auto* src=reinterpret_cast<ID3D12Resource*>(hud::MapTexture(w,h));
+    bool fullMap=false;float drawnZoom=0;   // Map view = Full map: the share is the full map's box, drawn at that game zoom
+    auto* src=reinterpret_cast<ID3D12Resource*>(hud::MapTexture(w,h,&fullMap,&drawnZoom));
     if(!src||!w||!h)return true; // No current map; never display the last area's texture.
     auto& e=mapEye;
     if(!e.chain) {
@@ -3176,7 +3190,22 @@ bool CopyMap(reshade::api::command_queue* rq) {
     // The heading arrow over the hero (while the compass knows the heading),
     // the map turning with you (top-down only), and top-down itself.
     const uint32_t flags=(compassFrame?1u:0u)|(compassFrame&&MapTurnOn()&&MapTopDownOn()?4u:0u)|(MapTopDownOn()?8u:0u);
-    if(!mapBlit.Render(device.Get(),e.commands.Get(),src,e.images[e.index].texture,true,true,flags,float(wristHeading.bearing),1.f,mapZoom.Zoom())) {
+    // The full map: a square of `span` share pixels around the X, the zoom's remainder after the
+    // game zoom this share was really drawn at (so a step landing a frame late never jumps).
+    // The corner map keeps its own zoom, up to 4x.
+    const bool turning=(flags&4)!=0,topDown=(flags&8)!=0;
+    const float span=fullMap?fullmap::Span(w,h,turning,topDown,mapZoom.Zoom(),drawnZoom):0.f;
+    if(fullMap) {   // a line when the share's size or its drawn zoom changes (at most 60 a session)
+        static uint32_t toldW=0,toldH=0;static float toldZoom=-1;static int told=0;
+        if((w!=toldW||h!=toldH||drawnZoom!=toldZoom)&&told<60) {
+            ++told;toldW=w;toldH=h;toldZoom=drawnZoom;
+            char line[220];std::snprintf(line,sizeof line,"Frame full map: share %ux%u drawn at game zoom %.3f%s; wrist %.2fx, span %.0f px (%s%s)",
+                w,h,drawnZoom>0?drawnZoom:fullmap::Own,drawnZoom>0?"":" (the game's own: the hook gave none)",mapZoom.Zoom(),span,topDown?"top-down":"flat",turning?", turning":"");
+            Say(line);
+        }
+    }
+    if(!mapBlit.Render(device.Get(),e.commands.Get(),src,e.images[e.index].texture,true,true,flags,float(wristHeading.bearing),1.f,
+                       fullMap?1.f:std::min(mapZoom.Zoom(),mapzoom::Max),span)) {
         e.commands->Close();return false;
     }
     if(FAILED(e.commands->Close()))return false;
