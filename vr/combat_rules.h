@@ -56,4 +56,20 @@ inline float CleaveFactor(unsigned index,float step,float floor) {
     const float v=1-s*float(index);
     return v<f?f:v>1?1.f:v;
 }
+// Unleashed on-hit gate (Cal, 2026-10-21): a physical contact's on-hit effects
+// (leech, chance-on-hit procs, crushing blow, open wounds, prevent heal,
+// critical and deadly strike) roll only on the stroke's first landed contact,
+// and only when that stroke spent a full native attack cycle (the breakpoint)
+// since the previous landed stroke on its recovery clock. swing_recovery_grace
+// does not shorten it. An unknown cycle (0) or no previous stroke (UINT64_MAX)
+// counts as full. Every other contact still lands its scaled damage.
+enum class OnHit:uint8_t {Allowed,NotFullCycle,CleaveFollowUp};
+inline OnHit OnHitGate(bool firstContact,uint64_t sinceMs,uint32_t cycleMs) {
+    if(!firstContact)return OnHit::CleaveFollowUp;
+    if(cycleMs&&sinceMs!=UINT64_MAX&&sinceMs<cycleMs)return OnHit::NotFullCycle;
+    return OnHit::Allowed;
+}
+// Scratch seed for a gated critical/deadly strike roll: it advances to 99,
+// under no chance below 100 (native: roll = low % 100, crit when roll < chance).
+inline Seed NoCritRoll() {return {0,99};}
 }

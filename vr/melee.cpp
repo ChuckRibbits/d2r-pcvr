@@ -70,6 +70,9 @@ std::atomic<unsigned> tooSoon{0},extraTargets{0},missed{0},buttonAttacks{0};
 framevr::attackspeed::Cadence cadence; // Classic shares one native attack cycle across hands/buttons.
 std::atomic<bool> swingRecovery{false};std::atomic<float> recoveryCurve{2},recoveryGrace{1};
 std::atomic<float> cleaveStep{0},cleaveFloor{.25f};
+// Unleashed on-hit gate, per resolved contact (developer builds report it).
+enum OnHitReason {OnHitAllowed,OnHitUnknownCycle,OnHitRiposte,OnHitNotFull,OnHitCleave,OnHitReasons};
+std::array<std::atomic<unsigned>,OnHitReasons> onHitWhy{};
 std::array<HandCombat,2> hands;
 std::mutex queueMutex;std::array<Engine,3> engines;HitSet shieldHits;
 using Request=breakables::Strike;
@@ -285,10 +288,10 @@ void TraceRefusal(int kind,const Request& r,uint32_t target) {
         (unsigned long long)cadence.Remaining(r.session,r.at),cycleMs.load());
     framevr::logging::Write(line);
 }
-void TraceHit(const Request& r,uint32_t target,const char* outcome,uint64_t since,uint32_t cycle) {
+void TraceHit(const Request& r,uint32_t target,const char* outcome,uint64_t since,uint32_t cycle,bool onHit) {
     if(!trace.load())return;
-    char line[260];snprintf(line,sizeof line,"Frame melee trace: hand=%s stroke=%llu target=%u %s since_last_landed=%lld ms cycle=%u ms %s=%.1f m/s",
-        r.sample.handIndex?"left":"right",(unsigned long long)r.sweep.stroke,target,outcome,since==UINT64_MAX?-1LL:(long long)since,cycle,r.sweep.thrust?"thrust":"swing",r.sweep.speed);
+    char line[280];snprintf(line,sizeof line,"Frame melee trace: hand=%s stroke=%llu target=%u %s since_last_landed=%lld ms cycle=%u ms %s=%.1f m/s onhit=%d",
+        r.sample.handIndex?"left":"right",(unsigned long long)r.sweep.stroke,target,outcome,since==UINT64_MAX?-1LL:(long long)since,cycle,r.sweep.thrust?"thrust":"swing",r.sweep.speed,int(onHit));
     framevr::logging::Write(line);
 }
 // Every weapon contact with a hostile creature feels struck: one tap per
@@ -387,13 +390,16 @@ void __cdecl Apply(const D2RL::PluginContext*,void* token) noexcept {
                         const auto since=recoveryClock.Since(r.session,r.at);
                         // Unleashed: the stroke's first landed contact measures how
                         // recovered it is; every creature that stroke reaches shares it.
+                        // Kept with swing_recovery_damage off too: the on-hit gate reads it.
                         float recovery=1;bool strokeStart=false;
-                        if(swingRecovery.load(std::memory_order_relaxed)&&!attackSpeed.load()) {
+                        if(!attackSpeed.load()) {
                             if(state.strokeSession==r.session&&state.strokeId==r.sweep.stroke)recovery=state.strokeRecovery;
                             else {
                                 cycle=cycleSession.load()==r.session?(speedHand?offCycleMs.load():cycleMs.load()):0;
-                                recovery=combat::RecoveryFactor(since,cycle,recoveryCurve.load(std::memory_order_relaxed),
-                                                                recoveryGrace.load(std::memory_order_relaxed));strokeStart=true;
+                                if(swingRecovery.load(std::memory_order_relaxed))
+                                    recovery=combat::RecoveryFactor(since,cycle,recoveryCurve.load(std::memory_order_relaxed),
+                                                                    recoveryGrace.load(std::memory_order_relaxed));
+                                strokeStart=true;
                             }
                         }
                         if(!hits.Insert(r.session,r.sweep.stroke,header[2]))continue;
@@ -411,10 +417,23 @@ void __cdecl Apply(const D2RL::PluginContext*,void* token) noexcept {
                             cleave=combat::CleaveFactor(state.cleaveLanded,step,cleaveFloor.load(std::memory_order_relaxed));cleaveTracked=true;
                         }
                         const float swingRecoverySaved=combat::SwingRecovery(recovery*cleave);
+                        // Unleashed on-hit gate (Cal, 2026-10-21): on-hit effects only on a full-cycle
+                        // stroke's first landed contact; a riposte has earned them. Classic: native.
+                        auto onHit=combat::OnHit::Allowed;bool riposte=false;
+                        if(!attackSpeed.load()) {
+                            onHit=combat::OnHitGate(strokeStart,since,cycle);
+                            riposte=onHit!=combat::OnHit::Allowed&&combat::RiposteDue(header[2]);
+                        }
+                        const bool effects=onHit==combat::OnHit::Allowed||riposte;
+                        const auto onHitSaved=combat::GateOnHit(effects?combat::OnHitScope{}:combat::OnHitScope{player,unit});
                         {
                             meleeweapon::Scope selected(player,weapon);
                             reinterpret_cast<int(*)(uintptr_t,uintptr_t,int,int)>(d2rsig::Addr(AttackRva))(local.game,player,0,1);
                         }
+                        combat::GateOnHit(onHitSaved);
+                        if(contact.resolved&&!attackSpeed.load())
+                            ++onHitWhy[riposte?OnHitRiposte:onHit==combat::OnHit::CleaveFollowUp?OnHitCleave:
+                                       onHit==combat::OnHit::NotFullCycle?OnHitNotFull:cycle?OnHitAllowed:OnHitUnknownCycle];
                         combat::SwingRecovery(swingRecoverySaved);
                         combat::PhysicalSwing(swing);
                         combat::NativeRolls(rolls);
@@ -423,7 +442,7 @@ void __cdecl Apply(const D2RL::PluginContext*,void* token) noexcept {
                         if(contact.resolved&&attackSpeed.load()){cadence.Landed(r.session,r.at,cycle);landed.Insert(r.session,r.sweep.stroke,0);}
                         if(contact.resolved&&strokeStart){state.recovery.Landed(r.session,r.at,cycle);state.strokeSession=r.session;state.strokeId=r.sweep.stroke;state.strokeRecovery=recovery;}
                         if(contact.resolved&&cleaveTracked)++state.cleaveLanded;
-                        TraceHit(r,header[2],contact.accepted?"LANDED":contact.resolved?"MISSED (roll)":"native rejected",since,cycle);
+                        TraceHit(r,header[2],contact.accepted?"LANDED":contact.resolved?"MISSED (roll)":"native rejected",since,cycle,effects);
                         contact=saved;
                         if(!dual)break; // Both blades may strike this creature in the same batch.
                     }
@@ -889,6 +908,16 @@ void Report() {
             framevr::logging::Write(why);
         }
     }
+#ifdef D2RVR_DEVELOPER
+    {   // Unleashed on-hit gate: resolved contacts with their effects, and gated ones by reason.
+        unsigned w[OnHitReasons];bool any=false;for(int k=0;k<OnHitReasons;++k){w[k]=onHitWhy[k].exchange(0);any|=w[k]!=0;}
+        if(any) {
+            char why[240];snprintf(why,sizeof why,"Frame on-hit gate: with effects=%u (unknown_cycle=%u riposte=%u) gated not_full_cycle=%u cleave_follow_up=%u",
+                w[OnHitAllowed]+w[OnHitUnknownCycle]+w[OnHitRiposte],w[OnHitUnknownCycle],w[OnHitRiposte],w[OnHitNotFull],w[OnHitCleave]);
+            framevr::logging::Write(why);
+        }
+    }
+#endif
     const auto early=tooSoon.exchange(0),extra=extraTargets.exchange(0),m=missed.exchange(0),button=buttonAttacks.exchange(0);
     if(!s&&!c&&!g&&!d.discontinuities&&!d.recovering&&!retries&&!early&&!extra&&!m&&!button)return;
     char line[760];snprintf(line,sizeof line,"Frame melee: sweep samples=%u physical contacts=%u native accepted=%u missed=%u rejected=%u missing server=%u intersections=%u stale=%u walls=%u pose resets=%u recovering=%u callbacks=%u abandoned=%u pending_ms=%llu missing_player=%u position_mismatch=%u nearby=%u missing_body=%u attack_speed=%d cycle_ms=%u too_soon=%u extra_targets=%u button_cycles=%u",s,c,a,m,r,g,i,x,w,d.discontinuities,d.recovering,callbacks,retries,(unsigned long long)age,missing,mismatch,monsters,bodies,
