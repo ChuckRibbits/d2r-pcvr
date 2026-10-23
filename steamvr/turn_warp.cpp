@@ -11,11 +11,35 @@
 namespace framevr {
 using Microsoft::WRL::ComPtr;
 namespace {
+// The pictures turned or moved land between texels nearly always. Read
+// bilinear, a half-texel step averages two, and fine detail and text lost
+// contrast every other frame in each eye: softer than Both eyes (the owner,
+// 2026-10-23). Catmull-Rom (TurnWarp::sharp) keeps more of it: five bilinear
+// taps (the four corner ones left out), kept within the four nearest texels,
+// so no ring or halo past them. On a texel's centre it is that texel.
+#define TURN_SHARP R"(
+float4 Sharp(Texture2D<float4> t,SamplerState s,float2 uv) {
+    float w,h;t.GetDimensions(w,h);
+    const float2 size=float2(w,h),at=uv*size,first=floor(at-.5)+.5,f=at-first;
+    const float2 w0=f*(-.5+f*(1-.5*f)),w1=1+f*f*(-2.5+1.5*f),w2=f*(.5+f*(2-1.5*f)),w3=f*f*(-.5+.5*f);
+    const float2 w12=w1+w2,mid=(first+w2/w12)/size,lo=(first-1)/size,hi=(first+2)/size;
+    const float4 c=(t.SampleLevel(s,float2(mid.x,lo.y),0)*(w12.x*w0.y)+t.SampleLevel(s,float2(lo.x,mid.y),0)*(w0.x*w12.y)
+                   +t.SampleLevel(s,mid,0)*(w12.x*w12.y)+t.SampleLevel(s,float2(hi.x,mid.y),0)*(w3.x*w12.y)
+                   +t.SampleLevel(s,float2(mid.x,hi.y),0)*(w12.x*w3.y))
+                  /(w12.x*w0.y+w0.x*w12.y+w12.x*w12.y+w3.x*w12.y+w12.x*w3.y);
+    const int2 last=int2(size)-1,a=clamp(int2(first-.5),0,last),b=clamp(int2(first+.5),0,last);
+    const float4 p=t.Load(int3(a,0)),q=t.Load(int3(b.x,a.y,0)),r=t.Load(int3(a.x,b.y,0)),u=t.Load(int3(b,0));
+    return clamp(c,min(min(p,q),min(r,u)),max(max(p,q),max(r,u)));
+}
+)"
 constexpr char Shader[]=R"(
 Texture2D<float4> drawn : register(t0);
 SamplerState edge : register(s0);
-// TurnHomography's rows: this frame's image coordinates to the drawn image's
-cbuffer Turn : register(b0) {float4 row0;float4 row1;float4 row2;};
+// TurnHomography's rows: this frame's image coordinates to the drawn image's;
+// filter.x: 1 Catmull-Rom (Sharp), 0 bilinear
+cbuffer Turn : register(b0) {float4 row0;float4 row1;float4 row2;float4 filter;};
+)" TURN_SHARP R"(
+float4 Read(float2 uv){return filter.x>0?Sharp(drawn,edge,uv):drawn.SampleLevel(edge,uv,0);}
 struct Pixel {float4 position:SV_Position;float2 uv:TEXCOORD0;};
 Pixel VS(uint id:SV_VertexID) {
     Pixel p;p.uv=float2(id==1?2:0,id==2?2:0);
@@ -25,7 +49,7 @@ float4 PS(Pixel p):SV_Target {
     const float3 at=float3(p.uv,1);
     const float3 h=float3(dot(row0.xyz,at),dot(row1.xyz,at),dot(row2.xyz,at));
     if(h.z<=1e-6)return float4(0,0,0,1);   // behind the drawn eye: nothing it saw
-    return drawn.SampleLevel(edge,h.xy/h.z,0);   // past its edge: the edge drawn out
+    return Read(h.xy/h.z);   // past its edge: the edge drawn out
 }
 // The game's interface laid over (Interface): blended as dest * a + rgb.
 float4 Layer(Pixel p):SV_Target {
@@ -33,10 +57,11 @@ float4 Layer(Pixel p):SV_Target {
     const float3 h=float3(dot(row0.xyz,at),dot(row1.xyz,at),dot(row2.xyz,at));
     const float2 uv=h.xy/max(h.z,1e-6);
     if(h.z<=1e-6||any(uv<0)||any(uv>1))return float4(0,0,0,1);   // none of the layer here: the picture as it is
-    const float4 l=drawn.SampleLevel(edge,uv,0);
+    const float4 l=Read(uv);
     return float4(l.rgb,saturate(l.a));
 }
 )";
+constexpr UINT TurnConstants=16;
 // The grid with the scene's depth (TurnDepth).
 constexpr char DepthShader[]=R"(
 Texture2D<float4> drawn : register(t0);
@@ -53,7 +78,7 @@ cbuffer Move : register(b0) {
     float4 drawnTan;   // tangents of the drawn eye's FOV: left, right, down, up
     float4 nowTan;     // this frame's
     float4 depthInfo;  // near plane, the depth's drawn part x, y
-    uint4 grid;        // cells across, down
+    uint4 grid;        // cells across, down; z: 1 Catmull-Rom (Sharp), 0 bilinear
     float4 carry0;float4 carry1;float4 carry2;   // the carried's rows (TurnDepth::carry)
     float4 reach;      // nearer than x: carried; farther than y: the world's; z: the drawn eye's edge scale
     float4 keep;       // x: parallax pixels a step in the depth buffer, 0 off; y: within how many the surface is the same;
@@ -61,6 +86,7 @@ cbuffer Move : register(b0) {
     float4 nearInfo;   // x, y: the picture's coordinates to the near blocks; z, w: this frame's pixels to them
     float4 effects;    // x, y: the effects' blocks across, down; z: from what level they count, 0 off
 };
+)" TURN_SHARP R"(
 // split: 0 the whole cell; a cell across an edge as two layers, each keeping
 // its own pixels: > 0 the nearer, those nearer than it; < 0 the rest.
 struct Pixel {float4 position:SV_Position;float2 uv:TEXCOORD0;nointerpolation float split:TEXCOORD1;};
@@ -130,7 +156,7 @@ float4 PS(Pixel p):SV_Target {
         const bool where=keep.z<=0&&effects.z<=0||keep.z>0&&NearThing(p,there)||effects.z>0&&Effect(p);
         if(there>0&&abs(p.position.z-there)*keep.x<=keep.y&&where)return own.Load(at);
     }
-    return drawn.SampleLevel(edge,p.uv,0);
+    return grid.z?Sharp(drawn,edge,p.uv):drawn.SampleLevel(edge,p.uv,0);
 }
 )";
 constexpr UINT DepthConstants=56;
@@ -253,7 +279,7 @@ bool TurnWarp::Initialize(ID3D12Device* device,DXGI_FORMAT targetFormat,void (*l
     parameters[0].ParameterType=D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
     parameters[0].DescriptorTable={1,&range};parameters[0].ShaderVisibility=D3D12_SHADER_VISIBILITY_PIXEL;
     parameters[1].ParameterType=D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS;
-    parameters[1].Constants={0,0,12};parameters[1].ShaderVisibility=D3D12_SHADER_VISIBILITY_PIXEL;
+    parameters[1].Constants={0,0,TurnConstants};parameters[1].ShaderVisibility=D3D12_SHADER_VISIBILITY_PIXEL;
     D3D12_ROOT_SIGNATURE_DESC desc{};desc.NumParameters=2;desc.pParameters=parameters;
     D3D12_STATIC_SAMPLER_DESC sampler{};sampler.Filter=D3D12_FILTER_MIN_MAG_LINEAR_MIP_POINT;
     sampler.AddressU=sampler.AddressV=sampler.AddressW=D3D12_TEXTURE_ADDRESS_MODE_CLAMP;
@@ -449,9 +475,10 @@ bool TurnWarp::Render(ID3D12Device* device,ID3D12GraphicsCommandList* list,ID3D1
     list->SetGraphicsRootSignature(root.Get());
     ID3D12DescriptorHeap* heaps[]={sourceHeap.Get()};list->SetDescriptorHeaps(1,heaps);
     list->SetGraphicsRootDescriptorTable(0,sourceGpu);
-    float rows[12]{};
+    float rows[TurnConstants]{};
     for(int r=0;r<3;++r)for(int c=0;c<3;++c)rows[r*4+c]=homography[r*3+c];
-    list->SetGraphicsRoot32BitConstants(1,12,rows,0);
+    rows[12]=sharp?1.f:0.f;
+    list->SetGraphicsRoot32BitConstants(1,TurnConstants,rows,0);
     list->OMSetRenderTargets(1,&rtvHandle,FALSE,nullptr);
     const D3D12_VIEWPORT viewport{0,0,float(t.Width),float(t.Height),0,1};const D3D12_RECT rect{0,0,LONG(t.Width),LONG(t.Height)};
     list->RSSetViewports(1,&viewport);list->RSSetScissorRects(1,&rect);
@@ -527,7 +554,7 @@ bool TurnWarp::Render(ID3D12Device* device,ID3D12GraphicsCommandList* list,ID3D1
         std::memcpy(values,d.move.data(),sizeof(float)*12);
         tangents(d.drawnFov,values+12);tangents(d.nowFov,values+16);
         values[20]=d.nearPlane;values[21]=d.scale[0];values[22]=d.scale[1];
-        std::memcpy(constants,values,sizeof values);constants[24]=across;constants[25]=down;
+        std::memcpy(constants,values,sizeof values);constants[24]=across;constants[25]=down;constants[26]=sharp?1:0;
         const bool carries=d.reach[1]>d.reach[0]&&d.reach[0]>0;
         float carried[16]{};
         std::memcpy(carried,carries?d.carry.data():d.move.data(),sizeof(float)*12);
@@ -629,9 +656,10 @@ bool TurnWarp::Interface(ID3D12Device* device,ID3D12GraphicsCommandList* list,ID
     list->SetGraphicsRootSignature(root.Get());
     ID3D12DescriptorHeap* heaps[]={sourceHeap.Get()};list->SetDescriptorHeaps(1,heaps);
     list->SetGraphicsRootDescriptorTable(0,gpu);
-    float rows[12]{};
+    float rows[TurnConstants]{};
     for(int r=0;r<3;++r)for(int c=0;c<3;++c)rows[r*4+c]=homography[r*3+c];
-    list->SetGraphicsRoot32BitConstants(1,12,rows,0);
+    rows[12]=sharp?1.f:0.f;
+    list->SetGraphicsRoot32BitConstants(1,TurnConstants,rows,0);
     list->OMSetRenderTargets(1,&rtvHandle,FALSE,nullptr);
     const D3D12_VIEWPORT viewport{0,0,float(t.Width),float(t.Height),0,1};const D3D12_RECT rect{0,0,LONG(t.Width),LONG(t.Height)};
     list->RSSetViewports(1,&viewport);list->RSSetScissorRects(1,&rect);

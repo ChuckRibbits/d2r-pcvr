@@ -38,6 +38,13 @@ void ConfigureTurnsKeepNear(float gap,float reach);
 // where the game's effects layer has this much (its strongest channel)
 // within the reach.
 void ConfigureTurnsKeepEffects(float level,float reach);
+// [stereo] turns_sharp (1): by turns, the pictures turned, moved and laid
+// over the eye not drawn read Catmull-Rom, sharper than bilinear
+// (TurnWarp::Sharpen); 0 bilinear. Applied when the ini's value changes;
+// DEV > Equipment switches it for the session (Set), and reads it back.
+void ConfigureTurnsSharp(bool on);
+void SetTurnsSharp(bool on);
+bool TurnsSharp();
 void ConfigureEyeTracking(bool enabled);
 void ConfigureGameplay(bool enabled);
 void ConfigureQuiver(bool enabled,bool preview); // [bow] quiver, quiver_preview
