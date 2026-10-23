@@ -3475,6 +3475,10 @@ void Tick(const targetlock::Snapshot* s) {
                        : framevr::targetcone::Pick(s->targets, s->count, s->heroX, s->heroY, gx, gy, g_pick[2].id.load());
     Store(framevr::aimrules::Eyes, s, eyes);
 }
+// The hand the outline puts first (and the only one under Dominant hand): the
+// bow hand is the main hand while a bow is out, so a monster both hands are on
+// shows its color. 0 right, 1 left.
+int OutlineDominant() { return gamestate::WeaponType() == D2RVR_TYPE_BOW || AimOn(framevr::settings::Dominant) ? 1 : 0; }
 // The target for a cast from this button's hand (bow: a bow skill; use: its
 // rule), with where it came from. Any thread.
 bool Resolve(int button, bool bow, framevr::aimrules::Use use, float& x, float& y, float& distance, int* source = nullptr, uint32_t* idOut = nullptr) {
@@ -3506,9 +3510,10 @@ bool Resolve(int button, bool bow, framevr::aimrules::Use use, float& x, float& 
     }
     // Aim follows your view: a raised, pointing first hand tries only its own
     // monster; with none the cast goes where it points (FreeAimRay). The melee
-    // attacks (Leap Attack...) still try the whole order.
+    // attacks (Leap Attack...) also take the other hand's while it is outlined.
     const auto order = framevr::aimrules::For(b, bow);
-    const int tries = framevr::aimrules::Tries(FollowsView(), Pointing(order.at[0]), use);
+    const bool otherOutlined = framevr::aimrules::OtherOutlined(TargetHighlightOn(), AimOn(framevr::settings::AimHighlights), OutlineDominant(), order.at[1]);
+    const int tries = framevr::aimrules::Tries(FollowsView(), Pointing(order.at[0]), use, otherOutlined);
     for (int k = 0; k < tries; ++k) {
         const auto src = order.at[k];
         const uint32_t id = g_pick[src].id.load();
@@ -3552,8 +3557,7 @@ int ShownTargets(Shown out[2]) {
         return false;
     };
     const bool both = AimOn(framevr::settings::AimHighlights);
-    // the bow hand is the main hand while a bow is out: first, so a monster both hands are on shows its color
-    const int dominant = gamestate::WeaponType() == D2RVR_TYPE_BOW || AimOn(framevr::settings::Dominant) ? 1 : 0;
+    const int dominant = OutlineDominant();
     int n = 0;
     uint32_t first = 0;
     for (int k = 0; k < 2; ++k) {
@@ -3649,7 +3653,7 @@ void Tick() {
     static bool followed = false;
     if (const bool follows = FollowsView(); follows != followed) {
         followed = follows;
-        if (follows) LogF("Frame aim rules: aim follows your view on - the eyes catch within %.0f deg of the head and keep to %.0f, the hands pick within %.0f, a raised hand aims alone (melee attacks take any aimed monster)",
+        if (follows) LogF("Frame aim rules: aim follows your view on - the eyes catch within %.0f deg of the head and keep to %.0f, the hands pick within %.0f, a raised hand aims alone (melee attacks also take the other hand's outlined monster)",
                           framevr::targetcone::TunnelDeg, framevr::targetcone::KeepDeg, framevr::targetcone::KeepDeg);
         else LogF("Frame aim rules: aim follows your view off");
     }

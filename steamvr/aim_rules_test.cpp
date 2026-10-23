@@ -28,10 +28,17 @@ int main() {
     Check(left.at[0]==Left&&left.at[1]==Right&&left.at[2]==Eyes,"a left button: left, right, eyes");
     Check(bow.at[0]==Left&&bow.at[1]==Right,"a bow skill on a right button: the bow hand first");
     for(const Use use:{Use::Heading,Use::Ground,Use::Curse,Use::Attack,Use::CorpseAtTarget})
-        Check(Tries(false,false,use)==3&&Tries(false,true,use)==3,"Aim follows your view Off: every cast tries its hand, the other hand, the eyes");
+        for(const bool other:{false,true})
+            Check(Tries(false,false,use,other)==3&&Tries(false,true,use,other)==3,"Aim follows your view Off: every cast tries its hand, the other hand, the eyes");
     for(const Use use:{Use::Heading,Use::Ground,Use::Curse,Use::CorpseAtTarget})
-        Check(Tries(true,false,use)==3&&Tries(true,true,use)==1,"On: a raised, pointing first hand tries its own monster only; a lowered one the whole order");
-    Check(Tries(true,false,Use::Attack)==3&&Tries(true,true,Use::Attack)==3,"On: a melee attack tries the whole order even from a raised hand");
+        for(const bool other:{false,true})
+            Check(Tries(true,false,use,other)==3&&Tries(true,true,use,other)==1,"On: a raised, pointing first hand tries its own monster only; a lowered one the whole order");
+    Check(Tries(true,false,Use::Attack,false)==3&&Tries(true,false,Use::Attack,true)==3,"On: a melee attack from a lowered hand tries the whole order");
+    Check(Tries(true,true,Use::Attack,true)==2,"On: a melee attack from a raised hand also tries the other hand's outlined monster, never the eyes'");
+    Check(Tries(true,true,Use::Attack,false)==1,"On: a melee attack from a raised hand skips the other hand's monster when it is not outlined");
+    Check(OtherOutlined(true,true,0,Left)&&OtherOutlined(true,true,1,Right),"Both hands: the other hand's monster is outlined");
+    Check(OtherOutlined(true,false,1,Left)&&!OtherOutlined(true,false,0,Left)&&!OtherOutlined(true,false,1,Right),"Dominant hand: only the dominant hand's monster is outlined");
+    Check(!OtherOutlined(false,true,0,Left)&&!OtherOutlined(false,false,1,Left),"Monster outline Off: nothing is outlined");
     Check(Of(107,false)==Use::Attack&&Of(143,false)==Use::Attack&&Of(275,false)==Use::Attack&&Of(151,false)==Use::Attack,"the melee attacks: Charge, Leap Attack, Dragon Flight, Whirlwind");
     Check(EyesOutlined(false,true)&&EyesOutlined(true,false)&&!EyesOutlined(true,true),"On, the eyes' monster is not outlined while a hand points");
     Check(Stable(373)&&Stable(402)&&!Stable(372)&&!Stable(403)&&Of(395,true)==Use::Native&&Of(388,false)==Use::Native,"the Warlock keeps upstream's aim: no rule, even for his missiles");

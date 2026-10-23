@@ -115,10 +115,19 @@ inline Order For(int buttonHand,bool bowSkill) {
 // cast tries that hand's monster only: with none it goes where the hand points,
 // never to the other hand's or the eyes' monster. A lowered hand, or the row
 // Off, tries the whole order as before. The melee attacks (Use::Attack: Charge,
-// Leap Attack, Dragon Flight, Whirlwind) always try the whole order: a raised
-// hand sent 35 of 45 Leap Attacks where it pointed, past the other hand's
-// outlined monster (Jeff, 2026-10-22). How many of For's sources to try.
-inline int Tries(bool followsView,bool firstPointing,Use use){return followsView&&firstPointing&&use!=Use::Attack?1:3;}
+// Leap Attack, Dragon Flight, Whirlwind) from a raised hand also try the other
+// hand's monster while it is outlined (otherOutlined), never the eyes' (not
+// outlined then): a raised hand sent 35 of 45 Leap Attacks where it pointed,
+// past the other hand's outlined monster (Jeff, 2026-10-22). How many of For's
+// sources to try.
+inline int Tries(bool followsView,bool firstPointing,Use use,bool otherOutlined) {
+    if(!(followsView&&firstPointing))return 3;
+    return use==Use::Attack&&otherOutlined?2:1;
+}
+// Is the other hand's monster outlined (VR Settings > Aim > Monster highlights):
+// with the outline On, Both hands outlines each hand's; Dominant hand only that
+// hand's (dominant: 0 right, 1 left).
+inline bool OtherOutlined(bool outline,bool bothHands,int dominant,Source other){return outline&&(bothHands||int(other)==dominant);}
 // The outline shows the eyes' monster only while the hand that would cast at it
 // (the one whose color it takes) is not aiming alone.
 inline bool EyesOutlined(bool followsView,bool handPointing){return !(followsView&&handPointing);}
