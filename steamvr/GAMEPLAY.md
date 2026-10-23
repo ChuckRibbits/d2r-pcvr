@@ -595,6 +595,20 @@ moves a weapon without sweeping it through bottles. `[interactions]
 bottle_physics=0` restores the old vanishing bottle. The log notes each release (`Frame dropped bottles:`)
 and wall sampling every ten seconds while bottles are in the world.
 
+**Knockable props.** The level's own small props within 3 m (cups, plates,
+bowls, vases, jugs, bottles, books, skulls, baskets, pails and about 60 more
+kinds) join the same physics world. Each stays where the game placed it until
+a weapon, fist or shield passes within a centimetre of it, or a dropped bottle
+or another prop reaches it. It then falls, bounces and rolls, and freezes again
+where it rests. The game draws its own model there, with its shadow, until the
+area loads again. The installer catalogues these props from your game files
+(`d2r_vr_props`), and the plugin matches each one by its level-preset id and
+position, so nothing else is ever moved. Tables and shelves are their bounding
+boxes: a prop pushed off a shelf's back falls through the cabinet. At most 12
+move at once. This is purely visual. `[interactions] prop_physics=0` turns it
+off; see [knockable props](../docs/KNOCKABLE_PROPS.md). The log notes each
+knock (`Frame props: knocked a cup ...`) and the scan every ten seconds.
+
 **Hurt merc.** During VR gameplay the local hireling's life is sampled on the
 game thread every 200 ms with the same native stat call as the wrist vitals.
 Below 50% life it is tinted with the game's own `red` state (states.txt row 91,
@@ -636,6 +650,7 @@ belt_forward=0.26
 hip_width=0.28
 holsters=1
 bottle_physics=1
+prop_physics=1
 ```
 
 `vitals_location` and `navigation_location`: `0` Wrist, `1` Palm, `2` Either,

@@ -51,7 +51,9 @@ restores the old behaviour.
   warp or recentre), is placed without sweeping. Radii are clamped to
   2-8 cm, which thins the shield's 15 cm creature capsule. Box3D hit events
   report the approach speed; above 1 m/s that hand gets a short Melee-category
-  tick, at most every 80 ms. The weapons exist only while bottles do.
+  tick, at most every 80 ms. The weapons exist only while bottles or
+  [knockable props](KNOCKABLE_PROPS.md) are in the world. Those props
+  share this world, so bottles and props knock each other too.
 - **Drawing.** `potions::AddDropped` puts up to six empty-looking models into
   the potion scene, mapped back to room space through the current stage
   frame. The scene grew by six entries.
