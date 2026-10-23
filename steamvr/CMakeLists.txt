@@ -181,6 +181,8 @@ add_executable(bow-flight-test bow_flight_test.cpp)
 add_executable(bow-laser-test bow_laser_test.cpp)
 add_executable(quiver-test quiver_test.cpp)
 add_test(NAME quiver-test COMMAND quiver-test) # Check() exits on failure; needs no -UNDEBUG
+add_executable(toss-test toss_test.cpp)
+add_test(NAME toss-test COMMAND toss-test)
 target_sources(d2rl-pcvr PRIVATE ${ROOT}/vr/spells.cpp)
 add_executable(spell-cast-test spell_cast_test.cpp)
 add_executable(spell-aim-assist-test spell_aim_assist_test.cpp)

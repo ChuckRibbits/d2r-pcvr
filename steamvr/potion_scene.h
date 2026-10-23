@@ -4,8 +4,8 @@
 #include "dropped_bottles.h"
 namespace framevr::potions {
 struct Instance {interaction::Pose pose;uint32_t code=0;bool empty=false,highlight=false;};
-// Four belt bottles, one held, one thrown, the arrow, the emptied ones let go of.
-struct Scene {std::array<Instance,7+bottles::MaxBottles> items{};unsigned count=0;};
+// Four belt bottles, one held, one thrown, the arrow, a trap, the emptied ones let go of.
+struct Scene {std::array<Instance,8+bottles::MaxBottles> items{};unsigned count=0;};
 // The game's arrow (the cache's arw.pvr), along its pose's +Y, placed by its middle.
 inline constexpr uint32_t ArrowCode=interaction::Code('a','r','w');
 inline bool AddArrow(Scene& s,interaction::Pose middle) {
@@ -16,6 +16,12 @@ inline bool AddArrow(Scene& s,interaction::Pose middle) {
 inline bool AddDropped(Scene& s,interaction::Pose pose,uint32_t code) {
     if(!code||s.count>=s.items.size()||!interaction::Valid(pose))return false;
     s.items[s.count++]={pose,code,true,false};return true;
+}
+// A trap or bomb in the throwing hand (#224, toss::Model), held in the grip like a bottle.
+inline bool AddHeld(Scene& s,interaction::Pose hand,uint32_t code) {
+    if(!code||s.count>=s.items.size()||!interaction::Valid(hand))return false;
+    hand.p=Center(hand.p,hand.q);hand.q=HeldRotation(hand.q);
+    s.items[s.count++]={hand,code,false,false};return true;
 }
 inline Scene MakeScene(const interaction::Input& in,const interaction::Output& out) {
     Scene s;
