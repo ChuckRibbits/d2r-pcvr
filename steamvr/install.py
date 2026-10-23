@@ -16,6 +16,7 @@ import zipfile
 from prepare_icons import prepare as prepare_icons
 from prepare_potions import prepare as prepare_potions, CODES as POTION_CODES, FILES as POTION_FILES
 from prepare_spell_sprites import prepare as prepare_spell_sprites, FILE as SPELL_SPRITES
+from prepare_props import prepare as prepare_props, FILES as PROP_FILES
 import prepare_arcane_sky
 import prepare_sewer_backdrop
 from game_install import validate_game
@@ -419,6 +420,15 @@ def main():
             for name in list(POTION_FILES) + ['cache.json']:
                 payload[mod_identity.PLUGIN.parent / 'd2r_vr_potions' / safe_relative(name)] = (Path(temporary) / name).read_bytes()
             print(f"Prepared {result['models']} original 3D potion models from your installed game.")
+    with tempfile.TemporaryDirectory(prefix='d2r-vr-props-') as temporary:
+        try:
+            result = prepare_props(game, temporary, casclib=args.casclib)
+        except (OSError, ValueError, KeyError, IndexError) as error:
+            print(f'Knockable prop catalog unavailable; level props stay where they are: {error}')
+        else:
+            for name in list(PROP_FILES) + ['cache.json']:
+                payload[mod_identity.PLUGIN.parent / 'd2r_vr_props' / safe_relative(name)] = (Path(temporary) / name).read_bytes()
+            print(f"Catalogued {result['props']} knockable props from your installed game's levels.")
     with tempfile.TemporaryDirectory(prefix='d2r-vr-spell-sprites-') as temporary:
         try:
             result = prepare_spell_sprites(game, temporary, casclib=args.casclib)

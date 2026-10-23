@@ -50,6 +50,7 @@ Game snapshots used for optional local allocator tests are not distributed.
 | D2RLoader Plugin SDK headers | [D2RLoader/PluginSDK](https://github.com/D2RLoader/PluginSDK), `717f727a0ec52912d1558764345f8fa3453a2bd6` | `steamvr/licenses/D2RLoader-PluginSDK-MIT.txt` |
 | OpenXR headers and Windows loader | [KhronosGroup/OpenXR-SDK](https://github.com/KhronosGroup/OpenXR-SDK), 1.1.62, `57af7fc61f9f2d492580cb28aab6d0ea59d8d417` | `steamvr/licenses/OpenXR-Apache-2.0.txt`, `OpenXR-MIT.txt` |
 | JsonCpp (compiled into OpenXR loader) | OpenXR SDK's vendored JsonCpp | `steamvr/licenses/JsonCpp.txt`, public domain / MIT |
+| Box3D physics (compiled into plugin; dropped empty bottles) | [erincatto/box3d](https://github.com/erincatto/box3d), 0.1.0, `8441b4a06d6d09dcfb0b0f704df4d847d1437b92`, unmodified | `steamvr/licenses/Box3D-MIT.txt`, MIT, copyright 2026 Erin Catto |
 | MinGW runtime and GCC runtime libraries | MinGW-w64 / GCC 13, static linkage | `steamvr/licenses/MinGW-copyright.txt`, `GCC-runtime-copyright.txt`, `GPL-3.0.txt`; GCC Runtime Library Exception applies |
 | Native Windows C++/compiler runtime | LLVM-MinGW 20260616, Clang 22.1.8, static libc++/compiler-rt and winpthreads | `steamvr/licenses/LLVM-Apache-2.0-with-exceptions.txt`, `LLVM-MinGW-runtime.txt`, `winpthreads-MIT.txt` |
 

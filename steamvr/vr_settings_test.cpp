@@ -85,8 +85,10 @@ int main(){
               RowKey(Page::Performance,1)==RenderResolution&&RowKey(Page::Performance,7)==DesktopOneEye,"strength sits directly under foveated rendering");
         Check(RowKey(Page::Performance,0)==StereoRendering&&RowKey(Page::Performance,2)==DrawDistance&&RowKey(Page::Performance,3)==ObjectDistance&&
               RowKey(Page::Performance,6)==ReShadeDepth,"everything that changes the frame rate is on the Perf page");
-        Check(RowCount(Page::Video)==4&&RowKey(Page::Video,0)==Sky&&RowKey(Page::Video,1)==Fog&&RowKey(Page::Video,2)==Ceiling&&
-              RowKey(Page::Video,3)==ElementalHands,"the Video page keeps the mod's effects");
+        Check(RowCount(Page::Video)==6&&RowKey(Page::Video,0)==Sky&&RowKey(Page::Video,1)==Fog&&RowKey(Page::Video,2)==Ceiling&&
+              RowKey(Page::Video,3)==ElementalHands&&RowKey(Page::Video,4)==BottlePhysics&&RowKey(Page::Video,5)==PropPhysics,
+              "the Video page keeps the mod's effects, with bottle and prop physics");
+        Check(Defaults()[BottlePhysics]==1&&Defaults()[PropPhysics]==1,"both physics switches start on, as their INI defaults");
         const auto last=Increase(RowCount(Page::Performance)-1);
         Check(last.y+last.h<PerformanceBox.y&&PerformanceBox.y+PerformanceBox.h<=GameVideoBox.y&&GameVideoBox.y+GameVideoBox.h<=DepthRestartBox.y&&
               DepthRestartBox.y+DepthRestartBox.h<876,"Perf rows, then its numbers, end above the save status");
@@ -324,7 +326,7 @@ int main(){
         thrust.Click(hit);Check(thrust.Get()[MeleeThrustSpeed]==2.25f,"thrust speed adjusts in quarter steps");
         const auto request=thrust.Click({Kind::Apply});
         Check(request.changed==(ChangeMask{1}<<MeleeThrustSpeed),"thrust edit does not change swing speed or combat rules");
-        Check(RowCount(Page::Combat)==8&&RowKey(Page::Combat,3)==ShieldBashSpeed,"eight Combat rows retain independent bash speed; parry window is fixed");
+        Check(RowCount(Page::Combat)==9&&RowKey(Page::Combat,3)==ShieldBashSpeed,"nine Combat rows retain independent bash speed; parry window is fixed");
         Check(Normalize(MeleeThrustSpeed,NAN)==2&&Normalize(MeleeThrustSpeed,0)==.75f&&Normalize(MeleeThrustSpeed,99)==10,"thrust speed has finite usable bounds");
     }
     {Model strain;strain.Open(s);strain.Click({Kind::Tab,int(Page::Combat)});
@@ -497,7 +499,7 @@ int main(){
     {   // Rows follow the character: another class's or weapon's are left out; unknown (the menus) shows them all
         const auto v=Defaults();
         Check(RowShown(ElementalHands,v,{})&&RowShown(ElementalHands,v,{heroclass::Sorceress})&&!RowShown(ElementalHands,v,{heroclass::Amazon}),"elemental hands: the Sorceress's");
-        Check(RowCount(Page::Video,v,{heroclass::Barbarian})==3&&RowCount(Page::Video,v,{heroclass::Sorceress})==4,"the Video page drops them for others");
+        Check(RowCount(Page::Video,v,{heroclass::Barbarian})==5&&RowCount(Page::Video,v,{heroclass::Sorceress})==6,"the Video page drops them for others");
         for(int k:{int(heroclass::Sorceress),int(heroclass::Assassin),int(heroclass::Druid),int(heroclass::Necromancer)})
             Check(RowShown(GroundAim,v,{k}),"ground skills for the classes that have them");
         for(int k:{int(heroclass::Amazon),int(heroclass::Barbarian),int(heroclass::Paladin)})Check(!RowShown(GroundAim,v,{k}),"none for those that do not");
@@ -510,8 +512,8 @@ int main(){
         Check(RowCount(Page::Aim,v,{heroclass::Barbarian})==3&&RowKey(Page::Aim,0,v,{heroclass::Barbarian})==SpellLock&&
               RowKey(Page::Aim,1,v,{heroclass::Barbarian})==TargetHighlight&&RowKey(Page::Aim,2,v,{heroclass::Barbarian})==ThrowLift,
               "a Barbarian's Aim page: the aimed monster, the outline and the throws");
-        Check(RowShown(ThrowLift,v,{heroclass::Amazon})&&!RowShown(ThrowLift,v,{heroclass::Sorceress})&&RowShown(ThrowLift,v,{heroclass::Sorceress,false,false,true}),
-              "throw lift: the Amazon's and Barbarian's, or a thrown weapon in hand");
+        Check(RowShown(ThrowLift,v,{heroclass::Amazon})&&RowShown(ThrowLift,v,{heroclass::Assassin})&&!RowShown(ThrowLift,v,{heroclass::Sorceress})&&
+              RowShown(ThrowLift,v,{heroclass::Sorceress,false,false,true}),"throw lift: the Amazon's, Barbarian's and Assassin's (traps), or a thrown weapon in hand");
         Model druid;druid.Open(s);druid.SetContext({heroclass::Druid});druid.Click({Kind::Tab,int(Page::Aim)});
         const auto rows=druid.Rows();Check(rows.count==4&&rows[1]==StaffPoint&&rows[3]==GroundAim,"a Druid: staff aim and ground skills, no laser");
         const auto revision=druid.revision;druid.SetContext({heroclass::Druid});Check(druid.revision==revision,"the same character repaints nothing");
@@ -557,6 +559,22 @@ int main(){
         for(int i=0;i<25;++i)sight.Click(At(sight,Page::Combat,Increase(7)));
         Check(sight.Get()[EnemySight]==300,"300% is the upper bound");
         Check(sight.Click({Kind::Apply}).changed==(ChangeMask{1}<<EnemySight),"enemy sight saves only its own setting");
+    }
+    {Model companion;companion.Open(s);companion.Click({Kind::Tab,int(Page::Combat)});
+        Check(s.values[CompanionAi]==1&&RowKey(Page::Combat,8)==CompanionAi,"companion AI is the ninth Combat row, Enabled by default");
+        Check(ValueBox(8).y+ValueBox(8).h<=800,"companion AI row avoids Combat footer");
+        Check(Normalize(CompanionAi,NAN)==1&&Normalize(CompanionAi,0)==0&&Normalize(CompanionAi,1)==1&&Normalize(CompanionAi,2)==1,"companion AI normalizes to binary choice");
+        Check(std::string(HelpChoice(CompanionAi,1).name)=="Enabled"&&std::string(HelpChoice(CompanionAi,0).name)=="Legacy","companion AI choices are named Enabled and Legacy");
+        companion.Click(At(companion,Page::Combat,ValueBox(8)));
+        Check(companion.Get()[CompanionAi]==0,"clicking value toggles to Legacy (0)");
+        companion.Click(At(companion,Page::Combat,ValueBox(8)));
+        Check(companion.Get()[CompanionAi]==1,"clicking value toggles back to Enabled (1)");
+        companion.Click(At(companion,Page::Combat,Decrease(8)));
+        Check(companion.Get()[CompanionAi]==0,"decrease selects Legacy (0)");
+        companion.Click(At(companion,Page::Combat,Increase(8)));
+        Check(companion.Get()[CompanionAi]==1,"increase selects Enabled (1)");
+        companion.Click(At(companion,Page::Combat,Decrease(8)));
+        Check(companion.Click({Kind::Apply}).changed==(ChangeMask{1}<<CompanionAi),"companion AI saves only its own setting");
     }
     {Model difficulty;difficulty.Open(s);difficulty.Click({Kind::Tab,int(Page::Combat)});
         Check(s.values[OfflinePlayers]==0&&RowKey(Page::Combat,5)==OfflinePlayers,"difficulty preserves native settings by default");

@@ -15,6 +15,8 @@
 #include "melee.h"
 #include "melee_weapon.h"
 #include "breakables.h"
+#include "wall_cells.h"
+#include "prop_scan.h"
 #include "../steamvr/melee_hand_state.h"
 #include "bow.h"
 #include "combat.h"
@@ -716,8 +718,10 @@ bool HirelingVitals(uint32_t hint,float& health,float& maxHealth,uint32_t& class
     // rehire) walk for it, at most once a second while none is found.
     // Offline the only live, non-hostile hireling is the player's own; the
     // walk takes the nearest if a mod ever adds more.
+    static uint32_t cachedHirelingId=0;
+    if(!hint&&cachedHirelingId)hint=cachedHirelingId;
     uintptr_t best=hint?Hireling(game,self,hint,true):0;
-    if(best)unitId=hint;
+    if(best){unitId=hint;cachedHirelingId=hint;}
     else {
         static uint64_t walkedAt=0;const auto now=GetTickCount64();
         if(now-walkedAt<1000)return false;
@@ -725,8 +729,9 @@ bool HirelingVitals(uint32_t hint,float& health,float& maxHealth,uint32_t& class
         if(!EachFriendly(game,self,[&](uintptr_t unit,uint32_t id,Vec pos){
             const float d=std::hypot(pos.x-selfPos.x,pos.z-selfPos.z);uint32_t header[3]{};
             if(IsHireling(id)&&(bestDistance<0||d<bestDistance)&&Read(unit,header)){bestDistance=d;best=unit;unitId=header[2];}
-        })||!best)return false;
+        })||!best){cachedHirelingId=0;return false;}
         walkedAt=0; // found: later samples use the direct lookup
+        cachedHirelingId=unitId;
     }
     uint32_t header[2]{};
     if(!Read(best,header))return false;
@@ -831,6 +836,8 @@ void Submit(const Sample& sample) {
 }
 void Report() {
     breakables::Report();
+    wallcells::Report();
+    propscan::Report();
     const auto right=dualLanded[0].exchange(0),left=dualLanded[1].exchange(0),invalid=dualRefused.exchange(0);
     if(right||left||invalid) {
         char line[180];snprintf(line,sizeof line,"Frame dual wield: right landed=%u left landed=%u stale/unavailable weapon=%u",right,left,invalid);
