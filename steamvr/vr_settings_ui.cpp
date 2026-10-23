@@ -34,7 +34,6 @@ static void ValueLabel(Key key,float value,const Context& c,char* label,size_t s
     else if(key==ThrowLift){if(value==0)std::snprintf(label,size,"Off");else std::snprintf(label,size,"%+.0f\xc2\xb0",value);}
     else if(key==Dominant)std::snprintf(label,size,"%s",value>.5f?"Left":"Right");
     else if(key==MeleeRules)std::snprintf(label,size,"%s",MeleeRulesNames[value>.5f?1:0]);
-    else if(key==LeftHandStrikes)std::snprintf(label,size,"%s",LeftHandStrikesNames[std::clamp(int(std::lround(value)),0,2)]);
     else if(key==OfflinePlayers){if(value==0)std::snprintf(label,size,"Game default");else std::snprintf(label,size,"Players %.0f",value);}
     else if(key==StrainDark)std::snprintf(label,size,"%s",StrainColorNames[std::clamp(int(std::lround(value)),0,2)]);
     else if(key==StrainSpeed)std::snprintf(label,size,"%s",StrainSpeedNames[int(value)]);
@@ -179,10 +178,8 @@ std::vector<uint8_t> Paint(const Model& m,Hit hover,const char* runtimeStatus,co
             text(gameWarning?gameWarning:DeferWarning,{40,209,width,29},false,false,warn);
             if(defer)button(DeferBox,"Defer GPU wait",{Kind::Change,DeferGpuWait,1},false,m.ready&&!m.Busy());
         }else text(m.page==Page::Haptics?"Tune vibration for your headset and controllers.":m.page==Page::Combat?"Tune physical combat and offline difficulty.":m.page==Page::Aim?"Choose how your skills find their target and what you see of it. Rows for other classes stay hidden.":
-             m.page==Page::Shield?"Seat a held shield on your forearm.":m.page==Page::Class?"Options for the class you are playing.":m.page==Page::Video?"The mod's added effects. What changes the frame rate is on Perf.":runtimeStatus,{40,197,1200,42},false,false,quiet);
+             m.page==Page::Shield?"Seat a held shield on your forearm.":m.page==Page::Video?"The mod's added effects. What changes the frame rate is on Perf.":runtimeStatus,{40,197,1200,42},false,false,quiet);
         const RowList rows=m.Rows();
-        if(m.page==Page::Class&&rows.count==0)   // only the class being played shows its options
-            text(m.context.heroClass<0?"Enter the game to see your class's options.":"No options for this class yet.",{58,RowY+8,1160,30},false,false,quiet);
         for(int row=0;row<rows.count;++row){
             const Key key=rows[row];const int y=RowY+row*RowStep;
             fill({40,y-4,1200,RowStep},row%2?RGB(19,31,39):RGB(22,36,44));

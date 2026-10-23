@@ -398,9 +398,11 @@ hand's strike skill: a weapon or claw strike that lands casts it on the
 creature it struck, with the skill's own mana, damage and effects, and no
 animation. So far the Druid's single-hit form skills: **Maul** and **Feral
 Rage** (their stacks build per landed cast), **Rabies**, **Fire Claws** and
-**Hunger**. **VR Settings > Class > Left-hand strikes** picks the left claw's
-skill: its own trigger's (default), the right trigger's (a skill sits on one
-trigger only, so this puts it on both claws), or basic attacks. In
+**Hunger**. The skill wheel's lower-left box, **Left claw strikes** (Druid
+only), picks the left claw's skill with one click: its own trigger's
+(default) or the right trigger's (a skill sits on one trigger only, so this
+puts it on both claws). For plain left-claw strikes, leave the left trigger
+without a strike skill. In
 Unleashed only a stroke that waited a full attack cycle casts, on the first
 creature it lands on; faster strokes and the rest of a cleave stay basic
 attacks. In Classic every paced strike casts. Without mana, outside the form

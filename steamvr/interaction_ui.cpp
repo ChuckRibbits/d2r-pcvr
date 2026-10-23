@@ -374,6 +374,14 @@ std::vector<uint8_t> Paint(const Snapshot& s,const Output& o,int selection,const
         frame(run,o.hover==RunWalkCell);SelectObject(dc,skillFont);
         text("RUN / WALK",{run.left+8,run.top+10,run.right-8,run.bottom-28});
         SelectObject(dc,shortcutFont);text("Click to toggle",{run.left+8,run.bottom-29,run.right-8,run.bottom-7});SelectObject(dc,font);
+        if(o.leftStrikes>=0) {   // Druid: which trigger skill the left claw's strikes cast
+            const auto l=LeftStrikesBounds;
+            RECT claw{LONG(l.left*768),LONG(l.top*768),LONG(l.right*768),LONG(l.bottom*768)};
+            frame(claw,o.hover==LeftStrikesCell);
+            SelectObject(dc,shortcutFont);text("LEFT CLAW STRIKES",{claw.left+6,claw.top+5,claw.right-6,claw.top+22});
+            SelectObject(dc,skillFont);text(o.leftStrikes==1?"Right trigger skill":"Own trigger skill",{claw.left+6,claw.top+23,claw.right-6,claw.bottom-22});
+            SelectObject(dc,shortcutFont);text("Click to toggle",{claw.left+6,claw.bottom-22,claw.right-6,claw.bottom-5});SelectObject(dc,font);
+        }
     }
     if(o.editor) {
         char hint[120];std::snprintf(hint,sizeof hint,"Set %s  /  %s",s.activeSet==2?"II":"I",

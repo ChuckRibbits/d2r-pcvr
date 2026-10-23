@@ -180,6 +180,9 @@ notice::Cards noticeCards;
 notice::Card noticeCard;
 panels::Placement noticePlacement{};
 uint64_t noticePaintRequest=0,noticeRequestedSequence=0,noticePaintedSequence=0;
+// The skill wheel's Left claw strikes box saves [gameplay] left_hand_strikes
+// itself; until the save lands (Poll, about 0.5 s) the box shows the choice made.
+uint64_t leftStrikesSequence=0,leftStrikesAt=0;float leftStrikesWanted=0;
 bool noticeAtlasPending=false,noticeImageReady=false;
 // Guard strain light: soft white at the rim, directly beneath the blood. Fed by
 // the game thread's blocks and the guard tick; painted small in the background.
@@ -1417,7 +1420,7 @@ void MotionPointer() {
     const auto mid=ray+direction*(beamLength*.5f);
     beamPose=XrPose({mid,math::BeamOrientation(direction,V(head.position)-mid)});pointerVisible=true;
     if(pointerHit) {
-        motionInput.hover=interaction::WheelCell(hit.u,hit.v,interactionOutput.hover,interactions.Page(),hand,interactionInput.snapshot.developer,interactions.DeveloperPage());
+        motionInput.hover=interaction::WheelCell(hit.u,hit.v,interactionOutput.hover,interactions.Page(),hand,interactionInput.snapshot.developer,interactions.DeveloperPage(),interactionOutput.leftStrikes>=0);
         dotPose=XrPose({hit.point+math::Rotate(pose.q,{0,0,.003f}),pose.q});
     }
 }
@@ -2023,6 +2026,10 @@ void Input() {
     interactionInput.vitalsLocation=vitals::Location(int(hudSettings.values[settings::VitalsLocation]));
     interactionInput.vitalsTilt=hudSettings.values[settings::VitalsTilt];
     interactionInput.criticalAlerts=hudSettings.values[settings::CriticalAlerts]>.5f;
+    if(leftStrikesSequence&&((hudSettings.sequence==leftStrikesSequence&&hudSettings.result!=settings::Result::Saving)||interactionInput.at-leftStrikesAt>2000))
+        leftStrikesSequence=0;   // saved, refused, or overtaken by another save: the profile's value again
+    interactionInput.leftStrikes=hudSettings.ready&&bindingSnapshot.skillClass==settings::heroclass::Druid?
+        int(leftStrikesSequence?leftStrikesWanted:hudSettings.values[settings::LeftHandStrikes]):-1;
     interactionInput.leftCasting=handOutput.spells[1]>=0||(handOutput.slot>=0&&handOutput.hand==1);
     interactionInput.leftTrigger=controls.lt/255.f;
     // A thrown bottle lands on the world floor in room space. Without a recent
@@ -2055,6 +2062,16 @@ void Input() {
             interaction::Input::Tossed{thrown.id,thrown.landed,thrown.p,thrown.q}:interaction::Input::Tossed{};
     }
     interactionOutput=interactions.Step(interactionInput);
+    if(interactionOutput.toggleLeftStrikes) {
+        const auto current=vrsettings::Read();
+        settings::Request request{current.values,current.values,0,current.sequence+1};
+        request.values[settings::LeftHandStrikes]=float(interactionInput.leftStrikes==1?0:1);
+        request.changed=settings::Changed(request.base,request.values);
+        if(!leftStrikesSequence&&current.ready&&request.changed&&vrsettings::Submit(request)) {
+            leftStrikesSequence=request.sequence;leftStrikesAt=interactionInput.at;leftStrikesWanted=request.values[settings::LeftHandStrikes];
+            Say(leftStrikesWanted>.5f?"Frame wheel: left claw strikes = right trigger skill":"Frame wheel: left claw strikes = own trigger skill");
+        } else interactionOutput.feedback=3;   // a save is still running: refuse, never queue a second flip
+    }
     StepDroppedBottles();
     // Quest / level-up notices: queue a card per message, paint the current one.
     {
@@ -2392,7 +2409,7 @@ void Input() {
         shapeshift::Input in;
         in.time=interactionInput.time;in.session=interactionInput.session;in.epoch=interactionInput.epoch;
         in.active=motionInput.active&&!motionOutput.block&&!motionInput.quickCast&&quickFresh&&
-            gestureSettings[settings::ShapeshiftGestures]>.5f&&!interactionOutput.wheel&&!interactionOutput.settings;
+            gestureSettings[settings::SkillGestures]>.5f&&!interactionOutput.wheel&&!interactionOutput.settings;
         in.head=interactionInput.head.p;in.headRotation=interactionInput.head.q;
         for(int h=0;h<2;++h) {
             in.hand[h]=interactionInput.hand[h].p;in.tracked[h]=interactionInput.tracked[h];
@@ -2584,7 +2601,7 @@ void Input() {
         // Melee-skill contact adapter: each hand's strikes carry its own trigger
         // skill when that is a confirmed strike skill (strike_skills.h). The
         // assignment identity rides the sample, so a rebind drops a queued stroke.
-        // [gameplay] left_hand_strikes (Class tab) picks the left hand's: its own, the right's, or none.
+        // [gameplay] left_hand_strikes (skill wheel, lower left) picks the left hand's: its own or the right's.
         const auto strike=[&](int hand) {
             const int trigger=strikeskills::StrikeTrigger(hand,strikeskills::LeftChoice(gestureSettings[settings::LeftHandStrikes]));
             const int slot=skills::TriggerSlot(trigger<0?hand:trigger);const auto& skill=quickSnapshot.skills[slot];
