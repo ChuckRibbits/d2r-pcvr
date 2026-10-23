@@ -815,11 +815,9 @@ int main(){
     m.Click(At(m,Page::HUD,ValueBox(9)));
     Check(m.Get()[CompanionCounts]==0&&m.Get()[NavigationLocation]==0,"companion toggle is independent of map placement");
     Check(m.Click({Kind::Apply}).changed==(ChangeMask{1}<<CompanionCounts),"companion toggle uses its own high change-mask bit");
-    {   // Class tab: one hero class's options, shown only while that class is played
-        Check(TabCount==11&&std::strcmp(TabNames[int(Page::Class)],"Class")==0&&Page(int(Page::Class)+1)==Page::Haptics,"the Class tab sits between Shield and Haptics");
-        for(int i=0;i<TabCount;++i)Check(TabBox(i).x>=40&&TabBox(i).x+TabBox(i).w<=1240&&(i==0||TabBox(i).x>=TabBox(i-1).x+TabBox(i-1).w+6),"the eleven tabs fit the panel without overlapping");
-        Check(RowCount(Page::Class)==0&&RowCount(Page::Class,s.values,{heroclass::Paladin})==0,"no class or another class: the Class page is empty");
-        Check(RowCount(Page::Class,s.values,{heroclass::Druid})==0,"left-hand strikes left the Class page for the skill wheel");
+    {   // Left-hand strikes: set from the skill wheel (Druid), on no settings page; no Class tab
+        Check(TabCount==10&&Page(int(Page::Shield)+1)==Page::Haptics,"ten tabs: Haptics follows Shield");
+        for(int i=0;i<TabCount;++i)if(std::strcmp(TabNames[i],"Class")==0)Check(false,"no Class tab");
         Check(s.values[LeftHandStrikes]==0&&std::wstring(Definitions[LeftHandStrikes].key)==L"left_hand_strikes"&&HelpText(LeftHandStrikes)[0]!=0&&
               HelpChoices(LeftHandStrikes)==2,"left-hand strikes: own trigger skill by default, two explained choices");
         Check(Normalize(LeftHandStrikes,2)==0&&Normalize(LeftHandStrikes,1)==1&&Normalize(LeftHandStrikes,-1)==0,"the retired Basic attack (2) reads Own trigger skill");

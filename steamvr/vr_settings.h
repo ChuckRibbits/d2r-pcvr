@@ -14,7 +14,7 @@
 #include "haptic_strength.h"
 
 namespace framevr::settings {
-enum class Page { Controls, VR, Video, HUD, Combat, Aim, Shield, Class, Haptics, Performance, ReleaseNotes };
+enum class Page { Controls, VR, Video, HUD, Combat, Aim, Shield, Haptics, Performance, ReleaseNotes };
 enum Key { Motion, Seated, Dominant, Snap, TurnSpeed, Waist, BeltForward,
            Foveation, Sky, Fog, Ceiling, DrawDistance, ObjectDistance,
            EyeHeight, ArmSpan, BodyCalibration, SkillGestures, WristMap, WristCompass, ControllerLabels, WeaponSkillIndicators, PlanarSpellAim, VitalsLocation, CriticalAlerts, RenderResolution, NavigationLocation, SmoothTurn, OrdinaryMobBars, MenuDistance, TooltipTiming, ProjectileAimAssist, MeleeHitSpeed, VitalsTilt, HapticStrength, HapticMelee, HapticBowDraw, HapticBowRelease, HapticSpell, HapticInteraction, HapticAlert, HapticShortMelee, BloodVisor, BloodWipe, MeleeRules, MeleeThrustSpeed, LootLabelSize, CompanionCounts, StrainDark, OfflinePlayers, ShieldBashSpeed, StrainSpeed, DesktopOneEye, MapTopDown, MapRotate, FoveationStrength, StereoRendering, DeferGpuWait, TargetHighlight, HeartbeatStart, SpellLock, StaffPoint, LandingCircles, GroundAim, AimHighlights, HighlightRight, HighlightLeft, ReShadeDepth, ElementalHands, EnemySight, BowLaser, ThrowLift, BottlePhysics, PropPhysics, CompanionAi, ShieldGrip, ShieldOut, ShieldUp, ShieldFollow, ShieldRoll, AimFollowsView, LeftHandStrikes, Count };
@@ -188,9 +188,9 @@ struct Rect {
     bool Contains(float px,float py)const{return px>=x&&px<x+w&&py>=y&&py<y+h;}
 };
 constexpr int Width=1280,Height=1024;
-constexpr int TabCount=11;
-inline constexpr const char* TabNames[TabCount]={"Controls","VR","Video","HUD","Combat","Aim","Shield","Class","Haptics","Perf","Notes"};
-constexpr Rect Tabs[TabCount]={{40,114,136,60},{182,114,73,60},{261,114,101,60},{368,114,89,60},{463,114,129,60},{598,114,77,60},{681,114,109,60},{796,114,101,60},{903,114,125,60},{1034,114,93,60},{1133,114,107,60}};   // 11 tabs: the Class tab narrowed each by 7 and the gaps to 6
+constexpr int TabCount=10;
+inline constexpr const char* TabNames[TabCount]={"Controls","VR","Video","HUD","Combat","Aim","Shield","Haptics","Perf","Notes"};
+constexpr Rect Tabs[TabCount]={{40,114,144,60},{194,114,80,60},{284,114,108,60},{402,114,96,60},{508,114,136,60},{654,114,84,60},{748,114,116,60},{874,114,132,60},{1016,114,100,60},{1126,114,114,60}};
 inline Rect TabBox(int index){return Tabs[index];}
 constexpr Rect Apply{965,918,275,68},Close{650,918,275,68},Recenter{40,918,270,68},Calibrate{330,918,300,68};
 constexpr int RowY=242,RowStep=62;
@@ -425,7 +425,7 @@ inline Rect PairDecrease(int row,int side){return {PairX(side),RowY+row*RowStep,
 inline Rect PairValue(int row,int side){return {PairX(side)+56,RowY+row*RowStep,238,52};}
 inline Rect PairIncrease(int row,int side){return {PairX(side)+298,RowY+row*RowStep,52,52};}
 // Every row a page can show, in order (Rows leaves out those that cannot apply).
-inline int CatalogCount(Page page){return page==Page::Haptics?2+haptics::CategoryCount:page==Page::Combat?9:page==Page::Aim?10:page==Page::Shield?5:page==Page::Class?0:page==Page::VR?10:page==Page::Video?6:page==Page::Performance?8:page==Page::HUD?10:0;}
+inline int CatalogCount(Page page){return page==Page::Haptics?2+haptics::CategoryCount:page==Page::Combat?9:page==Page::Aim?10:page==Page::Shield?5:page==Page::VR?10:page==Page::Video?6:page==Page::Performance?8:page==Page::HUD?10:0;}
 inline Key CatalogKey(Page page,int row){
     constexpr Key hapticRows[]={HapticStrength,HapticMelee,HapticShortMelee,HapticBowDraw,HapticBowRelease,HapticSpell,HapticInteraction,HapticAlert};
     if(page==Page::Haptics)return hapticRows[row];
@@ -436,8 +436,6 @@ inline Key CatalogKey(Page page,int row){
     constexpr Key aim[]={SpellLock,StaffPoint,TargetHighlight,AimHighlights,HighlightLeft,GroundAim,LandingCircles,AimFollowsView,BowLaser,ThrowLift};   // HighlightLeft: with HighlightRight
     if(page==Page::Aim)return aim[row];
     if(page==Page::Shield)return Key(ShieldGrip+row);   // Grip, Out, Up, Follows, Roll: every class can carry a shield
-    // Class: options for one hero class each, shown only while that class is played (RowShown).
-    // Empty for now: Left-hand strikes moved to the skill wheel (interaction::LeftStrikesBounds).
     constexpr Key hud[]={VitalsLocation,VitalsTilt,CriticalAlerts,NavigationLocation,MenuDistance,TooltipTiming,BloodVisor,BloodWipe,LootLabelSize,CompanionCounts};
     if(page==Page::HUD)return hud[row];
     constexpr Key video[]={Sky,Fog,Ceiling,ElementalHands,BottlePhysics,PropPhysics};
