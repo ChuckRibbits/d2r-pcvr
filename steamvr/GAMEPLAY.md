@@ -1402,6 +1402,95 @@ The held bottle now uses the original 3D model when the local cache is available
 and health/mana now use the read-only native snapshot and local icon cache.
 Do not describe this prototype as completed physics combat.
 
+## Druid shapeshift forms in first person
+
+The game draws Werewolf and Werebear with enemy models
+(`data/hd/character/enemy/wolf`, `.../bear`) that carry only claws: no weapon
+or shield bones. While the player has the form's state (139 Werewolf, 140
+Werebear), the skeleton hook takes that model as the hero if it stands within
+2 units of the player and stands (by its hips: the game's werewolf bites with
+its head low, and the head test a person's rig uses left those frames to the
+game). A rig taken as the hero is kept while the game still
+draws it (40 ms, about three frames) unless another is clearly nearer (a summon
+can share the rig), and the druid's own model is not posed while a form rig is
+drawn. The state sample trails the game's swap of the models by up to a few
+hundred ms; a form's rig is taken as soon as the rig the sample still names
+(the druid's, or the other form's) has stopped being drawn, and the druid's
+model as soon as the form's has. This works for any class shifted by an item
+(Beast, Wolfhowl). While a rig is drawn as the hero, it - not the sample - says
+whether the player is in form (the sample can read human for a second or two
+after a load), so the shield guard, the left claw and the form's attack cycle
+never drop out mid-form. Left to the game, a werewolf's first frames
+drew its own unscaled beast leaning out ahead of the eyes (its back in view).
+
+- **Grafted under the player** (first person only; third person and flat menus
+  show the game's form, unscaled). The player sees arms, torso and legs, so the
+  form's body goes where the player's would be. Its torso is held tipped
+  upright about the spine root (the authored werewolf leans 66° with its head
+  below its shoulders), its shoulders sit under the eyes where a person's do
+  (the druid's proportions), and its own neck and head are hidden.
+- **Its own height.** The werewolf's eyes stand at 98 % of the druid's, the
+  werebear's at 112 % (6.93 and 7.92 in the druid's model units, her eyes 7.07;
+  the forms' models are drawn at world scale 1.0 against her 0.95, and the
+  heights and the world's scale are taken across). Only the camera moves: the
+  world keeps the druid's scale (units per metre from the druid's eyes), and
+  the hands and arms hang by that same scale. The rig is drawn at the uniform
+  scale that puts its upright shoulders under those eyes (about 0.76 for the
+  werewolf, 0.92 for the werebear), from the feet. Taking a form eases the eye height over half a
+  second (once per stereo pair); returning to human form takes the druid's at
+  once, and a person's rig is never drawn scaled. `[shapeshift] wolf_height` /
+  `bear_height` (% of the form's own height, 50–150, default 100) adjust it.
+- **No idle sway.** Above the hips the body is held as for every class, and a
+  form's hips are held at rest too. While the form stands still its legs and
+  tail are held; while it walks or runs they take the game's stride, hung from
+  the held hips, with the feet kept at the stride's height by leg IK (150 ms
+  blend either way). At the drawn scale the stride is shorter than the ground
+  covered, so the feet may slide.
+- **Arms on the controllers,** fitted to the player's reach from a person's
+  shoulders rather than the form's (the werebear's shoulders are 3.11 units
+  apart against the druid's 1.72; fitted to the T-pose span from those, its
+  arms were cut to half and a forward reach fell short). Forms may fit down
+  to 0.5 of their authored length, and beyond full reach a form's arm
+  lengthens (up to twice, as the shield arm does) so the paw stays on the
+  controller. Both paws are free hands: the grip curls the claws.
+- **Equipment is stats without a visual.** In form, aiming and holding treat
+  the player as unarmed: no bow draw, crossbow, javelin rod, staff or two-hand
+  grip, and no physical shield: the shield's block chance goes to the native
+  block roll. Physical block, parry, guard strain and chip damage don't apply
+  in form.
+- **Claw strikes.** Each paw is a physical claw: a capsule from the palm's
+  middle to past the middle finger's last joint, half the knuckle span thick,
+  measured on the paw's rest shape hung on the drawn wrist (a grip curls the
+  drawn fingers into a fist; the claw keeps its reach and its forward
+  direction). Both paws strike, with the existing swing and
+  thrust thresholds (release both triggers), the left claw too though a druid
+  never dual-wields; each claw has its own strokes,
+  hit list and cleave, and both share **one recovery** in Unleashed (and one
+  attack cycle in Classic). A claw hit is the native basic attack with the
+  druid's one weapon, so the form's damage, criticals, procs and leech stay
+  native; a weapon contact taps the paw's own controller. Both paws can break
+  barrels and crates. Contacts one batch applies out of time order never run
+  the recovery clock back: a claw timed before the latest landed hit is not
+  recovered. Skills (Fury, Maul,
+  Feral Rage, Rabies, Hunger...) stay trigger/button casts.
+- **The form's attack cycle** (recovery in Unleashed, pacing in Classic) is the
+  D2R 2.4 wereform normal attack (`attack_speed.h` `WereformFrames`): the
+  druid's A1 animation speed and start frame for the weapon class, the
+  increment slowed by the form's A1 length over the human's, the form's own
+  length (Werewolf 13, Werebear 12), and EIAS from item IAS plus the unit's
+  attackrate (ItemStatCost 68: Werewolf and Maul skill speed, auras, less WSM
+  and slows), capped at −85…150. It matches ChthonVII's 2.4 wereform
+  calculator for every weapon class and EIAS. `Frame melee attack speed:`
+  shows `attackrate=` and `form=`; `Frame claws:` counts landed hits per paw.
+
+F10's skeleton dump adds each bone's rest translation (`b x y z`). Each learned
+form rig logs one `Frame shapeshift body:` line (rest-pose head, lean, upright
+shoulders, rig eye, legs, fingers); `VR body pose:` adds `form`, `scale` and
+`legs_held`. Developer builds also log a form rig rejected for standing more
+than 2 units from the player, and, when they change (at most every 5 s), the
+form rig frames posed ahead of the state sample, left to the game (not
+standing, another rig taken) and grafted without the neck anchor.
+
 ## Head-relative sound
 
 Monsters, NPCs, objects and other positioned sounds now come from where they

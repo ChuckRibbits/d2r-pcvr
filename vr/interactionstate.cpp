@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <cstdio>
 #include "interactionstate.h"
+#include "skeletons.h"
 #include "logging.h"
 #include "native_ui.h"
 #include "native_belt.h"
@@ -15,6 +16,7 @@
 #include "companions.h"
 #include "companion_ai.h"
 #include "active_effects.h"
+#include "../steamvr/shapeshift_form.h"
 namespace gamestate {uint32_t WeaponSet();uint64_t LocalPlayer();bool MenuOpen();}
 namespace gamecmd {bool ExecuteUiCommand(uint32_t);}
 namespace framevr {bool VrGameplay(uint64_t now);}
@@ -264,6 +266,15 @@ framevr::interaction::Snapshot Read(){std::lock_guard lock(mutex);return snapsho
 int CurrentLevel(uint64_t session,uint64_t now) {
     std::lock_guard lock(mutex);
     return framevr::interaction::Fresh(snapshot,session,now)?snapshot.location.level:0;
+}
+int ShapeForm(uint64_t session,uint64_t now) {
+    // The rig the game draws as the hero, while one is drawn: the state sample trails the swap
+    // and goes stale after a load (a shield druid lost every block in that window - the guard
+    // was armed for a shield the form doesn't draw).
+    if(const int posed=skel::PosedForm();posed>=0)return posed;
+    std::lock_guard lock(mutex);
+    if(!session||mercSession!=session||now<mercAt||now-mercAt>MercMaxAge)return 0;
+    return framevr::shapeshift::FromStates(effects);
 }
 framevr::interaction::Reply Status(){const auto dev=devscenarios::Status();if(dev.sequence)return dev;std::lock_guard lock(mutex);return reply;}
 void Request(const framevr::interaction::Request& r) {

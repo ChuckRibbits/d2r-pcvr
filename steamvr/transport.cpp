@@ -1479,7 +1479,11 @@ void MotionFeedback(const gameplay::Output& out) {
     }
     if(!out.bowDrawing)previousDraw=0;
 }
+// A druid's shapeshift form draws only claws: its weapon and shield are stats
+// without a visual (1 Werewolf, 2 Werebear; vr/interactionstate.cpp).
+bool InShapeForm() {return interactionstate::ShapeForm(gamestate::LocalPlayer(),GetTickCount64())!=0;}
 gameplay::Weapon MotionWeapon() {
+    if(InShapeForm())return gameplay::Weapon::Melee;   // no bow draw, crossbow or javelin in form
     switch(gamestate::WeaponType()) {
         case D2RVR_TYPE_BOW:return gameplay::Weapon::Bow;
         case D2RVR_TYPE_CROSSBOW:return gameplay::Weapon::Crossbow;
@@ -1493,6 +1497,7 @@ gameplay::Weapon MotionWeapon() {
     }
 }
 gameplay::MeleeStyle MotionMeleeStyle() {
+    if(InShapeForm())return gameplay::MeleeStyle::Short;   // claws
     switch(gamestate::WeaponType()) {
         case D2RVR_TYPE_UNARMED:return gameplay::MeleeStyle::Unarmed;
         case D2RVR_TYPE_DAGGER:case D2RVR_TYPE_CLAW:case D2RVR_TYPE_ORB:return gameplay::MeleeStyle::Short;
@@ -2298,10 +2303,12 @@ void Input() {
     if(quick||handOutput.interact){motionInput.aim=handAim[handOutput.hand];motionInput.aimTracked=handAimTracked[handOutput.hand];}
     castHand=quick||handOutput.interact?handOutput.hand:0;
     motionInput.skillContext=bindingContext^bindingLayout;
-    motionInput.shieldEquipped=gamestate::LeftShield()&&::melee::ShieldReady();
-    motionInput.leftThrow=leftThrowArmed;motionInput.leftTrigger=controls.lt/255.f;
+    // In form the claws are the only hands: no shield, hand throw or trap toss.
+    const bool shapeForm=InShapeForm();
+    motionInput.shieldEquipped=gamestate::LeftShield()&&::melee::ShieldReady()&&!shapeForm;
+    motionInput.leftThrow=leftThrowArmed&&!shapeForm;motionInput.leftTrigger=controls.lt/255.f;
     motionInput.throwLift=gestureSettings[settings::ThrowLift];
-    motionInput.toss=gestureSettings[settings::SkillGestures]>.5f&&quickFresh&&rightSkill.known&&rightSkill.available&&toss::Skill(rightSkill.id);
+    motionInput.toss=!shapeForm&&gestureSettings[settings::SkillGestures]>.5f&&quickFresh&&rightSkill.known&&rightSkill.available&&toss::Skill(rightSkill.id);
     motionOutput=motion.Step(motionInput);motionAt=GetTickCount64();
     if(motionOutput.tossHeld)tossLanding={};   // a new trap in hand: nothing placed yet
     const auto& tossStage=interactionInput.stage;
@@ -2523,13 +2530,16 @@ void Input() {
         sample.minThrustSpeed=gestureSettings[settings::MeleeThrustSpeed];
         sample.minShieldBashSpeed=gestureSettings[settings::ShieldBashSpeed];
         const auto weapons=gamestate::MeleeEquipment();
-        const bool dual=dualwield::Eligible(skel::HeroClass(),weapons);
+        // A shapeshift form strikes with both claws; its weapon is a stat without a visual.
+        const bool claws=InShapeForm();
+        const bool dual=!claws&&dualwield::Eligible(skel::HeroClass(),weapons);
         if(dual)sample.weapons=weapons;
+        sample.claws=claws;
         meleePoses.Push(s.sampleStamp,sample);
         sample.hand=motionInput.hand[1];sample.handIndex=1;
-        sample.active=sample.active&&dual&&controls.lt<51&&controls.rt<51;
+        sample.active=sample.active&&(dual||claws)&&controls.lt<51&&controls.rt<51;
         offhandPoses.Push(s.sampleStamp,sample);
-        sample.weapons={};
+        sample.weapons={};sample.claws=false;
         sample.hand=motionInput.hand[1];sample.shield=true;sample.active=motionInput.active&&motionOutput.shieldContact;
         sample.skillSlot=shieldSlot;sample.skillOwner=shieldSkill.owner;sample.skillContext=motionInput.skillContext;
         shieldPoses.Push(s.sampleStamp,sample);
@@ -4014,7 +4024,8 @@ bool MeleeSample(uint32_t poseStamp,melee::Sample& sample,int hand) {
     std::lock_guard lock(mutex);
     if(!motionControls.load()||!motionInput.active||!motionOutput.meleeContact||GetTickCount64()-motionAt>100)return false;
     if(hand<0||hand>1||!(hand?offhandPoses:meleePoses).Find(poseStamp,Milliseconds()/1000.,sample))return false;
-    if(hand==1&&!dualwield::Eligible(skel::HeroClass(),gamestate::MeleeEquipment()))return false;
+    // the off hand strikes with a second weapon - or, in a druid's form, with the left claw
+    if(hand==1&&!sample.claws&&!dualwield::Eligible(skel::HeroClass(),gamestate::MeleeEquipment()))return false;
     return sample.epoch==meleeEpoch&&sample.equipment==motionInput.equipment;
 }
 bool ShieldSample(uint32_t poseStamp,melee::Sample& sample) {
@@ -4204,10 +4215,10 @@ bool BowPreviewPose(bowflight::Shot& pose,bool& visible) {
     if(!bowflight::Allowed(bowPreviewPose,gate,GetTickCount64()))return false;
     pose=bowPreviewPose;visible=bowPreviewVisible;return true;
 }
-bool View(float out[16],const float hero[3],float eyeHeight,float userEyeHeight,float bodyHeading,float recenterYaw,int eye,float mapNorth) {
+bool View(float out[16],const float hero[3],float eyeHeight,float userEyeHeight,float bodyHeading,float recenterYaw,int eye,float mapNorth,float scaleHeight) {
     std::lock_guard lock(mutex);if(!Active())return false;
     if(std::fabs(recenterYaw-lastRecenter)>.001f){origin=V(head.position);lastRecenter=recenterYaw;}
-    const float upm=eyeHeight/std::max(userEyeHeight,.5f);
+    const float upm=(scaleHeight>0?scaleHeight:eyeHeight)/std::max(userEyeHeight,.5f);
     const auto base=math::Yaw(bodyHeading-recenterYaw);
     if(eye<0)compassFrame=wristHeading.Update(gamestate::LocalPlayer(),motionHeadTracked,
         Q(head.orientation),bodyHeading-recenterYaw,mapNorth);

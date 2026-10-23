@@ -61,7 +61,7 @@ thread_local Contact contact;
 std::atomic<unsigned> samples{0},contacts{0},accepted{0},rejected{0},noServer{0},intersections{0},stale{0},walls{0};
 std::atomic<unsigned> applied{0},recovered{0},playerMissing{0},positionMismatch{0},nearby{0},bodyMissing{0};
 std::atomic<unsigned> shieldSweeps{0},shieldRequests{0},shieldAccepted{0},shieldRejected{0};
-std::atomic<unsigned> dualLanded[2]{},dualRefused{0};
+std::atomic<unsigned> dualLanded[2]{},dualRefused{0},clawLanded[2]{};
 // Attack speed: settings/cycle cross threads; the cadence and the strokes that
 // already landed live on the game thread (Apply) only.
 std::atomic<bool> attackSpeed{false},trace{false},attackRating{true};
@@ -227,7 +227,7 @@ bool Allowed(const Request& r) {
     int why=-1;
     if(!now.active||r.session!=inputSession||r.session!=gamestate::LocalPlayer())why=StaleInactive;
     else if(r.sample.epoch!=now.epoch)why=StaleEpoch;
-    else if(r.sample.equipment!=now.equipment||r.sample.minWeaponSpeed!=now.minWeaponSpeed||r.sample.minShieldBashSpeed!=now.minShieldBashSpeed||r.sample.weapons.id[0]!=now.weapons.id[0]||r.sample.weapons.id[1]!=now.weapons.id[1])why=StaleEquipment;
+    else if(r.sample.equipment!=now.equipment||r.sample.claws!=now.claws||r.sample.minWeaponSpeed!=now.minWeaponSpeed||r.sample.minShieldBashSpeed!=now.minShieldBashSpeed||r.sample.weapons.id[0]!=now.weapons.id[0]||r.sample.weapons.id[1]!=now.weapons.id[1])why=StaleEquipment;
     else if(r.sample.skillSlot!=now.skillSlot||r.sample.skillOwner!=now.skillOwner||r.sample.skillContext!=now.skillContext)why=StaleSkill;
     else if(age>150)why=StaleAge;
     else if(gamestate::MenuOpen())why=StaleMenu;
@@ -414,11 +414,16 @@ void __cdecl Apply(const D2RL::PluginContext*,void* token) noexcept {
                         const int hand=r.sample.handIndex;
                         auto& state=hands[hand];
                         auto& hits=state.hits;auto& landed=state.landed;
-                        auto& recoveryClock=attackSpeed.load()?cadence:state.recovery;
-                        const bool dual=r.sample.weapons.id[0]&&r.sample.weapons.id[1];
+                        // A shapeshift form's two claws: each its own strokes, hits and cleave, one
+                        // shared recovery (Cal, 2026-10-21) and the native form attack with the
+                        // druid's one weapon (no weapon selection); the cycle is the form's.
+                        const bool claws=r.sample.claws;
+                        auto& recoveryState=claws?hands[0].recovery:state.recovery;
+                        auto& recoveryClock=attackSpeed.load()?cadence:recoveryState;
+                        const bool dual=!claws&&r.sample.weapons.id[0]&&r.sample.weapons.id[1];
                         const uintptr_t weapon=dual?meleeweapon::Select(player,hand,r.sample.weapons):0;
                         const int speedHand=dual?r.sample.weapons.BodyHand(hand):0;
-                        if((dual&&(!weapon||speedHand<0))||(hand==1&&!dual)){++dualRefused;continue;}
+                        if((dual&&(!weapon||speedHand<0))||(hand==1&&!dual&&!claws)){++dualRefused;continue;}
                         uint32_t selectedId=0;
                         if(dual&&(!Read(weapon+8,selectedId)||selectedId!=r.sample.weapons.displayed[hand])){++dualRefused;continue;}
                         Feel(r,header[2]);
@@ -430,10 +435,10 @@ void __cdecl Apply(const D2RL::PluginContext*,void* token) noexcept {
                         uint32_t cycle=0;
                         if(attackSpeed.load()) {
                             if(landed.Contains(r.session,r.sweep.stroke,0)){
-                                ++extraTargets;TraceRefusal(1,r,header[2]);if(dual)continue;break;
+                                ++extraTargets;TraceRefusal(1,r,header[2]);if(dual||claws)continue;break;
                             }
                             if(!cadence.Ready(r.session,r.at)){
-                                ++tooSoon;TraceRefusal(0,r,header[2]);if(dual)continue;break;
+                                ++tooSoon;TraceRefusal(0,r,header[2]);if(dual||claws)continue;break;
                             }
                             cycle=cycleSession.load()==r.session?(speedHand?offCycleMs.load():cycleMs.load()):0;
                         }
@@ -489,12 +494,13 @@ void __cdecl Apply(const D2RL::PluginContext*,void* token) noexcept {
                         combat::NativeRolls(rolls);
                         if(contact.accepted)++accepted;else if(contact.resolved)++missed;else ++rejected;
                         if(dual&&contact.accepted)++dualLanded[hand];
+                        if(claws&&contact.accepted)++clawLanded[hand];
                         if(contact.resolved&&attackSpeed.load()){cadence.Landed(r.session,r.at,cycle);landed.Insert(r.session,r.sweep.stroke,0);}
-                        if(contact.resolved&&strokeStart){state.recovery.Landed(r.session,r.at,cycle);state.strokeSession=r.session;state.strokeId=r.sweep.stroke;state.strokeRecovery=recovery;}
+                        if(contact.resolved&&strokeStart){recoveryState.Landed(r.session,r.at,cycle);state.strokeSession=r.session;state.strokeId=r.sweep.stroke;state.strokeRecovery=recovery;}
                         if(contact.resolved&&cleaveTracked)++state.cleaveLanded;
                         TraceHit(r,header[2],contact.accepted?"LANDED":contact.resolved?"MISSED (roll)":"native rejected",since,cycle,effects);
                         contact=saved;
-                        if(!dual)break; // Both blades may strike this creature in the same batch.
+                        if(!dual&&!claws)break; // Both blades (or claws) may strike this creature in the same batch.
                     }
                 }
             }
@@ -939,6 +945,10 @@ void Report() {
     breakables::Report();
     wallcells::Report();
     propscan::Report();
+    if(const auto right=clawLanded[0].exchange(0),left=clawLanded[1].exchange(0);right||left) {
+        char line[160];snprintf(line,sizeof line,"Frame claws: right landed=%u left landed=%u (one shared recovery, cycle %u ms)",right,left,cycleMs.load());
+        framevr::logging::Write(line);
+    }
     const auto right=dualLanded[0].exchange(0),left=dualLanded[1].exchange(0),invalid=dualRefused.exchange(0);
     if(right||left||invalid) {
         char line[180];snprintf(line,sizeof line,"Frame dual wield: right landed=%u left landed=%u stale/unavailable weapon=%u",right,left,invalid);
