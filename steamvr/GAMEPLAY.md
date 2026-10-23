@@ -175,9 +175,11 @@ not generate melee velocity. The layout currently assumes a right-handed player.
 | Nock bow | Bow equipped: bring right hand to string and hold right trigger; no left grip required |
 | Draw and shoot | Pull string hand back at least 12 cm (28 cm total separation), then release trigger |
 | Throw a javelin, throwing knife or axe | Any javelin, throwing knife or throwing axe equipped in WEAPON mode, right trigger bound to Attack, Throw or nothing: hold right trigger, make a deliberate throwing motion, release to throw along the hand's motion. The game's own Throw fires the weapon's own missile and consumes its quantity; a knife flies point first, an axe tumbles end over end. With a javelin, Poison Javelin, Lightning Bolt, Plague Javelin or Lightning Fury on the right trigger (or loaded from a face button, like the bow quiver) rides the throw: the skill's own mana, damage and effects. A Barbarian with a throwing weapon in each hand and Double Throw on the right trigger (or loaded) throws with both hands: the left trigger throws the left weapon, and each throw is one native Double Throw of that hand's weapon. Trigger-free jabs and swings stay available |
+| Throw a trap or bomb | An Assassin's Fire Blast, Shock Web, Blade Sentinel, sentry or wake on the right trigger: press it and the game's own bomb or trap model appears in the hand; throw and let go, and the native cast lands where the arc meets the floor, within the skill's reach (the throw picks the spot only). A quick press casts where you point; held still for a moment, the native cast holds and repeats as before. Weapon skill gestures Off keeps the trigger native |
 | Cancel active grab/draw | Right B; release inputs before starting again |
 | Physical belt potion | Reach to an original 3D bottle on the front belt and hold **Right Grip** to grab; left-hand grip also works |
 | Drink | Keep grip held, bring the bottle's opening to your mouth and tip nearly horizontal for 0.25 seconds; release to return an unused potion |
+| Drop the empty bottle | Open your hand after drinking: the bottle falls, bounces and rolls on the floor (visual only); hit it with your weapon or shield to knock it away |
 | Heal the mercenary | Toss a held Health, Rejuvenation, Antidote or Thawing bottle (release mid-swing, at least 1.4 m/s) so it lands within 1.5 m of your mercenary's feet. It shatters on landing; a miss leaves the potion on the belt |
 | Quick potion | Left Y → **EQUIPMENT / BELT** → trigger a potion wedge; grip on a potion wedge instead grabs it into the right hand |
 | Swap weapon sets | Reach the swap hand over either shoulder and press its grip; right hand by default, selectable in VR settings. Hip anchors are removed |
@@ -574,6 +576,47 @@ the merc through the native set-overlay call. Slow releases still return the
 bottle; mana and stamina potions are never thrown. The log records each
 landing's hireling class and distance (`Frame potion toss:`).
 
+**Emptied bottles.** Letting go of a bottle you have drunk from no longer makes
+it vanish: it leaves the hand with the hand's speed and turn and falls into the
+world. It bounces and rolls on the floor under the player and stops at the
+game's walls and closed doors near it, as a [Box3D](https://github.com/erincatto/box3d)
+rigid body (a cylinder the model's height and width). Up to six lie in the
+world; each goes after 20 seconds, or once you are 12 m away. This is purely
+visual. Nothing is sent to the game, and an emptied bottle has no item behind
+it. The floor is the one under you when you let go, flat like the floor
+thrown potions land on, so stairs and slopes are not followed. Walls are the
+game's wall cells (the same missile-barrier test as physical arrows), sampled
+on the game thread around the bottle every half second and standing 6 m high.
+Like the belt, the bottles draw over the scene with their own depth, so
+monsters and walls do not hide them. Swords, other melee weapons, fists and
+the shield knock them about: while physical melee is active, the same posed
+capsule it tests creatures with moves through the physics world, pushing the
+bottles it meets, and a hit gives that hand a light tick (the melee haptic
+strength applies). Slow pushes roll a bottle; a hard swing sends it flying.
+The shield uses a thinner capsule than its creature test. A warp or recentre
+moves a weapon without sweeping it through bottles. `[interactions]
+bottle_physics=0` restores the old vanishing bottle. The log notes each release (`Frame dropped bottles:`)
+and wall sampling every ten seconds while bottles are in the world.
+
+**Knockable props.** The level's own small props within 3 m (cups, plates,
+bowls, vases, jugs, bottles, books, skulls, baskets, pails, stools, chairs,
+barrels, sacks and about 80 more kinds) join the same physics world. Each stays
+where the game placed it until a weapon, fist or shield passes within a
+centimetre of it (a hand with no weapon, including the off hand, pushes as a
+fist), or a dropped bottle or another prop reaches it. It then falls, bounces
+and rolls, and freezes again where it rests. The game draws its own model
+there, with its shadow, until the area loads again. The installer catalogues
+these props from your game files (`d2r_vr_props`), and the plugin matches each
+one by its level-preset id and position, so nothing else is ever moved. Tables
+and shelves are their bounding boxes: a prop pushed off a shelf's back falls
+through the cabinet. Inside a room or building (a mantle or ledge that is part
+of it), the surface ends 3 cm past the row of props on it. A prop on another
+prop (a cup on a plate) falls when that one is knocked away. At most 12 move at
+once; a new weapon hit then freezes the one moving longest. This is purely
+visual. `[interactions] prop_physics=0` turns it off; see [knockable
+props](../docs/KNOCKABLE_PROPS.md). The log notes each weapon knock (`Frame
+props: knocked a cup ...`) and a summary every ten seconds.
+
 **Hurt merc.** During VR gameplay the local hireling's life is sampled on the
 game thread every 200 ms with the same native stat call as the wrist vitals.
 Below 50% life it is tinted with the game's own `red` state (states.txt row 91,
@@ -614,6 +657,8 @@ waist_below_eyes=0.65
 belt_forward=0.26
 hip_width=0.28
 holsters=1
+bottle_physics=1
+prop_physics=1
 ```
 
 `vitals_location` and `navigation_location`: `0` Wrist, `1` Palm, `2` Either,
@@ -1126,9 +1171,10 @@ scene and does not stop at walls or monsters, which only the flight tests.
 **Throw lift** (**VR Settings > Aim > Throw lift**, `[gameplay] throw_lift_deg`,
 10° by default): a thrown javelin, knife or axe leaves along the throwing
 hand's recent motion, which dips as the hand follows through. Every throw,
-from either hand and with any javelin skill or Double Throw, leaves this many
-degrees above that path, keeping its heading; -10° to 30° in 5° steps, Off at
-0°. Shown for the Amazon and Barbarian, or any class holding a thrown weapon.
+from either hand and with any javelin skill or Double Throw, and every tossed
+trap, leaves this many degrees above that path, keeping its heading; -10° to
+30° in 5° steps, Off at 0°. Shown for the Amazon, Barbarian and Assassin, or
+any class holding a thrown weapon.
 Multiple Shot, Guided Arrow, Strafe and crossbows show no line. The first line of each draw logs
 `Frame bow laser: shown (length N m)` (`, floor` added when it ends on the
 floor), at most every 2 seconds.

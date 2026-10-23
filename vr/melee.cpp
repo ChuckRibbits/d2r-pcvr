@@ -15,6 +15,8 @@
 #include "melee.h"
 #include "melee_weapon.h"
 #include "breakables.h"
+#include "wall_cells.h"
+#include "prop_scan.h"
 #include "../steamvr/melee_hand_state.h"
 #include "../steamvr/target_cone.h"
 #include "bow.h"
@@ -847,6 +849,8 @@ void Submit(const Sample& sample) {
 }
 void Report() {
     breakables::Report();
+    wallcells::Report();
+    propscan::Report();
     const auto right=dualLanded[0].exchange(0),left=dualLanded[1].exchange(0),invalid=dualRefused.exchange(0);
     if(right||left||invalid) {
         char line[180];snprintf(line,sizeof line,"Frame dual wield: right landed=%u left landed=%u stale/unavailable weapon=%u",right,left,invalid);

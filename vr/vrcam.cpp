@@ -123,6 +123,8 @@ namespace gamestate {bool OpaqueMenuOpen();}
 #include "melee.h"
 #include "target_lock.h"
 #include "bow.h"
+#include "wall_cells.h"
+#include "prop_scan.h"
 #include "crossbow.h"
 #include "memory.h"
 #include "environment_cutaway.h"
@@ -844,6 +846,8 @@ void LoadSettings() {
     framevr::ConfigureQuiver(IniB(L"bow",L"quiver",true),IniB(L"bow",L"quiver_preview",true));
     framevr::ConfigureInteractions(IniB(L"interactions",L"seated",false),IniF(L"interactions",L"waist_below_eyes",.65f),
         IniF(L"interactions",L"belt_forward",.26f),IniF(L"interactions",L"dominant_hand",0)==1?1:0);
+    framevr::ConfigureBottlePhysics(IniB(L"interactions",L"bottle_physics",true));
+    framevr::ConfigurePropPhysics(IniB(L"interactions",L"prop_physics",true));
     projectiles::Configure(IniB(L"gameplay",L"motion_controls",false),IniF(L"gameplay",L"arrow_speed",2.f),IniB(L"gameplay",L"arrow_direct_release",true));
     bowvr::Configure(IniB(L"gameplay",L"motion_controls",false));
     combat::Configure(IniB(L"gameplay",L"motion_controls",false)&&IniB(L"gameplay",L"contact_hits",true));
@@ -3761,6 +3765,25 @@ uintptr_t RulesUnit(int skill) {
     return unit;
 }
 bool NativeSpellAimDecide(float playerX,float playerY,framevr::spellaim::Cast& cast);
+// A trap or bomb thrown to place (#224): where its arc landed, whatever the Aim
+// options, never past the game's reach. A quick press or a still hold has no
+// landing and casts as before.
+bool TossAim(int skill,float playerX,float playerY,framevr::spellaim::Cast& cast) {
+    float x=0,y=0;
+    if(!g_spellAimReady.load()||!g_enabled.load()||gamestate::MenuOpen()||!framevr::TossTarget(skill,x,y))return false;
+    float dx=x-playerX,dy=y-playerY;
+    const float wanted=std::hypot(dx,dy);
+    if(wanted<framevr::spellaim::GroundMinDistance&&wanted>.001f){dx*=framevr::spellaim::GroundMinDistance/wanted;dy*=framevr::spellaim::GroundMinDistance/wanted;}
+    if(!framevr::aimreach::Clamp(dx,dy))return false;
+    cast.x=playerX+dx;cast.y=playerY+dy;cast.directed=cast.contactPoint=true;
+    g_note.by="toss";g_note.distance=std::hypot(dx,dy);
+    static ULONGLONG lastLog=0;
+    if(GetTickCount64()-lastLog>250) {
+        lastLog=GetTickCount64();
+        LogF("Frame toss aim: skill %d where its arc landed, %.1f cells (thrown %.1f; game reach %.0f)",skill,g_note.distance,wanted,framevr::aimreach::Along(dx,dy));
+    }
+    return true;
+}
 // Telemetry: "Frame aim cast:" - every cast the aim rules see, at most one line
 // per skill per 250 ms: the rule, the button, the target and where it came
 // from, a unit hand-off, and the point or heading sent to the game.
@@ -3768,8 +3791,10 @@ bool UpstreamSpellAim(float playerX,float playerY,framevr::spellaim::Cast& cast)
 bool NativeSpellAim(float playerX,float playerY,framevr::spellaim::Cast& cast) {
     g_note={};
     const auto c=aimtargets::Now();
-    // The aim rules only with this kind of cast's Aim option On; Off, as before them.
-    const bool directed=aimtargets::RulesOn(c)?NativeSpellAimDecide(playerX,playerY,cast):UpstreamSpellAim(playerX,playerY,cast);
+    // A thrown trap first; then the aim rules only with this kind of cast's Aim
+    // option On; Off, as before them.
+    const bool directed=TossAim(c.skill,playerX,playerY,cast)||
+        (aimtargets::RulesOn(c)?NativeSpellAimDecide(playerX,playerY,cast):UpstreamSpellAim(playerX,playerY,cast));
     static ULONGLONG told=0;static int toldSkill=-2;
     if(c.skill>=0&&(c.skill!=toldSkill||GetTickCount64()-told>250)) {
         told=GetTickCount64();toldSkill=c.skill;
@@ -7069,7 +7094,7 @@ void MeleeContactHand(int hand) {
     if(!g_enabled.load()||!g_inWorld.load()||ThirdPerson()||Overhead()||!g_eyeOk.load()||
        gamestate::MenuOpen()||!skel::MeleeWeapon(pose,hand)||!pose.weaponType||pose.worldEpoch!=g_meleeTurnEpoch.load()||
        !framevr::MeleeSample(pose.poseStamp,sample,hand)) {
-        melee::CancelWeapon(hand);return;
+        melee::CancelWeapon(hand);framevr::BottleWeapon(hand,nullptr);return;
     }
     const float upm=std::max(1.f,ViewHeight())/UserEyeHeightM();
     using framevr::math::Vec;
@@ -7088,20 +7113,20 @@ void MeleeContactHand(int hand) {
     // The checked UI-thread accessor refreshes the native local unit across
     // warps. Do not gate swings on aim-hook traffic or camera proximity.
     uintptr_t nativeHero=0;
-    if(!combat::LocalPlayerUnit(nativeHero)){melee::CancelWeapon(hand);return;}
+    if(!combat::LocalPlayerUnit(nativeHero)){melee::CancelWeapon(hand);framevr::BottleWeapon(hand,nullptr);return;}
     combat::ObserveLocalPlayer(nativeHero);
     sample.epoch=(sample.epoch<<32)|pose.worldEpoch;
     sample.unitsPerMetre=upm;sample.player={pose.player[0]/upm,pose.player[1]/upm,pose.player[2]/upm};
     sample.blade.base={pose.origin[0]/upm,pose.origin[1]/upm,pose.origin[2]/upm};
     sample.blade.tip=sample.blade.base+Vec{pose.axis[0],pose.axis[1],pose.axis[2]}*length;
     sample.thrustAxis=framevr::melee::TrackingThrustAxis({pose.gripAxis[0],pose.gripAxis[1],pose.gripAxis[2]},sample.hand.q);
-    sample.blade.radius=radius;melee::Submit(sample);
+    sample.blade.radius=radius;framevr::BottleWeapon(hand,&sample.blade);melee::Submit(sample);
 }
 void MeleeContactTick(){MeleeContactHand(0);MeleeContactHand(1);}
 void ShieldContactTick() {
     framevr::melee::Sample sample;skel::MeleeWeaponPose pose;
     if(!g_enabled.load()||!g_inWorld.load()||ThirdPerson()||Overhead()||!g_eyeOk.load()||gamestate::MenuOpen()||!gamestate::LeftShield()) {
-        melee::CancelShield();return;
+        melee::CancelShield();framevr::BottleWeapon(2,nullptr);return;
     }
     const bool hook=melee::ShieldReady(),posed=skel::ShieldWeapon(pose);
     const bool epoch=posed&&pose.worldEpoch==g_meleeTurnEpoch.load();
@@ -7111,7 +7136,7 @@ void ShieldContactTick() {
         char line[180];snprintf(line,sizeof line,"Frame shield ready: hook=%d posed=%d epoch=%d input=%d contact=%d",hook,posed,epoch,input,input&&sample.active);
         framevr::logging::Write(line);reportAt=now+5000;
     }
-    if(!hook||!input){melee::CancelShield();return;}
+    if(!hook||!input){melee::CancelShield();framevr::BottleWeapon(2,nullptr);return;}
     const float upm=std::max(1.f,ViewHeight())/UserEyeHeightM();
     sample.epoch=(sample.epoch<<32)|pose.worldEpoch;sample.unitsPerMetre=upm;
     sample.player={pose.player[0]/upm,pose.player[1]/upm,pose.player[2]/upm};
@@ -7120,6 +7145,7 @@ void ShieldContactTick() {
     // Conservative shield-sized capsule around the visible attachment. Native
     // Smite still checks reach and walls; a resting shield cannot power a hit.
     sample.blade={center-axis*.20f,center+axis*.20f,.15f};
+    framevr::BottleWeapon(2,&sample.blade);
     melee::Submit(sample);
 }
 // Unleashed physical guard: independent of Smite. Not eligible (first person,
@@ -9864,6 +9890,8 @@ D2RL_PLUGIN_EXPORT bool D2RLoaderLoadPlugin(const PluginContext* ctx) noexcept {
     enemysight::Init(ctx);
     melee::Init(ctx);
     bowvr::Init(ctx);
+    wallcells::Init(ctx);
+    propscan::Init();
 #endif
     if (HANDLE h = CreateThread(nullptr, 0, UpdateThread, nullptr, 0, &g_updateThreadId)) CloseHandle(h);
     if (!ctx->RegisterConsoleCommand("vrcam", &CmdVrcam, "vrcam - the camera: off / first person / third person (F12)"))

@@ -139,7 +139,17 @@ inline const char* PotionName(Potion type) {
 // samples are capped at ThrowMaxSpeed, never discarded; only tracking jumps
 // above ThrowGlitchSpeed are ignored.
 constexpr float ThrowGravity=9.81f,ThrowMinSpeed=1.4f,ThrowMaxSpeed=20.f,ThrowGlitchSpeed=30.f,ThrowClearOfBelt=.15f;
+constexpr float ThrowMaxSpin=30.f; // rad/s; a wrist flick, not a tracking jump
 constexpr double ThrowWindow=.12,ThrowMaxFlight=3.;
+// Hand turn between two poses as an angular velocity (rad/s, the poses' frame).
+inline Vec Spin(Quat from,Quat to,float dt) {
+    Quat d=math::Multiply(to,math::Conjugate(from));
+    if(d.w<0)d={-d.x,-d.y,-d.z,-d.w};
+    const float s=std::sqrt(d.x*d.x+d.y*d.y+d.z*d.z);
+    if(!(dt>0)||!std::isfinite(s)||s<1e-7f)return {};
+    const float rate=2*std::atan2(s,d.w)/dt;
+    return Vec{d.x,d.y,d.z}*(rate/s);
+}
 // Potions the game itself lets a mercenary take from the belt with Shift.
 inline bool Throwable(Potion type) {
     return type==Potion::Health||type==Potion::Rejuvenation||type==Potion::Antidote||type==Potion::Thawing;
@@ -401,6 +411,10 @@ struct Output {
     Item bottleItem{};
     bool bottleEmpty=false,beltReady=false;
     bool flying=false; Pose flight{}; Item flightItem{}; int flightColumn=-1; // thrown bottle, model pose
+    // An emptied bottle let go of, this step only: its model pose and the
+    // hand's motion in world metres (Stage::World), and the floor under the
+    // player. It falls into the world as a physics body, drawn only.
+    struct Discard {bool active=false;Vec p{},v{},w{};Quat q{0,0,0,1};float floor=0;uint32_t code=0;} discard{};
     Pose body{},belt[4]{},holster[2]{};
     Request request{};
     int editor=0,editSlot=-1,editPage=0,editPages=1,editCount=0,editCategory=0,editClass=-1;
@@ -470,22 +484,41 @@ class Engine {
     // p, v and q are in WORLD metres/orientation; stage is the latest frame
     // used to draw it, kept through a brief loss of the view frame.
     struct Flight {bool active=false;double start=0,land=0;Vec p{},v{};Quat q{0,0,0,1};int column=-1,hand=-1;Item item{};uint32_t revision=0;Stage stage{};} flight;
-    struct Motion {double at=0;Vec v{};};
+    struct Motion {double at=0;Vec v{},w{};};
     std::array<Motion,32> motion{};unsigned motionNext=0;
-    Vec bottleWas{};bool bottleTracked=false;
+    Vec bottleWas{};Quat bottleTurnWas{0,0,0,1};bool bottleTracked=false;
     void Drop() {bottle=bottleHand=holster=holsterHand=-1;drinkStart=0;spent=consumed=false;held={};owner[0]=owner[1]=Owner::Combat;
         bottleTracked=false;motion={};motionNext=0;}
     // Fastest recent sample, capped in magnitude, keeping its direction.
-    bool PeakVelocity(double now,Vec& out) const {
+    bool PeakVelocity(double now,Vec& out,float minimum=ThrowMinSpeed) const {
         float best=0;
         for(const auto& m:motion) {
             if(!m.at||now-m.at>ThrowWindow||m.at>now)continue;
             const float s=std::sqrt(math::Dot(m.v,m.v));
             if(s>best){best=s;out=m.v;}
         }
-        if(best<ThrowMinSpeed)return false;
+        if(best<minimum)return false;
         if(best>ThrowMaxSpeed)out=out*(ThrowMaxSpeed/best);
         return true;
+    }
+    // Mean hand turn over the release window, capped.
+    Vec ReleaseSpin(double now) const {
+        Vec sum{};int n=0;
+        for(const auto& m:motion)if(m.at&&now-m.at<=ThrowWindow&&m.at<=now){sum=sum+m.w;++n;}
+        if(!n)return {};
+        sum=sum*(1.f/n);
+        const float s=std::sqrt(math::Dot(sum,sum));
+        return s>ThrowMaxSpin?sum*(ThrowMaxSpin/s):sum;
+    }
+    // Let go of an emptied bottle: it leaves the hand into the world with the
+    // hand's motion, slow or fast. Nothing native follows; it is drawn only.
+    void Discard(const Input& in,Output& out) const {
+        if(!consumed||!in.floorKnown||!in.stage.known)return;
+        const auto& hand=in.hand[bottleHand];const auto& stage=in.stage;
+        Vec v{};PeakVelocity(in.time,v,0);
+        out.discard={true,stage.World(potions::Center(hand.p,hand.q)),math::Rotate(stage.base,v),
+            math::Rotate(stage.base,ReleaseSpin(in.time)),math::Multiply(stage.base,potions::HeldRotation(hand.q)),
+            stage.anchor.y+(in.floor-stage.origin.y),held.item.code};
     }
     // Grip released with recent deliberate motion, away from the belt: launch.
     // A slow or still release keeps the original behaviour (back to the belt).
@@ -758,14 +791,15 @@ public:
             held.at=now;
             // Prefer the runtime's own controller velocity; fall back to the
             // pose difference when the runtime does not report one.
-            const Vec handNow=in.hand[bottleHand].p;
+            const Vec handNow=in.hand[bottleHand].p;const Quat turnNow=in.hand[bottleHand].q;
             if(in.velocityKnown[bottleHand]||bottleTracked) {
                 const Vec v=in.velocityKnown[bottleHand]?in.handVelocity[bottleHand]:(handNow-bottleWas)*(1/float(dt));
-                if(math::Dot(v,v)<=ThrowGlitchSpeed*ThrowGlitchSpeed){motion[motionNext]={in.time,v};motionNext=(motionNext+1)%motion.size();}
+                const Vec w=bottleTracked?Spin(bottleTurnWas,turnNow,float(dt)):Vec{};
+                if(math::Dot(v,v)<=ThrowGlitchSpeed*ThrowGlitchSpeed){motion[motionNext]={in.time,v,w};motionNext=(motionNext+1)%motion.size();}
             }
-            bottleWas=handNow;bottleTracked=true;
+            bottleWas=handNow;bottleTurnWas=turnNow;bottleTracked=true;
             if(!grips[bottleHand]&&Throw(in,fresh,out.belt[bottle].p)) {Drop();rearm=true;out.feedback=1;out.feedbackHand=flight.hand;}
-            else if(!grips[bottleHand]||(!spent&&(!fresh||!SameBelt(in.snapshot,held)))) {Drop();rearm=true;}
+            else if(!grips[bottleHand]||(!spent&&(!fresh||!SameBelt(in.snapshot,held)))) {if(!grips[bottleHand])Discard(in,out);Drop();rearm=true;}
             else {
                 out.bottle=bottle;out.bottleHand=bottleHand;out.bottleItem=held.item;out.bottleEmpty=consumed;owner[bottleHand]=Owner::Bottle;
                 if(!spent&&potions::AtMouth(in.hand[bottleHand].p,in.hand[bottleHand].q,in.head.p,in.head.q,drinkStart!=0)) {

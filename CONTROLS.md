@@ -93,6 +93,8 @@ Quest left X/Y correspond to Index left A/B; right A/B labels are the same.
 | Swap weapon sets I / II | Dominant grip over either shoulder; or wheel → EQUIPMENT |
 | Stow / draw weapons | Wheel → EQUIPMENT → Stow / Draw |
 | Grab / drink potion | Grip a belt bottle, bring its opening to the mouth and tip it; release to return unused |
+| Drop the empty bottle | Open your hand after drinking; it falls, bounces and rolls on the floor (visual only). Swing a weapon or shield into it to knock it away |
+| Knock over cups, plates, vases, stools | Swing a weapon, punch or block into the level's small props; they fall and roll where they land until the area reloads (visual only) |
 | Heal your mercenary | Toss a held Health, Rejuvenation, Antidote or Thawing bottle so it lands near its feet; a miss keeps the potion |
 | Quick potion | Wheel → EQUIPMENT → potion, using opposite laser + trigger |
 | Grab wheel potion | Wheel → EQUIPMENT → potion, using the pointing hand's grip |
@@ -358,6 +360,17 @@ native Double Throw of that hand's weapon, with its attack bonus, mana and
 quantity. The game's own Double Throw throws both weapons for one mana cost;
 here each hand's throw pays it. If the game refuses it, the hand throws its
 weapon as a basic throw.
+
+**Throwing traps and bombs.** With an Assassin's Fire Blast, Shock Web, Blade
+Sentinel, Charged Bolt, Lightning or Death Sentry, Wake of Fire or Wake of
+Inferno on the right trigger, press the trigger: the bomb or trap appears in
+your hand. Throw it and let go, and the game casts the skill where its arc
+lands, within the skill's own reach. A quick press still casts where you point
+(with **Ground skills** on Where you point; on Game, where the game aims), and
+holding the trigger still for a moment casts natively as before, repeating
+while held. Start the throw right after pressing; a slow reach casts nothing.
+The models are the game's own, cached from your installed game by the
+installer. **Weapon skill gestures** Off turns this off.
 
 Face-button skills never replace gesture skills. Ordinary melee swings remain
 basic attacks for skills without a supported physical adapter; assigning a
