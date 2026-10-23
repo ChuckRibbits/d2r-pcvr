@@ -34,6 +34,23 @@ inline float ArFactor(int chance,float floor) {
 // reduction, resistances and absorb, so the expected damage equals native
 // (chance x a landed hit) without the hit-or-miss variance. No floor.
 inline float DefenseFactor(int chance) {return ArFactor(chance,0);}
+// Unleashed would-have-hit gate (Cal, 2026-10-22): every forced contact lands and
+// its damage follows the Unleashed formula, but its other effects deliver natively:
+// only when the native roll would have hit. The forced hit check still advances the
+// attacker's real seed once (GetSeed); that advanced seed's low % 100 is the roll
+// the game itself would have compared (44BD6D..44BDC6: roll >= chance misses).
+inline int NativeHitRoll(Seed current) {return int(AdvanceSeed(current).low%100);}
+// An unknown roll or chance (-1) counts as a hit: native effects, as before the gate.
+inline bool WouldHit(int roll,int chance) {return roll<0||chance<0||roll<chance;}
+// Damage over time (poison, burn) never reaches the scaled life write, so it takes
+// the hit's factor itself. A positive rate never rounds away to nothing.
+inline int32_t ScaleDamageOverTime(int32_t rate,double factor) {
+    if(rate<=0||!(factor>=0)||factor==1)return rate;
+    const double v=double(rate)*(factor>8?8:factor)+.5;
+    if(v>=2147483647.)return 2147483647;
+    const int32_t scaled=int32_t(v);
+    return factor>0&&scaled<1?1:scaled;
+}
 // Unleashed swing damage: how recovered a stroke is - the time since the
 // previous landed stroke over the native attack cycle, raised to `curve`, at
 // most 1. curve 1 is damage-per-second neutral (twice the strokes at half the

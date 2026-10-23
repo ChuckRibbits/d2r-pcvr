@@ -57,6 +57,17 @@ bool RiposteDue(uint32_t monster);
 // prevent monster heal and defense lowered per hit. {} = none. Returns the previous scope.
 struct OnHitScope {uintptr_t attacker=0,target=0;};
 OnHitScope GateOnHit(OnHitScope scope);
+// Unleashed would-have-hit gate (combat_rules.h WouldHit): a forced contact - the
+// local player's physical swing, or a monster's hit on the local player - keeps its
+// Unleashed damage, but its other effects (procs, leech, chill/freeze/stun, thorns,
+// item wear...) only come when the native roll would have hit. Game thread: the
+// latest swing's verdict on this thread (1 would hit, 0 would miss, -1 unknown or
+// not gated, e.g. a riposte), for the melee trace.
+int LastSwingWouldHit();
+// Unleashed (default on there, applied live): the local player's arrows and throws
+// - forced hits under contact_hits - follow the contact rules: attack rating scales
+// their damage (with ar_damage) and the would-have-hit gate decides their effects.
+void ConfigureShotRules(bool unleashed);
 // A parry swing made during the monster's downstroke (opensAt, melee::ParryOpens)
 // resolves at once, before its hit frame. ParryArmed: an unspent recent swing (cheap gate,
 // thread-safe). Game thread: EarlyParry judges this attacking monster unit
