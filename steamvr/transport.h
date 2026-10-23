@@ -42,6 +42,8 @@ void ConfigureEyeTracking(bool enabled);
 void ConfigureGameplay(bool enabled);
 void ConfigureQuiver(bool enabled,bool preview); // [bow] quiver, quiver_preview
 void ConfigureInteractions(bool seated,float waistBelowEyes,float beltForward,int dominantHand);
+void ConfigureBottlePhysics(bool on); // [interactions] bottle_physics: emptied bottles fall into the world
+void ConfigurePropPhysics(bool on);   // [interactions] prop_physics: weapons knock the level's small props about
 void PublishSewerPrompt(const sewerprompt::Target&); // Values only; XR follows no game pointers.
 // Current motion-combat aim in the existing head-yaw-relative hand frame.
 bool SettingsOpen();
@@ -63,8 +65,14 @@ int CastButtonHand();        // the hand whose button holds a native cast now, -
 bool HandSpellHeld(int hand); // that hand's physical spell button is held
 int PointSpellSkill();       // the cast skill when the aim rules place it at a point, else -1
 int AimRulesSkill();         // the cast skill (any), -1 none; with its game "directed" flag
+// A trap or bomb thrown to place (#224): where its arc landed, in grid cells,
+// for that skill's cast (skill -1: any) just after the throw.
+bool TossTarget(int skill,float& x,float& y);
 bool AimRulesDirected();
 bool MeleeSample(uint32_t poseStamp,melee::Sample& sample,int hand=0);
+// The posed melee capsule (world metres) that also pushes dropped bottles:
+// slot 0 right hand, 1 left hand, 2 shield. Null clears it. Any thread.
+void BottleWeapon(int slot,const melee::Blade* blade);
 bool ShieldSample(uint32_t poseStamp,melee::Sample& sample);
 bool RequestShieldSkill(const melee::Sample& sample,uint32_t target,math::Vec gridTarget);
 int TakeShieldTarget(uint32_t& target); // 1 physical target, -1 cancelled cast, 0 native fallback

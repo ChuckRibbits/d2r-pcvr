@@ -70,9 +70,10 @@ inline const char* HelpText(int id) {
         case LandingCircles:return "Shows where a ground skill will hit once the game accepts the cast, in its element's color: fire orange, cold blue, lightning yellow. The circle fills from the centre outward until the skill lands: a Fire Blast bomb over its flight, Meteor over its fall, Blizzard while the ice falls. Fire Wall shows as a strip across your aim. Floor only, never monsters' legs or walls. Greyed out while Ground skills is Game.";
         case GroundAim:return "Where ground skills land: Fire Blast and traps, Blizzard, Meteor, Fire Wall, Hydra, Fissure, Volcano, Bone Wall and Bone Prison. Aimed at the horizon or above, as far as the game lets a skill be cast.";
         case BowLaser:return "At full draw a faint line runs from the arrow's tip along the path a release would fly, ending in a brighter dot at the floor or fading out after 15 m. It doesn't stop at walls or monsters. Shown for basic arrows and Magic, Fire, Cold, Ice, Exploding, Immolation and Freezing Arrow; not Multiple Shot, Guided Arrow, Strafe or crossbows. Off by default, else its color in 15-degree steps from red 0; past 345 comes Off, both ways.";
-        case ThrowLift:return "A thrown javelin, knife or axe leaves along your hand's motion, which tends to dip as you let go. This raises every throw above that path by the angle shown, 10 degrees by default, keeping its direction left or right. Minus values lower it; Off follows the hand exactly. Both hands, every throw and javelin skill.";
+        case ThrowLift:return "A thrown javelin, knife or axe leaves along your hand's motion, which tends to dip as you let go. This raises every throw above that path by the angle shown, 10 degrees by default, keeping its direction left or right. Minus values lower it; Off follows the hand exactly. Both hands, every throw and javelin skill, and the Assassin's thrown traps.";
         case HeartbeatStart:return "The life percentage where the low-life heartbeat begins. Below it the heartbeat steps up every 10% of life you lose, louder and faster, until it is at full strength below 10%. 60% is the default; Off silences it. Healing winds it back down beat by beat; wiping the visor clean fades it until the next hit. Works in Unleashed and Classic.";
         case EnemySight:return "Scales how far away hostile monsters notice and approach you in offline VR, from 100% (game default) up to 300% (three times as far). 100% keeps the game's original sight distance and restores the unmodified table values. Friendly NPCs, mercenaries and summons are unchanged.";
+        case CompanionAi:return "Enhanced VR Mercenary overhaul: dynamic detection range matching enemy sight, elastic 40 sub-tile combat leash, and an anti-stuck watchdog that safely relocates the ally to your rear flank if trapped. Legacy restores vanilla AI constants and behavior.";
         case MeleeHitSpeed:return "Minimum weapon movement speed for a swing to count as a strike. Lower it for easier swings; raise it to require faster movement. Default: 12 m/s. Both melee modes use this value. Shield bash has its own threshold.";
         case ShieldBashSpeed:return "Minimum tracked hand speed for a physical shield bash, including assigned Smite. Default: 2 m/s. Move the hand at least 12 cm in one deliberate stroke; wrist twisting alone does not attack. The speed must still be met at contact. Applies in both melee modes; blocking, parries and trigger attacks are unchanged.";
         case MeleeThrustSpeed:return "Minimum forward speed for a stab along your weapon's tip. Default: 2 m/s. Move forward at least 12 cm, then pull back before stabbing again. This is separate from swing speed and applies in both melee modes.";
@@ -88,6 +89,8 @@ inline const char* HelpText(int id) {
         case BloodVisor:return "Shows peripheral blood splatters as life falls below 60%, 40% and 20%. Healing back above each threshold fades that layer. Face wipe gesture lets you clear splatters by hand.";
         case BloodWipe:return "With blood on the visor, move either hand side to side in front of your face with that hand's trigger released. Successful wipes remove blood with vibration. This does not restore health.";
         case ElementalHands:return "A Sorceress's hands each show a small copy of their trigger skill's look, made from the spell's own effects in your game: flames, lightning flashes or ice, switching while you hold a spell shortcut. Supported hand spells flare it as they cast; the spells you cast are unchanged. Experimental: it is drawn over the picture, so it can show through your weapon or a wall. Other classes see nothing.";
+        case BottlePhysics:return "A bottle you have drunk from falls from your open hand, bounces and rolls, and weapons, fists and the shield knock it about. A potion thrown at your mercenary flies as a real bottle and breaks where it first hits; an Assassin's thrown trap or bomb lands where its arc first hits, stopping at walls and tables. Off: emptied bottles vanish and throws use a simple arc to the floor. Healing the mercenary works either way.";
+        case PropPhysics:return "The level's small things near you (cups, plates, vases, books, skulls, stools, barrels and more) stay put until a weapon, hand, shield or bottle reaches them. Then they fall and roll, and stay where they land until the area loads again. Purely visual. Shelves and tables are approximate: something pushed off a shelf's back can fall through it.";
         case ReShadeDepth:return "ReShade's built-in Generic Depth add-on looks at every draw call the game makes to find its depth. In VR the mod gives the fog and sky its own depth, so in the game world the add-on is not needed. Off saves its work on each draw; on the flat menu panel and outside VR the fog and sky then have no depth. ReShade reads this when it starts: changes apply after you restart the game.";
         case HelpPerformance:return "The last second of headset frames. Drawing: the game preparing one eye (By turns) or both; it grows with what is in view, draw distances and shadows, hardly with resolution. Game: its update between frames. VR: the mod's own work. Headset wait: the runtime holding the frame for the next refresh. Past the headset's frame (11.1 ms at 90 Hz), late frames wait a whole refresh: up to half the frame rate.";
         case HelpGameVideo:return "The game's own graphics options, as it saved them (Options > Video, then close the menu). Shadows, character detail and lights add drawing work for the CPU; ambient occlusion (AO), atmospherics and scale cost the graphics card. Change them in the game's Options > Video; the numbers are the game's own, 0 its lowest.";
@@ -114,7 +117,7 @@ inline int HelpChoices(int id) {
         case StereoRendering:return int(std::size(StereoRenderingNames));
         case RenderResolution:return int(std::size(resolution::Choices));
         case ControllerLabels:return int(controllers::Choice::Count);
-        case Dominant:case MeleeRules:case MapTopDown:case AimHighlights:return 2;
+        case Dominant:case MeleeRules:case MapTopDown:case AimHighlights:case CompanionAi:return 2;
         case GroundAim:return int(std::size(GroundAimNames));
         case SpellLock:return int(std::size(SpellLockNames));
         default:return 0;
@@ -213,6 +216,12 @@ inline ChoiceHelp HelpChoice(int id,float value) {
                 "One outline: the monster your dominant hand (VR > Dominant hand) points at, else the one you look at.",
                 "Each hand's monster has its own outline in its own color; with neither hand on one, the monster you look at."};
             return {HighlightsNames[c],text[c]};}
+        case CompanionAi:{
+            static constexpr const char* names[]={"Legacy","Enabled"};
+            static constexpr const char* text[]={
+                "Restores vanilla mercenary AI constants and original pathfinding behavior.",
+                "Enables dynamic combat detection range scaling, elastic combat tether (40 sub-tiles), and anti-stuck watchdog repositioning to your rear flank."};
+            return {names[c],text[c]};}
         case Dominant:{
             static constexpr const char* names[]={"Right","Left"};
             static constexpr const char* text[]={

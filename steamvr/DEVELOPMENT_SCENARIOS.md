@@ -81,7 +81,9 @@ Open either hand's wheel and choose **DEV**. Its tabs are grouped by purpose:
 - **Character:** level 10, 30, 60 and 90 presets; heal life/mana.
 - **Equipment:** starter primary/alternate gear, class unique primary/alternate
   gear, crossbow + bolts, bow + arrows, a small shield, **Render debug draws**,
-  **By turns own picture** and a **Throwing kit**.
+  **By turns own picture**, a **Throwing kit** and a **Potion kit** (four Super
+  Healing, two Full Rejuvenation, two Antidote and two Thawing potions, normal
+  items in the inventory: put them in the belt to toss at the mercenary).
 - **Act I - II:** towns, combat areas and inspection destinations.
 - **Act III:** Kurast regions, sewer entrances, jungle areas and bosses.
 - **Act IV - V:** later-act combat areas and filming locations.

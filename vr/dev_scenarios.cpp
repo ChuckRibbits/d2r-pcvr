@@ -110,6 +110,19 @@ void __cdecl Commands(const PluginContext*,void* token) noexcept {
         Finish(r,Result::Refused,claim);return;
     }
     bool accepted=true;
+    if(r.index==framevr::dev::UnlockQuestsChoice) {
+        const auto send=[&](const char* command) {
+            if(!Current(claim))return false;
+            if(r.session!=gamestate::LocalPlayer()||!execute(command)) {
+                char line[160];std::snprintf(line,sizeof line,"Frame development: quest unlock dispatch refused at %s",command);
+                framevr::logging::Write(line);return false;
+            }
+            return true;
+        };
+        accepted=send("cheat quests")&&send("cheat waypoints");
+        Finish(r,accepted?Result::Dispatched:Result::Refused,claim);
+        return;
+    }
     if(const int level=framevr::dev::LevelFor(r.index)) {
         const int cls=interactionstate::Read().devClass;
         if(!framevr::dev::ValidClass(cls)){Finish(r,Result::Refused,claim);return;}
