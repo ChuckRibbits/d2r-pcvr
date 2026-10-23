@@ -20,6 +20,18 @@ struct Sim {
     Output Step(int count=1){while(count--){in.time+=.02;in.at=1000000+uint64_t(in.time*1000);in.snapshot.at=in.at;out=e.Step(in);}return out;}
 };
 int main(){
+    // The player's own speed: steady running is measured, jumps and gaps reset it.
+    {
+        Carry c;double time=0;Vec at{100,2,50};
+        for(int i=0;i<20;++i){time+=.011;at=at+Vec{4*.011f,0,0};c.Update(time,at);}
+        Check(c.known&&distance(c.velocity,{4,0,0})<.05f,"a steady run is measured in world metres per second");
+        at=at+Vec{30,0,0};time+=.011;c.Update(time,at);
+        Check(!c.known&&distance(c.velocity,{})<1e-6f,"a waypoint or portal jump is not a run");
+        for(int i=0;i<3;++i){time+=.011;at=at+Vec{4*.011f,0,0};c.Update(time,at);}
+        Check(c.known,"running is measured again after the jump");
+        time+=.5;c.Update(time,at);Check(!c.known,"a gap in the frames resets it");
+        c.Update(time+.011,{std::numeric_limits<float>::quiet_NaN(),0,0});Check(!c.known&&!c.have,"a broken position resets it");
+    }
     // Integration: the quick-use inventory has no skill-category strip.
     for(int i=0;i<8;++i){
         const float x=.05f+(i%2)*.46f,y=.23f+(i/2)*.145f;
@@ -642,6 +654,8 @@ int main(){
         Sim still;drink(still);still.in.grip[0]=0;
         Check(still.Step().discard.active&&distance(still.out.discard.v,{})<.01f&&distance(still.out.discard.w,{})<.01f,
             "a still hand just lets it fall");
+        Sim run;drink(run);run.in.carry={0,0,-3};run.in.grip[0]=0;
+        Check(run.Step().discard.active&&distance(run.out.discard.v,{0,0,-3})<.01f,"let go of while running, it keeps the run's speed");
         Sim frameless;drink(frameless);frameless.in.stage.known=false;frameless.in.grip[0]=0;
         Check(!frameless.Step().discard.active,"no discard without the room-to-world frame");
         Sim full;full.in.floorKnown=true;full.in.hand[0].p=full.out.belt[0].p;full.Step();full.in.grip[0]=1;full.Step();
@@ -772,6 +786,57 @@ int main(){
             Sim s;toss(s,{0,1.f,-3.f});int requests=0;Request request;land(s,requests,request);
             s.in.reply={request.sequence,s.in.session,Result::Applied};
             Check(s.Step().feedback==2,"confirmed hireling feed is a success pulse");
+        }
+        {
+            // In the physics world: the release is handed over, the flight
+            // follows the body, and it lands where the body first touched.
+            Sim s;s.in.physicsThrows=true;const auto o=toss(s,{0,1.f,-3.f});
+            Check(o.toss.active&&o.toss.id&&o.toss.code==Code('h','p','1')&&o.flying&&o.flightId==o.toss.id&&o.request.action==Action::None,
+                "a physics throw hands the release to the world and flies it");
+            Check(distance(o.toss.v,{0,1.f,-3.f})<.05f&&std::fabs(o.toss.floor)<1e-4f,"with the hand's speed and the floor under the player");
+            Check(!s.Step().toss.active,"the release is handed over once");
+            const auto id=o.toss.id;
+            s.in.tossed={id,false,{.3f,1.1f,-2.5f},{0,0,0,1}};
+            Check(s.Step().flying&&distance(s.out.flight.p,{.3f,1.1f,-2.5f})<1e-4f&&s.out.request.action==Action::None,
+                "while the body flies the bottle is drawn there, and nothing is requested");
+            for(int i=0;i<100;++i)Check(s.Step().request.action==Action::None,"no landing while the body is still in the air, past the arc's own landing time");
+            s.in.tossed={id,true,{.5f,.8f,-3.1f},{0,0,0,1}};
+            const auto l=s.Step();
+            Check(l.request.action==Action::FeedMerc&&distance(l.request.world,{.5f,.8f,-3.1f})<1e-4f&&!l.flying,
+                "it lands where the body first touched something: one feed request there");
+            Check(s.Step().request.action==Action::None,"one request per throw");
+        }
+        {
+            // Thrown while running: the throw carries the player's own speed;
+            // whether it is a throw at all still depends on the hand.
+            Sim s;s.in.physicsThrows=true;s.in.carry={3,0,0};const auto o=toss(s,{0,1.f,-3.f});
+            Check(o.toss.active&&distance(o.toss.v,{3,1.f,-3.f})<.05f,"a throw while running carries the run");
+            Sim arc;arc.in.carry={0,0,-4};toss(arc,{0,1.f,-3.f});
+            const auto a=arc.out.flight.p;arc.Step();const auto b=arc.out.flight.p;
+            Check(std::fabs((b.z-a.z)/.02f-(-7.f))<.1f,"the arc carries it too");
+            Sim slow;slow.in.carry={0,0,-6};const auto r=toss(slow,{0,.2f,-.6f},20);
+            Check(!r.flying,"running alone never turns a slow release into a throw");
+        }
+        {
+            // The world never takes it: the arc, as without physics.
+            Sim s;s.in.physicsThrows=true;const auto o=toss(s,{0,1.f,-3.f});
+            Check(o.toss.active,"handed over");
+            int requests=0;Request request;land(s,requests,request);
+            Check(requests==1&&std::fabs(request.point.y)<1e-3f,"no body within the pickup time: it lands on the arc");
+        }
+        {
+            // A body that never touches anything lands where it is after the flight limit.
+            Sim s;s.in.physicsThrows=true;const auto o=toss(s,{0,1.f,-3.f});
+            s.in.tossed={o.toss.id,false,{1,2,-6},{0,0,0,1}};
+            int requests=0;Request request;
+            for(int i=0;i<200&&!requests;++i)if(s.Step().request.action==Action::FeedMerc){++requests;request=s.out.request;}
+            Check(requests==1&&distance(request.world,{1,2,-6})<1e-4f,"after the flight limit it lands where the body is");
+        }
+        {
+            // Another body's report never lands this one.
+            Sim s;s.in.physicsThrows=true;const auto o=toss(s,{0,1.f,-3.f});
+            s.in.tossed={o.toss.id+7,true,{0,0,0},{0,0,0,1}};
+            Check(s.Step().request.action==Action::None,"a stale body's landing is ignored");
         }
         {
             Sim s;const auto o=toss(s,{0,.2f,-.6f},20);int requests=0;Request request;land(s,requests,request);

@@ -75,12 +75,13 @@ struct Release {
 };
 inline constexpr float Height=.18f;           // potion models are normalized to this
 inline constexpr float MinRadius=.02f,MaxRadius=.08f,DefaultRadius=.045f;
-inline constexpr float MaxSpeed=25,MaxSpin=40; // beyond a real hand's release
+inline constexpr float MaxSpeed=32,MaxSpin=40; // beyond a real hand's release (20 m/s) carried by a run (10 m/s)
 inline constexpr unsigned MaxBottles=6;        // the oldest goes first
 inline constexpr double Lifetime=20;           // seconds after release
 inline constexpr float Range=12;               // metres from the player before it is forgotten
 inline constexpr float WallHeight=6;           // walls stand this high above the floor
 inline constexpr double Step=1/120.;
+inline constexpr double FreshTime=.3; // a bottle leaving the hand passes through weapons and fists this long
 inline bool Finite(Vec v) {return std::isfinite(v.x)&&std::isfinite(v.y)&&std::isfinite(v.z);}
 inline bool Valid(const Release& r) {
     const float n=r.q.x*r.q.x+r.q.y*r.q.y+r.q.z*r.q.z+r.q.w*r.q.w;
@@ -158,6 +159,10 @@ inline constexpr double PropRestTime=.6;   // ... this long: at rest
 inline constexpr double PropDriftTime=.5;  // or moved under PropDrift, turning under PropDriftTurn,
 inline constexpr float PropDrift=.015f,PropDriftTurn=.07f; // over this long: settling in place
 inline constexpr float WakeMargin=.01f;    // metres a weapon may pass from a prop and still set it going
+// A full bottle thrown (a potion tossed toward the hireling): a body like the
+// dropped ones until it first touches anything, where it shatters. Weapons
+// and fists never touch it. The interactions engine takes the landing point.
+struct Thrown {uint64_t id=0;bool landed=false;Vec p{};Quat q{0,0,0,1};};
 // Where the game thread should sample walls: around the bottles, on their floor.
 struct WallRequest {
     uint64_t session=0;
@@ -176,6 +181,12 @@ public:
     bool Ready() const; // the Box3D world exists
     // A release on another floor or game forgets the earlier bottles.
     bool Drop(const Release&);
+    // A thrown bottle, replacing any earlier one; false when the world cannot
+    // take it now (another floor while props move), so the caller flies the
+    // old arc. Tossed gives it in the air, interpolated, or where it landed.
+    bool Toss(const Release&,uint64_t id);
+    bool Tossed(Thrown&) const;
+    void EndToss();
     // The game's wall cells; a patch from another game is ignored.
     void Walls(const Patch&);
     // Advance in fixed steps to time. Bottles older than Lifetime, or farther
@@ -201,7 +212,7 @@ public:
     unsigned Knocks(std::array<Knock,props::MaxMoving>& out);
     unsigned Frozen() const;   // props waiting where they are
     unsigned Supports() const; // static surfaces under them
-    bool Idle() const;         // no bottles and no props
+    bool Idle() const;         // no bottles, thrown bottle or props
     bool WallsWanted(WallRequest&) const;
     unsigned Count() const; // bottles
     unsigned Shapes() const; // static wall boxes, for diagnostics

@@ -180,7 +180,7 @@ not generate melee velocity. The layout currently assumes a right-handed player.
 | Physical belt potion | Reach to an original 3D bottle on the front belt and hold **Right Grip** to grab; left-hand grip also works |
 | Drink | Keep grip held, bring the bottle's opening to your mouth and tip nearly horizontal for 0.25 seconds; release to return an unused potion |
 | Drop the empty bottle | Open your hand after drinking: the bottle falls, bounces and rolls on the floor (visual only); hit it with your weapon or shield to knock it away |
-| Heal the mercenary | Toss a held Health, Rejuvenation, Antidote or Thawing bottle (release mid-swing, at least 1.4 m/s) so it lands within 1.5 m of your mercenary's feet. It shatters on landing; a miss leaves the potion on the belt |
+| Heal the mercenary | Toss a held Health, Rejuvenation, Antidote or Thawing bottle (release mid-swing, at least 1.4 m/s) so it lands within 1.5 m of your mercenary's feet. It shatters on landing (with bottle physics, where it first touches a wall, table, prop or the floor); a miss leaves the potion on the belt |
 | Quick potion | Left Y → **EQUIPMENT / BELT** → trigger a potion wedge; grip on a potion wedge instead grabs it into the right hand |
 | Swap weapon sets | Reach the swap hand over either shoulder and press its grip; right hand by default, selectable in VR settings. Hip anchors are removed |
 | Seated weapon selection | Utility wheel → **Weapon I** or **Weapon II** |
@@ -554,10 +554,21 @@ A Health, Rejuvenation, Antidote or Thawing bottle released with a deliberate th
 away from its belt slot, flies on a ballistic arc and lands on the world floor.
 Its launch velocity is 1:1 with the hand: the fastest controller velocity the
 OpenXR runtime reported in the last 0.12 s before the grip opened (pose
-differences only when the runtime reports none), capped at 20 m/s. Once released
+differences only when the runtime reports none), capped at 20 m/s, plus your
+own speed through the world when running or walking (measured from the
+player's position frame to frame, smoothed over 0.1 s; a waypoint, portal or
+other jump faster than 10 m/s is not counted). Running never turns a slow
+release into a throw: that still depends on the hand alone. Once released
 it is in the world: its arc is integrated in world metres from the release frame,
 against the floor height under the player at release, so walking, turning or
-recentering afterwards never carries it along.
+recentering afterwards never carries it along. With bottle physics on
+(`[interactions] bottle_physics`, the default) the bottle flies as a body in the
+same Box3D world as the dropped bottles and the level's props, spinning with
+your hand's last turn. It stops at the game's walls, can land on a table or
+shelf surface, knocks props it reaches, and lands wherever it first touches
+anything. Your own weapons and fists never touch it. If the physics world
+cannot take it at that moment (another floor while props are still moving),
+it flies the arc above; with bottle physics off, it always does.
 
 The landing point is checked on the game thread against the live, non-hostile
 hireling. Within 1.5 m of its feet, the UI thread presses the column's native
