@@ -8,6 +8,7 @@ namespace framevr::effects {
 // Native state IDs, audited against the supported game's states/skills tables.
 // These describe effects on the player, never learned skills or button bindings.
 enum class Kind { Benefit, Harm, Other };
+constexpr int HolyShieldState=101;   // states.txt holyshield (the Paladin skill 117)
 struct Definition {int state,skill;const char* name;Kind kind=Kind::Benefit;};
 inline constexpr Definition Definitions[]={
     {1,-1,"Frozen",Kind::Harm},{2,-1,"Poisoned",Kind::Harm},

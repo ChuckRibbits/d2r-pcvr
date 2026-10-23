@@ -66,6 +66,8 @@ void FindHero(const float hero[3], const wchar_t* outPath, const char* tag);
 int FindHeroMatrices(const float hero[3], uintptr_t* out, int max);
 }
 #include "skeletons.h"
+#include "shield_pose.h"
+namespace effectstate { bool HolyShield(uint64_t session); }   // active_effects.cpp: the last game-thread sample
 #include "writewatch.h"
 namespace uitrace { void Register(bool diagnostic); bool Enabled(); bool Arm(const std::wstring& path); void SetSkip(uint64_t pipe); void SetSkipShaders(const uint64_t* hashes, int n); }
 #include "game_hud_shared.h"
@@ -401,6 +403,7 @@ struct Settings {
     std::atomic<bool>  thirdTurn{true};     // [body] turn_third: from behind too the whole hero faces where the camera looks (the right stick turns him)
     std::atomic<int>   bodyTurn{2};         // 0 game facing, 1 above the pelvis, 2 whole body turns to where the camera looks
     std::atomic<bool>  wrist{true};         // arms mode 2: the hands turn with the controllers
+    std::atomic<bool>  shieldTrace{false};  // [debug] shield_trace
     std::atomic<float> wristPitch{0.0f}, wristYaw{0.0f}, wristRoll{0.0f};   // degrees on top, controller axes
     std::atomic<float> convergence{15.0f};  // distance (world units) that sits ON the screen; 0 = parallel eyes
     std::atomic<float> thirdDistance{7.0f}; // third person: camera this far behind the eye point
@@ -1441,6 +1444,7 @@ void LoadSettings() {
     g_set.spearShaftAxis.store(std::clamp((int)IniF(L"hands", L"spear_shaft_axis", -2.0f), -3, 3));
     g_set.bodyYawDeg.store(std::clamp(IniF(L"body", L"yaw", 0.0f), -180.0f, 180.0f));
     g_set.wrist.store(IniB(L"hands", L"wrist", true));
+    g_set.shieldTrace.store(IniB(L"debug", L"shield_trace", false));   // off unless asked for (5 Hz lines)
     g_set.wristPitch.store(std::clamp(IniF(L"hands", L"pitch", 0.0f), -180.0f, 180.0f));
     g_set.wristYaw.store(std::clamp(IniF(L"hands", L"yaw", 0.0f), -180.0f, 180.0f));
     g_set.wristRoll.store(std::clamp(IniF(L"hands", L"roll", 0.0f), -180.0f, 180.0f));
@@ -7058,6 +7062,17 @@ void ShieldGuardTick() {
     const auto epoch=g_meleeTurnEpoch.load();
     const bool posed=eligible&&skel::ShieldGuardPose(pose)&&pose.epoch==epoch;
     pose.epoch=epoch; // invalidate cached coverage across a snap turn
+    // Holy Shield: blocks land on its larger glow, mesh surface or fallback alike.
+    // Logged when Holy Shield itself starts or ends, not when a menu or the
+    // view turns the guard off and on.
+    const bool holyActive=effectstate::HolyShield(gamestate::LocalPlayer()),holy=eligible&&holyActive;
+    pose.coverScale=framevr::guard::CoverScale(holy);
+    static bool holyWas=false;
+    if(holyActive!=holyWas) {
+        holyWas=holyActive;char line[160];snprintf(line,sizeof line,"Frame guard: Holy Shield coverage %s (x%.1f about the shield's center)",
+            holyActive?"on":"off",holyActive?framevr::guard::HolyShieldCover:1.f);
+        framevr::logging::Write(line);
+    }
     // Coverage, height and scale all come from the completed shield pose.
     // Latest tracking may invalidate it, but must not replace its input sample.
     const D2RVR_Shared* sh=g_shared;
@@ -7273,6 +7288,20 @@ void PushArms() {
     if(in.armSpanM>0)in.scale=1;
 #endif
     in.wrist = g_set.wrist.load();
+#ifdef D2RVR_NATIVE_OPENXR
+    in.forearmTwist = in.wrist;   // a hand turned by the controller turns its forearm too
+    in.shieldTrace = g_set.shieldTrace.load();
+    {// VR Settings > Shield: one settings snapshot every 200 ms, not one per frame
+     static float grip = 0, out = 0, up = 0, follow = skel::shield::kFollowDefaultPct, roll = 0;
+     static ULONGLONG readAt = 0; const ULONGLONG now = GetTickCount64();
+     if (!readAt || now - readAt > 200) {
+         readAt = now; const auto v = vrsettings::Read().values;
+         grip = v[framevr::settings::ShieldGrip]; out = v[framevr::settings::ShieldOut]; up = v[framevr::settings::ShieldUp];
+         follow = skel::shield::FollowSetting(v[framevr::settings::ShieldFollow]);   // 0..100 in 10% steps
+         roll = skel::shield::RollSetting(v[framevr::settings::ShieldRoll]);         // -180..+180 in 5-degree steps
+     }
+     in.shieldGripCm = grip; in.shieldOutCm = out; in.shieldUpCm = up; in.shieldFollowPct = follow; in.shieldRollDeg = roll;}
+#endif
     in.wristDeg[0] = g_set.wristPitch.load(); in.wristDeg[1] = g_set.wristYaw.load(); in.wristDeg[2] = g_set.wristRoll.load();
     float yaw = 0.0f;
     in.handOffset[0] = g_set.handSide.load() * 0.01f;
