@@ -279,7 +279,7 @@ inline bool HasTorchInHand(const Snapshot& s, int hand, uint32_t& outFlags) {
     codeText[2] = static_cast<char>((item.code >> 16) & 0xFF);
     codeText[3] = static_cast<char>((item.code >> 24) & 0xFF);
     const bool enchant = s.effects.Has(16);
-    const bool devClub = s.developer && (item.quality == 2 || item.quality == 0) && (std::string_view(codeText, 3) == "clb");
+    const bool devClub = false;
     const auto qual = framevr::torch::EvaluateQualification(codeText, item.quality, item.socketed, enchant, devClub);
     outFlags = static_cast<uint32_t>(qual);
     return framevr::torch::IsTorchQualified(outFlags);

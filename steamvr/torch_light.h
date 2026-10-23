@@ -146,6 +146,10 @@ inline TorchQualification EvaluateQualification(std::string_view code, uint32_t 
     if (socketedCount > 0) {
         flags |= static_cast<uint32_t>(TorchQualification::SocketedFire);
     }
+    // Magic or rare club (fire affix / charges)
+    if (quality == 4 || quality == 6) {
+        flags |= static_cast<uint32_t>(TorchQualification::MagicFireAffix);
+    }
     return static_cast<TorchQualification>(flags);
 }
 

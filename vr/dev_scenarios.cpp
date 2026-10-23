@@ -185,6 +185,24 @@ void __cdecl Gear(const PluginContext*,void* callbackToken) noexcept {
         spec.itemLevel=framevr::dev::NormalKit(r.index)?1:99;spec.seedMode=Items::SeedMode::Random;
         spec.quantity=spec.durability=Items::DefaultValue;spec.stateFlags=Items::ItemStateIdentified;
         if(ammo)spec.quantity=250;
+        if(r.index==framevr::dev::TorchChoice) {
+            if(i==0||i==1) {
+                spec.quality=Items::Quality::Normal;
+                spec.socketCount=1;
+                spec.itemLevel=1;
+            } else if(i==2||i==3) {
+                spec.quality=Items::Quality::Normal;
+                spec.itemLevel=1;
+            } else if(i==4) {
+                spec.quality=Items::Quality::Unique;
+                spec.qualityRecordId=Items::RandomQualityRecord;
+                spec.flags=Items::ItemCreateFlagBit(Items::ItemCreateFlag::AllowDuplicateUnique);
+                spec.itemLevel=99;
+            } else if(i==5) {
+                spec.quality=Items::Quality::Magic;
+                spec.itemLevel=30;
+            }
+        }
         spec.destination.structSize=sizeof spec.destination;
         spec.destination.container=Items::ItemContainer::Inventory;
         spec.destination.placement=Items::Placement::Automatic;

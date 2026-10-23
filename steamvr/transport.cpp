@@ -2461,6 +2461,19 @@ void Input() {
         elementalInput.activation[h]=handOutput.activation[h];
     }
     elementalScene=elementalState.Step(elementalInput,interactionInput.snapshot);
+    for(int h=0;h<2;++h) {
+        uint32_t torchFlags=0;
+        if(interaction::HasTorchInHand(interactionInput.snapshot,h,torchFlags)&&interactionInput.tracked[h]) {
+            elementalScene.hands[h].element=elements::Element::Fire;
+            elementalScene.hands[h].opacity=1.0f;
+            elementalScene.hands[h].pulse=0.5f;
+            elementalScene.hands[h].skill=36;
+            elementalScene.hands[h].pose={framevr::torch::ComputeTorchTip(interactionInput.hand[h].p,interactionInput.hand[h].q),interactionInput.hand[h].q};
+            elementalScene.session=gamestate::LocalPlayer();
+            elementalScene.at=interactionInput.at;
+            if(elementalScene.time==0.0f)elementalScene.time=float(interactionInput.at%60000)/1000.f;
+        }
+    }
     if(interactionInput.active) {
         const bool snapshotFresh=interaction::Fresh(interactionInput.snapshot,interactionInput.session,interactionInput.at);
         if(snapshotFresh&&(interactionPrefetchSession!=interactionInput.session||interactionPrefetchRevision!=interactionInput.snapshot.revision)) {

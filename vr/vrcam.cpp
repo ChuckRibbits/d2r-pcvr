@@ -8872,11 +8872,11 @@ void OnBeginEffects(reshade::api::effect_runtime* rt, reshade::api::command_list
     for (const SkyView& v : sv) sky = sky && v.proj_ok && v.axes_ok && v.proj[0] != 0.0f && v.proj[1] != 0.0f;
     SetBool(rt, "SkyOn", sky);
     SetBool(rt, "ArcaneSkyOn", sky && arcane);
-    {   // the cave ceiling: a plane CeilHeight over the hero's floor, met by each eye's ray
-        bool ceil = !sky && CeilWanted();
-        for (const SkyView& v : sv) ceil = ceil && v.proj_ok && v.axes_ok && v.proj[0] != 0.0f && v.proj[1] != 0.0f;
-        SetBool(rt, "CeilOn", ceil);
-        if (ceil) {
+    {   // camera and eye projection setup for depth fog and dynamic lighting
+
+
+
+
             const float scale = g_set.ceilScale.load();
             // The hero's place wrapped on a whole number of tiles: the world's own
             // coordinates in a float would round the pattern into steps far from the
@@ -8903,22 +8903,7 @@ void OnBeginEffects(reshade::api::effect_runtime* rt, reshade::api::command_list
                 const float hero[2] = {(float)hx, (float)hz};
                 snprintf(n, sizeof n, "CeilHero%d", e); SetFloats(rt, n, hero, 2);
             }
-            float height, bright, light, relief;
-            int slot;
-            CeilingNow(&height, &bright, &light, &relief, &slot);
-            SetFloat(rt, "CeilHeight", height);
-            SetFloat(rt, "CeilScale", scale);
-            SetFloat(rt, "CeilBrightness", bright);
-            SetFloat(rt, "CeilRelief", relief);
-            SetFloat(rt, "CeilTexSlot", (float)slot);
-            SetFloat(rt, "CeilLightRadius", light);
-            SetBool(rt, "CeilTorches", g_set.ceilTorches.load());
-            SetFloat(rt, "CeilTorchBright", g_set.ceilTorchBright.load());
-            SetFloat(rt, "CeilTorchRadius", g_set.ceilTorchRadius.load());
-            SetFloat(rt, "CeilHalo", g_set.ceilHalo.load());
-            SetFloat(rt, "CeilTorchWarm", g_set.ceilTorchWarm.load());
-            SetFloat(rt, "CeilWallDist", g_set.ceilWall.load());
-            SetFloat(rt, "CeilFloorDepth", g_set.ceilFloor.load());
+
             {   // the lit objects the game has near the hero, relative to him; the flame ~7 units up
                 bool torchActive[2] = { false, false };
                 uint32_t torchFlags[2] = { 0, 0 };
@@ -9019,17 +9004,37 @@ void OnBeginEffects(reshade::api::effect_runtime* rt, reshade::api::command_list
 
                 SetBool(rt, "CeilTorches", g_set.ceilTorches.load() || anyTorch);
                 SetBool(rt, "GameLightsOn", worldobj::g_known.load() || anyTorch);
+                SetFloat(rt, "CeilTorchBright", g_set.ceilTorchBright.load());
+                SetFloat(rt, "CeilTorchRadius", g_set.ceilTorchRadius.load());
+                SetFloat(rt, "CeilTorchWarm", g_set.ceilTorchWarm.load());
                 SetFloats(rt, "GameLightPos", pos, worldobj::kMaxLights * 4);
                 SetFloats(rt, "GameLightCol", col, worldobj::kMaxLights * 4);
                 static ULONGLONG told = 0;   // what goes to the shader, every 5 s: the nearest light, as the hero sees it
                 if (GetTickCount64() - told > 5000) {
                     told = GetTickCount64();
                     const bool hasPos = rt->find_uniform_variable("D2R_DepthFog.fx", "GameLightPos").handle != 0;
-                    LogF("worldobj: to the shader %d lights (uniform %s, playerTorch=%d), nearest at %.1f %.1f %.1f radius %.0f colour %.2f %.2f %.2f; hero %.1f %.1f %.1f, eye %.1f %.1f %.1f, ceiling %.0f",
+                    LogF("worldobj: to the shader %d lights (uniform %s, playerTorch=%d), nearest at %.1f %.1f %.1f radius %.0f colour %.2f %.2f %.2f; hero %.1f %.1f %.1f, eye %.1f %.1f %.1f",
                          outIndex, hasPos ? "found" : "MISSING", anyTorch ? 1 : 0, pos[0], pos[1], pos[2], pos[3], col[0], col[1], col[2],
-                         sv[0].hero[0], sv[0].hero[1], sv[0].hero[2], sv[0].eyeRel[0], sv[0].eyeRel[1], sv[0].eyeRel[2], height);
+                         sv[0].hero[0], sv[0].hero[1], sv[0].hero[2], sv[0].eyeRel[0], sv[0].eyeRel[1], sv[0].eyeRel[2]);
                 }
             }
+        bool ceil = !sky && CeilWanted();
+        for (const SkyView& v : sv) ceil = ceil && v.proj_ok && v.axes_ok && v.proj[0] != 0.0f && v.proj[1] != 0.0f;
+        SetBool(rt, "CeilOn", ceil);
+        if (ceil) {
+
+            float height, bright, light, relief;
+            int slot;
+            CeilingNow(&height, &bright, &light, &relief, &slot);
+            SetFloat(rt, "CeilHeight", height);
+            SetFloat(rt, "CeilScale", scale);
+            SetFloat(rt, "CeilBrightness", bright);
+            SetFloat(rt, "CeilRelief", relief);
+            SetFloat(rt, "CeilTexSlot", (float)slot);
+            SetFloat(rt, "CeilLightRadius", light);
+            SetFloat(rt, "CeilHalo", g_set.ceilHalo.load());
+            SetFloat(rt, "CeilWallDist", g_set.ceilWall.load());
+            SetFloat(rt, "CeilFloorDepth", g_set.ceilFloor.load());
             float wet, detail, contrast;
             CeilVaultCfg vault;
             CeilingLookNow(&wet, &detail, &contrast, &vault);

@@ -73,9 +73,16 @@ static Items::Result __cdecl ItemsCall(const PluginContext*,const Items::Transac
         const auto& s=t->outputs[i];const bool ammo=s.code==Items::MakeItemCode("aqv")||s.code==Items::MakeItemCode("cqv");
         grantedCodes.push_back(s.code);
         const bool potions=t->outputCount==10&&t->outputs[0].code==Items::MakeItemCode("hp5"); // the potion kit
-        const bool torch=t->outputCount==1&&t->outputs[0].code==Items::MakeItemCode("clb");
-        const bool starter=(t->outputCount<9&&t->outputCount>2)||potions||torch;
-        assert(s.quality==((ammo||starter)?Items::Quality::Normal:Items::Quality::Unique)&&s.itemLevel==(starter?1:99));
+        const bool torch=t->outputCount==6&&t->outputs[0].code==Items::MakeItemCode("clb");
+        const bool starter=(t->outputCount<9&&t->outputCount>2)||potions;
+        if(torch) {
+            if(i==0||i==1)assert(s.quality==Items::Quality::Normal&&s.socketCount==1&&s.itemLevel==1);
+            else if(i==2||i==3)assert(s.quality==Items::Quality::Normal&&s.itemLevel==1);
+            else if(i==4)assert(s.quality==Items::Quality::Unique&&s.itemLevel==99);
+            else if(i==5)assert(s.quality==Items::Quality::Magic&&s.itemLevel==30);
+        } else {
+            assert(s.quality==((ammo||starter)?Items::Quality::Normal:Items::Quality::Unique)&&s.itemLevel==(starter?1:99));
+        }
         assert(s.destination.container==Items::ItemContainer::Inventory);
         assert(s.quantity==(ammo?250:Items::DefaultValue)&&s.durability==Items::DefaultValue);
     }
@@ -244,7 +251,7 @@ int main(){
     assert(IsKit(TorchChoice)&&NormalKit(TorchChoice)&&PageFor(TorchChoice)==1);
     for(int cls=0;cls<8;++cls) {
         std::vector<std::string_view> codes;for(const char* code:Kit(cls,TorchChoice))if(code)codes.push_back(code);
-        assert((codes==std::vector<std::string_view>{"clb"}));
+        assert((codes==std::vector<std::string_view>{"clb","clb","gcr","r08","clb","clb"}));
     }
     // Unlock quests & waypoints button: sends cheat quests and cheat waypoints via console
     assert(ValidChoice(UnlockQuestsChoice)&&PageFor(UnlockQuestsChoice)==0&&SlotFor(UnlockQuestsChoice)==5);

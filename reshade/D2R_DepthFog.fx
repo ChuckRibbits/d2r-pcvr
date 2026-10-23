@@ -695,6 +695,26 @@ float4 TorchLight(float3 wh, float3 nrm, float3 v)
     return float4(sum, glint);
 }
 
+// Their light on drawn world points (p: less the hero / floorY)
+float3 SceneLight(float3 p)
+{
+    float3 sum = float3(0.0, 0.0, 0.0);
+    [loop] for (int i = 0; i < 16; ++i) {
+        const float4 L = GameLightPos[i];
+        if (L.w <= 0.0) continue;
+        const float3 dv = L.xyz - p;
+        const float dist = length(dv);
+        const float rad = max(CeilTorchRadius * L.w / 19.0, 1.0);
+        if (dist >= rad * 2.0) continue;
+        const float k = dist / rad;
+        const float flicker = 0.93 + 0.07 * sin(Timer * 0.011 + i * 2.3) * sin(Timer * 0.0037 + i * 1.1);
+        const float fall = Falloff(k) * flicker * GameLightCol[i].w;
+        const float3 col = lerp(GameLightCol[i].rgb, float3(1.0, 0.58, 0.22), saturate(CeilTorchWarm));
+        sum += col * fall;
+    }
+    return sum * CeilTorchBright;
+}
+
 // The lit objects the game itself has near the hero (vrcam reads them from the game's
 // rooms; their light from its Objects table): xyz less the hero (his feet), w the
 // game's light radius (Lit: a torch 19). With them the fire in the picture is not
@@ -1473,7 +1493,21 @@ float3 DepthFogWorld(float4 pos, float2 uv, int eye)
         const float3 fogDir = normalize(float3(dir.x, clamp(dir.y, -0.1, 0.15), dir.z));
         if (SkyOn && !FogFixed) fogColour = (SkyTex > 0.5 ? PaintedSky(fogDir) : SkyGradient(fogDir.y)) * SkyBrightness + dither;
     }
-    if (!FogOn) return colour;
+    float3 litColour = colour;
+    if (GameLightsOn && d > 1e-6) {
+        const float2 ndc = float2(uv.x * 2.0 - 1.0, 1.0 - uv.y * 2.0);
+        const float4 sp = eye == 0 ? SkyProj0 : SkyProj1;
+        if (sp.x != 0.0 && sp.y != 0.0) {
+            const float3 v = float3((ndc.x + sp.z) / sp.x, (ndc.y + sp.w) / sp.y, -1.0);
+            const float3 off = (eye == 0 ? v.x * CamRight0 + v.y * CamUp0 + v.z * CamBack0
+                                         : v.x * CamRight1 + v.y * CamUp1 + v.z * CamBack1) * (NearPlane / d);
+            const float3 eP = eye == 0 ? CeilEye0 : CeilEye1;
+            const float3 worldP = eP + off;
+            const float3 lit = SceneLight(worldP);
+            litColour += colour * lit * 1.2 + lit * 0.05;
+        }
+    }
+    if (!FogOn) return litColour;
 
     if (!SkyOn && !CeilOn && dNear <= 1e-6) {
         // In unroofed interiors such as Tal Rasha's Chamber, zero depth belongs
@@ -1485,7 +1519,7 @@ float3 DepthFogWorld(float4 pos, float2 uv, int eye)
         // Without the effect's own depth, leave it at its authored brightness;
         // actual drawn scenery still uses its distance in the path below.
         if (ShowDistance) return 0.0;
-        return fogColour * FogAmount(dFar) + colour;
+        return fogColour * FogAmount(dFar) + litColour;
     }
 
     // The depth smeared: the fog of a 3x3 grid FogBlur pixels apart, averaged
@@ -1515,10 +1549,10 @@ float3 DepthFogWorld(float4 pos, float2 uv, int eye)
     // (2026-10-07). The halo is warm - red well over blue - and the cave's rock is not: what
     // is warm keeps its light through the fog (CeilHalo of it), as it does over the void.
     if (CeilOn && !SkyOn) {
-        const float warm = smoothstep(0.05, 0.25, colour.r - colour.b);
-        return lerp(colour, fogColour, t) + colour * (t * warm * saturate(CeilHalo));
+        const float warm = smoothstep(0.05, 0.25, litColour.r - litColour.b);
+        return lerp(litColour, fogColour, t) + litColour * (t * warm * saturate(CeilHalo));
     }
-    return lerp(colour, fogColour, t);
+    return lerp(litColour, fogColour, t);
 }
 // The interface keeps its own colour: the fog and the sky only where the layer lets the world through.
 float3 DepthFog(float4 pos, float2 uv, int eye)

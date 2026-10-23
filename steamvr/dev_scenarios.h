@@ -228,7 +228,7 @@ inline std::array<const char*,10> Kit(int cls,int choice){
     // Potion toss tests, any class: the four kinds the hireling takes from a
     // throw (Health, Rejuvenation, Antidote, Thawing), for the belt. 10 cells.
     if(ValidClass(cls)&&choice==PotionsChoice)return {"hp5","hp5","hp5","hp5","rvl","rvl","yps","yps","wms","wms"};
-    if(ValidClass(cls)&&choice==TorchChoice)return {"clb"};
+    if(ValidClass(cls)&&choice==TorchChoice)return {"clb","clb","gcr","r08","clb","clb"};
     if(!ValidClass(cls)||(choice!=1&&choice!=2))return {};
     const auto& p=Presets[cls];const bool caster=choice==2&&cls!=0&&cls!=4;
     const auto& weapons=choice==1?p.primaryWeapons:p.alternateWeapons;
