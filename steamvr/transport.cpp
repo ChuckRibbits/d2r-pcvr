@@ -84,6 +84,7 @@
 #include "../vr/skeletons.h"
 #include "spell_aim.h"
 #include "aim_rules.h"
+#include "toss.h"
 
 namespace gamestate {uint32_t WeaponType();uint32_t HandsKey();uint32_t WeaponSet();uint32_t WeaponClass();uint32_t TwoHanded();uint64_t LocalPlayer();uint32_t MenuEpoch();}
 namespace gamecmd {void RequestPotion(int slot);void CancelPotion();}
@@ -439,6 +440,9 @@ bool bowNeedsWorld=false,bowHasShot=false;
 // Double Throw (#224): the left hand's own release, beside the right's.
 bowflight::Shot throwLeftPending{},throwLeftReady{};
 bool leftNeedsWorld=false,leftHasShot=false,leftThrowArmed=false;
+// A trap or bomb thrown to place (#224): where its arc landed, in grid cells,
+// for its cast's aim (TossTarget).
+struct TossLanding {int skill=-1;float x=0,y=0;uint64_t at=0,session=0;} tossLanding;
 // The latest centre-view stage-to-world frame (View, eye<0). Input reads it
 // for the room height of the world floor and to place a thrown bottle's
 // landing point in world metres; both run under the transport mutex.
@@ -2294,7 +2298,19 @@ void Input() {
     motionInput.shieldEquipped=gamestate::LeftShield()&&::melee::ShieldReady();
     motionInput.leftThrow=leftThrowArmed;motionInput.leftTrigger=controls.lt/255.f;
     motionInput.throwLift=gestureSettings[settings::ThrowLift];
+    motionInput.toss=gestureSettings[settings::SkillGestures]>.5f&&quickFresh&&rightSkill.known&&rightSkill.available&&toss::Skill(rightSkill.id);
     motionOutput=motion.Step(motionInput);motionAt=GetTickCount64();
+    if(motionOutput.tossHeld)tossLanding={};   // a new trap in hand: nothing placed yet
+    if(motionOutput.tossRelease) {
+        // The arc lands on the floor under the player at release (world metres).
+        const auto& stage=interactionInput.stage;float x=0,y=0;
+        const bool landed=interactionInput.floorKnown&&stageWorld.upm>0&&
+            toss::Landing(stage,stage.anchor.y+(interactionInput.floor-stage.origin.y),stageWorld.upm,motionOutput.tossOrigin,motionOutput.tossVelocity,x,y);
+        if(landed)tossLanding={rightSkill.id,x,y,motionAt,gamestate::LocalPlayer()};
+        char line[200];std::snprintf(line,sizeof line,"Frame toss: skill=%d thrown at %.1f m/s, %s %.1f,%.1f",rightSkill.id,
+            gameplay::Length(motionOutput.tossVelocity),landed?"lands at cells":"no landing (room unknown), cast where you point",x,y);
+        Say(line);
+    }
     motionOutput.shieldContact=motionInput.active&&!motionOutput.block&&!motionInput.quickCast&&motionInput.trigger<.2f&&
         motionInput.shieldEquipped&&gestureSettings[settings::SkillGestures]>.5f&&quickFresh&&shieldSkill.available&&shieldSkill.motion&&shieldSkill.id==weaponskills::Smite;
     if(motionOutput.skill>=0&&(!quickFresh||!quickSnapshot.skills[motionOutput.skill].available))motionOutput.skill=-1;
@@ -2398,6 +2414,9 @@ void Input() {
         for(unsigned i=0,n=droppedBottles->Show(shown);i<n;++i)
             potions::AddDropped(potionScene,{stage.Room(shown[i].p),math::Multiply(math::Conjugate(stage.base),shown[i].q)},shown[i].code);
     }
+    // The trap or bomb in the throwing hand while a toss is armed (#224).
+    if(motionOutput.tossHeld&&motionInput.active&&!panelMode)
+        potions::AddHeld(potionScene,{motionInput.hand[0].p,motionInput.hand[0].q},toss::Model(interactionInput.snapshot.skills[skills::TriggerSlot(0)].id));
     // The game's arrow on the bow while the game's own nocked arrow is not
     // showing (in town the game stops drawing missiles): tail at the nock or
     // drawing hand, along the draw. Without the cached model, the draw guide.
@@ -3927,6 +3946,12 @@ const interaction::Skill* CastSkillRow() {
     const auto& skill=interactionInput.snapshot.skills[slot];
     return skill.known&&skill.available&&skill.id>=0?&skill:nullptr;
 }
+}
+bool TossTarget(int skill,float& x,float& y) {
+    std::lock_guard lock(mutex);
+    const auto now=GetTickCount64();const auto& t=tossLanding;
+    if(t.skill<0||now<t.at||now-t.at>700||t.session!=gamestate::LocalPlayer()||(skill>=0&&skill!=t.skill))return false;
+    x=t.x;y=t.y;return true;
 }
 int AimRulesSkill() {
     std::lock_guard lock(mutex);

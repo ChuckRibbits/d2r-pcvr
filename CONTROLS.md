@@ -360,6 +360,17 @@ quantity. The game's own Double Throw throws both weapons for one mana cost;
 here each hand's throw pays it. If the game refuses it, the hand throws its
 weapon as a basic throw.
 
+**Throwing traps and bombs.** With an Assassin's Fire Blast, Shock Web, Blade
+Sentinel, Charged Bolt, Lightning or Death Sentry, Wake of Fire or Wake of
+Inferno on the right trigger, press the trigger: the bomb or trap appears in
+your hand. Throw it and let go, and the game casts the skill where its arc
+lands, within the skill's own reach. A quick press still casts where you point
+(with **Ground skills** on Where you point; on Game, where the game aims), and
+holding the trigger still for a moment casts natively as before, repeating
+while held. Start the throw right after pressing; a slow reach casts nothing.
+The models are the game's own, cached from your installed game by the
+installer. **Weapon skill gestures** Off turns this off.
+
 Face-button skills never replace gesture skills. Ordinary melee swings remain
 basic attacks for skills without a supported physical adapter; assigning a
 spell does not cast it on every swing. Physical skill gestures can be disabled
