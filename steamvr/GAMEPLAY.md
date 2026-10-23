@@ -603,7 +603,7 @@ bottles it meets, and a hit gives that hand a light tick (the melee haptic
 strength applies). Slow pushes roll a bottle; a hard swing sends it flying.
 The shield uses a thinner capsule than its creature test. A warp or recentre
 moves a weapon without sweeping it through bottles. `[interactions]
-bottle_physics=0` restores the old vanishing bottle. The log notes each release (`Frame dropped bottles:`)
+bottle_physics=0` (VR Settings > Video > Bottle physics: Off) restores the old vanishing bottle, and thrown potions fly the old arc. The log notes each release (`Frame dropped bottles:`)
 and wall sampling every ten seconds while bottles are in the world.
 
 **Knockable props.** The level's own small props within 3 m (cups, plates,
@@ -621,7 +621,7 @@ through the cabinet. Inside a room or building (a mantle or ledge that is part
 of it), the surface ends 3 cm past the row of props on it. A prop on another
 prop (a cup on a plate) falls when that one is knocked away. At most 12 move at
 once; a new weapon hit then freezes the one moving longest. This is purely
-visual. `[interactions] prop_physics=0` turns it off; see [knockable
+visual. VR Settings > Video > Knockable props (`[interactions] prop_physics`) turns it off; see [knockable
 props](../docs/KNOCKABLE_PROPS.md). The log notes each weapon knock (`Frame
 props: knocked a cup ...`) and a summary every ten seconds.
 
