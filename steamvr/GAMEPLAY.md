@@ -1033,14 +1033,16 @@ mid-game) choose between two modes for physical swings and trigger/button melee:
     later landed stroke of a claw carrying Fury lands the next one, at any
     speed (only a stroke within 100 ms of the previous Fury hit, one swipe's
     follow-through, can't): unscaled, with on-hit effects, no mana, on the
-    creature it struck. A new cast still needs a full-cycle stroke, so the
-    burst limits itself. In Classic each follow-up waits Fury's Param2 (70%) of
+    creature it struck. A later stroke that reaches several creatures lands
+    Fury on its first two (native Fury spreads its hits across nearby
+    monsters); the casting stroke on one. A new cast still needs a full-cycle
+    stroke, so the burst limits itself. In Classic each follow-up waits Fury's Param2 (70%) of
     the attack cycle after the previous Fury hit, sooner than the shared
     cadence; earlier strokes stay basic and never delay it. Unused hits lapse
     after two cycles, a form change or another skill's cast. Developer builds
     log `Frame melee flurries:` and tag trace lines `cast 1/5`,
-    `flurry 2/5 after N ms`, `basic_strike flurry_early after N ms`; the on-hit
-    report counts `flurry=`.
+    `flurry 2/5 after N ms`, `flurry 3/5 spread`, `basic_strike flurry_early after N ms`;
+    the on-hit report counts `flurry=`.
   `Frame swing damage:` in the log reports scaled hits and the last factors.
 - **Classic** (`1`): native attack rating, monster defense, block and the
   level penalty decide each attack, and attack speed paces them (below). A rolled

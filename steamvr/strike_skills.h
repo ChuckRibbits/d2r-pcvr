@@ -86,18 +86,28 @@ inline bool Casts(int skill,bool classic,bool fullCycleFirst) {
 //    natively each middle hit comes after 70 % of the wind-up).
 // The unused hits lapse when none lands for two attack cycles; the next
 // qualifying stroke casts anew.
+// Spread (Cal, 2026-10-23 rev6, "most like native"): natively each hit after
+// the first jumps to another creature nearby. A later stroke that reaches more
+// than one creature lands Fury on up to FlurryHitsPerStroke of them, the first
+// and the next one it touches, each a whole Fury hit; the casting stroke stays
+// one hit. Further creatures in that stroke stay cleave basics.
 inline bool MultiHit(int skill) {return skill==Fury;}
 inline constexpr uint32_t FlurryWindowCycles=2,FlurryUnknownCycleMs=1500,FlurryStrokeGapMs=100;
+inline constexpr int FlurryHitsPerStroke=2;
 // A Param2 outside 10..100 (unread, a mod) paces one hit per full cycle.
 inline int FlurryPace(int param2) {return param2>=10&&param2<=100?param2:100;}
 class Flurry {
-    uint64_t session=0,lastHit=0;int skill=-1,form=-1,total=0,left=0,pace=100;
+    uint64_t session=0,lastHit=0,stroke=0;int skill=-1,form=-1,total=0,left=0,pace=100,strokeHits=0;bool castStroke=false;
 public:
     enum class Feed:uint8_t {None,TooSoon,Hit};
     // The cast landed its first hit at `now`; hits: the cast's whole count.
-    void Begin(uint64_t s,int sk,int shape,int hits,int param2,uint64_t now) {
+    // strokeKey: the casting stroke (StrokeKey).
+    void Begin(uint64_t s,int sk,int shape,int hits,int param2,uint64_t now,uint64_t strokeKey=0) {
         session=s;skill=sk;form=shape;total=hits>0?hits:0;left=total>1?total-1:0;pace=FlurryPace(param2);lastHit=now;
+        stroke=strokeKey;strokeHits=1;castStroke=true;
     }
+    // One hand's stroke, as both claws number their strokes separately.
+    static uint64_t StrokeKey(int hand,uint64_t strokeId) {return strokeId*2+uint64_t(hand&1)+2;}
     void End() {left=0;}
     bool Open(uint64_t s,int sk,int shape) const {return left>0&&s==session&&sk==skill&&shape==form;}
     // The least time since the previous hit before a stroke takes the next one.
@@ -111,12 +121,22 @@ public:
     }
     // What a landed stroke of this skill and form is to the open flurry. A
     // contact timed before the last hit (one batch applies out of order) is too soon.
-    Feed Feeds(uint64_t s,int sk,int shape,uint64_t now,uint32_t cycle,bool classic) const {
+    // strokeKey 0: no stroke spread (the pace rule only).
+    Feed Feeds(uint64_t s,int sk,int shape,uint64_t now,uint32_t cycle,bool classic,uint64_t strokeKey=0) const {
         if(!Open(s,sk,shape))return Feed::None;
+        if(strokeKey&&strokeKey==stroke)   // another creature in the stroke that took the last hit
+            return !castStroke&&strokeHits<FlurryHitsPerStroke?Feed::Hit:Feed::TooSoon;
         return now>=lastHit&&now-lastHit>=Floor(cycle,classic)?Feed::Hit:Feed::TooSoon;
     }
+    // This stroke already landed a Fury hit: its next creature is a spread hit, not a new swipe.
+    bool SameStroke(uint64_t strokeKey) const {return strokeKey&&strokeKey==stroke;}
     // A follow-up hit ran (hit or miss: natively a miss spends the hit too); returns its ordinal.
-    int Hit(uint64_t now) {if(left>0)--left;lastHit=std::max(lastHit,now);return total-left;}
+    int Hit(uint64_t now,uint64_t strokeKey=0) {
+        if(left>0)--left;
+        lastHit=std::max(lastHit,now);
+        if(strokeKey&&strokeKey==stroke)++strokeHits;else{stroke=strokeKey;strokeHits=1;castStroke=false;}
+        return total-left;
+    }
     int Total() const {return total;}
     int Left() const {return left;}
     uint64_t SinceHit(uint64_t now) const {return now>=lastHit?now-lastHit:0;}   // diagnostics

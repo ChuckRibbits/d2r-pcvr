@@ -87,6 +87,23 @@ int main() {
         f.End();
         Check(!f.Open(s,Fury,wolf)&&f.Lapse(s,99999,480,wolf)==0,"ended by another skill's cast");
     }
+    // Spread: a later stroke lands Fury on its first two creatures; the casting stroke on one.
+    {
+        using F=Flurry::Feed;Flurry f;const uint64_t s=7;const int wolf=1;const bool unleashed=false;
+        const uint64_t cast=Flurry::StrokeKey(0,10),next=Flurry::StrokeKey(1,4),again=Flurry::StrokeKey(0,11);
+        Check(cast!=next&&Flurry::StrokeKey(0,4)!=next&&cast!=0,"each hand's strokes have their own keys");
+        f.Begin(s,Fury,wolf,5,70,1000,cast);
+        Check(f.SameStroke(cast)&&f.Feeds(s,Fury,wolf,1000,480,unleashed,cast)==F::TooSoon,"the casting stroke's other creatures stay basic");
+        Check(f.Feeds(s,Fury,wolf,1250,480,unleashed,next)==F::Hit&&f.Hit(1250,next)==2,"the next stroke's first creature: hit 2");
+        Check(f.SameStroke(next)&&f.Feeds(s,Fury,wolf,1250,480,unleashed,next)==F::Hit&&f.Hit(1250,next)==3,"its second creature: hit 3, at once");
+        Check(f.Feeds(s,Fury,wolf,1251,480,unleashed,next)==F::TooSoon,"its third creature stays a cleave basic");
+        Check(f.Feeds(s,Fury,wolf,1300,480,unleashed,again)==F::TooSoon&&f.Feeds(s,Fury,wolf,1350,480,unleashed,again)==F::Hit,
+              "a new stroke keeps the follow-through guard from the last hit");
+        Check(f.Hit(1350,again)==4&&f.Feeds(s,Fury,wolf,1350,480,unleashed,again)==F::Hit&&f.Hit(1350,again)==5&&!f.Open(s,Fury,wolf),
+              "two more creatures: hits 4 and 5, then spent");
+        f.Begin(s,Fury,wolf,5,70,2000,cast);
+        Check(f.Feeds(s,Fury,wolf,2200,480,unleashed)==F::Hit,"without a stroke key: the pace rule only");
+    }
     if(failures)return EXIT_FAILURE;
     std::printf("strike skills ok\n");return EXIT_SUCCESS;
 }

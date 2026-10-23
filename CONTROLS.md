@@ -420,8 +420,10 @@ mana, however fast you swing. No swipe is lost; only one swipe's
 follow-through can't take a second hit. Once the hits are spent, the next
 full-cycle swipe casts Fury again. In Classic each follow-up waits 70% of an
 attack cycle after the previous Fury hit (Fury's own pace); a swipe before
-that is a basic attack and doesn't delay it. One Fury hit per swipe; the
-rest of a cleave stays basic. The unused hits lapse after two attack cycles
+that is a basic attack and doesn't delay it. As natively, the hits spread
+across a pack: a later swipe through several creatures lands Fury on the
+first two it touches (the casting swipe on one); the rest of a cleave stays
+basic. The unused hits lapse after two attack cycles
 without one, or when the form changes or another skill is cast. Only the
 casting swipe growls.
 

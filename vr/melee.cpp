@@ -382,7 +382,7 @@ std::atomic<unsigned> strikeArmed{0},strikeCast{0},strikeBasic{0},strikeStartRef
 std::atomic<int> strikeSound{0};
 // Fury's flurry (game thread): the open cast whose hits later strokes deliver.
 framevr::strikeskills::Flurry flurry;
-std::atomic<unsigned> flurryCasts{0},flurryHits{0},flurryEarly{0},flurryForfeit{0},flurrySpent{0},flurryRefused{0};
+std::atomic<unsigned> flurryCasts{0},flurryHits{0},flurryEarly{0},flurryForfeit{0},flurrySpent{0},flurryRefused{0},flurrySpread{0};
 bool StrikeSkillVerified(int skill) {
     for(size_t i=0;i<std::size(StrikeNatives);++i)if(StrikeNatives[i].skill==skill)return strikeVerified[i];
     return false;
@@ -631,7 +631,9 @@ void __cdecl Apply(const D2RL::PluginContext*,void* token) noexcept {
                         const uint32_t handCycle=cycleSession.load()==r.session?(speedHand?offCycleMs.load():cycleMs.load()):0;
                         const int shape=claws?interactionstate::ShapeForm(r.session,GetTickCount64()):0;
                         if(const int lapsed=flurry.Lapse(r.session,r.at,handCycle,shape))flurryForfeit+=unsigned(lapsed);
-                        const auto feed=r.sample.strikeSkill>=0?flurry.Feeds(r.session,r.sample.strikeSkill,shape,r.at,handCycle,attackSpeed.load()):Feed::None;
+                        const uint64_t strokeKey=framevr::strikeskills::Flurry::StrokeKey(hand,r.sweep.stroke);
+                        const auto feed=r.sample.strikeSkill>=0?flurry.Feeds(r.session,r.sample.strikeSkill,shape,r.at,handCycle,attackSpeed.load(),strokeKey):Feed::None;
+                        const bool spread=flurry.SameStroke(strokeKey);   // the stroke already landed a Fury hit (rev6)
                         // Attack speed: a basic attack strikes one creature, and
                         // no sooner than its native attack cycle (IAS, WSM, class)
                         // after the last attack. A rolled miss spends the cycle
@@ -661,10 +663,11 @@ void __cdecl Apply(const D2RL::PluginContext*,void* token) noexcept {
                                 strokeStart=true;
                             }
                         }
-                        // One flurry hit per stroke: its first landed contact (Classic lands one creature per stroke).
-                        // It lands the skill's own damage and on-hit effects; other creatures that stroke reaches
-                        // keep the stroke's true recovery, as cleave follow-ups.
-                        const bool followUp=feed==Feed::Hit&&(attackSpeed.load()||strokeStart);
+                        // A flurry hit: a stroke's first landed contact, or (Unleashed, rev6) the next creature of
+                        // a later stroke that already landed one (Flurry: up to two per stroke; Classic lands one
+                        // creature per stroke). It lands the skill's own damage and on-hit effects; other creatures
+                        // that stroke reaches keep the stroke's true recovery, as cleave follow-ups.
+                        const bool followUp=feed==Feed::Hit&&(attackSpeed.load()||strokeStart||spread);
                         const bool early=feed==Feed::TooSoon&&(attackSpeed.load()||strokeStart);   // an early stroke, not a cleave contact
                         if(!hits.Insert(r.session,r.sweep.stroke,header[2]))continue;
                         ++contacts;
@@ -680,7 +683,7 @@ void __cdecl Apply(const D2RL::PluginContext*,void* token) noexcept {
                             if(state.cleaveSession!=r.session||state.cleaveStroke!=r.sweep.stroke){state.cleaveSession=r.session;state.cleaveStroke=r.sweep.stroke;state.cleaveLanded=0;}
                             cleave=combat::CleaveFactor(state.cleaveLanded,step,cleaveFloor.load(std::memory_order_relaxed));cleaveTracked=true;
                         }
-                        const float swingRecoverySaved=combat::SwingRecovery((followUp?1.f:recovery)*cleave);
+                        const float swingRecoverySaved=combat::SwingRecovery(followUp?1.f:recovery*cleave);
                         // Unleashed on-hit gate (Cal, 2026-10-21): on-hit effects only on a full-cycle
                         // stroke's first landed contact; a riposte has earned them. Classic: native.
                         // A flurry hit is a whole native hit of the cast: it has them.
@@ -705,7 +708,7 @@ void __cdecl Apply(const D2RL::PluginContext*,void* token) noexcept {
                                 ++strikeArmed;
                                 if(followUp) {
                                     if(FollowUpStrike(local.game,player,strikeSkill,r.sample.skillOwner,header[2])) {
-                                        strike=StrikeOutcome::FollowUp;flurryHit=flurry.Hit(r.at);++flurryHits;
+                                        strike=StrikeOutcome::FollowUp;flurryHit=flurry.Hit(r.at,strokeKey);++flurryHits;if(spread)++flurrySpread;
                                         if(!flurry.Left())++flurrySpent;
                                     } else {flurry.End();++flurryRefused;}
                                 } else if(feed!=Feed::TooSoon&&framevr::strikeskills::Casts(strikeSkill,attackSpeed.load(),onHit==combat::OnHit::Allowed)) {
@@ -713,7 +716,7 @@ void __cdecl Apply(const D2RL::PluginContext*,void* token) noexcept {
                                     strike=CastStrike(local.game,player,r.session,strikeSkill,r.sample.skillOwner,&castHits,&pace);
                                     if(strike==StrikeOutcome::Basic)++strikeFallback;
                                     if(strike==StrikeOutcome::Cast&&framevr::strikeskills::MultiHit(strikeSkill)) {
-                                        flurry.Begin(r.session,strikeSkill,shape,castHits,pace,r.at);flurryHit=1;++flurryCasts;
+                                        flurry.Begin(r.session,strikeSkill,shape,castHits,pace,r.at,strokeKey);flurryHit=1;++flurryCasts;
                                     } else if(strike!=StrikeOutcome::Basic)flurry.End();   // another skill's cast ends an open flurry
                                 } else {++strikeBasic;if(early)++flurryEarly;}
                             }
@@ -750,7 +753,8 @@ void __cdecl Apply(const D2RL::PluginContext*,void* token) noexcept {
                             // A flurry's hits: "cast 1/5", "flurry 3/5 after 352 ms" (since its previous hit);
                             // an early stroke inside it: "basic_strike flurry_early after 40 ms".
                             char tag[64];
-                            if(strike==StrikeOutcome::FollowUp)snprintf(tag,sizeof tag,"flurry %d/%d after %llu ms",flurryHit,flurry.Total(),(unsigned long long)sinceFlurryHit);
+                            if(strike==StrikeOutcome::FollowUp&&spread)snprintf(tag,sizeof tag,"flurry %d/%d spread",flurryHit,flurry.Total());
+                            else if(strike==StrikeOutcome::FollowUp)snprintf(tag,sizeof tag,"flurry %d/%d after %llu ms",flurryHit,flurry.Total(),(unsigned long long)sinceFlurryHit);
                             else if(flurryHit)snprintf(tag,sizeof tag,"cast %d/%d",flurryHit,flurry.Total());
                             else if(strikeSkill>=0&&early)snprintf(tag,sizeof tag,"basic_strike flurry_early after %llu ms",(unsigned long long)sinceFlurryHit);
                             else snprintf(tag,sizeof tag,"%s",strike==StrikeOutcome::Cast?"cast":strike==StrikeOutcome::StartRefused?"cast_start_refused":
@@ -1276,10 +1280,10 @@ void Report() {
             framevr::logging::Write(why);
         }
         const auto casts=flurryCasts.exchange(0),hits=flurryHits.exchange(0),early=flurryEarly.exchange(0),forfeit=flurryForfeit.exchange(0),
-                   spent=flurrySpent.exchange(0),refused=flurryRefused.exchange(0);
+                   spent=flurrySpent.exchange(0),refused=flurryRefused.exchange(0),spreadHits=flurrySpread.exchange(0);
         if(casts||hits||early||forfeit||refused) {
-            char line[240];snprintf(line,sizeof line,"Frame melee flurries: casts=%u follow-up hits=%u early strokes (basic)=%u spent=%u hits forfeited=%u follow-up refused=%u",
-                casts,hits,early,spent,forfeit,refused);
+            char line[260];snprintf(line,sizeof line,"Frame melee flurries: casts=%u follow-up hits=%u (spread to a second creature=%u) early strokes (basic)=%u spent=%u hits forfeited=%u follow-up refused=%u",
+                casts,hits,spreadHits,early,spent,forfeit,refused);
             framevr::logging::Write(line);
         }
     }
