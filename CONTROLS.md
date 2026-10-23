@@ -469,9 +469,11 @@ map is fitted inside the frame so edge markers remain visible.
 A gold arrow sits on the game's blue hero marker and points the way you face.
 Change its view under **VR Settings > HUD**, then press **Apply**:
 
-- **Map view: Isometric / Top-down.** Top-down flattens the game's slanted map into
-  a plan, so rooms are square and the arrow matches your real turns. Map names
-  are left out in top-down, since they would turn 45 degrees with the floor.
+- **Map view: Isometric / Top-down / Full map / Full top-down.** Top-down flattens the
+  game's slanted map into a plan, so rooms are square and the arrow matches your real
+  turns. Map names are left out in top-down, since they would turn 45 degrees with the
+  floor. **Full map** and **Full top-down** show the game's full (Tab) map instead of its
+  corner map, in the same two views, and zoom much further (below).
 - **Rotate map: Off / On** (top-down only). On turns the map so the way you face
   is up; Off keeps north up.
 
@@ -488,3 +490,11 @@ starts at 1x. Looking away gives the right stick back from the next frame; a
 push still held then must return to the center before it toggles running or
 shows loot labels. A push already held when you look at the map zooms it
 straight away.
+
+With **Full map** or **Full top-down**, 1x is the game's full map at its widest
+(the game's own zoom 0.125, about four times wider than its Tab map), and the
+right stick zooms in to 16x. The game redraws its map closer as you zoom in, so it
+stays sharp; past 4x a tick marks each whole step. The game's full map is a window
+around your hero the size of its screen: the widest view shows that window, not
+the whole level. While the wrist or palm map shows it, the full map is not drawn in
+your view; press Tab as usual for the game's own map.

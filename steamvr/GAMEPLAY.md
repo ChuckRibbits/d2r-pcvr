@@ -238,6 +238,12 @@ zoom, and the wheel's **MAP** tab shows it (change it at the wrist). It is not
 saved: every new game starts at 1x, so a player who has forgotten the control
 still sees the whole map.
 
+**Full map:** **VR Settings > HUD > Map view** = **Full map** or **Full top-down**
+shows the game's full (Tab) map on the wrist instead of its corner map, in the same
+two views. 1x is the game's widest zoom (0.125); up zooms in to 16x, redrawn by the
+game closer as you go so it stays sharp. It is a screen-sized window around your
+hero, not the whole level, and it is not drawn in your view while the wrist shows it.
+
 The label above the compass shows your current **act (I-V)** and **area name**,
 including named dungeon floors. It follows the same wrist/palm placement and
 visibility as navigation, and updates when you cross a boundary or use a waypoint
