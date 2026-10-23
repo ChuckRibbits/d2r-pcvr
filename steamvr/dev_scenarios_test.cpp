@@ -71,7 +71,8 @@ static Items::Result __cdecl ItemsCall(const PluginContext*,const Items::Transac
     for(unsigned i=0;i<t->outputCount;++i) {
         const auto& s=t->outputs[i];const bool ammo=s.code==Items::MakeItemCode("aqv")||s.code==Items::MakeItemCode("cqv");
         grantedCodes.push_back(s.code);
-        const bool starter=t->outputCount<9&&t->outputCount>2;
+        const bool potions=t->outputCount==10&&t->outputs[0].code==Items::MakeItemCode("hp5"); // the potion kit
+        const bool starter=(t->outputCount<9&&t->outputCount>2)||potions;
         assert(s.quality==((ammo||starter)?Items::Quality::Normal:Items::Quality::Unique)&&s.itemLevel==(starter?1:99));
         assert(s.destination.container==Items::ItemContainer::Inventory);
         assert(s.quantity==(ammo?250:Items::DefaultValue)&&s.durability==Items::DefaultValue);
@@ -192,7 +193,7 @@ int main(){
                 assert(commands[start+PreparationCount+i]==expected);
             }
         }
-        for(int choice:{1,2,CrossbowChoice,BowChoice,SmallShieldChoice,StarterPrimaryChoice,StarterAlternateChoice,ThrowingChoice}) {
+        for(int choice:{1,2,CrossbowChoice,BowChoice,SmallShieldChoice,StarterPrimaryChoice,StarterAlternateChoice,ThrowingChoice,PotionsChoice}) {
             const auto commandCount=commands.size();
             devscenarios::Request(Make(choice));assert(tasks.back().game);Run(tasks.size()-1);
             assert(devscenarios::Status().result==Result::Applied&&!tokenLive);
@@ -231,9 +232,15 @@ int main(){
         std::vector<std::string_view> codes;for(const char* code:Kit(cls,ThrowingChoice))if(code)codes.push_back(code);
         assert((codes==std::vector<std::string_view>{"jav","pil","glv","tkf","tax"}));
     }
+    // The potion kit: the four potions a hireling takes from a throw, for every class.
+    assert(IsKit(PotionsChoice)&&NormalKit(PotionsChoice)&&PageFor(PotionsChoice)==1);
+    for(int cls=0;cls<8;++cls) {
+        std::vector<std::string_view> codes;for(const char* code:Kit(cls,PotionsChoice))if(code)codes.push_back(code);
+        assert((codes==std::vector<std::string_view>{"hp5","hp5","hp5","hp5","rvl","rvl","yps","yps","wms","wms"}));
+    }
     // Failed standalone kits clean up only the generated exchange token.
     failItems=true;
-    for(int choice:{CrossbowChoice,BowChoice,SmallShieldChoice,ThrowingChoice}) {
+    for(int choice:{CrossbowChoice,BowChoice,SmallShieldChoice,ThrowingChoice,PotionsChoice}) {
         const auto beforeCleanup=tokenRemoves;
         devscenarios::Request(Make(choice));Run(tasks.size()-1);
         assert(devscenarios::Status().result==Result::KitRefused&&!tokenLive&&tokenRemoves==beforeCleanup+1);
