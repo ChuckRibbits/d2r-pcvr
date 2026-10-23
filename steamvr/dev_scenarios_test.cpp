@@ -21,8 +21,10 @@ static std::vector<Task> tasks;
 namespace gamestate {uint64_t LocalPlayer(){return local;}bool MenuOpen(){return menu;}}
 namespace interactionstate {Snapshot Read(){return state;}}
 namespace framevr::logging {void Write(const char*){}}
-static int keepOwn=3;
+static int keepOwn=3;static bool sharp=true,fill=true;
 namespace framevr {void SetTurnsKeepOwn(int mode){keepOwn=mode;}int TurnsKeepOwn(){return keepOwn;}}
+namespace framevr {void SetTurnsSharp(bool on){sharp=on;}bool TurnsSharp(){return sharp;}}
+namespace framevr {void SetTurnsFill(bool on){fill=on;}bool TurnsFill(){return fill;}}
 
 static Threads::Result Queue(Threads::Callback callback,void* data,bool game) {
     assert(devscenarios::Status().result==Result::Pending);
@@ -308,6 +310,22 @@ int main(){
     }
     devscenarios::Request(Make(TurnsKeepOwnChoice));++local;Run(tasks.size()-1);--local;
     assert(keepOwn==3&&devscenarios::Status().result==Result::Refused);
+    // The filter switch flips [stereo] turns_sharp the same way (soft, sharp).
+    for(bool expected:{false,true}) {
+        devscenarios::Request(Make(TurnsSharpChoice));assert(!tasks.back().game);Run(tasks.size()-1);
+        assert(devscenarios::Status().result==Result::SharpUpdated&&sharp==expected);
+        Snapshot snapshot;devscenarios::Capture(snapshot);assert(snapshot.devTurnsSharp==expected&&snapshot.devTurnsKeepOwn==3);
+    }
+    devscenarios::Request(Make(TurnsSharpChoice));++local;Run(tasks.size()-1);--local;
+    assert(sharp&&devscenarios::Status().result==Result::Refused);
+    // And the ghosts switch [stereo] turns_fill (as before, fixed).
+    for(bool expected:{false,true}) {
+        devscenarios::Request(Make(TurnsFillChoice));assert(!tasks.back().game);Run(tasks.size()-1);
+        assert(devscenarios::Status().result==Result::FillUpdated&&fill==expected);
+        Snapshot snapshot;devscenarios::Capture(snapshot);assert(snapshot.devTurnsFill==expected&&snapshot.devTurnsSharp);
+    }
+    devscenarios::Request(Make(TurnsFillChoice));++local;Run(tasks.size()-1);--local;
+    assert(fill&&devscenarios::Status().result==Result::Refused);
     assert(commands.size()==debugCommands&&itemCalls==debugItems);
     devscenarios::execute=Execute;
     inlineQueue=true;devscenarios::Request(Make(3,100));

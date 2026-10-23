@@ -180,6 +180,26 @@ headset frame are drawn:
   close moves with the hero for that frame. The depth is the same copy the
   added fog reads (DLSS's corner included). Until both eyes have one, a pair
   is drawn from the hero's first step to 0.3 s after the last.
+  The pictures turned, moved and laid over the eye not drawn land between
+  texels nearly always; read bilinear, a half-texel step averaged two and
+  every other frame in each eye was softer than Both eyes. They are read
+  Catmull-Rom instead (`[stereo] turns_sharp=1`, live; in developer mode also
+  DEV > Equipment > By turns filter), kept within the four nearest texels so
+  it adds no ring or halo: at half a texel, stripes 4 px apart keep about a
+  third more contrast, and a texel's centre reads exactly that texel. On an
+  RTX 5090 it costs no measurable GPU time (the eye not drawn 0.55 ms at
+  3072 square, 0.97 ms at 4096, either way). 0 reads bilinear.
+  Beside anything near, the eye not drawn sees a strip the drawn eye cannot,
+  and keeps its own picture from a frame back there; a monster that stood
+  there a frame ago and has walked on was left in it, a ghost beside it in
+  one eye. Such a strip is always of what is behind (the drawn eye's view of
+  it is blocked by something nearer), so where the eye's own picture there is
+  nearer than the farther end of the strip along the row by more than 2 px of
+  parallax, the picture beside that end goes there instead; where it shows
+  what is behind, its own texture stays (`[stereo] turns_fill=1`, live; in
+  developer mode also DEV > Equipment > By turns ghosts; 0 as before). The
+  ends are looked for up to 128 px of a 4096-wide eye either side. On an RTX
+  5090 it adds 0.1 ms at 3072 square and 0.23 ms at 4096.
 
 By turns draws a pair on a snap turn, outside first person, in open menus,
 during stereo captures and on any frame without a reusable image for both eyes.

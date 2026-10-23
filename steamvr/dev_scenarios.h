@@ -23,9 +23,13 @@ inline constexpr int TurnsKeepOwnChoice=37;
 inline constexpr int ThrowingChoice=38;
 inline constexpr int PotionsChoice=39;
 inline constexpr int UnlockQuestsChoice=40;
-inline constexpr int TorchChoice=41;
+// A session switch like TurnsKeepOwnChoice: [stereo] turns_sharp (sharp, soft) for A/B.
+inline constexpr int TurnsSharpChoice=41;
+// And [stereo] turns_fill (fixed, as before).
+inline constexpr int TurnsFillChoice=42;
+inline constexpr int TorchChoice=43;
 inline constexpr int PageSize=14;
-inline constexpr std::array<Choice,42> Choices{{
+inline constexpr std::array<Choice,44> Choices{{
     {"Level 90", "All class skills rank 20 / test attributes", nullptr},
     {"Primary gear", "Class-specific unique equipment", nullptr},
     {"Alternate gear", "Equipment for the other class abilities", nullptr},
@@ -74,6 +78,8 @@ inline constexpr std::array<Choice,42> Choices{{
     {"Throwing kit", "Javelin, Pilum, Glaive, knives and axes", nullptr},
     {"Potion kit", "Health, Rejuvenation, Antidote, Thawing / belt them to throw", nullptr},
     {"Unlock Quests & Waypoints", "Complete quests through Act V / unlock all waypoints", nullptr},
+    {"By turns filter", "Eye not drawn read sharp (Catmull-Rom) / soft (bilinear)", nullptr},
+    {"By turns ghosts", "Strips beside moving things: frame-old ghosts removed / kept", nullptr},
     {"Torch kit", "One-hand club torch / test lighting and melee", nullptr},
 }};
 // Stable action IDs are independent of their presentation order.
@@ -88,7 +94,7 @@ inline constexpr const char* PageHelp[]={
 };
 inline constexpr std::array<std::array<int,PageSize>,PageCount> Pages{{
     {{Level10Choice,Level30Choice,Level60Choice,0,HealChoice,UnlockQuestsChoice,-1,-1,-1,-1,-1,-1,-1,-1}},
-    {{StarterPrimaryChoice,StarterAlternateChoice,1,2,CrossbowChoice,BowChoice,SmallShieldChoice,DebugDrawsChoice,TurnsKeepOwnChoice,ThrowingChoice,PotionsChoice,TorchChoice,-1,-1}},
+    {{StarterPrimaryChoice,StarterAlternateChoice,1,2,CrossbowChoice,BowChoice,SmallShieldChoice,DebugDrawsChoice,TurnsKeepOwnChoice,ThrowingChoice,PotionsChoice,TurnsSharpChoice,TurnsFillChoice,TorchChoice}},
     {{4,11,14,15,16,5,3,8,9,-1,-1,-1,-1,-1}},
     {{17,UpperKurastChoice,KurastSewersChoice,18,19,26,27,-1,-1,-1,-1,-1,-1,-1}},
     {{6,7,20,21,22,23,24,25,-1,-1,-1,-1,-1,-1}}

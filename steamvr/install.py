@@ -19,6 +19,7 @@ from prepare_spell_sprites import prepare as prepare_spell_sprites, FILE as SPEL
 from prepare_props import prepare as prepare_props, FILES as PROP_FILES
 import prepare_arcane_sky
 import prepare_sewer_backdrop
+import prepare_kurast_dock
 from game_install import validate_game
 import mod_identity
 
@@ -454,6 +455,14 @@ def main():
     else:
         payload.update({mod_identity.MOD_DIR / name: data for name, data in sewers.items()})
         print('Prepared dark Kurast sewer entrances from your installed game.')
+    try:
+        docktown = prepare_kurast_dock.prepare(game, casclib=args.casclib)
+        prepare_kurast_dock.check_existing(game / mod_identity.MOD_DIR, docktown)
+    except (OSError, ValueError, KeyError, IndexError) as error:
+        print(f'Kurast Docks flying canoe fix unavailable; existing preset retained: {error}')
+    else:
+        payload.update({mod_identity.MOD_DIR / name: data for name, data in docktown.items()})
+        print('Prepared Kurast Docks preset (removed flying canoe) from your installed game.')
     require_game_closed()
     check_launcher_icon(game, payload[mod_identity.MOD_DIR / 'launcher_icon.png'])
     snapshot = args.backup_dir / datetime.now().strftime('%Y%m%d-%H%M%S-%f')

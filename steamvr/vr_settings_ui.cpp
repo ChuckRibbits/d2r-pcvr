@@ -47,6 +47,9 @@ static void ValueLabel(Key key,float value,const Context& c,char* label,size_t s
     else if(key==MeleeHitSpeed||key==MeleeThrustSpeed||key==ShieldBashSpeed)std::snprintf(label,size,"%.2f m/s",value);
     else if(HapticKey(key)){if(value==0)std::snprintf(label,size,"Off (0%%)");else std::snprintf(label,size,"%.0f%%",value);}
     else if(key==LootLabelSize)std::snprintf(label,size,"%g%%",value);
+    else if(key==ShieldGrip||key==ShieldOut||key==ShieldUp)std::snprintf(label,size,"%+.0f cm",value);
+    else if(key==ShieldFollow){if(value==0)std::snprintf(label,size,"0%% Forearm");else if(value==100)std::snprintf(label,size,"100%% Wrist");else std::snprintf(label,size,"%.0f%%",value);}
+    else if(key==ShieldRoll)std::snprintf(label,size,"%+.0f\xc2\xb0",value);
     else if(key==Waist||key==BeltForward)std::snprintf(label,size,"%.1f cm",value*100);
     else std::snprintf(label,size,"%.0f",value);
 }
@@ -175,7 +178,7 @@ std::vector<uint8_t> Paint(const Model& m,Hit hover,const char* runtimeStatus,co
             text(gameWarning?gameWarning:DeferWarning,{40,209,width,29},false,false,warn);
             if(defer)button(DeferBox,"Defer GPU wait",{Kind::Change,DeferGpuWait,1},false,m.ready&&!m.Busy());
         }else text(m.page==Page::Haptics?"Tune vibration for your headset and controllers.":m.page==Page::Combat?"Tune physical combat and offline difficulty.":m.page==Page::Aim?"Choose how your skills find their target and what you see of it. Rows for other classes stay hidden.":
-             m.page==Page::Video?"The mod's added effects. What changes the frame rate is on Perf.":runtimeStatus,{40,197,1200,42},false,false,quiet);
+             m.page==Page::Shield?"Seat a held shield on your forearm.":m.page==Page::Video?"The mod's added effects. What changes the frame rate is on Perf.":runtimeStatus,{40,197,1200,42},false,false,quiet);
         const RowList rows=m.Rows();
         for(int row=0;row<rows.count;++row){
             const Key key=rows[row];const int y=RowY+row*RowStep;

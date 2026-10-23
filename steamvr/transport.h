@@ -38,6 +38,22 @@ void ConfigureTurnsKeepNear(float gap,float reach);
 // where the game's effects layer has this much (its strongest channel)
 // within the reach.
 void ConfigureTurnsKeepEffects(float level,float reach);
+// [stereo] turns_sharp (1): by turns, the pictures turned, moved and laid
+// over the eye not drawn read Catmull-Rom, sharper than bilinear
+// (TurnWarp::Sharpen); 0 bilinear. Applied when the ini's value changes;
+// DEV > Equipment switches it for the session (Set), and reads it back.
+void ConfigureTurnsSharp(bool on);
+void SetTurnsSharp(bool on);
+bool TurnsSharp();
+// [stereo] turns_fill (1): by turns, in the strips beside near things the
+// drawn eye's picture does not reach, where the eye's own frame-old picture
+// shows something nearer since gone (a monster that walked on), what is
+// behind beside the strip instead (TurnWarp::Fill); 0 its own picture as
+// before. Applied when the ini's value changes; DEV > Equipment switches it
+// for the session (Set), and reads it back.
+void ConfigureTurnsFill(bool on);
+void SetTurnsFill(bool on);
+bool TurnsFill();
 void ConfigureEyeTracking(bool enabled);
 void ConfigureGameplay(bool enabled);
 void ConfigureQuiver(bool enabled,bool preview); // [bow] quiver, quiver_preview
@@ -171,7 +187,9 @@ bool Active();
 bool VrGameplay(uint64_t now);
 bool SpatialMenu();
 // mapNorth is the unmodified native camera's horizontal heading (map-up).
+// scaleHeight: the eye height the world's scale is taken from (units per metre over
+// userEyeHeight), 0 = eyeHeight; a druid's form stands its eyes apart from it.
 bool View(float out[16], const float hero[3], float eyeHeight,
-          float userEyeHeight, float bodyHeading, float recenterYaw, int eye, float mapNorth);
+          float userEyeHeight, float bodyHeading, float recenterYaw, int eye, float mapNorth, float scaleHeight = 0);
 bool Projection(float out[16], float nearWorld, int eye);
 }

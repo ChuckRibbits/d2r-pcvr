@@ -78,10 +78,12 @@ Quest left X/Y correspond to Index left A/B; right A/B labels are the same.
 | Bone Wall / Bone Prison | Aim with the casting controller: the wall or prison lands where its ray meets the floor (six cells ahead when level). With **VR Settings > Aim > Ground skills** on Aimed monster, Bone Prison lands on the aimed monster and Bone Wall rises 3 cells in front of it. Native placement rules still apply |
 | Holy Bolt | Aim with either casting controller, including up/down with Planar spell aiming Off. Light assists at launch; Strong also adds gentle homing toward undead/demons. Directly aim at your mercenary to heal; native damage/healing rules apply |
 | See which monsters you are aiming at | **VR Settings > Aim > Monster outline** (Off by default; 10-100% sets its brightness) draws a thin, steady outline round each hand's monster: a hand held out picks the monster it points at; with no hand on one, the monster you look at is outlined. **Monster highlights**: Both hands (default) outlines each hand's monster, Dominant hand only that hand's (**VR > Dominant hand**; the bow hand while a bow is out, whose color also wins when both hands are on one monster). **Hand colors** (one row: its left stepper is the left hand's, its right stepper the right hand's) each choose By range (red near, orange mid-range, yellow far) or one hue; gold and blue by default. The monster you look at takes the color of the hand that would cast at it: the left (bow) hand with a bow equipped, else your dominant hand. A button you hold keeps showing the monster its cast took. Walls in between rule a monster out. A guide only: it does not change how skills aim |
-| Send skills to that monster | **VR Settings > Aim > Skills go to the aimed monster** (Off by default; Spells, Bow skills or Both. A class without bow skills sees it as **Spells go to the aimed monster**, On or Off): a spell takes the monster of the hand whose button casts it (arm held out in front of you, along where it points, at least a tenth of your Controller span: 15 cm on a 1.5 m span; a hand pointing within 45 degrees of straight down, or hanging at your side, is resting), else the other hand's, else the one you look at, and keeps it until you let go. Bolts and Lightning fly at it; curses and Corpse Explosion land on it; Guided Arrow, Bone Spirit, Fist of the Heavens, Charge, Leap Attack and Zeal are handed the monster itself; Teleport, Leap, golems and raises go where you point. With no monster, a spell goes where its hand's arm points, else the other arm, else where you look. Only monsters within the game's own cast reach count (50 cells on either axis, less a margin). Off, spells aim along the casting hand as before. With Bow skills or Both, bow skills take the bow hand's monster first, aimed from the bow hand. The Warlock's skills are left out for now: they keep the hand aim they had before these settings |
-| Cast with a staff | **VR Settings > Aim > Staff aims where your arm points** (Off by default): an upright staff casts along your arm, shoulder through hand; levelled out like a wand, it casts from its top |
+| Send skills to that monster | **VR Settings > Aim > Skills go to the aimed monster** (Off by default; Spells, Bow skills or Both. A class without bow skills sees it as **Spells go to the aimed monster**, On or Off): a spell takes the monster of the hand whose button casts it (arm held out in front of you, along where it points, at least a tenth of your Controller span: 15 cm on a 1.5 m span; a hand pointing within 45 degrees of straight down, or hanging at your side, is resting), else the other hand's, else the one you look at, and keeps it until you let go or it walks out of the game's reach. Bolts and Lightning fly at it; curses and Corpse Explosion land on it; Guided Arrow, Bone Spirit, Charge, Leap Attack, Dragon Flight, Attract and Taunt are handed the monster itself; Teleport, Leap, golems and raises go where you point. With no monster, a spell goes where its hand's arm points, else the other arm, else where you look. Only monsters within the game's own cast reach count (50 cells on either axis, less a margin). Off, spells aim along the casting hand as before. With Bow skills or Both, bow skills take the bow hand's monster first, aimed from the bow hand. The Warlock's skills are left out for now: they keep the hand aim they had before these settings |
+| Keep the aim on what you face | **VR Settings > Aim > Aim follows your view** (Off by default; shown once Monster outline, Skills go to the aimed monster or Ground skills on Aimed monster is on): the monster you look at must come within 17 degrees of where your head faces, and stays yours while it is within 30, until another comes within 17; a hand picks only monsters within 30 degrees of where your head faces. A casting hand (the bow hand for a bow skill) held out and pointing aims alone: its cast takes its own monster, else goes where it points, never the other hand's or the one you look at, and while the hand whose color the one you look at takes points, that monster is not outlined. A lowered hand still takes the other hand's, then the one you look at. The melee attack skills (Charge, Leap Attack, Dragon Flight, Whirlwind) from a raised hand take its own monster, else the other hand's while that one is outlined (Monster highlights Both hands, or the other hand is the dominant one), never the one you look at; lowered, they try all three like any cast |
+| Cast with a staff | **VR Settings > Aim > Staff aims where your arm points** (Off by default): an upright staff casts along your arm, shoulder through hand; leveled out like a wand, it casts from its top. The Warlock's skills keep the staff's own aim |
 | Aim ground skills | **VR Settings > Aim > Ground skills** sets where Fire Blast, Shock Web and the other traps (Blade Sentinel, Mind Blast...), Blizzard, Meteor, Fire Wall, Hydra, Fissure, Volcano, Bone Wall and Bone Prison land. **Game** (default): the game's own aim, as before. **Where you point**: on the floor where the casting hand points, held out or not (else the other arm, else where you look); aimed at the horizon or above, as far as the game lets a skill be cast (45 cells along an axis, more diagonally). **Aimed monster**: on the monster the casting hand, the other hand or your eyes aim at, else where you point |
 | See where a ground skill will hit | **VR Settings > Aim > Landing circles** (default On; with Ground skills on Where you point or Aimed monster): once the game accepts the cast, a circle in the element's color fills from the centre outward until the skill lands (a bomb over its flight, timed by the game's own missile, Meteor over its fall, Blizzard while the ice falls); Fire Wall shows as a strip across your aim. It paints the floor only, not monsters' legs or walls |
+| Seat a held shield on your arm | **VR Settings > Shield**: Grip offset slides the shield up the forearm so your fingers reach its grip strap; Out and Up move it away from and across the forearm. In centimeters (Grip -10 to 40, Out and Up -30 to 30), all 0 by default (the original position when Shield follows is 100%); about 3 / 2 / 2 suits a buckler, large shields need more. The shield blocks where it is shown. Shield follows sets how much it turns with your wrist (0% Forearm, strapped to it; 100% Wrist, with the hand; default 50%, 10% steps), and Shield roll turns it about the forearm (default 0, -180 to +180 in 5° steps, + toward the little finger) |
 | Increase offline difficulty | **VR Settings > Combat > Offline difficulty**: Game default or Players 1-8; higher counts make monsters tougher and increase rewards |
 | Bow draw | Right trigger near the left-hand bow string; draw and release |
 | See where a drawn arrow will fly | At full draw a faint line runs from the arrow's tip along its straight flight, with a brighter dot where it would reach the floor; otherwise it fades out at 15 m. It does not stop at walls or monsters. Basic arrows and Magic, Fire, Cold, Ice, Exploding, Immolation and Freezing Arrow; not Multiple Shot, Guided Arrow, Strafe or crossbows. **VR Settings > Aim > Bow path laser** chooses Off or its color, 15 degrees at a time around the color wheel (Off by default; the first step is red 0°); stepping past 345° goes to Off and on to 0°, in either direction |
@@ -138,12 +140,25 @@ defense scales the damage (the game's own hit chance, 5-95%), and so does your
 rhythm: a stroke before your attack speed has recovered hits much weaker, so
 measured swings beat flailing. Faster attack speed (IAS) shortens the wait.
 One stroke can hit several monsters, each further one a little weaker.
+On-hit effects (life and mana leech, critical and deadly strike, crushing blow,
+open wounds, chance to cast and the like) come only from a stroke made after
+your attack speed has fully recovered, and only on the first monster it hits.
 
 **Unleashed incoming damage:** monsters' attacks and projectiles always reach
 you; your shield is what stops them. Your Defense decides how hard they land:
 the chance a monster would have had to hit you (5-95%) scales the whole
 attack, elemental damage included. Spells never roll to hit, so Defense
 doesn't reduce them; resistances still matter.
+
+**Unleashed hit effects:** contact always lands both ways, but everything an
+attack does besides its damage (leech, chill, freeze, stun, procs, chance to
+cast when struck, thorns, item wear...) only happens when the game's own hit
+roll would have landed it. A monster with a 30% chance to hit you chills or
+drains you on about 3 hits in 10, as in the original game, and your own swings'
+effects follow your attack rating the same way, arrows and throws included:
+your attack rating scales an arrow's damage as it does a swing's. Poison and burn
+count as damage: they are scaled like the hit itself. Energy Shield, Bone Armor
+and the other absorb skills soak and drain at the original game's average rate.
 
 ### Shield: block, parry and strain (Unleashed)
 
@@ -376,7 +391,43 @@ basic attacks for skills without a supported physical adapter; assigning a
 spell does not cast it on every swing. Physical skill gestures can be disabled
 under **VR settings → VR → Weapon skill gestures** (on by default), retaining
 button casting and basic physical attacks. This implementation supports the
-existing Smite and bow adapters; it does not generalize arbitrary melee skills.
+existing Smite and bow adapters, and melee skill strikes (below).
+
+**Melee skill strikes.** A supported melee skill on a hand's trigger is that
+hand's strike skill: a weapon or claw strike that lands casts it on the
+creature it struck, with the skill's own mana, damage and effects, and no
+animation. So far the Druid's single-hit form skills: **Maul** and **Feral
+Rage** (their stacks build per landed cast), **Rabies**, **Fire Claws** and
+**Hunger**. The skill wheel's lower-left box, **Left claw strikes** (Druid
+only), picks the left claw's skill with one click: its own trigger's
+(default) or the right trigger's (a skill sits on one trigger only, so this
+puts it on both claws). For plain left-claw strikes, leave the left trigger
+without a strike skill. In
+Unleashed only a stroke that waited a full attack cycle casts, on the first
+creature it lands on; faster strokes and the rest of a cleave stay basic
+attacks. In Classic every paced strike casts. Without mana, outside the form
+or with the wrong weapon, the strike lands as a basic attack (no mana also
+plays the character's mana warning). In Werewolf and Werebear form each
+strike that is one native attack (a full-cycle stroke in Unleashed, every
+paced strike in Classic) plays the form's growl as the native attack would
+(85% / 80% of the time), and Rabies and Hunger their bite. Holding the trigger still casts the
+skill natively. **Weapon skill gestures** Off keeps strikes basic.
+
+**Fury: a swipe flurry.** Werewolf **Fury** is one cast of up to five hits
+(two at skill level 1), and you deliver them. The swipe that casts it
+(the rule above) pays its mana and lands hit 1; in Unleashed each of the
+next swipes that lands, from a claw carrying Fury, lands the next hit on
+whatever it struck, with Fury's own damage and on-hit effects and no further
+mana, however fast you swing. No swipe is lost; only one swipe's
+follow-through can't take a second hit. Once the hits are spent, the next
+full-cycle swipe casts Fury again. In Classic each follow-up waits 70% of an
+attack cycle after the previous Fury hit (Fury's own pace); a swipe before
+that is a basic attack and doesn't delay it. As natively, the hits spread
+across a pack: a later swipe through several creatures lands Fury on the
+first two it touches (the casting swipe on one); the rest of a cleave stays
+basic. The unused hits lapse after two attack cycles
+without one, or when the form changes or another skill is cast. Only the
+casting swipe growls.
 
 Turning gestures off or changing equipment/assignments cancels an in-progress
 skill draw. Shield contact and its trigger fallback cannot duplicate a cast.

@@ -215,6 +215,7 @@ struct Skill {
     int32_t owner=-1;
     int32_t missile=-1; // native srvmissile of the assigned skill, -1 if none
     bool known=false,available=false,directed=false,motion=false,physical=false;
+    bool strike=false; // a melee skill physical strikes cast, its compiled row confirmed (strike_skills.h)
     char name[64]{};
     bool operator==(const Skill&) const = default;
 };
@@ -249,6 +250,8 @@ struct Snapshot {
     bool developer=false;
     bool devDebugDraws=false;
     int devTurnsKeepOwn=0;   // [stereo] turns_keep_own as it stands (DEV switch): 0 off, 1 near things, 2 everywhere
+    bool devTurnsSharp=false;   // [stereo] turns_sharp as it stands (DEV switch)
+    bool devTurnsFill=false;    // and turns_fill
     int devClass=-1,skillClass=-1;
     uint64_t session=0,at=0;
     uint32_t revision=0,activeSet=0;
@@ -299,7 +302,7 @@ inline bool Fresh(const Snapshot& s,uint64_t session,uint64_t now) {
     return session&&s.session==session&&now>=s.at&&now-s.at<=650;
 }
 enum class Action { None, Potion, Equip, Quest, Map, Character, Skills, BindSkill, Developer, FeedMerc, BindItem, UseItem, RunWalk };
-enum class Result { None, Pending, Applied, Refused, Cancelled, Dispatched, KitRefused, DebugUpdated, TurnsUpdated };
+enum class Result { None, Pending, Applied, Refused, Cancelled, Dispatched, KitRefused, DebugUpdated, TurnsUpdated, SharpUpdated, FillUpdated };
 struct Request {
     Action action=Action::None;
     uint64_t sequence=0,session=0,at=0;
@@ -342,9 +345,12 @@ struct MenuBounds {
     float left,top,right,bottom;
     bool Contains(float u,float v) const {return u>left&&u<right&&v>top&&v<bottom;}
 };
-constexpr int QuickUseCell=210,RunWalkCell=211;
+constexpr int QuickUseCell=210,RunWalkCell=211,LeftStrikesCell=212;
 constexpr double QuickEditHold=.65;
 constexpr MenuBounds QuickUseBounds{.025f,.025f,.255f,.18f},RunWalkBounds{.76f,.025f,.975f,.13f};
+// Druid: the left claw's strike skill, [gameplay] left_hand_strikes. Lower left,
+// above the ACTIVE line (y 637) and clear of the hand wheel's 216-degree label.
+constexpr MenuBounds LeftStrikesBounds{.025f,.72f,.235f,.82f};
 inline bool QuickControls(MenuPage page){return page==MenuPage::Spells||page==MenuPage::Equipment;}
 constexpr int SkillCategoryCell(int category){return 220+category;}
 inline MenuBounds SkillCategoryBounds(int category){
@@ -377,12 +383,13 @@ inline MenuBounds FooterBounds(int index,MenuPage page,bool developer=false) {
 inline int FooterCell(int index,MenuPage page) {
     constexpr int tabs[]={9,12,10,11,13};return Editing(page)?9+index:tabs[index];
 }
-inline int WheelCell(float u,float v,int previous=-1,MenuPage page=MenuPage::Spells,int hand=-1,bool developer=false,int devPage=0) {
+inline int WheelCell(float u,float v,int previous=-1,MenuPage page=MenuPage::Spells,int hand=-1,bool developer=false,int devPage=0,bool leftStrikes=false) {
     if(!std::isfinite(u)||!std::isfinite(v)||u<0||u>1||v<0||v>1)return -1;
     for(int i=0;i<FooterCount(page,developer);++i)if(FooterBounds(i,page,developer).Contains(u,v))return FooterCell(i,page);
     if(QuickControls(page)) {
         if(QuickUseBounds.Contains(u,v))return QuickUseCell;
         if(RunWalkBounds.Contains(u,v))return RunWalkCell;
+        if(leftStrikes&&LeftStrikesBounds.Contains(u,v))return LeftStrikesCell;
     }
     if(page==MenuPage::Map)return -1; // no invisible spells behind the map
     if(page==MenuPage::Developer) {
@@ -431,6 +438,7 @@ struct Input {
     uint64_t session=0,epoch=0,at=0; // at shares the native snapshot's monotonic clock
     bool active=false,tracked[2]{},wheel=false,cancel=false,reservedLeft=false,spell=false,quickCast=false;
     bool runWalk=false;   // right stick pushed up this step: toggle running / walking
+    int leftStrikes=-1;   // Druid: [gameplay] left_hand_strikes for the wheel's box (0 own trigger, 1 same as right); -1 hides it
     vitals::Location navigationLocation=vitals::Location::Wrist;
     vitals::Location vitalsLocation=vitals::Location::Wrist;
     float vitalsTilt=0;
@@ -458,6 +466,8 @@ struct Output {
     bool vitals=false,palm=false,navigation=false,navigationPalm=false;
     int wheelHand=-1;
     bool inventory=false;
+    int leftStrikes=-1;             // the wheel's left-claw box: shown value, -1 hidden
+    bool toggleLeftStrikes=false;   // clicked this step: the transport saves the other choice
     int select=-2,bottle=-1,bottleHand=-1,nearBelt=-1,nearHolster=-1,hover=-1;
     int feedback=0,feedbackHand=0;
     Result result=Result::None;
@@ -650,7 +660,7 @@ public:
         if(in.cancel) {quickPressed=false;Drop();flight={};rearm=true;wheelLatch=true;pending={};out.cancelPending=true;editor=0;map=developer=false;editSlot=-1;}
         if(pending.action!=Action::None) {
             if(in.reply.sequence==pending.sequence&&in.reply.session==session&&in.reply.result!=Result::Pending) {
-                result=in.reply.result;resultAt=in.time;out.feedback=(result==Result::Applied||result==Result::Dispatched||result==Result::DebugUpdated||result==Result::TurnsUpdated)?2:3;
+                result=in.reply.result;resultAt=in.time;out.feedback=(result==Result::Applied||result==Result::Dispatched||result==Result::DebugUpdated||result==Result::TurnsUpdated||result==Result::SharpUpdated||result==Result::FillUpdated)?2:3;
                 out.feedbackHand=pendingHand;
                 if(result==Result::Applied&&pending.action==Action::Equip)stowed=false;
                 if(result==Result::Applied&&pending.action==Action::Potion&&pending.item==held.item)consumed=true;
@@ -698,7 +708,7 @@ public:
             else {out.feedback=3;out.feedbackHand=0;}
         }
         if(wheel) {
-            out.wheel=true;out.utility=utility;out.map=map;out.hover=in.hover;out.block=true;
+            out.wheel=true;out.utility=utility;out.map=map;out.hover=in.hover;out.block=true;out.leftStrikes=in.leftStrikes;
             owner[0]=owner[1]=Owner::Wheel;
             if((editor==1||editor==2)&&fresh&&in.snapshot.bindingBank!=editBank){editor=in.wheelHand>=0?0:1;editSlot=-1;editBank=in.snapshot.bindingBank;rearm=true;}
             // A hold edits; a short click uses on release. A lost ray/session
@@ -730,6 +740,10 @@ public:
                     if(fresh)request(Action::RunWalk,0);else out.feedback=3;
                     pendingHand=in.wheelHand>=0?1-in.wheelHand:0;
                     wheelLatch=true;out.wheel=false;rearm=true;
+                } else if(QuickControls(Page())&&in.hover==LeftStrikesCell) {
+                    // A local setting, not a game command: the wheel stays open to show it.
+                    if(in.leftStrikes>=0){out.toggleLeftStrikes=true;out.feedback=1;}else out.feedback=3;
+                    out.feedbackHand=in.wheelHand>=0?1-in.wheelHand:0;rearm=true;
                 } else if(editor==3) {
                     if(in.hover==11){editor=0;editSlot=-1;}
                     else if(in.hover==9)editPage=std::max(0,editPage-1);
