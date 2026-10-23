@@ -126,6 +126,7 @@ std::atomic<bool> turnsFromDrawnEye{true};
 std::atomic<int> turnsKeepOwn{3};   // ConfigureTurnsKeepOwn: 0 off, 1 near things only, 2 everywhere, 3 the game's effects, 4 near things and effects
 std::atomic<float> turnsKeepGap{48},turnsKeepReach{96};   // ConfigureTurnsKeepNear: a 4096-wide eye's pixels
 std::atomic<float> turnsEffectsLevel{.02f},turnsEffectsReach{32};   // ConfigureTurnsKeepEffects: the layer's level; a 4096-wide eye's pixels
+std::atomic<bool> turnsSharp{true};   // ConfigureTurnsSharp: the pictures read Catmull-Rom (TurnWarp::Sharpen)
 std::atomic<bool> eyeTracking{false};
 std::atomic<bool> motionControls{false};
 // Stamped each focused XR input while motion controls are on (menus included).
@@ -2996,6 +2997,7 @@ bool TurnEye(int i) {
     // blends it (UNORM), and then it goes to its swapchain image.
     ID3D12Resource* image=e.images[e.index].texture;
     const bool layered=layerKept[i]&&TurnTarget(image);
+    turnWarp.Sharpen(turnsSharp.load());
     const bool turned=turnWarp.Render(device.Get(),e.commands.Get(),turnImages[i].Get(),layered?turnTarget.Get():image,h,i,moving,fromDrawn);
     for(UINT k=0;k<kept;++k)std::swap(b[k].Transition.StateBefore,b[k].Transition.StateAfter);
     e.commands->ResourceBarrier(kept,b);
@@ -3306,6 +3308,14 @@ void ConfigureTurnsKeepOwn(int mode) {
 }
 void ConfigureTurnsKeepNear(float gap,float reach) {turnsKeepGap.store(std::clamp(gap,1.f,1000.f));turnsKeepReach.store(std::clamp(reach,16.f,1024.f));}
 void ConfigureTurnsKeepEffects(float level,float reach) {turnsEffectsLevel.store(std::clamp(level,1e-4f,100.f));turnsEffectsReach.store(std::clamp(reach,0.f,512.f));}
+void SetTurnsSharp(bool on) {
+    if(turnsSharp.exchange(on)!=on)Say(on?"Frame OpenXR: by turns - the eye not drawn read sharper (Catmull-Rom)":"Frame OpenXR: by turns - the eye not drawn read bilinear");
+}
+bool TurnsSharp() {return turnsSharp.load();}
+void ConfigureTurnsSharp(bool on) {
+    static std::atomic<int> read{-1};   // as ConfigureTurnsKeepOwn: only a change of the ini's own value overrides the DEV switch
+    if(read.exchange(on?1:0)!=(on?1:0))SetTurnsSharp(on);
+}
 void ConfigureEyeTracking(bool on) {eyeTracking.store(on);}
 void BeginEye(int eye) {
     hud::UiFrame(spatialMode,!journalMode,eye);
