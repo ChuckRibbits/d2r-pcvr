@@ -79,7 +79,7 @@ inline const char* HelpText(int id) {
         case ShieldFollow:return "How much a held shield turns with your wrist. 0% straps it to your forearm, so bending the wrist leaves it still; 100% turns it with your hand. Twisting the forearm turns it at every value. 50% by default, in 10% steps.";
         case ShieldRoll:return "Turns the shield around the forearm; + toward the little finger. 0 = the attach's own facing. -180 to +180 degrees in 5-degree steps; +90 suits a controller held palm down.";
         case EnemySight:return "Scales how far away hostile monsters notice and approach you in offline VR, from 100% (game default) up to 300% (three times as far). 100% keeps the game's original sight distance and restores the unmodified table values. Friendly NPCs, mercenaries and summons are unchanged.";
-        case LeftHandStrikes:return "Druid only. A melee skill on a trigger (Maul, Feral Rage, Fire Claws, Rabies, Hunger, Fury) casts when that hand's claw lands a stroke that waited a full attack cycle; faster strokes stay basic attacks. This picks the left claw's skill. Weapon skill gestures Off keeps every strike basic.";
+        case LeftHandStrikes:return "Druid only. A melee skill on a trigger (Maul, Feral Rage, Fire Claws, Rabies, Hunger, Fury) casts when that hand's claw lands a full-cycle stroke; faster strokes stay basic attacks. Toggle it in the skill wheel's lower-left box. Weapon skill gestures Off keeps every strike basic.";
         case CompanionAi:return "Enhanced VR Mercenary overhaul: dynamic detection range matching enemy sight, elastic 40 sub-tile combat leash, and an anti-stuck watchdog that safely relocates the ally to your rear flank if trapped. Legacy restores vanilla AI constants and behavior.";
         case MeleeHitSpeed:return "Minimum weapon movement speed for a swing to count as a strike. Lower it for easier swings; raise it to require faster movement. Default: 12 m/s. Both melee modes use this value. Shield bash has its own threshold.";
         case ShieldBashSpeed:return "Minimum tracked hand speed for a physical shield bash, including assigned Smite. Default: 2 m/s. Move the hand at least 12 cm in one deliberate stroke; wrist twisting alone does not attack. The speed must still be met at contact. Applies in both melee modes; blocking, parries and trigger attacks are unchanged.";
@@ -239,8 +239,7 @@ inline ChoiceHelp HelpChoice(int id,float value) {
         case LeftHandStrikes:{
             static constexpr const char* text[]={
                 "The left claw casts the skill on the left trigger; a skill strikes cannot cast gives basic attacks.",
-                "Both claws cast the right trigger's skill (a skill can sit on only one trigger). The claws share one attack cycle, so this is never more casts.",
-                "The left claw always strikes with basic attacks."};
+                "Both claws cast the right trigger's skill (a skill can sit on only one trigger). The claws share one attack cycle, so this is never more casts."};
             return {LeftHandStrikesNames[c],text[c]};}
         case MeleeRules:{
             static constexpr const char* text[]={

@@ -128,7 +128,8 @@ inline constexpr std::array<Definition,Count> Definitions{{
     // The eyes' 17-degree tunnel, the hands' 30-degree wedge, a raised hand alone (targetcone, aimrules::Tries).
     {"Aim follows your view", "Only monsters ahead of you; a raised hand aims alone", L"gameplay",L"aim_follows_view",0,0,1,1},
     // Melee skill strikes (strike_skills.h): which skill the left claw's strikes cast.
-    {"Left-hand strikes", "Druid: the left claw casts its own trigger skill, the right trigger's, or strikes plainly", L"gameplay",L"left_hand_strikes",0,0,2,1},
+    // Set from the skill wheel's lower-left box (Druid), not a VR Settings row.
+    {"Left-hand strikes", "Druid: the left claw casts its own trigger skill or the right trigger's", L"gameplay",L"left_hand_strikes",0,0,1,1},
 }};
 using Values=std::array<float,Count>;
 inline bool HapticKey(Key key){return key>=HapticStrength&&key<=HapticAlert;}
@@ -161,6 +162,7 @@ inline float Normalize(Key key,float value){
     if(!std::isfinite(value))return d.defaultValue;
     if(key==OfflinePlayers&&(value<0||value>8||std::floor(value)!=value))return 0;
     if(key==BowLaser&&value<0)return LaserOff;
+    if(key==LeftHandStrikes)return std::round(value)==1?1.f:0.f;   // the retired 2 (Basic attack) reads Own trigger skill
     if(key==HeartbeatStart)return std::clamp(std::round(value/10)*10,d.min,d.max);   // 0 = Off, else a 10% step
     if(key==ShieldFollow||key==ShieldRoll)return std::clamp(std::round(value/d.step)*d.step,d.min,d.max)+0.f;   // whole steps, as skel::shield::FollowSetting / RollSetting
     if(HighlightKey(key))return std::clamp(std::round(value/15)*15,d.min,d.max);   // 0 = By range, else a hue in 15-degree steps
@@ -211,8 +213,10 @@ inline void HueRgb(float hue,float rgb[3]){
     for(int i=0;i<3;++i)rgb[i]=table[std::min(5,int(h))][i];
 }
 inline constexpr const char* MeleeRulesNames[]={"Unleashed","Classic"};
-// [gameplay] left_hand_strikes: 0 the left trigger's skill, 1 the right trigger's, 2 basic attacks.
-inline constexpr const char* LeftHandStrikesNames[]={"Own trigger skill","Same as right","Basic attack"};
+// [gameplay] left_hand_strikes: 0 the left trigger's skill, 1 the right trigger's.
+// (2, Basic attack, left the choices on 2026-10-23: Own trigger with no strike
+// skill on the left trigger is the same; a profile saved with it reads Own.)
+inline constexpr const char* LeftHandStrikesNames[]={"Own trigger skill","Same as right"};
 inline constexpr const char* HighlightsNames[]={"Dominant hand","Both hands"};   // aim_highlights 0 / 1
 inline constexpr const char* GroundAimNames[]={"Game","Where you point","Aimed monster"};   // ground_aim 0 / 1 / 2
 inline constexpr const char* StrainColorNames[]={"White","Black","Off"};   // guard_strain_dark 0 / 1 / 2
@@ -377,7 +381,6 @@ inline bool RowShown(Key key,const Values& v,const Context& c){
         case ThrowLift:return c.heroClass<0||c.heroClass==heroclass::Amazon||c.heroClass==heroclass::Barbarian||c.heroClass==heroclass::Assassin||c.thrown;
         case StaffPoint:return c.heroClass<0||c.staff||c.heroClass==heroclass::Sorceress||c.heroClass==heroclass::Druid;
         case ElementalHands:return ClassIs(c,heroclass::Sorceress);
-        case LeftHandStrikes:return c.heroClass==heroclass::Druid;      // strike skills are the Druid's forms for now
         case FoveationStrength:return v[Foveation]>.5f;
         case Snap:return !SmoothTurning(v[Snap],v[SmoothTurn]);
         case TurnSpeed:return SmoothTurning(v[Snap],v[SmoothTurn]);
@@ -422,7 +425,7 @@ inline Rect PairDecrease(int row,int side){return {PairX(side),RowY+row*RowStep,
 inline Rect PairValue(int row,int side){return {PairX(side)+56,RowY+row*RowStep,238,52};}
 inline Rect PairIncrease(int row,int side){return {PairX(side)+298,RowY+row*RowStep,52,52};}
 // Every row a page can show, in order (Rows leaves out those that cannot apply).
-inline int CatalogCount(Page page){return page==Page::Haptics?2+haptics::CategoryCount:page==Page::Combat?9:page==Page::Aim?10:page==Page::Shield?5:page==Page::Class?1:page==Page::VR?10:page==Page::Video?6:page==Page::Performance?8:page==Page::HUD?10:0;}
+inline int CatalogCount(Page page){return page==Page::Haptics?2+haptics::CategoryCount:page==Page::Combat?9:page==Page::Aim?10:page==Page::Shield?5:page==Page::Class?0:page==Page::VR?10:page==Page::Video?6:page==Page::Performance?8:page==Page::HUD?10:0;}
 inline Key CatalogKey(Page page,int row){
     constexpr Key hapticRows[]={HapticStrength,HapticMelee,HapticShortMelee,HapticBowDraw,HapticBowRelease,HapticSpell,HapticInteraction,HapticAlert};
     if(page==Page::Haptics)return hapticRows[row];
@@ -433,9 +436,8 @@ inline Key CatalogKey(Page page,int row){
     constexpr Key aim[]={SpellLock,StaffPoint,TargetHighlight,AimHighlights,HighlightLeft,GroundAim,LandingCircles,AimFollowsView,BowLaser,ThrowLift};   // HighlightLeft: with HighlightRight
     if(page==Page::Aim)return aim[row];
     if(page==Page::Shield)return Key(ShieldGrip+row);   // Grip, Out, Up, Follows, Roll: every class can carry a shield
-    // Class: options for one hero class each, shown only while that class is played (RowShown)
-    constexpr Key heroClassRows[]={LeftHandStrikes};
-    if(page==Page::Class)return heroClassRows[row];
+    // Class: options for one hero class each, shown only while that class is played (RowShown).
+    // Empty for now: Left-hand strikes moved to the skill wheel (interaction::LeftStrikesBounds).
     constexpr Key hud[]={VitalsLocation,VitalsTilt,CriticalAlerts,NavigationLocation,MenuDistance,TooltipTiming,BloodVisor,BloodWipe,LootLabelSize,CompanionCounts};
     if(page==Page::HUD)return hud[row];
     constexpr Key video[]={Sky,Fog,Ceiling,ElementalHands,BottlePhysics,PropPhysics};

@@ -26,12 +26,12 @@ int main() {
     Check(Casts(Maul,false,true)&&!Casts(Maul,false,false),"Unleashed: full-cycle first contact only");
     Check(Casts(Maul,true,false)&&Casts(Maul,true,true),"Classic: every paced contact");
     Check(!Casts(-1,true,true)&&!Casts(-1,false,true),"unarmed hand never casts");
-    Check(LeftChoice(0)==LeftStrikes::Own&&LeftChoice(1)==LeftStrikes::SameAsRight&&LeftChoice(2)==LeftStrikes::Basic&&LeftChoice(7)==LeftStrikes::Own,
-          "left-hand strikes choices; an unknown value is its own trigger");
-    Check(StrikeTrigger(0,LeftStrikes::Own)==0&&StrikeTrigger(0,LeftStrikes::SameAsRight)==0&&StrikeTrigger(0,LeftStrikes::Basic)==0,
+    Check(LeftChoice(0)==LeftStrikes::Own&&LeftChoice(1)==LeftStrikes::SameAsRight&&LeftChoice(2)==LeftStrikes::Own&&LeftChoice(7)==LeftStrikes::Own,
+          "left-hand strikes choices; the retired Basic (2) or an unknown value is its own trigger");
+    Check(StrikeTrigger(0,LeftStrikes::Own)==0&&StrikeTrigger(0,LeftStrikes::SameAsRight)==0,
           "the right hand always follows the right trigger");
-    Check(StrikeTrigger(1,LeftStrikes::Own)==1&&StrikeTrigger(1,LeftStrikes::SameAsRight)==0&&StrikeTrigger(1,LeftStrikes::Basic)==-1,
-          "the left hand: its own trigger, the right's, or none");
+    Check(StrikeTrigger(1,LeftStrikes::Own)==1&&StrikeTrigger(1,LeftStrikes::SameAsRight)==0,
+          "the left hand: its own trigger or the right's");
     Check(FormVoice(1,false,true,-1,0)==WolfGrowl&&FormVoice(2,false,true,Maul,0)==BearGrowl,"a full-cycle stroke growls in either form, basic or cast");
     Check(FormVoice(1,false,true,-1,84)==WolfGrowl&&FormVoice(1,false,true,-1,85)==0&&FormVoice(2,false,true,-1,79)==BearGrowl&&FormVoice(2,false,true,-1,80)==0,
           "the native growl chances: wolf 85%, bear 80%");

@@ -35,18 +35,19 @@ inline bool Matches(int skill,int start,int action) {
 inline int Armed(bool gestures,bool fresh,bool known,bool available,bool strike,int skill) {
     return gestures&&fresh&&known&&available&&strike&&Known(skill)?skill:-1;
 }
-// Which trigger the left hand's strikes follow, [gameplay] left_hand_strikes:
-// 0 its own (left) trigger, 1 the right trigger's skill (a skill sits on one
-// trigger only, so this is how both claws carry it), 2 basic attacks only.
-enum class LeftStrikes:uint8_t {Own=0,SameAsRight=1,Basic=2};
+// Which trigger the left hand's strikes follow, [gameplay] left_hand_strikes
+// (the skill wheel's lower-left box): 0 its own (left) trigger, 1 the right
+// trigger's skill (a skill sits on one trigger only, so this is how both claws
+// carry it). Basic strikes need no choice: leave the left trigger without a
+// strike skill.
+enum class LeftStrikes:uint8_t {Own=0,SameAsRight=1};
 inline LeftStrikes LeftChoice(float value) {
-    const int v=int(value+.5f);
-    return v==1?LeftStrikes::SameAsRight:v==2?LeftStrikes::Basic:LeftStrikes::Own;
+    return int(value+.5f)==1?LeftStrikes::SameAsRight:LeftStrikes::Own;
 }
-// The trigger hand whose skill this hand's strikes carry; -1 for none.
+// The trigger hand whose skill this hand's strikes carry.
 inline int StrikeTrigger(int hand,LeftStrikes left) {
     if(hand!=1)return 0;
-    return left==LeftStrikes::Own?1:left==LeftStrikes::SameAsRight?0:-1;
+    return left==LeftStrikes::SameAsRight?0:1;
 }
 // Native use state (D2Common SKILLS_GetUseState, D2R 33F360): the packet
 // handler's own check of weapon type, mana, shapeshift form and skill delay,

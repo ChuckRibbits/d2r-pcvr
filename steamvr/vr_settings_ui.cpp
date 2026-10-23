@@ -34,7 +34,7 @@ static void ValueLabel(Key key,float value,const Context& c,char* label,size_t s
     else if(key==ThrowLift){if(value==0)std::snprintf(label,size,"Off");else std::snprintf(label,size,"%+.0f\xc2\xb0",value);}
     else if(key==Dominant)std::snprintf(label,size,"%s",value>.5f?"Left":"Right");
     else if(key==MeleeRules)std::snprintf(label,size,"%s",MeleeRulesNames[value>.5f?1:0]);
-    else if(key==LeftHandStrikes)std::snprintf(label,size,"%s",LeftHandStrikesNames[std::clamp(int(std::lround(value)),0,2)]);
+    else if(key==LeftHandStrikes)std::snprintf(label,size,"%s",LeftHandStrikesNames[std::clamp(int(std::lround(value)),0,1)]);
     else if(key==OfflinePlayers){if(value==0)std::snprintf(label,size,"Game default");else std::snprintf(label,size,"Players %.0f",value);}
     else if(key==StrainDark)std::snprintf(label,size,"%s",StrainColorNames[std::clamp(int(std::lround(value)),0,2)]);
     else if(key==StrainSpeed)std::snprintf(label,size,"%s",StrainSpeedNames[int(value)]);
