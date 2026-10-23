@@ -1,7 +1,8 @@
 # Dropped empty bottles (Box3D)
 
 Status: first physics prototype; the owner verified it working in the headset
-(2026-10-22, offline character, isolated developer build).
+(2026-10-22, offline character, isolated developer build). The weapon hits
+below were verified the same day ("that works great").
 
 After drinking, opening the hand lets the empty bottle fall into the world.
 It keeps the hand's velocity and turn, bounces, rolls and stops at the game's

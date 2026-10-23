@@ -1,6 +1,7 @@
 # Knockable level props (Box3D)
 
-Status: third version. Owner headset tests, 2026-10-22:
+Status: owner verified in the headset (2026-10-22, offline character,
+isolated developer build), on the third version. The headset tests:
 1. The first version worked but not for everything. Books on a shelf woke
    each other without end, which used up the moving-prop limit, and props
    inside buildings were missing from the catalog.
@@ -10,6 +11,8 @@ Status: third version. Owner headset tests, 2026-10-22:
    plate. Every knock came from the right hand, because the off hand had no
    collider without dual wielding or a shield, and the nearest-64 limit was
    full.
+3. The third, with guessed and joined ledges, props on props, bare-hand
+   fists and the 160 nearest, verified.
 
 The level's own small props near the player (cups, plates, bowls, vases,
 jugs, bottles, books, skulls, baskets, pails, stools, chairs, barrels, sacks,
