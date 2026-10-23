@@ -217,5 +217,9 @@ void Shutdown() {
     std::lock_guard lock(ticketMutex);
     syncTicket.Cancel();
 }
+
+int AppliedPercent() {
+    return lastApplied.load();
+}
 } // namespace enemysight
 

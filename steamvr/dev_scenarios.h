@@ -22,8 +22,9 @@ inline constexpr int KurastSewersChoice=35,UpperKurastChoice=36;
 inline constexpr int TurnsKeepOwnChoice=37;
 inline constexpr int ThrowingChoice=38;
 inline constexpr int PotionsChoice=39;
+inline constexpr int UnlockQuestsChoice=40;
 inline constexpr int PageSize=14;
-inline constexpr std::array<Choice,40> Choices{{
+inline constexpr std::array<Choice,41> Choices{{
     {"Level 90", "All class skills rank 20 / test attributes", nullptr},
     {"Primary gear", "Class-specific unique equipment", nullptr},
     {"Alternate gear", "Equipment for the other class abilities", nullptr},
@@ -71,6 +72,7 @@ inline constexpr std::array<Choice,40> Choices{{
     {"By turns own picture", "Eye not drawn: FX / near+FX / off / near / all", nullptr},
     {"Throwing kit", "Javelin, Pilum, Glaive, knives and axes", nullptr},
     {"Potion kit", "Health, Rejuvenation, Antidote, Thawing / belt them to throw", nullptr},
+    {"Unlock Quests & Waypoints", "Complete quests through Act V / unlock all waypoints", nullptr},
 }};
 // Stable action IDs are independent of their presentation order.
 inline constexpr int PageCount=5;
@@ -83,7 +85,7 @@ inline constexpr const char* PageHelp[]={
     "Area entrances. Travel does not complete quests, reset bosses or change difficulty."
 };
 inline constexpr std::array<std::array<int,PageSize>,PageCount> Pages{{
-    {{Level10Choice,Level30Choice,Level60Choice,0,HealChoice,-1,-1,-1,-1,-1,-1,-1,-1,-1}},
+    {{Level10Choice,Level30Choice,Level60Choice,0,HealChoice,UnlockQuestsChoice,-1,-1,-1,-1,-1,-1,-1,-1}},
     {{StarterPrimaryChoice,StarterAlternateChoice,1,2,CrossbowChoice,BowChoice,SmallShieldChoice,DebugDrawsChoice,TurnsKeepOwnChoice,ThrowingChoice,PotionsChoice,-1,-1,-1}},
     {{4,11,14,15,16,5,3,8,9,-1,-1,-1,-1,-1}},
     {{17,UpperKurastChoice,KurastSewersChoice,18,19,26,27,-1,-1,-1,-1,-1,-1,-1}},

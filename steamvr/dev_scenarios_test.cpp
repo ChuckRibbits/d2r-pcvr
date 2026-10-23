@@ -23,6 +23,7 @@ namespace interactionstate {Snapshot Read(){return state;}}
 namespace framevr::logging {void Write(const char*){}}
 static int keepOwn=3;
 namespace framevr {void SetTurnsKeepOwn(int mode){keepOwn=mode;}int TurnsKeepOwn(){return keepOwn;}}
+
 static Threads::Result Queue(Threads::Callback callback,void* data,bool game) {
     assert(devscenarios::Status().result==Result::Pending);
     if(failQueue)return Threads::Result::Unavailable;
@@ -238,6 +239,17 @@ int main(){
         std::vector<std::string_view> codes;for(const char* code:Kit(cls,PotionsChoice))if(code)codes.push_back(code);
         assert((codes==std::vector<std::string_view>{"hp5","hp5","hp5","hp5","rvl","rvl","yps","yps","wms","wms"}));
     }
+    // Unlock quests & waypoints button: sends cheat quests and cheat waypoints via console
+    assert(ValidChoice(UnlockQuestsChoice)&&PageFor(UnlockQuestsChoice)==0&&SlotFor(UnlockQuestsChoice)==5);
+    const auto beforeQuestCommands = commands.size();
+    devscenarios::Request(Make(UnlockQuestsChoice));
+    assert(!tasks.back().game); // Runs on UI thread like all console commands
+    Run(tasks.size() - 1);
+    assert(devscenarios::Status().result == Result::Dispatched);
+    assert(commands.size() == beforeQuestCommands + 2);
+    assert(commands[beforeQuestCommands] == "cheat quests");
+    assert(commands[beforeQuestCommands + 1] == "cheat waypoints");
+
     // Failed standalone kits clean up only the generated exchange token.
     failItems=true;
     for(int choice:{CrossbowChoice,BowChoice,SmallShieldChoice,ThrowingChoice,PotionsChoice}) {

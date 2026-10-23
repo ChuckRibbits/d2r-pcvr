@@ -115,6 +115,7 @@ namespace gamestate {bool OpaqueMenuOpen();}
 #include "../steamvr/reshade_addons.h"
 #include "offline_difficulty.h"
 #include "enemy_sight.h"
+#include "companion_ai.h"
 #include "projectiles.h"
 #include "combat.h"
 #include "interactionstate.h"
@@ -991,6 +992,10 @@ void LoadSettings() {
         IniF(L"gameplay",L"offline_players",0))),g_set.platform.load()==1);
     enemysight::Configure(int(framevr::settings::Normalize(framevr::settings::EnemySight,
         IniF(L"gameplay",L"enemy_sight_pct",100))),g_set.platform.load()==1);
+    companionai::Configure(int(framevr::settings::Normalize(framevr::settings::CompanionAi,
+        IniF(L"gameplay",L"companion_ai",1.0f)))!=0&&g_set.platform.load()==1);
+    companionai::ConfigureDistressSound((int)IniF(L"gameplay",L"companion_distress_sound",1));
+    companionai::ConfigurePeel(IniF(L"gameplay",L"companion_peel",1.0f)!=0.0f);
 #endif
 #if D2RVR_FIRST_PERSON
     g_set.flatView.store(std::clamp((int)IniF(L"mode", L"flat_view", 3.0f), 1, 3));
@@ -9567,6 +9572,14 @@ DWORD WINAPI UpdateThread(void*) {
             enemysight::Install();
             enemysight::Tick();
             enemysight::Report();
+            float compFx = 0.0f, compFy = -1.0f;
+            AcquireSRWLockShared(&g_skyLock);
+            const auto& compView = g_skyView[g_eye.load() & 1];
+            if (compView.axes_ok) { compFx = -compView.axes[6]; compFy = -compView.axes[8]; }
+            ReleaseSRWLockShared(&g_skyLock);
+            companionai::Install();
+            companionai::Tick(compFx, compFy);
+            companionai::Report();
             roofcutaway::Tick();
             roofmaterials::Install(&Log, +[]() { return g_set.platform.load() == 1; });
             propphysics::Tick();
@@ -9784,6 +9797,7 @@ D2RL_PLUGIN_EXPORT bool D2RLoaderLoadPlugin(const PluginContext* ctx) noexcept {
     gamecmd::Init(ctx);
 #ifdef D2RVR_NATIVE_OPENXR
     enemysight::Init(ctx);
+    companionai::Init(ctx);
     melee::Init(ctx);
     bowvr::Init(ctx);
     wallcells::Init(ctx);
@@ -9799,6 +9813,7 @@ D2RL_PLUGIN_EXPORT void D2RLoaderUnloadPlugin() noexcept {
     if (g_standDown) return;   // nothing was started
 #ifdef D2RVR_NATIVE_OPENXR
     enemysight::Shutdown();
+    companionai::Shutdown();
     framevr::scenedepth::Shutdown();
 #endif
     g_enabled.store(false);
