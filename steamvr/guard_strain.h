@@ -132,16 +132,23 @@ public:
     }
 };
 
-// Light image: Size x Size straight-alpha RGBA, stretched over the same
-// visor extent as the blood (blood_screen.h VisorExtent). A smooth radial
-// field, so a small texture is enough. Inward from the rim the light thins
+// Light image: Size x Size straight-alpha RGBA. Its shape is set in the same
+// visor extent as the blood (blood_screen.h VisorExtent), the footprint
+// verified on Quest 3, so the light sits at the same angles on every headset.
+// Unlike the splats it must reach the edge of the view: on a wider headset the
+// quad grows to the whole view (ViewExtent) and the image `reach` times the
+// visor per axis, the field carrying on outward (it only gets brighter). Reach
+// 1 is the visor itself, pixel for pixel. A smooth radial field, so a small
+// texture is enough. Inward from the rim the light thins
 // out over `feather` with an ease-in (smoothstep squared): no visible inner
 // rim, just a glow that fades toward the centre. Squared smoothstep is half
 // at t=.6436, so the blend starts that far (of feather) inside the midpoint.
 constexpr int Size=256;
 constexpr uint32_t White=0xFFF7EA; // the pale, slightly warm white first tried
-inline float Radius(int x,int y) {
-    const float u=(x+.5f)/Size*2-1,v=(y+.5f)/Size*2-1;
+constexpr float MaxReach=5;        // ~80 degrees per side over the 54 / 55 degree visor
+inline float Reach(float r){return std::isfinite(r)?std::clamp(r,1.f,MaxReach):1.f;}
+inline float Radius(int x,int y,float reachX=1,float reachY=1) {
+    const float u=((x+.5f)/Size*2-1)*Reach(reachX),v=((y+.5f)/Size*2-1)*Reach(reachY);
     return std::sqrt(u*u*.85f+v*v); // same aspect as the blood's clear centre
 }
 inline float Falloff(float edge,float feather,float radius) {
@@ -154,23 +161,24 @@ inline float Falloff(float edge,float feather,float radius) {
 // a dark rim over a dark scene reads far lighter than a pale one at the same
 // opacity, so the black rim is drawn denser to hide as much. 0 and 1 stay put.
 inline float Dense(float a,float density) {return density>1?1-std::pow(1-a,density):a;}
-inline std::vector<uint8_t> Compose(float edge,float alpha,float feather=Feather,uint32_t color=0x000000,float density=1) {
+inline std::vector<uint8_t> Compose(float edge,float alpha,float feather=Feather,uint32_t color=0x000000,float density=1,float reachX=1,float reachY=1) {
     std::vector<uint8_t> rgba(size_t(Size)*Size*4,0);
     if(!std::isfinite(edge)||!std::isfinite(alpha)||!std::isfinite(feather)||!std::isfinite(density)||alpha<=0)return rgba;
     alpha=std::min(alpha,1.f);
     for(int y=0;y<Size;++y)for(int x=0;x<Size;++x) {
         auto* p=&rgba[(size_t(y)*Size+x)*4];
         p[0]=uint8_t(color>>16);p[1]=uint8_t(color>>8);p[2]=uint8_t(color);
-        p[3]=uint8_t(std::lround(255*alpha*Dense(Falloff(edge,feather,Radius(x,y)),density)));
+        p[3]=uint8_t(std::lround(255*alpha*Dense(Falloff(edge,feather,Radius(x,y,reachX,reachY)),density)));
     }
     return rgba;
 }
 // Repaint only on a visible change: edge and softness to 1/256 of the image,
-// opacity to 1/128, or a new colour. 0: nothing to paint.
-inline uint64_t PaintKey(float edge,float alpha,float feather=Feather,uint32_t color=0x000000,float density=1) {
+// opacity to 1/128, a new colour, or the view's reach to 1/256. 0: nothing to paint.
+inline uint64_t PaintKey(float edge,float alpha,float feather=Feather,uint32_t color=0x000000,float density=1,float reachX=1,float reachY=1) {
     if(!std::isfinite(edge)||!std::isfinite(alpha)||!std::isfinite(feather)||!std::isfinite(density)||alpha<=0)return 0;
     const uint64_t shape=(uint64_t(std::lround(std::clamp(feather,0.f,1.f)*256))<<32)|
            (uint64_t(std::lround(std::clamp(edge,0.f,1.5f)*256))<<16)|uint64_t(std::lround(std::clamp(alpha,0.f,1.f)*128)+1);
-    return ((shape*1000003u+(color&0xFFFFFFu))*31u+uint64_t(std::lround(std::clamp(density,1.f,6.f)*64)))|1;
+    const uint64_t reach=(uint64_t(std::lround(Reach(reachX)*256))<<12)|uint64_t(std::lround(Reach(reachY)*256));
+    return (((shape*1000003u+(color&0xFFFFFFu))*31u+uint64_t(std::lround(std::clamp(density,1.f,6.f)*64)))*2654435761u+reach)|1;
 }
 }

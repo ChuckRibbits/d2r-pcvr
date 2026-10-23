@@ -127,6 +127,8 @@ std::atomic<bool> turnsFromDrawnEye{true};
 std::atomic<int> turnsKeepOwn{3};   // ConfigureTurnsKeepOwn: 0 off, 1 near things only, 2 everywhere, 3 the game's effects, 4 near things and effects
 std::atomic<float> turnsKeepGap{48},turnsKeepReach{96};   // ConfigureTurnsKeepNear: a 4096-wide eye's pixels
 std::atomic<float> turnsEffectsLevel{.02f},turnsEffectsReach{32};   // ConfigureTurnsKeepEffects: the layer's level; a 4096-wide eye's pixels
+std::atomic<bool> turnsSharp{true};   // ConfigureTurnsSharp: the pictures read Catmull-Rom (TurnWarp::Sharpen)
+std::atomic<bool> turnsFill{true};    // ConfigureTurnsFill: no frame-old ghosts in the strips beside near things (TurnWarp::Fill)
 std::atomic<bool> eyeTracking{false};
 std::atomic<bool> motionControls{false};
 // Stamped each focused XR input while motion controls are on (menus included).
@@ -195,6 +197,7 @@ std::atomic<ULONGLONG> guardStateAt{0};std::atomic<bool> guardEligible{false},gu
 strain::Painter strainPainter;
 XrSwapchain strainChain=XR_NULL_HANDLE;
 uint64_t strainPaintKey=~0ull,strainPaintSession=0;
+float strainShownReach[2]={1,1};   // the uploaded image's reach (guard_strain.h): its quad is the visor times this
 ULONGLONG strainPaintAt=0;
 bool strainAtlasPending=false,strainImageReady=false,strainSlotReported=false;
 // Bow path laser: its own small atlas, repainted only when its color changes.
@@ -2170,12 +2173,34 @@ void Input() {
         if(strainOutput.visible) {
             strain::PaintImage painted;
             if(!strainAtlasPending&&atlasUploads.size()<3&&strainPainter.Take(painted)) {
-                if(!painted.pixels.empty()&&UploadAtlas(strainChain,atlasFormat,strain::Size,strain::Size,painted.pixels,true,&strainAtlasPending))
-                    strainPaintKey=painted.key;
+                if(!painted.pixels.empty()&&UploadAtlas(strainChain,atlasFormat,strain::Size,strain::Size,painted.pixels,true,&strainAtlasPending)) {
+                    strainPaintKey=painted.key;strainShownReach[0]=painted.reachX;strainShownReach[1]=painted.reachY;
+                }
             }
-            const auto key=strain::PaintKey(strainOutput.edge,strainOutput.alpha,tuning.feather,tuning.color,tuning.density);
+            // Reach: the whole view over the blood's visor, per axis, eyes turned
+            // against the head included. 1 where the visor already is the whole
+            // view (Quest 3); wider headsets get the light out to their rim.
+            // Latched, so tracking noise in a canted eye's turn never repaints.
+            static float reach[2]={1,1};
+            {
+                const auto& lf=views[0].fov;const auto& rf=views[1].fov;
+                const math::Fov l{lf.angleLeft,lf.angleRight,lf.angleDown,lf.angleUp},r{rf.angleLeft,rf.angleRight,rf.angleDown,rf.angleUp};
+                const auto toHead=math::Conjugate(Q(head.orientation));
+                const auto visor=blood::VisorExtent(l,r);
+                const auto view=blood::ViewExtent(l,r,math::Multiply(toHead,Q(views[0].pose.orientation)),math::Multiply(toHead,Q(views[1].pose.orientation)));
+                if(visor.width>0&&visor.height>0&&view.width>0&&view.height>0) {
+                    const float x=strain::Reach(view.width/visor.width),y=strain::Reach(view.height/visor.height);
+                    if(std::fabs(x-reach[0])>.01f||std::fabs(y-reach[1])>.01f) {
+                        reach[0]=x;reach[1]=y;
+                        char message[128];std::snprintf(message,sizeof message,"Frame guard strain: light reaches %.2f x %.2f of the visor to cover the view",x,y);
+                        Say(message);
+                    }
+                }
+            }
+            const float reachX=reach[0],reachY=reach[1];
+            const auto key=strain::PaintKey(strainOutput.edge,strainOutput.alpha,tuning.feather,tuning.color,tuning.density,reachX,reachY);
             if(key!=strainPaintKey&&now>=strainPaintAt&&!strainPainter.Busy()&&
-               strainPainter.Submit({strainOutput.edge,strainOutput.alpha,tuning.feather,tuning.color,tuning.density}))strainPaintAt=now+40;
+               strainPainter.Submit({strainOutput.edge,strainOutput.alpha,tuning.feather,tuning.color,tuning.density,reachX,reachY}))strainPaintAt=now+40;
         }
     }
     // Low-life heartbeat (Classic and Unleashed): queue the next beat ~80 ms before
@@ -3037,6 +3062,7 @@ bool TurnEye(int i) {
     // blends it (UNORM), and then it goes to its swapchain image.
     ID3D12Resource* image=e.images[e.index].texture;
     const bool layered=layerKept[i]&&TurnTarget(image);
+    turnWarp.Sharpen(turnsSharp.load());turnWarp.Fill(turnsFill.load());
     const bool turned=turnWarp.Render(device.Get(),e.commands.Get(),turnImages[i].Get(),layered?turnTarget.Get():image,h,i,moving,fromDrawn);
     for(UINT k=0;k<kept;++k)std::swap(b[k].Transition.StateBefore,b[k].Transition.StateAfter);
     e.commands->ResourceBarrier(kept,b);
@@ -3347,6 +3373,22 @@ void ConfigureTurnsKeepOwn(int mode) {
 }
 void ConfigureTurnsKeepNear(float gap,float reach) {turnsKeepGap.store(std::clamp(gap,1.f,1000.f));turnsKeepReach.store(std::clamp(reach,16.f,1024.f));}
 void ConfigureTurnsKeepEffects(float level,float reach) {turnsEffectsLevel.store(std::clamp(level,1e-4f,100.f));turnsEffectsReach.store(std::clamp(reach,0.f,512.f));}
+void SetTurnsSharp(bool on) {
+    if(turnsSharp.exchange(on)!=on)Say(on?"Frame OpenXR: by turns - the eye not drawn read sharper (Catmull-Rom)":"Frame OpenXR: by turns - the eye not drawn read bilinear");
+}
+bool TurnsSharp() {return turnsSharp.load();}
+void SetTurnsFill(bool on) {
+    if(turnsFill.exchange(on)!=on)Say(on?"Frame OpenXR: by turns - the strips beside near things lose frame-old ghosts":"Frame OpenXR: by turns - the strips beside near things keep the eye's own picture");
+}
+bool TurnsFill() {return turnsFill.load();}
+void ConfigureTurnsFill(bool on) {
+    static std::atomic<int> read{-1};   // as ConfigureTurnsKeepOwn: only a change of the ini's own value overrides the DEV switch
+    if(read.exchange(on?1:0)!=(on?1:0))SetTurnsFill(on);
+}
+void ConfigureTurnsSharp(bool on) {
+    static std::atomic<int> read{-1};   // as ConfigureTurnsKeepOwn: only a change of the ini's own value overrides the DEV switch
+    if(read.exchange(on?1:0)!=(on?1:0))SetTurnsSharp(on);
+}
 void ConfigureEyeTracking(bool on) {eyeTracking.store(on);}
 void BeginEye(int eye) {
     hud::UiFrame(spatialMode,!journalMode,eye);
@@ -3768,14 +3810,17 @@ void EndPair() {
             layers[below]=reinterpret_cast<const XrCompositionLayerBaseHeader*>(&bloodQuad);++count;
         }
     }
-    // Guard strain light: the blood's head-locked extent, inserted at the same
-    // slot after it, so it sits directly above the world and beneath the blood.
+    // Guard strain light: head-locked, its shape on the blood's visor extent and
+    // the quad grown by the painted image's reach to the edge of the view;
+    // inserted at the same slot after the blood, so it sits directly above the
+    // world and beneath the blood.
     XrCompositionLayerQuad strainQuad{XR_TYPE_COMPOSITION_LAYER_QUAD};
     if(strainImageReady&&strainPaintKey&&strainPaintKey!=~0ull&&strainOutput.visible&&layer&&!panelMode&&!blackMenu&&!settingsModel.open&&
        !bodyCalibration.Active()&&headSpace) {
-        const auto extent=blood::VisorExtent(
+        auto extent=blood::VisorExtent(
             {views[0].fov.angleLeft,views[0].fov.angleRight,views[0].fov.angleDown,views[0].fov.angleUp},
             {views[1].fov.angleLeft,views[1].fov.angleRight,views[1].fov.angleDown,views[1].fov.angleUp});
+        extent.width*=strain::Reach(strainShownReach[0]);extent.height*=strain::Reach(strainShownReach[1]);
         if(count>=contentLimit) {
             if(!strainSlotReported){Say("Frame guard strain: no spare composition layer; light hidden");strainSlotReported=true;}
         } else if(std::isfinite(extent.width)&&std::isfinite(extent.height)&&extent.width>0&&extent.height>0) {
