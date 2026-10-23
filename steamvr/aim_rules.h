@@ -83,7 +83,7 @@ inline bool MonsterSwitch(Use use,bool bow,const Switches& s) {
 inline float FrontOfTarget(int skill){return skill==78?3.f:0.f;}
 // Skills the game should be handed the monster itself, when there is one: seekers
 // home in on it (Guided Arrow, Bone Spirit), Attract and Taunt need a unit, and
-// the travelling attacks (Charge, Leap Attack, Dragon Flight) fight it. With no
+// the traveling attacks (Charge, Leap Attack, Dragon Flight) fight it. With no
 // monster they keep their rule. Only a skill the rules aim reaches the hand-off
 // (RulesAim). Fist of the Heavens and Zeal stay with the game's own pick: the
 // game marks both as needing a target, not as aimed, so they have no rule.
@@ -116,8 +116,8 @@ inline Order For(int buttonHand,bool bowSkill) {
 // never to the other hand's or the eyes' monster. A lowered hand, or the row
 // Off, tries the whole order as before. The melee attacks (Use::Attack: Charge,
 // Leap Attack, Dragon Flight, Whirlwind) from a raised hand also try the other
-// hand's monster while it is outlined (otherOutlined), never the eyes' (not
-// outlined then): a raised hand sent 35 of 45 Leap Attacks where it pointed,
+// hand's monster while it is outlined (otherOutlined), never the eyes': a
+// raised hand sent 35 of 45 Leap Attacks where it pointed,
 // past the other hand's outlined monster (Jeff, 2026-10-22). How many of For's
 // sources to try.
 inline int Tries(bool followsView,bool firstPointing,Use use,bool otherOutlined) {

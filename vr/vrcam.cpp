@@ -3528,8 +3528,8 @@ bool Resolve(int button, bool bow, framevr::aimrules::Use use, float& x, float& 
     for (int k = tries; k < 3; ++k)
         if (const auto src = order.at[k]; g_pick[src].id.load() && now - g_pick[src].at.load() <= 300 && now - toldAlone.load() > 1000) {
             toldAlone.store(now);
-            LogF("Frame aim rules: %s raised with no monster of its own: the cast goes where it points, not to the %s's monster %u (aim follows your view)",
-                 SourceName(order.at[0]), SourceName(src), g_pick[src].id.load());
+            LogF("Frame aim rules: %s raised with no monster of its own: the cast goes where it points, not to the %s%s monster %u (aim follows your view)",
+                 SourceName(order.at[0]), SourceName(src), src == framevr::aimrules::Eyes ? "'" : "'s", g_pick[src].id.load());
             break;
         }
     return false;
@@ -3664,7 +3664,7 @@ void Tick() {
     static bool rested = false;
     if (resting != rested) {
         rested = resting;
-        LogF("Frame aim rules: %s", resting ? "every Aim option and the outline Off - no arm tracking or hand-offs" : "an Aim option or the outline On - arms tracked");
+        LogF("Frame aim rules: %s", resting ? "Skills go to the aimed monster, Ground skills and the outline Off - no arm tracking or hand-offs" : "an Aim option or the outline On - arms tracked");
     }
     if (resting) { aimtargets::Reset(); return; }
     const auto s = targetlock::Get();
