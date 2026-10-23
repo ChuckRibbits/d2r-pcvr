@@ -890,6 +890,7 @@ void LoadSettings() {
     // of the attack cycle since the previous stroke, to the power
     // swing_recovery_curve (2: flailing loses damage per second), full from
     // swing_recovery_grace % of the cycle (100 = none). A riposte ignores both.
+    combat::ConfigureShotRules(!classicMelee);   // arrows and throws: attack-rating damage, would-hit effects
     combat::ConfigureArDamage(!classicMelee&&IniB(L"gameplay",L"ar_damage",true),
                               std::clamp(IniF(L"gameplay",L"ar_damage_floor",0),0.f,100.f)/100.f);
     melee::ConfigureSwingRecovery(!classicMelee&&IniB(L"gameplay",L"swing_recovery_damage",true),
