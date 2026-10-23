@@ -289,7 +289,8 @@ std::atomic<unsigned> defenseScaled{0},defenseUnseen{0};std::atomic<int> lastDef
 // (poison, chill...) land as normal, Defense-scaled like any hit.
 // CTB is the native block rate 347DA0(defender) the block roll uses, divided
 // by 3 while running as native does, capped at 75.
-// Player hit recovery and the hit sound are left native (2026-10-19).
+// The hit sound is left native (2026-10-19); in Unleashed the hero's hit recovery
+// itself is refused by default ([gameplay] player_flinch, melee.cpp, 2026-10-22).
 // On by default in Unleashed; [debug] guard_trace logs each chip.
 constexpr uint64_t BlockRateRva=0x347da0;
 using BlockRateFn=int(*)(uintptr_t);
@@ -636,8 +637,9 @@ void StruckWear(uintptr_t game,uintptr_t attacker,uintptr_t defender) {
     }
     originalStruckWear(game,attacker,defender);
 }
-// Native still runs in full (avoid/dodge, block animation, FBR, sounds); only
-// its block roll is replaced by the physical verdict.
+// Native still runs in full (avoid/dodge, sounds; in Unleashed the hero's block
+// animation is refused by default, [gameplay] player_flinch); only its block
+// roll is replaced by the physical verdict.
 uint64_t NativeCallerRva(uintptr_t caller) {
     // Addr(0) means unresolved, not the image base. Subtract the resolved
     // block offset so diagnostics also work when signatures relocate it.

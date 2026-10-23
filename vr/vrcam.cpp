@@ -873,6 +873,10 @@ void LoadSettings() {
     // its native to-hit chance against your Defense scales the damage instead.
     // Classic keeps the native monster to-hit roll.
     combat::ConfigureEnemiesAlwaysHit(!classicMelee&&IniB(L"gameplay",L"enemies_always_hit",true));
+    // Unleashed (off by default): the hero never flinches when struck - no hit
+    // recovery or block animation to stun-lock a VR body. 1 = native flinching.
+    // Classic always flinches natively.
+    melee::ConfigurePlayerFlinch(classicMelee||IniB(L"gameplay",L"player_flinch",false));
     // Unleashed (on by default): a broken guard leaks a chip of each blocked hit.
     combat::ConfigureGuardChip(!classicMelee&&IniB(L"gameplay",L"guard_break_chip",true),
                                IniF(L"gameplay",L"guard_break_chip_scale",1));

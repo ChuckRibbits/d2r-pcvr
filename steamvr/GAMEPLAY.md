@@ -1209,6 +1209,19 @@ whose `Set(defender, life, ...)` returns to 44D098), so resistances, criticals a
 leech have already run; only the local player's physical swings are scaled - not
 spells, missiles or thorns.
 
+**No flinching (Unleashed, 2026-10-22):** the hero never enters the game's hit
+recovery (GetHit) or block animation when struck; Classic keeps native flinching,
+so FHR and FBR still work there. Natively both lock out casts, button skills and
+movement for their FHR / FBR frames, which a VR body cannot follow and which
+stun-locks in a crowd. The game's unit mode setter (34E5F0) refuses
+those two modes for the local hero's server and client units, so the hero keeps
+whatever it was doing; the hit's damage is unchanged. Physical swings never waited
+on hit recovery anyway (a contact calls the native attack directly). Knockback stays
+native. `[gameplay] player_flinch` (default 0) restores native flinching with 1;
+applied live. Developer builds log `Frame flinch:` counts and, once per distinct
+call chain (at most 8 a session), a `Frame flinch probe:` line naming the game code
+that asked for the flinch.
+
 **Incoming defense (Unleashed):** every monster melee attack and projectile aimed at
 the local player lands - its to-hit roll always succeeds, so only the raised shield
 (or the native block roll without one) stops it. Defense still counts: the native
