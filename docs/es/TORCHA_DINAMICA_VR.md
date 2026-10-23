@@ -96,6 +96,8 @@ Implementado en [vr/vrcam.cpp](../../vr/vrcam.cpp) y [reshade/D2R_DepthFog.fx](.
 
 ## 7. Problemas Conocidos (Pendiente de Corrección)
 
-- **Desincronización al equipar la antorcha en la mano izquierda (Off-Hand):**
+- **Desincronización al equipar la antorcha en la mano izquierda / dual-wielding (detectado en pruebas con Bárbaro):**
   - Al equipar el garrote antorcha en la mano derecha (ranura principal), la posición, rotación, luz y partículas se sincronizan de forma óptima con la punta del arma física en VR.
-  - Al equipar la antorcha en la mano izquierda (ranura secundaria/off-hand), el modelo del arma en VR permanece renderizado en la mano derecha, mientras que las partículas de llama flotan en el vacío en la posición espacial que le correspondería al lado derecho. Pendiente de auditar el mapeo de huesos y accesorios en `skel::MeleeWeapon` para el slot secundario sin arma principal.
+  - Al equipar la antorcha en la mano izquierda (ranura secundaria / off-hand, probado en configuración de doble empuñadura con Bárbaro), el modelo del arma en VR permanece renderizado en la mano derecha, mientras que las partículas de llama flotan en el vacío en la posición espacial que le correspondería al lado derecho. Pendiente de auditar el mapeo de huesos y accesorios en `skel::MeleeWeapon` para el slot secundario.
+- **Extinción del objeto al caer al suelo:**
+  - Si el jugador suelta o tira la antorcha al suelo, la llama y la luz dinámica se extinguen. Los objetos arrojados en el escenario existen como entidades/props estáticos de botín nativos del juego y actualmente no mantienen activo el emisor de luz ni el volumen de partículas en el suelo.

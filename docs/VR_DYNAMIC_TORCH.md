@@ -126,6 +126,8 @@ Instead of fabricating a foreign item, D2R-PCVR qualifies **native one-handed wo
 
 ## 6. Known Issues (Pending Investigation)
 
-* **Left-Hand (Off-Hand) Equipment Desync:**
+* **Left-Hand (Off-Hand) Equipment Desync (Discovered during Barbarian Dual-Wield Testing):**
   * When the torch club is equipped in the right-hand slot (primary), everything renders correctly anchored to the weapon head.
-  * When the torch is equipped in the left-hand slot (off-hand), the character's 3D weapon mesh in VR remains attached to the right hand, while the flame emitter/particles float disconnected in empty space at the coordinates where the right-hand club head would be located. Pending investigation into off-hand weapon bone mapping and dual-wielding attachment indexing in `skel::MeleeWeapon`.
+  * When the torch is equipped in the left-hand slot (off-hand, e.g. tested on a dual-wielding Barbarian), the character's 3D weapon mesh in VR remains attached to the right hand, while the flame emitter/particles float disconnected in empty space at the coordinates where the right-hand club head would be located. Pending investigation into off-hand weapon bone mapping and dual-wielding attachment indexing in `skel::MeleeWeapon`.
+* **Dropped Item Extinguishment (Ground Item Limitation):**
+  * Dropping an active torch club onto the ground extinguishes the flame and dynamic lighting. Dropped ground items exist as native static 2D/3D loot props and do not currently sustain an active light emitter or particle volume while resting on the floor.
