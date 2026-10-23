@@ -2558,7 +2558,10 @@ void Input() {
         elementalInput.activation[h]=handOutput.activation[h];
     }
     elementalScene=elementalState.Step(elementalInput,interactionInput.snapshot);
-    for(int h=0;h<2;++h) {
+    // A torch club's flame (VR Settings > Video > Torch flame); its light is
+    // vrcam's and stays either way.
+    const bool torchFlame=hudSettings.values[settings::TorchFlame]>.5f;
+    for(int h=0;h<2&&torchFlame;++h) {
         uint32_t torchFlags=0;
         if(interaction::HasTorchInHand(interactionInput.snapshot,h,torchFlags)) {
             elementalScene.hands[h].element=elements::Element::Fire;

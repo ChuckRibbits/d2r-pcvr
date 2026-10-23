@@ -390,7 +390,7 @@ tabs and a **Reset eye height** button:
 |---|---|
 | Controls | Left/right controller reference for movement, menus, melee, bow, spells, potions, holsters and height reset |
 | VR | Controller labels, motion combat, seated belt position, dominant hand, smooth/snap turning, belt height and reach, weapon skill gestures and ordinary mob bars |
-| Video | Added sky, fog and dungeon ceilings, and the experimental Sorceress elemental hand effects (Off by default) |
+| Video | Added sky, fog and dungeon ceilings, the experimental Sorceress elemental hand effects (Off by default), bottle and prop physics, and the torch club's flame (On; its light stays when it is off) |
 | HUD | Health/mana location and tilt, optional resource alerts, navigation location, menu distance and tooltip timing |
 | Combat | Melee rules, swing hit speed and thrust speed |
 | Aim | Whether spells and bow skills go to the aimed monster, the staff aiming where your arm points, and the aimed monster's outline: strength, which hands show it, and each hand's color (by range or one hue), where ground skills land (the game's aim, where you point or the aimed monster), landing circles, and whether the aim follows your view (the eyes' 17-degree tunnel, the hands within 30 degrees of your head, a raised hand aiming alone). Every option that changes how a cast aims is Off (Game) by default |

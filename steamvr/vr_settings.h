@@ -17,7 +17,7 @@ namespace framevr::settings {
 enum class Page { Controls, VR, Video, HUD, Combat, Aim, Shield, Haptics, Performance, ReleaseNotes };
 enum Key { Motion, Seated, Dominant, Snap, TurnSpeed, Waist, BeltForward,
            Foveation, Sky, Fog, Ceiling, DrawDistance, ObjectDistance,
-           EyeHeight, ArmSpan, BodyCalibration, SkillGestures, WristMap, WristCompass, ControllerLabels, WeaponSkillIndicators, PlanarSpellAim, VitalsLocation, CriticalAlerts, RenderResolution, NavigationLocation, SmoothTurn, OrdinaryMobBars, MenuDistance, TooltipTiming, ProjectileAimAssist, MeleeHitSpeed, VitalsTilt, HapticStrength, HapticMelee, HapticBowDraw, HapticBowRelease, HapticSpell, HapticInteraction, HapticAlert, HapticShortMelee, BloodVisor, BloodWipe, MeleeRules, MeleeThrustSpeed, LootLabelSize, CompanionCounts, StrainDark, OfflinePlayers, ShieldBashSpeed, StrainSpeed, DesktopOneEye, MapTopDown, MapRotate, FoveationStrength, StereoRendering, DeferGpuWait, TargetHighlight, HeartbeatStart, SpellLock, StaffPoint, LandingCircles, GroundAim, AimHighlights, HighlightRight, HighlightLeft, ReShadeDepth, ElementalHands, EnemySight, BowLaser, ThrowLift, BottlePhysics, PropPhysics, CompanionAi, ShieldGrip, ShieldOut, ShieldUp, ShieldFollow, ShieldRoll, AimFollowsView, LeftHandStrikes, Count };
+           EyeHeight, ArmSpan, BodyCalibration, SkillGestures, WristMap, WristCompass, ControllerLabels, WeaponSkillIndicators, PlanarSpellAim, VitalsLocation, CriticalAlerts, RenderResolution, NavigationLocation, SmoothTurn, OrdinaryMobBars, MenuDistance, TooltipTiming, ProjectileAimAssist, MeleeHitSpeed, VitalsTilt, HapticStrength, HapticMelee, HapticBowDraw, HapticBowRelease, HapticSpell, HapticInteraction, HapticAlert, HapticShortMelee, BloodVisor, BloodWipe, MeleeRules, MeleeThrustSpeed, LootLabelSize, CompanionCounts, StrainDark, OfflinePlayers, ShieldBashSpeed, StrainSpeed, DesktopOneEye, MapTopDown, MapRotate, FoveationStrength, StereoRendering, DeferGpuWait, TargetHighlight, HeartbeatStart, SpellLock, StaffPoint, LandingCircles, GroundAim, AimHighlights, HighlightRight, HighlightLeft, ReShadeDepth, ElementalHands, EnemySight, BowLaser, ThrowLift, BottlePhysics, PropPhysics, CompanionAi, ShieldGrip, ShieldOut, ShieldUp, ShieldFollow, ShieldRoll, AimFollowsView, LeftHandStrikes, TorchFlame, Count };
 // One bit per setting, 128 wide: two words, since MSVC has no 128-bit integer.
 struct ChangeMask {
     static constexpr int Bits=128;
@@ -130,6 +130,7 @@ inline constexpr std::array<Definition,Count> Definitions{{
     // Melee skill strikes (strike_skills.h): which skill the left claw's strikes cast.
     // Set from the skill wheel's lower-left box (Druid), not a VR Settings row.
     {"Left-hand strikes", "Druid: the left claw casts its own trigger skill or the right trigger's", L"gameplay",L"left_hand_strikes",0,0,1,1},
+    {"Torch flame", "The flame on a torch club's head; its light stays either way", L"torch",L"flame",1,0,1,1},
 }};
 using Values=std::array<float,Count>;
 inline bool HapticKey(Key key){return key>=HapticStrength&&key<=HapticAlert;}
@@ -425,7 +426,7 @@ inline Rect PairDecrease(int row,int side){return {PairX(side),RowY+row*RowStep,
 inline Rect PairValue(int row,int side){return {PairX(side)+56,RowY+row*RowStep,238,52};}
 inline Rect PairIncrease(int row,int side){return {PairX(side)+298,RowY+row*RowStep,52,52};}
 // Every row a page can show, in order (Rows leaves out those that cannot apply).
-inline int CatalogCount(Page page){return page==Page::Haptics?2+haptics::CategoryCount:page==Page::Combat?9:page==Page::Aim?10:page==Page::Shield?5:page==Page::VR?10:page==Page::Video?6:page==Page::Performance?8:page==Page::HUD?10:0;}
+inline int CatalogCount(Page page){return page==Page::Haptics?2+haptics::CategoryCount:page==Page::Combat?9:page==Page::Aim?10:page==Page::Shield?5:page==Page::VR?10:page==Page::Video?7:page==Page::Performance?8:page==Page::HUD?10:0;}
 inline Key CatalogKey(Page page,int row){
     constexpr Key hapticRows[]={HapticStrength,HapticMelee,HapticShortMelee,HapticBowDraw,HapticBowRelease,HapticSpell,HapticInteraction,HapticAlert};
     if(page==Page::Haptics)return hapticRows[row];
@@ -438,7 +439,7 @@ inline Key CatalogKey(Page page,int row){
     if(page==Page::Shield)return Key(ShieldGrip+row);   // Grip, Out, Up, Follows, Roll: every class can carry a shield
     constexpr Key hud[]={VitalsLocation,VitalsTilt,CriticalAlerts,NavigationLocation,MenuDistance,TooltipTiming,BloodVisor,BloodWipe,LootLabelSize,CompanionCounts};
     if(page==Page::HUD)return hud[row];
-    constexpr Key video[]={Sky,Fog,Ceiling,ElementalHands,BottlePhysics,PropPhysics};
+    constexpr Key video[]={Sky,Fog,Ceiling,ElementalHands,BottlePhysics,PropPhysics,TorchFlame};
     if(page==Page::Video)return video[row];
     // Everything that changes the frame rate, with its numbers below.
     constexpr Key performance[]={StereoRendering,RenderResolution,DrawDistance,ObjectDistance,Foveation,FoveationStrength,ReShadeDepth,DesktopOneEye};

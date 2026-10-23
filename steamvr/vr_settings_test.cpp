@@ -85,9 +85,11 @@ int main(){
               RowKey(Page::Performance,1)==RenderResolution&&RowKey(Page::Performance,7)==DesktopOneEye,"strength sits directly under foveated rendering");
         Check(RowKey(Page::Performance,0)==StereoRendering&&RowKey(Page::Performance,2)==DrawDistance&&RowKey(Page::Performance,3)==ObjectDistance&&
               RowKey(Page::Performance,6)==ReShadeDepth,"everything that changes the frame rate is on the Perf page");
-        Check(RowCount(Page::Video)==6&&RowKey(Page::Video,0)==Sky&&RowKey(Page::Video,1)==Fog&&RowKey(Page::Video,2)==Ceiling&&
-              RowKey(Page::Video,3)==ElementalHands&&RowKey(Page::Video,4)==BottlePhysics&&RowKey(Page::Video,5)==PropPhysics,
-              "the Video page keeps the mod's effects, with bottle and prop physics");
+        Check(RowCount(Page::Video)==7&&RowKey(Page::Video,0)==Sky&&RowKey(Page::Video,1)==Fog&&RowKey(Page::Video,2)==Ceiling&&
+              RowKey(Page::Video,3)==ElementalHands&&RowKey(Page::Video,4)==BottlePhysics&&RowKey(Page::Video,5)==PropPhysics&&
+              RowKey(Page::Video,6)==TorchFlame,"the Video page keeps the mod's effects, with bottle and prop physics and the torch flame");
+        Check(Defaults()[TorchFlame]==1&&std::wstring(Definitions[TorchFlame].section)==L"torch"&&std::wstring(Definitions[TorchFlame].key)==L"flame"&&
+              HelpText(TorchFlame)[0]!=0,"the torch flame: on by default, [torch] flame, explained");
         Check(Defaults()[BottlePhysics]==1&&Defaults()[PropPhysics]==1,"both physics switches start on, as their INI defaults");
         const auto last=Increase(RowCount(Page::Performance)-1);
         Check(last.y+last.h<PerformanceBox.y&&PerformanceBox.y+PerformanceBox.h<=GameVideoBox.y&&GameVideoBox.y+GameVideoBox.h<=DepthRestartBox.y&&
@@ -520,7 +522,7 @@ int main(){
     {   // Rows follow the character: another class's or weapon's are left out; unknown (the menus) shows them all
         const auto v=Defaults();
         Check(RowShown(ElementalHands,v,{})&&RowShown(ElementalHands,v,{heroclass::Sorceress})&&!RowShown(ElementalHands,v,{heroclass::Amazon}),"elemental hands: the Sorceress's");
-        Check(RowCount(Page::Video,v,{heroclass::Barbarian})==5&&RowCount(Page::Video,v,{heroclass::Sorceress})==6,"the Video page drops them for others");
+        Check(RowCount(Page::Video,v,{heroclass::Barbarian})==6&&RowCount(Page::Video,v,{heroclass::Sorceress})==7,"the Video page drops them for others");
         for(int k:{int(heroclass::Sorceress),int(heroclass::Assassin),int(heroclass::Druid),int(heroclass::Necromancer)})
             Check(RowShown(GroundAim,v,{k}),"ground skills for the classes that have them");
         for(int k:{int(heroclass::Amazon),int(heroclass::Barbarian),int(heroclass::Paladin)})Check(!RowShown(GroundAim,v,{k}),"none for those that do not");
