@@ -10,5 +10,5 @@ void Install();
 void Tick();
 void Report();
 void Shutdown();
+int AppliedPercent();
 }
-

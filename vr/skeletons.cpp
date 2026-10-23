@@ -47,6 +47,7 @@
 #include "hero_selection.h"
 #include "bow_pose.h"
 #include "shield_pose.h"
+#include "shield_steady.h"
 #include "dev_scenarios.h"
 #include "../steamvr/shield_surface.h"
 namespace gamestate {framevr::dualwield::Equipment MeleeEquipment();uint64_t LocalPlayer();uint32_t HandsKey();uint32_t WeaponSet();}
@@ -858,8 +859,10 @@ void ApplyWrist(Mat& hand, const Wrist& r) {
 // forearm shield_attach sat on: the necromancer's animation holds it past the
 // palm side, the stop turned round and pushed his hand up as it bent down,
 // with a steel shield only (2026-10-20). The barbarian's never turned it.
-// Returns how much bend the controller asked that the wrist held back, degrees (0: none).
-float StopShieldWrist(const Hero& h,std::vector<Mat>& newW) {
+// Returns how much bend the controller asked that the wrist held back, degrees (0: none);
+// sideOut (if given): -1 when the shield's bone puts it on the palm's side, else +1 -
+// for the shield's placement, never to turn the stop round.
+float StopShieldWrist(const Hero& h,std::vector<Mat>& newW,int* sideOut=nullptr) {
     const int k=h.hand[1],sa=h.shieldAttach,l=h.lwr[1],i=h.ind[1],m=h.mid[1],p=h.pnk[1];
     if(k<0||sa<0||l<0||i<0||m<0||p<0)return 0;
     // the back of the hand in the hand bone's frame (Fist's left palm, reversed)
@@ -868,6 +871,16 @@ float StopShieldWrist(const Hero& h,std::vector<Mat>& newW) {
     const Mat rigid=Mul(Mul(h.bind[k],InvAffine(h.bind[sa])),newW[sa]);
     const V3 f=Norm(Sub(Pos(newW[k]),Pos(newW[l])));   // elbow -> wrist
     const V3 now=Norm(RotOnly(back,newW[k])),stop=Norm(RotOnly(back,rigid));
+    // the shield's side of the forearm, for its placement only (the stop above stays
+    // the back of the hand's): the back of the hand's, unless its bone says otherwise.
+    // 2026-10-20: decided from the bind pose, once per model. Read each frame, an
+    // attach bone near the forearm's line flipped the side as the arm moved, and
+    // the shield following the hand jumped across the wrist.
+    if(sideOut) {
+        const V3 fb=Norm(Sub(Pos(h.bind[k]),Pos(h.bind[l]))),ob=Sub(Pos(h.bind[sa]),Pos(h.bind[l]));
+        const V3 off=Sub(ob,Scale(fb,Dot(ob,fb)));
+        *sideOut=Len(off)>.05f*Len(Sub(Pos(h.bind[k]),Pos(h.bind[l])))&&Dot(off,RotOnly(back,h.bind[k]))<0?-1:1;
+    }
     // Bend as the angle off the forearm: easing starts kEase short of the stop
     // and only approaches it, so the shield slows into place and never reaches the arm.
     constexpr float kEase=15.0f/57.2958f;
@@ -1782,14 +1795,73 @@ void PoseBody(uintptr_t self, const Hero& h, const Input& in) {
         }
     }
 
+    // Forearm twist: the hand alone turned with the controller, so a turned
+    // wrist left the sleeve, bracer and shield facing the old way. The forearm
+    // takes a share of the twist the hand has about it - measured against the
+    // hand as the animation holds it on that forearm - turned about its own
+    // length at the elbow. The hand and all it holds keep exactly the pose the
+    // controller gave them.
+    if (in.mode == 2 && in.forearmTwist) {
+        // One hand axis can lie nearly along the forearm and then swings wildly
+        // (the arm twisted ~90 degrees and pinched the elbow): instead two
+        // directions square to the forearm are carried from the held hand to
+        // the real one, and their mean turn about the forearm is the twist.
+        constexpr float kShare = 0.6f, kMaxTurn = 1.0f;   // radians the forearm may turn
+        for (int side = 0; side < 2; ++side) {
+            const int l = h.lwr[side], k = h.hand[side];
+            if (l < 0 || k < 0 || !(in.handsValid & (1u << side))) continue;
+            const V3 axis = Norm(Sub(Pos(newW[k]), Pos(newW[l])));
+            const Mat held = Mul(Mul(baseW[k], InvAffine(baseW[l])), newW[l]);   // the hand untwisted on this forearm
+            V3 heldAx[3], nowAx[3];
+            for (int r = 0; r < 3; ++r) {
+                heldAx[r] = Norm({held.m[r * 4], held.m[r * 4 + 1], held.m[r * 4 + 2]});
+                nowAx[r] = Norm({newW[k].m[r * 4], newW[k].m[r * 4 + 1], newW[k].m[r * 4 + 2]});
+            }
+            const V3 p = Norm(Cross(axis, fabsf(axis.y) < 0.9f ? V3{0, 1, 0} : V3{1, 0, 0}));
+            const V3 q = Cross(axis, p);
+            auto carry = [&](V3 v) {   // v as the held hand has it, where the real hand has it
+                V3 out{0, 0, 0};
+                for (int r = 0; r < 3; ++r) out = Add(out, Scale(nowAx[r], Dot(v, heldAx[r])));
+                return out;
+            };
+            const V3 p2 = carry(p), q2 = carry(q);
+            float twist = atan2f(Dot(Add(Cross(p, p2), Cross(q, q2)), axis), Dot(p, p2) + Dot(q, q2));
+            if (!std::isfinite(twist)) continue;
+            // Near half a turn (the wrist turned up to read the map) the reading
+            // wraps from +180 to -180 degrees and the forearm flipped between its limits.
+            // Keep the reading continuous with the last frame's, and ease into
+            // the limit instead of stopping hard at it.
+            static float lastTwist[2] = {0.0f, 0.0f};
+            constexpr float kTau = 6.2831853f;
+            while (twist - lastTwist[side] > kTau * 0.5f) twist -= kTau;
+            while (twist - lastTwist[side] < -kTau * 0.5f) twist += kTau;
+            twist = std::clamp(twist, -kTau * 0.75f, kTau * 0.75f);   // a real wrist goes no further
+            lastTwist[side] = twist;
+            if (fabsf(twist) < 0.01f) continue;
+            const float t = kMaxTurn * tanhf(kShare * twist / kMaxTurn);
+            const V3 a = p;
+            const Mat R = RotBetween(a, Add(Scale(a, cosf(t)), Scale(Cross(axis, a), sinf(t))));
+            // keep the hand's whole subtree as posed; turn the forearm and re-derive
+            // only its other children (twist helpers, armor pieces)
+            std::vector<char> handTree(n, 0); handTree[k] = 1;
+            for (int i = k + 1; i < n; ++i) if (h.parent[i] >= 0 && handTree[h.parent[i]]) handTree[i] = 1;
+            const auto before = newW;
+            TurnAboutSelf(newW[l], R);
+            std::vector<char> fromL(n, 0); fromL[l] = 1;
+            Propagate(h, before, newW, fromL, l);
+            for (int i = 0; i < n; ++i) if (handTree[i]) newW[i] = before[i];
+        }
+    }
+
 #ifdef D2RVR_NATIVE_OPENXR
     // A shield has its own left-wrist attachment. Taking it from a random
     // combat animation or applying the sword/bow adjustment makes it orbit
     // the forearm. The bind relationship follows the final tracked wrist.
     bool shieldFollowed=false;
+    struct {int bone=-1,side=1;float heldBack=0,bend=-1;shield::Frame frame;} seatTrace;   // for [debug] shield_trace
     if(in.mode==2&&in.leftShield&&(in.handsValid&2u)&&h.bindOk&&h.weapon[1]>=0&&h.hand[1]>=0) {
         const int wb=h.weapon[1],hand=h.hand[1];
-        StopShieldWrist(h,newW);   // before the shield takes the hand's turn
+        int side=1;const float heldBack=StopShieldWrist(h,newW,&side);   // before the shield takes the hand's turn
         bow::Mat wristBind,shieldBind,wristNow,result;
         memcpy(&wristBind,&h.bind[hand],sizeof wristBind);
         memcpy(&shieldBind,&h.bind[wb],sizeof shieldBind);
@@ -1800,13 +1872,54 @@ void PoseBody(uintptr_t self, const Hero& h, const Input& in) {
             const auto before=newW;memcpy(&newW[wb],&result,sizeof result);
             std::vector<char> moved(n,0);moved[wb]=1;Propagate(h,before,newW,moved,wb);
             shieldFollowed=true;
-            // The visible shield hangs on shield_attach, a FOREARM child: give it
-            // the same bind relationship to the tracked hand, so it bends with the wrist.
-            const int sa=h.shieldAttach;bow::Mat attachBind,attachNow;
-            if(sa>=0&&sa!=wb) {
+            // The visible shield hangs on shield_attach, a FOREARM child. It is
+            // placed in the arm's own frame (shield::ArmFrame - joint positions,
+            // never a bone's axes, so every slider means the same direction on
+            // every class): VR Settings > Shield > Shield follows blends it from
+            // strapped to the forearm (0%, the wrist's bend ignored) to turning
+            // with the hand (100%, the original wrist attach), then the resting
+            // roll (Shield roll) turns it about the forearm, and
+            // Grip / Out / Up move it - a big shield's straps are far from its
+            // attach bone - scaled by this model's forearm (~0.26 m on an adult).
+            const int sa=h.shieldAttach,l=h.lwr[1],ki=h.ind[1],kp=h.pnk[1],km=h.mid[1];bow::Mat attachBind,attachNow;
+            if(sa>=0&&sa!=wb&&l>=0) {
                 memcpy(&attachBind,&h.bind[sa],sizeof attachBind);
-                if(shield::Follow(wristBind,attachBind,wristNow,attachNow)) {
+                auto bv=[](V3 v){return bow::Vec{v.x,v.y,v.z};};
+                shield::Frame bindFrame,wristFrame,strapped,frame;
+                if(ki>=0&&kp>=0&&km>=0) {
+                    const float handed=shield::Handed(bv(Pos(h.bind[l])),bv(Pos(h.bind[hand])),bv(Pos(h.bind[ki])),bv(Pos(h.bind[kp])),bv(Pos(h.bind[km])),side);
+                    bindFrame=shield::ArmFrame(bv(Pos(h.bind[l])),bv(Pos(h.bind[hand])),bv(Pos(h.bind[ki])),bv(Pos(h.bind[kp])),handed);
+                    wristFrame=shield::Carry(bindFrame,wristBind,wristNow);
+                    strapped=shield::ArmFrame(bv(Pos(newW[l])),bv(Pos(newW[hand])),bv(Pos(newW[ki])),bv(Pos(newW[kp])),handed);
+                    frame=shield::Roll(shield::Blend(strapped,wristFrame,in.shieldFollowPct/shield::kFollowMaxPct),in.shieldRollDeg);
+                }
+                const V3 handRow{newW[hand].m[0],newW[hand].m[1],newW[hand].m[2]},bindRow{h.bind[hand].m[0],h.bind[hand].m[1],h.bind[hand].m[2]};
+                const bool placed=frame.ok&&shield::Place(attachBind,bindFrame,bv(Pos(h.bind[hand])),Len(bindRow),frame,bv(Pos(newW[hand])),Len(handRow),attachNow);
+                if(placed||shield::Follow(wristBind,attachBind,wristNow,attachNow)) {   // no knuckles: the wrist attach, unmoved
                     const auto beforeAttach=newW;memcpy(&newW[sa],&attachNow,sizeof attachNow);
+                    if(placed) {
+                        const float units=Len(Sub(Pos(newW[hand]),Pos(newW[l])));   // this model's forearm, ~0.26 m on an adult
+                        const bow::Vec move=shield::Offset(frame.along,frame.out,frame.up,in.shieldGripCm,
+                                                           in.shieldOutCm,in.shieldUpCm,units/0.26f);
+                        newW[sa].m[12]+=move.x;newW[sa].m[13]+=move.y;newW[sa].m[14]+=move.z;
+                    }
+                    // Steadied last of all (shield_steady.h): the controller's tremor
+                    // shook the shield; dead zones drop it, real moves pass at once. The guard pose
+                    // blocking reads is this bone, so it is the steady one too.
+                    {
+                        static steady::Filter steadied;static LARGE_INTEGER last{};
+                        static LARGE_INTEGER freq{};if(!freq.QuadPart)QueryPerformanceFrequency(&freq);
+                        LARGE_INTEGER now;QueryPerformanceCounter(&now);
+                        const float dt=last.QuadPart?float(double(now.QuadPart-last.QuadPart)/double(freq.QuadPart)):0.f;
+                        last=now;
+                        bow::Mat m;memcpy(&m,&newW[sa],sizeof m);
+                        steadied.Apply(m,dt,std::max(1e-4f,Len(Sub(Pos(newW[hand]),Pos(newW[l]))))/26.f,steady::Shield);   // forearm ~26 cm
+                        memcpy(&newW[sa],&m,sizeof m);
+                        static bool told=false;
+                        if(!told){told=true;char line[120];snprintf(line,sizeof line,"Frame shield steady: on (dead zones %.1f degree and %.1f mm)",steady::Shield.angleDeadDeg,steady::Shield.moveDeadCm*10);framevr::logging::Write(line);}
+                    }
+                    seatTrace.bone=sa;seatTrace.side=side;seatTrace.heldBack=heldBack;seatTrace.frame=placed?frame:shield::Frame{};
+                    if(in.shieldTrace){bow::Vec axis;float angle;seatTrace.bend=shield::TurnBetween(strapped,wristFrame,axis,angle)?angle*57.2958f:-1;}
                     std::vector<char> movedAttach(n,0);movedAttach[sa]=1;Propagate(h,beforeAttach,newW,movedAttach,sa);
                 }
             }
@@ -2120,6 +2233,64 @@ void PoseBody(uintptr_t self, const Hero& h, const Input& in) {
                     (","+ std::string(in.shrinkBone) + ",").find("," + nm + ",") != std::string::npos)   // a comma list
                     for (int r = 0; r < 3; ++r) for (int c2 = 0; c2 < 3; ++c2) newW[i].m[r * 4 + c2] *= 0.001f;
         ReleaseSRWLockShared(&g_namesLock);
+    }
+#endif
+#ifdef D2RVR_NATIVE_OPENXR
+    // [debug] shield_trace: the held shield's pose chain at 5 Hz, and at once when
+    // it jumps (turns over 20 degrees in one frame). Everything is in model space
+    // from the eye - the tracked hand too, turned by the yaw the controllers are
+    // placed with (`face`) - so a body turn or a level load no longer reads as a
+    // flip; a new world placement (snap turn, recenter, level) restarts the check.
+    if (in.shieldTrace && shieldFollowed && seatTrace.bone >= 0 && h.hand[1] >= 0 && h.lwr[1] >= 0 && h.head >= 0) {
+        const int k = h.hand[1], l = h.lwr[1], sb = seatTrace.bone;
+        const V3 head = in.haveEye ? V3{in.eyeModel[0], in.eyeModel[1], in.eyeModel[2]} : Pos(newW[h.head]);
+        const float upm = framevr::body::UnitsPerMetre(h.eyeY > 0 ? h.eyeY : head.y, in.userHeadM, in.scale);
+        bow::Mat hand, elbow, shieldNow;
+        memcpy(&hand, &newW[k], sizeof hand); memcpy(&elbow, &newW[l], sizeof elbow); memcpy(&shieldNow, &newW[sb], sizeof shieldNow);
+        const float cm = upm > 0 ? 100 / upm : 0;
+        static bow::Mat lastFrame{}, lastLine{}; static bool haveFrame = false; static ULONGLONG nextLine = 0, lastSeen = 0; static uint32_t lastEpoch = 0;
+        static uintptr_t lastSkel = 0; static int lastBone = -1;
+        const ULONGLONG now = GetTickCount64();
+        // a new world placement, the first frame after the shield or arm appears, or a gap
+        // (a level loading) starts the jump check over, so spawning never prints a JUMP
+        if (in.worldEpoch != lastEpoch || shield::TraceFresh(haveFrame, lastSeen, now, lastSkel == h.skel && lastBone == sb)) {
+            haveFrame = false; lastEpoch = in.worldEpoch;
+        }
+        lastSeen = now; lastSkel = h.skel; lastBone = sb;
+        const float jump = haveFrame ? shield::TurnDeg(lastFrame, shieldNow) : 0;
+        const bool sudden = jump > 20;
+        if (now >= nextLine || sudden) {
+            nextLine = now + 200;
+            bow::Mat tracked = bow::Identity();
+            const float* q = in.rot[1];
+            const Q4 qq = {q[0], q[1], q[2], q[3]};
+            const V3 raw[3] = {QRot(qq, {1, 0, 0}), QRot(qq, {0, 1, 0}), QRot(qq, {0, 0, 1})};
+            for (int r = 0; r < 3; ++r) {   // the controller's axes in model space, as the hand is placed
+                const float a[3] = {raw[r].x, raw[r].y, raw[r].z};
+                const V3 m = Norm(ToModel(a, c, s));
+                tracked.m[r * 4] = m.x; tracked.m[r * 4 + 1] = m.y; tracked.m[r * 4 + 2] = m.z;
+            }
+            const auto ta = shield::Angles(tracked), wa = shield::Angles(hand), ea = shield::Angles(elbow), sa = shield::Angles(shieldNow);
+            auto at = [&](V3 p) { p = Sub(p, head); return V3{p.x * cm, p.y * cm, p.z * cm}; };
+            const V3 t = at(ControllerPoint(h, 1, in, newW, c, s)), w = at(Pos(newW[k])), e = at(Pos(newW[l])), s2 = at(Pos(newW[sb]));
+            // the attach bone from the wrist in the arm's frame (along, out, up), cm
+            const shield::Frame& f = seatTrace.frame;
+            const V3 d = Sub(Pos(newW[sb]), Pos(newW[k]));
+            const V3 seat = f.ok ? V3{Dot(d, {f.along.x, f.along.y, f.along.z}) * cm, Dot(d, {f.out.x, f.out.y, f.out.z}) * cm, Dot(d, {f.up.x, f.up.y, f.up.z}) * cm} : V3{0, 0, 0};
+            char line[640]; std::snprintf(line, sizeof line,
+                "Frame shield trace: t=%llu%s face=%.0f hand=(%.1f,%.1f,%.1f|%.0f,%.0f,%.0f) wrist=(%.1f,%.1f,%.1f|%.0f,%.0f,%.0f) "
+                "elbow=(%.1f,%.1f,%.1f|%.0f,%.0f,%.0f) seat=(%.1f,%.1f,%.1f) shield=(%.1f,%.1f,%.1f|%.0f,%.0f,%.0f) side=%s stop=%.0f "
+                "follow=%.0f%% roll=%.0f bend=%.0f%s turn=%.1fdeg",
+                (unsigned long long)now, sudden ? " JUMP" : "", in.yawInModel * 57.29578f,
+                t.x, t.y, t.z, ta.x, ta.y, ta.z,
+                w.x, w.y, w.z, wa.x, wa.y, wa.z, e.x, e.y, e.z, ea.x, ea.y, ea.z, seat.x, seat.y, seat.z,
+                s2.x, s2.y, s2.z, sa.x, sa.y, sa.z, seatTrace.side < 0 ? "palm" : "back", seatTrace.heldBack,
+                in.shieldFollowPct, in.shieldRollDeg, seatTrace.bend, f.ok ? "" : " (wrist attach)",
+                haveFrame ? shield::TurnDeg(lastLine, shieldNow) : 0.f);
+            framevr::logging::Write(line);
+            lastLine = shieldNow;
+        }
+        lastFrame = shieldNow; haveFrame = true;
     }
 #endif
     const bool written = SafeWrite((void*)mats, newW.data(), sizeof(Mat) * n);

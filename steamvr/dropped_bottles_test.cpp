@@ -363,6 +363,102 @@ int main() {
             assert(Moves(world).size()<=props::MaxMoving);
         }
     }
+    // A thrown potion lands where it first touches anything.
+    {
+        auto flyUntilLanded=[](World& world,Vec player,double& t,Thrown& out){
+            for(int i=0;i<90*3;++i){t+=1/90.;world.Advance(t,player);if(world.Tossed(out)&&out.landed)return true;}
+            return false;
+        };
+        // Onto the floor: about where the arc lands (the body starts above the floor).
+        {
+            World world;const Vec start{10,1.3f,20},v{0,1,-3};
+            assert(world.Toss(At(start,v),5));
+            Thrown in;assert(world.Tossed(in)&&in.id==5&&!in.landed);
+            double t=0;Thrown out;assert(flyUntilLanded(world,start,t,out));
+            const float arc=(v.y+std::sqrt(v.y*v.y+2*9.81f*1.3f))/9.81f;
+            assert(std::fabs(out.p.z-(start.z+v.z*arc))<.3f&&std::fabs(out.p.x-start.x)<.05f&&out.p.y<.2f);
+            world.EndToss();assert(!world.Tossed(out));
+        }
+        // Into a wall: it stops at the face, off the floor.
+        {
+            World world;const float floor=0;const Vec start{500.2f,1.3f,800.7f};
+            const auto c=CellAt(start,floor,Upm);
+            Patch p;p.session=7;p.serial=1;p.x0=c.x-16;p.z0=c.z-16;
+            for(int z=0;z<PatchCells;++z)p.rows[z]=1u<<19;
+            const float face=CellCorner(float(p.x0+19),float(c.z),floor,Upm).x;
+            assert(world.Toss(At(start,{8,1,0},floor),6));world.Walls(p);
+            double t=0;Thrown out;assert(flyUntilLanded(world,start,t,out));
+            assert(out.p.x<face&&out.p.x>face-.2f&&out.p.y>.5f);
+        }
+        // Through the thrower's own weapon, which never touches it.
+        {
+            World world;const Vec start{0,1.3f,0};
+            assert(world.Toss(At(start,{0,0,-4}),7));
+            std::array<Collider,Colliders> weapons{};
+            weapons[0]=Blade({-.3f,1.3f,-.3f},{.3f,1.3f,-.3f},.05f);world.Weapons(weapons);
+            double t=0;Thrown out;assert(flyUntilLanded(world,start,t,out));
+            assert(out.p.z<-1&&out.p.y<.2f);
+        }
+        // Into a cup on the floor: it lands there and sets the cup going.
+        {
+            World world;const Vec player{0,0,0};
+            world.Props(Scan(player,{Cup(91,{0,0,-.8f})}));
+            assert(world.Toss(At({0,.25f,0},{0,0,-4}),8));
+            double t=0;Thrown out;std::array<Knock,props::MaxMoving> knocks{};unsigned k=0;
+            for(int i=0;i<90*2&&!(world.Tossed(out)&&out.landed);++i){t+=1/90.;world.Advance(t,player);k+=world.Knocks(knocks);}
+            assert(out.landed&&out.p.z>-1&&out.p.z<-.5f);
+            assert(k>=1);
+        }
+        // Refused for invalid releases.
+        {
+            World world;assert(!world.Toss(At({0,1,0},{MaxSpeed+1,0,0}),9));assert(!world.Toss(At({0,1,0}),0));
+            Thrown out;assert(!world.Tossed(out));
+        }
+    }
+    // A thrown trap, traced through the world at release.
+    {
+        const float r=.06f;
+        World world;Vec hit{};
+        assert(!world.Trace({0,1.5f,0},{5,0,0},r,3,hit)); // no world here yet
+        assert(world.Prepare(7,0,Upm,{0,0,0}));
+        // Over open floor: where the arc meets it, the ball a radius above.
+        const float fall=std::sqrt(2*(1.5f-r)/9.81f);
+        assert(world.Trace({0,1.5f,0},{5,0,0},r,3,hit)&&std::fabs(hit.x-5*fall)<.05f&&std::fabs(hit.z)<1e-3f&&std::fabs(hit.y-r)<.02f);
+        // A wall in the way: at its face, still in the air.
+        const auto c=CellAt({0,0,0},0,Upm);
+        Patch p;p.session=7;p.serial=1;p.x0=c.x-16;p.z0=c.z-16;
+        for(int z=0;z<PatchCells;++z)p.rows[z]=1u<<20;
+        world.Walls(p);
+        const float face=CellCorner(float(p.x0+20),float(c.z),0,Upm).x;
+        assert(face<5*fall);
+        assert(world.Trace({0,1.5f,0},{5,0,0},r,3,hit)&&hit.x<face&&hit.x>face-r-.05f&&hit.y>.3f);
+        // A table top on the way down, from a prop's support.
+        World table;assert(table.Prepare(7,0,Upm,{0,0,0}));
+        table.Props(Scan({0,0,0},{Cup(95,{1.6f,.75f,0},props::Support{false,.75f,1,-.5f,2.5f,.5f})}));
+        assert(table.Supports()==1);
+        assert(table.Trace({0,1.5f,0},{3,0,0},r,3,hit)&&std::fabs(hit.y-(.75f+r))<.02f&&hit.x>1&&hit.x<2.5f);
+        // The thrower's own weapon never stops it.
+        World open;assert(open.Prepare(7,0,Upm,{0,0,0}));
+        std::array<Collider,Colliders> weapons{};weapons[0]=Blade({.2f,1.3f,-.3f},{.2f,1.6f,.3f},.05f);
+        open.Props(Scan({0,0,0},{Cup(96,{0,0,10})})); // something in the world, so the weapon is made
+        open.Weapons(weapons);open.Advance(1/90.,{0,0,0});open.Advance(2/90.,{0,0,0});
+        assert(open.Pushers()==1);
+        assert(open.Trace({0,1.5f,0},{5,0,0},r,3,hit)&&hit.x>2);
+        // Another floor while props move: the world stays where it is.
+        assert(!World().Prepare(0,0,Upm,{0,0,0})&&!World().Prepare(7,0,0,{0,0,0}));
+    }
+    // A bottle leaving the hand passes through that hand's fist for a moment.
+    {
+        World world;const Vec start{2,.3f,2};
+        std::array<Collider,Colliders> weapons{};
+        weapons[0]=Blade({1.9f,.3f,2},{2.1f,.3f,2},.06f); // a fist right where the bottle is
+        world.Weapons(weapons);
+        assert(world.Drop(At(start)));
+        double t=0;
+        for(int i=0;i<18;++i){t+=1/90.;world.Advance(t,start);}  // 0.2 s
+        const auto early=First(world);
+        assert(std::fabs(early.p.x-start.x)<.01f&&std::fabs(early.p.z-start.z)<.01f);
+    }
     // A pause or clock jump resumes in place instead of stepping seconds at once.
     {
         World world;assert(world.Drop(At({0,1.5f,0})));

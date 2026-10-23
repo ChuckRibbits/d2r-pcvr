@@ -7,8 +7,9 @@ below were verified the same day ("that works great").
 After drinking, opening the hand lets the empty bottle fall into the world.
 It keeps the hand's velocity and turn, bounces, rolls and stops at the game's
 walls. Previously it vanished on release. This is purely visual: no native
-request, item or game state is involved. `[interactions] bottle_physics=0`
-restores the old behaviour.
+request, item or game state is involved. VR Settings > Video > Bottle
+physics (`[interactions] bottle_physics=0`) restores the old behaviour, live,
+for dropped bottles and thrown potions alike.
 
 ## Pieces
 
@@ -16,7 +17,11 @@ restores the old behaviour.
   opens on a confirmed-empty bottle, the engine reports one `Output::discard`.
   It carries the held model's world pose (the same `Stage::World` mapping
   thrown potions use), the hand velocity and the floor under the player. The
-  velocity is the peak in the last 0.12 s, capped at 20 m/s. Turn is the mean
+  velocity is the peak in the last 0.12 s, capped at 20 m/s, plus the player's
+  own world velocity when running or walking (`interaction::Carry`: the stage
+  anchor's motion smoothed over 0.1 s, reset by jumps faster than 10 m/s or
+  gaps over 0.25 s). A bottle let go of mid-run moves on with you rather than
+  dropping straight down. Turn is the mean
   hand angular velocity over that window, from pose differences, capped at
   30 rad/s. A full bottle released still returns to the belt.
 - **Physics** (`steamvr/dropped_bottles.*`). [Box3D](https://github.com/erincatto/box3d)
@@ -55,6 +60,27 @@ restores the old behaviour.
   tick, at most every 80 ms. The weapons exist only while bottles or
   [knockable props](KNOCKABLE_PROPS.md) are in the world. Those props
   share this world, so bottles and props knock each other too.
+- **Thrown potions.** A Health, Rejuvenation, Antidote or Thawing bottle
+  thrown toward the hireling flies in this world too while bottle physics is
+  on. The engine hands the release over (`Output::toss`, an id with the same
+  pose, velocity and spin as a discard). `World::Toss` makes it a body like
+  the dropped ones, with contact events on, which weapons never touch. Its
+  first begin-touch with anything (the floor, a wall, a support plate or a
+  prop) lands it there: the body goes, and the engine sends the hireling
+  feed request with that point. While it flies, the engine draws the
+  bottle's body pose. If no body follows within 0.2 s (the world was busy
+  with moving props on another floor), the throw flies the old ballistic arc.
+  A body that touches nothing lands where it is after 3 s.
+- **Thrown traps and bombs.** While an Assassin's trap or bomb is in the
+  hand, the world is readied around the player (`World::Prepare`, no body)
+  and asks for walls. On release, `World::Trace` sweeps a 6 cm ball along the
+  throw's arc in 1/60 s pieces. The arc carries the player's running speed.
+  The ball meets walls, support plates, props and bottles, never weapons. The
+  native cast is aimed at the floor cell under the first hit; with nothing
+  hit (or Bottle physics off) it lands where the arc meets the floor, as
+  before.
+- **Leaving the hand.** For 0.3 s after release, a dropped bottle passes
+  through weapons and fists, so the hand that let go does not shove it.
 - **Drawing.** `potions::AddDropped` puts up to six empty-looking models into
   the potion scene, mapped back to room space through the current stage
   frame. The scene grew by six entries.

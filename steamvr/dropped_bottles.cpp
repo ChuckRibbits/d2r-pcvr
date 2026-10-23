@@ -24,6 +24,9 @@ constexpr float FloorFriction=.7f,FloorBounce=.2f,WallFriction=.4f,WallBounce=.2
 constexpr float FloorHalf=40; // the ground box around the physics origin, metres
 constexpr int Sides=24,MaxSteps=8;
 constexpr float WeaponFriction=.4f;
+// Weapons and fists are their own collision category: a bottle leaving the
+// hand ignores them for FreshTime, a thrown one always.
+constexpr uint64_t PusherBit=0x2;
 // Level props: twelve-sided round ones; surfaces under them 2 cm thick.
 constexpr int PropSides=12,WakeSamples=6;
 constexpr float MinHalf=.008f,SurfaceHalf=.01f,SurfaceFriction=.6f,SurfaceBounce=.1f,RestTurn=.3f;
@@ -39,7 +42,7 @@ constexpr float ContactSpeed=1;
 struct World::Impl {
     b3WorldId world=b3_nullWorldId;
     b3BodyId ground=b3_nullBodyId,walls=b3_nullBodyId;
-    struct Bottle {b3BodyId body=b3_nullBodyId;double born=0;uint32_t code=0;Vec p0{},p1{};Quat q0{0,0,0,1},q1{0,0,0,1};};
+    struct Bottle {b3BodyId body=b3_nullBodyId;double born=0;uint32_t code=0;Vec p0{},p1{};Quat q0{0,0,0,1},q1{0,0,0,1};b3ShapeId shape=b3_nullShapeId;bool armed=false;};
     std::array<Bottle,MaxBottles> bottles{};
     unsigned count=0;
     // Box3D works near its origin: physics position = world - origin.
@@ -71,6 +74,8 @@ struct World::Impl {
     struct Surface {b3BodyId body=b3_nullBodyId;props::Support support{};};
     std::vector<Surface> surfaces;
     std::vector<Knock> knocks;
+    struct Flying {b3BodyId body=b3_nullBodyId;b3ShapeId shape=b3_nullShapeId;uint64_t id=0;bool landed=false;double born=0;Vec p0{},p1{};Quat q0{0,0,0,1},q1{0,0,0,1};};
+    Flying toss{};
     Vec player{};
     Impl() {
         auto def=b3DefaultWorldDef();
@@ -93,6 +98,7 @@ struct World::Impl {
         for(auto& p:pushers){Destroy(p.body);p.shape=b3_nullShapeId;}
         for(auto& p:pieces)Destroy(p.body);
         for(auto& s:surfaces)Destroy(s.body);
+        Destroy(toss.body);toss={};
         pieces.clear();surfaces.clear();knocks.clear();
         Destroy(walls);Destroy(ground);rectCount=0;timed=false;accumulator=0;
     }
@@ -113,6 +119,7 @@ struct World::Impl {
                 auto def=b3DefaultBodyDef();def.type=b3_kinematicBody;def.position=target.p;def.rotation=target.q;
                 p.body=b3CreateBody(world,&def);
                 auto shape=b3DefaultShapeDef();shape.enableHitEvents=true;shape.baseMaterial.friction=WeaponFriction;
+                shape.filter.categoryBits=PusherBit;
                 const b3Capsule capsule{{0,0,0},{0,std::max(length,.001f),0},radius};
                 p.shape=b3CreateCapsuleShape(p.body,&shape,&capsule);
                 p.length=length;p.radius=radius;continue;
@@ -171,6 +178,51 @@ struct World::Impl {
         }
     }
     Vec Position(const Bottle& b,float alpha) const {return origin+b.p0+(b.p1-b.p0)*alpha;}
+    bool Busy() const {return count||!pieces.empty()||!B3_IS_NULL(toss.body);}
+    // The world for a release here, restarted for another floor, game or
+    // scale unless props are moving (they would stop in the air).
+    bool Prepare(const Release& r) {
+        const Vec offset=r.p-origin;
+        if(!Live()||r.session!=session||std::fabs(r.floor-floor)>.05f||
+           std::fabs(r.unitsPerMetre-upm)>.01f*upm||std::hypot(offset.x,offset.z)>FloorHalf*.5f) {
+            if(MovingCount())return false;
+            Restart(r.session,r.floor,r.unitsPerMetre,r.p);
+        }
+        return !B3_IS_NULL(ground);
+    }
+    // A bottle body: an 18 cm cylinder of the model's radius, released with the hand's motion.
+    b3BodyId Body(const Release& r,bool events,b3ShapeId& made) {
+        const float radius=Radius(r.radius);
+        Vec p=r.p-origin;
+        p.y=std::max(p.y,std::max(radius,Height*.5f)+.005f); // never start inside the floor
+        auto def=b3DefaultBodyDef();
+        def.type=b3_dynamicBody;def.position=B(p);def.rotation=B(r.q);
+        def.linearVelocity=B(r.v);def.angularVelocity=B(r.w);
+        def.linearDamping=.05f;def.angularDamping=.05f;
+        const auto body=b3CreateBody(world,&def);
+        if(B3_IS_NULL(body))return body;
+        auto* hull=b3CreateCylinder(Height,radius,-Height*.5f,Sides);
+        if(!hull){b3DestroyBody(body);return b3_nullBodyId;}
+        auto shape=b3DefaultShapeDef();shape.density=Density;
+        shape.baseMaterial.friction=GlassFriction;shape.baseMaterial.restitution=GlassBounce;shape.baseMaterial.rollingResistance=GlassRolling;
+        shape.filter.maskBits=~PusherBit;shape.enableContactEvents=events;
+        made=b3CreateHullShape(body,&shape,hull); // the world keeps its own copy
+        b3DestroyHull(hull);
+        if(B3_IS_NULL(made)){b3DestroyBody(body);return b3_nullBodyId;}
+        return body;
+    }
+    // After a step: the thrown bottle's first touch of anything lands it.
+    void Landing() {
+        if(B3_IS_NULL(toss.body))return;
+        const auto events=b3World_GetContactEvents(world);
+        bool touched=false;
+        for(int i=0;i<events.beginCount&&!touched;++i)
+            touched=B3_ID_EQUALS(events.beginEvents[i].shapeIdA,toss.shape)||B3_ID_EQUALS(events.beginEvents[i].shapeIdB,toss.shape);
+        const auto t=b3Body_GetTransform(toss.body);
+        toss.p1=F(t.p);toss.q1=F(t.q);
+        if(!Finite(toss.p1)||toss.p1.y<-1){toss.p1=Finite(toss.p0)?toss.p0:Vec{};toss.p1.y=0;touched=true;}
+        if(touched){Destroy(toss.body);toss.shape=b3_nullShapeId;toss.landed=true;toss.p0=toss.p1;toss.q0=toss.q1;}
+    }
     // ---- Level props ----
     // The frozen shape's bounds in physics space, for waking it.
     props::Box Reach(const Piece& p) const {
@@ -284,6 +336,7 @@ struct World::Impl {
             movers.push_back({F(box.lowerBound)-Vec{grow,grow,grow},F(box.upperBound)+Vec{grow,grow,grow}});
         };
         for(unsigned i=0;i<count;++i)mover(bottles[i].body);
+        if(!B3_IS_NULL(toss.body))mover(toss.body);
         for(const auto& p:pieces)if(p.moving)mover(p.body);
         for(auto& p:pieces) {
             if(p.moving)continue;
@@ -350,35 +403,59 @@ World::~World()=default;
 bool World::Ready() const {return b3World_IsValid(impl->world);}
 bool World::Drop(const Release& release) {
     auto& m=*impl;
-    if(!Ready()||!Valid(release))return false;
-    const Vec offset=release.p-m.origin;
-    const bool moving=m.MovingCount()>0;
     // Props moving on another floor keep theirs; the bottle waits for them.
-    if(!m.Live()||release.session!=m.session||std::fabs(release.floor-m.floor)>.05f||
-       std::fabs(release.unitsPerMetre-m.upm)>.01f*m.upm||std::hypot(offset.x,offset.z)>FloorHalf*.5f) {
-        if(moving)return false;
-        m.Restart(release.session,release.floor,release.unitsPerMetre,release.p);
-    }
-    if(B3_IS_NULL(m.ground))return false;
+    if(!Ready()||!Valid(release)||!m.Prepare(release))return false;
     if(m.count==MaxBottles)m.Remove(0);
-    const float radius=Radius(release.radius);
-    Vec p=release.p-m.origin;
-    p.y=std::max(p.y,std::max(radius,Height*.5f)+.005f); // never start inside the floor
-    auto def=b3DefaultBodyDef();
-    def.type=b3_dynamicBody;def.position=B(p);def.rotation=B(release.q);
-    def.linearVelocity=B(release.v);def.angularVelocity=B(release.w);
-    def.linearDamping=.05f;def.angularDamping=.05f;
-    const auto body=b3CreateBody(m.world,&def);
+    b3ShapeId shape=b3_nullShapeId;
+    const auto body=m.Body(release,false,shape);
     if(B3_IS_NULL(body))return false;
-    auto* hull=b3CreateCylinder(Height,radius,-Height*.5f,Sides);
-    if(!hull){b3DestroyBody(body);return false;}
-    auto shape=b3DefaultShapeDef();shape.density=Density;
-    shape.baseMaterial.friction=GlassFriction;shape.baseMaterial.restitution=GlassBounce;shape.baseMaterial.rollingResistance=GlassRolling;
-    const auto made=b3CreateHullShape(body,&shape,hull); // the world keeps its own copy
-    b3DestroyHull(hull);
-    if(B3_IS_NULL(made)){b3DestroyBody(body);return false;}
-    m.bottles[m.count++]={body,release.time,release.code,p,p,release.q,release.q};
+    const Vec p=F(b3Body_GetPosition(body));
+    m.bottles[m.count++]={body,release.time,release.code,p,p,release.q,release.q,shape,false};
     return true;
+}
+bool World::Toss(const Release& release,uint64_t id) {
+    auto& m=*impl;
+    if(!Ready()||!id||!Valid(release)||!m.Prepare(release))return false;
+    Impl::Destroy(m.toss.body);m.toss={};
+    b3ShapeId shape=b3_nullShapeId;
+    const auto body=m.Body(release,true,shape);
+    if(B3_IS_NULL(body))return false;
+    const Vec p=F(b3Body_GetPosition(body));
+    m.toss={body,shape,id,false,release.time,p,p,release.q,release.q};
+    return true;
+}
+bool World::Tossed(Thrown& out) const {
+    const auto& m=*impl;
+    if(!m.toss.id)return false;
+    const float alpha=m.toss.landed?1.f:float(std::clamp(m.accumulator/Step,0.,1.));
+    out={m.toss.id,m.toss.landed,m.origin+m.toss.p0+(m.toss.p1-m.toss.p0)*alpha,Blend(m.toss.q0,m.toss.q1,alpha)};
+    return true;
+}
+void World::EndToss() {auto& m=*impl;Impl::Destroy(m.toss.body);m.toss={};}
+bool World::Prepare(uint64_t session,float floor,float unitsPerMetre,Vec around) {
+    Release r;r.session=session;r.floor=floor;r.unitsPerMetre=unitsPerMetre;r.p=around;
+    return Ready()&&session&&std::isfinite(floor)&&unitsPerMetre>=1&&unitsPerMetre<=12&&Finite(around)&&impl->Prepare(r);
+}
+bool World::Trace(Vec p,Vec v,float radius,double maxTime,Vec& hit) const {
+    const auto& m=*impl;
+    if(!Ready()||!m.Live()||!Finite(p)||!Finite(v)||!(radius>0)||!(maxTime>0))return false;
+    const b3Vec3 centre{0,0,0};
+    const b3ShapeProxy ball{&centre,1,radius};
+    auto filter=b3DefaultQueryFilter();filter.maskBits=~PusherBit;
+    struct Closest {float fraction=1;bool hit=false;} closest;
+    auto keep=[](b3ShapeId,b3Pos,b3Vec3,float fraction,uint64_t,int,int,void* context)->float {
+        auto* c=static_cast<Closest*>(context);c->hit=true;c->fraction=fraction;return fraction;
+    };
+    // The arc in short straight pieces, each cast in turn.
+    constexpr double Piece=1/60.;
+    for(double t=0;t<maxTime;t+=Piece) {
+        const auto at=[&](double s){return p+v*float(s)+Vec{0,-.5f*9.81f*float(s*s),0}-m.origin;};
+        const Vec a=at(t),b=at(std::min(t+Piece,maxTime));
+        closest={};
+        b3World_CastShape(m.world,B(a),&ball,B(b-a),filter,keep,&closest);
+        if(closest.hit){hit=m.origin+a+(b-a)*closest.fraction;return true;}
+    }
+    return false;
 }
 void World::Walls(const Patch& patch) {
     auto& m=*impl;
@@ -427,7 +504,7 @@ void World::Advance(double time,Vec player) {
     auto& m=*impl;
     if(Finite(player))m.player=player;
     for(auto& p:m.pieces)p.rested=false;
-    if(!Ready()||!m.Live()||(!m.count&&m.pieces.empty())||!std::isfinite(time)){m.timed=false;return;}
+    if(!Ready()||!m.Live()||!m.Busy()||!std::isfinite(time)){m.timed=false;return;}
     if(!m.timed){m.last=time;m.timed=true;m.accumulator=0;}
     double dt=time-m.last;m.last=time;
     if(!(dt>=0)||dt>.25)dt=Step; // a pause or clock jump resumes in place
@@ -439,8 +516,9 @@ void World::Advance(double time,Vec player) {
     while(m.accumulator>=Step&&steps<MaxSteps) {
         for(unsigned i=0;i<m.count;++i){m.bottles[i].p0=m.bottles[i].p1;m.bottles[i].q0=m.bottles[i].q1;}
         for(auto& p:m.pieces)if(p.moving){p.p0=p.p1;p.q0=p.q1;}
+        if(!B3_IS_NULL(m.toss.body)){m.toss.p0=m.toss.p1;m.toss.q0=m.toss.q1;}
         b3World_Step(m.world,float(Step),4);
-        m.Hits();
+        m.Hits();m.Landing();
         for(unsigned i=0;i<m.count;++i) {
             const auto t=b3Body_GetTransform(m.bottles[i].body);
             m.bottles[i].p1=F(t.p);m.bottles[i].q1=F(t.q);
@@ -450,6 +528,10 @@ void World::Advance(double time,Vec player) {
     }
     if(steps==MaxSteps)m.accumulator=0;
     if(steps){m.Halt();m.Settle(time,steps*Step);}
+    // Out of the hand long enough: weapons and fists push it again.
+    for(unsigned i=0;i<m.count;++i)if(!m.bottles[i].armed&&time-m.bottles[i].born>=FreshTime) {
+        b3Shape_SetFilter(m.bottles[i].shape,b3DefaultFilter(),true);m.bottles[i].armed=true;
+    }
     for(unsigned i=m.count;i-->0;) {
         const auto& b=m.bottles[i];
         const Vec p=m.origin+b.p1;
@@ -482,7 +564,7 @@ unsigned World::Knocks(std::array<Knock,props::MaxMoving>& out) {
 }
 bool World::WallsWanted(WallRequest& out) const {
     const auto& m=*impl;
-    if(!m.Live()||(!m.count&&m.pieces.empty()))return false;
+    if(!m.Live()||!m.Busy())return false;
     // The newest bottle still moving; once all rest, the newest. Without
     // bottles, a moving prop, else around the player among the props, so
     // the walls are there before a prop is knocked toward them.
@@ -491,7 +573,8 @@ bool World::WallsWanted(WallRequest& out) const {
         unsigned pick=m.count-1;
         for(unsigned i=m.count;i-->0;)if(b3Body_IsAwake(m.bottles[i].body)){pick=i;break;}
         at=m.origin+m.bottles[pick].p1;
-    } else for(const auto& p:m.pieces)if(p.moving)at=m.origin+p.p1;
+    } else if(!B3_IS_NULL(m.toss.body))at=m.origin+m.toss.p1;
+    else for(const auto& p:m.pieces)if(p.moving)at=m.origin+p.p1;
     out={m.session,at,m.floor,m.upm};
     return true;
 }
@@ -510,7 +593,7 @@ unsigned World::Frozen() const {
     return unsigned(std::count_if(impl->pieces.begin(),impl->pieces.end(),[](const Impl::Piece& p){return !p.moving;}));
 }
 unsigned World::Supports() const {return unsigned(impl->surfaces.size());}
-bool World::Idle() const {return !impl->Live()||(!impl->count&&impl->pieces.empty());}
+bool World::Idle() const {return !impl->Live()||!impl->Busy();}
 unsigned World::Shapes() const {return impl->rectCount;}
 void World::Reset() {auto& m=*impl;m.Clear();m.session=0;m.havePatch=false;m.patch={};for(auto& p:m.pushers)p={};}
 }

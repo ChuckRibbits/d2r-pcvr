@@ -86,6 +86,10 @@ add_executable(companions-test companions_test.cpp)
 add_executable(active-effects-test active_effects_test.cpp)
 target_link_libraries(active-effects-test PRIVATE framevr-runtime)
 target_link_libraries(companions-test PRIVATE framevr-runtime)
+target_sources(d2rl-pcvr PRIVATE ${ROOT}/vr/companion_ai.cpp)
+add_executable(companion-ai-test companion_ai_test.cpp)
+target_include_directories(companion-ai-test PRIVATE ${ROOT}/cleanroom/sigscan ${CMAKE_CURRENT_SOURCE_DIR} ${D2RL_SDK}/include)
+target_link_libraries(companion-ai-test PRIVATE framevr-runtime)
 target_include_directories(d2rl-pcvr PRIVATE ${ROOT}/shared ${ROOT}/external/flatvr ${ROOT}/external/bodywalk ${ROOT}/external/reshade/include ${CMAKE_CURRENT_SOURCE_DIR} ${OPENXR_SDK}/include)
 target_link_libraries(d2rl-pcvr PRIVATE d2rcam minhook user32 gdi32 framevr-runtime)
 set_target_properties(d2rl-pcvr PROPERTIES PREFIX "")
@@ -141,6 +145,7 @@ add_executable(crossbow-pose-test crossbow_pose_test.cpp ${ROOT}/vr/crossbow.cpp
 target_include_directories(crossbow-pose-test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} ${ROOT}/shared)
 target_link_libraries(crossbow-pose-test PRIVATE framevr-runtime)
 add_executable(body-tracking-test body_tracking_test.cpp)
+add_executable(shield-steady-test shield_steady_test.cpp)
 add_executable(body-calibration-test body_calibration_test.cpp)
 add_executable(shoulder-swap-test shoulder_swap_test.cpp)
 add_executable(blood-screen-test blood_screen_test.cpp)
@@ -304,11 +309,11 @@ set_tests_properties(arcane-sky-test PROPERTIES TIMEOUT 30)
 add_test(NAME light-bounds-test COMMAND light-bounds-test)
 set_tests_properties(light-bounds-test PROPERTIES TIMEOUT 30)
 foreach(test_target IN ITEMS memory-test hook-metrics-test active-keys-test resource-descriptions-test latest-worker-test haptic-pulse-test thread-stats-test
-    gameplay-test weapon-skills-test quick-cast-test hand-controls-test elemental-hands-test skill-pad-test interact-press-test sewer-interaction-test notice-card-test mod-layout-test spell-aim-test bow-pose-test crossbow-pose-test body-tracking-test body-calibration-test shoulder-swap-test blood-screen-test
+    gameplay-test weapon-skills-test quick-cast-test hand-controls-test elemental-hands-test skill-pad-test interact-press-test sewer-interaction-test notice-card-test mod-layout-test spell-aim-test bow-pose-test crossbow-pose-test body-tracking-test shield-steady-test body-calibration-test shoulder-swap-test blood-screen-test
     portal-billboard-test shrine-trace-test shrine-placement-test overlay-view-test composition-layers-test projectile-rules-test environment-cutaway-test roof-materials-test stereo-prop-physics-test dropped-bottles-test props-test
     combat-rules-test shield-guard-test guard-strain-test heartbeat-test logging-test melee-contact-test melee-weapon-test breakables-test offline-difficulty-test enemy-sight-test attack-speed-test world-coordinates-test bow-flight-test bow-laser-test spell-cast-test spell-aim-assist-test
     interaction-test dev-scenarios-test native-belt-test wrist-hud-test navigation-info-test companions-test active-effects-test dropped-item-labels-test stick-gestures-test show-items-command-test native-hud-test render-resolution-test render-pointer-test scene-depth-test game-device-only-test controller-bindings-test journal-test native-panels-test
-    vr-settings-test vr-settings-store-test controller-labels-test math-test deferred-draw-test monster-bars-test telegraph-test aim-reach-test aim-rules-test target-cone-test gaze-test window-focus-test callback-ticket-test local-player-test shield-block-test)
+    vr-settings-test vr-settings-store-test controller-labels-test math-test deferred-draw-test monster-bars-test telegraph-test aim-reach-test aim-rules-test target-cone-test gaze-test window-focus-test callback-ticket-test local-player-test shield-block-test companion-ai-test)
   # These fixtures use assert for their checks, including in Release builds.
   if(MSVC)
     target_compile_options(${test_target} PRIVATE /UNDEBUG)
@@ -326,7 +331,7 @@ add_test(NAME sewer-prompt-art-test COMMAND interaction-preview "${CMAKE_CURRENT
 set_tests_properties(sewer-prompt-art-test PROPERTIES TIMEOUT 10)
 add_test(NAME notice-card-art-test COMMAND interaction-preview "${CMAKE_CURRENT_BINARY_DIR}/notice-cards.png" --notice-card-check)
 set_tests_properties(notice-card-art-test PROPERTIES TIMEOUT 10)
-add_test(NAME settings-release-notes-test COMMAND vr-settings-preview "${CMAKE_CURRENT_BINARY_DIR}/release-notes.bmp" 8 --release-notes-check)
+add_test(NAME settings-release-notes-test COMMAND vr-settings-preview "${CMAKE_CURRENT_BINARY_DIR}/release-notes.bmp" 9 --release-notes-check)
 add_test(NAME ui-blit-typed COMMAND ui-blit-test)
 add_test(NAME ui-blit-typeless COMMAND ui-blit-test --typeless)
 add_test(NAME ui-blit-typeless-black COMMAND ui-blit-test black --typeless)
@@ -345,7 +350,7 @@ add_test(NAME wrist-compass-art-test COMMAND interaction-preview "${CMAKE_CURREN
 add_test(NAME navigation-info-art-test COMMAND interaction-preview "${CMAKE_CURRENT_BINARY_DIR}/navigation-info-preview.png" --navigation-check)
 add_test(NAME vr-settings-help-art-test COMMAND vr-settings-preview "${CMAKE_CURRENT_BINARY_DIR}/settings-help.bmp" 4 --help-check)
 add_test(NAME vr-settings-worker-paint-test COMMAND vr-settings-preview "${CMAKE_CURRENT_BINARY_DIR}/settings-worker.bmp" 0 --worker-check)
-add_test(NAME vr-settings-performance-lines-test COMMAND vr-settings-preview "${CMAKE_CURRENT_BINARY_DIR}/settings-performance.bmp" 7 --performance-check)
+add_test(NAME vr-settings-performance-lines-test COMMAND vr-settings-preview "${CMAKE_CURRENT_BINARY_DIR}/settings-performance.bmp" 8 --performance-check)
 add_test(NAME companions-art-test COMMAND interaction-preview "${CMAKE_CURRENT_BINARY_DIR}/companions-preview.png" --companions-check)
 
 add_test(NAME active-effects-art-test COMMAND interaction-preview "${CMAKE_CURRENT_BINARY_DIR}/active-effects-preview.png" --effects-check)

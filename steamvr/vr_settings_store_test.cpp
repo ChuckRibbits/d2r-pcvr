@@ -90,6 +90,15 @@ int main(){
     }
     {const auto current=vrsettings::Read();vrsettings::SetOfflineDifficultyAvailable(true);const auto live=vrsettings::Read();
         Check(live.offlineDifficultyAvailable&&live.revision>current.revision&&live.values==current.values,"runtime capability is separate from saved preferences");}
+    Check(before.values[CompanionAi]==1,"missing companion AI preference preserves Enabled default");
+    for(int choice:{0,1}){
+        const auto current=vrsettings::Read();auto values=current.values;values[CompanionAi]=float(choice);
+        const Request request{current.values,values,Changed(current.values,values),current.sequence+1};
+        Check(vrsettings::Submit(request)&&vrsettings::Poll(name),"save companion AI preference");
+        const auto saved=vrsettings::Read();
+        Check(saved.values[CompanionAi]==choice&&Int(path,L"gameplay",L"companion_ai")==choice,"companion AI preference survives reload");
+        Check(Changed(saved.values,current.values)==request.changed&&Int(path,L"custom",L"keep")==12345,"companion AI preserves other settings");
+    }
     Check(before.values[HapticShortMelee]==0,"missing short-melee preference selects the compatible longer pulse");
     for(int choice:{1,0}){
         const auto current=vrsettings::Read();Model h;h.Open(current);h.Click({Kind::Change,HapticShortMelee,1});

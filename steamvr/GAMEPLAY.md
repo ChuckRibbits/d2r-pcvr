@@ -175,12 +175,12 @@ not generate melee velocity. The layout currently assumes a right-handed player.
 | Nock bow | Bow equipped: bring right hand to string and hold right trigger; no left grip required |
 | Draw and shoot | Pull string hand back at least 12 cm (28 cm total separation), then release trigger |
 | Throw a javelin, throwing knife or axe | Any javelin, throwing knife or throwing axe equipped in WEAPON mode, right trigger bound to Attack, Throw or nothing: hold right trigger, make a deliberate throwing motion, release to throw along the hand's motion. The game's own Throw fires the weapon's own missile and consumes its quantity; a knife flies point first, an axe tumbles end over end. With a javelin, Poison Javelin, Lightning Bolt, Plague Javelin or Lightning Fury on the right trigger (or loaded from a face button, like the bow quiver) rides the throw: the skill's own mana, damage and effects. A Barbarian with a throwing weapon in each hand and Double Throw on the right trigger (or loaded) throws with both hands: the left trigger throws the left weapon, and each throw is one native Double Throw of that hand's weapon. Trigger-free jabs and swings stay available |
-| Throw a trap or bomb | An Assassin's Fire Blast, Shock Web, Blade Sentinel, sentry or wake on the right trigger: press it and the game's own bomb or trap model appears in the hand; throw and let go, and the native cast lands where the arc meets the floor, within the skill's reach (the throw picks the spot only). A quick press casts where you point; held still for a moment, the native cast holds and repeats as before. Weapon skill gestures Off keeps the trigger native |
+| Throw a trap or bomb | An Assassin's Fire Blast, Shock Web, Blade Sentinel, sentry or wake on the right trigger: press it and the game's own bomb or trap model appears in the hand; throw and let go, and the native cast lands where the arc meets the floor, within the skill's reach (the throw picks the spot only). With Bottle physics on, the arc is traced through the physics world as you let go, so a wall, a table top or a prop stops it and the cast lands there; running carries the throw either way. A quick press casts where you point; held still for a moment, the native cast holds and repeats as before. Weapon skill gestures Off keeps the trigger native |
 | Cancel active grab/draw | Right B; release inputs before starting again |
 | Physical belt potion | Reach to an original 3D bottle on the front belt and hold **Right Grip** to grab; left-hand grip also works |
 | Drink | Keep grip held, bring the bottle's opening to your mouth and tip nearly horizontal for 0.25 seconds; release to return an unused potion |
 | Drop the empty bottle | Open your hand after drinking: the bottle falls, bounces and rolls on the floor (visual only); hit it with your weapon or shield to knock it away |
-| Heal the mercenary | Toss a held Health, Rejuvenation, Antidote or Thawing bottle (release mid-swing, at least 1.4 m/s) so it lands within 1.5 m of your mercenary's feet. It shatters on landing; a miss leaves the potion on the belt |
+| Heal the mercenary | Toss a held Health, Rejuvenation, Antidote or Thawing bottle (release mid-swing, at least 1.4 m/s) so it lands within 1.5 m of your mercenary's feet. It shatters on landing (with bottle physics, where it first touches a wall, table, prop or the floor); a miss leaves the potion on the belt |
 | Quick potion | Left Y → **EQUIPMENT / BELT** → trigger a potion wedge; grip on a potion wedge instead grabs it into the right hand |
 | Swap weapon sets | Reach the swap hand over either shoulder and press its grip; right hand by default, selectable in VR settings. Hip anchors are removed |
 | Seated weapon selection | Utility wheel → **Weapon I** or **Weapon II** |
@@ -383,7 +383,7 @@ pending.
 
 ### In-headset VR settings
 
-The panel opens in front of the headset and stays in room space. It has nine
+The panel opens in front of the headset and stays in room space. It has ten
 tabs and a **Reset eye height** button:
 
 | Tab | Contents |
@@ -394,6 +394,7 @@ tabs and a **Reset eye height** button:
 | HUD | Health/mana location and tilt, optional resource alerts, navigation location, menu distance and tooltip timing |
 | Combat | Melee rules, swing hit speed and thrust speed |
 | Aim | Whether spells and bow skills go to the aimed monster, the staff aiming where your arm points, and the aimed monster's outline: strength, which hands show it, and each hand's color (by range or one hue), where ground skills land (the game's aim, where you point or the aimed monster), landing circles, and whether the aim follows your view (the eyes' 17-degree tunnel, the hands within 30 degrees of your head, a raised hand aiming alone). Every option that changes how a cast aims is Off (Game) by default |
+| Shield | Where a held shield sits on the forearm: grip offset, out and up (all 0 by default), how far it follows the wrist, and its roll about the forearm |
 | Haptics | Overall strength and separate melee, bow draw, bow/throw release, spell, interaction and resource-alert strengths; tests follow each action's hands |
 | Perf | Everything that changes the frame rate: stereo rendering (Both eyes / By turns, By turns by default), VR render resolution (Headset by default), terrain and object draw distances, foveation Off / Fixed / Eye tracked and its strength, ReShade depth (after a restart) and desktop one eye; the actual VR source size, a Defer GPU wait button while frames wait for the GPU, and warnings while the game's Vertical Sync is on or its anti-aliasing is not FXAA. Under them, each second's frame rate and where the frame's time goes, whether the CPU's part fits the headset's frame, and the game's own graphics options |
 | Notes | The last published release's notes, read-only |
@@ -556,10 +557,21 @@ A Health, Rejuvenation, Antidote or Thawing bottle released with a deliberate th
 away from its belt slot, flies on a ballistic arc and lands on the world floor.
 Its launch velocity is 1:1 with the hand: the fastest controller velocity the
 OpenXR runtime reported in the last 0.12 s before the grip opened (pose
-differences only when the runtime reports none), capped at 20 m/s. Once released
+differences only when the runtime reports none), capped at 20 m/s, plus your
+own speed through the world when running or walking (measured from the
+player's position frame to frame, smoothed over 0.1 s; a waypoint, portal or
+other jump faster than 10 m/s is not counted). Running never turns a slow
+release into a throw: that still depends on the hand alone. Once released
 it is in the world: its arc is integrated in world metres from the release frame,
 against the floor height under the player at release, so walking, turning or
-recentering afterwards never carries it along.
+recentering afterwards never carries it along. With bottle physics on
+(`[interactions] bottle_physics`, the default) the bottle flies as a body in the
+same Box3D world as the dropped bottles and the level's props, spinning with
+your hand's last turn. It stops at the game's walls, can land on a table or
+shelf surface, knocks props it reaches, and lands wherever it first touches
+anything. Your own weapons and fists never touch it. If the physics world
+cannot take it at that moment (another floor while props are still moving),
+it flies the arc above; with bottle physics off, it always does.
 
 The landing point is checked on the game thread against the live, non-hostile
 hireling. Within 1.5 m of its feet, the UI thread presses the column's native
@@ -595,7 +607,7 @@ bottles it meets, and a hit gives that hand a light tick (the melee haptic
 strength applies). Slow pushes roll a bottle; a hard swing sends it flying.
 The shield uses a thinner capsule than its creature test. A warp or recentre
 moves a weapon without sweeping it through bottles. `[interactions]
-bottle_physics=0` restores the old vanishing bottle. The log notes each release (`Frame dropped bottles:`)
+bottle_physics=0` (VR Settings > Video > Bottle physics: Off) restores the old vanishing bottle, and thrown potions fly the old arc. The log notes each release (`Frame dropped bottles:`)
 and wall sampling every ten seconds while bottles are in the world.
 
 **Knockable props.** The level's own small props within 3 m (cups, plates,
@@ -613,7 +625,7 @@ through the cabinet. Inside a room or building (a mantle or ledge that is part
 of it), the surface ends 3 cm past the row of props on it. A prop on another
 prop (a cup on a plate) falls when that one is knocked away. At most 12 move at
 once; a new weapon hit then freezes the one moving longest. This is purely
-visual. `[interactions] prop_physics=0` turns it off; see [knockable
+visual. VR Settings > Video > Knockable props (`[interactions] prop_physics`) turns it off; see [knockable
 props](../docs/KNOCKABLE_PROPS.md). The log notes each weapon knock (`Frame
 props: knocked a cup ...`) and a summary every ten seconds.
 
@@ -741,6 +753,84 @@ back restores normal arm proportions. Extension is bounded at twice the arm's
 current length for extreme tracking/calibration errors. Contact uses the same
 final shield pose. The owner verified this adjustment in the combined developer
 build; individual class/shield combinations were not specified.
+
+**Forearm twist and shield position (2026-10-21).** With the hands turning
+with the controllers, the forearm takes a share of the hand's twist about its
+own length, so sleeves and bracers follow the wrist. The shield is placed in the
+arm's own frame, built from joint positions only (elbow, wrist and the index and
+little-finger knuckles), never from a bone's axes, which each class's bind pose
+lays differently: on the Paladin the old "Up" moved the shield sideways off the
+arm. **VR Settings > Shield** now means the same directions on every class:
+**Grip offset** slides the shield along the forearm, + toward the elbow and -
+toward the hand (-10 to 40 cm), **Out** moves it away from the arm on the
+shield's side (the back of the hand, or the palm if the bind pose hangs it
+there) and **Up** toward the thumb (-30 to +30 cm each), in 1 cm steps scaled by
+the model's forearm; all 0 by default (the original position when Shield follows is
+100%); about 3 / 2 / 2
+cm suits a buckler and large shields need more (`[gameplay] shield_grip_cm`,
+`shield_out_cm`, `shield_up_cm`). The posed shield is also the guard pose that
+blocking, parrying and bashing read, so the shield blocks where it is shown.
+
+**Shield follows** sets how much the shield turns with the wrist
+(`[gameplay] shield_follow_pct`, 0-100 in 10% steps, default 50%; the row reads
+"0% Forearm" and "100% Wrist" at its ends). 0 straps the shield to the forearm, so a wrist bend leaves it still; 100 turns it
+with the hand, the original wrist attach. The blend is a slerp between the two,
+so it is smooth at every value. Twisting the forearm turns the shield at every
+value.
+
+A resting roll then turns the shield about the forearm: **Shield roll**
+(`[gameplay] shield_roll_deg`), default 0 (the attach's own facing), -180 to +180, snapped to
+5-degree steps; positive turns the face from the back of the hand toward the
+little finger. With the usual near thumb-up grip, 0 seats every class's shield
+on the outside of the forearm; +90 suits a controller held palm down (the face
+outward instead of lying on the forearm like a tray), while with the thumb up it
+lays the shield flat under the wrist.
+
+The side of the forearm the shield is on (for Out only; the wrist stop is unchanged) is
+decided from the bind pose (the same every frame), never from the live bones:
+read from the live bones, it flipped when the shield's bone sat near the
+forearm's line, and the shield jumped across the wrist.
+
+**Steady shield.** The controller's own tremor shook the shield about as much as
+the hand (about 1-2 degrees and 1.6-1.9 cm a second of back-and-forth while held still,
+at every Shield follows), so the placed shield ignores changes under 1 degree
+and 1.5 mm (`vr/shield_steady.h`). The dead zones are soft: past them only the
+excess passes, so the shield never jumps at their edge, and any real move goes
+through in the same frame. (A smoothing filter tried first trailed behind when
+walking side to side, then snapped back.) Rotation and position are separate;
+a pause over 250 ms restarts it. There is no setting. The guard pose blocking
+reads is this bone, so blocking uses the steady shield. `Frame shield steady: on`
+is logged once.
+
+`[debug] shield_trace=1` (off by default)
+logs the held shield's pose chain at 5 Hz, and at once when it jumps:
+
+`Frame shield trace: t=1234567 face=35 hand=(-21.0,-38.5,-30.2|12,-35,80) wrist=(-19.8,-41.0,-27.5|10,-33,78) elbow=(-24.1,-48.7,-3.0|5,-20,70) seat=(-3.0,6.1,2.0) shield=(-15.9,-43.1,-31.8|-80,10,15) side=back stop=0 follow=50% roll=0 bend=24 turn=3.2deg`
+
+Everything is in model space from the eye, so a body turn or a level load no
+longer reads as a flip. A new world placement (snap turn, recenter, level), the
+first trace frame after the shield or arm appears (or its bone or skeleton
+changes), and a gap of over 0.5 s with no trace frame (a level loading) each
+restart the jump check, so spawning never prints a JUMP.
+
+- `t`: milliseconds (GetTickCount64); ` JUMP` after it marks a line written
+  early because the shield turned over 20 degrees in one frame.
+- `face`: the yaw the controllers are placed with in model space, degrees.
+- `hand`: the tracked left controller's grip point, model space from the eye,
+  cm (at the user's scale), then its heading, pitch and roll in degrees.
+- `wrist`, `elbow`: the model's hand and forearm bones, the same way.
+- `seat`: the shield's attach bone from the wrist in the arm's frame (along,
+  out, up), cm. It moves with Grip / Out / Up, not the wrist or the roll.
+- `shield`: the shield's attach bone (after the steady shield's dead zones), model space from the eye, and its angles.
+- `side`: the side of the forearm the shield is on (`back` of the hand or
+  `palm`); `stop`: degrees of wrist bend the shield stop held back.
+- `follow`, `roll`: the settings in use; `bend`: degrees between the forearm and
+  wrist frames (the bend shield_follow_pct splits);
+  ` (wrist attach)` when the hand has no knuckle bones and the original wrist
+  attach is used unmoved.
+- `turn`: the shield's turn since the previous line, degrees - a flip shows as
+  a jump toward 180.
+
 With **Smite** selected, an energetic
 left-arm swing or thrust that intersects an eligible creature requests one native
 Smite against that creature. A stationary shield cannot bash; one continuous
