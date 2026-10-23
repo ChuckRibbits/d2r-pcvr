@@ -29,5 +29,16 @@ int main() {
     Check(!toss::Landing(stage,2,2,{0,1.5f,0},{5,0,0},x,y),"nor from below the floor");
     Check(!toss::Landing(stage,0,2,{0,1.5f,0},{1,40,0},x,y),"nor a flight longer than the potion toss allows");
     Check(!toss::Landing(stage,0,2,{0,1.5f,0},{NAN,0,0},x,y),"nor a bad velocity");
+    // Running carries the throw: 3 m/s more along x for the same fall time.
+    Check(toss::Landing(stage,0,2,{0,1.5f,0},{5,0,0},x,y,{3,0,0})&&std::fabs(x-(100+8*fall))<1e-3f&&std::fabs(y-200)<1e-3f,
+          "a throw while running carries the run");
+    Check(toss::Landing(turned,0,2,{0,1.5f,0},{0,0,0},x,y,{0,0,4})&&std::fabs(x-100)<1e-3f&&std::fabs(y-(200+4*fall))<1e-3f,
+          "the run is already in world metres: the room's turn does not turn it");
+    // A world point's cell, as the landing gives it.
+    float cx=0,cy=0;
+    Check(toss::Cell({100+reach,0,200},0,2,cx,cy)&&toss::Landing(stage,0,2,{0,1.5f,0},{5,0,0},x,y)&&std::fabs(cx-x)<1e-3f&&std::fabs(cy-y)<1e-3f,
+          "a traced landing point maps to the same cells as the arc's");
+    Check(toss::Cell({100,1.2f,200},0,2,cx,cy)&&std::fabs(cx-100)<1e-3f,"a point above the floor (a table) maps to the floor's cell under it");
+    Check(!toss::Cell({100,0,200},0,0,cx,cy)&&!toss::Cell({NAN,0,200},0,2,cx,cy),"no cell without a scale or a point");
     std::puts("toss tests passed");
 }

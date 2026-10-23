@@ -415,6 +415,38 @@ int main() {
             Thrown out;assert(!world.Tossed(out));
         }
     }
+    // A thrown trap, traced through the world at release.
+    {
+        const float r=.06f;
+        World world;Vec hit{};
+        assert(!world.Trace({0,1.5f,0},{5,0,0},r,3,hit)); // no world here yet
+        assert(world.Prepare(7,0,Upm,{0,0,0}));
+        // Over open floor: where the arc meets it, the ball a radius above.
+        const float fall=std::sqrt(2*(1.5f-r)/9.81f);
+        assert(world.Trace({0,1.5f,0},{5,0,0},r,3,hit)&&std::fabs(hit.x-5*fall)<.05f&&std::fabs(hit.z)<1e-3f&&std::fabs(hit.y-r)<.02f);
+        // A wall in the way: at its face, still in the air.
+        const auto c=CellAt({0,0,0},0,Upm);
+        Patch p;p.session=7;p.serial=1;p.x0=c.x-16;p.z0=c.z-16;
+        for(int z=0;z<PatchCells;++z)p.rows[z]=1u<<20;
+        world.Walls(p);
+        const float face=CellCorner(float(p.x0+20),float(c.z),0,Upm).x;
+        assert(face<5*fall);
+        assert(world.Trace({0,1.5f,0},{5,0,0},r,3,hit)&&hit.x<face&&hit.x>face-r-.05f&&hit.y>.3f);
+        // A table top on the way down, from a prop's support.
+        World table;assert(table.Prepare(7,0,Upm,{0,0,0}));
+        table.Props(Scan({0,0,0},{Cup(95,{1.6f,.75f,0},props::Support{false,.75f,1,-.5f,2.5f,.5f})}));
+        assert(table.Supports()==1);
+        assert(table.Trace({0,1.5f,0},{3,0,0},r,3,hit)&&std::fabs(hit.y-(.75f+r))<.02f&&hit.x>1&&hit.x<2.5f);
+        // The thrower's own weapon never stops it.
+        World open;assert(open.Prepare(7,0,Upm,{0,0,0}));
+        std::array<Collider,Colliders> weapons{};weapons[0]=Blade({.2f,1.3f,-.3f},{.2f,1.6f,.3f},.05f);
+        open.Props(Scan({0,0,0},{Cup(96,{0,0,10})})); // something in the world, so the weapon is made
+        open.Weapons(weapons);open.Advance(1/90.,{0,0,0});open.Advance(2/90.,{0,0,0});
+        assert(open.Pushers()==1);
+        assert(open.Trace({0,1.5f,0},{5,0,0},r,3,hit)&&hit.x>2);
+        // Another floor while props move: the world stays where it is.
+        assert(!World().Prepare(0,0,Upm,{0,0,0})&&!World().Prepare(7,0,0,{0,0,0}));
+    }
     // A bottle leaving the hand passes through that hand's fist for a moment.
     {
         World world;const Vec start{2,.3f,2};

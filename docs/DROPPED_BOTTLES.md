@@ -71,6 +71,14 @@ for dropped bottles and thrown potions alike.
   bottle's body pose. If no body follows within 0.2 s (the world was busy
   with moving props on another floor), the throw flies the old ballistic arc.
   A body that touches nothing lands where it is after 3 s.
+- **Thrown traps and bombs.** While an Assassin's trap or bomb is in the
+  hand, the world is readied around the player (`World::Prepare`, no body)
+  and asks for walls. On release, `World::Trace` sweeps a 6 cm ball along the
+  throw's arc in 1/60 s pieces. The arc carries the player's running speed.
+  The ball meets walls, support plates, props and bottles, never weapons. The
+  native cast is aimed at the floor cell under the first hit; with nothing
+  hit (or Bottle physics off) it lands where the arc meets the floor, as
+  before.
 - **Leaving the hand.** For 0.3 s after release, a dropped bottle passes
   through weapons and fists, so the hand that let go does not shove it.
 - **Drawing.** `potions::AddDropped` puts up to six empty-looking models into

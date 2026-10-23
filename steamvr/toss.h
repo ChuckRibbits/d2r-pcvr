@@ -27,18 +27,27 @@ inline uint32_t Model(int id) {
         default:return 0;
     }
 }
-// Where a toss released at room point p with room velocity v (metres, y up)
-// lands, in grid cells: the stage maps room to world metres, the floor under
-// the player at release (world metres) is the landing plane, and cells are
-// the unsheared grid at half a cell per rendered unit.
-inline bool Landing(const interaction::Stage& stage,float floor,float unitsPerMetre,math::Vec p,math::Vec v,float& x,float& y) {
-    if(!stage.known||!std::isfinite(unitsPerMetre)||unitsPerMetre<1||unitsPerMetre>12)return false;
-    const auto worldP=stage.World(p),worldV=math::Rotate(stage.base,v);
-    const double t=interaction::LandingTime(worldP,worldV,floor);
-    if(t<=0)return false;
-    const auto landed=interaction::Ballistic(worldP,worldV,float(t));
-    const auto grid=coordinates::GridPlane({landed.x,floor,landed.z});
+// The grid cell under a world point (metres) on the floor under the player:
+// cells are the unsheared grid at half a cell per rendered unit.
+inline bool Cell(math::Vec world,float floor,float unitsPerMetre,float& x,float& y) {
+    if(!std::isfinite(unitsPerMetre)||unitsPerMetre<1||unitsPerMetre>12)return false;
+    const auto grid=coordinates::GridPlane({world.x,floor,world.z});
     x=grid.x*unitsPerMetre*.5f;y=grid.z*unitsPerMetre*.5f;
     return std::isfinite(x)&&std::isfinite(y)&&x>=1&&y>=1&&x<=65534&&y<=65534;
 }
+// The toss released at room point p with room velocity v (metres, y up), in
+// world metres: the stage maps room to world, and the player's own world
+// velocity (running, interaction::Carry) is carried along.
+inline math::Vec WorldVelocity(const interaction::Stage& stage,math::Vec v,math::Vec carry) {return math::Rotate(stage.base,v)+carry;}
+// Where it lands in grid cells, with the floor under the player at release
+// (world metres) as the landing plane.
+inline bool Landing(const interaction::Stage& stage,float floor,float unitsPerMetre,math::Vec p,math::Vec v,float& x,float& y,math::Vec carry={}) {
+    if(!stage.known||!std::isfinite(unitsPerMetre)||unitsPerMetre<1||unitsPerMetre>12)return false;
+    const auto worldP=stage.World(p),worldV=WorldVelocity(stage,v,carry);
+    const double t=interaction::LandingTime(worldP,worldV,floor);
+    if(t<=0)return false;
+    return Cell(interaction::Ballistic(worldP,worldV,float(t)),floor,unitsPerMetre,x,y);
+}
+// A trap or bomb is about this big in flight, for finding what it hits first.
+inline constexpr float Radius=.06f;
 }
