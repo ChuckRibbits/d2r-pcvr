@@ -3475,9 +3475,9 @@ void Tick(const targetlock::Snapshot* s) {
                        : framevr::targetcone::Pick(s->targets, s->count, s->heroX, s->heroY, gx, gy, g_pick[2].id.load());
     Store(framevr::aimrules::Eyes, s, eyes);
 }
-// The target for a cast from this button's hand (bow: a bow skill), with where
-// it came from. Any thread.
-bool Resolve(int button, bool bow, float& x, float& y, float& distance, int* source = nullptr, uint32_t* idOut = nullptr) {
+// The target for a cast from this button's hand (bow: a bow skill; use: its
+// rule), with where it came from. Any thread.
+bool Resolve(int button, bool bow, framevr::aimrules::Use use, float& x, float& y, float& distance, int* source = nullptr, uint32_t* idOut = nullptr) {
     const auto s = targetlock::Get();
     const ULONGLONG now = GetTickCount64();
     if (!s.at || now - s.at > 500) return false;
@@ -3505,9 +3505,10 @@ bool Resolve(int button, bool bow, float& x, float& y, float& distance, int* sou
         return true;
     }
     // Aim follows your view: a raised, pointing first hand tries only its own
-    // monster; with none the cast goes where it points (FreeAimRay).
+    // monster; with none the cast goes where it points (FreeAimRay). The melee
+    // attacks (Leap Attack...) still try the whole order.
     const auto order = framevr::aimrules::For(b, bow);
-    const int tries = framevr::aimrules::Tries(FollowsView(), Pointing(order.at[0]));
+    const int tries = framevr::aimrules::Tries(FollowsView(), Pointing(order.at[0]), use);
     for (int k = 0; k < tries; ++k) {
         const auto src = order.at[k];
         const uint32_t id = g_pick[src].id.load();
@@ -3648,7 +3649,7 @@ void Tick() {
     static bool followed = false;
     if (const bool follows = FollowsView(); follows != followed) {
         followed = follows;
-        if (follows) LogF("Frame aim rules: aim follows your view on - the eyes catch within %.0f deg of the head and keep to %.0f, the hands pick within %.0f, a raised hand aims alone",
+        if (follows) LogF("Frame aim rules: aim follows your view on - the eyes catch within %.0f deg of the head and keep to %.0f, the hands pick within %.0f, a raised hand aims alone (melee attacks take any aimed monster)",
                           framevr::targetcone::TunnelDeg, framevr::targetcone::KeepDeg, framevr::targetcone::KeepDeg);
         else LogF("Frame aim rules: aim follows your view off");
     }
@@ -3687,7 +3688,7 @@ bool DirectedSpellAim(float& gx,float& gy) {
     if(!aimtargets::FreeAimRay(c.button,c.bow,origin,direction,true,&how)||
        !framevr::spellaim::Horizontal({direction[0],direction[1],direction[2]},gx,gy))return false;
     float mx=0,my=0,md=0;int source=-1;uint32_t id=0;
-    if(aimtargets::TargetsOn(c)&&aimtargets::Resolve(c.button,c.bow,mx,my,md,&source,&id)) {
+    if(aimtargets::TargetsOn(c)&&aimtargets::Resolve(c.button,c.bow,c.use,mx,my,md,&source,&id)) {
         const auto s=targetlock::Get();
         const float tx=mx-s.heroX,ty=my-s.heroY,tl=std::hypot(tx,ty);
         if(tl>.5f){gx=tx/tl;gy=ty/tl;how=aimtargets::SourceName(source);}
@@ -3712,7 +3713,7 @@ bool PointSpellAim(float playerX,float playerY,float& targetX,float& targetY) {
     float dx=0,dy=0,mx=0,my=0,md=0;
     const char* how="free aim";
     int source=-1;uint32_t targetId=0;
-    if(aimtargets::TargetsOn(c)&&aimtargets::Resolve(c.button,c.bow,mx,my,md,&source,&targetId)&&std::hypot(mx-playerX,my-playerY)>=.01f) {
+    if(aimtargets::TargetsOn(c)&&aimtargets::Resolve(c.button,c.bow,c.use,mx,my,md,&source,&targetId)&&std::hypot(mx-playerX,my-playerY)>=.01f) {
         dx=mx-playerX;dy=my-playerY;
         how=aimtargets::SourceName(source);
         const float front=framevr::aimrules::FrontOfTarget(skill),l=std::hypot(dx,dy);
@@ -3814,7 +3815,7 @@ bool NativeSpellAimDecide(float playerX,float playerY,framevr::spellaim::Cast& c
     // Only when the game's own unit is found here (the game thread): otherwise
     // the rule's heading or spot below (Guided Arrow flew into a wall).
     if(c.skill>=0&&framevr::aimrules::WantsUnit(c.skill)&&aimtargets::SwitchOn(c)) {
-        if(aimtargets::Resolve(c.button,c.bow,mx,my,md,&g_note.source,&id)&&worldobj::ClientMonster(id)) {
+        if(aimtargets::Resolve(c.button,c.bow,c.use,mx,my,md,&g_note.source,&id)&&worldobj::ClientMonster(id)) {
             // the button that cast it, while it is held: letting go drops the hand-off (aimtargets::Tick)
             const bool pressed=framevr::CastButtonHand()==c.button||framevr::HandSpellHeld(c.button);
             g_unitId.store(id);g_unitButton.store(pressed?c.button:-1);g_unitAt.store(GetTickCount64());g_unitSkill.store(c.skill);
@@ -7053,7 +7054,7 @@ void BowTick() {
         // flat when spells are planar; the game thread then re-aims at the
         // middle of the monster's body (bowvr::AssistSpell, lockTarget).
         float mx=0,my=0,md=0;int source=-1;uint32_t lockId=0;
-        if(SpellsLocked()&&!framevr::aimrules::Stable(shot.skill)&&aimtargets::Resolve(hand,false,mx,my,md,&source,&lockId)) {
+        if(SpellsLocked()&&!framevr::aimrules::Stable(shot.skill)&&aimtargets::Resolve(hand,false,framevr::aimrules::Of(shot.skill,true),mx,my,md,&source,&lockId)) {
             using framevr::math::Vec;
             const Vec ground=framevr::bowflight::RenderGround(shot,Vec{mx*2.0f,0.0f,my*2.0f});
             if(framevr::bowflight::LockAimDirection(shot.origin,framevr::bowflight::LockAimPoint(ground,false,{},{}),shot.planar,shot.direction)) {

@@ -114,8 +114,11 @@ inline Order For(int buttonHand,bool bowSkill) {
 // alone. While the first hand of a cast's order is held out and pointing, the
 // cast tries that hand's monster only: with none it goes where the hand points,
 // never to the other hand's or the eyes' monster. A lowered hand, or the row
-// Off, tries the whole order as before. How many of For's sources to try.
-inline int Tries(bool followsView,bool firstPointing){return followsView&&firstPointing?1:3;}
+// Off, tries the whole order as before. The melee attacks (Use::Attack: Charge,
+// Leap Attack, Dragon Flight, Whirlwind) always try the whole order: a raised
+// hand sent 35 of 45 Leap Attacks where it pointed, past the other hand's
+// outlined monster (Jeff, 2026-10-22). How many of For's sources to try.
+inline int Tries(bool followsView,bool firstPointing,Use use){return followsView&&firstPointing&&use!=Use::Attack?1:3;}
 // The outline shows the eyes' monster only while the hand that would cast at it
 // (the one whose color it takes) is not aiming alone.
 inline bool EyesOutlined(bool followsView,bool handPointing){return !(followsView&&handPointing);}
