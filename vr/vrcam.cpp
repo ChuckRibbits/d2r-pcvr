@@ -9575,7 +9575,7 @@ void TryRegister() {
     // In VR the fog and sky read the mod's own depth (scenedepth); ReShade's,
     // which Generic Depth provides, only outside it.
     if (!vrsettings::ReShadeDepthActive())
-        Log("vrcam: ReShade's Generic Depth add-on is off (VR Settings > Perf > ReShade depth) - in VR the fog and sky use the mod's own depth; outside VR they have none and stay off");
+        Log("vrcam: ReShade's Generic Depth add-on is off (d2r_pcvr.ini [render] reshade_depth) - in VR the fog and sky use the mod's own depth; outside VR they have none and stay off");
 #else
     // Both read ReShade's depth, which Generic Depth provides (FlatVR's addon
     // only corrects its pick); without it the shader sees no depth and stays off.
@@ -9930,7 +9930,7 @@ DWORD WINAPI UpdateThread(void*) {
 }  // namespace
 
 #ifdef D2RVR_NATIVE_OPENXR
-// [render] reshade_depth (VR Settings > Perf > ReShade depth): ReShade's
+// [render] reshade_depth (d2r_pcvr.ini only): ReShade's
 // Generic Depth add-on, written into its ini's [ADDON] DisabledAddons here,
 // before ReShade reads it - it cannot be switched while ReShade runs. In VR the
 // fog and sky read the mod's own depth (scenedepth); the add-on still watches
@@ -9948,7 +9948,7 @@ bool SyncReShadeDepth(const std::wstring& ini) {
             LogF("vrcam: no ReShade.ini yet (ReShade makes it when it first starts) - ReShade depth %s from the next start", want == 1.0f ? "on" : "off");
         else if (WritePrivateProfileStringW(L"ADDON", L"DisabledAddons", next.c_str(), ini.c_str())) {
             on = want == 1.0f;
-            LogF("vrcam: ReShade depth (Generic Depth add-on) %s - ReShade.ini set from VR Settings", on ? "on" : "off");
+            LogF("vrcam: ReShade depth (Generic Depth add-on) %s - ReShade.ini set from d2r_pcvr.ini", on ? "on" : "off");
         } else LogF("vrcam: ReShade depth could not be set in ReShade.ini (error %lu) - it stays %s", GetLastError(), on ? "on" : "off");
     }
     return on;

@@ -54,7 +54,7 @@ static void ValueLabel(Key key,float value,const Context& c,char* label,size_t s
     else std::snprintf(label,size,"%.0f",value);
 }
 std::vector<uint8_t> Paint(const Model& m,Hit hover,const char* runtimeStatus,const calibration::Flow* body,const controllers::Labels& detected,int help,GameVideo game,bool monoAudio,
-                           const PerformanceReadout& performance,bool depthRestart){
+                           const PerformanceReadout& performance){
     const bool showHelp=!body&&help!=NoHelp&&HelpText(help)[0];
     BITMAPINFO info{};info.bmiHeader.biSize=sizeof(BITMAPINFOHEADER);info.bmiHeader.biWidth=AtlasWidth;
     info.bmiHeader.biHeight=-Height;info.bmiHeader.biPlanes=1;info.bmiHeader.biBitCount=32;
@@ -206,14 +206,13 @@ std::vector<uint8_t> Paint(const Model& m,Hit hover,const char* runtimeStatus,co
         }
         if(m.page==Page::Performance){
             // The last second's frames, whether the CPU's part fits the
-            // headset's frame, the game's own options, a restart to come.
+            // headset's frame and the game's own options.
             const COLORREF teal=RGB(116,220,219),warn=RGB(236,186,96);
             const auto line=PerformanceLine(performance),verdict=PerformanceVerdict(performance);
             text(line.c_str(),{58,PerformanceBox.y+2,1170,30},false,false,performance.valid?teal:quiet);
             if(!verdict.empty())text(verdict.c_str(),{58,PerformanceBox.y+33,1170,29},false,false,performance.CpuMs()>performance.budgetMs?warn:quiet);
             const auto gameLine=GameVideoLine(game);
             text(gameLine.empty()?GameVideoUnsaved:gameLine.c_str(),{58,GameVideoBox.y+2,1170,29},false,false,quiet);
-            if(depthRestart)text(DepthRestartNote,{58,DepthRestartBox.y+2,1170,29},false,false,warn);
         }
         if(m.page==Page::Combat){
             // The ninth row ends at 800; without the offline adapter its notice replaces the difficulty note.

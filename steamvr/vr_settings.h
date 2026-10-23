@@ -17,7 +17,7 @@ namespace framevr::settings {
 enum class Page { Controls, VR, Video, HUD, Combat, Aim, Shield, Haptics, Performance, ReleaseNotes };
 enum Key { Motion, Seated, Dominant, Snap, TurnSpeed, Waist, BeltForward,
            Foveation, Sky, Fog, Ceiling, DrawDistance, ObjectDistance,
-           EyeHeight, ArmSpan, BodyCalibration, SkillGestures, WristMap, WristCompass, ControllerLabels, WeaponSkillIndicators, PlanarSpellAim, VitalsLocation, CriticalAlerts, RenderResolution, NavigationLocation, SmoothTurn, OrdinaryMobBars, MenuDistance, TooltipTiming, ProjectileAimAssist, MeleeHitSpeed, VitalsTilt, HapticStrength, HapticMelee, HapticBowDraw, HapticBowRelease, HapticSpell, HapticInteraction, HapticAlert, HapticShortMelee, BloodVisor, BloodWipe, MeleeRules, MeleeThrustSpeed, LootLabelSize, CompanionCounts, StrainDark, OfflinePlayers, ShieldBashSpeed, StrainSpeed, DesktopOneEye, MapTopDown, MapRotate, FoveationStrength, StereoRendering, DeferGpuWait, TargetHighlight, HeartbeatStart, SpellLock, StaffPoint, LandingCircles, GroundAim, AimHighlights, HighlightRight, HighlightLeft, ReShadeDepth, ElementalHands, EnemySight, BowLaser, ThrowLift, BottlePhysics, PropPhysics, CompanionAi, ShieldGrip, ShieldOut, ShieldUp, ShieldFollow, ShieldRoll, AimFollowsView, LeftHandStrikes, Count };
+           EyeHeight, ArmSpan, BodyCalibration, SkillGestures, WristMap, WristCompass, ControllerLabels, WeaponSkillIndicators, PlanarSpellAim, VitalsLocation, CriticalAlerts, RenderResolution, NavigationLocation, SmoothTurn, OrdinaryMobBars, MenuDistance, TooltipTiming, ProjectileAimAssist, MeleeHitSpeed, VitalsTilt, HapticStrength, HapticMelee, HapticBowDraw, HapticBowRelease, HapticSpell, HapticInteraction, HapticAlert, HapticShortMelee, BloodVisor, BloodWipe, MeleeRules, MeleeThrustSpeed, LootLabelSize, CompanionCounts, StrainDark, OfflinePlayers, ShieldBashSpeed, StrainSpeed, DesktopOneEye, MapTopDown, MapRotate, FoveationStrength, StereoRendering, DeferGpuWait, TargetHighlight, HeartbeatStart, SpellLock, StaffPoint, LandingCircles, GroundAim, AimHighlights, HighlightRight, HighlightLeft, ElementalHands, EnemySight, BowLaser, ThrowLift, BottlePhysics, PropPhysics, CompanionAi, ShieldGrip, ShieldOut, ShieldUp, ShieldFollow, ShieldRoll, AimFollowsView, LeftHandStrikes, Count };
 // One bit per setting, 128 wide: two words, since MSVC has no 128-bit integer.
 struct ChangeMask {
     static constexpr int Bits=128;
@@ -110,7 +110,6 @@ inline constexpr std::array<Definition,Count> Definitions{{
     {"Monster highlights", "Dominant hand: its monster only. Both hands: each hand's own", L"gameplay",L"aim_highlights",1,0,1,1},
     {"Right hand color", "The right hand's monster: By range, or one color", L"gameplay",L"highlight_right_hue",45,0,360,15},
     {"Left hand color", "The left hand's monster: By range, or one color", L"gameplay",L"highlight_left_hue",210,0,360,15},
-    {"ReShade depth", "ReShade's Generic Depth add-on; applies after restarting the game", L"render",L"reshade_depth",1,0,1,1},
     {"Elemental hand effects", "Sorceress: fire, frost and lightning around each hand (experimental)", L"interactions",L"elemental_hands",0,0,1,1},
     {"Enemy sight distance", "Offline monster detection range; 100% is game default", L"gameplay",L"enemy_sight_pct",enemysight::DefaultPercent,enemysight::MinPercent,enemysight::MaxPercent,enemysight::StepPercent},
     // Off (LaserOff, below), else the line's hue; steps wrap through Off.
@@ -233,10 +232,9 @@ inline constexpr const char* StereoRenderingNames[]={"Both eyes","By turns"};
 // rate. While it is not deferred, the Perf page warns and offers a button
 // that turns it on (Apply saves it).
 constexpr Rect DeferBox{940,181,300,52};
-// Under the Perf page's eight rows: the last second's frame times and whether
-// they fit the headset's frame, the game's graphics options, and a ReShade
-// depth change waiting for a restart.
-constexpr Rect PerformanceBox{40,742,1200,62},GameVideoBox{40,806,1200,32},DepthRestartBox{40,840,1200,32};
+// Under the Perf page's rows: the last second's frame times and whether they
+// fit the headset's frame, and the game's graphics options.
+constexpr Rect PerformanceBox{40,742,1200,62},GameVideoBox{40,806,1200,32};
 // Windows Mono audio (Settings > Accessibility > Audio) folds the PC's sound to
 // the centre before any headset stream, so head-relative sound cannot pan.
 // While it is on, the title row's hint gives way to this warning on every page.
@@ -317,7 +315,6 @@ inline std::string PerformanceLine(const PerformanceReadout& r) {
     return line;
 }
 inline constexpr const char* GameVideoUnsaved="Game: options not saved yet; the game writes them when its options menu closes";
-inline constexpr const char* DepthRestartNote="ReShade depth: restart the game to apply the change";
 // Whether the CPU's part fits the headset's frame: past it, the runtime
 // holds every late frame back to its next refresh.
 inline std::string PerformanceVerdict(const PerformanceReadout& r) {
@@ -425,7 +422,7 @@ inline Rect PairDecrease(int row,int side){return {PairX(side),RowY+row*RowStep,
 inline Rect PairValue(int row,int side){return {PairX(side)+56,RowY+row*RowStep,238,52};}
 inline Rect PairIncrease(int row,int side){return {PairX(side)+298,RowY+row*RowStep,52,52};}
 // Every row a page can show, in order (Rows leaves out those that cannot apply).
-inline int CatalogCount(Page page){return page==Page::Haptics?2+haptics::CategoryCount:page==Page::Combat?9:page==Page::Aim?10:page==Page::Shield?5:page==Page::VR?10:page==Page::Video?6:page==Page::Performance?8:page==Page::HUD?10:0;}
+inline int CatalogCount(Page page){return page==Page::Haptics?2+haptics::CategoryCount:page==Page::Combat?9:page==Page::Aim?10:page==Page::Shield?5:page==Page::VR?10:page==Page::Video?6:page==Page::Performance?6:page==Page::HUD?10:0;}
 inline Key CatalogKey(Page page,int row){
     constexpr Key hapticRows[]={HapticStrength,HapticMelee,HapticShortMelee,HapticBowDraw,HapticBowRelease,HapticSpell,HapticInteraction,HapticAlert};
     if(page==Page::Haptics)return hapticRows[row];
@@ -440,8 +437,9 @@ inline Key CatalogKey(Page page,int row){
     if(page==Page::HUD)return hud[row];
     constexpr Key video[]={Sky,Fog,Ceiling,ElementalHands,BottlePhysics,PropPhysics};
     if(page==Page::Video)return video[row];
-    // Everything that changes the frame rate, with its numbers below.
-    constexpr Key performance[]={StereoRendering,RenderResolution,DrawDistance,ObjectDistance,Foveation,FoveationStrength,ReShadeDepth,DesktopOneEye};
+    // Everything that changes the frame rate, with its numbers below. The
+    // desktop mirror is [render] desktop_one_eye in the INI only.
+    constexpr Key performance[]={StereoRendering,RenderResolution,DrawDistance,ObjectDistance,Foveation,FoveationStrength};
     if(page==Page::Performance)return performance[row];
     constexpr Key vrRows[]={Motion,Seated,Dominant,SmoothTurn,Snap,TurnSpeed,Waist,BeltForward,SkillGestures,OrdinaryMobBars};
     return vrRows[row];

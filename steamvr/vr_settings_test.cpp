@@ -81,17 +81,21 @@ int main(){
         external[ElementalHands]=1;Check(Conflict(external,request.base,request.changed),"its conflicts are detected");
     }
     {
-        Check(RowCount(Page::Performance)==8&&RowKey(Page::Performance,4)==Foveation&&RowKey(Page::Performance,5)==FoveationStrength&&
-              RowKey(Page::Performance,1)==RenderResolution&&RowKey(Page::Performance,7)==DesktopOneEye,"strength sits directly under foveated rendering");
-        Check(RowKey(Page::Performance,0)==StereoRendering&&RowKey(Page::Performance,2)==DrawDistance&&RowKey(Page::Performance,3)==ObjectDistance&&
-              RowKey(Page::Performance,6)==ReShadeDepth,"everything that changes the frame rate is on the Perf page");
+        Check(RowCount(Page::Performance)==6&&RowKey(Page::Performance,4)==Foveation&&RowKey(Page::Performance,5)==FoveationStrength&&
+              RowKey(Page::Performance,1)==RenderResolution,"strength sits directly under foveated rendering");
+        Check(RowKey(Page::Performance,0)==StereoRendering&&RowKey(Page::Performance,2)==DrawDistance&&RowKey(Page::Performance,3)==ObjectDistance,
+              "everything that changes the frame rate is on the Perf page");
+        bool mirrorRow=false;
+        for(int p=0;p<=int(Page::ReleaseNotes);++p)for(int i=0;i<CatalogCount(Page(p));++i)mirrorRow|=CatalogKey(Page(p),i)==DesktopOneEye;
+        Check(!mirrorRow&&Defaults()[DesktopOneEye]==1&&std::wstring(Definitions[DesktopOneEye].key)==L"desktop_one_eye",
+              "the desktop mirror is [render] desktop_one_eye in the INI only, on by default");
         Check(RowCount(Page::Video)==6&&RowKey(Page::Video,0)==Sky&&RowKey(Page::Video,1)==Fog&&RowKey(Page::Video,2)==Ceiling&&
               RowKey(Page::Video,3)==ElementalHands&&RowKey(Page::Video,4)==BottlePhysics&&RowKey(Page::Video,5)==PropPhysics,
               "the Video page keeps the mod's effects, with bottle and prop physics");
         Check(Defaults()[BottlePhysics]==1&&Defaults()[PropPhysics]==1,"both physics switches start on, as their INI defaults");
         const auto last=Increase(RowCount(Page::Performance)-1);
-        Check(last.y+last.h<PerformanceBox.y&&PerformanceBox.y+PerformanceBox.h<=GameVideoBox.y&&GameVideoBox.y+GameVideoBox.h<=DepthRestartBox.y&&
-              DepthRestartBox.y+DepthRestartBox.h<876,"Perf rows, then its numbers, end above the save status");
+        Check(last.y+last.h<PerformanceBox.y&&PerformanceBox.y+PerformanceBox.h<=GameVideoBox.y&&
+              GameVideoBox.y+GameVideoBox.h<876,"Perf rows, then its numbers, end above the save status");
         Model strength;strength.Open(s);strength.Click({Kind::Tab,int(Page::Performance)});
         Check(strength.Get()[Foveation]==1&&strength.Get()[FoveationStrength]==1,"fixed foveation at Medium strength by default");
         strength.Click(At(strength,Page::Performance,Increase(5)));
@@ -185,19 +189,11 @@ int main(){
         Check(PerformanceLine({}).find("waiting")!=std::string::npos&&PerformanceVerdict({}).empty(),"no numbers before a second of frames");
         Check(HelpAt(Page::Performance,600.f/Width,(PerformanceBox.y+10.f)/Height)==HelpPerformance&&
               HelpAt(Page::Performance,600.f/Width,(GameVideoBox.y+10.f)/Height)==HelpGameVideo,"each of the Perf page's lines has help");
-        Check(HelpAt(Page::Performance,600.f/Width,(DepthRestartBox.y+10.f)/Height)==NoHelp,"no card over the restart note's strip, drawn or not");
         r.mixed=true;Check(PerformanceLine(r).find("(mixed)")!=std::string::npos,"a second of turns and pairs says so");r.mixed=false;
         Check(HelpText(HelpPerformance)[0]&&HelpText(HelpGameVideo)[0]&&HelpTitle(HelpPerformance)[0]&&HelpTitle(HelpGameVideo)[0]&&HelpLast==HelpGameVideo,"and their help reads");
         Check(HelpAt(Page::Video,600.f/Width,(PerformanceBox.y+10.f)/Height)==NoHelp,"not on other pages");
     }
-    {   // ReShade depth: d2r_pcvr.ini [render] reshade_depth, set in ReShade.ini before ReShade loads
-        const auto& d=Definitions[ReShadeDepth];
-        Check(std::wstring(d.section)==L"render"&&std::wstring(d.key)==L"reshade_depth"&&d.defaultValue==1&&d.min==0&&d.max==1,"an on/off [render] setting");
-        Model depth;depth.Open(s);depth.Click({Kind::Tab,int(Page::Performance)});
-        depth.Click(At(depth,Page::Performance,ValueBox(6)));
-        Check(depth.Get()[ReShadeDepth]==0&&depth.Dirty(),"its value box switches it off");
-        const auto save=depth.Click({Kind::Apply});
-        Check(save.changed==(ChangeMask{1}<<ReShadeDepth)&&save.values[ReShadeDepth]==0,"Apply saves only it");
+    {   // ReShade depth: d2r_pcvr.ini [render] reshade_depth (not in VR Settings), set in ReShade.ini before ReShade loads
         namespace addons=framevr::reshadeaddons;
         Check(!addons::Disabled(L"",addons::GenericDepth)&&addons::Disabled(L"Generic Depth",addons::GenericDepth)&&
               addons::Disabled(L"Effect Runtime Sync, generic depth ",addons::GenericDepth)&&!addons::Disabled(L"Generic Depth Plus",addons::GenericDepth),
@@ -549,7 +545,7 @@ int main(){
         v[Seated]=1;Check(!RowShown(Waist,v,{}),"seated: no standing belt drop");
         v[Foveation]=0;Check(!RowShown(FoveationStrength,v,{}),"no foveation strength while it is Off");
         v[BloodVisor]=0;Check(!RowShown(BloodWipe,v,{}),"no face wipe without blood");
-        Check(RowCount(Page::VR,v)==8&&RowCount(Page::Performance,v)==7&&RowCount(Page::HUD,v)==9,"each page drops what cannot apply");
+        Check(RowCount(Page::VR,v)==8&&RowCount(Page::Performance,v)==5&&RowCount(Page::HUD,v)==9,"each page drops what cannot apply");
     }
     {   // Windows Mono audio: the title row warns on every page; pointing at it explains
         const float u=(MonoAudioBox.x+20.f)/Width,v=(MonoAudioBox.y+20.f)/Height;

@@ -203,8 +203,8 @@ headset frame are drawn:
 
 By turns draws a pair on a snap turn, outside first person, in open menus,
 during stereo captures and on any frame without a reusable image for both eyes.
-With **Desktop shows one eye**, the kept left image covers the right frames on
-the monitor.
+With `[render] desktop_one_eye` (On by default), the kept left image covers the
+right frames on the monitor.
 
 Replay (both eyes from one CPU pass, adapted from upstream) was a third
 choice until 2026-10-20. On the owner's PC it halved the CPU work a frame but
@@ -233,13 +233,14 @@ the mod's own work and the wait for the headset. It says whether the CPU's part
 fits the headset's frame (11.1 ms at 90 Hz); past it, late frames wait a whole
 refresh. Drawing grows with what is in view, the draw distances and the game's
 shadows, and hardly with resolution. The game's own graphics options are shown
-as it last saved them; change those in its Options > Video. **ReShade depth**
-(`[render] reshade_depth`) switches ReShade's Generic Depth add-on, which looks
-at every draw call to find the depth buffer; in VR the fog and sky read the
-mod's own depth (on the flat menu panel and outside VR they need ReShade's).
-The plugin writes it into ReShade.ini's `[ADDON]
-DisabledAddons` before ReShade loads, so a change applies after a restart;
-without the key ReShade.ini is left as it is.
+as it last saved them; change those in its Options > Video.
+
+`[render] reshade_depth` in `d2r_pcvr.ini` (not in VR Settings) switches
+ReShade's Generic Depth add-on, which looks at every draw call to find the
+depth buffer; in VR the fog and sky read the mod's own depth (on the flat menu
+panel and outside VR they need ReShade's). The plugin writes it into
+ReShade.ini's `[ADDON] DisabledAddons` before ReShade loads, so a change
+applies after a restart; without the key ReShade.ini is left as it is.
 
 The choice is stored as `[stereo] rendering` (0 Both eyes, 1 By turns,
 2 Replay; missing or invalid is By turns) and applies live. Every 10 seconds the log reports a

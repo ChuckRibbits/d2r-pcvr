@@ -360,19 +360,19 @@ ULONGLONG settingsPaintAt=0;
 struct SettingsPaintJob {
     settings::Model model;settings::Hit hover;std::string status;controllers::Labels detected;
     int help=settings::NoHelp;settings::GameVideo game{};bool monoAudio=false;
-    settings::PerformanceReadout performance{};bool depthRestart=false;
+    settings::PerformanceReadout performance{};
     bool calibrating=false;calibration::Flow body;
 };
 struct SettingsPainted {std::vector<uint8_t> pixels;double paintMs=0;};
 LatestWorker<SettingsPaintJob,SettingsPainted> settingsPainter([](const SettingsPaintJob& job) {
     const auto start=hookmetrics::Nanos();
     auto pixels=job.calibrating?settings::Paint(job.model,{},"",&job.body):
-        settings::Paint(job.model,job.hover,job.status.c_str(),nullptr,job.detected,job.help,job.game,job.monoAudio,job.performance,job.depthRestart);
+        settings::Paint(job.model,job.hover,job.status.c_str(),nullptr,job.detected,job.help,job.game,job.monoAudio,job.performance);
     return SettingsPainted{std::move(pixels),double(hookmetrics::Nanos()-start)/1e6};
 });
 struct SettingsPicture {
     uint64_t revision=~0ull;int hover=-1,status=-1,help=settings::NoHelp,game=-1;
-    uint64_t performance=0;bool depthRestart=false;settings::GameVideo gameVideo{};   // the Perf page's
+    uint64_t performance=0;settings::GameVideo gameVideo{};   // the Perf page's
     bool operator==(const SettingsPicture&)const=default;
 };
 SettingsPicture settingsPainted;     // what the picture shown has
@@ -1682,13 +1682,12 @@ void SettingsPointer(const settings::InputGate::Edges& edges,bool grip) {
     // The Perf page repaints with each second's numbers; the others never for them.
     const bool performancePage=settingsModel.page==settings::Page::Performance;
     const bool fresh=performance.valid&&now-performanceAt<=2000;
-    const bool depthRestart=(vrsettings::Read().values[settings::ReShadeDepth]>.5f)!=vrsettings::ReShadeDepthActive();
     const SettingsPicture wanted{settingsModel.revision,hover,status,help,warnings,performancePage&&fresh?performanceSerial:0,
-                                 performancePage&&depthRestart,performancePage?game:settings::GameVideo{}};
+                                 performancePage?game:settings::GameVideo{}};
     if(!(wanted==settingsPainted)&&now>=settingsPaintAt&&!settingsPaintRequest){
         char resolutionStatus[160];resolution::Describe(resolutionStatus,sizeof resolutionStatus,{width,height});
         settingsPaintRequest=settingsPainter.Submit({settingsModel,settingsHover,performancePage?resolutionStatus:descriptions[status],
-                                                    detectedControllers,help,game,monoAudio,fresh?performance:settings::PerformanceReadout{},depthRestart});
+                                                    detectedControllers,help,game,monoAudio,fresh?performance:settings::PerformanceReadout{}});
         settingsRequested=wanted;settingsPaintAt=now+100;
     }
     if(TakeSettingsPicture())settingsPainted=settingsRequested;

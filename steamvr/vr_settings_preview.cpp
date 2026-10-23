@@ -115,7 +115,7 @@ int main(int argc,char** argv){
         const auto most=ParseGameVideo(R"({"Shadow Quality": 44, "Character Detail": 55, "Light Quality": 44, "Ambient Occlusion Quality": 44,)"
                                        R"( "Atmospherics Quality": 44, "Resolution Scale": 200, "NVIDIA DLSS": 1})");
         const bool ok=fits(PerformanceLine(widest))&&fits(PerformanceVerdict(widest))&&fits(PerformanceLine({}))&&fits(GameVideoLine(most))&&
-                      fits(GameVideoUnsaved)&&fits(DepthRestartNote);
+                      fits(GameVideoUnsaved);
         SelectObject(dc,old);DeleteObject(normal);DeleteDC(dc);
         if(!ok)return 22;
         std::puts("Perf page lines fit at their widest");return 0;
@@ -145,8 +145,7 @@ int main(int argc,char** argv){
     GameVideo game=argc>3&&std::strcmp(argv[3],"--game-video")==0?GameVideo{true,true}:GameVideo{};
     const bool monoAudio=argc>3&&std::strcmp(argv[3],"--mono-audio")==0;   // the title row's Windows Mono audio warning
     // --performance: the Perf page with a second of frames over the headset's
-    // frame, the game's options as its Settings.json has them, and a ReShade
-    // depth change waiting for a restart.
+    // frame and the game's options as its Settings.json has them.
     const bool sample=argc>3&&std::strcmp(argv[3],"--performance")==0;
     PerformanceReadout performance;
     if(sample){
@@ -155,7 +154,7 @@ int main(int argc,char** argv){
                             R"( "Light Quality": 2, "Texture Quality": 4, "Resolution Scale": 100, "NVIDIA DLSS": 0, "Anti Aliasing": 1, "VSync": 0})");
     }
     const auto pixels=Paint(m,{},page==int(Page::Performance)?"VR source: 2560 x 2560 per eye":"Foveated shading available. Eye-tracking samples are active.",page==TabCount?&body:nullptr,
-        framevr::controllers::Labels{{framevr::controllers::Layout::Touch,framevr::controllers::Layout::Touch}},help,game,monoAudio,performance,sample);
+        framevr::controllers::Labels{{framevr::controllers::Layout::Touch,framevr::controllers::Layout::Touch}},help,game,monoAudio,performance);
     if(pixels.size()!=AtlasWidth*Height*4)return 1;
     FILE* file=std::fopen(argc>1?argv[1]:"vr-settings-preview.ppm","wb");if(!file)return 2;
     const char* name=argc>1?argv[1]:"";
