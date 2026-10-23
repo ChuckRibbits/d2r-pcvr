@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Cache original 3D potion meshes and textures, and the arrow's, from the installed game.
+"""Cache original 3D potion meshes and textures, the arrow's and the thrown traps', from the installed game.
 
 Standard-library Python; Battle.net also needs CascLib on Windows. Cache contains Blizzard
 assets and stays in the user's installation, never in the mod's release.
@@ -13,14 +13,24 @@ from pathlib import Path
 from game_assets import open_assets
 from potion_assets import Granny, texture
 
-VERSION = 2   # the cache; 2 adds the arrow
+VERSION = 3   # the cache; 2 adds the arrow, 3 the thrown traps
 FORMAT = 1    # each .pvr file's layout
 CODES = tuple(f'{kind}p{tier}' for kind in 'hm' for tier in range(1, 6)) + ('rvs','rvl','yps','wms','vps')
 # The basic arrow, drawn on the bow while the game's own nocked arrow is not
 # showing (in town the game stops drawing missiles).
 ARROW = 'arw'
 ARROW_LENGTH = .75   # metres: bowflight::ArrowLength, tail at the nock
-FILES = tuple(code + '.pvr' for code in CODES + (ARROW,))
+# Traps and bombs held in the hand while a throw winds up (#224, toss::Model):
+# Fire Blast's bomb, Shock Web's caltrops, Blade Sentinel's blade, the sentry
+# (Charged Bolt, Lightning and Death Sentry share it) and the wake (Wake of
+# Fire and Wake of Inferno), each from its unit file, TOSS_SIZE across.
+TOSS = {'tfb': 'data/hd/missiles/expansion_fire_trauma_missile.json',
+        'tsw': 'data/hd/missiles/expansion_caltrops.json',
+        'tbs': 'data/hd/character/enemy/bladecreeper.json',
+        'tst': 'data/hd/character/enemy/chargeboltsentry.json',
+        'twk': 'data/hd/character/enemy/wakeofdestruction.json'}
+TOSS_SIZE = .14   # metres: the model's largest side
+FILES = tuple(code + '.pvr' for code in CODES + (ARROW,) + tuple(TOSS))
 
 
 def encode(meshes, tex):
@@ -76,6 +86,36 @@ def encode_arrow(meshes, tex):
     return pack(turned, indices, tex)
 
 
+def encode_toss(meshes, tex):
+    """A thrown trap or bomb in the hand: the game's own axes (+Y up), its
+    bounding box centred on the origin and its largest side TOSS_SIZE."""
+    vertices, indices = [], []
+    for _, verts, ix in meshes:
+        indices.extend(i + len(vertices) for i in ix)
+        vertices.extend(verts)
+    if not vertices or len(vertices) > 32768 or len(indices) > 131072:
+        raise ValueError('Unsupported thrown model geometry')
+    lo = [min(v[a] for v in vertices) for a in range(3)]
+    hi = [max(v[a] for v in vertices) for a in range(3)]
+    span = max(hi[a] - lo[a] for a in range(3))
+    if span < .01:
+        raise ValueError('Unsupported thrown model geometry')
+    scale = TOSS_SIZE / span
+    centre = [(lo[a] + hi[a]) * .5 for a in range(3)]
+    return pack([tuple((v[a]-centre[a])*scale for a in range(3)) + tuple(v[3:8]) + (0.,) for v in vertices], indices, tex)
+
+
+def unit_model(assets, unit_path):
+    """A unit file's first model (its _lod0) and albedo: listed with it, else
+    beside the model (the missiles keep theirs there)."""
+    unit = json.loads(assets.read(unit_path))
+    dependencies = unit['dependencies']
+    model = dependencies['models'][0]['path'].lower()
+    albedo = next((t['path'].lower() for t in dependencies.get('textures', []) if t['path'].lower().endswith('_alb.texture')),
+                  model[:-len('.model')] + '_alb.texture')
+    return model.replace('.model', '_lod0.model'), albedo
+
+
 def prepare(game, destination=None, force=False, casclib=None):
     game=Path(game)
     destination=Path(destination) if destination else game/'d2rloader/plugins/d2r_vr_potions'
@@ -86,7 +126,7 @@ def prepare(game, destination=None, force=False, casclib=None):
             try:
                 previous=json.loads(metadata.read_text())
                 if previous['version']==VERSION and previous['build']==assets.build_hash and all(
-                    hashlib.sha256((destination/(code+'.pvr')).read_bytes()).hexdigest()==previous['sha256'][code] for code in CODES+(ARROW,)):
+                    hashlib.sha256((destination/(code+'.pvr')).read_bytes()).hexdigest()==previous['sha256'][code] for code in CODES+(ARROW,)+tuple(TOSS)):
                     return previous
             except (ValueError,KeyError,OSError):
                 pass
@@ -104,8 +144,12 @@ def prepare(game, destination=None, force=False, casclib=None):
         albedo=next(t['path'].lower() for t in unit['dependencies']['textures'] if t['path'].lower().endswith('_alb.texture'))
         output[ARROW]=encode_arrow(Granny(assets.read(model)).meshes(),texture(assets.read(albedo)))
         sources[ARROW]={'model':model,'albedo':albedo}
+        for code,unit_path in TOSS.items():
+            model,albedo=unit_model(assets,unit_path)
+            output[code]=encode_toss(Granny(assets.read(model)).meshes(),texture(assets.read(albedo)))
+            sources[code]={'model':model,'albedo':albedo}
         # Decode/validate all assets before replacing any live cache files.
-        result={'version':VERSION,'build':assets.build_hash,'models':len(CODES),'arrow':True,'sources':sources,
+        result={'version':VERSION,'build':assets.build_hash,'models':len(CODES),'arrow':True,'toss':len(TOSS),'sources':sources,
                 'sha256':{code:hashlib.sha256(data).hexdigest() for code,data in output.items()}}
         for code,data in output.items():
             temp=destination/(code+'.pvr.tmp');temp.write_bytes(data);os.replace(temp,destination/(code+'.pvr'))

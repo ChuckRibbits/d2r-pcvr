@@ -184,6 +184,38 @@ int main() {
             Check((left?s.out.leftRelease:s.out.javelinRelease)&&std::fabs(pitch(d)-15)<.01f&&d.z<0,"either hand's throw leaves 15 degrees above its level path");
         }
     }
+    // A trap or bomb thrown to place (#224): a quick press, a still hold, a throw.
+    const auto tossing=[](Sim& s){s.in.handBindings=true;s.in.weapon=Weapon::Melee;s.engine.Select(0);
+        s.in.selectedSkill=251;s.in.selectedAvailable=true;s.in.toss=true;s.Step(3);};
+    {
+        Sim s;tossing(s);s.in.trigger=1;s.Step();
+        Check(s.out.tossHeld&&s.out.skill<0&&s.out.feedback==1&&!s.out.attack,"a press puts the bomb in the hand without casting yet");
+        s.Step(3);s.in.trigger=0;s.Step();
+        Check(s.out.skill==0&&!s.out.tossRelease&&!s.out.tossHeld,"a quick still press casts where you point, on release");
+        int pressed=1;for(int i=0;i<10;++i)pressed+=s.Step().skill==0;
+        Check(pressed>=3&&pressed<=5&&s.out.skill<0,"one brief native press");
+    }
+    {
+        Sim s;tossing(s);s.in.trigger=1;s.Step();
+        Check(s.Step(10).skill<0&&s.out.tossHeld,"held still a moment, it is still in the hand");
+        Check(s.Step(10).skill==0&&!s.out.tossHeld,"held still, the native cast holds as before, where you point");
+        Check(s.Step(20).skill==0,"and keeps holding while the trigger does");
+        s.in.trigger=0;Check(s.Step().skill<0&&s.Step(5).skill<0,"letting go ends it, with no extra cast");
+    }
+    for(const float lift:{0.f,15.f}) {
+        Sim s;tossing(s);s.in.throwLift=lift;s.in.trigger=1;s.Step();
+        s.Move({.25f,1.55f,-.2f},4);s.Move({.25f,1.55f,-.9f},5);s.in.trigger=0;s.Step();
+        Check(s.out.tossRelease&&s.out.skill==0&&s.out.feedback==2&&!s.out.tossHeld,"a throw releases the trap with one native press");
+        const Vec v=s.out.tossVelocity;const float pitch=std::atan2(v.y,std::sqrt(v.x*v.x+v.z*v.z))*180/3.14159265f;
+        Check(v.z<-5&&std::fabs(Length(v)-7)<.05f&&std::fabs(pitch-lift)<.05f,"along the hand at its peak speed, lifted like any throw");
+        Check(Length(s.out.tossOrigin-s.in.hand[0].p)<1e-5f,"from the hand");
+    }
+    {
+        Sim s;tossing(s);s.in.trigger=1;s.Step();s.Move({.25f,1.25f,-.55f},15);s.in.trigger=0;
+        bool cast=false;for(int i=0;i<8;++i){s.Step();cast|=s.out.skill>=0||s.out.tossRelease;}
+        Check(!cast,"a slow reach is neither a quick press nor a throw: nothing is cast");
+        s.in.toss=false;s.in.trigger=1;Check(s.Step().skill==0&&!s.out.tossHeld,"any other skill keeps the trigger as before");
+    }
     for(int kind=0;kind<4;++kind) {
         Sim s;s.in.weapon=Weapon::Javelin;s.Step(3);s.in.trigger=1;s.Step();
         if(kind==0)s.Move({.25f,1.25f,-.45f},10); // weak reposition, not a throw
