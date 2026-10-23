@@ -1,5 +1,6 @@
 #pragma once
 #include <cstdint>
+#include "aim_reach.h"
 
 // How each skill uses the aimed monster, and which hand's target it takes
 // (Jeff, 2026-10-20). One table, so
@@ -59,6 +60,11 @@ inline bool Circle(Use use){return use==Use::Ground;}
 // VR Settings > Aim: Spells and Bow skills go to the aimed monster, and Ground
 // skills (0 the game's own aim, 1 where you point, 2 the aimed monster).
 struct Switches {bool spells=false,bowSkills=false;int ground=0;};
+// Any option On: the rules can aim some cast. All Off, nothing of them runs:
+// no arm tracking, transport reads or hand-offs (cost while Off). Aim follows
+// your view is not one of them: it only changes which monster the picks take
+// (Tries, targetcone::PickTunnel), so alone it has nothing to do.
+inline bool Any(const Switches& s){return s.spells||s.bowSkills||s.ground>0;}
 // The rules aim a cast only with its kind's option On. Off (the defaults),
 // every cast aims as it did before them: the casting hand's ray, Bone Wall and
 // Prison on their own floor point, ground skills by the game (#159 review).
@@ -76,12 +82,24 @@ inline bool MonsterSwitch(Use use,bool bow,const Switches& s) {
 // monster, Bone Prison (and every other skill) on it (Jeff, 2026-10-20).
 inline float FrontOfTarget(int skill){return skill==78?3.f:0.f;}
 // Skills the game should be handed the monster itself, when there is one: seekers
-// home in on it (Guided Arrow, Bone Spirit), Fist of the Heavens strikes it,
-// Attract and Taunt need a unit, and the travelling attacks (Charge, Leap
-// Attack, Dragon Flight) and Zeal fight it. With no monster they keep their rule.
+// home in on it (Guided Arrow, Bone Spirit), Attract and Taunt need a unit, and
+// the traveling attacks (Charge, Leap Attack, Dragon Flight) fight it. With no
+// monster they keep their rule. Only a skill the rules aim reaches the hand-off
+// (RulesAim). Fist of the Heavens and Zeal stay with the game's own pick: the
+// game marks both as needing a target, not as aimed, so they have no rule.
 inline bool WantsUnit(int skill){
-    switch(skill){case 22: case 93: case 121: case 86: case 137: case 106: case 107: case 143: case 275: return true;default: return false;}
+    switch(skill){case 22: case 93: case 86: case 137: case 107: case 143: case 275: return true;default: return false;}
 }
+// The monster handed to the game for a unit skill answers the game's target
+// queries for this long after the cast (RulesUnit).
+inline constexpr unsigned long long HandOffMs=500;
+inline bool HandOffLive(int skill,unsigned long long at,unsigned long long now){return skill>=0&&now-at<=HandOffMs;}
+// Letting go of a button drops the hand-off its own cast made while it was held.
+// A cast made with the button already up (-1) keeps the HandOffMs expiry.
+inline bool DropOnRelease(int handedButton,int released){return handedButton>=0&&handedButton==released;}
+// A held target stays while the scan still finds it and it is inside the game's
+// own cast reach (aimreach): the scan reaches past it.
+inline bool KeepHeld(bool found,float dx,float dy){return found&&aimreach::Within(dx,dy);}
 
 // Where the target comes from: the right hand (0), the left hand (1), the eyes (2).
 enum Source {Right=0,Left=1,Eyes=2};
@@ -92,4 +110,25 @@ inline Order For(int buttonHand,bool bowSkill) {
     if(bowSkill||buttonHand==1)return {{Left,Right,Eyes}};
     return {{Right,Left,Eyes}};
 }
+// VR Settings > Aim > Aim follows your view (Off by default): a raised hand aims
+// alone. While the first hand of a cast's order is held out and pointing, the
+// cast tries that hand's monster only: with none it goes where the hand points,
+// never to the other hand's or the eyes' monster. A lowered hand, or the row
+// Off, tries the whole order as before. The melee attacks (Use::Attack: Charge,
+// Leap Attack, Dragon Flight, Whirlwind) from a raised hand also try the other
+// hand's monster while it is outlined (otherOutlined), never the eyes': a
+// raised hand sent 35 of 45 Leap Attacks where it pointed,
+// past the other hand's outlined monster (Jeff, 2026-10-22). How many of For's
+// sources to try.
+inline int Tries(bool followsView,bool firstPointing,Use use,bool otherOutlined) {
+    if(!(followsView&&firstPointing))return 3;
+    return use==Use::Attack&&otherOutlined?2:1;
+}
+// Is the other hand's monster outlined (VR Settings > Aim > Monster highlights):
+// with the outline On, Both hands outlines each hand's; Dominant hand only that
+// hand's (dominant: 0 right, 1 left).
+inline bool OtherOutlined(bool outline,bool bothHands,int dominant,Source other){return outline&&(bothHands||int(other)==dominant);}
+// The outline shows the eyes' monster only while the hand that would cast at it
+// (the one whose color it takes) is not aiming alone.
+inline bool EyesOutlined(bool followsView,bool handPointing){return !(followsView&&handPointing);}
 }

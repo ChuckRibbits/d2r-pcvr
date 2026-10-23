@@ -88,16 +88,19 @@ struct Scope {
     }
     ~Scope(){creation=saved;}
 };
-// Telemetry: "Frame missile flight:" where each of the local hero's missiles
-// really ends - its last position before it is gone - and how far it flew
-// (Jeff, 2026-10-20: Cold Arrow looked short). Watched from its server
-// creation, followed by FollowFlights on the game thread.
+// Telemetry: "Frame missile flight:" where the local hero's missiles really
+// end - each one's last position before it is gone - and how far they flew
+// (Jeff, 2026-10-20: Cold Arrow looked short). Watched from their server
+// creation only while FollowFlights runs (the target lock's scan, game thread:
+// the Monster outline, Skills go to the aimed monster, or Ground skills on
+// Aimed monster is On), and summed up in at most one line a second.
 struct Flight {uint32_t unit=0,missile=0;float ox=0,oy=0,x=0,y=0;bool seen=false;ULONGLONG at=0;};
 std::mutex flightMutex;
 Flight flights[32];
+std::atomic<ULONGLONG> followedAt{0};
 void WatchFlight(uintptr_t created,uint32_t missile,int ox,int oy) {
     uint32_t id=0;
-    if(!created||!Read(created+8,id)||!id)return;
+    if(GetTickCount64()-followedAt.load()>500||!created||!Read(created+8,id)||!id)return;   // nobody follows: record nothing
     std::lock_guard lock(flightMutex);
     Flight* slot=&flights[0];
     for(auto& f:flights)if(!f.unit){slot=&f;break;}else if(f.at<slot->at)slot=&f;   // a free slot, else the oldest
@@ -280,12 +283,15 @@ void Install() {
     allReady=releaseIn&&speedHooksReady.load();
 }
 // The game thread (targetlock's scan, every 100 ms): each watched missile's
-// position while it lasts; once it is gone, one line with where it ended.
+// position while it lasts; the ones gone since the last line, summed up.
 void FollowFlights() {
+    const auto now=GetTickCount64();
+    const bool resumed=now-followedAt.exchange(now)>500;
+    static char ended[400]{};static int count=0;static ULONGLONG wrote=0;
+    std::lock_guard lock(flightMutex);
+    if(resumed){for(auto& f:flights)f={};count=0;ended[0]=0;}   // left over from before a pause: no bogus endings
     uintptr_t game=0,self=0;
     if(!melee::LocalServer(game,self))return;
-    const auto now=GetTickCount64();
-    std::lock_guard lock(flightMutex);
     for(auto& f:flights) {
         if(!f.unit)continue;
         const uintptr_t unit=melee::ServerUnit(game,3,f.unit);
@@ -295,10 +301,17 @@ void FollowFlights() {
             if(now-f.at<15000)continue;
         }
         if(!f.seen&&now-f.at<300)continue;   // not in the server's hash yet
-        char line[200];snprintf(line,sizeof line,"Frame missile flight: missile %u from %.0f,%.0f ended at %.0f,%.0f, %.1f cells in %llu ms%s",
-            f.missile,f.ox,f.oy,f.x,f.y,std::hypot(f.x-f.ox,f.y-f.oy),(unsigned long long)(now-f.at),f.seen?"":" (never seen in flight)");
-        framevr::logging::Write(line);
+        if(count++<4) {   // the first few in full, the rest counted
+            const size_t used=std::strlen(ended);
+            snprintf(ended+used,sizeof ended-used,"%smissile %u %.1f cells in %llu ms%s",used?"; ":"",
+                f.missile,std::hypot(f.x-f.ox,f.y-f.oy),(unsigned long long)(now-f.at),f.seen?"":" (never seen in flight)");
+        }
         f={};
+    }
+    if(count&&now-wrote>=1000) {
+        char line[512];snprintf(line,sizeof line,"Frame missile flight: %d ended: %s%s",count,ended,count>4?"; ...":"");
+        framevr::logging::Write(line);
+        wrote=now;count=0;ended[0]=0;
     }
 }
 

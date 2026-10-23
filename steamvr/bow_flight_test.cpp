@@ -339,5 +339,19 @@ int main() {
         --gate.epoch;render.Publish(live,gate,false,2200);
         Check(render.Read(live.session,2200,2200,pose,visible)&&!visible,"out-of-reach preview remains hidden with valid tracking");
     }
+    {   // Spell lock: a 0.6 m monster 10 m away, the hand 1.4 m up
+        const Vec origin{0,1.4f,0},ground{10,0,0},bottom{10,.2f,0},top{10,.4f,0};const float radius=.2f;
+        Check(Near(LockAimPoint(ground,true,bottom,top).y,.3f)&&Near(LockAimPoint(ground,true,bottom,top).x,10),"the lock aims at the body's middle");
+        Check(Near(LockAimPoint(ground,false,bottom,top).y,1)&&Near(LockAimPoint(ground,false,bottom,top).x,10),"no body: the old 1 m point");
+        Vec old{},body{};float t=0;
+        Check(LockAimDirection(origin,LockAimPoint(ground,false,bottom,top),false,old)&&!CapsuleEntry(origin,origin+old*12,bottom,top,radius,t),
+              "the 1 m aim flies over a small monster");
+        Check(LockAimDirection(origin,LockAimPoint(ground,true,bottom,top),false,body)&&CapsuleEntry(origin,origin+body*12,bottom,top,radius,t),
+              "the body aim hits it");
+        Vec flat{};
+        Check(LockAimDirection(origin,LockAimPoint(ground,true,bottom,top),true,flat)&&flat.y==0&&Near(flat.x,1),"planar spells stay flat");
+        Vec kept{0,0,-1};
+        Check(!LockAimDirection(origin,origin+Vec{.1f,-.2f,0},false,kept)&&kept.z==-1,"too close keeps the direction");
+    }
     std::puts("Physical bow: release ownership, cancellation, cave coordinates, swept contacts, walls, speed, visual-axis, mesh-binding, preview recovery and render-pose tests passed");
 }
