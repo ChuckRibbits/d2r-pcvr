@@ -95,37 +95,46 @@ static void TestClubCodeRecognition() {
 
 static void TestTorchQualification() {
     // 1. Plain standard club without any fire: NOT qualified as a burning torch
-    const auto plainClub = EvaluateQualification("clb ", 2 /* Normal */, 0 /* sockets */, false /* enchant */, false /* dev */);
+    const auto plainClub = EvaluateQualification("clb ", 0 /* fireDamage */, false /* enchant */, false /* dev */);
     assert(!IsTorchQualified(static_cast<uint32_t>(plainClub)));
     assert(plainClub == TorchQualification::BaseClub);
 
     // 2. Club with Sorceress Enchant active: QUALIFIED
-    const auto enchantedClub = EvaluateQualification("clb ", 2, 0, true /* enchant */, false);
+    const auto enchantedClub = EvaluateQualification("clb ", 0, true /* enchant */, false);
     assert(IsTorchQualified(static_cast<uint32_t>(enchantedClub)));
     assert((static_cast<uint32_t>(enchantedClub) & static_cast<uint32_t>(TorchQualification::EnchantBuff)) != 0);
 
-    // 3. Unique club Felloak: QUALIFIED
-    const auto felloak = EvaluateQualification("clb ", 7 /* Unique */, 0, false, false);
-    assert(IsTorchQualified(static_cast<uint32_t>(felloak)));
-    assert((static_cast<uint32_t>(felloak) & static_cast<uint32_t>(TorchQualification::UniqueFelloak)) != 0);
+    // 3. Club with fire damage (e.g. Felloak with 8 fire damage, or ruby with 4, or Ral with 30): QUALIFIED
+    const auto fireDamageClub = EvaluateQualification("clb ", 8 /* fire damage */, false, false);
+    assert(IsTorchQualified(static_cast<uint32_t>(fireDamageClub)));
+    assert((static_cast<uint32_t>(fireDamageClub) & static_cast<uint32_t>(TorchQualification::FireDamage)) != 0);
 
-    // 4. Socketed club containing a Ruby or Ral rune (socketedCount > 0): QUALIFIED
-    const auto socketedClub = EvaluateQualification("clb ", 2, 1 /* 1 socketed item */, false, false);
-    assert(IsTorchQualified(static_cast<uint32_t>(socketedClub)));
-    assert((static_cast<uint32_t>(socketedClub) & static_cast<uint32_t>(TorchQualification::SocketedFire)) != 0);
+    // 4. Socketed club with NO fire damage (empty socket or emerald/sapphire/topaz): NOT QUALIFIED!
+    const auto emptySocketClub = EvaluateQualification("clb ", 0 /* fireDamage = 0 */, false, false);
+    assert(!IsTorchQualified(static_cast<uint32_t>(emptySocketClub)));
+
+    // 4b. Club socketed with Ruby (e.g. 4 fire damage): QUALIFIED!
+    const auto socketedRubyClub = EvaluateQualification("clb ", 4 /* 4 fire damage */, false, false);
+    assert(IsTorchQualified(static_cast<uint32_t>(socketedRubyClub)));
+    assert((static_cast<uint32_t>(socketedRubyClub) & static_cast<uint32_t>(TorchQualification::FireDamage)) != 0);
 
     // 5. Dev mode test override on plain club: QUALIFIED
-    const auto devClub = EvaluateQualification("clb ", 2, 0, false, true /* dev */);
+    const auto devClub = EvaluateQualification("clb ", 0, false, true /* dev */);
     assert(IsTorchQualified(static_cast<uint32_t>(devClub)));
 
     // 6. Non-club weapon (e.g., Short Sword "ssd ") with enchant: NOT a torch (it is an enchanted blade, not a torch club)
-    const auto enchantedSword = EvaluateQualification("ssd ", 2, 0, true, false);
+    const auto enchantedSword = EvaluateQualification("ssd ", 0, true, false);
     assert(!IsTorchQualified(static_cast<uint32_t>(enchantedSword)));
     assert(enchantedSword == TorchQualification::None);
 
-    // 7. Spiked Club with sockets: QUALIFIED
-    const auto spikedSocketed = EvaluateQualification("spc ", 2, 2, false, false);
-    assert(IsTorchQualified(static_cast<uint32_t>(spikedSocketed)));
+    // 7. Spiked Club without fire damage: NOT qualified
+    const auto spikedEmpty = EvaluateQualification("spc ", 0, false, false);
+    assert(!IsTorchQualified(static_cast<uint32_t>(spikedEmpty)));
+
+    // 7b. Spiked Club with fire damage (e.g. Ral rune giving 30): QUALIFIED!
+    const auto spikedRal = EvaluateQualification("spc ", 30, false, false);
+    assert(IsTorchQualified(static_cast<uint32_t>(spikedRal)));
+    assert((static_cast<uint32_t>(spikedRal) & static_cast<uint32_t>(TorchQualification::FireDamage)) != 0);
 }
 
 static void TestShaderLightRadius() {

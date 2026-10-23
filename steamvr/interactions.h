@@ -113,6 +113,8 @@ struct Item {
     uint32_t quality=0;
     int32_t qualityRecord=-1;
     uint32_t socketed=0;
+    uint32_t fireAffix=0;
+    uint32_t fireDamage=0;
     bool operator==(const Item&) const = default;
 };
 constexpr uint32_t Code(char a,char b=' ',char c=' ',char d=' ') {
@@ -280,7 +282,7 @@ inline bool HasTorchInHand(const Snapshot& s, int hand, uint32_t& outFlags) {
     codeText[3] = static_cast<char>((item.code >> 24) & 0xFF);
     const bool enchant = s.effects.Has(16);
     const bool devClub = false;
-    const auto qual = framevr::torch::EvaluateQualification(codeText, item.quality, item.socketed, enchant, devClub);
+    const auto qual = framevr::torch::EvaluateQualification(codeText, item.fireDamage, enchant, devClub);
     outFlags = static_cast<uint32_t>(qual);
     return framevr::torch::IsTorchQualified(outFlags);
 }

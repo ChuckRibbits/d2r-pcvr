@@ -76,4 +76,6 @@ bool LocalPlayerUnit(uintptr_t& unit);
 // UI thread: a worn item's new durability onto the local player's client item.
 void MirrorClientDurability(uint32_t itemId,int value);
 bool LocalPlayerId(uint32_t& id);
+// Returns the maximum fire damage on the equipped item at body location (4=right hand, 5=left hand, 9/10=swap).
+int EquippedFireDamage(int location);
 }

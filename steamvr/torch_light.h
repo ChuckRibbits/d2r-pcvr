@@ -13,8 +13,11 @@ using math::Quat;
 
 // Default geometry for a one-handed club torch:
 // OpenXR grip coordinates: +Y points up along handle/knuckles, -Z forward.
-// The torch head is situated at the top of the handle (~32cm along Y, slightly tilted forward -Z).
-inline constexpr Vec DefaultShaftOffset{0.0f, 0.32f, -0.06f};
+// The torch head is situated at the top of the handle (~44cm along shaft).
+inline constexpr Vec DefaultShaftOffset{0.0f, 0.44f, -0.06f};
+
+// Dedicated skill identifier for handheld torch flame rendering
+inline constexpr int TorchSkill = 999;
 
 // Lighting parameters aligned with D2R native torch reaches (18.0 - 20.0 units)
 inline constexpr float DefaultBaseRadius = 18.0f;
@@ -106,18 +109,14 @@ inline bool IsTorchClubCode(std::string_view code) {
 enum class TorchQualification : uint32_t {
     None = 0,
     BaseClub = 1 << 0,         // Base item is 1H Club ("clb") or Spiked Club ("spc")
-    SocketedFire = 1 << 1,     // Weapon has socketed Ruby, Ral rune, or fire gems
-    UniqueFelloak = 1 << 2,    // The unique Club Felloak (inherent fire damage)
-    EnchantBuff = 1 << 3,      // Player is affected by Sorceress Enchant spell (state 16)
-    MagicFireAffix = 1 << 4,   // Magic or rare prefix with fire damage / light radius
-    DevOverride = 1 << 5       // Explicit dev-mode override / test preset
+    FireDamage = 1 << 1,       // Weapon deals fire damage (> 0)
+    EnchantBuff = 1 << 2,      // Player is affected by Sorceress Enchant spell (state 16)
+    DevOverride = 1 << 3       // Explicit dev-mode override / test preset
 };
 
 inline constexpr uint32_t TorchFireMask = 
-    static_cast<uint32_t>(TorchQualification::SocketedFire) |
-    static_cast<uint32_t>(TorchQualification::UniqueFelloak) |
+    static_cast<uint32_t>(TorchQualification::FireDamage) |
     static_cast<uint32_t>(TorchQualification::EnchantBuff) |
-    static_cast<uint32_t>(TorchQualification::MagicFireAffix) |
     static_cast<uint32_t>(TorchQualification::DevOverride);
 
 // Evaluates whether a set of qualification flags satisfies the torch requirements
@@ -127,8 +126,12 @@ inline bool IsTorchQualified(uint32_t flags) {
     return isClub && hasFire;
 }
 
-// Evaluates an equipped weapon's properties to produce the qualification flags
-inline TorchQualification EvaluateQualification(std::string_view code, uint32_t quality, uint32_t socketedCount, bool enchantActive, bool devMode = false) {
+// Evaluates an equipped weapon's properties to produce the qualification flags.
+// Pure fire-damage rule:
+// A club qualifies as a torch IF AND ONLY IF it has actual fire damage (> 0),
+// Sorceress Enchant buff is active, or dev mode override is enabled.
+// No checks by sockets, socketed count, affixes, or Felloak ID remain.
+inline TorchQualification EvaluateQualification(std::string_view code, uint32_t fireDamage, bool enchantActive, bool devMode = false) {
     if (!IsTorchClubCode(code)) return TorchQualification::None;
     
     uint32_t flags = static_cast<uint32_t>(TorchQualification::BaseClub);
@@ -138,17 +141,8 @@ inline TorchQualification EvaluateQualification(std::string_view code, uint32_t 
     if (enchantActive) {
         flags |= static_cast<uint32_t>(TorchQualification::EnchantBuff);
     }
-    // Felloak is the unique club (Quality::Unique = 7 + code "clb")
-    if (quality == 7 && code.substr(0, 3) == "clb") {
-        flags |= static_cast<uint32_t>(TorchQualification::UniqueFelloak);
-    }
-    // Socketed with fire gems / runes
-    if (socketedCount > 0) {
-        flags |= static_cast<uint32_t>(TorchQualification::SocketedFire);
-    }
-    // Magic or rare club (fire affix / charges)
-    if (quality == 4 || quality == 6) {
-        flags |= static_cast<uint32_t>(TorchQualification::MagicFireAffix);
+    if (fireDamage > 0) {
+        flags |= static_cast<uint32_t>(TorchQualification::FireDamage);
     }
     return static_cast<TorchQualification>(flags);
 }

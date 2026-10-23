@@ -2467,8 +2467,18 @@ void Input() {
             elementalScene.hands[h].element=elements::Element::Fire;
             elementalScene.hands[h].opacity=1.0f;
             elementalScene.hands[h].pulse=0.5f;
-            elementalScene.hands[h].skill=36;
-            elementalScene.hands[h].pose={framevr::torch::ComputeTorchTip(interactionInput.hand[h].p,interactionInput.hand[h].q),interactionInput.hand[h].q};
+            elementalScene.hands[h].skill=framevr::torch::TorchSkill;
+            math::Vec shaftOffset = framevr::torch::DefaultShaftOffset;
+#ifdef D2RVR_NATIVE_OPENXR
+            skel::MeleeWeaponPose wpose;
+            if (skel::MeleeWeapon(wpose, h)) {
+                const math::Vec gAxis{wpose.gripAxis[0], wpose.gripAxis[1], wpose.gripAxis[2]};
+                if (math::Dot(gAxis, gAxis) > 0.1f) {
+                    shaftOffset = gAxis * 0.44f;
+                }
+            }
+#endif
+            elementalScene.hands[h].pose={framevr::torch::ComputeTorchTip(interactionInput.hand[h].p,interactionInput.hand[h].q,shaftOffset),interactionInput.hand[h].q};
             elementalScene.session=gamestate::LocalPlayer();
             elementalScene.at=interactionInput.at;
             if(elementalScene.time==0.0f)elementalScene.time=float(interactionInput.at%60000)/1000.f;

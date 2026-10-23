@@ -28,20 +28,29 @@ Implementado en [steamvr/torch_light.h](../../steamvr/torch_light.h):
 ---
 
 ## 3. Fase 2: Lógica de Cualificación e Inspección de Equipo
-Implementado en [steamvr/torch_light.h](../../steamvr/torch_light.h) y [steamvr/interactions.h](../../steamvr/interactions.h):
+Implementado en [steamvr/torch_light.h](../../steamvr/torch_light.h), [steamvr/interactions.h](../../steamvr/interactions.h) y [vr/combat.cpp](../../vr/combat.cpp):
 
 - `HasTorchInHand(Snapshot, hand, outFlags)`: verifica en cada fotograma si el conjunto activo de armas contiene un garrote válido con fuego en la mano indicada (0 = principal, 1 = secundaria).
-- **Criterios de Activación:**
-  - Engarces con gemas de fuego o runas (`socketed > 0`).
-  - Garrote único *Felloak* (`quality == 7` y código `"clb"`).
-  - Hechizo de Hechicera *Enchant* activo en el jugador (`effects.Has(16)`).
-  - Override para pruebas en modo desarrollo (`developer && clb`).
+- **Criterios de Activación (basados en daño de fuego):**
+  - **Daño de Fuego en el Garrote (`fireDamage > 0`):** Leído directamente de las estadísticas nativas del motor D2R (`item_firemindam` / `item_firemaxdam`, stats 48 y 49). Cubre de forma unificada:
+    - Garrotes con rubíes engarzados (daño de fuego agregado).
+    - Garrotes con runa Ral engarzada (5-30 daño de fuego).
+    - Garrotes con joyas u orbes engarzados que aporten daño de fuego.
+    - Garrotes con huecos vacíos **NO** prenden (daño de fuego = 0).
+    - Garrotes con otras gemas (zafiro, esmeralda, topacio) **NO** prenden.
+  - **Garrote Único *Felloak* (`quality == 7` y código `"clb"`):** 6-8 daño de fuego inherente.
+  - **Afijos Mágicos/Raros de Fuego (`fireAffix != 0`):** sufijos como *"of Flame"*, *"of Fire"*, *"of Burning"*.
+  - **Hechizo de Hechicera *Enchant* Activo (`effects.Has(16)`):** Imbuye el arma con daño de fuego en tiempo real.
+  - **Override de Desarrollo:** Prueba directa en modo desarrollador.
 
 ---
 
-## 4. Fase 3: Inyección en Render Pipeline y Shader ReShade
-Implementado en [vr/vrcam.cpp](../../vr/vrcam.cpp) y [reshade/D2R_DepthFog.fx](../../reshade/D2R_DepthFog.fx):
+## 4. Fase 3: Inyección en Render Pipeline, Shader ReShade y Partículas
+Implementado en [vr/vrcam.cpp](../../vr/vrcam.cpp), [steamvr/transport.cpp](../../steamvr/transport.cpp) y [reshade/D2R_DepthFog.fx](../../reshade/D2R_DepthFog.fx):
 
+- **Alineación Precisa de la Punta (`skel::MeleeWeapon`):**
+  - Tanto la fuente de luz en `vrcam.cpp` como el emisor de partículas de fuego en `transport.cpp` consultan la orientación real del eje del garrote (`wpose.gripAxis` / `wpose.axis`).
+  - Las partículas de fuego se sitúan a lo largo del vector exacto del eje del garrote en el espacio del mando (`shaftOffset = gAxis * 0.44f`), situándose fielmente sobre la cabeza de la porra en cualquier ángulo.
 - **Asignación del Slot 0:** El slot 0 del array uniforme `GameLightPos[16]` y `GameLightCol[16]` se reserva para la antorcha sostenida en la mano.
 - **Transformación de Coordenadas:** La punta del garrote obtenida mediante `skel::MeleeWeapon(wpose, hand)` se proyecta relativa al héroe y suelo: `(tipX - heroX, tipY - floorY, tipZ - heroZ)`.
 - **Escala de Radio Exacta:** `ComputeShaderLightRadius` normaliza el alcance respecto al baseline del techo (`CeilTorchRadius`), garantizando la distancia exacta configurada.
