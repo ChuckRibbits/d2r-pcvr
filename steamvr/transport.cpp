@@ -1745,6 +1745,14 @@ void StepDroppedBottles() {
             if(w.valid&&now>=w.at&&now-w.at<=100)weapons[i]={true,w.blade.base,w.blade.tip,w.blade.radius};
         }
     }
+    // A hand without a weapon capsule (empty, or the off hand without dual
+    // wielding or a shield) still pushes, as a fist at the controller.
+    for(int h=0;h<2&&motionControls.load();++h) {
+        if(weapons[size_t(h)].active||!in.tracked[h]||out.bottleHand==h)continue;
+        const auto p=in.stage.World(in.hand[h].p);
+        const auto forward=math::Rotate(in.stage.base,math::Rotate(in.hand[h].q,{0,0,-1}));
+        weapons[size_t(h)]={true,p-forward*.03f,p+forward*.08f,.045f};
+    }
     droppedBottles->Weapons(weapons);
     droppedBottles->Advance(in.time,in.stage.anchor);
     // A light tick in the hand whose weapon struck a bottle or a prop.

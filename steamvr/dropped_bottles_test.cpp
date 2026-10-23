@@ -331,6 +331,24 @@ int main() {
         assert(last);
         assert(Moves(world).size()<=props::MaxMoving);
     }
+    // A cup on a plate rests on the plate's body: no plane is added under it,
+    // so with the plate gone it falls to the floor when knocked.
+    {
+        World world;const Vec player{0,0,0};
+        const props::Support table{false,.75f,-.5f,-.5f,.5f,.5f};
+        props::Support onPlate{false,.77f};onPlate.onProp=true;
+        Prop plate=Cup(81,{0,.75f,0},table);plate.bounds={{-.1f,0,-.1f},{.1f,.02f,.1f}};
+        world.Props(Scan(player,{plate,Cup(82,{.45f,.77f,0},onPlate)}));
+        assert(world.Frozen()==2&&world.Supports()==1); // the table alone
+        auto gone=Scan(player,{Cup(82,{.45f,.77f,0},onPlate)});gone.lost=1;gone.lostEntities[0]=81;
+        world.Props(gone);
+        assert(world.Frozen()==1&&world.Supports()==0);
+        std::array<Collider,Colliders> weapons{};double t=0;float lowest=10;
+        for(int i=0;i<8;++i){weapons[0]=Blade({.3f+i*.03f,.82f,-.3f},{.3f+i*.03f,.82f,.3f});world.Weapons(weapons);t+=1/90.;world.Advance(t,player);}
+        weapons[0]={};world.Weapons(weapons);
+        for(int i=0;i<90*3;++i){t+=1/90.;world.Advance(t,player);for(const auto& m:Moves(world))lowest=std::min(lowest,m.p.y);}
+        assert(lowest<.1f);
+    }
     // No more than MaxMoving props move at once.
     {
         World world;const Vec player{0,0,0};

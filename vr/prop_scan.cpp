@@ -102,6 +102,7 @@ struct Found {
     uintptr_t transforms=0,bounds=0;
     int idPool=-1,boundsPool=-1;
     unsigned nearby=0,matched=0;
+    unsigned unbounded=0,unrigid=0,sized=0,beyond=0; // catalogued props in reach left out, and why
     double ms=0;
 };
 props::Catalog catalog;
@@ -232,23 +233,36 @@ Found Work(const Job& job) {
             around.push_back(e.worldBounds);
     std::vector<const Near*> found;
     for(const auto& e:nearby) {
-        if(e.kind<0||!e.reach||!e.bounded)continue;
+        if(e.kind<0||!e.reach)continue;
+        if(!e.bounded){++f.unbounded;continue;}
         props::Placement at;
-        if(!props::Decompose(e.world,at))continue;
+        if(!props::Decompose(e.world,at)){++f.unrigid;continue;}
         const Vec size=e.localBounds.hi-e.localBounds.lo;
         const float x=size.x*at.scale.x/u,y=size.y*at.scale.y/u,z=size.z*at.scale.z/u;
-        if(std::max({x,y,z})>props::MaxExtent||std::min({x,y,z})<props::MinExtent)continue;
+        if(std::max({x,y,z})>props::MaxExtent||std::min({x,y,z})<props::MinExtent){++f.sized;continue;}
         found.push_back(&e);
     }
     auto distance=[&](const Near* e){return std::hypot(e->world[12]-r.centre[0],e->world[14]-r.centre[2]);};
     std::sort(found.begin(),found.end(),[&](const Near* a,const Near* b){return distance(a)<distance(b);});
-    for(const auto* e:found) {
-        if(f.scan.count>=props::MaxSeen)break;
+    if(found.size()>props::MaxSeen){f.beyond=unsigned(found.size()-props::MaxSeen);found.resize(props::MaxSeen);}
+    // What each rests on: another of these props (its body holds it), or a
+    // surface; guessed surfaces side by side join into one.
+    std::vector<Box> placed;for(const auto* e:found)placed.push_back(props::WorldBounds(e->localBounds,e->world));
+    std::vector<props::Support> supports(found.size());
+    for(size_t i=0;i<found.size();++i) {
+        bool onProp=false;
+        for(size_t j=0;j<found.size()&&!onProp;++j)onProp=j!=i&&props::RestsOn(placed[i],placed[j],u);
+        if(onProp){supports[i]={false,placed[i].lo.y};supports[i].onProp=true;}
+        else supports[i]=props::FindSupport(placed[i],around,r.floor,u);
+    }
+    props::JoinLedges(supports,u);
+    for(size_t i=0;i<found.size();++i) {
+        const auto* e=found[i];
         auto& s=f.scan.seen[f.scan.count++];
         const auto& kind=catalog.KindAt(unsigned(e->kind));
         s.entity=e->entity;s.kind=uint16_t(e->kind);s.shape=kind.shape;s.material=kind.material;
         std::memcpy(s.world,e->world,64);s.local=e->localBounds;
-        s.support=props::FindSupport(props::WorldBounds(e->localBounds,e->world),around,r.floor,u);
+        s.support=supports[i];
         Tracked t;t.entity=e->entity;t.parent=e->parent;t.transformIndex=e->index;t.boundsIndex=e->boundsIndex;
         std::memcpy(t.local,e->local,12);std::memcpy(t.world,e->world,64);t.bounds=e->localBounds;t.hasBounds=true;
         f.tracked.push_back(t);
@@ -274,6 +288,7 @@ props::Poses pending{};
 uint64_t applied=0; // the write pass only
 std::atomic<unsigned> scans{0},failed{0},seenProps{0},matchedProps{0},writes{0},settles{0},lost{0},boundsRefused{0},passes{0};
 std::atomic<unsigned> struckKnocks{0},chainedKnocks{0},mostSeen{0};
+std::atomic<unsigned> leftOut[4]{}; // the last scan's catalogued props in reach left out: unbounded, unrigid, size, beyond the nearest
 uint64_t reportedAt=0; // Report's caller only
 std::atomic<uint32_t> scanMicros{0};
 
@@ -371,7 +386,10 @@ bool Latest(props::Scan& out) {
     job=0;
     if(f.idPool>=0)idPool=f.idPool;
     if(f.boundsPool>=0)boundsPool=f.boundsPool;
-    if(f.ok){++scans;scanMicros=uint32_t(f.ms*1000);seenProps=f.scan.count;matchedProps=f.matched;if(f.scan.count>mostSeen)mostSeen=f.scan.count;}
+    if(f.ok) {
+        ++scans;scanMicros=uint32_t(f.ms*1000);seenProps=f.scan.count;matchedProps=f.matched;if(f.scan.count>mostSeen)mostSeen=f.scan.count;
+        leftOut[0]=f.unbounded;leftOut[1]=f.unrigid;leftOut[2]=f.sized;leftOut[3]=f.beyond;
+    }
     else ++failed;
     lastWhy=f.why;
     out=f.scan;
@@ -418,10 +436,12 @@ void Report() {
     const auto s=scans.exchange(0),x=failed.exchange(0),w=writes.exchange(0),t=settles.exchange(0),l=lost.exchange(0),
         b=boundsRefused.exchange(0),p=passes.exchange(0),k=struckKnocks.exchange(0),c=chainedKnocks.exchange(0),most=mostSeen.exchange(0);
     if(!s&&!x&&!w&&!l)return;
-    char line[480];
-    std::snprintf(line,sizeof line,"Frame props: ten seconds: scans=%u failed=%u (last %.1f ms%s%s) props in reach now=%u most=%u, catalogued within 6 m=%u; "
-        "storages ids=%d bounds=%d; knocks by weapons=%u by moving things=%u; write passes=%u moves=%u settles=%u lost=%u bounds refused=%u",
-        s,x,scanMicros.load()/1000.,*lastWhy?", ":"",lastWhy,seenProps.load(),most,matchedProps.load(),idPool,boundsPool,k,c,p,w,t,l,b);
+    char line[560];
+    std::snprintf(line,sizeof line,"Frame props: ten seconds: scans=%u failed=%u (last %.1f ms%s%s) props in reach now=%u most=%u, catalogued within 6 m=%u, "
+        "left out now: no bounds=%u not rigid=%u size=%u beyond the nearest %u=%u; storages ids=%d bounds=%d; knocks by weapons=%u by moving things=%u; "
+        "write passes=%u moves=%u settles=%u lost=%u bounds refused=%u",
+        s,x,scanMicros.load()/1000.,*lastWhy?", ":"",lastWhy,seenProps.load(),most,matchedProps.load(),leftOut[0].load(),leftOut[1].load(),leftOut[2].load(),
+        props::MaxSeen,leftOut[3].load(),idPool,boundsPool,k,c,p,w,t,l,b);
     logging::Write(line);
 }
 }

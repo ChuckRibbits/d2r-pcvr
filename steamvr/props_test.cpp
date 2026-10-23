@@ -90,13 +90,37 @@ int main() {
         const std::array<Box,2> shelves{room,cabinet};
         s=FindSupport(at(cup,{2.5f,1.1f,.25f}),shelves,floor,1);
         assert(!s.floor&&std::fabs(s.y-1.1f)<1e-5f&&s.x0==2&&s.x1==3);
-        // A huge surface is cut to the reach either side of the prop.
-        const Box ledge{{-50,0,-50},{50,1,50}};
-        s=FindSupport(at(cup,{4,1,4}),std::span(&ledge,1),floor,1);
-        assert(std::fabs(s.x0-(4-SupportReach))<1e-4f&&std::fabs(s.x1-(4+SupportReach))<1e-4f);
-        // Nothing under it: a small plane at its own height.
+        // A long counter is cut to the reach either side of the prop.
+        const Box counter{{-50,0,0},{50,1,.6f}};
+        s=FindSupport(at(cup,{4,1,.3f}),std::span(&counter,1),floor,1);
+        assert(!s.guessed&&std::fabs(s.x0-(4-SupportReach))<1e-4f&&std::fabs(s.x1-(4+SupportReach))<1e-4f&&s.z0==0&&s.z1==.6f);
+        // Inside a building (a mantle that is part of it): guessed, just past the prop.
+        const Box building{{-6,0,-5},{6,6,5}};
+        s=FindSupport(at(cup,{4,1.3f,4}),std::span(&building,1),floor,1);
+        assert(!s.floor&&s.guessed&&std::fabs(s.y-1.3f)<1e-5f&&std::fabs(s.x0-(4-.04f-GuessMargin))<1e-4f&&std::fabs(s.z1-(4+.04f+GuessMargin))<1e-4f);
+        // Nothing under it: the same small guessed plane at its own height.
         s=FindSupport(at(cup,{8,1.5f,8}),around,floor,1);
-        assert(!s.floor&&std::fabs(s.y-1.5f)<1e-5f&&s.x1-s.x0<.2f&&s.x0<7.96f&&s.x1>8.04f);
+        assert(!s.floor&&s.guessed&&std::fabs(s.y-1.5f)<1e-5f&&s.x1-s.x0<.2f&&s.x0<7.96f&&s.x1>8.04f);
+        // Books along a mantle join into one plane; one on another shelf, or
+        // farther along, does not.
+        std::array<Support,5> row{};
+        for(int i=0;i<3;++i)row[size_t(i)]=FindSupport(at(cup,{4+i*.15f,1.3f,4}),std::span(&building,1),floor,1);
+        row[3]=FindSupport(at(cup,{4.15f,1.6f,4}),std::span(&building,1),floor,1);
+        row[4]=FindSupport(at(cup,{6,1.3f,4}),std::span(&building,1),floor,1);
+        const auto tableTop=FindSupport(onTable,around,floor,1);
+        JoinLedges(row,1);
+        assert(row[0]==row[1]&&row[1]==row[2]);
+        assert(std::fabs(row[0].x0-(4-.04f-GuessMargin))<1e-4f&&std::fabs(row[0].x1-(4.3f+.04f+GuessMargin))<1e-4f);
+        assert(!(row[3]==row[0])&&row[3].x1-row[3].x0<.2f);
+        assert(!(row[4]==row[0])&&row[4].x1-row[4].x0<.2f);
+        std::array<Support,2> mixed{tableTop,row[4]};JoinLedges(mixed,1);
+        assert(mixed[0]==tableTop);                               // only guessed planes join
+        // A cup on a plate rests on the plate, not one beside or below it.
+        const Box plate{{3.9f,1.29f,3.9f},{4.1f,1.31f,4.1f}};
+        assert(RestsOn(at(cup,{4,1.31f,4}),plate,1));
+        assert(!RestsOn(at(cup,{4.3f,1.31f,4}),plate,1));
+        assert(!RestsOn(at(cup,{4,1.41f,4}),plate,1));
+        assert(!RestsOn(plate,at(cup,{4,1.31f,4}),1));
         // Units scale with the renderer's.
         const Box scaled{{-.13f,3.3f*.75f,-.13f},{.13f,3.3f*.85f,.13f}};
         const Box scaledTable{{-1,0,-1},{1,3.3f*.75f,1}};

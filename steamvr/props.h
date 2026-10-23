@@ -128,21 +128,30 @@ inline bool Near(const Box& a,const Box& b,float tolerance) {
 }
 
 // ---- What a prop rests on ----
-// A horizontal surface under it: the floor, or a plane at y over a footprint
-// (x0, z0)-(x1, z1). Units are whatever the boxes use.
+// A horizontal surface under it: the floor, another prop (its own body holds
+// it, nothing is added), or a plane at y over a footprint (x0, z0)-(x1, z1).
+// A guessed plane is one the bounds cannot tell: a mantle or ledge that is
+// part of a building. Units are whatever the boxes use.
 struct Support {
     bool floor=true;
     float y=0,x0=0,z0=0,x1=0,z1=0;
+    bool guessed=false,onProp=false;
     bool operator==(const Support&) const=default;
 };
 inline constexpr float FloorTouch=.05f,AboveTop=.03f,SideTolerance=.01f; // metres
 inline constexpr float SupportReach=1.5f; // metres either side of the prop at most
+// Bounds this wide both ways are a room or a building, not furniture: what
+// the prop stands on inside them is unknown.
+inline constexpr float LargeSupport=1.6f;
+inline constexpr float GuessMargin=.03f; // a guessed plane reaches this far past the prop
+inline constexpr float LedgeHeight=.015f,LedgeGap=.3f; // guessed planes this close join into one
 // Among the bounds of the entities around a prop (not other props), the most
 // specific one under it: the smallest footprint containing its centre whose
 // height range holds its bottom. The surface is that entity's top, or the
 // prop's own bottom where that is lower (a shelf inside a cabinet, or a prop
 // sunk a little into the top): never above the prop, which would pop it up.
-// Nothing found leaves a plane just past the prop's own footprint.
+// Inside a room or building, or with nothing found, the plane is guessed: just
+// past the prop's own footprint at its bottom, until JoinLedges widens it.
 inline Support FindSupport(const Box& prop,std::span<const Box> around,float floor,float unitsPerMetre) {
     const float u=unitsPerMetre,bottom=prop.lo.y;
     const float cx=(prop.lo.x+prop.hi.x)*.5f,cz=(prop.lo.z+prop.hi.z)*.5f;
@@ -155,14 +164,46 @@ inline Support FindSupport(const Box& prop,std::span<const Box> around,float flo
            bottom<b.lo.y-SideTolerance*u||bottom>b.hi.y+AboveTop*u)continue;
         if(!best||area<bestArea){best=&b;bestArea=area;}
     }
-    const float reach=SupportReach*u;
-    if(!best) {
-        const float hx=(prop.hi.x-prop.lo.x)*.75f,hz=(prop.hi.z-prop.lo.z)*.75f;
-        return {false,bottom,cx-hx,cz-hz,cx+hx,cz+hz};
+    if(!best||std::min(best->hi.x-best->lo.x,best->hi.z-best->lo.z)>LargeSupport*u) {
+        const float m=GuessMargin*u,y=best?std::min(bottom,best->hi.y):bottom;
+        Support s{false,std::max(y,floor),prop.lo.x-m,prop.lo.z-m,prop.hi.x+m,prop.hi.z+m};s.guessed=true;
+        return s;
     }
+    const float reach=SupportReach*u;
     const float y=std::min(bottom,best->hi.y);
     return {false,std::max(y,floor),std::max(best->lo.x,cx-reach),std::max(best->lo.z,cz-reach),
             std::min(best->hi.x,cx+reach),std::min(best->hi.z,cz+reach)};
+}
+// Props side by side on the same unseen surface (books along a mantle): their
+// guessed planes join into one over the row, so each falls at the row's
+// edge, not at its own.
+inline void JoinLedges(std::span<Support> supports,float unitsPerMetre) {
+    const size_t n=supports.size();
+    std::vector<size_t> group(n);
+    for(size_t i=0;i<n;++i)group[i]=i;
+    auto root=[&](size_t i){while(group[i]!=i)i=group[i]=group[group[i]];return i;};
+    const float h=LedgeHeight*unitsPerMetre,gap=LedgeGap*unitsPerMetre;
+    for(size_t i=0;i<n;++i)for(size_t j=i+1;j<n;++j) {
+        const auto& a=supports[i];const auto& b=supports[j];
+        if(!a.guessed||!b.guessed||std::fabs(a.y-b.y)>h)continue;
+        const float dx=std::max({0.f,b.x0-a.x1,a.x0-b.x1}),dz=std::max({0.f,b.z0-a.z1,a.z0-b.z1});
+        if(dx<=gap&&dz<=gap)group[root(i)]=root(j);
+    }
+    std::vector<Support> joined(supports.begin(),supports.end());
+    for(size_t i=0;i<n;++i) {
+        if(!supports[i].guessed)continue;
+        auto& r=joined[root(i)];const auto& s=supports[i];
+        r.x0=std::min(r.x0,s.x0);r.z0=std::min(r.z0,s.z0);r.x1=std::max(r.x1,s.x1);r.z1=std::max(r.z1,s.z1);r.y=std::min(r.y,s.y);
+    }
+    for(size_t i=0;i<n;++i)if(supports[i].guessed)supports[i]=joined[root(i)];
+}
+// Does a prop sit on another one (a cup on a plate, anything on a barrel)?
+// Its top is at the prop's bottom and its footprint holds the prop's centre.
+inline bool RestsOn(const Box& prop,const Box& other,float unitsPerMetre) {
+    const float u=unitsPerMetre;
+    const float cx=(prop.lo.x+prop.hi.x)*.5f,cz=(prop.lo.z+prop.hi.z)*.5f;
+    return cx>=other.lo.x-SideTolerance*u&&cx<=other.hi.x+SideTolerance*u&&cz>=other.lo.z-SideTolerance*u&&cz<=other.hi.z+SideTolerance*u&&
+        other.hi.y>=prop.lo.y-AboveTop*u&&other.hi.y<=prop.lo.y+.02f*u&&other.lo.y<prop.lo.y-.005f*u;
 }
 
 // ---- Waking a prop ----
@@ -189,10 +230,10 @@ inline bool Overlap(const Box& a,const Box& b) {
 }
 
 // ---- Between the game side and the physics ----
-inline constexpr unsigned MaxSeen=64;   // nearest props simulated, frozen until touched
+inline constexpr unsigned MaxSeen=160;  // nearest props simulated, frozen until touched
 inline constexpr unsigned MaxMoving=12; // props moving at once
 inline constexpr unsigned MaxLost=16;
-inline constexpr float MaxExtent=1.2f,MinExtent=.01f; // metres: a prop's largest (a chair) and smallest size
+inline constexpr float MaxExtent=1.2f,MinExtent=.003f; // metres: a prop's largest (a chair) and smallest size
 // A prop near the player, as the renderer has it now (render units).
 struct Seen {
     uint32_t entity=0;

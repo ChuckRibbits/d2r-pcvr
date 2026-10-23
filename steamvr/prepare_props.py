@@ -20,7 +20,7 @@ import struct
 from pathlib import Path
 from game_assets import open_assets
 
-VERSION = 2   # the cache; 2 adds wall-faded props, static native bodies, furniture and cloth
+VERSION = 3   # the cache; 2 adds wall-faded props, static native bodies, furniture and cloth; 3 barrels, shovels, hay
 FORMAT = 1    # props.bin layout, read by steamvr/props.h
 MAGIC = 0x31505250   # 'PRP1'
 FILES = ('props.bin',)
@@ -45,7 +45,8 @@ KINDS = {
     **{name: ('round', 'glass') for name in (
         'bottle', 'bottle_small', 'bottle_green', 'bottle_brown', 'bottle_glass', 'bottle_flower')},
     **{name: ('round', 'metal') for name in ('pail', 'bucket', 'pan', 'kettle')},
-    **{name: ('box', 'metal') for name in ('knife', 'tool_knife', 'tool_spoon', 'hammer')},
+    **{name: ('box', 'metal') for name in ('knife', 'tool_knife', 'tool_spoon', 'hammer', 'shovel')},
+    'barrel': ('round', 'wood'),
     **{name: ('box', 'paper') for name in (
         'book', 'book_green', 'book_red', 'book_orange', 'book_open', 'arcane_book', 'scrolls', 'book_stack',
         'package_brown', 'package_yellow', 'package_white')},
@@ -58,7 +59,7 @@ KINDS = {
     **{name: ('box', 'wood') for name in ('crate', 'container', 'figurine_box', 'firewood', 'firewood_log')},
     **{name: ('box', 'furniture') for name in ('chair', 'stool', 'act1_stool', 'barstool')},
     **{name: ('box', 'stone') for name in ('tablet', 'tablet_small')},
-    **{name: ('box', 'sack') for name in ('sack', 'sack_small')},
+    **{name: ('box', 'sack') for name in ('sack', 'sack_small', 'hay_bale')},
 }
 NUMBER = re.compile(r'_?\d+$')
 

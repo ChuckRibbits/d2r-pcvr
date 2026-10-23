@@ -223,7 +223,7 @@ struct World::Impl {
         std::vector<props::Support> wanted;
         for(const auto& p:pieces) {
             const auto& s=p.prop.support;
-            if(s.floor||s.x1-s.x0<.01f||s.z1-s.z0<.01f||s.y<=floor+.005f)continue;
+            if(s.floor||s.onProp||s.x1-s.x0<.01f||s.z1-s.z0<.01f||s.y<=floor+.005f)continue;
             const bool known=std::any_of(wanted.begin(),wanted.end(),[&](const props::Support& w){
                 return std::fabs(w.y-s.y)<.01f&&std::fabs(w.x0-s.x0)<.01f&&std::fabs(w.z0-s.z0)<.01f&&
                        std::fabs(w.x1-s.x1)<.01f&&std::fabs(w.z1-s.z1)<.01f;});
