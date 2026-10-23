@@ -20,6 +20,7 @@
 #include "aim_rules.h"
 #include "spell_cast.h"
 #include "weapon_skills.h"
+#include "strike_skills.h"
 #include "panel_input.h"
 #include "spells.h"
 #include "bow.h"
@@ -379,6 +380,7 @@ void Capture(framevr::interaction::Snapshot& s) {
             skill.motion=framevr::weaponskills::Bow(skillId)||(skillId==framevr::weaponskills::Smite&&serverFunction==150);
             int16_t start=-1,secondary=-1;
             uint8_t los=255;
+            if(Read(row+0x4c,start))skill.strike=framevr::strikeskills::Matches(skillId,start,serverFunction);
             if(Read(row+0x4c,start)&&Read(row+0x68,secondary)&&Read(row+0x231,los))skill.physical=skill.owner==-1&&los==0&&
                 framevr::spellcast::Candidate(h[1],skillId,start,serverFunction,missile,flags,secondary)&&
                 (skillId!=101||bowvr::HolyReady());

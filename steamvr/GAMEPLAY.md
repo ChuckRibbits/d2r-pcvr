@@ -1023,6 +1023,26 @@ mid-game) choose between two modes for physical swings and trigger/button melee:
     so a full-cycle stroke at 60% attack rating chance carries them about 60%
     of the time, as natively. `would_hit=1/0` (-1: not gated, e.g. a riposte)
     ends each `melee_trace` contact line.
+  - **Melee skill strikes** (CONTROLS.md): a hand armed with a strike skill
+    (the Druid's Maul, Feral Rage, Rabies, Fire Claws, Hunger and Fury so far) casts it natively on a full-cycle stroke's first landed
+    contact, inside that contact's scaling and on-hit gate; every other contact
+    stays a basic attack. Classic casts on every paced contact. Developer
+    builds log `Frame melee skills:` (armed contacts, casts, refusals by
+    reason) and add `strike=<skill> cast|basic_strike` to `melee_trace` lines.
+  - **Fury's flurry:** the cast lands hit 1 of its 2-5. In Unleashed each
+    later landed stroke of a claw carrying Fury lands the next one, at any
+    speed (only a stroke within 100 ms of the previous Fury hit, one swipe's
+    follow-through, can't): unscaled, with on-hit effects, no mana, on the
+    creature it struck. A later stroke that reaches several creatures lands
+    Fury on its first two (native Fury spreads its hits across nearby
+    monsters); the casting stroke on one. A new cast still needs a full-cycle
+    stroke, so the burst limits itself. In Classic each follow-up waits Fury's Param2 (70%) of
+    the attack cycle after the previous Fury hit, sooner than the shared
+    cadence; earlier strokes stay basic and never delay it. Unused hits lapse
+    after two cycles, a form change or another skill's cast. Developer builds
+    log `Frame melee flurries:` and tag trace lines `cast 1/5`,
+    `flurry 2/5 after N ms`, `flurry 3/5 spread`, `basic_strike flurry_early after N ms`;
+    the on-hit report counts `flurry=`.
   `Frame swing damage:` in the log reports scaled hits and the last factors.
 - **Classic** (`1`): native attack rating, monster defense, block and the
   level penalty decide each attack, and attack speed paces them (below). A rolled

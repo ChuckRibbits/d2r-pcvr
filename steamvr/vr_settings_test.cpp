@@ -815,5 +815,14 @@ int main(){
     m.Click(At(m,Page::HUD,ValueBox(9)));
     Check(m.Get()[CompanionCounts]==0&&m.Get()[NavigationLocation]==0,"companion toggle is independent of map placement");
     Check(m.Click({Kind::Apply}).changed==(ChangeMask{1}<<CompanionCounts),"companion toggle uses its own high change-mask bit");
+    {   // Left-hand strikes: set from the skill wheel (Druid), on no settings page; no Class tab
+        Check(TabCount==10&&Page(int(Page::Shield)+1)==Page::Haptics,"ten tabs: Haptics follows Shield");
+        for(int i=0;i<TabCount;++i)if(std::strcmp(TabNames[i],"Class")==0)Check(false,"no Class tab");
+        Check(s.values[LeftHandStrikes]==0&&std::wstring(Definitions[LeftHandStrikes].key)==L"left_hand_strikes"&&HelpText(LeftHandStrikes)[0]!=0&&
+              HelpChoices(LeftHandStrikes)==2,"left-hand strikes: own trigger skill by default, two explained choices");
+        Check(Normalize(LeftHandStrikes,2)==0&&Normalize(LeftHandStrikes,1)==1&&Normalize(LeftHandStrikes,-1)==0,"the retired Basic attack (2) reads Own trigger skill");
+        for(int p=0;p<TabCount;++p)for(int row=0;row<RowCount(Page(p),s.values,{heroclass::Druid});++row)
+            Check(RowKey(Page(p),row,s.values,{heroclass::Druid})!=LeftHandStrikes,"left-hand strikes on no settings page");
+    }
     std::puts("VR settings draft, persistence requests, conflicts, hit regions and input-gating tests passed");
 }
