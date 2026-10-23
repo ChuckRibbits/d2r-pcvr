@@ -117,7 +117,7 @@ inline constexpr std::array<Definition,Count> Definitions{{
     {"Bow path laser", "A faint line along a drawn arrow's flight: Off or its color", L"bow",L"path_laser_hue",-15,-15,345,15},
     // Degrees above the throwing hand's path; a release follows through low.
     {"Throw lift", "Thrown weapons leave above the hand's path; - lowers them", L"gameplay",L"throw_lift_deg",10,-10,30,5},
-    {"Bottle physics", "Emptied bottles fall and roll; thrown potions fly as real bottles", L"interactions",L"bottle_physics",1,0,1,1},
+    {"Bottle physics", "Emptied bottles roll; thrown potions and traps stop at walls", L"interactions",L"bottle_physics",1,0,1,1},
     {"Knockable props", "Weapons and hands knock the level's cups, plates and vases about", L"interactions",L"prop_physics",1,0,1,1},
 }};
 using Values=std::array<float,Count>;

@@ -1754,9 +1754,10 @@ void StepDroppedBottles() {
     }
     if(propsWanted&&!wantProps&&droppedBottles)droppedBottles->Props({}); // frozen props go; moving ones finish
     propsWanted=wantProps;
-    if(!droppedBottles||droppedBottles->Idle()||!in.stage.known)return; // menus and loading hold them still
+    // Walls reach the world even while nothing moves in it (a trap in hand).
     bottles::Patch patch;
-    if(wallcells::Latest(patch))droppedBottles->Walls(patch);
+    if(droppedBottles&&wallcells::Latest(patch))droppedBottles->Walls(patch);
+    if(!droppedBottles||droppedBottles->Idle()||!in.stage.known)return; // menus and loading hold them still
     std::array<bottles::Collider,bottles::Colliders> weapons{};
     {
         std::lock_guard lock(bottleWeaponMutex);const auto now=GetTickCount64();
@@ -2301,14 +2302,34 @@ void Input() {
     motionInput.toss=gestureSettings[settings::SkillGestures]>.5f&&quickFresh&&rightSkill.known&&rightSkill.available&&toss::Skill(rightSkill.id);
     motionOutput=motion.Step(motionInput);motionAt=GetTickCount64();
     if(motionOutput.tossHeld)tossLanding={};   // a new trap in hand: nothing placed yet
+    const auto& tossStage=interactionInput.stage;
+    const bool tossWorld=interactionInput.floorKnown&&tossStage.known&&stageWorld.upm>=1&&stageWorld.upm<=12;
+    const float tossFloor=tossStage.anchor.y+(interactionInput.floor-tossStage.origin.y);
+    // With bottle physics, a trap in hand readies the physics world here and
+    // its walls, so the throw can be traced through them when it leaves.
+    if(motionOutput.tossHeld&&tossWorld&&bottlePhysics.load()) {
+        if(!droppedBottles)droppedBottles=std::make_unique<bottles::World>();
+        const auto session=gamestate::LocalPlayer();
+        if(droppedBottles->Ready()&&droppedBottles->Prepare(session,tossFloor,stageWorld.upm,tossStage.anchor))
+            wallcells::Want({session,tossStage.anchor,tossFloor,stageWorld.upm},GetTickCount64());
+    }
     if(motionOutput.tossRelease) {
-        // The arc lands on the floor under the player at release (world metres).
-        const auto& stage=interactionInput.stage;float x=0,y=0;
-        const bool landed=interactionInput.floorKnown&&stageWorld.upm>0&&
-            toss::Landing(stage,stage.anchor.y+(interactionInput.floor-stage.origin.y),stageWorld.upm,motionOutput.tossOrigin,motionOutput.tossVelocity,x,y);
+        // Where the arc first meets anything in the physics world (a wall, a
+        // table, a prop or the floor), else where it reaches the floor under
+        // the player at release (world metres). Running carries it along.
+        const auto carry=playerCarry.known?playerCarry.velocity:math::Vec{};
+        float x=0,y=0;bool landed=false,traced=false;
+        if(tossWorld) {
+            math::Vec hit{};
+            const auto worldP=tossStage.World(motionOutput.tossOrigin),worldV=toss::WorldVelocity(tossStage,motionOutput.tossVelocity,carry);
+            traced=bottlePhysics.load()&&droppedBottles&&droppedBottles->Trace(worldP,worldV,toss::Radius,interaction::ThrowMaxFlight,hit)&&
+                toss::Cell(hit,tossFloor,stageWorld.upm,x,y);
+            landed=traced||toss::Landing(tossStage,tossFloor,stageWorld.upm,motionOutput.tossOrigin,motionOutput.tossVelocity,x,y,carry);
+        }
         if(landed)tossLanding={rightSkill.id,x,y,motionAt,gamestate::LocalPlayer()};
-        char line[200];std::snprintf(line,sizeof line,"Frame toss: skill=%d thrown at %.1f m/s, %s %.1f,%.1f",rightSkill.id,
-            gameplay::Length(motionOutput.tossVelocity),landed?"lands at cells":"no landing (room unknown), cast where you point",x,y);
+        char line[220];std::snprintf(line,sizeof line,"Frame toss: skill=%d thrown at %.1f m/s (running %.1f m/s), %s %.1f,%.1f",rightSkill.id,
+            gameplay::Length(motionOutput.tossVelocity),gameplay::Length(carry),
+            !landed?"no landing (room unknown), cast where you point":traced?"first hit at cells":"lands on the floor at cells",x,y);
         Say(line);
     }
     motionOutput.shieldContact=motionInput.active&&!motionOutput.block&&!motionInput.quickCast&&motionInput.trigger<.2f&&

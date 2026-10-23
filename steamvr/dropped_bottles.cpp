@@ -432,6 +432,31 @@ bool World::Tossed(Thrown& out) const {
     return true;
 }
 void World::EndToss() {auto& m=*impl;Impl::Destroy(m.toss.body);m.toss={};}
+bool World::Prepare(uint64_t session,float floor,float unitsPerMetre,Vec around) {
+    Release r;r.session=session;r.floor=floor;r.unitsPerMetre=unitsPerMetre;r.p=around;
+    return Ready()&&session&&std::isfinite(floor)&&unitsPerMetre>=1&&unitsPerMetre<=12&&Finite(around)&&impl->Prepare(r);
+}
+bool World::Trace(Vec p,Vec v,float radius,double maxTime,Vec& hit) const {
+    const auto& m=*impl;
+    if(!Ready()||!m.Live()||!Finite(p)||!Finite(v)||!(radius>0)||!(maxTime>0))return false;
+    const b3Vec3 centre{0,0,0};
+    const b3ShapeProxy ball{&centre,1,radius};
+    auto filter=b3DefaultQueryFilter();filter.maskBits=~PusherBit;
+    struct Closest {float fraction=1;bool hit=false;} closest;
+    auto keep=[](b3ShapeId,b3Pos,b3Vec3,float fraction,uint64_t,int,int,void* context)->float {
+        auto* c=static_cast<Closest*>(context);c->hit=true;c->fraction=fraction;return fraction;
+    };
+    // The arc in short straight pieces, each cast in turn.
+    constexpr double Piece=1/60.;
+    for(double t=0;t<maxTime;t+=Piece) {
+        const auto at=[&](double s){return p+v*float(s)+Vec{0,-.5f*9.81f*float(s*s),0}-m.origin;};
+        const Vec a=at(t),b=at(std::min(t+Piece,maxTime));
+        closest={};
+        b3World_CastShape(m.world,B(a),&ball,B(b-a),filter,keep,&closest);
+        if(closest.hit){hit=m.origin+a+(b-a)*closest.fraction;return true;}
+    }
+    return false;
+}
 void World::Walls(const Patch& patch) {
     auto& m=*impl;
     if(!patch.session||(m.havePatch&&patch.serial==m.patch.serial&&patch.session==m.patch.session))return;

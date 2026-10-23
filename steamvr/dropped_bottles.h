@@ -187,6 +187,13 @@ public:
     bool Toss(const Release&,uint64_t id);
     bool Tossed(Thrown&) const;
     void EndToss();
+    // Make the world here (its floor and the walls given to it) without any
+    // body, as a release would: false while props move on another floor.
+    bool Prepare(uint64_t session,float floor,float unitsPerMetre,Vec around);
+    // Where a ball of this radius thrown from p at v (world metres, m/s)
+    // first meets anything here (the floor, walls, surfaces, props or
+    // bottles; never weapons), within maxTime: the ball's centre then.
+    bool Trace(Vec p,Vec v,float radius,double maxTime,Vec& hit) const;
     // The game's wall cells; a patch from another game is ignored.
     void Walls(const Patch&);
     // Advance in fixed steps to time. Bottles older than Lifetime, or farther
