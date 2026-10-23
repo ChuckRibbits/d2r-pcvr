@@ -695,11 +695,6 @@ float4 TorchLight(float3 wh, float3 nrm, float3 v)
     return float4(sum, glint);
 }
 
-    return sum * CeilTorchBright;
-}
-
-
-
 // The lit objects the game itself has near the hero (vrcam reads them from the game's
 // rooms; their light from its Objects table): xyz less the hero (his feet), w the
 // game's light radius (Lit: a torch 19). With them the fire in the picture is not
