@@ -81,7 +81,7 @@ Open either hand's wheel and choose **DEV**. Its tabs are grouped by purpose:
 - **Character:** level 10, 30, 60 and 90 presets; heal life/mana.
 - **Equipment:** starter primary/alternate gear, class unique primary/alternate
   gear, crossbow + bolts, bow + arrows, a small shield, **Render debug draws**,
-  **By turns own picture**, **By turns filter**, a **Throwing kit** and a **Potion kit** (four Super
+  **By turns own picture**, **By turns filter**, **By turns ghosts**, a **Throwing kit** and a **Potion kit** (four Super
   Healing, two Full Rejuvenation, two Antidote and two Thawing potions, normal
   items in the inventory: put them in the belt to toss at the mercenary).
 - **Act I - II:** towns, combat areas and inspection destinations.
@@ -196,6 +196,18 @@ kept within the nearest texels. **SOFT** (0): bilinear, as before. The
 button shows the current state, and the frame log records each switch. It
 changes no saved setting. Compare text on loot labels and in the distance,
 ground textures and fine edges, looking with one eye then the other.
+
+## By turns ghosts
+
+Select **DEV > Equipment > By turns ghosts** to switch, for the session, the
+strips beside near things that only the eye not drawn sees. **FIXED** (the
+default, `[stereo] turns_fill=1`): where its frame-old picture there shows
+something nearer since gone, what is behind beside the strip instead. **OLD**
+(0): its own frame-old picture, as before. Watch a monster walking across
+in front of a wall a few metres away, and the edges of things while you
+strafe: with OLD a frame-old copy of the monster can trail beside it in one
+eye. The button shows the current state, and the frame log records each
+switch. It changes no saved setting.
 
 ## Locations
 

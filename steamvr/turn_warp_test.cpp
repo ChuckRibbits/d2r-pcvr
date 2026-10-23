@@ -324,6 +324,24 @@ static void Move(Gpu& gpu,bool typeless) {
         drawn.keep=0;
         out=gpu.Warp(warp,source.Get(),target.Get(),Identity,slot^=1,&still,&drawn);
         from(2,15,4,true,"keep off: the drawn eye's wall everywhere it reaches");
+        from(32,36,0,false,"its own wall in the strip the drawn eye cannot see stays");
+        // This eye's own picture still showed the post where it stood a frame
+        // ago (columns 28-43): in the strip the drawn eye cannot see (32-35)
+        // it is nearer than the wall behind - a ghost. What is behind beside
+        // the strip goes there instead: the drawn eye's wall at 36 (its 40).
+        const auto old=distances([](UINT x){return x>=28&&x<44?2.f:4.f;});
+        framevr::TurnDepth stale=still;stale.depth=old.Get();
+        out=gpu.Warp(warp,source.Get(),target.Get(),Identity,slot^=1,&stale,&drawn);
+        bool filled=true;
+        for(UINT y=0;y<side;++y)for(UINT x=32;x<36;++x)if(!Same(out[y*side+x],other(40,y))) {
+            if(filled)std::printf("a frame-old post in the strip: pixel %u,%u = %08x, expected %08x\n",x,y,out[y*side+x],other(40,y));filled=false;
+        }
+        Check(filled,"a frame-old post in the strip: what is behind beside it instead");
+        from(16,32,8,true,"the post itself from the drawn eye still");
+        warp.Fill(false);
+        out=gpu.Warp(warp,source.Get(),target.Get(),Identity,slot^=1,&stale,&drawn);
+        from(32,36,0,false,"fill off: the frame-old post stays, as before");
+        warp.Fill(true);
     }
     {   // DLSS: the scene drawn into the top-left quarter of a depth twice the size
         auto big=gpu.Texture(side*2,side*2,DXGI_FORMAT_R32_FLOAT,D3D12_RESOURCE_FLAG_NONE,D3D12_RESOURCE_STATE_COPY_DEST);
@@ -333,7 +351,7 @@ static void Move(Gpu& gpu,bool typeless) {
         framevr::TurnDepth corner=moved;corner.depth=big.Get();corner.scale[0]=corner.scale[1]=.5f;
         expect(gpu.Warp(warp,source.Get(),target.Get(),Identity,slot^=1,&corner),0,56,4,"the depth read from its drawn corner");
     }
-    std::printf("Turn depth GPU pass passed (%s target): wall, sky, occlusion, edge, carried, the drawn eye's picture to the pixel, a thin blade, this eye's own where the surface is the same, drawn corner\n",typeless?"typeless":"typed");
+    std::printf("Turn depth GPU pass passed (%s target): wall, sky, occlusion, edge, carried, the drawn eye's picture to the pixel, a thin blade, this eye's own where the surface is the same, a frame-old post in the strip filled, drawn corner\n",typeless?"typeless":"typed");
 }
 
 // Near things only (TurnDepth::keepNear): a 256-pixel wall 4 units away, a

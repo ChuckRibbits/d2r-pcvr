@@ -275,7 +275,8 @@ std::vector<uint8_t> Paint(const Snapshot& s,const Output& o,int selection,const
             const char* title=i==dev::DebugDrawsChoice?(s.devDebugDraws?"Render debug draws: ON":"Render debug draws: OFF"):
                               i==dev::TurnsKeepOwnChoice?(s.devTurnsKeepOwn==1?"By turns own picture: NEAR":s.devTurnsKeepOwn==2?"By turns own picture: ALL":
                                                           s.devTurnsKeepOwn==3?"By turns own picture: FX":s.devTurnsKeepOwn==4?"By turns own picture: NEAR+FX":"By turns own picture: OFF"):
-                              i==dev::TurnsSharpChoice?(s.devTurnsSharp?"By turns filter: SHARP":"By turns filter: SOFT"):choice.name;
+                              i==dev::TurnsSharpChoice?(s.devTurnsSharp?"By turns filter: SHARP":"By turns filter: SOFT"):
+                              i==dev::TurnsFillChoice?(s.devTurnsFill?"By turns ghosts: FIXED":"By turns ghosts: OLD"):choice.name;
             text(title,{x+8,y+4,right-8,y+29});
             SelectObject(dc,shortcutFont);text(choice.detail,{x+8,y+29,right-8,bottom-4});SelectObject(dc,font);
         }
@@ -287,6 +288,7 @@ std::vector<uint8_t> Paint(const Snapshot& s,const Output& o,int selection,const
                                          s.devTurnsKeepOwn==4?"By turns: the eye not drawn keeps its own picture round near things and where the game's effects are.":
                                          "By turns: the eye not drawn takes the drawn eye's picture wherever it reaches."):
              o.result==Result::SharpUpdated?(s.devTurnsSharp?"By turns: the eye not drawn is read sharp (Catmull-Rom).":"By turns: the eye not drawn is read soft (bilinear), as before."):
+             o.result==Result::FillUpdated?(s.devTurnsFill?"By turns: no frame-old ghosts beside moving things.":"By turns: beside near things the eye keeps its own older picture, as before."):
              o.result==Result::Applied?"Kit added to inventory. Equip it using the native inventory screen.":
              o.result==Result::Dispatched?"Commands sent. Check character stats / destination in game.":
              o.result==Result::KitRefused?"Kit could not be added. Check inventory space and the development log.":
