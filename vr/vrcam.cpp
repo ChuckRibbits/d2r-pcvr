@@ -7039,20 +7039,18 @@ void BowTick() {
             }
         }
         // Spells go to the aimed monster (the aim rules): this hand's, else the
-        // other hand's, else the one looked at - fly at its chest, flat when
-        // spells are planar.
-        float mx=0,my=0,md=0;int source=-1;
-        if(SpellsLocked()&&!framevr::aimrules::Stable(shot.skill)&&aimtargets::Resolve(hand,false,mx,my,md,&source)) {
+        // other hand's, else the one looked at - fly 1 m above its floor here,
+        // flat when spells are planar; the game thread then re-aims at the
+        // middle of the monster's body (bowvr::AssistSpell, lockTarget).
+        float mx=0,my=0,md=0;int source=-1;uint32_t lockId=0;
+        if(SpellsLocked()&&!framevr::aimrules::Stable(shot.skill)&&aimtargets::Resolve(hand,false,mx,my,md,&source,&lockId)) {
             using framevr::math::Vec;
-            const Vec target=framevr::bowflight::RenderGround(shot,Vec{mx*2.0f,0.0f,my*2.0f})+Vec{0.0f,1.0f,0.0f};
-            Vec to=target-shot.origin;
-            if(shot.planar)to.y=0;
-            const float len=framevr::bowflight::Length(to);
-            if(len>.3f) {
-                shot.direction=to*(1/len);
+            const Vec ground=framevr::bowflight::RenderGround(shot,Vec{mx*2.0f,0.0f,my*2.0f});
+            if(framevr::bowflight::LockAimDirection(shot.origin,framevr::bowflight::LockAimPoint(ground,false,{},{}),shot.planar,shot.direction)) {
                 // one steerer per shot: VR Settings' Projectile aim assist would
                 // bend it again, perhaps toward another monster
                 shot.aimAssist=0;
+                shot.lockTarget=lockId;
                 static ULONGLONG told=0;
                 if(GetTickCount64()-told>2000){told=GetTickCount64();LogF("Frame spell lock: hand skill %d to the %s target, %.1f cells (aim assist skipped)",shot.skill,aimtargets::SourceName(source),md);}
             }

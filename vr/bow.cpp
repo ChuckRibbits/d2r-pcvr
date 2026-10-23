@@ -964,10 +964,40 @@ void CrossbowClient(uintptr_t unit,const Shot& shot) {
         if(!a.client||a.client==unit){a.client=unit;a.clientId=h[2];++visuals;Recount();}return;
     }
 }
+// The spell lock (vrcam BowTick) aimed this cast 1 m above the locked
+// monster's floor; aim it at the middle of the same body capsule the flight
+// hits (Body), from the same origin. Not found: the 1 m aim stays.
+// lockTarget is 0 without a lock, so nothing here runs.
+static void LockBody(uintptr_t game,Shot& shot) {
+    const uint32_t id=shot.lockTarget;
+    if(!id)return;
+    const auto target=melee::ServerUnit(game,1,id);
+    uint32_t h[4]{};Vec bottom{},top{};float radius=0;
+    const bool found=target&&Read(target,h)&&h[0]==1&&h[2]==id&&h[3]!=0&&h[3]!=12&&Body(target,h[1],shot,bottom,top,radius);
+    Vec direction{};
+    const auto point=framevr::bowflight::LockAimPoint({},found,bottom,top);
+    const bool aimed=found&&framevr::bowflight::LockAimDirection(shot.origin,point,shot.planar,direction);
+    if(aimed)shot.direction=direction;
+    // Telemetry: "Frame lock body:" at most once a second (one call per cast)
+    static ULONGLONG told=0;
+    if(GetTickCount64()-told<1000)return;
+    told=GetTickCount64();
+    char line[256];
+    if(!found)snprintf(line,sizeof line,"Frame lock body: skill %d monster %u not found, kept the 1 m aim",shot.skill,id);
+    else {
+        const float floor=bottom.y-radius,height=top.y+radius-floor;
+        const float distance=std::hypot(point.x-shot.origin.x,point.z-shot.origin.z);
+        snprintf(line,sizeof line,"Frame lock body: skill %d monster %u class %u body %.2f m, aim %.2f m above its floor (was %.2f), %.1f m away%s",
+            shot.skill,id,h[1],height,point.y-floor,framevr::bowflight::LockFallbackHeight,distance,
+            aimed?(shot.planar?" (planar: flat)":""):" (too close, kept the 1 m aim)");
+    }
+    framevr::logging::Write(line);
+}
 void AssistSpell(uintptr_t game,uintptr_t player) {
     if(launch.slot<0||launch.game!=game||launch.player!=player||launch.shot.kind!=Kind::Spell)return;
     auto& shot=launch.shot;
     if(shot.hand<0||shot.hand>1)return;
+    LockBody(game,shot);
     auto& history=assistHistory[shot.hand];
     auto selection=history.Begin(shot);
     auto& stats=assistStats[shot.hand];

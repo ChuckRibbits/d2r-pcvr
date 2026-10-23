@@ -48,6 +48,7 @@ struct Shot {
     bool planar=true;
     float boltLength=0; // authored held-bolt size, metres
     bool gripped=false; // a thrown weapon's origin moved from the hand to its tail
+    uint32_t lockTarget=0; // a spell locked on a monster: its server unit id, else 0
 };
 // A thrown weapon's missile: the one the native Throw named, else the javelin.
 inline uint32_t ThrownId(const Shot& s) {return s.missile>0&&ThrownMissile(uint32_t(s.missile))?uint32_t(s.missile):1u;}
@@ -97,6 +98,22 @@ inline Vec GridPoint(const Shot& shot,Vec renderMetres) {
 }
 inline Vec RenderGround(const Shot& shot,Vec gridWorld) {
     return coordinates::RenderGround(gridWorld*(1/shot.unitsPerMetre),shot.player.y);
+}
+// A spell locked on a monster flies at the middle of its body capsule (floor
+// to its stats height), not 1 m above its floor, which passes over monsters
+// shorter than about 1 m. No body found: the old point, 1 m above the floor.
+inline constexpr float LockFallbackHeight=1.f;
+inline Vec LockAimPoint(Vec ground,bool body,Vec bottom,Vec top) {
+    return body?(bottom+top)*.5f:ground+Vec{0,LockFallbackHeight,0};
+}
+// The lock's direction from origin to point, flat for planar spells; false
+// (keep the direction) within 0.3 m, as the lock itself does.
+inline bool LockAimDirection(Vec origin,Vec point,bool planar,Vec& direction) {
+    Vec to=point-origin;
+    if(planar)to.y=0;
+    const float len=Length(to);
+    if(!(len>.3f))return false;
+    direction=to*(1/len);return true;
 }
 inline bool Valid(const Shot& s) {
     const bool kind=(BasicMissile(uint32_t(s.kind))&&(!SkillRelease(s)||weaponskills::Loadable(s.skill,s.missile,s.kind==Kind::Javelin)))||
