@@ -45,6 +45,15 @@ void ConfigureTurnsKeepEffects(float level,float reach);
 void ConfigureTurnsSharp(bool on);
 void SetTurnsSharp(bool on);
 bool TurnsSharp();
+// [stereo] turns_fill (1): by turns, in the strips beside near things the
+// drawn eye's picture does not reach, where the eye's own frame-old picture
+// shows something nearer since gone (a monster that walked on), what is
+// behind beside the strip instead (TurnWarp::Fill); 0 its own picture as
+// before. Applied when the ini's value changes; DEV > Equipment switches it
+// for the session (Set), and reads it back.
+void ConfigureTurnsFill(bool on);
+void SetTurnsFill(bool on);
+bool TurnsFill();
 void ConfigureEyeTracking(bool enabled);
 void ConfigureGameplay(bool enabled);
 void ConfigureQuiver(bool enabled,bool preview); // [bow] quiver, quiver_preview
