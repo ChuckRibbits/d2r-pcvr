@@ -175,6 +175,7 @@ not generate melee velocity. The layout currently assumes a right-handed player.
 | Nock bow | Bow equipped: bring right hand to string and hold right trigger; no left grip required |
 | Draw and shoot | Pull string hand back at least 12 cm (28 cm total separation), then release trigger |
 | Throw a javelin, throwing knife or axe | Any javelin, throwing knife or throwing axe equipped in WEAPON mode, right trigger bound to Attack, Throw or nothing: hold right trigger, make a deliberate throwing motion, release to throw along the hand's motion. The game's own Throw fires the weapon's own missile and consumes its quantity; a knife flies point first, an axe tumbles end over end. With a javelin, Poison Javelin, Lightning Bolt, Plague Javelin or Lightning Fury on the right trigger (or loaded from a face button, like the bow quiver) rides the throw: the skill's own mana, damage and effects. A Barbarian with a throwing weapon in each hand and Double Throw on the right trigger (or loaded) throws with both hands: the left trigger throws the left weapon, and each throw is one native Double Throw of that hand's weapon. Trigger-free jabs and swings stay available |
+| Throw a trap or bomb | An Assassin's Fire Blast, Shock Web, Blade Sentinel, sentry or wake on the right trigger: press it and the game's own bomb or trap model appears in the hand; throw and let go, and the native cast lands where the arc meets the floor, within the skill's reach (the throw picks the spot only). A quick press casts where you point; held still for a moment, the native cast holds and repeats as before. Weapon skill gestures Off keeps the trigger native |
 | Cancel active grab/draw | Right B; release inputs before starting again |
 | Physical belt potion | Reach to an original 3D bottle on the front belt and hold **Right Grip** to grab; left-hand grip also works |
 | Drink | Keep grip held, bring the bottle's opening to your mouth and tip nearly horizontal for 0.25 seconds; release to return an unused potion |
@@ -1168,9 +1169,10 @@ scene and does not stop at walls or monsters, which only the flight tests.
 **Throw lift** (**VR Settings > Aim > Throw lift**, `[gameplay] throw_lift_deg`,
 10° by default): a thrown javelin, knife or axe leaves along the throwing
 hand's recent motion, which dips as the hand follows through. Every throw,
-from either hand and with any javelin skill or Double Throw, leaves this many
-degrees above that path, keeping its heading; -10° to 30° in 5° steps, Off at
-0°. Shown for the Amazon and Barbarian, or any class holding a thrown weapon.
+from either hand and with any javelin skill or Double Throw, and every tossed
+trap, leaves this many degrees above that path, keeping its heading; -10° to
+30° in 5° steps, Off at 0°. Shown for the Amazon, Barbarian and Assassin, or
+any class holding a thrown weapon.
 Multiple Shot, Guided Arrow, Strafe and crossbows show no line. The first line of each draw logs
 `Frame bow laser: shown (length N m)` (`, floor` added when it ends on the
 floor), at most every 2 seconds.
