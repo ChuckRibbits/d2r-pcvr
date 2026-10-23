@@ -130,6 +130,52 @@ int main() {
         assert(!world.Drop(At({0,1,0},{MaxSpeed+1,0,0})));
         assert(world.Count()==0);
     }
+    // A sword swung through a resting bottle knocks it away and is felt.
+    {
+        World world;const Vec start{3.4f,.5f,7.1f};
+        assert(world.Drop(At(start)));
+        double t=Run(world,0,3,start); // settled and asleep
+        const auto rest=First(world);
+        // A blade lying flat across the floor, swept along +x at 4 m/s through the bottle.
+        auto blade=[&](float x){Collider c;c.active=true;c.base={x,rest.p.y,rest.p.z-.4f};c.tip={x,rest.p.y,rest.p.z+.4f};c.radius=.065f;return c;};
+        std::array<Collider,Colliders> weapons{};
+        float x=rest.p.x-.6f;
+        weapons[0]=blade(x);world.Weapons(weapons);t+=1/90.;world.Advance(t,start);
+        assert(world.Pushers()==1);
+        assert(std::hypot(First(world).p.x-rest.p.x,First(world).p.z-rest.p.z)<.01f); // placed, not swept from nowhere
+        float struck=0;
+        for(int i=0;i<30;++i){x+=4/90.f;weapons[0]=blade(x);world.Weapons(weapons);t+=1/90.;world.Advance(t,start);struck=std::max(struck,world.Struck(0));}
+        assert(First(world).p.x>rest.p.x+.15f); // pushed ahead of the blade
+        assert(struck>1);                    // a hit worth a haptic tick
+        assert(world.Struck(0)==0);          // reported once
+        // Put away: the weapon leaves the world.
+        weapons[0]={};world.Weapons(weapons);t+=1/90.;world.Advance(t,start);
+        assert(world.Pushers()==0);
+    }
+    // A warp moves a weapon without sweeping it through the bottles between.
+    {
+        World world;const Vec start{0,.5f,0};
+        assert(world.Drop(At(start)));
+        double t=Run(world,0,3,start);
+        const auto rest=First(world);
+        auto post=[&](float x){Collider c;c.active=true;c.base={x,rest.p.y-.05f,rest.p.z};c.tip={x,rest.p.y+.5f,rest.p.z};c.radius=.05f;return c;};
+        std::array<Collider,Colliders> weapons{};
+        weapons[1]=post(rest.p.x-2);world.Weapons(weapons);t+=1/90.;world.Advance(t,start);
+        weapons[1]=post(rest.p.x+2);world.Weapons(weapons);t+=1/90.;world.Advance(t,start);
+        t=Run(world,t,.5,start);
+        assert(std::hypot(First(world).p.x-rest.p.x,First(world).p.z-rest.p.z)<.01f);
+        assert(world.Struck(1)==0);
+        // A weapon whose pose stops arriving stays put rather than coasting on.
+        weapons[1]=post(rest.p.x+2.05f);world.Weapons(weapons);t+=1/90.;world.Advance(t,start);
+        weapons[1]=post(rest.p.x+2.15f);world.Weapons(weapons);t+=1/90.;world.Advance(t,start);
+        t=Run(world,t,1,start); // same target: no further motion toward the bottle
+        assert(std::hypot(First(world).p.x-rest.p.x,First(world).p.z-rest.p.z)<.01f);
+        // Invalid colliders are refused.
+        Collider bad=post(0);bad.tip={std::numeric_limits<float>::quiet_NaN(),0,0};assert(!Valid(bad));
+        bad=post(0);bad.radius=0;assert(!Valid(bad));
+        bad=post(0);bad.tip=bad.base+Vec{4,0,0};assert(!Valid(bad));
+        assert(!Valid(Collider{}));
+    }
     // A pause or clock jump resumes in place instead of stepping seconds at once.
     {
         World world;assert(world.Drop(At({0,1.5f,0})));
