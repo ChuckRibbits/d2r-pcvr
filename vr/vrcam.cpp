@@ -32,6 +32,7 @@
 #include "../steamvr/dropped_item_labels.h"
 #include "../steamvr/arm_pointing.h"
 #include "../steamvr/aim_reach.h"
+#include "../steamvr/torch_light.h"
 #include <tlhelp32.h>
 #include <intrin.h>
 #include <xinput.h>
@@ -312,6 +313,10 @@ struct Settings {
     std::atomic<float> ceilWet{0.35f};      // [ceiling] wet: how much the rock shines, like the walls
     std::atomic<float> ceilDetail{0.8f};    // [ceiling] detail: world units the picture's light parts stand out of the rock
     std::atomic<float> ceilContrast{1.6f};  // [ceiling] contrast: the picture's fine detail times this
+    std::atomic<bool>  torchEnabled{true};       // [torch] enabled: 1H club with fire lights the dungeon in VR
+    std::atomic<float> torchRadius{28.0f};       // [torch] radius: world units of light reach
+    std::atomic<bool>  torchFlicker{true};       // [torch] flicker: organic turbulent flame flicker
+    std::atomic<float> torchWarmth{0.65f};       // [torch] warmth: color warmth toward fire orange
     std::atomic<int>   armsMode{0};        // 0 game animation, 1 test pose (arms ahead), 2 controllers
     std::atomic<bool>  hideHead{false};     // shrink the hero's head away (first person)
     std::atomic<float> armScale{1.0f};      // reach on top of the hero/user height ratio
@@ -1300,6 +1305,10 @@ void LoadSettings() {
     g_set.ceilWet.store(std::clamp(IniF(L"ceiling", L"wet", 0.35f), 0.0f, 3.0f));
     g_set.ceilDetail.store(std::clamp(IniF(L"ceiling", L"detail", 0.8f), 0.0f, 10.0f));
     g_set.ceilContrast.store(std::clamp(IniF(L"ceiling", L"contrast", 1.6f), 0.0f, 5.0f));
+    g_set.torchEnabled.store(IniB(L"torch", L"enabled", true));
+    g_set.torchRadius.store(std::clamp(IniF(L"torch", L"radius", 28.0f), 5.0f, 60.0f));
+    g_set.torchFlicker.store(IniB(L"torch", L"flicker", true));
+    g_set.torchWarmth.store(std::clamp(IniF(L"torch", L"warmth", 0.65f), 0.0f, 1.0f));
     LoadCeilingBiomes();
     LoadCeilingTextures();
     g_set.armsMode.store(std::clamp((int)IniF(L"arms", L"mode", 0.0f), 0, 2));
@@ -9041,11 +9050,11 @@ void OnBeginEffects(reshade::api::effect_runtime* rt, reshade::api::command_list
     for (const SkyView& v : sv) sky = sky && v.proj_ok && v.axes_ok && v.proj[0] != 0.0f && v.proj[1] != 0.0f;
     SetBool(rt, "SkyOn", sky);
     SetBool(rt, "ArcaneSkyOn", sky && arcane);
-    {   // the cave ceiling: a plane CeilHeight over the hero's floor, met by each eye's ray
-        bool ceil = !sky && CeilWanted();
-        for (const SkyView& v : sv) ceil = ceil && v.proj_ok && v.axes_ok && v.proj[0] != 0.0f && v.proj[1] != 0.0f;
-        SetBool(rt, "CeilOn", ceil);
-        if (ceil) {
+    {   // camera and eye projection setup for depth fog and dynamic lighting
+
+
+
+
             const float scale = g_set.ceilScale.load();
             // The hero's place wrapped on a whole number of tiles: the world's own
             // coordinates in a float would round the pattern into steps far from the
@@ -9072,6 +9081,154 @@ void OnBeginEffects(reshade::api::effect_runtime* rt, reshade::api::command_list
                 const float hero[2] = {(float)hx, (float)hz};
                 snprintf(n, sizeof n, "CeilHero%d", e); SetFloats(rt, n, hero, 2);
             }
+
+            {   // the lit objects the game has near the hero, relative to him; the flame ~7 units up
+                bool torchActive[2] = { false, false };
+                uint32_t torchFlags[2] = { 0, 0 };
+#ifdef D2RVR_NATIVE_OPENXR
+                if (g_set.torchEnabled.load()) {
+                    const auto snapshot = interactionstate::Read();
+                    torchActive[1] = framevr::interaction::HasTorchInHand(snapshot, 1, torchFlags[1]);
+                    torchActive[0] = framevr::interaction::HasTorchInHand(snapshot, 0, torchFlags[0]);
+                }
+#endif
+                const bool anyTorch = torchActive[0] || torchActive[1];
+                worldobj::Light l[worldobj::kMaxLights];
+                const int n = worldobj::g_known.load() ? worldobj::Lights(l) : 0;
+                float pos[worldobj::kMaxLights * 4] = {}, col[worldobj::kMaxLights * 4] = {};
+                int outIndex = 0;
+
+                if (anyTorch) {
+                    const uint64_t nowMs = GetTickCount64();
+                    const float flickerWave = g_set.torchFlicker.load() ? framevr::torch::ComputeFlameFlickerWave(nowMs) : 0.0f;
+                    const float ceilRadius = g_set.ceilTorchRadius.load();
+                    const float fireOrange[3] = { 1.0f, 0.58f, 0.22f };
+                    const float warmth = g_set.torchWarmth.load();
+
+                    const int handsToCheck[2] = { 1, 0 }; // prioritize offhand, then mainhand
+                    for (int h : handsToCheck) {
+                        if (!torchActive[h] || outIndex >= worldobj::kMaxLights) continue;
+
+                        float tipRel[3] = {};
+                        bool haveTip = false;
+#ifdef D2RVR_NATIVE_OPENXR
+                        // Primary: track the physical 3D weapon bone origin + shaft in the game world
+                        skel::MeleeWeaponPose wpose;
+                        if (skel::MeleeWeapon(wpose, h) && (wpose.axis[0]*wpose.axis[0] + wpose.axis[1]*wpose.axis[1] + wpose.axis[2]*wpose.axis[2]) > 0.1f) {
+                            const float headM = UserEyeHeightM();
+                            const float upm = std::max(1.0f, ViewHeight()) / (headM > 0.1f ? headM : 1.75f);
+                            // Shaft tip ~0.56m along weapon axis reaches the upper tip of the club head
+                            const float tipX = wpose.origin[0] + wpose.axis[0] * (0.56f * upm);
+                            const float tipY = wpose.origin[1] + wpose.axis[1] * (0.56f * upm);
+                            const float tipZ = wpose.origin[2] + wpose.axis[2] * (0.56f * upm);
+                            tipRel[0] = tipX - sv[0].hero[0];
+                            tipRel[1] = tipY - floorY;
+                            tipRel[2] = tipZ - sv[0].hero[2];
+                            haveTip = true;
+                        }
+                        if (!haveTip) {
+                            const D2RVR_Shared* sh = g_shared;
+                            if (sh && sh->version == D2RVR_SHARED_VERSION && sh->headValid && (sh->handsValid & (1u << h))) {
+                                AcquireSRWLockShared(&g_stickLock); const StickFrame f = g_stickFrame; ReleaseSRWLockShared(&g_stickLock);
+                                if (f.valid) {
+                                    const float* p = (h == 0) ? sh->rightHand : sh->leftHand;
+                                    const float* q = (h == 0) ? sh->rightRot : sh->leftRot;
+                                    const framevr::math::Quat handQ{q[0], q[1], q[2], q[3]};
+                                    const framevr::math::Vec tipOffset = framevr::math::Rotate(handQ, framevr::torch::DefaultShaftOffset);
+                                    const float handTip[3] = { p[0] + tipOffset.x, p[1] + tipOffset.y, p[2] + tipOffset.z };
+
+                                    const float headM = UserEyeHeightM();
+                                    const float upm = std::max(1.0f, ViewHeight()) / (headM > 0.1f ? headM : 1.75f);
+                                    const float dw[3] = {
+                                        (handTip[0] * f.camR[0] - handTip[2] * f.camF[0]) * upm,
+                                        handTip[1] * upm,
+                                        (handTip[0] * f.camR[2] - handTip[2] * f.camF[2]) * upm
+                                    };
+                                    tipRel[0] = sv[0].eyeRel[0] + dw[0];
+                                    tipRel[1] = (sv[0].hero[1] - floorY) + sv[0].eyeRel[1] + dw[1];
+                                    tipRel[2] = sv[0].eyeRel[2] + dw[2];
+                                    haveTip = true;
+                                }
+                            }
+                        }
+#endif
+                        if (!haveTip) {
+                            // Fallback when unposed / hand tracking idle: anchored to hero eye / chest
+                            const float sideOffset = (h == 1) ? -0.5f : 0.5f;
+                            tipRel[0] = sv[0].eyeRel[0] + sideOffset;
+                            tipRel[1] = (sv[0].hero[1] - floorY) + 1.2f;
+                            tipRel[2] = sv[0].eyeRel[2] + 0.4f;
+                        }
+
+                        float curRadius = g_set.torchRadius.load();
+                        if (g_set.torchFlicker.load()) {
+                            curRadius = framevr::torch::ComputeFlickerRadius(curRadius, flickerWave);
+                        }
+                        // Scale radius relative to shader's CeilTorchRadius baseline
+                        const float shaderRadius = framevr::torch::ComputeShaderLightRadius(curRadius, ceilRadius);
+
+                        float curCol[3];
+                        if (g_set.torchFlicker.load()) {
+                            framevr::torch::ComputeFlickerColor(framevr::torch::DefaultTorchColor, flickerWave, curCol);
+                        } else {
+                            curCol[0] = framevr::torch::DefaultTorchColor[0];
+                            curCol[1] = framevr::torch::DefaultTorchColor[1];
+                            curCol[2] = framevr::torch::DefaultTorchColor[2];
+                        }
+                        for (int c = 0; c < 3; ++c) {
+                            curCol[c] = (1.0f - warmth) * curCol[c] + warmth * fireOrange[c];
+                        }
+
+                        pos[outIndex * 4 + 0] = tipRel[0];
+                        pos[outIndex * 4 + 1] = tipRel[1];
+                        pos[outIndex * 4 + 2] = tipRel[2];
+                        pos[outIndex * 4 + 3] = shaderRadius;
+
+                        col[outIndex * 4 + 0] = curCol[0];
+                        col[outIndex * 4 + 1] = curCol[1];
+                        col[outIndex * 4 + 2] = curCol[2];
+                        col[outIndex * 4 + 3] = 1.0f; // Handheld torch never fades by distance from hero
+
+                        ++outIndex;
+                    }
+                }
+
+                // Fill remaining slots with world/monster lights
+                const int remainingSlots = worldobj::kMaxLights - outIndex;
+                const int copyCount = std::min(n, remainingSlots);
+                for (int i = 0; i < copyCount; ++i, ++outIndex) {
+                    pos[outIndex * 4 + 0] = l[i].x - sv[0].hero[0];
+                    pos[outIndex * 4 + 1] = l[i].y - floorY;   // over the area's floor, as the ceiling
+                    pos[outIndex * 4 + 2] = l[i].z - sv[0].hero[2];
+                    pos[outIndex * 4 + 3] = l[i].lit;
+                    for (int c = 0; c < 3; ++c) col[outIndex * 4 + c] = l[i].rgb[c];
+                    // farther than [ceiling] torch_distance from the hero: gone, fading over its last quarter -
+                    // the torches of the next hall lit the ceiling over the walls between (2026-10-07)
+                    const float d = sqrtf(pos[outIndex * 4] * pos[outIndex * 4] + pos[outIndex * 4 + 2] * pos[outIndex * 4 + 2]), reach = g_set.ceilTorchDist.load();
+                    col[outIndex * 4 + 3] = std::clamp((reach - d) / (0.25f * reach), 0.0f, 1.0f) * (l[i].monster ? g_set.ceilMonsterBright.load() : 1.0f);
+                }
+
+                SetBool(rt, "CeilTorches", g_set.ceilTorches.load() || anyTorch);
+                SetBool(rt, "GameLightsOn", worldobj::g_known.load() || anyTorch);
+                SetFloat(rt, "CeilTorchBright", g_set.ceilTorchBright.load());
+                SetFloat(rt, "CeilTorchRadius", g_set.ceilTorchRadius.load());
+                SetFloat(rt, "CeilTorchWarm", g_set.ceilTorchWarm.load());
+                SetFloats(rt, "GameLightPos", pos, worldobj::kMaxLights * 4);
+                SetFloats(rt, "GameLightCol", col, worldobj::kMaxLights * 4);
+                static ULONGLONG told = 0;   // what goes to the shader, every 5 s: the nearest light, as the hero sees it
+                if (GetTickCount64() - told > 5000) {
+                    told = GetTickCount64();
+                    const bool hasPos = rt->find_uniform_variable("D2R_DepthFog.fx", "GameLightPos").handle != 0;
+                    LogF("worldobj: to the shader %d lights (uniform %s, playerTorch=%d), nearest at %.1f %.1f %.1f radius %.0f colour %.2f %.2f %.2f; hero %.1f %.1f %.1f, eye %.1f %.1f %.1f",
+                         outIndex, hasPos ? "found" : "MISSING", anyTorch ? 1 : 0, pos[0], pos[1], pos[2], pos[3], col[0], col[1], col[2],
+                         sv[0].hero[0], sv[0].hero[1], sv[0].hero[2], sv[0].eyeRel[0], sv[0].eyeRel[1], sv[0].eyeRel[2]);
+                }
+            }
+        bool ceil = !sky && CeilWanted();
+        for (const SkyView& v : sv) ceil = ceil && v.proj_ok && v.axes_ok && v.proj[0] != 0.0f && v.proj[1] != 0.0f;
+        SetBool(rt, "CeilOn", ceil);
+        if (ceil) {
+
             float height, bright, light, relief;
             int slot;
             CeilingNow(&height, &bright, &light, &relief, &slot);
@@ -9081,40 +9238,9 @@ void OnBeginEffects(reshade::api::effect_runtime* rt, reshade::api::command_list
             SetFloat(rt, "CeilRelief", relief);
             SetFloat(rt, "CeilTexSlot", (float)slot);
             SetFloat(rt, "CeilLightRadius", light);
-            SetBool(rt, "CeilTorches", g_set.ceilTorches.load());
-            SetFloat(rt, "CeilTorchBright", g_set.ceilTorchBright.load());
-            SetFloat(rt, "CeilTorchRadius", g_set.ceilTorchRadius.load());
             SetFloat(rt, "CeilHalo", g_set.ceilHalo.load());
-            SetFloat(rt, "CeilTorchWarm", g_set.ceilTorchWarm.load());
             SetFloat(rt, "CeilWallDist", g_set.ceilWall.load());
             SetFloat(rt, "CeilFloorDepth", g_set.ceilFloor.load());
-            {   // the lit objects the game has near the hero, relative to him; the flame ~7 units up
-                worldobj::Light l[worldobj::kMaxLights];
-                const int n = worldobj::g_known.load() ? worldobj::Lights(l) : 0;
-                float pos[worldobj::kMaxLights * 4] = {}, col[worldobj::kMaxLights * 4] = {};
-                for (int i = 0; i < n; ++i) {
-                    pos[i * 4 + 0] = l[i].x - sv[0].hero[0];
-                    pos[i * 4 + 1] = l[i].y - floorY;   // over the area's floor, as the ceiling
-                    pos[i * 4 + 2] = l[i].z - sv[0].hero[2];
-                    pos[i * 4 + 3] = l[i].lit;
-                    for (int c = 0; c < 3; ++c) col[i * 4 + c] = l[i].rgb[c];
-                    // farther than [ceiling] torch_distance from the hero: gone, fading over its last quarter -
-                    // the torches of the next hall lit the ceiling over the walls between (2026-10-07)
-                    const float d = sqrtf(pos[i * 4] * pos[i * 4] + pos[i * 4 + 2] * pos[i * 4 + 2]), reach = g_set.ceilTorchDist.load();
-                    col[i * 4 + 3] = std::clamp((reach - d) / (0.25f * reach), 0.0f, 1.0f) * (l[i].monster ? g_set.ceilMonsterBright.load() : 1.0f);
-                }
-                SetBool(rt, "GameLightsOn", worldobj::g_known.load());
-                SetFloats(rt, "GameLightPos", pos, worldobj::kMaxLights * 4);
-                SetFloats(rt, "GameLightCol", col, worldobj::kMaxLights * 4);
-                static ULONGLONG told = 0;   // what goes to the shader, every 5 s: the nearest light, as the hero sees it
-                if (GetTickCount64() - told > 5000) {
-                    told = GetTickCount64();
-                    const bool hasPos = rt->find_uniform_variable("D2R_DepthFog.fx", "GameLightPos").handle != 0;
-                    LogF("worldobj: to the shader %d lights (uniform %s), nearest at %.1f %.1f %.1f radius %.0f colour %.2f %.2f %.2f; hero %.1f %.1f %.1f, eye %.1f %.1f %.1f, ceiling %.0f",
-                         n, hasPos ? "found" : "MISSING", pos[0], pos[1], pos[2], pos[3], col[0], col[1], col[2],
-                         sv[0].hero[0], sv[0].hero[1], sv[0].hero[2], sv[0].eyeRel[0], sv[0].eyeRel[1], sv[0].eyeRel[2], height);
-                }
-            }
             float wet, detail, contrast;
             CeilVaultCfg vault;
             CeilingLookNow(&wet, &detail, &contrast, &vault);

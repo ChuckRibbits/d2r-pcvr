@@ -2558,6 +2558,43 @@ void Input() {
         elementalInput.activation[h]=handOutput.activation[h];
     }
     elementalScene=elementalState.Step(elementalInput,interactionInput.snapshot);
+    for(int h=0;h<2;++h) {
+        uint32_t torchFlags=0;
+        if(interaction::HasTorchInHand(interactionInput.snapshot,h,torchFlags)) {
+            elementalScene.hands[h].element=elements::Element::Fire;
+            elementalScene.hands[h].opacity=1.0f;
+            elementalScene.hands[h].pulse=0.5f;
+            elementalScene.hands[h].skill=framevr::torch::TorchSkill;
+
+            math::Vec tipPos{};
+            math::Quat tipRot = interactionInput.tracked[h] ? interactionInput.hand[h].q : interactionInput.head.q;
+            bool haveTip = false;
+#ifdef D2RVR_NATIVE_OPENXR
+            // Primary: track the physical club weapon bone rendered by the hero model.
+            // wpose.tipHead is from the eye in the camera's turn-only (heading) frame.
+            // Rotating by headYaw (pure azimuth, zero pitch/roll) anchors the flame directly to the 3D club in room space!
+            skel::MeleeWeaponPose wpose;
+            if (skel::MeleeWeapon(wpose, h) && (wpose.dirHead[0]*wpose.dirHead[0] + wpose.dirHead[1]*wpose.dirHead[1] + wpose.dirHead[2]*wpose.dirHead[2]) > 0.01f) {
+                const float heading = math::Heading(interactionInput.head.q);
+                const auto headYaw = math::Yaw(heading);
+                const math::Vec tipFromEye{wpose.tipHead[0], wpose.tipHead[1], wpose.tipHead[2]};
+                tipPos = interactionInput.head.p + math::Rotate(headYaw, tipFromEye);
+
+                haveTip = true;
+            }
+#endif
+            if (!haveTip && interactionInput.tracked[h]) {
+                tipPos = framevr::torch::ComputeTorchTip(interactionInput.hand[h].p, interactionInput.hand[h].q, framevr::torch::DefaultShaftOffset);
+                haveTip = true;
+            }
+            if (haveTip) {
+                elementalScene.hands[h].pose = { tipPos, tipRot };
+                elementalScene.session = gamestate::LocalPlayer();
+                elementalScene.at = interactionInput.at;
+                if(elementalScene.time==0.0f)elementalScene.time=float(interactionInput.at%60000)/1000.f;
+            }
+        }
+    }
     if(interactionInput.active) {
         const bool snapshotFresh=interaction::Fresh(interactionInput.snapshot,interactionInput.session,interactionInput.at);
         if(snapshotFresh&&(interactionPrefetchSession!=interactionInput.session||interactionPrefetchRevision!=interactionInput.snapshot.revision)) {

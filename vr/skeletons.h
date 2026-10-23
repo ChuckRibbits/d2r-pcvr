@@ -192,6 +192,8 @@ struct MeleeWeaponPose {
     float castingAxis[3]{}; // final visible shaft, including staff's chosen axis/sign
     float gripAxis[3]{}; // collision blade direction relative to its driving controller grip
     float length=0,radius=0; // game world units: a shapeshift form's claw, sized from the drawn paw (0 = by weapon type)
+    float tipHead[3]{}; // metres from eye in head frame (x right, y up, z back)
+    float dirHead[3]{}; // shaft direction in head frame
 };
 bool MeleeWeapon(MeleeWeaponPose& out,int hand=0);
 bool ShieldWeapon(MeleeWeaponPose& out);

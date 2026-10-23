@@ -58,7 +58,7 @@ static Items::Result __cdecl RemoveToken(const PluginContext*,PlayerHandle playe
 }
 static Items::Result __cdecl ItemsCall(const PluginContext*,const Items::Transaction* t,Items::TransactionResult* r) noexcept {
     ++itemCalls;assert(t->player==local&&(t->outputCount==1||t->outputCount==2||(t->outputCount>=5&&t->outputCount<=10)));
-    if(t->outputCount==1)assert(t->outputs[0].code==Items::MakeItemCode("buc"));
+    if(t->outputCount==1)assert(t->outputs[0].code==Items::MakeItemCode("buc")||t->outputs[0].code==Items::MakeItemCode("clb"));
     if(t->outputCount==5){constexpr const char* kit[]={"jav","pil","glv","tkf","tax"};   // the throwing kit
         for(unsigned i=0;i<5;++i)assert(t->outputs[i].code==Items::MakeItemCode(kit[i][0],kit[i][1],kit[i][2]));}
     if(t->outputCount==2) {
@@ -75,8 +75,16 @@ static Items::Result __cdecl ItemsCall(const PluginContext*,const Items::Transac
         const auto& s=t->outputs[i];const bool ammo=s.code==Items::MakeItemCode("aqv")||s.code==Items::MakeItemCode("cqv");
         grantedCodes.push_back(s.code);
         const bool potions=t->outputCount==10&&t->outputs[0].code==Items::MakeItemCode("hp5"); // the potion kit
+        const bool torch=t->outputCount==6&&t->outputs[0].code==Items::MakeItemCode("clb");
         const bool starter=(t->outputCount<9&&t->outputCount>2)||potions;
-        assert(s.quality==((ammo||starter)?Items::Quality::Normal:Items::Quality::Unique)&&s.itemLevel==(starter?1:99));
+        if(torch) {
+            if(i==0||i==1)assert(s.quality==Items::Quality::Normal&&s.socketCount==1&&s.itemLevel==1);
+            else if(i==2||i==3)assert(s.quality==Items::Quality::Normal&&s.itemLevel==1);
+            else if(i==4)assert(s.quality==Items::Quality::Unique&&s.itemLevel==99);
+            else if(i==5)assert(s.quality==Items::Quality::Magic&&s.itemLevel==30);
+        } else {
+            assert(s.quality==((ammo||starter)?Items::Quality::Normal:Items::Quality::Unique)&&s.itemLevel==(starter?1:99));
+        }
         assert(s.destination.container==Items::ItemContainer::Inventory);
         assert(s.quantity==(ammo?250:Items::DefaultValue)&&s.durability==Items::DefaultValue);
     }
@@ -196,7 +204,7 @@ int main(){
                 assert(commands[start+PreparationCount+i]==expected);
             }
         }
-        for(int choice:{1,2,CrossbowChoice,BowChoice,SmallShieldChoice,StarterPrimaryChoice,StarterAlternateChoice,ThrowingChoice,PotionsChoice}) {
+        for(int choice:{1,2,CrossbowChoice,BowChoice,SmallShieldChoice,StarterPrimaryChoice,StarterAlternateChoice,ThrowingChoice,PotionsChoice,TorchChoice}) {
             const auto commandCount=commands.size();
             devscenarios::Request(Make(choice));assert(tasks.back().game);Run(tasks.size()-1);
             assert(devscenarios::Status().result==Result::Applied&&!tokenLive);
@@ -241,6 +249,12 @@ int main(){
         std::vector<std::string_view> codes;for(const char* code:Kit(cls,PotionsChoice))if(code)codes.push_back(code);
         assert((codes==std::vector<std::string_view>{"hp5","hp5","hp5","hp5","rvl","rvl","yps","yps","wms","wms"}));
     }
+    // The torch kit: a one-handed club for dynamic lighting and melee, for every class.
+    assert(IsKit(TorchChoice)&&NormalKit(TorchChoice)&&PageFor(TorchChoice)==1);
+    for(int cls=0;cls<8;++cls) {
+        std::vector<std::string_view> codes;for(const char* code:Kit(cls,TorchChoice))if(code)codes.push_back(code);
+        assert((codes==std::vector<std::string_view>{"clb","clb","gcr","r08","clb","clb"}));
+    }
     // Unlock quests & waypoints button: sends cheat quests and cheat waypoints via console
     assert(ValidChoice(UnlockQuestsChoice)&&PageFor(UnlockQuestsChoice)==0&&SlotFor(UnlockQuestsChoice)==5);
     const auto beforeQuestCommands = commands.size();
@@ -254,7 +268,7 @@ int main(){
 
     // Failed standalone kits clean up only the generated exchange token.
     failItems=true;
-    for(int choice:{CrossbowChoice,BowChoice,SmallShieldChoice,ThrowingChoice,PotionsChoice}) {
+    for(int choice:{CrossbowChoice,BowChoice,SmallShieldChoice,ThrowingChoice,PotionsChoice,TorchChoice}) {
         const auto beforeCleanup=tokenRemoves;
         devscenarios::Request(Make(choice));Run(tasks.size()-1);
         assert(devscenarios::Status().result==Result::KitRefused&&!tokenLive&&tokenRemoves==beforeCleanup+1);

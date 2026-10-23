@@ -17,6 +17,7 @@
 #include "companion_ai.h"
 #include "active_effects.h"
 #include "../steamvr/shapeshift_form.h"
+#include "combat.h"
 namespace gamestate {uint32_t WeaponSet();uint64_t LocalPlayer();bool MenuOpen();}
 namespace gamecmd {bool ExecuteUiCommand(uint32_t);}
 namespace framevr {bool VrGameplay(uint64_t now);}
@@ -49,7 +50,9 @@ constexpr int GlassBreak=2587;
 uint64_t issuedAt=0,cancelEpoch=0;
 bool scheduled=false;
 template<class T>const T* Service(const PluginContext* c) {const T* p=nullptr;return c->QueryService(&p)==ServiceQueryResult::Success?p:nullptr;}
-Item Copy(const Items::ItemInfo& i){return {i.handle,i.runtimeId,i.code,uint32_t(i.quality),i.qualityRecordId};}
+Item Copy(const Items::ItemInfo& i, uint32_t fireDamage = 0) {
+    return {i.handle, i.runtimeId, i.code, uint32_t(i.quality), i.qualityRecordId, i.socketedItemCount, 0, fireDamage};
+}
 void __cdecl PlayHeal(const PluginContext*,void* unit) noexcept {
     const bool played=melee::HirelingOverlay(uint32_t(reinterpret_cast<uintptr_t>(unit)),HealOverlay);
     framevr::logging::Write(played?"Frame potion toss: native healing overlay played on the mercenary":
@@ -77,13 +80,15 @@ Snapshot Collect() {
     s.session=player;s.activeSet=gamestate::WeaponSet();
     s.equipmentKnown=s.activeSet==1||s.activeSet==2;
     for(int i=0;i<4;++i) {
+        const int loc = i<2 ? 4+i : 9+i;
         ItemHandle handle=InvalidItemHandle;
-        const auto result=inventory->getEquippedItem(context,player,i<2?4+i:9+i,&handle);
+        const auto result=inventory->getEquippedItem(context,player,loc,&handle);
         if(result!=Inventory::Result::Success&&result!=Inventory::Result::NotFound){s.equipmentKnown=false;continue;}
         if(!handle)continue;
         Items::ItemInfo item{};item.structSize=sizeof item;
         if(items->getItemInfo(context,handle,&item)!=Items::Result::Success){s.equipmentKnown=false;continue;}
-        if(s.activeSet==1||s.activeSet==2)s.sets[(i/2)^(s.activeSet-1)][i%2]=Copy(item);
+        const uint32_t fireDmg = static_cast<uint32_t>(std::max(0, combat::EquippedFireDamage(loc)));
+        if(s.activeSet==1||s.activeSet==2)s.sets[(i/2)^(s.activeSet-1)][i%2]=Copy(item, fireDmg);
     }
     Inventory::ItemFilter filter{sizeof filter,0,Items::ContainerBit(Items::ItemContainer::Belt),0};
     BeltRead belt{&s};

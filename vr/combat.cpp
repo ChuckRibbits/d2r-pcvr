@@ -18,6 +18,7 @@
 #include "shield_guard.h"
 #include "guard_strain.h"
 #include "melee.h"
+#include "native_ui_signatures.h"
 #include "../steamvr/transport.h"
 
 namespace gamestate {uint64_t LocalPlayer();int32_t LeftDurability();}
@@ -1092,6 +1093,33 @@ void MirrorClientDurability(uint32_t itemId,int value) {
         return;
     }
     ++clientMissing;
+}
+int EquippedFireDamage(int location) {
+    uintptr_t player=0;
+    if(!LocalPlayerUnit(player)) {
+        const auto idxFn=reinterpret_cast<int(*)()>(d2rsig::Addr(nativeui::abi::LocalIndexRva));
+        const auto clientFn=reinterpret_cast<uintptr_t(*)(int)>(d2rsig::Addr(nativeui::abi::ClientPlayerRva));
+        if(idxFn&&clientFn) {
+            const int idx=idxFn();
+            if(idx>=0&&idx<8)player=clientFn(idx);
+        }
+    }
+    if(!player)return 0;
+    const auto invFn=reinterpret_cast<InventoryFn>(d2rsig::Addr(InventoryRva));
+    if(!invFn)return 0;
+    const uintptr_t inventory=invFn(player,reinterpret_cast<const char*>(d2rsig::Addr(InventoryFileRva)),0xb9e);
+    if(!inventory)return 0;
+    const auto eqFn=reinterpret_cast<EquippedFn>(d2rsig::Addr(EquippedRva));
+    if(!eqFn)return 0;
+    const uintptr_t item=eqFn(inventory,location);
+    if(!item)return 0;
+    uint32_t h[3]{};
+    if(!Read(item,h)||h[0]!=4)return 0;
+    const auto getStat=reinterpret_cast<GetStatFn>(d2rsig::Addr(GetStatRva));
+    if(!getStat)return 0;
+    const int maxFire=getStat(item,49,0);
+    const int minFire=getStat(item,48,0);
+    return maxFire>0?maxFire:(minFire>0?minFire:0);
 }
 bool LocalPlayerUnit(uintptr_t& unit) {
     UiPlayer player;{std::lock_guard lock(localPlayerMutex);player=uiPlayer;}

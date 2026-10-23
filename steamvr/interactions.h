@@ -10,6 +10,7 @@
 #include "navigation_info.h"
 #include "companions.h"
 #include "active_effects.h"
+#include "torch_light.h"
 #include <array>
 #include <cstdint>
 #include <cstring>
@@ -111,6 +112,9 @@ struct Item {
     uint32_t id=0,code=0;
     uint32_t quality=0;
     int32_t qualityRecord=-1;
+    uint32_t socketed=0;
+    uint32_t fireAffix=0;
+    uint32_t fireDamage=0;
     bool operator==(const Item&) const = default;
 };
 constexpr uint32_t Code(char a,char b=' ',char c=' ',char d=' ') {
@@ -268,6 +272,24 @@ struct Snapshot {
     Mercenary merc;
     companions::Roster companions;
     effects::Status effects;
+};
+inline bool HasTorchInHand(const Snapshot& s, int hand, uint32_t& outFlags) {
+    outFlags = 0;
+    if (!s.equipmentKnown || (s.activeSet != 1 && s.activeSet != 2) || hand < 0 || hand > 1) return false;
+    const auto& item = s.sets[s.activeSet - 1][hand];
+    if (!item.code) return false;
+    char codeText[5]{};
+    codeText[0] = static_cast<char>(item.code & 0xFF);
+    codeText[1] = static_cast<char>((item.code >> 8) & 0xFF);
+    codeText[2] = static_cast<char>((item.code >> 16) & 0xFF);
+    codeText[3] = static_cast<char>((item.code >> 24) & 0xFF);
+    const bool enchant = s.effects.Has(16);
+    const bool devClub = false;
+    const auto qual = framevr::torch::EvaluateQualification(codeText, item.fireDamage, enchant, devClub);
+    outFlags = static_cast<uint32_t>(qual);
+    return framevr::torch::IsTorchQualified(outFlags);
+}
+struct TorchHandTag {
 };
 struct SkillCue {
     int slot=-1,id=-1,owner=-1;
