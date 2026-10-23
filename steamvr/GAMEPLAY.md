@@ -891,7 +891,11 @@ mid-game) choose between two modes for physical swings and trigger/button melee:
   level penalty decide each attack, and attack speed paces them (below). A rolled
   miss uses up the attack, as a missed swing animation would.
 
-Missile hit checks (arrows, missile spells) keep `contact_hits` in both modes.
+Missile hit checks (arrows, missile spells) keep `contact_hits` in both modes. In
+Unleashed your arrows and throws then follow the contact rules: attack rating
+against the monster's defense scales each projectile's damage at the life write
+(`ar_damage`; no recovery penalty), and the would-have-hit gate decides its other
+effects. `Frame shot damage:` counts scaled hits. Classic: full damage, as before.
 In Classic, button melee keeps native monster block only where the game checks
 block inside its hit check; `native block/dodge in melee` in `Frame combat:`
 confirms it. Every weapon contact with a hostile creature taps the controller once
@@ -1115,8 +1119,12 @@ the game would have compared. On a would-miss contact:
 - **Damage over time** - poison and burn - is damage that never reaches the scaled
   life write: it takes the hit's own factor (Defense, or attack rating x recovery
   x cleave, a riposte's bonus) on every contact.
-On average every effect then lands as often as natively. Arrows, throws and
-trigger/button attacks are not covered. Each part is checked against the build
+- **Absorb skills** (Energy Shield, Bone Armor, Cyclone Armor, Psychic Ward,
+  Health Link: the absorbdamage event, before the life write) see the contact's
+  damage at its factor and what they leave is scaled back, so they soak and drain
+  their mana or pool at native-average rates.
+On average every effect then lands as often as natively. Your arrows and throws
+are covered (above); trigger/button attacks are not. Each part is checked against the build
 at start (`Frame would-hit gate: verdict= events= effects= ...`); a part not
 found stays as before (its effects on every contact). `Frame would-hit gate:
 incoming would hit= would miss= swings ...` counts verdicts; developer builds add

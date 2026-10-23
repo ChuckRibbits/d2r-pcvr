@@ -64,6 +64,10 @@ OnHitScope GateOnHit(OnHitScope scope);
 // latest swing's verdict on this thread (1 would hit, 0 would miss, -1 unknown or
 // not gated, e.g. a riposte), for the melee trace.
 int LastSwingWouldHit();
+// Unleashed (default on there, applied live): the local player's arrows and throws
+// - forced hits under contact_hits - follow the contact rules: attack rating scales
+// their damage (with ar_damage) and the would-have-hit gate decides their effects.
+void ConfigureShotRules(bool unleashed);
 // A parry swing made during the monster's downstroke (opensAt, melee::ParryOpens)
 // resolves at once, before its hit frame. ParryArmed: an unspent recent swing (cheap gate,
 // thread-safe). Game thread: EarlyParry judges this attacking monster unit

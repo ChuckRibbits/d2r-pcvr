@@ -221,6 +221,14 @@ std::atomic<unsigned> gatedMeleeDamage{0},gatedMeleeAttack{0},gatedLeech{0},gate
 // - item wear 4526C0 (executor 44B44B, landed melee hits only: armor 10%, weapon 4%):
 //   skipped. Missiles never wear an item natively. A block's shield wear is the
 //   designed exception and stays.
+// The local player's arrows and throws (missile hit checks forced by
+// contact_hits) are gated the same way in Unleashed, and attack rating scales
+// their damage at the life write like a swing's (ar_damage).
+// Absorb skills (absorbdamage, 11, fired in 44DF10 at 44EB3A before the total is
+// summed: Energy Shield, Bone Armor, Cyclone Armor, Psychic Ward, Health Link) run
+// on the forced contact's damage already scaled by its factor, then what they
+// leave is scaled back, so they soak and drain at native-average rates while the
+// life write still applies the factor once.
 // Critical and deadly strike are not gated: they multiply the damage the chance
 // already scales. Damage over time - poison (+0x38 rate, +0x3C length, the
 // +0x40 list; 4518C0) and burn (+0x24, +0x28; 451380) - is damage that never
@@ -232,9 +240,17 @@ thread_local int nativeHitRoll=-1,nativeHitChance=-1;   // this forced check's r
 thread_local int lastSwingVerdict=-1;                   // the latest forced swing check: 1 would hit, 0 would miss, -1 unknown
 thread_local int lastIncomingVerdict=-1;                // the same for the latest forced incoming hit (guard trace)
 thread_local uintptr_t damageDefender=0;
-std::atomic<unsigned> verdictInHit{0},verdictInMiss{0},verdictSwingHit{0},verdictSwingMiss{0},verdictUnknown{0},dotScaled{0};
+std::atomic<unsigned> verdictInHit{0},verdictInMiss{0},verdictSwingHit{0},verdictSwingMiss{0},verdictShotHit{0},verdictShotMiss{0},verdictUnknown{0},dotScaled{0};
+std::atomic<unsigned> absorbScaled{0},shotScaled{0},shotUnseen{0};std::atomic<int> lastShotChance{-1};
+std::atomic<bool> shotRules{false};   // Unleashed: the player's arrows and throws follow the contact rules
+// The local player's latest forced missile hit (arrow, throw), for its life write.
+struct ShotHit {uintptr_t attacker=0,defender=0;int chance=-1;uint64_t at=0;};
+thread_local ShotHit shotHit;
 std::atomic<unsigned> missEvents{0},missAsMiss{0},missFields{0},missUmods{0},missThorns{0},missWear{0},missHeal{0},missDefense{0};
-constexpr int DamagedInMelee=1,DamagedByMissile=2,AttackedInMelee=3,DoMissileDamage=6;   // Events.txt rows
+constexpr int DamagedInMelee=1,DamagedByMissile=2,AttackedInMelee=3,DoMissileDamage=6,AbsorbDamage=11;   // Events.txt rows
+bool absorbReady=false;
+double ContactFactor(uintptr_t attacker,uintptr_t defender);
+uint32_t AbsorbScaled(uintptr_t game,uintptr_t unit,uintptr_t source,uintptr_t damage,double factor);
 bool missEventsReady=false;   // the hit-only / miss-too event sites match this build
 bool MissGated(uintptr_t attacker,uintptr_t defender);
 bool MissGatedDefender(uintptr_t defender);
@@ -243,6 +259,9 @@ uint32_t Trigger(uintptr_t game,int event,uintptr_t unit,uintptr_t source,uintpt
     if(onHitGated&&unit==onHitGated&&source==onHitTarget&&(event==DoMeleeDamage||event==DoMeleeAttack)) {
         ++(event==DoMeleeDamage?gatedMeleeDamage:gatedMeleeAttack);return 0;
     }
+    // Absorb skills soak the forced contact's damage at its factor (unit = the struck unit).
+    if(event==AbsorbDamage&&absorbReady&&damage)
+        if(const double factor=ContactFactor(source,unit);factor!=1&&factor>0)return AbsorbScaled(game,unit,source,damage,factor);
     // Would-have-hit gate. 5/6/7: unit = the attacker; 1/2/3: unit = the struck unit.
     if(missEventsReady&&missScope.attacker) {
         const bool byAttacker=event==DoMeleeDamage||event==DoMissileDamage||event==DoMeleeAttack;
@@ -417,6 +436,10 @@ constexpr GateSite EffectSites[]={
 constexpr GateSite ThornsSites[]={
     {0x44b4d3,{0x4c,0x8d,0x4c,0x24,0x30,0x4d,0x8b,0xc6,0x48,0x8b,0xd6,0x48,0x8b,0xcf,0xe8,0xda,0xba,0xfe,0xff},19},
     {0x4630b1,{0x4c,0x8b,0xcb,0x4d,0x8b,0xc7,0x48,0x8b,0xd6,0x49,0x8b,0xce,0xe8,0x1e,0x3f,0xfd,0xff},17}};
+constexpr GateSite AbsorbSites[]={
+    {0x44eb25,{0x48,0x8b,0x4c,0x24,0x30,0x4d,0x8b,0xcd,0x4c,0x8b,0xc6,0x4c,0x89,0x7c,0x24,0x20,0xba,0x0b,0x00,0x00,0x00,0xe8,0x31,0xea,0xff,0xff},26},
+    {0x44ec71,{0x41,0x8b,0x47,0x30,0x4d,0x8b,0xcd,0x41,0x03,0x47,0x34,0x4c,0x8b,0xc6,0x41,0x03,0x47,0x18,0xba,0x10,0x00,0x00,0x00,0x41,0x03,0x47,0x2c,
+               0x41,0x03,0x47,0x38,0x41,0x03,0x47,0x20},35}};
 constexpr GateSite WearSites[]={
     {0x44b438,{0x44,0x38,0xa4,0x24,0x20,0x02,0x00,0x00,0x74,0x0e,0x4d,0x8b,0xc6,0x48,0x8b,0xd6,0x48,0x8b,0xcf,0xe8,0x70,0x72,0x00,0x00},24}};
 EffectsFn originalEffects=nullptr;UmodFn originalUmod=nullptr;ThornsFn originalThorns=nullptr,originalMissileThorns=nullptr;
@@ -429,19 +452,44 @@ double SwingLifeFactor(uint32_t monster) {
     if(arDamage.load(std::memory_order_relaxed)&&swingChance>=0)factor*=ArFactor(swingChance,arFloor.load(std::memory_order_relaxed));
     return factor*swingRecovery;
 }
-// Damage over time takes the factor the hit's life damage gets: the incoming
-// Defense factor, or the swing's. 1 = not a forced contact.
-double DamageOverTimeFactor(uintptr_t attacker,uintptr_t defender) {
+// The factor a forced contact's life damage gets: the incoming Defense factor,
+// the swing's, or an arrow's / throw's attack rating. 1 = not a forced contact.
+// Inside 44CE80 / 44DF10 a missile's own unit (type 3) may name the attacker.
+double ContactFactor(uintptr_t attacker,uintptr_t defender) {
     const auto now=GetTickCount64();
-    if(incomingHit.attacker&&defender==incomingHit.defender&&now-incomingHit.at<=IncomingWindowMs&&incomingHit.chance>=0) {
-        uint32_t type=~0u;
-        if(attacker==incomingHit.attacker||(Read(attacker,type)&&type==3))return DefenseFactor(incomingHit.chance);
-    }
+    uint32_t type=~0u;
+    const auto striker=[&](uintptr_t expected){return attacker==expected||(Read(attacker,type)&&type==3);};
+    if(incomingHit.attacker&&defender==incomingHit.defender&&now-incomingHit.at<=IncomingWindowMs&&incomingHit.chance>=0&&
+       striker(incomingHit.attacker))return DefenseFactor(incomingHit.chance);
+    if(shotHit.attacker&&defender==shotHit.defender&&now-shotHit.at<=IncomingWindowMs&&shotHit.chance>=0&&
+       arDamage.load(std::memory_order_relaxed)&&striker(shotHit.attacker))return ArFactor(shotHit.chance,arFloor.load(std::memory_order_relaxed));
     if(swingTarget!=NoSwing) {
         uint32_t a=~0u,d[3]{};
         if(Read(attacker,a)&&a==0&&Read(defender,d)&&d[0]==1&&d[2]==swingTarget)return SwingLifeFactor(swingTarget);
     }
     return 1;
+}
+// absorbdamage (11) on a forced contact: the absorb skills see the damage
+// components 44DF10 sums into the total (physical, fire, lightning, magic, cold,
+// poison) at the contact's factor; what they leave is scaled back by it, so the
+// life write's factor still applies once. An untouched component is restored exactly.
+uint32_t AbsorbScaled(uintptr_t game,uintptr_t unit,uintptr_t source,uintptr_t damage,double factor) {
+    static constexpr int Parts[]={0x18,0x20,0x2c,0x30,0x34,0x38};
+    int32_t before[6]{},scaled[6]{};bool ok[6]{};
+    for(int i=0;i<6;++i)if(Read(damage+Parts[i],before[i])&&before[i]>0) {
+        scaled[i]=int32_t(std::min(double(before[i])*factor+.5,2147483647.));
+        ok[i]=framevr::WriteMemory(reinterpret_cast<void*>(damage+Parts[i]),&scaled[i],sizeof scaled[i]);
+    }
+    const uint32_t result=originalTrigger(game,AbsorbDamage,unit,source,damage);
+    bool changed=false;
+    for(int i=0;i<6;++i)if(ok[i]) {
+        int32_t after=0;if(!Read(damage+Parts[i],after))continue;
+        int32_t back=before[i];
+        if(after!=scaled[i]){back=after<=0?after:int32_t(std::min(double(after)/factor+.5,2147483647.));changed=true;}
+        framevr::WriteMemory(reinterpret_cast<void*>(damage+Parts[i]),&back,sizeof back);
+    }
+    if(changed)++absorbScaled;
+    return result;
 }
 void ScaleRecordDots(uintptr_t record,double factor) {
     bool scaled=false;
@@ -473,7 +521,7 @@ uint64_t DamageEffects(uintptr_t game,uintptr_t attacker,uintptr_t defender,uint
                 if(Read(record+at,v)&&v&&framevr::WriteMemory(reinterpret_cast<void*>(record+at),&none,sizeof none))++missFields;
             }
         }
-        if(const double factor=DamageOverTimeFactor(attacker,defender);factor!=1)ScaleRecordDots(record,factor);
+        if(const double factor=ContactFactor(attacker,defender);factor!=1)ScaleRecordDots(record,factor);
     }
     return originalEffects(game,attacker,defender,record);
 }
@@ -538,6 +586,24 @@ void SetStat(uintptr_t unit,int stat,int value,int layer) {
                 const int before=reinterpret_cast<GetStatFn>(d2rsig::Addr(GetStatRva))(unit,6,0);
                 const int64_t life=int64_t(before)-int64_t(double(damage)*factor);
                 value=life>=0x100?int(life):0;   // native: under one point of life is death
+            }
+        }
+    }
+    // The life write of the local player's arrow or throw: attack rating decides
+    // how hard it lands (Unleashed, ar_damage), consumed once.
+    if(stat==6&&layer==0&&shotHit.attacker&&unit==shotHit.defender&&damageRecord&&damageScaleReady.load(std::memory_order_relaxed)&&
+       reinterpret_cast<uintptr_t>(_ReturnAddress())==d2rsig::Addr(LifeWriteReturn)) {
+        const ShotHit shot=shotHit;shotHit={};
+        uint32_t source=~0u;Read(damageAttacker,source);
+        int damage=0;
+        if(arDamage.load(std::memory_order_relaxed)&&GetTickCount64()-shot.at<=IncomingWindowMs&&(damageAttacker==shot.attacker||source==3)&&
+           Read(damageRecord+0x134,damage)&&damage>0) {
+            if(shot.chance<0)++shotUnseen;
+            else {
+                const int before=reinterpret_cast<GetStatFn>(d2rsig::Addr(GetStatRva))(unit,6,0);
+                const int64_t life=int64_t(before)-int64_t(double(damage)*ArFactor(shot.chance,arFloor.load(std::memory_order_relaxed)));
+                value=life>=0x100?int(life):0;   // native: under one point of life is death
+                ++shotScaled;lastShotChance=shot.chance;
             }
         }
     }
@@ -638,16 +704,21 @@ int Hit(uintptr_t attacker,uintptr_t defender,int accuracy,int missile) {
     // Would-have-hit gate: a forced incoming hit, or the local player's physical
     // swing on its target (not a riposte: that is a clean hit). Arrows, throws and
     // trigger/button attacks are unchanged.
-    bool swingGate=false;
+    bool swingGate=false,shotGate=false;
     if(roll.attacker&&local&&!missile&&swingTarget!=NoSwing) {
         uint32_t d[3]{};
         swingGate=Read(defender,d)&&d[0]==1&&d[2]==swingTarget&&!RiposteDue(swingTarget);
+    }
+    // The local player's arrow or throw (contact_hits): Unleashed only.
+    if(roll.attacker&&local&&missile&&shotRules.load(std::memory_order_relaxed)) {
+        uint32_t d=~0u;
+        shotGate=Read(defender,d)&&d==1;
     }
     const bool forcedHit=roll.attacker!=0;
     const bool savedCheck=forcedCheck,savedGate=forcedGate,savedMissile=forcedMissile;
     const int savedRoll=nativeHitRoll,savedChance=nativeHitChance;
     if(forcedHit) {
-        forcedCheck=true;forcedGate=forcedIncoming||swingGate;forcedMissile=missile!=0;nativeHitRoll=-1;nativeHitChance=-1;
+        forcedCheck=true;forcedGate=forcedIncoming||swingGate||shotGate;forcedMissile=missile!=0;nativeHitRoll=-1;nativeHitChance=-1;
         if(forcedGate)missScope={};   // this attack's own verdict replaces any earlier one
     }
     const int result=originalHit(attacker,defender,accuracy,missile);
@@ -658,10 +729,13 @@ int Hit(uintptr_t attacker,uintptr_t defender,int accuracy,int missile) {
             if(!result||!known)missScope={};   // unknown: native effects, as before the gate
             if(!known)++verdictUnknown;
             else if(forcedIncoming)++(would?verdictInHit:verdictInMiss);
+            else if(shotGate)++(would?verdictShotHit:verdictShotMiss);
             else ++(would?verdictSwingHit:verdictSwingMiss);
             if(swingGate)lastSwingVerdict=known?int(would):-1;
-            else lastIncomingVerdict=known?int(would):-1;
+            else if(forcedIncoming)lastIncomingVerdict=known?int(would):-1;
         }
+        // An arrow or throw that landed: its attack rating scales it at the life write.
+        if(shotGate)shotHit=result?ShotHit{attacker,defender,nativeHitChance,GetTickCount64()}:ShotHit{};
         forcedCheck=savedCheck;forcedGate=savedGate;forcedMissile=savedMissile;nativeHitRoll=savedRoll;nativeHitChance=savedChance;
     }
     if(forcedIncoming) {   // landed: its damage is scaled at the life write
@@ -1071,6 +1145,7 @@ OnHitScope GateOnHit(OnHitScope scope) {
     return was;
 }
 int LastSwingWouldHit() {return lastSwingVerdict;}
+void ConfigureShotRules(bool unleashed) {shotRules=unleashed;}
 void ConfigureRiposte(float bonus,uint32_t windowMs,float volume,const wchar_t* soundFile) {
     riposteBonus=std::clamp(bonus,0.f,4.f);riposteMs=windowMs;
     {std::lock_guard lock(riposteSoundMutex);const float v=std::clamp(volume,0.f,4.f);if(riposteExtra!=v){riposteExtra=v;riposteGain=-1;}}
@@ -1261,6 +1336,7 @@ void Install() {
         missileThornsIn=thornsIn&&d2rsig::Hook(MissileThornsRva,MissileThornsSig,sizeof MissileThornsSig,reinterpret_cast<void*>(&MissileThorns),reinterpret_cast<void**>(&originalMissileThorns));
     }
     if(!missWearReady)missWearReady=struckWearIn&&CheckSites(WearSites);
+    if(!absorbReady)absorbReady=triggerIn&&CheckSites(AbsorbSites);
     if(seedIn&&hitIn&&blockIn&&dodgeIn&&!ready.exchange(true))
         framevr::logging::Write("Frame combat: deterministic local-player hit checks ready; native collision/range and damage retained");
     if(ready.load()&&!onHitLogged) {
@@ -1271,9 +1347,9 @@ void Install() {
     }
     if(ready.load()&&!missLogged) {
         missLogged=true;
-        char line[360];snprintf(line,sizeof line,"Frame would-hit gate: verdict=%s events=%s effects=%s monster mods=%s thorns=%s missile thorns=%s wear=%s prevent heal=%s defense per hit=%s (Unleashed: a forced contact's other effects only when its native roll would have hit; off = on every contact)",
+        char line[400];snprintf(line,sizeof line,"Frame would-hit gate: verdict=%s events=%s effects=%s monster mods=%s thorns=%s missile thorns=%s wear=%s prevent heal=%s defense per hit=%s absorb=%s (Unleashed: a forced contact's other effects only when its native roll would have hit; off = on every contact)",
             hitChanceIn&&seedIn?"ready":"off",missEventsReady?"ready":"off",effectsIn?"ready":"off",umodIn?"ready":"off",thornsIn?"ready":"off",
-            missileThornsIn?"ready":"off",missWearReady?"ready":"off",curseIn?"ready":"off",defenseGate?"ready":"off");
+            missileThornsIn?"ready":"off",missWearReady?"ready":"off",curseIn?"ready":"off",defenseGate?"ready":"off",absorbReady?"ready":"off");
         framevr::logging::Write(line);
     }
 }
@@ -1301,9 +1377,14 @@ void Report() {
         framevr::logging::Write(line);
     }
     if(const auto ih=verdictInHit.exchange(0),im=verdictInMiss.exchange(0),sh=verdictSwingHit.exchange(0),sm=verdictSwingMiss.exchange(0),
-                  vu=verdictUnknown.exchange(0),ds=dotScaled.exchange(0);ih||im||sh||sm||vu||ds) {
-        char line[220];snprintf(line,sizeof line,"Frame would-hit gate: incoming would hit=%u would miss=%u swings would hit=%u would miss=%u unknown=%u damage over time scaled=%u",
-            ih,im,sh,sm,vu,ds);
+                  th=verdictShotHit.exchange(0),tm=verdictShotMiss.exchange(0),vu=verdictUnknown.exchange(0),ds=dotScaled.exchange(0),
+                  ab=absorbScaled.exchange(0);ih||im||sh||sm||th||tm||vu||ds||ab) {
+        char line[300];snprintf(line,sizeof line,"Frame would-hit gate: incoming would hit=%u would miss=%u swings would hit=%u would miss=%u shots would hit=%u would miss=%u unknown=%u damage over time scaled=%u absorbs scaled=%u",
+            ih,im,sh,sm,th,tm,vu,ds,ab);
+        framevr::logging::Write(line);
+    }
+    if(const auto ss=shotScaled.exchange(0),su=shotUnseen.exchange(0);ss||su) {
+        char line[160];snprintf(line,sizeof line,"Frame shot damage: scaled hits=%u last chance=%d%% chance unseen=%u",ss,lastShotChance.load(),su);
         framevr::logging::Write(line);
     }
 #ifdef D2RVR_DEVELOPER

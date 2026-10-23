@@ -151,8 +151,10 @@ attack does besides its damage (leech, chill, freeze, stun, procs, chance to
 cast when struck, thorns, item wear...) only happens when the game's own hit
 roll would have landed it. A monster with a 30% chance to hit you chills or
 drains you on about 3 hits in 10, as in the original game, and your own swings'
-effects follow your attack rating the same way. Poison and burn count as damage:
-they are scaled like the hit itself.
+effects follow your attack rating the same way, arrows and throws included:
+your attack rating scales an arrow's damage as it does a swing's. Poison and burn
+count as damage: they are scaled like the hit itself. Energy Shield, Bone Armor
+and the other absorb skills soak and drain at the original game's average rate.
 
 ### Shield: block, parry and strain (Unleashed)
 
