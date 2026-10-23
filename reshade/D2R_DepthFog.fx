@@ -695,25 +695,10 @@ float4 TorchLight(float3 wh, float3 nrm, float3 v)
     return float4(sum, glint);
 }
 
-// Their light on drawn world points (p: less the hero / floorY)
-float3 SceneLight(float3 p)
-{
-    float3 sum = float3(0.0, 0.0, 0.0);
-    [loop] for (int i = 0; i < 16; ++i) {
-        const float4 L = GameLightPos[i];
-        if (L.w <= 0.0) continue;
-        const float3 dv = L.xyz - p;
-        const float dist = length(dv);
-        const float rad = max(CeilTorchRadius * L.w / 19.0, 1.0);
-        if (dist >= rad * 2.0) continue;
-        const float k = dist / rad;
-        const float flicker = 0.93 + 0.07 * sin(Timer * 0.011 + i * 2.3) * sin(Timer * 0.0037 + i * 1.1);
-        const float fall = Falloff(k) * flicker * GameLightCol[i].w;
-        const float3 col = lerp(GameLightCol[i].rgb, float3(1.0, 0.58, 0.22), saturate(CeilTorchWarm));
-        sum += col * fall;
-    }
     return sum * CeilTorchBright;
 }
+
+
 
 // The lit objects the game itself has near the hero (vrcam reads them from the game's
 // rooms; their light from its Objects table): xyz less the hero (his feet), w the
@@ -747,6 +732,26 @@ float4 GameLight(float3 p, float3 nrm, float3 v)
         glint += fall * Glint(nrm, l, v);
     }
     return float4(sum, glint);
+}
+
+// Their light on drawn world points (p: less the hero / floorY)
+float3 SceneLight(float3 p)
+{
+    float3 sum = float3(0.0, 0.0, 0.0);
+    [loop] for (int i = 0; i < 16; ++i) {
+        const float4 L = GameLightPos[i];
+        if (L.w <= 0.0) continue;
+        const float3 dv = L.xyz - p;
+        const float dist = length(dv);
+        const float rad = max(CeilTorchRadius * L.w / 19.0, 1.0);
+        if (dist >= rad * 2.0) continue;
+        const float k = dist / rad;
+        const float flicker = 0.93 + 0.07 * sin(Timer * 0.011 + i * 2.3) * sin(Timer * 0.0037 + i * 1.1);
+        const float fall = Falloff(k) * flicker * GameLightCol[i].w;
+        const float3 col = lerp(GameLightCol[i].rgb, float3(1.0, 0.58, 0.22), saturate(CeilTorchWarm));
+        sum += col * fall;
+    }
+    return sum * CeilTorchBright;
 }
 
 // The far wall (2026-10-07, the user: "paint the void in the distance - the cave's
