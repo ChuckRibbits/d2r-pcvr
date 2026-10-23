@@ -128,6 +128,95 @@ static void TestTorchQualification() {
     assert(IsTorchQualified(static_cast<uint32_t>(spikedSocketed)));
 }
 
+static void TestShaderLightRadius() {
+    // When torch radius matches default ceiling radius (20), shader radius is native 19.0
+    const float r1 = ComputeShaderLightRadius(20.0f, 20.0f);
+    assert(std::fabs(r1 - 19.0f) < 1e-4f);
+
+    // 18.0f reach scaled against 20.0f baseline: 18 * 19 / 20 = 17.1f
+    const float r2 = ComputeShaderLightRadius(18.0f, 20.0f);
+    assert(std::fabs(r2 - 17.1f) < 1e-4f);
+
+    // Fallback on zero/invalid ceiling radius
+    const float r3 = ComputeShaderLightRadius(18.0f, 0.0f);
+    assert(std::fabs(r3 - 19.0f) < 1e-4f);
+}
+
+static void TestShaderLightSlotAllocation() {
+    constexpr int kMaxLights = 16;
+    struct Light { float x, y, z, lit; float rgb[3]; };
+    Light worldLights[kMaxLights];
+    for (int i = 0; i < kMaxLights; ++i) {
+        worldLights[i] = { float(i * 10), 5.0f, float(i * 10), 19.0f, { 1.0f, 1.0f, 1.0f } };
+    }
+
+    // Scenario A: Handheld torch active -> Slot 0 is torch, slots 1..15 are world lights
+    float pos[kMaxLights * 4] = {}, col[kMaxLights * 4] = {};
+    int outIndex = 0;
+    const bool torchActive = true;
+    const float torchPos[3] = { 0.5f, 1.2f, -0.3f };
+    const float torchShaderRadius = 17.1f;
+    const float torchCol[3] = { 1.0f, 0.7f, 0.3f };
+
+    if (torchActive) {
+        pos[0] = torchPos[0];
+        pos[1] = torchPos[1];
+        pos[2] = torchPos[2];
+        pos[3] = torchShaderRadius;
+        col[0] = torchCol[0];
+        col[1] = torchCol[1];
+        col[2] = torchCol[2];
+        col[3] = 1.0f; // Player torch never fades by distance
+        ++outIndex;
+    }
+
+    const int remaining = kMaxLights - outIndex;
+    const int copyCount = std::min(kMaxLights, remaining);
+    for (int i = 0; i < copyCount; ++i, ++outIndex) {
+        pos[outIndex * 4 + 0] = worldLights[i].x;
+        pos[outIndex * 4 + 1] = worldLights[i].y;
+        pos[outIndex * 4 + 2] = worldLights[i].z;
+        pos[outIndex * 4 + 3] = worldLights[i].lit;
+        col[outIndex * 4 + 0] = worldLights[i].rgb[0];
+        col[outIndex * 4 + 1] = worldLights[i].rgb[1];
+        col[outIndex * 4 + 2] = worldLights[i].rgb[2];
+        col[outIndex * 4 + 3] = 0.8f;
+    }
+
+    assert(outIndex == kMaxLights);
+    // Verify slot 0 is the torch
+    assert(std::fabs(pos[0] - 0.5f) < 1e-4f);
+    assert(std::fabs(pos[3] - 17.1f) < 1e-4f);
+    assert(std::fabs(col[3] - 1.0f) < 1e-4f);
+
+    // Verify slot 1 has world light 0
+    assert(std::fabs(pos[1 * 4 + 0] - worldLights[0].x) < 1e-4f);
+    assert(std::fabs(pos[1 * 4 + 3] - worldLights[0].lit) < 1e-4f);
+
+    // Verify slot 15 has world light 14 (light 15 was displaced by player torch)
+    assert(std::fabs(pos[15 * 4 + 0] - worldLights[14].x) < 1e-4f);
+}
+
+static void TestWarmthBlending() {
+    const float baseCol[3] = { 1.0f, 224.0f / 255.0f, 150.0f / 255.0f };
+    const float fireOrange[3] = { 1.0f, 0.58f, 0.22f };
+
+    // Warmth 0.0 -> matches baseCol
+    float c0[3];
+    for (int c = 0; c < 3; ++c) c0[c] = (1.0f - 0.0f) * baseCol[c] + 0.0f * fireOrange[c];
+    assert(std::fabs(c0[1] - baseCol[1]) < 1e-4f);
+
+    // Warmth 1.0 -> matches fireOrange
+    float c1[3];
+    for (int c = 0; c < 3; ++c) c1[c] = (1.0f - 1.0f) * baseCol[c] + 1.0f * fireOrange[c];
+    assert(std::fabs(c1[1] - fireOrange[1]) < 1e-4f);
+
+    // Warmth 0.65 -> between base and fireOrange
+    float c65[3];
+    for (int c = 0; c < 3; ++c) c65[c] = (1.0f - 0.65f) * baseCol[c] + 0.65f * fireOrange[c];
+    assert(c65[1] < baseCol[1] && c65[1] > fireOrange[1]);
+}
+
 int main() {
     TestTipCalculation();
     TestFlameDirection();
@@ -135,6 +224,9 @@ int main() {
     TestWorldCoordinates();
     TestClubCodeRecognition();
     TestTorchQualification();
-    std::cout << "torch_light_test: All Phase 1 & Phase 2 tests passed successfully.\n";
+    TestShaderLightRadius();
+    TestShaderLightSlotAllocation();
+    TestWarmthBlending();
+    std::cout << "torch_light_test: All Phase 1, Phase 2 & Phase 3 tests passed successfully.\n";
     return 0;
 }

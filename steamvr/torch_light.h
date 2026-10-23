@@ -81,6 +81,11 @@ inline void ComputeFlickerColor(const float baseRgb[3], float flickerWave, float
     outRgb[2] = std::clamp(baseRgb[2] * (1.0f + colorMod * 1.5f * wave), 0.0f, 1.0f);
 }
 
+// Scales torch reach radius against the ceiling shader's baseline reach (baseline: 20.0 units with standard torch 19.0)
+inline float ComputeShaderLightRadius(float torchRadius, float ceilTorchRadius = 20.0f) {
+    return (ceilTorchRadius > 0.001f) ? (torchRadius * 19.0f / ceilTorchRadius) : 19.0f;
+}
+
 // Converts XR play space position (metres relative to head) to D2R engine world units
 inline Vec LocalToWorldGrid(Vec localTip, Vec heroWorldPos, Vec localHeadPos, float unitsPerMetre = 2.0f) {
     const Vec delta = localTip - localHeadPos;

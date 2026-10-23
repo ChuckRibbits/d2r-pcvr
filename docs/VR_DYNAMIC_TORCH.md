@@ -78,9 +78,20 @@ Instead of fabricating a foreign item, D2R-PCVR qualifies **native one-handed wo
   * **Radius:** $R(t) = R_{\text{base}} \cdot (1.0 + 0.06 \cdot W(t))$ (default $18.0 \pm 1.1$ world units).
   * **Color Temperature:** shifts dynamically between saturated golden amber and hot fire-orange.
 
-### Pillar 4: Engine Light Buffer Injection
-* In `vr/vrcam.cpp`, `g_lights` maintains up to 64 active lights for cave ceilings and ReShade depth fog.
-* The player's active torch is inserted at priority index 0, preventing distance-based culling in dense dungeons.
+### Pillar 4: Engine Render Pipeline & ReShade Injection (Phase 3)
+* In `vr/vrcam.cpp` and `reshade/D2R_DepthFog.fx`, dynamic lighting for cave ceilings, rock walls, and the void boundary is driven via uniform arrays `GameLightPos[16]` and `GameLightCol[16]`.
+* When a handheld torch is equipped and qualified:
+  * **Slot 0 Allocation:** Slot 0 is reserved exclusively for the player's primary active torch. If dual wielding torches, slot 1 is allocated for the secondary torch.
+  * **Shader Coordinates:** The torch tip position $(X, Y, Z)$ is transformed relative to the hero and floor: $(X - 	ext{heroX}, Y - 	ext{floorY}, Z - 	ext{heroZ})$.
+  * **Radius Scaling:** Uses `ComputeShaderLightRadius(curRadius, ceilRadius)` to normalize against the shader's baseline `CeilTorchRadius` (typically 20.0 units with standard torch reach 19.0), ensuring mathematically exact lighting reach.
+  * **Zero Distance Falloff:** The player's handheld torch is assigned intensity $1.0$ (`col[3] = 1.0f`), guaranteeing it never fades or culls based on distance from the character.
+  * **Ceiling & Light Activation:** `SetBool(rt, "CeilTorches", ...)` and `SetBool(rt, "GameLightsOn", ...)` are enabled automatically whenever a torch is active, illuminating pitch-black caverns even when no static world torches exist.
+  * **Slot Packing:** Remaining slots (1 to 15) are packed seamlessly with the nearest static objects and monster lights from `worldobj::Lights`.
+* **Configuration (`d2r_pcvr.ini`):**
+  * `[torch] enabled=1`: Master toggle for VR handheld torch lighting.
+  * `[torch] radius=18.0`: Base reach in game world units.
+  * `[torch] flicker=1`: Enables organic multi-frequency sinusoidal flame flicker.
+  * `[torch] warmth=0.65`: Color temperature adjustment blending base amber toward fire orange.
 
 ---
 
