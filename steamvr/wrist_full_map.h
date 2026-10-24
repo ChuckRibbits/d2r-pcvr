@@ -22,6 +22,12 @@
 // the 1/8 step at or below the zoom wanted and the wrist magnifies the rest (under 2x), so
 // it stays sharp at every zoom and never steps: each share is tagged with the zoom it was
 // really drawn at, and the wrist scales by wanted / drawn.
+// Each map piece in that box is its own draw: ~2,050 a pass on a 3072-px layer, at 0.125 or
+// 0.25 alike (the game draws every explored piece; owner, Steam Frame, 2026-10-24). They are
+// drawn for the wrist in a frame's first pass only (DrawForWrist). The frame rate the full
+// map cost (By turns 88 -> 39 frames a second) was not these draws but the share's size:
+// the hero marker's search, one GPU thread over the 3072x1728 share, took 23.6 ms a frame
+// (RTX 5090); in tiles it takes 0.14 (ui_blit.cpp FindTiles).
 namespace framevr::fullmap {
 // Set by the transport from the setting; read by gamestate (the lease, the hooks) and hud.
 inline std::atomic<bool> g_on{false};
@@ -64,6 +70,13 @@ inline float ZoomArg(float game,float wanted,bool gates){
     if(!gates||!(wanted>0)||!std::isfinite(wanted)||!(game>=ArgLo&&game<=ArgHi))return game;
     return GameStep(wanted);
 }
+
+// One full map a frame. Both eyes draw the interface, and the wrist copies one share a frame
+// (the transport, at the frame's first eye), so a later pass's full map would only be drawn
+// over it. A pass draws it for the wrist unless this frame already did; with no frame start
+// for longer than ReuseMs (nobody begins frames) every pass draws, as before.
+constexpr uint64_t ReuseMs=100;
+inline bool DrawForWrist(bool drawnThisFrame,uint64_t sinceMs){return !drawnThisFrame||sinceMs>ReuseMs;}
 
 // The wrist square shows a square of `span` source pixels around the hero's X (the
 // blit's heroAt), turned with you when the map turns, top-down undone (its diamond span

@@ -155,6 +155,9 @@ int main(){
             Check(fm::Span(2112,1188,turning,topDown,1,0)>fill&&fm::Span(2112,1188,turning,topDown,0.f,fm::Base)==fill&&fm::Span(0,0,turning,topDown,1,fm::Base)==0,
                   "no hook: the game's own 0.5 shown wider (never past the box); nonsense: 1x");
         }
+        // one full map a frame: the first pass draws it, a later one reuses it unless the frame start is long gone
+        Check(fm::DrawForWrist(false,0)&&!fm::DrawForWrist(true,0)&&!fm::DrawForWrist(true,fm::ReuseMs)&&fm::DrawForWrist(true,fm::ReuseMs+1)&&fm::DrawForWrist(false,5000),
+              "the frame's first pass draws; a later pass within the frame reuses; no frame start for long: draws");
         // the arrow from the X, as the shader sizes it
         Check(fm::ArrowRadius(512,1188,0,false)==512*fm::ArrowSize,"no X: the corner map's size");
         Check(std::fabs(fm::ArrowRadius(512,1188,30,false)-30*512/1188.f*1.2f)<1e-4f,"the X's reach on the wrist, 1.2 times");
