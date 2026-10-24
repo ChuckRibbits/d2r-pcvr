@@ -754,7 +754,10 @@ struct Builder {
         const bool defer=offer!=nullptr;
         struct Line {std::string text;uint16_t flags;};
         const Line first=defer&&video?Line{DeferWarning,Warn}:Line{in.runtimeStatus,0};
-        const Line second=video?Line{video,Warn}:defer?Line{DeferWarning,Warn}:Line{{},0};
+        // The game's own graphics options (main's Perf line) take the second line when no warning
+        // needs it; they are on the readout's help card always.
+        const std::string game=GameVideoLine(in.game);
+        const Line second=video?Line{video,Warn}:defer?Line{DeferWarning,Warn}:Line{game.empty()?std::string(GameVideoUnsaved):game,0};
         const std::string now=PerformanceLine(in.performance),verdict=PerformanceVerdict(in.performance);
         const int x=ContentX+16;
         if(!first.text.empty())Add(Role::Readout,{x,y+4,textRight-x,30},{},HelpPerformance,first.flags,first.text);
@@ -931,6 +934,7 @@ struct Builder {
         if(r.kind!=content::RowKind::Button){
             need=std::max(need,CardTitleH+HelpHeightAtFloor(help,sideW)+CardStateH);   // a long state line stays under the help
             need=std::max(need,CardStateH+8+CardButtonH);   // the column: state over the buttons side by side
+            if(const int cat=HapticCategory(r.key);cat>=0&&haptics::PreviewCount(haptics::Category(cat))>1)need=std::max(need,2*CardButtonH+MinGap+8);   // two Feel it tests over Undo and Default (+ the gap above the card)
             int count=0;const content::Option* options=content::OptionsFor(r,c,count);
             for(int i=0;i<count;++i)if(options[i].hint)need=std::max(need,CardTitleH+HelpHeightAtFloor(options[i].hint,fullW)+CardStateH);
         }
@@ -976,7 +980,14 @@ struct Builder {
             if(framegen::Warning(in.frameGen))s.stateFlags=Warn;
         }
         const int category=HapticCategory(k);
-        if(category>=0)s.buttons.push_back({{"Feel it at "+ValueOf(*r,v,c),"Feel it"},{Kind::TestHaptics,category,1},draw::Icon::Feel,Armed()&&m.CanTestHaptics(category),0});
+        if(category>=0){   // one Feel it per test the category has (main's Weapon / Shield, Bow / Throw, Test L / R), each on its own hands
+            const auto cat=haptics::Category(category);const int tests=haptics::PreviewCount(cat);
+            for(int choice=0;choice<tests;++choice){
+                const std::string label=haptics::PreviewLabel(cat,choice);
+                std::vector<std::string> names=tests==1?std::vector<std::string>{"Feel it at "+ValueOf(*r,v,c),"Feel it"}:std::vector<std::string>{"Feel it: "+label,label};
+                s.buttons.push_back({std::move(names),{Kind::TestHaptics,category,choice+1},draw::Icon::Feel,Armed()&&m.CanTestHaptics(category),0});
+            }
+        }
         if(Dirty(k)){const auto was=ValueOf(*r,m.Applied()[k],c);s.buttons.push_back({{"Undo: back to "+was,"Undo: "+was,"Undo"},{Kind::Undo,k},draw::Icon::Undo,Armed(),1});}
         if(r->kind!=content::RowKind::Offer&&!Same(v,d.defaultValue)){
             const auto def=ValueOf(*r,d.defaultValue,c);
@@ -1067,6 +1078,7 @@ struct Builder {
         s.text=tool&&tool->help?tool->help:id==HelpClose?CloseAsksHelp:HelpText(id);
         if(id==HelpCalibrate&&m.Dirty()){s.titleFlags=Locked;s.stateFlags=Locked;s.state="Locked while changes are not applied";}
         if(id==HelpMonoAudio)s.titleFlags=Warn;
+        if(id==HelpPerformance){const std::string g=GameVideoLine(in.game);s.state=g.empty()?std::string(GameVideoUnsaved):g;}   // the game's options, whatever the readout shows
         return s;
     }
     void Card(int top){
@@ -1144,19 +1156,23 @@ struct Builder {
                     placed.push_back({s.buttons[0],{cx,cy,CardColumnW,CardButtonH}});placed.push_back({s.buttons[1],{cx,cy+CardButtonH+MinGap,CardColumnW,CardButtonH}});}
                 else{const int cy=stack(CardButtonH);
                     placed.push_back({s.buttons[0],{cx,cy,half,CardButtonH}});placed.push_back({s.buttons[1],{cx+half+MinGap,cy,half,CardButtonH}});}
-            }else if(inner<2*CardButtonH+MinGap||(state&&inner<CardStateH+8+2*CardButtonH+MinGap&&inner>=CardStateH+8+CardButtonH)){
-                // a short card: Feel it, Undo and Default side by side (under the state line when it fits)
-                const int third=(CardColumnW-2*MinGap)/3;
+            }else if(inner<2*CardButtonH+MinGap||(buttonsN==3&&state&&inner<CardStateH+8+2*CardButtonH+MinGap&&inner>=CardStateH+8+CardButtonH)){   // four buttons keep two rows: one row of four is too narrow for their names
+                // a short card: every button side by side (under the state line when it fits)
+                const int each=(CardColumnW-(buttonsN-1)*MinGap)/buttonsN;
                 int cy=stack(CardButtonH);
                 if(state&&inner>=CardStateH+8+CardButtonH)cy=stateAt(stack(CardStateH+8+CardButtonH));
-                for(int b=0;b<3;++b)placed.push_back({s.buttons[size_t(b)],{cx+b*(third+MinGap),cy,third,CardButtonH}});
-            }else{   // Feel it over Undo and Default
+                for(int b=0;b<buttonsN;++b)placed.push_back({s.buttons[size_t(b)],{cx+b*(each+MinGap),cy,each,CardButtonH}});
+            }else{   // the Feel it buttons (one per test: Weapon / Shield, Bow / Throw...) over Undo and Default
                 const int stacked=2*CardButtonH+MinGap;
                 int cy=stack(stacked);
                 if(state&&inner>=CardStateH+8+stacked)cy=stateAt(stack(CardStateH+8+stacked));
-                placed.push_back({s.buttons[0],{cx,cy,CardColumnW,CardButtonH}});
-                placed.push_back({s.buttons[1],{cx,cy+CardButtonH+MinGap,half,CardButtonH}});
-                placed.push_back({s.buttons[2],{cx+half+MinGap,cy+CardButtonH+MinGap,half,CardButtonH}});
+                int feel=0;for(const auto& b:s.buttons)if(b.hit.kind==Kind::TestHaptics)++feel;
+                feel=std::clamp(feel,1,buttonsN-1);
+                auto row=[&](int first,int count,int y){
+                    const int w=(CardColumnW-(count-1)*MinGap)/count;
+                    for(int b=0;b<count;++b)placed.push_back({s.buttons[size_t(first+b)],{cx+b*(w+MinGap),y,w,CardButtonH}});
+                };
+                row(0,feel,cy);row(feel,buttonsN-feel,cy+CardButtonH+MinGap);
             }
             for(auto& [b,r]:placed)PlaceButton(b,r,s.subject);
         }
@@ -1205,7 +1221,7 @@ struct Builder {
         if(stateH&&end-y-buttonsH>=CardStateH){Add(Role::CardState,{textX,y,textW,CardStateH},{},NoHelp,s.stateFlags,s.state);y+=CardStateH;}
         if(!side&&buttonsN){
             // Centered row under the state line.
-            const int n=std::min(buttonsN,3);
+            const int n=std::min(buttonsN,4);   // two Feel it tests, Undo and Default at most
             const int bw=std::min(CardColumnW,(fullW-(n-1)*MinGap)/n);
             int bx=x+(w-(n*bw+(n-1)*MinGap))/2;const int by=end-CardButtonH;
             for(int i=0;i<n;++i){PlaceButton(s.buttons[size_t(i)],{bx,by,bw,CardButtonH},s.subject);bx+=bw+MinGap;}

@@ -871,7 +871,8 @@ inline MenuData BuildMenu(const Override* overrides,size_t overrideCount,const P
         Override shown=o;shown.format=r.format;
         r.kind=o.kind==RowKind::Auto?DerivedKind(d,shown):o.kind;
         if(!KindFits(r.kind,d,shown)){note(id+": its row kind no longer fits the setting; the data's own control");r.kind=DerivedKind(d,shown);}
-        r.label=o.label?o.label:d.label;r.help=o.help?o.help:HelpText(k)[0]?HelpText(k):d.detail;   // no words of ours: upstream's long help, else its detailr.warn=o.warn;
+        r.label=o.label?o.label:d.label;r.warn=o.warn;
+        r.help=o.help?o.help:HelpText(k)[0]?HelpText(k):d.detail;   // no words of ours: upstream's long help, else its detail
         r.classes=o.classes;r.wraps=o.wraps;r.warnWhen=o.warnWhen;
         r.recommended=o.recommended==o.recommended&&o.recommended>=d.min&&o.recommended<=d.max?o.recommended:std::numeric_limits<float>::quiet_NaN();
         // Value words in range only.

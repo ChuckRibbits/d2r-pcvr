@@ -564,6 +564,53 @@ int main(int argc,char** argv){
         const auto band=L::Build(m,{},{});bool link=false;for(const auto& e:band.elements)if(e.hit.kind==Kind::Open&&e.hit.index==int(View::More)&&e.text=="2 more")link=true;
         Check(link,"the band links More with NVIDIA's two rows");
     }
+    {   // Every override's warn line reaches its row, and draws: Motion combat, Spell glow on hands, Frame generation.
+        int warned=0;
+        for(const auto& o:content::Overrides)if(o.warn){
+            const int k=content::KeyOfId(o.id);if(k<0)continue;++warned;
+            Check(tables.Row(Key(k))&&tables.Row(Key(k))->warn==o.warn,std::string("the warn line reaches its row: ")+o.id);
+        }
+        Check(warned>=4,"the overrides carry warn lines");
+        Values v=Defaults();v[StereoRendering]=0;   // Both eyes: Frame generation is not locked
+        Model m;m.Open(Ready(v));m.SetContext({heroclass::Sorceress});
+        auto sub=[&](View view,Key k){L::Press(m,{Kind::Open,int(view),-1},0);const auto* e=FindRole(L::Build(m,m.context,{}),L::Role::Label,k);return e?std::make_pair(e->sub,e->Has(L::Warn)):std::make_pair(std::string(),false);};
+        for(auto [view,k]:{std::pair{View::Combat,Motion},std::pair{View::World,ElementalHands},std::pair{View::Performance,FrameGeneration}}){
+            const auto [text,warn]=sub(view,k);
+            Check(text==tables.Row(k)->warn&&warn,std::string("its warn line draws, amber: ")+tables.Row(k)->label);
+        }
+    }
+    {   // Vibration: one Feel it per test the category has, each sending its own choice (Weapon / Shield, Bow / Throw, Test L / R).
+        Values v=Defaults();Model m;m.Open(Ready(v));L::Press(m,{Kind::Open,int(View::Vibration),-1},0);
+        for(int cat=0;cat<framevr::haptics::CategoryCount;++cat){
+            const Key k=Key(HapticMelee+cat);const auto category=framevr::haptics::Category(cat);
+            for(bool changed:{false,true}){
+                if(changed)m.Set(k,40);
+                L::LayoutInput in;in.card=k;in.nowMs=10000;const auto l=L::Build(m,{},in);CheckLayout(l,std::string("feel it ")+Definitions[k].label);
+                std::vector<const L::Element*> feel;for(const auto& e:l.elements)if(e.role==L::Role::CardButton&&e.hit.kind==Kind::TestHaptics)feel.push_back(&e);
+                Check(int(feel.size())==framevr::haptics::PreviewCount(category),std::string("a Feel it per test: ")+Definitions[k].label);
+                for(size_t i=0;i<feel.size();++i){
+                    Check(feel[i]->hit.index==cat&&feel[i]->hit.delta==int(i)+1,"each sends its own test");
+                    if(feel.size()>1)Check(feel[i]->text.find(framevr::haptics::PreviewLabel(category,int(i)))!=std::string::npos,"named as main named it");
+                }
+                if(changed)m.Discard();
+            }
+        }
+        Check(std::string(tables.Row(HapticMelee)->help).find("Weapon buzzes the right controller, Shield the left")!=std::string::npos&&
+              framevr::haptics::PreviewLabel(framevr::haptics::Category::Melee,0)==std::string("Weapon")&&framevr::haptics::PreviewLabel(framevr::haptics::Category::Melee,1)==std::string("Shield"),
+              "the Melee help names the two tests the card offers");
+    }
+    {   // The Performance readout shows the game's own graphics options when no warning needs the line, and its card always.
+        Values v=Defaults();v[DeferGpuWait]=1;Model m;m.Open(Ready(v));L::Press(m,{Kind::Open,int(View::Performance),-1},0);
+        L::LayoutInput in;in.game=ParseGameVideo(R"({"Shadow Quality": 4, "Character Detail": 5, "Anti Aliasing": 1, "VSync": 0})");
+        const auto l=L::Build(m,{},in);CheckLayout(l,"performance with the game's options");
+        bool line=false;for(const auto& e:l.elements)if(e.role==L::Role::Readout&&e.text==GameVideoLine(in.game))line=true;
+        Check(line,"the readout shows the game's options");
+        L::LayoutInput unsaved;const auto u=L::Build(m,{},unsaved);
+        bool note=false;for(const auto& e:u.elements)if(e.role==L::Role::Readout&&e.text==GameVideoUnsaved)note=true;
+        Check(note,"or that the game has not saved them yet");
+        in.card=HelpPerformance;const auto card=L::Build(m,{},in);
+        Check(FindRole(card,L::Role::CardState)&&FindRole(card,L::Role::CardState)->text==GameVideoLine(in.game),"the readout's card names them too");
+    }
     {   // Warn lines come from the data (an override's warnWhen), not from Key checks in the layout.
         Values v=Defaults();v[SmoothTurn]=1;v[TurnSpeed]=160;v[StereoRendering]=1;
         Model m;m.Open(Ready(v));L::Press(m,{Kind::Open,int(View::Body),-1},0);

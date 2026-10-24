@@ -118,6 +118,17 @@ static int PagesCheck(){
             }
         }
     }
+    {   // the game's options at their widest: on the readout's second line (no warning) and on its card
+        Values v=AllRows(false);v[DeferGpuWait]=1;
+        for(int hero:Classes)for(bool card:{false,true})for(bool ready:{true,false}){
+            Setup x=Base(View::Performance,hero,v);x.m.ready=ready;
+            x.in.game=ParseGameVideo(R"({"Shadow Quality": 44, "Character Detail": 55, "Light Quality": 44, "Ambient Occlusion Quality": 44,)"
+                                     R"( "Atmospherics Quality": 44, "Resolution Scale": 200, "NVIDIA DLSS": 1, "Anti Aliasing": 1, "VSync": 0})");
+            if(card)x.in.card=HelpPerformance;
+            const auto picture=PaintPage(x.m,x.in);++pages;
+            Report(std::string("game options, ")+ClassName(hero)+(card?", card":"")+(ready?"":", unavailable"),FitProblems(picture.layout));
+        }
+    }
     {   // frame generation's status on its row and card, every state, NVIDIA and FidelityFX, by turns or not
         for(int state=0;state<=int(framevr::framegen::State::NeedsBothEyes);++state)for(int mode:{1,2})for(int hero:Classes){
             Values v=AllRows(false);v[FrameGeneration]=float(mode);
@@ -213,7 +224,7 @@ static int FitCheck(){
                 x.m.Set(k,Normalize(k,d.defaultValue==d.min?d.min+d.step*2:d.min));x.in.card=k;
                 if(!x.m.Dirty())continue;
                 const auto l=check(x,where+", changed");whole(l,Expected(k,true),where+", changed");
-                const int want=(HapticCategory(k)>=0?1:0)+1+(L::Same(x.m.Get()[k],d.defaultValue)?0:1);
+                const int want=(HapticCategory(k)>=0?framevr::haptics::PreviewCount(framevr::haptics::Category(HapticCategory(k))):0)+1+(L::Same(x.m.Get()[k],d.defaultValue)?0:1);
                 if(CountRole(l,L::Role::CardButton)!=want)Fail(where+", changed: the card shows "+std::to_string(CountRole(l,L::Role::CardButton))+" of its "+std::to_string(want)+" buttons");
             }
             for(const auto& e:idle.elements){   // each option pointed: its hint
