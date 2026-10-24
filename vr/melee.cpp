@@ -7,6 +7,7 @@
 #include <mutex>
 #include <array>
 #include <cstdio>
+#include <cstring>
 #include <vector>
 #include <algorithm>
 #include "native_skill_dispatch.h"
@@ -331,7 +332,9 @@ void InstallSmite() {
 //  - server do dispatcher 43ACB0: srvdofunc (Maul's 120 resolves the hit
 //    through 44B2B0, adds the stack), cooldown, srvmissile.
 // The tables are checked where the start and dispatcher index them, and each
-// supported skill's entries against the functions studied for it.
+// supported skill's entries against the functions studied for it. An entry
+// not pinned yet (Unpinned: Conversion's do 79, 2026-10-23) must be set and in
+// the game's .text; its RVA and first bytes are logged once to pin it from.
 constexpr uint64_t UseStateRva=0x33f360;
 constexpr uint8_t UseStateSig[]={0x40,0x56,0x57,0x48,0x83,0xec,0x28,0x48,0x8b,0xfa,0x48,0x8b,0xf1,0x48,0x85,0xd2,0x75,0x13};
 constexpr uint64_t UseStateCallRva=0x4fdd95;   // the server's skill request: UseState(unit, [skill])
@@ -373,12 +376,14 @@ constexpr uint8_t Do64Sig[EntrySig]={0x40,0x55,0x53,0x41,0x54,0x41,0x55,0x41,0x5
 // the hero's animation (4914E0) by the row's Param2 (+0x1BC, read at 556BF5).
 // With no attack animation that rewind would re-time the hero's walk/neutral
 // events, so each call is given a count of 1: one hit, and the jle skips the
-// next-target search and the rewind. These three sites are checked for Fury.
+// next-target search and the rewind. These three sites are checked for Fury
+// and Zeal, the same functions.
 constexpr uint64_t Do13TargetRva=0x556965,Do13CountRva=0x556b56,Do13PaceRva=0x556bf5;
 constexpr uint8_t Do13TargetSig[]={0x41,0x8b,0x56,0x2c,0x48,0x8b,0xce,0x89,0x44,0x24,0x44,0x41,0x8b,0x46,0x30};   // mov edx,[r14+2Ch] .. mov eax,[r14+30h]
 constexpr uint8_t Do13CountSig[]={0x41,0xff,0x4e,0x24,0x41,0x83,0x7e,0x24,0x00,0x0f,0x8e,0xc3,0x00,0x00,0x00};    // dec [r14+24h]; cmp; jle 556C28 (the exit)
 constexpr uint8_t Do13PaceSig[]={0x8b,0x80,0xbc,0x01,0x00,0x00};                                                   // mov eax,[rax+1BCh]
 constexpr uintptr_t NodeHitsOffset=0x24,NodeTargetTypeOffset=0x2c,NodeTargetIdOffset=0x30,RowParam2Offset=0x1bc;
+constexpr uint64_t Unpinned=~uint64_t{0};
 struct StrikeNative {const char* name;int skill,start,action;uint64_t startRva,actionRva;const uint8_t* startSig;const uint8_t* actionSig;};
 constexpr StrikeNative StrikeNatives[]={
     {"Maul",framevr::strikeskills::Maul,56,120,0x5779e0,0x576160,St56Sig,Do120Sig},
@@ -387,12 +392,14 @@ constexpr StrikeNative StrikeNatives[]={
     {"Fire Claws",framevr::strikeskills::FireClaws,58,2,0x577c90,0x430240,St58Sig,Do2Sig},
     {"Hunger",framevr::strikeskills::Hunger,0,122,0,0x576630,nullptr,Do122Sig},
     {"Fury",framevr::strikeskills::Fury,37,13,0x5582a0,0x5568e0,St37Sig,Do13Sig},
+    {"Zeal",framevr::strikeskills::Zeal,37,13,0x5582a0,0x5568e0,St37Sig,Do13Sig},
     {"Bash",framevr::strikeskills::Bash,32,2,0x5695d0,0x430240,St32Sig,Do2Sig},
     {"Stun",framevr::strikeskills::Stun,32,2,0x5695d0,0x430240,St32Sig,Do2Sig},
     {"Concentrate",framevr::strikeskills::Concentrate,32,2,0x5695d0,0x430240,St32Sig,Do2Sig},
     {"Berserk",framevr::strikeskills::Berserk,39,2,0x569670,0x430240,St39Sig,Do2Sig},
     {"Sacrifice",framevr::strikeskills::Sacrifice,29,64,0x565240,0x5645c0,St29Sig,Do64Sig},
     {"Vengeance",framevr::strikeskills::Vengeance,35,2,0x565520,0x430240,St35Sig,Do2Sig},
+    {"Conversion",framevr::strikeskills::Conversion,32,79,0x5695d0,Unpinned,St32Sig,nullptr},
     {"Power Strike",framevr::strikeskills::PowerStrike,6,2,0x558c70,0x430240,St6Sig,Do2Sig},
     {"Impale",framevr::strikeskills::Impale,7,2,0x558590,0x430240,St7Sig,Do2Sig},
     {"Charged Strike",framevr::strikeskills::ChargedStrike,6,11,0x558c70,0x5562b0,St6Sig,Do11Sig},
@@ -405,12 +412,44 @@ using framevr::strikeskills::Refusal;
 std::array<std::atomic<unsigned>,size_t(Refusal::Count)> strikeRefused{};
 std::atomic<unsigned> strikeArmed{0},strikeCast{0},strikeBasic{0},strikeStartRefused{0},strikeFallback{0};
 std::atomic<int> strikeSound{0};
-// Fury's flurry (game thread): the open cast whose hits later strokes deliver.
+// Fury's or Zeal's flurry (game thread): the open cast whose hits later strokes deliver.
 framevr::strikeskills::Flurry flurry;
 std::atomic<unsigned> flurryCasts{0},flurryHits{0},flurryEarly{0},flurryForfeit{0},flurrySpent{0},flurryRefused{0},flurrySpread{0};
 bool StrikeSkillVerified(int skill) {
     for(size_t i=0;i<std::size(StrikeNatives);++i)if(StrikeNatives[i].skill==skill)return strikeVerified[i];
     return false;
+}
+// An unpinned table entry: set, and inside the game's .text section (by its
+// headers: a page not decrypted yet does not read, but is still code).
+bool GameCode(uintptr_t address) {
+    const auto base=reinterpret_cast<uintptr_t>(GetModuleHandleW(nullptr));
+    IMAGE_DOS_HEADER dos{};IMAGE_NT_HEADERS64 nt{};
+    if(!address||!Read(base,dos)||dos.e_magic!=IMAGE_DOS_SIGNATURE||!Read(base+uintptr_t(dos.e_lfanew),nt)||nt.Signature!=IMAGE_NT_SIGNATURE)return false;
+    const uintptr_t sections=base+uintptr_t(dos.e_lfanew)+offsetof(IMAGE_NT_HEADERS64,OptionalHeader)+nt.FileHeader.SizeOfOptionalHeader;
+    for(unsigned i=0;i<nt.FileHeader.NumberOfSections;++i) {
+        IMAGE_SECTION_HEADER s{};
+        if(!Read(sections+i*sizeof s,s))return false;
+        if(std::memcmp(s.Name,".text",6)==0)return address>=base+s.VirtualAddress&&address<base+s.VirtualAddress+s.Misc.VirtualSize;
+    }
+    return false;
+}
+// One table entry: pinned (its RVA and entry bytes), none (rva 0: empty) or
+// Unpinned (in the game's code; logged once with its RVA and bytes).
+bool StrikeEntry(const char* table,uint64_t tableRva,int index,uint64_t rva,const uint8_t* sig,std::vector<uint64_t>& logged) {
+    uintptr_t entry=0;
+    if(!Read(d2rsig::Addr(tableRva+uint64_t(index)*8),entry))return false;
+    if(rva!=Unpinned)return rva?entry==d2rsig::Addr(rva)&&d2rsig::Check(rva,sig,EntrySig):entry==0;
+    if(!GameCode(entry))return false;
+    if(const uint64_t key=tableRva*256+uint64_t(index);std::find(logged.begin(),logged.end(),key)==logged.end()) {
+        logged.push_back(key);
+        uint8_t bytes[EntrySig]{};char hex[3*EntrySig+1]{};
+        if(framevr::ReadMemory(bytes,reinterpret_cast<const void*>(entry),EntrySig))
+            for(size_t i=0;i<EntrySig;++i)snprintf(hex+3*i,4,"%02x ",bytes[i]);
+        char line[200];snprintf(line,sizeof line,"Frame melee skills: %s %d not pinned yet - rva 0x%llx, entry %s",table,index,
+            (unsigned long long)(entry-reinterpret_cast<uintptr_t>(GetModuleHandleW(nullptr))),hex);
+        framevr::logging::Write(line);
+    }
+    return true;
 }
 void InstallStrikes() {
     if(strikeReady.load())return;
@@ -424,13 +463,11 @@ void InstallStrikes() {
         if(!said){said=true;framevr::logging::Write("Frame melee skills: native skill start/do/use-check signatures differ; strikes stay basic attacks");}
         return;
     }
-    unsigned verified=0;
+    unsigned verified=0;std::vector<uint64_t> logged;
     for(size_t i=0;i<std::size(StrikeNatives);++i) {
-        const auto& n=StrikeNatives[i];uintptr_t start=0,action=0;
-        const bool startOk=Read(d2rsig::Addr(StartFunctionsRva+uint64_t(n.start)*8),start)&&
-            (n.startRva?start==d2rsig::Addr(n.startRva)&&d2rsig::Check(n.startRva,n.startSig,EntrySig):start==0);
-        strikeVerified[i]=startOk&&Read(d2rsig::Addr(DoFunctionsRva+uint64_t(n.action)*8),action)&&action==d2rsig::Addr(n.actionRva)&&
-            d2rsig::Check(n.actionRva,n.actionSig,EntrySig);
+        const auto& n=StrikeNatives[i];
+        strikeVerified[i]=StrikeEntry("start",StartFunctionsRva,n.start,n.startRva,n.startSig,logged)&&
+            StrikeEntry("do",DoFunctionsRva,n.action,n.actionRva,n.actionSig,logged);
         if(n.action==13)strikeVerified[i]=strikeVerified[i]&&d2rsig::Check(Do13TargetRva,Do13TargetSig,sizeof Do13TargetSig)&&
             d2rsig::Check(Do13CountRva,Do13CountSig,sizeof Do13CountSig)&&d2rsig::Check(Do13PaceRva,Do13PaceSig,sizeof Do13PaceSig);
         verified+=strikeVerified[i];
@@ -650,7 +687,7 @@ void __cdecl Apply(const D2RL::PluginContext*,void* token) noexcept {
                         if(dual&&(!Read(weapon+8,selectedId)||selectedId!=r.sample.weapons.displayed[hand])){++dualRefused;continue;}
                         Feel(r,header[2]);
                         if(hits.Contains(r.session,r.sweep.stroke,header[2]))continue;
-                        // Fury's flurry (strike_skills.h Flurry): a landed stroke of a claw carrying
+                        // Fury's or Zeal's flurry (strike_skills.h Flurry): a landed stroke of a claw or weapon carrying
                         // the open cast's skill, in its form, may be its next hit, timed from the
                         // flurry's last hit: Unleashed any stroke but one swipe's follow-through;
                         // Classic at the skill's own pace (sooner than the shared cadence would allow).
@@ -725,7 +762,7 @@ void __cdecl Apply(const D2RL::PluginContext*,void* token) noexcept {
                         // skill casts it on a full-cycle stroke's first landed contact (Unleashed) or on
                         // every paced contact (Classic); everything else, and a refused cast, stays the
                         // basic attack. The cast keeps this contact's scope, scaling and on-hit gate.
-                        // A multi-hit cast (Fury) lands its first hit and opens the flurry; while it is
+                        // A multi-hit cast (Fury, Zeal) lands its first hit and opens the flurry; while it is
                         // open, the hand's paced strokes land its next hits and early ones stay basic.
                         const int strikeSkill=r.sample.strikeSkill;
                         auto strike=StrikeOutcome::Basic;int flurryHit=0;const uint64_t sinceFlurryHit=flurry.SinceHit(r.at);

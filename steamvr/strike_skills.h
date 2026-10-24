@@ -11,8 +11,8 @@
 // followed (#223, 2026-10-23). Each further one is added here once verified.
 namespace framevr::strikeskills {
 inline constexpr int FeralRage=232,Maul=233,Rabies=238,FireClaws=239,Hunger=242,Fury=248;
-inline constexpr int PowerStrike=14,Impale=19,ChargedStrike=24,LightningStrike=34,PoisonDagger=73,Sacrifice=96,Vengeance=111,
-                     Bash=126,Stun=139,Concentrate=144,Berserk=152;
+inline constexpr int PowerStrike=14,Impale=19,ChargedStrike=24,LightningStrike=34,PoisonDagger=73,Sacrifice=96,Zeal=106,Vengeance=111,
+                     Conversion=116,Bash=126,Stun=139,Concentrate=144,Berserk=152;
 // The Skills.txt srvstfunc / srvdofunc each skill must still have in its
 // compiled row (D2R skills data; D2MOO for the logic). A row that differs (a
 // game patch, a mod) keeps the basic attack. The Druid's single-hit form skills:
@@ -24,17 +24,19 @@ inline constexpr int PowerStrike=14,Impale=19,ChargedStrike=24,LightningStrike=3
 //  - Fury: start 37 sets the cast's hit count and first target, do 13 lands
 //    one hit per call (multi-hit: Flurry below).
 // The weapon skills that strike once a cast (#223), each with its own start:
-//  - Bash, Stun and Concentrate 32, Power Strike and Charged Strike 6,
-//    Impale 7, Lightning Strike 10, Poison Dagger 16, Sacrifice 29,
+//  - Bash, Stun, Concentrate and Conversion 32, Power Strike and Charged
+//    Strike 6, Impale 7, Lightning Strike 10, Poison Dagger 16, Sacrifice 29,
 //    Vengeance 35, Berserk 39;
 //  - do 2, the shared melee resolve, or the skill's own: Charged Strike 11
-//    (its bolts), Lightning Strike 14 (its chain), Poison Dagger 32, Sacrifice 64.
-// Jab, Fend, Zeal, Frenzy, Double Swing and Whirlwind hit more than once a
-// cast and Charge runs first: not (yet) strike skills.
+//    (its bolts), Lightning Strike 14 (its chain), Poison Dagger 32,
+//    Sacrifice 64, Conversion 79.
+// Zeal is Fury's start 37 and do 13 with a weapon: multi-hit (Flurry below).
+// Jab, Fend, Frenzy, Double Swing and Whirlwind hit more than once a cast
+// with functions of their own, and Charge runs first: not (yet) strike skills.
 struct Row {int skill,start,action;};
 inline constexpr Row Supported[]={{Maul,56,120},{FeralRage,56,120},{Rabies,57,121},{FireClaws,58,2},{Hunger,0,122},{Fury,37,13},
     {Bash,32,2},{Stun,32,2},{Concentrate,32,2},{Berserk,39,2},{Sacrifice,29,64},{Vengeance,35,2},
-    {PowerStrike,6,2},{Impale,7,2},{ChargedStrike,6,11},{LightningStrike,10,14},{PoisonDagger,16,32}};
+    {PowerStrike,6,2},{Impale,7,2},{ChargedStrike,6,11},{LightningStrike,10,14},{PoisonDagger,16,32},{Zeal,37,13},{Conversion,32,79}};
 inline bool Known(int skill) {
     for(const auto& r:Supported)if(r.skill==skill)return true;
     return false;
@@ -85,8 +87,9 @@ inline bool Casts(int skill,bool classic,bool fullCycleFirst) {
 }
 // Multi-hit strike skills (Cal, 2026-10-23, option A: "a werewolf swipe flurry
 // feeds Fury's hits"). One native cast, its hits delivered by the strokes that
-// follow. The casting stroke (the rule above) pays the mana and lands hit 1;
-// each later landed stroke of a claw carrying the same skill, in the same form,
+// follow. Zeal (2026-10-23, the owner: "add Zeal") is the same with a weapon.
+// The casting stroke (the rule above) pays the mana and lands hit 1; each
+// later landed stroke of a claw or weapon carrying the same skill, in the same form,
 // lands the next hit on the creature it struck: the skill's own damage and
 // on-hit effects, no mana, one hit per stroke (the stroke's first landed contact).
 // Pace, measured from the flurry's previous hit (never from an early stroke):
@@ -97,7 +100,7 @@ inline bool Casts(int skill,bool classic,bool fullCycleFirst) {
 //    split into a second stroke 15-80 ms later, is kept from taking a second
 //    hit: FlurryStrokeGapMs.
 //  - Classic (native pacing): the skill's Param2 % of the attack cycle (Fury 70:
-//    natively each middle hit comes after 70 % of the wind-up).
+//    natively each middle hit comes after 70 % of the wind-up; Zeal 100).
 // The unused hits lapse when none lands for two attack cycles; the next
 // qualifying stroke casts anew.
 // Spread (Cal, 2026-10-23 rev6, "most like native"): natively each hit after
@@ -105,7 +108,7 @@ inline bool Casts(int skill,bool classic,bool fullCycleFirst) {
 // than one creature lands Fury on up to FlurryHitsPerStroke of them, the first
 // and the next one it touches, each a whole Fury hit; the casting stroke stays
 // one hit. Further creatures in that stroke stay cleave basics.
-inline bool MultiHit(int skill) {return skill==Fury;}
+inline bool MultiHit(int skill) {return skill==Fury||skill==Zeal;}
 inline constexpr uint32_t FlurryWindowCycles=2,FlurryUnknownCycleMs=1500,FlurryStrokeGapMs=100;
 inline constexpr int FlurryHitsPerStroke=2;
 // A Param2 outside 10..100 (unread, a mod) paces one hit per full cycle.

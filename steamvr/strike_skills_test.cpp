@@ -7,17 +7,25 @@ static int failures=0;
 static void Check(bool ok,const char* what){if(!ok){std::printf("FAIL: %s\n",what);++failures;}}
 int main() {
     for(int s:{Maul,FeralRage,Rabies,FireClaws,Hunger,Fury})Check(Known(s),"the Druid's form skills strike");
-    for(int s:{PowerStrike,Impale,ChargedStrike,LightningStrike,PoisonDagger,Sacrifice,Vengeance,Bash,Stun,Concentrate,Berserk})
+    for(int s:{PowerStrike,Impale,ChargedStrike,LightningStrike,PoisonDagger,Sacrifice,Vengeance,Conversion,Bash,Stun,Concentrate,Berserk})
         Check(Known(s)&&!MultiHit(s),"the single-hit weapon skills strike");
-    for(int s:{0,10,97,106,107,133,147,151,254})Check(!Known(s),"Attack, Jab, Smite, Zeal, Charge, Double Swing, Frenzy, Whirlwind and Tiger Strike do not (yet)");
+    Check(Known(Zeal)&&MultiHit(Zeal)&&Matches(Zeal,37,13)&&!Matches(Zeal,37,2),"Zeal strikes as a flurry, on Fury's functions");
+    for(int s:{0,10,97,107,133,147,151,254})Check(!Known(s),"Attack, Jab, Smite, Charge, Double Swing, Frenzy, Whirlwind and Tiger Strike do not (yet)");
     Check(Matches(Maul,56,120)&&Matches(FeralRage,56,120)&&Matches(Rabies,57,121)&&Matches(FireClaws,58,2)&&Matches(Hunger,0,122)&&Matches(Fury,37,13),
           "each skill's compiled start/do functions");
     Check(!Matches(Fury,9,13)&&!Matches(Fury,37,2),"Fury with another start or do is refused");
     Check(Matches(Bash,32,2)&&Matches(Stun,32,2)&&Matches(Concentrate,32,2)&&Matches(Berserk,39,2)&&Matches(Sacrifice,29,64)&&Matches(Vengeance,35,2)&&
-          Matches(PowerStrike,6,2)&&Matches(Impale,7,2)&&Matches(ChargedStrike,6,11)&&Matches(LightningStrike,10,14)&&Matches(PoisonDagger,16,32),
+          Matches(PowerStrike,6,2)&&Matches(Impale,7,2)&&Matches(ChargedStrike,6,11)&&Matches(LightningStrike,10,14)&&Matches(PoisonDagger,16,32)&&
+          Matches(Conversion,32,79),
           "each weapon skill's compiled start/do functions (Skills.txt)");
     Check(!Matches(Bash,1,2)&&!Matches(ChargedStrike,6,2)&&!Matches(PowerStrike,6,11),"a weapon skill's row that differs is refused");
-    Check(MultiHit(Fury)&&!MultiHit(Maul)&&!MultiHit(Hunger)&&!MultiHit(-1),"only Fury is multi-hit");
+    Check(MultiHit(Fury)&&MultiHit(Zeal)&&!MultiHit(Maul)&&!MultiHit(Hunger)&&!MultiHit(-1),"only Fury and Zeal are multi-hit");
+    {   // Zeal: a weapon's flurry (form 0); Classic paces it at its Param2, a whole cycle.
+        using F=Flurry::Feed;Flurry z;z.Begin(3,Zeal,0,5,100,1000);
+        Check(z.Open(3,Zeal,0)&&z.Left()==4&&z.Floor(480,true)==480&&z.Floor(480,false)==FlurryStrokeGapMs,"Zeal's flurry and its pace");
+        Check(z.Feeds(3,Zeal,0,1479,480,true)==F::TooSoon&&z.Feeds(3,Zeal,0,1480,480,true)==F::Hit&&z.Feeds(3,Zeal,0,1100,480,false)==F::Hit&&
+              z.Feeds(3,Fury,0,1480,480,true)==F::None,"Classic: a full cycle; Unleashed: any later swing; another skill is not its flurry");
+    }
     Check(!Matches(Hunger,56,122)&&!Matches(FireClaws,58,120),"a start or do that differs is refused");
     Check(!Matches(Maul,56,2)&&!Matches(Maul,0,120)&&!Matches(97,0,150),"a changed row or another skill is refused");
     Check(Armed(true,true,true,true,true,Maul)==Maul,"a confirmed trigger skill arms the hand");
@@ -25,7 +33,7 @@ int main() {
     Check(Armed(true,false,true,true,true,Maul)==-1&&Armed(true,true,false,true,true,Maul)==-1&&
           Armed(true,true,true,false,true,Maul)==-1&&Armed(true,true,true,true,false,Maul)==-1,"stale, unknown, unavailable or unconfirmed: basic strikes");
     Check(Armed(true,true,true,true,true,Bash)==Bash,"a weapon skill arms the hand too");
-    Check(Armed(true,true,true,true,true,106)==-1,"a skill not in the list: basic strikes");
+    Check(Armed(true,true,true,true,true,147)==-1,"a skill not in the list: basic strikes");
     Check(FromUseState(0)==Refusal::None&&FromUseState(1)==Refusal::Mana&&FromUseState(2)==Refusal::Weapon&&
           FromUseState(4)==Refusal::Form&&FromUseState(8)==Refusal::Delay,"native use states");
     for(int s:{3,5,6,7,9,-1})Check(FromUseState(s)==Refusal::Other,"other use states");

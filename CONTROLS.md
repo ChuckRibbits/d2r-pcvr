@@ -408,14 +408,15 @@ animation. So far:
 - the Druid's single-hit form skills: **Maul** and **Feral Rage** (their
   stacks build per landed cast), **Rabies**, **Fire Claws** and **Hunger**;
 - the Barbarian's **Bash**, **Stun**, **Concentrate** and **Berserk**;
-- the Paladin's **Sacrifice** and **Vengeance**;
+- the Paladin's **Sacrifice**, **Vengeance** and **Conversion**, and **Zeal**
+  as a swing flurry (below);
 - the Amazon's **Power Strike**, **Impale**, **Charged Strike** and
   **Lightning Strike**;
 - the Necromancer's **Poison Dagger**.
 
 A weapon's left-trigger skill rides the left weapon of a dual-wield pair.
-Skills that hit several times a cast (Jab, Fend, Zeal, Frenzy, Double
-Swing, Whirlwind) and Charge stay trigger buttons. The skill wheel's lower-left box, **Left claw strikes** (Druid
+Skills that hit several times a cast with their own native sequence (Jab,
+Fend, Frenzy, Double Swing, Whirlwind) and Charge stay trigger buttons. The skill wheel's lower-left box, **Left claw strikes** (Druid
 only), picks the left claw's skill with one click: its own trigger's
 (default) or the right trigger's (a skill sits on one trigger only, so this
 puts it on both claws). For plain left-claw strikes, leave the left trigger
@@ -445,6 +446,12 @@ first two it touches (the casting swipe on one); the rest of a cleave stays
 basic. The unused hits lapse after two attack cycles
 without one, or when the form changes or another skill is cast. Only the
 casting swipe growls.
+
+**Zeal: a swing flurry.** The Paladin's **Zeal** works the same way with a
+weapon: the full-cycle swing that casts it pays its mana and lands hit 1 of
+up to five, and each later swing that lands delivers the next hit, with no
+further mana. In Classic each follow-up waits a whole attack cycle (Zeal's
+own pace).
 
 Turning gestures off or changing equipment/assignments cancels an in-progress
 skill draw. Shield contact and its trigger fallback cannot duplicate a cast.
