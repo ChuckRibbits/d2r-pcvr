@@ -28,7 +28,7 @@
 // first pass only (DrawForWrist). The frame rate the full map cost (By turns 88 -> 39 frames
 // a second) did not follow these draws - a quarter of the area and the second eye skipped
 // changed nothing - but the share's size: the hero marker's search, one GPU thread over the
-// 3072x1728 share, took 23.6 ms a frame (RTX 5090); in tiles it takes 0.45 (ui_blit.cpp).
+// 3072x1728 share, took 23.6 ms a frame (RTX 5090); in tiles it takes 0.14 (ui_blit.cpp).
 namespace framevr::fullmap {
 // Set by the transport from the setting; read by gamestate (the lease, the hooks) and hud.
 inline std::atomic<bool> g_on{false};
