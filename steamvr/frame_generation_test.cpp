@@ -46,7 +46,9 @@ int main() {
     s.pending=0;s.ready=1;
     auto r=Classify(Start::Loaded,true,on,&s);
     assert(r.state==State::Active&&r.backend==1&&r.sessions==1&&r.ready==1);
-    assert(Line(r)=="Frame generation: active, OFXR Bridge NVIDIA Medium, 50% scale");
+    assert(Line(r)=="Frame generation: active, OFXR Bridge NVIDIA Medium, 50% scale"&&!Warning(r));
+    r.byTurns=true;   // the game at half the rate by turns: each eye a quarter of the frames
+    assert(Line(r)=="Frame generation: active, OFXR Bridge NVIDIA Medium, 50% scale; best with Both eyes"&&Warning(r));
     s.ready=0;s.bypass=1;
     assert(Classify(Start::Loaded,true,on,&s).state==State::Bypassed);
     s.bypass=0;s.errors=1;s.lastError=int32_t(0x887A0005);
@@ -58,11 +60,11 @@ int main() {
 
     // Every state has a line that fits the Perf page, and a log name.
     for(int i=0;i<=int(State::NoControl);++i){
-        Readout each;each.state=State(i);each.backend=1;each.errors=1;
+        Readout each;each.state=State(i);each.backend=1;each.errors=1;each.byTurns=true;
         const auto line=Line(each);
         assert(line.rfind("Frame generation: ",0)==0&&line.size()<90);
         assert(std::strlen(StateName(State(i)))>0);
     }
-    assert(Warning(State::Error)&&Warning(State::Failed)&&!Warning(State::Active)&&!Warning(State::Off));
+    assert(Warning({State::Error})&&Warning({State::Failed})&&!Warning({State::Active})&&!Warning({State::Off})&&!Warning({State::Off,0,1,2,0,0,0,0,0,true}));
     return 0;
 }

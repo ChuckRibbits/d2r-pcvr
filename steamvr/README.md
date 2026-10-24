@@ -250,7 +250,16 @@ on any graphics card; NVIDIA uses the optical flow hardware of RTX and GTX 1660
 cards, with its quality (Slow, Medium, Fast) and scale (100%, 75%, 50%) on a
 row under it, sent to the loaded layer live through its control API. The Perf
 page's last line and the log say whether it is off, waiting for a restart,
-active, bypassed or failed. If the loader does not list the layer (a game run
+active, bypassed or failed. While it runs it doubles the frame time the game
+is given, so the game draws every other headset frame (45 of 90) and the
+bridge makes the rest: Both eyes then shows each eye half its frames for real,
+By turns only a quarter, and the Perf line suggests Both eyes while By turns
+is on. The bridge takes over every color swapchain whose images are listed
+through it (three more swapchains and an optical flow pipeline each); with the
+mod's panels SteamVR ran out of swapchains, and menus fell back to the flat
+panel. While it is loaded the mod lists the panels' images through the
+runtime's own `xrEnumerateSwapchainImages`, below the bridge, so it takes over
+the two eyes only; the log says so, or why not. If the loader does not list the layer (a game run
 as administrator ignores `XR_API_LAYER_PATH`) or the instance fails with it,
 the game starts without it; Proton's WineOpenXR has no API layers. The
 generated frames come from color alone, so moving things and head turns can

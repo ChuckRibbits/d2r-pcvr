@@ -224,7 +224,7 @@ std::vector<uint8_t> Paint(const Model& m,Hit hover,const char* runtimeStatus,co
             text(gameLine.empty()?GameVideoUnsaved:gameLine.c_str(),{58,GameVideoBox.y+2,1170,29},false,false,quiet);
             const auto frameGenLine=framegen::Line(frameGen);
             text(frameGenLine.c_str(),{58,FrameGenBox.y+2,1170,29},false,false,
-                 framegen::Warning(frameGen.state)?warn:frameGen.state==framegen::State::Active?teal:quiet);
+                 framegen::Warning(frameGen)?warn:frameGen.state==framegen::State::Active?teal:quiet);
         }
         if(m.page==Page::Combat){
             // The ninth row ends at 800; without the offline adapter its notice replaces the difficulty note.

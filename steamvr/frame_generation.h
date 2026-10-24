@@ -15,6 +15,10 @@
 // (XR_API_LAYER_PATH and xrCreateInstance's layers), so turning it on or off
 // takes a restart. The backend and NVIDIA's options reach the loaded layer
 // live through its control API (provider_api.hpp V1, mirrored below).
+// While it runs it doubles the frame time the game is given (xrWaitFrame's
+// predicted period): the game draws every other headset frame and the bridge
+// makes the rest. Both eyes at half the rate then shows each eye half its
+// frames for real; By turns only a quarter, so the Perf line suggests Both eyes.
 // Value-only: nothing here loads a module or reads XR state.
 namespace framevr::framegen {
 enum class Mode {Off,FidelityFx,Nvidia};   // [render] frame_generation 0 / 1 / 2
@@ -89,6 +93,7 @@ struct Readout {
     State state=State::Off;
     int backend=0,preset=1,scale=2;   // what the layer was asked for (Loaded)
     uint32_t sessions=0,ready=0,bypass=0,errors=0;int32_t lastError=0;
+    bool byTurns=false;   // active while the game draws by turns: each eye a quarter of the headset's frames
     bool operator==(const Readout&)const=default;
 };
 // started: as above; installed: plugins\ofxr has the manifest now; wanted: the
@@ -124,7 +129,7 @@ inline std::string Line(const Readout& r){
         case State::Failed:return "Frame generation: OFXR Bridge did not start; playing without it (see the log)";
         case State::Starting:return "Frame generation: OFXR Bridge loaded, waiting for the headset session";
         case State::Applying:std::snprintf(line,sizeof line,"Frame generation: OFXR Bridge switching to %s",running.c_str());return line;
-        case State::Active:std::snprintf(line,sizeof line,"Frame generation: active, OFXR Bridge %s",running.c_str());return line;
+        case State::Active:std::snprintf(line,sizeof line,"Frame generation: active, OFXR Bridge %s%s",running.c_str(),r.byTurns?"; best with Both eyes":"");return line;
         case State::Bypassed:return "Frame generation: OFXR Bridge loaded but bypassed; no generated frames";
         case State::Paused:return "Frame generation: Off for now; restart the game to unload OFXR Bridge";
         case State::Error:
@@ -135,5 +140,8 @@ inline std::string Line(const Readout& r){
     return {};
 }
 // Whether the line is a warning (amber on the Perf page).
-inline bool Warning(State s){return s==State::Failed||s==State::Bypassed||s==State::Error||s==State::NotInstalled||s==State::Unavailable;}
+inline bool Warning(const Readout& r){
+    return r.state==State::Failed||r.state==State::Bypassed||r.state==State::Error||r.state==State::NotInstalled||r.state==State::Unavailable||
+           (r.state==State::Active&&r.byTurns);
+}
 }

@@ -3,6 +3,7 @@
 #define XR_NO_PROTOTYPES
 #include <windows.h>
 #include <shlobj.h>
+#include <tlhelp32.h>
 #include <d3d12.h>
 #include <dxgi1_4.h>
 #include <wrl/client.h>
@@ -131,6 +132,16 @@ framegen::RequestFn frameGenRequest=nullptr;
 std::wstring frameGenFolder;   // plugins\ofxr beside this plugin
 framegen::Readout frameGenReadout;bool frameGenRead=false,frameGenInstalled=false;
 ULONGLONG frameGenReadAt=0,frameGenInstalledAt=0;
+// OFXR Bridge takes over every color swapchain whose images are listed
+// through it: three more runtime swapchains and an optical flow pipeline
+// each. With this mod's panels (menus, map, VR Settings, notices, blood,
+// strain, the bow laser, the belt and companions) SteamVR ran out on the
+// owner's PC (2026-10-23: "create atlas failed (-10)" 839 times, menus back
+// on the flat panel). Only the eyes need it, so while it is loaded the
+// panels' images are listed by the runtime's own function, below the bridge
+// (neither the loader nor the bridge wraps handles); the bridge passes their
+// acquire, wait and release on untouched and never builds anything for them.
+PFN_xrEnumerateSwapchainImages runtimeEnumerateImages=nullptr;
 LogFn logger=nullptr;
 PanelFn wantsPanel=nullptr;
 PanelFn inWorld=nullptr;
@@ -912,6 +923,45 @@ bool FrameGenListed() {
     if(XR_FAILED(enumerate(count,&count,layers.data())))return false;
     return std::any_of(layers.begin(),layers.begin()+std::min<size_t>(count,layers.size()),[](const auto& l){return !std::strcmp(l.layerName,framegen::LayerName);});
 }
+// The runtime under the layers: the one loaded module that offers the
+// runtime negotiation (SteamVR's vrclient_x64.dll, VDXR's) and is no layer.
+// Its xrEnumerateSwapchainImages for this instance, else none.
+PFN_xrEnumerateSwapchainImages FrameGenRuntimeEnumerate() {
+    const HANDLE modules=CreateToolhelp32Snapshot(TH32CS_SNAPMODULE,GetCurrentProcessId());
+    if(modules==INVALID_HANDLE_VALUE)return nullptr;
+    PFN_xrNegotiateLoaderRuntimeInterface negotiate=nullptr;int found=0;
+    MODULEENTRY32W module{};module.dwSize=sizeof module;
+    for(BOOL more=Module32FirstW(modules,&module);more;more=Module32NextW(modules,&module)) {
+        const auto candidate=reinterpret_cast<PFN_xrNegotiateLoaderRuntimeInterface>(GetProcAddress(module.hModule,"xrNegotiateLoaderRuntimeInterface"));
+        if(!candidate||module.hModule==loader||GetProcAddress(module.hModule,"xrNegotiateLoaderApiLayerInterface"))continue;
+        negotiate=candidate;++found;
+    }
+    CloseHandle(modules);
+    if(found!=1)return nullptr;
+    XrNegotiateLoaderInfo li{XR_LOADER_INTERFACE_STRUCT_LOADER_INFO,XR_LOADER_INFO_STRUCT_VERSION,sizeof(XrNegotiateLoaderInfo),1,1,XR_API_VERSION_1_0,XR_API_VERSION_1_0};
+    XrNegotiateRuntimeRequest rr{XR_LOADER_INTERFACE_STRUCT_RUNTIME_REQUEST,XR_RUNTIME_INFO_STRUCT_VERSION,sizeof(XrNegotiateRuntimeRequest)};
+    PFN_xrEnumerateSwapchainImages enumerate=nullptr;
+    if(XR_FAILED(negotiate(&li,&rr))||!rr.getInstanceProcAddr||
+       XR_FAILED(rr.getInstanceProcAddr(instance,"xrEnumerateSwapchainImages",reinterpret_cast<PFN_xrVoidFunction*>(&enumerate))))return nullptr;
+    return enumerate;
+}
+// The panels' images: below the bridge while it is loaded, else as usual.
+XrResult EnumeratePanelImages(XrSwapchain chain,uint32_t capacity,uint32_t* count,XrSwapchainImageBaseHeader* images) {
+    return (runtimeEnumerateImages?runtimeEnumerateImages:pEnumerateSwapchainImages)(chain,capacity,count,images);
+}
+// Only if the runtime's own list gives the left eye's images as the bridge
+// passed them on; else the panels go through the bridge as before.
+void FrameGenCheckPanelImages(XrSwapchain chain,const std::vector<XrSwapchainImageD3D12KHR>& passed) {
+    if(!runtimeEnumerateImages)return;
+    uint32_t n=0;
+    bool same=XR_SUCCEEDED(runtimeEnumerateImages(chain,0,&n,nullptr))&&n==passed.size();
+    std::vector<XrSwapchainImageD3D12KHR> own(n,{XR_TYPE_SWAPCHAIN_IMAGE_D3D12_KHR});
+    same=same&&XR_SUCCEEDED(runtimeEnumerateImages(chain,n,&n,reinterpret_cast<XrSwapchainImageBaseHeader*>(own.data())));
+    for(uint32_t i=0;same&&i<n;++i)same=own[i].texture==passed[i].texture;
+    if(!same)runtimeEnumerateImages=nullptr;
+    Say(same?"Frame generation: the panels' images are listed below OFXR Bridge; it takes over the eyes only":
+             "Frame generation: the runtime's own image list differs; the panels go through OFXR Bridge (SteamVR may run out of swapchains)");
+}
 // Asks the loaded layer for the settings (caller holds frameGenMutex).
 void FrameGenAsk(const framegen::Options& o) {
     if(!frameGenRequest)return;
@@ -938,7 +988,7 @@ framegen::Start FrameGenAttach() {
 }
 // What the Perf page and the log say of frame generation. The layer is asked
 // at most twice a second; each change is logged.
-framegen::Readout FrameGenNow(ULONGLONG now) {
+framegen::Readout FrameGenNow(ULONGLONG now,bool byTurns) {
     std::lock_guard lock(frameGenMutex);
     if(frameGenRead&&now-frameGenReadAt<500)return frameGenReadout;
     frameGenReadAt=now;
@@ -950,7 +1000,8 @@ framegen::Readout FrameGenNow(ULONGLONG now) {
     }
     framegen::ControlSnapshotV1 snapshot;
     const bool answered=frameGenSnapshot&&frameGenSnapshot(&snapshot)!=0;
-    const auto readout=framegen::Classify(frameGenStart,frameGenInstalled,wanted,answered?&snapshot:nullptr);
+    auto readout=framegen::Classify(frameGenStart,frameGenInstalled,wanted,answered?&snapshot:nullptr);
+    readout.byTurns=readout.state==framegen::State::Active&&byTurns;
     if(!frameGenRead||!(readout==frameGenReadout)) {
         char line[260];std::snprintf(line,sizeof line,"%s [%s; sessions %u, ready %u, bypass %u, errors %u]",framegen::Line(readout).c_str(),
             framegen::StateName(readout.state),readout.sessions,readout.ready,readout.bypass,readout.errors);
@@ -970,6 +1021,7 @@ bool LoadFunctions() {
     auto frameGenStarted=wineOpenXR?framegen::Start::Unavailable:framegen::Start::NotAsked;
     bool frameGenOffered=false;
     {std::lock_guard lock(frameGenMutex);frameGenStart=frameGenStarted;frameGenSnapshot=nullptr;frameGenRequest=nullptr;frameGenRead=false;}
+    runtimeEnumerateImages=nullptr;
     if(wineOpenXR&&frameGen.On())Say("Frame generation: WineOpenXR has no OpenXR API layers; OFXR Bridge stays off under Proton");
     // The mod's own loader beside this plugin (mods\D2R-PCVR\d2rloader\plugins), then
     // the usual search (the game folder of an older install).
@@ -1043,7 +1095,11 @@ bool LoadFunctions() {
         frameGenLayer=false;frameGenStarted=framegen::Start::Failed;instance=XR_NULL_HANDLE;
         ci.enabledApiLayerCount=0;ci.enabledApiLayerNames=nullptr;created=pCreateInstance(&ci,&instance);
     }
-    if(frameGenLayer)frameGenStarted=FrameGenAttach();
+    if(frameGenLayer) {
+        frameGenStarted=FrameGenAttach();
+        runtimeEnumerateImages=FrameGenRuntimeEnumerate();
+        if(!runtimeEnumerateImages)Say("Frame generation: no runtime found under OFXR Bridge; the panels go through it (SteamVR may run out of swapchains)");
+    }
     {std::lock_guard lock(frameGenMutex);frameGenStart=frameGenStarted;frameGenRead=false;}
     if(frameGenLayer)Say("Frame generation: OFXR Bridge is in this OpenXR instance (experimental)");
     if(!Check(created,"create instance")) return false;
@@ -1143,9 +1199,9 @@ bool UploadAtlas(XrSwapchain& chain,DXGI_FORMAT eyeFormat,int atlasWidth,int atl
     ci.format=eyeFormat;ci.width=atlasWidth;ci.height=atlasHeight;ci.sampleCount=ci.faceCount=ci.arraySize=ci.mipCount=1;
     if(!chain&&!Check(pCreateSwapchain(session,&ci,&chain),"create atlas"))return false;
     uint32_t count=0;
-    if(!Check(pEnumerateSwapchainImages(chain,0,&count,nullptr),"count static atlas images"))return false;
+    if(!Check(EnumeratePanelImages(chain,0,&count,nullptr),"count static atlas images"))return false;
     std::vector<XrSwapchainImageD3D12KHR> images(count,{XR_TYPE_SWAPCHAIN_IMAGE_D3D12_KHR});
-    if(!Check(pEnumerateSwapchainImages(chain,count,&count,reinterpret_cast<XrSwapchainImageBaseHeader*>(images.data())),"get static atlas images"))return false;
+    if(!Check(EnumeratePanelImages(chain,count,&count,reinterpret_cast<XrSwapchainImageBaseHeader*>(images.data())),"get static atlas images"))return false;
     double at=Milliseconds();
     const auto stage=[&](double& into){const double t=Milliseconds();into+=t-at;at=t;};
     uint32_t index=0;XrSwapchainImageAcquireInfo ai{XR_TYPE_SWAPCHAIN_IMAGE_ACQUIRE_INFO};
@@ -1359,6 +1415,7 @@ bool Initialize(reshade::api::command_queue* rq,reshade::api::swapchain* swap) {
         if(!e.chain&&!Check(pCreateSwapchain(session,&c,&e.chain),"create eye swapchain")) return false;
         n=0;pEnumerateSwapchainImages(e.chain,0,&n,nullptr);e.images.resize(n,{XR_TYPE_SWAPCHAIN_IMAGE_D3D12_KHR});
         if(!Check(pEnumerateSwapchainImages(e.chain,n,&n,reinterpret_cast<XrSwapchainImageBaseHeader*>(e.images.data())),"enumerate eye textures")) return false;
+        if(&e==&eyes[0])FrameGenCheckPanelImages(e.chain,e.images);
         if(!Hr(device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT,IID_PPV_ARGS(&e.allocator)),"create eye copy allocator")||
            !Hr(device->CreateCommandList(0,D3D12_COMMAND_LIST_TYPE_DIRECT,e.allocator.Get(),nullptr,IID_PPV_ARGS(&e.commands)),"create eye copy list")||
            !Hr(e.commands->Close(),"close initial eye copy list"))return false;
@@ -1827,7 +1884,7 @@ void SettingsPointer(const settings::InputGate::Edges& edges,bool grip) {
     // The Perf page repaints with each second's numbers; the others never for them.
     const bool performancePage=settingsModel.page==settings::Page::Performance;
     const bool fresh=performance.valid&&now-performanceAt<=2000;
-    const auto frameGen=performancePage?FrameGenNow(now):framegen::Readout{};
+    const auto frameGen=performancePage?FrameGenNow(now,performance.valid&&performance.byTurns):framegen::Readout{};
     const SettingsPicture wanted{settingsModel.revision,hover,status,help,warnings,performancePage&&fresh?performanceSerial:0,
                                  performancePage?game:settings::GameVideo{},frameGen};
     if(!(wanted==settingsPainted)&&now>=settingsPaintAt&&!settingsPaintRequest){
@@ -3516,9 +3573,9 @@ bool CopyMap(reshade::api::command_queue* rq) {
         c.format=DXGI_FORMAT_R16G16B16A16_FLOAT;c.width=c.height=mapSide;c.sampleCount=c.faceCount=c.arraySize=c.mipCount=1;
         if(XR_FAILED(pCreateSwapchain(session,&c,&e.chain)))return false;
         uint32_t n=0;
-        if(XR_FAILED(pEnumerateSwapchainImages(e.chain,0,&n,nullptr))||!n)return false;
+        if(XR_FAILED(EnumeratePanelImages(e.chain,0,&n,nullptr))||!n)return false;
         e.images.resize(n,{XR_TYPE_SWAPCHAIN_IMAGE_D3D12_KHR});
-        if(XR_FAILED(pEnumerateSwapchainImages(e.chain,n,&n,reinterpret_cast<XrSwapchainImageBaseHeader*>(e.images.data()))))return false;
+        if(XR_FAILED(EnumeratePanelImages(e.chain,n,&n,reinterpret_cast<XrSwapchainImageBaseHeader*>(e.images.data()))))return false;
         if(FAILED(device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT,IID_PPV_ARGS(&e.allocator)))||
            FAILED(device->CreateCommandList(0,D3D12_COMMAND_LIST_TYPE_DIRECT,e.allocator.Get(),nullptr,IID_PPV_ARGS(&e.commands)))||FAILED(e.commands->Close()))return false;
         Say("Frame menu map: 512x512 GPU surface ready; native explored map shared by both eyes");
@@ -3579,8 +3636,8 @@ bool CopyUi(reshade::api::command_queue* rq) {
         XrSwapchainCreateInfo c{XR_TYPE_SWAPCHAIN_CREATE_INFO};c.usageFlags=XR_SWAPCHAIN_USAGE_COLOR_ATTACHMENT_BIT|XR_SWAPCHAIN_USAGE_TRANSFER_DST_BIT;
         c.format=DXGI_FORMAT_R16G16B16A16_FLOAT;c.width=w;c.height=h;c.sampleCount=c.faceCount=c.arraySize=c.mipCount=1;
         if(XR_FAILED(pCreateSwapchain(session,&c,&e.chain))) {uiSupported=false;Say("Frame panels: UI format unavailable; native menu retained");return true;}
-        uint32_t n=0;pEnumerateSwapchainImages(e.chain,0,&n,nullptr);e.images.resize(n,{XR_TYPE_SWAPCHAIN_IMAGE_D3D12_KHR});
-        if(XR_FAILED(pEnumerateSwapchainImages(e.chain,n,&n,reinterpret_cast<XrSwapchainImageBaseHeader*>(e.images.data()))))return false;
+        uint32_t n=0;EnumeratePanelImages(e.chain,0,&n,nullptr);e.images.resize(n,{XR_TYPE_SWAPCHAIN_IMAGE_D3D12_KHR});
+        if(XR_FAILED(EnumeratePanelImages(e.chain,n,&n,reinterpret_cast<XrSwapchainImageBaseHeader*>(e.images.data()))))return false;
         if(FAILED(device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT,IID_PPV_ARGS(&e.allocator)))||
            FAILED(device->CreateCommandList(0,D3D12_COMMAND_LIST_TYPE_DIRECT,e.allocator.Get(),nullptr,IID_PPV_ARGS(&e.commands)))||FAILED(e.commands->Close()))return false;
         uiWidth=w;uiHeight=h;
@@ -4271,7 +4328,7 @@ void NoteFrame(double gameMs,double waitMs,double drawMs,double vrMs,double peri
     performance.gameMs=w.periods?float(w.game/w.periods):0.f;performance.waitMs=float(w.wait*k);
     performance.drawMs=float(w.draw*k);performance.vrMs=float(w.vr*k);
     ++performanceSerial;performanceAt=now;w={};w.since=w.last=now;
-    FrameGenNow(now);   // logs what OFXR Bridge does, once a second of frames
+    FrameGenNow(now,performance.byTurns);   // logs what OFXR Bridge does, once a second of frames
 }
 void ConfigureGameplay(bool enabled) {
     std::lock_guard lock(mutex);
@@ -4761,6 +4818,7 @@ void Shutdown(bool preserveResolution) {
     if(session&&pDestroySession)pDestroySession(session);if(actionSet&&pDestroyActionSet)pDestroyActionSet(actionSet);
     // Destroying the instance unloads OFXR Bridge: its entry points go first.
     {std::lock_guard lock(frameGenMutex);frameGenSnapshot=nullptr;frameGenRequest=nullptr;frameGenStart=framegen::Start::NotAsked;frameGenRead=false;}
+    runtimeEnumerateImages=nullptr;
     if(instance&&pDestroyInstance)pDestroyInstance(instance);
     session=XR_NULL_HANDLE;instance=XR_NULL_HANDLE;actionSet=XR_NULL_HANDLE;headSpace=space=XR_NULL_HANDLE;
     hapticActions.Reset();
