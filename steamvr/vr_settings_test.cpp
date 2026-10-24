@@ -95,8 +95,21 @@ int main(){
         external[ElementalHands]=1;Check(Conflict(external,request.base,request.changed),"its conflicts are detected");
     }
     {
-        Check(RowCount(Page::Performance)==6&&RowKey(Page::Performance,4)==Foveation&&RowKey(Page::Performance,5)==FoveationStrength&&
+        Check(RowCount(Page::Performance)==7&&RowKey(Page::Performance,4)==Foveation&&RowKey(Page::Performance,5)==FoveationStrength&&
               RowKey(Page::Performance,1)==RenderResolution,"strength sits directly under foveated rendering");
+        // Frame generation last; NVIDIA's quality and scale share the row under it, with NVIDIA only.
+        Check(RowKey(Page::Performance,6)==FrameGeneration&&Defaults()[FrameGeneration]==0,"frame generation is on the Perf page, off by default");
+        auto nvidia=Defaults();nvidia[FrameGeneration]=2;
+        Check(RowCount(Page::Performance,nvidia)==8&&RowKey(Page::Performance,7,nvidia)==FrameGenPreset&&PairOf(FrameGenPreset)==FrameGenScale,
+              "NVIDIA's quality and scale share a row");
+        auto fidelity=Defaults();fidelity[FrameGeneration]=1;
+        Check(RowCount(Page::Performance,fidelity)==7,"FidelityFX has no NVIDIA row");
+        Check(Defaults()[FrameGenPreset]==1&&Defaults()[FrameGenScale]==2,"NVIDIA Medium at 50% to start");
+        Check(Normalize(FrameGeneration,3)==0&&Normalize(FrameGeneration,1.5f)==0&&Normalize(FrameGenScale,-1)==2&&Normalize(FrameGenPreset,2)==2,
+              "out-of-range frame generation values read as their defaults");
+        Check(std::wstring(Definitions[FrameGeneration].key)==L"frame_generation"&&std::wstring(Definitions[FrameGeneration].section)==L"render"&&
+              std::wstring(Definitions[FrameGenPreset].key)==L"frame_generation_preset"&&std::wstring(Definitions[FrameGenScale].key)==L"frame_generation_scale",
+              "frame generation's INI keys");
         Check(RowKey(Page::Performance,0)==StereoRendering&&RowKey(Page::Performance,2)==DrawDistance&&RowKey(Page::Performance,3)==ObjectDistance,
               "everything that changes the frame rate is on the Perf page");
         bool mirrorRow=false;
@@ -143,6 +156,23 @@ int main(){
         Check(Normalize(StereoRendering,NAN)==1&&Normalize(StereoRendering,-3)==1&&Normalize(StereoRendering,3)==1&&Normalize(StereoRendering,1.5f)==1&&
               Normalize(StereoRendering,0)==0,"malformed stereo rendering goes by turns");
         Check(Normalize(StereoRendering,2)==1,"a profile saved with Replay goes by turns");
+    }
+    {   // Frame generation steps Off, FidelityFX, NVIDIA and stops at the ends; NVIDIA brings its row.
+        Model frames;frames.Open(s);frames.Click({Kind::Tab,int(Page::Performance)});
+        frames.Click(At(frames,Page::Performance,Decrease(6)));
+        Check(frames.Get()[FrameGeneration]==0,"Off stays Off");
+        frames.Click(At(frames,Page::Performance,Increase(6)));
+        Check(frames.Get()[FrameGeneration]==1&&frames.Rows().count==7,"FidelityFX");
+        frames.Click(At(frames,Page::Performance,Increase(6)));frames.Click(At(frames,Page::Performance,Increase(6)));
+        Check(frames.Get()[FrameGeneration]==2&&frames.Rows().count==8&&frames.Rows()[7]==FrameGenPreset,"NVIDIA, and no further");
+        frames.Click(At(frames,Page::Performance,PairDecrease(7,0)));frames.Click(At(frames,Page::Performance,PairIncrease(7,1)));
+        Check(frames.Get()[FrameGenPreset]==0&&frames.Get()[FrameGenScale]==2,"Slow; the scale stops at 50%");
+        frames.Click(At(frames,Page::Performance,PairDecrease(7,1)));
+        Check(frames.Get()[FrameGenScale]==1&&frames.Dirty(),"75%");
+        Check(HelpAt(Page::Performance,1000.f/Width,(RowY+7*RowStep+10.f)/Height,false,&frames.Get())==FrameGenScale&&
+              HelpAt(Page::Performance,700.f/Width,(RowY+7*RowStep+10.f)/Height,false,&frames.Get())==FrameGenPreset,"each half explains its own setting");
+        Check(HelpAt(Page::Performance,600.f/Width,(FrameGenBox.y+10.f)/Height)==HelpFrameGen&&HelpText(HelpFrameGen)[0]&&
+              FrameGenBox.y>=GameVideoBox.y+GameVideoBox.h&&FrameGenBox.y+FrameGenBox.h<=876,"the status line under the game's options has help");
     }
     {   // The GPU wait not deferred: the Perf page's button turns it on, once, in every mode
         Model defer;defer.Open(s);defer.Click({Kind::Tab,int(Page::Performance)});
@@ -206,7 +236,7 @@ int main(){
         Check(HelpAt(Page::Performance,600.f/Width,(PerformanceBox.y+10.f)/Height)==HelpPerformance&&
               HelpAt(Page::Performance,600.f/Width,(GameVideoBox.y+10.f)/Height)==HelpGameVideo,"each of the Perf page's lines has help");
         r.mixed=true;Check(PerformanceLine(r).find("(mixed)")!=std::string::npos,"a second of turns and pairs says so");r.mixed=false;
-        Check(HelpText(HelpPerformance)[0]&&HelpText(HelpGameVideo)[0]&&HelpTitle(HelpPerformance)[0]&&HelpTitle(HelpGameVideo)[0]&&HelpLast==HelpGameVideo,"and their help reads");
+        Check(HelpText(HelpPerformance)[0]&&HelpText(HelpGameVideo)[0]&&HelpTitle(HelpPerformance)[0]&&HelpTitle(HelpGameVideo)[0]&&HelpLast==HelpFrameGen,"and their help reads");
         Check(HelpAt(Page::Video,600.f/Width,(PerformanceBox.y+10.f)/Height)==NoHelp,"not on other pages");
     }
     {   // ReShade depth: d2r_pcvr.ini [render] reshade_depth (not in VR Settings), set in ReShade.ini before ReShade loads
@@ -543,7 +573,7 @@ int main(){
         v[Seated]=1;Check(!RowShown(Waist,v,{}),"seated: no standing belt drop");
         v[Foveation]=0;Check(!RowShown(FoveationStrength,v,{}),"no foveation strength while it is Off");
         v[BloodVisor]=0;Check(!RowShown(BloodWipe,v,{}),"no face wipe without blood");
-        Check(RowCount(Page::VR,v)==8&&RowCount(Page::Performance,v)==5&&RowCount(Page::HUD,v)==9,"each page drops what cannot apply");
+        Check(RowCount(Page::VR,v)==8&&RowCount(Page::Performance,v)==6&&RowCount(Page::HUD,v)==9,"each page drops what cannot apply");
     }
     {   // Windows Mono audio: the title row warns on every page; pointing at it explains
         const float u=(MonoAudioBox.x+20.f)/Width,v=(MonoAudioBox.y+20.f)/Height;

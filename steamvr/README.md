@@ -235,6 +235,40 @@ refresh. Drawing grows with what is in view, the draw distances and the game's
 shadows, and hardly with resolution. The game's own graphics options are shown
 as it last saved them; change those in its Options > Video.
 
+VR Settings > Perf > **Frame generation** (experimental, Off by default) runs
+[OFXR Bridge](https://github.com/tig3rmast3r/OFXR-Bridge) by tig3rmast3r
+(LGPL-3.0-or-later), an OpenXR API layer that adds a frame made by optical flow
+between two the game draws. On native Windows, Setup downloads its pinned
+0.2.1 release (build V116; the SHA-256 is in `install.py`) and installs the
+layer, its licenses, a layer manifest and `ofxr_bridge.ini` in
+`mods\D2R-PCVR\d2rloader\plugins\ofxr`. Its tray program is not installed and
+nothing is registered: while the setting is on, the mod adds that folder to
+`XR_API_LAYER_PATH` for its own process and names the layer in
+`xrCreateInstance` (`steamvr/frame_generation.h`). Turning it on or off takes a
+restart; Off while it is loaded asks it to step aside at once. FidelityFX runs
+on any graphics card; NVIDIA uses the optical flow hardware of RTX and GTX 1660
+cards, with its quality (Slow, Medium, Fast) and scale (100%, 75%, 50%) on a
+row under it, sent to the loaded layer live through its control API. The Perf
+page's last line and the log say whether it is off, waiting for a restart,
+active, bypassed or failed. While it runs it doubles the frame time the game
+is given, so the game draws every other headset frame (45 of 90) and the
+bridge makes the rest: Both eyes then shows each eye half its frames for real,
+By turns only a quarter, and the Perf line suggests Both eyes while By turns
+is on. The bridge takes over every color swapchain whose images are listed
+through it (three more swapchains and an optical flow pipeline each); with the
+mod's panels SteamVR ran out of swapchains, and menus fell back to the flat
+panel. While it is loaded the mod lists the panels' images through the
+runtime's own `xrEnumerateSwapchainImages`, below the bridge, so it takes over
+the two eyes only; the log says so, or why not. If the loader does not list the layer (a game run
+as administrator ignores `XR_API_LAYER_PATH`) or the instance fails with it,
+the game starts without it; Proton's WineOpenXR has no API layers. The
+generated frames come from color alone, so moving things and head turns can
+show artifacts, and the Perf page's frame rate counts the frames the game
+draws, not the generated ones. The layer needs the Microsoft Visual C++ x64
+runtime. Its settings are `[render] frame_generation` (0 Off, 1 FidelityFX,
+2 NVIDIA), `frame_generation_preset` (0 Slow, 1 Medium, 2 Fast) and
+`frame_generation_scale` (0 100%, 1 75%, 2 50%).
+
 `[render] reshade_depth` in `d2r_pcvr.ini` (not in VR Settings) switches
 ReShade's Generic Depth add-on, which looks at every draw call to find the
 depth buffer; in VR the fog and sky read the mod's own depth (on the flat menu
