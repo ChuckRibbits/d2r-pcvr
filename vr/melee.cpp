@@ -7,7 +7,6 @@
 #include <mutex>
 #include <array>
 #include <cstdio>
-#include <cstring>
 #include <vector>
 #include <algorithm>
 #include "native_skill_dispatch.h"
@@ -332,10 +331,7 @@ void InstallSmite() {
 //  - server do dispatcher 43ACB0: srvdofunc (Maul's 120 resolves the hit
 //    through 44B2B0, adds the stack), cooldown, srvmissile.
 // The tables are checked where the start and dispatcher index them, and each
-// supported skill's entries against the functions studied for it. A weapon
-// skill's own entries (#223) are not pinned yet (Unpinned): there the entry
-// must be set and in the game's executable code, and its RVA and first bytes
-// are logged once to be pinned from.
+// supported skill's entries against the functions studied for it.
 constexpr uint64_t UseStateRva=0x33f360;
 constexpr uint8_t UseStateSig[]={0x40,0x56,0x57,0x48,0x83,0xec,0x28,0x48,0x8b,0xfa,0x48,0x8b,0xf1,0x48,0x85,0xd2,0x75,0x13};
 constexpr uint64_t UseStateCallRva=0x4fdd95;   // the server's skill request: UseState(unit, [skill])
@@ -356,6 +352,20 @@ constexpr uint8_t Do121Sig[EntrySig]={0x40,0x55,0x53,0x56,0x57,0x41,0x54,0x41,0x
 constexpr uint8_t Do122Sig[EntrySig]={0x40,0x55,0x56,0x57,0x41,0x54,0x41,0x55,0x41,0x57};
 constexpr uint8_t St37Sig[EntrySig]={0x48,0x89,0x5c,0x24,0x20,0x55,0x57,0x41,0x55,0x41};
 constexpr uint8_t Do13Sig[EntrySig]={0x40,0x55,0x56,0x57,0x41,0x55,0x41,0x57,0x48,0x8d};
+// The weapon skills' entries (#223), read live from the decrypted tables by
+// the dev build (2026-10-23, D2R 3.3.94995, which keeps 3.3.93787's RVAs).
+constexpr uint8_t St6Sig[EntrySig]={0x40,0x55,0x56,0x57,0x41,0x54,0x41,0x56,0x41,0x57};
+constexpr uint8_t St7Sig[EntrySig]={0x40,0x55,0x56,0x57,0x41,0x54,0x41,0x56,0x41,0x57};
+constexpr uint8_t St10Sig[EntrySig]={0x40,0x55,0x53,0x56,0x57,0x41,0x54,0x41,0x56,0x48};
+constexpr uint8_t St16Sig[EntrySig]={0x40,0x55,0x56,0x57,0x41,0x54,0x41,0x55,0x41,0x56};
+constexpr uint8_t St29Sig[EntrySig]={0x40,0x55,0x56,0x57,0x41,0x55,0x41,0x56,0x41,0x57};
+constexpr uint8_t St32Sig[EntrySig]={0x48,0x89,0x5c,0x24,0x08,0x48,0x89,0x6c,0x24,0x10};
+constexpr uint8_t St35Sig[EntrySig]={0x40,0x55,0x56,0x57,0x41,0x54,0x41,0x55,0x41,0x57};
+constexpr uint8_t St39Sig[EntrySig]={0x40,0x55,0x56,0x57,0x41,0x54,0x41,0x55,0x41,0x56};
+constexpr uint8_t Do11Sig[EntrySig]={0x40,0x55,0x53,0x56,0x57,0x41,0x54,0x41,0x55,0x41};
+constexpr uint8_t Do14Sig[EntrySig]={0x40,0x53,0x55,0x56,0x57,0x41,0x54,0x41,0x55,0x41};
+constexpr uint8_t Do32Sig[EntrySig]={0x48,0x89,0x5c,0x24,0x08,0x57,0x48,0x83,0xec,0x30};
+constexpr uint8_t Do64Sig[EntrySig]={0x40,0x55,0x53,0x41,0x54,0x41,0x55,0x41,0x56,0x41};
 // Fury (multi-hit, strike_skills.h Flurry). Start 37 writes the used skill node:
 // hit count +0x24, target type +0x2c, target id +0x30. Do 13 (one call per hit)
 // reads the target from +0x2c/+0x30 (556965), lands the hit, then counts +0x24
@@ -369,7 +379,6 @@ constexpr uint8_t Do13TargetSig[]={0x41,0x8b,0x56,0x2c,0x48,0x8b,0xce,0x89,0x44,
 constexpr uint8_t Do13CountSig[]={0x41,0xff,0x4e,0x24,0x41,0x83,0x7e,0x24,0x00,0x0f,0x8e,0xc3,0x00,0x00,0x00};    // dec [r14+24h]; cmp; jle 556C28 (the exit)
 constexpr uint8_t Do13PaceSig[]={0x8b,0x80,0xbc,0x01,0x00,0x00};                                                   // mov eax,[rax+1BCh]
 constexpr uintptr_t NodeHitsOffset=0x24,NodeTargetTypeOffset=0x2c,NodeTargetIdOffset=0x30,RowParam2Offset=0x1bc;
-constexpr uint64_t Unpinned=~uint64_t{0};
 struct StrikeNative {const char* name;int skill,start,action;uint64_t startRva,actionRva;const uint8_t* startSig;const uint8_t* actionSig;};
 constexpr StrikeNative StrikeNatives[]={
     {"Maul",framevr::strikeskills::Maul,56,120,0x5779e0,0x576160,St56Sig,Do120Sig},
@@ -378,17 +387,17 @@ constexpr StrikeNative StrikeNatives[]={
     {"Fire Claws",framevr::strikeskills::FireClaws,58,2,0x577c90,0x430240,St58Sig,Do2Sig},
     {"Hunger",framevr::strikeskills::Hunger,0,122,0,0x576630,nullptr,Do122Sig},
     {"Fury",framevr::strikeskills::Fury,37,13,0x5582a0,0x5568e0,St37Sig,Do13Sig},
-    {"Bash",framevr::strikeskills::Bash,32,2,Unpinned,0x430240,nullptr,Do2Sig},
-    {"Stun",framevr::strikeskills::Stun,32,2,Unpinned,0x430240,nullptr,Do2Sig},
-    {"Concentrate",framevr::strikeskills::Concentrate,32,2,Unpinned,0x430240,nullptr,Do2Sig},
-    {"Berserk",framevr::strikeskills::Berserk,39,2,Unpinned,0x430240,nullptr,Do2Sig},
-    {"Sacrifice",framevr::strikeskills::Sacrifice,29,64,Unpinned,Unpinned,nullptr,nullptr},
-    {"Vengeance",framevr::strikeskills::Vengeance,35,2,Unpinned,0x430240,nullptr,Do2Sig},
-    {"Power Strike",framevr::strikeskills::PowerStrike,6,2,Unpinned,0x430240,nullptr,Do2Sig},
-    {"Impale",framevr::strikeskills::Impale,7,2,Unpinned,0x430240,nullptr,Do2Sig},
-    {"Charged Strike",framevr::strikeskills::ChargedStrike,6,11,Unpinned,Unpinned,nullptr,nullptr},
-    {"Lightning Strike",framevr::strikeskills::LightningStrike,10,14,Unpinned,Unpinned,nullptr,nullptr},
-    {"Poison Dagger",framevr::strikeskills::PoisonDagger,16,32,Unpinned,Unpinned,nullptr,nullptr},
+    {"Bash",framevr::strikeskills::Bash,32,2,0x5695d0,0x430240,St32Sig,Do2Sig},
+    {"Stun",framevr::strikeskills::Stun,32,2,0x5695d0,0x430240,St32Sig,Do2Sig},
+    {"Concentrate",framevr::strikeskills::Concentrate,32,2,0x5695d0,0x430240,St32Sig,Do2Sig},
+    {"Berserk",framevr::strikeskills::Berserk,39,2,0x569670,0x430240,St39Sig,Do2Sig},
+    {"Sacrifice",framevr::strikeskills::Sacrifice,29,64,0x565240,0x5645c0,St29Sig,Do64Sig},
+    {"Vengeance",framevr::strikeskills::Vengeance,35,2,0x565520,0x430240,St35Sig,Do2Sig},
+    {"Power Strike",framevr::strikeskills::PowerStrike,6,2,0x558c70,0x430240,St6Sig,Do2Sig},
+    {"Impale",framevr::strikeskills::Impale,7,2,0x558590,0x430240,St7Sig,Do2Sig},
+    {"Charged Strike",framevr::strikeskills::ChargedStrike,6,11,0x558c70,0x5562b0,St6Sig,Do11Sig},
+    {"Lightning Strike",framevr::strikeskills::LightningStrike,10,14,0x558930,0x557510,St10Sig,Do14Sig},
+    {"Poison Dagger",framevr::strikeskills::PoisonDagger,16,32,0x5601a0,0x55cc50,St16Sig,Do32Sig},
 };
 std::atomic<bool> strikeReady{false};
 std::array<bool,std::size(StrikeNatives)> strikeVerified{};
@@ -403,38 +412,6 @@ bool StrikeSkillVerified(int skill) {
     for(size_t i=0;i<std::size(StrikeNatives);++i)if(StrikeNatives[i].skill==skill)return strikeVerified[i];
     return false;
 }
-// An unpinned table entry: set, and inside the game's .text section (by its
-// headers: a page not decrypted yet does not read, but is still code).
-bool GameCode(uintptr_t address) {
-    const auto base=reinterpret_cast<uintptr_t>(GetModuleHandleW(nullptr));
-    IMAGE_DOS_HEADER dos{};IMAGE_NT_HEADERS64 nt{};
-    if(!address||!Read(base,dos)||dos.e_magic!=IMAGE_DOS_SIGNATURE||!Read(base+uintptr_t(dos.e_lfanew),nt)||nt.Signature!=IMAGE_NT_SIGNATURE)return false;
-    const uintptr_t sections=base+uintptr_t(dos.e_lfanew)+offsetof(IMAGE_NT_HEADERS64,OptionalHeader)+nt.FileHeader.SizeOfOptionalHeader;
-    for(unsigned i=0;i<nt.FileHeader.NumberOfSections;++i) {
-        IMAGE_SECTION_HEADER s{};
-        if(!Read(sections+i*sizeof s,s))return false;
-        if(std::memcmp(s.Name,".text",6)==0)return address>=base+s.VirtualAddress&&address<base+s.VirtualAddress+s.Misc.VirtualSize;
-    }
-    return false;
-}
-// One table entry: pinned (its RVA and entry bytes), none (rva 0: empty) or
-// Unpinned (in the game's code; logged once with its RVA and bytes).
-bool StrikeEntry(const char* table,uint64_t tableRva,int index,uint64_t rva,const uint8_t* sig,std::vector<uint64_t>& logged) {
-    uintptr_t entry=0;
-    if(!Read(d2rsig::Addr(tableRva+uint64_t(index)*8),entry))return false;
-    if(rva!=Unpinned)return rva?entry==d2rsig::Addr(rva)&&d2rsig::Check(rva,sig,EntrySig):entry==0;
-    if(!GameCode(entry))return false;
-    if(const uint64_t key=tableRva*256+uint64_t(index);std::find(logged.begin(),logged.end(),key)==logged.end()) {
-        logged.push_back(key);
-        uint8_t bytes[EntrySig]{};char hex[3*EntrySig+1]{};
-        if(framevr::ReadMemory(bytes,reinterpret_cast<const void*>(entry),EntrySig))
-            for(size_t i=0;i<EntrySig;++i)snprintf(hex+3*i,4,"%02x ",bytes[i]);
-        char line[200];snprintf(line,sizeof line,"Frame melee skills: %s %d not pinned yet - rva 0x%llx, entry %s",table,index,
-            (unsigned long long)(entry-reinterpret_cast<uintptr_t>(GetModuleHandleW(nullptr))),hex);
-        framevr::logging::Write(line);
-    }
-    return true;
-}
 void InstallStrikes() {
     if(strikeReady.load())return;
     using namespace spellvr::native;
@@ -447,11 +424,13 @@ void InstallStrikes() {
         if(!said){said=true;framevr::logging::Write("Frame melee skills: native skill start/do/use-check signatures differ; strikes stay basic attacks");}
         return;
     }
-    unsigned verified=0;std::vector<uint64_t> logged;
+    unsigned verified=0;
     for(size_t i=0;i<std::size(StrikeNatives);++i) {
-        const auto& n=StrikeNatives[i];
-        strikeVerified[i]=StrikeEntry("start",StartFunctionsRva,n.start,n.startRva,n.startSig,logged)&&
-            StrikeEntry("do",DoFunctionsRva,n.action,n.actionRva,n.actionSig,logged);
+        const auto& n=StrikeNatives[i];uintptr_t start=0,action=0;
+        const bool startOk=Read(d2rsig::Addr(StartFunctionsRva+uint64_t(n.start)*8),start)&&
+            (n.startRva?start==d2rsig::Addr(n.startRva)&&d2rsig::Check(n.startRva,n.startSig,EntrySig):start==0);
+        strikeVerified[i]=startOk&&Read(d2rsig::Addr(DoFunctionsRva+uint64_t(n.action)*8),action)&&action==d2rsig::Addr(n.actionRva)&&
+            d2rsig::Check(n.actionRva,n.actionSig,EntrySig);
         if(n.action==13)strikeVerified[i]=strikeVerified[i]&&d2rsig::Check(Do13TargetRva,Do13TargetSig,sizeof Do13TargetSig)&&
             d2rsig::Check(Do13CountRva,Do13CountSig,sizeof Do13CountSig)&&d2rsig::Check(Do13PaceRva,Do13PaceSig,sizeof Do13PaceSig);
         verified+=strikeVerified[i];

@@ -1030,9 +1030,6 @@ mid-game) choose between two modes for physical swings and trigger/button melee:
     stays a basic attack. Classic casts on every paced contact. Developer
     builds log `Frame melee skills:` (armed contacts, casts, refusals by
     reason) and add `strike=<skill> cast|basic_strike` to `melee_trace` lines.
-    The weapon skills' own start/do entries are not pinned yet: the plugin
-    checks each is in the game's code and logs `Frame melee skills: start|do
-    <n> not pinned yet - rva ..., entry ...` once, to pin it from.
   - **Fury's flurry:** the cast lands hit 1 of its 2-5. In Unleashed each
     later landed stroke of a claw carrying Fury lands the next one, at any
     speed (only a stroke within 100 ms of the previous Fury hit, one swipe's
