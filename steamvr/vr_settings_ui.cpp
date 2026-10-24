@@ -20,6 +20,9 @@ static void ValueLabel(Key key,float value,const Context& c,char* label,size_t s
     else if(key==Foveation){const char* modes[]={"Off","Fixed","Eye tracked"};std::snprintf(label,size,"%s",modes[int(value)]);}
     else if(key==FoveationStrength)std::snprintf(label,size,"%s",FoveationStrengthNames[int(value)]);
     else if(key==StereoRendering)std::snprintf(label,size,"%s",StereoRenderingNames[std::clamp(int(value),0,int(std::size(StereoRenderingNames))-1)]);
+    else if(key==FrameGeneration)std::snprintf(label,size,"%s",framegen::ModeNames[std::clamp(int(value),0,2)]);
+    else if(key==FrameGenPreset)std::snprintf(label,size,"%s",framegen::PresetNames[std::clamp(int(value),0,2)]);
+    else if(key==FrameGenScale)std::snprintf(label,size,"%s",framegen::ScaleNames[std::clamp(int(value),0,2)]);
     else if(key==VitalsLocation||key==NavigationLocation)std::snprintf(label,size,"%s",vitals::LocationNames[int(value)]);
     else if(key==RenderResolution)std::snprintf(label,size,"%s",resolution::Choices[int(value)]);
     else if(key==MenuDistance)std::snprintf(label,size,"%s",MenuDistanceNames[int(value)]);
@@ -53,7 +56,7 @@ static void ValueLabel(Key key,float value,const Context& c,char* label,size_t s
 }
 int ReleaseNotesPages(){return NotesPages(int(releasenotes::ReleaseLines.size()));}
 std::vector<uint8_t> Paint(const Model& m,Hit hover,const char* runtimeStatus,const calibration::Flow* body,const controllers::Labels& detected,int help,GameVideo game,bool monoAudio,
-                           const PerformanceReadout& performance){
+                           const PerformanceReadout& performance,const framegen::Readout& frameGen){
     const bool showHelp=!body&&help!=NoHelp&&HelpText(help)[0];
     BITMAPINFO info{};info.bmiHeader.biSize=sizeof(BITMAPINFOHEADER);info.bmiHeader.biWidth=AtlasWidth;
     info.bmiHeader.biHeight=-Height;info.bmiHeader.biPlanes=1;info.bmiHeader.biBitCount=32;
@@ -219,6 +222,9 @@ std::vector<uint8_t> Paint(const Model& m,Hit hover,const char* runtimeStatus,co
             if(!verdict.empty())text(verdict.c_str(),{58,PerformanceBox.y+33,1170,29},false,false,performance.CpuMs()>performance.budgetMs?warn:quiet);
             const auto gameLine=GameVideoLine(game);
             text(gameLine.empty()?GameVideoUnsaved:gameLine.c_str(),{58,GameVideoBox.y+2,1170,29},false,false,quiet);
+            const auto frameGenLine=framegen::Line(frameGen);
+            text(frameGenLine.c_str(),{58,FrameGenBox.y+2,1170,29},false,false,
+                 framegen::Warning(frameGen.state)?warn:frameGen.state==framegen::State::Active?teal:quiet);
         }
         if(m.page==Page::Combat){
             // The ninth row ends at 800; without the offline adapter its notice replaces the difficulty note.

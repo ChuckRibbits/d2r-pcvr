@@ -8,13 +8,14 @@ namespace framevr::settings {
 constexpr int HelpGap=24,HelpWidth=440,AtlasWidth=Width+HelpGap+HelpWidth;
 constexpr Rect HelpCard{Width+HelpGap,242,HelpWidth-24,612};
 constexpr int NoHelp=-1,HelpApply=Count,HelpClose=Count+1,HelpRecenter=Count+2,HelpCalibrate=Count+3,HelpMonoAudio=Count+4,
-              HelpPerformance=Count+5,HelpGameVideo=Count+6,HelpLast=HelpGameVideo;
+              HelpPerformance=Count+5,HelpGameVideo=Count+6,HelpFrameGen=Count+7,HelpLast=HelpFrameGen;
 inline const char* HelpTitle(int id) {
     if(id>=0&&id<Count)return Definitions[id].label;
     switch(id){case HelpApply:return "Apply";case HelpClose:return "Close";
         case HelpRecenter:return "Reset eye height";case HelpCalibrate:return "Calibrate body";
         case HelpMonoAudio:return "Windows Mono audio";
-        case HelpPerformance:return "Frame times now";case HelpGameVideo:return "The game's graphics options";default:return "";}
+        case HelpPerformance:return "Frame times now";case HelpGameVideo:return "The game's graphics options";
+        case HelpFrameGen:return "Frame generation now";default:return "";}
 }
 inline const char* HelpText(int id) {
     switch(id) {
@@ -97,6 +98,10 @@ inline const char* HelpText(int id) {
         case TorchFlame:return "A one-handed club with fire damage is a torch: it lights the dark round you from its head. This shows or hides the flame drawn on it; the light stays either way.";
         case PropPhysics:return "The level's small things near you (cups, plates, vases, books, skulls, stools, barrels and more) stay put until a weapon, hand, shield or bottle reaches them. Then they fall and roll, and stay where they land until the area loads again. Purely visual. Shelves and tables are approximate: something pushed off a shelf's back can fall through it.";
         case HelpPerformance:return "The last second of headset frames. Drawing: the game preparing one eye (By turns) or both; it grows with what is in view, draw distances and shadows, hardly with resolution. Game: its update between frames. VR: the mod's own work. Headset wait: the runtime holding the frame for the next refresh. Past the headset's frame (11.1 ms at 90 Hz), late frames wait a whole refresh: up to half the frame rate.";
+        case FrameGeneration:return "OFXR Bridge, an experimental OpenXR layer by tig3rmast3r, adds a frame made from the motion between two the game draws. Expect artifacts round moving things and while turning. Turning it on or off takes a restart.";
+        case FrameGenPreset:return "How carefully NVIDIA's optical flow looks for the motion between two frames. Medium is the suggested start; OFXR marks Fast as a test setting. Changes apply while you play.";
+        case FrameGenScale:return "The size NVIDIA's optical flow works at, of each eye's image. 50% is the suggested start; 100% usually costs more than it gains. Changes apply while you play.";
+        case HelpFrameGen:return "What OFXR Bridge is doing now: off, waiting for a restart, active with its backend, bypassed (loaded but making no frames) or failed. The mod's log records each change. The frame rate above counts the frames the game draws, not the generated ones. OFXR needs the Microsoft Visual C++ x64 runtime.";
         case HelpGameVideo:return "The game's own graphics options, as it saved them (Options > Video, then close the menu). Shadows, character detail and lights add drawing work for the CPU; ambient occlusion (AO), atmospherics and scale cost the graphics card. Change them in the game's Options > Video; the numbers are the game's own, 0 its lowest.";
         case HelpApply:return "Saves your pending changes and applies them. Your other saved settings and calibration are preserved. Changes stay as a draft until you press Apply.";
         case HelpClose:return "Returns to the game and discards changes you have not applied. Right B also closes this panel. The world continues running while VR Settings is open.";
@@ -119,6 +124,7 @@ inline int HelpChoices(int id) {
         case Foveation:case MenuDistance:case TooltipTiming:case ProjectileAimAssist:return 3;
         case FoveationStrength:case VitalsLocation:case NavigationLocation:return 4;
         case StereoRendering:return int(std::size(StereoRenderingNames));
+        case FrameGeneration:case FrameGenPreset:case FrameGenScale:return 3;
         case RenderResolution:return int(std::size(resolution::Choices));
         case ControllerLabels:return int(controllers::Choice::Count);
         case MapTopDown:return 4;
@@ -153,6 +159,24 @@ inline ChoiceHelp HelpChoice(int id,float value) {
                 "The game draws each frame twice, once per eye, from the same moment. Accurate 3D, and the most CPU and GPU work per frame.",
                 "One eye per frame, alternating; the other eye's last image is turned to your head and moved with the scene's depth. About half the drawing work, but moving monsters can look doubled and the edges of nearby things may smear."};
             return {StereoRenderingNames[c],text[c]};}
+        case FrameGeneration:{
+            static constexpr const char* text[]={
+                "No layer: the headset shows the frames the game draws. The default.",
+                "AMD FidelityFX optical flow on any graphics card, the lightest. Dark areas can smear as you turn your head.",
+                "The optical flow hardware of RTX and GTX 1660 cards (not GTX 1650 or GTX 10). Quality and scale: the row below."};
+            return {framegen::ModeNames[c],text[c]};}
+        case FrameGenPreset:{
+            static constexpr const char* text[]={
+                "The most careful search for motion, and the most GPU time.",
+                "OFXR's suggested balance of quality and GPU time.",
+                "The least GPU time; OFXR still calls it a test."};
+            return {framegen::PresetNames[c],text[c]};}
+        case FrameGenScale:{
+            static constexpr const char* text[]={
+                "Full size: the finest motion, but it usually costs more than it gains.",
+                "Between full and half size.",
+                "Half size: OFXR's suggested balance."};
+            return {framegen::ScaleNames[c],text[c]};}
         case RenderResolution:{
             static constexpr const char* text[]={
                 "Each eye uses the game window's size, so the monitor resolution sets the headset image.",
@@ -259,6 +283,7 @@ inline int HelpAt(Page page,float u,float v,bool controllerMenu=false,const Valu
         if(DeferBox.Contains(x,y)&&(!values||DeferOffered(*values)))return DeferGpuWait;
         if(PerformanceBox.Contains(x,y))return HelpPerformance;
         if(GameVideoBox.Contains(x,y))return HelpGameVideo;
+        if(FrameGenBox.Contains(x,y))return HelpFrameGen;
     }
     if(page==Page::HUD){
         if(Rect{40,181,570,52}.Contains(x,y))return MapTopDown;

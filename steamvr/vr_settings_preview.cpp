@@ -115,8 +115,12 @@ int main(int argc,char** argv){
         const PerformanceReadout widest{true,false,999,99.9f,99.9f,99.9f,99.9f,99.9f};
         const auto most=ParseGameVideo(R"({"Shadow Quality": 44, "Character Detail": 55, "Light Quality": 44, "Ambient Occlusion Quality": 44,)"
                                        R"( "Atmospherics Quality": 44, "Resolution Scale": 200, "NVIDIA DLSS": 1})");
-        const bool ok=fits(PerformanceLine(widest))&&fits(PerformanceVerdict(widest))&&fits(PerformanceLine({}))&&fits(GameVideoLine(most))&&
+        bool ok=fits(PerformanceLine(widest))&&fits(PerformanceVerdict(widest))&&fits(PerformanceLine({}))&&fits(GameVideoLine(most))&&
                       fits(GameVideoUnsaved);
+        for(int state=0;state<=int(framevr::framegen::State::NoControl);++state){   // frame generation's status, its widest backend
+            framevr::framegen::Readout frameGen;frameGen.state=framevr::framegen::State(state);frameGen.backend=1;frameGen.preset=1;frameGen.scale=2;
+            frameGen.errors=1;frameGen.lastError=-1;ok=fits(framevr::framegen::Line(frameGen))&&ok;
+        }
         SelectObject(dc,old);DeleteObject(normal);DeleteDC(dc);
         if(!ok)return 22;
         std::puts("Perf page lines fit at their widest");return 0;
@@ -148,14 +152,15 @@ int main(int argc,char** argv){
     // --performance: the Perf page with a second of frames over the headset's
     // frame and the game's options as its Settings.json has them.
     const bool sample=argc>3&&std::strcmp(argv[3],"--performance")==0;
-    PerformanceReadout performance;
+    PerformanceReadout performance;framevr::framegen::Readout frameGen;
     if(sample){
+        frameGen={framevr::framegen::State::Active,1,1,2,1,1};
         performance={true,true,52,11.1f,1.0f,7.0f,9.4f,1.5f};
         game=ParseGameVideo(R"({"Shadow Quality": 4, "Character Detail": 5, "Ambient Occlusion Quality": 4, "Atmospherics Quality": 4,)"
                             R"( "Light Quality": 2, "Texture Quality": 4, "Resolution Scale": 100, "NVIDIA DLSS": 0, "Anti Aliasing": 1, "VSync": 0})");
     }
     const auto pixels=Paint(m,{},page==int(Page::Performance)?"VR source: 2560 x 2560 per eye":"Foveated shading available. Eye-tracking samples are active.",page==TabCount?&body:nullptr,
-        framevr::controllers::Labels{{framevr::controllers::Layout::Touch,framevr::controllers::Layout::Touch}},help,game,monoAudio,performance);
+        framevr::controllers::Labels{{framevr::controllers::Layout::Touch,framevr::controllers::Layout::Touch}},help,game,monoAudio,performance,frameGen);
     if(pixels.size()!=AtlasWidth*Height*4)return 1;
     FILE* file=std::fopen(argc>1?argv[1]:"vr-settings-preview.ppm","wb");if(!file)return 2;
     const char* name=argc>1?argv[1]:"";

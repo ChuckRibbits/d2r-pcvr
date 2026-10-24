@@ -63,6 +63,7 @@
 #include "../vr/prop_scan.h"
 #include "elemental_hands_renderer.h"
 #include "vr_settings_ui.h"
+#include "frame_generation.h"
 #include "../vr/settings_menu.h"
 #include "journal.h"
 #include "native_panels.h"
@@ -117,6 +118,19 @@ XR_FUNCTIONS(DECLARE)
 PFN_xrGetInstanceProcAddr getProc=nullptr;
 HMODULE loader=nullptr;
 bool wineOpenXR=false;
+// Frame generation (frame_generation.h): the settings now, packed as
+// mode*100+preset*10+scale (-1 before the INI is read), how this instance
+// started with OFXR Bridge and the layer's control API while it is loaded.
+// frameGenMutex keeps the layer's entry points from being called while
+// Shutdown destroys the instance that unloads it.
+std::atomic<int> frameGenWanted{-1};
+std::mutex frameGenMutex;
+framegen::Start frameGenStart=framegen::Start::NotAsked;
+framegen::SnapshotFn frameGenSnapshot=nullptr;
+framegen::RequestFn frameGenRequest=nullptr;
+std::wstring frameGenFolder;   // plugins\ofxr beside this plugin
+framegen::Readout frameGenReadout;bool frameGenRead=false,frameGenInstalled=false;
+ULONGLONG frameGenReadAt=0,frameGenInstalledAt=0;
 LogFn logger=nullptr;
 PanelFn wantsPanel=nullptr;
 PanelFn inWorld=nullptr;
@@ -362,19 +376,19 @@ ULONGLONG settingsPaintAt=0;
 struct SettingsPaintJob {
     settings::Model model;settings::Hit hover;std::string status;controllers::Labels detected;
     int help=settings::NoHelp;settings::GameVideo game{};bool monoAudio=false;
-    settings::PerformanceReadout performance{};
+    settings::PerformanceReadout performance{};framegen::Readout frameGen{};
     bool calibrating=false;calibration::Flow body;
 };
 struct SettingsPainted {std::vector<uint8_t> pixels;double paintMs=0;};
 LatestWorker<SettingsPaintJob,SettingsPainted> settingsPainter([](const SettingsPaintJob& job) {
     const auto start=hookmetrics::Nanos();
     auto pixels=job.calibrating?settings::Paint(job.model,{},"",&job.body):
-        settings::Paint(job.model,job.hover,job.status.c_str(),nullptr,job.detected,job.help,job.game,job.monoAudio,job.performance);
+        settings::Paint(job.model,job.hover,job.status.c_str(),nullptr,job.detected,job.help,job.game,job.monoAudio,job.performance,job.frameGen);
     return SettingsPainted{std::move(pixels),double(hookmetrics::Nanos()-start)/1e6};
 });
 struct SettingsPicture {
     uint64_t revision=~0ull;int hover=-1,status=-1,help=settings::NoHelp,game=-1;
-    uint64_t performance=0;settings::GameVideo gameVideo{};   // the Perf page's
+    uint64_t performance=0;settings::GameVideo gameVideo{};framegen::Readout frameGen{};   // the Perf page's
     bool operator==(const SettingsPicture&)const=default;
 };
 SettingsPicture settingsPainted;     // what the picture shown has
@@ -869,11 +883,94 @@ void ClearInput() {
     if(pad.data) { const auto c=pad.data->counter;*pad.data={};pad.data->version=BW_PAD_MIRROR_VERSION;pad.data->writer_pid=GetCurrentProcessId();pad.data->reserved[0]=uint32_t(menus::Mode::Blocked);pad.data->reserved[1]=gamestate::MenuEpoch();pad.data->counter=c+1; }
     if(actions.data) { actions.data->held=0;++actions.data->counter; }
 }
+framegen::Options FrameGenWanted() {
+    const int packed=frameGenWanted.load();
+    return packed<0?framegen::Options{}:framegen::Options{framegen::Mode(packed/100),packed/10%10,packed%10};
+}
+// Names OFXR Bridge's folder to the Khronos loader for this process only, as
+// a place for explicit layers (XR_API_LAYER_PATH, added to any path already
+// set; a later instance finds it there). Nothing loads until the instance
+// names the layer.
+bool FrameGenOffer(const std::wstring& folder) {
+    const std::wstring manifest=folder+L"\\"+framegen::ManifestFile;
+    if(GetFileAttributesW(manifest.c_str())==INVALID_FILE_ATTRIBUTES) {
+        Say("Frame generation: on, but OFXR Bridge is not installed (no layer manifest in plugins\\ofxr); starting without it");
+        return false;
+    }
+    std::wstring value(32768,L'\0');
+    const DWORD n=GetEnvironmentVariableW(L"XR_API_LAYER_PATH",value.data(),DWORD(value.size()));
+    value.resize(n<value.size()?n:0);
+    if(value.find(folder)==std::wstring::npos)value=value.empty()?folder:value+L";"+folder;
+    return SetEnvironmentVariableW(L"XR_API_LAYER_PATH",value.c_str())!=FALSE;
+}
+bool FrameGenListed() {
+    PFN_xrEnumerateApiLayerProperties enumerate=nullptr;
+    uint32_t count=0;
+    if(XR_FAILED(getProc(XR_NULL_HANDLE,"xrEnumerateApiLayerProperties",reinterpret_cast<PFN_xrVoidFunction*>(&enumerate)))||!enumerate||
+       XR_FAILED(enumerate(0,&count,nullptr)))return false;
+    std::vector<XrApiLayerProperties> layers(count,{XR_TYPE_API_LAYER_PROPERTIES});
+    if(XR_FAILED(enumerate(count,&count,layers.data())))return false;
+    return std::any_of(layers.begin(),layers.begin()+std::min<size_t>(count,layers.size()),[](const auto& l){return !std::strcmp(l.layerName,framegen::LayerName);});
+}
+// Asks the loaded layer for the settings (caller holds frameGenMutex).
+void FrameGenAsk(const framegen::Options& o) {
+    if(!frameGenRequest)return;
+    const auto control=framegen::Control(o);
+    const bool saved=frameGenRequest(&control)!=0;
+    const std::string what=o.On()?framegen::Describe(control.backend,control.preset,control.scale):"bypass (Off until the game restarts)";
+    char line[200];std::snprintf(line,sizeof line,"Frame generation: asked OFXR Bridge for %s%s",what.c_str(),saved?"":" (not saved to its ofxr_bridge.ini)");Say(line);
+    frameGenReadAt=0;
+}
+// The layer in the instance's chain: its control API, then the settings now.
+framegen::Start FrameGenAttach() {
+    const HMODULE layer=GetModuleHandleW(framegen::LibraryFile);
+    const auto version=layer?reinterpret_cast<framegen::VersionFn>(GetProcAddress(layer,framegen::VersionExport)):nullptr;
+    const auto snapshot=layer?reinterpret_cast<framegen::SnapshotFn>(GetProcAddress(layer,framegen::SnapshotExport)):nullptr;
+    const auto request=layer?reinterpret_cast<framegen::RequestFn>(GetProcAddress(layer,framegen::RequestExport)):nullptr;
+    if(!version||!snapshot||!request||version()!=framegen::ApiVersion) {
+        Say("Frame generation: OFXR Bridge is in the OpenXR chain without the control API this mod knows; its own ofxr_bridge.ini applies");
+        return framegen::Start::NoControl;
+    }
+    std::lock_guard lock(frameGenMutex);
+    frameGenSnapshot=snapshot;frameGenRequest=request;
+    FrameGenAsk(FrameGenWanted());
+    return framegen::Start::Loaded;
+}
+// What the Perf page and the log say of frame generation. The layer is asked
+// at most twice a second; each change is logged.
+framegen::Readout FrameGenNow(ULONGLONG now) {
+    std::lock_guard lock(frameGenMutex);
+    if(frameGenRead&&now-frameGenReadAt<500)return frameGenReadout;
+    frameGenReadAt=now;
+    const auto wanted=FrameGenWanted();
+    // Installed since the start? Its manifest, at most every 5 s, only while it matters.
+    if(wanted.On()&&frameGenStart!=framegen::Start::Loaded&&(!frameGenInstalledAt||now-frameGenInstalledAt>=5000)) {
+        frameGenInstalled=!frameGenFolder.empty()&&GetFileAttributesW((frameGenFolder+L"\\"+framegen::ManifestFile).c_str())!=INVALID_FILE_ATTRIBUTES;
+        frameGenInstalledAt=now;
+    }
+    framegen::ControlSnapshotV1 snapshot;
+    const bool answered=frameGenSnapshot&&frameGenSnapshot(&snapshot)!=0;
+    const auto readout=framegen::Classify(frameGenStart,frameGenInstalled,wanted,answered?&snapshot:nullptr);
+    if(!frameGenRead||!(readout==frameGenReadout)) {
+        char line[260];std::snprintf(line,sizeof line,"%s [%s; sessions %u, ready %u, bypass %u, errors %u]",framegen::Line(readout).c_str(),
+            framegen::StateName(readout.state),readout.sessions,readout.ready,readout.bypass,readout.errors);
+        Say(line);
+    }
+    frameGenReadout=readout;frameGenRead=true;
+    return readout;
+}
 bool LoadFunctions() {
     // Proton's WineOpenXR exports the runtime negotiation entrypoint.
     // Negotiate it directly, or use a standard Windows loader as a fallback.
     loader=LoadLibraryW(L"wineopenxr.dll");
     wineOpenXR=loader!=nullptr;
+    // Frame generation: OFXR Bridge is offered to the Khronos loader before it
+    // loads; WineOpenXR has no API layers.
+    const auto frameGen=FrameGenWanted();
+    auto frameGenStarted=wineOpenXR?framegen::Start::Unavailable:framegen::Start::NotAsked;
+    bool frameGenOffered=false;
+    {std::lock_guard lock(frameGenMutex);frameGenStart=frameGenStarted;frameGenSnapshot=nullptr;frameGenRequest=nullptr;frameGenRead=false;}
+    if(wineOpenXR&&frameGen.On())Say("Frame generation: WineOpenXR has no OpenXR API layers; OFXR Bridge stays off under Proton");
     // The mod's own loader beside this plugin (mods\D2R-PCVR\d2rloader\plugins), then
     // the usual search (the game folder of an older install).
     if(!loader) {
@@ -884,6 +981,11 @@ bool LoadFunctions() {
             if(n&&n<MAX_PATH) {
                 while(n&&path[n-1]!=L'\\')--n;
                 path[n]=0;
+                frameGenFolder=std::wstring(path)+framegen::Folder;
+                if(frameGen.On()) {
+                    frameGenOffered=FrameGenOffer(frameGenFolder);
+                    if(!frameGenOffered)frameGenStarted=framegen::Start::Missing;
+                }
                 if(wcscat_s(path,L"openxr_loader.dll")==0&&GetFileAttributesW(path)!=INVALID_FILE_ATTRIBUTES)
                     loader=LoadLibraryExW(path,nullptr,LOAD_WITH_ALTERED_SEARCH_PATH);
             }
@@ -925,7 +1027,26 @@ bool LoadFunctions() {
     std::strcpy(ci.applicationInfo.applicationName,"D2R Steam Frame prototype");
     ci.applicationInfo.applicationVersion=1;ci.applicationInfo.apiVersion=XR_API_VERSION_1_0;
     ci.enabledExtensionCount=uint32_t(enabled.size());ci.enabledExtensionNames=enabled.data();
-    if(!Check(pCreateInstance(&ci,&instance),"create instance")) return false;
+    // Frame generation names OFXR Bridge for this instance only. If the loader
+    // does not list it (a game run as administrator ignores XR_API_LAYER_PATH)
+    // or the instance fails with it, the game starts without it.
+    const char* const frameGenLayers[]={framegen::LayerName};
+    bool frameGenLayer=frameGenOffered&&FrameGenListed();
+    if(frameGenOffered&&!frameGenLayer) {
+        Say("Frame generation: the OpenXR loader does not list OFXR Bridge (a game run as administrator ignores XR_API_LAYER_PATH); starting without it");
+        frameGenStarted=framegen::Start::Failed;
+    }
+    if(frameGenLayer){ci.enabledApiLayerCount=1;ci.enabledApiLayerNames=frameGenLayers;}
+    XrResult created=pCreateInstance(&ci,&instance);
+    if(frameGenLayer&&XR_FAILED(created)) {
+        char line[200];std::snprintf(line,sizeof line,"Frame generation: xrCreateInstance with OFXR Bridge failed (%d); starting without it",int(created));Say(line);
+        frameGenLayer=false;frameGenStarted=framegen::Start::Failed;instance=XR_NULL_HANDLE;
+        ci.enabledApiLayerCount=0;ci.enabledApiLayerNames=nullptr;created=pCreateInstance(&ci,&instance);
+    }
+    if(frameGenLayer)frameGenStarted=FrameGenAttach();
+    {std::lock_guard lock(frameGenMutex);frameGenStart=frameGenStarted;frameGenRead=false;}
+    if(frameGenLayer)Say("Frame generation: OFXR Bridge is in this OpenXR instance (experimental)");
+    if(!Check(created,"create instance")) return false;
 #define LOAD(name) if(!Check(getProc(instance,"xr" #name,reinterpret_cast<PFN_xrVoidFunction*>(&p##name)),"load " #name)) return false;
     XR_FUNCTIONS(LOAD)
 #undef LOAD
@@ -1706,12 +1827,13 @@ void SettingsPointer(const settings::InputGate::Edges& edges,bool grip) {
     // The Perf page repaints with each second's numbers; the others never for them.
     const bool performancePage=settingsModel.page==settings::Page::Performance;
     const bool fresh=performance.valid&&now-performanceAt<=2000;
+    const auto frameGen=performancePage?FrameGenNow(now):framegen::Readout{};
     const SettingsPicture wanted{settingsModel.revision,hover,status,help,warnings,performancePage&&fresh?performanceSerial:0,
-                                 performancePage?game:settings::GameVideo{}};
+                                 performancePage?game:settings::GameVideo{},frameGen};
     if(!(wanted==settingsPainted)&&now>=settingsPaintAt&&!settingsPaintRequest){
         char resolutionStatus[160];resolution::Describe(resolutionStatus,sizeof resolutionStatus,{width,height});
         settingsPaintRequest=settingsPainter.Submit({settingsModel,settingsHover,performancePage?resolutionStatus:descriptions[status],
-                                                    detectedControllers,help,game,monoAudio,fresh?performance:settings::PerformanceReadout{}});
+                                                    detectedControllers,help,game,monoAudio,fresh?performance:settings::PerformanceReadout{},frameGen});
         settingsRequested=wanted;settingsPaintAt=now+100;
     }
     if(TakeSettingsPicture())settingsPainted=settingsRequested;
@@ -3572,6 +3694,18 @@ void ConfigureDeferredWait(bool on) {
     if(deferredWait.exchange(on)!=on)Say(on?"Frame OpenXR: GPU wait deferred until copy allocator reuse":"Frame OpenXR: conservative GPU wait before image release");
 }
 void ConfigureSymmetricProjection(bool on) {symmetricProjection.store(on);}
+void ConfigureFrameGeneration(float mode,float preset,float scale) {
+    const auto o=framegen::Read(mode,preset,scale);
+    const int packed=int(o.mode)*100+o.preset*10+o.scale;
+    const int was=frameGenWanted.exchange(packed);
+    if(was==packed)return;
+    const bool wasOn=was>=0&&was/100!=0;
+    std::lock_guard lock(frameGenMutex);
+    if(frameGenRequest){FrameGenAsk(o);return;}   // loaded: live, Off bypasses it
+    frameGenReadAt=0;
+    if(was<0){if(o.On())Say("Frame generation: on (OFXR Bridge, experimental); it starts with OpenXR");return;}
+    if(o.On()!=wasOn)Say(o.On()?"Frame generation: on from the next start of the game (OFXR Bridge loads with OpenXR)":"Frame generation: off");
+}
 void ConfigureTurnsFromDrawnEye(bool on) {
     if(turnsFromDrawnEye.exchange(on)!=on)Say(on?"Frame OpenXR: by turns - the eye not drawn mostly from the drawn eye's picture":"Frame OpenXR: by turns - the eye not drawn from its own image alone");
 }
@@ -4137,6 +4271,7 @@ void NoteFrame(double gameMs,double waitMs,double drawMs,double vrMs,double peri
     performance.gameMs=w.periods?float(w.game/w.periods):0.f;performance.waitMs=float(w.wait*k);
     performance.drawMs=float(w.draw*k);performance.vrMs=float(w.vr*k);
     ++performanceSerial;performanceAt=now;w={};w.since=w.last=now;
+    FrameGenNow(now);   // logs what OFXR Bridge does, once a second of frames
 }
 void ConfigureGameplay(bool enabled) {
     std::lock_guard lock(mutex);
@@ -4624,6 +4759,8 @@ void Shutdown(bool preserveResolution) {
     for(auto& s:handSpaces){if(s&&pDestroySpace)pDestroySpace(s);s=XR_NULL_HANDLE;}
     if(headSpace&&pDestroySpace)pDestroySpace(headSpace);if(space&&pDestroySpace)pDestroySpace(space);
     if(session&&pDestroySession)pDestroySession(session);if(actionSet&&pDestroyActionSet)pDestroyActionSet(actionSet);
+    // Destroying the instance unloads OFXR Bridge: its entry points go first.
+    {std::lock_guard lock(frameGenMutex);frameGenSnapshot=nullptr;frameGenRequest=nullptr;frameGenStart=framegen::Start::NotAsked;frameGenRead=false;}
     if(instance&&pDestroyInstance)pDestroyInstance(instance);
     session=XR_NULL_HANDLE;instance=XR_NULL_HANDLE;actionSet=XR_NULL_HANDLE;headSpace=space=XR_NULL_HANDLE;
     hapticActions.Reset();
