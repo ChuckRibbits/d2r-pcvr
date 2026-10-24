@@ -241,9 +241,13 @@ still sees the whole map.
 
 **Full map:** **VR Settings > HUD > Map view** = **Full map** or **Full top-down**
 shows the game's full (Tab) map on the wrist instead of its corner map, in the same
-two views. 1x is the game's widest zoom (0.125); up zooms in to 16x, redrawn by the
-game closer as you go so it stays sharp. It is a screen-sized window around your
-hero, not the whole level, and it is not drawn in your view while the wrist shows it.
+two views. 1x shows about 4,224 map units across: the game's widest zoom (0.125) at a
+2112-pixel render width, 0.25 at 3072, since every map piece in view is a draw that
+costs frame rate; `[interactions] full_map_widest` picks the zoom instead. Up zooms in
+to the game's zoom 2 (16x from 0.125), redrawn by the game closer as you go so it
+stays sharp. It is a screen-sized window around your hero, not the whole level, and
+it is not drawn in your view while the wrist shows it. The game draws it for the
+wrist once a frame: with both eyes, the second eye skips it.
 
 The label above the compass shows your current **act (I-V)** and **area name**,
 including named dungeon floors. It follows the same wrist/palm placement and
