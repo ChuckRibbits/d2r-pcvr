@@ -12,7 +12,7 @@ body:
     id: versions
     attributes:
       label: Mod version and game build
-      placeholder: "Example: D2R PCVR v0.3.7; D2R 3.3.93787"
+      placeholder: "Example: D2R PCVR v0.3.7; D2R 3.3.94995"
     validations:
       required: true
   - type: dropdown
