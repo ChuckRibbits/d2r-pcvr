@@ -1284,7 +1284,11 @@ stun-locks in a crowd. The game's unit mode setter (34E5F0) refuses
 those two modes for the local hero's server and client units, so the hero keeps
 whatever it was doing; the hit's damage is unchanged. Physical swings never waited
 on hit recovery anyway (a contact calls the native attack directly). Knockback stays
-native. `[gameplay] player_flinch` (default 0) restores native flinching with 1;
+native, but ends in Neutral: the game ends every knockback by asking for GetHit, and
+refusing that left the hero in knockback, asking again at each animation end, locked
+in place until save and exit (Duriel's stunning Smite, 2026-10-24). Any flinch asked
+for while in knockback now sets Neutral instead (`knockback_to_neutral=` in the
+`Frame flinch:` line). `[gameplay] player_flinch` (default 0) restores native flinching with 1;
 applied live. Developer builds log `Frame flinch:` counts and, once per distinct
 call chain (at most 8 a session), a `Frame flinch probe:` line naming the game code
 that asked for the flinch.
