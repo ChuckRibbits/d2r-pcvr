@@ -40,7 +40,7 @@ inline const char* HelpText(int id) {
         case EyeHeight:return "Your standing eye height above the tracked floor. Body calibration measures this to set the world's scale. Use Calibrate body to measure it again.";
         case ArmSpan:return "The distance between your controller grips with your arms extended in a T-pose. Body calibration uses it to fit the character's arms to yours.";
         case BodyCalibration:return "Stores your measured standing height and controller span. Use Calibrate body to repeat the guided measurement; updating the mod preserves it.";
-        case SkillGestures:return "Lets compatible assigned trigger skills power physical actions, such as Smite with a shield bash and arrow skills with bow release. The skill must be learned and available. Ordinary physical weapon swings remain separate.";
+        case SkillGestures:return "Lets compatible assigned trigger skills power physical actions: Smite with a shield bash, arrow skills with bow release, and melee skills such as Bash, Charged Strike or Maul with a landed strike. The skill must be learned and available. Off, every swing is a basic attack.";
         case WristMap:return "Shows the minimap on your left hand. Minimap & Compass controls its placement. The wheel's MAP tab remains available.";
         case WristCompass:return "Shows compass bearings on your left hand. North follows the top of the minimap. Minimap & Compass controls its placement.";
         case ControllerLabels:return "Which controller's button names appear in help and menus. This changes labels, not button bindings.";

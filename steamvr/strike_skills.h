@@ -7,9 +7,12 @@
 // runs the skill's own server start and do functions (the hand-spell
 // pipeline, without an animation), so its mana, damage, states and charges
 // stay native; the strike decides only whether and on whom it lands.
-// Maul is the first skill; each further one is added here once verified.
+// The Druid's form skills came first (Cal); the single-hit weapon skills
+// followed (#223, 2026-10-23). Each further one is added here once verified.
 namespace framevr::strikeskills {
 inline constexpr int FeralRage=232,Maul=233,Rabies=238,FireClaws=239,Hunger=242,Fury=248;
+inline constexpr int PowerStrike=14,Impale=19,ChargedStrike=24,LightningStrike=34,PoisonDagger=73,Sacrifice=96,Vengeance=111,
+                     Bash=126,Stun=139,Concentrate=144,Berserk=152;
 // The Skills.txt srvstfunc / srvdofunc each skill must still have in its
 // compiled row (D2R skills data; D2MOO for the logic). A row that differs (a
 // game patch, a mod) keeps the basic attack. The Druid's single-hit form skills:
@@ -20,8 +23,18 @@ inline constexpr int FeralRage=232,Maul=233,Rabies=238,FireClaws=239,Hunger=242,
 //    dispatcher pays its mana.
 //  - Fury: start 37 sets the cast's hit count and first target, do 13 lands
 //    one hit per call (multi-hit: Flurry below).
+// The weapon skills that strike once a cast (#223), each with its own start:
+//  - Bash, Stun and Concentrate 32, Power Strike and Charged Strike 6,
+//    Impale 7, Lightning Strike 10, Poison Dagger 16, Sacrifice 29,
+//    Vengeance 35, Berserk 39;
+//  - do 2, the shared melee resolve, or the skill's own: Charged Strike 11
+//    (its bolts), Lightning Strike 14 (its chain), Poison Dagger 32, Sacrifice 64.
+// Jab, Fend, Zeal, Frenzy, Double Swing and Whirlwind hit more than once a
+// cast and Charge runs first: not (yet) strike skills.
 struct Row {int skill,start,action;};
-inline constexpr Row Supported[]={{Maul,56,120},{FeralRage,56,120},{Rabies,57,121},{FireClaws,58,2},{Hunger,0,122},{Fury,37,13}};
+inline constexpr Row Supported[]={{Maul,56,120},{FeralRage,56,120},{Rabies,57,121},{FireClaws,58,2},{Hunger,0,122},{Fury,37,13},
+    {Bash,32,2},{Stun,32,2},{Concentrate,32,2},{Berserk,39,2},{Sacrifice,29,64},{Vengeance,35,2},
+    {PowerStrike,6,2},{Impale,7,2},{ChargedStrike,6,11},{LightningStrike,10,14},{PoisonDagger,16,32}};
 inline bool Known(int skill) {
     for(const auto& r:Supported)if(r.skill==skill)return true;
     return false;

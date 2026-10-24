@@ -396,9 +396,19 @@ existing Smite and bow adapters, and melee skill strikes (below).
 **Melee skill strikes.** A supported melee skill on a hand's trigger is that
 hand's strike skill: a weapon or claw strike that lands casts it on the
 creature it struck, with the skill's own mana, damage and effects, and no
-animation. So far the Druid's single-hit form skills: **Maul** and **Feral
-Rage** (their stacks build per landed cast), **Rabies**, **Fire Claws** and
-**Hunger**. The skill wheel's lower-left box, **Left claw strikes** (Druid
+animation. So far:
+
+- the Druid's single-hit form skills: **Maul** and **Feral Rage** (their
+  stacks build per landed cast), **Rabies**, **Fire Claws** and **Hunger**;
+- the Barbarian's **Bash**, **Stun**, **Concentrate** and **Berserk**;
+- the Paladin's **Sacrifice** and **Vengeance**;
+- the Amazon's **Power Strike**, **Impale**, **Charged Strike** and
+  **Lightning Strike**;
+- the Necromancer's **Poison Dagger**.
+
+A weapon's left-trigger skill rides the left weapon of a dual-wield pair.
+Skills that hit several times a cast (Jab, Fend, Zeal, Frenzy, Double
+Swing, Whirlwind) and Charge stay trigger buttons. The skill wheel's lower-left box, **Left claw strikes** (Druid
 only), picks the left claw's skill with one click: its own trigger's
 (default) or the right trigger's (a skill sits on one trigger only, so this
 puts it on both claws). For plain left-claw strikes, leave the left trigger

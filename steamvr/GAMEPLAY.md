@@ -1024,11 +1024,15 @@ mid-game) choose between two modes for physical swings and trigger/button melee:
     of the time, as natively. `would_hit=1/0` (-1: not gated, e.g. a riposte)
     ends each `melee_trace` contact line.
   - **Melee skill strikes** (CONTROLS.md): a hand armed with a strike skill
-    (the Druid's Maul, Feral Rage, Rabies, Fire Claws, Hunger and Fury so far) casts it natively on a full-cycle stroke's first landed
+    (the Druid's Maul, Feral Rage, Rabies, Fire Claws, Hunger and Fury; Bash, Stun, Concentrate, Berserk, Sacrifice, Vengeance,
+    Power Strike, Impale, Charged Strike, Lightning Strike and Poison Dagger) casts it natively on a full-cycle stroke's first landed
     contact, inside that contact's scaling and on-hit gate; every other contact
     stays a basic attack. Classic casts on every paced contact. Developer
     builds log `Frame melee skills:` (armed contacts, casts, refusals by
     reason) and add `strike=<skill> cast|basic_strike` to `melee_trace` lines.
+    The weapon skills' own start/do entries are not pinned yet: the plugin
+    checks each is in the game's code and logs `Frame melee skills: start|do
+    <n> not pinned yet - rva ..., entry ...` once, to pin it from.
   - **Fury's flurry:** the cast lands hit 1 of its 2-5. In Unleashed each
     later landed stroke of a claw carrying Fury lands the next one, at any
     speed (only a stroke within 100 ms of the previous Fury hit, one swipe's
