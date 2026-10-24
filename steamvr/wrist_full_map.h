@@ -17,16 +17,18 @@
 //  - its draw passes a zoom to the scale function at RVA 0xD1940, which uses
 //    max(round(zoom*8)/8, 0.125) and 4 pixels a unit times that (the full map's own is
 //    0.5). For the wrist's capture only, that argument is replaced (nothing in the game's
-//    memory is written): the widest view is Widest's step, at least the game's floor 0.125.
+//    memory is written): the widest view is the game's floor, 0.125 ([interactions]
+//    full_map_widest picks another step: Widest).
 // The right stick's map zoom (map_zoom.h) then zooms in smoothly from there: the game gets
 // the 1/8 step at or below the zoom wanted and the wrist magnifies the rest (under 2x), so
 // it stays sharp at every zoom and never steps: each share is tagged with the zoom it was
 // really drawn at, and the wrist scales by wanted / drawn.
-// Each map piece the game draws in that box is its own draw, a few microseconds each. At
-// 0.125 a 3072-px layer's box held 6144 x 3456 map units, 16 times the Tab map's area:
-// ~2,400-2,900 more draws in each eye's pass, and By turns fell from 88 to 39 frames a
-// second, Both eyes to 25 pairs (owner, Steam Frame, 2026-10-24). Hence Widest, and the
-// full map drawn for the wrist in a frame's first pass only (DrawForWrist).
+// Each map piece the game draws in that box is its own draw: ~2,050 a pass at 0.25 on a
+// 3072-px layer (owner, Steam Frame, 2026-10-24). They are drawn for the wrist in a frame's
+// first pass only (DrawForWrist). The frame rate the full map cost (By turns 88 -> 39 frames
+// a second) did not follow these draws - a quarter of the area and the second eye skipped
+// changed nothing - but the share's size: the hero marker's search, one GPU thread over the
+// 3072x1728 share, took 23.6 ms a frame (RTX 5090); in tiles it takes 0.45 (ui_blit.cpp).
 namespace framevr::fullmap {
 // Set by the transport from the setting; read by gamestate (the lease, the hooks) and hud.
 inline std::atomic<bool> g_on{false};
@@ -72,17 +74,12 @@ inline float ZoomArg(float game,float wanted,bool gates){
     if(!gates||!(wanted>0)||!std::isfinite(wanted)||!(game>=ArgLo&&game<=ArgHi))return game;
     return GameStep(wanted);
 }
-// The widest view, 1x. The box is the layer's width, so at one zoom it covers the level in
-// proportion to that width squared. Automatic: the closest step whose box is at most
-// WidestUnits across, the map the feature was made at (a 2112-px layer at 0.125): 0.125
-// to 2112 px, 0.25 to 4224. setting > 0 ([interactions] full_map_widest): that step instead.
+// The widest view, 1x: the game's floor, or the game's step for setting > 0 ([interactions]
+// full_map_widest; a closer one covers less of the level, with fewer map pieces to draw).
 // Closest: the closest view, 16x from 0.125, whatever the widest.
-constexpr float WidestUnits=2112/(4*Base),Closest=2.f;
-inline float Widest(uint32_t layerWidth,float setting){
-    if(std::isfinite(setting)&&setting>0)return GameRounded(std::min(setting,Closest));
-    if(!layerWidth)return Base;
-    const float need=float(layerWidth)/(4*WidestUnits);
-    return std::clamp(std::ceil(need*8-1e-3f)/8,Base,Closest);
+constexpr float Closest=2.f;
+inline float Widest(float setting){
+    return std::isfinite(setting)&&setting>0?GameRounded(std::min(setting,Closest)):Base;
 }
 // The right stick's closest zoom from that widest view (map_zoom.h's ceiling).
 inline float MaxMagnify(float widest){return std::isfinite(widest)&&widest>=Base?Closest/widest:Closest/Base;}

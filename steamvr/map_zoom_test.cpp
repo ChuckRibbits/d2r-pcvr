@@ -155,17 +155,10 @@ int main(){
             Check(fm::Span(2112,1188,turning,topDown,1,0)>fill&&fm::Span(2112,1188,turning,topDown,0.f,fm::Base)==fill&&fm::Span(0,0,turning,topDown,1,fm::Base)==0,
                   "no hook: the game's own 0.5 shown wider (never past the box); nonsense: 1x");
         }
-        // the widest view: the closest step whose box is at most the map the feature was made at
-        Check(fm::Widest(2112,0)==.125f&&fm::Widest(1920,0)==.125f&&fm::Widest(3072,0)==.25f&&fm::Widest(4224,0)==.25f&&fm::Widest(4300,0)==.375f,
-              "automatic: 0.125 to a 2112-px layer, 0.25 on the owner's 3072, the next step past 4224");
-        Check(fm::Widest(0,0)==fm::Base&&fm::Widest(3072,NAN)==.25f&&fm::Widest(3072,-1)==.25f,"no layer yet: the floor; no or a nonsense setting: automatic");
-        Check(fm::Widest(3072,.125f)==.125f&&fm::Widest(3072,.3f)==.25f&&fm::Widest(2112,.5f)==.5f&&fm::Widest(3072,9)==fm::Closest&&fm::Widest(3072,.01f)==fm::Base,
+        // the widest view: the game's floor, or full_map_widest's step
+        Check(fm::Widest(0)==fm::Base&&fm::Widest(NAN)==fm::Base&&fm::Widest(-1)==fm::Base,"not set or nonsense: the game's widest");
+        Check(fm::Widest(.25f)==.25f&&fm::Widest(.3f)==.25f&&fm::Widest(.5f)==.5f&&fm::Widest(9)==fm::Closest&&fm::Widest(.01f)==fm::Base,
               "full_map_widest: the game's step for it, within the floor and the closest view");
-        for(uint32_t w=640;w<=8192;w+=64) {
-            const float z=fm::Widest(w,0);
-            Check(w/(4*z)<=fm::WidestUnits+1e-2f||z==fm::Closest,"the automatic box stays within the map it was made at");
-            Check(z==fm::Base||w/(4*(z-.125f))>fm::WidestUnits-1e-2f,"and it is the widest step that does");
-        }
         Check(fm::MaxMagnify(.125f)==16&&fm::MaxMagnify(.25f)==8&&fm::MaxMagnify(fm::Closest)==1&&fm::MaxMagnify(NAN)==16,"the closest view stays game zoom 2 from any widest");
         for(bool turning:{false,true})for(bool topDown:{false,true}) {
             // from a widest 0.25 the zoom follows the stick the same way

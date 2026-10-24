@@ -571,15 +571,10 @@ push still held then must return to the center before it toggles running or
 shows loot labels. A push already held when you look at the map zooms it
 straight away.
 
-With **Full map** or **Full top-down**, 1x is the game's full map zoomed out. At a
-2112-pixel VR render width that is the game's widest zoom, 0.125, about four times
-wider than its Tab map. Each map piece in view costs frame rate, so a wider render
-keeps the same area: at 3072 pixels 1x is the game's zoom 0.25, about twice the Tab
-map's width. The right stick zooms in to the same closest view either way (16x from
-0.125, 8x from 0.25). The game redraws its map closer as you zoom in, so it stays
-sharp; past 4x a tick marks each whole step. `[interactions] full_map_widest` in
-`d2r_pcvr.ini` picks the widest zoom instead (0.125 is the game's widest; 0 is
-automatic). The game's full map is a window
+With **Full map** or **Full top-down**, 1x is the game's full map at its widest
+(the game's own zoom 0.125, about four times wider than its Tab map), and the
+right stick zooms in to 16x. The game redraws its map closer as you zoom in, so it
+stays sharp; past 4x a tick marks each whole step. The game's full map is a window
 around your hero the size of its screen: the widest view shows that window, not
 the whole level. While the wrist or palm map shows it, the full map is not drawn in
 your view; press Tab as usual for the game's own map.
