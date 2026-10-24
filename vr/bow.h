@@ -33,10 +33,12 @@ bool Visual(uint32_t entity,uintptr_t unit,bool hasReleasePoint,bool isRoot);
 bool OwnsVisual(uintptr_t unit);
 // A gas or oil potion thrown as a physical bottle (#292): the transport
 // expects the game's own potion when the bottle shatters, and the first local
-// potion missile visual (Missiles.txt 44-49) within 1.5 s then flies hidden;
-// its burst is the game's own. HidePotion: that visual's entity, true if taken.
+// potion missile (Missiles.txt 44-49) whose visual appears within 1.5 s is
+// claimed: every entity of its visual (root, meshes, effects) then flies
+// hidden; its burst is the game's own. HidePotion: one such entity of that
+// client missile unit; true if hidden (first: true when it claimed the unit).
 void ExpectPotion(uint64_t now);
-bool HidePotion(uint32_t entity);
+bool HidePotion(uint32_t entity,uintptr_t unit,bool& first);
 // Preserve native client-effect creation/lifetime; capture only effects inside
 // the physical quiver arrow's hit callback, including synchronous HD binding.
 uintptr_t ImpactVisual(uintptr_t params,int flags,uintptr_t(*create)(uintptr_t,int));

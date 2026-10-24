@@ -740,7 +740,8 @@ void ClientKill(uintptr_t unit) {
 // A thrown potion's own missile, hidden in flight (#292): its visual shrunk to
 // nothing where the game puts it, so its burst still plays where it lands.
 struct HiddenPotion {uint32_t entity=0;uint64_t until=0;};
-std::array<HiddenPotion,4> hiddenPotions{};
+std::array<HiddenPotion,12> hiddenPotions{};
+struct PotionClaim {uintptr_t unit=0;uint32_t id=0;uint64_t until=0;} potionClaim;   // the client missile whose visual is hidden
 std::atomic<unsigned> hiddenPotionCount{0},potionsHidden{0};
 std::atomic<uint64_t> potionExpected{0};
 bool HiddenPotionMatrix(uintptr_t out,uint32_t entity,uintptr_t component) {
@@ -1172,16 +1173,25 @@ bool Visual(uint32_t entity,uintptr_t unit,bool hasReleasePoint,bool isRoot) {
     return false;
 }
 void ExpectPotion(uint64_t now){potionExpected=now;}
-bool HidePotion(uint32_t entity) {
-    const uint64_t now=GetTickCount64(),expected=potionExpected.load();
-    if(!entity||!expected||now<expected||now-expected>1500)return false;
+bool HidePotion(uint32_t entity,uintptr_t unit,bool& first) {
+    first=false;uint32_t header[3]{};
+    if(!entity||(entity&0xfffff)==0xfffff||!Read(unit,header)||header[0]!=3)return false;
+    const uint64_t now=GetTickCount64();
     {
         std::lock_guard lock(mutex);
+        if(potionClaim.unit!=unit||potionClaim.id!=header[2]||now>potionClaim.until) {
+            const uint64_t expected=potionExpected.load();
+            if(!expected||now<expected||now-expected>1500)return false;
+            potionClaim={unit,header[2],now+4000};potionExpected=0;first=true;++potionsHidden;   // one missile per throw
+        }
         auto* slot=&hiddenPotions[0];
-        for(auto& h:hiddenPotions)if(!h.entity||h.until<slot->until){slot=&h;if(!h.entity)break;}
-        *slot={entity,now+4000};
+        for(auto& h:hiddenPotions) {
+            if(h.entity==entity){slot=&h;break;}
+            if(!h.entity||h.until<slot->until)slot=&h;
+        }
+        *slot={entity,potionClaim.until};
     }
-    potionExpected=0;++hiddenPotionCount;++potionsHidden;   // one per throw
+    ++hiddenPotionCount;
     return true;
 }
 bool OwnsVisual(uintptr_t unit) {
