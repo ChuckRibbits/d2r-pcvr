@@ -1078,6 +1078,21 @@ Unleashed your arrows and throws then follow the contact rules: attack rating
 against the monster's defense scales each projectile's damage at the life write
 (`ar_damage`; no recovery penalty), and the would-have-hit gate decides its other
 effects. `Frame shot damage:` counts scaled hits. Classic: full damage, as before.
+In Unleashed your trigger/button melee (a melee hit check outside a physical
+swing: the trigger's basic attack or melee skill, Smite from the trigger or a
+shield bash) is a stroke like a swing (2026-10-24): it lands, attack rating scales
+its damage at the life write (`ar_damage`), the would-have-hit gate decides its
+other effects, and it shares the swings' recovery. It is measured from your latest
+landed swing on any hand (the recovery damage factor and the on-hit cycle gate, as
+a swing's), and every later swing is measured from it as well as from its own
+clock, so mixing trigger attacks with swings is never faster than swinging. Trigger
+hits never count against each other: the native animation already paces them, and
+a multi-hit cast (Zeal, Fury, Whirlwind) keeps its later hits. Smite always hits
+natively, so it skips attack rating and the would-have-hit gate and only shares the
+recovery. `button_cycles` in `Frame melee:` counts trigger hits; developer builds
+log `Frame trigger melee:` (hits inside a swing's cycle) and `Frame trigger melee
+damage:` (verdicts, scaled hits), and `melee_trace` adds a `trigger target=` line
+per hit. Classic: unchanged.
 In Classic, button melee keeps native monster block only where the game checks
 block inside its hit check; `native block/dodge in melee` in `Frame combat:`
 confirms it. Every weapon contact with a hostile creature taps the controller once
@@ -1317,7 +1332,7 @@ the game would have compared. On a would-miss contact:
   damage at its factor and what they leave is scaled back, so they soak and drain
   their mana or pool at native-average rates.
 On average every effect then lands as often as natively. Your arrows and throws
-are covered (above); trigger/button attacks are not. Each part is checked against the build
+and trigger/button melee are covered (above; Smite, which always hits natively, is not gated). Each part is checked against the build
 at start (`Frame would-hit gate: verdict= events= effects= ...`); a part not
 found stays as before (its effects on every contact). `Frame would-hit gate:
 incoming would hit= would miss= swings ...` counts verdicts; developer builds add
