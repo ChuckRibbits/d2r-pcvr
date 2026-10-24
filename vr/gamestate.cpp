@@ -38,6 +38,7 @@
 #include "journal_ui.h"
 #include "../steamvr/native_panels.h"
 #include "../steamvr/notice_card.h"
+#include "../steamvr/weapon_skills.h"
 #include "../steamvr/callback_ticket.h"
 #include "../steamvr/native_hud.h"
 #include "../steamvr/wrist_full_map.h"
@@ -309,6 +310,9 @@ std::atomic<uint32_t> g_from{0};
 std::atomic<bool> g_leftShield{false};
 std::mutex g_meleeEquipmentMutex;framevr::dualwield::Equipment g_meleeEquipment;
 std::vector<uint32_t> g_shieldTypes;
+std::vector<uint32_t> g_potionTypes;            // ItemTypes tpot: the throwing potions (RightThrowingPotion)
+std::atomic<bool> g_rightPotion{false};
+std::atomic<uint32_t> g_rightPotionCode{0};   // its item code, for the bottle that flies (#292)
 std::atomic<uint32_t> g_handsKey{0};          // what is in the two hands, as one number (HandsKey)             // the hand slot the weapon kind came from: 0 right, 1 left              // D2RVR_TWO_HANDED* bits of what is held
 
 constexpr uint32_t Four(const char* s) { return DataTables::MakeFourCC(s[0], s[1], s[2], s[3]); }
@@ -362,6 +366,7 @@ void CalibrateTypes() {
         uint32_t index=0;
         if(TypeRow(Four(code),&index))g_shieldTypes.push_back(index);
     }
+    if(uint32_t index=0;TypeRow(Four("tpot"),&index))g_potionTypes.push_back(index);
     for (const auto& k : kKinds) {
         uint32_t idx;
         if (TypeRow(Four(k.code), &idx)) g_typeIndex.push_back({idx, k.type});
@@ -469,6 +474,14 @@ bool IsShield(const std::string& code) {
     if(!row||uint32_t(g_typeOffset)+sizeof type>size)return false;
     memcpy(&type,row+g_typeOffset,sizeof type);
     return std::find(g_shieldTypes.begin(),g_shieldTypes.end(),type)!=g_shieldTypes.end();
+}
+// A throwing potion by its item type (tpot); by its code when the types are unknown.
+bool IsThrowingPotion(const std::string& code) {
+    if(code.size()!=4||g_typeOffset<0||g_potionTypes.empty())return framevr::weaponskills::ThrowingPotion(code);
+    uint32_t size=0;const auto* row=ItemRow(Four(code.c_str()),&size);uint16_t type=0;
+    if(!row||uint32_t(g_typeOffset)+sizeof type>size)return false;
+    memcpy(&type,row+g_typeOffset,sizeof type);
+    return std::find(g_potionTypes.begin(),g_potionTypes.end(),type)!=g_potionTypes.end();
 }
 
 // Weapons.txt "speed" (WSM) and "wclass"/"2handedwclass" in an Items row, for
@@ -677,6 +690,8 @@ void __cdecl ReadItems(const PluginContext* ctx, void* token) noexcept {
     // The tracked shield is on the left wrist even when the SDK reports it
     // in body location 4 (observed with the development Paladin).
     g_leftShield=IsShield(code[0])||IsShield(code[1]);
+    g_rightPotion=IsThrowingPotion(code[0]);   // thrown by hand to a spot (transport: motionInput.potion)
+    g_rightPotionCode=g_rightPotion&&code[0].size()>=3?uint32_t(uint8_t(code[0][0]))|uint32_t(uint8_t(code[0][1]))<<8|uint32_t(uint8_t(code[0][2]))<<16|uint32_t(' ')<<24:0u;
     const uint32_t handTypes[2]={KindOf(code[0]),KindOf(code[1])};
     {std::lock_guard lock(g_meleeEquipmentMutex);
         if(g_meleeEquipment.id[0]!=id[0]||g_meleeEquipment.id[1]!=id[1])g_meleeEquipment={};
@@ -952,6 +967,8 @@ uint32_t WeaponSet() { return g_set.load(); }
 uint32_t WeaponType() { return g_type.load(); }
 uint32_t HandsHeld() { return g_held.load(); }
 bool LeftShield() {return g_leftShield.load();}
+bool RightThrowingPotion() {return g_rightPotion.load();}
+uint32_t RightThrowingPotionCode() {return g_rightPotionCode.load();}
 uint32_t TwoHanded() { return g_two.load(); }
 uint32_t WeaponHand() { return g_from.load(); }
 uint32_t HandsKey() { return g_handsKey.load(); }

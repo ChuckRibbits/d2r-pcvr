@@ -20,7 +20,7 @@ the original VR mod for Diablo II: Resurrected. See [Credits](#credits).
 and install your own legitimate copy of Diablo II: Resurrected.** The mod adds
 VR support and motion interactions on top of your existing game installation.
 
-The Windows preview supports **Steam 3.3.93787** and experimental
+The Windows preview supports **Steam 3.3.94995** (and the earlier 3.3.93787) and experimental
 **Battle.net 3.3.93847** installations.
 Run Setup (or **Install-Windows.cmd** in the ZIP) and choose **Steam** or **Battle.net** before choosing
 your headset and connection. See
@@ -56,7 +56,7 @@ backups, including those in older release folders, until removal is complete.
 
 ## What you need
 
-- A Windows PC with your **purchased Steam copy of D2R 3.3.93787**, or
+- A Windows PC with your **purchased Steam copy of D2R 3.3.94995** (or 3.3.93787), or
   **Battle.net copy of D2R 3.3.93847** (experimental support).
 - The Steam desktop client, including for Battle.net VR library shortcuts.
 - A VR headset and two tracked controllers.
@@ -226,7 +226,9 @@ basic attacks for skills without a supported physical adapter; assigning a
 spell does not cast it on every swing. Physical skill gestures can be disabled
 under **VR settings → VR → Weapon skill gestures** (on by default), retaining
 button casting and basic physical attacks. This implementation supports the
-existing Smite and bow adapters; it does not generalize arbitrary melee skills.
+existing Smite and bow adapters and melee skill strikes: a supported melee
+skill on a hand's trigger (Bash, Stun, Charged Strike, Maul and others; see
+CONTROLS.md) casts when that hand's strike lands.
 
 Turning gestures off or changing equipment/assignments cancels an in-progress
 skill draw. Shield contact and its trigger fallback cannot duplicate a cast.

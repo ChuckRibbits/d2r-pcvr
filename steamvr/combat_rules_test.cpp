@@ -85,5 +85,23 @@ int main() {
     // A gated critical/deadly strike roll reads 99: under no chance from 0 to 99.
     assert(AdvanceSeed(NoCritRoll()).low%100==99);
     for(int chance=0;chance<=99;++chance)assert(!(AdvanceSeed(NoCritRoll()).low%100<uint32_t(chance)));
-    std::puts("Combat rules: local ownership, guaranteed accuracy, subsequent random-stream, swing damage and on-hit gate tests passed");
+    // Would-have-hit gate: the roll is the game's own (advanced low % 100), hit when roll < chance.
+    {
+        Seed s{0x12345678u,0x9abcdef0u};
+        for(int i=0;i<1000;++i){assert(NativeHitRoll(s)==int(AdvanceSeed(s).low%100));s=AdvanceSeed(s);}
+        assert(WouldHit(4,5)&&!WouldHit(5,5)&&WouldHit(94,95)&&!WouldHit(95,95)&&!WouldHit(99,95));   // the clamp ends
+        assert(WouldHit(-1,50)&&WouldHit(50,-1)&&WouldHit(-1,-1));   // unknown = native effects
+        // Over the real stream, the would-hit share is the chance: effects match native on average.
+        for(int chance:{5,30,61,95}) {
+            Seed r{0xdeadbeefu,0x1234u};int hits=0;const int n=200000;
+            for(int i=0;i<n;++i){hits+=WouldHit(NativeHitRoll(r),chance);r=AdvanceSeed(r);}
+            const double share=double(hits)/n;
+            assert(share>chance/100.-.01&&share<chance/100.+.01);
+        }
+        // Damage over time follows the hit's factor; a positive rate never rounds to nothing.
+        assert(ScaleDamageOverTime(400,.25)==100&&ScaleDamageOverTime(50,.05)==3&&ScaleDamageOverTime(16,.3)==5);
+        assert(ScaleDamageOverTime(10,.01)==1&&ScaleDamageOverTime(10,0)==0&&ScaleDamageOverTime(10,1)==10);
+        assert(ScaleDamageOverTime(0,.5)==0&&ScaleDamageOverTime(-3,.5)==-3&&ScaleDamageOverTime(100,1.5)==150);
+    }
+    std::puts("Combat rules: local ownership, guaranteed accuracy, subsequent random-stream, swing damage, on-hit and would-hit gate tests passed");
 }

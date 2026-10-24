@@ -17,7 +17,7 @@ namespace framevr::settings {
 enum class Page { Controls, VR, Video, HUD, Combat, Aim, Shield, Haptics, Performance, ReleaseNotes };
 enum Key { Motion, Seated, Dominant, Snap, TurnSpeed, Waist, BeltForward,
            Foveation, Sky, Fog, Ceiling, DrawDistance, ObjectDistance,
-           EyeHeight, ArmSpan, BodyCalibration, SkillGestures, WristMap, WristCompass, ControllerLabels, WeaponSkillIndicators, PlanarSpellAim, VitalsLocation, CriticalAlerts, RenderResolution, NavigationLocation, SmoothTurn, OrdinaryMobBars, MenuDistance, TooltipTiming, ProjectileAimAssist, MeleeHitSpeed, VitalsTilt, HapticStrength, HapticMelee, HapticBowDraw, HapticBowRelease, HapticSpell, HapticInteraction, HapticAlert, HapticShortMelee, BloodVisor, BloodWipe, MeleeRules, MeleeThrustSpeed, LootLabelSize, CompanionCounts, StrainDark, OfflinePlayers, ShieldBashSpeed, StrainSpeed, DesktopOneEye, MapTopDown, MapRotate, FoveationStrength, StereoRendering, DeferGpuWait, TargetHighlight, HeartbeatStart, SpellLock, StaffPoint, LandingCircles, GroundAim, AimHighlights, HighlightRight, HighlightLeft, ReShadeDepth, ElementalHands, EnemySight, BowLaser, ThrowLift, BottlePhysics, PropPhysics, CompanionAi, ShieldGrip, ShieldOut, ShieldUp, ShieldFollow, ShieldRoll, AimFollowsView, Count };
+           EyeHeight, ArmSpan, BodyCalibration, SkillGestures, WristMap, WristCompass, ControllerLabels, WeaponSkillIndicators, PlanarSpellAim, VitalsLocation, CriticalAlerts, RenderResolution, NavigationLocation, SmoothTurn, OrdinaryMobBars, MenuDistance, TooltipTiming, ProjectileAimAssist, MeleeHitSpeed, VitalsTilt, HapticStrength, HapticMelee, HapticBowDraw, HapticBowRelease, HapticSpell, HapticInteraction, HapticAlert, HapticShortMelee, BloodVisor, BloodWipe, MeleeThrustSpeed, LootLabelSize, CompanionCounts, StrainVignette, OfflinePlayers, ShieldBashSpeed, DesktopOneEye, MapTopDown, MapRotate, FoveationStrength, StereoRendering, DeferGpuWait, TargetHighlight, HeartbeatStart, SpellLock, StaffPoint, LandingCircles, GroundAim, AimHighlights, HighlightRight, HighlightLeft, ElementalHands, EnemySight, BowLaser, ThrowLift, BottlePhysics, PropPhysics, CompanionAi, ShieldGrip, ShieldOut, ShieldUp, ShieldFollow, ShieldRoll, AimFollowsView, LeftHandStrikes, TorchFlame, Count };
 // One bit per setting, 128 wide: two words, since MSVC has no 128-bit integer.
 struct ChangeMask {
     static constexpr int Bits=128;
@@ -60,7 +60,7 @@ inline constexpr std::array<Definition,Count> Definitions{{
     {"Standing eye height", "Measured from the SteamVR floor", L"calibration",L"eye_height_m",1.64f,.8f,2.3f,.01f},
     {"Controller span", "Measured between grips in a T-pose", L"calibration",L"arm_span_m",1.6f,.85f,2.6f,.01f},
     {"Body calibration", "Saved body calibration version", L"calibration",L"version",0,0,1,1},
-    {"Weapon skill gestures", "Compatible trigger skills power shield bash and bow release", L"gameplay",L"skill_gestures",1,0,1,1},
+    {"Weapon skill gestures", "Compatible trigger skills power strikes, shield bash and bow release", L"gameplay",L"skill_gestures",1,0,1,1},
     {"Wrist minimap", "Show above wrist health and mana; the wheel MAP tab stays available", L"interactions",L"wrist_map",1,0,1,1},
     {"Wrist compass", "Left wrist bearings; N follows the top of the minimap", L"interactions",L"wrist_compass",1,0,1,1},
     {"Headset / controller labels", "Automatic uses the active controllers; override if labels do not match", L"interactions",L"controller_labels",0,0,4,1},
@@ -87,14 +87,12 @@ inline constexpr std::array<Definition,Count> Definitions{{
     {"Short melee pulses", "Off: longer taps; On: very short, sharp taps", L"haptics",L"short_melee",0,0,1,1},
     {"Blood on visor", "Low life splashes the view; healing back above a band fades it", L"hud",L"blood_visor",1,0,1,1},
     {"Face wipe gesture", "Scrub side to side in front of your face to wipe blood away", L"hud",L"blood_wipe",1,0,1,1},
-    {"Melee rules", "Unleashed scales damage; Classic rolls for hits", L"gameplay",L"melee_rules",0,0,1,1},
     {"Melee thrust speed", "Forward stabs along the blade; independent of swing speed", L"gameplay",L"melee_thrust_speed",2,.75f,10,.25f},
     {"Loot label size", "Dropped-item names; 45% is the original size", L"hud",L"labels_size",45,20,150,5},
     {"Companions & effects", "Companion counts and current buffs, auras and harmful effects", L"interactions",L"companion_counts",1,0,1,1},
-    {"Guard strain color", "Blocking strain at the rim of the view: pale white light, black shadow or off", L"gameplay",L"guard_strain_dark",0,0,2,1},
+    {"Guard strain vignette", "Blocks darken the rim of the view; the rarer the attacker, the faster", L"gameplay",L"guard_strain_vignette",1,0,1,1},
     {"Offline difficulty", "Players 1-8 scaling for newly spawned monsters", L"gameplay",L"offline_players",0,0,8,1},
     {"Shield bash speed", "Hand speed for bash / Smite; wrist twisting never attacks", L"gameplay",L"shield_bash_speed",2,.75f,10,.25f},
-    {"Guard strain buildup", "How quickly repeated blocks build the vignette; same size", L"gameplay",L"guard_strain_speed",1,0,2,1},
     {"Desktop shows one eye", "Monitor shows the left eye only; one extra GPU copy per frame", L"render",L"desktop_one_eye",1,0,1,1},
     // 0 Isometric, 1 Top-down (the corner map, as before); 2 Full map, 3 Full top-down: the game's full map, zoomed from its widest (wrist_full_map.h)
     {"Map view", "The minimap Isometric or Top-down, or the game's full map", L"interactions",L"map_top_down",0,0,3,1},
@@ -111,7 +109,6 @@ inline constexpr std::array<Definition,Count> Definitions{{
     {"Monster highlights", "Dominant hand: its monster only. Both hands: each hand's own", L"gameplay",L"aim_highlights",1,0,1,1},
     {"Right hand color", "The right hand's monster: By range, or one color", L"gameplay",L"highlight_right_hue",45,0,360,15},
     {"Left hand color", "The left hand's monster: By range, or one color", L"gameplay",L"highlight_left_hue",210,0,360,15},
-    {"ReShade depth", "ReShade's Generic Depth add-on; applies after restarting the game", L"render",L"reshade_depth",1,0,1,1},
     {"Elemental hand effects", "Sorceress: fire, frost and lightning around each hand (experimental)", L"interactions",L"elemental_hands",0,0,1,1},
     {"Enemy sight distance", "Offline monster detection range; 100% is game default", L"gameplay",L"enemy_sight_pct",enemysight::DefaultPercent,enemysight::MinPercent,enemysight::MaxPercent,enemysight::StepPercent},
     // Off (LaserOff, below), else the line's hue; steps wrap through Off.
@@ -128,6 +125,10 @@ inline constexpr std::array<Definition,Count> Definitions{{
     {"Shield roll", "Turns the shield around the forearm; + toward the little finger", L"gameplay",L"shield_roll_deg",0,-180,180,5},
     // The eyes' 17-degree tunnel, the hands' 30-degree wedge, a raised hand alone (targetcone, aimrules::Tries).
     {"Aim follows your view", "Only monsters ahead of you; a raised hand aims alone", L"gameplay",L"aim_follows_view",0,0,1,1},
+    // Melee skill strikes (strike_skills.h): which skill the left claw's strikes cast.
+    // Set from the skill wheel's lower-left box (Druid), not a VR Settings row.
+    {"Left-hand strikes", "Druid: the left claw casts its own trigger skill or the right trigger's", L"gameplay",L"left_hand_strikes",0,0,1,1},
+    {"Torch flame", "The flame on a torch club's head; its light stays either way", L"torch",L"flame",1,0,1,1},
 }};
 using Values=std::array<float,Count>;
 inline bool HapticKey(Key key){return key>=HapticStrength&&key<=HapticAlert;}
@@ -160,13 +161,14 @@ inline float Normalize(Key key,float value){
     if(!std::isfinite(value))return d.defaultValue;
     if(key==OfflinePlayers&&(value<0||value>8||std::floor(value)!=value))return 0;
     if(key==BowLaser&&value<0)return LaserOff;
+    if(key==LeftHandStrikes)return std::round(value)==1?1.f:0.f;   // the retired 2 (Basic attack) reads Own trigger skill
     if(key==HeartbeatStart)return std::clamp(std::round(value/10)*10,d.min,d.max);   // 0 = Off, else a 10% step
     if(key==ShieldFollow||key==ShieldRoll)return std::clamp(std::round(value/d.step)*d.step,d.min,d.max)+0.f;   // whole steps, as skel::shield::FollowSetting / RollSetting
     if(HighlightKey(key))return std::clamp(std::round(value/15)*15,d.min,d.max);   // 0 = By range, else a hue in 15-degree steps
     if(key==EnemySight)return float(enemysight::NormalizePercent(value));
     if(key==VitalsTilt)return vitals::NormalizeTilt(value);
     if(HapticKey(key))return haptics::NormalizeStrength(value);
-    if((key==ControllerLabels||key==VitalsLocation||key==NavigationLocation||key==RenderResolution||key==MenuDistance||key==TooltipTiming||key==ProjectileAimAssist||key==GroundAim||key==SpellLock||key==StrainSpeed||key==StrainDark||key==FoveationStrength||key==StereoRendering)&&(value<d.min||value>d.max||value!=std::round(value)))return d.defaultValue;
+    if((key==ControllerLabels||key==VitalsLocation||key==NavigationLocation||key==RenderResolution||key==MenuDistance||key==TooltipTiming||key==ProjectileAimAssist||key==GroundAim||key==SpellLock||key==FoveationStrength||key==StereoRendering)&&(value<d.min||value>d.max||value!=std::round(value)))return d.defaultValue;
     value=std::clamp(value,d.min,d.max);
     return d.step==1?std::round(value):value;
 }
@@ -211,11 +213,12 @@ inline void HueRgb(float hue,float rgb[3]){
     const float table[6][3]={{1,x,0},{x,1,0},{0,1,x},{0,x,1},{x,0,1},{1,0,x}};
     for(int i=0;i<3;++i)rgb[i]=table[std::min(5,int(h))][i];
 }
-inline constexpr const char* MeleeRulesNames[]={"Unleashed","Classic"};
+// [gameplay] left_hand_strikes: 0 the left trigger's skill, 1 the right trigger's.
+// (2, Basic attack, left the choices on 2026-10-23: Own trigger with no strike
+// skill on the left trigger is the same; a profile saved with it reads Own.)
+inline constexpr const char* LeftHandStrikesNames[]={"Own trigger skill","Same as right"};
 inline constexpr const char* HighlightsNames[]={"Dominant hand","Both hands"};   // aim_highlights 0 / 1
 inline constexpr const char* GroundAimNames[]={"Game","Where you point","Aimed monster"};   // ground_aim 0 / 1 / 2
-inline constexpr const char* StrainColorNames[]={"White","Black","Off"};   // guard_strain_dark 0 / 1 / 2
-inline constexpr const char* StrainSpeedNames[]={"Slow","Medium","Fast"};
 inline constexpr const char* FoveationStrengthNames[]={"Low","Medium","High","Maximum"};
 // Replay (one CPU pass for both eyes) left the choices on 2026-10-20: on the
 // owner's PC it halved the CPU work a frame but not the frame time - the right
@@ -228,10 +231,9 @@ inline constexpr const char* StereoRenderingNames[]={"Both eyes","By turns"};
 // rate. While it is not deferred, the Perf page warns and offers a button
 // that turns it on (Apply saves it).
 constexpr Rect DeferBox{940,181,300,52};
-// Under the Perf page's eight rows: the last second's frame times and whether
-// they fit the headset's frame, the game's graphics options, and a ReShade
-// depth change waiting for a restart.
-constexpr Rect PerformanceBox{40,742,1200,62},GameVideoBox{40,806,1200,32},DepthRestartBox{40,840,1200,32};
+// Under the Perf page's rows: the last second's frame times and whether they
+// fit the headset's frame, and the game's graphics options.
+constexpr Rect PerformanceBox{40,742,1200,62},GameVideoBox{40,806,1200,32};
 // Windows Mono audio (Settings > Accessibility > Audio) folds the PC's sound to
 // the centre before any headset stream, so head-relative sound cannot pan.
 // While it is on, the title row's hint gives way to this warning on every page.
@@ -312,7 +314,6 @@ inline std::string PerformanceLine(const PerformanceReadout& r) {
     return line;
 }
 inline constexpr const char* GameVideoUnsaved="Game: options not saved yet; the game writes them when its options menu closes";
-inline constexpr const char* DepthRestartNote="ReShade depth: restart the game to apply the change";
 // Whether the CPU's part fits the headset's frame: past it, the runtime
 // holds every late frame back to its next refresh.
 inline std::string PerformanceVerdict(const PerformanceReadout& r) {
@@ -385,18 +386,16 @@ inline bool RowShown(Key key,const Values& v,const Context& c){
     }
 }
 // Two settings that belong together share a row, a stepper each: the left
-// hand's outline color and the right's, the guard strain's color and buildup.
-inline Key PairOf(Key key){return key==HighlightLeft?HighlightRight:key==StrainDark?StrainSpeed:Count;}
+// hand's outline color and the right's.
+inline Key PairOf(Key key){return key==HighlightLeft?HighlightRight:Count;}
 inline bool Paired(Key key){return PairOf(key)!=Count;}
 inline const char* RowLabel(Key key,const Context& c){
     if(key==HighlightLeft)return "Hand colors";
-    if(key==StrainDark)return "Guard strain";
     if(key==SpellLock&&!BowSkillClass(c))return "Spells go to the aimed monster";
     return Definitions[key].label;
 }
 inline const char* RowDetail(Key key){
     if(key==HighlightLeft)return "Each hand's monster: range or a hue";
-    if(key==StrainDark)return "Rim color; how fast blocks build it";
     return Definitions[key].detail;
 }
 // Skills go to the aimed monster, spell_lock bits: 1 spells, 2 bow skills.
@@ -420,11 +419,13 @@ inline Rect PairDecrease(int row,int side){return {PairX(side),RowY+row*RowStep,
 inline Rect PairValue(int row,int side){return {PairX(side)+56,RowY+row*RowStep,238,52};}
 inline Rect PairIncrease(int row,int side){return {PairX(side)+298,RowY+row*RowStep,52,52};}
 // Every row a page can show, in order (Rows leaves out those that cannot apply).
-inline int CatalogCount(Page page){return page==Page::Haptics?2+haptics::CategoryCount:page==Page::Combat?9:page==Page::Aim?10:page==Page::Shield?5:page==Page::VR?10:page==Page::Video?6:page==Page::Performance?8:page==Page::HUD?10:0;}
+inline int CatalogCount(Page page){return page==Page::Haptics?2+haptics::CategoryCount:page==Page::Combat?8:page==Page::Aim?10:page==Page::Shield?5:page==Page::VR?10:page==Page::Video?7:page==Page::Performance?6:page==Page::HUD?10:0;}
 inline Key CatalogKey(Page page,int row){
     constexpr Key hapticRows[]={HapticStrength,HapticMelee,HapticShortMelee,HapticBowDraw,HapticBowRelease,HapticSpell,HapticInteraction,HapticAlert};
     if(page==Page::Haptics)return hapticRows[row];
-    constexpr Key combat[]={MeleeRules,MeleeHitSpeed,MeleeThrustSpeed,ShieldBashSpeed,StrainDark,OfflinePlayers,HeartbeatStart,EnemySight,CompanionAi};   // StrainDark: with StrainSpeed
+    // Melee is Unleashed only: Melee rules left the page and the settings on
+    // 2026-10-23 ([gameplay] melee_rules is ignored).
+    constexpr Key combat[]={MeleeHitSpeed,MeleeThrustSpeed,ShieldBashSpeed,StrainVignette,OfflinePlayers,HeartbeatStart,EnemySight,CompanionAi};
     if(page==Page::Combat)return combat[row];
     // the aimed monster, the staff, the outline: strength, which hands, their colors; the ground skills, circles, the bow path laser, the throws
     // AimFollowsView below every row that brings it, so turning one on moves no row above the pointer
@@ -433,10 +434,11 @@ inline Key CatalogKey(Page page,int row){
     if(page==Page::Shield)return Key(ShieldGrip+row);   // Grip, Out, Up, Follows, Roll: every class can carry a shield
     constexpr Key hud[]={VitalsLocation,VitalsTilt,CriticalAlerts,NavigationLocation,MenuDistance,TooltipTiming,BloodVisor,BloodWipe,LootLabelSize,CompanionCounts};
     if(page==Page::HUD)return hud[row];
-    constexpr Key video[]={Sky,Fog,Ceiling,ElementalHands,BottlePhysics,PropPhysics};
+    constexpr Key video[]={Sky,Fog,Ceiling,ElementalHands,BottlePhysics,PropPhysics,TorchFlame};
     if(page==Page::Video)return video[row];
-    // Everything that changes the frame rate, with its numbers below.
-    constexpr Key performance[]={StereoRendering,RenderResolution,DrawDistance,ObjectDistance,Foveation,FoveationStrength,ReShadeDepth,DesktopOneEye};
+    // Everything that changes the frame rate, with its numbers below. The
+    // desktop mirror is [render] desktop_one_eye in the INI only.
+    constexpr Key performance[]={StereoRendering,RenderResolution,DrawDistance,ObjectDistance,Foveation,FoveationStrength};
     if(page==Page::Performance)return performance[row];
     constexpr Key vrRows[]={Motion,Seated,Dominant,SmoothTurn,Snap,TurnSpeed,Waist,BeltForward,SkillGestures,OrdinaryMobBars};
     return vrRows[row];
@@ -456,7 +458,7 @@ inline RowList Rows(Page page,const Values& values,const Context& context={}){
 enum class Kind { None, Tab, Change, Apply, Close, Recenter, Calibrate, ControllerMenu, ControllerChoice, DismissMenu, TestHaptics };
 struct Hit {Kind kind=Kind::None;int index=-1,delta=0;};
 // A value box that steps forward when selected, besides On/Off toggles.
-inline bool ValueSteps(Key key){return Definitions[key].max==1||key==StrainDark||key==SpellLock;}
+inline bool ValueSteps(Key key){return Definitions[key].max==1||key==SpellLock;}
 // shown: the rows the panel draws (Model::Rows); none, the defaults' rows.
 inline Hit HitTest(Page page,float u,float v,bool controllerMenu=false,const RowList* shown=nullptr){
     if(!std::isfinite(u)||!std::isfinite(v)||u<0||u>=1||v<0||v>=1)return {};
@@ -549,10 +551,9 @@ public:
             const auto key=Key(hit.index);const auto& d=Definitions[key];
             if(d.max==1)draft[key]=draft[key]>.5f?0.f:1.f;
             else if(key==OfflinePlayers)draft[key]=std::clamp(draft[key]+float(hit.delta),0.f,8.f);
-            else if(key==StrainSpeed)draft[key]=std::clamp(draft[key]+float(hit.delta),0.f,2.f);
             else if(key==FoveationStrength||key==StereoRendering)draft[key]=std::clamp(draft[key]+float(hit.delta),d.min,d.max);
             else if(key==SpellLock)draft[key]=LockStep(draft[key],hit.delta,context);
-            else if(key==ProjectileAimAssist||key==StrainDark||key==GroundAim)draft[key]=float((int(draft[key])+(hit.delta<0?2:1))%3);   // cycles
+            else if(key==ProjectileAimAssist||key==GroundAim)draft[key]=float((int(draft[key])+(hit.delta<0?2:1))%3);   // cycles
             else if(key==MapTopDown)draft[key]=float((int(draft[key])+(hit.delta<0?3:1))%4);   // Isometric, Top-down, Full map, Full top-down, round
             else if(key==BowLaser){   // round the wheel through Off: ... 345, Off, 0, 15 ... both ways
                 const float next=draft[key]+hit.delta*d.step;
