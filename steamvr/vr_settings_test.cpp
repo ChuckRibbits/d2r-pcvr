@@ -46,6 +46,20 @@ int main(){
         state.ready=false;model.Open(state);model.Click(At(model,Page::Controls,TabBox(int(Page::ReleaseNotes))));
         Check(model.page==Page::ReleaseNotes&&!model.Dirty(),"release notes remain readable without configuration");
     }
+    {   // Notes pages (a long release): Previous / Next under the lines, with or without settings
+        Model notes;Snapshot none;notes.Open(none);notes.SetNotesPages(3);notes.Click({Kind::Tab,int(Page::ReleaseNotes)});
+        const auto next=HitTest(Page::ReleaseNotes,(NotesNextBox.x+10.f)/Width,(NotesNextBox.y+10.f)/Height),
+                   previous=HitTest(Page::ReleaseNotes,(NotesPrevBox.x+10.f)/Width,(NotesPrevBox.y+10.f)/Height);
+        Check(next.kind==Kind::NotesPage&&next.delta==1&&previous.kind==Kind::NotesPage&&previous.delta==-1,"Next and Previous under the lines");
+        Check(!notes.ready&&notes.notesPage==0,"opens on page 1, before any settings load");
+        notes.Click(next);notes.Click(next);notes.Click(next);Check(notes.notesPage==2,"Next stops at the last page");
+        notes.Click(previous);Check(notes.notesPage==1&&!notes.Dirty(),"Previous goes back; paging edits nothing");
+        notes.Click({Kind::Tab,int(Page::Controls)});notes.Click(next);Check(notes.notesPage==1,"other tabs never page the notes");
+        notes.Open(none);Check(notes.notesPage==0,"reopening starts on page 1");
+        notes.SetNotesPages(1);notes.Click({Kind::Tab,int(Page::ReleaseNotes)});notes.Click(next);Check(notes.notesPage==0,"one page: nothing to turn");
+        Check(NotesPages(0)==1&&NotesPages(12)==1&&NotesPages(13)==2&&NotesPages(NotesMaxLines)==6,"12 lines a page");
+        Check(NotesPrevBox.y>=330+NotesPerPage*36-8&&NotesPrevBox.y+NotesPrevBox.h<=848,"the pager sits between the last line and the credits");
+    }
     {
         HoverHelp help;
         Check(help.Step(MeleeThrustSpeed,100)==NoHelp&&help.Step(MeleeThrustSpeed,549)==NoHelp,"passing over a setting does not flash help");

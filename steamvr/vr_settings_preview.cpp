@@ -14,7 +14,7 @@ int main(int argc,char** argv){
     if(argc>3&&std::strcmp(argv[3],"--all-rows")==0){   // the outline's rows (the longest hue names) and ground circles shown
         s.values[TargetHighlight]=50;s.values[GroundAim]=1;s.values[HighlightLeft]=300;s.values[HighlightRight]=315;
     }
-    Model m;m.Open(s);const int page=argc>2?std::atoi(argv[2]):0;
+    Model m;m.Open(s);m.SetNotesPages(ReleaseNotesPages());const int page=argc>2?std::atoi(argv[2]):0;
     m.Click({Kind::Tab,page});
     if(argc>3&&std::strcmp(argv[3],"--release-notes-check")==0){
         if(m.page!=Page::ReleaseNotes||m.Dirty())return 13;
@@ -41,6 +41,7 @@ int main(int argc,char** argv){
         SelectObject(dc,old);DeleteObject(font);DeleteDC(dc);
     }
     if(argc>3&&std::strcmp(argv[3],"--dropdown")==0)m.Click({Kind::ControllerMenu});
+    if(argc>4&&std::strcmp(argv[3],"--notes-page")==0)for(int i=std::atoi(argv[4]);i>0;--i)m.Click({Kind::NotesPage,0,1});   // the Notes tab turned to that page
     const int help=argc>4&&std::strcmp(argv[3],"--help")==0?std::atoi(argv[4]):NoHelp;
     if(argc>3&&std::strcmp(argv[3],"--help-check")==0){
         const auto plain=Paint(m,{},"");

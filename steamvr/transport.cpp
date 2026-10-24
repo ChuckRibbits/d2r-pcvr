@@ -1538,7 +1538,7 @@ void ResetSettingsInput() {
 }
 void OpenSettings() {
     settingsImageReady=false;settingsPainted={};settingsPaintAt=0;settingsPaintRequest=0;settingsRequested={};
-    settingsModel.Open(vrsettings::Read());settingsOpen=true;settingsSession=gamestate::LocalPlayer();
+    settingsModel.Open(vrsettings::Read());settingsModel.SetNotesPages(settings::ReleaseNotesPages());settingsOpen=true;settingsSession=gamestate::LocalPlayer();
     const auto q=math::Yaw(math::Heading(Q(head.orientation)));
     settingsBase={V(head.position)+math::Rotate(q,{0,-.06f,-1.05f}),q};
     settingsPose=Placed(settingsBase,settingsOffset);settingsHover={};ResetSettingsInput();
