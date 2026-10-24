@@ -1036,8 +1036,10 @@ and trigger/button melee were:
     defense lowered per hit and chance to cast on striking or attack (curses
     included). Every other contact still lands its scaled damage, with no
     on-hit effects. `swing_recovery_grace` does not shorten the wait. A riposte
-    always carries them; an unknown cycle counts as full. Elemental damage and
-    its effects (chill, poison) and on-kill effects are unchanged. The game's
+    always carries them; an unknown cycle counts as full. Elemental damage is
+    damage (scaled like the hit; poison and burn by the contact's factor), its
+    effects (chill, freeze) follow the would-have-hit gate below, and on-kill
+    effects are unchanged. The game's
     own roll sites are checked at start (`Frame on-hit gate:`); a part not
     found stays native. `[debug] melee_trace=1` adds `onhit=1/0` to each
     traced contact.
@@ -1230,7 +1232,8 @@ instead of a random one. Classic keeps the native roll.
   each block sends one smooth pulse in from the edge. At full strain the guard
   breaks: the shadow swells until only `guard_strain_clear` % (10) of the view is
   clear and breathes slowly (`guard_strain_breathe_ms`, 1600), with one alert tap on
-  the left controller. The shield keeps blocking throughout; the cost is sight.
+  the left controller. The shield still stops every hit, but through a broken
+  guard each block leaks a chip (below); the other cost is sight.
   Strain holds while hits keep reaching the shield. Once no hit (block or parry)
   has reached it for `guard_strain_recover_ms` (1500; 0 = only lowering drains), it
   drains with the shield still up; the next hit stops the drain and restarts the
@@ -1290,8 +1293,10 @@ instead of a random one. Classic keeps the native roll.
 
 Damage is scaled at the native damage application's final life write (44CE80,
 whose `Set(defender, life, ...)` returns to 44D098), so resistances, criticals and
-leech have already run; only the local player's physical swings are scaled - not
-spells, missiles or thorns.
+leech have already run. Scaled: the local player's physical swings, trigger/button
+melee, arrows and throws, and every forced incoming hit. Not scaled: spells (yours
+or theirs; they never roll to hit), thorns, and anything that never passes a hit
+check.
 
 **No flinching (Unleashed, 2026-10-22):** the hero never enters the game's hit
 recovery (GetHit) or block animation when struck; Classic keeps native flinching,
@@ -1321,7 +1326,9 @@ after damage reduction, resistances and absorb, so expected damage equals native
 without the hit-or-miss variance. Spells never roll to hit and are unchanged.
 `[gameplay] enemies_always_hit` (default 1) turns the rule off with 0, restoring
 native monster misses at full damage. Classic always uses the native monster
-chance to hit. The log's `Frame incoming defense:` line counts scaled hits.
+chance to hit. The log's `Frame incoming defense:` line counts scaled hits. It
+needs the combat hooks, which `contact_hits=1` (the default) installs: with
+`contact_hits=0` monsters roll to hit natively whatever this key says.
 
 **Would-have-hit gate (Unleashed):** contact always lands, both ways - a monster's
 melee hit or missile on you (`enemies_always_hit`) and your physical swing - and
