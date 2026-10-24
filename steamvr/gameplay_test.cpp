@@ -228,6 +228,18 @@ int main() {
         Sim trap;tossing(trap);trap.Step();
         Check(trap.out.meleeContact,"a trap's hand still swings its weapon between throws");
     }
+    // A physical potion flight (#292): the release presses nothing; the step whose
+    // bottle shatters (tossBurst) makes the one native press of the trigger's slot.
+    {
+        Sim s;tossing(s);s.in.selectedSkill=weaponskills::Throw;s.in.potion=s.in.potionFlight=true;s.Step();
+        s.in.trigger=1;s.Step();s.Move({.25f,1.55f,-.2f},4);s.Move({.25f,1.55f,-.9f},5);s.in.trigger=0;s.Step();
+        Check(s.out.tossRelease&&s.out.skill<0,"the bottle leaves the hand: no native press yet");
+        bool early=false;for(int i=0;i<20;++i)early|=s.Step().skill>=0;
+        Check(!early,"nor while it flies");
+        s.in.tossBurst=true;Check(s.Step().skill==0,"it shatters: one native press");s.in.tossBurst=false;
+        int pressed=1;for(int i=0;i<10;++i)pressed+=s.Step().skill==0;
+        Check(pressed>=3&&pressed<=5&&s.out.skill<0,"a brief one, as a release's");
+    }
     for(int kind=0;kind<4;++kind) {
         Sim s;s.in.weapon=Weapon::Javelin;s.Step(3);s.in.trigger=1;s.Step();
         if(kind==0)s.Move({.25f,1.25f,-.45f},10); // weak reposition, not a throw

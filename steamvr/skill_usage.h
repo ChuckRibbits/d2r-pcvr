@@ -46,7 +46,7 @@ inline const char* Line(int skill,int slot) {
         case Kind::Attack:return "Press to attack what this hand points at. Swinging a melee weapon attacks without it.";
         case Kind::Throw:
             if(!at.right)break;
-            return "Gesture: throw by hand. A javelin or throwing weapon flies along your throw; a gas or oil potion bursts where its arc lands.";
+            return "Gesture: throw by hand. A javelin or throwing weapon flies along your throw; a gas or oil potion flies as a bottle and bursts where it shatters.";
         case Kind::Strike:
             if(!at.trigger)return "Press to cast it, aimed by this hand. On a trigger it is a gesture: a swing that lands casts it.";
             return at.left?"Gesture with a second weapon or claw: a full-cycle swing of the left hand that lands casts it; quicker swings stay weaker basic attacks.":
@@ -101,8 +101,8 @@ inline std::string Details(int skill,int slot) {
             if(!at.right)break;
             return "Gesture with a thrown weapon or a gas or oil potion in the right hand. Javelins, throwing knives and axes: hold the trigger, "
                    "make a deliberate throwing motion and let go; the weapon flies along your throw. Gas and oil potions: press, throw and let go; "
-                   "the game's own potion bursts where the arc first meets the floor, a wall, a table or a prop (with Bottle physics on), within "
-                   "the game's reach. A quick press or a still hold throws as the game does.";
+                   "with Bottle physics on the potion leaves your hand as a real bottle, and the game's own cloud or blast starts where it "
+                   "shatters on the floor, a wall, a table or a prop, within the game's reach. A quick press or a still hold throws as the game does.";
         case Kind::Strike: {
             if(!at.trigger)return "Press to cast it natively, aimed by this hand. On a trigger it becomes a gesture: a swing that lands casts it on the monster you hit, with the skill's own mana, damage and effects.";
             std::string text=at.left?"Gesture, with a second weapon of a dual-wield pair or the other claw in a form. ":"Gesture with a melee weapon or claws. ";

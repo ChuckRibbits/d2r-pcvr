@@ -91,7 +91,7 @@
 namespace gamestate {uint32_t WeaponType();uint32_t HandsKey();uint32_t WeaponSet();uint32_t WeaponClass();uint32_t TwoHanded();uint64_t LocalPlayer();uint32_t MenuEpoch();}
 namespace gamecmd {void RequestPotion(int slot);void CancelPotion();}
 namespace gamestate {void MenuMap(bool wanted);uint32_t QuestNotices();bool NoticePanelOpen();bool NoticeText(int kind,char* out,uint32_t size);}
-namespace gamestate {bool LeftShield();bool RightThrowingPotion();framevr::dualwield::Equipment MeleeEquipment();}
+namespace gamestate {bool LeftShield();bool RightThrowingPotion();uint32_t RightThrowingPotionCode();framevr::dualwield::Equipment MeleeEquipment();}
 namespace combat {float GameVolume();}
 
 namespace framevr {
@@ -454,7 +454,14 @@ bowflight::Shot throwLeftPending{},throwLeftReady{};
 bool leftNeedsWorld=false,leftHasShot=false,leftThrowArmed=false;
 // A trap or bomb thrown to place (#224): where its arc landed, in grid cells,
 // for its cast's aim (TossTarget).
-struct TossLanding {int skill=-1;float x=0,y=0;uint64_t at=0,session=0;} tossLanding;
+struct TossLanding {int skill=-1;float x=0,y=0;uint64_t at=0,session=0;bool burst=false;} tossLanding;   // burst: a potion bottle's shatter (#292)
+// A gas or oil potion thrown as a physical bottle (#292): its body in the
+// bottles' world until it first touches anything. There it shatters and the
+// game's own Throw is pressed at that cell (potionBurst feeds the motion
+// engine's tossBurst), its native potion hidden in flight (bowvr::ExpectPotion).
+struct PotionFlight {uint64_t id=0,session=0;uint32_t code=0;int skill=-1;double started=0;bool shown=false;interaction::Pose pose{};} potionFlight;
+uint64_t potionFlightSerial=0;bool potionBurst=false;
+constexpr double PotionFlightMax=3;   // seconds; a bottle still in the air then bursts where it is
 // The latest centre-view stage-to-world frame (View, eye<0). Input reads it
 // for the room height of the world floor and to place a thrown bottle's
 // landing point in world metres; both run under the transport mutex.
@@ -1716,6 +1723,7 @@ void StepDroppedBottles() {
     if((!bottlesOn&&!propsOn)||!in.session||in.session!=droppedSession) {
         if(droppedBottles)droppedBottles->Reset();
         droppedSession=in.session;propsWanted=false;
+        potionFlight={};   // its bottle went with the world: nothing thrown, nothing spent
         if(!bottlesOn&&!propsOn)return;
     }
     const float upm=stageWorld.upm;
@@ -1749,7 +1757,7 @@ void StepDroppedBottles() {
     }
     // Landed, cancelled or back on the arc: the body goes.
     bottles::Thrown thrown;
-    if(droppedBottles&&droppedBottles->Tossed(thrown)&&(!out.flying||out.flightId!=thrown.id))droppedBottles->EndToss();
+    if(droppedBottles&&droppedBottles->Tossed(thrown)&&(!out.flying||out.flightId!=thrown.id)&&thrown.id!=potionFlight.id)droppedBottles->EndToss();
     // Props are looked for around the player while physical melee can reach them.
     const bool wantProps=propsOn&&world&&motionControls.load()&&stageWorld.valid;
     if(wantProps) {
@@ -1795,6 +1803,26 @@ void StepDroppedBottles() {
     // Draw a thrown potion where this frame's steps left it.
     if(interactionOutput.flying&&interactionOutput.flightId&&droppedBottles->Tossed(thrown)&&thrown.id==interactionOutput.flightId&&!thrown.landed)
         interactionOutput.flight={in.stage.Room(thrown.p),math::Multiply(math::Conjugate(in.stage.base),thrown.q)};
+    // A thrown gas or oil potion (#292): drawn where this frame's steps left it;
+    // where it first touched anything (or still flying after PotionFlightMax,
+    // or lost to another throw) it shatters, and the game's own Throw goes there.
+    if(potionFlight.id) {
+        bottles::Thrown flight;
+        const bool mine=droppedBottles->Tossed(flight)&&flight.id==potionFlight.id;
+        if(mine&&!flight.landed&&in.time-potionFlight.started<PotionFlightMax) {
+            potionFlight.pose={in.stage.Room(flight.p),math::Multiply(math::Conjugate(in.stage.base),flight.q)};potionFlight.shown=true;
+        } else {
+            const auto at=mine?flight.p:in.stage.World(potionFlight.pose.p);
+            float x=0,y=0;const bool cell=world&&(mine||potionFlight.shown)&&toss::Cell(at,floor,upm,x,y);
+            if(cell)tossLanding={potionFlight.skill,x,y,GetTickCount64(),potionFlight.session,true};
+            potionBurst=true;bowvr::ExpectPotion(GetTickCount64());
+            char line[200];std::snprintf(line,sizeof line,"Frame potion throw: the bottle %s after %.2f s%s %.1f,%.1f; the game's Throw goes there",
+                !mine?"was replaced":flight.landed?"shattered":"was still flying",in.time-potionFlight.started,cell?" at cells":" (no cell: where you point)",x,y);
+            Say(line);
+            if(mine)droppedBottles->EndToss();
+            potionFlight={};
+        }
+    }
     // A light tick in the hand whose weapon struck a bottle or a prop.
     for(int slot=0;slot<bottles::Colliders;++slot) {
         const float speed=droppedBottles->Struck(slot);const int hand=slot?1:0;const auto now=GetTickCount64();
@@ -2358,8 +2386,15 @@ void Input() {
     const bool tossReady=!shapeForm&&gestureSettings[settings::SkillGestures]>.5f&&quickFresh&&rightSkill.known&&rightSkill.available;
     motionInput.potion=tossReady&&gamestate::RightThrowingPotion()&&weaponskills::PotionThrow(rightSkill.id);
     motionInput.toss=tossReady&&(toss::Skill(rightSkill.id)||motionInput.potion);
+    // With Bottle physics and the potion's model cached, it leaves the hand as a
+    // physical bottle; the press waits for it to shatter (StepDroppedBottles).
+    const uint32_t potionCode=motionInput.potion?gamestate::RightThrowingPotionCode():0u;
+    motionInput.potionFlight=potionCode&&bottlePhysics.load()&&potionModels.Radius(potionCode)>0&&!potionFlight.id;
+    motionInput.tossBurst=std::exchange(potionBurst,false);
     motionOutput=motion.Step(motionInput);motionAt=GetTickCount64();
-    if(motionOutput.tossHeld)tossLanding={};   // a new trap in hand: nothing placed yet
+    // A new trap or potion in hand: nothing placed yet; a bottle's shatter keeps
+    // its spot for the press it makes, even with the next potion already armed.
+    if(motionOutput.tossHeld&&!(tossLanding.burst&&motionAt-tossLanding.at<700))tossLanding={};
     const auto& tossStage=interactionInput.stage;
     const bool tossWorld=interactionInput.floorKnown&&tossStage.known&&stageWorld.upm>=1&&stageWorld.upm<=12;
     const float tossFloor=tossStage.anchor.y+(interactionInput.floor-tossStage.origin.y);
@@ -2376,17 +2411,32 @@ void Input() {
         // table, a prop or the floor), else where it reaches the floor under
         // the player at release (world metres). Running carries it along.
         const auto carry=playerCarry.known?playerCarry.velocity:math::Vec{};
-        float x=0,y=0;bool landed=false,traced=false;
+        float x=0,y=0;bool landed=false,traced=false,flying=false;
         if(tossWorld) {
             math::Vec hit{};
             const auto worldP=tossStage.World(motionOutput.tossOrigin),worldV=toss::WorldVelocity(tossStage,motionOutput.tossVelocity,carry);
             traced=bottlePhysics.load()&&droppedBottles&&droppedBottles->Trace(worldP,worldV,toss::Radius,interaction::ThrowMaxFlight,hit)&&
                 toss::Cell(hit,tossFloor,stageWorld.upm,x,y);
             landed=traced||toss::Landing(tossStage,tossFloor,stageWorld.upm,motionOutput.tossOrigin,motionOutput.tossVelocity,x,y,carry);
+            // A gas or oil potion leaves the hand as its own bottle (#292), held as
+            // the hand held it, tumbling end over end along its throw.
+            if(motionInput.potionFlight&&droppedBottles&&droppedBottles->Ready()) {
+                const auto held=potions::HeldRotation(motionInput.hand[0].q);
+                const auto across=math::Cross(worldV,math::Vec{0,1,0});const float spin=gameplay::Length(across);
+                const bottles::Release release{gamestate::LocalPlayer(),interactionInput.time,tossStage.World(potions::Center(motionOutput.tossOrigin,motionInput.hand[0].q)),
+                    worldV,spin>1e-4f?across*(6.f/spin):math::Vec{},math::Multiply(tossStage.base,held),tossFloor,stageWorld.upm,
+                    bottles::Radius(potionModels.Radius(potionCode)),potionCode};
+                const uint64_t id=(uint64_t(1)<<62)|++potionFlightSerial;
+                flying=droppedBottles->Toss(release,id);
+                if(flying)potionFlight={id,release.session,potionCode,rightSkill.id,interactionInput.time};
+            }
         }
-        if(landed)tossLanding={rightSkill.id,x,y,motionAt,gamestate::LocalPlayer()};
+        // The bottle in the air: its own landing comes when it shatters. Without
+        // it the game's Throw goes now, to the traced landing, as before.
+        if(motionInput.potionFlight&&!flying)potionBurst=true;
+        if(landed&&!flying)tossLanding={rightSkill.id,x,y,motionAt,gamestate::LocalPlayer()};
         char line[240];std::snprintf(line,sizeof line,"Frame toss: skill=%d%s thrown at %.1f m/s (running %.1f m/s), %s %.1f,%.1f",rightSkill.id,
-            motionInput.potion?" (throwing potion)":"",
+            flying?" (throwing potion, its bottle flies)":motionInput.potion?" (throwing potion)":"",
             gameplay::Length(motionOutput.tossVelocity),gameplay::Length(carry),
             !landed?"no landing (room unknown), cast where you point":traced?"first hit at cells":"lands on the floor at cells",x,y);
         Say(line);
@@ -2546,6 +2596,7 @@ void Input() {
     const uint32_t hidden=interactionOutput.stowed?3u:journalMode?2u:interactionOutput.bottleHand>=0?1u<<interactionOutput.bottleHand:0;
     skel::SetInteractionHidden(hidden);
     potionScene=potions::MakeScene(interactionInput,interactionOutput);
+    if(potionFlight.id&&potionFlight.shown)potions::AddThrown(potionScene,potionFlight.pose,potionFlight.code);   // #292
     if(droppedBottles&&droppedBottles->Count()&&interactionInput.stage.known) {
         const auto& stage=interactionInput.stage;
         std::array<bottles::Shown,bottles::MaxBottles> shown{};

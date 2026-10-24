@@ -221,6 +221,13 @@ bool HasComponent(uintptr_t storage,uint32_t entity) {
 }
 void Release(uintptr_t assets,uintptr_t definition,uint32_t entity,uintptr_t unit) {
     uint32_t type=~0u,missile=~0u;
+    // A gas or oil potion thrown as a physical bottle (#292): the game's own
+    // potion, thrown once that bottle shattered, flies hidden (bowvr::HidePotion).
+    if(enabled.load()&&Read(unit,type)&&type==3&&Read(unit+4,missile)&&missile>=44&&missile<=49&&
+       IsLocalOwner(reinterpret_cast<uintptr_t(*)(uintptr_t)>(d2rsig::Addr(OwnerRva))(unit))&&bowvr::HidePotion(entity)) {
+        static std::atomic<unsigned> told{0};
+        if(told.fetch_add(1)<8){char line[120];std::snprintf(line,sizeof line,"Frame potion throw: the game's potion (missile %u) flies hidden",missile);framevr::logging::Write(line);}
+    }
     if(enabled.load()&&Read(unit,type)&&type==3&&Read(unit+4,missile)&&
        (framevr::bowflight::BasicMissile(missile)||framevr::bowflight::ThrownMissile(missile)||missile==31||bowvr::OwnsVisual(unit))) {
         const auto owner=reinterpret_cast<uintptr_t(*)(uintptr_t)>(d2rsig::Addr(OwnerRva))(unit);

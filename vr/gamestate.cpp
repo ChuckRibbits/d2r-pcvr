@@ -247,6 +247,7 @@ std::mutex g_meleeEquipmentMutex;framevr::dualwield::Equipment g_meleeEquipment;
 std::vector<uint32_t> g_shieldTypes;
 std::vector<uint32_t> g_potionTypes;            // ItemTypes tpot: the throwing potions (RightThrowingPotion)
 std::atomic<bool> g_rightPotion{false};
+std::atomic<uint32_t> g_rightPotionCode{0};   // its item code, for the bottle that flies (#292)
 std::atomic<uint32_t> g_handsKey{0};          // what is in the two hands, as one number (HandsKey)             // the hand slot the weapon kind came from: 0 right, 1 left              // D2RVR_TWO_HANDED* bits of what is held
 
 constexpr uint32_t Four(const char* s) { return DataTables::MakeFourCC(s[0], s[1], s[2], s[3]); }
@@ -625,6 +626,7 @@ void __cdecl ReadItems(const PluginContext* ctx, void* token) noexcept {
     // in body location 4 (observed with the development Paladin).
     g_leftShield=IsShield(code[0])||IsShield(code[1]);
     g_rightPotion=IsThrowingPotion(code[0]);   // thrown by hand to a spot (transport: motionInput.potion)
+    g_rightPotionCode=g_rightPotion&&code[0].size()>=3?uint32_t(uint8_t(code[0][0]))|uint32_t(uint8_t(code[0][1]))<<8|uint32_t(uint8_t(code[0][2]))<<16|uint32_t(' ')<<24:0u;
     const uint32_t handTypes[2]={KindOf(code[0]),KindOf(code[1])};
     {std::lock_guard lock(g_meleeEquipmentMutex);
         if(g_meleeEquipment.id[0]!=id[0]||g_meleeEquipment.id[1]!=id[1])g_meleeEquipment={};
@@ -900,6 +902,7 @@ uint32_t WeaponType() { return g_type.load(); }
 uint32_t HandsHeld() { return g_held.load(); }
 bool LeftShield() {return g_leftShield.load();}
 bool RightThrowingPotion() {return g_rightPotion.load();}
+uint32_t RightThrowingPotionCode() {return g_rightPotionCode.load();}
 uint32_t TwoHanded() { return g_two.load(); }
 uint32_t WeaponHand() { return g_from.load(); }
 uint32_t HandsKey() { return g_handsKey.load(); }

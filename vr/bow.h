@@ -31,6 +31,12 @@ bool AdoptCrossbow(uintptr_t game,uintptr_t unit,const framevr::bowflight::Shot&
 void CrossbowClient(uintptr_t unit,const framevr::bowflight::Shot& shot);
 bool Visual(uint32_t entity,uintptr_t unit,bool hasReleasePoint,bool isRoot);
 bool OwnsVisual(uintptr_t unit);
+// A gas or oil potion thrown as a physical bottle (#292): the transport
+// expects the game's own potion when the bottle shatters, and the first local
+// potion missile visual (Missiles.txt 44-49) within 1.5 s then flies hidden;
+// its burst is the game's own. HidePotion: that visual's entity, true if taken.
+void ExpectPotion(uint64_t now);
+bool HidePotion(uint32_t entity);
 // Preserve native client-effect creation/lifetime; capture only effects inside
 // the physical quiver arrow's hit callback, including synchronous HD binding.
 uintptr_t ImpactVisual(uintptr_t params,int flags,uintptr_t(*create)(uintptr_t,int));

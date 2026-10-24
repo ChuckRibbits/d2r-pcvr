@@ -397,11 +397,12 @@ installer. **Weapon skill gestures** Off turns this off.
 
 **Throwing potions.** Equip a stack of gas or oil potions (Rancid, Choking or
 Strangling Gas; Oil, Exploding or Fulminating Potion) in the right hand, with
-Attack or Throw on the right trigger. Press the trigger, throw and let go: the
-game's own Throw lands the potion where your arc meets the floor, within its
-reach, and its cloud or blast is the game's own. With **Bottle physics** on, a
-wall, a table or a prop in the arc's way stops it there; running carries the
-throw either way, and **Throw lift** raises it like any throw. A quick press or
+Attack or Throw on the right trigger. Press the trigger, throw and let go. With
+**Bottle physics** on, the potion leaves your hand as a real bottle and flies
+until it first touches the floor, a wall, a table or a prop; it shatters there,
+and the game's own cloud or blast starts at that spot, within its reach. Off,
+the game's own Throw lands the potion where your arc meets the floor. Running
+carries the throw either way, and **Throw lift** raises it like any throw. A quick press or
 a still hold throws as it did before. A potion in hand is never swung as a
 melee weapon. **Weapon skill gestures** Off turns this off.
 

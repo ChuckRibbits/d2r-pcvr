@@ -51,7 +51,10 @@ struct Input {
     // The right trigger's skill is a trap or bomb thrown to place (toss::Skill, #224),
     // or Attack or Throw with a throwing potion in the right hand (potion): tossed
     // the same way, and never swung.
-    bool toss=false,potion=false;
+    // potionFlight: the potion leaves the hand as a physical bottle (#292), so the
+    // release presses nothing; the transport sets tossBurst for the step where
+    // that bottle shatters, and that step makes the one native press.
+    bool toss=false,potion=false,potionFlight=false,tossBurst=false;
     Weapon weapon=Weapon::Unknown;
     MeleeStyle meleeStyle=MeleeStyle::OneHand;
     uint32_t equipment=0;
@@ -291,10 +294,11 @@ public:
             if(tossing.Step(in.hand[0].p,handDelta,dt,in.time,released,direction,draw)) {
                 out.tossRelease=true;out.feedback=2;out.tossOrigin=in.hand[0].p;
                 out.tossVelocity=Lift(math::Normalized(tossing.peak),in.throwLift)*std::min(Length(tossing.peak),TossMaxSpeed);
-                skillPulse.Start(selection,in.selectedSkill,in.selectedOwner,in.skillContext,in.time);
+                if(!in.potionFlight)skillPulse.Start(selection,in.selectedSkill,in.selectedOwner,in.skillContext,in.time);
             } else if(armed&&released&&tossing.travel<TossStill) {
                 skillPulse.Start(selection,in.selectedSkill,in.selectedOwner,in.skillContext,in.time);
             }
+            if(in.tossBurst)skillPulse.Start(selection,in.selectedSkill,in.selectedOwner,in.skillContext,in.time);   // a thrown potion's bottle shattered
             if(trigger&&tossing.armed&&in.time-tossing.at>=TossHold&&tossing.travel<TossStill){tossNative=true;tossing={};}
             if(!trigger)tossNative=false;
             out.tossHeld=tossing.armed;
