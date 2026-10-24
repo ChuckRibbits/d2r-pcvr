@@ -131,7 +131,7 @@ inline constexpr std::array<Definition,Count> Definitions{{
     {"Left-hand strikes", "Druid: the left claw casts its own trigger skill or the right trigger's", L"gameplay",L"left_hand_strikes",0,0,1,1},
     {"Torch flame", "The flame on a torch club's head; its light stays either way", L"torch",L"flame",1,0,1,1},
     // OFXR Bridge (frame_generation.h): 0 Off, 1 FidelityFX, 2 NVIDIA; on or off at the next start.
-    {"Frame generation", "Experimental: OFXR Bridge; on or off takes a restart", L"render",L"frame_generation",0,0,2,1},
+    {"Frame generation", "Experimental, with Both eyes; on or off takes a restart", L"render",L"frame_generation",0,0,2,1},
     // NVIDIA's optical flow, live: 0 Slow, 1 Medium, 2 Fast; its scale 0 100%, 1 75%, 2 50%.
     {"NVIDIA flow quality", "Slow, Medium or Fast optical flow", L"render",L"frame_generation_preset",1,0,2,1},
     {"NVIDIA flow scale", "The size the optical flow works at", L"render",L"frame_generation_scale",2,0,2,1},
@@ -353,6 +353,9 @@ inline bool RowEnabled(const Values& values,Key key){
     if(key==DeferGpuWait)return DeferOffered(values);   // the button only turns it on
     if(key==AimHighlights||HighlightKey(key))return values[TargetHighlight]>0;   // only while the monster outline shows
     if(key==LandingCircles)return values[GroundAim]>.5f;   // only while the mod places ground skills
+    // Frame generation runs with Both eyes only (frame_generation.h): turned on
+    // only then; once on it can still be changed or turned off.
+    if(key==FrameGeneration)return values[StereoRendering]<.5f||values[FrameGeneration]>.5f;
     return key!=FoveationStrength||values[Foveation]>.5f;
 }
 // The character the panel is open for: rows for another class, or for a

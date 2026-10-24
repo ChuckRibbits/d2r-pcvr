@@ -47,8 +47,14 @@ int main() {
     auto r=Classify(Start::Loaded,true,on,&s);
     assert(r.state==State::Active&&r.backend==1&&r.sessions==1&&r.ready==1);
     assert(Line(r)=="Frame generation: active, OFXR Bridge NVIDIA Medium, 50% scale"&&!Warning(r));
-    r.byTurns=true;   // the game at half the rate by turns: each eye a quarter of the frames
-    assert(Line(r)=="Frame generation: active, OFXR Bridge NVIDIA Medium, 50% scale; best with Both eyes"&&Warning(r));
+    // By turns: the loaded layer steps aside (each eye would get a quarter of the frames).
+    r=Classify(Start::Loaded,true,on,&s,false);
+    assert(r.state==State::NeedsBothEyes&&Warning(r)&&Line(r)=="Frame generation: paused; it needs Stereo rendering: Both eyes");
+    assert(Classify(Start::NotAsked,true,on,nullptr,false).state==State::NeedsBothEyes);
+    assert(Classify(Start::NotAsked,false,on,nullptr,false).state==State::NotInstalled);   // what blocks it first
+    assert(Classify(Start::Loaded,true,off,&s,false).state==State::Paused&&Classify(Start::NotAsked,true,off,nullptr,false).state==State::Off);
+    assert(Control({Mode::Nvidia,1,2},false).enabled==0&&Control({Mode::Nvidia,1,2},true).enabled==1);
+    s.ready=1;
     s.ready=0;s.bypass=1;
     assert(Classify(Start::Loaded,true,on,&s).state==State::Bypassed);
     s.bypass=0;s.errors=1;s.lastError=int32_t(0x887A0005);
@@ -59,12 +65,12 @@ int main() {
     assert(Classify(Start::NoControl,true,on,nullptr).state==State::NoControl);
 
     // Every state has a line that fits the Perf page, and a log name.
-    for(int i=0;i<=int(State::NoControl);++i){
-        Readout each;each.state=State(i);each.backend=1;each.errors=1;each.byTurns=true;
+    for(int i=0;i<=int(State::NeedsBothEyes);++i){
+        Readout each;each.state=State(i);each.backend=1;each.errors=1;
         const auto line=Line(each);
         assert(line.rfind("Frame generation: ",0)==0&&line.size()<90);
         assert(std::strlen(StateName(State(i)))>0);
     }
-    assert(Warning({State::Error})&&Warning({State::Failed})&&!Warning({State::Active})&&!Warning({State::Off})&&!Warning({State::Off,0,1,2,0,0,0,0,0,true}));
+    assert(Warning({State::Error})&&Warning({State::Failed})&&Warning({State::NeedsBothEyes})&&!Warning({State::Active})&&!Warning({State::Off}));
     return 0;
 }

@@ -131,6 +131,7 @@ framegen::SnapshotFn frameGenSnapshot=nullptr;
 framegen::RequestFn frameGenRequest=nullptr;
 std::wstring frameGenFolder;   // plugins\ofxr beside this plugin
 framegen::Readout frameGenReadout;bool frameGenRead=false,frameGenInstalled=false;
+bool frameGenRunAsked=true;   // the layer was last asked to run (Both eyes), not to step aside
 ULONGLONG frameGenReadAt=0,frameGenInstalledAt=0;
 // OFXR Bridge takes over every color swapchain whose images are listed
 // through it: three more runtime swapchains and an optical flow pipeline
@@ -965,9 +966,13 @@ void FrameGenCheckPanelImages(XrSwapchain chain,const std::vector<XrSwapchainIma
 // Asks the loaded layer for the settings (caller holds frameGenMutex).
 void FrameGenAsk(const framegen::Options& o) {
     if(!frameGenRequest)return;
-    const auto control=framegen::Control(o);
+    // Both eyes only: by turns each eye would get a quarter of the frames.
+    const bool bothEyes=StereoRendering()==0;
+    const auto control=framegen::Control(o,bothEyes);
+    frameGenRunAsked=bothEyes;
     const bool saved=frameGenRequest(&control)!=0;
-    const std::string what=o.On()?framegen::Describe(control.backend,control.preset,control.scale):"bypass (Off until the game restarts)";
+    const std::string what=!o.On()?"bypass (Off until the game restarts)":!bothEyes?"a pause (By turns; it runs with Both eyes)":
+                           framegen::Describe(control.backend,control.preset,control.scale);
     char line[200];std::snprintf(line,sizeof line,"Frame generation: asked OFXR Bridge for %s%s",what.c_str(),saved?"":" (not saved to its ofxr_bridge.ini)");Say(line);
     frameGenReadAt=0;
 }
@@ -988,11 +993,14 @@ framegen::Start FrameGenAttach() {
 }
 // What the Perf page and the log say of frame generation. The layer is asked
 // at most twice a second; each change is logged.
-framegen::Readout FrameGenNow(ULONGLONG now,bool byTurns) {
+framegen::Readout FrameGenNow(ULONGLONG now) {
     std::lock_guard lock(frameGenMutex);
     if(frameGenRead&&now-frameGenReadAt<500)return frameGenReadout;
     frameGenReadAt=now;
     const auto wanted=FrameGenWanted();
+    // Stereo rendering switched: run with Both eyes, step aside by turns, live.
+    const bool bothEyes=StereoRendering()==0;
+    if(frameGenRequest&&wanted.On()&&bothEyes!=frameGenRunAsked)FrameGenAsk(wanted);
     // Installed since the start? Its manifest, at most every 5 s, only while it matters.
     if(wanted.On()&&frameGenStart!=framegen::Start::Loaded&&(!frameGenInstalledAt||now-frameGenInstalledAt>=5000)) {
         frameGenInstalled=!frameGenFolder.empty()&&GetFileAttributesW((frameGenFolder+L"\\"+framegen::ManifestFile).c_str())!=INVALID_FILE_ATTRIBUTES;
@@ -1000,8 +1008,7 @@ framegen::Readout FrameGenNow(ULONGLONG now,bool byTurns) {
     }
     framegen::ControlSnapshotV1 snapshot;
     const bool answered=frameGenSnapshot&&frameGenSnapshot(&snapshot)!=0;
-    auto readout=framegen::Classify(frameGenStart,frameGenInstalled,wanted,answered?&snapshot:nullptr);
-    readout.byTurns=readout.state==framegen::State::Active&&byTurns;
+    const auto readout=framegen::Classify(frameGenStart,frameGenInstalled,wanted,answered?&snapshot:nullptr,bothEyes);
     if(!frameGenRead||!(readout==frameGenReadout)) {
         char line[260];std::snprintf(line,sizeof line,"%s [%s; sessions %u, ready %u, bypass %u, errors %u]",framegen::Line(readout).c_str(),
             framegen::StateName(readout.state),readout.sessions,readout.ready,readout.bypass,readout.errors);
@@ -1884,7 +1891,7 @@ void SettingsPointer(const settings::InputGate::Edges& edges,bool grip) {
     // The Perf page repaints with each second's numbers; the others never for them.
     const bool performancePage=settingsModel.page==settings::Page::Performance;
     const bool fresh=performance.valid&&now-performanceAt<=2000;
-    const auto frameGen=performancePage?FrameGenNow(now,performance.valid&&performance.byTurns):framegen::Readout{};
+    const auto frameGen=performancePage?FrameGenNow(now):framegen::Readout{};
     const SettingsPicture wanted{settingsModel.revision,hover,status,help,warnings,performancePage&&fresh?performanceSerial:0,
                                  performancePage?game:settings::GameVideo{},frameGen};
     if(!(wanted==settingsPainted)&&now>=settingsPaintAt&&!settingsPaintRequest){
@@ -4328,7 +4335,7 @@ void NoteFrame(double gameMs,double waitMs,double drawMs,double vrMs,double peri
     performance.gameMs=w.periods?float(w.game/w.periods):0.f;performance.waitMs=float(w.wait*k);
     performance.drawMs=float(w.draw*k);performance.vrMs=float(w.vr*k);
     ++performanceSerial;performanceAt=now;w={};w.since=w.last=now;
-    FrameGenNow(now,performance.byTurns);   // logs what OFXR Bridge does, once a second of frames
+    FrameGenNow(now);   // logs what OFXR Bridge does, once a second of frames
 }
 void ConfigureGameplay(bool enabled) {
     std::lock_guard lock(mutex);
