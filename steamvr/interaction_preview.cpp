@@ -8,6 +8,7 @@
 #include "wrist_compass.h"
 #include "sewer_prompt_art.h"
 #include "notice_card_art.h"
+#include "skill_usage.h"
 #include <cstdio>
 #include <cstring>
 #include <limits>
@@ -370,18 +371,33 @@ int main(int argc,char** argv) {
         std::fclose(file);return 0;
     }
     if(editorCheck) {
+        {   // Every skill's card text fits its card on every slot (skill_usage.h Details, the 18 px skill font).
+            HDC measure=CreateCompatibleDC(nullptr);
+            HFONT card=CreateFontW(18,0,0,0,FW_SEMIBOLD,FALSE,FALSE,FALSE,DEFAULT_CHARSET,OUT_DEFAULT_PRECIS,CLIP_DEFAULT_PRECIS,ANTIALIASED_QUALITY,DEFAULT_PITCH,L"Georgia");
+            const auto old=SelectObject(measure,card);const auto c=SkillCardBounds(0);
+            const int width=int(768*(c.right-c.left))-2*SkillCardPad,height=int(768*(c.bottom-c.top))-SkillCardTop-SkillCardPad;
+            int tallest=0;
+            for(int skill=0;skill<400;++skill)for(int slot=0;slot<framevr::skills::Count;++slot) {
+                wchar_t w[1024]{};MultiByteToWideChar(CP_UTF8,0,framevr::skillusage::Details(skill,slot).c_str(),-1,w,1024);
+                RECT r{0,0,width,0};DrawTextW(measure,w,-1,&r,DT_LEFT|DT_TOP|DT_WORDBREAK|DT_NOPREFIX|DT_CALCRECT);tallest=std::max(tallest,int(r.bottom));
+            }
+            SelectObject(measure,old);DeleteObject(card);DeleteDC(measure);
+            if(tallest>height){std::fprintf(stderr,"Skill card text too tall: %d of %d px\n",tallest,height);return 26;}
+            std::printf("Skill cards: the tallest text takes %d of %d px\n",tallest,height);
+        }
         s.bindingsEditable=true;s.bindingBank=0;s.skillCount=7;
         std::copy_n(s.skills.begin(),7,s.catalog.begin());
-        std::vector<uint8_t> gallery(1536*768*4);
-        for(int page=0;page<2;++page) {
-            o.utility=false;o.editor=page+1;o.editSlot=1;o.editCount=7;
+        std::vector<uint8_t> gallery(2304*768*4);
+        for(int page=0;page<3;++page) {
+            o.utility=false;o.editor=page?2:1;o.editSlot=page==2?framevr::skills::TriggerSlot(0):1;o.editCount=7;
             o.editClass=1;o.editCategoryCounts={7,2,1,1,3};
             std::copy_n(s.skills.begin(),o.editOptions.size(),o.editOptions.begin());o.hover=page?3:1;
+            if(page==2){auto& bash=o.editOptions[2];bash.id=framevr::strikeskills::Zeal;std::snprintf(bash.name,sizeof bash.name,"Zeal");o.hover=2;}
             const auto atlas=Paint(s,o,2);
-            for(int y=0;y<768;++y)std::memcpy(&gallery[(y*1536+page*768)*4],&atlas[y*1024*4],768*4);
+            for(int y=0;y<768;++y)std::memcpy(&gallery[(y*2304+page*768)*4],&atlas[y*1024*4],768*4);
         }
-        if(!SavePng(argv[1],gallery,1536,768))return 25;
-        std::puts("Skill editor preview: slot selection and native skill icon list rendered");return 0;
+        if(!SavePng(argv[1],gallery,2304,768))return 25;
+        std::puts("Skill editor preview: slot selection, a skill card on a face button and Zeal's on the right trigger");return 0;
     }
     if(wheelCheck) {
         if(argc<4||!icons::Get("s36")||!icons::Get(s.belt[0].Next())||!icons::Get(s.sets[0][0]))return 21;

@@ -135,6 +135,7 @@ std::vector<uint8_t> Paint(const Snapshot& s,const Output& o,int selection,const
     auto oldFont=SelectObject(dc,font);SetBkMode(dc,TRANSPARENT);SetTextColor(dc,RGB(238,235,220));
     auto fill=[&](RECT r,COLORREF c){auto b=CreateSolidBrush(c);FillRect(dc,&r,b);DeleteObject(b);};
     auto text=[&](const char* t,RECT r){wchar_t w[256]{};MultiByteToWideChar(CP_UTF8,0,t,-1,w,256);DrawTextW(dc,w,-1,&r,DT_CENTER|DT_VCENTER|DT_WORDBREAK|DT_NOPREFIX);};
+    auto paragraph=[&](const std::string& t,RECT r){wchar_t w[1024]{};MultiByteToWideChar(CP_UTF8,0,t.c_str(),-1,w,1024);DrawTextW(dc,w,-1,&r,DT_LEFT|DT_TOP|DT_WORDBREAK|DT_NOPREFIX);};
     auto polygon=[&](POINT* p,int n,COLORREF c){auto b=CreateSolidBrush(c);auto was=SelectObject(dc,b);auto pen=SelectObject(dc,GetStockObject(NULL_PEN));Polygon(dc,p,n);SelectObject(dc,pen);SelectObject(dc,was);DeleteObject(b);};
     const bool handWheel=o.wheelHand>=0;
     const bool fiveSectors=handWheel&&!o.utility;
@@ -351,6 +352,21 @@ std::vector<uint8_t> Paint(const Snapshot& s,const Output& o,int selection,const
             SelectObject(dc,shortcutFont);SetTextColor(dc,RGB(169,151,118));
             text(detail,{x+85,y+63,right-8,bottom-4});SetTextColor(dc,RGB(235,218,181));SelectObject(dc,font);
         }
+        // The skill pointed at: how it works from the slot being assigned
+        // (skill_usage.h), on a card over the other column.
+        if(o.hover>=0&&o.hover<o.editCount) {
+            const auto& skill=o.editOptions[o.hover];
+            const auto card=SkillCardBounds(o.hover);
+            const RECT box{LONG(768*card.left),LONG(768*card.top),LONG(768*card.right),LONG(768*card.bottom)};
+            fill(box,RGB(22,18,14));frame(box,true);
+            SelectObject(dc,font);text(skill.name,{box.left+10,box.top+8,box.right-10,box.top+36});
+            const bool trigger=o.editSlot==skills::TriggerSlot(skills::Hand(o.editSlot));
+            SelectObject(dc,shortcutFont);SetTextColor(dc,RGB(232,196,119));
+            text(skillusage::Gesture(skill.id,o.editSlot)?"GESTURE ON THIS TRIGGER":trigger?"ON THIS TRIGGER":"ON THIS BUTTON",{box.left+10,box.top+38,box.right-10,box.top+56});
+            SelectObject(dc,skillFont);SetTextColor(dc,RGB(235,218,181));
+            paragraph(skillusage::Details(skill.id,o.editSlot),{box.left+SkillCardPad,box.top+SkillCardTop,box.right-SkillCardPad,box.bottom-SkillCardPad});
+            SelectObject(dc,font);
+        }
         if(!o.editCount)text("No active skills available",{56,249,712,430});
     } else if(handWheel&&!o.utility) {
         text(o.wheelHand?"LEFT HAND":"RIGHT HAND",{290,305,478,345});
@@ -391,11 +407,10 @@ std::vector<uint8_t> Paint(const Snapshot& s,const Output& o,int selection,const
     // The skill pointed at and the slot it is (or would be) on: how it works there
     // (skill_usage.h), under the picker, the slot chooser and the hand wheel.
     const char* usage=[&]()->const char* {
-        if(o.developer||o.map||o.utility||o.editor==3)return "";
-        if(o.editor==2)return o.hover>=0&&o.hover<o.editCount?skillusage::Describe(o.editOptions[o.hover].id,o.editSlot):"";
+        if(o.developer||o.map||o.utility||o.editor>=2)return "";   // the picker shows a card instead
         if(o.hover<0||o.hover>=(handWheel?5:8))return "";
         const int slot=handWheel?skills::HandSlot(o.wheelHand,o.hover):o.hover;
-        return s.skills[slot].known?skillusage::Describe(s.skills[slot].id,slot):"";
+        return s.skills[slot].known?skillusage::Line(s.skills[slot].id,slot):"";
     }();
     if(o.editor) {
         char hint[120];std::snprintf(hint,sizeof hint,"Set %s  /  %s",s.activeSet==2?"II":"I",
