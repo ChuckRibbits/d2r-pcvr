@@ -17,7 +17,11 @@ void ConfigureAttackSpeed(bool enabled,bool traceHits); // trace: [debug] melee_
 void SetAttackCycle(uint64_t session,uint32_t milliseconds,int hand=0);
 // Physical swings and trigger/button melee use the native to-hit/block/level
 // rolls. Off restores the contact_hits policy for them. Missiles unaffected.
-void ConfigureAttackRating(bool native); // [gameplay] melee_rules=1 (Classic)
+void ConfigureAttackRating(bool native); // Classic rules (unused: melee is Unleashed only)
+// [gameplay] player_flinch (Unleashed): native=false (default) refuses the local
+// hero's hit recovery (GetHit) and block animation when struck, so no hit locks
+// out casting, skills or movement; true (and Classic) keeps native flinching. Any thread.
+void ConfigurePlayerFlinch(bool native);
 // Unleashed: a stroke's damage scales with how much of the native attack cycle
 // passed since the previous landed stroke; every creature one stroke reaches
 // shares that factor. Contacts are never refused. [gameplay] swing_recovery_damage;

@@ -2,6 +2,7 @@
 #include "vr_settings_pointer.h"
 #include "../vr/shield_pose.h"
 #include "reshade_addons.h"
+#include <algorithm>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -16,7 +17,16 @@ static Hit Step(Key key,int delta=1){return {Kind::Change,key,delta};}
 static View PageOf(Key key){const auto* r=content::RowOf(key);return r?r->page:View::Count;}
 static_assert((ChangeMask{1}<<64)==ChangeMask(0,1)&&(ChangeMask{1}<<127)==ChangeMask(0,uint64_t{1}<<63),"shifts cross into the high word");
 static_assert((ChangeMask(0,1)>>64)==ChangeMask{1}&&(ChangeMask{3}<<63)==ChangeMask(uint64_t{1}<<63,1),"shifts carry between words");
-int main(){
+// The menu's non-fatal report (docs/VR_SETTINGS_MENU.md): settings with no words yet,
+// orphan overrides and preset entries, name-count mismatches, a non-empty More
+// page. Printed on every run; --tidy prints only it. Never fails the test.
+static void PrintReport(){
+    const auto& report=content::Menu().report;
+    std::printf("VR settings menu report: %zu item%s\n",report.size(),report.size()==1?"":"s");
+    for(const auto& line:report)std::printf("  report: %s\n",line.c_str());
+}
+int main(int argc,char** argv){
+    if(argc>1&&std::strcmp(argv[1],"--tidy")==0){PrintReport();return 0;}
     {
         int supported=0;
         for(int i=0;i<ChangeMask::Bits;++i){
@@ -37,8 +47,35 @@ int main(){
         layout::Press(model,{Kind::Open,int(View::WhatsNew),-1},0);
         Check(model.view==View::WhatsNew&&!model.Dirty(),"release notes remain readable without configuration");
     }
+    {   // What's new pages a long release (main's Notes tab): Previous / Next under the lines, with or without settings
+        Model notes;Snapshot none;notes.Open(none);notes.SetNotesPages(3);
+        layout::Press(notes,{Kind::Open,int(View::WhatsNew),-1},0);
+        const Hit next{Kind::NotesPage,0,1},previous{Kind::NotesPage,0,-1};
+        Check(!notes.ready&&notes.notesPage==0,"opens on page 1, before any settings load");
+        for(int i=0;i<3;++i)layout::Press(notes,next,0);
+        Check(notes.notesPage==2,"Next stops at the last page");
+        layout::Press(notes,previous,0);Check(notes.notesPage==1&&!notes.Dirty(),"Previous goes back; paging edits nothing");
+        layout::Press(notes,{Kind::Open,int(View::Body),-1},0);layout::Press(notes,next,0);Check(notes.notesPage==1,"other views never page the notes");
+        std::array<const char*,30> lines;lines.fill("A release line");
+        layout::LayoutInput in;in.notes.title="This release";in.notes.lines=lines.data();in.notes.lineCount=int(lines.size());
+        layout::Press(notes,{Kind::Open,int(View::WhatsNew),-1},0);
+        const auto shownLines=[](const layout::Layout& l){int n=0;for(const auto& e:l.elements)if(e.role==layout::Role::NotesText&&e.text=="A release line")++n;return n;};
+        const auto page2=layout::Build(notes,notes.context,in);
+        const auto* nextButton=layout::Find(page2,next);const auto* previousButton=layout::Find(page2,previous);
+        Check(shownLines(page2)==NotesPerPage&&nextButton&&previousButton&&nextButton->Has(layout::Enabled)&&previousButton->Has(layout::Enabled),
+              "page 2 of 3: twelve lines, Previous and Next");
+        Check(nextButton&&layout::HitTest(page2,nextButton->rect.x+10.f,nextButton->rect.y+10.f)==next,"Next is pressable where it is drawn");
+        notes.notesPage=2;const auto last=layout::Build(notes,notes.context,in);
+        Check(shownLines(last)==30-2*NotesPerPage&&layout::Find(last,next)&&!layout::Find(last,next)->Has(layout::Enabled),"the last page: the rest, Next grayed");
+        Check(nextButton&&layout::Find(last,next)&&layout::Find(last,next)->rect==nextButton->rect,"Next stays put from page to page");
+        notes.Open(none);Check(notes.notesPage==0,"reopening starts on page 1");
+        notes.SetNotesPages(1);layout::Press(notes,{Kind::Open,int(View::WhatsNew),-1},0);layout::Press(notes,next,0);Check(notes.notesPage==0,"one page: nothing to turn");
+        in.notes.lineCount=NotesPerPage;const auto one=layout::Build(notes,notes.context,in);
+        Check(!layout::Find(one,next)&&shownLines(one)==NotesPerPage,"one page: every line, no Previous / Next");
+        Check(NotesPages(0)==1&&NotesPages(12)==1&&NotesPages(13)==2&&NotesPages(NotesMaxLines)==6,"12 lines a page");
+    }
     {   // Every row has help, short enough for its card.
-        for(size_t i=0;i<std::size(content::RowTable);++i){const Key key=content::RowTable[i].key;Check(HelpText(key)[0]&&HelpTitle(key)[0],"every row has help");}
+        for(const auto& row:content::Menu().rows){const Key key=row.key;Check(HelpText(key)[0]&&HelpTitle(key)[0],"every row has help");}
         for(int id=0;id<=HelpLast;++id)Check(std::string(HelpText(id)).size()<450,"every help text is short enough for its card");
     }
     Snapshot s;s.ready=true;
@@ -51,9 +88,14 @@ int main(){
         external[ElementalHands]=1;Check(Conflict(external,request.base,request.changed),"its conflicts are detected");
     }
     {
-        for(Key k:{StereoRendering,RenderResolution,DrawDistance,ObjectDistance,Foveation,FoveationStrength,ReShadeDepth})
+        for(Key k:{StereoRendering,RenderResolution,DrawDistance,ObjectDistance,Foveation,FoveationStrength})
             Check(PageOf(k)==View::Performance,"everything that changes the frame rate is on the Performance page");
-        for(Key k:{Sky,Fog,Ceiling,ElementalHands,BottlePhysics,PropPhysics})Check(PageOf(k)==View::World,"the World page keeps the mod's effects, with bottle and prop physics");
+        for(Key k:{Sky,Fog,Ceiling,ElementalHands,BottlePhysics,PropPhysics,TorchFlame})
+            Check(PageOf(k)==View::World,"the World page keeps the mod's effects, with bottle and prop physics and the torch flame");
+        Check(!content::RowOf(DesktopOneEye)&&Defaults()[DesktopOneEye]==1&&std::wstring(Definitions[DesktopOneEye].key)==L"desktop_one_eye",
+              "the desktop mirror is [render] desktop_one_eye in the INI only, on by default");
+        Check(Defaults()[TorchFlame]==1&&std::wstring(Definitions[TorchFlame].section)==L"torch"&&std::wstring(Definitions[TorchFlame].key)==L"flame"&&
+              HelpText(TorchFlame)[0]!=0,"the torch flame: on by default, [torch] flame, explained");
         Check(Defaults()[BottlePhysics]==1&&Defaults()[PropPhysics]==1,"both physics switches start on, as their INI defaults");
         Model strength;strength.Open(s);
         Check(strength.Get()[Foveation]==1&&strength.Get()[FoveationStrength]==1,"fixed foveation at Medium strength by default");
@@ -142,16 +184,9 @@ int main(){
         Check(PerformanceVerdict(r)=="CPU 9.5 ms of the headset's 11.1 ms frame: it fits"&&PerformanceLine(r).find("(both eyes)")!=std::string::npos,"within it; both eyes named");
         Check(PerformanceLine({}).find("waiting")!=std::string::npos&&PerformanceVerdict({}).empty(),"no numbers before a second of frames");
         r.mixed=true;Check(PerformanceLine(r).find("(mixed)")!=std::string::npos,"a second of turns and pairs says so");r.mixed=false;
-        Check(HelpText(HelpPerformance)[0]&&HelpText(HelpGameVideo)[0]&&HelpTitle(HelpPerformance)[0]&&HelpTitle(HelpGameVideo)[0],"and their help reads");
+        Check(HelpText(HelpPerformance)[0]&&HelpTitle(HelpPerformance)[0],"and the readout's help reads");
     }
-    {   // ReShade depth: d2r_pcvr.ini [render] reshade_depth, set in ReShade.ini before ReShade loads
-        const auto& d=Definitions[ReShadeDepth];
-        Check(std::wstring(d.section)==L"render"&&std::wstring(d.key)==L"reshade_depth"&&d.defaultValue==1&&d.min==0&&d.max==1,"an on/off [render] setting");
-        Model depth;depth.Open(s);
-        depth.Click(Step(ReShadeDepth));
-        Check(depth.Get()[ReShadeDepth]==0&&depth.Dirty(),"its toggle switches it off");
-        const auto save=depth.Click({Kind::Apply});
-        Check(save.changed==(ChangeMask{1}<<ReShadeDepth)&&save.values[ReShadeDepth]==0,"Apply saves only it");
+    {   // ReShade depth: d2r_pcvr.ini [render] reshade_depth (not in VR Settings), set in ReShade.ini before ReShade loads
         namespace addons=framevr::reshadeaddons;
         Check(!addons::Disabled(L"",addons::GenericDepth)&&addons::Disabled(L"Generic Depth",addons::GenericDepth)&&
               addons::Disabled(L"Effect Runtime Sync, generic depth ",addons::GenericDepth)&&!addons::Disabled(L"Generic Depth Plus",addons::GenericDepth),
@@ -161,17 +196,13 @@ int main(){
         Check(addons::WithEnabled(L"A, Generic Depth ,B",addons::GenericDepth,true)==L"A,B"&&addons::WithEnabled(L"A,B",addons::GenericDepth,false)==L"A,B,Generic Depth"&&
               addons::WithEnabled(L"Generic Depth,A,generic depth",addons::GenericDepth,false)==L"A,Generic Depth","other add-ons keep their place; listed once");
     }
-    {   // The HUD map buttons (the old menu's HitTest, kept for the store test) and their drafts
-        Model map;map.Open(s);map.Click({Kind::Tab,int(Page::HUD)});
-        const auto at=[](Rect r){return HitTest(Page::HUD,(r.x+r.w*.5f)/Width,(r.y+r.h*.5f)/Height);};
-        const auto view=at(HudMapViewBox),rotate=at(HudMapRotateBox);
-        Check(view.kind==Kind::Change&&view.index==MapTopDown&&rotate.kind==Kind::Change&&rotate.index==MapRotate,"HUD map controls target separate preferences");
+    {   // Map view and Rotate map: their drafts
+        Model map;map.Open(s);
+        const Hit view{Kind::Change,MapTopDown,1},rotate{Kind::Change,MapRotate,1};
         Check(s.values[MapTopDown]==0&&s.values[MapRotate]==0,"map defaults remain isometric and north-up");
-        for(int page=0;page<TabCount;++page)if(Page(page)!=Page::HUD)
-            Check(HitTest(Page(page),(HudMapViewBox.x+5.f)/Width,(HudMapViewBox.y+5.f)/Height).kind==Kind::None,"other pages have no invisible map controls");
         map.Click(view);map.Click(rotate);
         Check(map.Dirty()&&map.Get()[MapTopDown]==1&&map.Get()[MapRotate]==1&&s.values[MapTopDown]==0,"map changes remain drafts");
-        map.Click({Kind::Close});map.Open(s);map.Click({Kind::Tab,int(Page::HUD)});
+        map.Click({Kind::Close});map.Open(s);
         Check(!map.Dirty()&&map.Get()[MapTopDown]==0&&map.Get()[MapRotate]==0,"Close discards unapplied map changes");
         map.Click(rotate);map.Click(view);
         const auto request=map.Click({Kind::Apply});
@@ -239,48 +270,30 @@ int main(){
         Check(melee.Get()[MeleeHitSpeed]==6.25f,"plus button goes beyond old cap");
         s.values[MeleeHitSpeed]=12;
     }
-    {Model rules;rules.Open(s);
-        Check(s.values[MeleeRules]==0&&PageOf(MeleeRules)==View::Combat,"melee rules default to Unleashed, on the Combat page");
-        rules.Click(Step(MeleeRules));
-        Check(rules.Get()[MeleeRules]==1,"a step switches to Classic");
-        const auto request=rules.Click({Kind::Apply});
-        Check(request.changed==(ChangeMask{1}<<MeleeRules),"melee rules save only their own setting");
+    {   // Melee is Unleashed only: no Melee rules setting or row
+        bool rulesKey=false;
+        for(const auto& d:Definitions)rulesKey|=std::wstring(d.key)==L"melee_rules";
+        Check(!rulesKey&&PageOf(MeleeHitSpeed)==View::Combat,"swing speed stays on the Combat page; there are no melee rules to choose");
     }
     {Model thrust;thrust.Open(s);
         Check(s.values[MeleeThrustSpeed]==2&&PageOf(MeleeThrustSpeed)==View::Combat,"thrust has its own Combat row and two m/s default");
         thrust.Click(Step(MeleeThrustSpeed));Check(thrust.Get()[MeleeThrustSpeed]==2.25f,"thrust speed adjusts in quarter steps");
         const auto request=thrust.Click({Kind::Apply});
-        Check(request.changed==(ChangeMask{1}<<MeleeThrustSpeed),"thrust edit does not change swing speed or combat rules");
+        Check(request.changed==(ChangeMask{1}<<MeleeThrustSpeed),"thrust edit does not change swing speed");
         Check(Normalize(MeleeThrustSpeed,NAN)==2&&Normalize(MeleeThrustSpeed,0)==.75f&&Normalize(MeleeThrustSpeed,99)==10,"thrust speed has finite usable bounds");
     }
     {Model strain;strain.Open(s);
-        Check(s.values[StrainDark]==0,"guard strain color is White by default");
-        strain.Click(Step(StrainDark));
-        Check(strain.Get()[StrainDark]==1,"a step switches the strain to Black");
+        const auto* row=content::RowOf(StrainVignette);
+        Check(PageOf(StrainVignette)==View::Shield&&row&&row->kind==content::RowKind::Toggle,"the guard strain shadow is one Off / On row on the Shield page");
+        Check(s.values[StrainVignette]==1&&Definitions[StrainVignette].max==1,"the shadow is On by default, On / Off only");
+        layout::Press(strain,{Kind::Set,StrainVignette,0,0},0);
+        Check(strain.Get()[StrainVignette]==0,"its toggle turns the shadow Off");
+        layout::Press(strain,{Kind::Set,StrainVignette,0,1},0);
+        Check(strain.Get()[StrainVignette]==1,"and back On");
+        strain.Click(Step(StrainVignette,-1));
+        Check(strain.Get()[StrainVignette]==0,"a step also switches it");
         const auto request=strain.Click({Kind::Apply});
-        Check(request.changed==(ChangeMask{1}<<StrainDark),"strain color saves only its own setting");
-    }
-    {Model look;look.Open(s);
-        look.Click(Step(StrainDark));look.Click(Step(StrainDark));
-        Check(look.Get()[StrainDark]==2,"a second step turns the strain light Off");
-        look.Click(Step(StrainDark));
-        Check(look.Get()[StrainDark]==0,"a third returns to White");
-        look.Click(Step(StrainDark,-1));
-        Check(look.Get()[StrainDark]==2,"minus from White wraps to Off");
-        look.Click(Step(StrainDark));
-        Check(look.Get()[StrainDark]==0,"plus from Off wraps to White");
-        Check(Normalize(StrainDark,2)==2&&Normalize(StrainDark,1)==1&&Normalize(StrainDark,0)==0,"White, Black and Off persist");
-        for(float bad:{-1.f,3.f,.5f,NAN})Check(Normalize(StrainDark,bad)==0,"an invalid strain color uses White");
-    }
-    {Model speed;speed.Open(s);
-        Check(s.values[StrainSpeed]==1,"guard strain buildup defaults to Medium");
-        for(float bad:{-1.f,3.f,1.5f,NAN})Check(Normalize(StrainSpeed,bad)==1,"invalid buildup preference uses Medium");
-        speed.Click(Step(StrainSpeed,-1));Check(speed.Get()[StrainSpeed]==0,"minus selects Slow");
-        speed.Click(Step(StrainSpeed,-1));Check(speed.Get()[StrainSpeed]==0,"Slow is the lower bound");
-        speed.Click(Step(StrainSpeed));speed.Click(Step(StrainSpeed));
-        Check(speed.Get()[StrainSpeed]==2,"plus selects Fast");
-        speed.Click(Step(StrainSpeed));Check(speed.Get()[StrainSpeed]==2,"Fast is the upper bound");
-        Check(speed.Click({Kind::Apply}).changed==(ChangeMask{1}<<StrainSpeed),"buildup edits preserve combat rules, difficulty and color");
+        Check(request.changed==(ChangeMask{1}<<StrainVignette),"the shadow switch saves only its own setting");
     }
     {Model shield;shield.Open(s);
         for(Key k:{ShieldGrip,ShieldOut,ShieldUp,ShieldFollow,ShieldRoll})Check(PageOf(k)==View::Shield,"the Shield page holds grip, out, up, follows and roll");
@@ -598,17 +611,13 @@ int main(){
         indicators.Click(Step(WeaponSkillIndicators));auto request=indicators.Click({Kind::Apply});
         Check(request.changed==(1u<<WeaponSkillIndicators)&&request.values[WeaponSkillIndicators]==1,"indicator opt-in saves only its preference");}
     Check(s.values[ControllerLabels]==0&&Normalize(ControllerLabels,99)==0&&Normalize(ControllerLabels,1.5f)==0,"unknown controller preferences use automatic");
-    {Model chooser;chooser.Open(s);chooser.Click({Kind::Tab,int(Page::VR)});
-        chooser.Click({Kind::ControllerMenu});Check(chooser.controllerMenu&&!chooser.Dirty(),"dropdown opens without changing selection");
-        chooser.Click({Kind::ControllerChoice,2});
-        Check(!chooser.controllerMenu&&chooser.Get()[ControllerLabels]==2&&chooser.Dirty(),"Index option changes draft only");
-        chooser.Click({Kind::ControllerMenu});
-        chooser.Click({Kind::DismissMenu});Check(!chooser.controllerMenu&&chooser.Get()[Motion]==0,"an outside click only dismisses");
-        chooser.Click({Kind::ControllerMenu});Check(chooser.DismissControllerMenu()&&chooser.open,"Back dismisses dropdown first");
+    {Model chooser;chooser.Open(s);   // Button names: a press on Index (a chip or a popover option)
+        layout::Press(chooser,{Kind::Set,ControllerLabels,0,2},0);
+        Check(chooser.Get()[ControllerLabels]==2&&chooser.Dirty(),"Index option changes draft only");
         auto pending=chooser.Click({Kind::Apply});
         Check(pending.changed==(1u<<ControllerLabels)&&pending.values[ControllerLabels]==2,"Apply queues preference alone");
-        chooser.Click({Kind::ControllerMenu});Check(!chooser.controllerMenu,"cannot edit while saving");
-        chooser.Close();chooser.Open(s);Check(chooser.Get()[ControllerLabels]==0&&!chooser.controllerMenu,"reopen discards unsaved choice");
+        layout::Press(chooser,{Kind::Set,ControllerLabels,0,3},0);Check(chooser.Get()[ControllerLabels]==2,"cannot edit while saving");
+        chooser.Close();chooser.Open(s);Check(chooser.Get()[ControllerLabels]==0,"reopen discards unsaved choice");
     }
     Check(s.values[DrawDistance]==2&&s.values[ObjectDistance]==210,"distance fallbacks match release configuration: objects just past the fog's end");
     {Model distance;distance.Open(s);
@@ -618,7 +627,6 @@ int main(){
         Check(distance.Get()[ObjectDistance]==260,"and back up past the default");}
     Model m;m.Open(s);
     Check(m.open&&m.ready&&!m.Dirty()&&m.view==View::Guide,"open actual configuration on the Controller guide");
-    Check(HitTest(Page::HUD,-.01f,.5f).kind==Kind::None&&HitTest(Page::HUD,NAN,.5f).kind==Kind::None,"invalid laser coordinates ignored");
     Check(Normalize(BeltForward,.06f)==.06f,"settings preserve the closer belt placement");
     m.Click(Step(Motion));
     Check(m.Get()[Motion]==1&&m.Dirty()&&!m.Busy(),"edit remains a draft until Apply");
@@ -690,5 +698,63 @@ int main(){
         Check(longer.size()==std::string("VR Settings could not draw: ").size()+72&&longer.ends_with("..."),"a long error is cut to fit the card");
         Check(PaintFailureNotice("Body calibration","")=="Body calibration could not draw: unknown error","an empty error still says something");
     }
+    {   // Left-hand strikes: set from the skill wheel's Left claw strikes box (Druid), on no settings page
+        Check(s.values[LeftHandStrikes]==0&&std::wstring(Definitions[LeftHandStrikes].key)==L"left_hand_strikes",
+              "left-hand strikes: own trigger skill by default");
+        Check(Normalize(LeftHandStrikes,2)==0&&Normalize(LeftHandStrikes,1)==1&&Normalize(LeftHandStrikes,-1)==0,"the retired Basic attack (2) reads Own trigger skill");
+        Check(!content::RowOf(LeftHandStrikes),"left-hand strikes on no settings page");
+    }
+    {   // Frame generation's settings (main's #313), as on main.
+        Check(Defaults()[FrameGeneration]==0&&Defaults()[FrameGenPreset]==1&&Defaults()[FrameGenScale]==2,"off by default; NVIDIA Medium at 50% to start");
+        Check(Normalize(FrameGeneration,3)==0&&Normalize(FrameGeneration,1.5f)==0&&Normalize(FrameGenScale,-1)==2&&Normalize(FrameGenPreset,2)==2,
+              "out-of-range frame generation values read as their defaults");
+        Check(std::wstring(Definitions[FrameGeneration].key)==L"frame_generation"&&std::wstring(Definitions[FrameGeneration].section)==L"render"&&
+              std::wstring(Definitions[FrameGenPreset].key)==L"frame_generation_preset"&&std::wstring(Definitions[FrameGenScale].key)==L"frame_generation_scale",
+              "frame generation's INI keys");
+        auto nvidia=Defaults();nvidia[FrameGeneration]=2;auto fidelity=Defaults();fidelity[FrameGeneration]=1;
+        Check(RowShown(FrameGenPreset,nvidia,{})&&RowShown(FrameGenScale,nvidia,{})&&!RowShown(FrameGenPreset,fidelity,{})&&!RowShown(FrameGenScale,fidelity,{}),
+              "NVIDIA's quality and scale only with NVIDIA");
+        Check(HelpText(FrameGeneration)[0]&&content::RowOf(FrameGeneration)&&content::RowOf(FrameGeneration)->help[0],"frame generation's help reads");
+        Model frames;frames.Open(s);layout::Press(frames,{Kind::Set,StereoRendering,0,0},0);   // Both eyes first (main: frame generation turns on only then)
+        layout::Press(frames,{Kind::Set,FrameGeneration,0,2},0);Check(frames.Get()[FrameGeneration]==2&&frames.Dirty(),"NVIDIA is one press, a draft");
+        layout::Press(frames,{Kind::Set,FrameGenScale,0,1},0);Check(frames.Get()[FrameGenScale]==1,"75%");
+        Check(frames.Click({Kind::Apply}).changed==((ChangeMask{1}<<StereoRendering)|(ChangeMask{1}<<FrameGeneration)|(ChangeMask{1}<<FrameGenScale)),"Apply saves only those three (Both eyes, NVIDIA, 75%)");
+    }
+    {   // The merge (docs/VR_SETTINGS_MENU.md): made-up overrides against the real Definitions.
+        static constexpr content::Option twoNames[]={{0,"Isometric","a"},{1,"Top-down","b"},{7,"Past the end","c"}};
+        static constexpr content::ValueName farWord[]={{0,"Off"},{999,"Far"}};
+        static constexpr content::Override made[]={
+            {.id="gameplay.no_such_setting",.page=View::Combat,.section="Melee",.label="Gone"},
+            {.id="interactions.map_top_down",.page=View::Wrist,.section="Map",.label="Map view",.options=twoNames,.optionCount=3},
+            {.id="gameplay.melee_hit_speed",.page=View::Combat,.section="Melee",.kind=content::RowKind::Toggle},
+            {.id="gameplay.target_outline_pct",.page=View::Targets,.names=farWord,.nameCount=2},
+            {.id="gameplay.target_outline_pct",.page=View::Targets,.label="Twice"},
+            {.id="sky.enabled",.page=View::World,.section="Sky and dungeons"},
+            {.id="fog.enabled",.page=content::NotInMenu},
+            {.id="calibration.eye_height_m",.page=View::Body,.section="Measurements"},   // no long help upstream: its detail
+        };
+        static constexpr content::PresetSetting gone[]={{"gameplay.no_such_setting",1},{"sky.enabled",1},{"gameplay.target_outline_pct",900}};
+        static constexpr content::PresetSpec specs[]={{"test","Test",draw::Icon::Comfort,"A test preset.",gone,3}};
+        const auto menu=content::BuildMenu(made,std::size(made),specs,1);
+        auto reported=[&](const char* words){for(const auto& l:menu.report)if(l.find(words)!=std::string::npos)return true;return false;};
+        Check(reported("orphan override: gameplay.no_such_setting")&&std::count_if(menu.rows.begin(),menu.rows.end(),[](const content::ContentRow& r){return !r.fallback;})==5,"an override for a removed setting is skipped and reported, never a build error");
+        const content::ContentRow* map=nullptr;const content::ContentRow* speed=nullptr;const content::ContentRow* outline=nullptr;const content::ContentRow* sky=nullptr;
+        for(const auto& r:menu.rows){if(r.key==MapTopDown)map=&r;if(r.key==MeleeHitSpeed)speed=&r;if(r.key==TargetHighlight)outline=&r;if(r.key==Sky)sky=&r;}
+        Check(map&&map->optionCount==4&&std::string(map->options[1].label)=="Top-down"&&std::string(map->options[2].label)=="Choice 3"&&
+              std::string(map->options[3].label)=="Choice 4"&&reported("interactions.map_top_down: 3 names, 4 values"),
+              "a partly named list keeps its names, reads Choice n for the rest, drops names past the range and says so");
+        Check(speed&&speed->kind==content::RowKind::Stepper&&reported("gameplay.melee_hit_speed: its row kind no longer fits"),"a kind that no longer fits falls back to the data's own control");
+        Check(outline&&outline->nameCount==1&&std::string(outline->label)==Definitions[TargetHighlight].label&&
+              std::string(outline->help)==HelpText(TargetHighlight)&&reported("second override ignored")&&reported("value words past the range dropped"),
+              "missing words fall back to upstream's label and long help; one override per id");
+        {const content::ContentRow* eye=nullptr;for(const auto& r:menu.rows)if(r.key==EyeHeight)eye=&r;
+         Check(eye&&std::string(eye->help)==Definitions[EyeHeight].detail,"a setting with neither our words nor a long help shows its Definitions detail");}
+        Check(sky&&sky->kind==content::RowKind::Toggle&&sky->section==0,"an override with only a page and section: the switch comes from the data");
+        bool fogRow=false;for(const auto& r:menu.rows)if(r.key==Fog)fogRow=true;
+        Check(!fogRow&&!reported("no override: fog.enabled")&&reported("no words yet: ceiling.enabled"),"NotInMenu keeps a setting off the menu quietly; unplaced settings are listed");
+        Check(menu.presets.size()==1&&menu.presets[0].count==1&&menu.presets[0].values[0].key==Sky&&reported("orphan preset entry: test gameplay.no_such_setting")&&
+              reported("preset value out of range"),"preset entries by ini id: a removed setting or a value out of range is skipped and reported");
+    }
+    PrintReport();
     std::puts("VR settings draft, persistence requests, conflicts, row rules and input-gating tests passed");
 }

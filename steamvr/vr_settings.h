@@ -12,18 +12,17 @@
 #include "hand_vitals.h"
 #include "vr_resolution.h"
 #include "haptic_strength.h"
+#include "frame_generation.h"
 
 namespace framevr::settings {
-// The old menu's tabs: only Model::Click's Tab press and the HUD map buttons'
-// HitTest below still name them, for vr_settings_store_test (kept as on main).
-enum class Page { Controls, VR, Video, HUD, Combat, Aim, Shield, Haptics, Performance, ReleaseNotes };
 // The menu's views, in rail order (names, icons, sections and rows:
 // vr_settings_content.h). Presets heads the rail; Guide and WhatsNew open from
-// the page band, not the rail.
-enum class View : uint8_t { Presets, Body, Combat, Aim, Targets, Shield, Wrist, Interface, Survival, World, Vibration, Performance, Guide, WhatsNew, Count };
+// the page band, not the rail; More (rows no override placed yet, the menu data
+// rules) too, and only while it has rows.
+enum class View : uint8_t { Presets, Body, Combat, Aim, Targets, Shield, Wrist, Interface, Survival, World, Vibration, Performance, Guide, WhatsNew, More, Count };
 enum Key { Motion, Seated, Dominant, Snap, TurnSpeed, Waist, BeltForward,
            Foveation, Sky, Fog, Ceiling, DrawDistance, ObjectDistance,
-           EyeHeight, ArmSpan, BodyCalibration, SkillGestures, WristMap, WristCompass, ControllerLabels, WeaponSkillIndicators, PlanarSpellAim, VitalsLocation, CriticalAlerts, RenderResolution, NavigationLocation, SmoothTurn, OrdinaryMobBars, MenuDistance, TooltipTiming, ProjectileAimAssist, MeleeHitSpeed, VitalsTilt, HapticStrength, HapticMelee, HapticBowDraw, HapticBowRelease, HapticSpell, HapticInteraction, HapticAlert, HapticShortMelee, BloodVisor, BloodWipe, MeleeRules, MeleeThrustSpeed, LootLabelSize, CompanionCounts, StrainDark, OfflinePlayers, ShieldBashSpeed, StrainSpeed, DesktopOneEye, MapTopDown, MapRotate, FoveationStrength, StereoRendering, DeferGpuWait, TargetHighlight, HeartbeatStart, SpellLock, StaffPoint, LandingCircles, GroundAim, AimHighlights, HighlightRight, HighlightLeft, ReShadeDepth, ElementalHands, EnemySight, BowLaser, ThrowLift, BottlePhysics, PropPhysics, CompanionAi, ShieldGrip, ShieldOut, ShieldUp, ShieldFollow, ShieldRoll, AimFollowsView, Count };
+           EyeHeight, ArmSpan, BodyCalibration, SkillGestures, WristMap, WristCompass, ControllerLabels, WeaponSkillIndicators, PlanarSpellAim, VitalsLocation, CriticalAlerts, RenderResolution, NavigationLocation, SmoothTurn, OrdinaryMobBars, MenuDistance, TooltipTiming, ProjectileAimAssist, MeleeHitSpeed, VitalsTilt, HapticStrength, HapticMelee, HapticBowDraw, HapticBowRelease, HapticSpell, HapticInteraction, HapticAlert, HapticShortMelee, BloodVisor, BloodWipe, MeleeThrustSpeed, LootLabelSize, CompanionCounts, StrainVignette, OfflinePlayers, ShieldBashSpeed, DesktopOneEye, MapTopDown, MapRotate, FoveationStrength, StereoRendering, DeferGpuWait, TargetHighlight, HeartbeatStart, SpellLock, StaffPoint, LandingCircles, GroundAim, AimHighlights, HighlightRight, HighlightLeft, ElementalHands, EnemySight, BowLaser, ThrowLift, BottlePhysics, PropPhysics, CompanionAi, ShieldGrip, ShieldOut, ShieldUp, ShieldFollow, ShieldRoll, AimFollowsView, LeftHandStrikes, TorchFlame, FrameGeneration, FrameGenPreset, FrameGenScale, Count };
 // One bit per setting, 128 wide: two words, since MSVC has no 128-bit integer.
 struct ChangeMask {
     static constexpr int Bits=128;
@@ -66,7 +65,7 @@ inline constexpr std::array<Definition,Count> Definitions{{
     {"Standing eye height", "Measured from the SteamVR floor", L"calibration",L"eye_height_m",1.64f,.8f,2.3f,.01f},
     {"Controller span", "Measured between grips in a T-pose", L"calibration",L"arm_span_m",1.6f,.85f,2.6f,.01f},
     {"Body calibration", "Saved body calibration version", L"calibration",L"version",0,0,1,1},
-    {"Weapon skill gestures", "Compatible trigger skills power shield bash and bow release", L"gameplay",L"skill_gestures",1,0,1,1},
+    {"Weapon skill gestures", "Compatible trigger skills power strikes, shield bash and bow release", L"gameplay",L"skill_gestures",1,0,1,1},
     {"Wrist minimap", "Show above wrist health and mana; the wheel MAP tab stays available", L"interactions",L"wrist_map",1,0,1,1},
     {"Wrist compass", "Left wrist bearings; N follows the top of the minimap", L"interactions",L"wrist_compass",1,0,1,1},
     {"Headset / controller labels", "Automatic uses the active controllers; override if labels do not match", L"interactions",L"controller_labels",0,0,4,1},
@@ -93,16 +92,15 @@ inline constexpr std::array<Definition,Count> Definitions{{
     {"Short melee pulses", "Off: longer taps; On: very short, sharp taps", L"haptics",L"short_melee",0,0,1,1},
     {"Blood on visor", "Low life splashes the view; healing back above a band fades it", L"hud",L"blood_visor",1,0,1,1},
     {"Face wipe gesture", "Scrub side to side in front of your face to wipe blood away", L"hud",L"blood_wipe",1,0,1,1},
-    {"Melee rules", "Unleashed scales damage; Classic rolls for hits", L"gameplay",L"melee_rules",0,0,1,1},
     {"Melee thrust speed", "Forward stabs along the blade; independent of swing speed", L"gameplay",L"melee_thrust_speed",2,.75f,10,.25f},
     {"Loot label size", "Dropped-item names; 45% is the original size", L"hud",L"labels_size",45,20,150,5},
     {"Companions & effects", "Companion counts and current buffs, auras and harmful effects", L"interactions",L"companion_counts",1,0,1,1},
-    {"Guard strain color", "Blocking strain at the rim of the view: pale white light, black shadow or off", L"gameplay",L"guard_strain_dark",0,0,2,1},
+    {"Guard strain vignette", "Blocks darken the rim of the view; the rarer the attacker, the faster", L"gameplay",L"guard_strain_vignette",1,0,1,1},
     {"Offline difficulty", "Players 1-8 scaling for newly spawned monsters", L"gameplay",L"offline_players",0,0,8,1},
     {"Shield bash speed", "Hand speed for bash / Smite; wrist twisting never attacks", L"gameplay",L"shield_bash_speed",2,.75f,10,.25f},
-    {"Guard strain buildup", "How quickly repeated blocks build the vignette; same size", L"gameplay",L"guard_strain_speed",1,0,2,1},
     {"Desktop shows one eye", "Monitor shows the left eye only; one extra GPU copy per frame", L"render",L"desktop_one_eye",1,0,1,1},
-    {"Map view", "Isometric or Top-down wrist minimap", L"interactions",L"map_top_down",0,0,1,1},
+    // 0 Isometric, 1 Top-down (the corner map, as before); 2 Full map, 3 Full top-down: the game's full map, zoomed from its widest (wrist_full_map.h)
+    {"Map view", "The minimap Isometric or Top-down, or the game's full map", L"interactions",L"map_top_down",0,0,3,1},
     {"Rotate map", "Top-down only: keep your facing direction at the top", L"interactions",L"map_rotate",0,0,1,1},
     {"Foveation strength", "Higher levels shade a larger edge area more coarsely", L"render",L"foveation_strength",1,0,3,1},
     {"Stereo rendering", "Both eyes: each frame twice; By turns: one eye a frame", L"stereo",L"rendering",1,0,1,1},
@@ -116,7 +114,6 @@ inline constexpr std::array<Definition,Count> Definitions{{
     {"Monster highlights", "Dominant hand: its monster only. Both hands: each hand's own", L"gameplay",L"aim_highlights",1,0,1,1},
     {"Right hand color", "The right hand's monster: By range, or one color", L"gameplay",L"highlight_right_hue",45,0,360,15},
     {"Left hand color", "The left hand's monster: By range, or one color", L"gameplay",L"highlight_left_hue",210,0,360,15},
-    {"ReShade depth", "ReShade's Generic Depth add-on; applies after restarting the game", L"render",L"reshade_depth",1,0,1,1},
     {"Elemental hand effects", "Sorceress: fire, frost and lightning around each hand (experimental)", L"interactions",L"elemental_hands",0,0,1,1},
     {"Enemy sight distance", "Offline monster detection range; 100% is game default", L"gameplay",L"enemy_sight_pct",enemysight::DefaultPercent,enemysight::MinPercent,enemysight::MaxPercent,enemysight::StepPercent},
     // Off (LaserOff, below), else the line's hue; steps wrap through Off.
@@ -133,6 +130,15 @@ inline constexpr std::array<Definition,Count> Definitions{{
     {"Shield roll", "Turns the shield around the forearm; + toward the little finger", L"gameplay",L"shield_roll_deg",0,-180,180,5},
     // The eyes' 17-degree tunnel, the hands' 30-degree wedge, a raised hand alone (targetcone, aimrules::Tries).
     {"Aim follows your view", "Only monsters ahead of you; a raised hand aims alone", L"gameplay",L"aim_follows_view",0,0,1,1},
+    // Melee skill strikes (strike_skills.h): which skill the left claw's strikes cast.
+    // Set from the skill wheel's lower-left box (Druid), not a VR Settings row.
+    {"Left-hand strikes", "Druid: the left claw casts its own trigger skill or the right trigger's", L"gameplay",L"left_hand_strikes",0,0,1,1},
+    {"Torch flame", "The flame on a torch club's head; its light stays either way", L"torch",L"flame",1,0,1,1},
+    // OFXR Bridge (frame_generation.h): 0 Off, 1 FidelityFX, 2 NVIDIA; on or off at the next start.
+    {"Frame generation", "Experimental, with Both eyes; on or off takes a restart", L"render",L"frame_generation",0,0,2,1},
+    // NVIDIA's optical flow, live: 0 Slow, 1 Medium, 2 Fast; its scale 0 100%, 1 75%, 2 50%.
+    {"NVIDIA flow quality", "Slow, Medium or Fast optical flow", L"render",L"frame_generation_preset",1,0,2,1},
+    {"NVIDIA flow scale", "The size the optical flow works at", L"render",L"frame_generation_scale",2,0,2,1},
 }};
 using Values=std::array<float,Count>;
 inline bool HapticKey(Key key){return key>=HapticStrength&&key<=HapticAlert;}
@@ -165,13 +171,14 @@ inline float Normalize(Key key,float value){
     if(!std::isfinite(value))return d.defaultValue;
     if(key==OfflinePlayers&&(value<0||value>8||std::floor(value)!=value))return 0;
     if(key==BowLaser&&value<0)return LaserOff;
+    if(key==LeftHandStrikes)return std::round(value)==1?1.f:0.f;   // the retired 2 (Basic attack) reads Own trigger skill
     if(key==HeartbeatStart)return std::clamp(std::round(value/10)*10,d.min,d.max);   // 0 = Off, else a 10% step
     if(key==ShieldFollow||key==ShieldRoll)return std::clamp(std::round(value/d.step)*d.step,d.min,d.max)+0.f;   // whole steps, as skel::shield::FollowSetting / RollSetting
     if(HighlightKey(key))return std::clamp(std::round(value/15)*15,d.min,d.max);   // 0 = By range, else a hue in 15-degree steps
     if(key==EnemySight)return float(enemysight::NormalizePercent(value));
     if(key==VitalsTilt)return vitals::NormalizeTilt(value);
     if(HapticKey(key))return haptics::NormalizeStrength(value);
-    if((key==ControllerLabels||key==VitalsLocation||key==NavigationLocation||key==RenderResolution||key==MenuDistance||key==TooltipTiming||key==ProjectileAimAssist||key==GroundAim||key==SpellLock||key==StrainSpeed||key==StrainDark||key==FoveationStrength||key==StereoRendering)&&(value<d.min||value>d.max||value!=std::round(value)))return d.defaultValue;
+    if((key==ControllerLabels||key==VitalsLocation||key==NavigationLocation||key==RenderResolution||key==MenuDistance||key==TooltipTiming||key==ProjectileAimAssist||key==GroundAim||key==SpellLock||key==FoveationStrength||key==StereoRendering||key==FrameGeneration||key==FrameGenPreset||key==FrameGenScale)&&(value<d.min||value>d.max||value!=std::round(value)))return d.defaultValue;
     value=std::clamp(value,d.min,d.max);
     return d.step==1?std::round(value):value;
 }
@@ -191,9 +198,10 @@ struct Rect {
     bool operator==(const Rect&)const=default;
 };
 constexpr int Width=1280,Height=1024;
-// The old menu's tab count and HUD map buttons (vr_settings_store_test).
-constexpr int TabCount=10;
-constexpr Rect HudMapViewBox{280,181,275,52},HudMapRotateBox{942,181,221,52};
+// Map view (map_top_down): 0 Isometric, 1 Top-down, 2 Full map, 3 Full top-down
+// (the names: content::MapViewOptions).
+inline bool MapViewTopDown(float view){return view==1||view==3;}
+inline bool MapViewFull(float view){return view>=2;}
 // The outline color for a hue, at full saturation and brightness.
 inline void HueRgb(float hue,float rgb[3]){
     const float h=std::fmod(std::max(0.f,hue),360.f)/60.f,x=1.f-std::fabs(std::fmod(h,2.f)-1.f);
@@ -210,6 +218,10 @@ inline void HueRgb(float hue,float rgb[3]){
 // the wait is deferred ([render] defer_gpu_wait): then about half the frame
 // rate. While it is not deferred, the Performance readout warns and offers a
 // button that turns it on (Apply saves it).
+// [gameplay] left_hand_strikes: 0 the left trigger's skill, 1 the right trigger's,
+// set from the skill wheel's Left claw strikes box, not a VR Settings row.
+// (2, Basic attack, left the choices on 2026-10-23: Own trigger with no strike
+// skill on the left trigger is the same; a profile saved with it reads Own.)
 // Windows Mono audio (Settings > Accessibility > Audio) folds the PC's sound to
 // the center before any headset stream, so head-relative sound cannot pan.
 // While it is on, the band shows this warning on every page.
@@ -289,7 +301,6 @@ inline std::string PerformanceLine(const PerformanceReadout& r) {
     return line;
 }
 inline constexpr const char* GameVideoUnsaved="Game: options not saved yet; the game writes them when its options menu closes";
-inline constexpr const char* DepthRestartNote="ReShade depth: restart the game to apply the change";
 // Whether the CPU's part fits the headset's frame: past it, the runtime
 // holds every late frame back to its next refresh.
 inline std::string PerformanceVerdict(const PerformanceReadout& r) {
@@ -322,6 +333,9 @@ inline bool RowEnabled(const Values& values,Key key){
     if(key==DeferGpuWait)return DeferOffered(values);   // the button only turns it on
     if(key==AimHighlights||HighlightKey(key))return values[TargetHighlight]>0;   // only while the monster outline shows
     if(key==LandingCircles)return values[GroundAim]>.5f;   // only while the mod places ground skills
+    // Frame generation runs with Both eyes only (frame_generation.h): turned on
+    // only then; once on it can still be changed or turned off.
+    if(key==FrameGeneration)return values[StereoRendering]<.5f||values[FrameGeneration]>.5f;
     return key!=FoveationStrength||values[Foveation]>.5f;
 }
 // The character the panel is open for: rows for another class, or for a
@@ -368,6 +382,7 @@ inline bool RowShown(Key key,const Values& v,const Context& c){
         case TurnSpeed:return SmoothTurning(v[Snap],v[SmoothTurn]);
         case Waist:return v[Seated]<.5f;   // standing mode only
         case BloodWipe:return v[BloodVisor]>.5f;
+        case FrameGenPreset:case FrameGenScale:return framegen::Read(v[FrameGeneration],0,0).mode==framegen::Mode::Nvidia;   // with its scale
         default:return true;
     }
 }
@@ -380,12 +395,12 @@ inline float LockStep(float value,int delta,const Context& c){
     const int v=int(value)&3;
     return float(BowSkillClass(c)?(v+(delta<0?3:1))%4:v^1);
 }
-// What a press on a control does. The first eleven are main's (Model::Click;
-// Tab, ControllerMenu, ControllerChoice and DismissMenu are left from main's
-// menu). The rest were appended so the numbers stay; layout::Press
-// (vr_settings_layout.h) handles them and passes the others to Model::Click.
+// What a press on a control does. layout::Press (vr_settings_layout.h)
+// handles most and passes Change's steps, Apply, Close's plain case and
+// NotesPage to Model::Click.
 //   Change       index Key, delta steps (-1/+1 from a stepper, n from a drag)
 //   TestHaptics  index haptics category, delta preview choice + 1 ("Feel it")
+//   NotesPage    What's new: delta -1 Previous / +1 Next page (Model::Click; works before ready)
 //   Open         index View: a rail tab, Presets, Guide, What's new, a card's
 //                "Open <page>" or a pending-list entry; delta: the Key to point
 //                the card at there, or -1
@@ -393,32 +408,32 @@ inline float LockStep(float value,int delta,const Context& c){
 //                hue grid, Defer GPU wait's one-way offer)
 //   Undo         index Key: back to the applied value (Model::Applied)
 //   Default      index Key: back to Definitions[key].defaultValue
-//   Preset       index: entry in content::PresetTable; sets only its listed keys
+//   Preset       index: entry in content::PresetSpecs (Menu().presets); sets only its listed keys
 //   ResetPage    every row the current view shows, to its default (a draft)
 //   UndoReset    within UndoResetMs: the values from before Reset page
 //   ConfirmClose the confirm row's "Discard n changes": drop the draft and close
 //   KeepEditing  the confirm row's middle button: back to the page
 //   ApplyClose   the confirm row's right button: Apply, then close once saved
 //   Card         inside the help card but on none of its buttons: swallows the press
-enum class Kind { None, Tab, Change, Apply, Close, Recenter, Calibrate, ControllerMenu, ControllerChoice, DismissMenu, TestHaptics,
-                  Open, Set, Undo, Default, Preset, ResetPage, UndoReset, ConfirmClose, KeepEditing, ApplyClose, Card };
+//   Popover      index Key: open its list (a named list too long for chips) on the press's release
+//   PopoverClose the dimmed panel around an open popover: close it without a change (the press goes no further)
+enum class Kind { None, Change, Apply, Close, Recenter, Calibrate, TestHaptics, NotesPage,
+                  Open, Set, Undo, Default, Preset, ResetPage, UndoReset, ConfirmClose, KeepEditing, ApplyClose, Card,
+                  Popover, PopoverClose };
+// What's new pages its release lines (2026-10-23: a long list since the last
+// release): NotesPerPage a page, at most NotesMaxLines (release_notes.py
+// MAX_LINES). Previous / Next and the page number sit under the lines, shown
+// only with more than one page; paging needs no settings (works before ready).
+constexpr int NotesPerPage=12,NotesMaxLines=72;
+inline int NotesPages(int lines){return std::max(1,(std::max(lines,0)+NotesPerPage-1)/NotesPerPage);}
 struct Hit {Kind kind=Kind::None;int index=-1,delta=0;float value=0;bool operator==(const Hit&)const=default;};
-// The old menu's hit test, kept only for its HUD page's map buttons (Map view,
-// Rotate map), which vr_settings_store_test presses as on main. The menu
-// hit-tests layout::Build's elements (layout::HitTest).
-inline Hit HitTest(Page page,float u,float v){
-    if(!std::isfinite(u)||!std::isfinite(v)||u<0||u>=1||v<0||v>=1||page!=Page::HUD)return {};
-    const float x=u*Width,y=v*Height;
-    if(HudMapViewBox.Contains(x,y))return {Kind::Change,MapTopDown,1};
-    if(HudMapRotateBox.Contains(x,y))return {Kind::Change,MapRotate,1};
-    return {};
-}
 class Model {
     Values base=Defaults(),draft=base;
     uint64_t serial=0,pending=0;
 public:
-    bool open=false,ready=false,controllerMenu=false,offlineDifficultyAvailable=false;
-    Page page=Page::Controls;
+    bool open=false,ready=false,offlineDifficultyAvailable=false;
+    int notesPage=0,notesPages=1;   // What's new's page, of SetNotesPages
+    int morePage=0;                 // the More view's page (8 rows a page; layout::Press turns it)
     Context context;   // the character: SetContext each frame while open
     Result result=Result::None;
     uint64_t revision=0;
@@ -433,9 +448,11 @@ public:
     ChangeMask resetKeys=0;         // the rows Reset page changed (Undo reset puts back only these)
     View lastPage=View::Body;       // the settings page Guide / What's new return to when pressed again
     int focusKey=-1;                // Open's delta: the Key the card should point at on arrival (-1: none); the pointer layer reads and clears it
-    int pickedPreset=-1;            // the preset last pressed (content::PresetTable index), for "Edited" on Presets
+    int pickedPreset=-1;            // the preset last pressed (content::PresetSpecs index), for "Edited" on Presets
     bool closeWhenSaved=false;      // Apply and close: close once this save lands as Saved
-    static constexpr uint64_t ConfirmGuardMs=300,UndoResetMs=6000,UndoResetGuardMs=400;
+    int popoverKey=-1;              // the Key whose list is open over the page (-1: none); layout::Press opens and closes it
+    uint64_t popoverAt=0;           // when it opened (ms): its options take presses PopoverGuardMs later
+    static constexpr uint64_t ConfirmGuardMs=300,UndoResetMs=6000,UndoResetGuardMs=400,PopoverGuardMs=300;
     const Values& Applied()const{return base;}   // the saved values the draft started from
     // Drop the draft: every row back to its applied value (Discard n changes).
     void Discard(){if(Dirty()){draft=base;result=Result::None;++revision;}}
@@ -450,17 +467,17 @@ public:
         draft[key]=v;result=Result::None;++revision;return true;
     }
     void SetContext(const Context& c){if(!(c==context)){context=c;++revision;}}
+    void SetNotesPages(int pages){pages=std::max(1,pages);if(pages!=notesPages||notesPage>=pages){notesPages=pages;notesPage=std::min(notesPage,pages-1);++revision;}}
     bool Dirty()const{return Changed(base,draft)!=0;}
     bool Busy()const{return pending!=0;}
     // Feel it: on the Vibration view.
     bool CanTestHaptics(int category)const{return open&&ready&&!Busy()&&view==View::Vibration&&category>=0&&category<haptics::CategoryCount;}
     void Open(const Snapshot& s){
-        open=true;controllerMenu=false;page=Page::Controls;base=draft=s.values;ready=s.ready;offlineDifficultyAvailable=s.offlineDifficultyAvailable;result=s.result;serial=std::max(serial,s.sequence);pending=s.result==Result::Saving?s.sequence:0;
-        view=View::Guide;lastPage=View::Body;confirmClose=false;confirmAt=0;undoResetUntil=undoResetAt=0;beforeReset={};resetKeys=0;focusKey=-1;pickedPreset=-1;closeWhenSaved=false;
+        open=true;base=draft=s.values;ready=s.ready;offlineDifficultyAvailable=s.offlineDifficultyAvailable;result=s.result;serial=std::max(serial,s.sequence);pending=s.result==Result::Saving?s.sequence:0;
+        view=View::Guide;lastPage=View::Body;notesPage=0;morePage=0;confirmClose=false;confirmAt=0;undoResetUntil=undoResetAt=0;beforeReset={};resetKeys=0;focusKey=-1;pickedPreset=-1;closeWhenSaved=false;popoverKey=-1;popoverAt=0;
         ++revision;
     }
-    void Close(){open=false;controllerMenu=false;confirmClose=false;undoResetUntil=0;closeWhenSaved=false;++revision;}
-    bool DismissControllerMenu(){if(!controllerMenu)return false;controllerMenu=false;++revision;return true;}
+    void Close(){open=false;confirmClose=false;undoResetUntil=0;closeWhenSaved=false;popoverKey=-1;++revision;}
     void Observe(const Snapshot& s){
         if(!open)return;
         if(offlineDifficultyAvailable!=s.offlineDifficultyAvailable){offlineDifficultyAvailable=s.offlineDifficultyAvailable;++revision;}
@@ -478,21 +495,20 @@ public:
     Request Click(Hit hit){
         if(!open)return {};
         if(hit.kind==Kind::Close){Close();return {};}
-        if(hit.kind==Kind::DismissMenu){DismissControllerMenu();return {};}
-        if(hit.kind==Kind::Tab&&hit.index>=0&&hit.index<TabCount){controllerMenu=false;page=Page(hit.index);++revision;return {};}
-        if(!ready||Busy())return {};
-        if(hit.kind==Kind::ControllerMenu&&page==Page::VR){controllerMenu=!controllerMenu;++revision;return {};}
-        if(hit.kind==Kind::ControllerChoice&&page==Page::VR&&controllerMenu&&hit.index>=0&&hit.index<int(controllers::Choice::Count)){
-            draft[ControllerLabels]=float(hit.index);controllerMenu=false;result=Result::None;++revision;return {};
+        if(hit.kind==Kind::NotesPage&&view==View::WhatsNew){
+            const int next=std::clamp(notesPage+(hit.delta<0?-1:1),0,notesPages-1);
+            if(next!=notesPage){notesPage=next;++revision;}
+            return {};
         }
+        if(!ready||Busy())return {};
         if(hit.kind==Kind::Change&&hit.index>=0&&hit.index<Count&&RowEnabled(draft,Key(hit.index))){
             const auto key=Key(hit.index);const auto& d=Definitions[key];
             if(d.max==1)draft[key]=draft[key]>.5f?0.f:1.f;
             else if(key==OfflinePlayers)draft[key]=std::clamp(draft[key]+float(hit.delta),0.f,8.f);
-            else if(key==StrainSpeed)draft[key]=std::clamp(draft[key]+float(hit.delta),0.f,2.f);
-            else if(key==FoveationStrength||key==StereoRendering)draft[key]=std::clamp(draft[key]+float(hit.delta),d.min,d.max);
+            else if(key==FoveationStrength||key==StereoRendering||key==FrameGeneration||key==FrameGenPreset||key==FrameGenScale)draft[key]=std::clamp(draft[key]+float(hit.delta),d.min,d.max);
             else if(key==SpellLock)draft[key]=LockStep(draft[key],hit.delta,context);
-            else if(key==ProjectileAimAssist||key==StrainDark||key==GroundAim)draft[key]=float((int(draft[key])+(hit.delta<0?2:1))%3);   // cycles
+            else if(key==ProjectileAimAssist||key==GroundAim)draft[key]=float((int(draft[key])+(hit.delta<0?2:1))%3);   // cycles
+            else if(key==MapTopDown)draft[key]=float((int(draft[key])+(hit.delta<0?3:1))%4);   // Isometric, Top-down, Full map, Full top-down, round
             else if(key==BowLaser){   // round the wheel through Off: ... 345, Off, 0, 15 ... both ways
                 const float next=draft[key]+hit.delta*d.step;
                 draft[key]=Normalize(key,next>d.max?d.min:next<d.min?d.max:next);

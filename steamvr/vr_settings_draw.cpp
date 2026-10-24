@@ -1143,6 +1143,16 @@ void Painter::DrainBar(RectF r,float left,Color c){
 }
 void Painter::Gem(float cx,float cy,float radius){auto& i=*impl;if(i.drawing)i.GemAt(cx,cy,radius);}
 void Painter::DefaultMark(float cx,float y){auto& i=*impl;if(i.drawing)i.DefaultTriangle(cx,y);}
+void Painter::Dot(RectF r,float hue,ControlState s){
+    auto& i=*impl;if(!i.drawing)return;
+    // Pointed: 1.15 and the pointed ring; pressed: 0.92; chosen: a 4 px ring.
+    const float scale=s.pressed?.92f:s.pointed?1.15f:1.f;
+    const float cx=r.x+r.w/2,cy=r.y+r.h/2,rad=std::min(r.w,r.h)/2*scale;
+    if(s.chosen)i.rt->DrawEllipse(D2D1::Ellipse({cx,cy},rad+7,rad+7),i.Token(Color::Text),4);
+    if(s.pointed)i.rt->DrawEllipse(D2D1::Ellipse({cx,cy},rad+(s.chosen?12.5f:6.5f),rad+(s.chosen?12.5f:6.5f)),i.Token(Color::RingHi),3);
+    Swatch({cx-rad,cy-rad,rad*2,rad*2},hue,ControlState{false,false,false,s.locked,false,false,s.disabled});
+    if(s.isDefault)i.DefaultTriangle(cx,cy+rad+4);
+}
 
 // ---- the component sheet (vr-settings-preview --draw-sheet) ----
 namespace {

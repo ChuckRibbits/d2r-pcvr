@@ -5,6 +5,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <string>
+#include <vector>
 using namespace framevr::settings;
 namespace L=framevr::settings::layout;
 namespace P=framevr::settings::pointer;
@@ -275,10 +276,57 @@ static void DragTests(){
     std::printf("Coarse drag rows: %s\n",coarseRows.empty()?"none":coarseRows.c_str());
 }
 
+// The popover on the real layout: opening on release, the guard, a pick that
+// slides off, the full-height hit boxes, and closing on a point-away.
+static void PopoverTests(){
+    Model m;Snapshot s;s.ready=true;m.Open(s);L::Press(m,{Kind::Open,int(View::Performance),-1},0);
+    P::PointerFilter f;uint64_t ms=1000;
+    L::LayoutInput in;in.nowMs=ms;auto layout=L::Build(m,{},in);
+    const L::Element* face=nullptr;for(const auto& e:layout.elements)if(e.hit.kind==Kind::Popover&&e.hit.index==RenderResolution)face=&e;
+    Check(face!=nullptr,"Render resolution's value opens a popover");
+    // A press low in the row, below the drawn value but inside the row: its hit box is the full row height.
+    const float x=float(face->rect.x+face->rect.w/2),y=float(face->HitBox().y+face->HitBox().h-3);
+    Check(y>float(face->rect.y+face->rect.h),"the point is below the drawn control");
+    for(int i=0;i<8;++i){f.Step(layout,ms,true,x,y,false);ms+=11;}
+    f.Step(layout,ms,true,x,y,true);ms+=11;
+    auto out=f.Step(layout,ms,true,x,y,false);ms+=11;
+    Check(out.click.kind==Kind::Popover,"the release of a press anywhere in the row's height opens it");
+    L::Press(m,out.click,ms);in.nowMs=ms;layout=L::Build(m,{},in);
+    out=f.Step(layout,ms,true,x,y,false);ms+=11;
+    Check(out.click.kind==Kind::None&&m.popoverKey>=0,"the opening press picks nothing");
+    std::vector<const L::Element*> options;for(const auto& e:layout.elements)if(e.role==L::Role::PopoverOption)options.push_back(&e);
+    Check(options.size()==7,"seven sizes");
+    // Pressed on one option, released on the next: no pick.
+    ms+=400;in.nowMs=ms;layout=L::Build(m,{},in);options.clear();for(const auto& e:layout.elements)if(e.role==L::Role::PopoverOption)options.push_back(&e);
+    const auto at=[&](const L::Element* e){return std::pair<float,float>{float(e->rect.x+e->rect.w/2),float(e->rect.y+e->rect.h/2)};};
+    auto [ax,ay]=at(options[1]);auto [bx,by]=at(options[3]);
+    for(int i=0;i<10;++i){f.Step(layout,ms,true,ax,ay,false);ms+=11;}
+    f.Step(layout,ms,true,ax,ay,true);ms+=11;
+    for(int i=0;i<10;++i){f.Step(layout,ms,true,ax+(bx-ax)*float(i)/9,ay+(by-ay)*float(i)/9,true);ms+=11;}
+    out=f.Step(layout,ms,true,bx,by,false);ms+=11;
+    Check(out.click.kind==Kind::None,"a press that slides off its option picks nothing");
+    // A clean pick.
+    for(int i=0;i<10;++i){f.Step(layout,ms,true,bx,by,false);ms+=11;}
+    f.Step(layout,ms,true,bx,by,true);ms+=11;out=f.Step(layout,ms,true,bx,by,false);ms+=11;
+    Check(out.click.kind==Kind::Set&&out.click.value==options[3]->hit.value,"a press and release on one option picks it");
+    L::Press(m,out.click,ms);Check(m.popoverKey<0&&m.Get()[RenderResolution]==options[3]->hit.value,"and closes it");
+    // Point-away.
+    P::PopoverWatch w;const Rect card{600,300,500,400},row{328,200,920,84};
+    Check(!w.Step(0,true,true,700,350,card,row)&&!w.Step(1000,true,true,700,350,card,row),"on the card: stays open");
+    Check(!w.Step(1100,true,true,500,240,card,row),"on its row: stays open");
+    Check(!w.Step(1200,true,true,700,290,card,row)&&!w.Step(1700,true,true,1110,500,card,row),"tremor at the edge: stays open");
+    Check(!w.Step(2000,true,true,100,900,card,row)&&!w.Step(2300,true,true,100,900,card,row),"away for under 450 ms: stays open");
+    Check(w.Step(2450,true,true,100,900,card,row),"away 450 ms: closes");
+    w.Reset();Check(!w.Step(3000,true,false,0,0,card,row)&&w.Step(3450,true,false,0,0,card,row),"off the panel 450 ms: closes");
+    w.Reset();Check(!w.Step(4000,false,true,100,900,card,row)&&!w.Step(9000,false,true,100,900,card,row),"nothing open: nothing to close");
+    Check(!w.Step(9000,true,true,100,900,{0,0,0,0},row),"before its picture shows (no card yet): no close");
+}
+
 int main(){
     PointerTests();
     CardTests();
     DragTests();
+    PopoverTests();
     std::printf("VR settings pointer tests passed (%d checks)\n",checks);
     return 0;
 }

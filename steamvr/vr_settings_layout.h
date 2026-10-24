@@ -34,8 +34,10 @@
 //   CardTitle Changed: not applied; Locked: locked; Selected: your setting (custom)
 #include "vr_settings_help.h"
 #include "vr_settings_content.h"
+#include "vr_settings_hooks.h"
 #include <algorithm>
 #include <array>
+#include <cctype>
 #include <cmath>
 #include <cstdarg>
 #include <cstdio>
@@ -96,9 +98,18 @@ constexpr int LabelEmberW=46;                                    // Painter::Lab
 constexpr int CardPad=8,CardTitleH=36,CardLineH=33,CardStateH=32,CardColumnW=330,CardColumnPad=14,CardButtonH=64;
 constexpr int GuideHeadH=36,GuideLineMax=68,NotesLineMax=66,NotesAuthorGap=16;
 constexpr int PresetH=128,PresetPitch=140;
+// Named lists: chips up to MaxChips options when they fit, else a popover: one
+// column of PopCell px cells up to PopListMax options (two when that would pass
+// PopMaxH), a grid of 2 columns up to 12 and 3 up to 24 (content::MaxOptions).
+constexpr int MaxChips=6,PopListMax=8,PopCell=66,PopCellGap=12,PopPad=12,PopTitleH=44,PopHintH=72,PopMaxH=600,PopMinW=420,PopGap=8;
+// A popover that fits neither below nor above its row goes compact: PopCellMin cells (the 64 px target floor,
+// above the 56 px a ray needs), no title, a shorter hint; the color grid 8 a row (a third of the wheel) instead of 6.
+constexpr int PopCellMin=MinTarget,PopHintCompact=52,PopHintColor=40;
 constexpr Rect FooterLeft{330,FooterY,304,FooterH},FooterMid{682,FooterY,204,FooterH},FooterRight{950,FooterY,274,FooterH};
 constexpr Rect GuideLink{890,BandY,140,BandH},NotesLink{1046,BandY,192,BandH};
 constexpr Rect GuideIcon{1098,BandY,64,BandH},NotesIcon{1174,BandY,64,BandH},MonoWarning{730,BandY,352,BandInkH};
+// More's link ("3 more", only while More has rows); with the Mono audio warning, icon-only and the warning moves left.
+constexpr Rect MoreLink{890,BandY,190,BandH},MoreIcon{1022,BandY,64,BandH},MonoWarningMore{654,BandY,352,BandInkH};
 
 // What an element is. The painter picks the look from the role and flags.
 enum class Role : uint8_t {
@@ -152,6 +163,13 @@ enum class Role : uint8_t {
     CalibHint,      // body calibration: the hint box
     CalibProgress,  // body calibration: the hold's progress bar (fill)
     CalibNote,      // body calibration: the measured values / notes
+    // the popover (a named list too long for chips; docs/VR_SETTINGS_MENU.md), over everything else
+    PopoverDim,     // the whole panel dimmed 40%; hit PopoverClose (an outside press closes, without a change, and goes no further)
+    Popover,        // the floating card; hit Card (swallows presses between its options)
+    PopoverTitle,   // the row's label
+    PopoverOption,  // one option: hit Set, drawn as a chip; its hit box is the whole cell
+    PopoverHint,    // the pointed (else the chosen) option's hint, at the bottom
+    ColorDot,       // a color popover's hue: hit Set, hue the dot's; drawn 46 px in its 66 px cell (its hit box)
     Count
 };
 
@@ -190,7 +208,10 @@ struct Element {
     int dragCoarse=1;         // Flag::Drag: steps per drag unit (DragCoarseSteps on long ranges)
     int dragIndex=-1;         // Flag::Drag: the value's step from the minimum (-1: unknown, no alignment or clamp)
     int dragSteps=0;          // Flag::Drag: the range's steps end to end (0: unbounded)
+    Rect hitRect{0,0,0,0};    // where a press lands, when larger than what is drawn (a row's controls: the full row height,
+                              // meeting their neighbors in the gap; a popover cell); w 0: rect
     bool Has(Flag f)const{return (flags&f)!=0;}
+    const Rect& HitBox()const{return hitRect.w>0?hitRect:rect;}
     bool operator==(const Element&)const=default;
 };
 
@@ -224,7 +245,7 @@ struct LayoutInput {
     bool monoAudio=false;
     GameVideo game{};
     PerformanceReadout performance{};
-    bool depthRestart=false;
+    framegen::Readout frameGen{};   // what OFXR Bridge is doing: the Frame generation row's sub line and card (hooks)
     std::string runtimeStatus;      // foveation / resolution status line (Performance readout)
     controllers::Labels detected{}; // "Detected: ..." under Button names; guide button names
     CalibrationView calibration{};
@@ -236,6 +257,8 @@ struct Layout {
     View view=View::Guide;
     std::vector<Element> elements;   // paint order: back to front
     Rect card{0,0,0,0};              // the help card's rectangle (CardFocus freezes inside it)
+    Rect popover{0,0,0,0};           // an open popover's card (w 0: none); pointer::PopoverWatch closes it when the laser stays away
+    Rect popoverRow{0,0,0,0};        // the row it edits (pointing there keeps it open too)
 };
 
 // ---- text measure: the painter's, or an estimate ----
@@ -244,8 +267,8 @@ inline float StyleSize(draw::TextStyle s){
     switch(s){case TextStyle::Title:return 44;case TextStyle::Section:return 30;case TextStyle::CardTitle:return 32;case TextStyle::Label:return 36;
         case TextStyle::Value:case TextStyle::Help:return 30;case TextStyle::Small:return 26;case TextStyle::Readout:return 22;default:return 30;}
 }
-// Conservative widths for Cinzel caps and Alegreya Sans (wider than measured
-// in the v5 shots), so the painter's real text fits where the estimate does.
+// Conservative widths for Cinzel caps and Alegreya Sans (wider than the
+// painter measures), so its real text fits where the estimate does.
 inline float EstimateWidth(std::string_view utf8,draw::TextStyle s){
     using draw::TextStyle;
     float perEm=.46f;
@@ -275,9 +298,13 @@ struct Tables {
     }
     const content::ContentTool* Tool(Kind kind)const{for(size_t i=0;i<toolCount;++i)if(tools[i].kind==kind)return &tools[i];return nullptr;}
 };
+// The tables of a merged menu (content::BuildMenu): the real one, or a test's.
+inline Tables TablesOf(const content::MenuData& m){
+    return Tables{m.rows.data(),m.rows.size(),m.sections.data(),m.sections.size(),m.presets.data(),m.presets.size(),
+        content::GuideTable,std::size(content::GuideTable),content::ToolTable,std::size(content::ToolTable)};
+}
 inline const Tables& ContentTables(){
-    static const Tables tables{content::RowTable,std::size(content::RowTable),content::SectionTable,std::size(content::SectionTable),
-        content::PresetTable,std::size(content::PresetTable),content::GuideTable,std::size(content::GuideTable),content::ToolTable,std::size(content::ToolTable)};
+    static const Tables tables=TablesOf(content::Menu());   // Definitions merged with the overrides
     return tables;
 }
 
@@ -300,13 +327,21 @@ inline int CountRows(View view,const Values& values,const Context& context,const
     int n=0;for(size_t i=0;i<t.rowCount;++i)if(t.rows[i].page==view&&RowVisible(t.rows[i],values,context))++n;
     return n;
 }
-inline ViewRows RowsOf(View view,const Values& values,const Context& context,const Tables& t=ContentTables()){
+// skip: the visible rows before this page of a paged view (More: Model::morePage x MaxViewRows).
+inline ViewRows RowsOf(View view,const Values& values,const Context& context,const Tables& t=ContentTables(),int skip=0){
     ViewRows list;
     for(size_t i=0;i<t.rowCount;++i){
         const auto& r=t.rows[i];
-        if(r.page==view&&list.count<MaxViewRows&&RowVisible(r,values,context))list.keys[size_t(list.count++)]=r.key;
+        if(r.page==view&&list.count<MaxViewRows&&RowVisible(r,values,context)&&skip--<=0)list.keys[size_t(list.count++)]=r.key;
     }
     return list;
+}
+// The More view pages its rows, MaxViewRows a page (What's new's pager).
+inline int MorePages(const Values& values,const Context& context,const Tables& t=ContentTables()){
+    return std::max(1,(CountRows(View::More,values,context,t)+MaxViewRows-1)/MaxViewRows);
+}
+inline int MoreSkip(const Model& m,const Tables& t=ContentTables()){
+    return m.view==View::More?std::clamp(m.morePage,0,MorePages(m.Get(),m.context,t)-1)*MaxViewRows:0;
 }
 // Whether a key's row shows now in its own view.
 inline bool KeyVisible(Key key,const Values& values,const Context& context,const Tables& t=ContentTables()){
@@ -318,13 +353,13 @@ inline bool KeyVisible(Key key,const Values& values,const Context& context,const
 inline bool Blocked(const Model& m){return !m.open||!m.ready||m.Busy();}
 // Why a shown row is locked now, or nullptr.
 inline const char* LockReason(const Model& m,Key key){
-    if(key==BodyCalibration){
+    if(hooks::BodyMeasurements(key)){
         if(!m.ready)return "Unavailable";
         if(m.Busy())return "Saving...";
         if(m.Dirty())return "Apply or discard first";
         return nullptr;
     }
-    if(!RowEnabled(m.Get(),key))return "Not available now";
+    if(!RowEnabled(m.Get(),key))return hooks::LockedReason(key);
     return nullptr;
 }
 inline bool Editable(const Model& m,Key key){
@@ -332,13 +367,11 @@ inline bool Editable(const Model& m,Key key){
 }
 // Offline difficulty without the offline scaling adapter: main shows its
 // notice and leaves the row editable (the saved value applies once it loads).
-inline bool OfflineNotice(const Model& m,Key key){return key==OfflinePlayers&&!m.offlineDifficultyAvailable;}
+inline bool OfflineNotice(const Model& m,Key key){return hooks::OfflineAdapterNotice(key)&&!m.offlineDifficultyAvailable;}
 // A class without bow skills sees Spells go to the aimed monster as Off / On
 // (main's LockStep): only the spell bit changes, a saved bow bit stays.
-inline bool SpellLockOnOff(Key key,const Context& c){return key==SpellLock&&!BowSkillClass(c);}
-inline float ClassValue(Key key,float value,float current,const Context& c){
-    return SpellLockOnOff(key,c)?float((int(value)&1)|(int(current)&2)):value;
-}
+inline bool SpellLockOnOff(Key key,const Context& c){return hooks::SpellsOnly(key,c);}
+inline float ClassValue(Key key,float value,float current,const Context& c){return hooks::ClassValue(key,value,current,c);}
 inline const char* LabelOf(const content::ContentRow& r,const Context& c){return content::LabelFor(r,c);}
 inline std::string ValueOf(const content::ContentRow& r,float value,const Context& c){return content::ValueText(r,value,c);}
 // The options a row shows (content::OptionsFor). Spells go to the aimed
@@ -364,11 +397,12 @@ inline bool WrapsRound(const content::ContentRow& r){
     using content::RowKind;
     return r.wraps||r.kind==RowKind::Cycler||r.kind==RowKind::Choice||r.kind==RowKind::Swatch;
 }
-// The value box's swatch for a color row: the hue, draw::SwatchOff for the
-// arrow path line's Off, draw::SwatchByRange for a hand color's By range (0).
-inline float SwatchHue(Key k,float v){
-    if(k==BowLaser)return v<0?draw::SwatchOff:v;
-    return v<=0?draw::SwatchByRange:v;
+// The swatch for a color row's value, from its words: a value named "Off" (or
+// any negative hue, which Normalize reads as Off) the slashed Off swatch,
+// another named value (By range) the range gradient, else the hue itself.
+inline float SwatchHue(const content::ContentRow& r,float v){
+    for(int i=0;i<r.nameCount;++i)if(std::fabs(r.names[i].value-v)<.001f)return std::string_view(r.names[i].label)=="Off"?draw::SwatchOff:draw::SwatchByRange;
+    return v<0?draw::SwatchOff:v;
 }
 inline bool Finite(float v){return std::isfinite(v)&&v<1e30f;}
 
@@ -395,9 +429,7 @@ inline std::vector<Key> DirtyKeys(const Model& m){
 
 // ---- presets ----
 // Presets never touch these (the owner's calls, and calibration's own keys).
-inline bool PresetSkips(Key key){
-    return key==StereoRendering||key==DeferGpuWait||key==ElementalHands||key==CompanionAi||key==EyeHeight||key==ArmSpan||key==BodyCalibration;
-}
+inline bool PresetSkips(Key key){return hooks::PresetSkips(key);}
 // Whether a preset sets this key for this character: not skipped, and its row
 // (if any) is not hidden for the class or weapon.
 inline bool PresetSets(Key key,const Context& c,const Tables& t=ContentTables()){
@@ -482,6 +514,31 @@ inline const char* HintText(int hint){
         "Save failed. Release and hold both triggers to retry, or press B to cancel.","Settings changed elsewhere. Release and hold both triggers to try again."};
     return hint>=0&&hint<int(std::size(hints))?hints[hint]:hints[0];
 }
+// ---- control choice (docs/VR_SETTINGS_MENU.md): the control comes from the data ----
+// A named list shows chips when it has at most MaxChips options for this
+// character and every one fits beside its label (with room for the changed
+// ember); else its value opens a popover: a list up to PopListMax options, a
+// grid up to content::MaxOptions. Decided per row and character, never per
+// value, so a change never turns chips into a popover under the laser.
+inline bool ChipsFit(const content::ContentRow& r,const Values& values,const Context& c,const TextMeasure& measure={}){
+    const auto options=OptionsOf(r,values[r.key],c);
+    if((r.kind!=content::RowKind::Choice&&r.kind!=content::RowKind::Cycler&&!content::SpellsOnly(r,c))||options.size()<2||options.size()>size_t(MaxChips))return false;   // spells only: Off / On chips
+    float chips=float(ChipGap)*float(options.size()-1);
+    for(const auto& o:options)chips+=std::max(float(ChipMin),measure(o.label,draw::TextStyle::Value)+ChipPad);
+    return measure(LabelOf(r,c),draw::TextStyle::Label)+LabelEmberW+24+chips<=ContentW-2*RowPad;
+}
+enum class Control : uint8_t { Toggle, Chips, Popover, Number, Color, Button, Offer };
+inline Control ControlOf(const content::ContentRow& r,const Values& values,const Context& c,const TextMeasure& measure={}){
+    using content::RowKind;
+    switch(r.kind){
+        case RowKind::Toggle:return Control::Toggle;
+        case RowKind::Button:return Control::Button;
+        case RowKind::Offer:return Control::Offer;
+        case RowKind::Swatch:return Control::Color;
+        case RowKind::Choice:case RowKind::Cycler:return ChipsFit(r,values,c,measure)?Control::Chips:Control::Popover;
+        default:return content::SpellsOnly(r,c)?Control::Chips:Control::Number;
+    }
+}
 // ---- the build ----
 namespace detail {
 struct Builder {
@@ -493,6 +550,17 @@ struct Builder {
         out.elements.push_back(std::move(e));return out.elements.back();
     }
     float W(std::string_view s,draw::TextStyle style)const{return measure(s,style);}
+    // A fallback row's label (upstream's words) too wide for its room ends in "...".
+    std::string CutToFit(std::string text,float room,draw::TextStyle style)const{
+        if(W(text,style)<=room)return text;
+        while(!text.empty()){
+            while(!text.empty()&&(static_cast<unsigned char>(text.back())&0xC0)==0x80)text.pop_back();   // whole UTF-8 characters
+            if(!text.empty())text.pop_back();
+            while(!text.empty()&&text.back()==' ')text.pop_back();
+            if(W(text+"...",style)<=room)return text+"...";
+        }
+        return "...";
+    }
     bool Dirty(Key k)const{return !Same(m.Get()[k],m.Applied()[k]);}
 
     // The rail: Presets and the 11 pages, a thin line between groups.
@@ -503,22 +571,35 @@ struct Builder {
             const View v=View(i);const auto& p=content::PageOf(v);
             const int y=TabY+i*TabPitch;
             if(p.group!=group){Add(Role::GroupLine,{RailX+16,y-7,RailW-32,2});group=p.group;}
-            auto& e=Add(Role::Tab,{RailX,y,RailW,TabH},{Kind::Open,i,-1},HelpTabFirst+i,uint16_t(Enabled|(m.view==v?Selected:0)|(changed&(1u<<i)?Changed:0)),p.name);
+            // Presets until content::PresetsReady: drawn grayed out, no press; pointing still explains why.
+            const bool open=v!=View::Presets||content::PresetsReady;
+            auto& e=Add(Role::Tab,{RailX,y,RailW,TabH},{Kind::Open,i,-1},HelpTabFirst+i,uint16_t((open?Enabled:0)|(m.view==v?Selected:0)|(changed&(1u<<i)?Changed:0)),p.name);
             e.icon=p.icon;
         }
     }
     void Band(){
         const auto& p=content::PageOf(m.view);
-        const int limit=(in.monoAudio?MonoWarning.x:GuideLink.x)-16-330;
+        // More's link shows only while it has rows (docs/VR_SETTINGS_MENU.md):
+        // then Guide and What's new go icon-only, and with the
+        // Mono audio warning More does too and the warning moves left.
+        const int more=CountRows(View::More,m.Get(),c,t);
+        const bool icons=in.monoAudio||more>0;
+        const Rect warning=more>0?MonoWarningMore:MonoWarning;
+        const int limit=(in.monoAudio?warning.x:more>0?MoreLink.x:GuideLink.x)-16-330;
         const float want=56+12+W(p.name,draw::TextStyle::Title)*(in.monoAudio?38.f/44.f:1.f);
         auto& title=Add(Role::PageTitle,{330,BandY,std::min(limit,int(std::ceil(want))),BandInkH},{},NoHelp,0,p.name);
         title.icon=p.icon;
         if(in.monoAudio){
-            auto& w=Add(Role::Warning,MonoWarning,{},HelpMonoAudio,Warn,MonoAudioWarning);w.icon=draw::Icon::Warning;
+            auto& w=Add(Role::Warning,warning,{},HelpMonoAudio,Warn,MonoAudioWarning);w.icon=draw::Icon::Warning;
         }
-        auto& guide=Add(Role::HeaderLink,in.monoAudio?GuideIcon:GuideLink,{Kind::Open,int(View::Guide),-1},HelpGuide,uint16_t(Enabled|(m.view==View::Guide?Selected:0)),in.monoAudio?"":content::PageOf(View::Guide).name);
+        if(more>0){
+            auto& link=Add(Role::HeaderLink,in.monoAudio?MoreIcon:MoreLink,{Kind::Open,int(View::More),-1},HelpTabFirst+int(View::More),
+                uint16_t(Enabled|(m.view==View::More?Selected:0)),in.monoAudio?"":Printf("%d more",more));
+            link.icon=content::PageOf(View::More).icon;
+        }
+        auto& guide=Add(Role::HeaderLink,icons?GuideIcon:GuideLink,{Kind::Open,int(View::Guide),-1},HelpGuide,uint16_t(Enabled|(m.view==View::Guide?Selected:0)),icons?"":content::PageOf(View::Guide).name);
         guide.icon=content::PageOf(View::Guide).icon;
-        auto& notes=Add(Role::HeaderLink,in.monoAudio?NotesIcon:NotesLink,{Kind::Open,int(View::WhatsNew),-1},HelpWhatsNew,uint16_t(Enabled|(m.view==View::WhatsNew?Selected:0)),in.monoAudio?"":content::PageOf(View::WhatsNew).name);
+        auto& notes=Add(Role::HeaderLink,icons?NotesIcon:NotesLink,{Kind::Open,int(View::WhatsNew),-1},HelpWhatsNew,uint16_t(Enabled|(m.view==View::WhatsNew?Selected:0)),icons?"":content::PageOf(View::WhatsNew).name);
         notes.icon=content::PageOf(View::WhatsNew).icon;
     }
     int RegionEnd()const{return Status()?StatusY-6:RegionBottom;}
@@ -547,6 +628,7 @@ struct Builder {
                     break;
                 case content::RowKind::Stepper:case content::RowKind::Slider:case content::RowKind::Swatch:{
                     const float extra=r.kind==content::RowKind::Swatch?44.f:0.f;
+                    if(r.kind==content::RowKind::Swatch){for(const char* name:content::HueNames)fit(name,extra);for(int i=0;i<r.nameCount;++i)fit(r.names[i].label,extra);}
                     fit(ValueOf(r,v,c),extra);fit(ValueOf(r,d.min,c),extra);fit(ValueOf(r,d.defaultValue,c),extra);
                     if(Finite(d.max))fit(ValueOf(r,d.max,c),extra);
                     break;}
@@ -555,23 +637,17 @@ struct Builder {
         }
         return int(std::ceil(std::min(w,float(ValueMax))));
     }
-    // A Choice shows chips when every option fits beside its label; else a cycler.
-    bool UsesChips(const content::ContentRow& r)const{
-        const auto options=OptionsOf(r,m.Get()[r.key],c);
-        if((r.kind!=content::RowKind::Choice&&!content::SpellsOnly(r,c))||options.size()<2||options.size()>5)return false;   // spells only: Off / On chips
-        float chips=float(ChipGap)*float(options.size()-1);
-        for(const auto& o:options)chips+=std::max(float(ChipMin),W(o.label,draw::TextStyle::Value)+ChipPad);
-        return W(LabelOf(r,c),draw::TextStyle::Label)+LabelEmberW+24+chips<=ContentW-2*RowPad;   // room for the changed ember, so a change never turns chips into a cycler
-    }
+    bool UsesChips(const content::ContentRow& r)const{return ChipsFit(r,m.Get(),c,measure);}
     std::string SubLine(const content::ContentRow& r,const char* locked,uint16_t& flags)const{
         const Key k=r.key;const float v=m.Get()[k];
         if(locked){flags|=Locked;return locked;}
-        if(k==ControllerLabels)return content::DetectedText(in.detected);
+        if(hooks::ShowsDetectedControllers(k))return content::DetectedText(in.detected);
         if(OfflineNotice(m,k))return content::OfflineUnavailableShort;   // main's notice; the row stays editable
-        if(r.restartNote&&in.depthRestart){flags|=Warn;return r.restartNote;}
-        if(k==SmoothTurn&&v>.5f){flags|=Warn;return "Can cause motion sickness";}
-        if(k==TurnSpeed&&v>150){flags|=Warn;return "Fast turns are harder on the stomach";}
-        if(k==StereoRendering&&v>.5f){flags|=Warn;return "Fast monsters can look doubled";}
+        if(hooks::ShowsFrameGenStatus(k)&&in.frameGen.state!=framegen::State::Off){   // main's Perf status line, short: "Now: active"
+            if(framegen::Warning(in.frameGen))flags|=Warn;
+            return std::string("Now: ")+framegen::StateName(in.frameGen.state);
+        }
+        if(r.warnWhen.text&&v>r.warnWhen.above){flags|=Warn;return r.warnWhen.text;}
         if(r.warn){flags|=Warn;return r.warn;}
         if(r.classes!=content::AllClasses&&c.heroClass<0)return ClassTag(r.classes);
         return {};
@@ -623,24 +699,22 @@ struct Builder {
             if(cycler){
                 index=OptionIndex(options,v);count=int(options.size());
                 if(!wraps){canDown=index>0;canUp=index<0||index<count-1;}
-                sub=Printf("%d of %d",index+1,count);
-            }else if(swatch){
-                count=int(std::lround((d.max-d.min)/d.step))+1;index=int(std::lround((v-d.min)/d.step));
-                sub=Printf("%d of %d",index+1,count);
+                // the value names the option and opens the popover; < > still step and wrap
+            }else if(swatch){   // a color: a dot and its name; the value opens the color grid, < > step and wrap
                 if(!wraps){canDown=v>d.min+.0001f;canUp=v<d.max-.0001f;}
             }else if(!wraps){canDown=v>d.min+.0001f;canUp=!Finite(d.max)||v<d.max-.0001f;}
             const int vx=right-StepW-StepGap-vw;left=vx-StepGap-StepW;
             control(Role::StepMinus,{left,cy,StepW,ctlH},{Kind::Change,k,-1},uint16_t((live&&canDown?Enabled:0)|Repeat|(locked?Locked:0)));
             const bool bar=!cycler&&!swatch&&Finite(d.max)&&d.max>d.min;
-            // A swatch shows the color itself, not its name (the card says the name).
-            auto& value=control(Role::Value,{vx,cy,vw,ctlH},bar||(!cycler&&!swatch)?Hit{Kind::Change,k,0}:Hit{},
-                uint16_t((live&&(!cycler&&!swatch)?Enabled|Drag:0)|(Same(v,d.defaultValue)?IsDefault:0)|(dirty?Changed:0)|(locked?Locked:0)),swatch?std::string{}:ValueOf(r,v,c),sub);
+            // A swatch shows the color and its name.
+            auto& value=control(Role::Value,{vx,cy,vw,ctlH},bar||(!cycler&&!swatch)?Hit{Kind::Change,k,0}:Hit{Kind::Popover,k},
+                uint16_t((live&&(!cycler&&!swatch)?Enabled|Drag:0)|(live&&(cycler||swatch)?Enabled:0)|(Same(v,d.defaultValue)?IsDefault:0)|(dirty?Changed:0)|(locked?Locked:0)),ValueOf(r,v,c),sub);
             if(bar){
                 const float span=d.max-d.min;
                 value.fill=std::clamp((v-d.min)/span,0.f,1.f);value.mark=std::clamp((d.defaultValue-d.min)/span,0.f,1.f);
                 if(d.min<0&&d.max>0)value.zeroAt=-d.min/span;
             }
-            if(swatch)value.hue=SwatchHue(k,v);
+            if(swatch)value.hue=SwatchHue(r,v);
             if(!cycler&&!swatch){   // a number: drag it along its bar
                 const float sweep=float(PanelInner.x+PanelInner.w-(vx+int(BarInset))-8);
                 value.dragPx=DragStepPx(d.min,d.max,d.step,sweep);
@@ -654,7 +728,17 @@ struct Builder {
         auto& slab=Add(Role::Row,{ContentX,y,ContentW,pitch},{},k,dirty?Changed:0);slab.key=k;
         if(std::isfinite(r.recommended)&&!Same(v,r.recommended)&&!locked){slab.flags|=Recommended;labelFlags|=Recommended;slab.sub="Recommended: "+ValueOf(r,r.recommended,c);}
         const int lx=ContentX+RowPad;
-        auto& label=Add(Role::Label,{lx,y,std::max(0,left-16-lx),pitch},{},k,labelFlags,LabelOf(r,c),std::move(sub));label.key=k;
+        const int labelW=std::max(0,left-16-lx);
+        std::string text=LabelOf(r,c);
+        if(r.fallback)text=CutToFit(text,float(labelW-((labelFlags&Changed)?LabelEmberW:0)),draw::TextStyle::Label);   // upstream's words: only these may be cut
+        auto& label=Add(Role::Label,{lx,y,labelW,pitch},{},k,labelFlags,std::move(text),std::move(sub));label.key=k;
+        // Hit boxes: the full row height, meeting the neighbor control halfway across the gap.
+        for(size_t i=0;i<controls.size();++i){
+            Rect& r0=controls[i].rect;
+            const int leftGap=i?r0.x-(controls[i-1].rect.x+controls[i-1].rect.w):0,rightGap=i+1<controls.size()?controls[i+1].rect.x-(r0.x+r0.w):0;
+            controls[i].hitRect={r0.x-leftGap/2,y,r0.w+leftGap/2+(rightGap-rightGap/2),pitch};
+        }
+        if(k==m.popoverKey)out.popoverRow={ContentX,y,ContentW,pitch};
         for(auto& e:controls)out.elements.push_back(std::move(e));
     }
     void Readout(int y,const content::ContentRow* offer){
@@ -663,8 +747,8 @@ struct Builder {
         if(offer){
             const std::string label=offer->label?offer->label:"Defer GPU wait";
             const int w=std::max(MinTarget,int(std::ceil(W(label,draw::TextStyle::Value)))+48);
-            auto& b=Add(Role::Button,{ContentRight-12-w,y+4,w,64},{Kind::Set,DeferGpuWait,0,1},DeferGpuWait,uint16_t(Editable(m,DeferGpuWait)?Enabled:0),label);
-            b.key=DeferGpuWait;textRight=b.rect.x-16;
+            auto& b=Add(Role::Button,{ContentRight-12-w,y+4,w,64},{Kind::Set,offer->key,0,1},offer->key,uint16_t(Editable(m,offer->key)?Enabled:0),label);
+            b.key=offer->key;textRight=b.rect.x-16;
         }
         const char* video=GameVideoWarning(in.game);
         const bool defer=offer!=nullptr;
@@ -681,7 +765,7 @@ struct Builder {
     int Page(){
         const auto& page=content::PageOf(m.view);
         std::vector<Planned> rows;const content::ContentRow* offer=nullptr;
-        const ViewRows shown=RowsOf(m.view,m.Get(),c,t);
+        const ViewRows shown=RowsOf(m.view,m.Get(),c,t,MoreSkip(m,t));
         for(int i=0;i<shown.count;++i){
             const auto* r=t.Row(shown.keys[size_t(i)]);
             if(r->kind==content::RowKind::Offer){offer=r;continue;}
@@ -689,7 +773,8 @@ struct Builder {
         }
         int sections=0;for(size_t i=0;i<rows.size();++i)if(i==0||rows[i].section!=rows[i-1].section)if(t.Section(m.view,rows[i].section))++sections;
         const bool readout=m.view==View::Performance;
-        const int n=int(rows.size()),region=RegionEnd()-ViewTop;
+        const int morePages=m.view==View::More?MorePages(m.Get(),c,t):1,pagerH=morePages>1?MinTarget+MinGap:0;
+        const int n=int(rows.size()),region=RegionEnd()-ViewTop-pagerH;
         int cardRoom=CardMin;   // the card space rows give way to: enough for the page's longest help
         for(const auto& p:rows)cardRoom=std::max(cardRoom,RowCardNeed(*p.row));
         // Rows close up to PitchMin first; a page still short of card room draws its section headings compact.
@@ -705,7 +790,17 @@ struct Builder {
             Row(*rows[i].row,y,pitch,vw);y+=pitch;
         }
         if(readout){y+=2;Readout(y,offer);y+=ReadoutH;}
+        if(morePages>1)y=Pager(y,std::clamp(m.morePage,0,morePages-1),morePages,HelpTabFirst+int(View::More));
         return y;
+    }
+    // Previous / Next and "Page n of m" under a paged view's lines or rows (What's new, More).
+    int Pager(int y,int page,int pages,int help){
+        constexpr int PagerW=220;y+=MinGap/2;
+        Add(Role::Button,{ContentX,y,PagerW,MinTarget},{Kind::NotesPage,0,-1},help,uint16_t(page>0?Enabled:0),"Previous");
+        Add(Role::Button,{ContentRight-PagerW,y,PagerW,MinTarget},{Kind::NotesPage,0,1},help,uint16_t(page<pages-1?Enabled:0),"Next");
+        auto& label=Add(Role::NotesText,{ContentX+PagerW+MinGap,y+14,ContentW-2*(PagerW+MinGap),36},{},help,0,Printf("Page %d of %d",page+1,pages));
+        label.option=0;   // drawn centered
+        return y+MinTarget+MinGap/2;
     }
     // ---- other views ----
     int Presets(){
@@ -730,7 +825,7 @@ struct Builder {
         return y;
     }
     int Guide(){
-        const auto labels=controllers::Resolve(controllers::Choice(int(m.Get()[ControllerLabels])),in.detected);
+        const auto labels=controllers::Resolve(hooks::ButtonNames(m.Get()),in.detected);
         std::vector<const content::GuideLine*> left,right;std::string panels;
         for(size_t i=0;i<t.guideCount;++i){
             const auto& g=t.guide[i];
@@ -763,13 +858,20 @@ struct Builder {
             if(n.url)Add(Role::NotesText,{ContentX+half,y,half-12,36},{},HelpWhatsNew,Selected,n.url);
             y+=36+NotesAuthorGap;   // a clear space between the byline and the first release line
         }
-        const int creditsH=n.credits?40:0;
-        const int space=RegionEnd()-y-creditsH-CardMin;
-        const int pitch=n.lineCount?std::min(NotesLineMax,space/std::max(1,n.lineCount)):NotesLineMax;
-        const int shown=pitch>=40?n.lineCount:std::max(0,space/40);
+        // A long release pages its lines, NotesPerPage a page (main's Notes tab),
+        // with Previous / Next and the page number under them.
+        const int pages=NotesPages(n.lineCount),page=std::clamp(m.notesPage,0,pages-1);
+        const int first=pages>1?page*NotesPerPage:0,lines=pages>1?std::min(NotesPerPage,n.lineCount-first):n.lineCount;
+        const int creditsH=n.credits?40:0,pagerH=pages>1?MinTarget+MinGap:0;
+        const int space=RegionEnd()-y-creditsH-pagerH-CardMin;
+        // Paged, every page keeps a full page's pitch, so Previous / Next stay put while you turn.
+        const int slots=pages>1?NotesPerPage:lines;
+        const int pitch=slots?std::min(NotesLineMax,space/std::max(1,slots)):NotesLineMax;
+        const int shown=pitch>=40?lines:std::max(0,space/40);
         const int step=pitch>=40?pitch:40;
-        for(int i=0;i<shown&&i<n.lineCount;++i)Add(Role::NotesText,{ContentX,y+i*step,ContentW,step-2},{},HelpWhatsNew,0,n.lines[i]?n.lines[i]:"");
-        y+=std::min(shown,n.lineCount)*step;
+        for(int i=0;i<shown&&i<lines;++i)Add(Role::NotesText,{ContentX,y+i*step,ContentW,step-2},{},HelpWhatsNew,0,n.lines[first+i]?n.lines[first+i]:"");
+        y+=(pages>1?slots:std::min(shown,lines))*step;
+        if(pages>1)y=Pager(y,page,pages,HelpWhatsNew);
         if(n.credits){Add(Role::NotesText,{ContentX+12,y+4,ContentW-24,32},{},HelpWhatsNew,0,std::string("Credits: ")+n.credits);y+=creditsH;}
         return y;
     }
@@ -839,7 +941,7 @@ struct Builder {
     std::string RowHelp(Key k)const{
         const auto* r=t.Row(k);
         std::string help=r&&r->help?r->help:HelpText(k);
-        if(k==OfflinePlayers)help=std::string(m.offlineDifficultyAvailable?content::OfflineNote:content::OfflineUnavailable)+" "+help;
+        if(hooks::OfflineAdapterNotice(k))help=std::string(m.offlineDifficultyAvailable?content::OfflineNote:content::OfflineUnavailable)+" "+help;
         return help;
     }
     CardSpec RowCard(Key k)const{
@@ -847,12 +949,13 @@ struct Builder {
         const auto* r=t.Row(k);const float v=m.Get()[k];const auto& d=Definitions[k];
         s.title=r?LabelOf(*r,c):HelpTitle(k);
         std::string help=RowHelp(k);
-        if(k==BodyCalibration||!r){s.text=help;return s;}
+        if(!r||r->kind==content::RowKind::Button){s.text=help;return s;}
         // A pointed chip: its hint, and whether it is chosen.
         if(in.hover.kind==Kind::Set&&in.hover.index==k&&r->kind!=content::RowKind::Toggle&&r->kind!=content::RowKind::Offer){
             const auto options=OptionsOf(*r,v,c);const int i=OptionIndex(options,in.hover.value);
             if(i>=0){help=options[size_t(i)].hint?options[size_t(i)].hint:help;s.state=std::string(options[size_t(i)].label)+(Same(options[size_t(i)].value,v)?": chosen":": press to choose");}
         }
+        if(in.hover.kind==Kind::Popover&&in.hover.index==k)s.state="Now: "+ValueOf(*r,v,c)+". Press to see all "+std::to_string(OptionsOf(*r,v,c).size())+" choices";
         s.text=help;
         if(LockReason(m,k)){
             s.titleFlags=Locked;s.stateFlags=Locked;
@@ -865,10 +968,17 @@ struct Builder {
         else if(s.state.empty())s.state="At default";
         // A color row's value box shows only the swatch: the card names the color.
         if(r->kind==content::RowKind::Swatch){const std::string now="Now: "+ValueOf(*r,v,c)+". ";s.state=now+s.state;if(!s.shortState.empty())s.shortState=now+s.shortState;}
+        if(hooks::ShowsFrameGenStatus(k)&&!Dirty(k)&&in.frameGen.state!=framegen::State::Off){   // what OFXR Bridge is doing: main's Perf status line
+            std::string line=framegen::Line(in.frameGen);constexpr std::string_view prefix="Frame generation: ";
+            if(line.rfind(prefix,0)==0)line.erase(0,prefix.size());
+            if(!line.empty())line[0]=char(std::toupper(static_cast<unsigned char>(line[0])));
+            s.state=line;s.shortState.clear();   // the whole line, under the help when the button column has no room for it
+            if(framegen::Warning(in.frameGen))s.stateFlags=Warn;
+        }
         const int category=HapticCategory(k);
         if(category>=0)s.buttons.push_back({{"Feel it at "+ValueOf(*r,v,c),"Feel it"},{Kind::TestHaptics,category,1},draw::Icon::Feel,Armed()&&m.CanTestHaptics(category),0});
         if(Dirty(k)){const auto was=ValueOf(*r,m.Applied()[k],c);s.buttons.push_back({{"Undo: back to "+was,"Undo: "+was,"Undo"},{Kind::Undo,k},draw::Icon::Undo,Armed(),1});}
-        if(r->kind!=content::RowKind::Offer&&k!=DeferGpuWait&&!Same(v,d.defaultValue)){
+        if(r->kind!=content::RowKind::Offer&&!Same(v,d.defaultValue)){
             const auto def=ValueOf(*r,d.defaultValue,c);
             s.buttons.push_back({{std::string(LabelOf(*r,c))+" to "+def,"Default: "+def,"Default"},{Kind::Default,k},draw::Icon::Default,Armed()&&Editable(m,k),2});
         }
@@ -889,7 +999,7 @@ struct Builder {
     CardSpec ConfirmCard()const{
         CardSpec s;s.subject=HelpKeepEditing;s.title="Close without applying?";s.titleFlags=Changed;s.stateFlags=Changed;
         const auto keys=DirtyKeys(m);
-        for(Key k:keys)s.lines.push_back({OldNew(k,m.Applied()[k],m.Get()[k])+(KeyVisible(k,m.Get(),c,t)||k==DeferGpuWait?"":" (hidden)"),0});
+        for(Key k:keys)s.lines.push_back({OldNew(k,m.Applied()[k],m.Get()[k])+(KeyVisible(k,m.Get(),c,t)||(t.Row(k)&&t.Row(k)->kind==content::RowKind::Offer)?"":" (hidden)"),0});
         s.state=Plural(int(keys.size()),"change","changes")+" not applied. Right B: Keep editing.";
         return s;
     }
@@ -897,8 +1007,7 @@ struct Builder {
         CardSpec s;s.subject=HelpPresetFirst+index;
         const auto& p=t.presets[index];s.title=p.name;
         if(StateOf(m,index,c,t)==PresetState::Applied)s.titleFlags=Selected;
-        static constexpr Key comfort[]={SmoothTurn,TurnSpeed,Snap,StereoRendering,BloodVisor,HeartbeatStart};
-        auto isComfort=[](Key k){for(Key x:comfort)if(x==k)return true;return false;};
+        auto isComfort=[](Key k){return hooks::ComfortKey(k);};
         std::vector<std::pair<std::string,uint16_t>> first,rest;int other=0;
         for(int i=0;i<p.count;++i){
             const Key k=p.values[i].key;
@@ -922,7 +1031,9 @@ struct Builder {
         bool introShown=false;for(const auto& e:out.elements)if(e.role==Role::Intro)introShown=true;
         switch(m.view){
             case View::Guide:s.subject=HelpGuide;s.title="Wheels and skills";s.text="Each stick opens its hand's wheel. Point the other hand's laser at a wedge to assign a skill.";s.state="Names follow Interface: Button names";break;
-            case View::WhatsNew:s.subject=HelpWhatsNew;s.title="This version";s.text="One line per change. Press What's new again to go back to your page.";break;
+            case View::WhatsNew:s.subject=HelpWhatsNew;s.title="This version";
+                s.text=NotesPages(in.notes.lineCount)>1?"One line per change; Previous and Next turn the pages. Press What's new again to go back to your page.":"One line per change. Press What's new again to go back to your page.";
+                break;
             case View::Presets:s.subject=HelpPresets;s.title="How presets work";s.text="Each sets only the rows it lists, comfort changes first. Pick one; Apply saves it.";break;
             default:{
                 s.subject=HelpTabFirst+int(m.view);s.title="Point at a setting";
@@ -937,7 +1048,7 @@ struct Builder {
         if(id>=0&&id<Count)return RowCard(Key(id));
         if(id>=HelpTabFirst&&id<HelpTabFirst+int(View::Count)){
             const View v=View(id-HelpTabFirst);const auto& p=content::PageOf(v);
-            CardSpec s;s.subject=id;s.title=p.name;s.text=v==View::Presets?HelpText(HelpPresets):p.intro;
+            CardSpec s;s.subject=id;s.title=p.name;s.text=v==View::Presets?(content::PresetsReady?HelpText(HelpPresets):content::PresetsLater):p.intro;
             if(const int n=ChangedCount(m,v,c,t)){s.state=std::to_string(n)+" not applied";s.titleFlags=s.stateFlags=Changed;}
             return s;
         }
@@ -1130,7 +1241,7 @@ struct Builder {
                 bar.fill=std::clamp(float(m.undoResetUntil-in.nowMs)/float(Model::UndoResetMs),0.f,1.f);
             }else{
                 bool resettable=false;
-                const ViewRows rows=RowsOf(m.view,m.Get(),c,t);
+                const ViewRows rows=RowsOf(m.view,m.Get(),c,t,MoreSkip(m,t));
                 for(int i=0;i<rows.count;++i){
                     const Key k=rows.keys[size_t(i)];const auto* r=t.Row(k);
                     if(r->kind!=content::RowKind::Button&&r->kind!=content::RowKind::Offer&&Editable(m,k)&&!Same(m.Get()[k],ClassValue(k,Definitions[k].defaultValue,m.Get()[k],c)))resettable=true;
@@ -1171,6 +1282,115 @@ struct Builder {
         }
         for(auto& e:out.elements)if(e.role==Role::Row&&(e.key==pointed||(in.card==int(e.key)&&in.card!=NoHelp)))e.flags|=Hovered;
     }
+    // ---- the popover: a named list too long for chips, over the page ----
+    // A floating card beside the row it edits, never over that row: below it,
+    // or above it when it would reach the footer. The rest of the panel is
+    // dimmed and an outside press closes it without a change (PopoverClose);
+    // one press on an option picks it and closes. Options take presses
+    // Model::PopoverGuardMs after it opened. Each option's hit box is its whole
+    // cell; neighbors meet halfway across the gap.
+    void Popover(){
+        const Key k=Key(m.popoverKey);const auto* r=t.Row(k);
+        if(!r||out.popoverRow.w<=0)return;
+        if(r->kind==content::RowKind::Swatch){ColorPopover(*r);return;}
+        const float v=m.Get()[k];const auto& d=Definitions[k];
+        const auto options=OptionsOf(*r,v,c);const int n=int(options.size());
+        if(n<1)return;
+        const bool armed=in.nowMs>=m.popoverAt+Model::PopoverGuardMs&&Editable(m,k);
+        // Columns: one up to PopListMax (two when that would pass PopMaxH); a grid of 2 up to 12, else 3.
+        int cellP=PopCell,titleH=PopTitleH,hintH=PopHintH;   // compact (PopCellMin cells, no title) when it fits neither below nor above its row
+        auto heightFor=[&](int columns){return PopPad*2+titleH+(n+columns-1)/columns*cellP+hintH;};
+        int columns=n<=PopListMax?1:n<=12?2:3;
+        if(columns==1&&heightFor(1)>PopMaxH)columns=2;
+        if(!PopoverFits(heightFor(columns)))titleH=0;   // its row is right beside it: the title goes first
+        if(!PopoverFits(heightFor(columns))){cellP=PopCellMin;hintH=PopHintCompact;}
+        float widest=0;for(const auto& o:options)widest=std::max(widest,W(o.label,draw::TextStyle::Strong));
+        const int cellW=std::max(180,int(std::ceil(widest))+ChipPad+16);
+        const int w=std::clamp(columns*cellW+2*PopPad,PopMinW,ContentW),h=heightFor(columns);
+        const int colW=(w-2*PopPad)/columns;
+        const Rect card{ContentRight-w,PopoverTop(h),w,h};
+        out.popover=card;
+        Add(Role::PopoverDim,PanelInner,{Kind::PopoverClose},k,Enabled);   // its help: the row's, while the popover is open
+        Add(Role::Popover,card,{Kind::Card},k,Enabled);
+        if(titleH)Add(Role::PopoverTitle,{card.x+PopPad,card.y+PopPad,card.w-2*PopPad,titleH},{},k,0,LabelOf(*r,c));
+        const int top=card.y+PopPad+titleH;const int drawnH=cellP-PopCellGap;
+        int pointed=-1;
+        for(int i=0;i<n;++i){
+            const int col=i%columns,rowIndex=i/columns;
+            const Rect cell{card.x+PopPad+col*colW,top+rowIndex*cellP,colW,cellP};
+            const Rect drawn{cell.x+PopCellGap/2,cell.y+PopCellGap/2,cell.w-PopCellGap,drawnH};
+            const bool chosen=Same(options[size_t(i)].value,v);
+            const bool isDefault=SpellLockOnOff(k,c)?(int(options[size_t(i)].value)&1)==(int(d.defaultValue)&1):Same(options[size_t(i)].value,d.defaultValue);
+            const Hit hit{Kind::Set,k,0,options[size_t(i)].value};
+            auto& e=Add(Role::PopoverOption,drawn,hit,k,uint16_t((armed?Enabled:0)|(chosen?Selected:0)|(isDefault?IsDefault:0)|(chosen&&Dirty(k)?Changed:0)),options[size_t(i)].label);
+            e.key=k;e.option=i;e.hitRect=cell;
+            if(in.hover==hit)pointed=i;
+        }
+        const int shown=pointed>=0?pointed:OptionIndex(options,v);
+        const char* hint=shown>=0&&options[size_t(shown)].hint?options[size_t(shown)].hint:"";
+        Add(Role::PopoverHint,{card.x+PopPad,card.y+card.h-PopPad-hintH,card.w-2*PopPad,hintH},{},k,0,hint);
+    }
+    // Where a popover card of height h goes: below its row, else above it,
+    // else on the side with more room (inside the content area either way).
+    bool PopoverFits(int h)const{const Rect row=out.popoverRow;return row.y+row.h+PopGap+h<=RegionEnd()||row.y-PopGap-h>=ViewTop;}
+    int PopoverTop(int h)const{
+        const Rect row=out.popoverRow;
+        const int below=row.y+row.h+PopGap,above=row.y-PopGap-h,bottom=RegionEnd();
+        return below+h<=bottom?below:above>=ViewTop?above:(bottom-below>row.y-ViewTop?bottom-h:ViewTop);
+    }
+    // The color grid (a hue row): named values outside the hue wheel (By
+    // range, Off) as full-width chips above, then every hue as a dot, 6 a row (8 when
+    // compact)
+    // in hue order (a quarter of the wheel a row: Red ... Crimson), the dot
+    // colored as the game draws the outline (HueRgb). The chosen one ringed.
+    void ColorPopover(const content::ContentRow& r){
+        const Key k=r.key;const float v=m.Get()[k];const auto& d=Definitions[k];
+        const bool armed=in.nowMs>=m.popoverAt+Model::PopoverGuardMs&&Editable(m,k);
+        std::vector<std::pair<float,const char*>> specials;std::vector<float> hues;
+        const int steps=int(std::lround((d.max-d.min)/d.step));
+        for(int i=0;i<=steps;++i){
+            const float value=d.min+float(i)*d.step;const char* name=nullptr;
+            for(int n=0;n<r.nameCount;++n)if(Same(r.names[n].value,value))name=r.names[n].label;
+            if(name)specials.push_back({value,name});else hues.push_back(value);
+        }
+        std::stable_sort(hues.begin(),hues.end(),[](float a,float b){return std::fmod(a,360.f)<std::fmod(b,360.f);});
+        int cellP=PopCell,titleH=PopTitleH,hintH=PopHintColor,dotD=46,columns=6;
+        auto rowsOf=[&]{return int((hues.size()+size_t(columns)-1)/size_t(columns));};
+        auto heightFor=[&]{return PopPad*2+titleH+(specials.empty()?0:cellP)+rowsOf()*cellP+hintH;};
+        if(!PopoverFits(heightFor()))titleH=0;   // its row is right beside it: the title goes first
+        if(!PopoverFits(heightFor())){cellP=PopCellMin;dotD=44;columns=8;}
+        const int rows=rowsOf();(void)rows;
+        const int gridW=columns*cellP;
+        const int w=std::max(PopMinW,gridW+2*PopPad),h=PopPad*2+titleH+(specials.empty()?0:cellP)+rows*cellP+hintH;
+        const Rect card{ContentRight-w,PopoverTop(h),w,h};
+        out.popover=card;
+        Add(Role::PopoverDim,PanelInner,{Kind::PopoverClose},k,Enabled);
+        Add(Role::Popover,card,{Kind::Card},k,Enabled);
+        if(titleH)Add(Role::PopoverTitle,{card.x+PopPad,card.y+PopPad,card.w-2*PopPad,titleH},{},k,0,LabelOf(r,c));
+        int y=card.y+PopPad+titleH;const int x0=card.x+(card.w-gridW)/2;
+        std::string hint;
+        auto flags=[&](float value){return uint16_t((armed?Enabled:0)|(Same(value,v)?Selected:0)|(Same(value,d.defaultValue)?IsDefault:0)|(Same(value,v)&&Dirty(k)?Changed:0));};
+        if(!specials.empty()){
+            const int cw=gridW/int(specials.size());
+            for(size_t i=0;i<specials.size();++i){
+                const Rect cell{x0+int(i)*cw,y,cw,cellP};
+                const Hit hit{Kind::Set,k,0,specials[i].first};
+                auto& e=Add(Role::PopoverOption,{cell.x+PopCellGap/2,cell.y+PopCellGap/2,cell.w-PopCellGap,cellP-PopCellGap},hit,k,flags(specials[i].first),specials[i].second);
+                e.key=k;e.hitRect=cell;e.hue=SwatchHue(r,specials[i].first);
+                if(in.hover==hit||(hint.empty()&&Same(specials[i].first,v)))hint=SwatchHue(r,specials[i].first)==draw::SwatchByRange?"By range: red near, orange mid, yellow far":specials[i].second;
+            }
+            y+=cellP;
+        }
+        for(size_t i=0;i<hues.size();++i){
+            const Rect cell{x0+int(i%size_t(columns))*cellP,y+int(i/size_t(columns))*cellP,cellP,cellP};
+            const Hit hit{Kind::Set,k,0,hues[i]};
+            auto& e=Add(Role::ColorDot,{cell.x+(cellP-dotD)/2,cell.y+(cellP-dotD)/2,dotD,dotD},hit,k,flags(hues[i]));
+            e.key=k;e.hitRect=cell;e.hue=hues[i];
+            if(in.hover==hit)hint=content::HueNameOf(hues[i]);
+        }
+        if(hint.empty())hint=std::string("Now: ")+ValueOf(r,v,c);
+        Add(Role::PopoverHint,{card.x+PopPad,card.y+card.h-PopPad-hintH,card.w-2*PopPad,hintH},{},k,0,hint);
+    }
     void Build(){
         out.view=m.view;
         if(in.calibration.active){Calibration();return;}
@@ -1184,6 +1404,7 @@ struct Builder {
         }
         Card(y+4);
         Footer();
+        if(m.popoverKey>=0)Popover();
         Flags();
     }
 };
@@ -1198,7 +1419,7 @@ inline Layout Build(const Model& model,const Context& context,const LayoutInput&
 // The top-most pressable element under (x, y) in canvas pixels, or nullptr.
 inline const Element* ElementAt(const Layout& layout,float x,float y){
     for(auto it=layout.elements.rbegin();it!=layout.elements.rend();++it)
-        if(it->hit.kind!=Kind::None&&it->rect.Contains(x,y))return &*it;
+        if(it->hit.kind!=Kind::None&&it->HitBox().Contains(x,y))return &*it;
     return nullptr;
 }
 // What a press at (x, y) does (Kind::None: nothing).
@@ -1229,7 +1450,7 @@ inline Request Step(Model& m,const Hit& hit,const Tables& t){
     if(!Editable(m,k)||hit.delta==0)return {};
     const auto* r=t.Row(k);
     const float v=m.Get()[k];
-    if(r&&k!=SpellLock&&k!=BowLaser&&r->optionCount>0){   // walk the options in their shown order
+    if(r&&!hooks::ModelSteps(k)&&r->optionCount>0){   // walk the options in their shown order
         const auto options=OptionsOf(*r,v,m.context);const int n=int(options.size());
         int i=OptionIndex(options,v);if(i<0)i=0;
         int next=i+hit.delta;
@@ -1237,7 +1458,7 @@ inline Request Step(Model& m,const Hit& hit,const Tables& t){
         if(next!=i)SetValue(m,k,options[size_t(next)].value);
         return {};
     }
-    if(r&&k!=SpellLock&&k!=BowLaser&&WrapsRound(*r)){   // a hand color goes round through By range (the arrow path line wraps through Off in Model::Click)
+    if(r&&!hooks::ModelSteps(k)&&WrapsRound(*r)){   // a hand color goes round through By range (the arrow path line wraps through Off in Model::Click)
         const auto& d=Definitions[k];const float range=d.max-d.min+d.step;
         float next=v+float(hit.delta)*d.step;
         while(next>d.max+.001f)next-=range;
@@ -1246,6 +1467,18 @@ inline Request Step(Model& m,const Hit& hit,const Tables& t){
         return {};
     }
     return m.Click(hit);   // Normalize's steps, OfflinePlayers' 0-8, LockStep, the laser's wheel through Off
+}
+// A preset: sets only the keys it lists, for this character (PresetSets).
+// Press calls it only while content::PresetsReady; the tests call it so the
+// preset logic stays checked while presets are off.
+inline void ApplyPreset(Model& model,int index,const Tables& t=ContentTables()){
+    if(Blocked(model)||index<0||size_t(index)>=t.presetCount)return;
+    const auto& p=t.presets[index];
+    for(int i=0;i<p.count;++i){
+        const Key k=p.values[i].key;
+        if(PresetSets(k,model.context,t))SetValue(model,k,p.values[i].value);
+    }
+    model.pickedPreset=index;++model.revision;
 }
 // A press: the new kinds change the model here; the old ones go to
 // Model::Click. Returns the save request Apply makes (sequence 0: none).
@@ -1257,40 +1490,61 @@ inline Request Press(Model& model,const Hit& hit,uint64_t nowMs,const Tables& t=
     if(!model.open)return {};
     const bool confirmArmed=model.confirmClose&&nowMs>=model.confirmAt+Model::ConfirmGuardMs;
     const bool keyOk=hit.index>=0&&hit.index<Count;
+    // An open popover is modal: Right B (Close) and an outside press close it
+    // without a change; a pick sets its row and closes it. Nothing else reaches the page.
+    if(model.popoverKey>=0){
+        const bool pick=hit.kind==Kind::Set&&hit.index==model.popoverKey;
+        if(!pick&&hit.kind!=Kind::Card&&hit.kind!=Kind::TestHaptics){model.popoverKey=-1;++model.revision;return {};}
+        if(pick){
+            if(nowMs<model.popoverAt+Model::PopoverGuardMs||!Editable(model,Key(hit.index)))return {};
+            SetValue(model,Key(hit.index),hit.value);model.popoverKey=-1;++model.revision;return {};
+        }
+    }
     switch(hit.kind){
         case Kind::Open:{
             if(hit.index<0||hit.index>=int(View::Count))return {};
             View v=View(hit.index);
+            if(v==View::Presets&&!content::PresetsReady)return {};   // grayed out until content::PresetsReady
             if(v==model.view&&(v==View::Guide||v==View::WhatsNew))v=model.lastPage;   // the header link again: back to the page
             if(content::PageOf(v).settings)model.lastPage=v;
-            model.view=v;model.focusKey=hit.delta>=0&&hit.delta<Count?hit.delta:-1;model.controllerMenu=false;++model.revision;
+            model.view=v;model.focusKey=hit.delta>=0&&hit.delta<Count?hit.delta:-1;model.popoverKey=-1;
+            if(v==View::More){   // More opens on the page that holds the row it was sent to
+                model.morePage=0;int index=0;
+                for(size_t i=0;i<t.rowCount&&model.focusKey>=0;++i){
+                    const auto& r=t.rows[i];
+                    if(r.page!=View::More||!RowVisible(r,model.Get(),model.context))continue;
+                    if(r.key==model.focusKey){model.morePage=index/MaxViewRows;break;}
+                    ++index;
+                }
+            }
+            ++model.revision;
             return {};
         }
+        case Kind::NotesPage:
+            if(model.view==View::More){   // the More view's pager; What's new's is Model::Click's
+                const int next=std::clamp(model.morePage+(hit.delta<0?-1:1),0,MorePages(model.Get(),model.context,t)-1);
+                if(next!=model.morePage){model.morePage=next;++model.revision;}
+                return {};
+            }
+            return model.Click(hit);
         case Kind::Set:
             if(!keyOk||!Editable(model,Key(hit.index)))return {};
-            if(hit.index==DeferGpuWait&&hit.value<.5f)return {};   // one way: the offer only turns it on
+            if(const auto* r=t.Row(Key(hit.index));r&&r->kind==content::RowKind::Offer&&hit.value<.5f)return {};   // one way: an offer only turns its setting on
             SetValue(model,Key(hit.index),hit.value);return {};
         case Kind::Change:return keyOk?Step(model,hit,t):Request{};
         case Kind::Undo:
             if(keyOk&&!Blocked(model))model.Set(Key(hit.index),model.Applied()[hit.index]);
             return {};
         case Kind::Default:
-            if(keyOk&&hit.index!=DeferGpuWait&&Editable(model,Key(hit.index)))SetValue(model,Key(hit.index),Definitions[hit.index].defaultValue);
+            if(keyOk&&!(t.Row(Key(hit.index))&&t.Row(Key(hit.index))->kind==content::RowKind::Offer)&&Editable(model,Key(hit.index)))SetValue(model,Key(hit.index),Definitions[hit.index].defaultValue);
             return {};
-        case Kind::Preset:{
-            if(Blocked(model)||hit.index<0||size_t(hit.index)>=t.presetCount)return {};
-            const auto& p=t.presets[hit.index];
-            for(int i=0;i<p.count;++i){
-                const Key k=p.values[i].key;
-                if(PresetSets(k,model.context,t))SetValue(model,k,p.values[i].value);
-            }
-            model.pickedPreset=hit.index;++model.revision;
+        case Kind::Preset:   // no preset applies until content::PresetsReady
+            if(content::PresetsReady)ApplyPreset(model,hit.index,t);
             return {};
-        }
         case Kind::ResetPage:{
             if(Blocked(model)||!content::PageOf(model.view).settings)return {};
             const Values before=model.Get();ChangeMask changed=0;
-            const ViewRows rows=RowsOf(model.view,model.Get(),model.context,t);
+            const ViewRows rows=RowsOf(model.view,model.Get(),model.context,t,MoreSkip(model,t));
             for(int i=0;i<rows.count;++i){
                 const Key k=rows.keys[size_t(i)];const auto* r=t.Row(k);
                 if(r->kind==content::RowKind::Button||r->kind==content::RowKind::Offer||!Editable(model,k))continue;
@@ -1322,6 +1576,10 @@ inline Request Press(Model& model,const Hit& hit,uint64_t nowMs,const Tables& t=
             if(request.sequence){model.confirmClose=false;model.closeWhenSaved=true;}
             return request;
         }
+        case Kind::Popover:   // a named list's value: open its popover (on the release of the press)
+            if(keyOk&&Editable(model,Key(hit.index))){model.popoverKey=hit.index;model.popoverAt=nowMs;++model.revision;}
+            return {};
+        case Kind::PopoverClose:return {};   // nothing open: nothing to close
         case Kind::Card:return {};
         default:return model.Click(hit);
     }

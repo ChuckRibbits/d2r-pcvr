@@ -94,7 +94,7 @@ public:
                 if(!e){target=hover;e=layout::Find(layout,target);}
                 if(e){
                     if(!e->Has(layout::Enabled))out.blocked=true;
-                    else{pressed=target;pressedRect=e->rect;pressedAt=lastRepeat=ms;pressX=x;pressY=y;dragSent=dragUnit=0;dragging=repeated=false;
+                    else{pressed=target;pressedRect=e->HitBox();pressedAt=lastRepeat=ms;pressX=x;pressY=y;dragSent=dragUnit=0;dragging=repeated=false;
                         dragCoarse=std::max(1,e->dragCoarse);dragIndex=e->dragSteps>0?e->dragIndex:-1;dragSteps=e->dragSteps;}
                 }
             }
@@ -106,7 +106,7 @@ public:
         if(!onPanel){Release();return out;}   // off the panel or tracking lost: the press is gone
         const layout::Element* e=layout::Find(layout,pressed);
         if(!e){Release();return out;}
-        pressedRect=e->rect;
+        pressedRect=e->HitBox();
         if(e->Has(layout::Drag)){
             if(!dragging&&std::fabs(x-pressX)>=DragStartPx)dragging=true;
             if(dragging){
@@ -163,7 +163,7 @@ private:
     Hit Hover(const layout::Layout& layout,float x,float y)const{
         const layout::Element* raw=layout::ElementAt(layout,x,y);
         if(hover.kind!=Kind::None&&!(raw&&raw->hit==hover))
-            if(const auto* old=layout::Find(layout,hover);old&&Near(old->rect,x,y,HysteresisPx)&&(!raw||Encloses(raw->rect,old->rect)))return hover;
+            if(const auto* old=layout::Find(layout,hover);old&&Near(old->HitBox(),x,y,HysteresisPx)&&(!raw||Encloses(raw->HitBox(),old->HitBox())))return hover;
         return raw?raw->hit:Hit{};
     }
     void Remember(uint64_t ms,const Hit& hit){
@@ -182,6 +182,31 @@ private:
         return oldest&&oldest->hit.kind!=Kind::None?oldest->hit:hover;
     }
     void Release(){pressed={};dragging=repeated=false;dragSent=dragUnit=0;}
+};
+
+// An open popover closes when the laser points away: off the popover's card
+// and off the row it edits (each with SlopPx around it) for AwayMs, or off
+// the panel for as long. Crossing the gap from the row to the card, or a
+// tremor at its edge, does not close it. Nothing open: nothing to watch.
+class PopoverWatch {
+public:
+    static constexpr uint64_t AwayMs=450;
+    static constexpr float SlopPx=24;
+    // True on the frame the popover should close (Model::popoverKey = -1).
+    bool Step(uint64_t ms,bool open,bool onPanel,float x,float y,const Rect& card,const Rect& row){
+        if(!open||card.w<=0){awaySince=0;return false;}
+        const bool pointing=onPanel&&(Near(card,x,y)||Near(row,x,y));
+        if(pointing){awaySince=0;return false;}   // (not "near": a windows.h macro)
+        if(!awaySince)awaySince=ms?ms:1;
+        if(ms>=awaySince+AwayMs){awaySince=0;return true;}
+        return false;
+    }
+    void Reset(){awaySince=0;}
+private:
+    uint64_t awaySince=0;
+    static bool Near(const Rect& r,float x,float y){
+        return r.w>0&&x>=float(r.x)-SlopPx&&x<float(r.x+r.w)+SlopPx&&y>=float(r.y)-SlopPx&&y<float(r.y+r.h)+SlopPx;
+    }
 };
 
 // What the help card shows.

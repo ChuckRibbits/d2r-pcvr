@@ -226,6 +226,9 @@ public:
     // A hue disc filling r (the color grid puts it inside a Socket); SwatchByRange:
     // the red-orange-yellow range gradient; any other hue<0: Off (slashed ring).
     void Swatch(RectF r,float hue,ControlState s);
+    // A color grid's dot: the hue's disc in r (scaled 1.15 pointed, 0.92 pressed),
+    // a 4 px light ring when chosen, the pointed ring outside that, the default mark under it.
+    void Dot(RectF r,float hue,ControlState s);
     // Footer and card buttons: icon + text centered as a pair. textSize 0: Value (30 px).
     void Button(RectF r,std::string_view utf8,Icon icon,ControlState s,Plate plate=Plate::Socket,float textSize=0);
     void IconAt(Icon icon,RectF r,Color c,float alpha=1.f);

@@ -67,7 +67,7 @@ static Values AllRows(bool smooth){
 }
 static Setup Base(View v,int hero,const Values& values=AllRows(false),bool adapter=true){
     Setup x;Snapshot s;s.values=values;s.ready=true;s.offlineDifficultyAvailable=adapter;
-    x.m.Open(s);x.m.SetContext({hero,hero==heroclass::Amazon,hero==heroclass::Sorceress,false});x.m.view=v;
+    x.m.Open(s);x.m.SetNotesPages(ReleaseNotesPages());x.m.SetContext({hero,hero==heroclass::Amazon,hero==heroclass::Sorceress,false});x.m.view=v;
     x.in.nowMs=100000;x.in.detected={{framevr::controllers::Layout::Touch,framevr::controllers::Layout::Touch}};
     // transport.cpp: the Performance view shows render_resolution's Describe (its widest), the others the foveation status.
     x.in.runtimeStatus=v==View::Performance?"VR source: 8192 x 8192 per eye (desktop fallback)":"Foveated shading available. Eye tracking unavailable on this headset/runtime.";
@@ -91,18 +91,80 @@ static int PagesCheck(){
         const std::string where=std::string(ViewName(v))+", "+ClassName(hero);
         paint(Base(View(v),hero),where);
         paint(Base(View(v),hero,AllRows(true)),where+", smooth turning");
-        // Warnings: Mono audio, the GPU wait not deferred, the game's video options, a restart waiting, the widest frame times.
+        // Warnings: Mono audio, the GPU wait not deferred, the game's video options, the widest frame times.
         Values w=AllRows(false);w[DeferGpuWait]=0;
-        Setup x=Base(View(v),hero,w);x.in.monoAudio=true;x.in.game={true,true};x.in.depthRestart=true;
+        Setup x=Base(View(v),hero,w);x.in.monoAudio=true;x.in.game={true,true};x.in.frameGen={framevr::framegen::State::Active,1,1,2,1,1,0,0,0};   // frame generation's longest line
         x.in.performance={true,false,144,13.9f,33.3f,99.9f,33.3f,33.3f};x.in.performance.mixed=true;   // three-digit fps, CPU 99.9 ms
         paint(x,where+", warnings");
         Setup off=Base(View(v),hero);off.m.ready=false;paint(off,where+", unavailable");
         paint(Base(View(v),hero,AllRows(false),false),where+", no offline adapter");
     }
+    {   // every popover open (the rows whose named list is too long for chips), every class, with and without a pointed option
+        for(int hero:Classes)for(int v=0;v<int(View::Count);++v){
+            const Setup probe=Base(View(v),hero);
+            const auto rows=L::RowsOf(View(v),probe.m.Get(),probe.m.context);
+            for(int i=0;i<rows.count;++i){
+                const auto* r=L::ContentTables().Row(rows.keys[size_t(i)]);
+                {const auto control=L::ControlOf(*r,probe.m.Get(),probe.m.context,ThisThreadMeasure());if(control!=L::Control::Popover&&control!=L::Control::Color)continue;}
+                for(bool pointed:{false,true}){
+                    Setup x=Base(View(v),hero);x.m.popoverKey=r->key;x.m.popoverAt=0;x.in.card=r->key;
+                    if(pointed){int n=0;const auto* o=C::OptionsFor(*r,x.m.context,n);if(n)x.in.hover={Kind::Set,r->key,0,o[n-1].value};}
+                    const auto picture=PaintPage(x.m,x.in);++pages;
+                    const std::string where=std::string("popover ")+r->label+", "+ClassName(hero)+(pointed?", pointed":"");
+                    if(picture.pixels.size()!=size_t(Width)*Height*4){Fail(where+": paint error: "+picture.error);continue;}
+                    if(picture.layout.popover.w<=0)Fail(where+": no popover");
+                    Report(where,FitProblems(picture.layout));
+                }
+            }
+        }
+    }
+    {   // frame generation's status on its row and card, every state, NVIDIA and FidelityFX, by turns or not
+        for(int state=0;state<=int(framevr::framegen::State::NeedsBothEyes);++state)for(int mode:{1,2})for(int hero:Classes){
+            Values v=AllRows(false);v[FrameGeneration]=float(mode);
+            Setup x=Base(View::Performance,hero,v);x.in.card=FrameGeneration;
+            x.in.frameGen={framevr::framegen::State(state),mode==2?1:0,1,2,1,1,0,1,-1};
+            const auto picture=PaintPage(x.m,x.in);++pages;
+            Report(std::string("frame generation ")+framevr::framegen::StateName(framevr::framegen::State(state))+", "+ClassName(hero),FitProblems(picture.layout));
+        }
+    }
+    {   // the fallback rows (content::FallbackDemo): every view, both More pages, with and without the Mono audio warning
+        static const L::Tables demo=L::TablesOf(C::FallbackDemo());
+        for(int hero:Classes)for(int v=0;v<int(View::Count);++v)for(int p=0;p<2;++p)for(bool mono:{false,true}){
+            Setup x=Base(View(v),hero);x.m.morePage=p;x.in.monoAudio=mono;
+            const auto picture=PaintPage(x.m,x.in,&demo);++pages;
+            const std::string where=std::string("fallback ")+ViewName(v)+", "+ClassName(hero)+(mono?", mono":"");
+            if(picture.pixels.size()!=size_t(Width)*Height*4){Fail(where+": paint error: "+picture.error);continue;}
+            Report(where,FitProblems(picture.layout));
+        }
+    }
     {   // body calibration, both phases
         Setup x=Base(View::Body,-1);framevr::calibration::Flow f;f.Begin();f.phase=framevr::calibration::Phase::Hold;f.hint=framevr::calibration::Hint::Arms;f.progress=.55f;
         x.in.calibration=CalibrationOf(f);paint(x,"calibration");
         x.in.calibration.hint=int(framevr::calibration::Hint::Saved);x.in.calibration.measured=true;x.in.calibration.eyeHeight=2.3f;x.in.calibration.armSpan=2.6f;paint(x,"calibration saved");
+    }
+    {   // the longest release (NotesMaxLines lines): every page fits above the card with Previous / Next,
+        // and Next walks to the last page, ready or not (paging needs no settings)
+        std::vector<std::string> text;std::vector<const char*> lines;
+        for(int i=0;i<NotesMaxLines;++i)text.push_back("Line "+std::to_string(i+1)+": a release line about as long as the notes allow on one line");
+        for(const auto& t:text)lines.push_back(t.c_str());
+        for(bool ready:{true,false}){
+            Setup x=Base(View::WhatsNew,-1);x.m.ready=ready;
+            x.in.notes=ReleaseNotesView();x.in.notes.lines=lines.data();x.in.notes.lineCount=NotesMaxLines;
+            x.m.SetNotesPages(NotesPages(NotesMaxLines));
+            for(int p=0;p<x.m.notesPages;++p){
+                const std::string where="What's new page "+std::to_string(p+1)+(ready?"":", unavailable");
+                paint(x,where);
+                const auto l=MeasuredLayout(x.m,x.in);int buttons=0,bottom=0;
+                for(const auto& e:l.elements){
+                    if(e.hit.kind==Kind::NotesPage)++buttons;
+                    if(e.role==L::Role::NotesText||e.hit.kind==Kind::NotesPage)bottom=std::max(bottom,e.rect.y+e.rect.h);
+                }
+                if(buttons!=2)Fail(where+": no Previous / Next");
+                if(bottom>l.card.y)Fail(where+": the lines run into the help card");
+                L::Press(x.m,{Kind::NotesPage,0,1},100000);
+            }
+            if(x.m.notesPage!=x.m.notesPages-1)Fail("What's new: Next did not reach the last page");
+        }
     }
     if(problems){std::fprintf(stderr,"%d problems on %d pages\n",problems,pages);return 60;}
     std::printf("%d pages painted without error; every text fits\n",pages);return 0;

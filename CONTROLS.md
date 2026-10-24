@@ -60,24 +60,25 @@ Quest left X/Y correspond to Index left A/B; right A/B labels are the same.
 | Assign a button | Opposite hand's laser + trigger: select a wedge, then a skill |
 | Use an inventory item | Either wheel > **QUICK USE**: point with the opposite hand and briefly click its trigger; use happens on release |
 | Assign / change quick-use item | Hold the trigger over **QUICK USE** for 0.65 seconds, then select a carried scroll, tome or other usable item. An empty slot also opens the picker on a short click. **CLEAR SLOT** removes the assignment |
-| Toggle running / walking | Push the right stick up (once per push; outside wheels), or either wheel > **RUN / WALK**, using the opposite hand's laser + trigger |
+| Toggle running / walking | Push the right stick up (once per push; outside wheels, and not while you look at the wrist map, which it zooms), or either wheel > **RUN / WALK**, using the opposite hand's laser + trigger |
 | Finish editing | Click the wheel hand's stick again, or select CLOSE in its center |
 | Inventory / character / skills / journal | Left Grip + left stick click; or either wheel > INVENTORY; native tabs retain their controls |
 | VR settings / body calibration | Either wheel → VR SETTINGS |
 | Explain a VR setting | Point the right-hand laser at its label or controls for about half a second. Help appears beside the panel and disappears when you point away; no click needed |
 | Minimap | Either wheel → MAP; movement remains available |
+| Zoom the minimap | Look at the wrist / palm map and push the right stick up to zoom in, down to zoom out; down until it stops shows the whole map. While you look at it, right stick up / down does nothing else (no run / walk toggle, no loot labels); left / right still turns, except during a zoom push |
 | Reset height | VR Settings > Body > Height and arm span > **Set eye height** |
 | Adjust controller vibration | **VR Settings > Vibration**: overall vibration plus separate melee, bow draw, bow/throw release, spell, loot/potion/menu and low life/mana alert strengths. **Feel it** on a row's help card tests it on that action's hands; **Apply** saves |
-| Hold to show all nearby loot labels (Alt) | Hold the **right stick down** during gameplay, outside wheels. Labels stay shown while it is held; let go to restore normal drop/hover labels. Uses the native Alt range, independently of where you aim. A mostly vertical push never turns you. Also listed in **VR Settings > Guide** |
+| Hold to show all nearby loot labels (Alt) | Hold the **right stick down** during gameplay, outside wheels and while not looking at the wrist map. Labels stay shown while it is held; let go to restore normal drop/hover labels. Uses the native Alt range, independently of where you aim. A mostly vertical push never turns you. Also listed in **VR Settings > Guide** |
 | Interact / pick up / talk | Right A by default; requires an aimed interactable. One press acts on one target: press again for each item, including loot a chest just dropped |
 | Free melee swing / thrust | Move the equipped weapon through an enemy |
 | Physical dual wield | Equip two supported melee weapons on a Barbarian or two claws on an Assassin; release both triggers and swing or thrust with either hand. Active skills retain their button bindings |
 | Break pots / barrels | Swing a held melee weapon through them with its trigger released. Either Barbarian weapon or Assassin claw works; ordinary button interaction/kicking remains available |
-| Choose melee rules / motion thresholds | **VR Settings > Combat**: Melee rules (Unleashed or Classic), Swing speed to hit, and Stab speed to hit |
+| Choose motion thresholds | **VR Settings > Combat**: Swing speed to hit and Stab speed to hit |
 | Bone Spear | Assign either hand's trigger or shortcut; aim with that controller and hold to repeat while moving. **Aim > Spell aim assist** applies to Bone Spear too; Strong adds gentle homing |
 | Bone Wall / Bone Prison | Aim with the casting controller: the wall or prison lands where its ray meets the floor (six cells ahead when level). With **VR Settings > Aim > Ground skill aim** on Monster, Bone Prison lands on the aimed monster and Bone Wall rises 3 cells in front of it. Native placement rules still apply |
 | Holy Bolt | Aim with either casting controller, including up/down with Aim > Keep spell shots level Off. Light assists at launch; Strong also adds gentle homing toward undead/demons. Directly aim at your mercenary to heal; native damage/healing rules apply |
-| See which monsters you are aiming at | **VR Settings > Targets > Monster outline** (Off by default; 10-100% sets its brightness) draws a thin, steady outline round each hand's monster: a hand held out picks the monster it points at; with no hand on one, the monster you look at is outlined. **Outlines shown**: Both hands (default) outlines each hand's monster, Main hand only that hand's (**Body > Dominant hand**; the bow hand while a bow is out, whose color also wins when both hands are on one monster). **Left hand outline color** and **Right hand outline color** each choose By range (red near, orange mid-range, yellow far) or one hue; gold and blue by default. The monster you look at takes the color of the hand that would cast at it: the left (bow) hand with a bow equipped, else your dominant hand. A button you hold keeps showing the monster its cast took. Walls in between rule a monster out. A guide only: it does not change how skills aim |
+| See which monsters you are aiming at | **VR Settings > Targets > Monster outline** (Off by default; 10-100% sets its brightness) draws a thin, steady outline round each hand's monster: a hand held out picks the monster it points at; with no hand on one, the monster you look at is outlined. **Outlines shown**: Both hands (default) outlines each hand's monster, Main hand only that hand's (**Body > Dominant hand**; the bow hand while a bow is out, whose color also wins when both hands are on one monster). **Left hand outline color** and **Right hand outline color** each choose By range (red near, orange mid-range, yellow far) or one hue (press the color to see all 24 and By range at once; one press picks; < and > still step through them); gold and blue by default. The monster you look at takes the color of the hand that would cast at it: the left (bow) hand with a bow equipped, else your dominant hand. A button you hold keeps showing the monster its cast took. Walls in between rule a monster out. A guide only: it does not change how skills aim |
 | Send skills to that monster | **VR Settings > Aim > Skills go to the aimed monster** (Off by default; Spells, Bow skills or Both. A class without bow skills sees it as **Spells go to the aimed monster**, On or Off): a spell takes the monster of the hand whose button casts it (arm held out in front of you, along where it points, at least a tenth of your Controller span: 15 cm on a 1.5 m span; a hand pointing within 45 degrees of straight down, or hanging at your side, is resting), else the other hand's, else the one you look at, and keeps it until you let go or it walks out of the game's reach. Bolts and Lightning fly at it; curses and Corpse Explosion land on it; Guided Arrow, Bone Spirit, Charge, Leap Attack, Dragon Flight, Attract and Taunt are handed the monster itself; Teleport, Leap, golems and raises go where you point. With no monster, a spell goes where its hand's arm points, else the other arm, else where you look. Only monsters within the game's own cast reach count (50 cells on either axis, less a margin). Off, spells aim along the casting hand as before. With Bow skills or Both, bow skills take the bow hand's monster first, aimed from the bow hand. The Warlock's skills are left out for now: they keep the hand aim they had before these settings |
 | Keep the aim on what you face | **VR Settings > Aim > Aim with your view** (Off by default; shown once Monster outline, Skills go to the aimed monster or Ground skill aim on Monster is on): the monster you look at must come within 17 degrees of where your head faces, and stays yours while it is within 30, until another comes within 17; a hand picks only monsters within 30 degrees of where your head faces. A casting hand (the bow hand for a bow skill) held out and pointing aims alone: its cast takes its own monster, else goes where it points, never the other hand's or the one you look at, and while the hand whose color the one you look at takes points, that monster is not outlined. A lowered hand still takes the other hand's, then the one you look at. The melee attack skills (Charge, Leap Attack, Dragon Flight, Whirlwind) from a raised hand take its own monster, else the other hand's while that one is outlined (Outlines shown on Both hands, or the other hand is the dominant one), never the one you look at; lowered, they try all three like any cast |
 | Cast with a staff | **VR Settings > Aim > Aim staff along arm** (Off by default): an upright staff casts along your arm, shoulder through hand; leveled out like a wand, it casts from its top. The Warlock's skills keep the staff's own aim |
@@ -126,10 +127,9 @@ Apply.
 180 Hz pulse. **Survival > Low life and mana alert** must also be enabled for
 automatic resource warnings.
 
-**Combat > Melee rules** defaults to **Unleashed**: physical strokes can hit
-each creature they reach once, without hit rolls or an attack-speed cooldown.
-**Classic** uses native hit/block checks and the modeled class/weapon/IAS cycle,
-with one target per physical stroke. Both modes require deliberate motion.
+Melee is **Unleashed**: physical strokes can hit each creature they reach
+once, without hit rolls or an attack-speed cooldown, and need deliberate
+motion. The Classic rules are gone; `[gameplay] melee_rules` is ignored.
 **Combat > Stab speed to hit** is separate from swing speed: 2 m/s by default, adjustable
 from 0.75 to 10 m/s in 0.25 m/s steps. Push along the blade and pull back between
 stabs. The old `attack_speed` INI key does not select Classic; choose it here.
@@ -140,12 +140,25 @@ defense scales the damage (the game's own hit chance, 5-95%), and so does your
 rhythm: a stroke before your attack speed has recovered hits much weaker, so
 measured swings beat flailing. Faster attack speed (IAS) shortens the wait.
 One stroke can hit several monsters, each further one a little weaker.
+On-hit effects (life and mana leech, critical and deadly strike, crushing blow,
+open wounds, chance to cast and the like) come only from a stroke made after
+your attack speed has fully recovered, and only on the first monster it hits.
 
 **Unleashed incoming damage:** monsters' attacks and projectiles always reach
 you; your shield is what stops them. Your Defense decides how hard they land:
 the chance a monster would have had to hit you (5-95%) scales the whole
 attack, elemental damage included. Spells never roll to hit, so Defense
 doesn't reduce them; resistances still matter.
+
+**Unleashed hit effects:** contact always lands both ways, but everything an
+attack does besides its damage (leech, chill, freeze, stun, procs, chance to
+cast when struck, thorns, item wear...) only happens when the game's own hit
+roll would have landed it. A monster with a 30% chance to hit you chills or
+drains you on about 3 hits in 10, as in the original game, and your own swings'
+effects follow your attack rating the same way, arrows and throws included:
+your attack rating scales an arrow's damage as it does a swing's. Poison and burn
+count as damage: they are scaled like the hit itself. Energy Shield, Bone Armor
+and the other absorb skills soak and drain at the original game's average rate.
 
 ### Shield: block, parry and strain (Unleashed)
 
@@ -179,18 +192,15 @@ doesn't reduce them; resistances still matter.
 - **Guard strain:** every block (not a parry) strains your guard, and the
   rarer the attacker the more: a minion strains it a little more than a
   normal monster, a champion twice as much, a unique or super unique two and
-  a half times and an act boss four times. A pale light
+  a half times and an act boss four times. A black shadow
   creeps in from the edge of your view; at full strain
-  the guard breaks and the light swells over most of your view. The shield
+  the guard breaks and the shadow swells over most of your view. The shield
   keeps blocking; the cost is sight, then chip damage (below). It fades once
   no hit has reached your shield for a moment, even held up, and is gone about
   3 seconds after the last hit; lowering the shield starts the fade at once.
-  **Combat > Guard strain** (left stepper: color) switches the light to a black shadow, or
-  Off to hide it (strain, guard breaks and chip damage still apply).
-  Its right stepper (buildup) selects Slow / Medium / Fast: about 20 / 10 / 5
-  normal-monster blocks to full strain with default tuning (an act boss: about
-  6 / 3 / 2). Medium keeps the original rate.
-  This changes how quickly it builds, not how much of your view it covers.
+  About 10 normal-monster blocks reach full strain (an act boss: about 3).
+  **Shield > Guard strain shadow** turns the shadow Off (strain, guard breaks
+  and chip damage still apply).
 - **Guard break:** the guard breaks with a bone snap, and while it is broken
   blocked hits leak a **chip**: part of their physical damage gets through,
   less the higher your chance to block (more while running). Elemental damage
@@ -327,6 +337,16 @@ skills assigned to left trigger fire on bow draw/release using the right hand
 to pull the string. The left trigger remains a button fallback; right trigger
 away from the string uses the right hand's own assignment.
 
+A trigger skill that works as a gesture with what the hand holds says
+**GESTURE** instead of PRIMARY in that hand's wheel, and the hand's skill card
+says how: **Shield swing / thrust** (Smite with a shield), **Draw & release**
+(arrow skills with a bow), **Swing to strike** (melee skill strikes, below) or
+**Throw to place** (the Assassin's traps and bombs). Other trigger skills cast
+where you point.
+Pointing at a skill in the skill picker (**EDIT SKILLS**), or at a slot in a
+hand wheel, shows a line under it saying how that skill works from that slot:
+the gesture on a trigger, or what its button does.
+
 **Bow quiver.** With a bow, a face button assigned to Magic Arrow, Fire Arrow,
 Cold Arrow, Exploding Arrow, Ice Arrow, Immolation Arrow or Freezing Arrow loads
 that skill instead of casting it. Every following arrow you nock shows the
@@ -371,14 +391,78 @@ lands, within the skill's own reach. A quick press still casts where you point
 holding the trigger still for a moment casts natively as before, repeating
 while held. Start the throw right after pressing; a slow reach casts nothing.
 The models are the game's own, cached from your installed game by the
-installer. **Combat > Skills on bash and bow** Off turns this off.
+installer. **Combat > Skills on your moves** Off turns this off.
+
+**Throwing potions.** Equip a stack of gas or oil potions (Rancid, Choking or
+Strangling Gas; Oil, Exploding or Fulminating Potion) in the right hand, with
+Attack or Throw on the right trigger. Press the trigger, throw and let go. With
+**Bottle physics** on, the potion leaves your hand as a real bottle and flies
+until it first touches the floor, a wall, a table or a prop; it shatters there,
+and the game's own cloud or blast starts at that spot, within its reach. Off,
+the game's own Throw lands the potion where your arc meets the floor. Running
+carries the throw either way, and **Combat > Thrown weapon lift** raises it like any throw. A quick press or
+a still hold throws as it did before. A potion in hand is never swung as a
+melee weapon. **Combat > Skills on your moves** Off turns this off.
 
 Face-button skills never replace gesture skills. Ordinary melee swings remain
 basic attacks for skills without a supported physical adapter; assigning a
 spell does not cast it on every swing. Physical skill gestures can be disabled
-under **VR Settings > Combat > Skills on bash and bow** (on by default), retaining
+under **VR Settings > Combat > Skills on your moves** (on by default), retaining
 button casting and basic physical attacks. This implementation supports the
-existing Smite and bow adapters; it does not generalize arbitrary melee skills.
+existing Smite and bow adapters, and melee skill strikes (below).
+
+**Melee skill strikes.** A supported melee skill on a hand's trigger is that
+hand's strike skill: a weapon or claw strike that lands casts it on the
+creature it struck, with the skill's own mana, damage and effects, and no
+animation. So far:
+
+- the Druid's single-hit form skills: **Maul** and **Feral Rage** (their
+  stacks build per landed cast), **Rabies**, **Fire Claws** and **Hunger**;
+- the Barbarian's **Bash**, **Stun**, **Concentrate** and **Berserk**;
+- the Paladin's **Sacrifice**, **Vengeance** and **Conversion**, and **Zeal**
+  as a swing flurry (below);
+- the Amazon's **Power Strike**, **Impale**, **Charged Strike** and
+  **Lightning Strike**;
+- the Necromancer's **Poison Dagger**.
+
+A weapon's left-trigger skill rides the left weapon of a dual-wield pair.
+Skills that hit several times a cast with their own native sequence (Jab,
+Fend, Frenzy, Double Swing, Whirlwind) and Charge stay trigger buttons. The skill wheel's lower-left box, **Left claw strikes** (Druid
+only), picks the left claw's skill with one click: its own trigger's
+(default) or the right trigger's (a skill sits on one trigger only, so this
+puts it on both claws). For plain left-claw strikes, leave the left trigger
+without a strike skill. In
+Unleashed only a stroke that waited a full attack cycle casts, on the first
+creature it lands on; faster strokes and the rest of a cleave stay basic
+attacks. In Classic every paced strike casts. Without mana, outside the form
+or with the wrong weapon, the strike lands as a basic attack (no mana also
+plays the character's mana warning). In Werewolf and Werebear form each
+strike that is one native attack (a full-cycle stroke in Unleashed, every
+paced strike in Classic) plays the form's growl as the native attack would
+(85% / 80% of the time), and Rabies and Hunger their bite. Holding the trigger still casts the
+skill natively. **Combat > Skills on your moves** Off keeps strikes basic.
+
+**Fury: a swipe flurry.** Werewolf **Fury** is one cast of up to five hits
+(two at skill level 1), and you deliver them. The swipe that casts it
+(the rule above) pays its mana and lands hit 1; in Unleashed each of the
+next swipes that lands, from a claw carrying Fury, lands the next hit on
+whatever it struck, with Fury's own damage and on-hit effects and no further
+mana, however fast you swing. No swipe is lost; only one swipe's
+follow-through can't take a second hit. Once the hits are spent, the next
+full-cycle swipe casts Fury again. In Classic each follow-up waits 70% of an
+attack cycle after the previous Fury hit (Fury's own pace); a swipe before
+that is a basic attack and doesn't delay it. As natively, the hits spread
+across a pack: a later swipe through several creatures lands Fury on the
+first two it touches (the casting swipe on one); the rest of a cleave stays
+basic. The unused hits lapse after two attack cycles
+without one, or when the form changes or another skill is cast. Only the
+casting swipe growls.
+
+**Zeal: a swing flurry.** The Paladin's **Zeal** works the same way with a
+weapon: the full-cycle swing that casts it pays its mana and lands hit 1 of
+up to five, and each later swing that lands delivers the next hit, with no
+further mana. In Classic each follow-up waits a whole attack cycle (Zeal's
+own pace).
 
 Turning gestures off or changing equipment/assignments cancels an in-progress
 skill draw. Shield contact and its trigger fallback cannot duplicate a cast.
@@ -465,10 +549,32 @@ map is fitted inside the frame so edge markers remain visible.
 A gold arrow sits on the game's blue hero marker and points the way you face.
 Change its view under **VR Settings > Wrist**, then press **Apply**:
 
-- **Map view: Game's view / Top-down.** Top-down flattens the game's slanted map into
-  a plan, so rooms are square and the arrow matches your real turns. Map names
-  are left out in top-down, since they would turn 45 degrees with the floor.
-- **Turn map with you: Off / On** (top-down only). On turns the map so the way you face
+- **Map view: Isometric / Top-down / Full map / Full top-down.** Top-down flattens the
+  game's slanted map into a plan, so rooms are square and the arrow matches your real
+  turns. Map names are left out in top-down, since they would turn 45 degrees with the
+  floor. **Full map** and **Full top-down** show the game's full (Tab) map instead of its
+  corner map, in the same two views, and zoom much further (below).
+- **Turn map with you: Off / On** (top-down views only). On turns the map so the way you face
   is up; Off keeps north up.
 
-Both are saved like any setting. The game's view with north up is the default.
+Both are saved like any setting. Isometric with north up is the default.
+
+To zoom, look at the wrist or palm map (its center within about 22 degrees
+of where your head points) and push the right stick up to zoom in about your
+hero, up to 4x, or down to zoom out; 1x, the whole native map, is the lowest.
+Only a mostly vertical push zooms, and during it left / right does not turn
+until the stick is back near the center. A light tick marks each quarter step
+(faster as it zooms in) and a firmer one either end. The wheel's MAP tab shows
+the same zoom; change it at the wrist. The zoom is not saved: every new game
+starts at 1x. Looking away gives the right stick back from the next frame; a
+push still held then must return to the center before it toggles running or
+shows loot labels. A push already held when you look at the map zooms it
+straight away.
+
+With **Full map** or **Full top-down**, 1x is the game's full map at its widest
+(the game's own zoom 0.125, about four times wider than its Tab map), and the
+right stick zooms in to 16x. The game redraws its map closer as you zoom in, so it
+stays sharp; past 4x a tick marks each whole step. The game's full map is a window
+around your hero the size of its screen: the widest view shows that window, not
+the whole level. While the wrist or palm map shows it, the full map is not drawn in
+your view; press Tab as usual for the game's own map.

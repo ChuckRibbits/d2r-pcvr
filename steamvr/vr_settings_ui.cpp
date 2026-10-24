@@ -7,6 +7,7 @@
 #include "release_notes.h"
 // Retain an exact summary fingerprint in the DLL for the release packager.
 extern "C" __declspec(dllexport) const char* D2RPCVR_ReleaseNotesIdentity(){return framevr::releasenotes::ContentMarker;}
+static_assert(framevr::releasenotes::ReleaseLines.size()<=size_t(framevr::settings::NotesMaxLines),"release_notes.py MAX_LINES and NotesMaxLines agree");
 // ---- the page painter: Layout -> Painter ----
 // Build lays the page out once with the painter's own text measure; every
 // element is then drawn by its role with its state flags. Nothing here knows
@@ -107,9 +108,9 @@ void Calibration(Painter& p,const Layout& l){
 // Every element of a settings, preset, guide or notes view, back to front.
 void Draw(Painter& p,const Layout& l,bool monoAudio){
     p.Panel();
-    // Cyclers and swatches step with chevrons: their value box takes no press.
+    // Lists and swatches step with chevrons: their value box takes no press, or opens the popover.
     std::vector<bool> chevrons(size_t(Count)+1,false);
-    for(const auto& e:l.elements)if(e.role==Role::Value&&e.hit.kind==Kind::None&&e.key>=0&&e.key<Count)chevrons[size_t(e.key)]=true;
+    for(const auto& e:l.elements)if(e.role==Role::Value&&(e.hit.kind==Kind::None||e.hit.kind==Kind::Popover)&&e.key>=0&&e.key<Count)chevrons[size_t(e.key)]=true;
     for(size_t i=0;i<l.elements.size();++i){
         const Element& e=l.elements[i];const RectF r=F(e.rect);const ControlState s=StateOf(e);
         switch(e.role){
@@ -189,6 +190,7 @@ void Draw(Painter& p,const Layout& l,bool monoAudio){
             case Role::NotesText:
                 if(e.help==HelpGuide)p.TextFit(e.text,TextStyle::Value,r,Color::Quiet,Align::Leading,true);   // the game menus line
                 else if(e.Has(Selected))p.TextFit(e.text,TextStyle::Value,r,Color::Magic);                     // the project link
+                else if(e.option==0)p.TextFit(e.text,TextStyle::Value,r,Color::Quiet,Align::Center);           // What's new's "Page n of m"
                 else if(e.text.rfind("Credits: ",0)==0||e.rect.w<ContentW)p.TextFit(e.text,TextStyle::Value,r,Color::Quiet);
                 else{   // a release line
                     p.TextFit(e.text,TextStyle::Value,{r.x+12,r.y,r.w-24,r.h},Color::Text);
@@ -198,20 +200,30 @@ void Draw(Painter& p,const Layout& l,bool monoAudio){
             case Role::ReadoutBox:p.ReadoutBox(r);break;
             case Role::Readout:p.TextFit(e.text,TextStyle::Readout,r,e.Has(Warn)?Color::Warn:e.Has(Selected)?Color::Magic:Color::Quiet);break;
             case Role::Intro:p.TextFit(e.text,TextStyle::Value,r,Color::Quiet);break;
+            // The popover: the panel dimmed 40% (a fixed overlay), a card with the row's label, its options as chips, the hint.
+            case Role::PopoverDim:p.Fill(r,Color::Ink,.4f);break;
+            case Role::Popover:p.Fill(r,Color::Stone);p.Card(r);p.Outline(r,Color::Bronze,2.f);break;   // opaque: nothing shows through
+            case Role::PopoverTitle:p.TextFit(e.text,TextStyle::CardTitle,r,Color::Gold,Align::Center);break;
+            case Role::PopoverOption:   // a color grid's special value (By range, Off) carries its swatch at the left
+                p.Socket(r,e.text,s);
+                if(e.hue!=draw::SwatchNone)p.Swatch({r.x+18,r.y+r.h/2-15,30,30},e.hue,s);
+                break;
+            case Role::ColorDot:p.Dot(r,e.hue,s);break;
+            case Role::PopoverHint:p.TextFit(e.text,TextStyle::Help,r,Color::TipBody,Align::Center,true);break;
             default:break;   // unused roles (Slider, Swatch, FooterRecenter, PresetLine) and calibration's
         }
     }
 }
 }
 
-PagePicture PaintPage(const Model& model,const layout::LayoutInput& given){
+PagePicture PaintPage(const Model& model,const layout::LayoutInput& given,const layout::Tables* tables){
     PagePicture out;
     Worker& w=ThisWorker();
     if(!w.painter.Ready()){out.error=w.painter.Error();return out;}
     layout::LayoutInput input=given;
     if(!input.notes.title)input.notes=ReleaseNotesView();
     const auto t0=Now();
-    out.layout=layout::Build(model,model.context,input,layout::TextMeasure{&MeasureWidth,&w});
+    out.layout=layout::Build(model,model.context,input,layout::TextMeasure{&MeasureWidth,&w},tables?*tables:layout::ContentTables());
     const auto t1=Now();
     if(w.painter.Begin()){
         if(input.calibration.active)Calibration(w.painter,out.layout);
@@ -273,18 +285,22 @@ std::vector<std::string> FitProblems(const layout::Layout& l){
             case Role::NotesText:shrinks(e,e.text,TextStyle::Value,e.help==HelpGuide?r:RectF{r.x+12,r.y,r.w-24,r.h},e.help==HelpGuide,"notes line");break;
             case Role::Readout:shrinks(e,e.text,TextStyle::Readout,r,false,"readout");break;
             case Role::Intro:shrinks(e,e.text,TextStyle::Value,r,false,"intro");break;
+            case Role::PopoverTitle:shrinks(e,e.text,TextStyle::CardTitle,r,false,"popover title");break;
+            case Role::PopoverOption:line(e,e.text,e.Has(Selected)?TextStyle::Strong:TextStyle::Value,r.w-16,"popover option");break;
+            case Role::PopoverHint:shrinks(e,e.text,TextStyle::Help,r,true,"popover hint");break;
             case Role::StatusStrip:shrinks(e,e.text,TextStyle::Value,r,false,"status");break;
             default:break;
         }
     }
     return out;
 }
-layout::Layout MeasuredLayout(const Model& model,const layout::LayoutInput& given){
+layout::Layout MeasuredLayout(const Model& model,const layout::LayoutInput& given,const layout::Tables* tables){
     Worker& w=ThisWorker();
     layout::LayoutInput input=given;
     if(!input.notes.title)input.notes=ReleaseNotesView();
-    return layout::Build(model,model.context,input,w.painter.Ready()?layout::TextMeasure{&MeasureWidth,&w}:layout::TextMeasure{});
+    return layout::Build(model,model.context,input,w.painter.Ready()?layout::TextMeasure{&MeasureWidth,&w}:layout::TextMeasure{},tables?*tables:layout::ContentTables());
 }
+layout::TextMeasure ThisThreadMeasure(){Worker& w=ThisWorker();return w.painter.Ready()?layout::TextMeasure{&MeasureWidth,&w}:layout::TextMeasure{};}
 layout::CalibrationView CalibrationOf(const calibration::Flow& body){
     layout::CalibrationView v;
     v.active=body.Active();v.hint=int(body.hint);v.progress=body.progress;
@@ -298,6 +314,7 @@ layout::NotesView ReleaseNotesView(){
     n.lines=releasenotes::ReleaseLines.data();n.lineCount=int(releasenotes::ReleaseLines.size());
     return n;
 }
+int ReleaseNotesPages(){return NotesPages(int(releasenotes::ReleaseLines.size()));}
 
 // ---- the preview set ----
 std::vector<PreviewShot> PreviewShots(){
@@ -308,18 +325,18 @@ std::vector<PreviewShot> PreviewShots(){
     struct Setup {Model m;LayoutInput in;};
     auto base=[&](View v,int heroClass,Snapshot s=Snapshot{})->Setup{
         Setup x;s.ready=true;s.offlineDifficultyAvailable=true;
-        x.m.Open(s);x.m.SetContext({heroClass,heroClass==heroclass::Amazon,heroClass==heroclass::Sorceress,false});x.m.view=v;
+        x.m.Open(s);x.m.SetNotesPages(ReleaseNotesPages());x.m.SetContext({heroClass,heroClass==heroclass::Amazon,heroClass==heroclass::Sorceress,false});x.m.view=v;
         x.in.nowMs=now;x.in.detected=touch;
         x.in.runtimeStatus=v==View::Performance?"VR source: 2560 x 2560 per eye":"Foveated shading available. Eye tracking unavailable on this headset/runtime.";   // as transport.cpp
         return x;
     };
-    auto add=[&](const std::string& name,const Setup& x){
+    auto add=[&](const std::string& name,const Setup& x,const layout::Tables* tables=nullptr){
         PreviewShot shot;shot.name=name;
-        shot.picture=PaintPage(x.m,x.in);
-        const auto t=Now();const PagePicture warm=PaintPage(x.m,x.in);shot.warmMs=Ms(t,Now());
+        shot.picture=PaintPage(x.m,x.in,tables);
+        const auto t=Now();const PagePicture warm=PaintPage(x.m,x.in,tables);shot.warmMs=Ms(t,Now());
         shots.push_back(std::move(shot));
     };
-    static constexpr const char* names[]={"presets","body","combat","aim","targets","shield","wrist","interface","survival","world","vibration","performance","guide","whats-new"};
+    static constexpr const char* names[]={"presets","body","combat","aim","targets","shield","wrist","interface","survival","world","vibration","performance","guide","whats-new","more"};
     static_assert(std::size(names)==size_t(View::Count));
     // Every view with no character (class tags shown).
     for(int v=0;v<int(View::Count);++v){
@@ -340,8 +357,43 @@ std::vector<PreviewShot> PreviewShots(){
     {Setup x=base(View::Aim,heroclass::Sorceress);x.in.monoAudio=true;x.in.hover={Kind::Set,ProjectileAimAssist,0,1};x.in.card=ProjectileAimAssist;add("aim-mono-pointed",x);
      Setup y=base(View::Aim,-1);y.m.ready=false;add("aim-unavailable",y);}
     {Snapshot s;s.values[DeferGpuWait]=0;Setup x=base(View::Performance,-1,s);x.in.game={true,true};
-     x.in.performance={true,true,52,11.1f,1.0f,7.0f,9.4f,1.5f};x.in.depthRestart=true;add("performance-warnings",x);}
+     x.in.performance={true,true,52,11.1f,1.0f,7.0f,9.4f,1.5f};add("performance-warnings",x);}
     {Setup x=base(View::Presets,-1);x.in.hover={Kind::Preset,0};x.in.card=HelpPresetFirst;add("presets-pointed",x);}
+    // Presets off (content::PresetsReady): the rail's tab grayed out, its card saying they come later.
+    {Setup x=base(View::Body,-1);x.in.hover={Kind::Open,int(View::Presets),-1};x.in.card=HelpTabFirst+int(View::Presets);add("presets-grayed",x);}
+    {   // A long release (30 lines, three pages): the middle page with Next pointed, and the last page.
+        static std::array<std::string,30> text;static std::array<const char*,30> lines;
+        for(size_t i=0;i<text.size();++i){text[i]="Release line "+std::to_string(i+1)+": a change in this version, one line long";lines[i]=text[i].c_str();}
+        Setup x=base(View::WhatsNew,-1);x.in.notes=ReleaseNotesView();x.in.notes.lines=lines.data();x.in.notes.lineCount=int(lines.size());
+        x.m.SetNotesPages(NotesPages(x.in.notes.lineCount));x.m.notesPage=1;x.in.hover={Kind::NotesPage,0,1};add("whats-new-paged",x);
+        x.m.notesPage=x.m.notesPages-1;x.in.hover={};add("whats-new-last-page",x);
+    }
+    {Snapshot s;s.values[MapTopDown]=2;Setup x=base(View::Wrist,-1,s);x.in.hover={Kind::Set,MapTopDown,0,2};x.in.card=MapTopDown;add("wrist-full-map",x);}
+    {   // Popovers: a named list too long for chips, open over its page (options armed, one pointed).
+        Setup x=base(View::Performance,-1);x.m.popoverKey=RenderResolution;x.m.popoverAt=now-1000;
+        x.in.hover={Kind::Set,RenderResolution,0,3};x.in.card=RenderResolution;add("popover-list",x);
+        Setup a=base(View::Aim,heroclass::Amazon);a.m.popoverKey=SpellLock;a.m.popoverAt=now-1000;a.in.card=SpellLock;add("popover-aim-amazon",a);
+        Setup y=base(View::Performance,-1);y.in.hover={Kind::Popover,RenderResolution};y.in.card=RenderResolution;add("popover-face-pointed",y);
+        // The color grid: a hand's outline color (Azure pointed), and the arrow path line's.
+        Snapshot s;s.values[TargetHighlight]=60;s.values[HighlightRight]=45;
+        Setup g=base(View::Targets,-1,s);g.m.popoverKey=HighlightRight;g.m.popoverAt=now-1000;g.in.hover={Kind::Set,HighlightRight,0,210};g.in.card=HighlightRight;add("color-grid",g);
+        Setup l=base(View::Targets,heroclass::Amazon,s);l.m.popoverKey=BowLaser;l.m.popoverAt=now-1000;l.in.card=BowLaser;add("color-grid-arrow-path",l);
+        Setup b=base(View::Targets,-1,s);b.m.popoverKey=HighlightLeft;b.m.popoverAt=now-1000;b.in.hover={Kind::Set,HighlightLeft,0,0};b.in.card=HighlightLeft;add("color-grid-by-range",b);
+    }
+    {   // Frame generation (main's #313): its row on Performance; NVIDIA's quality and scale on More while NVIDIA is chosen.
+        Snapshot s;s.values[FrameGeneration]=2;
+        Setup p=base(View::Performance,-1,s);p.in.performance={true,true,90,11.1f,3.4f,2.6f,4.1f,.9f};
+        p.in.frameGen={framegen::State::Active,1,1,2,1,1,0,0,0};p.in.card=FrameGeneration;add("performance-frame-generation",p);
+        add("more-frame-generation-nvidia",base(View::More,-1,s));
+    }
+    {   // The fallback (content::FallbackDemo): settings with no override, on their owner page's New section or on More.
+        static const layout::Tables demo=layout::TablesOf(content::FallbackDemo());
+        add("fallback-world",base(View::World,-1),&demo);
+        add("fallback-performance",base(View::Performance,-1),&demo);
+        Setup more=base(View::More,-1);add("fallback-more",more,&demo);
+        more.m.morePage=1;more.in.card=MapTopDown;add("fallback-more-2",more,&demo);
+        Setup mono=base(View::Body,-1);mono.in.monoAudio=true;add("fallback-band-mono",mono,&demo);
+    }
     {Snapshot s;s.values[Motion]=0;add("combat-recommended",base(View::Combat,-1,s));}   // Motion combat Off: the "Recommended: On" tag
     {Snapshot s;s.values[TargetHighlight]=60;s.values[HighlightRight]=0;s.values[HighlightLeft]=210;s.values[BowLaser]=45;
      Setup x=base(View::Targets,-1,s);x.in.card=HighlightRight;add("targets-colors",x);}                    // swatches: By range, a hue, the arrow path line

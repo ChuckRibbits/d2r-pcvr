@@ -27,7 +27,7 @@ The frame loop was left as it is.
 
 ## Replay removed, October 20
 
-Replay left VR Settings > Video > Stereo rendering. Walks on the owner's PC
+Replay left Stereo rendering (now VR Settings > Performance > Eyes drawn per frame). Walks on the owner's PC
 (RTX 5090, Ryzen 9 5950X, 3072 square per eye, 90 Hz headset):
 
 - The game set its biome at every line of its 80-unit map grid, so the
