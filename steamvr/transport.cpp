@@ -2470,6 +2470,18 @@ void Input() {
         }
     }
     if(motionOutput.nativeBowRelease&&motionInput.bowSkill==weaponskills::Strafe)volleyRequestedAt=motionAt;
+    // Gesture skills on a trigger are labelled GESTURE on the hand wheel and
+    // say how in the hand's cue, as Smite on a shield and arrow skills on a bow
+    // do: a strike skill (strike_skills.h) casts with the hand's landed strikes
+    // (the right hand's weapon or claw; the left's second weapon or claw unless
+    // left_hand_strikes follows the right trigger), and a trap or bomb on the
+    // right trigger is thrown to place (#224).
+    const bool strikeWeapon=motionInput.weapon==gameplay::Weapon::Melee||motionInput.weapon==gameplay::Weapon::Javelin;
+    const auto strikes=[&](const auto& skill){
+        return strikeWeapon&&strikeskills::Armed(gestureSettings[settings::SkillGestures]>.5f,quickFresh,skill.known,skill.available,skill.strike,skill.id)>=0;
+    };
+    const bool leftStrikes=strikeskills::StrikeTrigger(1,strikeskills::LeftChoice(gestureSettings[settings::LeftHandStrikes]))==1&&
+        (InShapeForm()||dualwield::Eligible(skel::HeroClass(),gamestate::MeleeEquipment()))&&strikes(quickSnapshot.skills[shieldSlot]);
     interaction::SkillCue cue;
     cue.slot=motionInput.quickSkill>=0&&castHand==0?motionInput.quickSkill:motion.Selection();
     cue.temporary=motionInput.quickSkill>=0&&castHand==0;
@@ -2478,6 +2490,9 @@ void Input() {
         cue.known=skill.known;cue.available=skill.known&&skill.available&&skill.id>=0;
         std::snprintf(cue.name,sizeof cue.name,"%s",skill.known?skill.name:"Unknown skill");
         std::snprintf(cue.hint,sizeof cue.hint,"%s",cue.available?(cue.temporary?"Right hand shortcut":"Right hand: point & trigger"):"Assignment unavailable");
+        if(cue.available&&!cue.temporary&&cue.slot==skills::TriggerSlot(0)&&(motionInput.toss||strikes(skill))) {
+            cue.gesture=true;std::snprintf(cue.hint,sizeof cue.hint,"%s",motionInput.toss?"Throw to place":"Swing to strike");
+        }
     } else if(cue.slot<0) {
         cue.known=cue.available=true;
         std::snprintf(cue.name,sizeof cue.name,"%s",motionInput.weapon==gameplay::Weapon::Bow?"Basic Arrow":"Basic Attack");
@@ -2493,6 +2508,7 @@ void Input() {
         std::snprintf(cue.name,sizeof cue.name,"%s",name?name:javelin?"Javelin skill":"Skill arrow");
         std::snprintf(cue.hint,sizeof cue.hint,"%s",javelin?(quiver.Current().Active()?"Loaded: throw":"Throw"):
             quiver.Current().Active()?"Loaded: draw & release":"Draw & release");
+        cue.gesture=false;   // the loaded skill, not the trigger's
     }
     cue.busy=(shieldCast.issued&&!shieldCast.cancelled)||(cue.id==weaponskills::Strafe&&quickFresh&&quickSnapshot.actionKnown&&quickSnapshot.actionMode==16&&
         volleyRequestedAt&&motionAt>=volleyRequestedAt&&motionAt-volleyRequestedAt<10000);
@@ -2508,10 +2524,10 @@ void Input() {
     const auto& leftSkill=quickSnapshot.skills[leftCue.slot];leftCue.id=leftSkill.id;leftCue.owner=leftSkill.owner;
     leftCue.known=quickFresh&&leftSkill.known;leftCue.available=leftCue.known&&leftSkill.available;
     std::snprintf(leftCue.name,sizeof leftCue.name,"%s",leftCue.known?leftSkill.name:"Unavailable");
-    leftCue.gesture=!leftCue.temporary&&leftCue.available&&gestureSettings[settings::SkillGestures]>.5f&&leftSkill.motion&&
-        ((weaponskills::Bow(leftSkill.id)&&motionInput.weapon==gameplay::Weapon::Bow)||(leftSkill.id==weaponskills::Smite&&motionInput.shieldEquipped));
-    std::snprintf(leftCue.hint,sizeof leftCue.hint,"%s",leftCue.gesture?weaponskills::Hint(leftSkill.id,
-        motionInput.weapon==gameplay::Weapon::Bow,motionInput.shieldEquipped):leftCue.temporary?"Left hand shortcut":"Left hand: point & trigger");
+    leftCue.gesture=!leftCue.temporary&&leftCue.available&&((gestureSettings[settings::SkillGestures]>.5f&&leftSkill.motion&&
+        ((weaponskills::Bow(leftSkill.id)&&motionInput.weapon==gameplay::Weapon::Bow)||(leftSkill.id==weaponskills::Smite&&motionInput.shieldEquipped)))||leftStrikes);
+    std::snprintf(leftCue.hint,sizeof leftCue.hint,"%s",leftCue.gesture?(leftStrikes?"Swing to strike":weaponskills::Hint(leftSkill.id,
+        motionInput.weapon==gameplay::Weapon::Bow,motionInput.shieldEquipped)):leftCue.temporary?"Left hand shortcut":"Left hand: point & trigger");
     leftCue.expanded=leftCue.temporary;
     leftCue.busy=shieldCast.issued&&!shieldCast.cancelled;
     if(leftThrowArmed&&!leftCue.temporary) {

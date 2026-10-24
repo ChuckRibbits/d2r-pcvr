@@ -226,7 +226,9 @@ basic attacks for skills without a supported physical adapter; assigning a
 spell does not cast it on every swing. Physical skill gestures can be disabled
 under **VR settings → VR → Weapon skill gestures** (on by default), retaining
 button casting and basic physical attacks. This implementation supports the
-existing Smite and bow adapters; it does not generalize arbitrary melee skills.
+existing Smite and bow adapters and melee skill strikes: a supported melee
+skill on a hand's trigger (Bash, Stun, Charged Strike, Maul and others; see
+CONTROLS.md) casts when that hand's strike lands.
 
 Turning gestures off or changing equipment/assignments cancels an in-progress
 skill draw. Shield contact and its trigger fallback cannot duplicate a cast.
