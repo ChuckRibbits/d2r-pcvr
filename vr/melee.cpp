@@ -142,9 +142,13 @@ template<class T> bool Read(uintptr_t p,T& out) {
 // skills and movement for their FHR/FBR frames: in VR a stun-lock the body
 // cannot follow (Cal, 2026-10-22). Refused at the mode setter (SetMode below)
 // for the hero's server and client units; the mode stays what it was.
-// Knockback (mode 19) stays native and is only counted. 1 = native flinching.
+// Knockback (mode 19) stays native and is only counted, but a flinch asked for
+// while in knockback ends it in Neutral instead: the game ends every knockback
+// by asking for GetHit, and a refused one left the hero in knockback, asking
+// again at each animation end, locked until save and exit (Duriel's stunning
+// Smite, YouTube report 2026-10-24). 1 = native flinching.
 std::atomic<bool> noFlinch{true};
-std::atomic<unsigned> flinchRefused[2]{},knockbacks{0};   // [0] GetHit, [1] Block
+std::atomic<unsigned> flinchRefused[2]{},knockbacks{0},knockbackEnds{0};   // [0] GetHit, [1] Block
 #ifdef D2RVR_DEVELOPER
 // Developer builds: the game code that asked for a refused flinch, so the
 // refusal can move up to the game's own hit-recovery decision. Each distinct
@@ -815,6 +819,8 @@ int SetMode(uintptr_t unit,int mode) {
         if(Read(unit,header)&&header[0]==0&&combat::LocalPlayerId(id)&&header[2]==id) {
             if(mode==19)++knockbacks;
             else if(noFlinch.load(std::memory_order_relaxed)) {
+                // Leaving knockback: Neutral, as every other animation ends.
+                if(uint32_t prior=0;Read(unit+0xc,prior)&&prior==19){++knockbackEnds;return originalSetMode(unit,1);}
                 ++flinchRefused[mode==9];
 #ifdef D2RVR_DEVELOPER
                 ProbeFlinch(unit,mode,reinterpret_cast<uintptr_t>(_ReturnAddress()));
@@ -1253,14 +1259,14 @@ void Report() {
         framevr::logging::Write(line);
     }
     {
-        const auto gh=flinchRefused[0].exchange(0),bl=flinchRefused[1].exchange(0),kb=knockbacks.exchange(0);
+        const auto gh=flinchRefused[0].exchange(0),bl=flinchRefused[1].exchange(0),kb=knockbacks.exchange(0),ke=knockbackEnds.exchange(0);
 #ifdef D2RVR_DEVELOPER
-        if(gh||bl||kb) {
-            char line[160];snprintf(line,sizeof line,"Frame flinch: refused gethit=%u block=%u knockback_native=%u",gh,bl,kb);
+        if(gh||bl||kb||ke) {
+            char line[160];snprintf(line,sizeof line,"Frame flinch: refused gethit=%u block=%u knockback_native=%u knockback_to_neutral=%u",gh,bl,kb,ke);
             framevr::logging::Write(line);
         }
 #else
-        (void)gh;(void)bl;(void)kb;
+        (void)gh;(void)bl;(void)kb;(void)ke;
 #endif
     }
     const auto ss=shieldSweeps.exchange(0),sr=shieldRequests.exchange(0),sa=shieldAccepted.exchange(0),sf=shieldRejected.exchange(0);
