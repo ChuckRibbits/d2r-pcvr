@@ -981,9 +981,10 @@ See [physical breakables](../docs/PHYSICAL_BREAKABLES.md) for scope and validati
 Only a confirmed physical contact overrides legacy melee grid reach. Native
 line-of-sight, hostile relationship, creature life state, damage, elemental
 resistances/immunities, criticals, leech, procs, durability, death and XP still run.
-**Melee rules** (`[gameplay] melee_rules`, applied live, mid-game; no longer in
-VR Settings since 2026-10-23, where melee is Unleashed only) choose between two
-modes for physical swings and trigger/button melee:
+**Melee rules.** Melee is Unleashed only since 2026-10-23: `[gameplay]
+melee_rules` is ignored and no longer in VR Settings. The Classic rules below
+describe code that stays until it is removed. The two modes for physical swings
+and trigger/button melee were:
 
 - **Unleashed** (`0`, the default): every weapon contact strikes each
   creature once per stroke. No to-hit, block or dodge roll and no attack-speed

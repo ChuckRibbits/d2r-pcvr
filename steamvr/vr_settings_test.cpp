@@ -48,8 +48,8 @@ int main(){
     }
     {
         HoverHelp help;
-        Check(help.Step(MeleeRules,100)==NoHelp&&help.Step(MeleeRules,549)==NoHelp,"passing over a setting does not flash help");
-        Check(help.Step(MeleeRules,550)==MeleeRules,"steady hover reveals help after 450 ms");
+        Check(help.Step(MeleeThrustSpeed,100)==NoHelp&&help.Step(MeleeThrustSpeed,549)==NoHelp,"passing over a setting does not flash help");
+        Check(help.Step(MeleeThrustSpeed,550)==MeleeThrustSpeed,"steady hover reveals help after 450 ms");
         Check(help.Step(MeleeHitSpeed,600)==NoHelp&&help.Step(MeleeHitSpeed,1050)==MeleeHitSpeed,"changing settings restarts dwell and clears old help");
         Check(help.Step(NoHelp,1100)==NoHelp&&help.Step(MeleeHitSpeed,1600)==NoHelp,"leaving panel or losing tracking clears dwell");
         help.Clear();Check(help.Step(MeleeHitSpeed,3000)==NoHelp,"close or focus loss cannot retain old dwell");
@@ -309,10 +309,10 @@ int main(){
         Check(melee.Get()[MeleeHitSpeed]==6.25f,"plus button goes beyond old cap");
         s.values[MeleeHitSpeed]=12;
     }
-    {   // Melee is Unleashed only: no Melee rules row; the INI key stays, Unleashed by default
-        bool rulesRow=false;
-        for(int i=0;i<CatalogCount(Page::Combat);++i)rulesRow|=CatalogKey(Page::Combat,i)==MeleeRules;
-        Check(!rulesRow&&s.values[MeleeRules]==0&&RowKey(Page::Combat,0)==MeleeHitSpeed,"melee hit speed leads the Combat page; melee rules stay Unleashed");
+    {   // Melee is Unleashed only: no Melee rules setting or row
+        bool rulesKey=false;
+        for(const auto& d:Definitions)rulesKey|=std::wstring(d.key)==L"melee_rules";
+        Check(!rulesKey&&RowKey(Page::Combat,0)==MeleeHitSpeed,"melee hit speed leads the Combat page; there are no melee rules to choose");
     }
     {Model thrust;thrust.Open(s);thrust.Click({Kind::Tab,int(Page::Combat)});
         const auto hit=At(Page::Combat,Increase(1));

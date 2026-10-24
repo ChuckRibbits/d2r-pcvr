@@ -128,8 +128,7 @@ automatic resource warnings.
 
 Melee is **Unleashed**: physical strokes can hit each creature they reach
 once, without hit rolls or an attack-speed cooldown, and need deliberate
-motion. (The Classic rules are no longer in VR Settings; `[gameplay]
-melee_rules=1` in the INI still selects them.)
+motion. The Classic rules are gone; `[gameplay] melee_rules` is ignored.
 **Melee thrust speed** is separate from swing speed: 2 m/s by default, adjustable
 from 0.75 to 10 m/s in 0.25 m/s steps. Push along the blade and pull back between
 stabs. The old `attack_speed` INI key does not select Classic; choose it here.

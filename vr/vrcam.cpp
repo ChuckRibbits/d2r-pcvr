@@ -865,11 +865,12 @@ void LoadSettings() {
     projectiles::Configure(IniB(L"gameplay",L"motion_controls",false),IniF(L"gameplay",L"arrow_speed",2.f),IniB(L"gameplay",L"arrow_direct_release",true));
     bowvr::Configure(IniB(L"gameplay",L"motion_controls",false));
     combat::Configure(IniB(L"gameplay",L"motion_controls",false)&&IniB(L"gameplay",L"contact_hits",true));
-    // [gameplay] melee_rules (VR Settings > Combat, applied live): 0 Unleashed
-    // - every weapon contact strikes, no attack-speed gate; 1 Classic -
-    // native attack rating, defense and block decide melee, attack speed paces
-    // it. Arrows and spells keep contact_hits either way.
-    const bool classicMelee=IniF(L"gameplay",L"melee_rules",0)>.5f;
+    // Melee is Unleashed only (the owner, 2026-10-23): every weapon contact
+    // strikes, with no attack-speed gate. [gameplay] melee_rules is no longer
+    // read, so a saved 1 (Classic: native attack rating, defense and block
+    // decide melee, attack speed paces it) no longer applies. The Classic
+    // paths below stay until they are removed.
+    const bool classicMelee=false;
     melee::ConfigureAttackSpeed(classicMelee,IniB(L"debug",L"melee_trace",false));
     melee::ConfigureAttackRating(classicMelee);
     // Unleashed only: a raised shield blocks instead of the block stat.

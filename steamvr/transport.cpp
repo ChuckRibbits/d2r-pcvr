@@ -2154,7 +2154,7 @@ void Input() {
         tuning.recoverSeconds=strainRecoverSeconds.load(std::memory_order_relaxed);
         strain::Input in;
         in.time=interactionInput.time;in.session=interactionInput.session;
-        in.enabled=hudSettings.values[settings::MeleeRules]<.5f&&motionControls.load();
+        in.enabled=motionControls.load();   // melee is Unleashed only
         in.eligible=guardEligible.load()&&now-guardStateAt.load()<=250;
         in.raised=guardRaised.load();
         in.blocks=guardBlockEvents.exchange(0);in.parries=guardParryEvents.exchange(0);
