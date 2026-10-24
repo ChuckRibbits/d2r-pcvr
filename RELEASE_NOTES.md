@@ -171,7 +171,7 @@ Installer failures are recorded separately in
 
 ## Verification and known issues
 
-The release build passed **140 native checks**. **249 of 254 Python checks**
+The release build passed **140 native checks**. **250 of 255 Python checks**
 passed on Windows: the 4 session checks need Linux's `/proc`, and 1 symbolic-link
 check was skipped because this Windows session cannot create symbolic links. The
 in-headset Notes pages were rendered and inspected for fit and content.
