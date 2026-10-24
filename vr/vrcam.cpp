@@ -27,7 +27,6 @@
 #include "../steamvr/profile.h"
 #include "../steamvr/resource_descriptions.h"
 #include "../steamvr/vr_settings.h"
-#include "../steamvr/wrist_full_map.h"
 #include "../steamvr/interact_press.h"
 #include "../steamvr/sewer_interaction.h"
 #include "../steamvr/dropped_item_labels.h"
@@ -851,7 +850,6 @@ void LoadSettings() {
     framevr::ConfigureDeferredWait(IniB(L"render",L"defer_gpu_wait",false));
     framevr::ConfigureSymmetricProjection(IniB(L"render",L"symmetric_projection",true));
     framevr::ConfigureFrameGeneration(IniF(L"render",L"frame_generation",0),IniF(L"render",L"frame_generation_preset",1),IniF(L"render",L"frame_generation_scale",2));
-    framevr::fullmap::g_widestSetting.store(IniF(L"interactions",L"full_map_widest",0));   // the wrist's full map at 1x (0: automatic)
     framevr::ConfigureTurnsFromDrawnEye(IniB(L"stereo",L"turns_from_drawn_eye",true));
     framevr::ConfigureTurnsKeepOwn(int(IniF(L"stereo",L"turns_keep_own",3)));
     framevr::ConfigureTurnsKeepNear(IniF(L"stereo",L"turns_keep_gap",48),IniF(L"stereo",L"turns_keep_reach",96));

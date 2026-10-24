@@ -116,7 +116,7 @@ void Install() {
     ready.store(a&&b);
     char line[220];
     std::snprintf(line,sizeof line,"Frame full map: zoom hooks %s (map panel 0x14E3480 %s, scale 0xD1940 %s); %s",a&&b?"installed":"NOT installed",
-                  a?"ok":"bytes differ",b?"ok":a?"bytes differ":"not tried",a&&b?"the wrist's full map opens at its widest view":"the wrist shows the full map at the game's own zoom");
+                  a?"ok":"bytes differ",b?"ok":a?"bytes differ":"not tried",a&&b?"the wrist's full map opens at game zoom 0.125":"the wrist shows the full map at the game's own zoom");
     framevr::logging::Write(line);
 }
 }

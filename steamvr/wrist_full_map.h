@@ -17,18 +17,17 @@
 //  - its draw passes a zoom to the scale function at RVA 0xD1940, which uses
 //    max(round(zoom*8)/8, 0.125) and 4 pixels a unit times that (the full map's own is
 //    0.5). For the wrist's capture only, that argument is replaced (nothing in the game's
-//    memory is written): the widest view is the game's floor, 0.125 ([interactions]
-//    full_map_widest picks another step: Widest).
+//    memory is written): the widest view is the game's floor, 0.125.
 // The right stick's map zoom (map_zoom.h) then zooms in smoothly from there: the game gets
 // the 1/8 step at or below the zoom wanted and the wrist magnifies the rest (under 2x), so
 // it stays sharp at every zoom and never steps: each share is tagged with the zoom it was
 // really drawn at, and the wrist scales by wanted / drawn.
-// Each map piece the game draws in that box is its own draw: ~2,050 a pass at 0.25 on a
-// 3072-px layer (owner, Steam Frame, 2026-10-24). They are drawn for the wrist in a frame's
-// first pass only (DrawForWrist). The frame rate the full map cost (By turns 88 -> 39 frames
-// a second) did not follow these draws - a quarter of the area and the second eye skipped
-// changed nothing - but the share's size: the hero marker's search, one GPU thread over the
-// 3072x1728 share, took 23.6 ms a frame (RTX 5090); in tiles it takes 0.14 (ui_blit.cpp).
+// Each map piece in that box is its own draw: ~2,050 a pass on a 3072-px layer, at 0.125 or
+// 0.25 alike (the game draws every explored piece; owner, Steam Frame, 2026-10-24). They are
+// drawn for the wrist in a frame's first pass only (DrawForWrist). The frame rate the full
+// map cost (By turns 88 -> 39 frames a second) was not these draws but the share's size:
+// the hero marker's search, one GPU thread over the 3072x1728 share, took 23.6 ms a frame
+// (RTX 5090); in tiles it takes 0.14 (ui_blit.cpp FindTiles).
 namespace framevr::fullmap {
 // Set by the transport from the setting; read by gamestate (the lease, the hooks) and hud.
 inline std::atomic<bool> g_on{false};
@@ -36,12 +35,9 @@ inline std::atomic<bool> g_on{false};
 // (0 full, 1 left, 2 right, -1 unread), the AutoMap panel is open.
 inline std::atomic<bool> g_capture{false},g_panel{false};
 inline std::atomic<int> g_layout{-1};
-// Set by the transport: the zoom wanted for the wrist (g_widest = 1x; 0 = none).
+// Set by the transport: the zoom wanted for the wrist (0.125 = the widest; 0 = none).
 // Set by the hook: the step it gave the full map's last draw (0: none given).
 inline std::atomic<float> g_wanted{0.f},g_applied{0.f};
-// [interactions] full_map_widest, read by vrcam (0: automatic), and the widest view the
-// transport uses now (Widest).
-inline std::atomic<float> g_widestSetting{0.f},g_widest{.125f};
 
 struct Box {int32_t left=0,top=0,right=0,bottom=0;};
 // The full map's box on a w x h layer: the layer's width, 16:9 tall, from the top-left.
@@ -61,7 +57,7 @@ inline bool IsFullBox(int32_t l,int32_t t,int32_t r,int32_t b,uint32_t w,uint32_
 // game's layout full, the AutoMap panel open.
 inline bool Active(bool on,bool capture,int layout,bool panel){return on&&capture&&layout==0&&panel;}
 
-// The game's zoom. Base: the game's floor, the widest it draws; Own: the full map's own.
+// The game's zoom. Base: the widest view (the game's floor); Own: the full map's own.
 constexpr float Base=.125f,Own=.5f,ArgLo=.05f,ArgHi=4.f;
 // The zoom the game really uses for z (0xD1940: max(round(z*8)/8, 0.125)); 0 for none.
 inline float GameRounded(float z){return std::isfinite(z)&&z>0?std::max(std::round(z*8)/8,Base):0.f;}
@@ -74,15 +70,6 @@ inline float ZoomArg(float game,float wanted,bool gates){
     if(!gates||!(wanted>0)||!std::isfinite(wanted)||!(game>=ArgLo&&game<=ArgHi))return game;
     return GameStep(wanted);
 }
-// The widest view, 1x: the game's floor, or the game's step for setting > 0 ([interactions]
-// full_map_widest; a closer one covers less of the level, with fewer map pieces to draw).
-// Closest: the closest view, 16x from 0.125, whatever the widest.
-constexpr float Closest=2.f;
-inline float Widest(float setting){
-    return std::isfinite(setting)&&setting>0?GameRounded(std::min(setting,Closest)):Base;
-}
-// The right stick's closest zoom from that widest view (map_zoom.h's ceiling).
-inline float MaxMagnify(float widest){return std::isfinite(widest)&&widest>=Base?Closest/widest:Closest/Base;}
 
 // One full map a frame. Both eyes draw the interface, and the wrist copies one share a frame
 // (the transport, at the frame's first eye), so a later pass's full map would only be drawn
@@ -107,19 +94,18 @@ inline int WristTaps(float span,float side){
     const float k=side>0&&span>0?span/side:1.f;
     return std::clamp(int(std::ceil(k-.001f)),1,4);
 }
-// The span for magnify (the map zoom, 1 = the widest view, game zoom `widest`) when the
-// share was drawn at game zoom `drawn` (0: the game's own, the hook gave none): the fill at
-// the widest zoom, divided by what the share still has to be magnified. Never wider than
-// the whole box seen at every turn (a share drawn closer than wanted, e.g. a frame before the hook).
-inline float Span(uint32_t w,uint32_t h,bool turning,bool topDown,float magnify,float drawn,float widest=Base){
+// The span for magnify (the map zoom, 1 = the widest view) when the share was drawn at
+// game zoom `drawn` (0: the game's own, the hook gave none): the fill at the widest zoom,
+// divided by what the share still has to be magnified. Never wider than the whole box
+// seen at every turn (a share drawn closer than wanted, e.g. a frame before the hook).
+inline float Span(uint32_t w,uint32_t h,bool turning,bool topDown,float magnify,float drawn){
     const float fill=WristFill(w,h,turning,topDown);
     if(fill<=0)return 0.f;
     const float m=std::isfinite(magnify)&&magnify>1?magnify:1.f;
     const float d=std::isfinite(drawn)&&drawn>0?drawn:Own;
-    const float z=std::isfinite(widest)&&widest>=Base?widest:Base;
     const float fw=float(w),fh=float(h);
     const float whole=topDown?(turning?Root2*std::sqrt(fw*fw+4*fh*fh):fw+2*fh):(turning?std::sqrt(fw*fw+fh*fh):std::max(fw,fh));
-    return std::min(fill*d/(m*z),std::max(whole,fill));
+    return std::min(fill*d/(m*Base),std::max(whole,fill));
 }
 // The arrow sized from the game's X (FindX measures its half size in source pixels): as
 // the X shows on the wrist at side/span wrist pixels a source pixel (top-down undoes the

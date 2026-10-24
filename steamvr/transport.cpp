@@ -2498,22 +2498,13 @@ void Input() {
         wristMapLooked=shown&&mapzoom::Looking(interactionInput.head.p,interactionInput.head.q,wristMapCenter,wristMapLooked);
         mapzoom::Input in;in.time=interactionInput.time;in.looking=MinimapLooked();
         in.stick=controls.ry/32767.f;in.x=controls.rx/32767.f;
-        // Map view = Full map: zoomed in from the widest view (fullmap::Widest) to the closest;
-        // the game is asked for the zoom that keeps it sharp (wrist_full_map.h). Off: nothing
-        // asked, the hooks idle.
+        // Map view = Full map: zoomed in from the game's widest view, to 16x; the game is asked
+        // for the zoom that keeps it sharp (wrist_full_map.h). Off: nothing asked, the hooks idle.
         const bool fullMap=MapFullOn();
         fullmap::g_on.store(fullMap,std::memory_order_relaxed);
-        const float setting=fullmap::g_widestSetting.load(std::memory_order_relaxed);
-        const float widest=fullmap::Widest(setting);
-        if(fullMap&&widest!=fullmap::g_widest.load(std::memory_order_relaxed)) {
-            char line[160];std::snprintf(line,sizeof line,"Frame full map: widest view at game zoom %.3f ([interactions] full_map_widest %s)",
-                                         widest,setting>0?"set":"not set: the game's widest");
-            Say(line);
-        }
-        fullmap::g_widest.store(widest,std::memory_order_relaxed);
-        in.max=fullMap?std::min(fullmap::MaxMagnify(widest),mapzoom::FullMax):mapzoom::Max;
+        in.max=fullMap?mapzoom::FullMax:mapzoom::Max;
         const auto zoom=mapZoom.Step(in);
-        fullmap::g_wanted.store(fullMap?widest*zoom.zoom:0.f,std::memory_order_relaxed);
+        fullmap::g_wanted.store(fullMap?fullmap::Base*zoom.zoom:0.f,std::memory_order_relaxed);
         if(zoom.owned)controls.ry=0;
         if(zoom.turnOwned)controls.rx=0;
         if(zoom.tick)MotionPulse(0,haptics::Category::Interaction,zoom.tick==2?.35f:.15f,zoom.tick==2?30000000:12000000);
@@ -2526,7 +2517,7 @@ void Input() {
         if(zoom.stopped&&mapZoomLogged){
             char line[160];
             if(fullMap)std::snprintf(line,sizeof line,"Frame map zoom: stop at %.2fx%s (full map: game zoom %.3f asked, %.3f drawn)",zoom.zoom,wristMapLooked?"":" (looked away)",
-                                     fullmap::GameStep(widest*zoom.zoom),fullmap::g_applied.load(std::memory_order_relaxed));
+                                     fullmap::GameStep(fullmap::Base*zoom.zoom),fullmap::g_applied.load(std::memory_order_relaxed));
             else std::snprintf(line,sizeof line,"Frame map zoom: stop at %.2fx%s",zoom.zoom,wristMapLooked?"":" (looked away)");
             Say(line);
             mapZoomLogged=false;
@@ -3606,7 +3597,7 @@ bool CopyMap(reshade::api::command_queue* rq) {
     // game zoom this share was really drawn at (so a step landing a frame late never jumps).
     // The corner map keeps its own zoom, up to 4x.
     const bool turning=(flags&4)!=0,topDown=(flags&8)!=0;
-    const float span=fullMap?fullmap::Span(w,h,turning,topDown,mapZoom.Zoom(),drawnZoom,fullmap::g_widest.load(std::memory_order_relaxed)):0.f;
+    const float span=fullMap?fullmap::Span(w,h,turning,topDown,mapZoom.Zoom(),drawnZoom):0.f;
     if(fullMap) {   // a line when the share's size or its drawn zoom changes (at most 60 a session)
         static uint32_t toldW=0,toldH=0;static float toldZoom=-1;static int told=0;
         if((w!=toldW||h!=toldH||drawnZoom!=toldZoom)&&told<60) {

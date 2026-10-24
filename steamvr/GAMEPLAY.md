@@ -242,8 +242,7 @@ still sees the whole map.
 **Full map:** **VR Settings > HUD > Map view** = **Full map** or **Full top-down**
 shows the game's full (Tab) map on the wrist instead of its corner map, in the same
 two views. 1x is the game's widest zoom (0.125); up zooms in to 16x, redrawn by the
-game closer as you go so it stays sharp. `[interactions] full_map_widest` in
-`d2r_pcvr.ini` starts it closer (for example 0.25: half as far each way, to 8x). It is a screen-sized window around your
+game closer as you go so it stays sharp. It is a screen-sized window around your
 hero, not the whole level, and it is not drawn in your view while the wrist shows it.
 
 The label above the compass shows your current **act (I-V)** and **area name**,
