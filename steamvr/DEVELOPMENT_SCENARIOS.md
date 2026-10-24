@@ -138,7 +138,7 @@ Double Throw.
 
 Select **DEV > Equipment > Render debug draws** to toggle the shield guard
 overlay. It starts Off each launch and does not change combat rules or saved
-settings. Equip a shield, select Unleashed melee rules, close the menu, and
+settings. Equip a shield (melee is Unleashed), close the menu, and
 compare the outline with the visible shield while moving and rotating it.
 
 - **Cyan:** measured shield bounds used by the blocking check.

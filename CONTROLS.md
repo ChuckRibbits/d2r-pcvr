@@ -73,7 +73,7 @@ Quest left X/Y correspond to Index left A/B; right A/B labels are the same.
 | Free melee swing / thrust | Move the equipped weapon through an enemy |
 | Physical dual wield | Equip two supported melee weapons on a Barbarian or two claws on an Assassin; release both triggers and swing or thrust with either hand. Active skills retain their button bindings |
 | Break pots / barrels | Swing a held melee weapon through them with its trigger released. Either Barbarian weapon or Assassin claw works; ordinary button interaction/kicking remains available |
-| Choose melee rules / motion thresholds | **VR Settings > Combat**: Unleashed or Classic, Melee hit speed, and Melee thrust speed |
+| Choose motion thresholds | **VR Settings > Combat**: Melee hit speed and Melee thrust speed |
 | Bone Spear | Assign either hand's trigger or shortcut; aim with that controller and hold to repeat while moving. **Projectile aim assist** under Controls applies to Bone Spear too; Strong adds gentle homing |
 | Bone Wall / Bone Prison | Aim with the casting controller: the wall or prison lands where its ray meets the floor (six cells ahead when level). With **VR Settings > Aim > Ground skills** on Aimed monster, Bone Prison lands on the aimed monster and Bone Wall rises 3 cells in front of it. Native placement rules still apply |
 | Holy Bolt | Aim with either casting controller, including up/down with Planar spell aiming Off. Light assists at launch; Strong also adds gentle homing toward undead/demons. Directly aim at your mercenary to heal; native damage/healing rules apply |
@@ -126,10 +126,9 @@ and one left-hand alert test. Tests use the displayed values before Apply.
 180 Hz pulse. **HUD > Low health / mana alerts** must also be enabled for
 automatic resource warnings.
 
-**Combat > Melee rules** defaults to **Unleashed**: physical strokes can hit
-each creature they reach once, without hit rolls or an attack-speed cooldown.
-**Classic** uses native hit/block checks and the modeled class/weapon/IAS cycle,
-with one target per physical stroke. Both modes require deliberate motion.
+Melee is **Unleashed**: physical strokes can hit each creature they reach
+once, without hit rolls or an attack-speed cooldown, and need deliberate
+motion. The Classic rules are gone; `[gameplay] melee_rules` is ignored.
 **Melee thrust speed** is separate from swing speed: 2 m/s by default, adjustable
 from 0.75 to 10 m/s in 0.25 m/s steps. Push along the blade and pull back between
 stabs. The old `attack_speed` INI key does not select Classic; choose it here.
