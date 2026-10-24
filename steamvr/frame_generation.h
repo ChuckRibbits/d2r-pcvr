@@ -12,9 +12,12 @@
 // licenses, an explicit layer manifest and its ofxr_bridge.ini in the mod's
 // d2rloader\plugins\ofxr. No tray app and no registry entry: with [render]
 // frame_generation on, the transport names the layer for this process only
-// (XR_API_LAYER_PATH and xrCreateInstance's layers), so turning it on or off
-// takes a restart. The backend and NVIDIA's options reach the loaded layer
-// live through its control API (provider_api.hpp V1, mirrored below).
+// (XR_API_LAYER_PATH and xrCreateInstance's layers), so it loads with an OpenXR
+// instance: turned on while the game runs, the transport restarts the OpenXR
+// session for it, as a window resize does (LoadsWithNewSession); turned off, the
+// loaded layer is bypassed until the game restarts. The backend and NVIDIA's
+// options reach the loaded layer live through its control API (provider_api.hpp
+// V1, mirrored below).
 // While it runs it doubles the frame time the game is given (xrWaitFrame's
 // predicted period): the game draws every other headset frame and the bridge
 // makes the rest. Both eyes at half the rate then shows each eye half its
@@ -89,7 +92,7 @@ enum class Start {
 };
 enum class State {Off,Unavailable,NotInstalled,RestartToStart,Failed,Starting,Applying,Active,Bypassed,Paused,Error,NoControl,NeedsBothEyes};
 inline const char* StateName(State s){
-    constexpr const char* names[]={"off","unavailable","not installed","restart to start","failed","starting","applying",
+    constexpr const char* names[]={"off","unavailable","not installed","loads with a new session","failed","starting","applying",
                                    "active","bypassed","paused","error","no control","needs both eyes"};
     return names[int(s)];
 }
@@ -123,6 +126,10 @@ inline Readout Classify(Start started,bool installed,const Options& wanted,const
     else r.state=State::RestartToStart;   // off at start, or installed since
     return r;
 }
+// It would run (on, installed, Both eyes) but this instance has no OFXR Bridge: the
+// transport restarts the OpenXR session so a new instance loads it. Not by turns (it
+// would only wait for Both eyes), not when it failed or cannot load.
+inline bool LoadsWithNewSession(State s){return s==State::RestartToStart;}
 // The Perf page's line (and the log's): one line, under 90 characters.
 inline std::string Line(const Readout& r){
     char line[160];
@@ -131,7 +138,7 @@ inline std::string Line(const Readout& r){
         case State::Off:return "Frame generation: Off (experimental, OFXR Bridge)";
         case State::Unavailable:return "Frame generation: needs native Windows; Proton has no OpenXR layers";
         case State::NotInstalled:return "Frame generation: OFXR Bridge is not installed; run Setup's Update / repair";
-        case State::RestartToStart:return "Frame generation: restart the game to start OFXR Bridge";
+        case State::RestartToStart:return "Frame generation: loading OFXR Bridge; the VR session restarts";
         case State::Failed:return "Frame generation: OFXR Bridge did not start; playing without it (see the log)";
         case State::Starting:return "Frame generation: OFXR Bridge loaded, waiting for the headset session";
         case State::Applying:std::snprintf(line,sizeof line,"Frame generation: OFXR Bridge switching to %s",running.c_str());return line;

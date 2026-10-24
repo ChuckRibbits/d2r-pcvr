@@ -133,6 +133,13 @@ std::wstring frameGenFolder;   // plugins\ofxr beside this plugin
 framegen::Readout frameGenReadout;bool frameGenRead=false,frameGenInstalled=false;
 bool frameGenRunAsked=true;   // the layer was last asked to run (Both eyes), not to step aside
 ULONGLONG frameGenReadAt=0,frameGenInstalledAt=0;
+// On, installed and with Both eyes, but this instance has no OFXR Bridge (it was off at
+// the start): FrameGenNow asks the next frame to rebuild the session the way a window
+// resize does (Capture), and the new instance names the layer (LoadFunctions). The owner
+// found a resolution change started it (2026-10-24); before, it waited for a restart.
+// Once each time it is turned on (frameGenRebuildArmed), so it never loops; cleared by
+// every instance made meanwhile.
+std::atomic<bool> frameGenRebuild{false},frameGenRebuildArmed{true};
 // OFXR Bridge takes over every color swapchain whose images are listed
 // through it: three more runtime swapchains and an optical flow pipeline
 // each. With this mod's panels (menus, map, VR Settings, notices, blood,
@@ -1009,6 +1016,8 @@ framegen::Readout FrameGenNow(ULONGLONG now) {
     framegen::ControlSnapshotV1 snapshot;
     const bool answered=frameGenSnapshot&&frameGenSnapshot(&snapshot)!=0;
     const auto readout=framegen::Classify(frameGenStart,frameGenInstalled,wanted,answered?&snapshot:nullptr,bothEyes);
+    // It would run, but this instance has no OFXR Bridge: a new session loads it (frameGenRebuild).
+    if(framegen::LoadsWithNewSession(readout.state)&&frameGenRebuildArmed.exchange(false))frameGenRebuild.store(true);
     if(!frameGenRead||!(readout==frameGenReadout)) {
         char line[260];std::snprintf(line,sizeof line,"%s [%s; sessions %u, ready %u, bypass %u, errors %u]",framegen::Line(readout).c_str(),
             framegen::StateName(readout.state),readout.sessions,readout.ready,readout.bypass,readout.errors);
@@ -1025,6 +1034,7 @@ bool LoadFunctions() {
     // Frame generation: OFXR Bridge is offered to the Khronos loader before it
     // loads; WineOpenXR has no API layers.
     const auto frameGen=FrameGenWanted();
+    frameGenRebuild.store(false);   // this instance is made with the settings now
     auto frameGenStarted=wineOpenXR?framegen::Start::Unavailable:framegen::Start::NotAsked;
     bool frameGenOffered=false;
     {std::lock_guard lock(frameGenMutex);frameGenStart=frameGenStarted;frameGenSnapshot=nullptr;frameGenRequest=nullptr;frameGenRead=false;}
@@ -3673,6 +3683,9 @@ void Capture(reshade::api::command_queue* rq,reshade::api::swapchain* swap) {
     if(desc.Width!=width||desc.Height!=height||desc.Format!=format) {
         Say("Frame OpenXR: window resized; recreating eye swapchains");Shutdown(true);failed=false;return;
     }
+    if(frameGenRebuild.exchange(false)) {   // frame generation turned on: a new instance names OFXR Bridge
+        Say("Frame generation: restarting the OpenXR session to load OFXR Bridge");Shutdown(true);failed=false;return;
+    }
     if(!afr) {
         afrHandle=OpenFileMappingW(FILE_MAP_READ,FALSE,FLATVR_AFR_EYE_NAME);
         if(afrHandle)afr=static_cast<FlatVRAfrEye*>(MapViewOfFile(afrHandle,FILE_MAP_READ,0,0,sizeof(FlatVRAfrEye)));
@@ -3768,7 +3781,11 @@ void ConfigureFrameGeneration(float mode,float preset,float scale) {
     if(frameGenRequest){FrameGenAsk(o);return;}   // loaded: live, Off bypasses it
     frameGenReadAt=0;
     if(was<0){if(o.On())Say("Frame generation: on (OFXR Bridge, experimental); it starts with OpenXR");return;}
-    if(o.On()!=wasOn)Say(o.On()?"Frame generation: on from the next start of the game (OFXR Bridge loads with OpenXR)":"Frame generation: off");
+    if(o.On()==wasOn)return;
+    if(!o.On()){frameGenRebuild.store(false);Say("Frame generation: off");return;}
+    // Not loaded: OFXR Bridge loads with an OpenXR instance, so FrameGenNow has a new one made.
+    frameGenRebuildArmed.store(true);
+    Say("Frame generation: on; OFXR Bridge loads with a new OpenXR session (the headset goes dark for a moment)");
 }
 void ConfigureTurnsFromDrawnEye(bool on) {
     if(turnsFromDrawnEye.exchange(on)!=on)Say(on?"Frame OpenXR: by turns - the eye not drawn mostly from the drawn eye's picture":"Frame OpenXR: by turns - the eye not drawn from its own image alone");
