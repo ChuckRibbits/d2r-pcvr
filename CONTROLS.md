@@ -339,6 +339,13 @@ and thrusts when a shield and its native hook are available. Supported arrow
 skills assigned to left trigger fire on bow draw/release using the right hand
 to pull the string. The left trigger remains a button fallback; right trigger
 away from the string uses the right hand's own assignment.
+
+A trigger skill that works as a gesture with what the hand holds says
+**GESTURE** instead of PRIMARY in that hand's wheel, and the hand's skill card
+says how: **Shield swing / thrust** (Smite with a shield), **Draw & release**
+(arrow skills with a bow), **Swing to strike** (melee skill strikes, below) or
+**Throw to place** (the Assassin's traps and bombs). Other trigger skills cast
+where you point.
 
 **Bow quiver.** With a bow, a face button assigned to Magic Arrow, Fire Arrow,
 Cold Arrow, Exploding Arrow, Ice Arrow, Immolation Arrow or Freezing Arrow loads

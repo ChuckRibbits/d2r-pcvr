@@ -215,7 +215,7 @@ std::vector<uint8_t> Paint(const Snapshot& s,const Output& o,int selection,const
                 RoundRect(dc,box.left-5,box.top-5,box.right+5,box.bottom+5,10,10);
                 SelectObject(dc,oldBrush);SelectObject(dc,oldPen);DeleteObject(pen);
                 fill({x-34,y+12,x+34,y+28},RGB(100,74,29));
-                const auto prior=SelectObject(dc,shortcutFont);text(handWheel?(o.wheelHand==1&&o.leftCue.gesture?"GESTURE":"PRIMARY"):"ACTIVE",{x-34,y+12,x+34,y+28});SelectObject(dc,prior);
+                const auto prior=SelectObject(dc,shortcutFont);text(handWheel?((o.wheelHand==1?o.leftCue.gesture:o.cue.gesture)?"GESTURE":"PRIMARY"):"ACTIVE",{x-34,y+12,x+34,y+28});SelectObject(dc,prior);
             }
         } else if(i<4) {
             const char* utility[]={"Weapon I","Weapon II","",o.stowed?"Draw weapons":"Stow weapons"};
