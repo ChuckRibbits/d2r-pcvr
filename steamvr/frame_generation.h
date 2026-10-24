@@ -18,7 +18,10 @@
 // While it runs it doubles the frame time the game is given (xrWaitFrame's
 // predicted period): the game draws every other headset frame and the bridge
 // makes the rest. Both eyes at half the rate then shows each eye half its
-// frames for real; By turns only a quarter, so the Perf line suggests Both eyes.
+// frames for real; By turns only a quarter (22 a second at 90 Hz, where By
+// turns alone ran 83-89 frames: owner's PC, 2026-10-23). So it runs with Both
+// eyes only: with By turns the loaded layer is asked to step aside, live, and
+// VR Settings turns it on only with Both eyes.
 // Value-only: nothing here loads a module or reads XR state.
 namespace framevr::framegen {
 enum class Mode {Off,FidelityFx,Nvidia};   // [render] frame_generation 0 / 1 / 2
@@ -63,9 +66,10 @@ inline Options Read(float mode,float preset,float scale){
     return {Mode(Choice(mode,3,0)),Choice(preset,3,1),Choice(scale,3,2)};
 }
 // What the layer is asked for. Off with the layer loaded asks it to step
-// aside (enabled 0) until a restart leaves it out.
-inline ControlSettingsV1 Control(const Options& o){
-    ControlSettingsV1 c;c.enabled=o.On();c.backend=o.mode==Mode::Nvidia;c.preset=o.preset;c.scale=o.scale;
+// aside (enabled 0) until a restart leaves it out; bothEyes false (By turns)
+// asks the same until Both eyes is back.
+inline ControlSettingsV1 Control(const Options& o,bool bothEyes=true){
+    ControlSettingsV1 c;c.enabled=o.On()&&bothEyes;c.backend=o.mode==Mode::Nvidia;c.preset=o.preset;c.scale=o.scale;
     return c;
 }
 // The backend and options as the status names them: "FidelityFX", "NVIDIA Medium, 50% scale".
@@ -83,26 +87,27 @@ enum class Start {
     Loaded,       // the instance runs through the layer, its control API found
     NoControl,    // the instance runs through the layer, without a control API this mod knows
 };
-enum class State {Off,Unavailable,NotInstalled,RestartToStart,Failed,Starting,Applying,Active,Bypassed,Paused,Error,NoControl};
+enum class State {Off,Unavailable,NotInstalled,RestartToStart,Failed,Starting,Applying,Active,Bypassed,Paused,Error,NoControl,NeedsBothEyes};
 inline const char* StateName(State s){
     constexpr const char* names[]={"off","unavailable","not installed","restart to start","failed","starting","applying",
-                                   "active","bypassed","paused","error","no control"};
+                                   "active","bypassed","paused","error","no control","needs both eyes"};
     return names[int(s)];
 }
 struct Readout {
     State state=State::Off;
     int backend=0,preset=1,scale=2;   // what the layer was asked for (Loaded)
     uint32_t sessions=0,ready=0,bypass=0,errors=0;int32_t lastError=0;
-    bool byTurns=false;   // active while the game draws by turns: each eye a quarter of the headset's frames
     bool operator==(const Readout&)const=default;
 };
 // started: as above; installed: plugins\ofxr has the manifest now; wanted: the
-// settings now; snapshot: the layer's, when Loaded and it answered.
-inline Readout Classify(Start started,bool installed,const Options& wanted,const ControlSnapshotV1* snapshot){
+// settings now; snapshot: the layer's, when Loaded and it answered; bothEyes:
+// Stereo rendering is Both eyes (else it waits for it).
+inline Readout Classify(Start started,bool installed,const Options& wanted,const ControlSnapshotV1* snapshot,bool bothEyes=true){
     Readout r;
     if(started==Start::NoControl){r.state=State::NoControl;return r;}
     if(started==Start::Loaded){
         if(!wanted.On()){r.state=State::Paused;return r;}
+        if(!bothEyes){r.state=State::NeedsBothEyes;return r;}
         if(!snapshot){r.state=State::Error;return r;}
         r.backend=snapshot->desired.backend;r.preset=snapshot->desired.preset;r.scale=snapshot->desired.scale;
         r.sessions=snapshot->sessions;r.ready=snapshot->ready;r.bypass=snapshot->bypass;r.errors=snapshot->errors;r.lastError=snapshot->lastError;
@@ -114,6 +119,7 @@ inline Readout Classify(Start started,bool installed,const Options& wanted,const
     else if(started==Start::Unavailable)r.state=State::Unavailable;
     else if(started==Start::Failed)r.state=State::Failed;
     else if(!installed)r.state=State::NotInstalled;
+    else if(!bothEyes)r.state=State::NeedsBothEyes;
     else r.state=State::RestartToStart;   // off at start, or installed since
     return r;
 }
@@ -129,19 +135,20 @@ inline std::string Line(const Readout& r){
         case State::Failed:return "Frame generation: OFXR Bridge did not start; playing without it (see the log)";
         case State::Starting:return "Frame generation: OFXR Bridge loaded, waiting for the headset session";
         case State::Applying:std::snprintf(line,sizeof line,"Frame generation: OFXR Bridge switching to %s",running.c_str());return line;
-        case State::Active:std::snprintf(line,sizeof line,"Frame generation: active, OFXR Bridge %s%s",running.c_str(),r.byTurns?"; best with Both eyes":"");return line;
+        case State::Active:std::snprintf(line,sizeof line,"Frame generation: active, OFXR Bridge %s",running.c_str());return line;
         case State::Bypassed:return "Frame generation: OFXR Bridge loaded but bypassed; no generated frames";
         case State::Paused:return "Frame generation: Off for now; restart the game to unload OFXR Bridge";
         case State::Error:
             if(!r.errors)return "Frame generation: OFXR Bridge does not answer; no status";
             std::snprintf(line,sizeof line,"Frame generation: OFXR Bridge failed (0x%08X); no generated frames",unsigned(r.lastError));return line;
         case State::NoControl:return "Frame generation: OFXR Bridge loaded; this version gives no status";
+        case State::NeedsBothEyes:return "Frame generation: paused; it needs Stereo rendering: Both eyes";
     }
     return {};
 }
 // Whether the line is a warning (amber on the Perf page).
 inline bool Warning(const Readout& r){
     return r.state==State::Failed||r.state==State::Bypassed||r.state==State::Error||r.state==State::NotInstalled||r.state==State::Unavailable||
-           (r.state==State::Active&&r.byTurns);
+           r.state==State::NeedsBothEyes;
 }
 }

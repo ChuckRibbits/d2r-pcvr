@@ -157,8 +157,20 @@ int main(){
               Normalize(StereoRendering,0)==0,"malformed stereo rendering goes by turns");
         Check(Normalize(StereoRendering,2)==1,"a profile saved with Replay goes by turns");
     }
+    {   // Frame generation is turned on with Both eyes only; by turns, once on, it can still be changed or turned off.
+        Model turns;turns.Open(s);turns.Click({Kind::Tab,int(Page::Performance)});
+        Check(turns.Get()[StereoRendering]==1&&!RowEnabled(turns.Get(),FrameGeneration),"by turns, frame generation cannot be turned on");
+        turns.Click(At(turns,Page::Performance,Increase(6)));
+        Check(turns.Get()[FrameGeneration]==0&&!turns.Dirty(),"its arrows do nothing");
+        auto on=Defaults();on[FrameGeneration]=2;
+        Check(RowEnabled(on,FrameGeneration),"once on, by turns it can still be changed or turned off");
+        on[StereoRendering]=0;on[FrameGeneration]=0;
+        Check(RowEnabled(on,FrameGeneration),"with Both eyes it can be turned on");
+    }
     {   // Frame generation steps Off, FidelityFX, NVIDIA and stops at the ends; NVIDIA brings its row.
         Model frames;frames.Open(s);frames.Click({Kind::Tab,int(Page::Performance)});
+        frames.Click(At(frames,Page::Performance,Increase(0)));   // Both eyes first
+        Check(frames.Get()[StereoRendering]==0,"Both eyes");
         frames.Click(At(frames,Page::Performance,Decrease(6)));
         Check(frames.Get()[FrameGeneration]==0,"Off stays Off");
         frames.Click(At(frames,Page::Performance,Increase(6)));

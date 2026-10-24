@@ -117,9 +117,9 @@ int main(int argc,char** argv){
                                        R"( "Atmospherics Quality": 44, "Resolution Scale": 200, "NVIDIA DLSS": 1})");
         bool ok=fits(PerformanceLine(widest))&&fits(PerformanceVerdict(widest))&&fits(PerformanceLine({}))&&fits(GameVideoLine(most))&&
                       fits(GameVideoUnsaved);
-        for(int state=0;state<=int(framevr::framegen::State::NoControl);++state){   // frame generation's status, its widest backend
+        for(int state=0;state<=int(framevr::framegen::State::NeedsBothEyes);++state){   // frame generation's status, its widest backend
             framevr::framegen::Readout frameGen;frameGen.state=framevr::framegen::State(state);frameGen.backend=1;frameGen.preset=1;frameGen.scale=2;
-            frameGen.errors=1;frameGen.lastError=-1;frameGen.byTurns=true;ok=fits(framevr::framegen::Line(frameGen))&&ok;
+            frameGen.errors=1;frameGen.lastError=-1;ok=fits(framevr::framegen::Line(frameGen))&&ok;
         }
         SelectObject(dc,old);DeleteObject(normal);DeleteDC(dc);
         if(!ok)return 22;

@@ -253,8 +253,11 @@ page's last line and the log say whether it is off, waiting for a restart,
 active, bypassed or failed. While it runs it doubles the frame time the game
 is given, so the game draws every other headset frame (45 of 90) and the
 bridge makes the rest: Both eyes then shows each eye half its frames for real,
-By turns only a quarter, and the Perf line suggests Both eyes while By turns
-is on. The bridge takes over every color swapchain whose images are listed
+By turns only a quarter (22 a second, where By turns alone ran 83-89 frames on
+the owner's PC). So it runs with Both eyes only: by turns the loaded bridge is
+asked to step aside, and Both eyes brings it back, both live; the Perf line
+says it is paused. VR Settings turns it on only with Both eyes (once on, it
+can still be changed or turned off). The bridge takes over every color swapchain whose images are listed
 through it (three more swapchains and an optical flow pipeline each); with the
 mod's panels SteamVR ran out of swapchains, and menus fell back to the flat
 panel. While it is loaded the mod lists the panels' images through the
