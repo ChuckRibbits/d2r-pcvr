@@ -80,7 +80,8 @@ This is a PCVR mod: the game runs on your Windows PC and streams to the headset.
 - Optional experimental [Sorceress elemental hand effects](docs/elemental_hands.md), enabled under VR Settings > World > Spell glow on hands.
 - Optional experimental frame generation under **VR Settings > Performance > Frame generation**, through
   [OFXR Bridge](https://github.com/tig3rmast3r/OFXR-Bridge) by tig3rmast3r, which
-  Setup downloads on native Windows. Off by default; turning it on or off takes a restart.
+  Setup downloads on native Windows. Off by default; turning it on restarts the VR session
+  for a moment, without restarting the game.
 - Free-swing melee, including with a wheel skill selected, aimed spells, bows and physical javelin, throwing knife and axe throws.
 - Belt potions you can grab and drink, plus wrist health, mana, level and experience progress.
 - A left-hand minimap/compass with current area and act, independent health/mana tilt,

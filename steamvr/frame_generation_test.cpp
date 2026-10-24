@@ -34,6 +34,15 @@ int main() {
     assert(Classify(Start::NotAsked,false,on,nullptr).state==State::NotInstalled);
     assert(Classify(Start::Missing,false,on,nullptr).state==State::NotInstalled);
     assert(Classify(Start::Missing,true,on,nullptr).state==State::RestartToStart);   // installed since
+    // ... and the transport restarts the session for it, only when it would run
+    assert(LoadsWithNewSession(Classify(Start::NotAsked,true,on,nullptr).state));
+    assert(LoadsWithNewSession(Classify(Start::Missing,true,on,nullptr).state));
+    assert(!LoadsWithNewSession(Classify(Start::NotAsked,true,on,nullptr,false).state));   // by turns: it waits for Both eyes
+    assert(!LoadsWithNewSession(Classify(Start::NotAsked,true,off,nullptr).state));
+    assert(!LoadsWithNewSession(Classify(Start::NotAsked,false,on,nullptr).state));
+    assert(!LoadsWithNewSession(Classify(Start::Failed,true,on,nullptr).state));
+    assert(!LoadsWithNewSession(Classify(Start::Unavailable,true,on,nullptr).state));
+    assert(Line(Classify(Start::NotAsked,true,on,nullptr)).size()<90);
     assert(Classify(Start::Unavailable,true,on,nullptr).state==State::Unavailable);
     assert(Classify(Start::Failed,true,on,nullptr).state==State::Failed);
     assert(Classify(Start::Failed,true,off,nullptr).state==State::Off);

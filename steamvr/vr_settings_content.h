@@ -595,8 +595,8 @@ inline constexpr Override Overrides[]={
     // so they show on More while NVIDIA is chosen (main pairs them on one row; this
     // menu has no paired rows yet). Its status: the row's sub line and card (hooks).
     {.id="render.frame_generation",.page=View::Performance,.section="Image",.label="Frame generation",
-     .help="Experimental, through OFXR Bridge by tig3rmast3r: the game draws every other frame and the rest come from the motion between them. Needs Both eyes drawn.",
-     .warn="Experimental: needs a restart",FRAMEVR_OPTIONS(FrameGenOptions)},
+     .help="Experimental, through OFXR Bridge by tig3rmast3r: the game draws every other frame and the rest come from the motion between them. Needs Both eyes drawn. Turning it on restarts the VR view for a moment of black; off takes effect at once.",
+     .warn="Experimental: turning it on reloads VR",FRAMEVR_OPTIONS(FrameGenOptions)},
     // Performance: Draw distance (and the Defer GPU wait offer, shown in the readout)
     {.id="render.rings",.page=View::Performance,.section="Draw distance",.kind=RowKind::Stepper,.label="Terrain distance",
      .help="How many rings of map tiles stay drawn around you. Lower it first if big outdoor areas run slowly.",
