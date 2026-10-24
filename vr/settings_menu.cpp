@@ -30,7 +30,9 @@ Values Load(const wchar_t* path){
         // navigation_location takes precedence without rewriting old keys.
         // The old single outline color reaches the per-hand colors the same way
         // (LegacyHighlight): a hand's own key, once saved, wins.
+        // Guard strain color Off (guard_strain_dark 2) carries to the vignette switch as Off.
         const float fallback=i==NavigationLocation?(v[WristMap]>.5f||v[WristCompass]>.5f?0.f:3.f):
+                             i==StrainVignette?(std::lround(Value(path,L"gameplay",L"guard_strain_dark",0))==2?0.f:1.f):
                              HighlightKey(Key(i))?LegacyHighlight(Key(i),Value(path,L"gameplay",L"target_outline_by_range",-1),Value(path,L"gameplay",L"target_outline_hue",-1)):
                              d.defaultValue;
         raw[i]=Value(path,d.section,d.key,fallback);v[i]=Normalize(Key(i),raw[i]);

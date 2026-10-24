@@ -57,8 +57,7 @@ inline const char* HelpText(int id) {
         case TooltipTiming:return "How soon item details appear when you point the laser at an item in a game panel.";
         case CompanionCounts:return "Shows companion counts and effects currently affecting your character below the left-hand minimap. This includes received buffs, auras and harmful effects, not just assigned skills. It follows Minimap & Compass placement.";
         case OfflinePlayers:return "Uses native offline Players 1-8 scaling for tougher monsters and increased experience and loot. Apply affects newly spawned monsters; existing monsters keep their current stats. For all monsters to use the new value, Save and Exit, then start a new game with the same character. Game default follows the game's own setting. Works with every class and either melee mode. Does not change Normal, Nightmare or Hell, or your desktop preference.";
-        case StrainSpeed:return "How quickly blocked hits build the shield strain vignette in Unleashed. Strain starts fading a moment after hits stop, or as soon as you lower the shield; full strain is gone about 3 seconds after the last hit.";
-        case StrainDark:return "The color of the edge effect as repeated blocks strain your guard in Unleashed, or Off to hide it. It clears when hits stop for a few seconds or you lower your shield. Off hides only the effect: strain, guard breaks and chip damage still apply.";
+        case StrainVignette:return "A black shadow at the edges of your view as repeated blocks strain your guard in Unleashed; rarer attackers strain it faster. It clears when hits stop for a few seconds or you lower your shield. Off hides only the shadow: strain, guard breaks and chip damage still apply.";
         case TargetHighlight:return "A thin, steady outline round the monsters you aim at. Off by default; the percentage sets how strongly it shows. A hand held out picks the monster it points at; with no hand on one, the monster you look at is outlined. Monster highlights and the hand colors below choose which show and how; the one you look at takes the color of the hand that would cast at it. Only monsters in sight count. A guide only: it does not change how skills aim.";
         case AimHighlights:return "Which aimed monsters are outlined. A button you hold keeps showing the monster its cast took until you let go. Greyed out while the Monster outline is Off.";
         case HighlightRight:return "The outline color of the monster your right hand points at, and of the monster you look at when the right hand would cast at it (Dominant hand Right, no bow equipped). By range: red near, orange mid-range, yellow far. Otherwise one color around the color wheel, 15 degrees at a time; gold by default. A color unlike the monster's own reads best. Greyed out while the Monster outline is Off.";
@@ -117,7 +116,7 @@ struct ChoiceHelp {const char* name=nullptr;const char* text=nullptr;};
 constexpr int HelpChoiceGap=18,HelpChoiceNameHeight=40;   // on the card: above the name, the name's line
 inline int HelpChoices(int id) {
     switch(id) {
-        case Foveation:case MenuDistance:case TooltipTiming:case StrainSpeed:case ProjectileAimAssist:case StrainDark:return 3;
+        case Foveation:case MenuDistance:case TooltipTiming:case ProjectileAimAssist:return 3;
         case FoveationStrength:case VitalsLocation:case NavigationLocation:return 4;
         case StereoRendering:return int(std::size(StereoRenderingNames));
         case RenderResolution:return int(std::size(resolution::Choices));
@@ -239,18 +238,6 @@ inline ChoiceHelp HelpChoice(int id,float value) {
                 "The left claw casts the skill on the left trigger; a skill strikes cannot cast gives basic attacks.",
                 "Both claws cast the right trigger's skill (a skill can sit on only one trigger). The claws share one attack cycle, so this is never more casts."};
             return {LeftHandStrikesNames[c],text[c]};}
-        case StrainSpeed:{
-            static constexpr const char* text[]={
-                "Half the strain per block: about 20 blocks to full strain without lowering your shield.",
-                "The original rate: about 10 blocks to full strain.",
-                "Twice the strain per block: about 5 blocks to full strain."};
-            return {StrainSpeedNames[c],text[c]};}
-        case StrainDark:{
-            static constexpr const char* text[]={
-                "A pale glow at the edges of your view.",
-                "A dark vignette at the edges of your view.",
-                "No vignette. Strain still builds and can break your guard; you just do not see it."};
-            return {StrainColorNames[c],text[c]};}
         default:return {};
     }
 }

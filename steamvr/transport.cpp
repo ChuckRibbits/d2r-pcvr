@@ -2150,7 +2150,6 @@ void Input() {
         strain::Tuning tuning;{std::lock_guard lock(strainTuningMutex);tuning=strainTuning;}
         const float lightOn=tuning.brightness;   // [gameplay] guard_strain_light
         tuning.brightness=1;   // strain itself runs regardless of the light; only the drawing is scaled
-        tuning.speed=strain::BuildSpeed(int(hudSettings.values[settings::StrainSpeed]));
         tuning.recoverSeconds=strainRecoverSeconds.load(std::memory_order_relaxed);
         strain::Input in;
         in.time=interactionInput.time;in.session=interactionInput.session;

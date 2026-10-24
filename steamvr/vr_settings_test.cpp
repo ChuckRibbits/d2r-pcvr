@@ -326,34 +326,18 @@ int main(){
         Check(Normalize(MeleeThrustSpeed,NAN)==2&&Normalize(MeleeThrustSpeed,0)==.75f&&Normalize(MeleeThrustSpeed,99)==10,"thrust speed has finite usable bounds");
     }
     {Model strain;strain.Open(s);strain.Click({Kind::Tab,int(Page::Combat)});
-        Check(RowKey(Page::Combat,3)==StrainDark&&std::strcmp(RowLabel(StrainDark,{}),"Guard strain")==0&&s.values[StrainDark]==0,"guard strain colour is the fourth Combat row's left, White by default");
-        strain.Click(At(strain,Page::Combat,PairValue(3,0)));
-        Check(strain.Get()[StrainDark]==1,"clicking the value switches the strain to Black");
+        Check(RowKey(Page::Combat,3)==StrainVignette&&!Paired(StrainVignette)&&std::strcmp(RowLabel(StrainVignette,{}),"Guard strain vignette")==0,
+              "the guard strain vignette is the fourth Combat row, on its own");
+        Check(s.values[StrainVignette]==1&&Definitions[StrainVignette].max==1,"the vignette is On by default, On / Off only");
+        strain.Click(At(strain,Page::Combat,ValueBox(3)));
+        Check(strain.Get()[StrainVignette]==0,"clicking the value turns the vignette Off");
+        strain.Click(At(strain,Page::Combat,ValueBox(3)));
+        Check(strain.Get()[StrainVignette]==1,"and back On");
+        strain.Click(At(strain,Page::Combat,Decrease(3)));
+        Check(strain.Get()[StrainVignette]==0,"minus also switches it");
         const auto request=strain.Click({Kind::Apply});
-        Check(request.changed==(ChangeMask{1}<<StrainDark),"strain colour saves only its own setting");
-    }
-    {Model look;look.Open(s);look.Click({Kind::Tab,int(Page::Combat)});
-        look.Click(At(look,Page::Combat,PairValue(3,0)));look.Click(At(look,Page::Combat,PairValue(3,0)));
-        Check(look.Get()[StrainDark]==2&&std::string(StrainColorNames[2])=="Off","a second click on the value turns the strain light Off");
-        look.Click(At(look,Page::Combat,PairValue(3,0)));
-        Check(look.Get()[StrainDark]==0,"a third click returns to White");
-        look.Click(At(look,Page::Combat,PairDecrease(3,0)));
-        Check(look.Get()[StrainDark]==2,"minus from White wraps to Off");
-        look.Click(At(look,Page::Combat,PairIncrease(3,0)));
-        Check(look.Get()[StrainDark]==0,"plus from Off wraps to White");
-        Check(Normalize(StrainDark,2)==2&&Normalize(StrainDark,1)==1&&Normalize(StrainDark,0)==0,"White, Black and Off persist");
-        for(float bad:{-1.f,3.f,.5f,NAN})Check(Normalize(StrainDark,bad)==0,"an invalid strain colour uses White");
-        Check(HelpChoices(StrainDark)==3&&std::string(HelpChoice(StrainDark,2).name)=="Off","the help card describes Off");
-    }
-    {Model speed;speed.Open(s);speed.Click({Kind::Tab,int(Page::Combat)});
-        Check(s.values[StrainSpeed]==1&&PairOf(RowKey(Page::Combat,3))==StrainSpeed,"guard strain buildup defaults to Medium, on the same row's right");
-        for(float bad:{-1.f,3.f,1.5f,NAN})Check(Normalize(StrainSpeed,bad)==1,"invalid buildup preference uses Medium");
-        speed.Click(At(speed,Page::Combat,PairDecrease(3,1)));Check(speed.Get()[StrainSpeed]==0,"minus selects Slow");
-        speed.Click(At(speed,Page::Combat,PairDecrease(3,1)));Check(speed.Get()[StrainSpeed]==0,"Slow is the lower bound");
-        speed.Click(At(speed,Page::Combat,PairIncrease(3,1)));speed.Click(At(speed,Page::Combat,PairIncrease(3,1)));
-        Check(speed.Get()[StrainSpeed]==2,"plus selects Fast");
-        speed.Click(At(speed,Page::Combat,PairIncrease(3,1)));Check(speed.Get()[StrainSpeed]==2,"Fast is the upper bound");
-        Check(speed.Click({Kind::Apply}).changed==(ChangeMask{1}<<StrainSpeed),"buildup edits preserve combat rules, difficulty and colour");
+        Check(request.changed==(ChangeMask{1}<<StrainVignette),"the vignette switch saves only its own setting");
+        Check(HelpChoices(StrainVignette)==0,"no colour or buildup choices on the help card");
     }
     {Model shield;shield.Open(s);shield.Click({Kind::Tab,int(Page::Shield)});
         Check(CatalogCount(Page::Shield)==5&&RowKey(Page::Shield,0)==ShieldGrip&&RowKey(Page::Shield,1)==ShieldOut&&RowKey(Page::Shield,2)==ShieldUp&&

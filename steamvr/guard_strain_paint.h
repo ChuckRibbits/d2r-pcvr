@@ -5,8 +5,8 @@
 namespace framevr::strain {
 struct PaintJob {
     float edge=1,alpha=0,feather=Feather;
-    uint32_t color=White;
-    float density=1;
+    uint32_t color=0x000000;   // black only
+    float density=2.5f;
     float reachX=1,reachY=1; // the quad over the visor per axis (guard_strain.h Reach)
 };
 // reach: what the image was painted for; the quad is drawn at that size.

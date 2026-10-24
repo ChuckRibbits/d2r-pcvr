@@ -1164,20 +1164,18 @@ instead of a random one. Classic keeps the native roll.
   sliders (re-read from Settings.json when the game saves it), times
   `riposte_volume` (100).
 - **Guard strain light**: every blocked hit (not a parry) strains the guard by
-  `guard_strain_per_block` % (10). **VR Settings > Combat > Guard strain** (right stepper: buildup)
-  selects Slow / Medium / Fast (`guard_strain_speed` 0 / 1 / 2, default Medium).
-  Slow halves strain per block; Fast doubles it. With default tuning, full
-  strain takes about 20 / 10 / 5 blocks in a row. The
-  vignette size, lowering/reset time and blocking rules stay the same. Existing
-  custom `guard_strain_per_block` tuning is multiplied, not overwritten. Strain shows as a soft vignette at the
-  rim of the view (a pale white light by default; VR Settings > Combat > **Guard strain
-  color** switches it to a black shadow, `guard_strain_dark` 1, or hides it, `guard_strain_dark` 2
-  (Off: no light, but strain, guard breaks and chip damage still apply); the black is drawn denser by
-  `guard_strain_dark_density` (2.5) so it hides as much as the light, and
-  `guard_strain_color` takes any RRGGBB hex, default FFF7EA), beneath the blood on
-  the visor, creeping inward as it builds;
+  `guard_strain_per_block` % (10), weighted by the attacker's rank: about 10
+  normal-monster blocks in a row reach full strain. There is no buildup speed
+  setting (`guard_strain_speed` is no longer read). Strain shows as a soft black
+  vignette at the rim of the view, drawn denser by `guard_strain_dark_density` (2.5)
+  so it hides more over D2's dark scenes, beneath the blood on the visor, creeping
+  inward as it builds. **VR Settings > Combat > Guard strain vignette**
+  (`guard_strain_vignette`, 1 = On) turns it Off: no shadow, but strain, guard breaks
+  and chip damage still apply. A profile without that key that had chosen the old
+  Guard strain color Off (`guard_strain_dark` 2) stays Off; `guard_strain_dark` and
+  `guard_strain_color` are otherwise no longer read (the rim is black only);
   each block sends one smooth pulse in from the edge. At full strain the guard
-  breaks: the light swells until only `guard_strain_clear` % (10) of the view is
+  breaks: the shadow swells until only `guard_strain_clear` % (10) of the view is
   clear and breathes slowly (`guard_strain_breathe_ms`, 1600), with one alert tap on
   the left controller. The shield keeps blocking throughout; the cost is sight.
   Strain holds while hits keep reaching the shield. Once no hit (block or parry)
@@ -1185,9 +1183,9 @@ instead of a random one. Classic keeps the native roll.
   drains with the shield still up; the next hit stops the drain and restarts the
   wait. Lowering it (or a menu, or losing the shield) drains at once, without the
   wait. Either way full strain drains in `guard_strain_reset_ms` (1500), so a broken guard left alone clears 3 s after the last hit; a broken guard
-  stays broken until the light has fully faded, and raising the shield again part
+  stays broken until the shadow has fully faded, and raising the shield again part
   way keeps what is left. Opacity is `guard_strain_light` (100 %, 0 = none; strain
-  still runs). The light's inner blend is
+  still runs). The shadow's inner blend is
   `guard_strain_softness` % of the visor radius (45) about a fixed midpoint, so it
   fades toward the centre with no visible inner rim. Pulses re-trigger without
   dropping, so rapid blocks hold a swell rather than flashing.
