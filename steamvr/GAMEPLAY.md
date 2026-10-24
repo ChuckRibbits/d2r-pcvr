@@ -392,7 +392,7 @@ tabs and a **Reset eye height** button:
 | VR | Controller labels, motion combat, seated belt position, dominant hand, smooth/snap turning, belt height and reach, weapon skill gestures and ordinary mob bars |
 | Video | Added sky, fog and dungeon ceilings, and the experimental Sorceress elemental hand effects (Off by default) |
 | HUD | Health/mana location and tilt, optional resource alerts, navigation location, menu distance and tooltip timing |
-| Combat | Melee rules, swing hit speed and thrust speed |
+| Combat | Swing hit speed and thrust speed |
 | Aim | Whether spells and bow skills go to the aimed monster, the staff aiming where your arm points, and the aimed monster's outline: strength, which hands show it, and each hand's color (by range or one hue), where ground skills land (the game's aim, where you point or the aimed monster), landing circles, and whether the aim follows your view (the eyes' 17-degree tunnel, the hands within 30 degrees of your head, a raised hand aiming alone). Every option that changes how a cast aims is Off (Game) by default |
 | Shield | Where a held shield sits on the forearm: grip offset, out and up (all 0 by default), how far it follows the wrist, and its roll about the forearm |
 | Haptics | Overall strength and separate melee, bow draw, bow/throw release, spell, interaction and resource-alert strengths; tests follow each action's hands |
@@ -981,8 +981,9 @@ See [physical breakables](../docs/PHYSICAL_BREAKABLES.md) for scope and validati
 Only a confirmed physical contact overrides legacy melee grid reach. Native
 line-of-sight, hostile relationship, creature life state, damage, elemental
 resistances/immunities, criticals, leech, procs, durability, death and XP still run.
-**Melee rules** (VR Settings > Combat, `[gameplay] melee_rules`, applied live,
-mid-game) choose between two modes for physical swings and trigger/button melee:
+**Melee rules** (`[gameplay] melee_rules`, applied live, mid-game; no longer in
+VR Settings since 2026-10-23, where melee is Unleashed only) choose between two
+modes for physical swings and trigger/button melee:
 
 - **Unleashed** (`0`, the default): every weapon contact strikes each
   creature once per stroke. No to-hit, block or dodge roll and no attack-speed

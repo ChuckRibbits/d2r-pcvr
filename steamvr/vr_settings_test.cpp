@@ -299,7 +299,7 @@ int main(){
         for(int i=0;i<framevr::haptics::CategoryCount;++i)Check(levels.category[i]==i*10,"each saved category maps to its runtime channel");}
     Check(s.values[MeleeHitSpeed]==12,"melee defaults to twelve m/s");
     {Model melee;melee.Open(s);melee.Click({Kind::Tab,int(Page::Combat)});
-        const auto hit=At(Page::Combat,Increase(1));
+        const auto hit=At(Page::Combat,Increase(0));
         Check(hit.index==MeleeHitSpeed&&hit.kind==Kind::Change,"combat speed control hit target");
         melee.Click(hit);Check(melee.Get()[MeleeHitSpeed]==12.25f,"melee speed quarter step");
         const auto request=melee.Click({Kind::Apply});
@@ -309,50 +309,48 @@ int main(){
         Check(melee.Get()[MeleeHitSpeed]==6.25f,"plus button goes beyond old cap");
         s.values[MeleeHitSpeed]=12;
     }
-    {Model rules;rules.Open(s);rules.Click({Kind::Tab,int(Page::Combat)});
-        Check(s.values[MeleeRules]==0&&RowKey(Page::Combat,0)==MeleeRules,"melee rules default to Unleashed, first on the Combat page");
-        rules.Click(At(rules,Page::Combat,ValueBox(0)));
-        Check(rules.Get()[MeleeRules]==1,"clicking the value switches to Classic");
-        const auto request=rules.Click({Kind::Apply});
-        Check(request.changed==(ChangeMask{1}<<MeleeRules),"melee rules save only their own setting");
+    {   // Melee is Unleashed only: no Melee rules row; the INI key stays, Unleashed by default
+        bool rulesRow=false;
+        for(int i=0;i<CatalogCount(Page::Combat);++i)rulesRow|=CatalogKey(Page::Combat,i)==MeleeRules;
+        Check(!rulesRow&&s.values[MeleeRules]==0&&RowKey(Page::Combat,0)==MeleeHitSpeed,"melee hit speed leads the Combat page; melee rules stay Unleashed");
     }
     {Model thrust;thrust.Open(s);thrust.Click({Kind::Tab,int(Page::Combat)});
-        const auto hit=At(Page::Combat,Increase(2));
+        const auto hit=At(Page::Combat,Increase(1));
         Check(s.values[MeleeThrustSpeed]==2&&hit.index==MeleeThrustSpeed&&hit.kind==Kind::Change,"thrust has its own Combat row and two m/s default");
         thrust.Click(hit);Check(thrust.Get()[MeleeThrustSpeed]==2.25f,"thrust speed adjusts in quarter steps");
         const auto request=thrust.Click({Kind::Apply});
         Check(request.changed==(ChangeMask{1}<<MeleeThrustSpeed),"thrust edit does not change swing speed or combat rules");
-        Check(RowCount(Page::Combat)==9&&RowKey(Page::Combat,3)==ShieldBashSpeed,"nine Combat rows retain independent bash speed; parry window is fixed");
+        Check(RowCount(Page::Combat)==8&&RowKey(Page::Combat,2)==ShieldBashSpeed,"eight Combat rows retain independent bash speed; parry window is fixed");
         Check(Normalize(MeleeThrustSpeed,NAN)==2&&Normalize(MeleeThrustSpeed,0)==.75f&&Normalize(MeleeThrustSpeed,99)==10,"thrust speed has finite usable bounds");
     }
     {Model strain;strain.Open(s);strain.Click({Kind::Tab,int(Page::Combat)});
-        Check(RowKey(Page::Combat,4)==StrainDark&&std::strcmp(RowLabel(StrainDark,{}),"Guard strain")==0&&s.values[StrainDark]==0,"guard strain colour is the fifth Combat row's left, White by default");
-        strain.Click(At(strain,Page::Combat,PairValue(4,0)));
+        Check(RowKey(Page::Combat,3)==StrainDark&&std::strcmp(RowLabel(StrainDark,{}),"Guard strain")==0&&s.values[StrainDark]==0,"guard strain colour is the fourth Combat row's left, White by default");
+        strain.Click(At(strain,Page::Combat,PairValue(3,0)));
         Check(strain.Get()[StrainDark]==1,"clicking the value switches the strain to Black");
         const auto request=strain.Click({Kind::Apply});
         Check(request.changed==(ChangeMask{1}<<StrainDark),"strain colour saves only its own setting");
     }
     {Model look;look.Open(s);look.Click({Kind::Tab,int(Page::Combat)});
-        look.Click(At(look,Page::Combat,PairValue(4,0)));look.Click(At(look,Page::Combat,PairValue(4,0)));
+        look.Click(At(look,Page::Combat,PairValue(3,0)));look.Click(At(look,Page::Combat,PairValue(3,0)));
         Check(look.Get()[StrainDark]==2&&std::string(StrainColorNames[2])=="Off","a second click on the value turns the strain light Off");
-        look.Click(At(look,Page::Combat,PairValue(4,0)));
+        look.Click(At(look,Page::Combat,PairValue(3,0)));
         Check(look.Get()[StrainDark]==0,"a third click returns to White");
-        look.Click(At(look,Page::Combat,PairDecrease(4,0)));
+        look.Click(At(look,Page::Combat,PairDecrease(3,0)));
         Check(look.Get()[StrainDark]==2,"minus from White wraps to Off");
-        look.Click(At(look,Page::Combat,PairIncrease(4,0)));
+        look.Click(At(look,Page::Combat,PairIncrease(3,0)));
         Check(look.Get()[StrainDark]==0,"plus from Off wraps to White");
         Check(Normalize(StrainDark,2)==2&&Normalize(StrainDark,1)==1&&Normalize(StrainDark,0)==0,"White, Black and Off persist");
         for(float bad:{-1.f,3.f,.5f,NAN})Check(Normalize(StrainDark,bad)==0,"an invalid strain colour uses White");
         Check(HelpChoices(StrainDark)==3&&std::string(HelpChoice(StrainDark,2).name)=="Off","the help card describes Off");
     }
     {Model speed;speed.Open(s);speed.Click({Kind::Tab,int(Page::Combat)});
-        Check(s.values[StrainSpeed]==1&&PairOf(RowKey(Page::Combat,4))==StrainSpeed,"guard strain buildup defaults to Medium, on the same row's right");
+        Check(s.values[StrainSpeed]==1&&PairOf(RowKey(Page::Combat,3))==StrainSpeed,"guard strain buildup defaults to Medium, on the same row's right");
         for(float bad:{-1.f,3.f,1.5f,NAN})Check(Normalize(StrainSpeed,bad)==1,"invalid buildup preference uses Medium");
-        speed.Click(At(speed,Page::Combat,PairDecrease(4,1)));Check(speed.Get()[StrainSpeed]==0,"minus selects Slow");
-        speed.Click(At(speed,Page::Combat,PairDecrease(4,1)));Check(speed.Get()[StrainSpeed]==0,"Slow is the lower bound");
-        speed.Click(At(speed,Page::Combat,PairIncrease(4,1)));speed.Click(At(speed,Page::Combat,PairIncrease(4,1)));
+        speed.Click(At(speed,Page::Combat,PairDecrease(3,1)));Check(speed.Get()[StrainSpeed]==0,"minus selects Slow");
+        speed.Click(At(speed,Page::Combat,PairDecrease(3,1)));Check(speed.Get()[StrainSpeed]==0,"Slow is the lower bound");
+        speed.Click(At(speed,Page::Combat,PairIncrease(3,1)));speed.Click(At(speed,Page::Combat,PairIncrease(3,1)));
         Check(speed.Get()[StrainSpeed]==2,"plus selects Fast");
-        speed.Click(At(speed,Page::Combat,PairIncrease(4,1)));Check(speed.Get()[StrainSpeed]==2,"Fast is the upper bound");
+        speed.Click(At(speed,Page::Combat,PairIncrease(3,1)));Check(speed.Get()[StrainSpeed]==2,"Fast is the upper bound");
         Check(speed.Click({Kind::Apply}).changed==(ChangeMask{1}<<StrainSpeed),"buildup edits preserve combat rules, difficulty and colour");
     }
     {Model shield;shield.Open(s);shield.Click({Kind::Tab,int(Page::Shield)});
@@ -557,60 +555,60 @@ int main(){
         Check(!MonoAudioBox.Contains(float(TabBox(0).x),float(TabBox(0).y))&&MonoAudioBox.y+MonoAudioBox.h<=TabBox(0).y,"the warning stays above the tabs");
     }
     {Model heart;heart.Open(s);heart.Click({Kind::Tab,int(Page::Combat)});
-        Check(s.values[HeartbeatStart]==60&&RowKey(Page::Combat,6)==HeartbeatStart,"heartbeat start is the seventh Combat row, 60% by default");
+        Check(s.values[HeartbeatStart]==60&&RowKey(Page::Combat,5)==HeartbeatStart,"heartbeat start is the sixth Combat row, 60% by default");
         Check(ValueBox(6).y+ValueBox(6).h<744,"heartbeat row avoids Combat notes");
         Check(Normalize(HeartbeatStart,NAN)==60&&Normalize(HeartbeatStart,45)==50&&Normalize(HeartbeatStart,-5)==0&&Normalize(HeartbeatStart,100)==90,"heartbeat start snaps to 10% steps, 0-90");
-        heart.Click(At(heart,Page::Combat,Decrease(6)));Check(heart.Get()[HeartbeatStart]==50,"minus lowers the start by 10%");
-        for(int i=0;i<6;++i)heart.Click(At(heart,Page::Combat,Decrease(6)));
+        heart.Click(At(heart,Page::Combat,Decrease(5)));Check(heart.Get()[HeartbeatStart]==50,"minus lowers the start by 10%");
+        for(int i=0;i<6;++i)heart.Click(At(heart,Page::Combat,Decrease(5)));
         Check(heart.Get()[HeartbeatStart]==0,"Off is the lower bound");
-        for(int i=0;i<10;++i)heart.Click(At(heart,Page::Combat,Increase(6)));
+        for(int i=0;i<10;++i)heart.Click(At(heart,Page::Combat,Increase(5)));
         Check(heart.Get()[HeartbeatStart]==90,"90% is the upper bound");
         Check(heart.Click({Kind::Apply}).changed==(ChangeMask{1}<<HeartbeatStart),"heartbeat start saves only its own setting");
     }
     {Model sight;sight.Open(s);sight.Click({Kind::Tab,int(Page::Combat)});
-        Check(s.values[EnemySight]==100&&RowKey(Page::Combat,7)==EnemySight,"enemy sight distance is the eighth Combat row, 100% by default");
+        Check(s.values[EnemySight]==100&&RowKey(Page::Combat,6)==EnemySight,"enemy sight distance is the seventh Combat row, 100% by default");
         Check(ValueBox(7).y+ValueBox(7).h<804,"enemy sight row avoids Combat footer");
         Check(Normalize(EnemySight,NAN)==100&&Normalize(EnemySight,145)==150&&Normalize(EnemySight,50)==100&&Normalize(EnemySight,350)==300,"enemy sight snaps to 10% steps, 100-300");
-        sight.Click(At(sight,Page::Combat,Decrease(7)));Check(sight.Get()[EnemySight]==100,"100% is the lower bound");
-        sight.Click(At(sight,Page::Combat,Increase(7)));Check(sight.Get()[EnemySight]==110,"plus raises enemy sight by 10%");
-        for(int i=0;i<25;++i)sight.Click(At(sight,Page::Combat,Increase(7)));
+        sight.Click(At(sight,Page::Combat,Decrease(6)));Check(sight.Get()[EnemySight]==100,"100% is the lower bound");
+        sight.Click(At(sight,Page::Combat,Increase(6)));Check(sight.Get()[EnemySight]==110,"plus raises enemy sight by 10%");
+        for(int i=0;i<25;++i)sight.Click(At(sight,Page::Combat,Increase(6)));
         Check(sight.Get()[EnemySight]==300,"300% is the upper bound");
         Check(sight.Click({Kind::Apply}).changed==(ChangeMask{1}<<EnemySight),"enemy sight saves only its own setting");
     }
     {Model companion;companion.Open(s);companion.Click({Kind::Tab,int(Page::Combat)});
-        Check(s.values[CompanionAi]==1&&RowKey(Page::Combat,8)==CompanionAi,"companion AI is the ninth Combat row, Enabled by default");
+        Check(s.values[CompanionAi]==1&&RowKey(Page::Combat,7)==CompanionAi,"companion AI is the eighth Combat row, Enabled by default");
         Check(ValueBox(8).y+ValueBox(8).h<=800,"companion AI row avoids Combat footer");
         Check(Normalize(CompanionAi,NAN)==1&&Normalize(CompanionAi,0)==0&&Normalize(CompanionAi,1)==1&&Normalize(CompanionAi,2)==1,"companion AI normalizes to binary choice");
         Check(std::string(HelpChoice(CompanionAi,1).name)=="Enabled"&&std::string(HelpChoice(CompanionAi,0).name)=="Legacy","companion AI choices are named Enabled and Legacy");
-        companion.Click(At(companion,Page::Combat,ValueBox(8)));
+        companion.Click(At(companion,Page::Combat,ValueBox(7)));
         Check(companion.Get()[CompanionAi]==0,"clicking value toggles to Legacy (0)");
-        companion.Click(At(companion,Page::Combat,ValueBox(8)));
+        companion.Click(At(companion,Page::Combat,ValueBox(7)));
         Check(companion.Get()[CompanionAi]==1,"clicking value toggles back to Enabled (1)");
-        companion.Click(At(companion,Page::Combat,Decrease(8)));
+        companion.Click(At(companion,Page::Combat,Decrease(7)));
         Check(companion.Get()[CompanionAi]==0,"decrease selects Legacy (0)");
-        companion.Click(At(companion,Page::Combat,Increase(8)));
+        companion.Click(At(companion,Page::Combat,Increase(7)));
         Check(companion.Get()[CompanionAi]==1,"increase selects Enabled (1)");
-        companion.Click(At(companion,Page::Combat,Decrease(8)));
+        companion.Click(At(companion,Page::Combat,Decrease(7)));
         Check(companion.Click({Kind::Apply}).changed==(ChangeMask{1}<<CompanionAi),"companion AI saves only its own setting");
     }
     {Model difficulty;difficulty.Open(s);difficulty.Click({Kind::Tab,int(Page::Combat)});
-        Check(s.values[OfflinePlayers]==0&&RowKey(Page::Combat,5)==OfflinePlayers,"difficulty preserves native settings by default");
+        Check(s.values[OfflinePlayers]==0&&RowKey(Page::Combat,4)==OfflinePlayers,"difficulty preserves native settings by default");
         Check(ValueBox(5).y+ValueBox(5).h<698,"difficulty avoids Combat notes");
         Check(Normalize(OfflinePlayers,NAN)==0&&Normalize(OfflinePlayers,9)==0&&Normalize(OfflinePlayers,2.5f)==0,"invalid offline counts fail back to native");
-        for(int i=1;i<=8;++i){difficulty.Click(At(difficulty,Page::Combat,Increase(5)));Check(difficulty.Get()[OfflinePlayers]==i,"increase difficulty through every native count");}
-        difficulty.Click(At(difficulty,Page::Combat,Increase(5)));Check(difficulty.Get()[OfflinePlayers]==8,"upper bound does not wrap");
+        for(int i=1;i<=8;++i){difficulty.Click(At(difficulty,Page::Combat,Increase(4)));Check(difficulty.Get()[OfflinePlayers]==i,"increase difficulty through every native count");}
+        difficulty.Click(At(difficulty,Page::Combat,Increase(4)));Check(difficulty.Get()[OfflinePlayers]==8,"upper bound does not wrap");
         const auto request=difficulty.Click({Kind::Apply});
         Check(request.changed==(ChangeMask{1}<<OfflinePlayers),"difficulty does not alter melee rules or speeds");
         auto saved=s;saved.sequence=request.sequence;saved.result=Result::Saved;saved.values=request.values;
         difficulty.Observe(saved);
-        for(int i=7;i>=0;--i){difficulty.Click(At(difficulty,Page::Combat,Decrease(5)));Check(difficulty.Get()[OfflinePlayers]==i,"decrease through native default");}
-        difficulty.Click(At(difficulty,Page::Combat,Decrease(5)));Check(difficulty.Get()[OfflinePlayers]==0,"native default is lower bound");
+        for(int i=7;i>=0;--i){difficulty.Click(At(difficulty,Page::Combat,Decrease(4)));Check(difficulty.Get()[OfflinePlayers]==i,"decrease through native default");}
+        difficulty.Click(At(difficulty,Page::Combat,Decrease(4)));Check(difficulty.Get()[OfflinePlayers]==0,"native default is lower bound");
         const auto draft=difficulty.Get();saved.offlineDifficultyAvailable=true;difficulty.Observe(saved);
         Check(difficulty.offlineDifficultyAvailable&&difficulty.Get()==draft,"capability updates preserve unsaved edits");
     }
     {Model bash;bash.Open(s);bash.Click({Kind::Tab,int(Page::Combat)});
-        Check(s.values[ShieldBashSpeed]==2&&At(Page::Combat,Increase(3)).index==ShieldBashSpeed,"shield bash has its own speed row");
-        bash.Click(At(bash,Page::Combat,Increase(3)));
+        Check(s.values[ShieldBashSpeed]==2&&At(Page::Combat,Increase(2)).index==ShieldBashSpeed,"shield bash has its own speed row");
+        bash.Click(At(bash,Page::Combat,Increase(2)));
         Check(bash.Get()[ShieldBashSpeed]==2.25f&&bash.Click({Kind::Apply}).changed==(ChangeMask{1}<<ShieldBashSpeed),"bash speed edits only its own setting");
         Check(Normalize(ShieldBashSpeed,NAN)==2&&Normalize(ShieldBashSpeed,0)==.75f&&Normalize(ShieldBashSpeed,99)==10,"bash speed UI matches contact bounds");
     }

@@ -55,7 +55,6 @@ inline const char* HelpText(int id) {
         case OrdinaryMobBars:return "Shows names and health bars for ordinary enemies. Turn it Off to reduce clutter. Boss and elite bars remain visible.";
         case MenuDistance:return "How far away eye-level game panels, such as inventory and merchant menus, appear. You can also point at a game menu, hold Right Grip and push or pull it; menus reopen at that distance until you change this setting or restart. This does not move this VR Settings panel; grab it with Right Grip to move, push, pull or tilt it.";
         case TooltipTiming:return "How soon item details appear when you point the laser at an item in a game panel.";
-        case MeleeRules:return "How your physical melee strokes deal damage.";
         case CompanionCounts:return "Shows companion counts and effects currently affecting your character below the left-hand minimap. This includes received buffs, auras and harmful effects, not just assigned skills. It follows Minimap & Compass placement.";
         case OfflinePlayers:return "Uses native offline Players 1-8 scaling for tougher monsters and increased experience and loot. Apply affects newly spawned monsters; existing monsters keep their current stats. For all monsters to use the new value, Save and Exit, then start a new game with the same character. Game default follows the game's own setting. Works with every class and either melee mode. Does not change Normal, Nightmare or Hell, or your desktop preference.";
         case StrainSpeed:return "How quickly blocked hits build the shield strain vignette in Unleashed. Strain starts fading a moment after hits stop, or as soon as you lower the shield; full strain is gone about 3 seconds after the last hit.";
@@ -122,7 +121,7 @@ inline int HelpChoices(int id) {
         case StereoRendering:return int(std::size(StereoRenderingNames));
         case RenderResolution:return int(std::size(resolution::Choices));
         case ControllerLabels:return int(controllers::Choice::Count);
-        case Dominant:case MeleeRules:case MapTopDown:case AimHighlights:case CompanionAi:return 2;
+        case Dominant:case MapTopDown:case AimHighlights:case CompanionAi:return 2;
         case GroundAim:return int(std::size(GroundAimNames));
         case LeftHandStrikes:return int(std::size(LeftHandStrikesNames));
         case SpellLock:return int(std::size(SpellLockNames));
@@ -239,11 +238,6 @@ inline ChoiceHelp HelpChoice(int id,float value) {
                 "The left claw casts the skill on the left trigger; a skill strikes cannot cast gives basic attacks.",
                 "Both claws cast the right trigger's skill (a skill can sit on only one trigger). The claws share one attack cycle, so this is never more casts."};
             return {LeftHandStrikesNames[c],text[c]};}
-        case MeleeRules:{
-            static constexpr const char* text[]={
-                "Each deliberate stroke hits every enemy it reaches, once. Damage = normal damage x hit chance (70% means 70% damage, never a miss) x recovery (25% at half an attack cycle since your last landed stroke, 100% at a full one) x cleave (100%, 75%, 50%, then 25% per target). Ripostes skip these. Adds shield blocks and parries.",
-                "The game's own rules: each stroke rolls to hit, attack speed limits how often you can hit, and each stroke hits one target."};
-            return {MeleeRulesNames[c],text[c]};}
         case StrainSpeed:{
             static constexpr const char* text[]={
                 "Half the strain per block: about 20 blocks to full strain without lowering your shield.",
