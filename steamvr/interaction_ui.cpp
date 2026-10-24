@@ -131,6 +131,7 @@ std::vector<uint8_t> Paint(const Snapshot& s,const Output& o,int selection,const
     auto old=SelectObject(dc,bitmap);std::memset(bits,0,size*size*4);
     HFONT font=CreateFontW(20,0,0,0,FW_SEMIBOLD,FALSE,FALSE,FALSE,DEFAULT_CHARSET,OUT_DEFAULT_PRECIS,CLIP_DEFAULT_PRECIS,ANTIALIASED_QUALITY,DEFAULT_PITCH,L"Georgia");
     HFONT shortcutFont=CreateFontW(14,0,0,0,FW_SEMIBOLD,FALSE,FALSE,FALSE,DEFAULT_CHARSET,OUT_DEFAULT_PRECIS,CLIP_DEFAULT_PRECIS,ANTIALIASED_QUALITY,DEFAULT_PITCH,L"Georgia");
+    HFONT cardFont=CreateFontW(SkillCardFont,0,0,0,FW_SEMIBOLD,FALSE,FALSE,FALSE,DEFAULT_CHARSET,OUT_DEFAULT_PRECIS,CLIP_DEFAULT_PRECIS,ANTIALIASED_QUALITY,DEFAULT_PITCH,L"Georgia");
     HFONT skillFont=CreateFontW(18,0,0,0,FW_SEMIBOLD,FALSE,FALSE,FALSE,DEFAULT_CHARSET,OUT_DEFAULT_PRECIS,CLIP_DEFAULT_PRECIS,ANTIALIASED_QUALITY,DEFAULT_PITCH,L"Georgia");
     auto oldFont=SelectObject(dc,font);SetBkMode(dc,TRANSPARENT);SetTextColor(dc,RGB(238,235,220));
     auto fill=[&](RECT r,COLORREF c){auto b=CreateSolidBrush(c);FillRect(dc,&r,b);DeleteObject(b);};
@@ -350,7 +351,16 @@ std::vector<uint8_t> Paint(const Snapshot& s,const Output& o,int selection,const
             char detail[64];if(skill.owner==-1)std::snprintf(detail,sizeof detail,"Level %d",skill.level);
             else std::snprintf(detail,sizeof detail,"Item-granted skill");
             SelectObject(dc,shortcutFont);SetTextColor(dc,RGB(169,151,118));
-            text(detail,{x+85,y+63,right-8,bottom-4});SetTextColor(dc,RGB(235,218,181));SelectObject(dc,font);
+            // Gesture skills (skill_usage.h): GESTURE from this slot, ON TRIGGER where a trigger makes one.
+            const bool here=skillusage::Gesture(skill.id,o.editSlot);
+            const bool trigger=here||skillusage::Gesture(skill.id,skills::TriggerSlot(0))||skillusage::Gesture(skill.id,skills::TriggerSlot(1));
+            text(detail,{x+85,y+63,trigger?right-106:right-8,bottom-4});
+            if(trigger) {
+                const RECT chip{right-102,bottom-27,right-8,bottom-7};
+                fill(chip,here?RGB(100,74,29):RGB(48,40,28));SetTextColor(dc,here?RGB(235,218,181):RGB(169,151,118));
+                text(here?"GESTURE":"ON TRIGGER",chip);
+            }
+            SetTextColor(dc,RGB(235,218,181));SelectObject(dc,font);
         }
         // The skill pointed at: how it works from the slot being assigned
         // (skill_usage.h), on a card over the other column.
@@ -363,7 +373,7 @@ std::vector<uint8_t> Paint(const Snapshot& s,const Output& o,int selection,const
             const bool trigger=o.editSlot==skills::TriggerSlot(skills::Hand(o.editSlot));
             SelectObject(dc,shortcutFont);SetTextColor(dc,RGB(232,196,119));
             text(skillusage::Gesture(skill.id,o.editSlot)?"GESTURE ON THIS TRIGGER":trigger?"ON THIS TRIGGER":"ON THIS BUTTON",{box.left+10,box.top+38,box.right-10,box.top+56});
-            SelectObject(dc,skillFont);SetTextColor(dc,RGB(235,218,181));
+            SelectObject(dc,cardFont);SetTextColor(dc,RGB(235,218,181));
             paragraph(skillusage::Details(skill.id,o.editSlot),{box.left+SkillCardPad,box.top+SkillCardTop,box.right-SkillCardPad,box.bottom-SkillCardPad});
             SelectObject(dc,font);
         }
@@ -566,7 +576,7 @@ std::vector<uint8_t> Paint(const Snapshot& s,const Output& o,int selection,const
             rgba[4*i+3]=textPixel?255:p[3];
         }
     }
-    SelectObject(dc,oldFont);DeleteObject(font);DeleteObject(shortcutFont);DeleteObject(skillFont);SelectObject(dc,old);DeleteObject(bitmap);DeleteDC(dc);return rgba;
+    SelectObject(dc,oldFont);DeleteObject(font);DeleteObject(shortcutFont);DeleteObject(skillFont);DeleteObject(cardFont);SelectObject(dc,old);DeleteObject(bitmap);DeleteDC(dc);return rgba;
 }
 std::vector<uint8_t> BloodArt(int width,int height) {
     return width>0&&height>0?DecodeArt(L"D2RVR_BLOOD_VISOR",UINT(width),UINT(height)):std::vector<uint8_t>{};

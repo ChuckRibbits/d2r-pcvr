@@ -15,7 +15,7 @@
 //    most LineLength characters (their strip holds two lines);
 //  - Details: the skill picker's tooltip card, at most DetailsLength.
 namespace framevr::skillusage {
-inline constexpr size_t LineLength=180,DetailsLength=520;
+inline constexpr size_t LineLength=180,DetailsLength=900;
 inline constexpr int Interact=357;   // the catalog's Interact / pick up entry (native_ui)
 enum class Kind {None,Interact,Attack,Strike,Flurry,Smite,Bow,Quiver,Javelin,DoubleThrow,Toss,Native};
 inline Kind Classify(int skill) {
@@ -81,7 +81,18 @@ inline std::string Details(int skill,int slot) {
     switch(Classify(skill)) {
         case Kind::None:return {};
         case Kind::Interact:return "Press to interact with or pick up what this hand points at: doors, chests, shrines, waypoints, items and people.";
-        case Kind::Attack:return "Press to attack what this hand points at, as the game's basic attack. Swinging a melee weapon through a monster attacks without any button.";
+        case Kind::Attack:
+            // Unleashed swing rules (steamvr/GAMEPLAY.md, vrcam's [gameplay] defaults).
+            return "Swing a melee weapon through a monster to attack it; no button is needed. Every stroke hits each monster it reaches once: "
+                   "nothing misses, and attack speed sets no cooldown. Instead:\n"
+                   "• Hit chance scales damage: a 70% chance to hit deals 70% damage.\n"
+                   "• Recovery: damage x (the share of your attack cycle since your last landed stroke) squared, so swinging "
+                   "after half a cycle deals 25%.\n"
+                   "• Cleave: each further monster one stroke reaches takes 25% less: 100, 75, 50, then 25%.\n"
+                   "• On-hit effects (leech, crushing blow, deadly strike, procs) come only from a full-cycle stroke's first "
+                   "monster, and only as often as its hit roll would hit.\n"
+                   "• A riposte after a perfect parry is a full hit with them.\n"
+                   "Pressing this button attacks what the hand points at.";
         case Kind::Strike: {
             if(!at.trigger)return "Press to cast it natively, aimed by this hand. On a trigger it becomes a gesture: a swing that lands casts it on the monster you hit, with the skill's own mana, damage and effects.";
             std::string text=at.left?"Gesture, with a second weapon of a dual-wield pair or the other claw in a form. ":"Gesture with a melee weapon or claws. ";

@@ -371,9 +371,9 @@ int main(int argc,char** argv) {
         std::fclose(file);return 0;
     }
     if(editorCheck) {
-        {   // Every skill's card text fits its card on every slot (skill_usage.h Details, the 18 px skill font).
+        {   // Every skill's card text fits its card on every slot (skill_usage.h Details, in the card's font).
             HDC measure=CreateCompatibleDC(nullptr);
-            HFONT card=CreateFontW(18,0,0,0,FW_SEMIBOLD,FALSE,FALSE,FALSE,DEFAULT_CHARSET,OUT_DEFAULT_PRECIS,CLIP_DEFAULT_PRECIS,ANTIALIASED_QUALITY,DEFAULT_PITCH,L"Georgia");
+            HFONT card=CreateFontW(SkillCardFont,0,0,0,FW_SEMIBOLD,FALSE,FALSE,FALSE,DEFAULT_CHARSET,OUT_DEFAULT_PRECIS,CLIP_DEFAULT_PRECIS,ANTIALIASED_QUALITY,DEFAULT_PITCH,L"Georgia");
             const auto old=SelectObject(measure,card);const auto c=SkillCardBounds(0);
             const int width=int(768*(c.right-c.left))-2*SkillCardPad,height=int(768*(c.bottom-c.top))-SkillCardTop-SkillCardPad;
             int tallest=0;
@@ -387,17 +387,18 @@ int main(int argc,char** argv) {
         }
         s.bindingsEditable=true;s.bindingBank=0;s.skillCount=7;
         std::copy_n(s.skills.begin(),7,s.catalog.begin());
-        std::vector<uint8_t> gallery(2304*768*4);
-        for(int page=0;page<3;++page) {
+        std::vector<uint8_t> gallery(3072*768*4);
+        for(int page=0;page<4;++page) {
             o.utility=false;o.editor=page?2:1;o.editSlot=page==2?framevr::skills::TriggerSlot(0):1;o.editCount=7;
             o.editClass=1;o.editCategoryCounts={7,2,1,1,3};
             std::copy_n(s.skills.begin(),o.editOptions.size(),o.editOptions.begin());o.hover=page?3:1;
-            if(page==2){auto& bash=o.editOptions[2];bash.id=framevr::strikeskills::Zeal;std::snprintf(bash.name,sizeof bash.name,"Zeal");o.hover=2;}
+            if(page>=2){auto& zeal=o.editOptions[2];zeal.id=framevr::strikeskills::Zeal;std::snprintf(zeal.name,sizeof zeal.name,"Zeal");o.hover=2;}
+            if(page==3){auto& attack=o.editOptions[1];attack.id=framevr::weaponskills::Attack;std::snprintf(attack.name,sizeof attack.name,"Attack");o.hover=1;}
             const auto atlas=Paint(s,o,2);
-            for(int y=0;y<768;++y)std::memcpy(&gallery[(y*2304+page*768)*4],&atlas[y*1024*4],768*4);
+            for(int y=0;y<768;++y)std::memcpy(&gallery[(y*3072+page*768)*4],&atlas[y*1024*4],768*4);
         }
-        if(!SavePng(argv[1],gallery,2304,768))return 25;
-        std::puts("Skill editor preview: slot selection, a skill card on a face button and Zeal's on the right trigger");return 0;
+        if(!SavePng(argv[1],gallery,3072,768))return 25;
+        std::puts("Skill editor preview: slot selection, a skill card on a face button, Zeal's and Attack's on the right trigger");return 0;
     }
     if(wheelCheck) {
         if(argc<4||!icons::Get("s36")||!icons::Get(s.belt[0].Next())||!icons::Get(s.sets[0][0]))return 21;
