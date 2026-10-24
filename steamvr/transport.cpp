@@ -44,6 +44,7 @@
 #include "sewer_prompt_art.h"
 #include "notice_card_art.h"
 #include "blood_screen.h"
+#include "shapeshift_gesture.h"
 #include "guard_strain.h"
 #include "guard_strain_paint.h"
 #include "heartbeat.h"
@@ -423,6 +424,10 @@ struct ShieldCast {
 };
 ShieldCast shieldCast;
 weaponskills::Pulse shieldPulse;
+// [shapeshift] Druid gestures pulse whichever slot holds Werewolf / Werebear.
+shapeshift::Engine shapeshiftGesture;
+weaponskills::Pulse shapePulse;
+int shapeSlot=-1,shapeId=-1,shapeOwner=-1;
 // [bow] quiver: face-button arrow skills load the following physical arrows.
 std::atomic<bool> quiverEnabled{true},quiverPreview{true};
 weaponskills::Quiver quiver;
@@ -2379,6 +2384,48 @@ void Input() {
         motionOutput.meleeContact=false;
         // Keep observing the left stroke during native wind-up. Resetting it
         // here would allow the same continuous swing to become another bash.
+    }
+    // Druid shapeshift gestures. The performance casts the bound shape skill
+    // through its own slot's button; the game owns the transformation, mana
+    // and the return to human form (the same skill cast again).
+    {
+        shapeshift::Input in;
+        in.time=interactionInput.time;in.session=interactionInput.session;in.epoch=interactionInput.epoch;
+        in.active=motionInput.active&&!motionOutput.block&&!motionInput.quickCast&&quickFresh&&
+            gestureSettings[settings::ShapeshiftGestures]>.5f&&!interactionOutput.wheel&&!interactionOutput.settings;
+        in.head=interactionInput.head.p;in.headRotation=interactionInput.head.q;
+        for(int h=0;h<2;++h) {
+            in.hand[h]=interactionInput.hand[h].p;in.tracked[h]=interactionInput.tracked[h];
+            in.handVelocity[h]=interactionInput.handVelocity[h];in.velocityKnown[h]=interactionInput.velocityKnown[h];
+            in.busy[h]=interactionOutput.bottleHand==h||handInput.trigger[h]>.3f||(h==0&&motionOutput.bowDrawing)||bloodOutput.block[h];
+        }
+        const auto shape=shapeshiftGesture.Step(in);
+        if(shape.dropped) {
+            char line[160];std::snprintf(line,sizeof line,"Frame shapeshift: dropped at %s: %s",shape.stage,shape.dropped);Say(line);
+        }
+        if(shape.cast!=shapeshift::Form::None) {
+            const int wanted=shape.cast==shapeshift::Form::Werewolf?weaponskills::Werewolf:weaponskills::Werebear;
+            int slot=-1;
+            for(int i=0;i<skills::Count;++i)if(quickSnapshot.skills[i].known&&quickSnapshot.skills[i].id==wanted){slot=i;break;}
+            char line[160];
+            if(slot<0) {
+                std::snprintf(line,sizeof line,"Frame shapeshift: %s gesture, skill %d not assigned to a button",shape.cast==shapeshift::Form::Werewolf?"Werewolf":"Werebear",wanted);Say(line);
+            }
+            else if(!quickSnapshot.skills[slot].available) {
+                std::snprintf(line,sizeof line,"Frame shapeshift: %s gesture, skill unavailable on slot %d",shape.cast==shapeshift::Form::Werewolf?"Werewolf":"Werebear",slot);Say(line);
+            }
+            // Alternate-bank slots need the modifier prepared first: hold like Smite.
+            else if(shapePulse.Start(slot,wanted,quickSnapshot.skills[slot].owner,motionInput.skillContext,motionInput.time,skills::Alternate(slot)?.180:.065)) {
+                shapeSlot=slot;shapeId=wanted;shapeOwner=quickSnapshot.skills[slot].owner;
+                MotionPulse(0,haptics::Category::Spell,.6f,60000000);MotionPulse(1,haptics::Category::Spell,.6f,60000000);
+                std::snprintf(line,sizeof line,"Frame shapeshift: %s gesture cast via slot %d",shape.cast==shapeshift::Form::Werewolf?"Werewolf":"Werebear",slot);Say(line);
+            }
+        }
+        if(shapeSlot>=0) {
+            const int pulse=shapePulse.Get(shapeSlot,shapeId,shapeOwner,motionInput.skillContext,motionInput.time);
+            if(pulse<0)shapeSlot=shapeId=shapeOwner=-1;
+            else if(motionOutput.skill<0&&quickFresh&&quickSnapshot.skills[pulse].available)motionOutput.skill=pulse;
+        }
     }
     if(motionOutput.nativeBowRelease&&motionInput.bowSkill==weaponskills::Strafe)volleyRequestedAt=motionAt;
     interaction::SkillCue cue;

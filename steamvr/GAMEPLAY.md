@@ -395,6 +395,7 @@ tabs and a **Reset eye height** button:
 | Combat | Melee rules, swing hit speed and thrust speed |
 | Aim | Whether spells and bow skills go to the aimed monster, the staff aiming where your arm points, and the aimed monster's outline: strength, which hands show it, and each hand's color (by range or one hue), where ground skills land (the game's aim, where you point or the aimed monster), landing circles, and whether the aim follows your view (the eyes' 17-degree tunnel, the hands within 30 degrees of your head, a raised hand aiming alone). Every option that changes how a cast aims is Off (Game) by default |
 | Shield | Where a held shield sits on the forearm: grip offset, out and up (all 0 by default), how far it follows the wrist, and its roll about the forearm |
+| Class | Options for the class being played only: shapeshift gestures and left-hand strikes (Druid). Empty for other classes, and until a character is in the game |
 | Haptics | Overall strength and separate melee, bow draw, bow/throw release, spell, interaction and resource-alert strengths; tests follow each action's hands |
 | Perf | Everything that changes the frame rate: stereo rendering (Both eyes / By turns, By turns by default), VR render resolution (Headset by default), terrain and object draw distances, foveation Off / Fixed / Eye tracked and its strength, ReShade depth (after a restart) and desktop one eye; the actual VR source size, a Defer GPU wait button while frames wait for the GPU, and warnings while the game's Vertical Sync is on or its anti-aliasing is not FXAA. Under them, each second's frame rate and where the frame's time goes, whether the CPU's part fits the headset's frame, and the game's own graphics options |
 | Notes | The last published release's notes, read-only |
@@ -1700,6 +1701,30 @@ three eligible melee checks, three accuracy overrides and three block bypasses
 without failures. The final free-swing run recorded 58 physical contacts and
 58 native accepted hits with no rejections; the owner reported "works great."
 Arrow/spell live verification remains open.
+
+### Druid shapeshift gestures
+
+With **Shapeshift gestures** on (`[gameplay] shapeshift_gestures`, 1; VR Settings,
+Class tab, shown while a Druid is played) a Druid changes form by performing the transformation, in either
+melee rules mode:
+
+- **Werewolf:** cross both arms over your chest (each hand on the opposite side),
+  bow forward over them, then wrench upright while flinging both arms up and
+  outward.
+- **Werebear:** hold both hands above your head for a moment, then slam them
+  down together to waist height or lower.
+
+The gesture presses the controller button the shape skill is assigned to, so the
+skill must be on one of the ten slots; the native cast, mana, cooldown and the
+transformation itself stay native. Performing the gesture again while
+transformed casts the skill again, which returns you to human form; a 1.5 s
+cooldown after each cast stops one sloppy performance from casting twice. A
+performance is ignored while a hand is busy (trigger squeezed, bottle held, bow
+drawn, face wipe), while menus or the wheel are open, and without the skill on a
+button (the log says which skill was not assigned). Both controllers pulse once
+when the cast is issued. Thresholds live in `shapeshift::Tuning`
+(`steamvr/shapeshift_gesture.h`); `shapeshift-gesture-test` walks both
+performances, lazy and partial versions, loot stooping and overhead swings.
 
 ### Ice Bolt visual height correction
 
