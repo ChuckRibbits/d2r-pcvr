@@ -392,11 +392,11 @@ tabs and a **Reset eye height** button:
 | VR | Controller labels, motion combat, seated belt position, dominant hand, smooth/snap turning, belt height and reach, weapon skill gestures and ordinary mob bars |
 | Video | Added sky, fog and dungeon ceilings, the experimental Sorceress elemental hand effects (Off by default), bottle and prop physics, and the torch club's flame (On; its light stays when it is off) |
 | HUD | Health/mana location and tilt, optional resource alerts, navigation location, menu distance and tooltip timing |
-| Combat | Melee rules, swing hit speed and thrust speed |
+| Combat | Swing hit speed and thrust speed |
 | Aim | Whether spells and bow skills go to the aimed monster, the staff aiming where your arm points, and the aimed monster's outline: strength, which hands show it, and each hand's color (by range or one hue), where ground skills land (the game's aim, where you point or the aimed monster), landing circles, and whether the aim follows your view (the eyes' 17-degree tunnel, the hands within 30 degrees of your head, a raised hand aiming alone). Every option that changes how a cast aims is Off (Game) by default |
 | Shield | Where a held shield sits on the forearm: grip offset, out and up (all 0 by default), how far it follows the wrist, and its roll about the forearm |
 | Haptics | Overall strength and separate melee, bow draw, bow/throw release, spell, interaction and resource-alert strengths; tests follow each action's hands |
-| Perf | Everything that changes the frame rate: stereo rendering (Both eyes / By turns, By turns by default), VR render resolution (Headset by default), terrain and object draw distances, foveation Off / Fixed / Eye tracked and its strength, ReShade depth (after a restart) and desktop one eye; the actual VR source size, a Defer GPU wait button while frames wait for the GPU, and warnings while the game's Vertical Sync is on or its anti-aliasing is not FXAA. Under them, each second's frame rate and where the frame's time goes, whether the CPU's part fits the headset's frame, and the game's own graphics options |
+| Perf | Everything that changes the frame rate: stereo rendering (Both eyes / By turns, By turns by default), VR render resolution (Headset by default), terrain and object draw distances, foveation Off / Fixed / Eye tracked and its strength; the actual VR source size, a Defer GPU wait button while frames wait for the GPU, and warnings while the game's Vertical Sync is on or its anti-aliasing is not FXAA. Under them, each second's frame rate and where the frame's time goes, whether the CPU's part fits the headset's frame, and the game's own graphics options |
 | Notes | The last published release's notes, read-only |
 
 Pages show only the rows that can apply to the character the panel is open
@@ -981,8 +981,10 @@ See [physical breakables](../docs/PHYSICAL_BREAKABLES.md) for scope and validati
 Only a confirmed physical contact overrides legacy melee grid reach. Native
 line-of-sight, hostile relationship, creature life state, damage, elemental
 resistances/immunities, criticals, leech, procs, durability, death and XP still run.
-**Melee rules** (VR Settings > Combat, `[gameplay] melee_rules`, applied live,
-mid-game) choose between two modes for physical swings and trigger/button melee:
+**Melee rules.** Melee is Unleashed only since 2026-10-23: `[gameplay]
+melee_rules` is ignored and no longer in VR Settings. The Classic rules below
+describe code that stays until it is removed. The two modes for physical swings
+and trigger/button melee were:
 
 - **Unleashed** (`0`, the default): every weapon contact strikes each
   creature once per stroke. No to-hit, block or dodge roll and no attack-speed
@@ -1024,12 +1026,14 @@ mid-game) choose between two modes for physical swings and trigger/button melee:
     of the time, as natively. `would_hit=1/0` (-1: not gated, e.g. a riposte)
     ends each `melee_trace` contact line.
   - **Melee skill strikes** (CONTROLS.md): a hand armed with a strike skill
-    (the Druid's Maul, Feral Rage, Rabies, Fire Claws, Hunger and Fury so far) casts it natively on a full-cycle stroke's first landed
+    (the Druid's Maul, Feral Rage, Rabies, Fire Claws, Hunger and Fury; Bash, Stun, Concentrate, Berserk, Sacrifice, Vengeance, Conversion, Zeal,
+    Power Strike, Impale, Charged Strike, Lightning Strike and Poison Dagger) casts it natively on a full-cycle stroke's first landed
     contact, inside that contact's scaling and on-hit gate; every other contact
     stays a basic attack. Classic casts on every paced contact. Developer
     builds log `Frame melee skills:` (armed contacts, casts, refusals by
     reason) and add `strike=<skill> cast|basic_strike` to `melee_trace` lines.
-  - **Fury's flurry:** the cast lands hit 1 of its 2-5. In Unleashed each
+  - **Fury's flurry** (Zeal's the same with a weapon; Classic paces Zeal at its Param2, a whole cycle):
+    the cast lands hit 1 of its 2-5. In Unleashed each
     later landed stroke of a claw carrying Fury lands the next one, at any
     speed (only a stroke within 100 ms of the previous Fury hit, one swipe's
     follow-through, can't): unscaled, with on-hit effects, no mana, on the

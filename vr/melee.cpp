@@ -352,6 +352,21 @@ constexpr uint8_t Do121Sig[EntrySig]={0x40,0x55,0x53,0x56,0x57,0x41,0x54,0x41,0x
 constexpr uint8_t Do122Sig[EntrySig]={0x40,0x55,0x56,0x57,0x41,0x54,0x41,0x55,0x41,0x57};
 constexpr uint8_t St37Sig[EntrySig]={0x48,0x89,0x5c,0x24,0x20,0x55,0x57,0x41,0x55,0x41};
 constexpr uint8_t Do13Sig[EntrySig]={0x40,0x55,0x56,0x57,0x41,0x55,0x41,0x57,0x48,0x8d};
+// The weapon skills' entries (#223), read live from the decrypted tables by
+// the dev build (2026-10-23, D2R 3.3.94995, which keeps 3.3.93787's RVAs).
+constexpr uint8_t St6Sig[EntrySig]={0x40,0x55,0x56,0x57,0x41,0x54,0x41,0x56,0x41,0x57};
+constexpr uint8_t St7Sig[EntrySig]={0x40,0x55,0x56,0x57,0x41,0x54,0x41,0x56,0x41,0x57};
+constexpr uint8_t St10Sig[EntrySig]={0x40,0x55,0x53,0x56,0x57,0x41,0x54,0x41,0x56,0x48};
+constexpr uint8_t St16Sig[EntrySig]={0x40,0x55,0x56,0x57,0x41,0x54,0x41,0x55,0x41,0x56};
+constexpr uint8_t St29Sig[EntrySig]={0x40,0x55,0x56,0x57,0x41,0x55,0x41,0x56,0x41,0x57};
+constexpr uint8_t St32Sig[EntrySig]={0x48,0x89,0x5c,0x24,0x08,0x48,0x89,0x6c,0x24,0x10};
+constexpr uint8_t St35Sig[EntrySig]={0x40,0x55,0x56,0x57,0x41,0x54,0x41,0x55,0x41,0x57};
+constexpr uint8_t St39Sig[EntrySig]={0x40,0x55,0x56,0x57,0x41,0x54,0x41,0x55,0x41,0x56};
+constexpr uint8_t Do11Sig[EntrySig]={0x40,0x55,0x53,0x56,0x57,0x41,0x54,0x41,0x55,0x41};
+constexpr uint8_t Do14Sig[EntrySig]={0x40,0x53,0x55,0x56,0x57,0x41,0x54,0x41,0x55,0x41};
+constexpr uint8_t Do32Sig[EntrySig]={0x48,0x89,0x5c,0x24,0x08,0x57,0x48,0x83,0xec,0x30};
+constexpr uint8_t Do64Sig[EntrySig]={0x40,0x55,0x53,0x41,0x54,0x41,0x55,0x41,0x56,0x41};
+constexpr uint8_t Do79Sig[EntrySig]={0x48,0x89,0x5c,0x24,0x10,0x48,0x89,0x6c,0x24,0x18};   // Conversion's, read the same way later that day
 // Fury (multi-hit, strike_skills.h Flurry). Start 37 writes the used skill node:
 // hit count +0x24, target type +0x2c, target id +0x30. Do 13 (one call per hit)
 // reads the target from +0x2c/+0x30 (556965), lands the hit, then counts +0x24
@@ -359,20 +374,34 @@ constexpr uint8_t Do13Sig[EntrySig]={0x40,0x55,0x56,0x57,0x41,0x55,0x41,0x57,0x4
 // the hero's animation (4914E0) by the row's Param2 (+0x1BC, read at 556BF5).
 // With no attack animation that rewind would re-time the hero's walk/neutral
 // events, so each call is given a count of 1: one hit, and the jle skips the
-// next-target search and the rewind. These three sites are checked for Fury.
+// next-target search and the rewind. These three sites are checked for Fury
+// and Zeal, the same functions.
 constexpr uint64_t Do13TargetRva=0x556965,Do13CountRva=0x556b56,Do13PaceRva=0x556bf5;
 constexpr uint8_t Do13TargetSig[]={0x41,0x8b,0x56,0x2c,0x48,0x8b,0xce,0x89,0x44,0x24,0x44,0x41,0x8b,0x46,0x30};   // mov edx,[r14+2Ch] .. mov eax,[r14+30h]
 constexpr uint8_t Do13CountSig[]={0x41,0xff,0x4e,0x24,0x41,0x83,0x7e,0x24,0x00,0x0f,0x8e,0xc3,0x00,0x00,0x00};    // dec [r14+24h]; cmp; jle 556C28 (the exit)
 constexpr uint8_t Do13PaceSig[]={0x8b,0x80,0xbc,0x01,0x00,0x00};                                                   // mov eax,[rax+1BCh]
 constexpr uintptr_t NodeHitsOffset=0x24,NodeTargetTypeOffset=0x2c,NodeTargetIdOffset=0x30,RowParam2Offset=0x1bc;
-struct StrikeNative {int skill,start,action;uint64_t startRva,actionRva;const uint8_t* startSig;const uint8_t* actionSig;};
+struct StrikeNative {const char* name;int skill,start,action;uint64_t startRva,actionRva;const uint8_t* startSig;const uint8_t* actionSig;};
 constexpr StrikeNative StrikeNatives[]={
-    {framevr::strikeskills::Maul,56,120,0x5779e0,0x576160,St56Sig,Do120Sig},
-    {framevr::strikeskills::FeralRage,56,120,0x5779e0,0x576160,St56Sig,Do120Sig},
-    {framevr::strikeskills::Rabies,57,121,0x577f00,0x576bb0,St57Sig,Do121Sig},
-    {framevr::strikeskills::FireClaws,58,2,0x577c90,0x430240,St58Sig,Do2Sig},
-    {framevr::strikeskills::Hunger,0,122,0,0x576630,nullptr,Do122Sig},
-    {framevr::strikeskills::Fury,37,13,0x5582a0,0x5568e0,St37Sig,Do13Sig},
+    {"Maul",framevr::strikeskills::Maul,56,120,0x5779e0,0x576160,St56Sig,Do120Sig},
+    {"Feral Rage",framevr::strikeskills::FeralRage,56,120,0x5779e0,0x576160,St56Sig,Do120Sig},
+    {"Rabies",framevr::strikeskills::Rabies,57,121,0x577f00,0x576bb0,St57Sig,Do121Sig},
+    {"Fire Claws",framevr::strikeskills::FireClaws,58,2,0x577c90,0x430240,St58Sig,Do2Sig},
+    {"Hunger",framevr::strikeskills::Hunger,0,122,0,0x576630,nullptr,Do122Sig},
+    {"Fury",framevr::strikeskills::Fury,37,13,0x5582a0,0x5568e0,St37Sig,Do13Sig},
+    {"Zeal",framevr::strikeskills::Zeal,37,13,0x5582a0,0x5568e0,St37Sig,Do13Sig},
+    {"Bash",framevr::strikeskills::Bash,32,2,0x5695d0,0x430240,St32Sig,Do2Sig},
+    {"Stun",framevr::strikeskills::Stun,32,2,0x5695d0,0x430240,St32Sig,Do2Sig},
+    {"Concentrate",framevr::strikeskills::Concentrate,32,2,0x5695d0,0x430240,St32Sig,Do2Sig},
+    {"Berserk",framevr::strikeskills::Berserk,39,2,0x569670,0x430240,St39Sig,Do2Sig},
+    {"Sacrifice",framevr::strikeskills::Sacrifice,29,64,0x565240,0x5645c0,St29Sig,Do64Sig},
+    {"Vengeance",framevr::strikeskills::Vengeance,35,2,0x565520,0x430240,St35Sig,Do2Sig},
+    {"Conversion",framevr::strikeskills::Conversion,32,79,0x5695d0,0x562990,St32Sig,Do79Sig},
+    {"Power Strike",framevr::strikeskills::PowerStrike,6,2,0x558c70,0x430240,St6Sig,Do2Sig},
+    {"Impale",framevr::strikeskills::Impale,7,2,0x558590,0x430240,St7Sig,Do2Sig},
+    {"Charged Strike",framevr::strikeskills::ChargedStrike,6,11,0x558c70,0x5562b0,St6Sig,Do11Sig},
+    {"Lightning Strike",framevr::strikeskills::LightningStrike,10,14,0x558930,0x557510,St10Sig,Do14Sig},
+    {"Poison Dagger",framevr::strikeskills::PoisonDagger,16,32,0x5601a0,0x55cc50,St16Sig,Do32Sig},
 };
 std::atomic<bool> strikeReady{false};
 std::array<bool,std::size(StrikeNatives)> strikeVerified{};
@@ -380,7 +409,7 @@ using framevr::strikeskills::Refusal;
 std::array<std::atomic<unsigned>,size_t(Refusal::Count)> strikeRefused{};
 std::atomic<unsigned> strikeArmed{0},strikeCast{0},strikeBasic{0},strikeStartRefused{0},strikeFallback{0};
 std::atomic<int> strikeSound{0};
-// Fury's flurry (game thread): the open cast whose hits later strokes deliver.
+// Fury's or Zeal's flurry (game thread): the open cast whose hits later strokes deliver.
 framevr::strikeskills::Flurry flurry;
 std::atomic<unsigned> flurryCasts{0},flurryHits{0},flurryEarly{0},flurryForfeit{0},flurrySpent{0},flurryRefused{0},flurrySpread{0};
 bool StrikeSkillVerified(int skill) {
@@ -411,9 +440,11 @@ void InstallStrikes() {
         verified+=strikeVerified[i];
     }
     strikeReady=true;
-    char line[280];snprintf(line,sizeof line,"Frame melee skills: native use check, server start and do dispatch verified; %u of %zu strike skills ready "
-        "(Maul %d, Feral Rage %d, Rabies %d, Fire Claws %d, Hunger %d, Fury %d)",verified,std::size(StrikeNatives),
-        int(strikeVerified[0]),int(strikeVerified[1]),int(strikeVerified[2]),int(strikeVerified[3]),int(strikeVerified[4]),int(strikeVerified[5]));
+    char line[640];int used=snprintf(line,sizeof line,"Frame melee skills: native use check, server start and do dispatch verified; %u of %zu strike skills ready (",
+        verified,std::size(StrikeNatives));
+    for(size_t i=0;i<std::size(StrikeNatives)&&used>0&&size_t(used)<sizeof line;++i)
+        used+=snprintf(line+used,sizeof line-size_t(used),"%s%s %d",i?", ":"",StrikeNatives[i].name,int(strikeVerified[i]));
+    if(used>0&&size_t(used)+1<sizeof line){line[used]=')';line[used+1]=0;}
     framevr::logging::Write(line);
 }
 // The skill a hand's strike is about to cast, made the player's used skill
@@ -623,7 +654,7 @@ void __cdecl Apply(const D2RL::PluginContext*,void* token) noexcept {
                         if(dual&&(!Read(weapon+8,selectedId)||selectedId!=r.sample.weapons.displayed[hand])){++dualRefused;continue;}
                         Feel(r,header[2]);
                         if(hits.Contains(r.session,r.sweep.stroke,header[2]))continue;
-                        // Fury's flurry (strike_skills.h Flurry): a landed stroke of a claw carrying
+                        // Fury's or Zeal's flurry (strike_skills.h Flurry): a landed stroke of a claw or weapon carrying
                         // the open cast's skill, in its form, may be its next hit, timed from the
                         // flurry's last hit: Unleashed any stroke but one swipe's follow-through;
                         // Classic at the skill's own pace (sooner than the shared cadence would allow).
@@ -698,7 +729,7 @@ void __cdecl Apply(const D2RL::PluginContext*,void* token) noexcept {
                         // skill casts it on a full-cycle stroke's first landed contact (Unleashed) or on
                         // every paced contact (Classic); everything else, and a refused cast, stays the
                         // basic attack. The cast keeps this contact's scope, scaling and on-hit gate.
-                        // A multi-hit cast (Fury) lands its first hit and opens the flurry; while it is
+                        // A multi-hit cast (Fury, Zeal) lands its first hit and opens the flurry; while it is
                         // open, the hand's paced strokes land its next hits and early ones stay basic.
                         const int strikeSkill=r.sample.strikeSkill;
                         auto strike=StrikeOutcome::Basic;int flurryHit=0;const uint64_t sinceFlurryHit=flurry.SinceHit(r.at);

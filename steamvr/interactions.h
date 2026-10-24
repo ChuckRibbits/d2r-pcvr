@@ -360,6 +360,15 @@ inline MenuBounds SkillOptionBounds(int index){
     const float x=.05f+(index%2)*.46f,y=.305f+(index/2)*.13f;
     return {x,y,x+.44f,y+.118f};
 }
+// The skill picker's card for the option pointed at: over the other column,
+// from the category row's top to the last row's bottom; its text, in a
+// SkillCardFont px font, starts SkillCardTop pixels down (of 768),
+// SkillCardPad in from the sides.
+inline MenuBounds SkillCardBounds(int index){
+    const auto first=SkillOptionBounds(index%2?0:1),last=SkillOptionBounds(index%2?6:7);
+    return {first.left,SkillCategoryBounds(0).top,first.right,last.bottom};
+}
+constexpr int SkillCardTop=62,SkillCardPad=12,SkillCardFont=16;
 constexpr MenuBounds MapContent{.14f,.12f,.86f,.84f};
 // Footer cells occupy 9-13. Keep developer actions separate as the list grows.
 constexpr int DeveloperCell(int index) {return 14+index;}

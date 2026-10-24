@@ -36,11 +36,10 @@ inline const char* HelpText(int id) {
         case RenderResolution:return "The image size drawn for each eye, independent of your monitor. Higher is sharper but costs GPU time. Apply rebuilds the VR view; DLSS is set in the game's own Options.";
         case StereoRendering:return "How the two eye images of each headset frame are drawn. Menus, and views other than first person, always draw both eyes.";
         case DeferGpuWait:return "Lets the CPU begin the next frame while the graphics card finishes the last one, instead of waiting for it at the end of every frame. Without it each frame takes the CPU's time plus the GPU's, and every stereo rendering choice runs at about half its frame rate. Shown while it is off; Apply saves it as [render] defer_gpu_wait.";
-        case DesktopOneEye:return "In stereo the game window alternates between both eyes, which looks doubled on the monitor. On copies the left eye back over each right frame after the headset has it, so the monitor shows one steady image. The headset view is the same either way. Off saves one full-frame GPU copy per frame.";
         case EyeHeight:return "Your standing eye height above the tracked floor. Body calibration measures this to set the world's scale. Use Calibrate body to measure it again.";
         case ArmSpan:return "The distance between your controller grips with your arms extended in a T-pose. Body calibration uses it to fit the character's arms to yours.";
         case BodyCalibration:return "Stores your measured standing height and controller span. Use Calibrate body to repeat the guided measurement; updating the mod preserves it.";
-        case SkillGestures:return "Lets compatible assigned trigger skills power physical actions, such as Smite with a shield bash and arrow skills with bow release. The skill must be learned and available. Ordinary physical weapon swings remain separate.";
+        case SkillGestures:return "Lets compatible assigned trigger skills power physical actions: Smite with a shield bash, arrow skills with bow release, and melee skills such as Bash, Charged Strike or Maul with a landed strike. The skill must be learned and available. Off, every swing is a basic attack.";
         case WristMap:return "Shows the minimap on your left hand. Minimap & Compass controls its placement. The wheel's MAP tab remains available.";
         case WristCompass:return "Shows compass bearings on your left hand. North follows the top of the minimap. Minimap & Compass controls its placement.";
         case ControllerLabels:return "Which controller's button names appear in help and menus. This changes labels, not button bindings.";
@@ -56,7 +55,6 @@ inline const char* HelpText(int id) {
         case OrdinaryMobBars:return "Shows names and health bars for ordinary enemies. Turn it Off to reduce clutter. Boss and elite bars remain visible.";
         case MenuDistance:return "How far away eye-level game panels, such as inventory and merchant menus, appear. You can also point at a game menu, hold Right Grip and push or pull it; menus reopen at that distance until you change this setting or restart. This does not move this VR Settings panel; grab it with Right Grip to move, push, pull or tilt it.";
         case TooltipTiming:return "How soon item details appear when you point the laser at an item in a game panel.";
-        case MeleeRules:return "How your physical melee strokes deal damage.";
         case CompanionCounts:return "Shows companion counts and effects currently affecting your character below the left-hand minimap. This includes received buffs, auras and harmful effects, not just assigned skills. It follows Minimap & Compass placement.";
         case OfflinePlayers:return "Uses native offline Players 1-8 scaling for tougher monsters and increased experience and loot. Apply affects newly spawned monsters; existing monsters keep their current stats. For all monsters to use the new value, Save and Exit, then start a new game with the same character. Game default follows the game's own setting. Works with every class and either melee mode. Does not change Normal, Nightmare or Hell, or your desktop preference.";
         case StrainSpeed:return "How quickly blocked hits build the shield strain vignette in Unleashed. Strain starts fading a moment after hits stop, or as soon as you lower the shield; full strain is gone about 3 seconds after the last hit.";
@@ -99,7 +97,6 @@ inline const char* HelpText(int id) {
         case BottlePhysics:return "A bottle you have drunk from falls from your open hand, bounces and rolls, and weapons, fists and the shield knock it about. A potion thrown at your mercenary flies as a real bottle and breaks where it first hits; an Assassin's thrown trap or bomb lands where its arc first hits, stopping at walls and tables. Off: emptied bottles vanish and throws use a simple arc to the floor. Healing the mercenary works either way.";
         case TorchFlame:return "A one-handed club with fire damage is a torch: it lights the dark round you from its head. This shows or hides the flame drawn on it; the light stays either way.";
         case PropPhysics:return "The level's small things near you (cups, plates, vases, books, skulls, stools, barrels and more) stay put until a weapon, hand, shield or bottle reaches them. Then they fall and roll, and stay where they land until the area loads again. Purely visual. Shelves and tables are approximate: something pushed off a shelf's back can fall through it.";
-        case ReShadeDepth:return "ReShade's built-in Generic Depth add-on looks at every draw call the game makes to find its depth. In VR the mod gives the fog and sky its own depth, so in the game world the add-on is not needed. Off saves its work on each draw; on the flat menu panel and outside VR the fog and sky then have no depth. ReShade reads this when it starts: changes apply after you restart the game.";
         case HelpPerformance:return "The last second of headset frames. Drawing: the game preparing one eye (By turns) or both; it grows with what is in view, draw distances and shadows, hardly with resolution. Game: its update between frames. VR: the mod's own work. Headset wait: the runtime holding the frame for the next refresh. Past the headset's frame (11.1 ms at 90 Hz), late frames wait a whole refresh: up to half the frame rate.";
         case HelpGameVideo:return "The game's own graphics options, as it saved them (Options > Video, then close the menu). Shadows, character detail and lights add drawing work for the CPU; ambient occlusion (AO), atmospherics and scale cost the graphics card. Change them in the game's Options > Video; the numbers are the game's own, 0 its lowest.";
         case HelpApply:return "Saves your pending changes and applies them. Your other saved settings and calibration are preserved. Changes stay as a draft until you press Apply.";
@@ -125,7 +122,7 @@ inline int HelpChoices(int id) {
         case StereoRendering:return int(std::size(StereoRenderingNames));
         case RenderResolution:return int(std::size(resolution::Choices));
         case ControllerLabels:return int(controllers::Choice::Count);
-        case Dominant:case MeleeRules:case MapTopDown:case AimHighlights:case CompanionAi:return 2;
+        case Dominant:case MapTopDown:case AimHighlights:case CompanionAi:return 2;
         case GroundAim:return int(std::size(GroundAimNames));
         case LeftHandStrikes:return int(std::size(LeftHandStrikesNames));
         case SpellLock:return int(std::size(SpellLockNames));
@@ -242,11 +239,6 @@ inline ChoiceHelp HelpChoice(int id,float value) {
                 "The left claw casts the skill on the left trigger; a skill strikes cannot cast gives basic attacks.",
                 "Both claws cast the right trigger's skill (a skill can sit on only one trigger). The claws share one attack cycle, so this is never more casts."};
             return {LeftHandStrikesNames[c],text[c]};}
-        case MeleeRules:{
-            static constexpr const char* text[]={
-                "Each deliberate stroke hits every enemy it reaches, once. Damage = normal damage x hit chance (70% means 70% damage, never a miss) x recovery (25% at half an attack cycle since your last landed stroke, 100% at a full one) x cleave (100%, 75%, 50%, then 25% per target). Ripostes skip these. Adds shield blocks and parries.",
-                "The game's own rules: each stroke rolls to hit, attack speed limits how often you can hit, and each stroke hits one target."};
-            return {MeleeRulesNames[c],text[c]};}
         case StrainSpeed:{
             static constexpr const char* text[]={
                 "Half the strain per block: about 20 blocks to full strain without lowering your shield.",

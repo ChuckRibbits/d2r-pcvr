@@ -73,7 +73,7 @@ Quest left X/Y correspond to Index left A/B; right A/B labels are the same.
 | Free melee swing / thrust | Move the equipped weapon through an enemy |
 | Physical dual wield | Equip two supported melee weapons on a Barbarian or two claws on an Assassin; release both triggers and swing or thrust with either hand. Active skills retain their button bindings |
 | Break pots / barrels | Swing a held melee weapon through them with its trigger released. Either Barbarian weapon or Assassin claw works; ordinary button interaction/kicking remains available |
-| Choose melee rules / motion thresholds | **VR Settings > Combat**: Unleashed or Classic, Melee hit speed, and Melee thrust speed |
+| Choose motion thresholds | **VR Settings > Combat**: Melee hit speed and Melee thrust speed |
 | Bone Spear | Assign either hand's trigger or shortcut; aim with that controller and hold to repeat while moving. **Projectile aim assist** under Controls applies to Bone Spear too; Strong adds gentle homing |
 | Bone Wall / Bone Prison | Aim with the casting controller: the wall or prison lands where its ray meets the floor (six cells ahead when level). With **VR Settings > Aim > Ground skills** on Aimed monster, Bone Prison lands on the aimed monster and Bone Wall rises 3 cells in front of it. Native placement rules still apply |
 | Holy Bolt | Aim with either casting controller, including up/down with Planar spell aiming Off. Light assists at launch; Strong also adds gentle homing toward undead/demons. Directly aim at your mercenary to heal; native damage/healing rules apply |
@@ -126,10 +126,9 @@ and one left-hand alert test. Tests use the displayed values before Apply.
 180 Hz pulse. **HUD > Low health / mana alerts** must also be enabled for
 automatic resource warnings.
 
-**Combat > Melee rules** defaults to **Unleashed**: physical strokes can hit
-each creature they reach once, without hit rolls or an attack-speed cooldown.
-**Classic** uses native hit/block checks and the modeled class/weapon/IAS cycle,
-with one target per physical stroke. Both modes require deliberate motion.
+Melee is **Unleashed**: physical strokes can hit each creature they reach
+once, without hit rolls or an attack-speed cooldown, and need deliberate
+motion. The Classic rules are gone; `[gameplay] melee_rules` is ignored.
 **Melee thrust speed** is separate from swing speed: 2 m/s by default, adjustable
 from 0.75 to 10 m/s in 0.25 m/s steps. Push along the blade and pull back between
 stabs. The old `attack_speed` INI key does not select Classic; choose it here.
@@ -340,6 +339,16 @@ skills assigned to left trigger fire on bow draw/release using the right hand
 to pull the string. The left trigger remains a button fallback; right trigger
 away from the string uses the right hand's own assignment.
 
+A trigger skill that works as a gesture with what the hand holds says
+**GESTURE** instead of PRIMARY in that hand's wheel, and the hand's skill card
+says how: **Shield swing / thrust** (Smite with a shield), **Draw & release**
+(arrow skills with a bow), **Swing to strike** (melee skill strikes, below) or
+**Throw to place** (the Assassin's traps and bombs). Other trigger skills cast
+where you point.
+Pointing at a skill in the skill picker (**EDIT SKILLS**), or at a slot in a
+hand wheel, shows a line under it saying how that skill works from that slot:
+the gesture on a trigger, or what its button does.
+
 **Bow quiver.** With a bow, a face button assigned to Magic Arrow, Fire Arrow,
 Cold Arrow, Exploding Arrow, Ice Arrow, Immolation Arrow or Freezing Arrow loads
 that skill instead of casting it. Every following arrow you nock shows the
@@ -396,9 +405,20 @@ existing Smite and bow adapters, and melee skill strikes (below).
 **Melee skill strikes.** A supported melee skill on a hand's trigger is that
 hand's strike skill: a weapon or claw strike that lands casts it on the
 creature it struck, with the skill's own mana, damage and effects, and no
-animation. So far the Druid's single-hit form skills: **Maul** and **Feral
-Rage** (their stacks build per landed cast), **Rabies**, **Fire Claws** and
-**Hunger**. The skill wheel's lower-left box, **Left claw strikes** (Druid
+animation. So far:
+
+- the Druid's single-hit form skills: **Maul** and **Feral Rage** (their
+  stacks build per landed cast), **Rabies**, **Fire Claws** and **Hunger**;
+- the Barbarian's **Bash**, **Stun**, **Concentrate** and **Berserk**;
+- the Paladin's **Sacrifice**, **Vengeance** and **Conversion**, and **Zeal**
+  as a swing flurry (below);
+- the Amazon's **Power Strike**, **Impale**, **Charged Strike** and
+  **Lightning Strike**;
+- the Necromancer's **Poison Dagger**.
+
+A weapon's left-trigger skill rides the left weapon of a dual-wield pair.
+Skills that hit several times a cast with their own native sequence (Jab,
+Fend, Frenzy, Double Swing, Whirlwind) and Charge stay trigger buttons. The skill wheel's lower-left box, **Left claw strikes** (Druid
 only), picks the left claw's skill with one click: its own trigger's
 (default) or the right trigger's (a skill sits on one trigger only, so this
 puts it on both claws). For plain left-claw strikes, leave the left trigger
@@ -428,6 +448,12 @@ first two it touches (the casting swipe on one); the rest of a cleave stays
 basic. The unused hits lapse after two attack cycles
 without one, or when the form changes or another skill is cast. Only the
 casting swipe growls.
+
+**Zeal: a swing flurry.** The Paladin's **Zeal** works the same way with a
+weapon: the full-cycle swing that casts it pays its mana and lands hit 1 of
+up to five, and each later swing that lands delivers the next hit, with no
+further mana. In Classic each follow-up waits a whole attack cycle (Zeal's
+own pace).
 
 Turning gestures off or changing equipment/assignments cancels an in-progress
 skill draw. Shield contact and its trigger fallback cannot duplicate a cast.

@@ -4,6 +4,7 @@
 #include "interaction_ui.h"
 #include "interaction_icons.h"
 #include "skill_slots.h"
+#include "skill_usage.h"
 #include "wrist_compass.h"
 #include <cstdio>
 #include <string>
@@ -130,10 +131,12 @@ std::vector<uint8_t> Paint(const Snapshot& s,const Output& o,int selection,const
     auto old=SelectObject(dc,bitmap);std::memset(bits,0,size*size*4);
     HFONT font=CreateFontW(20,0,0,0,FW_SEMIBOLD,FALSE,FALSE,FALSE,DEFAULT_CHARSET,OUT_DEFAULT_PRECIS,CLIP_DEFAULT_PRECIS,ANTIALIASED_QUALITY,DEFAULT_PITCH,L"Georgia");
     HFONT shortcutFont=CreateFontW(14,0,0,0,FW_SEMIBOLD,FALSE,FALSE,FALSE,DEFAULT_CHARSET,OUT_DEFAULT_PRECIS,CLIP_DEFAULT_PRECIS,ANTIALIASED_QUALITY,DEFAULT_PITCH,L"Georgia");
+    HFONT cardFont=CreateFontW(SkillCardFont,0,0,0,FW_SEMIBOLD,FALSE,FALSE,FALSE,DEFAULT_CHARSET,OUT_DEFAULT_PRECIS,CLIP_DEFAULT_PRECIS,ANTIALIASED_QUALITY,DEFAULT_PITCH,L"Georgia");
     HFONT skillFont=CreateFontW(18,0,0,0,FW_SEMIBOLD,FALSE,FALSE,FALSE,DEFAULT_CHARSET,OUT_DEFAULT_PRECIS,CLIP_DEFAULT_PRECIS,ANTIALIASED_QUALITY,DEFAULT_PITCH,L"Georgia");
     auto oldFont=SelectObject(dc,font);SetBkMode(dc,TRANSPARENT);SetTextColor(dc,RGB(238,235,220));
     auto fill=[&](RECT r,COLORREF c){auto b=CreateSolidBrush(c);FillRect(dc,&r,b);DeleteObject(b);};
     auto text=[&](const char* t,RECT r){wchar_t w[256]{};MultiByteToWideChar(CP_UTF8,0,t,-1,w,256);DrawTextW(dc,w,-1,&r,DT_CENTER|DT_VCENTER|DT_WORDBREAK|DT_NOPREFIX);};
+    auto paragraph=[&](const std::string& t,RECT r){wchar_t w[1024]{};MultiByteToWideChar(CP_UTF8,0,t.c_str(),-1,w,1024);DrawTextW(dc,w,-1,&r,DT_LEFT|DT_TOP|DT_WORDBREAK|DT_NOPREFIX);};
     auto polygon=[&](POINT* p,int n,COLORREF c){auto b=CreateSolidBrush(c);auto was=SelectObject(dc,b);auto pen=SelectObject(dc,GetStockObject(NULL_PEN));Polygon(dc,p,n);SelectObject(dc,pen);SelectObject(dc,was);DeleteObject(b);};
     const bool handWheel=o.wheelHand>=0;
     const bool fiveSectors=handWheel&&!o.utility;
@@ -215,7 +218,7 @@ std::vector<uint8_t> Paint(const Snapshot& s,const Output& o,int selection,const
                 RoundRect(dc,box.left-5,box.top-5,box.right+5,box.bottom+5,10,10);
                 SelectObject(dc,oldBrush);SelectObject(dc,oldPen);DeleteObject(pen);
                 fill({x-34,y+12,x+34,y+28},RGB(100,74,29));
-                const auto prior=SelectObject(dc,shortcutFont);text(handWheel?(o.wheelHand==1&&o.leftCue.gesture?"GESTURE":"PRIMARY"):"ACTIVE",{x-34,y+12,x+34,y+28});SelectObject(dc,prior);
+                const auto prior=SelectObject(dc,shortcutFont);text(handWheel?((o.wheelHand==1?o.leftCue.gesture:o.cue.gesture)?"GESTURE":"PRIMARY"):"ACTIVE",{x-34,y+12,x+34,y+28});SelectObject(dc,prior);
             }
         } else if(i<4) {
             const char* utility[]={"Weapon I","Weapon II","",o.stowed?"Draw weapons":"Stow weapons"};
@@ -348,7 +351,31 @@ std::vector<uint8_t> Paint(const Snapshot& s,const Output& o,int selection,const
             char detail[64];if(skill.owner==-1)std::snprintf(detail,sizeof detail,"Level %d",skill.level);
             else std::snprintf(detail,sizeof detail,"Item-granted skill");
             SelectObject(dc,shortcutFont);SetTextColor(dc,RGB(169,151,118));
-            text(detail,{x+85,y+63,right-8,bottom-4});SetTextColor(dc,RGB(235,218,181));SelectObject(dc,font);
+            // Gesture skills (skill_usage.h): GESTURE from this slot, ON TRIGGER where a trigger makes one.
+            const bool here=skillusage::Gesture(skill.id,o.editSlot);
+            const bool trigger=here||skillusage::Gesture(skill.id,skills::TriggerSlot(0))||skillusage::Gesture(skill.id,skills::TriggerSlot(1));
+            text(detail,{x+85,y+63,trigger?right-106:right-8,bottom-4});
+            if(trigger) {
+                const RECT chip{right-102,bottom-27,right-8,bottom-7};
+                fill(chip,here?RGB(100,74,29):RGB(48,40,28));SetTextColor(dc,here?RGB(235,218,181):RGB(169,151,118));
+                text(here?"GESTURE":"ON TRIGGER",chip);
+            }
+            SetTextColor(dc,RGB(235,218,181));SelectObject(dc,font);
+        }
+        // The skill pointed at: how it works from the slot being assigned
+        // (skill_usage.h), on a card over the other column.
+        if(o.hover>=0&&o.hover<o.editCount) {
+            const auto& skill=o.editOptions[o.hover];
+            const auto card=SkillCardBounds(o.hover);
+            const RECT box{LONG(768*card.left),LONG(768*card.top),LONG(768*card.right),LONG(768*card.bottom)};
+            fill(box,RGB(22,18,14));frame(box,true);
+            SelectObject(dc,font);text(skill.name,{box.left+10,box.top+8,box.right-10,box.top+36});
+            const bool trigger=o.editSlot==skills::TriggerSlot(skills::Hand(o.editSlot));
+            SelectObject(dc,shortcutFont);SetTextColor(dc,RGB(232,196,119));
+            text(skillusage::Gesture(skill.id,o.editSlot)?"GESTURE ON THIS TRIGGER":trigger?"ON THIS TRIGGER":"ON THIS BUTTON",{box.left+10,box.top+38,box.right-10,box.top+56});
+            SelectObject(dc,cardFont);SetTextColor(dc,RGB(235,218,181));
+            paragraph(skillusage::Details(skill.id,o.editSlot),{box.left+SkillCardPad,box.top+SkillCardTop,box.right-SkillCardPad,box.bottom-SkillCardPad});
+            SelectObject(dc,font);
         }
         if(!o.editCount)text("No active skills available",{56,249,712,430});
     } else if(handWheel&&!o.utility) {
@@ -387,12 +414,22 @@ std::vector<uint8_t> Paint(const Snapshot& s,const Output& o,int selection,const
             SelectObject(dc,shortcutFont);text("Click to toggle",{claw.left+6,claw.bottom-22,claw.right-6,claw.bottom-5});SelectObject(dc,font);
         }
     }
+    // The skill pointed at and the slot it is (or would be) on: how it works there
+    // (skill_usage.h), under the picker, the slot chooser and the hand wheel.
+    const char* usage=[&]()->const char* {
+        if(o.developer||o.map||o.utility||o.editor>=2)return "";   // the picker shows a card instead
+        if(o.hover<0||o.hover>=(handWheel?5:8))return "";
+        const int slot=handWheel?skills::HandSlot(o.wheelHand,o.hover):o.hover;
+        return s.skills[slot].known?skillusage::Line(s.skills[slot].id,slot):"";
+    }();
     if(o.editor) {
         char hint[120];std::snprintf(hint,sizeof hint,"Set %s  /  %s",s.activeSet==2?"II":"I",
             o.result==Result::Pending?"Saving...":o.result==Result::Applied?"Assigned":o.result==Result::Refused?"Changed or unavailable; choose the slot again":handWheel?"Click stick to close":"Hold Left Y while editing");
         if(o.editor==3)std::snprintf(hint,sizeof hint,"Page %d  /  %s",o.editPage+1,
             o.result==Result::Pending?"Saving...":o.result==Result::Refused?"Item changed or unavailable. Reopen the picker.":"Select to assign; BACK leaves your slot unchanged.");
-        fill({29,637,739,680},RGB(22,18,14));text(hint,{35,639,733,678});
+        fill({29,637,739,680},RGB(22,18,14));
+        if(usage[0]&&o.result!=Result::Pending&&o.result!=Result::Refused){SelectObject(dc,shortcutFont);text(usage,{35,639,733,678});SelectObject(dc,font);}
+        else text(hint,{35,639,733,678});
     }
     const char* footer[5]={(o.utility||o.map||o.developer)?"SPELLS":"EQUIPMENT","MAP","VR SETTINGS",handWheel?"INVENTORY":"EDIT SKILLS","DEV"};
     if(o.editor==1){footer[0]="BACK";footer[1]="";footer[2]="DONE";}
@@ -409,8 +446,12 @@ std::vector<uint8_t> Paint(const Snapshot& s,const Output& o,int selection,const
         char active[120];if(handWheel)std::snprintf(active,sizeof active,"Other hand: point + trigger to assign. Click this stick to close.");
         else std::snprintf(active,sizeof active,"ACTIVE: %s",o.cue.known?o.cue.name:"Unknown skill");
         const auto prior=SelectObject(dc,skillFont);SetTextColor(dc,RGB(232,196,119));
-        if(handWheel){SelectObject(dc,shortcutFont);text("Top trigger slot: compatible skills also power weapon gestures.",{38,639,730,662});}
-        text(active,handWheel?RECT{38,662,730,685}:RECT{150,648,618,681});SelectObject(dc,prior);
+        if(handWheel&&usage[0]){SelectObject(dc,shortcutFont);text(usage,{38,639,730,685});}   // the slot pointed at
+        else {
+            if(handWheel){SelectObject(dc,shortcutFont);text("Top trigger slot: compatible skills also power weapon gestures.",{38,639,730,662});}
+            text(active,handWheel?RECT{38,662,730,685}:RECT{150,648,618,681});
+        }
+        SelectObject(dc,prior);
     }
     // Reserved atlas space: a compact weapon icon and an optional two-line
     // explanation. The native icon comes from the same cache as its wheel slot.
@@ -535,7 +576,7 @@ std::vector<uint8_t> Paint(const Snapshot& s,const Output& o,int selection,const
             rgba[4*i+3]=textPixel?255:p[3];
         }
     }
-    SelectObject(dc,oldFont);DeleteObject(font);DeleteObject(shortcutFont);DeleteObject(skillFont);SelectObject(dc,old);DeleteObject(bitmap);DeleteDC(dc);return rgba;
+    SelectObject(dc,oldFont);DeleteObject(font);DeleteObject(shortcutFont);DeleteObject(skillFont);DeleteObject(cardFont);SelectObject(dc,old);DeleteObject(bitmap);DeleteDC(dc);return rgba;
 }
 std::vector<uint8_t> BloodArt(int width,int height) {
     return width>0&&height>0?DecodeArt(L"D2RVR_BLOOD_VISOR",UINT(width),UINT(height)):std::vector<uint8_t>{};
