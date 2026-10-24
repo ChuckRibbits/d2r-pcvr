@@ -4,6 +4,7 @@
 #include "interaction_ui.h"
 #include "interaction_icons.h"
 #include "skill_slots.h"
+#include "skill_usage.h"
 #include "wrist_compass.h"
 #include <cstdio>
 #include <string>
@@ -387,12 +388,23 @@ std::vector<uint8_t> Paint(const Snapshot& s,const Output& o,int selection,const
             SelectObject(dc,shortcutFont);text("Click to toggle",{claw.left+6,claw.bottom-22,claw.right-6,claw.bottom-5});SelectObject(dc,font);
         }
     }
+    // The skill pointed at and the slot it is (or would be) on: how it works there
+    // (skill_usage.h), under the picker, the slot chooser and the hand wheel.
+    const char* usage=[&]()->const char* {
+        if(o.developer||o.map||o.utility||o.editor==3)return "";
+        if(o.editor==2)return o.hover>=0&&o.hover<o.editCount?skillusage::Describe(o.editOptions[o.hover].id,o.editSlot):"";
+        if(o.hover<0||o.hover>=(handWheel?5:8))return "";
+        const int slot=handWheel?skills::HandSlot(o.wheelHand,o.hover):o.hover;
+        return s.skills[slot].known?skillusage::Describe(s.skills[slot].id,slot):"";
+    }();
     if(o.editor) {
         char hint[120];std::snprintf(hint,sizeof hint,"Set %s  /  %s",s.activeSet==2?"II":"I",
             o.result==Result::Pending?"Saving...":o.result==Result::Applied?"Assigned":o.result==Result::Refused?"Changed or unavailable; choose the slot again":handWheel?"Click stick to close":"Hold Left Y while editing");
         if(o.editor==3)std::snprintf(hint,sizeof hint,"Page %d  /  %s",o.editPage+1,
             o.result==Result::Pending?"Saving...":o.result==Result::Refused?"Item changed or unavailable. Reopen the picker.":"Select to assign; BACK leaves your slot unchanged.");
-        fill({29,637,739,680},RGB(22,18,14));text(hint,{35,639,733,678});
+        fill({29,637,739,680},RGB(22,18,14));
+        if(usage[0]&&o.result!=Result::Pending&&o.result!=Result::Refused){SelectObject(dc,shortcutFont);text(usage,{35,639,733,678});SelectObject(dc,font);}
+        else text(hint,{35,639,733,678});
     }
     const char* footer[5]={(o.utility||o.map||o.developer)?"SPELLS":"EQUIPMENT","MAP","VR SETTINGS",handWheel?"INVENTORY":"EDIT SKILLS","DEV"};
     if(o.editor==1){footer[0]="BACK";footer[1]="";footer[2]="DONE";}
@@ -409,8 +421,12 @@ std::vector<uint8_t> Paint(const Snapshot& s,const Output& o,int selection,const
         char active[120];if(handWheel)std::snprintf(active,sizeof active,"Other hand: point + trigger to assign. Click this stick to close.");
         else std::snprintf(active,sizeof active,"ACTIVE: %s",o.cue.known?o.cue.name:"Unknown skill");
         const auto prior=SelectObject(dc,skillFont);SetTextColor(dc,RGB(232,196,119));
-        if(handWheel){SelectObject(dc,shortcutFont);text("Top trigger slot: compatible skills also power weapon gestures.",{38,639,730,662});}
-        text(active,handWheel?RECT{38,662,730,685}:RECT{150,648,618,681});SelectObject(dc,prior);
+        if(handWheel&&usage[0]){SelectObject(dc,shortcutFont);text(usage,{38,639,730,685});}   // the slot pointed at
+        else {
+            if(handWheel){SelectObject(dc,shortcutFont);text("Top trigger slot: compatible skills also power weapon gestures.",{38,639,730,662});}
+            text(active,handWheel?RECT{38,662,730,685}:RECT{150,648,618,681});
+        }
+        SelectObject(dc,prior);
     }
     // Reserved atlas space: a compact weapon icon and an optional two-line
     // explanation. The native icon comes from the same cache as its wheel slot.

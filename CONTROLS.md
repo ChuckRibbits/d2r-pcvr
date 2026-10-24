@@ -346,6 +346,9 @@ says how: **Shield swing / thrust** (Smite with a shield), **Draw & release**
 (arrow skills with a bow), **Swing to strike** (melee skill strikes, below) or
 **Throw to place** (the Assassin's traps and bombs). Other trigger skills cast
 where you point.
+Pointing at a skill in the skill picker (**EDIT SKILLS**), or at a slot in a
+hand wheel, shows a line under it saying how that skill works from that slot:
+the gesture on a trigger, or what its button does.
 
 **Bow quiver.** With a bow, a face button assigned to Magic Arrow, Fire Arrow,
 Cold Arrow, Exploding Arrow, Ice Arrow, Immolation Arrow or Freezing Arrow loads
