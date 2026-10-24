@@ -1,126 +1,22 @@
-# D2R VR Unleashed v0.3.25 - Windows preview
+# D2R VR Unleashed v0.3.26 - Windows preview
 
-This update focuses on physical combat skills and throwing, Druid shapeshifting,
-smarter aiming, objects you can knock about, and experimental frame generation.
+This hotfix fixes being stuck after a knockback, such as Duriel's stun in Act 2.
+It includes everything from
+[v0.3.25](https://github.com/bearstonem/d2r-pcvr/releases/tag/v0.3.25-windows-preview):
+weapon skills on contact, throwing by hand, Druid shapeshifting, smarter aiming,
+physics and experimental frame generation.
 
 ## Gameplay and combat
 
-- **Weapon skills strike on contact:** Put a weapon skill on a trigger and swing.
-  The skill casts when the weapon connects:
-  - Barbarian: Bash, Stun, Concentrate and Berserk.
-  - Paladin: Sacrifice, Vengeance, Zeal and Conversion.
-  - Amazon: Power Strike, Impale, Charged Strike and Lightning Strike.
-  - Assassin: Poison Dagger.
-
-  The skill picker marks these skills **GESTURE**. Hovering any skill now shows
-  a card explaining how it works, including the maths behind basic attacks.
-  Built on ChuckRibbits' strike framework.
-- **Druid shapeshifting in first person - contributed by ChuckRibbits:**
-  Werewolf and Werebear forms have a first-person beast body and eye height. The
-  claws strike physically and cast the form skills: Maul, Feral Rage, Rabies,
-  Fire Claws, Hunger and Fury. To transform with your body:
-  - **Werewolf:** cross your arms over your chest, bow, then fling them up and out.
-  - **Werebear:** hold both hands above your head, then slam them down.
-- **Unleashed combat only:** Melee always uses Unleashed rules, and the Classic
-  option is gone. A saved Classic choice is ignored. Combat changes, contributed
-  by **ChuckRibbits**:
-  - The hero no longer flinches when struck.
-  - A weapon's on-hit effects (crushing blow, open wounds, leech, chance to cast)
-    roll only on a full stroke's first contact.
-  - An attack's other effects (chill, stun, drain, thorns) apply only when its
-    normal hit roll would have hit.
-- **Guard strain - contributed by ChuckRibbits:** The guard-strain vignette is
-  black, with a simple On/Off switch under **VR Settings > Combat > Guard strain
-  vignette**. It now reaches the edge of wide headset views.
-- **Throwing by hand:** Throw throwing knives, axes and every javelin with your
-  arm.
-  - Javelin skills ride the throw: Poison Javelin, Lightning Bolt, Plague Javelin
-    and Lightning Fury.
-  - A Barbarian's Double Throw throws each hand's own weapon.
-  - **VR Settings > Aim > Throw lift** sets how far above the hand's path throws
-    leave.
-  - Assassins throw Fire Blast, Shock Web, the sentries and Wake skills to place
-    them where the arc lands.
-  - beadlebytes restored javelin motion throws.
-- **Throwing potions:** A gas or oil potion in the right weapon slot is thrown by
-  hand as a real bottle. The game's burst goes off where it shatters.
-- **Smarter aiming - contributed by beadlebytes:** Each hand and your eyes pick a
-  monster. Everything under **VR Settings > Aim** is off by default. There you
-  can choose:
-  - whether spells and bow skills go to the aimed monster;
-  - whether each hand's monster is outlined in its own color;
-  - where ground skills land: Blizzard, Meteor, Fire Wall, Hydra, Fissure,
-    Volcano, Bone Wall, Bone Prison and traps can land where you point or on the
-    aimed monster, with circles that show where and when they will hit.
-- **Bow path laser - contributed by beadlebytes:** At full draw, an optional faint
-  line shows exactly where the arrow will fly (**VR Settings > Aim > Bow path
-  laser**, off by default).
-- **A smarter mercenary - contributed by Mcklem:**
-  - stays where you can see it;
-  - adjusts how far it detects enemies during a fight;
-  - follows on an elastic leash;
-  - frees itself when stuck.
-
-  It is on by default under **VR Settings > Combat > Enhanced VR Mercenary**.
-  Legacy restores the game's behavior.
-- **Enemy sight distance - contributed by Mcklem:** Offline, monsters can notice
-  you from farther away, from the game's 100% up to 300% (**VR Settings >
-  Combat**).
-- **Torches - contributed by Mcklem:** One-handed clubs with fire damage act as
-  torches that light the dark from the club's head. The light radius is 18 by
-  default. **VR Settings > Video > Torch flame** hides the flame but keeps the
-  light.
-
-## Controls and interface
-
-- **Right stick up and down:** Push up to toggle running and walking. Hold down
-  to show nearby loot labels. This replaces the Right Grip + Right Trigger chord.
-- **Wrist map zoom - contributed by beadlebytes:** Look at the wrist map and push
-  the right stick up or down to zoom, up to 16 times. **Map view** adds the
-  game's full map, isometric or top-down.
-- **Forearm and shield - contributed by beadlebytes:** The forearm now turns with
-  the wrist. **VR Settings > Shield** positions a held shield on the forearm:
-  grip offset, out, up, how far it follows the wrist, and roll.
-- **Quest and level-up notices** now appear on a card in the room, not in the
-  middle of your view.
-- **Tidier VR Settings:** Pages show only the rows that apply to your character
-  and weapon, and related settings share a row. The **Notes** tab pages through
-  long release notes.
-
-## Visuals and stability
-
-- **Frame generation (experimental):** **VR Settings > Perf > Frame generation**
-  runs [OFXR Bridge](https://github.com/tig3rmast3r/OFXR-Bridge) by tig3rmast3r.
-  The game draws every other headset frame and the bridge generates the rest.
-  - **Choices:** FidelityFX (any graphics card) or NVIDIA (RTX or GTX 1660
-    family), with NVIDIA's quality and scale on a row below.
-  - **Requirements:** Stereo rendering: **Both eyes** (it pauses with By turns)
-    and native Windows.
-  - Setup downloads the bridge. It is off by default, and turning it on or off
-    takes a restart.
-  - The bottom line of the Perf page shows what it is doing.
-- **Physics you can knock about:**
-  - An emptied potion bottle falls, bounces and rolls.
-  - Weapons, fists and the shield knock bottles and the level's small props
-    (cups, plates, vases, books, barrels and more) about.
-  - Thrown potions, traps and bombs stop at walls and tables.
-
-  The physics is purely visual. Switch it under **VR Settings > Video > Bottle
-  physics** and **Knockable props**.
-- **Sharper By turns:** The eye not drawn is noticeably sharper, and moving
-  monsters no longer leave a frame-old ghost beside them.
-- **Sorceress elemental hands (experimental):** Each hand shows a small effect
-  made from its spell's own textures (**VR Settings > Video**, off by default).
-- **Centered Paladin auras - contributed by beadlebytes:** Aura rings now sit
-  around the hero's feet in VR.
-- **Kurast Docks - contributed by Mcklem:** Removed the canoe floating above the
-  docks.
-- **Latest game update:** Setup accepts Steam D2R 3.3.94995 (the October 22
-  update).
+- **Knockbacks no longer lock you in place - contributed by ChuckRibbits:**
+  After being knocked back, for example by Duriel's Smite or another attack that
+  stuns, you could no longer move or interact with anything until you saved and
+  exited. A knockback now ends normally, and you can walk again as soon as it
+  does.
 
 ## Updating
 
-Download **D2R-PCVR-Setup-0.3.25.exe** for graphical installation, or
+Download **D2R-PCVR-Setup-0.3.26.exe** for graphical installation, or
 **d2r-pcvr-windows.zip** for portable setup. Existing users should choose
 **Update / repair and keep calibration and video settings**.
 
@@ -142,7 +38,7 @@ portable setup remain available; Authentic is a separate optional mod.
 1. Install and start the original Diablo II: Resurrected through Steam or
    Battle.net once. Complete its account prompts, create or select an offline
    character, then fully exit the game.
-2. Download **D2R-PCVR-Setup-0.3.25.exe** from the assets below. Fully exit
+2. Download **D2R-PCVR-Setup-0.3.26.exe** from the assets below. Fully exit
    Steam using **Steam > Exit**, then run Setup and choose **Full install with
    recommended settings**. Follow the wizard to select your game copy, headset
    and connection; the shared launcher is included.
@@ -158,14 +54,20 @@ portable setup remain available; Authentic is a separate optional mod.
 
 ### Current log location
 
-For support, reproduce the problem and send the current gameplay log from
-inside your game folder:
+For support, reproduce the problem, close the game and send these logs from
+your game folder. In Steam's default library that is
+`C:\Program Files (x86)\Steam\steamapps\common\Diablo II Resurrected`:
 
 ```text
 mods\D2R-PCVR\d2rloader\logs\d2r-vr-frame.log
+mods\D2R-PCVR\d2rloader\logs\d2r-pcvr-vrcam.log
+mods\D2R-PCVR\reshade\ReShade.log
+d2rloader\logs\d2rloader.log
 ```
 
-Developer mode uses `mods\pcvr-dev\d2rloader\logs\d2r-vr-frame.log`.
+The `d2r-vr-frame.log` and `d2r-vr-vrcam.log` in the game's main
+`d2rloader\logs` folder are left over from older versions and are no longer
+updated. Developer mode uses `mods\pcvr-dev` in place of `mods\D2R-PCVR`.
 Installer failures are recorded separately in
 `%LOCALAPPDATA%\Programs\D2R PCVR\setup-install.log`.
 
@@ -176,7 +78,14 @@ passed on Windows: the 4 session checks need Linux's `/proc`, and 1 symbolic-lin
 check was skipped because this Windows session cannot create symbolic links. The
 in-headset Notes pages were rendered and inspected for fit and content.
 
-The merged features were tested with offline characters on Steam D2R 3.3.94995
+The knockback fix was tested on a headset before it was merged: a level 90
+character in Duriel's Lair took 9 knockbacks in about 50 seconds, and every one
+ended normally, with the hero walking again about 0.8 seconds after the stun
+appeared. Melee kept working through the fight. The lock itself was not
+reproduced on an unfixed build; it comes from a player's report. No new headset
+session is claimed for the version and release-notes update itself.
+
+The v0.3.25 features were tested with offline characters on Steam D2R 3.3.94995
 through SteamVR on a Steam Frame, in the isolated developer environment, as they
 were merged:
 - weapon skills on contact;
@@ -185,11 +94,11 @@ were merged:
 - frame generation with FidelityFX and NVIDIA, including menus and panels, and
   pausing and resuming when switching between Both eyes and By turns.
 
-Contributed features were tested by their authors before review. These are
-feature-level checks; no new headset session is claimed for the version and
-release-notes update itself.
+Contributed features were tested by their authors before review.
 
 Known issues:
+- **Stuns in Unleashed:** a stun now only knocks you back. You can move again as
+  soon as the knockback ends, even while the stun is still shown.
 - **Frame generation is experimental.** It uses a pre-release bridge. Expect
   artifacts around moving monsters and during fast head turns. Frame counters,
   including the Perf page's, count only the frames the game draws. Once, with it
@@ -207,8 +116,8 @@ Known issues:
 
 Thanks to **beadlebytes** for smarter aiming, ground skills, the bow path laser,
 the forearm and shield, wrist map zoom and centered auras. Thanks to
-**ChuckRibbits** for Druid shapeshifting, the strike framework and Unleashed
-combat. Thanks to **Mcklem** for the mercenary, enemy sight, torches and the
+**ChuckRibbits** for Druid shapeshifting, the strike framework, Unleashed
+combat and this knockback fix. Thanks to **Mcklem** for the mercenary, enemy sight, torches and the
 Kurast Docks fix. Thanks to **tig3rmast3r** for OFXR Bridge, and to everyone
 testing, reporting bugs and helping improve the mod!
 
@@ -216,17 +125,19 @@ D2R VR Unleashed is a mod by **monkeylashes**, with contributions from the commu
 
 ## Downloads and links
 
-- [Windows installer, portable ZIP and checksums](https://github.com/bearstonem/d2r-pcvr/releases/tag/v0.3.25-windows-preview)
-- [Installation instructions](https://github.com/bearstonem/d2r-pcvr/blob/v0.3.25-windows-preview/INSTALL-WINDOWS.md)
-- [Controls](https://github.com/bearstonem/d2r-pcvr/blob/v0.3.25-windows-preview/CONTROLS.md)
-- [Full source comparison](https://github.com/bearstonem/d2r-pcvr/compare/v0.3.24-windows-preview...v0.3.25-windows-preview)
+- [Windows installer, portable ZIP and checksums](https://github.com/bearstonem/d2r-pcvr/releases/tag/v0.3.26-windows-preview)
+- [Installation instructions](https://github.com/bearstonem/d2r-pcvr/blob/v0.3.26-windows-preview/INSTALL-WINDOWS.md)
+- [Controls](https://github.com/bearstonem/d2r-pcvr/blob/v0.3.26-windows-preview/CONTROLS.md)
+- [Full source comparison](https://github.com/bearstonem/d2r-pcvr/compare/v0.3.25-windows-preview...v0.3.26-windows-preview)
 - [Project on GitHub](https://github.com/bearstonem/d2r-pcvr)
 - [Discord](https://discord.gg/DmbFfJAnnm)
 - [Support](https://ko-fi.com/bearstonem)
 
 <!-- PCVR_IN_HEADSET_NOTES
-release: v0.3.25-windows-preview
-credits: beadlebytes; ChuckRibbits; Mcklem; tig3rmast3r (OFXR Bridge); Sergious.
+release: v0.3.26-windows-preview
+credits: ChuckRibbits; beadlebytes; Mcklem; tig3rmast3r (OFXR Bridge); Sergious.
+- Hotfix: a knockback (Duriel's Smite and others) no longer leaves you unable to move.
+- Included from v0.3.25: the features below.
 - Weapon skills cast on contact: put Bash, Zeal, Charged Strike and more on a trigger and swing.
 - Skill picker: GESTURE marks contact skills; hover any skill for a card on how it works.
 - Druid: first-person Werewolf/Werebear; claws cast Maul, Fury and the other form skills.
