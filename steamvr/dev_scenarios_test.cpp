@@ -1,6 +1,7 @@
 // Exercise the actual backend with fake SDK callbacks; never loads a game.
 #define D2RVR_DEV_TOOLS 1
 #include "../vr/dev_scenarios.cpp"
+#include "weapon_skills.h"
 #include <cassert>
 #include <vector>
 #include <functional>
@@ -204,7 +205,7 @@ int main(){
                 assert(commands[start+PreparationCount+i]==expected);
             }
         }
-        for(int choice:{1,2,CrossbowChoice,BowChoice,SmallShieldChoice,StarterPrimaryChoice,StarterAlternateChoice,ThrowingChoice,PotionsChoice,TorchChoice}) {
+        for(int choice:{1,2,CrossbowChoice,BowChoice,SmallShieldChoice,StarterPrimaryChoice,StarterAlternateChoice,ThrowingChoice,PotionsChoice,TorchChoice,ThrowingPotionsChoice}) {
             const auto commandCount=commands.size();
             devscenarios::Request(Make(choice));assert(tasks.back().game);Run(tasks.size()-1);
             assert(devscenarios::Status().result==Result::Applied&&!tokenLive);
@@ -249,6 +250,13 @@ int main(){
         std::vector<std::string_view> codes;for(const char* code:Kit(cls,PotionsChoice))if(code)codes.push_back(code);
         assert((codes==std::vector<std::string_view>{"hp5","hp5","hp5","hp5","rvl","rvl","yps","yps","wms","wms"}));
     }
+    // The throwing potion kit: one stack of each gas and oil potion, normal, for every class.
+    assert(IsKit(ThrowingPotionsChoice)&&NormalKit(ThrowingPotionsChoice)&&PageFor(ThrowingPotionsChoice)==0&&SlotFor(ThrowingPotionsChoice)==6);
+    for(int cls=0;cls<8;++cls) {
+        std::vector<std::string_view> codes;for(const char* code:Kit(cls,ThrowingPotionsChoice))if(code)codes.push_back(code);
+        assert((codes==std::vector<std::string_view>{"gps","gpm","gpl","ops","opm","opl"}));
+        for(const auto code:codes)assert(framevr::weaponskills::ThrowingPotion(code));
+    }
     // The torch kit: a one-handed club for dynamic lighting and melee, for every class.
     assert(IsKit(TorchChoice)&&NormalKit(TorchChoice)&&PageFor(TorchChoice)==1);
     for(int cls=0;cls<8;++cls) {
@@ -268,7 +276,7 @@ int main(){
 
     // Failed standalone kits clean up only the generated exchange token.
     failItems=true;
-    for(int choice:{CrossbowChoice,BowChoice,SmallShieldChoice,ThrowingChoice,PotionsChoice,TorchChoice}) {
+    for(int choice:{CrossbowChoice,BowChoice,SmallShieldChoice,ThrowingChoice,PotionsChoice,TorchChoice,ThrowingPotionsChoice}) {
         const auto beforeCleanup=tokenRemoves;
         devscenarios::Request(Make(choice));Run(tasks.size()-1);
         assert(devscenarios::Status().result==Result::KitRefused&&!tokenLive&&tokenRemoves==beforeCleanup+1);

@@ -78,7 +78,10 @@ setup first. Return to normal play with the ordinary VR shortcut.
 
 Open either hand's wheel and choose **DEV**. Its tabs are grouped by purpose:
 
-- **Character:** level 10, 30, 60 and 90 presets; heal life/mana.
+- **Character:** level 10, 30, 60 and 90 presets; heal life/mana; unlock quests and
+  waypoints; a **Throwing potions** kit (one stack each of Rancid, Choking and
+  Strangling Gas and Oil, Exploding and Fulminating Potion, to equip in the right
+  hand and throw; on this page as Equipment is full).
 - **Equipment:** starter primary/alternate gear, class unique primary/alternate
   gear, crossbow + bolts, bow + arrows, a small shield, **Render debug draws**,
   **By turns own picture**, **By turns filter**, **By turns ghosts**, a **Throwing kit** and a **Potion kit** (four Super

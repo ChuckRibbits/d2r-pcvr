@@ -17,12 +17,13 @@
 namespace framevr::skillusage {
 inline constexpr size_t LineLength=180,DetailsLength=900;
 inline constexpr int Interact=357;   // the catalog's Interact / pick up entry (native_ui)
-enum class Kind {None,Interact,Attack,Strike,Flurry,Smite,Bow,Quiver,Javelin,DoubleThrow,Toss,Native};
+enum class Kind {None,Interact,Attack,Throw,Strike,Flurry,Smite,Bow,Quiver,Javelin,DoubleThrow,Toss,Native};
 inline Kind Classify(int skill) {
     namespace ws=weaponskills;namespace st=strikeskills;
     if(skill<0)return Kind::None;
     if(skill==Interact)return Kind::Interact;
     if(skill==ws::Attack)return Kind::Attack;
+    if(skill==ws::Throw)return Kind::Throw;
     if(st::Known(skill))return st::MultiHit(skill)?Kind::Flurry:Kind::Strike;
     if(skill==ws::Smite)return Kind::Smite;
     if(ws::Bow(skill))return ws::QuiverSkill(skill)?Kind::Quiver:Kind::Bow;
@@ -43,6 +44,9 @@ inline const char* Line(int skill,int slot) {
         case Kind::None:return "";
         case Kind::Interact:return "Press to interact with or pick up what this hand points at.";
         case Kind::Attack:return "Press to attack what this hand points at. Swinging a melee weapon attacks without it.";
+        case Kind::Throw:
+            if(!at.right)break;
+            return "Gesture: throw by hand. A javelin or throwing weapon flies along your throw; a gas or oil potion flies as a bottle and bursts where it shatters.";
         case Kind::Strike:
             if(!at.trigger)return "Press to cast it, aimed by this hand. On a trigger it is a gesture: a swing that lands casts it.";
             return at.left?"Gesture with a second weapon or claw: a full-cycle swing of the left hand that lands casts it; quicker swings stay weaker basic attacks.":
@@ -92,7 +96,13 @@ inline std::string Details(int skill,int slot) {
                    "• On-hit effects (leech, crushing blow, deadly strike, procs) come only from a full-cycle stroke's first "
                    "monster, and only as often as its hit roll would hit.\n"
                    "• A riposte after a perfect parry is a full hit with them.\n"
-                   "Pressing this button attacks what the hand points at.";
+                   "A button attacks what the hand points at; on the right trigger a held javelin or potion is thrown by hand.";
+        case Kind::Throw:
+            if(!at.right)break;
+            return "Gesture with a thrown weapon or a gas or oil potion in the right hand. Javelins, throwing knives and axes: hold the trigger, "
+                   "make a deliberate throwing motion and let go; the weapon flies along your throw. Gas and oil potions: press, throw and let go; "
+                   "with Bottle physics on the potion leaves your hand as a real bottle, and the game's own cloud or blast starts where it "
+                   "shatters on the floor, a wall, a table or a prop, within the game's reach. A quick press or a still hold throws as the game does.";
         case Kind::Strike: {
             if(!at.trigger)return "Press to cast it natively, aimed by this hand. On a trigger it becomes a gesture: a swing that lands casts it on the monster you hit, with the skill's own mana, damage and effects.";
             std::string text=at.left?"Gesture, with a second weapon of a dual-wield pair or the other claw in a form. ":"Gesture with a melee weapon or claws. ";

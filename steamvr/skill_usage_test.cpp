@@ -33,6 +33,8 @@ int main() {
     Check(Gesture(251,rightTrigger)&&!Gesture(251,leftTrigger)&&!Gesture(251,rightFace),"traps and bombs are thrown from the right trigger only");
     Check(!Gesture(36,rightTrigger)&&Has(Line(36,rightTrigger),"trigger")&&Has(Line(36,rightFace),"button"),"any other skill casts natively from its trigger or button");
     Check(Has(Line(Interact,rightFace),"pick up")&&Has(Line(weaponskills::Attack,rightTrigger),"attack"),"Interact and the basic attack say what they do, not \"cast\"");
+    Check(Gesture(weaponskills::Throw,rightTrigger)&&!Gesture(weaponskills::Throw,leftTrigger)&&Has(Details(weaponskills::Throw,rightTrigger),"gas or oil potion")&&
+          Has(Details(weaponskills::Attack,rightTrigger),"thrown by hand"),"Throw and Attack on the right trigger throw a held javelin or potion by hand");
     if(failures)return 1;
     std::puts("skill usage: every skill and slot fits; gestures and flurries described");
     return 0;

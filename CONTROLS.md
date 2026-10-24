@@ -395,6 +395,17 @@ while held. Start the throw right after pressing; a slow reach casts nothing.
 The models are the game's own, cached from your installed game by the
 installer. **Weapon skill gestures** Off turns this off.
 
+**Throwing potions.** Equip a stack of gas or oil potions (Rancid, Choking or
+Strangling Gas; Oil, Exploding or Fulminating Potion) in the right hand, with
+Attack or Throw on the right trigger. Press the trigger, throw and let go. With
+**Bottle physics** on, the potion leaves your hand as a real bottle and flies
+until it first touches the floor, a wall, a table or a prop; it shatters there,
+and the game's own cloud or blast starts at that spot, within its reach. Off,
+the game's own Throw lands the potion where your arc meets the floor. Running
+carries the throw either way, and **Throw lift** raises it like any throw. A quick press or
+a still hold throws as it did before. A potion in hand is never swung as a
+melee weapon. **Weapon skill gestures** Off turns this off.
+
 Face-button skills never replace gesture skills. Ordinary melee swings remain
 basic attacks for skills without a supported physical adapter; assigning a
 spell does not cast it on every swing. Physical skill gestures can be disabled
