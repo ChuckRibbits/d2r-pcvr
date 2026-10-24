@@ -1187,7 +1187,7 @@ bool HidePotion(uint32_t entity,uintptr_t unit,bool& first) {
         std::lock_guard lock(mutex);
         if(potionClaim.unit!=unit||potionClaim.id!=header[2]||now>potionClaim.until) {
             const uint64_t expected=potionExpected.load();
-            if(!expected||now<expected||now-expected>1500)return false;
+            if(!expected||now<expected||now-expected>3000)return false;   // the throw animation, and the art loading the first time
             if(potionClaim.unit){char line[120];snprintf(line,sizeof line,"Frame potion throw: the last hidden potion's transforms rewritten %u times",hiddenWrites.exchange(0));framevr::logging::Write(line);}
             else hiddenWrites=0;
             potionClaim={unit,header[2],now+4000};potionExpected=0;first=true;++potionsHidden;   // one missile per throw

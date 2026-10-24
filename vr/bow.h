@@ -33,7 +33,7 @@ bool Visual(uint32_t entity,uintptr_t unit,bool hasReleasePoint,bool isRoot);
 bool OwnsVisual(uintptr_t unit);
 // A gas or oil potion thrown as a physical bottle (#292): the transport
 // expects the game's own potion when the bottle shatters, and the first local
-// potion missile (Missiles.txt 44-49) whose visual appears within 1.5 s is
+// potion missile (Missiles.txt 44-49) whose visual appears within 3 s is
 // claimed: every entity of its visual (root, meshes, effects) then flies
 // hidden; its burst is the game's own. HidePotion: one such entity of that
 // client missile unit; true if hidden (first: true when it claimed the unit).
