@@ -9,7 +9,7 @@
 // here reads native memory or XR state.
 //
 // Every blocked hit strains the guard, weighted by the attacker's rank
-// (RankWeight). Strain shows as soft white light at the rim of the view that
+// (RankWeight). Strain shows as a soft black shadow at the rim of the view that
 // creeps inward; each block sends one pulse in from
 // the edge. Full strain breaks the guard: the light swells toward the centre
 // and breathes slowly. The shield still blocks throughout; what the player
@@ -23,10 +23,9 @@
 // re-triggers without dropping, so rapid blocks hold a swell rather than
 // strobing; breathing is well under 1 Hz; opacity never exceeds brightness.
 namespace framevr::strain {
-enum class BuildSpeed { Slow, Medium, Fast };
 // The attacker's rank weights the strain of each block it lands on the shield:
-// lesser monsters wear the guard down slowly, the rarest fastest. At Medium a
-// normal monster breaks the guard in 10 blocks, an act boss in 3.
+// lesser monsters wear the guard down slowly, the rarest fastest. A normal
+// monster breaks the guard in 10 blocks, an act boss in 3.
 enum class Rank : uint8_t { Normal, Minion, Champion, Unique, PrimeEvil };
 inline float RankWeight(Rank r) {
     switch(r){case Rank::Minion:return 1.25f;case Rank::Champion:return 2.f;case Rank::Unique:return 2.5f;case Rank::PrimeEvil:return 4.f;default:return 1.f;}
@@ -34,9 +33,7 @@ inline float RankWeight(Rank r) {
 inline const char* RankName(Rank r) {
     switch(r){case Rank::Minion:return "minion";case Rank::Champion:return "champion";case Rank::Unique:return "unique";case Rank::PrimeEvil:return "prime_evil";default:return "normal";}
 }
-inline float BuildMultiplier(BuildSpeed speed){return speed==BuildSpeed::Slow?.5f:speed==BuildSpeed::Fast?2.f:1.f;}
 struct Tuning {
-    BuildSpeed speed=BuildSpeed::Medium; // changes strain per block, never ring size or reset time
     float perBlock=.10f;     // strain per blocked hit (1 = broken)
     float resetSeconds=1.5f; // draining: full strain clears in this long
     float recoverSeconds=1.5f; // raised, no hit on the shield this long: drains as if lowered (0 = only lowering drains)
@@ -45,8 +42,8 @@ struct Tuning {
     float brightness=1.f;    // peak opacity, 0 = off ([gameplay] guard_strain_light)
     float breatheSeconds=1.6f; // one slow swell while broken
     float feather=.45f;      // width of the inner blend (softness); the glow's midpoint stays put
-    uint32_t color=0xFFF7EA; // 0xRRGGBB: the pale white light; 0x000000 (guard_strain_dark) darkens the rim
-    float density=1;         // >1 thickens the partly clear band (the black rim: guard_strain_dark_density)
+    uint32_t color=0x000000; // 0xRRGGBB: black only
+    float density=2.5f;      // >1 thickens the partly clear band (guard_strain_dark_density)
 };
 // Ring geometry, in the visor image's radius (1 = image edge; the headset's
 // view ends near .95). The light covers everything outside `edge`.
@@ -94,7 +91,7 @@ public:
         if(up&&(in.blocks||in.parries||in.weight>0))hitAt=in.time;   // any hit on the shield restarts the recovery wait
         if(up&&(in.blocks||in.weight>0)) {   // weight may arrive a step before its count
             const float units=in.weight>=0?in.weight:float(in.blocks);
-            strain=std::min(1.f,strain+units*std::max(0.f,t.perBlock)*BuildMultiplier(t.speed));
+            strain=std::min(1.f,strain+units*std::max(0.f,t.perBlock));
             attacking=true;pulseAt=in.time;
             if(strain>=1&&!broken){broken=true;out.brokeNow=true;}
         }
@@ -144,7 +141,6 @@ public:
 // rim, just a glow that fades toward the centre. Squared smoothstep is half
 // at t=.6436, so the blend starts that far (of feather) inside the midpoint.
 constexpr int Size=256;
-constexpr uint32_t White=0xFFF7EA; // the pale, slightly warm white first tried
 constexpr float MaxReach=5;        // ~80 degrees per side over the 54 / 55 degree visor
 inline float Reach(float r){return std::isfinite(r)?std::clamp(r,1.f,MaxReach):1.f;}
 inline float Radius(int x,int y,float reachX=1,float reachY=1) {

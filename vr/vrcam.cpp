@@ -935,26 +935,22 @@ void LoadSettings() {
     melee::ConfigureParryAtHit(IniB(L"gameplay",L"parry_at_hit",true));
     // Guard strain light: % of the guard each block strains, lowered reset time,
     // % of the view left clear at full swell, the broken guard's breathing period,
-    // the width of the light's inner blend (% of the visor radius), opacity (% peak;
-    // 0 = none, strain still runs), and colour as RRGGBB hex
-    // (FFF7EA, the pale white light, by default). guard_strain_dark (VR Settings >
-    // Combat > Guard strain color: Black) darkens the rim instead, denser by
-    // guard_strain_dark_density (2.5; 1 = the same curve as the light): at equal
-    // opacity a dark rim over D2's dark scenes hides far less than a pale one.
-    // guard_strain_dark 2 (Guard strain color: Off) hides the light; strain still runs.
-    const int strainLook=std::clamp(int(std::lround(IniF(L"gameplay",L"guard_strain_dark",0))),0,2);   // 0 white, 1 black, 2 off
+    // the width of the shadow's inner blend (% of the visor radius) and opacity (% peak;
+    // 0 = none, strain still runs). The rim is black only, drawn denser by
+    // guard_strain_dark_density (2.5; 1 = the plain curve): over D2's dark scenes a
+    // dark rim hides far less than its opacity suggests.
+    // guard_strain_vignette 0 (VR Settings > Combat > Guard strain vignette: Off) hides
+    // it; strain still runs. Missing: the old Guard strain color Off (guard_strain_dark 2) stays Off.
+    const bool strainShown=std::lround(IniF(L"gameplay",L"guard_strain_vignette",
+                                            std::lround(IniF(L"gameplay",L"guard_strain_dark",0))==2?0.f:1.f))!=0;
     framevr::ConfigureGuardStrain(IniF(L"gameplay",L"guard_strain_per_block",10)/100.f,
                                   IniF(L"gameplay",L"guard_strain_reset_ms",1500)/1000.f,
                                   IniF(L"gameplay",L"guard_strain_clear",10)/100.f,
                                   IniF(L"gameplay",L"guard_strain_breathe_ms",1600)/1000.f,
                                   IniF(L"gameplay",L"guard_strain_softness",45)/100.f,
-                                  strainLook==2?0.f:IniF(L"gameplay",L"guard_strain_light",100)/100.f,
-                                  strainLook==1?0u:
-                                  [] {wchar_t hex[16];GetPrivateProfileStringW(L"gameplay",L"guard_strain_color",L"FFF7EA",hex,16,g_iniPath);
-                                      wchar_t* end=nullptr;const unsigned long v=wcstoul(hex[0]==L'#'?hex+1:hex,&end,16);
-                                      return end&&end!=hex&&!*end&&v<=0xFFFFFFul?uint32_t(v):0xFFF7EAu;}(),
-                                  strainLook==1?
-                                      std::clamp(IniF(L"gameplay",L"guard_strain_dark_density",2.5f),1.f,6.f):1.f);
+                                  strainShown?IniF(L"gameplay",L"guard_strain_light",100)/100.f:0.f,
+                                  0x000000u,   // black only
+                                  std::clamp(IniF(L"gameplay",L"guard_strain_dark_density",2.5f),1.f,6.f));
     // Strain also recedes with the shield still up once no hit has reached it for
     // guard_strain_recover_ms (1500), at the guard_strain_reset_ms rate (1500): clear 3 s after the
     // last hit from full. 0 = only lowering clears it.

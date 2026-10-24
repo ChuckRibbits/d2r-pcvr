@@ -34,8 +34,6 @@ static void ValueLabel(Key key,float value,const Context& c,char* label,size_t s
     else if(key==ThrowLift){if(value==0)std::snprintf(label,size,"Off");else std::snprintf(label,size,"%+.0f\xc2\xb0",value);}
     else if(key==Dominant)std::snprintf(label,size,"%s",value>.5f?"Left":"Right");
     else if(key==OfflinePlayers){if(value==0)std::snprintf(label,size,"Game default");else std::snprintf(label,size,"Players %.0f",value);}
-    else if(key==StrainDark)std::snprintf(label,size,"%s",StrainColorNames[std::clamp(int(std::lround(value)),0,2)]);
-    else if(key==StrainSpeed)std::snprintf(label,size,"%s",StrainSpeedNames[int(value)]);
     else if(key==HeartbeatStart){if(value==0)std::snprintf(label,size,"Off");else std::snprintf(label,size,"%.0f%% life",value);}
     else if(key==EnemySight){if(value==100)std::snprintf(label,size,"100%% (Default)");else std::snprintf(label,size,"%.0f%%",value);}
     else if(key==CompanionAi)std::snprintf(label,size,"%s",value>.5f?"Enabled":"Legacy");

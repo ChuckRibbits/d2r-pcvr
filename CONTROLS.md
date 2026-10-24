@@ -191,18 +191,15 @@ and the other absorb skills soak and drain at the original game's average rate.
 - **Guard strain:** every block (not a parry) strains your guard, and the
   rarer the attacker the more: a minion strains it a little more than a
   normal monster, a champion twice as much, a unique or super unique two and
-  a half times and an act boss four times. A pale light
+  a half times and an act boss four times. A black shadow
   creeps in from the edge of your view; at full strain
-  the guard breaks and the light swells over most of your view. The shield
+  the guard breaks and the shadow swells over most of your view. The shield
   keeps blocking; the cost is sight, then chip damage (below). It fades once
   no hit has reached your shield for a moment, even held up, and is gone about
   3 seconds after the last hit; lowering the shield starts the fade at once.
-  **Combat > Guard strain** (left stepper: color) switches the light to a black shadow, or
-  Off to hide it (strain, guard breaks and chip damage still apply).
-  Its right stepper (buildup) selects Slow / Medium / Fast: about 20 / 10 / 5
-  normal-monster blocks to full strain with default tuning (an act boss: about
-  6 / 3 / 2). Medium keeps the original rate.
-  This changes how quickly it builds, not how much of your view it covers.
+  About 10 normal-monster blocks reach full strain (an act boss: about 3).
+  **Combat > Guard strain vignette** turns the shadow Off (strain, guard breaks
+  and chip damage still apply).
 - **Guard break:** the guard breaks with a bone snap, and while it is broken
   blocked hits leak a **chip**: part of their physical damage gets through,
   less the higher your chance to block (more while running). Elemental damage
