@@ -314,7 +314,7 @@ struct Settings {
     std::atomic<float> ceilDetail{0.8f};    // [ceiling] detail: world units the picture's light parts stand out of the rock
     std::atomic<float> ceilContrast{1.6f};  // [ceiling] contrast: the picture's fine detail times this
     std::atomic<bool>  torchEnabled{true};       // [torch] enabled: 1H club with fire lights the dungeon in VR
-    std::atomic<float> torchRadius{28.0f};       // [torch] radius: world units of light reach
+    std::atomic<float> torchRadius{18.0f};       // [torch] radius: world units of light reach (28 looked too intense in the headset)
     std::atomic<bool>  torchFlicker{true};       // [torch] flicker: organic turbulent flame flicker
     std::atomic<float> torchWarmth{0.65f};       // [torch] warmth: color warmth toward fire orange
     std::atomic<int>   armsMode{0};        // 0 game animation, 1 test pose (arms ahead), 2 controllers
@@ -1307,7 +1307,7 @@ void LoadSettings() {
     g_set.ceilDetail.store(std::clamp(IniF(L"ceiling", L"detail", 0.8f), 0.0f, 10.0f));
     g_set.ceilContrast.store(std::clamp(IniF(L"ceiling", L"contrast", 1.6f), 0.0f, 5.0f));
     g_set.torchEnabled.store(IniB(L"torch", L"enabled", true));
-    g_set.torchRadius.store(std::clamp(IniF(L"torch", L"radius", 28.0f), 5.0f, 60.0f));
+    g_set.torchRadius.store(std::clamp(IniF(L"torch", L"radius", 18.0f), 5.0f, 60.0f));
     g_set.torchFlicker.store(IniB(L"torch", L"flicker", true));
     g_set.torchWarmth.store(std::clamp(IniF(L"torch", L"warmth", 0.65f), 0.0f, 1.0f));
     LoadCeilingBiomes();

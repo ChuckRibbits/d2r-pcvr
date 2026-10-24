@@ -75,7 +75,7 @@ Implementado en [vr/vrcam.cpp](../../vr/vrcam.cpp) y [reshade/D2R_DepthFog.fx](.
 - **Slot 0 Reservado e Inmunidad a Distancia:** El slot 0 del array `GameLightPos[16]` y `GameLightCol[16]` pertenece a la antorcha del jugador con intensidad $1.0$ (`col[3] = 1.0f`), garantizando activación prioritaria en techos y paredes.
 - **Configuración (`d2r_pcvr.ini`):**
   - `[torch] enabled=1`: Activa la iluminación de antorcha en VR.
-  - `[torch] radius=28.0`: Alcance base de la luz en unidades de mundo (iluminación ampliada 1.5x-2.0x).
+  - `[torch] radius=18.0`: Alcance base de la luz en unidades de mundo.
   - `[torch] flicker=1`: Activa el parpadeo senoidal multifrecuencia.
   - `[torch] warmth=0.65`: Ajuste de temperatura cromática hacia naranja fuego.
 
