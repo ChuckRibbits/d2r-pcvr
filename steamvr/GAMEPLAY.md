@@ -1015,7 +1015,7 @@ and trigger/button melee were:
     attack rating, defense and level penalty), read where the game's hit check
     passes it on. `ar_damage_floor` (0) keeps that % of damage at zero chance.
   - **Recovery** (`swing_recovery_damage`, 1): damage x the share of the native
-    attack cycle (class, weapon, IAS, WSM) since the previous landed stroke, to
+    attack cycle (class, weapon, IAS, WSM, skill speed and slows) since the previous landed stroke, to
     the power `swing_recovery_curve` (2), at most 1. With 2, flailing at twice
     the cycle's rate deals half the damage per second (1 would be neutral).
     `swing_recovery_grace` (100 = none) counts a stroke from that % of the cycle
@@ -1113,8 +1113,10 @@ starts it (`button_cycles`), so alternating trigger attacks with swings is no
 faster than swinging. A trigger attack started right after a swing is still
 paced only by its own native animation. This needs the combat hooks, which
 `contact_hits=1` (the default) installs.
-Skill speed (Fanaticism, Frenzy, Burst of Speed, werewolf), slows and dual-wield
-attack sequences are not read yet. An unknown class or weapon class (including
+Skill speed and slows (Fanaticism, Frenzy, Burst of Speed, chill, Decrepify) come
+from the unit's attackrate (ItemStatCost 68, which already subtracts the main
+hand's WSM; `attack_speed.h` `SkillSpeed`); the forms' own cycle is below.
+Dual-wield attack sequences are not read yet. An unknown class or weapon class (including
 classes outside the original seven) leaves the cycle unknown, which does not
 gate hits. Unleashed restores unlimited free-swing contacts. The log
 reports the cycle inputs (`Frame melee attack speed:`) and refused contacts
