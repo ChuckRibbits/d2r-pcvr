@@ -49,6 +49,8 @@
 #include "guard_strain_paint.h"
 #include "heartbeat.h"
 #include "wrist_compass.h"
+#include "map_zoom.h"
+#include "wrist_full_map.h"
 #include "interaction_paint.h"
 #include "latest_worker.h"
 #include "haptic_pulse.h"
@@ -536,10 +538,23 @@ Eye uiEye;
 Eye mapEye;
 // The wrist map's view: Isometric (the game's) or Top-down, and on the
 // top-down map whether it turns with you. Configured under VR Settings > HUD.
-bool MapTopDownOn(){return vrsettings::Read().values[settings::MapTopDown]>.5f;}
+bool MapTopDownOn(){return settings::MapViewTopDown(vrsettings::Read().values[settings::MapTopDown]);}
+// Map view = Full map / Full top-down: the wrist shows the game's full map (wrist_full_map.h)
+bool MapFullOn(){return settings::MapViewFull(vrsettings::Read().values[settings::MapTopDown]);}
 bool MapTurnOn(){return vrsettings::Read().values[settings::MapRotate]>.5f;}
 bool mapSupported=false;
 constexpr uint32_t mapSide=512;
+// Right-stick zoom of that map while it is looked at (map_zoom.h). wristMapShown:
+// the wrist / palm map quad went into the last frame's layers, centered at
+// wristMapCenter (interaction space, like interactionInput.head).
+mapzoom::Gesture mapZoom;
+bool wristMapShown=false,wristMapLooked=false;
+math::Vec wristMapCenter{};
+uint64_t mapZoomLogAt=0;
+bool mapZoomLogged=false;
+// True while the player looks at the shown wrist / palm map: the right stick's
+// up / down then zooms the map and is cleared for everything else that frame.
+bool MinimapLooked(){return wristMapLooked;}
 // Desktop mirror: in stereo the game window presents alternating eye frames,
 // so the monitor flickers between both eyes (double vision). After the headset
 // takes each right frame, the left eye image (still acquired until EndPair) is
@@ -828,7 +843,7 @@ void ClearInput() {
     lootlabels::display.Clear();
     rightStickGestures.Reset();
     meleeImpactAt[0]=meleeImpactAt[1]=shieldImpactAt=parryMissAt=0;
-    wristHeading.Reset();compassFrame=false;
+    wristHeading.Reset();compassFrame=false;mapZoom.Reset();wristMapLooked=false;
     panelinput::WorldInput(false);
     gamestate::MenuMap(false);
     menuControls.Suspend();menuNavigation.Reset();nativeMenuPad={};laserClick={};panelinput::UseController();
@@ -2002,8 +2017,10 @@ void Input() {
     const auto lootNow=GetTickCount64(),lootSession=gamestate::LocalPlayer();
     const bool lootWorld=motionHeadTracked&&!nativeUi&&!settingsOwned&&!settingsChord&&inWorld&&inWorld()&&lootSession;
     // Right stick up toggles run / walk; down, held, shows the loot labels
-    // (Show items, Alt). Not while a wheel is open. A vertical push turns nothing.
-    const auto rightStick=rightStickGestures.Step(lootWorld&&handControls.Wheel()<0,controls.rx/32767.f,controls.ry/32767.f);
+    // (Show items, Alt). Not while a wheel is open, nor while the wrist map is
+    // looked at: its zoom has the stick then (map_zoom.h). A vertical push turns nothing.
+    const auto rightStick=rightStickGestures.Step(mapzoom::WorldGestures(lootWorld&&handControls.Wheel()<0,wristMapLooked),
+        controls.rx/32767.f,controls.ry/32767.f);
     if(rightStick.owned)controls.rx=controls.ry=0;
     const bool lootHeld=rightStick.showLoot;
     const bool wasLootHeld=lootlabels::display.ShowAll(lootNow);
@@ -2282,6 +2299,44 @@ void Input() {
         Say(line);potionReportAt=GetTickCount64()+2000;
     }
     if(interactionOutput.settings){OpenSettings();settingsOwned=true;interactionInput.active=motionInput.active=false;}
+    {
+        // Minimap zoom: while the wrist / palm map is shown (the wrist turned
+        // toward you, or the palm raised) and you look at it, the right stick's
+        // up / down zooms it and does nothing else; left / right still turns,
+        // except during a zoom push. Each new game starts at 1x.
+        static uint64_t mapZoomSession=0;
+        if(mapzoom::NewGame(mapZoomSession,interactionInput.session)&&mapZoom.Zoom()!=mapzoom::Min) {
+            mapZoom.NewGame();Say("Frame map zoom: new game, back to 1.00x");
+        }
+        const bool shown=wristMapShown&&mapSupported&&interaction::NavigationWanted(interactionInput,interactionOutput,interactionInput.at);
+        wristMapLooked=shown&&mapzoom::Looking(interactionInput.head.p,interactionInput.head.q,wristMapCenter,wristMapLooked);
+        mapzoom::Input in;in.time=interactionInput.time;in.looking=MinimapLooked();
+        in.stick=controls.ry/32767.f;in.x=controls.rx/32767.f;
+        // Map view = Full map: zoomed in from the game's widest view, to 16x; the game is asked
+        // for the zoom that keeps it sharp (wrist_full_map.h). Off: nothing asked, the hooks idle.
+        const bool fullMap=MapFullOn();
+        fullmap::g_on.store(fullMap,std::memory_order_relaxed);
+        in.max=fullMap?mapzoom::FullMax:mapzoom::Max;
+        const auto zoom=mapZoom.Step(in);
+        fullmap::g_wanted.store(fullMap?fullmap::Base*zoom.zoom:0.f,std::memory_order_relaxed);
+        if(zoom.owned)controls.ry=0;
+        if(zoom.turnOwned)controls.rx=0;
+        if(zoom.tick)MotionPulse(0,haptics::Category::Interaction,zoom.tick==2?.35f:.15f,zoom.tick==2?30000000:12000000);
+        // One line a gesture: a start at most every half second, and its stop.
+        const uint64_t tick=GetTickCount64();
+        if(zoom.started&&tick>=mapZoomLogAt){
+            char line[80];std::snprintf(line,sizeof line,"Frame map zoom: start at %.2fx (%s)",zoom.zoom,in.stick>0?"in":"out");Say(line);
+            mapZoomLogAt=tick+500;mapZoomLogged=true;
+        }
+        if(zoom.stopped&&mapZoomLogged){
+            char line[160];
+            if(fullMap)std::snprintf(line,sizeof line,"Frame map zoom: stop at %.2fx%s (full map: game zoom %.3f asked, %.3f drawn)",zoom.zoom,wristMapLooked?"":" (looked away)",
+                                     fullmap::GameStep(fullmap::Base*zoom.zoom),fullmap::g_applied.load(std::memory_order_relaxed));
+            else std::snprintf(line,sizeof line,"Frame map zoom: stop at %.2fx%s",zoom.zoom,wristMapLooked?"":" (looked away)");
+            Say(line);
+            mapZoomLogged=false;
+        }
+    }
     gamestate::MenuMap(mapSupported&&interaction::MapWanted(interactionInput,interactionOutput,interactionInput.at));
     if(interactionOutput.inventory&&toggleMenus)toggleMenus();
     if(handOutput.wheel>=0&&!interactionOutput.wheel){handControls.Close();handOutput={};}
@@ -3330,7 +3385,8 @@ bool Copy(ID3D12Resource* src,Eye& e,reshade::api::command_queue* rq) {
 bool CopyMap(reshade::api::command_queue* rq) {
     if(!mapSupported||mapEye.copied||!interaction::MapWanted(interactionInput,interactionOutput,GetTickCount64()))return true;
     uint32_t w=0,h=0;
-    auto* src=reinterpret_cast<ID3D12Resource*>(hud::MapTexture(w,h));
+    bool fullMap=false;float drawnZoom=0;   // Map view = Full map: the share is the full map's box, drawn at that game zoom
+    auto* src=reinterpret_cast<ID3D12Resource*>(hud::MapTexture(w,h,&fullMap,&drawnZoom));
     if(!src||!w||!h)return true; // No current map; never display the last area's texture.
     auto& e=mapEye;
     if(!e.chain) {
@@ -3351,7 +3407,22 @@ bool CopyMap(reshade::api::command_queue* rq) {
     // The heading arrow over the hero (while the compass knows the heading),
     // the map turning with you (top-down only), and top-down itself.
     const uint32_t flags=(compassFrame?1u:0u)|(compassFrame&&MapTurnOn()&&MapTopDownOn()?4u:0u)|(MapTopDownOn()?8u:0u);
-    if(!mapBlit.Render(device.Get(),e.commands.Get(),src,e.images[e.index].texture,true,true,flags,float(wristHeading.bearing),1.f)) {
+    // The full map: a square of `span` share pixels around the X, the zoom's remainder after the
+    // game zoom this share was really drawn at (so a step landing a frame late never jumps).
+    // The corner map keeps its own zoom, up to 4x.
+    const bool turning=(flags&4)!=0,topDown=(flags&8)!=0;
+    const float span=fullMap?fullmap::Span(w,h,turning,topDown,mapZoom.Zoom(),drawnZoom):0.f;
+    if(fullMap) {   // a line when the share's size or its drawn zoom changes (at most 60 a session)
+        static uint32_t toldW=0,toldH=0;static float toldZoom=-1;static int told=0;
+        if((w!=toldW||h!=toldH||drawnZoom!=toldZoom)&&told<60) {
+            ++told;toldW=w;toldH=h;toldZoom=drawnZoom;
+            char line[220];std::snprintf(line,sizeof line,"Frame full map: share %ux%u drawn at game zoom %.3f%s; wrist %.2fx, span %.0f px (%s%s)",
+                w,h,drawnZoom>0?drawnZoom:fullmap::Own,drawnZoom>0?"":" (the game's own: the hook gave none)",mapZoom.Zoom(),span,topDown?"top-down":"flat",turning?", turning":"");
+            Say(line);
+        }
+    }
+    if(!mapBlit.Render(device.Get(),e.commands.Get(),src,e.images[e.index].texture,true,true,flags,float(wristHeading.bearing),1.f,
+                       fullMap?1.f:std::min(mapZoom.Zoom(),mapzoom::Max),span)) {
         e.commands->Close();return false;
     }
     if(FAILED(e.commands->Close()))return false;
@@ -3742,6 +3813,7 @@ void EndPair() {
         interactionInput.snapshot,interactionOutput,interaction::Fresh(interactionInput.snapshot,interactionInput.session,interactionInput.at),controllerLabels))
         motionQuad(palette,palettePose,paletteWidth,paletteHeight,{{0,0},{768,768}},interactionChain);
     XrCompositionLayerQuad menuMap{XR_TYPE_COMPOSITION_LAYER_QUAD};
+    wristMapShown=false;
     if(palette.subImage.swapchain&&mapEye.copied&&interaction::MenuMapWanted(interactionInput,interactionOutput,GetTickCount64())) {
         const auto bounds=interaction::MapContent;
         auto pose=MotionPose(palettePose);
@@ -3794,8 +3866,12 @@ void EndPair() {
                 interaction::CompanionImageCurrent(companionPaintContext,interactionInput.snapshot);
             const int companionRows=companionsReady?wriststatus::Rows(interactionInput.snapshot.companions,interactionInput.snapshot.effects):0;
             const float footer=interaction::CompanionSpace(companionRows);
-            if(mapEye.copied)motionQuad(wristMap,interactionPose(interaction::NavigationMapPanel(interactionInput.hand[1],interactionInput.head,palm,withVitals,footer)),
-                interaction::WristMapSize,interaction::WristMapSize,{{0,0},{int32_t(mapSide),int32_t(mapSide)}},mapEye.chain);
+            if(mapEye.copied){
+                const auto mapPanel=interaction::NavigationMapPanel(interactionInput.hand[1],interactionInput.head,palm,withVitals,footer);
+                wristMapShown=true;wristMapCenter=mapPanel.p;
+                motionQuad(wristMap,interactionPose(mapPanel),
+                    interaction::WristMapSize,interaction::WristMapSize,{{0,0},{int32_t(mapSide),int32_t(mapSide)}},mapEye.chain);
+            }
             auto compassPose=interaction::NavigationCompassPanel(interactionInput.hand[1],interactionInput.head,palm,withVitals,footer);
             motionQuad(wristCompass,interactionPose(compassPose),interaction::WristCompassWidth,interaction::WristCompassHeight,
                 {{compass::Crop(wristHeading.bearing),0},{compass::Window,compass::StripHeight}},compassChain);

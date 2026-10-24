@@ -50,8 +50,8 @@ inline const char* HelpText(int id) {
         case VitalsTilt:return "Rotates the health and mana display relative to your hand. Positive values tilt its top toward you; negative values tilt it away. The minimap and compass keep their own angle.";
         case CriticalAlerts:return "Shows a brief warning and vibrates when health or mana is low. Adjust its vibration under Haptics > Resource alerts. Turning this Off disables the warning, including its vibration.";
         case NavigationLocation:return "Where the minimap and compass appear on your left hand. Independent of health and mana.";
-        case MapTopDown:return "The wrist minimap's view. The gold arrow shows your facing direction. Apply saves your choice.";
-        case MapRotate:return "In Top-down view, Off keeps north at the top and turns the arrow with you. On rotates the map so your facing direction stays at the top. This has no effect in Isometric view; your choice is kept for the next time you use Top-down. Apply saves it.";
+        case MapTopDown:return "The wrist minimap's view. The gold arrow shows your facing direction. Full map and Full top-down show the game's full map instead of its corner map: look at it and push the right stick up to zoom in a lot, down to zoom back out. Apply saves your choice.";
+        case MapRotate:return "In Top-down and Full top-down views, Off keeps north at the top and turns the arrow with you. On rotates the map so your facing direction stays at the top. This has no effect in the isometric views; your choice is kept for the next time you use Top-down. Apply saves it.";
         case OrdinaryMobBars:return "Shows names and health bars for ordinary enemies. Turn it Off to reduce clutter. Boss and elite bars remain visible.";
         case MenuDistance:return "How far away eye-level game panels, such as inventory and merchant menus, appear. You can also point at a game menu, hold Right Grip and push or pull it; menus reopen at that distance until you change this setting or restart. This does not move this VR Settings panel; grab it with Right Grip to move, push, pull or tilt it.";
         case TooltipTiming:return "How soon item details appear when you point the laser at an item in a game panel.";
@@ -121,7 +121,8 @@ inline int HelpChoices(int id) {
         case StereoRendering:return int(std::size(StereoRenderingNames));
         case RenderResolution:return int(std::size(resolution::Choices));
         case ControllerLabels:return int(controllers::Choice::Count);
-        case Dominant:case MapTopDown:case AimHighlights:case CompanionAi:return 2;
+        case MapTopDown:return 4;
+        case Dominant:case AimHighlights:case CompanionAi:return 2;
         case GroundAim:return int(std::size(GroundAimNames));
         case LeftHandStrikes:return int(std::size(LeftHandStrikesNames));
         case SpellLock:return int(std::size(SpellLockNames));
@@ -189,7 +190,9 @@ inline ChoiceHelp HelpChoice(int id,float value) {
         case MapTopDown:{
             static constexpr const char* text[]={
                 "The game's own slanted map, with NPC and exit names.",
-                "Rooms straightened into a floor plan. NPC and exit names are hidden so their text is not turned with the floor. Rotate map can keep your facing at the top."};
+                "Rooms straightened into a floor plan. NPC and exit names are hidden so their text is not turned with the floor. Rotate map can keep your facing at the top.",
+                "The game's full map, isometric, from its widest view. Look at it and push the right stick up to zoom in, up to 16x, staying sharp; down zooms back out.",
+                "The game's full map as a floor plan, from its widest view, zoomed like Full map. Rotate map can keep your facing at the top."};
             return {MapViewNames[c],text[c]};}
         case MenuDistance:{
             static constexpr const char* text[]={

@@ -132,7 +132,7 @@ std::vector<uint8_t> Paint(const Model& m,Hit hover,const char* runtimeStatus,co
         const auto leftAlternates=labels.Button(1,3)+" / "+labels.Button(1,4);
         const auto rightFaces=labels.Button(0,1)+" / "+labels.Button(0,2)+" / grip + face";
         const Help left[]={{"Stick","Walk"},{leftFaces.c_str(),"Assigned left-hand skills"},{leftAlternates.c_str(),"Alternate left-hand skills"},{"Trigger","Assigned left-hand skill"},{"Stick click","Toggle left wheel; right laser edits"},{"Grip + stick click","Inventory / character / skills menu"},{"Grip near belt","Grab a potion"}};
-        const Help right[]={{"Stick sideways / click","Turn / toggle right wheel"},{"Trigger","Assigned right skill / grab bow string"},{"Stick up / hold down","Run or walk / show all loot labels"},{rightFaces.c_str(),"Interact by default / assigned skills"},{"Dominant grip at shoulder","Either shoulder: swap weapon sets I / II"},{"Trigger with bow / javelin","Draw & release / throw in WEAPON mode"},{"Left Grip + Right Trigger","Laser context click in game panels"}};
+        const Help right[]={{"Stick sideways / click","Turn / toggle right wheel"},{"Trigger","Assigned right skill / grab bow string"},{"Stick up / hold down","Run or walk / loot labels; zooms a looked-at map"},{rightFaces.c_str(),"Interact by default / assigned skills"},{"Dominant grip at shoulder","Either shoulder: swap weapon sets I / II"},{"Trigger with bow / javelin","Draw & release / throw in WEAPON mode"},{"Left Grip + Right Trigger","Laser context click in game panels"}};
         for(int i=0;i<7;++i)for(int side=0;side<2;++side){
             const auto& h=(side?right:left)[i];const int x=side?658:40,y=252+i*58;
             fill({x,y,582,56},i%2?RGB(19,31,39):RGB(22,36,44));
@@ -163,7 +163,7 @@ std::vector<uint8_t> Paint(const Model& m,Hit hover,const char* runtimeStatus,co
             text("Map view",{58,193,210,36},true);
             text("Rotate map",{675,193,250,36},true);
             const bool enabled=m.ready&&!m.Busy();
-            button(HudMapViewBox,MapViewNames[m.Get()[MapTopDown]>.5f?1:0],{Kind::Change,MapTopDown,1},false,enabled);
+            button(HudMapViewBox,MapViewNames[std::clamp(int(m.Get()[MapTopDown]),0,3)],{Kind::Change,MapTopDown,1},false,enabled);
             button(HudMapRotateBox,m.Get()[MapRotate]>.5f?"On":"Off",{Kind::Change,MapRotate,1},false,enabled);
         }else if(m.page==Page::Performance&&(DeferOffered(m.Get())||GameVideoWarning(game))){
             // Warnings in amber under the status, two lines at most: the GPU
