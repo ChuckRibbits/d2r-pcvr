@@ -273,6 +273,31 @@ int main() {
         const auto none=strain::Compose(.6f,0);
         bool empty=true;for(size_t i=3;i<none.size();i+=4)empty=empty&&none[i]==0;
         Check(empty,"zero opacity paints nothing");
+        {   // Reach: a view wider than the visor gets the same light at the same angles, carried on to its rim.
+            Check(strain::Compose(.9f,.5f,.45f,0,2.5f,1,1)==strain::Compose(.9f,.5f,.45f,0,2.5f),"reach 1 is the visor, pixel for pixel");
+            Check(strain::Reach(.5f)==1&&strain::Reach(NAN)==1&&strain::Reach(INFINITY)==1&&strain::Reach(99)==strain::MaxReach,"reach never shrinks the light inside the visor and stays bounded");
+            const float reach=1.6641f/1.3764f;   // the reported Frame view (59 / 60 degrees) over the 54 / 55 degree visor
+            const auto visor=strain::Compose(.9f,.5f,.45f),wide=strain::Compose(.9f,.5f,.45f,0,1,reach,reach);
+            auto a=[](const std::vector<uint8_t>& img,int x,int y){return int(img[(size_t(y)*strain::Size+x)*4+3]);};
+            // The visor's own edge lands inside the wide image at Size/2*(1-1/reach) from its border.
+            const int in=int(std::lround(strain::Size/2*(1-1/reach)));
+            Check(std::abs(a(wide,in,strain::Size/2)-a(visor,0,strain::Size/2))<=12&&std::abs(a(wide,strain::Size/2,in)-a(visor,strain::Size/2,0))<=12,
+                  "the visor's rim sits at the same angle inside the wider light");
+            Check(a(wide,strain::Size/2,strain::Size/2)==0,"the centre stays clear");
+            Check(a(wide,0,strain::Size/2)>a(visor,0,strain::Size/2)+40&&a(wide,strain::Size/2,0)>a(visor,strain::Size/2,0)+40,
+                  "past the visor the light keeps building out to the view's edge, never a hard stop");
+            bool rising=true;for(int x=1;x<strain::Size/2;++x)rising=rising&&a(wide,x-1,strain::Size/2)>=a(wide,x,strain::Size/2);
+            Check(rising,"no seam: brighter all the way out");
+            Check(strain::PaintKey(.9f,.5f,.45f,0,1,1,1)==strain::PaintKey(.9f,.5f,.45f,0,1)&&
+                  strain::PaintKey(.9f,.5f,.45f,0,1,reach,reach)!=strain::PaintKey(.9f,.5f,.45f,0,1)&&
+                  strain::PaintKey(.9f,.5f,.45f,0,1,reach,1)!=strain::PaintKey(.9f,.5f,.45f,0,1,1,reach),"a new reach repaints, per axis");
+            strain::Painter painter;Check(painter.Start(),"painter starts");
+            Check(painter.Submit({.9f,.5f,.45f,0,1,reach,1.1f}),"painter takes a reach");
+            strain::PaintImage image;Until([&]{return painter.Take(image);});
+            Check(image.reachX==strain::Reach(reach)&&image.reachY==1.1f&&image.pixels==strain::Compose(.9f,.5f,.45f,0,1,reach,1.1f),
+                  "the painted image carries the reach it was painted for");
+            painter.Stop();
+        }
     }
-    std::puts("Guard strain light: rim build-up, parries free, hold while hit, recede when hits stop, lower to reset, break swell and breathing, partial re-raise, eligibility, smooth pulses, off, sessions, hitches and painter passed");
+    std::puts("Guard strain light: rim build-up, parries free, hold while hit, recede when hits stop, lower to reset, break swell and breathing, partial re-raise, eligibility, smooth pulses, off, sessions, hitches, painter and wide views passed");
 }

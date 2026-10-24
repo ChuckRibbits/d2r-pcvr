@@ -37,12 +37,14 @@
 #include "stick_gestures.h"
 #include "window_focus.h"
 #include "gameplay.h"
+#include "strike_skills.h"
 #include "bow_laser.h"
 #include "hand_controls.h"
 #include "interaction_ui.h"
 #include "sewer_prompt_art.h"
 #include "notice_card_art.h"
 #include "blood_screen.h"
+#include "shapeshift_gesture.h"
 #include "guard_strain.h"
 #include "guard_strain_paint.h"
 #include "heartbeat.h"
@@ -126,6 +128,8 @@ std::atomic<bool> turnsFromDrawnEye{true};
 std::atomic<int> turnsKeepOwn{3};   // ConfigureTurnsKeepOwn: 0 off, 1 near things only, 2 everywhere, 3 the game's effects, 4 near things and effects
 std::atomic<float> turnsKeepGap{48},turnsKeepReach{96};   // ConfigureTurnsKeepNear: a 4096-wide eye's pixels
 std::atomic<float> turnsEffectsLevel{.02f},turnsEffectsReach{32};   // ConfigureTurnsKeepEffects: the layer's level; a 4096-wide eye's pixels
+std::atomic<bool> turnsSharp{true};   // ConfigureTurnsSharp: the pictures read Catmull-Rom (TurnWarp::Sharpen)
+std::atomic<bool> turnsFill{true};    // ConfigureTurnsFill: no frame-old ghosts in the strips beside near things (TurnWarp::Fill)
 std::atomic<bool> eyeTracking{false};
 std::atomic<bool> motionControls{false};
 // Stamped each focused XR input while motion controls are on (menus included).
@@ -178,6 +182,9 @@ notice::Cards noticeCards;
 notice::Card noticeCard;
 panels::Placement noticePlacement{};
 uint64_t noticePaintRequest=0,noticeRequestedSequence=0,noticePaintedSequence=0;
+// The skill wheel's Left claw strikes box saves [gameplay] left_hand_strikes
+// itself; until the save lands (Poll, about 0.5 s) the box shows the choice made.
+uint64_t leftStrikesSequence=0,leftStrikesAt=0;float leftStrikesWanted=0;
 bool noticeAtlasPending=false,noticeImageReady=false;
 // Guard strain light: soft white at the rim, directly beneath the blood. Fed by
 // the game thread's blocks and the guard tick; painted small in the background.
@@ -191,6 +198,7 @@ std::atomic<ULONGLONG> guardStateAt{0};std::atomic<bool> guardEligible{false},gu
 strain::Painter strainPainter;
 XrSwapchain strainChain=XR_NULL_HANDLE;
 uint64_t strainPaintKey=~0ull,strainPaintSession=0;
+float strainShownReach[2]={1,1};   // the uploaded image's reach (guard_strain.h): its quad is the visor times this
 ULONGLONG strainPaintAt=0;
 bool strainAtlasPending=false,strainImageReady=false,strainSlotReported=false;
 // Bow path laser: its own small atlas, repainted only when its color changes.
@@ -352,19 +360,19 @@ ULONGLONG settingsPaintAt=0;
 struct SettingsPaintJob {
     settings::Model model;settings::Hit hover;std::string status;controllers::Labels detected;
     int help=settings::NoHelp;settings::GameVideo game{};bool monoAudio=false;
-    settings::PerformanceReadout performance{};bool depthRestart=false;
+    settings::PerformanceReadout performance{};
     bool calibrating=false;calibration::Flow body;
 };
 struct SettingsPainted {std::vector<uint8_t> pixels;double paintMs=0;};
 LatestWorker<SettingsPaintJob,SettingsPainted> settingsPainter([](const SettingsPaintJob& job) {
     const auto start=hookmetrics::Nanos();
     auto pixels=job.calibrating?settings::Paint(job.model,{},"",&job.body):
-        settings::Paint(job.model,job.hover,job.status.c_str(),nullptr,job.detected,job.help,job.game,job.monoAudio,job.performance,job.depthRestart);
+        settings::Paint(job.model,job.hover,job.status.c_str(),nullptr,job.detected,job.help,job.game,job.monoAudio,job.performance);
     return SettingsPainted{std::move(pixels),double(hookmetrics::Nanos()-start)/1e6};
 });
 struct SettingsPicture {
     uint64_t revision=~0ull;int hover=-1,status=-1,help=settings::NoHelp,game=-1;
-    uint64_t performance=0;bool depthRestart=false;settings::GameVideo gameVideo{};   // the Perf page's
+    uint64_t performance=0;settings::GameVideo gameVideo{};   // the Perf page's
     bool operator==(const SettingsPicture&)const=default;
 };
 SettingsPicture settingsPainted;     // what the picture shown has
@@ -422,6 +430,10 @@ struct ShieldCast {
 };
 ShieldCast shieldCast;
 weaponskills::Pulse shieldPulse;
+// [shapeshift] Druid gestures pulse whichever slot holds Werewolf / Werebear.
+shapeshift::Engine shapeshiftGesture;
+weaponskills::Pulse shapePulse;
+int shapeSlot=-1,shapeId=-1,shapeOwner=-1;
 // [bow] quiver: face-button arrow skills load the following physical arrows.
 std::atomic<bool> quiverEnabled{true},quiverPreview{true};
 weaponskills::Quiver quiver;
@@ -1411,7 +1423,7 @@ void MotionPointer() {
     const auto mid=ray+direction*(beamLength*.5f);
     beamPose=XrPose({mid,math::BeamOrientation(direction,V(head.position)-mid)});pointerVisible=true;
     if(pointerHit) {
-        motionInput.hover=interaction::WheelCell(hit.u,hit.v,interactionOutput.hover,interactions.Page(),hand,interactionInput.snapshot.developer,interactions.DeveloperPage());
+        motionInput.hover=interaction::WheelCell(hit.u,hit.v,interactionOutput.hover,interactions.Page(),hand,interactionInput.snapshot.developer,interactions.DeveloperPage(),interactionOutput.leftStrikes>=0);
         dotPose=XrPose({hit.point+math::Rotate(pose.q,{0,0,.003f}),pose.q});
     }
 }
@@ -1477,7 +1489,11 @@ void MotionFeedback(const gameplay::Output& out) {
     }
     if(!out.bowDrawing)previousDraw=0;
 }
+// A druid's shapeshift form draws only claws: its weapon and shield are stats
+// without a visual (1 Werewolf, 2 Werebear; vr/interactionstate.cpp).
+bool InShapeForm() {return interactionstate::ShapeForm(gamestate::LocalPlayer(),GetTickCount64())!=0;}
 gameplay::Weapon MotionWeapon() {
+    if(InShapeForm())return gameplay::Weapon::Melee;   // no bow draw, crossbow or javelin in form
     switch(gamestate::WeaponType()) {
         case D2RVR_TYPE_BOW:return gameplay::Weapon::Bow;
         case D2RVR_TYPE_CROSSBOW:return gameplay::Weapon::Crossbow;
@@ -1491,6 +1507,7 @@ gameplay::Weapon MotionWeapon() {
     }
 }
 gameplay::MeleeStyle MotionMeleeStyle() {
+    if(InShapeForm())return gameplay::MeleeStyle::Short;   // claws
     switch(gamestate::WeaponType()) {
         case D2RVR_TYPE_UNARMED:return gameplay::MeleeStyle::Unarmed;
         case D2RVR_TYPE_DAGGER:case D2RVR_TYPE_CLAW:case D2RVR_TYPE_ORB:return gameplay::MeleeStyle::Short;
@@ -1665,13 +1682,12 @@ void SettingsPointer(const settings::InputGate::Edges& edges,bool grip) {
     // The Perf page repaints with each second's numbers; the others never for them.
     const bool performancePage=settingsModel.page==settings::Page::Performance;
     const bool fresh=performance.valid&&now-performanceAt<=2000;
-    const bool depthRestart=(vrsettings::Read().values[settings::ReShadeDepth]>.5f)!=vrsettings::ReShadeDepthActive();
     const SettingsPicture wanted{settingsModel.revision,hover,status,help,warnings,performancePage&&fresh?performanceSerial:0,
-                                 performancePage&&depthRestart,performancePage?game:settings::GameVideo{}};
+                                 performancePage?game:settings::GameVideo{}};
     if(!(wanted==settingsPainted)&&now>=settingsPaintAt&&!settingsPaintRequest){
         char resolutionStatus[160];resolution::Describe(resolutionStatus,sizeof resolutionStatus,{width,height});
         settingsPaintRequest=settingsPainter.Submit({settingsModel,settingsHover,performancePage?resolutionStatus:descriptions[status],
-                                                    detectedControllers,help,game,monoAudio,fresh?performance:settings::PerformanceReadout{},depthRestart});
+                                                    detectedControllers,help,game,monoAudio,fresh?performance:settings::PerformanceReadout{}});
         settingsRequested=wanted;settingsPaintAt=now+100;
     }
     if(TakeSettingsPicture())settingsPainted=settingsRequested;
@@ -2012,6 +2028,10 @@ void Input() {
     interactionInput.vitalsLocation=vitals::Location(int(hudSettings.values[settings::VitalsLocation]));
     interactionInput.vitalsTilt=hudSettings.values[settings::VitalsTilt];
     interactionInput.criticalAlerts=hudSettings.values[settings::CriticalAlerts]>.5f;
+    if(leftStrikesSequence&&((hudSettings.sequence==leftStrikesSequence&&hudSettings.result!=settings::Result::Saving)||interactionInput.at-leftStrikesAt>2000))
+        leftStrikesSequence=0;   // saved, refused, or overtaken by another save: the profile's value again
+    interactionInput.leftStrikes=hudSettings.ready&&bindingSnapshot.skillClass==settings::heroclass::Druid?
+        int(leftStrikesSequence?leftStrikesWanted:hudSettings.values[settings::LeftHandStrikes]):-1;
     interactionInput.leftCasting=handOutput.spells[1]>=0||(handOutput.slot>=0&&handOutput.hand==1);
     interactionInput.leftTrigger=controls.lt/255.f;
     // A thrown bottle lands on the world floor in room space. Without a recent
@@ -2044,6 +2064,16 @@ void Input() {
             interaction::Input::Tossed{thrown.id,thrown.landed,thrown.p,thrown.q}:interaction::Input::Tossed{};
     }
     interactionOutput=interactions.Step(interactionInput);
+    if(interactionOutput.toggleLeftStrikes) {
+        const auto current=vrsettings::Read();
+        settings::Request request{current.values,current.values,0,current.sequence+1};
+        request.values[settings::LeftHandStrikes]=float(interactionInput.leftStrikes==1?0:1);
+        request.changed=settings::Changed(request.base,request.values);
+        if(!leftStrikesSequence&&current.ready&&request.changed&&vrsettings::Submit(request)) {
+            leftStrikesSequence=request.sequence;leftStrikesAt=interactionInput.at;leftStrikesWanted=request.values[settings::LeftHandStrikes];
+            Say(leftStrikesWanted>.5f?"Frame wheel: left claw strikes = right trigger skill":"Frame wheel: left claw strikes = own trigger skill");
+        } else interactionOutput.feedback=3;   // a save is still running: refuse, never queue a second flip
+    }
     StepDroppedBottles();
     // Quest / level-up notices: queue a card per message, paint the current one.
     {
@@ -2124,7 +2154,7 @@ void Input() {
         tuning.recoverSeconds=strainRecoverSeconds.load(std::memory_order_relaxed);
         strain::Input in;
         in.time=interactionInput.time;in.session=interactionInput.session;
-        in.enabled=hudSettings.values[settings::MeleeRules]<.5f&&motionControls.load();
+        in.enabled=motionControls.load();   // melee is Unleashed only
         in.eligible=guardEligible.load()&&now-guardStateAt.load()<=250;
         in.raised=guardRaised.load();
         in.blocks=guardBlockEvents.exchange(0);in.parries=guardParryEvents.exchange(0);
@@ -2147,12 +2177,34 @@ void Input() {
         if(strainOutput.visible) {
             strain::PaintImage painted;
             if(!strainAtlasPending&&atlasUploads.size()<3&&strainPainter.Take(painted)) {
-                if(!painted.pixels.empty()&&UploadAtlas(strainChain,atlasFormat,strain::Size,strain::Size,painted.pixels,true,&strainAtlasPending))
-                    strainPaintKey=painted.key;
+                if(!painted.pixels.empty()&&UploadAtlas(strainChain,atlasFormat,strain::Size,strain::Size,painted.pixels,true,&strainAtlasPending)) {
+                    strainPaintKey=painted.key;strainShownReach[0]=painted.reachX;strainShownReach[1]=painted.reachY;
+                }
             }
-            const auto key=strain::PaintKey(strainOutput.edge,strainOutput.alpha,tuning.feather,tuning.color,tuning.density);
+            // Reach: the whole view over the blood's visor, per axis, eyes turned
+            // against the head included. 1 where the visor already is the whole
+            // view (Quest 3); wider headsets get the light out to their rim.
+            // Latched, so tracking noise in a canted eye's turn never repaints.
+            static float reach[2]={1,1};
+            {
+                const auto& lf=views[0].fov;const auto& rf=views[1].fov;
+                const math::Fov l{lf.angleLeft,lf.angleRight,lf.angleDown,lf.angleUp},r{rf.angleLeft,rf.angleRight,rf.angleDown,rf.angleUp};
+                const auto toHead=math::Conjugate(Q(head.orientation));
+                const auto visor=blood::VisorExtent(l,r);
+                const auto view=blood::ViewExtent(l,r,math::Multiply(toHead,Q(views[0].pose.orientation)),math::Multiply(toHead,Q(views[1].pose.orientation)));
+                if(visor.width>0&&visor.height>0&&view.width>0&&view.height>0) {
+                    const float x=strain::Reach(view.width/visor.width),y=strain::Reach(view.height/visor.height);
+                    if(std::fabs(x-reach[0])>.01f||std::fabs(y-reach[1])>.01f) {
+                        reach[0]=x;reach[1]=y;
+                        char message[128];std::snprintf(message,sizeof message,"Frame guard strain: light reaches %.2f x %.2f of the visor to cover the view",x,y);
+                        Say(message);
+                    }
+                }
+            }
+            const float reachX=reach[0],reachY=reach[1];
+            const auto key=strain::PaintKey(strainOutput.edge,strainOutput.alpha,tuning.feather,tuning.color,tuning.density,reachX,reachY);
             if(key!=strainPaintKey&&now>=strainPaintAt&&!strainPainter.Busy()&&
-               strainPainter.Submit({strainOutput.edge,strainOutput.alpha,tuning.feather,tuning.color,tuning.density}))strainPaintAt=now+40;
+               strainPainter.Submit({strainOutput.edge,strainOutput.alpha,tuning.feather,tuning.color,tuning.density,reachX,reachY}))strainPaintAt=now+40;
         }
     }
     // Low-life heartbeat (Classic and Unleashed): queue the next beat ~80 ms before
@@ -2296,12 +2348,14 @@ void Input() {
     if(quick||handOutput.interact){motionInput.aim=handAim[handOutput.hand];motionInput.aimTracked=handAimTracked[handOutput.hand];}
     castHand=quick||handOutput.interact?handOutput.hand:0;
     motionInput.skillContext=bindingContext^bindingLayout;
-    motionInput.shieldEquipped=gamestate::LeftShield()&&::melee::ShieldReady();
-    motionInput.leftThrow=leftThrowArmed;motionInput.leftTrigger=controls.lt/255.f;
+    // In form the claws are the only hands: no shield, hand throw or trap toss.
+    const bool shapeForm=InShapeForm();
+    motionInput.shieldEquipped=gamestate::LeftShield()&&::melee::ShieldReady()&&!shapeForm;
+    motionInput.leftThrow=leftThrowArmed&&!shapeForm;motionInput.leftTrigger=controls.lt/255.f;
     motionInput.throwLift=gestureSettings[settings::ThrowLift];
     // A throwing potion in the right hand, with Attack or Throw on the right
     // trigger, is tossed the same way: the game's own Throw lands it at the spot.
-    const bool tossReady=gestureSettings[settings::SkillGestures]>.5f&&quickFresh&&rightSkill.known&&rightSkill.available;
+    const bool tossReady=!shapeForm&&gestureSettings[settings::SkillGestures]>.5f&&quickFresh&&rightSkill.known&&rightSkill.available;
     motionInput.potion=tossReady&&gamestate::RightThrowingPotion()&&weaponskills::PotionThrow(rightSkill.id);
     motionInput.toss=tossReady&&(toss::Skill(rightSkill.id)||motionInput.potion);
     motionOutput=motion.Step(motionInput);motionAt=GetTickCount64();
@@ -2377,7 +2431,61 @@ void Input() {
         // Keep observing the left stroke during native wind-up. Resetting it
         // here would allow the same continuous swing to become another bash.
     }
+    // Druid shapeshift gestures. The performance casts the bound shape skill
+    // through its own slot's button; the game owns the transformation, mana
+    // and the return to human form (the same skill cast again).
+    {
+        shapeshift::Input in;
+        in.time=interactionInput.time;in.session=interactionInput.session;in.epoch=interactionInput.epoch;
+        in.active=motionInput.active&&!motionOutput.block&&!motionInput.quickCast&&quickFresh&&
+            gestureSettings[settings::SkillGestures]>.5f&&!interactionOutput.wheel&&!interactionOutput.settings;
+        in.head=interactionInput.head.p;in.headRotation=interactionInput.head.q;
+        for(int h=0;h<2;++h) {
+            in.hand[h]=interactionInput.hand[h].p;in.tracked[h]=interactionInput.tracked[h];
+            in.handVelocity[h]=interactionInput.handVelocity[h];in.velocityKnown[h]=interactionInput.velocityKnown[h];
+            in.busy[h]=interactionOutput.bottleHand==h||handInput.trigger[h]>.3f||(h==0&&motionOutput.bowDrawing)||bloodOutput.block[h];
+        }
+        const auto shape=shapeshiftGesture.Step(in);
+        if(shape.dropped) {
+            char line[160];std::snprintf(line,sizeof line,"Frame shapeshift: dropped at %s: %s",shape.stage,shape.dropped);Say(line);
+        }
+        if(shape.cast!=shapeshift::Form::None) {
+            const int wanted=shape.cast==shapeshift::Form::Werewolf?weaponskills::Werewolf:weaponskills::Werebear;
+            int slot=-1;
+            for(int i=0;i<skills::Count;++i)if(quickSnapshot.skills[i].known&&quickSnapshot.skills[i].id==wanted){slot=i;break;}
+            char line[160];
+            if(slot<0) {
+                std::snprintf(line,sizeof line,"Frame shapeshift: %s gesture, skill %d not assigned to a button",shape.cast==shapeshift::Form::Werewolf?"Werewolf":"Werebear",wanted);Say(line);
+            }
+            else if(!quickSnapshot.skills[slot].available) {
+                std::snprintf(line,sizeof line,"Frame shapeshift: %s gesture, skill unavailable on slot %d",shape.cast==shapeshift::Form::Werewolf?"Werewolf":"Werebear",slot);Say(line);
+            }
+            // Alternate-bank slots need the modifier prepared first: hold like Smite.
+            else if(shapePulse.Start(slot,wanted,quickSnapshot.skills[slot].owner,motionInput.skillContext,motionInput.time,skills::Alternate(slot)?.180:.065)) {
+                shapeSlot=slot;shapeId=wanted;shapeOwner=quickSnapshot.skills[slot].owner;
+                MotionPulse(0,haptics::Category::Spell,.6f,60000000);MotionPulse(1,haptics::Category::Spell,.6f,60000000);
+                std::snprintf(line,sizeof line,"Frame shapeshift: %s gesture cast via slot %d",shape.cast==shapeshift::Form::Werewolf?"Werewolf":"Werebear",slot);Say(line);
+            }
+        }
+        if(shapeSlot>=0) {
+            const int pulse=shapePulse.Get(shapeSlot,shapeId,shapeOwner,motionInput.skillContext,motionInput.time);
+            if(pulse<0)shapeSlot=shapeId=shapeOwner=-1;
+            else if(motionOutput.skill<0&&quickFresh&&quickSnapshot.skills[pulse].available)motionOutput.skill=pulse;
+        }
+    }
     if(motionOutput.nativeBowRelease&&motionInput.bowSkill==weaponskills::Strafe)volleyRequestedAt=motionAt;
+    // Gesture skills on a trigger are labelled GESTURE on the hand wheel and
+    // say how in the hand's cue, as Smite on a shield and arrow skills on a bow
+    // do: a strike skill (strike_skills.h) casts with the hand's landed strikes
+    // (the right hand's weapon or claw; the left's second weapon or claw unless
+    // left_hand_strikes follows the right trigger), and a trap or bomb on the
+    // right trigger is thrown to place (#224).
+    const bool strikeWeapon=motionInput.weapon==gameplay::Weapon::Melee||motionInput.weapon==gameplay::Weapon::Javelin;
+    const auto strikes=[&](const auto& skill){
+        return strikeWeapon&&strikeskills::Armed(gestureSettings[settings::SkillGestures]>.5f,quickFresh,skill.known,skill.available,skill.strike,skill.id)>=0;
+    };
+    const bool leftStrikes=strikeskills::StrikeTrigger(1,strikeskills::LeftChoice(gestureSettings[settings::LeftHandStrikes]))==1&&
+        (InShapeForm()||dualwield::Eligible(skel::HeroClass(),gamestate::MeleeEquipment()))&&strikes(quickSnapshot.skills[shieldSlot]);
     interaction::SkillCue cue;
     cue.slot=motionInput.quickSkill>=0&&castHand==0?motionInput.quickSkill:motion.Selection();
     cue.temporary=motionInput.quickSkill>=0&&castHand==0;
@@ -2386,6 +2494,9 @@ void Input() {
         cue.known=skill.known;cue.available=skill.known&&skill.available&&skill.id>=0;
         std::snprintf(cue.name,sizeof cue.name,"%s",skill.known?skill.name:"Unknown skill");
         std::snprintf(cue.hint,sizeof cue.hint,"%s",cue.available?(cue.temporary?"Right hand shortcut":"Right hand: point & trigger"):"Assignment unavailable");
+        if(cue.available&&!cue.temporary&&cue.slot==skills::TriggerSlot(0)&&(motionInput.toss||strikes(skill))) {
+            cue.gesture=true;std::snprintf(cue.hint,sizeof cue.hint,"%s",motionInput.toss?"Throw to place":"Swing to strike");
+        }
     } else if(cue.slot<0) {
         cue.known=cue.available=true;
         std::snprintf(cue.name,sizeof cue.name,"%s",motionInput.weapon==gameplay::Weapon::Bow?"Basic Arrow":"Basic Attack");
@@ -2401,6 +2512,7 @@ void Input() {
         std::snprintf(cue.name,sizeof cue.name,"%s",name?name:javelin?"Javelin skill":"Skill arrow");
         std::snprintf(cue.hint,sizeof cue.hint,"%s",javelin?(quiver.Current().Active()?"Loaded: throw":"Throw"):
             quiver.Current().Active()?"Loaded: draw & release":"Draw & release");
+        cue.gesture=false;   // the loaded skill, not the trigger's
     }
     cue.busy=(shieldCast.issued&&!shieldCast.cancelled)||(cue.id==weaponskills::Strafe&&quickFresh&&quickSnapshot.actionKnown&&quickSnapshot.actionMode==16&&
         volleyRequestedAt&&motionAt>=volleyRequestedAt&&motionAt-volleyRequestedAt<10000);
@@ -2416,10 +2528,10 @@ void Input() {
     const auto& leftSkill=quickSnapshot.skills[leftCue.slot];leftCue.id=leftSkill.id;leftCue.owner=leftSkill.owner;
     leftCue.known=quickFresh&&leftSkill.known;leftCue.available=leftCue.known&&leftSkill.available;
     std::snprintf(leftCue.name,sizeof leftCue.name,"%s",leftCue.known?leftSkill.name:"Unavailable");
-    leftCue.gesture=!leftCue.temporary&&leftCue.available&&gestureSettings[settings::SkillGestures]>.5f&&leftSkill.motion&&
-        ((weaponskills::Bow(leftSkill.id)&&motionInput.weapon==gameplay::Weapon::Bow)||(leftSkill.id==weaponskills::Smite&&motionInput.shieldEquipped));
-    std::snprintf(leftCue.hint,sizeof leftCue.hint,"%s",leftCue.gesture?weaponskills::Hint(leftSkill.id,
-        motionInput.weapon==gameplay::Weapon::Bow,motionInput.shieldEquipped):leftCue.temporary?"Left hand shortcut":"Left hand: point & trigger");
+    leftCue.gesture=!leftCue.temporary&&leftCue.available&&((gestureSettings[settings::SkillGestures]>.5f&&leftSkill.motion&&
+        ((weaponskills::Bow(leftSkill.id)&&motionInput.weapon==gameplay::Weapon::Bow)||(leftSkill.id==weaponskills::Smite&&motionInput.shieldEquipped)))||leftStrikes);
+    std::snprintf(leftCue.hint,sizeof leftCue.hint,"%s",leftCue.gesture?(leftStrikes?"Swing to strike":weaponskills::Hint(leftSkill.id,
+        motionInput.weapon==gameplay::Weapon::Bow,motionInput.shieldEquipped)):leftCue.temporary?"Left hand shortcut":"Left hand: point & trigger");
     leftCue.expanded=leftCue.temporary;
     leftCue.busy=shieldCast.issued&&!shieldCast.cancelled;
     if(leftThrowArmed&&!leftCue.temporary) {
@@ -2466,6 +2578,46 @@ void Input() {
         elementalInput.activation[h]=handOutput.activation[h];
     }
     elementalScene=elementalState.Step(elementalInput,interactionInput.snapshot);
+    // A torch club's flame (VR Settings > Video > Torch flame); its light is
+    // vrcam's and stays either way.
+    const bool torchFlame=hudSettings.values[settings::TorchFlame]>.5f;
+    for(int h=0;h<2&&torchFlame;++h) {
+        uint32_t torchFlags=0;
+        if(interaction::HasTorchInHand(interactionInput.snapshot,h,torchFlags)) {
+            elementalScene.hands[h].element=elements::Element::Fire;
+            elementalScene.hands[h].opacity=1.0f;
+            elementalScene.hands[h].pulse=0.5f;
+            elementalScene.hands[h].skill=framevr::torch::TorchSkill;
+
+            math::Vec tipPos{};
+            math::Quat tipRot = interactionInput.tracked[h] ? interactionInput.hand[h].q : interactionInput.head.q;
+            bool haveTip = false;
+#ifdef D2RVR_NATIVE_OPENXR
+            // Primary: track the physical club weapon bone rendered by the hero model.
+            // wpose.tipHead is from the eye in the camera's turn-only (heading) frame.
+            // Rotating by headYaw (pure azimuth, zero pitch/roll) anchors the flame directly to the 3D club in room space!
+            skel::MeleeWeaponPose wpose;
+            if (skel::MeleeWeapon(wpose, h) && (wpose.dirHead[0]*wpose.dirHead[0] + wpose.dirHead[1]*wpose.dirHead[1] + wpose.dirHead[2]*wpose.dirHead[2]) > 0.01f) {
+                const float heading = math::Heading(interactionInput.head.q);
+                const auto headYaw = math::Yaw(heading);
+                const math::Vec tipFromEye{wpose.tipHead[0], wpose.tipHead[1], wpose.tipHead[2]};
+                tipPos = interactionInput.head.p + math::Rotate(headYaw, tipFromEye);
+
+                haveTip = true;
+            }
+#endif
+            if (!haveTip && interactionInput.tracked[h]) {
+                tipPos = framevr::torch::ComputeTorchTip(interactionInput.hand[h].p, interactionInput.hand[h].q, framevr::torch::DefaultShaftOffset);
+                haveTip = true;
+            }
+            if (haveTip) {
+                elementalScene.hands[h].pose = { tipPos, tipRot };
+                elementalScene.session = gamestate::LocalPlayer();
+                elementalScene.at = interactionInput.at;
+                if(elementalScene.time==0.0f)elementalScene.time=float(interactionInput.at%60000)/1000.f;
+            }
+        }
+    }
     if(interactionInput.active) {
         const bool snapshotFresh=interaction::Fresh(interactionInput.snapshot,interactionInput.session,interactionInput.at);
         if(snapshotFresh&&(interactionPrefetchSession!=interactionInput.session||interactionPrefetchRevision!=interactionInput.snapshot.revision)) {
@@ -2526,13 +2678,29 @@ void Input() {
         sample.minThrustSpeed=gestureSettings[settings::MeleeThrustSpeed];
         sample.minShieldBashSpeed=gestureSettings[settings::ShieldBashSpeed];
         const auto weapons=gamestate::MeleeEquipment();
-        const bool dual=dualwield::Eligible(skel::HeroClass(),weapons);
+        // A shapeshift form strikes with both claws; its weapon is a stat without a visual.
+        const bool claws=InShapeForm();
+        const bool dual=!claws&&dualwield::Eligible(skel::HeroClass(),weapons);
         if(dual)sample.weapons=weapons;
+        sample.claws=claws;
+        // Melee-skill contact adapter: each hand's strikes carry its own trigger
+        // skill when that is a confirmed strike skill (strike_skills.h). The
+        // assignment identity rides the sample, so a rebind drops a queued stroke.
+        // [gameplay] left_hand_strikes (skill wheel, lower left) picks the left hand's: its own or the right's.
+        const auto strike=[&](int hand) {
+            const int trigger=strikeskills::StrikeTrigger(hand,strikeskills::LeftChoice(gestureSettings[settings::LeftHandStrikes]));
+            const int slot=skills::TriggerSlot(trigger<0?hand:trigger);const auto& skill=quickSnapshot.skills[slot];
+            sample.skillSlot=slot;sample.skillOwner=skill.owner;sample.skillContext=motionInput.skillContext;
+            sample.strikeSkill=trigger<0?-1:strikeskills::Armed(gestureSettings[settings::SkillGestures]>.5f,quickFresh,
+                skill.known,skill.available,skill.strike,skill.id);
+        };
+        strike(0);
         meleePoses.Push(s.sampleStamp,sample);
         sample.hand=motionInput.hand[1];sample.handIndex=1;
-        sample.active=sample.active&&dual&&controls.lt<51&&controls.rt<51;
+        sample.active=sample.active&&(dual||claws)&&controls.lt<51&&controls.rt<51;
+        strike(1);
         offhandPoses.Push(s.sampleStamp,sample);
-        sample.weapons={};
+        sample.weapons={};sample.claws=false;sample.strikeSkill=-1;
         sample.hand=motionInput.hand[1];sample.shield=true;sample.active=motionInput.active&&motionOutput.shieldContact;
         sample.skillSlot=shieldSlot;sample.skillOwner=shieldSkill.owner;sample.skillContext=motionInput.skillContext;
         shieldPoses.Push(s.sampleStamp,sample);
@@ -3001,6 +3169,7 @@ bool TurnEye(int i) {
     // blends it (UNORM), and then it goes to its swapchain image.
     ID3D12Resource* image=e.images[e.index].texture;
     const bool layered=layerKept[i]&&TurnTarget(image);
+    turnWarp.Sharpen(turnsSharp.load());turnWarp.Fill(turnsFill.load());
     const bool turned=turnWarp.Render(device.Get(),e.commands.Get(),turnImages[i].Get(),layered?turnTarget.Get():image,h,i,moving,fromDrawn);
     for(UINT k=0;k<kept;++k)std::swap(b[k].Transition.StateBefore,b[k].Transition.StateAfter);
     e.commands->ResourceBarrier(kept,b);
@@ -3311,6 +3480,22 @@ void ConfigureTurnsKeepOwn(int mode) {
 }
 void ConfigureTurnsKeepNear(float gap,float reach) {turnsKeepGap.store(std::clamp(gap,1.f,1000.f));turnsKeepReach.store(std::clamp(reach,16.f,1024.f));}
 void ConfigureTurnsKeepEffects(float level,float reach) {turnsEffectsLevel.store(std::clamp(level,1e-4f,100.f));turnsEffectsReach.store(std::clamp(reach,0.f,512.f));}
+void SetTurnsSharp(bool on) {
+    if(turnsSharp.exchange(on)!=on)Say(on?"Frame OpenXR: by turns - the eye not drawn read sharper (Catmull-Rom)":"Frame OpenXR: by turns - the eye not drawn read bilinear");
+}
+bool TurnsSharp() {return turnsSharp.load();}
+void SetTurnsFill(bool on) {
+    if(turnsFill.exchange(on)!=on)Say(on?"Frame OpenXR: by turns - the strips beside near things lose frame-old ghosts":"Frame OpenXR: by turns - the strips beside near things keep the eye's own picture");
+}
+bool TurnsFill() {return turnsFill.load();}
+void ConfigureTurnsFill(bool on) {
+    static std::atomic<int> read{-1};   // as ConfigureTurnsKeepOwn: only a change of the ini's own value overrides the DEV switch
+    if(read.exchange(on?1:0)!=(on?1:0))SetTurnsFill(on);
+}
+void ConfigureTurnsSharp(bool on) {
+    static std::atomic<int> read{-1};   // as ConfigureTurnsKeepOwn: only a change of the ini's own value overrides the DEV switch
+    if(read.exchange(on?1:0)!=(on?1:0))SetTurnsSharp(on);
+}
 void ConfigureEyeTracking(bool on) {eyeTracking.store(on);}
 void BeginEye(int eye) {
     hud::UiFrame(spatialMode,!journalMode,eye);
@@ -3732,14 +3917,17 @@ void EndPair() {
             layers[below]=reinterpret_cast<const XrCompositionLayerBaseHeader*>(&bloodQuad);++count;
         }
     }
-    // Guard strain light: the blood's head-locked extent, inserted at the same
-    // slot after it, so it sits directly above the world and beneath the blood.
+    // Guard strain light: head-locked, its shape on the blood's visor extent and
+    // the quad grown by the painted image's reach to the edge of the view;
+    // inserted at the same slot after the blood, so it sits directly above the
+    // world and beneath the blood.
     XrCompositionLayerQuad strainQuad{XR_TYPE_COMPOSITION_LAYER_QUAD};
     if(strainImageReady&&strainPaintKey&&strainPaintKey!=~0ull&&strainOutput.visible&&layer&&!panelMode&&!blackMenu&&!settingsModel.open&&
        !bodyCalibration.Active()&&headSpace) {
-        const auto extent=blood::VisorExtent(
+        auto extent=blood::VisorExtent(
             {views[0].fov.angleLeft,views[0].fov.angleRight,views[0].fov.angleDown,views[0].fov.angleUp},
             {views[1].fov.angleLeft,views[1].fov.angleRight,views[1].fov.angleDown,views[1].fov.angleUp});
+        extent.width*=strain::Reach(strainShownReach[0]);extent.height*=strain::Reach(strainShownReach[1]);
         if(count>=contentLimit) {
             if(!strainSlotReported){Say("Frame guard strain: no spare composition layer; light hidden");strainSlotReported=true;}
         } else if(std::isfinite(extent.width)&&std::isfinite(extent.height)&&extent.width>0&&extent.height>0) {
@@ -4000,7 +4188,8 @@ bool MeleeSample(uint32_t poseStamp,melee::Sample& sample,int hand) {
     std::lock_guard lock(mutex);
     if(!motionControls.load()||!motionInput.active||!motionOutput.meleeContact||GetTickCount64()-motionAt>100)return false;
     if(hand<0||hand>1||!(hand?offhandPoses:meleePoses).Find(poseStamp,Milliseconds()/1000.,sample))return false;
-    if(hand==1&&!dualwield::Eligible(skel::HeroClass(),gamestate::MeleeEquipment()))return false;
+    // the off hand strikes with a second weapon - or, in a druid's form, with the left claw
+    if(hand==1&&!sample.claws&&!dualwield::Eligible(skel::HeroClass(),gamestate::MeleeEquipment()))return false;
     return sample.epoch==meleeEpoch&&sample.equipment==motionInput.equipment;
 }
 bool ShieldSample(uint32_t poseStamp,melee::Sample& sample) {
@@ -4190,10 +4379,10 @@ bool BowPreviewPose(bowflight::Shot& pose,bool& visible) {
     if(!bowflight::Allowed(bowPreviewPose,gate,GetTickCount64()))return false;
     pose=bowPreviewPose;visible=bowPreviewVisible;return true;
 }
-bool View(float out[16],const float hero[3],float eyeHeight,float userEyeHeight,float bodyHeading,float recenterYaw,int eye,float mapNorth) {
+bool View(float out[16],const float hero[3],float eyeHeight,float userEyeHeight,float bodyHeading,float recenterYaw,int eye,float mapNorth,float scaleHeight) {
     std::lock_guard lock(mutex);if(!Active())return false;
     if(std::fabs(recenterYaw-lastRecenter)>.001f){origin=V(head.position);lastRecenter=recenterYaw;}
-    const float upm=eyeHeight/std::max(userEyeHeight,.5f);
+    const float upm=(scaleHeight>0?scaleHeight:eyeHeight)/std::max(userEyeHeight,.5f);
     const auto base=math::Yaw(bodyHeading-recenterYaw);
     if(eye<0)compassFrame=wristHeading.Update(gamestate::LocalPlayer(),motionHeadTracked,
         Q(head.orientation),bodyHeading-recenterYaw,mapNorth);
