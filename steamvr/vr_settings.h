@@ -455,7 +455,14 @@ inline RowList Rows(Page page,const Values& values,const Context& context={}){
         if(const Key key=CatalogKey(page,i);RowShown(key,values,context))list.keys[size_t(list.count++)]=key;
     return list;
 }
-enum class Kind { None, Tab, Change, Apply, Close, Recenter, Calibrate, ControllerMenu, ControllerChoice, DismissMenu, TestHaptics };
+enum class Kind { None, Tab, Change, Apply, Close, Recenter, Calibrate, ControllerMenu, ControllerChoice, DismissMenu, TestHaptics, NotesPage };
+// The Notes tab pages its release lines (2026-10-23: a long list since the last
+// release): NotesPerPage a page, at most NotesMaxLines (release_notes.py
+// MAX_LINES). Previous / Next and the page number sit under the lines, shown
+// only with more than one page; paging needs no settings (works before ready).
+constexpr int NotesPerPage=12,NotesMaxLines=72;
+constexpr Rect NotesPrevBox{40,776,220,46},NotesNextBox{1020,776,220,46},NotesPageBox{270,776,740,46};
+inline int NotesPages(int lines){return std::max(1,(std::max(lines,0)+NotesPerPage-1)/NotesPerPage);}
 struct Hit {Kind kind=Kind::None;int index=-1,delta=0;};
 // A value box that steps forward when selected, besides On/Off toggles.
 inline bool ValueSteps(Key key){return Definitions[key].max==1||key==SpellLock;}
@@ -482,6 +489,8 @@ inline Hit HitTest(Page page,float u,float v,bool controllerMenu=false,const Row
     if(page==Page::HUD&&HudMapViewBox.Contains(x,y))return {Kind::Change,MapTopDown,1};
     if(page==Page::HUD&&HudMapRotateBox.Contains(x,y))return {Kind::Change,MapRotate,1};
     if(page==Page::Performance&&DeferBox.Contains(x,y))return {Kind::Change,DeferGpuWait,1};
+    if(page==Page::ReleaseNotes&&NotesPrevBox.Contains(x,y))return {Kind::NotesPage,0,-1};
+    if(page==Page::ReleaseNotes&&NotesNextBox.Contains(x,y))return {Kind::NotesPage,0,1};
     const RowList rows=shown?*shown:Rows(page,Defaults());
     for(int r=0;r<rows.count;++r){
         const auto key=rows[r];
@@ -511,6 +520,7 @@ class Model {
 public:
     bool open=false,ready=false,controllerMenu=false,offlineDifficultyAvailable=false;
     Page page=Page::Controls;
+    int notesPage=0,notesPages=1;   // the Notes tab's page, of SetNotesPages
     Context context;   // the character: SetContext each frame while open
     Result result=Result::None;
     uint64_t revision=0;
@@ -518,10 +528,11 @@ public:
     RowList Rows(Page p)const{return settings::Rows(p,draft,context);}
     RowList Rows()const{return Rows(page);}
     void SetContext(const Context& c){if(!(c==context)){context=c;++revision;}}
+    void SetNotesPages(int pages){pages=std::max(1,pages);if(pages!=notesPages||notesPage>=pages){notesPages=pages;notesPage=std::min(notesPage,pages-1);++revision;}}
     bool Dirty()const{return Changed(base,draft)!=0;}
     bool Busy()const{return pending!=0;}
     bool CanTestHaptics(int category)const{return open&&ready&&!Busy()&&page==Page::Haptics&&category>=0&&category<haptics::CategoryCount;}
-    void Open(const Snapshot& s){open=true;controllerMenu=false;page=Page::Controls;base=draft=s.values;ready=s.ready;offlineDifficultyAvailable=s.offlineDifficultyAvailable;result=s.result;serial=std::max(serial,s.sequence);pending=s.result==Result::Saving?s.sequence:0;++revision;}
+    void Open(const Snapshot& s){open=true;controllerMenu=false;page=Page::Controls;notesPage=0;base=draft=s.values;ready=s.ready;offlineDifficultyAvailable=s.offlineDifficultyAvailable;result=s.result;serial=std::max(serial,s.sequence);pending=s.result==Result::Saving?s.sequence:0;++revision;}
     void Close(){open=false;controllerMenu=false;++revision;}
     bool DismissControllerMenu(){if(!controllerMenu)return false;controllerMenu=false;++revision;return true;}
     void Observe(const Snapshot& s){
@@ -542,6 +553,11 @@ public:
         if(hit.kind==Kind::Close){Close();return {};}
         if(hit.kind==Kind::DismissMenu){DismissControllerMenu();return {};}
         if(hit.kind==Kind::Tab&&hit.index>=0&&hit.index<TabCount){controllerMenu=false;page=Page(hit.index);++revision;return {};}
+        if(hit.kind==Kind::NotesPage&&page==Page::ReleaseNotes){
+            const int next=std::clamp(notesPage+(hit.delta<0?-1:1),0,notesPages-1);
+            if(next!=notesPage){notesPage=next;++revision;}
+            return {};
+        }
         if(!ready||Busy())return {};
         if(hit.kind==Kind::ControllerMenu&&page==Page::VR){controllerMenu=!controllerMenu;++revision;return {};}
         if(hit.kind==Kind::ControllerChoice&&page==Page::VR&&controllerMenu&&hit.index>=0&&hit.index<int(controllers::Choice::Count)){

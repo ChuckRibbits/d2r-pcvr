@@ -6,6 +6,7 @@
 #include "wide_text.h"
 // Retain an exact summary fingerprint in the DLL for the release packager.
 extern "C" __declspec(dllexport) const char* D2RPCVR_ReleaseNotesIdentity(){return framevr::releasenotes::ContentMarker;}
+static_assert(framevr::releasenotes::ReleaseLines.size()<=size_t(framevr::settings::NotesMaxLines),"release_notes.py MAX_LINES and NotesMaxLines agree");
 namespace framevr::settings {
 static int HelpTextHeight(HDC dc,HFONT font,const char* value,int width) {
     const auto wide=framevr::WideText(value);
@@ -50,6 +51,7 @@ static void ValueLabel(Key key,float value,const Context& c,char* label,size_t s
     else if(key==Waist||key==BeltForward)std::snprintf(label,size,"%.1f cm",value*100);
     else std::snprintf(label,size,"%.0f",value);
 }
+int ReleaseNotesPages(){return NotesPages(int(releasenotes::ReleaseLines.size()));}
 std::vector<uint8_t> Paint(const Model& m,Hit hover,const char* runtimeStatus,const calibration::Flow* body,const controllers::Labels& detected,int help,GameVideo game,bool monoAudio,
                            const PerformanceReadout& performance){
     const bool showHelp=!body&&help!=NoHelp&&HelpText(help)[0];
@@ -117,10 +119,17 @@ std::vector<uint8_t> Paint(const Model& m,Hit hover,const char* runtimeStatus,co
         text(releasenotes::ReleaseTitle,{40,195,1200,45},true);
         text(releasenotes::Author,{40,241,1200,35});
         text(releasenotes::ProjectUrl,{40,281,1200,35},false,false,RGB(116,220,219));
+        const int lines=int(releasenotes::ReleaseLines.size()),pages=NotesPages(lines),shown=std::clamp(m.notesPage,0,pages-1);
         int y=330;
-        for(const char* line:releasenotes::ReleaseLines){
+        for(int i=shown*NotesPerPage;i<std::min(lines,(shown+1)*NotesPerPage);++i) {
             fill({40,y-3,1200,35},(y/36)%2?RGB(19,31,39):RGB(22,36,44));
-            text(line,{54,y,1170,35});y+=36;
+            text(releasenotes::ReleaseLines[size_t(i)],{54,y,1170,35});y+=36;
+        }
+        if(pages>1) {   // a long release: Previous / Next under the lines
+            button(NotesPrevBox,"Previous",{Kind::NotesPage,0,-1},false,shown>0);
+            button(NotesNextBox,"Next",{Kind::NotesPage,0,1},false,shown<pages-1);
+            char label[48];std::snprintf(label,sizeof label,"Page %d of %d",shown+1,pages);
+            text(label,{NotesPageBox.x,NotesPageBox.y+6,NotesPageBox.w,34},false,true,quiet);
         }
         char credits[160];std::snprintf(credits,sizeof credits,"Credits: %s",releasenotes::Credits);
         text(credits,{40,848,1200,28},false,false,quiet);
