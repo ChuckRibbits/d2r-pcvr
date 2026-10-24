@@ -737,12 +737,16 @@ void ClientKill(uintptr_t unit) {
     originalClientKill(unit);
     if(retirement){std::lock_guard lock(mutex);clientRetirements.Finish(retirement);Recount();}
 }
-// A thrown potion's own missile, hidden in flight (#292): its visual shrunk to
-// nothing where the game puts it, so its burst still plays where it lands.
+// A thrown potion's own missile, hidden in flight (#292): its visual entities
+// are shrunk and sent far below the world (rows 0-2 the scaled basis, 12-14
+// the translation, as SpellMatrix writes them). Descendants inherit only the
+// root's translation, so the move is what hides the meshes and effects; the
+// burst plays where the missile itself lands.
+inline constexpr float HiddenDrop=100000;
 struct HiddenPotion {uint32_t entity=0;uint64_t until=0;};
 std::array<HiddenPotion,12> hiddenPotions{};
 struct PotionClaim {uintptr_t unit=0;uint32_t id=0;uint64_t until=0;} potionClaim;   // the client missile whose visual is hidden
-std::atomic<unsigned> hiddenPotionCount{0},potionsHidden{0};
+std::atomic<unsigned> hiddenPotionCount{0},potionsHidden{0},hiddenWrites{0};   // hiddenWrites: transforms rewritten for the last claim
 std::atomic<uint64_t> potionExpected{0};
 bool HiddenPotionMatrix(uintptr_t out,uint32_t entity,uintptr_t component) {
     const uint64_t now=GetTickCount64();bool hide=false;unsigned left=0;
@@ -758,6 +762,8 @@ bool HiddenPotionMatrix(uintptr_t out,uint32_t entity,uintptr_t component) {
     std::array<float,16> m{};
     if(!hide||!Read(out,m))return false;
     for(int row=0;row<3;++row)for(int column=0;column<3;++column)m[size_t(row*4+column)]*=1e-4f;
+    m[13]-=HiddenDrop;
+    ++hiddenWrites;
     framevr::WriteMemory(reinterpret_cast<void*>(out),m.data(),sizeof m);
     framevr::WriteMemory(reinterpret_cast<void*>(component+0x40),m.data(),sizeof m);
     framevr::WriteMemory(reinterpret_cast<void*>(component+0x80),m.data(),sizeof m);
@@ -1182,6 +1188,8 @@ bool HidePotion(uint32_t entity,uintptr_t unit,bool& first) {
         if(potionClaim.unit!=unit||potionClaim.id!=header[2]||now>potionClaim.until) {
             const uint64_t expected=potionExpected.load();
             if(!expected||now<expected||now-expected>1500)return false;
+            if(potionClaim.unit){char line[120];snprintf(line,sizeof line,"Frame potion throw: the last hidden potion's transforms rewritten %u times",hiddenWrites.exchange(0));framevr::logging::Write(line);}
+            else hiddenWrites=0;
             potionClaim={unit,header[2],now+4000};potionExpected=0;first=true;++potionsHidden;   // one missile per throw
         }
         auto* slot=&hiddenPotions[0];
