@@ -11,11 +11,14 @@ class UiBlit {
     Microsoft::WRL::ComPtr<ID3D12PipelineState> pipeline,findPipeline,tilesPipeline;
     Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> sourceHeap,targetHeap;
     Microsoft::WRL::ComPtr<ID3D12Resource> hero;   // 1x1: the map's hero marker, found each frame (square map)
-    Microsoft::WRL::ComPtr<ID3D12Resource> heroTiles;   // FindTiles: up to TileGrid x TileGrid tiles of its search square
 public:
     // The marker search's tiles, as the shader's Tile: TileGrid of them across covers a
     // source up to TileGrid*Tile/(2*SearchRadius) pixels on its longer side (12,800).
-    static constexpr int FindTile=16,TileGrid=128;
+    // TileTargets: FindTiles' outputs (nearest, sum and box low, box high).
+    static constexpr int FindTile=16,TileGrid=128,TileTargets=3;
+private:
+    Microsoft::WRL::ComPtr<ID3D12Resource> heroTiles[TileTargets];   // FindTiles: up to TileGrid x TileGrid tiles of its search square
+public:
     // The tiles across the search square of a w x h source, as FindX counts them (+1 to spare).
     static int FindTiles(uint32_t w,uint32_t h) {
         const int R=int(float(w>h?w:h)*.08f);

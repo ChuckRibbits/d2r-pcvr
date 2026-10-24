@@ -60,12 +60,18 @@ float ArrowCoverage(float2 pixel,float side,float angle,float r) {
 // and count to `hero`; the map is then centred and turned on that point, under
 // the arrow, and those blue pixels are painted over.
 // The search square is SearchRadius of the map's longer side each way: one pixel
-// scanning it alone read ~241,000 texels on the full map's 3072x1728 share, ~15 ms
-// of the GPU in one thread every frame (By turns 88 -> 39 frames a second, owner,
-// 2026-10-24). So FindTiles, a pixel per Tile x Tile of the square, finds each tile's
-// nearest marker pixel in parallel, and FindX (1x1) takes the nearest of those.
+// scanning it alone read ~241,000 texels on the full map's 3072x1728 share, 23.6 ms
+// of the GPU in one thread every frame (RTX 5090; By turns 88 -> 39 frames a second,
+// owner, 2026-10-24). So FindTiles, a pixel per Tile x Tile of the square, reads each
+// pixel once in parallel: its tile's nearest marker pixel and all its marker pixels'
+// sum, count and box. FindX (1x1) takes the nearest, then adds up the tiles within
+// MarkerRadius of it (whole tiles: the X's box rounded out to their edges).
 Texture2D<float4> hero : register(t1);
-Texture2D<float4> tiles : register(t2);   // FindTiles: the nearest marker pixel per tile (xy, squared distance; 1e9 none)
+// FindTiles, a texel per tile: (nearest marker pixel xy, its squared distance (1e9 none),
+// count), (sum of their middles xy, box low xy), (box high xy)
+Texture2D<float4> tileNear : register(t2);
+Texture2D<float4> tileSum : register(t3);
+Texture2D<float4> tileHigh : register(t4);
 static const float SearchRadius=.08,MarkerRadius=.02;   // of the map's longer side
 static const int Tile=16,TileGrid=128;   // ui_blit.h FindTile, TileGrid
 bool IsMarker(float4 c) {
@@ -74,19 +80,23 @@ bool IsMarker(float4 c) {
     float3 e=max(c.rgb,0)/opacity;   // sRGB-encoded, unassociated
     return e.b>.7&&e.b>2*e.r&&e.b>1.35*e.g;
 }
-float4 FindTiles(float4 position:SV_Position):SV_Target {
+struct Tiles {float4 near:SV_Target0;float4 sum:SV_Target1;float4 high:SV_Target2;};
+Tiles FindTiles(float4 position:SV_Position) {
     uint w,h;nativeUi.GetDimensions(w,h);
     const float side=max(w,h);
     const int R=int(side*SearchRadius);
     const int2 c=int2(uint2(w,h)/2),from=int2(position.xy)*Tile-R;
-    float best=1e9;int2 near=c;
+    float best=1e9,count=0;int2 near=c,lo=int2(w,h),hi=-1;float2 sum=0;
     [loop] for(int y=from.y;y<min(from.y+Tile,R+1);++y) [loop] for(int x=from.x;x<min(from.x+Tile,R+1);++x) {
         int2 q=c+int2(x,y);
         if(any(q<0)||q.x>=int(w)||q.y>=int(h))continue;
+        if(!IsMarker(nativeUi.Load(int3(q,0))))continue;
         float d=x*x+y*y;
-        if(d<best&&IsMarker(nativeUi.Load(int3(q,0)))){best=d;near=q;}
+        if(d<best){best=d;near=q;}
+        sum+=q+.5;++count;lo=min(lo,q);hi=max(hi,q);
     }
-    return float4(near,best,0);
+    Tiles t;t.near=float4(near,best,count);t.sum=float4(sum,lo);t.high=float4(hi,0,0);
+    return t;
 }
 float4 FindX(float4 position:SV_Position):SV_Target {
     uint w,h;nativeUi.GetDimensions(w,h);
@@ -96,23 +106,21 @@ float4 FindX(float4 position:SV_Position):SV_Target {
     const int n=min((2*R+Tile)/Tile,TileGrid);   // the tiles across the square (as many as FindTiles had)
     float best=1e9;int2 near=c;
     [loop] for(int ty=0;ty<n;++ty) [loop] for(int tx=0;tx<n;++tx) {
-        const float4 t=tiles.Load(int3(tx,ty,0));
+        const float4 t=tileNear.Load(int3(tx,ty,0));
         if(t.z<best){best=t.z;near=int2(t.xy);}
     }
     if(best>1e8)return 0;
-    // the X's blue pixels around it: every one on a map up to 2047 pixels across (the
-    // corner map), every step-th on bigger ones (the full map), its middle and size to a
-    // pixel or two of a share the wrist shows at a sixth of that
-    const int step=max(1,int(side)/1024),from=-(r/step)*step;   // the samples' grid through `near`
-    float3 sum=0;int2 lo=near,hi=near;
-    [loop] for(int y2=from;y2<=r;y2+=step) [loop] for(int x2=from;x2<=r;x2+=step) {
-        int2 q=near+int2(x2,y2);
-        if(any(q<0)||q.x>=int(w)||q.y>=int(h))continue;
-        if(IsMarker(nativeUi.Load(int3(q,0)))){sum+=float3(q+.5,1);lo=min(lo,q);hi=max(hi,q);}
+    // the X's blue pixels: those of the tiles within r of it, every pixel counted
+    const int2 first=clamp((near-r-(c-R))/Tile,0,n-1),last=clamp((near+r-(c-R))/Tile,0,n-1);
+    float3 sum=0;float2 lo=near,hi=near;
+    [loop] for(int y2=first.y;y2<=last.y;++y2) [loop] for(int x2=first.x;x2<=last.x;++x2) {
+        const float count=tileNear.Load(int3(x2,y2,0)).w;
+        if(count<=0)continue;
+        const float4 t=tileSum.Load(int3(x2,y2,0));
+        sum+=float3(t.xy,count);lo=min(lo,t.zw);hi=max(hi,tileHigh.Load(int3(x2,y2,0)).xy);
     }
-    // z: the X's pixel count (the PS's `seen` wants 3), each sample standing for step x step;
     // w: the X's half size (map pixels), from the box of its blue pixels (the full map's arrow)
-    return float4(sum.xy/max(sum.z,1),sum.z*step*step,max(hi.x-lo.x,hi.y-lo.y)*.5+.5*step);
+    return float4(sum.xy/max(sum.z,1),sum.z,max(hi.x-lo.x,hi.y-lo.y)*.5+.5);
 }
 // The X's pixels near the hero, rim too: the bright blue above, or a darker blue
 // (its outline, and the sampler's blend of it with the backing).
@@ -229,7 +237,7 @@ float4 PS(float4 position:SV_Position):SV_Target {
         if(log){char b[160];std::snprintf(b,sizeof b,"Frame panels: shader compile failed VS=%08lx PS=%08lx",(unsigned long)v,(unsigned long)p);log(b);if(errors)log(static_cast<const char*>(errors->GetBufferPointer()));}
         return fail();
     }
-    D3D12_DESCRIPTOR_RANGE range{D3D12_DESCRIPTOR_RANGE_TYPE_SRV,3,0,0,0};   // t0 the source, t1 the hero marker (FindX), t2 its tiles (FindTiles)
+    D3D12_DESCRIPTOR_RANGE range{D3D12_DESCRIPTOR_RANGE_TYPE_SRV,2+TileTargets,0,0,0};   // t0 the source, t1 the hero marker (FindX), t2.. its tiles (FindTiles)
     D3D12_ROOT_PARAMETER parameters[2]{};auto& parameter=parameters[0];parameter.ParameterType=D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
     parameter.DescriptorTable={1,&range};parameter.ShaderVisibility=D3D12_SHADER_VISIBILITY_PIXEL;
     parameters[1].ParameterType=D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS;
@@ -250,12 +258,13 @@ float4 PS(float4 position:SV_Position):SV_Target {
     state.RasterizerState.CullMode=D3D12_CULL_MODE_NONE;state.RasterizerState.DepthClipEnable=TRUE;
     state.PrimitiveTopologyType=D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
     state.NumRenderTargets=1;state.RTVFormats[0]=DXGI_FORMAT_R16G16B16A16_FLOAT;state.SampleDesc.Count=1;
-    D3D12_DESCRIPTOR_HEAP_DESC heap{};heap.Type=D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;heap.NumDescriptors=3;heap.Flags=D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
+    D3D12_DESCRIPTOR_HEAP_DESC heap{};heap.Type=D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;heap.NumDescriptors=2+TileTargets;heap.Flags=D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
     const auto result=device->CreateGraphicsPipelineState(&state,IID_PPV_ARGS(&pipeline));
     if(FAILED(result)) {if(log){char b[128];std::snprintf(b,sizeof b,"Frame panels: pipeline failed %08lx",(unsigned long)result);log(b);}return fail();}
     state.PS={findPs->GetBufferPointer(),findPs->GetBufferSize()};state.RTVFormats[0]=DXGI_FORMAT_R32G32B32A32_FLOAT;
     if(FAILED(device->CreateGraphicsPipelineState(&state,IID_PPV_ARGS(&findPipeline)))){if(log)log("Frame panels: map marker pass unavailable");return fail();}
-    state.PS={tilesPs->GetBufferPointer(),tilesPs->GetBufferSize()};
+    state.PS={tilesPs->GetBufferPointer(),tilesPs->GetBufferSize()};state.NumRenderTargets=TileTargets;
+    for(int i=0;i<TileTargets;++i){state.RTVFormats[i]=DXGI_FORMAT_R32G32B32A32_FLOAT;state.BlendState.RenderTarget[i].RenderTargetWriteMask=D3D12_COLOR_WRITE_ENABLE_ALL;}
     if(FAILED(device->CreateGraphicsPipelineState(&state,IID_PPV_ARGS(&tilesPipeline)))){if(log)log("Frame panels: map marker pass unavailable");return fail();}
     if(FAILED(device->CreateDescriptorHeap(&heap,IID_PPV_ARGS(&sourceHeap))))return fail();
     heap.Type=D3D12_DESCRIPTOR_HEAP_TYPE_RTV;heap.Flags=D3D12_DESCRIPTOR_HEAP_FLAG_NONE;
@@ -277,7 +286,7 @@ bool UiBlit::Render(ID3D12Device* device,ID3D12GraphicsCommandList* list,ID3D12R
     const UINT rtvStep=device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV);
     auto heroSrv=sourceHeap->GetCPUDescriptorHandleForHeapStart();heroSrv.ptr+=srvStep;
     auto heroRtv=targetHeap->GetCPUDescriptorHandleForHeapStart();heroRtv.ptr+=rtvStep;
-    auto tilesSrv=heroSrv;tilesSrv.ptr+=srvStep;
+    auto tilesSrv=heroSrv;tilesSrv.ptr+=srvStep;   // TileTargets in a row from here
     auto tilesRtv=heroRtv;tilesRtv.ptr+=rtvStep;
     // The square map: its hero marker found first (FindTiles into `heroTiles`, then FindX into
     // the 1x1 `hero`), read by the map's pass.
@@ -288,11 +297,13 @@ bool UiBlit::Render(ID3D12Device* device,ID3D12GraphicsCommandList* list,ID3D12R
         d.Format=DXGI_FORMAT_R32G32B32A32_FLOAT;d.SampleDesc.Count=1;d.Flags=D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET;
         if(FAILED(device->CreateCommittedResource(&heapProps,D3D12_HEAP_FLAG_NONE,&d,D3D12_RESOURCE_STATE_RENDER_TARGET,nullptr,IID_PPV_ARGS(&r))))r.Reset();
     };
-    if(squareMap){marker(hero,1);marker(heroTiles,TileGrid);}
-    const bool findHero=squareMap&&hero&&heroTiles&&findPipeline&&tilesPipeline;
+    bool findHero=squareMap&&findPipeline&&tilesPipeline;
+    if(findHero){marker(hero,1);for(auto& t:heroTiles)marker(t,TileGrid);}
+    for(const auto& t:heroTiles)findHero=findHero&&t;
+    findHero=findHero&&hero;
     D3D12_SHADER_RESOURCE_VIEW_DESC heroView=srv;heroView.Format=DXGI_FORMAT_R32G32B32A32_FLOAT;
     device->CreateShaderResourceView(findHero?hero.Get():nullptr,&heroView,heroSrv);
-    device->CreateShaderResourceView(findHero?heroTiles.Get():nullptr,&heroView,tilesSrv);
+    for(int i=0;i<TileTargets;++i){auto at=tilesSrv;at.ptr+=SIZE_T(i)*srvStep;device->CreateShaderResourceView(findHero?heroTiles[i].Get():nullptr,&heroView,at);}
     list->SetGraphicsRootSignature(root.Get());
     ID3D12DescriptorHeap* heaps[]={sourceHeap.Get()};list->SetDescriptorHeaps(1,heaps);
     list->SetGraphicsRootDescriptorTable(0,sourceHeap->GetGPUDescriptorHandleForHeapStart());
@@ -306,12 +317,12 @@ bool UiBlit::Render(ID3D12Device* device,ID3D12GraphicsCommandList* list,ID3D12R
         list->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
         // a pixel per tile of the search square, then the 1x1 pass over those tiles
         const LONG n=FindTiles(UINT(s.Width),s.Height);
-        device->CreateRenderTargetView(heroTiles.Get(),&heroTarget,tilesRtv);
-        list->OMSetRenderTargets(1,&tilesRtv,FALSE,nullptr);
+        for(int i=0;i<TileTargets;++i){auto at=tilesRtv;at.ptr+=SIZE_T(i)*rtvStep;device->CreateRenderTargetView(heroTiles[i].Get(),&heroTarget,at);}
+        list->OMSetRenderTargets(TileTargets,&tilesRtv,TRUE,nullptr);
         const D3D12_VIEWPORT grid{0,0,float(n),float(n),0,1};const D3D12_RECT gridRect{0,0,n,n};
         list->RSSetViewports(1,&grid);list->RSSetScissorRects(1,&gridRect);
         list->SetPipelineState(tilesPipeline.Get());list->DrawInstanced(3,1,0,0);
-        barrier(heroTiles.Get(),D3D12_RESOURCE_STATE_RENDER_TARGET,D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+        for(const auto& t:heroTiles)barrier(t.Get(),D3D12_RESOURCE_STATE_RENDER_TARGET,D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
         device->CreateRenderTargetView(hero.Get(),&heroTarget,heroRtv);
         list->OMSetRenderTargets(1,&heroRtv,FALSE,nullptr);
         const D3D12_VIEWPORT one{0,0,1,1,0,1};const D3D12_RECT oneRect{0,0,1,1};
@@ -341,7 +352,7 @@ bool UiBlit::Render(ID3D12Device* device,ID3D12GraphicsCommandList* list,ID3D12R
     list->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);list->DrawInstanced(3,1,0,0);
     if(findHero) {
         barrier(hero.Get(),D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE,D3D12_RESOURCE_STATE_RENDER_TARGET);
-        barrier(heroTiles.Get(),D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE,D3D12_RESOURCE_STATE_RENDER_TARGET);
+        for(const auto& t:heroTiles)barrier(t.Get(),D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE,D3D12_RESOURCE_STATE_RENDER_TARGET);
     }
     return true;
 }

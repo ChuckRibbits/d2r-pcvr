@@ -1,7 +1,8 @@
 // The square map's hero marker search (FindTiles + FindX) on the GPU: the nearest blue X to
-// the share's centre, its middle, count and half size, on a corner-map-sized share (every
-// pixel read) and on the full map's 3072x1728 (the X's box read every third pixel), with a
-// farther decoy. Prints the GPU time of the whole Render (marker passes and the map's).
+// the share's centre, its middle, count and half size - every pixel counted, so they hold
+// still as the hero moves - on a corner-map-sized share and on the full map's 3072x1728,
+// with a farther decoy, at each of the X's offsets against the tiles in a 16-pixel walk.
+// Prints the GPU time of the whole Render (marker passes and the map's).
 #include "ui_blit.h"
 #include <windows.h>
 #include <cmath>
@@ -92,10 +93,12 @@ int main(){try {
     Expect(framevr::UiBlit::FindTiles(3072,1728)>=(2*int(3072*.08f)+framevr::UiBlit::FindTile)/framevr::UiBlit::FindTile&&
            framevr::UiBlit::FindTiles(640,400)>=(2*int(640*.08f)+framevr::UiBlit::FindTile)/framevr::UiBlit::FindTile&&
            framevr::UiBlit::FindTiles(1u<<20,1)==framevr::UiBlit::TileGrid,"the tiles cover the shader's search square, within the grid");
-    // a corner map: every pixel of the X's box read, so its middle and size are exact
-    Run(device.Get(),queue.Get(),640,400,{9,-6,3},{40,30,3},.01f);
-    // the full map's share on a 3072-px layer: X up-right of the centre, a decoy farther out
-    Run(device.Get(),queue.Get(),3072,1728,{37,-23,4},{150,100,4},1.5f);
+    // a corner map, then the full map's share on a 3072-px layer: X up-right of the centre,
+    // a decoy farther out; the X walked across a tile both ways (the hero moving)
+    for(int step=0;step<16;step+=5) {
+        Run(device.Get(),queue.Get(),640,400,{9+step,-6-step,3},{40,30,3},.01f);
+        Run(device.Get(),queue.Get(),3072,1728,{37+step,-23-step,4},{150,100,4},.01f);
+    }
     std::puts("Map marker search passed: the nearest X, its middle, count and size, on a corner map and the full map's 3072x1728 share");
     return 0;
 }catch(const std::exception& e){std::fprintf(stderr,"%s\n",e.what());return 1;}}
