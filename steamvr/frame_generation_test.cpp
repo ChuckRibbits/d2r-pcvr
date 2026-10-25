@@ -81,5 +81,27 @@ int main() {
         assert(std::strlen(StateName(State(i)))>0);
     }
     assert(Warning({State::Error})&&Warning({State::Failed})&&Warning({State::NeedsBothEyes})&&!Warning({State::Active})&&!Warning({State::Off}));
+
+    // A failed live request (VDXR, resuming after By turns: 0x80070057) gets a new session;
+    // an error without the layer's count (no answer) or any other state does not.
+    s.errors=1;s.lastError=int32_t(0x80070057);
+    assert(RetriesWithNewSession(Classify(Start::Loaded,true,on,&s)));
+    assert(!RetriesWithNewSession(Classify(Start::Loaded,true,on,nullptr)));
+    s.errors=0;s.ready=1;
+    assert(!RetriesWithNewSession(Classify(Start::Loaded,true,on,&s))&&!RetriesWithNewSession(Classify(Start::Loaded,true,on,&s,false)));
+
+    // Virtual Desktop halving under the bridge: the tester's 90 Hz session, then SSW's 45.
+    HalvingWatch watch;
+    for(int i=0;i<10;++i)assert(!watch.Note(90.f));
+    assert(!watch.Note(45.f)&&!watch.Note(45.f)&&watch.Note(45.f));   // three seconds in a row
+    assert(watch.Note(90.f)&&watch.Note(90.f)&&!watch.Note(90.f));     // and three back
+    assert(!watch.Note(45.f)&&!watch.Note(90.f)&&!watch.Note(45.f)&&!watch.Note(45.f));   // a second back restarts the count
+    assert(watch.Note(45.f));
+    assert(watch.Note(0.f)&&watch.Note(std::nanf("")));   // no reading keeps it
+    HalvingWatch slower;   // a lower headset rate is no halving
+    for(int i=0;i<5;++i)slower.Note(90.f);
+    for(int i=0;i<10;++i)assert(!slower.Note(72.f));
+    r=Classify(Start::Loaded,true,on,&s);r.runtimeHalves=true;
+    assert(r.state==State::Active&&Warning(r)&&Line(r).size()<90&&Line(r).find("SSW")!=std::string::npos);
     return 0;
 }

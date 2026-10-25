@@ -5864,9 +5864,9 @@ uintptr_t HookDrawGameScreen(int a) {
 #ifdef D2RVR_NATIVE_OPENXR
         if(cycle>80000&&GetTickCount64()-lastHitch>1000) {
             lastHitch=GetTickCount64();
-            LogF("Frame hitch: cycle %.1f ms; game gap %.1f; XR begin %.1f (wait %.1f); left %.1f; right %.1f; XR end %.1f (GPU fence %.1f, submit %.1f); pipelines %u max %.1f ms",
+            LogF("Frame hitch: cycle %.1f ms; game gap %.1f; XR begin %.1f (wait %.1f); left %.1f; right %.1f; XR end %.1f (GPU fence %.1f, submit %.1f, layers %u); pipelines %u max %.1f ms",
                 cycle*.001,(entered-lastEnd)*.001,(t0-entered)*.001,xr.waitFrameMs,
-                (t1-t0)*.001,(t2-t1)*.001,(ended-t2)*.001,xr.waitGpuMs,xr.submitMs,xr.pipelines,xr.maxPipelineMs);
+                (t1-t0)*.001,(t2-t1)*.001,(ended-t2)*.001,xr.waitGpuMs,xr.submitMs,xr.layers,xr.pipelines,xr.maxPipelineMs);
         }
 #endif
     }
