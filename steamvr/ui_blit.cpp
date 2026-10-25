@@ -1,6 +1,7 @@
 #include "ui_blit.h"
 #include "dxgi_views.h"
 #include <d3dcompiler.h>
+#include <cmath>
 #include <cstring>
 #include <climits>
 #include <cstdio>
@@ -18,7 +19,12 @@ bool UiBlit::Initialize(ID3D12Device* device,void (*log)(const char*)) {
     constexpr char shader[]=R"(
 Texture2D<float4> nativeUi : register(t0);
 SamplerState mapSampler : register(s0);
-cbuffer Options : register(b0) {uint blackBackground;uint mapSide;uint mapFlags;float bearing;float wallAlpha;float zoom;float mapSpan;};
+cbuffer Options : register(b0) {uint blackBackground;uint mapSide;uint mapFlags;float bearing;float wallAlpha;float zoom;float mapSpan;float xReach;float2 xShift;};
+// xReach, xShift (the full map, xReach > 0; wrist_full_map.h XSearchAt): the X's search square,
+// xReach source pixels each way from the source's center moved by xShift, where the game draws
+// the hero's X on its full map at the game zoom the share was drawn at; sized to that X, so other
+// blue on the map (water) beside it stays out. 0: the corner map's wide search (SearchRadius,
+// MarkerRadius), as before.
 // mapSpan (square map, >0; Map view = Full map, steamvr/wrist_full_map.h): a square of that
 // many source pixels across the whole square around the hero's X, in place of fitting the
 // whole source; the arrow sized from the X at this span (ArrowRadius), the X's own pixels
@@ -65,7 +71,8 @@ float ArrowCoverage(float2 pixel,float side,float angle,float r) {
 // owner, 2026-10-24). So FindTiles, a pixel per Tile x Tile of the square, reads each
 // pixel once in parallel: its tile's nearest marker pixel and all its marker pixels'
 // sum, count and box. FindX (1x1) takes the nearest, then adds up the tiles within
-// MarkerRadius of it (whole tiles: the X's box rounded out to their edges).
+// MarkerRadius of it (whole tiles: the X's box rounded out to their edges). That is the
+// corner map's search; the full map searches only a square sized to its X (xReach, xShift).
 Texture2D<float4> hero : register(t1);
 // FindTiles, a texel per tile: (nearest marker pixel xy, its squared distance (1e9 none),
 // count), (sum of their middles xy, box low xy), (box high xy)
@@ -84,8 +91,8 @@ struct Tiles {float4 near:SV_Target0;float4 sum:SV_Target1;float4 high:SV_Target
 Tiles FindTiles(float4 position:SV_Position) {
     uint w,h;nativeUi.GetDimensions(w,h);
     const float side=max(w,h);
-    const int R=int(side*SearchRadius);
-    const int2 c=int2(uint2(w,h)/2),from=int2(position.xy)*Tile-R;
+    const int R=xReach>0?int(xReach):int(side*SearchRadius);
+    const int2 c=int2(uint2(w,h)/2)+(xReach>0?int2(round(xShift)):0),from=int2(position.xy)*Tile-R;
     float best=1e9,count=0;int2 near=c,lo=int2(w,h),hi=-1;float2 sum=0;
     [loop] for(int y=from.y;y<min(from.y+Tile,R+1);++y) [loop] for(int x=from.x;x<min(from.x+Tile,R+1);++x) {
         int2 q=c+int2(x,y);
@@ -101,8 +108,9 @@ Tiles FindTiles(float4 position:SV_Position) {
 float4 FindX(float4 position:SV_Position):SV_Target {
     uint w,h;nativeUi.GetDimensions(w,h);
     const float side=max(w,h);
-    const int R=int(side*SearchRadius),r=int(side*MarkerRadius)+1;
-    const int2 c=int2(uint2(w,h)/2);
+    // the full map: the whole square, sized to the X, is the X's (xReach); the corner map: within r of the nearest
+    const int R=xReach>0?int(xReach):int(side*SearchRadius),r=xReach>0?2*R:int(side*MarkerRadius)+1;
+    const int2 c=int2(uint2(w,h)/2)+(xReach>0?int2(round(xShift)):0);   // as FindTiles
     const int n=min((2*R+Tile)/Tile,TileGrid);   // the tiles across the square (as many as FindTiles had)
     float best=1e9;int2 near=c;
     [loop] for(int ty=0;ty<n;++ty) [loop] for(int tx=0;tx<n;++tx) {
@@ -241,7 +249,7 @@ float4 PS(float4 position:SV_Position):SV_Target {
     D3D12_ROOT_PARAMETER parameters[2]{};auto& parameter=parameters[0];parameter.ParameterType=D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
     parameter.DescriptorTable={1,&range};parameter.ShaderVisibility=D3D12_SHADER_VISIBILITY_PIXEL;
     parameters[1].ParameterType=D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS;
-    parameters[1].Constants={0,0,7};parameters[1].ShaderVisibility=D3D12_SHADER_VISIBILITY_PIXEL;
+    parameters[1].Constants={0,0,10};parameters[1].ShaderVisibility=D3D12_SHADER_VISIBILITY_PIXEL;
     D3D12_ROOT_SIGNATURE_DESC desc{};desc.NumParameters=2;desc.pParameters=parameters;
     D3D12_STATIC_SAMPLER_DESC sampler{};sampler.Filter=D3D12_FILTER_MIN_MAG_LINEAR_MIP_POINT;
     sampler.AddressU=sampler.AddressV=sampler.AddressW=D3D12_TEXTURE_ADDRESS_MODE_CLAMP;
@@ -272,7 +280,7 @@ float4 PS(float4 position:SV_Position):SV_Target {
     if(log)log("Frame panels: GPU native UI alpha conversion ready; original artwork retained");
     return true;
 }
-bool UiBlit::Render(ID3D12Device* device,ID3D12GraphicsCommandList* list,ID3D12Resource* source,ID3D12Resource* target,bool blackBackground,bool squareMap,uint32_t mapFlags,float bearing,float wallAlpha,float zoom,float mapSpan) {
+bool UiBlit::Render(ID3D12Device* device,ID3D12GraphicsCommandList* list,ID3D12Resource* source,ID3D12Resource* target,bool blackBackground,bool squareMap,uint32_t mapFlags,float bearing,float wallAlpha,float zoom,float mapSpan,float xReach,float xShiftRight,float xShiftDown) {
     if(!pipeline||!source||!target)return false;
     const auto s=source->GetDesc(),t=target->GetDesc();
     if(!RenderTargetCompatible(s.Format,DXGI_FORMAT_R16G16B16A16_FLOAT)||
@@ -307,6 +315,10 @@ bool UiBlit::Render(ID3D12Device* device,ID3D12GraphicsCommandList* list,ID3D12R
     list->SetGraphicsRootSignature(root.Get());
     ID3D12DescriptorHeap* heaps[]={sourceHeap.Get()};list->SetDescriptorHeaps(1,heaps);
     list->SetGraphicsRootDescriptorTable(0,sourceHeap->GetGPUDescriptorHandleForHeapStart());
+    // the X's search square, read by FindTiles and FindX before the map's own constants are set
+    if(!squareMap||!(xReach>0.f)||!std::isfinite(xReach)||!std::isfinite(xShiftRight)||!std::isfinite(xShiftDown))xReach=xShiftRight=xShiftDown=0.f;
+    const float search[3]={xReach,xShiftRight,xShiftDown};
+    list->SetGraphicsRoot32BitConstants(1,3,search,7);
     auto barrier=[&](ID3D12Resource* r,D3D12_RESOURCE_STATES from,D3D12_RESOURCE_STATES to) {
         D3D12_RESOURCE_BARRIER b{};b.Type=D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;b.Transition.pResource=r;
         b.Transition.Subresource=D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;b.Transition.StateBefore=from;b.Transition.StateAfter=to;
@@ -316,7 +328,7 @@ bool UiBlit::Render(ID3D12Device* device,ID3D12GraphicsCommandList* list,ID3D12R
         D3D12_RENDER_TARGET_VIEW_DESC heroTarget{};heroTarget.Format=DXGI_FORMAT_R32G32B32A32_FLOAT;heroTarget.ViewDimension=D3D12_RTV_DIMENSION_TEXTURE2D;
         list->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
         // a pixel per tile of the search square, then the 1x1 pass over those tiles
-        const LONG n=FindTiles(UINT(s.Width),s.Height);
+        const LONG n=FindTiles(UINT(s.Width),s.Height,xReach);
         for(int i=0;i<TileTargets;++i){auto at=tilesRtv;at.ptr+=SIZE_T(i)*rtvStep;device->CreateRenderTargetView(heroTiles[i].Get(),&heroTarget,at);}
         list->OMSetRenderTargets(TileTargets,&tilesRtv,TRUE,nullptr);
         const D3D12_VIEWPORT grid{0,0,float(n),float(n),0,1};const D3D12_RECT gridRect{0,0,n,n};
