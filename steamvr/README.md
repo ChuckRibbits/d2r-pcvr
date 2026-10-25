@@ -656,6 +656,12 @@ lighting. Higher refresh rates, transport lock splitting/dedicated frame calls,
 eye texture shape, and shared inter-eye skeleton/shadow work remain separate
 experiments. They are not included in the small-fix build.
 
+`[render] bone_armor_height` (game units, about 5.25 per metre; default 0.3,
+just above the floor) sets the Necromancer Bone Armor orbit's centre above the
+unit. The native effect places it 3 units up (waist height in VR) by one local
+point; 0 is the floor and 3 keeps it native. Other overlays and every other
+particle position stay native.
+
 `[render] symmetric_projection=1` is the default lighting compatibility
 setting. D2R's native light-bin shader assumes a centered projection;
 the headset can recommend offset frusta. This mode renders a centered FOV that
