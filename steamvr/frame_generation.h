@@ -100,6 +100,7 @@ struct Readout {
     State state=State::Off;
     int backend=0,preset=1,scale=2;   // what the layer was asked for (Loaded)
     uint32_t sessions=0,ready=0,bypass=0,errors=0;int32_t lastError=0;
+    bool runtimeHalves=false;   // Active, but Virtual Desktop halves the frame rate as well (HalvingWatch)
     bool operator==(const Readout&)const=default;
 };
 // started: as above; installed: plugins\ofxr has the manifest now; wanted: the
@@ -130,6 +131,29 @@ inline Readout Classify(Start started,bool installed,const Options& wanted,const
 // transport restarts the OpenXR session so a new instance loads it. Not by turns (it
 // would only wait for Both eyes), not when it failed or cannot load.
 inline bool LoadsWithNewSession(State s){return s==State::RestartToStart;}
+// The loaded layer failed a request made while it ran: under Virtual Desktop (VDXR),
+// resuming after By turns once it had made frames failed with 0x80070057 every time
+// (a tester's RTX 4090 and the owner's PC, 2026-10-24) and stayed failed, while a new
+// session set it up afresh. So after a live request the transport restarts the session once.
+inline bool RetriesWithNewSession(const Readout& r){return r.state==State::Error&&r.errors>0;}
+// Under VDXR the bridge keeps the headset's frame period while it makes frames (90 Hz
+// predicted, the game drawing 45 pairs a second). A predicted rate well under the
+// highest of the session means Virtual Desktop halved it too (its Synchronous
+// Spacewarp), and the game draws a quarter: the tester had 22 pairs a second for 28%
+// of the time with both on, none with SSW off. Note() takes a second's predicted rate;
+// HoldSeconds in a row set or clear it.
+struct HalvingWatch {
+    static constexpr int HoldSeconds=3;
+    float top=0;int below=0,above=0;bool halved=false;
+    bool Note(float hz) {
+        if(!std::isfinite(hz)||hz<=0)return halved;
+        top=std::max(top,hz);
+        if(hz<top*.6f){above=0;if(++below>=HoldSeconds)halved=true;}
+        else if(hz>top*.8f){below=0;if(++above>=HoldSeconds)halved=false;}
+        else below=above=0;
+        return halved;
+    }
+};
 // The Perf page's line (and the log's): one line, under 90 characters.
 inline std::string Line(const Readout& r){
     char line[160];
@@ -142,7 +166,9 @@ inline std::string Line(const Readout& r){
         case State::Failed:return "Frame generation: OFXR Bridge did not start; playing without it (see the log)";
         case State::Starting:return "Frame generation: OFXR Bridge loaded, waiting for the headset session";
         case State::Applying:std::snprintf(line,sizeof line,"Frame generation: OFXR Bridge switching to %s",running.c_str());return line;
-        case State::Active:std::snprintf(line,sizeof line,"Frame generation: active, OFXR Bridge %s",running.c_str());return line;
+        case State::Active:
+            if(r.runtimeHalves)return "Frame generation: active, but Virtual Desktop's SSW halves it again; set SSW to Disabled";
+            std::snprintf(line,sizeof line,"Frame generation: active, OFXR Bridge %s",running.c_str());return line;
         case State::Bypassed:return "Frame generation: OFXR Bridge loaded but bypassed; no generated frames";
         case State::Paused:return "Frame generation: Off for now; restart the game to unload OFXR Bridge";
         case State::Error:
@@ -156,6 +182,6 @@ inline std::string Line(const Readout& r){
 // Whether the line is a warning (amber on the Perf page).
 inline bool Warning(const Readout& r){
     return r.state==State::Failed||r.state==State::Bypassed||r.state==State::Error||r.state==State::NotInstalled||r.state==State::Unavailable||
-           r.state==State::NeedsBothEyes;
+           r.state==State::NeedsBothEyes||r.runtimeHalves;
 }
 }

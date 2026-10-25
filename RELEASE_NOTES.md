@@ -1,22 +1,57 @@
-# D2R VR Unleashed v0.3.26 - Windows preview
+# D2R VR Unleashed v0.3.27 - Windows preview
 
-This hotfix fixes being stuck after a knockback, such as Duriel's stun in Act 2.
-It includes everything from
-[v0.3.25](https://github.com/bearstonem/d2r-pcvr/releases/tag/v0.3.25-windows-preview):
-weapon skills on contact, throwing by hand, Druid shapeshifting, smarter aiming,
-physics and experimental frame generation.
+This update makes the full map on your wrist fast, brings frame generation back
+after By turns under Virtual Desktop and starts it without a game restart, and
+treats trigger melee like a swing in Unleashed.
 
 ## Gameplay and combat
 
-- **Knockbacks no longer lock you in place - contributed by ChuckRibbits:**
-  After being knocked back, for example by Duriel's Smite or another attack that
-  stuns, you could no longer move or interact with anything until you saved and
-  exited. A knockback now ends normally, and you can walk again as soon as it
-  does.
+- **Trigger melee follows the Unleashed rules - contributed by ChuckRibbits:**
+  A basic attack or melee skill on the trigger, and Smite, now counts as a stroke
+  like a swing. Your attack rating scales its damage, and its other effects
+  (procs, leech, critical strikes) happen only when the game's own hit roll would
+  have landed. It shares your swings' recovery, so mixing trigger attacks with
+  swings is never faster than swinging. Trigger attacks in a row are still paced
+  only by their animation, and multi-hit skills such as Zeal keep every hit. Smite
+  still always hits and is not scaled by attack rating. With a low attack rating,
+  trigger attacks now deal less damage, on average what the game would deal with
+  its misses.
+- **Swing speed follows skill speed and slows - contributed by ChuckRibbits:** In
+  human form, Fanaticism, Frenzy and Burst of Speed now shorten your swings'
+  recovery, and chill and Decrepify lengthen it, as they already did in Werewolf
+  and Werebear form.
+
+## Controls and interface
+
+- **The full map on your wrist keeps the frame rate:** With **Map view** set to
+  Full map or Full top-down, looking at the wrist map no longer drops the frame
+  rate. The search for your hero on the map ran on a single GPU thread and took
+  over 20 ms of GPU time a frame; it now takes about 0.1 ms. The arrow keeps a steady size
+  while you move.
+- **The full map's arrow matches your hero - contributed by beadlebytes:** The
+  heading arrow is sized from your hero's X at every game zoom. It no longer grows
+  to several times its size next to water, as in the Rogue Encampment, or pulls
+  the map off the hero.
+
+## Visuals and stability
+
+- **Frame generation starts when you turn it on:** Turning it on in **VR Settings
+  > Perf** now restarts the VR session, a moment of black, and OFXR Bridge runs
+  without restarting the game.
+- **Frame generation with Virtual Desktop:**
+  - Switching to By turns and back to Both eyes no longer leaves frame generation
+    failed. If OFXR Bridge fails to resume, the VR session restarts once and it
+    runs again.
+  - The mod's menus and panels now bypass OFXR Bridge under Virtual Desktop, as
+    they already did under SteamVR.
+  - With Virtual Desktop's Synchronous Spacewarp (SSW) on as well, the game could
+    draw only a quarter of the headset's frames. The Perf page now warns in amber
+    when that happens. Set SSW to **Disabled** in Virtual Desktop when you use
+    frame generation.
 
 ## Updating
 
-Download **D2R-PCVR-Setup-0.3.26.exe** for graphical installation, or
+Download **D2R-PCVR-Setup-0.3.27.exe** for graphical installation, or
 **d2r-pcvr-windows.zip** for portable setup. Existing users should choose
 **Update / repair and keep calibration and video settings**.
 
@@ -38,7 +73,7 @@ portable setup remain available; Authentic is a separate optional mod.
 1. Install and start the original Diablo II: Resurrected through Steam or
    Battle.net once. Complete its account prompts, create or select an offline
    character, then fully exit the game.
-2. Download **D2R-PCVR-Setup-0.3.26.exe** from the assets below. Fully exit
+2. Download **D2R-PCVR-Setup-0.3.27.exe** from the assets below. Fully exit
    Steam using **Steam > Exit**, then run Setup and choose **Full install with
    recommended settings**. Follow the wizard to select your game copy, headset
    and connection; the shared launcher is included.
@@ -73,30 +108,36 @@ Installer failures are recorded separately in
 
 ## Verification and known issues
 
-The release build passed **140 native checks**. **250 of 255 Python checks**
+The release build passed **142 native checks**. **250 of 255 Python checks**
 passed on Windows: the 4 session checks need Linux's `/proc`, and 1 symbolic-link
 check was skipped because this Windows session cannot create symbolic links. The
 in-headset Notes pages were rendered and inspected for fit and content.
 
-The knockback fix was tested on a headset before it was merged: a level 90
-character in Duriel's Lair took 9 knockbacks in about 50 seconds, and every one
-ended normally, with the hero walking again about 0.8 seconds after the stun
-appeared. Melee kept working through the fight. The lock itself was not
-reproduced on an unfixed build; it comes from a player's report. No new headset
-session is claimed for the version and release-notes update itself.
+Tested in a headset with offline characters on Steam D2R 3.3.94995:
+- **The full map's frame rate:** tested on a Steam Frame through SteamVR at
+  3072x3072, with Full top-down and rotation on. With the map up, Both eyes went
+  from 25 to 45 frame pairs a second, and By turns from 39 to 69-74 frames a
+  second (88-89 with the map down). The arrow kept a steady size while moving.
+- **Turning frame generation on while playing:** tested through SteamVR. It ran
+  about 5 seconds after Apply.
+- **Virtual Desktop:** the problems above were reproduced with Virtual Desktop on
+  v0.3.26, and found in a tester's logs with an RTX 4090. With SSW Disabled, frame
+  generation held 44-45 real frames a second for the whole run. The fixes
+  themselves have not been retested in a headset yet.
 
-The v0.3.25 features were tested with offline characters on Steam D2R 3.3.94995
-through SteamVR on a Steam Frame, in the isolated developer environment, as they
-were merged:
-- weapon skills on contact;
-- throwing potions;
-- the Notes tab's pages;
-- frame generation with FidelityFX and NVIDIA, including menus and panels, and
-  pausing and resuming when switching between Both eyes and By turns.
-
-Contributed features were tested by their authors before review.
+Contributed features were tested by their authors before review:
+- the arrow size, by beadlebytes, on a Quest 3 through SteamVR (Battle.net
+  edition) at every game zoom, but at only one map size;
+- trigger melee and swing speed, by ChuckRibbits, with a Paladin on v0.3.25. Not
+  yet covered: dual wield, Druid forms on the trigger, Bash, Frenzy, Burst of
+  Speed, Decrepify and a low attack rating.
 
 Known issues:
+- **Virtual Desktop freezes:** the game freezes for about a tenth of a second
+  every so often under Virtual Desktop, with or without frame generation. This is
+  being investigated.
+- **By turns with the full map:** it still runs about 15 frames a second below
+  the map-down rate while the full map is shown.
 - **Stuns in Unleashed:** a stun now only knocks you back. You can move again as
   soon as the knockback ends, even while the stun is still shown.
 - **Frame generation is experimental.** It uses a pre-release bridge. Expect
@@ -109,57 +150,39 @@ Known issues:
   effects and wispy hair without useful depth may keep artifacts.
 - **Sorceress elemental hands:** they are drawn over the picture, so they can show
   through your weapon or a wall.
-- **Not retested:** the latest rendering changes have not been retested through
-  VDXR or on other GPU vendors. Battle.net remains experimental.
+- **Not retested:** the latest rendering changes have not been retested on other
+  GPU vendors. Battle.net remains experimental.
 
 ## Special thanks
 
 Thanks to **beadlebytes** for smarter aiming, ground skills, the bow path laser,
-the forearm and shield, wrist map zoom and centered auras. Thanks to
-**ChuckRibbits** for Druid shapeshifting, the strike framework, Unleashed
-combat and this knockback fix. Thanks to **Mcklem** for the mercenary, enemy sight, torches and the
-Kurast Docks fix. Thanks to **tig3rmast3r** for OFXR Bridge, and to everyone
-testing, reporting bugs and helping improve the mod!
+the forearm and shield, wrist map zoom, centered auras and the full map's arrow.
+Thanks to **ChuckRibbits** for Druid shapeshifting, the strike framework,
+Unleashed combat, the knockback fix and trigger melee. Thanks to **Mcklem** for the
+mercenary, enemy sight, torches and the Kurast Docks fix. Thanks to
+**tig3rmast3r** for OFXR Bridge, and to everyone testing, reporting bugs and
+helping improve the mod!
 
 D2R VR Unleashed is a mod by **monkeylashes**, with contributions from the community.
 
 ## Downloads and links
 
-- [Windows installer, portable ZIP and checksums](https://github.com/bearstonem/d2r-pcvr/releases/tag/v0.3.26-windows-preview)
-- [Installation instructions](https://github.com/bearstonem/d2r-pcvr/blob/v0.3.26-windows-preview/INSTALL-WINDOWS.md)
-- [Controls](https://github.com/bearstonem/d2r-pcvr/blob/v0.3.26-windows-preview/CONTROLS.md)
-- [Full source comparison](https://github.com/bearstonem/d2r-pcvr/compare/v0.3.25-windows-preview...v0.3.26-windows-preview)
+- [Windows installer, portable ZIP and checksums](https://github.com/bearstonem/d2r-pcvr/releases/tag/v0.3.27-windows-preview)
+- [Installation instructions](https://github.com/bearstonem/d2r-pcvr/blob/v0.3.27-windows-preview/INSTALL-WINDOWS.md)
+- [Controls](https://github.com/bearstonem/d2r-pcvr/blob/v0.3.27-windows-preview/CONTROLS.md)
+- [Full source comparison](https://github.com/bearstonem/d2r-pcvr/compare/v0.3.26-windows-preview...v0.3.27-windows-preview)
 - [Project on GitHub](https://github.com/bearstonem/d2r-pcvr)
 - [Discord](https://discord.gg/DmbFfJAnnm)
 - [Support](https://ko-fi.com/bearstonem)
 
 <!-- PCVR_IN_HEADSET_NOTES
-release: v0.3.26-windows-preview
+release: v0.3.27-windows-preview
 credits: ChuckRibbits; beadlebytes; Mcklem; tig3rmast3r (OFXR Bridge); Sergious.
-- Hotfix: a knockback (Duriel's Smite and others) no longer leaves you unable to move.
-- Included from v0.3.25: the features below.
-- Weapon skills cast on contact: put Bash, Zeal, Charged Strike and more on a trigger and swing.
-- Skill picker: GESTURE marks contact skills; hover any skill for a card on how it works.
-- Druid: first-person Werewolf/Werebear; claws cast Maul, Fury and the other form skills.
-- Druid: transform with your body - arms crossed then flung out, or hands up then slammed down.
-- Melee is Unleashed only; no flinch when struck; on-hit effects only on a stroke's first contact.
-- Guard strain: black vignette with an On/Off switch; reaches the edge of wide headsets.
-- Throw knives, axes and every javelin by hand; javelin skills and Double Throw ride the throw.
-- Assassin: throw Fire Blast, Shock Web, sentries and Wake skills to place them.
-- Gas and oil potions are thrown by hand as real bottles; the burst lands where they shatter.
-- Aim: each hand and your eyes pick a monster; spells and bow skills can go to it.
-- Ground skills land where you point or on the aimed monster, with timed landing circles.
-- Bow path laser at full draw (Aim, off by default); Throw lift sets how high throws leave.
-- Mercenary: Enhanced VR AI keeps it in view, follows on a leash and frees itself (Combat).
-- Enemy sight distance: offline, monsters notice you from 100% up to 300% (Combat).
-- Torch clubs light the dark from their head; Video > Torch flame hides the flame only.
-- Right stick: push up to toggle run/walk; hold down for loot labels.
-- Wrist map: look at it and push the right stick to zoom; Map view adds the full map.
-- Forearm turns with the wrist; Shield tab positions a held shield on the forearm.
-- Quest and level-up notices appear on a card in the room, not at your eyes.
-- VR Settings shows only rows for your character; Notes tab pages long release notes.
-- Experimental frame generation (Perf, Both eyes only): OFXR Bridge, FidelityFX or NVIDIA.
-- Physics: emptied bottles roll; weapons knock bottles, cups, plates and vases about.
-- Sharper By turns, without frame-old ghosts beside moving monsters.
-- Sorceress elemental hands (experimental, Video); Paladin auras centered; Kurast canoe fixed.
+- Wrist full map: looking at it no longer drops the frame rate (Full map, Full top-down).
+- The full map's arrow matches your hero's X at every zoom, even next to water.
+- Trigger melee and Smite count as strokes: attack rating, hit-roll effects, shared recovery.
+- Swing speed follows Fanaticism, Frenzy, Burst of Speed and slows such as chill.
+- Frame generation starts when you turn it on: the VR session restarts, no game restart.
+- Virtual Desktop: frame generation comes back after By turns; panels bypass OFXR Bridge.
+- Perf warns when Virtual Desktop's SSW halves frame generation again: set SSW to Disabled.
 PCVR_IN_HEADSET_NOTES -->

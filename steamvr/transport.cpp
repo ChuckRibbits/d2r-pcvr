@@ -141,6 +141,12 @@ ULONGLONG frameGenReadAt=0,frameGenInstalledAt=0;
 // Once each time it is turned on (frameGenRebuildArmed), so it never loops; cleared by
 // every instance made meanwhile.
 std::atomic<bool> frameGenRebuild{false},frameGenRebuildArmed{true};
+// A live request asked the loaded layer to run (Both eyes again, or new settings): if it
+// fails, FrameGenNow has the session rebuilt once (framegen::RetriesWithNewSession).
+bool frameGenRetry=false;
+// VDXR: its own halving under the bridge, from the predicted rate (framegen::HalvingWatch).
+framegen::HalvingWatch frameGenHalving;
+std::atomic<bool> runtimeVdxr{false};
 // OFXR Bridge takes over every color swapchain whose images are listed
 // through it: three more runtime swapchains and an optical flow pipeline
 // each. With this mod's panels (menus, map, VR Settings, notices, blood,
@@ -436,7 +442,7 @@ SettingsPicture settingsRequested;   // what the outstanding settings request pa
 int calibrationRequestedKey=-1;      // the same for calibration
 settings::PaintGuard settingsPaintGuard;   // a failed picture closes the panel; no requests until the next open
 // The Performance page's numbers: each second's frames as NoteFrame gets them.
-struct PerformanceWindow {double game=0,wait=0,draw=0,vr=0,period=0;uint32_t frames=0,periods=0,turns=0;ULONGLONG since=0,last=0;} performanceWindow;
+struct PerformanceWindow {double game=0,wait=0,draw=0,vr=0,period=0,budget=0;uint32_t frames=0,periods=0,turns=0,budgets=0;ULONGLONG since=0,last=0;} performanceWindow;
 double performanceBudget=0;   // the headset's frame, from the last frame that had one
 settings::PerformanceReadout performance;
 uint64_t performanceSerial=0;ULONGLONG performanceAt=0;
@@ -969,7 +975,10 @@ PFN_xrEnumerateSwapchainImages FrameGenRuntimeEnumerate() {
     }
     CloseHandle(modules);
     if(found!=1)return nullptr;
-    XrNegotiateLoaderInfo li{XR_LOADER_INTERFACE_STRUCT_LOADER_INFO,XR_LOADER_INFO_STRUCT_VERSION,sizeof(XrNegotiateLoaderInfo),1,1,XR_API_VERSION_1_0,XR_API_VERSION_1_0};
+    // The API range the Khronos loader offers: VDXR refuses XR_API_VERSION_1_0 alone
+    // (XR_ERROR_INITIALIZATION_FAILED; the owner's PC, 2026-10-24), so its panels went through the bridge.
+    XrNegotiateLoaderInfo li{XR_LOADER_INTERFACE_STRUCT_LOADER_INFO,XR_LOADER_INFO_STRUCT_VERSION,sizeof(XrNegotiateLoaderInfo),1,1,
+                             XR_MAKE_VERSION(1,0,0),XR_MAKE_VERSION(1,0x3ff,0xfff)};
     XrNegotiateRuntimeRequest rr{XR_LOADER_INTERFACE_STRUCT_RUNTIME_REQUEST,XR_RUNTIME_INFO_STRUCT_VERSION,sizeof(XrNegotiateRuntimeRequest)};
     PFN_xrEnumerateSwapchainImages enumerate=nullptr;
     if(XR_FAILED(negotiate(&li,&rr))||!rr.getInstanceProcAddr||
@@ -993,13 +1002,14 @@ void FrameGenCheckPanelImages(XrSwapchain chain,const std::vector<XrSwapchainIma
     Say(same?"Frame generation: the panels' images are listed below OFXR Bridge; it takes over the eyes only":
              "Frame generation: the runtime's own image list differs; the panels go through OFXR Bridge (SteamVR may run out of swapchains)");
 }
-// Asks the loaded layer for the settings (caller holds frameGenMutex).
-void FrameGenAsk(const framegen::Options& o) {
+// Asks the loaded layer for the settings (caller holds frameGenMutex); live: not as
+// the instance starts, so a failure to run is retried with a new session.
+void FrameGenAsk(const framegen::Options& o,bool live=true) {
     if(!frameGenRequest)return;
     // Both eyes only: by turns each eye would get a quarter of the frames.
     const bool bothEyes=StereoRendering()==0;
     const auto control=framegen::Control(o,bothEyes);
-    frameGenRunAsked=bothEyes;
+    frameGenRunAsked=bothEyes;frameGenRetry=live&&control.enabled;
     const bool saved=frameGenRequest(&control)!=0;
     const std::string what=!o.On()?"bypass (Off until the game restarts)":!bothEyes?"a pause (By turns; it runs with Both eyes)":
                            framegen::Describe(control.backend,control.preset,control.scale);
@@ -1018,13 +1028,15 @@ framegen::Start FrameGenAttach() {
     }
     std::lock_guard lock(frameGenMutex);
     frameGenSnapshot=snapshot;frameGenRequest=request;
-    FrameGenAsk(FrameGenWanted());
+    FrameGenAsk(FrameGenWanted(),false);
     return framegen::Start::Loaded;
 }
 // What the Perf page and the log say of frame generation. The layer is asked
-// at most twice a second; each change is logged.
-framegen::Readout FrameGenNow(ULONGLONG now) {
+// at most twice a second; each change is logged. predictedHz: a second's
+// runtime-predicted rate (NoteFrame), 0 from the Perf page.
+framegen::Readout FrameGenNow(ULONGLONG now,float predictedHz=0) {
     std::lock_guard lock(frameGenMutex);
+    if(predictedHz>0&&runtimeVdxr.load())frameGenHalving.Note(predictedHz);
     if(frameGenRead&&now-frameGenReadAt<500)return frameGenReadout;
     frameGenReadAt=now;
     const auto wanted=FrameGenWanted();
@@ -1038,9 +1050,16 @@ framegen::Readout FrameGenNow(ULONGLONG now) {
     }
     framegen::ControlSnapshotV1 snapshot;
     const bool answered=frameGenSnapshot&&frameGenSnapshot(&snapshot)!=0;
-    const auto readout=framegen::Classify(frameGenStart,frameGenInstalled,wanted,answered?&snapshot:nullptr,bothEyes);
+    auto readout=framegen::Classify(frameGenStart,frameGenInstalled,wanted,answered?&snapshot:nullptr,bothEyes);
+    readout.runtimeHalves=readout.state==framegen::State::Active&&frameGenHalving.halved;
     // It would run, but this instance has no OFXR Bridge: a new session loads it (frameGenRebuild).
     if(framegen::LoadsWithNewSession(readout.state)&&frameGenRebuildArmed.exchange(false))frameGenRebuild.store(true);
+    // It failed a live request: a new session sets it up afresh, once (frameGenRetry).
+    if(framegen::RetriesWithNewSession(readout)&&frameGenRetry) {
+        frameGenRetry=false;frameGenRebuild.store(true);
+        char line[160];std::snprintf(line,sizeof line,"Frame generation: OFXR Bridge failed a live request (0x%08X); a new OpenXR session sets it up again",
+                                     unsigned(readout.lastError));Say(line);
+    } else if(readout.state==framegen::State::Active)frameGenRetry=false;
     if(!frameGenRead||!(readout==frameGenReadout)) {
         char line[260];std::snprintf(line,sizeof line,"%s [%s; sessions %u, ready %u, bypass %u, errors %u]",framegen::Line(readout).c_str(),
             framegen::StateName(readout.state),readout.sessions,readout.ready,readout.bypass,readout.errors);
@@ -1060,7 +1079,8 @@ bool LoadFunctions() {
     frameGenRebuild.store(false);   // this instance is made with the settings now
     auto frameGenStarted=wineOpenXR?framegen::Start::Unavailable:framegen::Start::NotAsked;
     bool frameGenOffered=false;
-    {std::lock_guard lock(frameGenMutex);frameGenStart=frameGenStarted;frameGenSnapshot=nullptr;frameGenRequest=nullptr;frameGenRead=false;}
+    {std::lock_guard lock(frameGenMutex);frameGenStart=frameGenStarted;frameGenSnapshot=nullptr;frameGenRequest=nullptr;frameGenRead=false;
+     frameGenRetry=false;frameGenHalving={};}
     runtimeEnumerateImages=nullptr;
     if(wineOpenXR&&frameGen.On())Say("Frame generation: WineOpenXR has no OpenXR API layers; OFXR Bridge stays off under Proton");
     // The mod's own loader beside this plugin (mods\D2R-PCVR\d2rloader\plugins), then
@@ -1148,6 +1168,7 @@ bool LoadFunctions() {
 #undef LOAD
     XrInstanceProperties props{XR_TYPE_INSTANCE_PROPERTIES};pGetInstanceProperties(instance,&props);
     char b[192];std::snprintf(b,sizeof b,"Frame OpenXR: runtime %s",props.runtimeName);Say(b);
+    runtimeVdxr.store(std::strstr(props.runtimeName,"VirtualDesktop")!=nullptr);
     XrSystemGetInfo si{XR_TYPE_SYSTEM_GET_INFO};si.formFactor=XR_FORM_FACTOR_HEAD_MOUNTED_DISPLAY;
     if(!Check(pGetSystem(instance,&si,&system),"get headset system"))return false;
     XrSystemProperties limits{XR_TYPE_SYSTEM_PROPERTIES};
@@ -3712,17 +3733,20 @@ bool CopyMap(reshade::api::command_queue* rq) {
     // The corner map keeps its own zoom, up to 4x.
     const bool turning=(flags&4)!=0,topDown=(flags&8)!=0;
     const float span=fullMap?fullmap::Span(w,h,turning,topDown,mapZoom.Zoom(),drawnZoom):0.f;
+    // the full map's X searched only where the game draws it, sized to it; the corner map: the wide search
+    const auto search=fullMap?fullmap::XSearchAt(drawnZoom,h):fullmap::XSearch{};
     if(fullMap) {   // a line when the share's size or its drawn zoom changes (at most 60 a session)
         static uint32_t toldW=0,toldH=0;static float toldZoom=-1;static int told=0;
         if((w!=toldW||h!=toldH||drawnZoom!=toldZoom)&&told<60) {
             ++told;toldW=w;toldH=h;toldZoom=drawnZoom;
-            char line[220];std::snprintf(line,sizeof line,"Frame full map: share %ux%u drawn at game zoom %.3f%s; wrist %.2fx, span %.0f px (%s%s)",
-                w,h,drawnZoom>0?drawnZoom:fullmap::Own,drawnZoom>0?"":" (the game's own: the hook gave none)",mapZoom.Zoom(),span,topDown?"top-down":"flat",turning?", turning":"");
+            char line[300];std::snprintf(line,sizeof line,"Frame full map: share %ux%u drawn at game zoom %.3f%s; wrist %.2fx, span %.0f px (%s%s); the X searched %.0f px each way from %+.0f,%+.0f px off the share's center%s",
+                w,h,drawnZoom>0?drawnZoom:fullmap::Own,drawnZoom>0?"":" (the game's own: the hook gave none)",mapZoom.Zoom(),span,topDown?"top-down":"flat",turning?", turning":"",
+                search.reach>0?search.reach:float(int(float(std::max(w,h))*.08f)),search.right,search.down,search.reach>0?"":" (wide: no drawn zoom)");
             Say(line);
         }
     }
     if(!mapBlit.Render(device.Get(),e.commands.Get(),src,e.images[e.index].texture,true,true,flags,float(wristHeading.bearing),1.f,
-                       fullMap?1.f:std::min(mapZoom.Zoom(),mapzoom::Max),span)) {
+                       fullMap?1.f:std::min(mapZoom.Zoom(),mapzoom::Max),span,search.reach,search.right,search.down)) {
         e.commands->Close();return false;
     }
     if(FAILED(e.commands->Close()))return false;
@@ -3787,8 +3811,8 @@ void Capture(reshade::api::command_queue* rq,reshade::api::swapchain* swap) {
     if(desc.Width!=width||desc.Height!=height||desc.Format!=format) {
         Say("Frame OpenXR: window resized; recreating eye swapchains");Shutdown(true);failed=false;return;
     }
-    if(frameGenRebuild.exchange(false)) {   // frame generation turned on: a new instance names OFXR Bridge
-        Say("Frame generation: restarting the OpenXR session to load OFXR Bridge");Shutdown(true);failed=false;return;
+    if(frameGenRebuild.exchange(false)) {   // frame generation turned on, or it failed: a new instance names OFXR Bridge
+        Say("Frame generation: restarting the OpenXR session for OFXR Bridge");Shutdown(true);failed=false;return;
     }
     if(!afr) {
         afrHandle=OpenFileMappingW(FILE_MAP_READ,FALSE,FLATVR_AFR_EYE_NAME);
@@ -4427,7 +4451,7 @@ void EndPair() {
             reportAt=now+3000;
         }
     }
-    timing.submitMs=Milliseconds()-start;
+    timing.submitMs=Milliseconds()-start;timing.layers=count;
     timing.pipelines=pipelineCreates.exchange(0);timing.maxPipelineMs=maxPipelineMs.exchange(0);
     lastTiming=timing;frame=false;
 }
@@ -4439,7 +4463,7 @@ void NoteFrame(double gameMs,double waitMs,double drawMs,double vrMs,double peri
     // it is not averaged in. Switching between turns and pairs is no gap.
     if(!w.since||now-w.last>250){w={};w.since=now;}
     w.last=now;
-    if(budgetMs>0)performanceBudget=budgetMs;
+    if(budgetMs>0){performanceBudget=budgetMs;w.budget+=budgetMs;++w.budgets;}
     w.wait+=waitMs;w.draw+=drawMs;w.vr+=vrMs;++w.frames;w.turns+=byTurns?1:0;
     if(periodMs>0){w.game+=gameMs;w.period+=periodMs;++w.periods;}
     if(now-w.since<1000)return;
@@ -4448,8 +4472,9 @@ void NoteFrame(double gameMs,double waitMs,double drawMs,double vrMs,double peri
     performance.fps=w.periods?float(w.periods*1000.0/w.period):0.f;performance.budgetMs=float(performanceBudget);
     performance.gameMs=w.periods?float(w.game/w.periods):0.f;performance.waitMs=float(w.wait*k);
     performance.drawMs=float(w.draw*k);performance.vrMs=float(w.vr*k);
+    const float predictedHz=w.budgets?float(w.budgets*1000.0/w.budget):0.f;
     ++performanceSerial;performanceAt=now;w={};w.since=w.last=now;
-    FrameGenNow(now);   // logs what OFXR Bridge does, once a second of frames
+    FrameGenNow(now,predictedHz);   // logs what OFXR Bridge does, once a second of frames
 }
 void ConfigureGameplay(bool enabled) {
     std::lock_guard lock(mutex);

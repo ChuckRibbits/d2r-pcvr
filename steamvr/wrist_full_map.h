@@ -112,6 +112,23 @@ inline float Span(uint32_t w,uint32_t h,bool turning,bool topDown,float magnify,
 // slant: its up arm grows 2*sqrt(2)), 1.2 times it, within 1.6% and 12% of the side. No X
 // found: the corner map's size. ui_blit.cpp's PS does the same.
 constexpr float ArrowSize=.024f,ArrowMin=.016f,ArrowMax=.12f,ArrowOverX=1.2f,TopDownXGain=2.8284271f;
+// Where the X is searched on the full map (ui_blit.cpp xSearch): the game draws the hero at the
+// share's center and its X grows with the game zoom, a little up and right of the center (headset
+// trace 2026-10-24 on a 2112x1188 share, game zoom 0.125 to 2.0: half size about 33 px a unit of
+// zoom plus 1, 4.5 px at 0.125 to 67 at 2.0; its middle about 17 px a unit above the center and
+// 4 to the right, 31 up and 7 right at 1.75). The square is centered where the X's middle is
+// expected and reaches 1.25 times its half size plus 6 px each way (12 px at 0.125, 90 at 2.0),
+// in the share's own pixels (scaled by its height), so blue beside the X (water) stays out at
+// every zoom. At 0.125 the old search (8% of the longer side each way, then every blue pixel in
+// the 16 px tiles within 2% of the nearest) took in water 40 px off and sized the arrow 3-6x.
+// No drawn zoom (the hook gave none): reach 0, the wide search.
+constexpr float XHalfPerZoom=33.f,XHalfBase=1.f,XRisePerZoom=17.f,XRightPerZoom=4.f,XReachOverHalf=1.25f,XReachMargin=6.f,XShareHeight=1188.f;
+struct XSearch {float right=0,down=0,reach=0;};   // the square's center from the share's center (px), and its reach each way
+inline XSearch XSearchAt(float drawnZoom,uint32_t shareHeight){
+    if(!(drawnZoom>0)||!std::isfinite(drawnZoom)||!shareHeight)return {};
+    const float s=float(shareHeight)/XShareHeight;
+    return {XRightPerZoom*drawnZoom*s,-XRisePerZoom*drawnZoom*s,(XReachOverHalf*(XHalfPerZoom*drawnZoom+XHalfBase)+XReachMargin)*s};
+}
 inline float ArrowRadius(float side,float span,float xHalf,bool topDown){
     if(!(xHalf>0)||!(span>0)||!(side>0))return side*ArrowSize;
     const float r=xHalf*side/span*(topDown?TopDownXGain:1.f)*ArrowOverX;

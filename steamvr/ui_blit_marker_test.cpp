@@ -4,6 +4,7 @@
 // with a farther decoy, at each of the X's offsets against the tiles in a 16-pixel walk.
 // Prints the GPU time of the whole Render (marker passes and the map's).
 #include "ui_blit.h"
+#include "wrist_full_map.h"
 #include <windows.h>
 #include <cmath>
 #include <cstdio>
@@ -20,7 +21,7 @@ static uint16_t HalfOf(float f){   // the few values this test writes: 0, 1 and 
     return uint16_t(((e-1+15)<<10)|(int(std::lround((m*2-1)*1024))&1023));
 }
 struct Blob {int x,y,half;};   // a blue square of side 2*half+1 at (x, y), offsets from the share's centre
-static void Run(ID3D12Device* device,ID3D12CommandQueue* queue,UINT w,UINT h,Blob x,Blob decoy,float tolerance) {
+static void Run(ID3D12Device* device,ID3D12CommandQueue* queue,UINT w,UINT h,Blob x,Blob decoy,float tolerance,framevr::fullmap::XSearch search={}) {
     D3D12_RESOURCE_DESC tex{};tex.Dimension=D3D12_RESOURCE_DIMENSION_TEXTURE2D;tex.Width=w;tex.Height=h;
     tex.DepthOrArraySize=tex.MipLevels=1;tex.Format=DXGI_FORMAT_R16G16B16A16_FLOAT;tex.SampleDesc.Count=1;
     D3D12_PLACED_SUBRESOURCE_FOOTPRINT footprint{};UINT64 sourceBytes=0;
@@ -58,7 +59,7 @@ static void Run(ID3D12Device* device,ID3D12CommandQueue* queue,UINT w,UINT h,Blo
     framevr::UiBlit blit;Expect(blit.Initialize(device,nullptr),"initialize");
     commands->EndQuery(queries.Get(),D3D12_QUERY_TYPE_TIMESTAMP,0);
     // the full map's flags and span: the arrow, top-down, turning; a square of the share's width
-    Expect(blit.Render(device,commands.Get(),source.Get(),target.Get(),false,true,1|4|8,0,1,1,float(w)),"render");
+    Expect(blit.Render(device,commands.Get(),source.Get(),target.Get(),false,true,1|4|8,0,1,1,float(w),search.reach,search.right,search.down),"render");
     commands->EndQuery(queries.Get(),D3D12_QUERY_TYPE_TIMESTAMP,1);
     commands->ResolveQueryData(queries.Get(),D3D12_QUERY_TYPE_TIMESTAMP,0,2,readback.Get(),0);
     Expect(blit.Marker()!=nullptr,"marker texture");
@@ -81,8 +82,8 @@ static void Run(ID3D12Device* device,ID3D12CommandQueue* queue,UINT w,UINT h,Blo
     D3D12_RANGE marker{0,16};Check(markerBack->Map(0,&marker,&data),"map marker");
     float m[4];std::memcpy(m,data,sizeof m);markerBack->Unmap(0,&none);
     const float wantX=float(cx+x.x)+.5f,wantY=float(cy+x.y)+.5f,wantCount=float((2*x.half+1)*(2*x.half+1)),wantHalf=float(x.half)+.5f;
-    std::printf("%ux%u share: marker at %.2f,%.2f (want %.2f,%.2f), count %.0f (%.0f), half size %.2f (%.2f); Render %.3f ms on the GPU\n",
-                w,h,m[0],m[1],wantX,wantY,m[2],wantCount,m[3],wantHalf,ms);
+    std::printf("%ux%u share%s: marker at %.2f,%.2f (want %.2f,%.2f), count %.0f (%.0f), half size %.2f (%.2f); Render %.3f ms on the GPU\n",
+                w,h,search.reach>0?" (full map search)":"",m[0],m[1],wantX,wantY,m[2],wantCount,m[3],wantHalf,ms);
     Expect(std::fabs(m[0]-wantX)<=tolerance&&std::fabs(m[1]-wantY)<=tolerance,"the X's middle, not the decoy's");
     Expect(m[2]>=3&&std::fabs(m[2]-wantCount)<=wantCount*.5f,"its pixel count, enough to be seen");
     Expect(std::fabs(m[3]-wantHalf)<=tolerance,"its half size");
@@ -99,6 +100,17 @@ int main(){try {
         Run(device.Get(),queue.Get(),640,400,{9+step,-6-step,3},{40,30,3},.01f);
         Run(device.Get(),queue.Get(),3072,1728,{37+step,-23-step,4},{150,100,4},.01f);
     }
-    std::puts("Map marker search passed: the nearest X, its middle, count and size, on a corner map and the full map's 3072x1728 share");
+    // the full map's search where the game draws the X, sized to it (wrist_full_map.h XSearchAt), on a
+    // 2112x1188 share as in the headset trace of 2026-10-24: at game zoom 0.125 a small X with water
+    // 30 px off (the wide search took it in) and a speck 17 px off; at 1.625 and 2.0 the big X risen
+    // above the center with water 80 px below the center (which a square at the center would take in)
+    const auto at=[](float zoom){return framevr::fullmap::XSearchAt(zoom,1188);};
+    for(int step=0;step<6;step+=5) {
+        Run(device.Get(),queue.Get(),2112,1188,{1+step/5,-4+step/5,4},{40,20,10},.01f,at(.125f));
+        Run(device.Get(),queue.Get(),2112,1188,{1,-3,4},{20,0,3},.01f,at(.125f));
+        Run(device.Get(),queue.Get(),2112,1188,{6,-25+step,50},{0,90,10},.01f,at(1.625f));
+        Run(device.Get(),queue.Get(),2112,1188,{7,-31+step,67},{0,95,8},.01f,at(2.f));
+    }
+    std::puts("Map marker search passed: the nearest X, its middle, count and size, on a corner map, the full map's 3072x1728 share, and the full map's own search on 2112x1188");
     return 0;
 }catch(const std::exception& e){std::fprintf(stderr,"%s\n",e.what());return 1;}}
