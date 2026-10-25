@@ -81,7 +81,8 @@ Open either hand's wheel and choose **DEV**. Its tabs are grouped by purpose:
 - **Character:** level 10, 30, 60 and 90 presets; heal life/mana; unlock quests and
   waypoints; a **Throwing potions** kit (one stack each of Rancid, Choking and
   Strangling Gas and Oil, Exploding and Fulminating Potion, to equip in the right
-  hand and throw; on this page as Equipment is full).
+  hand and throw) and **By turns far own** (both on this page as Equipment is
+  full).
 - **Equipment:** starter primary/alternate gear, class unique primary/alternate
   gear, crossbow + bolts, bow + arrows, a small shield, **Render debug draws**,
   **By turns own picture**, **By turns filter**, **By turns ghosts**, a **Throwing kit** and a **Potion kit** (four Super
@@ -211,6 +212,18 @@ in front of a wall a few metres away, and the edges of things while you
 strafe: with OLD a frame-old copy of the monster can trail beside it in one
 eye. The button shows the current state, and the frame log records each
 switch. It changes no saved setting.
+
+## By turns far own
+
+Select **DEV > Character > By turns far own** to step, for the session, how
+far off the eye not drawn keeps its own picture where it shows the same
+surface: **3 m**, **6 m**, **12 m**, then **OFF** (the default,
+`[stereo] turns_keep_far=0`). Stand still in Blood Moor (By turns holds about
+90 fps there), keep your head still and watch trees in the distance: with
+OFF they can shimmer, as each eye switches every frame between its own
+picture and the other eye's. Then walk, turn your head and watch monsters
+walking past that distance. The button shows the current distance, and the
+frame log records each step. It changes no saved setting.
 
 ## Locations
 

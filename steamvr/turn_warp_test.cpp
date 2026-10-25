@@ -493,6 +493,58 @@ static void KeepEffects(Gpu& gpu,bool typeless) {
     std::printf("Effects GPU pass passed (%s target): this eye's own kept where either eye's effects layer has something, the drawn eye's elsewhere\n",typeless?"typeless":"typed");
 }
 
+// Far off (TurnDepth::keepFar): a 256-pixel wall 8 units away, a post 2 units
+// away in columns 96-127, in both eyes' depth; the drawn eye 0.125 units to
+// the left (the post goes 8 px, the wall 2). Farther than keepFar this eye's
+// own picture is kept where it shows the same surface; nearer, the drawn eye's.
+static void KeepFar(Gpu& gpu,bool typeless) {
+    framevr::TurnWarp warp;
+    Check(warp.Initialize(gpu.device.Get(),DXGI_FORMAT_R8G8B8A8_UNORM_SRGB,nullptr)&&warp.DepthReady()&&warp.EffectsReady(),"pipelines");
+    constexpr UINT side=256;constexpr float nearPlane=1;
+    const auto texel=[](UINT x,UINT y){return x|(y&255)<<8|0x80u<<16|0xffu<<24;};
+    const auto other=[](UINT x,UINT y){return x|(y&255)<<8|0x30u<<16|0xffu<<24;};
+    std::vector<uint32_t> own(side*side),pixels(side*side),d(side*side);
+    for(UINT y=0;y<side;++y)for(UINT x=0;x<side;++x) {
+        own[y*side+x]=texel(x,y);pixels[y*side+x]=other(x,y);
+        const float v=nearPlane/(x>=96&&x<128?2.f:8.f);std::memcpy(&d[y*side+x],&v,4);
+    }
+    auto source=gpu.Texture(side,side,DXGI_FORMAT_R8G8B8A8_UNORM_SRGB,D3D12_RESOURCE_FLAG_NONE,D3D12_RESOURCE_STATE_COPY_DEST);
+    auto picture=gpu.Texture(side,side,DXGI_FORMAT_R8G8B8A8_UNORM_SRGB,D3D12_RESOURCE_FLAG_NONE,D3D12_RESOURCE_STATE_COPY_DEST);
+    auto target=gpu.Texture(side,side,typeless?DXGI_FORMAT_R8G8B8A8_TYPELESS:DXGI_FORMAT_R8G8B8A8_UNORM_SRGB,D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET,D3D12_RESOURCE_STATE_RENDER_TARGET);
+    auto depth=gpu.Texture(side,side,DXGI_FORMAT_R32_FLOAT,D3D12_RESOURCE_FLAG_NONE,D3D12_RESOURCE_STATE_COPY_DEST);
+    gpu.Upload(source.Get(),own,D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+    gpu.Upload(picture.Get(),pixels,D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+    gpu.Upload(depth.Get(),d,D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE|D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+    const float q=std::atan(1.f);const Fov square{-q,q,-q,q};
+    framevr::TurnDepth still;still.format=DXGI_FORMAT_R32_FLOAT;still.nearPlane=nearPlane;still.drawnFov=still.nowFov=square;
+    still.move=framevr::TurnMove({0,0,0},{0,0,0,1},{0,0,0},{0,0,0,1});still.depth=depth.Get();
+    framevr::TurnDepth drawn=still;drawn.image=picture.Get();drawn.apart=.125f;
+    drawn.move=framevr::TurnMove({0,0,0},{0,0,0,1},{.125f,0,0},{0,0,0,1});
+    drawn.keep=framevr::TurnEdgePixels;drawn.keepFar=4;
+    std::vector<uint32_t> out;
+    const auto from=[&](UINT a,UINT b,int shift,bool drawnEye,const char* what) {
+        bool same=true;
+        for(UINT y=0;y<side;y+=7)for(UINT x=a;x<b;++x) {
+            const uint32_t want=drawnEye?other(x+shift,y):texel(x,y);
+            if(!Same(out[y*side+x],want)){if(same)std::printf("%s: pixel %u,%u = %08x, expected %08x\n",what,x,y,out[y*side+x],want);same=false;}
+        }
+        Check(same,what);
+    };
+    out=gpu.Warp(warp,source.Get(),target.Get(),Identity,0,&still,&drawn);
+    from(2,84,0,false,"the wall past keepFar: this eye's own");
+    from(92,116,8,true,"the post nearer than keepFar: the drawn eye's");
+    from(136,250,0,false,"the wall right of the post: this eye's own again");
+    drawn.keepFar=10;   // past the wall: nothing is that far
+    out=gpu.Warp(warp,source.Get(),target.Get(),Identity,1,&still,&drawn);
+    from(2,84,2,true,"keepFar past the wall keeps nothing - not everything");
+    from(92,116,8,true,"nor the post");
+    drawn.keepFar=4;drawn.keepEffects=.5f;   // the default's effects with none found: far off still kept
+    out=gpu.Warp(warp,source.Get(),target.Get(),Identity,0,&still,&drawn);
+    from(2,84,0,false,"with effects on and none found, the far wall still this eye's own");
+    from(92,116,8,true,"and the post the drawn eye's");
+    std::printf("Far off GPU pass passed (%s target): this eye's own kept past keepFar, the drawn eye's nearer\n",typeless?"typeless":"typed");
+}
+
 // The sharper read (TurnWarp::Sharpen): a 64-pixel picture of vertical
 // stripes, 4 px a period, turned half a pixel. Bilinear averages each two
 // neighbours; Catmull-Rom keeps more of the stripes' contrast. A whole-pixel
@@ -585,5 +637,5 @@ static void Lay(Gpu& gpu,bool typeless) {
 
 int main(int argc,char** argv) {try {
     const bool typeless=argc>1&&!std::strcmp(argv[1],"--typeless");
-    Math();Gpu gpu;Precompiled(gpu);Turn(gpu,typeless);Move(gpu,typeless);KeepNear(gpu,typeless);KeepEffects(gpu,typeless);Sharpness(gpu,typeless);Lay(gpu,typeless);return 0;
+    Math();Gpu gpu;Precompiled(gpu);Turn(gpu,typeless);Move(gpu,typeless);KeepNear(gpu,typeless);KeepEffects(gpu,typeless);KeepFar(gpu,typeless);Sharpness(gpu,typeless);Lay(gpu,typeless);return 0;
 }catch(const std::exception& e){std::fprintf(stderr,"%s\n",e.what());return 1;}}

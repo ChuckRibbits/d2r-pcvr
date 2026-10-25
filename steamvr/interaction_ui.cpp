@@ -275,11 +275,15 @@ std::vector<uint8_t> Paint(const Snapshot& s,const Output& o,int selection,const
             const auto choice=available?dev::ChoiceFor(s.devClass,i):dev::Choices[i];
             frame({x,y,right,bottom},available&&o.hover==DeveloperCell(i));
             SetTextColor(dc,available?RGB(235,218,181):RGB(148,137,117));
+            char farTitle[40];
+            if(s.devTurnsFar>0)std::snprintf(farTitle,sizeof farTitle,"By turns far own: %.0f m",double(s.devTurnsFar));
+            else std::snprintf(farTitle,sizeof farTitle,"By turns far own: OFF");
             const char* title=i==dev::DebugDrawsChoice?(s.devDebugDraws?"Render debug draws: ON":"Render debug draws: OFF"):
                               i==dev::TurnsKeepOwnChoice?(s.devTurnsKeepOwn==1?"By turns own picture: NEAR":s.devTurnsKeepOwn==2?"By turns own picture: ALL":
                                                           s.devTurnsKeepOwn==3?"By turns own picture: FX":s.devTurnsKeepOwn==4?"By turns own picture: NEAR+FX":"By turns own picture: OFF"):
                               i==dev::TurnsSharpChoice?(s.devTurnsSharp?"By turns filter: SHARP":"By turns filter: SOFT"):
-                              i==dev::TurnsFillChoice?(s.devTurnsFill?"By turns ghosts: FIXED":"By turns ghosts: OLD"):choice.name;
+                              i==dev::TurnsFillChoice?(s.devTurnsFill?"By turns ghosts: FIXED":"By turns ghosts: OLD"):
+                              i==dev::TurnsKeepFarChoice?farTitle:choice.name;
             text(title,{x+8,y+4,right-8,y+29});
             SelectObject(dc,shortcutFont);text(choice.detail,{x+8,y+29,right-8,bottom-4});SelectObject(dc,font);
         }
@@ -292,6 +296,8 @@ std::vector<uint8_t> Paint(const Snapshot& s,const Output& o,int selection,const
                                          "By turns: the eye not drawn takes the drawn eye's picture wherever it reaches."):
              o.result==Result::SharpUpdated?(s.devTurnsSharp?"By turns: the eye not drawn is read sharp (Catmull-Rom).":"By turns: the eye not drawn is read soft (bilinear), as before."):
              o.result==Result::FillUpdated?(s.devTurnsFill?"By turns: no frame-old ghosts beside moving things.":"By turns: beside near things the eye keeps its own older picture, as before."):
+             o.result==Result::FarUpdated?(s.devTurnsFar>0?"By turns: far off, the eye not drawn keeps its own picture. Watch distant trees.":
+                                       "By turns: far off, the eye not drawn takes the drawn eye's picture, as before."):
              o.result==Result::Applied?"Kit added to inventory. Equip it using the native inventory screen.":
              o.result==Result::Dispatched?"Commands sent. Check character stats / destination in game.":
              o.result==Result::KitRefused?"Kit could not be added. Check inventory space and the development log.":

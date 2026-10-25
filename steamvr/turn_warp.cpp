@@ -83,7 +83,8 @@ cbuffer Move : register(b0) {
     float4 carry0;float4 carry1;float4 carry2;   // the carried's rows (TurnDepth::carry)
     float4 reach;      // nearer than x: carried; farther than y: the world's; z: the drawn eye's edge scale
     float4 keep;       // x: parallax pixels a step in the depth buffer, 0 off; y: within how many the surface is the same;
-                       // z: only within reach of something nearer by this many, 0 everywhere
+                       // z: only within reach of something nearer by this many, 0 everywhere;
+                       // w: also where the depth is this or less (farther than TurnDepth::keepFar), 0 off
     float4 nearInfo;   // x, y: the picture's coordinates to the near blocks; z, w: this frame's pixels to them
     float4 effects;    // x, y: the effects' blocks across, down; z: from what level they count, 0 off
 };
@@ -151,10 +152,10 @@ bool Effect(Pixel p) {
 }
 float4 PS(Pixel p):SV_Target {
     if(p.split!=0&&(Nearest(p.uv)>abs(p.split))!=(p.split>0))discard;   // the other layer's pixel
-    if(keep.x>0) {   // where this eye's own picture shows the same surface, it stays (round near things: keep.z; effects: effects.z)
+    if(keep.x>0) {   // where this eye's own picture shows the same surface, it stays (round near things: keep.z; effects: effects.z; far off: keep.w)
         const int3 at=int3(p.position.xy,0);
         const float there=ownDepth.Load(at);
-        const bool where=keep.z<=0&&effects.z<=0||keep.z>0&&NearThing(p,there)||effects.z>0&&Effect(p);
+        const bool where=keep.z<=0&&effects.z<=0&&keep.w<=0||keep.z>0&&NearThing(p,there)||effects.z>0&&Effect(p)||keep.w>0&&p.position.z<=keep.w;
         if(there>0&&abs(p.position.z-there)*keep.x<=keep.y&&where)return own.Load(at);
     }
     return grid.z?Sharp(drawn,edge,p.uv):drawn.SampleLevel(edge,p.uv,0);
@@ -616,7 +617,8 @@ bool TurnWarp::Render(ID3D12Device* device,ID3D12GraphicsCommandList* list,ID3D1
         std::memcpy(constants+28,carried,sizeof carried);
         // its parallax a step in the depth buffer (near plane / distance = depth * near plane / Ahead)
         const auto blocks=effectsOn?effects[0]->GetDesc():D3D12_RESOURCE_DESC{};
-        const float same[12]={keep?carried[14]*d.nearPlane/Ahead:0,d.keep,nearOnly?d.keepNear:0,0,
+        // farther than keepFar: its depth at most Ahead / keepFar (the grid's projection)
+        const float same[12]={keep?carried[14]*d.nearPlane/Ahead:0,d.keep,nearOnly?d.keepNear:0,keep&&d.keepFar>0?Ahead/d.keepFar:0,
                               float(t.Width)/TurnNearBlock,float(t.Height)/TurnNearBlock,1.f/TurnNearBlock,1.f/TurnNearBlock,
                               float(blocks.Width),float(blocks.Height),effectsOn?d.keepEffects:0,0};
         std::memcpy(constants+44,same,sizeof same);
@@ -656,10 +658,11 @@ bool TurnWarp::Render(ID3D12Device* device,ID3D12GraphicsCommandList* list,ID3D1
         // eye's, it stays: seen from this eye, a frame old. With keepNear only
         // round near things; without the passes for that, nowhere. With
         // keepEffects (also) where the game's effects are, as far as either
-        // eye's were found.
+        // eye's were found; with keepFar (also) far off.
         const bool nearOnly=drawn->keepNear>0&&NearReady()&&nears[0];
         const bool effectsOn=drawn->keepEffects>0&&EffectsReady()&&effects[0]&&(effectsKept[0]||effectsKept[1]);
-        const bool somewhere=drawn->keepNear<=0&&drawn->keepEffects<=0||nearOnly||effectsOn;   // everywhere, or where these say
+        const bool farOn=drawn->keepFar>0;
+        const bool somewhere=drawn->keepNear<=0&&drawn->keepEffects<=0&&!farOn||nearOnly||effectsOn||farOn;   // everywhere, or where these say
         const bool keep=own&&drawn->keep>0&&drawn->apart>0&&somewhere;
         D3D12_RESOURCE_BARRIER b[3]{};
         for(auto& x:b){x.Type=D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;x.Transition.Subresource=D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;}

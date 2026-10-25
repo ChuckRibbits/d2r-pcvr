@@ -169,6 +169,7 @@ std::atomic<bool> turnsFromDrawnEye{true};
 std::atomic<int> turnsKeepOwn{3};   // ConfigureTurnsKeepOwn: 0 off, 1 near things only, 2 everywhere, 3 the game's effects, 4 near things and effects
 std::atomic<float> turnsKeepGap{48},turnsKeepReach{96};   // ConfigureTurnsKeepNear: a 4096-wide eye's pixels
 std::atomic<float> turnsEffectsLevel{.02f},turnsEffectsReach{32};   // ConfigureTurnsKeepEffects: the layer's level; a 4096-wide eye's pixels
+std::atomic<float> turnsKeepFar{0};   // ConfigureTurnsKeepFar: metres; 0 off
 std::atomic<bool> turnsSharp{true};   // ConfigureTurnsSharp: the pictures read Catmull-Rom (TurnWarp::Sharpen)
 std::atomic<bool> turnsFill{true};    // ConfigureTurnsFill: no frame-old ghosts in the strips beside near things (TurnWarp::Fill)
 std::atomic<bool> eyeTracking{false};
@@ -3452,11 +3453,13 @@ bool TurnEye(int i) {
         other.drawnFov={f.angleLeft,f.angleRight,f.angleDown,f.angleUp};
         other.nowFov={now.fov.angleLeft,now.fov.angleRight,now.fov.angleDown,now.fov.angleUp};
         const auto gap=drawnAt.at-at;other.apart=std::sqrt(gap.x*gap.x+gap.y*gap.y+gap.z*gap.z);
-        if(const int keep=turnsKeepOwn.load()) {   // this eye's own picture where it shows the same surface
+        const int keep=turnsKeepOwn.load();const float farOff=turnsKeepFar.load();
+        if(keep||farOff>0) {   // this eye's own picture where it shows the same surface
             other.keep=TurnEdgePixels;
             const float wide=float(turnImages[i^1]->GetDesc().Width)/4096;
             if(keep==1||keep==4){other.keepNear=turnsKeepGap.load()*wide;other.keepReach=turnsKeepReach.load()*wide;}   // round near things
             if(keep>=3)other.keepEffects=turnsEffectsLevel.load();   // where the game's effects are
+            if(keep!=2&&farOff>0)other.keepFar=farOff*w.upm;   // far off (2 keeps it everywhere already)
         }
         fromDrawn=&other;
     }
@@ -3833,6 +3836,19 @@ void ConfigureTurnsKeepOwn(int mode) {
 }
 void ConfigureTurnsKeepNear(float gap,float reach) {turnsKeepGap.store(std::clamp(gap,1.f,1000.f));turnsKeepReach.store(std::clamp(reach,16.f,1024.f));}
 void ConfigureTurnsKeepEffects(float level,float reach) {turnsEffectsLevel.store(std::clamp(level,1e-4f,100.f));turnsEffectsReach.store(std::clamp(reach,0.f,512.f));}
+void SetTurnsKeepFar(float metres) {
+    metres=std::isfinite(metres)?std::clamp(metres,0.f,100.f):0.f;
+    if(turnsKeepFar.exchange(metres)==metres)return;
+    char line[160];
+    if(metres>0)std::snprintf(line,sizeof line,"Frame OpenXR: by turns - the eye not drawn also keeps its own picture farther than %.1f m where it shows the same surface",double(metres));
+    else std::snprintf(line,sizeof line,"Frame OpenXR: by turns - the eye not drawn keeps nothing of its own picture for being far off");
+    Say(line);
+}
+float TurnsKeepFar() {return turnsKeepFar.load();}
+void ConfigureTurnsKeepFar(float metres) {
+    static std::atomic<float> read{-1};   // as ConfigureTurnsKeepOwn: only a change of the ini's own value overrides the DEV switch
+    if(read.exchange(metres)!=metres)SetTurnsKeepFar(metres);
+}
 void SetTurnsSharp(bool on) {
     if(turnsSharp.exchange(on)!=on)Say(on?"Frame OpenXR: by turns - the eye not drawn read sharper (Catmull-Rom)":"Frame OpenXR: by turns - the eye not drawn read bilinear");
 }

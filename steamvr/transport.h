@@ -43,6 +43,15 @@ void ConfigureTurnsKeepNear(float gap,float reach);
 // where the game's effects layer has this much (its strongest channel)
 // within the reach.
 void ConfigureTurnsKeepEffects(float level,float reach);
+// [stereo] turns_keep_far (0, metres): by turns, the eye not drawn also
+// keeps its own picture farther than this where it shows the same surface
+// (TurnDepth::keepFar): far off it no longer switches between its own and the
+// other eye's every frame. 0: off; turns_keep_own 2 keeps it everywhere
+// anyway. Applied when the ini's value changes; DEV > Character steps it for
+// the session (Set), and reads it back.
+void ConfigureTurnsKeepFar(float metres);
+void SetTurnsKeepFar(float metres);
+float TurnsKeepFar();
 // [stereo] turns_sharp (1): by turns, the pictures turned, moved and laid
 // over the eye not drawn read Catmull-Rom, sharper than bilinear
 // (TurnWarp::Sharpen); 0 bilinear. Applied when the ini's value changes;

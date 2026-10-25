@@ -120,6 +120,15 @@ struct TurnDepth {
     // picture comes from, or as this eye did, round here - this eye's own
     // picture stays as well. 0: off; with keepNear neither off, either keeps.
     float keepEffects=0;
+    // Far off, each eye's own picture and the other eye's differ by how the
+    // game drew them from 6 cm apart - leaves smaller than a pixel, their
+    // edges, the sharpening - and by the warp's coarse depth there, so an eye
+    // switching between the two every frame shimmered in the trees in the
+    // distance (owner, 2026-10-25). Farther than keepFar along this frame's
+    // view (the world's units) this eye's own picture stays as well; it is
+    // a frame older, but nothing that far moves much in a frame. 0: off; with
+    // keepNear or keepEffects, any of them keeps.
+    float keepFar=0;
 };
 inline constexpr float TurnEdgePixels=2;
 // The grid's spacing in target pixels: an edge in depth stays within a few.
