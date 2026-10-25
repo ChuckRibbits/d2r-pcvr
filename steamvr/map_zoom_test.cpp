@@ -163,6 +163,18 @@ int main(){
         Check(std::fabs(fm::ArrowRadius(512,1188,30,false)-30*512/1188.f*1.2f)<1e-4f,"the X's reach on the wrist, 1.2 times");
         Check(fm::ArrowRadius(512,594,30,false)>fm::ArrowRadius(512,1188,30,false),"it grows as the wrist zooms in");
         Check(fm::ArrowRadius(512,100,40,true)==512*fm::ArrowMax&&fm::ArrowRadius(512,4000,2,false)==512*fm::ArrowMin,"within its floor and cap");
+        // the X's search: small at the widest zoom (water 40 px off stays out), wide enough for the X at the closest
+        {   // the X's search: where the game draws it, sized to it (headset trace: half 4.5 px at 0.125 to 67 at 2.0, up to 31 px up)
+            const auto none=fm::XSearchAt(0,1188),noShare=fm::XSearchAt(.5f,0),inf=fm::XSearchAt(INFINITY,1188);
+            Check(none.reach==0&&noShare.reach==0&&inf.reach==0,"no drawn zoom: the wide search");
+            const auto wide=fm::XSearchAt(.125f,1188),close=fm::XSearchAt(2.f,1188);
+            Check(wide.reach>4.5f+3&&wide.reach<16,"0.125: the 4.5 px X in, water 16 px off out");
+            Check(std::fabs(close.down+34)<1e-3f&&close.right>0&&close.reach>67+5&&close.reach<100,"2.0: centered up on the 67 px X, not 150 px below it");
+            const auto big=fm::XSearchAt(1.75f,1188);
+            Check(-big.down+big.reach>=31+58.5f&&big.reach+big.down<58.5f-31+30,"1.75: the X's top in, under 30 px below its bottom");
+            const auto twice=fm::XSearchAt(.5f,2376),once=fm::XSearchAt(.5f,1188);
+            Check(std::fabs(twice.reach-2*once.reach)<1e-3f&&std::fabs(twice.down-2*once.down)<1e-3f,"in the share's own pixels");
+        }
         Check(fm::WristTaps(512,512)==1&&fm::WristTaps(1188,512)==3&&fm::WristTaps(4000,512)==4,"taps a pixel");
     }
     return 0;

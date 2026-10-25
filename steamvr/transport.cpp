@@ -3608,17 +3608,20 @@ bool CopyMap(reshade::api::command_queue* rq) {
     // The corner map keeps its own zoom, up to 4x.
     const bool turning=(flags&4)!=0,topDown=(flags&8)!=0;
     const float span=fullMap?fullmap::Span(w,h,turning,topDown,mapZoom.Zoom(),drawnZoom):0.f;
+    // the full map's X searched only where the game draws it, sized to it; the corner map: the wide search
+    const auto search=fullMap?fullmap::XSearchAt(drawnZoom,h):fullmap::XSearch{};
     if(fullMap) {   // a line when the share's size or its drawn zoom changes (at most 60 a session)
         static uint32_t toldW=0,toldH=0;static float toldZoom=-1;static int told=0;
         if((w!=toldW||h!=toldH||drawnZoom!=toldZoom)&&told<60) {
             ++told;toldW=w;toldH=h;toldZoom=drawnZoom;
-            char line[220];std::snprintf(line,sizeof line,"Frame full map: share %ux%u drawn at game zoom %.3f%s; wrist %.2fx, span %.0f px (%s%s)",
-                w,h,drawnZoom>0?drawnZoom:fullmap::Own,drawnZoom>0?"":" (the game's own: the hook gave none)",mapZoom.Zoom(),span,topDown?"top-down":"flat",turning?", turning":"");
+            char line[300];std::snprintf(line,sizeof line,"Frame full map: share %ux%u drawn at game zoom %.3f%s; wrist %.2fx, span %.0f px (%s%s); the X searched %.0f px each way from %+.0f,%+.0f px off the share's center%s",
+                w,h,drawnZoom>0?drawnZoom:fullmap::Own,drawnZoom>0?"":" (the game's own: the hook gave none)",mapZoom.Zoom(),span,topDown?"top-down":"flat",turning?", turning":"",
+                search.reach>0?search.reach:float(int(float(std::max(w,h))*.08f)),search.right,search.down,search.reach>0?"":" (wide: no drawn zoom)");
             Say(line);
         }
     }
     if(!mapBlit.Render(device.Get(),e.commands.Get(),src,e.images[e.index].texture,true,true,flags,float(wristHeading.bearing),1.f,
-                       fullMap?1.f:std::min(mapZoom.Zoom(),mapzoom::Max),span)) {
+                       fullMap?1.f:std::min(mapZoom.Zoom(),mapzoom::Max),span,search.reach,search.right,search.down)) {
         e.commands->Close();return false;
     }
     if(FAILED(e.commands->Close()))return false;

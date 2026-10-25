@@ -20,8 +20,8 @@ private:
     Microsoft::WRL::ComPtr<ID3D12Resource> heroTiles[TileTargets];   // FindTiles: up to TileGrid x TileGrid tiles of its search square
 public:
     // The tiles across the search square of a w x h source, as FindX counts them (+1 to spare).
-    static int FindTiles(uint32_t w,uint32_t h) {
-        const int R=int(float(w>h?w:h)*.08f);
+    static int FindTiles(uint32_t w,uint32_t h,float xReach=0.f) {
+        const int R=xReach>0.f?int(xReach):int(float(w>h?w:h)*.08f);
         const int n=(2*R+FindTile)/FindTile+1;
         return n<1?1:n>TileGrid?TileGrid:n;
     }
@@ -32,6 +32,8 @@ public:
     // mapFlags (square map only): 1 heading arrow at bearing (radians, clockwise from map-up), 2 clear background, walls at wallAlpha, 4 the map turns with you
     // zoom (square map only, >= 1): the map that much bigger about the hero; 1 fits it whole
     // mapSpan (square map only, > 0; Map view = Full map): a square of that many source pixels across the whole square around the hero's X, the arrow sized from the X; 0: the fit, zoomed
-    bool Render(ID3D12Device*,ID3D12GraphicsCommandList*,ID3D12Resource* source,ID3D12Resource* target,bool blackBackground=false,bool squareMap=false,uint32_t mapFlags=0,float bearing=0,float wallAlpha=1.f,float zoom=1.f,float mapSpan=0.f);
+    // xReach (square map only, > 0; the full map): the X searched only that many source pixels each way from the source's center moved by xShiftRight, xShiftDown (wrist_full_map.h XSearchAt); 0: the corner map's wide search
+    bool Render(ID3D12Device*,ID3D12GraphicsCommandList*,ID3D12Resource* source,ID3D12Resource* target,bool blackBackground=false,bool squareMap=false,uint32_t mapFlags=0,float bearing=0,float wallAlpha=1.f,float zoom=1.f,float mapSpan=0.f,
+                float xReach=0.f,float xShiftRight=0.f,float xShiftDown=0.f);
 };
 }
