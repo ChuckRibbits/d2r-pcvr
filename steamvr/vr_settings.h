@@ -136,9 +136,9 @@ inline constexpr std::array<Definition,Count> Definitions{{
     // NVIDIA's optical flow, live: 0 Slow, 1 Medium, 2 Fast; its scale 0 100%, 1 75%, 2 50%.
     {"NVIDIA flow quality", "Slow, Medium or Fast optical flow", L"render",L"frame_generation_preset",1,0,2,1},
     {"NVIDIA flow scale", "The size the optical flow works at", L"render",L"frame_generation_scale",2,0,2,1},
-    // Movement slider (run_speed.h): -10 WALK, 0 BASE RUN (the no-gear run), 100 FULL RUN (the gear's).
-    // Set from the skill wheel's slider (upper right, where RUN / WALK was), not a VR Settings row.
-    {"Movement speed", "Walk, or run from your class's no-gear speed (0%) to your gear's full speed (100%)", L"gameplay",L"run_speed_pct",runspeed::DefaultPercent,runspeed::MinPercent,runspeed::MaxPercent,runspeed::StepPercent},
+    // Movement speed (run_speed.h): -10 Walk, 0 Base run (the no-gear run), 100 Full run (the gear's).
+    // VR Settings > VR, last row (Cal 2026-10-25; it was a skill-wheel slider, which replaced RUN / WALK).
+    {"Movement speed", "Walk, or run from your class's no-gear speed up to your gear's full speed", L"gameplay",L"run_speed_pct",runspeed::DefaultPercent,runspeed::MinPercent,runspeed::MaxPercent,runspeed::StepPercent},
 }};
 using Values=std::array<float,Count>;
 inline bool HapticKey(Key key){return key>=HapticStrength&&key<=HapticAlert;}
@@ -437,7 +437,7 @@ inline Rect PairDecrease(int row,int side){return {PairX(side),RowY+row*RowStep,
 inline Rect PairValue(int row,int side){return {PairX(side)+56,RowY+row*RowStep,238,52};}
 inline Rect PairIncrease(int row,int side){return {PairX(side)+298,RowY+row*RowStep,52,52};}
 // Every row a page can show, in order (Rows leaves out those that cannot apply).
-inline int CatalogCount(Page page){return page==Page::Haptics?2+haptics::CategoryCount:page==Page::Combat?8:page==Page::Aim?10:page==Page::Shield?5:page==Page::VR?10:page==Page::Video?7:page==Page::Performance?8:page==Page::HUD?10:0;}
+inline int CatalogCount(Page page){return page==Page::Haptics?2+haptics::CategoryCount:page==Page::Combat?8:page==Page::Aim?10:page==Page::Shield?5:page==Page::VR?11:page==Page::Video?7:page==Page::Performance?8:page==Page::HUD?10:0;}
 inline Key CatalogKey(Page page,int row){
     constexpr Key hapticRows[]={HapticStrength,HapticMelee,HapticShortMelee,HapticBowDraw,HapticBowRelease,HapticSpell,HapticInteraction,HapticAlert};
     if(page==Page::Haptics)return hapticRows[row];
@@ -459,7 +459,8 @@ inline Key CatalogKey(Page page,int row){
     // generation last, so its NVIDIA row moves nothing above the pointer.
     constexpr Key performance[]={StereoRendering,RenderResolution,DrawDistance,ObjectDistance,Foveation,FoveationStrength,FrameGeneration,FrameGenPreset};   // FrameGenPreset: with FrameGenScale
     if(page==Page::Performance)return performance[row];
-    constexpr Key vrRows[]={Motion,Seated,Dominant,SmoothTurn,Snap,TurnSpeed,Waist,BeltForward,SkillGestures,OrdinaryMobBars};
+    // Snap and TurnSpeed never show together, so at most 10 of these 11 rows (MaxRows) show.
+    constexpr Key vrRows[]={Motion,Seated,Dominant,SmoothTurn,Snap,TurnSpeed,Waist,BeltForward,SkillGestures,OrdinaryMobBars,RunSpeed};
     return vrRows[row];
 }
 constexpr int MaxRows=10;

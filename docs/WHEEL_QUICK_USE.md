@@ -17,18 +17,14 @@ by the native usable-item flag. It groups by code, totals charges/counts and
 prefers a nonempty tome. Restocking retains the assignment. Stash, cube, cursor,
 equipment and belt items are excluded. Native restrictions still apply.
 
-The MOVEMENT slider (upper right, where RUN / WALK was; `[gameplay]
-run_speed_pct`, `steamvr/run_speed.h`) has 12 stops: WALK (-10), BASE RUN (0),
-10..90, FULL RUN (100). WALK walks and every other stop runs: the game's own run /
-walk command 0x23 is sent when its toggle is set the other way. The mode alone
-can't show the toggle (with it on run, a partly pushed stick still walks, as every
-run starts), so a run seen (mode 3, from the path-velocity setter 0x342AE0) means
-"on run", only a walk with the stick fully pushed for 0.6 s means "on walk", and
-each toggle sent flips that (`runspeed::GaitSync`). On a run stop, only the local hero's run-mode path velocity is
-scaled, client and server alike. Velocity is linear in velocitypercent (stat 67),
-an absolute percentage where a run with no speed bonus reads 150, so the base is
-native x 150 / stat 67; walking, movement skills and other units keep native
-speed. The minimap's GPU blit draws a narrow
+RUN / WALK and the wheel's movement slider are gone: walking and run speed live
+in VR Settings > VR > Movement speed (`[gameplay] run_speed_pct`,
+`steamvr/run_speed.h`): Walk (-10), Base run (0), Run 10..90%, Full run (100).
+Walk walks and every other stop runs; the game's own run / walk command 0x23 is
+sent when its toggle is set the other way (`runspeed::GaitSync`: a run seen means
+"on run", only a full-stick walk for 0.6 s with stamina left means "on walk").
+On a run stop only the local hero's run-mode path velocity is scaled (setter
+0x342AE0, client and server alike): base = native x 150 / stat 67. The minimap's GPU blit draws a narrow
 bronze frame and fits the whole map inside it, with no new composition layer.
 
 ## Native adapter

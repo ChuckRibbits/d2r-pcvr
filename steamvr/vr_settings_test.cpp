@@ -585,7 +585,7 @@ int main(){
         v[Seated]=1;Check(!RowShown(Waist,v,{}),"seated: no standing belt drop");
         v[Foveation]=0;Check(!RowShown(FoveationStrength,v,{}),"no foveation strength while it is Off");
         v[BloodVisor]=0;Check(!RowShown(BloodWipe,v,{}),"no face wipe without blood");
-        Check(RowCount(Page::VR,v)==8&&RowCount(Page::Performance,v)==6&&RowCount(Page::HUD,v)==9,"each page drops what cannot apply");
+        Check(RowCount(Page::VR,v)==9&&RowCount(Page::Performance,v)==6&&RowCount(Page::HUD,v)==9,"each page drops what cannot apply");
     }
     {   // Windows Mono audio: the title row warns on every page; pointing at it explains
         const float u=(MonoAudioBox.x+20.f)/Width,v=(MonoAudioBox.y+20.f)/Height;
@@ -865,8 +865,20 @@ int main(){
               HelpText(RunSpeed)[0]!=0&&HelpChoices(RunSpeed)==0,"movement: FULL RUN by default, explained");
         Check(Normalize(RunSpeed,37)==40&&Normalize(RunSpeed,-10)==-10&&Normalize(RunSpeed,-40)==-10&&Normalize(RunSpeed,2)==0&&Normalize(RunSpeed,140)==100&&
               Normalize(RunSpeed,std::numeric_limits<float>::infinity())==100,"movement saves -10 (WALK) and 0..100 in 10% steps");
-        for(int p=0;p<TabCount;++p)for(int row=0;row<RowCount(Page(p),s.values,{heroclass::Druid});++row)
-            Check(RowKey(Page(p),row,s.values,{heroclass::Druid})!=RunSpeed,"run speed on no settings page");
+        {   // VR tab, last row; Snap and TurnSpeed never show together, so the tab stays within MaxRows
+            int found=0;
+            for(int p=0;p<TabCount;++p)for(int row=0;row<RowCount(Page(p),s.values);++row)if(RowKey(Page(p),row,s.values)==RunSpeed)found+=p==int(Page::VR)?1:100;
+            Check(found==1&&RowKey(Page::VR,RowCount(Page::VR,s.values)-1,s.values)==RunSpeed,"Movement speed: the VR tab's last row, nowhere else");
+            Values smooth=s.values;smooth[SmoothTurn]=1;Values snap=s.values;snap[SmoothTurn]=0;snap[Snap]=30;
+            Values seated=s.values;seated[Seated]=1;
+            for(const auto& v:{smooth,snap,seated})Check(RowCount(Page::VR,v)<=MaxRows&&RowKey(Page::VR,RowCount(Page::VR,v)-1,v)==RunSpeed,"every VR-tab layout keeps Movement speed, within MaxRows");
+            Model m;m.Open(s);m.Click({Kind::Tab,int(Page::VR)});
+            const int row=RowCount(Page::VR,s.values)-1;
+            m.Click(At(m,Page::VR,Decrease(row)));Check(m.Get()[RunSpeed]==90,"- steps 10%");
+            for(int i=0;i<20;++i)m.Click(At(m,Page::VR,Decrease(row)));Check(m.Get()[RunSpeed]==-10,"the bottom is Walk");
+            m.Click(At(m,Page::VR,Increase(row)));Check(m.Get()[RunSpeed]==0,"+ from Walk is Base run");
+            Check(m.Click({Kind::Apply}).changed==(ChangeMask{1}<<RunSpeed),"Apply saves only Movement speed");
+        }
         Values a=Defaults(),b=a;b[RunSpeed]=70;
         Check(Changed(a,b)==(ChangeMask{1}<<RunSpeed)&&RunSpeed<ChangeMask::Bits,"run speed has its own change bit");
     }

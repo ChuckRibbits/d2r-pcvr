@@ -40,6 +40,9 @@ static void ValueLabel(Key key,float value,const Context& c,char* label,size_t s
     else if(key==OfflinePlayers){if(value==0)std::snprintf(label,size,"Game default");else std::snprintf(label,size,"Players %.0f",value);}
     else if(key==HeartbeatStart){if(value==0)std::snprintf(label,size,"Off");else std::snprintf(label,size,"%.0f%% life",value);}
     else if(key==EnemySight){if(value==100)std::snprintf(label,size,"100%% (Default)");else std::snprintf(label,size,"%.0f%%",value);}
+    else if(key==RunSpeed){const int p=runspeed::NormalizePercent(value);
+        if(runspeed::Walks(p))std::snprintf(label,size,"Walk");else if(p==0)std::snprintf(label,size,"Base run");
+        else if(p==100)std::snprintf(label,size,"Full run");else std::snprintf(label,size,"Run %d%%",p);}
     else if(key==CompanionAi)std::snprintf(label,size,"%s",value>.5f?"Enabled":"Legacy");
     else if(Definitions[key].max==1)std::snprintf(label,size,"%s",value>.5f?"On":"Off");
     else if(key==Snap)std::snprintf(label,size,"%.0f deg",value);

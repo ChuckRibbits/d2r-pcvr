@@ -90,43 +90,10 @@ int main(){
         Check(c!=Context(s.in.snapshot,s.out,true),"count changes invalidate paint and old click eligibility");
         for(auto page:{MenuPage::Spells,MenuPage::Equipment}) {
             Check(WheelCell(.1f,.1f,-1,page,1)==QuickUseCell,"quick slot shares hit and paint bounds");
-            Check(WheelCell(.85f,.14f,-1,page,1)==-1,"no RUN / WALK box any more (the slider has WALK); hidden slider takes nothing");
+            Check(WheelCell(.85f,.14f,-1,page,1)==-1,"no RUN / WALK box or movement slider on the wheel (VR Settings > VR > Movement speed)");
         }
         for(auto page:{MenuPage::Map,MenuPage::Developer,MenuPage::EditSlots,MenuPage::EditSkills,MenuPage::EditItems})
             Check(WheelCell(.1f,.1f,-1,page,1)!=QuickUseCell,"hidden quick control never intercepts another page");
-    }
-    {   // Run speed slider, above RUN / WALK: press on it, then slide; every new stop saves once and ticks
-        Sim s;quick(s);s.in.runSpeed=100;s.Step();
-        Check(s.out.wheel&&s.out.runSpeed==100,"the wheel shows the movement stop");
-        s.in.hover=RunSpeedCell;s.in.hoverU=RunSpeedU(100);s.in.trigger=1;s.Step();
-        Check(s.out.setRunSpeed==RunSpeedHidden&&s.out.wheel&&s.out.request.action==Action::None,"pressing on the knob's own stop saves nothing; no game command, the wheel stays open");
-        s.in.hoverU=RunSpeedU(60)+.003f;s.Step();
-        Check(s.out.setRunSpeed==60&&s.out.runSpeed==60&&s.out.feedback==1&&s.out.hover==RunSpeedCell,"sliding to a new stop saves it and ticks");
-        s.in.runSpeed=60;s.Step();Check(s.out.setRunSpeed==RunSpeedHidden,"the same stop saves once");
-        s.in.hoverU=RunSpeedU(0);s.Step();Check(s.out.setRunSpeed==0,"BASE RUN is the stop above WALK");
-        s.in.runSpeed=0;s.in.hover=-1;s.in.hoverU=RunSpeedTrackLeft-.05f;s.Step();
-        Check(s.out.setRunSpeed==RunSpeedWalk&&RunSpeedWalk==-10,"off the track's left end (pointer outside the box) the held slider stops at WALK");
-        s.in.runSpeed=RunSpeedWalk;s.in.hoverU=-1;s.Step();Check(s.out.setRunSpeed==RunSpeedHidden,"no pointer on the wheel: the slider stays where it is");
-        s.in.trigger=0;s.Step();s.in.hoverU=RunSpeedU(100);s.Step();
-        Check(s.out.setRunSpeed==RunSpeedHidden,"let go, the pointer moves nothing");
-        s.in.hover=RunSpeedCell;s.in.hoverU=RunSpeedU(30)-.004f;s.in.trigger=1;s.Step();
-        Check(s.out.setRunSpeed==30,"a click on the track jumps to that stop");
-        s.in.trigger=0;s.in.runSpeed=30;s.Step();s.in.hoverU=RunSpeedTrackRight+.02f;s.in.trigger=1;s.Step();
-        Check(s.out.setRunSpeed==RunSpeedFull,"the right end is FULL RUN");
-        Sim off;quick(off);off.Step();off.in.hover=RunSpeedCell;off.in.hoverU=RunSpeedU(50);off.in.trigger=1;off.Step();
-        Check(off.out.runSpeed==RunSpeedHidden&&off.out.setRunSpeed==RunSpeedHidden&&off.out.feedback==3,"settings not ready: no slider, a stray click only buzzes");
-        auto c=Context(s.in.snapshot,s.out,true);auto moved=s.out;moved.runSpeed=s.out.runSpeed==RunSpeedWalk?0:RunSpeedWalk;
-        Check(c!=Context(s.in.snapshot,moved,true),"a moved slider repaints (WALK included)");
-        for(int p=RunSpeedWalk;p<=RunSpeedFull;p+=10)Check(RunSpeedAt(RunSpeedU(p))==p,"each of the 12 stops' position reads back as that stop");
-        Check(RunSpeedU(RunSpeedWalk)==RunSpeedTrackLeft&&RunSpeedU(RunSpeedFull)==RunSpeedTrackRight,"WALK and FULL RUN at the track's ends");
-        for(auto page:{MenuPage::Spells,MenuPage::Equipment})for(int hand:{-1,0,1})for(float v:{.06f,.14f}) {
-            Check(WheelCell(.85f,v,-1,page,hand,false,0,false,true)==RunSpeedCell,"the slider fills the corner RUN / WALK had");
-            Check(WheelCell(.85f,v,-1,page,hand,false,0,false,false)!=RunSpeedCell,"hidden slider never takes the pointer");
-        }
-        for(auto page:{MenuPage::Map,MenuPage::Developer,MenuPage::EditSlots,MenuPage::EditSkills,MenuPage::EditItems})
-            Check(WheelCell(.85f,.06f,-1,page,1,false,0,false,true)!=RunSpeedCell,"the slider never intercepts another page");
-        Check(RunSpeedBounds.top==QuickUseBounds.top&&RunSpeedBounds.bottom==QuickUseBounds.bottom,"the slider is as tall as QUICK USE opposite");
-        Check(RunSpeedBounds.left<RunSpeedTrackLeft&&RunSpeedTrackRight<RunSpeedBounds.right,"the track lies inside its box");
     }
     {   // Druid: the lower-left box toggles which trigger skill the left claw's strikes cast
         Sim s;quick(s);s.in.leftStrikes=0;s.Step();

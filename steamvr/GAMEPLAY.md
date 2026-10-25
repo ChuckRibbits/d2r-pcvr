@@ -205,8 +205,8 @@ holds the native **Show Items (Alt)** action, with a short vibration when the
 hold starts. All nearby loot labels stay shown while the stick is held, using
 the game's native Alt range rather than a VR aiming or pickup radius. Let go to
 restore normal labels for newly dropped or hovered items. Pushing the right
-stick **up** does nothing (walking and running moved to the wheel's MOVEMENT
-slider). Its sideways pushes keep turning: a push counts only when mostly
+stick **up** does nothing (walking and run speed are VR Settings > VR >
+Movement speed). Its sideways pushes keep turning: a push counts only when mostly
 vertical, and from then until the stick is back near the centre it turns
 nothing. It does not work while a wheel, menu or VR Settings is open; a stick
 still held when they close must return to the centre first.

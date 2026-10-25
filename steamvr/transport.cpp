@@ -227,14 +227,11 @@ uint64_t noticePaintRequest=0,noticeRequestedSequence=0,noticePaintedSequence=0;
 // The skill wheel's Left claw strikes box saves [gameplay] left_hand_strikes
 // itself; until the save lands (Poll, about 0.5 s) the box shows the choice made.
 uint64_t leftStrikesSequence=0,leftStrikesAt=0;float leftStrikesWanted=0;
-// The wheel's run speed slider saves [gameplay] run_speed_pct the same way. A drag
-// passes several stops faster than a save (Poll, about 0.5 s): one save runs at a
-// time, the slider shows the stop last chosen, and that one is saved after it.
-uint64_t runSpeedSequence=0,runSpeedAt=0;int runSpeedWanted=interaction::RunSpeedHidden;
-// The slider's WALK stop walks and every other stop runs: the game's run / walk toggle is kept in
-// line with it from the gait the plugin sees and the stick (runspeed::GaitSync).
+// VR Settings > VR > Movement speed ([gameplay] run_speed_pct): its WALK stop walks and every
+// other stop runs. The game's run / walk toggle is kept in line with it from the gait the
+// plugin sees and the stick (runspeed::GaitSync).
 runspeed::GaitSync gaitSync;
-float wheelPointerU=-1;   // the pointer's u on the wheel while it hits it (the slider drags by it)
+bool movementWalks=false;   // Movement speed is on WALK (this step)
 bool noticeAtlasPending=false,noticeImageReady=false;
 // Guard strain light: soft white at the rim, directly beneath the blood. Fed by
 // the game thread's blocks and the guard tick; painted small in the background.
@@ -1656,7 +1653,7 @@ void SampleGaze() {
 gameplay::Pose MotionPose(XrPosef pose) {return {V(pose.position),Q(pose.orientation)};}
 XrPosef XrPose(gameplay::Pose p) {return {{p.q.x,p.q.y,p.q.z,p.q.w},{p.p.x,p.p.y,p.p.z}};}
 void MotionPointer() {
-    motionInput.hover=-1;wheelPointerU=-1;
+    motionInput.hover=-1;
     if(!motionInput.active||handControls.Wheel()<0||!motionInput.tracked[handControls.Wheel()]||!handAimTracked[1-handControls.Wheel()])return;
     const int hand=handControls.Wheel(),pointer=1-hand;
     auto pose=motionInput.hand[hand];
@@ -1672,8 +1669,7 @@ void MotionPointer() {
     const auto mid=ray+direction*(beamLength*.5f);
     beamPose=XrPose({mid,math::BeamOrientation(direction,V(head.position)-mid)});pointerVisible=true;
     if(pointerHit) {
-        motionInput.hover=interaction::WheelCell(hit.u,hit.v,interactionOutput.hover,interactions.Page(),hand,interactionInput.snapshot.developer,interactions.DeveloperPage(),interactionOutput.leftStrikes>=0,interactionOutput.runSpeed!=interaction::RunSpeedHidden);
-        wheelPointerU=hit.u;
+        motionInput.hover=interaction::WheelCell(hit.u,hit.v,interactionOutput.hover,interactions.Page(),hand,interactionInput.snapshot.developer,interactions.DeveloperPage(),interactionOutput.leftStrikes>=0);
         dotPose=XrPose({hit.point+math::Rotate(pose.q,{0,0,.003f}),pose.q});
     }
 }
@@ -2303,18 +2299,11 @@ void Input() {
         leftStrikesSequence=0;   // saved, refused, or overtaken by another save: the profile's value again
     interactionInput.leftStrikes=hudSettings.ready&&bindingSnapshot.skillClass==settings::heroclass::Druid?
         int(leftStrikesSequence?leftStrikesWanted:hudSettings.values[settings::LeftHandStrikes]):-1;
-    if(runSpeedSequence) {
-        const bool done=hudSettings.sequence==runSpeedSequence&&hudSettings.result!=settings::Result::Saving;
-        if((done&&hudSettings.result!=settings::Result::Saved)||(!done&&interactionInput.at-runSpeedAt>2000))runSpeedWanted=interaction::RunSpeedHidden;   // refused or lost: the profile's value again
-        if(done||interactionInput.at-runSpeedAt>2000)runSpeedSequence=0;
-    }
-    interactionInput.runSpeed=hudSettings.ready?(runSpeedWanted!=interaction::RunSpeedHidden?runSpeedWanted:runspeed::NormalizePercent(hudSettings.values[settings::RunSpeed])):interaction::RunSpeedHidden;
-    interactionInput.hoverU=wheelPointerU;
     {
         uint64_t seenAt=0;bool tired=false;const int gait=projectiles::ObservedGait(seenAt,&tired);   // 1 walking, 2 running, 0 not seen
         const float stick=std::min(1.f,std::hypot(float(controls.lx),float(controls.ly))/32767.f);
-        interactionInput.gaitToggle=gaitSync.Step(interactionInput.session,gait,seenAt,stick,runspeed::Walks(interactionInput.runSpeed),
-            interactionInput.runSpeed!=interaction::RunSpeedHidden,GetTickCount64(),tired);
+        movementWalks=hudSettings.ready&&runspeed::Walks(runspeed::NormalizePercent(hudSettings.values[settings::RunSpeed]));
+        interactionInput.gaitToggle=gaitSync.Step(interactionInput.session,gait,seenAt,stick,movementWalks,hudSettings.ready,GetTickCount64(),tired);
     }
     interactionInput.leftCasting=handOutput.spells[1]>=0||(handOutput.slot>=0&&handOutput.hand==1);
     interactionInput.leftTrigger=controls.lt/255.f;
@@ -2359,23 +2348,8 @@ void Input() {
         } else interactionOutput.feedback=3;   // a save is still running: refuse, never queue a second flip
     }
     if(interactionInput.gaitToggle&&interactionOutput.request.action==interaction::Action::RunWalk) {
-        const bool walk=runspeed::Walks(interactionInput.runSpeed);
-        gaitSync.Sent(walk,GetTickCount64());
-        Say(walk?"Frame movement: game toggle on run, slider WALK - run / walk toggled":"Frame movement: game toggle on walk, slider on a run - run / walk toggled");
-    }
-    if(interactionOutput.setRunSpeed!=interaction::RunSpeedHidden)runSpeedWanted=interactionOutput.setRunSpeed;
-    if(runSpeedWanted!=interaction::RunSpeedHidden&&!runSpeedSequence) {
-        const auto current=vrsettings::Read();
-        if(!current.ready||runspeed::NormalizePercent(current.values[settings::RunSpeed])==runSpeedWanted)runSpeedWanted=interaction::RunSpeedHidden;   // saved (or nothing to save to)
-        else {
-            settings::Request request{current.values,current.values,0,current.sequence+1};
-            request.values[settings::RunSpeed]=float(runSpeedWanted);
-            request.changed=settings::Changed(request.base,request.values);
-            if(vrsettings::Submit(request)) {   // false: another save is running; tried again next frame
-                runSpeedSequence=request.sequence;runSpeedAt=interactionInput.at;
-                char line[64];std::snprintf(line,sizeof line,"Frame wheel: movement = %d%%%s",runSpeedWanted,runspeed::Walks(runSpeedWanted)?" (walk)":"");Say(line);
-            }
-        }
+        gaitSync.Sent(movementWalks,GetTickCount64());
+        Say(movementWalks?"Frame movement: game toggle on run, Movement speed WALK - run / walk toggled":"Frame movement: game toggle on walk, Movement speed on a run - run / walk toggled");
     }
     StepDroppedBottles();
     // Quest / level-up notices: queue a card per message, paint the current one.
