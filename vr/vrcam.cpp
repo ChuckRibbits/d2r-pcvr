@@ -7162,8 +7162,10 @@ void MeleeContactHand(int hand) {
         case D2RVR_TYPE_SPEAR:case D2RVR_TYPE_POLEARM:length=1.5f;break;
         default:if(gamestate::TwoHanded()&D2RVR_TWO_HANDS_ON)length=1.1f;break;
     }
-    // A shapeshift form's claw: the capsule the skeleton hook measured on the drawn paw.
-    if(pose.length>0&&pose.radius>0){length=std::clamp(pose.length/upm,.05f,.6f);radius=std::clamp(pose.radius/upm,.02f,.15f);}
+    // A shapeshift form's claw: the capsule the skeleton hook measured on the drawn paw,
+    // at least 0.22 m long (a claw weapon is 0.28) and 25% thicker, floor 0.06 m: the bare
+    // paw fell short of big-footprint, long-armed monsters (Brutes/Yetis) (Cal, 2026-10-24).
+    if(pose.length>0&&pose.radius>0){length=std::clamp(pose.length/upm,.22f,.6f);radius=std::clamp(pose.radius/upm*1.25f,.06f,.15f);}
     // The checked UI-thread accessor refreshes the native local unit across
     // warps. Do not gate swings on aim-hook traffic or camera proximity.
     uintptr_t nativeHero=0;
