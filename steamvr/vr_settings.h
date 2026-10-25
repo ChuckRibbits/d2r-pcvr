@@ -13,12 +13,13 @@
 #include "vr_resolution.h"
 #include "haptic_strength.h"
 #include "frame_generation.h"
+#include "run_speed.h"
 
 namespace framevr::settings {
 enum class Page { Controls, VR, Video, HUD, Combat, Aim, Shield, Haptics, Performance, ReleaseNotes };
 enum Key { Motion, Seated, Dominant, Snap, TurnSpeed, Waist, BeltForward,
            Foveation, Sky, Fog, Ceiling, DrawDistance, ObjectDistance,
-           EyeHeight, ArmSpan, BodyCalibration, SkillGestures, WristMap, WristCompass, ControllerLabels, WeaponSkillIndicators, PlanarSpellAim, VitalsLocation, CriticalAlerts, RenderResolution, NavigationLocation, SmoothTurn, OrdinaryMobBars, MenuDistance, TooltipTiming, ProjectileAimAssist, MeleeHitSpeed, VitalsTilt, HapticStrength, HapticMelee, HapticBowDraw, HapticBowRelease, HapticSpell, HapticInteraction, HapticAlert, HapticShortMelee, BloodVisor, BloodWipe, MeleeThrustSpeed, LootLabelSize, CompanionCounts, StrainVignette, OfflinePlayers, ShieldBashSpeed, DesktopOneEye, MapTopDown, MapRotate, FoveationStrength, StereoRendering, DeferGpuWait, TargetHighlight, HeartbeatStart, SpellLock, StaffPoint, LandingCircles, GroundAim, AimHighlights, HighlightRight, HighlightLeft, ElementalHands, EnemySight, BowLaser, ThrowLift, BottlePhysics, PropPhysics, CompanionAi, ShieldGrip, ShieldOut, ShieldUp, ShieldFollow, ShieldRoll, AimFollowsView, LeftHandStrikes, TorchFlame, FrameGeneration, FrameGenPreset, FrameGenScale, Count };
+           EyeHeight, ArmSpan, BodyCalibration, SkillGestures, WristMap, WristCompass, ControllerLabels, WeaponSkillIndicators, PlanarSpellAim, VitalsLocation, CriticalAlerts, RenderResolution, NavigationLocation, SmoothTurn, OrdinaryMobBars, MenuDistance, TooltipTiming, ProjectileAimAssist, MeleeHitSpeed, VitalsTilt, HapticStrength, HapticMelee, HapticBowDraw, HapticBowRelease, HapticSpell, HapticInteraction, HapticAlert, HapticShortMelee, BloodVisor, BloodWipe, MeleeThrustSpeed, LootLabelSize, CompanionCounts, StrainVignette, OfflinePlayers, ShieldBashSpeed, DesktopOneEye, MapTopDown, MapRotate, FoveationStrength, StereoRendering, DeferGpuWait, TargetHighlight, HeartbeatStart, SpellLock, StaffPoint, LandingCircles, GroundAim, AimHighlights, HighlightRight, HighlightLeft, ElementalHands, EnemySight, BowLaser, ThrowLift, BottlePhysics, PropPhysics, CompanionAi, ShieldGrip, ShieldOut, ShieldUp, ShieldFollow, ShieldRoll, AimFollowsView, LeftHandStrikes, TorchFlame, FrameGeneration, FrameGenPreset, FrameGenScale, RunSpeed, Count };
 // One bit per setting, 128 wide: two words, since MSVC has no 128-bit integer.
 struct ChangeMask {
     static constexpr int Bits=128;
@@ -135,6 +136,9 @@ inline constexpr std::array<Definition,Count> Definitions{{
     // NVIDIA's optical flow, live: 0 Slow, 1 Medium, 2 Fast; its scale 0 100%, 1 75%, 2 50%.
     {"NVIDIA flow quality", "Slow, Medium or Fast optical flow", L"render",L"frame_generation_preset",1,0,2,1},
     {"NVIDIA flow scale", "The size the optical flow works at", L"render",L"frame_generation_scale",2,0,2,1},
+    // Movement slider (run_speed.h): -10 WALK, 0 BASE RUN (the no-gear run), 100 FULL RUN (the gear's).
+    // Set from the skill wheel's slider (upper right, where RUN / WALK was), not a VR Settings row.
+    {"Movement speed", "Walk, or run from your class's no-gear speed (0%) to your gear's full speed (100%)", L"gameplay",L"run_speed_pct",runspeed::DefaultPercent,runspeed::MinPercent,runspeed::MaxPercent,runspeed::StepPercent},
 }};
 using Values=std::array<float,Count>;
 inline bool HapticKey(Key key){return key>=HapticStrength&&key<=HapticAlert;}
@@ -172,6 +176,7 @@ inline float Normalize(Key key,float value){
     if(key==ShieldFollow||key==ShieldRoll)return std::clamp(std::round(value/d.step)*d.step,d.min,d.max)+0.f;   // whole steps, as skel::shield::FollowSetting / RollSetting
     if(HighlightKey(key))return std::clamp(std::round(value/15)*15,d.min,d.max);   // 0 = By range, else a hue in 15-degree steps
     if(key==EnemySight)return float(enemysight::NormalizePercent(value));
+    if(key==RunSpeed)return float(runspeed::NormalizePercent(value));
     if(key==VitalsTilt)return vitals::NormalizeTilt(value);
     if(HapticKey(key))return haptics::NormalizeStrength(value);
     if((key==ControllerLabels||key==VitalsLocation||key==NavigationLocation||key==RenderResolution||key==MenuDistance||key==TooltipTiming||key==ProjectileAimAssist||key==GroundAim||key==SpellLock||key==FoveationStrength||key==StereoRendering||key==FrameGeneration||key==FrameGenPreset||key==FrameGenScale)&&(value<d.min||value>d.max||value!=std::round(value)))return d.defaultValue;

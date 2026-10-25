@@ -97,6 +97,7 @@ namespace gamecmd {void RequestPotion(int slot);void CancelPotion();}
 namespace gamestate {void MenuMap(bool wanted);uint32_t QuestNotices();bool NoticePanelOpen();bool NoticeText(int kind,char* out,uint32_t size);}
 namespace gamestate {bool LeftShield();bool RightThrowingPotion();uint32_t RightThrowingPotionCode();framevr::dualwield::Equipment MeleeEquipment();}
 namespace combat {float GameVolume();}
+namespace projectiles {int ObservedGait(uint64_t& at,bool* tired);}
 
 namespace framevr {
 using Microsoft::WRL::ComPtr;
@@ -226,6 +227,14 @@ uint64_t noticePaintRequest=0,noticeRequestedSequence=0,noticePaintedSequence=0;
 // The skill wheel's Left claw strikes box saves [gameplay] left_hand_strikes
 // itself; until the save lands (Poll, about 0.5 s) the box shows the choice made.
 uint64_t leftStrikesSequence=0,leftStrikesAt=0;float leftStrikesWanted=0;
+// The wheel's run speed slider saves [gameplay] run_speed_pct the same way. A drag
+// passes several stops faster than a save (Poll, about 0.5 s): one save runs at a
+// time, the slider shows the stop last chosen, and that one is saved after it.
+uint64_t runSpeedSequence=0,runSpeedAt=0;int runSpeedWanted=interaction::RunSpeedHidden;
+// The slider's WALK stop walks and every other stop runs: the game's run / walk toggle is kept in
+// line with it from the gait the plugin sees and the stick (runspeed::GaitSync).
+runspeed::GaitSync gaitSync;
+float wheelPointerU=-1;   // the pointer's u on the wheel while it hits it (the slider drags by it)
 bool noticeAtlasPending=false,noticeImageReady=false;
 // Guard strain light: soft white at the rim, directly beneath the blood. Fed by
 // the game thread's blocks and the guard tick; painted small in the background.
@@ -549,7 +558,7 @@ XrPosef head{};
 math::Vec origin{};
 bool haveOrigin=false;
 GripStickButton leftMenuButton;
-stickgestures::Gestures rightStickGestures;   // right stick up: run / walk; down: loot labels
+stickgestures::Gestures rightStickGestures;   // right stick down: loot labels (up: owned, does nothing since the movement slider)
 MenuTriggerGate menuTriggerGate;
 PressEdge inventoryButton,menuButton;
 float lastRecenter=0;
@@ -1647,7 +1656,7 @@ void SampleGaze() {
 gameplay::Pose MotionPose(XrPosef pose) {return {V(pose.position),Q(pose.orientation)};}
 XrPosef XrPose(gameplay::Pose p) {return {{p.q.x,p.q.y,p.q.z,p.q.w},{p.p.x,p.p.y,p.p.z}};}
 void MotionPointer() {
-    motionInput.hover=-1;
+    motionInput.hover=-1;wheelPointerU=-1;
     if(!motionInput.active||handControls.Wheel()<0||!motionInput.tracked[handControls.Wheel()]||!handAimTracked[1-handControls.Wheel()])return;
     const int hand=handControls.Wheel(),pointer=1-hand;
     auto pose=motionInput.hand[hand];
@@ -1663,7 +1672,8 @@ void MotionPointer() {
     const auto mid=ray+direction*(beamLength*.5f);
     beamPose=XrPose({mid,math::BeamOrientation(direction,V(head.position)-mid)});pointerVisible=true;
     if(pointerHit) {
-        motionInput.hover=interaction::WheelCell(hit.u,hit.v,interactionOutput.hover,interactions.Page(),hand,interactionInput.snapshot.developer,interactions.DeveloperPage(),interactionOutput.leftStrikes>=0);
+        motionInput.hover=interaction::WheelCell(hit.u,hit.v,interactionOutput.hover,interactions.Page(),hand,interactionInput.snapshot.developer,interactions.DeveloperPage(),interactionOutput.leftStrikes>=0,interactionOutput.runSpeed!=interaction::RunSpeedHidden);
+        wheelPointerU=hit.u;
         dotPose=XrPose({hit.point+math::Rotate(pose.q,{0,0,.003f}),pose.q});
     }
 }
@@ -2281,8 +2291,8 @@ void Input() {
     interactionInput.spell=motion.Selection()>=0;interactionInput.wheel=motionInput.palette;interactionInput.cancel=motionInput.cancel;
     interactionInput.quickCast=handOutput.slot>=0||handOutput.spells[0]>=0||handOutput.spells[1]>=0;
     interactionInput.wheelHand=handOutput.wheel;
-    interactionInput.runWalk=rightStick.toggleRun;
-    if(rightStick.toggleRun)Say("Frame right stick: up - run / walk toggle requested");
+    // Right stick up no longer toggles running / walking: the wheel's movement slider has WALK
+    // (Cal 2026-10-25). The push is still owned, so it never snap-turns.
     interactionInput.reservedLeft=(controls.buttons&menus::LeftStick)!=0;interactionInput.trigger=handOutput.wheel==0?controls.lt/255.f:controls.rt/255.f;interactionInput.hover=motionInput.hover;
     const auto hudSettings=vrsettings::Read();
     interactionInput.navigationLocation=vitals::Location(int(hudSettings.values[settings::NavigationLocation]));
@@ -2293,6 +2303,19 @@ void Input() {
         leftStrikesSequence=0;   // saved, refused, or overtaken by another save: the profile's value again
     interactionInput.leftStrikes=hudSettings.ready&&bindingSnapshot.skillClass==settings::heroclass::Druid?
         int(leftStrikesSequence?leftStrikesWanted:hudSettings.values[settings::LeftHandStrikes]):-1;
+    if(runSpeedSequence) {
+        const bool done=hudSettings.sequence==runSpeedSequence&&hudSettings.result!=settings::Result::Saving;
+        if((done&&hudSettings.result!=settings::Result::Saved)||(!done&&interactionInput.at-runSpeedAt>2000))runSpeedWanted=interaction::RunSpeedHidden;   // refused or lost: the profile's value again
+        if(done||interactionInput.at-runSpeedAt>2000)runSpeedSequence=0;
+    }
+    interactionInput.runSpeed=hudSettings.ready?(runSpeedWanted!=interaction::RunSpeedHidden?runSpeedWanted:runspeed::NormalizePercent(hudSettings.values[settings::RunSpeed])):interaction::RunSpeedHidden;
+    interactionInput.hoverU=wheelPointerU;
+    {
+        uint64_t seenAt=0;bool tired=false;const int gait=projectiles::ObservedGait(seenAt,&tired);   // 1 walking, 2 running, 0 not seen
+        const float stick=std::min(1.f,std::hypot(float(controls.lx),float(controls.ly))/32767.f);
+        interactionInput.gaitToggle=gaitSync.Step(interactionInput.session,gait,seenAt,stick,runspeed::Walks(interactionInput.runSpeed),
+            interactionInput.runSpeed!=interaction::RunSpeedHidden,GetTickCount64(),tired);
+    }
     interactionInput.leftCasting=handOutput.spells[1]>=0||(handOutput.slot>=0&&handOutput.hand==1);
     interactionInput.leftTrigger=controls.lt/255.f;
     // A thrown bottle lands on the world floor in room space. Without a recent
@@ -2334,6 +2357,25 @@ void Input() {
             leftStrikesSequence=request.sequence;leftStrikesAt=interactionInput.at;leftStrikesWanted=request.values[settings::LeftHandStrikes];
             Say(leftStrikesWanted>.5f?"Frame wheel: left claw strikes = right trigger skill":"Frame wheel: left claw strikes = own trigger skill");
         } else interactionOutput.feedback=3;   // a save is still running: refuse, never queue a second flip
+    }
+    if(interactionInput.gaitToggle&&interactionOutput.request.action==interaction::Action::RunWalk) {
+        const bool walk=runspeed::Walks(interactionInput.runSpeed);
+        gaitSync.Sent(walk,GetTickCount64());
+        Say(walk?"Frame movement: game toggle on run, slider WALK - run / walk toggled":"Frame movement: game toggle on walk, slider on a run - run / walk toggled");
+    }
+    if(interactionOutput.setRunSpeed!=interaction::RunSpeedHidden)runSpeedWanted=interactionOutput.setRunSpeed;
+    if(runSpeedWanted!=interaction::RunSpeedHidden&&!runSpeedSequence) {
+        const auto current=vrsettings::Read();
+        if(!current.ready||runspeed::NormalizePercent(current.values[settings::RunSpeed])==runSpeedWanted)runSpeedWanted=interaction::RunSpeedHidden;   // saved (or nothing to save to)
+        else {
+            settings::Request request{current.values,current.values,0,current.sequence+1};
+            request.values[settings::RunSpeed]=float(runSpeedWanted);
+            request.changed=settings::Changed(request.base,request.values);
+            if(vrsettings::Submit(request)) {   // false: another save is running; tried again next frame
+                runSpeedSequence=request.sequence;runSpeedAt=interactionInput.at;
+                char line[64];std::snprintf(line,sizeof line,"Frame wheel: movement = %d%%%s",runSpeedWanted,runspeed::Walks(runSpeedWanted)?" (walk)":"");Say(line);
+            }
+        }
     }
     StepDroppedBottles();
     // Quest / level-up notices: queue a card per message, paint the current one.

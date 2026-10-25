@@ -389,7 +389,7 @@ std::vector<uint8_t> Paint(const Snapshot& s,const Output& o,int selection,const
         if(selection<0){const auto prior=SelectObject(dc,shortcutFont);text("ACTIVE",{327,399,441,417});SelectObject(dc,prior);}
     }
     if(QuickControls(Page(o))) {
-        const auto q=QuickUseBounds,r=RunWalkBounds;
+        const auto q=QuickUseBounds;
         RECT box{LONG(q.left*768),LONG(q.top*768),LONG(q.right*768),LONG(q.bottom*768)};
         frame(box,o.hover==QuickUseCell);
         SelectObject(dc,shortcutFont);text("QUICK USE",{box.left+6,box.top+6,box.right-6,box.top+24});
@@ -400,11 +400,34 @@ std::vector<uint8_t> Paint(const Snapshot& s,const Output& o,int selection,const
         text(name,{box.left+(haveIcon?60:8),box.top+26,box.right-8,box.bottom-40});
         SelectObject(dc,shortcutFont);
         if(item){char count[32];std::snprintf(count,sizeof count,"x %d",item->quantity);text(count,{box.left+60,box.bottom-44,box.right-8,box.bottom-25});}
-        text("Click: use | Hold: edit",{box.left+6,box.bottom-23,box.right-6,box.bottom-5});
-        RECT run{LONG(r.left*768),LONG(r.top*768),LONG(r.right*768),LONG(r.bottom*768)};
-        frame(run,o.hover==RunWalkCell);SelectObject(dc,skillFont);
-        text("RUN / WALK",{run.left+8,run.top+10,run.right-8,run.bottom-28});
-        SelectObject(dc,shortcutFont);text("Click to toggle",{run.left+8,run.bottom-29,run.right-8,run.bottom-7});SelectObject(dc,font);
+        text("Click: use | Hold: edit",{box.left+6,box.bottom-23,box.right-6,box.bottom-5});SelectObject(dc,font);
+        if(o.runSpeed!=RunSpeedHidden) {   // movement slider (run_speed.h), where RUN / WALK was: WALK, BASE RUN, 10..90%, FULL RUN
+            const auto b=RunSpeedBounds;const bool hot=o.hover==RunSpeedCell;
+            RECT box{LONG(b.left*768),LONG(b.top*768),LONG(b.right*768),LONG(b.bottom*768)};
+            frame(box,hot);
+            const int value=std::clamp(o.runSpeed,RunSpeedWalk,RunSpeedFull);
+            char shown[24];
+            if(value==RunSpeedWalk)std::snprintf(shown,sizeof shown,"WALK");
+            else if(value==0)std::snprintf(shown,sizeof shown,"BASE RUN");
+            else if(value==RunSpeedFull)std::snprintf(shown,sizeof shown,"FULL RUN");
+            else std::snprintf(shown,sizeof shown,"RUN %d%%",value);
+            SelectObject(dc,shortcutFont);text("MOVEMENT",{box.left+6,box.top+6,box.right-6,box.top+24});
+            SelectObject(dc,skillFont);SetTextColor(dc,RGB(232,196,119));text(shown,{box.left+6,box.top+26,box.right-6,box.top+50});SetTextColor(dc,RGB(235,218,181));
+            // The groove and its 12 stops (a taller one at BASE RUN, where running starts), the
+            // part up to the knob in the wheel's gold, then the knob; WALK and FULL at its ends.
+            const LONG x0=LONG(RunSpeedTrackLeft*768),x1=LONG(RunSpeedTrackRight*768),y=box.top+66;
+            fill({x0-2,y-4,x1+2,y+4},hot?RGB(183,143,73):RGB(104,83,53));fill({x0,y-2,x1,y+2},RGB(18,16,14));
+            for(int stop=0;stop<RunSpeedStops;++stop){const LONG x=LONG(RunSpeedU(RunSpeedWalk+stop*10)*768);fill({x,y+5,x+1,y+(stop==1?12:stop%5==1?10:8)},RGB(104,83,53));}
+            const LONG knob=LONG(RunSpeedU(value)*768);
+            fill({x0,y-2,knob,y+2},hot?RGB(183,143,73):RGB(140,108,58));
+            fill({knob-7,y-11,knob+7,y+11},hot?RGB(235,218,181):RGB(183,143,73));fill({knob-5,y-9,knob+5,y+9},hot?RGB(100,74,29):RGB(65,49,29));
+            SelectObject(dc,shortcutFont);
+            auto line=[&](const char* t,RECT at,UINT align){wchar_t w[32]{};MultiByteToWideChar(CP_UTF8,0,t,-1,w,32);DrawTextW(dc,w,-1,&at,align|DT_VCENTER|DT_SINGLELINE|DT_NOPREFIX);};
+            SetTextColor(dc,RGB(169,151,118));
+            line("WALK",{box.left+11,y+13,box.right-11,y+29},DT_LEFT);line("FULL",{box.left+11,y+13,box.right-11,y+29},DT_RIGHT);
+            SetTextColor(dc,RGB(235,218,181));
+            text("Hold trigger and slide",{box.left+6,box.bottom-23,box.right-6,box.bottom-5});SelectObject(dc,font);
+        }
         if(o.leftStrikes>=0) {   // Druid: which trigger skill the left claw's strikes cast
             const auto l=LeftStrikesBounds;
             RECT claw{LONG(l.left*768),LONG(l.top*768),LONG(l.right*768),LONG(l.bottom*768)};

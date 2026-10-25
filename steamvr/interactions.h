@@ -345,9 +345,23 @@ struct MenuBounds {
     float left,top,right,bottom;
     bool Contains(float u,float v) const {return u>left&&u<right&&v>top&&v<bottom;}
 };
-constexpr int QuickUseCell=210,RunWalkCell=211,LeftStrikesCell=212;
+constexpr int QuickUseCell=210,LeftStrikesCell=212,RunSpeedCell=213;   // 211 was RUN / WALK (replaced by the slider's WALK stop)
 constexpr double QuickEditHold=.65;
-constexpr MenuBounds QuickUseBounds{.025f,.025f,.255f,.18f},RunWalkBounds{.76f,.025f,.975f,.13f};
+// Upper right, as tall as QUICK USE opposite: the movement slider ([gameplay]
+// run_speed_pct, run_speed.h) in place of RUN / WALK. 12 stops evenly along its
+// track (u): WALK (-10), BASE RUN (0), 10..90, FULL RUN (100).
+constexpr MenuBounds QuickUseBounds{.025f,.025f,.255f,.18f},RunSpeedBounds{.76f,.025f,.975f,.18f};
+constexpr float RunSpeedTrackLeft=.79f,RunSpeedTrackRight=.945f;
+constexpr int RunSpeedHidden=-100;   // no slider (settings not ready); not a stop
+constexpr int RunSpeedWalk=-10,RunSpeedFull=100,RunSpeedStops=12;
+inline int RunSpeedAt(float u) {
+    const float t=std::clamp((u-RunSpeedTrackLeft)/(RunSpeedTrackRight-RunSpeedTrackLeft),0.f,1.f);
+    return RunSpeedWalk+int(std::lround(t*(RunSpeedStops-1)))*10;
+}
+inline float RunSpeedU(int percent) {
+    const int stop=std::clamp((percent-RunSpeedWalk)/10,0,RunSpeedStops-1);
+    return RunSpeedTrackLeft+(RunSpeedTrackRight-RunSpeedTrackLeft)*stop/float(RunSpeedStops-1);
+}
 // Druid: the left claw's strike skill, [gameplay] left_hand_strikes. Lower left,
 // above the ACTIVE line (y 637) and clear of the hand wheel's 216-degree label.
 constexpr MenuBounds LeftStrikesBounds{.025f,.72f,.235f,.82f};
@@ -392,12 +406,12 @@ inline MenuBounds FooterBounds(int index,MenuPage page,bool developer=false) {
 inline int FooterCell(int index,MenuPage page) {
     constexpr int tabs[]={9,12,10,11,13};return Editing(page)?9+index:tabs[index];
 }
-inline int WheelCell(float u,float v,int previous=-1,MenuPage page=MenuPage::Spells,int hand=-1,bool developer=false,int devPage=0,bool leftStrikes=false) {
+inline int WheelCell(float u,float v,int previous=-1,MenuPage page=MenuPage::Spells,int hand=-1,bool developer=false,int devPage=0,bool leftStrikes=false,bool runSpeed=false) {
     if(!std::isfinite(u)||!std::isfinite(v)||u<0||u>1||v<0||v>1)return -1;
     for(int i=0;i<FooterCount(page,developer);++i)if(FooterBounds(i,page,developer).Contains(u,v))return FooterCell(i,page);
     if(QuickControls(page)) {
         if(QuickUseBounds.Contains(u,v))return QuickUseCell;
-        if(RunWalkBounds.Contains(u,v))return RunWalkCell;
+        if(runSpeed&&RunSpeedBounds.Contains(u,v))return RunSpeedCell;
         if(leftStrikes&&LeftStrikesBounds.Contains(u,v))return LeftStrikesCell;
     }
     if(page==MenuPage::Map)return -1; // no invisible spells behind the map
@@ -446,8 +460,10 @@ struct Input {
     double time=0;
     uint64_t session=0,epoch=0,at=0; // at shares the native snapshot's monotonic clock
     bool active=false,tracked[2]{},wheel=false,cancel=false,reservedLeft=false,spell=false,quickCast=false;
-    bool runWalk=false;   // right stick pushed up this step: toggle running / walking
+    bool gaitToggle=false;   // the hero moves in the other gait than the slider's (WALK / a run stop): send the game's run / walk toggle
     int leftStrikes=-1;   // Druid: [gameplay] left_hand_strikes for the wheel's box (0 own trigger, 1 same as right); -1 hides it
+    int runSpeed=RunSpeedHidden;   // [gameplay] run_speed_pct for the wheel's slider (-10 WALK..100); RunSpeedHidden hides it
+    float hoverU=-1;      // the pointer's u on the wheel while it hits it, else -1 (drags the slider)
     vitals::Location navigationLocation=vitals::Location::Wrist;
     vitals::Location vitalsLocation=vitals::Location::Wrist;
     float vitalsTilt=0;
@@ -477,6 +493,8 @@ struct Output {
     bool inventory=false;
     int leftStrikes=-1;             // the wheel's left-claw box: shown value, -1 hidden
     bool toggleLeftStrikes=false;   // clicked this step: the transport saves the other choice
+    int runSpeed=RunSpeedHidden;    // the wheel's movement slider: shown value
+    int setRunSpeed=RunSpeedHidden; // dragged to a new stop this step: the transport saves it
     int select=-2,bottle=-1,bottleHand=-1,nearBelt=-1,nearHolster=-1,hover=-1;
     int feedback=0,feedbackHand=0;
     Result result=Result::None;
@@ -520,6 +538,7 @@ class Engine {
     double lastTime=0,drinkStart=0,pendingAt=0,resultAt=0,criticalUntil=0,criticalAgain=0;
     bool primed=false,triggerWas=false,gripWas[2]{},wheelLatch=false,utility=false,map=false,rearm=true,stowed=false;
     bool spent=false,consumed=false;
+    bool runSpeedDrag=false;   // the run speed slider is held: it follows the pointer until the trigger lets go
     Owner owner[2]{Owner::Combat,Owner::Combat};
     int bottle=-1,bottleHand=-1,holster=-1,holsterHand=-1,pendingHand=0;
     Pose body{};
@@ -625,7 +644,7 @@ class Engine {
     }
 public:
     void Configure(Config c) {config=c;Reset();}
-    void Reset() {quickPressed=false;primed=false;rearm=true;wheelLatch=true;Drop();flight={};pending={};result=Result::None;criticalUntil=criticalAgain=0;editor=devPage=0;map=developer=false;editSlot=-1;shoulderSwap.Reset();}
+    void Reset() {quickPressed=false;runSpeedDrag=false;primed=false;rearm=true;wheelLatch=true;Drop();flight={};pending={};result=Result::None;criticalUntil=criticalAgain=0;editor=devPage=0;map=developer=false;editSlot=-1;shoulderSwap.Reset();}
     MenuPage Page() const {return developer?MenuPage::Developer:editor==3?MenuPage::EditItems:editor==2?MenuPage::EditSkills:editor?MenuPage::EditSlots:map?MenuPage::Map:utility?MenuPage::Equipment:MenuPage::Spells;}
     int DeveloperPage() const {return devPage;}
     bool WheelVisible(bool heldButton) const {return heldButton&&!wheelLatch;}
@@ -659,11 +678,11 @@ public:
         }
         lastTime=in.time;
         const bool handChanged=in.wheelHand!=lastWheelHand;
-        if(handChanged){quickPressed=false;editor=0;editSlot=-1;map=utility=developer=false;rearm=true;wheelLatch=false;lastWheelHand=in.wheelHand;}
+        if(handChanged){quickPressed=false;runSpeedDrag=false;editor=0;editSlot=-1;map=utility=developer=false;rearm=true;wheelLatch=false;lastWheelHand=in.wheelHand;}
         const bool triggerEdge=trigger&&!triggerWas&&!handChanged;
         const bool edges[2]={grips[0]&&!gripWas[0],grips[1]&&!gripWas[1]};
         triggerWas=trigger;gripWas[0]=grips[0];gripWas[1]=grips[1];
-        if(!in.wheel){quickPressed=false;wheelLatch=false;editor=0;map=developer=false;editSlot=-1;}
+        if(!in.wheel){quickPressed=false;runSpeedDrag=false;wheelLatch=false;editor=0;map=developer=false;editSlot=-1;}
         if(!in.snapshot.developer)developer=false;
         if(!trigger&&!grips[0]&&!grips[1])rearm=false;
         if(in.cancel) {quickPressed=false;Drop();flight={};rearm=true;wheelLatch=true;pending={};out.cancelPending=true;editor=0;map=developer=false;editSlot=-1;}
@@ -711,13 +730,11 @@ public:
         if(shoulder.swap&&request(Action::Equip,3-int(in.snapshot.activeSet))){
             pendingHand=dominant;out.feedback=1;out.feedbackHand=dominant;
         }
-        // Right stick up: the wheel's RUN / WALK without opening it.
-        if(in.runWalk&&!wheel) {
-            if(fresh&&request(Action::RunWalk,0)){pendingHand=0;out.feedback=1;out.feedbackHand=0;}
-            else {out.feedback=3;out.feedbackHand=0;}
-        }
+        // The movement slider's gait: WALK walks, every other stop runs. When the hero
+        // moves in the other one, the game's own run / walk toggle (no tick).
+        if(in.gaitToggle&&fresh&&request(Action::RunWalk,0))pendingHand=0;
         if(wheel) {
-            out.wheel=true;out.utility=utility;out.map=map;out.hover=in.hover;out.block=true;out.leftStrikes=in.leftStrikes;
+            out.wheel=true;out.utility=utility;out.map=map;out.hover=in.hover;out.block=true;out.leftStrikes=in.leftStrikes;out.runSpeed=in.runSpeed;
             owner[0]=owner[1]=Owner::Wheel;
             if((editor==1||editor==2)&&fresh&&in.snapshot.bindingBank!=editBank){editor=in.wheelHand>=0?0:1;editSlot=-1;editBank=in.snapshot.bindingBank;rearm=true;}
             // A hold edits; a short click uses on release. A lost ray/session
@@ -738,17 +755,30 @@ public:
                     }
                 }
             }
+            // Movement slider: pressed on it, it follows the pointer along its track
+            // until the trigger lets go; each new stop is saved and ticks once.
+            auto slide=[&] {
+                if(in.hoverU<0)return;
+                const int at=RunSpeedAt(in.hoverU);
+                if(at==in.runSpeed)return;
+                out.setRunSpeed=out.runSpeed=at;out.feedback=1;out.feedbackHand=in.wheelHand>=0?1-in.wheelHand:0;
+            };
+            if(runSpeedDrag) {
+                if(!trigger||in.runSpeed==RunSpeedHidden||!QuickControls(Page()))runSpeedDrag=false;
+                else {slide();out.hover=RunSpeedCell;}
+            }
             if(!rearm&&triggerEdge&&pending.action==Action::None) {
-                if(QuickControls(Page())&&in.hover==QuickUseCell) {
+                if(QuickControls(Page())&&in.hover==RunSpeedCell) {
+                    // A local setting, not a game command: the wheel stays open to show it.
+                    if(in.runSpeed!=RunSpeedHidden){runSpeedDrag=true;slide();}
+                    else {out.feedback=3;out.feedbackHand=in.wheelHand>=0?1-in.wheelHand:0;}
+                    rearm=true;
+                } else if(QuickControls(Page())&&in.hover==QuickUseCell) {
                     if(fresh&&in.snapshot.quick.known) {
                         quickPressed=true;quickPressedAt=in.time;quickPressedCode=in.snapshot.quick.assigned;
                         const auto* assigned=in.snapshot.quick.Find(quickPressedCode);
                         quickPressedItem=assigned?assigned->item:Item{};
                     } else out.feedback=3;
-                } else if(QuickControls(Page())&&in.hover==RunWalkCell) {
-                    if(fresh)request(Action::RunWalk,0);else out.feedback=3;
-                    pendingHand=in.wheelHand>=0?1-in.wheelHand:0;
-                    wheelLatch=true;out.wheel=false;rearm=true;
                 } else if(QuickControls(Page())&&in.hover==LeftStrikesCell) {
                     // A local setting, not a game command: the wheel stays open to show it.
                     if(in.leftStrikes>=0){out.toggleLeftStrikes=true;out.feedback=1;}else out.feedback=3;

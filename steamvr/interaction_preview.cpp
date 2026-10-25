@@ -66,6 +66,27 @@ int main(int argc,char** argv) {
         if(!SavePng(argv[1],gallery,notice::Width,notice::Height*3))return 126;
         std::puts("Notice cards painted; every message fits");return 0;
     }
+    if(argc>2&&!std::strcmp(argv[2],"--run-speed-check")) {   // the wheel's movement slider, where RUN / WALK was
+        if(argc>3){wchar_t path[32768]{};MultiByteToWideChar(CP_UTF8,0,argv[3],-1,path,32768);icons::Directory(path);}
+        Snapshot s;for(auto& skill:s.skills){skill.known=skill.available=true;skill.id=0;std::snprintf(skill.name,sizeof skill.name,"Attack");}
+        icons::Prefetch(s);if(!icons::Wait(10000))return 130;
+        Output o;o.wheel=true;o.wheelHand=1;
+        const int values[]={RunSpeedFull,30,0,RunSpeedWalk,RunSpeedHidden};const int hovers[]={-1,RunSpeedCell,-1,-1,-1};
+        constexpr int shots=5,width=768*shots,height=768;std::vector<uint8_t> gallery(width*height*4);std::vector<uint8_t> shot[shots];
+        for(int i=0;i<shots;++i) {
+            o.runSpeed=values[i];o.hover=hovers[i];
+            shot[i]=Paint(s,o,-1);if(shot[i].size()!=1024*1024*4)return 131;
+            for(int y=0;y<height;++y)std::memcpy(&gallery[(y*width+i*768)*4],&shot[i][y*1024*4],768*4);
+        }
+        auto box=[](MenuBounds b){return RECT{LONG(b.left*768),LONG(b.top*768),LONG(b.right*768),LONG(b.bottom*768)};};
+        auto same=[&](const std::vector<uint8_t>& a,const std::vector<uint8_t>& b,RECT r){
+            for(int y=r.top;y<r.bottom;++y)if(std::memcmp(&a[(y*1024+r.left)*4],&b[(y*1024+r.left)*4],(r.right-r.left)*4))return false;return true;};
+        const RECT slider=box(RunSpeedBounds);
+        for(int i=1;i<4;++i)if(same(shot[0],shot[i],slider))return 132;   // every stop (and the hover) shows
+        if(same(shot[4],shot[0],slider))return 134;   // settings not ready: no slider (the ring's rim shows through that corner)
+        if(!SavePng(argv[1],gallery,width,height))return 135;
+        std::puts("Movement slider painted in RUN / WALK's place: FULL RUN, RUN 30% hovered, BASE RUN, WALK, hidden");return 0;
+    }
     if(argc>2&&!std::strcmp(argv[2],"--quick-use-check")) {
         if(argc>3){wchar_t path[32768]{};MultiByteToWideChar(CP_UTF8,0,argv[3],-1,path,32768);icons::Directory(path);}
         Snapshot s;s.quick.known=true;s.quick.assigned=Code('t','b','k');s.quick.count=3;

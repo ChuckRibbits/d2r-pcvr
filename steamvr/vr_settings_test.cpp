@@ -860,5 +860,15 @@ int main(){
         for(int p=0;p<TabCount;++p)for(int row=0;row<RowCount(Page(p),s.values,{heroclass::Druid});++row)
             Check(RowKey(Page(p),row,s.values,{heroclass::Druid})!=LeftHandStrikes,"left-hand strikes on no settings page");
     }
+    {   // Run speed: set from the skill wheel's slider, on no settings page
+        Check(Defaults()[RunSpeed]==100&&std::wstring(Definitions[RunSpeed].section)==L"gameplay"&&std::wstring(Definitions[RunSpeed].key)==L"run_speed_pct"&&
+              HelpText(RunSpeed)[0]!=0&&HelpChoices(RunSpeed)==0,"movement: FULL RUN by default, explained");
+        Check(Normalize(RunSpeed,37)==40&&Normalize(RunSpeed,-10)==-10&&Normalize(RunSpeed,-40)==-10&&Normalize(RunSpeed,2)==0&&Normalize(RunSpeed,140)==100&&
+              Normalize(RunSpeed,std::numeric_limits<float>::infinity())==100,"movement saves -10 (WALK) and 0..100 in 10% steps");
+        for(int p=0;p<TabCount;++p)for(int row=0;row<RowCount(Page(p),s.values,{heroclass::Druid});++row)
+            Check(RowKey(Page(p),row,s.values,{heroclass::Druid})!=RunSpeed,"run speed on no settings page");
+        Values a=Defaults(),b=a;b[RunSpeed]=70;
+        Check(Changed(a,b)==(ChangeMask{1}<<RunSpeed)&&RunSpeed<ChangeMask::Bits,"run speed has its own change bit");
+    }
     std::puts("VR settings draft, persistence requests, conflicts, hit regions and input-gating tests passed");
 }
