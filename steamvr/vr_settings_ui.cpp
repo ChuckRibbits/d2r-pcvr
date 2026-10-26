@@ -215,11 +215,17 @@ std::vector<uint8_t> Paint(const Model& m,Hit hover,const char* runtimeStatus,co
         }
         if(m.page==Page::Performance){
             // The last second's frames, whether the CPU's part fits the
-            // headset's frame and the game's own options.
+            // headset's frame and the game's own options. With frame
+            // generation active those would be the menu's (FrameGenPerformanceNote).
             const COLORREF teal=RGB(116,220,219),warn=RGB(236,186,96);
-            const auto line=PerformanceLine(performance),verdict=PerformanceVerdict(performance);
-            text(line.c_str(),{58,PerformanceBox.y+2,1170,30},false,false,performance.valid?teal:quiet);
-            if(!verdict.empty())text(verdict.c_str(),{58,PerformanceBox.y+33,1170,29},false,false,performance.CpuMs()>performance.budgetMs?warn:quiet);
+            if(frameGen.state==framegen::State::Active) {
+                text(FrameGenPerformanceNote[0],{58,PerformanceBox.y+2,1170,30},false,false,quiet);
+                text(FrameGenPerformanceNote[1],{58,PerformanceBox.y+33,1170,29},false,false,quiet);
+            } else {
+                const auto line=PerformanceLine(performance),verdict=PerformanceVerdict(performance);
+                text(line.c_str(),{58,PerformanceBox.y+2,1170,30},false,false,performance.valid?teal:quiet);
+                if(!verdict.empty())text(verdict.c_str(),{58,PerformanceBox.y+33,1170,29},false,false,performance.CpuMs()>performance.budgetMs?warn:quiet);
+            }
             const auto gameLine=GameVideoLine(game);
             text(gameLine.empty()?GameVideoUnsaved:gameLine.c_str(),{58,GameVideoBox.y+2,1170,29},false,false,quiet);
             const auto frameGenLine=framegen::Line(frameGen);

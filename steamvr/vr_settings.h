@@ -321,6 +321,13 @@ inline std::string PerformanceLine(const PerformanceReadout& r) {
     return line;
 }
 inline constexpr const char* GameVideoUnsaved="Game: options not saved yet; the game writes them when its options menu closes";
+// With frame generation active, a menu open stops OFXR Bridge's generated
+// frames: Both eyes ran 30 pairs a second at 90 Hz with VR Settings up, 45
+// at 45 Hz (doubled) in play (owner, 2026-10-25). The page's own numbers were
+// the menu's, not play's, so while it is active they give way to this.
+inline constexpr const char* FrameGenPerformanceNote[2]={
+    "Frame generation is on: with a menu open the game runs slower, so no numbers here",
+    "To check the frame rate while playing, use fpsVR or SteamVR's performance graph"};
 // Whether the CPU's part fits the headset's frame: past it, the runtime
 // holds every late frame back to its next refresh.
 inline std::string PerformanceVerdict(const PerformanceReadout& r) {
