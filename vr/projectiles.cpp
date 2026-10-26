@@ -52,6 +52,7 @@ ReleaseFn originalRelease=nullptr;
 std::atomic<bool> enabled{false},direct{true},speedHooksReady{false},allReady{false};
 std::atomic<float> speed{2.f};
 std::atomic<int> runSpeed{framevr::runspeed::DefaultPercent};
+std::atomic<bool> stickFullRun{false};   // the right stick's switch runs although Movement speed walks (runspeed::StickToggle)
 std::atomic<uint64_t> gaitSeen{0};   // GetTickCount64() << 3 | tired << 2 | gait (1 walk, 2 run)
 bool clientIn=false,serverIn=false,velocityIn=false,releaseIn=false;
 std::atomic<unsigned> accelerated[2]{},released{},observed[2]{};
@@ -210,7 +211,7 @@ int RunVelocity(uintptr_t path,int native) {
     }
     int vp=0,frw=0;
     const bool stats=combat::UnitStat(unit,67,vp)&&combat::UnitStat(unit,96,frw);
-    const int percent=runSpeed.load();
+    const int percent=stickFullRun.load()?framevr::runspeed::MaxPercent:runSpeed.load();
     const int adjusted=h[3]==3&&stats?framevr::runspeed::Scaled(native,vp,percent):native;
 #ifdef D2RVR_DEVELOPER
     {   // Developer builds: every velocity the game gives the hero, to check the hook point
@@ -328,6 +329,7 @@ void Configure(bool motionControls,float multiplier,bool directRelease) {
     enabled=motionControls;speed=std::isfinite(multiplier)?std::clamp(multiplier,1.f,3.f):1.f;direct=directRelease;
 }
 void ConfigureRunSpeed(int percent){runSpeed=framevr::runspeed::NormalizePercent(float(percent));}
+void StickFullRun(bool on){stickFullRun=on;}
 int ObservedGait(uint64_t& at,bool* tired){const uint64_t v=gaitSeen.load();at=v>>3;if(tired)*tired=(v&4)!=0;return int(v&3);}
 void Install() {
     if(!enabled.load())return;

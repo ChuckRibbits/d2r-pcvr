@@ -8,6 +8,9 @@ void Configure(bool motionControls, float arrowSpeed, bool directRelease);
 // Run speed slider ([gameplay] run_speed_pct, steamvr/run_speed.h): the local hero's
 // run velocity, client and server alike, from the no-gear base (0) to the gear's (100).
 void ConfigureRunSpeed(int percent);
+// The right stick's switch (runspeed::StickToggle) has the hero running although Movement
+// speed walks: the full run, as the game's own toggle ran. Any thread.
+void StickFullRun(bool on);
 // The gait the local hero last moved in, from the velocities the game gives it:
 // 1 walking (modes 2, 6), 2 running (3), 0 never seen; at = its GetTickCount64;
 // tired = its stamina was below a quarter (the game then walks whatever its toggle says).

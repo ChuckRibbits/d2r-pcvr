@@ -19,7 +19,7 @@ namespace framevr::settings {
 enum class Page { Controls, VR, Video, HUD, Combat, Aim, Shield, Haptics, Performance, ReleaseNotes };
 enum Key { Motion, Seated, Dominant, Snap, TurnSpeed, Waist, BeltForward,
            Foveation, Sky, Fog, Ceiling, DrawDistance, ObjectDistance,
-           EyeHeight, ArmSpan, BodyCalibration, SkillGestures, WristMap, WristCompass, ControllerLabels, WeaponSkillIndicators, PlanarSpellAim, VitalsLocation, CriticalAlerts, RenderResolution, NavigationLocation, SmoothTurn, OrdinaryMobBars, MenuDistance, TooltipTiming, ProjectileAimAssist, MeleeHitSpeed, VitalsTilt, HapticStrength, HapticMelee, HapticBowDraw, HapticBowRelease, HapticSpell, HapticInteraction, HapticAlert, HapticShortMelee, BloodVisor, BloodWipe, MeleeThrustSpeed, LootLabelSize, CompanionCounts, StrainVignette, OfflinePlayers, ShieldBashSpeed, DesktopOneEye, MapTopDown, MapRotate, FoveationStrength, StereoRendering, DeferGpuWait, TargetHighlight, HeartbeatStart, SpellLock, StaffPoint, LandingCircles, GroundAim, AimHighlights, HighlightRight, HighlightLeft, ElementalHands, EnemySight, BowLaser, ThrowLift, BottlePhysics, PropPhysics, CompanionAi, ShieldGrip, ShieldOut, ShieldUp, ShieldFollow, ShieldRoll, AimFollowsView, LeftHandStrikes, TorchFlame, FrameGeneration, FrameGenPreset, FrameGenScale, RunSpeed, Count };
+           EyeHeight, ArmSpan, BodyCalibration, SkillGestures, WristMap, WristCompass, ControllerLabels, WeaponSkillIndicators, PlanarSpellAim, VitalsLocation, CriticalAlerts, RenderResolution, NavigationLocation, SmoothTurn, OrdinaryMobBars, MenuDistance, TooltipTiming, ProjectileAimAssist, MeleeHitSpeed, VitalsTilt, HapticStrength, HapticMelee, HapticBowDraw, HapticBowRelease, HapticSpell, HapticInteraction, HapticAlert, HapticShortMelee, BloodVisor, BloodWipe, MeleeThrustSpeed, LootLabelSize, CompanionCounts, StrainVignette, OfflinePlayers, ShieldBashSpeed, DesktopOneEye, MapTopDown, MapRotate, FoveationStrength, StereoRendering, DeferGpuWait, TargetHighlight, HeartbeatStart, SpellLock, StaffPoint, LandingCircles, GroundAim, AimHighlights, HighlightRight, HighlightLeft, ElementalHands, EnemySight, BowLaser, ThrowLift, BottlePhysics, PropPhysics, CompanionAi, ShieldGrip, ShieldOut, ShieldUp, ShieldFollow, ShieldRoll, AimFollowsView, LeftHandStrikes, TorchFlame, FrameGeneration, FrameGenPreset, FrameGenScale, RunSpeed, RunWalkToggle, Count };
 // One bit per setting, 128 wide: two words, since MSVC has no 128-bit integer.
 struct ChangeMask {
     static constexpr int Bits=128;
@@ -139,6 +139,9 @@ inline constexpr std::array<Definition,Count> Definitions{{
     // Movement speed (run_speed.h): -10 Walk, 0 Base run (the no-gear run), 100 Full run (the gear's).
     // VR Settings > VR, last row (Cal 2026-10-25; it was a skill-wheel slider, which replaced RUN / WALK).
     {"Movement speed", "Walk, or run from your class's no-gear speed up to your gear's full speed", L"gameplay",L"run_speed_pct",runspeed::DefaultPercent,runspeed::MinPercent,runspeed::MaxPercent,runspeed::StepPercent},
+    // Right stick up switches walk / run (runspeed::StickToggle), beside Movement speed on its row;
+    // off by default (owner 2026-10-25).
+    {"Stick toggle", "Right stick up switches between walking and running", L"gameplay",L"run_walk_toggle",0,0,1,1},
 }};
 using Values=std::array<float,Count>;
 inline bool HapticKey(Key key){return key>=HapticStrength&&key<=HapticAlert;}
@@ -410,8 +413,10 @@ inline bool RowShown(Key key,const Values& v,const Context& c){
     }
 }
 // Two settings that belong together share a row, a stepper each: the left
-// hand's outline color and the right's; NVIDIA's flow quality and its scale.
-inline Key PairOf(Key key){return key==HighlightLeft?HighlightRight:key==FrameGenPreset?FrameGenScale:Count;}
+// hand's outline color and the right's; NVIDIA's flow quality and its scale;
+// Movement speed and the right stick's run / walk toggle (the VR tab has no room
+// for an eleventh row above the buttons).
+inline Key PairOf(Key key){return key==HighlightLeft?HighlightRight:key==FrameGenPreset?FrameGenScale:key==RunSpeed?RunWalkToggle:Count;}
 inline bool Paired(Key key){return PairOf(key)!=Count;}
 inline const char* RowLabel(Key key,const Context& c){
     if(key==HighlightLeft)return "Hand colors";
@@ -422,6 +427,7 @@ inline const char* RowLabel(Key key,const Context& c){
 inline const char* RowDetail(Key key){
     if(key==HighlightLeft)return "Each hand's monster: range or a hue";
     if(key==FrameGenPreset)return "Quality and scale; change live";
+    if(key==RunSpeed)return "Walk or run speed; stick toggle";
     return Definitions[key].detail;
 }
 // Skills go to the aimed monster, spell_lock bits: 1 spells, 2 bow skills.
