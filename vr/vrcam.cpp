@@ -866,6 +866,8 @@ void LoadSettings() {
     framevr::ConfigureBottlePhysics(IniB(L"interactions",L"bottle_physics",true));
     framevr::ConfigurePropPhysics(IniB(L"interactions",L"prop_physics",true));
     projectiles::Configure(IniB(L"gameplay",L"motion_controls",false),IniF(L"gameplay",L"arrow_speed",2.f),IniB(L"gameplay",L"arrow_direct_release",true));
+    // Movement speed (VR Settings > VR): % of the way from the no-gear base run speed to the gear's (-10 walks).
+    projectiles::ConfigureRunSpeed(framevr::runspeed::NormalizePercent(IniF(L"gameplay",L"run_speed_pct",100)));
     bowvr::Configure(IniB(L"gameplay",L"motion_controls",false));
     combat::Configure(IniB(L"gameplay",L"motion_controls",false)&&IniB(L"gameplay",L"contact_hits",true));
     // Melee is Unleashed only (the owner, 2026-10-23): every weapon contact
@@ -7169,8 +7171,10 @@ void MeleeContactHand(int hand) {
         case D2RVR_TYPE_SPEAR:case D2RVR_TYPE_POLEARM:length=1.5f;break;
         default:if(gamestate::TwoHanded()&D2RVR_TWO_HANDS_ON)length=1.1f;break;
     }
-    // A shapeshift form's claw: the capsule the skeleton hook measured on the drawn paw.
-    if(pose.length>0&&pose.radius>0){length=std::clamp(pose.length/upm,.05f,.6f);radius=std::clamp(pose.radius/upm,.02f,.15f);}
+    // A shapeshift form's claw: the capsule the skeleton hook measured on the drawn paw,
+    // at least 0.22 m long (a claw weapon is 0.28) and 25% thicker, floor 0.06 m: the bare
+    // paw fell short of big-footprint, long-armed monsters (Brutes/Yetis) (Cal, 2026-10-24).
+    if(pose.length>0&&pose.radius>0){length=std::clamp(pose.length/upm,.22f,.6f);radius=std::clamp(pose.radius/upm*1.25f,.06f,.15f);}
     // The checked UI-thread accessor refreshes the native local unit across
     // warps. Do not gate swings on aim-hook traffic or camera proximity.
     uintptr_t nativeHero=0;

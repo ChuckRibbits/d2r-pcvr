@@ -395,7 +395,7 @@ std::vector<uint8_t> Paint(const Snapshot& s,const Output& o,int selection,const
         if(selection<0){const auto prior=SelectObject(dc,shortcutFont);text("ACTIVE",{327,399,441,417});SelectObject(dc,prior);}
     }
     if(QuickControls(Page(o))) {
-        const auto q=QuickUseBounds,r=RunWalkBounds;
+        const auto q=QuickUseBounds;
         RECT box{LONG(q.left*768),LONG(q.top*768),LONG(q.right*768),LONG(q.bottom*768)};
         frame(box,o.hover==QuickUseCell);
         SelectObject(dc,shortcutFont);text("QUICK USE",{box.left+6,box.top+6,box.right-6,box.top+24});
@@ -406,11 +406,7 @@ std::vector<uint8_t> Paint(const Snapshot& s,const Output& o,int selection,const
         text(name,{box.left+(haveIcon?60:8),box.top+26,box.right-8,box.bottom-40});
         SelectObject(dc,shortcutFont);
         if(item){char count[32];std::snprintf(count,sizeof count,"x %d",item->quantity);text(count,{box.left+60,box.bottom-44,box.right-8,box.bottom-25});}
-        text("Click: use | Hold: edit",{box.left+6,box.bottom-23,box.right-6,box.bottom-5});
-        RECT run{LONG(r.left*768),LONG(r.top*768),LONG(r.right*768),LONG(r.bottom*768)};
-        frame(run,o.hover==RunWalkCell);SelectObject(dc,skillFont);
-        text("RUN / WALK",{run.left+8,run.top+10,run.right-8,run.bottom-28});
-        SelectObject(dc,shortcutFont);text("Click to toggle",{run.left+8,run.bottom-29,run.right-8,run.bottom-7});SelectObject(dc,font);
+        text("Click: use | Hold: edit",{box.left+6,box.bottom-23,box.right-6,box.bottom-5});SelectObject(dc,font);
         if(o.leftStrikes>=0) {   // Druid: which trigger skill the left claw's strikes cast
             const auto l=LeftStrikesBounds;
             RECT claw{LONG(l.left*768),LONG(l.top*768),LONG(l.right*768),LONG(l.bottom*768)};
