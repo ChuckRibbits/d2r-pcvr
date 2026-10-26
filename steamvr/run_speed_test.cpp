@@ -68,5 +68,17 @@ int main() {
         }
         G hidden;hidden.Step(S,G::Run,100,1,true,false,100);Check(!hidden.Step(S,G::Run,200,1,true,false,200),"no slider (settings not ready): nothing sent");
     }
+    {   // Right stick up with the Stick toggle on (off by default)
+        StickToggle s;
+        Check(!s.Step(1,false,100,true)&&!s.Step(1,false,100,true),"off: a push changes nothing");
+        Check(s.Step(1,true,100,true)&&s.Step(1,true,100,false),"on: a push from a run walks, and stays walking");
+        Check(!s.Step(1,true,100,true)&&!s.FullRun(),"the next push runs again, at Movement speed's run");
+        Check(s.Step(1,true,50,true)&&!s.FullRun()&&s.Step(1,true,50,false),"from Run 50%: a push walks");
+        Check(!s.Step(1,true,60,false),"Movement speed changed: its run again");
+        Check(s.Step(1,true,WalkPercent,false)&&!s.FullRun(),"Movement speed on Walk walks");
+        Check(!s.Step(1,true,WalkPercent,true)&&s.FullRun(),"from Walk: a push runs, at the full run");
+        Check(s.Step(2,true,WalkPercent,false)&&!s.FullRun(),"a new character starts at Movement speed");
+        s.Step(2,true,100,true);Check(!s.Step(2,false,100,false)&&!s.Step(2,true,100,false),"turning it off forgets the switch");
+    }
     std::puts("Run speed slider tests passed");
 }

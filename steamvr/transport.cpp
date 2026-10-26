@@ -101,7 +101,7 @@ namespace gamecmd {void RequestPotion(int slot);void CancelPotion();}
 namespace gamestate {void MenuMap(bool wanted);uint32_t QuestNotices();bool NoticePanelOpen();bool NoticeText(int kind,char* out,uint32_t size);}
 namespace gamestate {bool LeftShield();bool RightThrowingPotion();uint32_t RightThrowingPotionCode();framevr::dualwield::Equipment MeleeEquipment();}
 namespace combat {float GameVolume();}
-namespace projectiles {int ObservedGait(uint64_t& at,bool* tired);}
+namespace projectiles {int ObservedGait(uint64_t& at,bool* tired);void StickFullRun(bool on);}
 
 namespace framevr {
 using Microsoft::WRL::ComPtr;
@@ -232,9 +232,11 @@ uint64_t noticePaintRequest=0,noticeRequestedSequence=0,noticePaintedSequence=0;
 uint64_t leftStrikesSequence=0,leftStrikesAt=0;float leftStrikesWanted=0;
 // VR Settings > VR > Movement speed ([gameplay] run_speed_pct): its WALK stop walks and every
 // other stop runs. The game's run / walk toggle is kept in line with it from the gait the
-// plugin sees and the stick (runspeed::GaitSync).
+// plugin sees and the stick (runspeed::GaitSync). With its Stick toggle on, right stick up
+// switches between walking and that run (runspeed::StickToggle).
 runspeed::GaitSync gaitSync;
-bool movementWalks=false;   // Movement speed is on WALK (this step)
+runspeed::StickToggle stickToggle;
+bool movementWalks=false;   // the hero should walk (this step): Movement speed's WALK, or the stick's switch
 bool noticeAtlasPending=false,noticeImageReady=false;
 // Guard strain light: soft white at the rim, directly beneath the blood. Fed by
 // the game thread's blocks and the guard tick; painted small in the background.
@@ -565,7 +567,7 @@ XrPosef head{};
 math::Vec origin{};
 bool haveOrigin=false;
 GripStickButton leftMenuButton;
-stickgestures::Gestures rightStickGestures;   // right stick down: loot labels (up: owned, does nothing since the movement slider)
+stickgestures::Gestures rightStickGestures;   // right stick up: run / walk (Movement speed's Stick toggle); down: loot labels
 MenuTriggerGate menuTriggerGate;
 PressEdge inventoryButton,menuButton;
 float lastRecenter=0;
@@ -2399,7 +2401,8 @@ void Input() {
     handInput.occupied=interactionOutput.bottle>=0||interactionOutput.owner[0]==interaction::Owner::Holster||interactionOutput.owner[1]==interaction::Owner::Holster;
     const auto lootNow=GetTickCount64(),lootSession=gamestate::LocalPlayer();
     const bool lootWorld=motionHeadTracked&&!nativeUi&&!settingsOwned&&!settingsChord&&inWorld&&inWorld()&&lootSession;
-    // Right stick up toggles run / walk; down, held, shows the loot labels
+    // Right stick up switches run / walk with Movement speed's Stick toggle on (owned
+    // either way, so it never turns); down, held, shows the loot labels
     // (Show items, Alt). Not while a wheel is open, nor while the wrist map is
     // looked at: its zoom has the stick then (map_zoom.h). A vertical push turns nothing.
     const auto rightStick=rightStickGestures.Step(mapzoom::WorldGestures(lootWorld&&handControls.Wheel()<0,wristMapLooked),
@@ -2447,8 +2450,8 @@ void Input() {
     interactionInput.spell=motion.Selection()>=0;interactionInput.wheel=motionInput.palette;interactionInput.cancel=motionInput.cancel;
     interactionInput.quickCast=handOutput.slot>=0||handOutput.spells[0]>=0||handOutput.spells[1]>=0;
     interactionInput.wheelHand=handOutput.wheel;
-    // Right stick up no longer toggles running / walking: the wheel's movement slider has WALK
-    // (Cal 2026-10-25). The push is still owned, so it never snap-turns.
+    // Right stick up switches running / walking only with Movement speed's Stick toggle on
+    // (below, off by default). The push is owned either way, so it never snap-turns.
     interactionInput.reservedLeft=(controls.buttons&menus::LeftStick)!=0;interactionInput.trigger=handOutput.wheel==0?controls.lt/255.f:controls.rt/255.f;interactionInput.hover=motionInput.hover;
     const auto hudSettings=vrsettings::Read();
     interactionInput.navigationLocation=vitals::Location(int(hudSettings.values[settings::NavigationLocation]));
@@ -2462,7 +2465,14 @@ void Input() {
     {
         uint64_t seenAt=0;bool tired=false;const int gait=projectiles::ObservedGait(seenAt,&tired);   // 1 walking, 2 running, 0 not seen
         const float stick=std::min(1.f,std::hypot(float(controls.lx),float(controls.ly))/32767.f);
-        movementWalks=hudSettings.ready&&runspeed::Walks(runspeed::NormalizePercent(hudSettings.values[settings::RunSpeed]));
+        const int movement=runspeed::NormalizePercent(hudSettings.values[settings::RunSpeed]);
+        const bool stickToggles=hudSettings.ready&&hudSettings.values[settings::RunWalkToggle]>.5f;
+        movementWalks=hudSettings.ready&&stickToggle.Step(interactionInput.session,stickToggles,movement,rightStick.toggleRun);
+        projectiles::StickFullRun(stickToggle.FullRun());
+        if(stickToggles&&rightStick.toggleRun) {
+            Say(movementWalks?"Frame right stick: up - walk (Stick toggle)":"Frame right stick: up - run (Stick toggle)");
+            MotionPulse(0,haptics::Category::Interaction,.45f,45000000);
+        }
         interactionInput.gaitToggle=gaitSync.Step(interactionInput.session,gait,seenAt,stick,movementWalks,hudSettings.ready,GetTickCount64(),tired);
     }
     interactionInput.leftCasting=handOutput.spells[1]>=0||(handOutput.slot>=0&&handOutput.hand==1);
@@ -2509,7 +2519,7 @@ void Input() {
     }
     if(interactionInput.gaitToggle&&interactionOutput.request.action==interaction::Action::RunWalk) {
         gaitSync.Sent(movementWalks,GetTickCount64());
-        Say(movementWalks?"Frame movement: game toggle on run, Movement speed WALK - run / walk toggled":"Frame movement: game toggle on walk, Movement speed on a run - run / walk toggled");
+        Say(movementWalks?"Frame movement: game toggle on run, walking wanted - run / walk toggled":"Frame movement: game toggle on walk, running wanted - run / walk toggled");
     }
     StepDroppedBottles();
     // Quest / level-up notices: queue a card per message, paint the current one.

@@ -876,13 +876,22 @@ int main(){
             for(const auto& v:{smooth,snap,seated})Check(RowCount(Page::VR,v)<=MaxRows&&RowKey(Page::VR,RowCount(Page::VR,v)-1,v)==RunSpeed,"every VR-tab layout keeps Movement speed, within MaxRows");
             Model m;m.Open(s);m.Click({Kind::Tab,int(Page::VR)});
             const int row=RowCount(Page::VR,s.values)-1;
-            m.Click(At(m,Page::VR,Decrease(row)));Check(m.Get()[RunSpeed]==90,"- steps 10%");
-            for(int i=0;i<20;++i)m.Click(At(m,Page::VR,Decrease(row)));Check(m.Get()[RunSpeed]==-10,"the bottom is Walk");
-            m.Click(At(m,Page::VR,Increase(row)));Check(m.Get()[RunSpeed]==0,"+ from Walk is Base run");
+            Check(Paired(RunSpeed)&&PairOf(RunSpeed)==RunWalkToggle&&std::strcmp(RowLabel(RunSpeed,{}),"Movement speed")==0,"Movement speed shares its row with the stick toggle");
+            m.Click(At(m,Page::VR,PairDecrease(row,0)));Check(m.Get()[RunSpeed]==90,"- steps 10%");
+            for(int i=0;i<20;++i)m.Click(At(m,Page::VR,PairDecrease(row,0)));Check(m.Get()[RunSpeed]==-10,"the bottom is Walk");
+            m.Click(At(m,Page::VR,PairIncrease(row,0)));Check(m.Get()[RunSpeed]==0,"+ from Walk is Base run");
+            Check(m.Get()[RunWalkToggle]==0,"the left stepper leaves the stick toggle alone");
             Check(m.Click({Kind::Apply}).changed==(ChangeMask{1}<<RunSpeed),"Apply saves only Movement speed");
+            Model t;t.Open(s);t.Click({Kind::Tab,int(Page::VR)});
+            t.Click(At(t,Page::VR,PairValue(row,1)));Check(t.Get()[RunWalkToggle]==1&&t.Get()[RunSpeed]==100,"the right value box turns the stick toggle on");
+            t.Click(At(t,Page::VR,PairDecrease(row,1)));Check(t.Get()[RunWalkToggle]==0,"either stepper flips it");
+            t.Click(At(t,Page::VR,PairIncrease(row,1)));
+            Check(t.Click({Kind::Apply}).changed==(ChangeMask{1}<<RunWalkToggle),"Apply saves only the stick toggle");
         }
         Values a=Defaults(),b=a;b[RunSpeed]=70;
         Check(Changed(a,b)==(ChangeMask{1}<<RunSpeed)&&RunSpeed<ChangeMask::Bits,"run speed has its own change bit");
+        Check(Defaults()[RunWalkToggle]==0&&std::wstring(Definitions[RunWalkToggle].section)==L"gameplay"&&std::wstring(Definitions[RunWalkToggle].key)==L"run_walk_toggle"&&
+              HelpText(RunWalkToggle)[0]!=0&&RunWalkToggle<ChangeMask::Bits,"the stick toggle: off by default, explained, its own change bit");
     }
     std::puts("VR settings draft, persistence requests, conflicts, hit regions and input-gating tests passed");
 }

@@ -447,7 +447,7 @@ struct Input {
     double time=0;
     uint64_t session=0,epoch=0,at=0; // at shares the native snapshot's monotonic clock
     bool active=false,tracked[2]{},wheel=false,cancel=false,reservedLeft=false,spell=false,quickCast=false;
-    bool gaitToggle=false;   // the game's run / walk toggle is the other way than VR Settings > Movement speed wants (WALK / a run stop): send it
+    bool gaitToggle=false;   // the game's run / walk toggle is the other way than the hero should go (Movement speed's WALK or a run stop, or the stick's switch): send it
     int leftStrikes=-1;   // Druid: [gameplay] left_hand_strikes for the wheel's box (0 own trigger, 1 same as right); -1 hides it
     vitals::Location navigationLocation=vitals::Location::Wrist;
     vitals::Location vitalsLocation=vitals::Location::Wrist;

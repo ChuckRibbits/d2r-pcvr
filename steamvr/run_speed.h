@@ -95,6 +95,23 @@ struct GaitSync {
     }
     void Sent(bool wantWalk,uint64_t now){state=wantWalk?Walk:Run;toggledAt=now;fullWalkSince=0;}
 };
+// Right stick up with Movement speed's Stick toggle on ([gameplay] run_walk_toggle, off by
+// default; owner 2026-10-25: "bring the toggle back and put an option to enable/disable",
+// "with it being disabled by default"): each push switches between walking and Movement
+// speed's run - from Walk, the full run, as the game's own toggle ran. A new character,
+// turning the toggle off and a change of Movement speed start from Movement speed again.
+// GaitSync then brings the game's own toggle in line.
+struct StickToggle {
+    uint64_t session=0;int percent=DefaultPercent;bool switched=false;
+    // True: the hero should walk now. pushed: the stick went up this step.
+    bool Step(uint64_t sessionNow,bool enabled,int setting,bool pushed) {
+        if(sessionNow!=session||!enabled||setting!=percent){session=sessionNow;percent=setting;switched=false;}
+        if(enabled&&pushed)switched=!switched;
+        return Walks(setting)!=switched;
+    }
+    // Running though Movement speed is on Walk: at the full run (Scaled would give BASE RUN).
+    bool FullRun()const{return switched&&Walks(percent);}
+};
 // The velocity the slider gives a native run velocity. Never above native, never below the base.
 inline int Scaled(int native,int velocityPercent,int percent) {
     percent=std::clamp(percent,0,MaxPercent);   // WALK while still running (until the toggle lands): BASE RUN
