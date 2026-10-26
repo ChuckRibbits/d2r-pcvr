@@ -626,7 +626,9 @@ class Engine {
     }
 public:
     void Configure(Config c) {config=c;Reset();}
-    void Reset() {quickPressed=false;primed=false;rearm=true;wheelLatch=true;Drop();flight={};pending={};result=Result::None;criticalUntil=criticalAgain=0;editor=devPage=0;map=developer=false;editSlot=-1;shoulderSwap.Reset();}
+    // The wheel's page (Map, Developer and its page; Spells / Equipment as before) is kept through a
+    // tracking or frame hiccup; a new game session (Step) and another wheel hand start over. Editors close.
+    void Reset() {quickPressed=false;primed=false;rearm=true;wheelLatch=true;Drop();flight={};pending={};result=Result::None;criticalUntil=criticalAgain=0;editor=0;editSlot=-1;shoulderSwap.Reset();}
     MenuPage Page() const {return developer?MenuPage::Developer:editor==3?MenuPage::EditItems:editor==2?MenuPage::EditSkills:editor?MenuPage::EditSlots:map?MenuPage::Map:utility?MenuPage::Equipment:MenuPage::Spells;}
     int DeveloperPage() const {return devPage;}
     bool WheelVisible(bool heldButton) const {return heldButton&&!wheelLatch;}
@@ -653,7 +655,7 @@ public:
         if(!in.active||!in.tracked[0]||!in.tracked[1]||!std::isfinite(in.time)||
            !Valid(in.head)||!Valid(in.hand[0])||!Valid(in.hand[1])||!primed||session!=in.session||epoch!=in.epoch||dt<=0||dt>.15) {
             Reset();primed=in.active&&in.tracked[0]&&in.tracked[1]&&Valid(in.head)&&Valid(in.hand[0])&&Valid(in.hand[1])&&std::isfinite(in.time);
-            if(session!=in.session)stowed=false;
+            if(session!=in.session){stowed=false;map=developer=false;devPage=0;}   // a new game: Map and Developer start over
             session=in.session;epoch=in.epoch;lastTime=in.time;
             triggerWas=trigger;gripWas[0]=grips[0];gripWas[1]=grips[1];
             body=Valid(in.head)?UprightBody(in.head,body.q):Pose{};out.block=true;out.stowed=stowed;out.cancelPending=true;return out;
@@ -664,10 +666,11 @@ public:
         const bool triggerEdge=trigger&&!triggerWas&&!handChanged;
         const bool edges[2]={grips[0]&&!gripWas[0],grips[1]&&!gripWas[1]};
         triggerWas=trigger;gripWas[0]=grips[0];gripWas[1]=grips[1];
-        if(!in.wheel){quickPressed=false;wheelLatch=false;editor=0;map=developer=false;editSlot=-1;}
+        // A plain close keeps the page for the next open (Map and Developer too); the editors close.
+        if(!in.wheel){quickPressed=false;wheelLatch=false;editor=0;editSlot=-1;}
         if(!in.snapshot.developer)developer=false;
         if(!trigger&&!grips[0]&&!grips[1])rearm=false;
-        if(in.cancel) {quickPressed=false;Drop();flight={};rearm=true;wheelLatch=true;pending={};out.cancelPending=true;editor=0;map=developer=false;editSlot=-1;}
+        if(in.cancel) {quickPressed=false;Drop();flight={};rearm=true;wheelLatch=true;pending={};out.cancelPending=true;editor=0;map=developer=false;devPage=0;editSlot=-1;}   // B: as before
         if(pending.action!=Action::None) {
             if(in.reply.sequence==pending.sequence&&in.reply.session==session&&in.reply.result!=Result::Pending) {
                 result=in.reply.result;resultAt=in.time;out.feedback=(result==Result::Applied||result==Result::Dispatched||result==Result::DebugUpdated||result==Result::TurnsUpdated||result==Result::SharpUpdated||result==Result::FillUpdated||result==Result::RimsUpdated||result==Result::SkyRimsUpdated)?2:3;
@@ -760,7 +763,7 @@ public:
                     }
                     rearm=true;
                 } else if(!editor&&in.hover==13&&fresh&&in.snapshot.developer) {
-                    developer=!developer;devPage=0;utility=map=false;out.utility=out.map=false;rearm=true;
+                    developer=!developer;devPage=std::clamp(devPage,0,dev::PageCount-1);utility=map=false;out.utility=out.map=false;rearm=true;   // its last page
                 } else if(developer&&in.hover>=DeveloperPageCell(0)&&in.hover<DeveloperPageCell(dev::PageCount)) {
                     if(fresh)devPage=in.hover-DeveloperPageCell(0);
                     out.hover=-1;rearm=true;

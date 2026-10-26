@@ -133,7 +133,10 @@ int main(){
         s.in.trigger=0;s.Step();s.in.hover=9;s.in.trigger=1;s.Step();
         Check(!s.out.developer&&!s.out.utility&&!s.out.map,"spells footer leaves dev page");
         s.in.trigger=0;s.Step();s.in.hover=13;s.in.trigger=1;s.Step();
-        s.in.wheel=false;s.Step();Check(!s.out.developer,"closing wheel resets developer page");
+        s.in.wheel=false;s.Step();s.in.trigger=0;s.Step();s.in.wheel=true;s.in.hover=-1;s.Step();
+        Check(s.out.developer&&s.e.Page()==MenuPage::Developer,"a plain close keeps the developer page for the next open");
+        s.in.cancel=true;s.Step();s.in.cancel=false;s.in.wheel=false;s.Step();s.in.wheel=true;s.Step();
+        Check(!s.out.developer&&s.e.Page()==MenuPage::Spells,"B (cancel) leaves the developer page, as before");
         const auto tab=FooterBounds(4,MenuPage::Spells,true);
         Check(WheelCell((tab.left+tab.right)/2,.93f,-1,MenuPage::Spells,0,true)==13,"developer footer hit matches paint bounds");
         Check(WheelCell(.5f,.45f,-1,MenuPage::Developer,0,true)==-1,"no hidden center spell behind developer page");
@@ -174,8 +177,13 @@ int main(){
         s.in.hover=DeveloperCell(0);s.in.trigger=1;s.Step();
         Check(s.out.request.action==Action::None,"a stale choice from the previous page cannot grant gear or travel");
         Check(WheelCell(.25f,.82f,-1,MenuPage::Developer,0,true,1)==-1,"space below scenic rows has no hidden action");
-        s.in.wheel=false;s.in.trigger=0;s.Step();s.in.wheel=true;s.Step();s.in.hover=13;s.in.trigger=1;s.Step();
-        Check(s.out.developer&&s.out.devPage==0,"reopening DEV starts on gear and test controls");
+        s.in.wheel=false;s.in.trigger=0;s.Step();s.in.wheel=true;s.in.hover=-1;s.Step();
+        Check(s.out.developer&&s.out.devPage==1,"reopening the wheel: DEV on the page it was left on");
+        s.in.hover=9;s.in.trigger=1;s.Step();s.in.trigger=0;s.Step();s.in.hover=13;s.in.trigger=1;s.Step();
+        Check(s.out.developer&&s.out.devPage==1,"leaving DEV and coming back: its last page");
+        s.in.trigger=0;s.in.cancel=true;s.Step();s.in.cancel=false;s.in.wheel=false;s.Step();s.in.wheel=true;s.Step();
+        s.in.hover=13;s.in.trigger=1;s.Step();
+        Check(s.out.developer&&s.out.devPage==0,"after B (cancel), DEV starts on gear and test controls, as before");
     }
     for(int footer=0;footer<5;++footer) {
         Sim s;s.in.snapshot.developer=true;s.in.snapshot.devClass=3;s.in.wheel=true;s.Step(3);
@@ -593,7 +601,27 @@ int main(){
         s.Step();Check(!s.out.map&&!MapWanted(s.in,s.out,s.in.at)&&s.out.block&&s.out.select==-2&&s.out.request.action==Action::None,
             "closing, cancellation, tracking loss, native menu, session change and recenter cancel map and block held trigger");
         s.in.wheel=false;s.in.cancel=false;s.in.active=true;s.in.tracked[0]=true;s.in.trigger=0;s.Step(3);
-        s.in.wheel=true;s.Step();Check(s.out.wheel&&!s.out.map&&s.e.Page()==MenuPage::Spells,"reopening after interruption starts on spells");
+        // Menus remember the last page: B (cancel) and a new game start over on Spells; a plain close, tracking
+        // loss, a native menu or a recenter keep the map for the next open (the map itself is still cancelled above).
+        const bool startsOver=interruption==1||interruption==4;
+        if(interruption==4)s.in.snapshot.session=s.in.session;
+        s.in.wheel=true;s.Step();
+        Check(s.out.wheel&&s.out.map==!startsOver&&s.e.Page()==(startsOver?MenuPage::Spells:MenuPage::Map),
+              "reopening after B or a new game starts on spells; after any other interruption, on the map it was left on");
+    }
+    {   // Menus remember the last page (2026-10-26): the wheel's page across a plain close; never an editor
+        auto press=[](Sim& s,int cell){s.in.hover=cell;s.in.trigger=1;s.Step();s.in.trigger=0;s.in.hover=-1;s.Step();};
+        auto reopen=[](Sim& s){s.in.wheel=false;s.in.trigger=0;s.Step(3);s.in.wheel=true;s.in.hover=-1;s.Step();};
+        Sim s;s.in.wheel=true;s.Step();press(s,12);Check(s.e.Page()==MenuPage::Map,"map open");
+        reopen(s);Check(s.out.wheel&&s.out.map&&s.e.Page()==MenuPage::Map&&s.out.select==-2&&s.out.request.action==Action::None,
+                        "a plain close keeps Map; reopening on it selects nothing");
+        press(s,9);reopen(s);Check(s.e.Page()==MenuPage::Spells,"SPELLS from the map, then closed: Spells");
+        press(s,9);reopen(s);Check(s.e.Page()==MenuPage::Equipment,"Equipment kept, as before");
+        press(s,11);Check(s.e.Page()==MenuPage::EditSlots,"the skill editor open");
+        reopen(s);Check(s.e.Page()!=MenuPage::EditSlots&&s.out.editor==0,"an editor is never reopened");
+        press(s,12);++s.in.session;s.in.snapshot.session=s.in.session;s.Step(3);reopen(s);
+        Check(!s.out.map&&s.e.Page()!=MenuPage::Map,"a new game: the map is not kept");
+        press(s,12);s.in.wheelHand=0;reopen(s);Check(!s.out.map&&s.e.Page()==MenuPage::Spells,"the other wheel hand starts over, as before");
     }
     for(int i=0;i<8;++i){float a=i*Pi/4+.012f;
         Check(WheelCell(.5f+std::sin(a)*.28f,.45f-std::cos(a)*.28f,(i+7)%8)==(i+7)%8,"segment boundary has selection hysteresis");}

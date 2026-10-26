@@ -55,7 +55,9 @@ int main(){
         notes.Click(next);notes.Click(next);notes.Click(next);Check(notes.notesPage==2,"Next stops at the last page");
         notes.Click(previous);Check(notes.notesPage==1&&!notes.Dirty(),"Previous goes back; paging edits nothing");
         notes.Click({Kind::Tab,int(Page::Controls)});notes.Click(next);Check(notes.notesPage==1,"other tabs never page the notes");
-        notes.Open(none);Check(notes.notesPage==0,"reopening starts on page 1");
+        notes.Click({Kind::Tab,int(Page::ReleaseNotes)});notes.Close();notes.Open(none);
+        Check(notes.page==Page::ReleaseNotes&&notes.notesPage==1,"a plain close: reopens on the Notes page it was left on");
+        notes.Close(true);notes.Open(none);Check(notes.page==Page::Controls&&notes.notesPage==0,"B (cancel): reopens on Controls, page 1, as before");
         notes.SetNotesPages(1);notes.Click({Kind::Tab,int(Page::ReleaseNotes)});notes.Click(next);Check(notes.notesPage==0,"one page: nothing to turn");
         Check(NotesPages(0)==1&&NotesPages(12)==1&&NotesPages(13)==2&&NotesPages(NotesMaxLines)==6,"12 lines a page");
         Check(NotesPrevBox.y>=330+NotesPerPage*36-8&&NotesPrevBox.y+NotesPrevBox.h<=848,"the pager sits between the last line and the credits");
@@ -335,7 +337,8 @@ int main(){
         }
         const auto request=h.Click({Kind::Apply});
         Check(request.changed==(ChangeMask{1}<<key)&&request.values[key]==90&&!h.CanTestHaptics(0),"Apply saves only selected haptic strength and blocks preview while saving");
-        h.Close();h.Open(s);Check(h.Get()[key]==100&&!h.CanTestHaptics(0),"close discards edits and Controls page has no preview");
+        h.Close();h.Open(s);Check(h.Get()[key]==100&&h.page==Page::Haptics,"close discards edits; the panel reopens on Haptics");
+        h.Close(true);h.Open(s);Check(h.Get()[key]==100&&!h.CanTestHaptics(0),"after B (cancel) it reopens on Controls, which has no preview");
     }
     Check(!Model{}.CanTestHaptics(0),"closed menu cannot preview haptics");
     {Model h;h.Open(s);h.Click({Kind::Tab,int(Page::Haptics)});

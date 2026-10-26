@@ -117,6 +117,14 @@ is fully released, so choosing Fire Bolt never immediately fires it. Start with
 the existing stationary selection behavior; locomotion while selecting is a
 separate comfort option. Use a dead zone and hover hysteresis at wedge borders.
 
+The wheel and VR Settings reopen on the page they were closed on: the wheel's
+Spells, Equipment, Map or Developer page (and Developer's own page), and VR
+Settings' tab and Notes page. Right B (cancel) starts over, as before: the wheel
+on Spells or Equipment, VR Settings on Controls. Skill, slot and item editors
+are never reopened. The pages are kept in memory only; a game restart starts
+over, a new character resets the wheel's Map and Developer page, and switching
+the wheel to the other hand resets it.
+
 Casting uses one rule: **point and press right trigger**. A ready spell commits
 on trigger press; projectile casts do not wait for trigger release, a hand
 movement, a charge pose or the stock body's casting wind-up. Hold to repeat only

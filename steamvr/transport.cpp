@@ -1941,11 +1941,13 @@ void OpenSettings() {
     const auto q=math::Yaw(math::Heading(Q(head.orientation)));
     settingsBase={V(head.position)+math::Rotate(q,{0,-.06f,-1.05f}),q};
     settingsPose=Placed(settingsBase,settingsOffset);settingsHover={};ResetSettingsInput();
-    Say("Frame VR settings: panel opened");
+    char line[96];std::snprintf(line,sizeof line,"Frame VR settings: panel opened on %s (notes page %d)",
+        settings::TabNames[std::clamp(int(settingsModel.page),0,settings::TabCount-1)],settingsModel.notesPage+1);Say(line);
 }
-void CloseSettings() {
-    settingsModel.Close();settingsOpen=false;settingsImageReady=false;ResetSettingsInput();
-    Say("Frame VR settings: panel closed; held input consumed");
+// cancel: the B button; the next open starts on Controls. Any other close keeps the tab for the next open.
+void CloseSettings(bool cancel=false) {
+    settingsModel.Close(cancel);settingsOpen=false;settingsImageReady=false;ResetSettingsInput();
+    Say(cancel?"Frame VR settings: panel closed (B: next opens on Controls); held input consumed":"Frame VR settings: panel closed; held input consumed");
 }
 void OpenBodyCalibration() {
     if(settingsModel.open)CloseSettings();
@@ -2309,7 +2311,7 @@ void Input() {
     if(settingsModel.open&&settingsSession!=gamestate::LocalPlayer()){CloseSettings();settingsOwned=true;}
     if(settingsEdges.chord&&!bodyCalibration.Active()&&!calibrationRelease.blocked){if(settingsModel.open)CloseSettings();else OpenSettings();settingsOwned=true;}
     else if(settingsModel.open&&(settingsEdges.cancel||menuPressed||gripMenuPressed)){
-        if(!settingsModel.DismissControllerMenu())CloseSettings();settingsOwned=true;
+        if(!settingsModel.DismissControllerMenu())CloseSettings(settingsEdges.cancel);settingsOwned=true;
     }
     settingsOwned=settingsOwned||settingsModel.open;
     bool focused=gameWindow&&GetForegroundWindow()==gameWindow;
