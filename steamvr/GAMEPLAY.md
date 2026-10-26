@@ -1053,21 +1053,25 @@ and trigger/button melee were:
     stays a basic attack. Classic casts on every paced contact. Developer
     builds log `Frame melee skills:` (armed contacts, casts, refusals by
     reason) and add `strike=<skill> cast|basic_strike` to `melee_trace` lines.
-  - **Fury's flurry** (Zeal's the same with a weapon; Classic paces Zeal at its Param2, a whole cycle):
-    the cast lands hit 1 of its 2-5. In Unleashed each
-    later landed stroke of a claw carrying Fury lands the next one, at any
-    speed (only a stroke within 100 ms of the previous Fury hit, one swipe's
-    follow-through, can't): unscaled, with on-hit effects, no mana, on the
-    creature it struck. A later stroke that reaches several creatures lands
-    Fury on its first two (native Fury spreads its hits across nearby
-    monsters); the casting stroke on one. A new cast still needs a full-cycle
-    stroke, so the burst limits itself. In Classic each follow-up waits Fury's Param2 (70%) of
-    the attack cycle after the previous Fury hit, sooner than the shared
-    cadence; earlier strokes stay basic and never delay it. Unused hits lapse
-    after two cycles, a form change or another skill's cast. Developer builds
-    log `Frame melee flurries:` and tag trace lines `cast 1/5`,
-    `flurry 2/5 after N ms`, `flurry 3/5 spread`, `basic_strike flurry_early after N ms`;
-    the on-hit report counts `flurry=`.
+  - **Fury and Zeal** (Cal, 2026-10-25; replaces the swing flurry; rev2
+    without the native mode, which rooted the hero): the casting stroke runs
+    the skill's start and one do 13 hit (count 1) on the struck creature.
+    The mod then lands the cast's other hits itself (`strike_skills.h`
+    `Sequence`, `melee.cpp` `SequenceHit`), one do 13 call each, at the native
+    sequence's rhythm measured from native casts (rev4): Fury 4/9 and Zeal 1/2
+    of the attack cycle (160 ms at 360, 280 ms at 560; 500 ms cycle if
+    unknown), up to 20 ms early to meet the game update, the next timed from
+    when the last was due, each on the nearest other live hostile within 3.5
+    cells and in sight (else the previous one; none ends the cast). do 13
+    still checks native melee range and picks its own creature in reach if
+    needed. The hero never enters the skill's mode, so movement stays free.
+    Those hits are the cast's own (rev3): the trigger rules' recovery factor
+    and on-hit gate don't apply to them (attack rating still scales them, and
+    the would-have-hit gate still holds back effects a miss would not have).
+    Each is still the latest attack later swings are measured from (rev5), so
+    strokes while it runs stay recovery-scaled basic attacks; a game/form change or death ends it. Developer builds log `Frame melee sequences (Fury, Zeal):`
+    and trace `cast 1/N` on the casting stroke and
+    `sequence skill=... hit k/N target=... after N ms` for the rest.
   `Frame swing damage:` in the log reports scaled hits and the last factors.
 - **Classic** (`1`): native attack rating, monster defense, block and the
   level penalty decide each attack, and attack speed paces them (below). A rolled
@@ -1089,10 +1093,21 @@ clock, so mixing trigger attacks with swings is never faster than swinging. Trig
 hits never count against each other: the native animation already paces them, and
 a multi-hit cast (Zeal, Fury, Whirlwind) keeps its later hits. Smite always hits
 natively, so it skips attack rating and the would-have-hit gate and only shares the
-recovery. `button_cycles` in `Frame melee:` counts trigger hits; developer builds
-log `Frame trigger melee:` (hits inside a swing's cycle) and `Frame trigger melee
+recovery. **Melee skills deliver natively (Cal, 2026-10-26):** a hit of a melee
+skill outside a physical swing - a trigger-held cast, Smite, a Fury or Zeal cast's
+later hit - is whole: no recovery factor and its on-hit effects, however recently
+you swung (the hero's used skill is past Skills.txt's basic rows 0-5). Attack
+rating still scales it (as every Unleashed hit, Cal's choice A: the same average
+as native's hit-or-miss roll, without whiffs) and the would-have-hit gate holds back
+the effects a miss would not have. It still stamps the trigger clock, so swings
+right after it stay recovery-scaled: Unleashed only keeps swings from slipping in
+between a skill's own casting windows. A swing that casts a strike skill is a
+full-cycle stroke's first contact, so it is whole too; a riposte adds its bonus to
+it. The trigger's plain Attack keeps the trigger rules above. `button_cycles` in
+`Frame melee:` counts trigger hits; developer builds log `Frame trigger melee:`
+(hits inside a swing's cycle; `skill hits left whole=`) and `Frame trigger melee
 damage:` (verdicts, scaled hits), and `melee_trace` adds a `trigger target=` line
-per hit. Classic: unchanged.
+per hit (`skill hit: whole` for skills). Classic: unchanged.
 In Classic, button melee keeps native monster block only where the game checks
 block inside its hit check; `native block/dodge in melee` in `Frame combat:`
 confirms it. Every weapon contact with a hostile creature taps the controller once
