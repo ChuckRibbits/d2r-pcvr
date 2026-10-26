@@ -279,7 +279,20 @@ through it (three more swapchains and an optical flow pipeline each); with the
 mod's panels SteamVR ran out of swapchains, and menus fell back to the flat
 panel. While it is loaded the mod lists the panels' images through the
 runtime's own `xrEnumerateSwapchainImages`, below the bridge, so it takes over
-the two eyes only; the log says so, or why not. If the loader does not list the layer (a game run
+the two eyes only; the log says so, or why not. The hand's map surface is
+made the first time a map shows; with the bridge loaded that failed in every
+session it was tried, and one failure left the minimap off for the session.
+It now uses the UI panel's swapchain usage, lists its images through the
+bridge should the list below it refuse them, logs which step failed with the
+result (`Frame menu map:`), and tries again 5 s later, three times a session.
+SteamVR gives a session 16 swapchains, and the bridge takes three more for
+each eye's, which leaves the panels about eight: with the map's surface made,
+VR Settings' atlas was refused (`XR_ERROR_LIMIT_REACHED`) and the panel never
+showed. Once that happens in a session, VR Settings takes the map's surface
+when it needs the room, the map waits while VR Settings is open, and closing
+it gives its atlas back so the map returns; a map refused for room waits and
+tries again every 5 s rather than counting it a failure.
+If the loader does not list the layer (a game run
 as administrator ignores `XR_API_LAYER_PATH`) or the instance fails with it,
 the game starts without it; Proton's WineOpenXR has no API layers. The
 generated frames come from color alone, so moving things and head turns can
