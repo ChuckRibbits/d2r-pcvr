@@ -200,16 +200,6 @@ headset frame are drawn:
   developer mode also DEV > Equipment > By turns ghosts; 0 as before). The
   ends are looked for up to 128 px of a 4096-wide eye either side. On an RTX
   5090 it adds 0.1 ms at 3072 square and 0.23 ms at 4096.
-  Far off, each eye switching every frame between its own picture and the
-  other eye's moved across shimmers: the game draws leaves smaller than a
-  pixel, their edges and its sharpening differently from 6 cm apart, and the
-  warp's depth there is coarse. With `[stereo] turns_keep_far` (metres, 0
-  off by default; live; in developer mode also DEV > Character > By turns
-  far own, 3, 6 or 12 m) the eye not drawn also keeps its own picture
-  farther than that along the view, where it shows the same surface, so far
-  off each eye shows only its own renders. It is a frame older there; what
-  moved since still comes from the drawn eye. `turns_keep_own=2` keeps it
-  everywhere anyway.
   The game's picture of anything against the sky (the void, depth 0) is
   larger than its depth: the pixel beside a roof, a treetop or a far
   building is dark like it and the next one half so, its colour blended into

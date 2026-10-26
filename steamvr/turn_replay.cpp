@@ -116,7 +116,7 @@ int main(int argc,char** argv) {try {
     own.drawnFov=fov("own.drawnFov");own.nowFov=fov("own.nowFov");
     drawn.depth=drawnDepth.Get();drawn.format=DXGI_FORMAT_R32_FLOAT;drawn.image=drawnImage.Get();drawn.nearPlane=need("drawn.near",1)[0];
     drawn.move=twelve("drawn.move");drawn.drawnFov=fov("drawn.drawnFov");drawn.nowFov=fov("drawn.nowFov");drawn.apart=need("drawn.apart",1)[0];
-    const auto& keep=need("drawn.keep",5);drawn.keep=keep[0];drawn.keepNear=keep[1];drawn.keepReach=keep[2];drawn.keepEffects=keep[3];drawn.keepFar=keep[4];
+    const auto& keep=need("drawn.keep",4);drawn.keep=keep[0];drawn.keepNear=keep[1];drawn.keepReach=keep[2];drawn.keepEffects=keep[3];
     std::array<float,9> turn{};const auto& hv=need("homography",9);for(int k=0;k<9;++k)turn[k]=hv[k];
     const auto out=gpu.Drawn(target.Get(),[&]{if(!warp.Render(gpu.device.Get(),gpu.list.Get(),ownImage.Get(),target.Get(),turn,1,&own,&drawn))throw std::runtime_error("render");});
     std::ofstream(dir+"/"+outName,std::ios::binary).write(reinterpret_cast<const char*>(out.data()),std::streamsize(out.size()*4));

@@ -22,11 +22,10 @@ static std::vector<Task> tasks;
 namespace gamestate {uint64_t LocalPlayer(){return local;}bool MenuOpen(){return menu;}}
 namespace interactionstate {Snapshot Read(){return state;}}
 namespace framevr::logging {void Write(const char*){}}
-static int keepOwn=3;static bool sharp=true,fill=true,rims=true;static float keepFar=0;
+static int keepOwn=3;static bool sharp=true,fill=true,rims=true;
 namespace framevr {void SetTurnsKeepOwn(int mode){keepOwn=mode;}int TurnsKeepOwn(){return keepOwn;}}
 namespace framevr {void SetTurnsSharp(bool on){sharp=on;}bool TurnsSharp(){return sharp;}}
 namespace framevr {void SetTurnsFill(bool on){fill=on;}bool TurnsFill(){return fill;}}
-namespace framevr {void SetTurnsKeepFar(float metres){keepFar=metres;}float TurnsKeepFar(){return keepFar;}}
 namespace framevr {void SetTurnsRims(bool on){rims=on;}bool TurnsRims(){return rims;}}
 static bool skyRims=true;
 namespace d2rcam {void SetSkyOverRims(bool on){skyRims=on;}bool SkyOverRims(){return skyRims;}}
@@ -338,16 +337,6 @@ int main(){
     }
     devscenarios::Request(Make(TurnsFillChoice));++local;Run(tasks.size()-1);--local;
     assert(fill&&devscenarios::Status().result==Result::Refused);
-    // And the far switch steps [stereo] turns_keep_far (3, 6, 12 m, off).
-    for(float expected:{3.f,6.f,12.f,0.f}) {
-        devscenarios::Request(Make(TurnsKeepFarChoice));assert(!tasks.back().game);Run(tasks.size()-1);
-        assert(devscenarios::Status().result==Result::FarUpdated&&keepFar==expected);
-        Snapshot snapshot;devscenarios::Capture(snapshot);assert(snapshot.devTurnsFar==expected&&snapshot.devTurnsFill);
-    }
-    keepFar=8;devscenarios::Request(Make(TurnsKeepFarChoice));Run(tasks.size()-1);assert(keepFar==12);   // an ini value between steps: the next one
-    keepFar=20;devscenarios::Request(Make(TurnsKeepFarChoice));Run(tasks.size()-1);assert(keepFar==0);    // past the last: off
-    devscenarios::Request(Make(TurnsKeepFarChoice));++local;Run(tasks.size()-1);--local;
-    assert(keepFar==0&&devscenarios::Status().result==Result::Refused);
     // And the rims switch [stereo] turns_rims (left with the sky, moved).
     for(bool expected:{false,true}) {
         devscenarios::Request(Make(TurnsRimsChoice));assert(!tasks.back().game);Run(tasks.size()-1);

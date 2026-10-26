@@ -855,7 +855,6 @@ void LoadSettings() {
     framevr::ConfigureTurnsKeepOwn(int(IniF(L"stereo",L"turns_keep_own",3)));
     framevr::ConfigureTurnsKeepNear(IniF(L"stereo",L"turns_keep_gap",48),IniF(L"stereo",L"turns_keep_reach",96));
     framevr::ConfigureTurnsKeepEffects(IniF(L"stereo",L"turns_effects_level",0.02f),IniF(L"stereo",L"turns_effects_reach",32));
-    framevr::ConfigureTurnsKeepFar(IniF(L"stereo",L"turns_keep_far",0));
     framevr::ConfigureTurnsSharp(IniB(L"stereo",L"turns_sharp",true));
     framevr::ConfigureTurnsFill(IniB(L"stereo",L"turns_fill",true));
     framevr::ConfigureTurnsRims(IniB(L"stereo",L"turns_rims",true));

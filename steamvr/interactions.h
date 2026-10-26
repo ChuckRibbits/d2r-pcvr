@@ -252,7 +252,6 @@ struct Snapshot {
     int devTurnsKeepOwn=0;   // [stereo] turns_keep_own as it stands (DEV switch): 0 off, 1 near things, 2 everywhere
     bool devTurnsSharp=false;   // [stereo] turns_sharp as it stands (DEV switch)
     bool devTurnsFill=false;    // and turns_fill
-    float devTurnsFar=0;        // and turns_keep_far, metres; 0 off
     bool devTurnsRims=false;    // and turns_rims
     bool devSkyRims=false;      // and [sky] cover_rims
     int devClass=-1,skillClass=-1;
@@ -305,7 +304,7 @@ inline bool Fresh(const Snapshot& s,uint64_t session,uint64_t now) {
     return session&&s.session==session&&now>=s.at&&now-s.at<=650;
 }
 enum class Action { None, Potion, Equip, Quest, Map, Character, Skills, BindSkill, Developer, FeedMerc, BindItem, UseItem, RunWalk };
-enum class Result { None, Pending, Applied, Refused, Cancelled, Dispatched, KitRefused, DebugUpdated, TurnsUpdated, SharpUpdated, FillUpdated, FarUpdated, RimsUpdated, SkyRimsUpdated };
+enum class Result { None, Pending, Applied, Refused, Cancelled, Dispatched, KitRefused, DebugUpdated, TurnsUpdated, SharpUpdated, FillUpdated, RimsUpdated, SkyRimsUpdated };
 struct Request {
     Action action=Action::None;
     uint64_t sequence=0,session=0,at=0;
@@ -672,7 +671,7 @@ public:
         if(in.cancel) {quickPressed=false;Drop();flight={};rearm=true;wheelLatch=true;pending={};out.cancelPending=true;editor=0;map=developer=false;editSlot=-1;}
         if(pending.action!=Action::None) {
             if(in.reply.sequence==pending.sequence&&in.reply.session==session&&in.reply.result!=Result::Pending) {
-                result=in.reply.result;resultAt=in.time;out.feedback=(result==Result::Applied||result==Result::Dispatched||result==Result::DebugUpdated||result==Result::TurnsUpdated||result==Result::SharpUpdated||result==Result::FillUpdated||result==Result::FarUpdated||result==Result::RimsUpdated||result==Result::SkyRimsUpdated)?2:3;
+                result=in.reply.result;resultAt=in.time;out.feedback=(result==Result::Applied||result==Result::Dispatched||result==Result::DebugUpdated||result==Result::TurnsUpdated||result==Result::SharpUpdated||result==Result::FillUpdated||result==Result::RimsUpdated||result==Result::SkyRimsUpdated)?2:3;
                 out.feedbackHand=pendingHand;
                 if(result==Result::Applied&&pending.action==Action::Equip)stowed=false;
                 if(result==Result::Applied&&pending.action==Action::Potion&&pending.item==held.item)consumed=true;

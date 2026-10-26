@@ -35,7 +35,7 @@ def prepare(folder, serial, frame, out):
         elif f[:2] == ["drawn", "near"]:
             v = dict(zip(f[1::2], f[2::2]))
             params += [f"drawn.near {v['near']}", f"drawn.apart {v['apart']}",
-                       f"drawn.keep {v['keep']} {v['keepNear']} {v['keepReach']} {v['keepEffects']} {v['keepFar']}"]
+                       f"drawn.keep {v['keep']} {v['keepNear']} {v['keepReach']} {v['keepEffects']}"]
         elif f[0] in ("drawn", "own") and f[1] in ("move", "carry", "drawnFov", "nowFov"):
             params.append(f"{f[0]}.{f[1]} " + " ".join(f[2:]))
         elif f[:2] == ["own", "near"]:
