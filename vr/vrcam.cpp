@@ -846,6 +846,7 @@ void LoadSettings() {
     #ifdef D2RVR_NATIVE_OPENXR
     framevr::profile::Request(GetPrivateProfileIntW(L"debug",L"profile_capture",0,g_iniPath));
     billboards::ConfigurePortalCenters(IniB(L"debug",L"portal_centers",true));
+    billboards::ConfigureBoneArmorHeight(IniF(L"render",L"bone_armor_height",-1));   // missing: default, just above the floor
     framevr::profile::ConfigureGpu(IniB(L"debug",L"profile_gpu",true));
     framevr::profile::ConfigureHooks(IniB(L"debug",L"profile_hooks",true));
     framevr::ConfigureDeferredWait(IniB(L"render",L"defer_gpu_wait",false));
