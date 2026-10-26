@@ -283,7 +283,7 @@ inline int HelpAt(Page page,float u,float v,bool controllerMenu=false,const Valu
         if(DeferBox.Contains(x,y)&&(!values||DeferOffered(*values)))return DeferGpuWait;
         if(PerformanceBox.Contains(x,y))return HelpPerformance;
         if(GameVideoBox.Contains(x,y))return HelpGameVideo;
-        if(FrameGenBox.Contains(x,y))return HelpFrameGen;
+        if(FrameGenBox.Contains(x,y)&&(!values||(*values)[StereoRendering]<.5f))return HelpFrameGen;   // not drawn by turns
     }
     if(page==Page::HUD){
         if(Rect{40,181,570,52}.Contains(x,y))return MapTopDown;
