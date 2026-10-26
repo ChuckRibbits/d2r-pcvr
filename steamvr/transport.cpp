@@ -600,7 +600,7 @@ constexpr int MapAttempts=3;constexpr ULONGLONG MapRetryMs=5000;
 // showed (owner, 2026-10-25: 16 created, then -10). Once refused in a session:
 // VR Settings takes the map's surface when it needs the room, the map waits
 // while it is open, and closing it gives its atlas back for the map.
-bool swapchainsShort=false,releaseSettingsChain=false;
+bool swapchainsShort=false,releaseSettingsChain=false,releaseUiChain=false;
 // Right-stick zoom of that map while it is looked at (map_zoom.h). wristMapShown:
 // the wrist / palm map quad went into the last frame's layers, centered at
 // wristMapCenter (interaction space, like interactionInput.head).
@@ -1261,12 +1261,13 @@ bool SetupActions() {
 }
 bool WaitGpu();
 bool WaitGpuValue(uint64_t value);
-// The hand map's surface given up for VR Settings (swapchainsShort); false
-// while this frame still holds one of its images. It is made again later.
-bool YieldMapSurface() {
+// The hand map's surface given up for VR Settings or the native menus' panel
+// (swapchainsShort); false while this frame still holds one of its images.
+// It is made again once they close.
+bool YieldMapSurface(const char* forWhat) {
     if(!mapEye.chain||mapEye.acquired||!WaitGpuValue(mapEye.copyFence))return false;
     pDestroySwapchain(mapEye.chain);mapEye={};mapRetryAt=GetTickCount64()+MapRetryMs;
-    Say("Frame menu map: its surface given up for VR Settings (no swapchain left); made again once there is room");
+    char line[160];std::snprintf(line,sizeof line,"Frame menu map: its surface given up for %s (no swapchain left); made again once there is room",forWhat);Say(line);
     return true;
 }
 bool UploadAtlas(XrSwapchain& chain,DXGI_FORMAT eyeFormat,int atlasWidth,int atlasHeight,const std::vector<uint8_t>& pixels,bool dynamic=false,bool* pending=nullptr) {
@@ -1279,7 +1280,7 @@ bool UploadAtlas(XrSwapchain& chain,DXGI_FORMAT eyeFormat,int atlasWidth,int atl
         if(r==XR_ERROR_LIMIT_REACHED) {
             if(!swapchainsShort)Say("Frame OpenXR: no swapchain left for a panel (the runtime's limit; frame generation's bridge takes some)");
             swapchainsShort=true;
-            if(&chain==&settingsChain&&YieldMapSurface())r=pCreateSwapchain(session,&ci,&chain);   // VR Settings first
+            if(&chain==&settingsChain&&YieldMapSurface("VR Settings"))r=pCreateSwapchain(session,&ci,&chain);   // VR Settings first
         }
         if(!Check(r,"create atlas")){chain=XR_NULL_HANDLE;return false;}
     }
@@ -1486,7 +1487,7 @@ bool Initialize(reshade::api::command_queue* rq,reshade::api::swapchain* swap) {
     {char message[128];std::snprintf(message,sizeof message,"Frame OpenXR: game format %d, eye format %d",int(format),int(eyeFormat));Say(message);}
     uiSupported=std::find(formats.begin(),formats.end(),int64_t(DXGI_FORMAT_R16G16B16A16_FLOAT))!=formats.end()&&uiBlit.Initialize(device.Get(),&Say);
     mapSupported=std::find(formats.begin(),formats.end(),int64_t(DXGI_FORMAT_R16G16B16A16_FLOAT))!=formats.end()&&mapBlit.Initialize(device.Get(),&Say);
-    mapRetryAt=0;mapFailures=0;swapchainsShort=releaseSettingsChain=false;
+    mapRetryAt=0;mapFailures=0;swapchainsShort=releaseSettingsChain=releaseUiChain=false;
     mirrorSupported=true;
     for(auto& e:eyes) {
         XrSwapchainCreateInfo c{XR_TYPE_SWAPCHAIN_CREATE_INFO};c.usageFlags=XR_SWAPCHAIN_USAGE_COLOR_ATTACHMENT_BIT|XR_SWAPCHAIN_USAGE_TRANSFER_DST_BIT;
@@ -3262,6 +3263,7 @@ bool Begin() {
         workspacePlaced=false;uiMissingFrames=0;std::fill_n(uiCrop,4,0);
         if(book)journalPlacement.Open();
         Say(spatial?(book?"Frame panels: handheld quest log":"Frame panels: native menus in stereo world"):"Frame panels: native surface closed");
+        releaseUiChain=!spatial&&swapchainsShort;   // short of swapchains: its surface back for the map (at the frame's end)
     }
     // Rearm pointer input when story/choices change, keeping the same anchored
     // canvas. A trigger that dismisses speech must not also choose an option.
@@ -3810,7 +3812,7 @@ bool Copy(ID3D12Resource* src,Eye& e,reshade::api::command_queue* rq) {
 }
 bool CopyMap(reshade::api::command_queue* rq) {
     if(!mapSupported||mapEye.copied||!interaction::MapWanted(interactionInput,interactionOutput,GetTickCount64()))return true;
-    if(swapchainsShort&&settingsOpen)return true;   // VR Settings may need the map's surface: no map while it is open
+    if(swapchainsShort&&(settingsOpen||spatialMode))return true;   // VR Settings or the native menus' panel may need its surface: no map while they are open
     uint32_t w=0,h=0;
     bool fullMap=false;float drawnZoom=0;   // Map view = Full map: the share is the full map's box, drawn at that game zoom
     auto* src=reinterpret_cast<ID3D12Resource*>(hud::MapTexture(w,h,&fullMap,&drawnZoom));
@@ -3917,7 +3919,14 @@ bool CopyUi(reshade::api::command_queue* rq) {
     if(!e.chain) {
         XrSwapchainCreateInfo c{XR_TYPE_SWAPCHAIN_CREATE_INFO};c.usageFlags=XR_SWAPCHAIN_USAGE_COLOR_ATTACHMENT_BIT|XR_SWAPCHAIN_USAGE_TRANSFER_DST_BIT;
         c.format=DXGI_FORMAT_R16G16B16A16_FLOAT;c.width=w;c.height=h;c.sampleCount=c.faceCount=c.arraySize=c.mipCount=1;
-        if(XR_FAILED(pCreateSwapchain(session,&c,&e.chain))) {uiSupported=false;Say("Frame panels: UI format unavailable; native menu retained");return true;}
+        XrResult r=pCreateSwapchain(session,&c,&e.chain);
+        if(r==XR_ERROR_LIMIT_REACHED) {   // no swapchain left (swapchainsShort): the map's, else again next frame
+            if(!swapchainsShort)Say("Frame OpenXR: no swapchain left for a panel (the runtime's limit; frame generation's bridge takes some)");
+            swapchainsShort=true;
+            if(YieldMapSurface("the native menus"))r=pCreateSwapchain(session,&c,&e.chain);
+            if(r==XR_ERROR_LIMIT_REACHED){e.chain=XR_NULL_HANDLE;return true;}   // the flat menu this frame
+        }
+        if(XR_FAILED(r)){e.chain=XR_NULL_HANDLE;uiSupported=false;Say("Frame panels: UI format unavailable; native menu retained");return true;}
         uint32_t n=0;EnumeratePanelImages(e.chain,0,&n,nullptr);e.images.resize(n,{XR_TYPE_SWAPCHAIN_IMAGE_D3D12_KHR});
         if(XR_FAILED(EnumeratePanelImages(e.chain,n,&n,reinterpret_cast<XrSwapchainImageBaseHeader*>(e.images.data()))))return false;
         if(FAILED(device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT,IID_PPV_ARGS(&e.allocator)))||
@@ -4274,6 +4283,11 @@ void EndPair() {
     if(releaseSettingsChain&&!settingsOpen&&settingsChain&&WaitGpu()) {
         pDestroySwapchain(settingsChain);settingsChain=XR_NULL_HANDLE;settingsImageReady=false;releaseSettingsChain=false;
         Say("Frame VR settings: its atlas given back while closed (no swapchain to spare)");
+    }
+    // The native menus closed short of swapchains: their surface goes back for the map.
+    if(releaseUiChain&&!spatialMode&&uiEye.chain&&!uiEye.acquired&&WaitGpu()) {
+        pDestroySwapchain(uiEye.chain);uiEye={};releaseUiChain=false;
+        Say("Frame panels: the native menus' surface given back while closed (no swapchain to spare)");
     }
     if(interactionAtlasPending) {
         XrSwapchainImageReleaseInfo release{XR_TYPE_SWAPCHAIN_IMAGE_RELEASE_INFO};
