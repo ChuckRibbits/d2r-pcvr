@@ -95,14 +95,15 @@ int main(){
         external[ElementalHands]=1;Check(Conflict(external,request.base,request.changed),"its conflicts are detected");
     }
     {
-        Check(RowCount(Page::Performance)==7&&RowKey(Page::Performance,4)==Foveation&&RowKey(Page::Performance,5)==FoveationStrength&&
+        auto both=Defaults();both[StereoRendering]=0;   // frame generation's rows show with Both eyes only
+        Check(RowCount(Page::Performance,both)==7&&RowKey(Page::Performance,4)==Foveation&&RowKey(Page::Performance,5)==FoveationStrength&&
               RowKey(Page::Performance,1)==RenderResolution,"strength sits directly under foveated rendering");
         // Frame generation last; NVIDIA's quality and scale share the row under it, with NVIDIA only.
-        Check(RowKey(Page::Performance,6)==FrameGeneration&&Defaults()[FrameGeneration]==0,"frame generation is on the Perf page, off by default");
-        auto nvidia=Defaults();nvidia[FrameGeneration]=2;
+        Check(RowKey(Page::Performance,6,both)==FrameGeneration&&Defaults()[FrameGeneration]==0,"frame generation is on the Perf page, off by default");
+        auto nvidia=both;nvidia[FrameGeneration]=2;
         Check(RowCount(Page::Performance,nvidia)==8&&RowKey(Page::Performance,7,nvidia)==FrameGenPreset&&PairOf(FrameGenPreset)==FrameGenScale,
               "NVIDIA's quality and scale share a row");
-        auto fidelity=Defaults();fidelity[FrameGeneration]=1;
+        auto fidelity=both;fidelity[FrameGeneration]=1;
         Check(RowCount(Page::Performance,fidelity)==7,"FidelityFX has no NVIDIA row");
         Check(Defaults()[FrameGenPreset]==1&&Defaults()[FrameGenScale]==2,"NVIDIA Medium at 50% to start");
         Check(Normalize(FrameGeneration,3)==0&&Normalize(FrameGeneration,1.5f)==0&&Normalize(FrameGenScale,-1)==2&&Normalize(FrameGenPreset,2)==2,
@@ -157,15 +158,15 @@ int main(){
               Normalize(StereoRendering,0)==0,"malformed stereo rendering goes by turns");
         Check(Normalize(StereoRendering,2)==1,"a profile saved with Replay goes by turns");
     }
-    {   // Frame generation is turned on with Both eyes only; by turns, once on, it can still be changed or turned off.
+    {   // Frame generation runs with Both eyes only: by turns its rows and its status line are left out.
         Model turns;turns.Open(s);turns.Click({Kind::Tab,int(Page::Performance)});
-        Check(turns.Get()[StereoRendering]==1&&!RowEnabled(turns.Get(),FrameGeneration),"by turns, frame generation cannot be turned on");
-        turns.Click(At(turns,Page::Performance,Increase(6)));
-        Check(turns.Get()[FrameGeneration]==0&&!turns.Dirty(),"its arrows do nothing");
+        Check(turns.Get()[StereoRendering]==1&&turns.Rows().count==6,"by turns, no frame generation rows");
         auto on=Defaults();on[FrameGeneration]=2;
-        Check(RowEnabled(on,FrameGeneration),"once on, by turns it can still be changed or turned off");
-        on[StereoRendering]=0;on[FrameGeneration]=0;
-        Check(RowEnabled(on,FrameGeneration),"with Both eyes it can be turned on");
+        Check(RowCount(Page::Performance,on)==6&&HelpAt(Page::Performance,600.f/Width,(FrameGenBox.y+10.f)/Height,false,&on)!=HelpFrameGen,
+              "nor once it was on with Both eyes: no NVIDIA row, no status line");
+        on[StereoRendering]=0;
+        Check(RowCount(Page::Performance,on)==8&&RowEnabled(on,FrameGeneration)&&
+              HelpAt(Page::Performance,600.f/Width,(FrameGenBox.y+10.f)/Height,false,&on)==HelpFrameGen,"Both eyes brings them back");
     }
     {   // Frame generation steps Off, FidelityFX, NVIDIA and stops at the ends; NVIDIA brings its row.
         Model frames;frames.Open(s);frames.Click({Kind::Tab,int(Page::Performance)});
@@ -585,7 +586,8 @@ int main(){
         v[Seated]=1;Check(!RowShown(Waist,v,{}),"seated: no standing belt drop");
         v[Foveation]=0;Check(!RowShown(FoveationStrength,v,{}),"no foveation strength while it is Off");
         v[BloodVisor]=0;Check(!RowShown(BloodWipe,v,{}),"no face wipe without blood");
-        Check(RowCount(Page::VR,v)==9&&RowCount(Page::Performance,v)==6&&RowCount(Page::HUD,v)==9,"each page drops what cannot apply");
+        Check(!RowShown(FrameGeneration,v,{})&&!RowShown(FrameGenPreset,v,{}),"no frame generation by turns");
+        Check(RowCount(Page::VR,v)==9&&RowCount(Page::Performance,v)==5&&RowCount(Page::HUD,v)==9,"each page drops what cannot apply");
     }
     {   // Windows Mono audio: the title row warns on every page; pointing at it explains
         const float u=(MonoAudioBox.x+20.f)/Width,v=(MonoAudioBox.y+20.f)/Height;

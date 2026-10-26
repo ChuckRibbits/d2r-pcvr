@@ -365,9 +365,6 @@ inline bool RowEnabled(const Values& values,Key key){
     if(key==DeferGpuWait)return DeferOffered(values);   // the button only turns it on
     if(key==AimHighlights||HighlightKey(key))return values[TargetHighlight]>0;   // only while the monster outline shows
     if(key==LandingCircles)return values[GroundAim]>.5f;   // only while the mod places ground skills
-    // Frame generation runs with Both eyes only (frame_generation.h): turned on
-    // only then; once on it can still be changed or turned off.
-    if(key==FrameGeneration)return values[StereoRendering]<.5f||values[FrameGeneration]>.5f;
     return key!=FoveationStrength||values[Foveation]>.5f;
 }
 // The character the panel is open for: rows for another class, or for a
@@ -404,7 +401,11 @@ inline bool RowShown(Key key,const Values& v,const Context& c){
         case TurnSpeed:return SmoothTurning(v[Snap],v[SmoothTurn]);
         case Waist:return v[Seated]<.5f;   // standing mode only
         case BloodWipe:return v[BloodVisor]>.5f;
-        case FrameGenPreset:return framegen::Read(v[FrameGeneration],0,0).mode==framegen::Mode::Nvidia;   // with its scale
+        // Frame generation runs with Both eyes only (frame_generation.h): By turns leaves its
+        // rows out, as it does the status line (owner, 2026-10-25: "it should go away since that
+        // is no longer active when you are at by turns").
+        case FrameGeneration:return v[StereoRendering]<.5f;
+        case FrameGenPreset:return v[StereoRendering]<.5f&&framegen::Read(v[FrameGeneration],0,0).mode==framegen::Mode::Nvidia;   // with its scale
         default:return true;
     }
 }
