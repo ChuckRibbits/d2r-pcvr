@@ -662,7 +662,7 @@ public:
         }
         lastTime=in.time;
         const bool handChanged=in.wheelHand!=lastWheelHand;
-        if(handChanged){quickPressed=false;editor=0;editSlot=-1;map=utility=developer=false;rearm=true;wheelLatch=false;lastWheelHand=in.wheelHand;}
+        if(handChanged){quickPressed=false;editor=0;editSlot=-1;map=utility=developer=false;devPage=0;rearm=true;wheelLatch=false;lastWheelHand=in.wheelHand;}
         const bool triggerEdge=trigger&&!triggerWas&&!handChanged;
         const bool edges[2]={grips[0]&&!gripWas[0],grips[1]&&!gripWas[1]};
         triggerWas=trigger;gripWas[0]=grips[0];gripWas[1]=grips[1];
@@ -670,7 +670,7 @@ public:
         if(!in.wheel){quickPressed=false;wheelLatch=false;editor=0;editSlot=-1;}
         if(!in.snapshot.developer)developer=false;
         if(!trigger&&!grips[0]&&!grips[1])rearm=false;
-        if(in.cancel) {quickPressed=false;Drop();flight={};rearm=true;wheelLatch=true;pending={};out.cancelPending=true;editor=0;map=developer=false;devPage=0;editSlot=-1;}   // B: as before
+        if(in.cancel) {quickPressed=false;Drop();flight={};rearm=true;wheelLatch=true;pending={};out.cancelPending=true;editor=0;map=developer=false;devPage=0;editSlot=-1;}   // the cancel input, as before (transport has sent none since the per-hand wheels)
         if(pending.action!=Action::None) {
             if(in.reply.sequence==pending.sequence&&in.reply.session==session&&in.reply.result!=Result::Pending) {
                 result=in.reply.result;resultAt=in.time;out.feedback=(result==Result::Applied||result==Result::Dispatched||result==Result::DebugUpdated||result==Result::TurnsUpdated||result==Result::SharpUpdated||result==Result::FillUpdated||result==Result::RimsUpdated||result==Result::SkyRimsUpdated)?2:3;

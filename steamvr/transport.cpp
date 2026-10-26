@@ -1941,8 +1941,10 @@ void OpenSettings() {
     const auto q=math::Yaw(math::Heading(Q(head.orientation)));
     settingsBase={V(head.position)+math::Rotate(q,{0,-.06f,-1.05f}),q};
     settingsPose=Placed(settingsBase,settingsOffset);settingsHover={};ResetSettingsInput();
-    char line[96];std::snprintf(line,sizeof line,"Frame VR settings: panel opened on %s (notes page %d)",
-        settings::TabNames[std::clamp(int(settingsModel.page),0,settings::TabCount-1)],settingsModel.notesPage+1);Say(line);
+    char line[96];
+    if(settingsModel.page==settings::Page::ReleaseNotes)std::snprintf(line,sizeof line,"Frame VR settings: panel opened on Notes, page %d",settingsModel.notesPage+1);
+    else std::snprintf(line,sizeof line,"Frame VR settings: panel opened on %s",settings::TabNames[std::clamp(int(settingsModel.page),0,settings::TabCount-1)]);
+    Say(line);
 }
 // cancel: the B button; the next open starts on Controls. Any other close keeps the tab for the next open.
 void CloseSettings(bool cancel=false) {
@@ -2509,6 +2511,15 @@ void Input() {
             interaction::Input::Tossed{thrown.id,thrown.landed,thrown.p,thrown.q}:interaction::Input::Tossed{};
     }
     interactionOutput=interactions.Step(interactionInput);
+    {   // The wheel reopens on the page it was closed on: one line when that is the Map or the Developer page
+        static bool wheelWas=false;
+        if(interactionOutput.wheel&&!wheelWas){
+            const auto page=interactions.Page();
+            if(page==interaction::MenuPage::Map)Say("Frame wheel: opened on the Map (kept from the last close)");
+            else if(page==interaction::MenuPage::Developer)Say("Frame wheel: opened on the Developer page (kept from the last close)");
+        }
+        wheelWas=interactionOutput.wheel;
+    }
     if(interactionOutput.toggleLeftStrikes) {
         const auto current=vrsettings::Read();
         settings::Request request{current.values,current.values,0,current.sequence+1};

@@ -337,7 +337,7 @@ int main(){
         }
         const auto request=h.Click({Kind::Apply});
         Check(request.changed==(ChangeMask{1}<<key)&&request.values[key]==90&&!h.CanTestHaptics(0),"Apply saves only selected haptic strength and blocks preview while saving");
-        h.Close();h.Open(s);Check(h.Get()[key]==100&&h.page==Page::Haptics,"close discards edits; the panel reopens on Haptics");
+        h.Close();h.Open(s);Check(h.Get()[key]==100&&h.page==Page::Haptics&&h.CanTestHaptics(0)==!h.Busy(),"close discards edits; the panel reopens on Haptics, its preview there");
         h.Close(true);h.Open(s);Check(h.Get()[key]==100&&!h.CanTestHaptics(0),"after B (cancel) it reopens on Controls, which has no preview");
     }
     Check(!Model{}.CanTestHaptics(0),"closed menu cannot preview haptics");
