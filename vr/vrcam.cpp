@@ -857,6 +857,7 @@ void LoadSettings() {
     framevr::ConfigureTurnsKeepFar(IniF(L"stereo",L"turns_keep_far",0));
     framevr::ConfigureTurnsSharp(IniB(L"stereo",L"turns_sharp",true));
     framevr::ConfigureTurnsFill(IniB(L"stereo",L"turns_fill",true));
+    framevr::ConfigureTurnsRims(IniB(L"stereo",L"turns_rims",true));
     framevr::ConfigureEyeTracking(IniB(L"render",L"eye_tracked_foveation",false));
     framevr::ConfigureGameplay(IniB(L"gameplay",L"motion_controls",false));
     framevr::ConfigureQuiver(IniB(L"bow",L"quiver",true),IniB(L"bow",L"quiver_preview",true));

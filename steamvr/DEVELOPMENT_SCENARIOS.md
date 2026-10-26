@@ -81,8 +81,8 @@ Open either hand's wheel and choose **DEV**. Its tabs are grouped by purpose:
 - **Character:** level 10, 30, 60 and 90 presets; heal life/mana; unlock quests and
   waypoints; a **Throwing potions** kit (one stack each of Rancid, Choking and
   Strangling Gas and Oil, Exploding and Fulminating Potion, to equip in the right
-  hand and throw) and **By turns far own** (both on this page as Equipment is
-  full).
+  hand and throw), **By turns far own** and **By turns rims** (all on this
+  page as Equipment is full).
 - **Equipment:** starter primary/alternate gear, class unique primary/alternate
   gear, crossbow + bolts, bow + arrows, a small shield, **Render debug draws**,
   **By turns own picture**, **By turns filter**, **By turns ghosts**, a **Throwing kit** and a **Potion kit** (four Super
@@ -224,6 +224,17 @@ OFF they can shimmer, as each eye switches every frame between its own
 picture and the other eye's. Then walk, turn your head and watch monsters
 walking past that distance. The button shows the current distance, and the
 frame log records each step. It changes no saved setting.
+
+## By turns rims
+
+Select **DEV > Character > By turns rims** to switch, for the session, the
+dark rim the game draws round anything against the sky: **MOVED** with it
+(the default, `[stereo] turns_rims=1`) or **OLD** (0), left with the sky.
+In By turns, look at hut roofs, treetops and far buildings against the sky,
+for example in Kurast Docks: with OLD a dark, ragged outline stands a few
+pixels off each of them and flickers; with MOVED only the thin rim of Both
+eyes stays. The button shows the current state, and the frame log records
+each switch. It changes no saved setting.
 
 ## Locations
 

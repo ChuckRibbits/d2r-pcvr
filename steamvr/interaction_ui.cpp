@@ -283,7 +283,8 @@ std::vector<uint8_t> Paint(const Snapshot& s,const Output& o,int selection,const
                                                           s.devTurnsKeepOwn==3?"By turns own picture: FX":s.devTurnsKeepOwn==4?"By turns own picture: NEAR+FX":"By turns own picture: OFF"):
                               i==dev::TurnsSharpChoice?(s.devTurnsSharp?"By turns filter: SHARP":"By turns filter: SOFT"):
                               i==dev::TurnsFillChoice?(s.devTurnsFill?"By turns ghosts: FIXED":"By turns ghosts: OLD"):
-                              i==dev::TurnsKeepFarChoice?farTitle:choice.name;
+                              i==dev::TurnsKeepFarChoice?farTitle:
+                              i==dev::TurnsRimsChoice?(s.devTurnsRims?"By turns rims: MOVED":"By turns rims: OLD"):choice.name;
             text(title,{x+8,y+4,right-8,y+29});
             SelectObject(dc,shortcutFont);text(choice.detail,{x+8,y+29,right-8,bottom-4});SelectObject(dc,font);
         }
@@ -298,6 +299,8 @@ std::vector<uint8_t> Paint(const Snapshot& s,const Output& o,int selection,const
              o.result==Result::FillUpdated?(s.devTurnsFill?"By turns: no frame-old ghosts beside moving things.":"By turns: beside near things the eye keeps its own older picture, as before."):
              o.result==Result::FarUpdated?(s.devTurnsFar>0?"By turns: far off, the eye not drawn keeps its own picture. Watch distant trees.":
                                        "By turns: far off, the eye not drawn takes the drawn eye's picture, as before."):
+             o.result==Result::RimsUpdated?(s.devTurnsRims?"By turns: the dark rim round roofs and trees against the sky moves with them.":
+                                        "By turns: the rim round things against the sky stays with the sky, as before. Watch roof edges."):
              o.result==Result::Applied?"Kit added to inventory. Equip it using the native inventory screen.":
              o.result==Result::Dispatched?"Commands sent. Check character stats / destination in game.":
              o.result==Result::KitRefused?"Kit could not be added. Check inventory space and the development log.":

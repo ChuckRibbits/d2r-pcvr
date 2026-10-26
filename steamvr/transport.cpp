@@ -175,6 +175,7 @@ std::atomic<float> turnsEffectsLevel{.02f},turnsEffectsReach{32};   // Configure
 std::atomic<float> turnsKeepFar{0};   // ConfigureTurnsKeepFar: metres; 0 off
 std::atomic<bool> turnsSharp{true};   // ConfigureTurnsSharp: the pictures read Catmull-Rom (TurnWarp::Sharpen)
 std::atomic<bool> turnsFill{true};    // ConfigureTurnsFill: no frame-old ghosts in the strips beside near things (TurnWarp::Fill)
+std::atomic<bool> turnsRims{true};    // ConfigureTurnsRims: the rims round things against the void go with them (TurnWarp::Rims)
 std::atomic<bool> eyeTracking{false};
 std::atomic<bool> motionControls{false};
 // Stamped each focused XR input while motion controls are on (menus included).
@@ -3503,7 +3504,7 @@ bool TurnEye(int i) {
     // blends it (UNORM), and then it goes to its swapchain image.
     ID3D12Resource* image=e.images[e.index].texture;
     const bool layered=layerKept[i]&&TurnTarget(image);
-    turnWarp.Sharpen(turnsSharp.load());turnWarp.Fill(turnsFill.load());
+    turnWarp.Sharpen(turnsSharp.load());turnWarp.Fill(turnsFill.load());turnWarp.Rims(turnsRims.load());
     const bool turned=turnWarp.Render(device.Get(),e.commands.Get(),turnImages[i].Get(),layered?turnTarget.Get():image,h,i,moving,fromDrawn);
     if(turnCapture.left>0){auto& c=turnCapture;c.noted=true;c.fromDrawn=fromDrawn;c.moved=moving;c.other=other;c.own=depth;c.turn=h;}
     for(UINT k=0;k<kept;++k)std::swap(b[k].Transition.StateBefore,b[k].Transition.StateAfter);
@@ -3680,16 +3681,16 @@ void CaptureTurn(int turned) {
     floats("drawn move",c.other.move.data(),12);fov("drawn drawnFov",c.other.drawnFov);fov("drawn nowFov",c.other.nowFov);
     Append(t,"own near %.6g reach %.6g %.6g\n",c.own.nearPlane,c.own.reach[0],c.own.reach[1]);
     floats("own move",c.own.move.data(),12);floats("own carry",c.own.carry.data(),12);fov("own drawnFov",c.own.drawnFov);fov("own nowFov",c.own.nowFov);
-    Append(t,"settings keep_own %d keep_far %.2f sharp %d fill %d\n",turnsKeepOwn.load(),turnsKeepFar.load(),int(turnsSharp.load()),int(turnsFill.load()));
+    Append(t,"settings keep_own %d keep_far %.2f sharp %d fill %d rims %d\n",turnsKeepOwn.load(),turnsKeepFar.load(),int(turnsSharp.load()),int(turnsFill.load()),int(turnsRims.load()));
     Append(t,"files: PNGs 24-bit as shown (sRGB bytes); depth .bin float32 little-endian, width x height rows from the top, reverse-Z (distance = near / depth, world units), 0 sky\n");
     job.textPath=c.folder+[&]{const auto s=turncapture::Sidecar(c.serial,frame);return std::wstring(s.begin(),s.end());}();
     const auto& l=views[0];const auto& r=views[1];
     std::snprintf(line,sizeof line,"Frame capture: by turns frame %d of %d (pass %llu) drew %s, turned %s (from the drawn eye %d, moved %d); left %.4f %.4f %.4f fov %.4f %.4f %.4f %.4f; right %.4f %.4f %.4f fov %.4f %.4f %.4f %.4f; "
-        "apart %.2f cm (upm %.2f); keep_own %d, far %.1f m, sharp %d, fill %d; waited %.1f ms for the GPU (diagnostic pause, exclude from performance comparison) -> %s",
+        "apart %.2f cm (upm %.2f); keep_own %d, far %.1f m, sharp %d, fill %d, rims %d; waited %.1f ms for the GPU (diagnostic pause, exclude from performance comparison) -> %s",
         frame,turncapture::Frames,(unsigned long long)c.passes,drawn?"right":"left",drawn?"left":"right",int(c.fromDrawn),int(c.moved),
         l.pose.position.x,l.pose.position.y,l.pose.position.z,l.fov.angleLeft,l.fov.angleRight,l.fov.angleDown,l.fov.angleUp,
         r.pose.position.x,r.pose.position.y,r.pose.position.z,r.fov.angleLeft,r.fov.angleRight,r.fov.angleDown,r.fov.angleUp,
-        stageWorld.upm>0?c.other.apart/stageWorld.upm*100:0.f,stageWorld.upm,turnsKeepOwn.load(),turnsKeepFar.load(),int(turnsSharp.load()),int(turnsFill.load()),waited,Utf8(c.folder).c_str());
+        stageWorld.upm>0?c.other.apart/stageWorld.upm*100:0.f,stageWorld.upm,turnsKeepOwn.load(),turnsKeepFar.load(),int(turnsSharp.load()),int(turnsFill.load()),int(turnsRims.load()),waited,Utf8(c.folder).c_str());
     Say(line);
     ++turnCaptureWriting;
     try{std::thread(WriteTurnCapture,std::move(job)).detach();}catch(...){--turnCaptureWriting;skip("no thread to write it");}
@@ -4031,6 +4032,14 @@ bool TurnsFill() {return turnsFill.load();}
 void ConfigureTurnsFill(bool on) {
     static std::atomic<int> read{-1};   // as ConfigureTurnsKeepOwn: only a change of the ini's own value overrides the DEV switch
     if(read.exchange(on?1:0)!=(on?1:0))SetTurnsFill(on);
+}
+void SetTurnsRims(bool on) {
+    if(turnsRims.exchange(on)!=on)Say(on?"Frame OpenXR: by turns - the rims round things against the sky go with them":"Frame OpenXR: by turns - the rims round things against the sky stay with the sky");
+}
+bool TurnsRims() {return turnsRims.load();}
+void ConfigureTurnsRims(bool on) {
+    static std::atomic<int> read{-1};   // as ConfigureTurnsKeepOwn: only a change of the ini's own value overrides the DEV switch
+    if(read.exchange(on?1:0)!=(on?1:0))SetTurnsRims(on);
 }
 void ConfigureTurnsSharp(bool on) {
     static std::atomic<int> read{-1};   // as ConfigureTurnsKeepOwn: only a change of the ini's own value overrides the DEV switch

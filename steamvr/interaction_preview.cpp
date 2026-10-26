@@ -254,6 +254,9 @@ int main(int argc,char** argv) {
         o.devPage=0;s.devTurnsFar=6;o.hover=DeveloperCell(framevr::dev::TurnsKeepFarChoice);o.result=Result::FarUpdated;
         const auto farOn=Paint(s,o,-1);s.devTurnsFar=0;
         if(farOn==Paint(s,o,-1)||!SavePng((std::string(argv[1])+".turns-far.png").c_str(),farOn,1024,1024))return 82;
+        s.devTurnsRims=true;o.hover=DeveloperCell(framevr::dev::TurnsRimsChoice);o.result=Result::RimsUpdated;
+        const auto rimsOn=Paint(s,o,-1);s.devTurnsRims=false;
+        if(rimsOn==Paint(s,o,-1)||!SavePng((std::string(argv[1])+".turns-rims.png").c_str(),rimsOn,1024,1024))return 83;
         std::puts("Development preview: page, hover and unavailable state passed");return 0;
     }
     s.health=74;s.maxHealth=100;s.mana=39;s.maxMana=80;

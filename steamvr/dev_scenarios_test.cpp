@@ -22,11 +22,12 @@ static std::vector<Task> tasks;
 namespace gamestate {uint64_t LocalPlayer(){return local;}bool MenuOpen(){return menu;}}
 namespace interactionstate {Snapshot Read(){return state;}}
 namespace framevr::logging {void Write(const char*){}}
-static int keepOwn=3;static bool sharp=true,fill=true;static float keepFar=0;
+static int keepOwn=3;static bool sharp=true,fill=true,rims=true;static float keepFar=0;
 namespace framevr {void SetTurnsKeepOwn(int mode){keepOwn=mode;}int TurnsKeepOwn(){return keepOwn;}}
 namespace framevr {void SetTurnsSharp(bool on){sharp=on;}bool TurnsSharp(){return sharp;}}
 namespace framevr {void SetTurnsFill(bool on){fill=on;}bool TurnsFill(){return fill;}}
 namespace framevr {void SetTurnsKeepFar(float metres){keepFar=metres;}float TurnsKeepFar(){return keepFar;}}
+namespace framevr {void SetTurnsRims(bool on){rims=on;}bool TurnsRims(){return rims;}}
 
 static Threads::Result Queue(Threads::Callback callback,void* data,bool game) {
     assert(devscenarios::Status().result==Result::Pending);
@@ -345,6 +346,14 @@ int main(){
     keepFar=20;devscenarios::Request(Make(TurnsKeepFarChoice));Run(tasks.size()-1);assert(keepFar==0);    // past the last: off
     devscenarios::Request(Make(TurnsKeepFarChoice));++local;Run(tasks.size()-1);--local;
     assert(keepFar==0&&devscenarios::Status().result==Result::Refused);
+    // And the rims switch [stereo] turns_rims (left with the sky, moved).
+    for(bool expected:{false,true}) {
+        devscenarios::Request(Make(TurnsRimsChoice));assert(!tasks.back().game);Run(tasks.size()-1);
+        assert(devscenarios::Status().result==Result::RimsUpdated&&rims==expected);
+        Snapshot snapshot;devscenarios::Capture(snapshot);assert(snapshot.devTurnsRims==expected&&snapshot.devTurnsFill);
+    }
+    devscenarios::Request(Make(TurnsRimsChoice));++local;Run(tasks.size()-1);--local;
+    assert(rims&&devscenarios::Status().result==Result::Refused);
     assert(commands.size()==debugCommands&&itemCalls==debugItems);
     devscenarios::execute=Execute;
     inlineQueue=true;devscenarios::Request(Make(3,100));

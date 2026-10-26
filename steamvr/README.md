@@ -210,6 +210,19 @@ headset frame are drawn:
   off each eye shows only its own renders. It is a frame older there; what
   moved since still comes from the drawn eye. `turns_keep_own=2` keeps it
   everywhere anyway.
+  The game's picture of anything against the sky (the void, depth 0) is
+  larger than its depth: the pixel beside a roof, a treetop or a far
+  building is dark like it and the next one half so, its colour blended into
+  the void's black, which the sky is not painted over. With the sky's depth
+  that rim stayed where the drawn eye saw it while the thing moved across by
+  the eyes' parallax, about 7 px for a roof 10 m off: a dark, ragged outline
+  beside every silhouette against the sky in every other frame of each eye.
+  Captures in Kurast Docks showed it on all sides; against anything with
+  depth the picture keeps to its depth. Within 2 px of something, a pixel of
+  the sky now takes the nearest depth there in both eyes' depth before they
+  move, so the rim goes with what it belongs to (`[stereo] turns_rims=1`,
+  live; in developer mode also DEV > Character > By turns rims; 0 as
+  before). The thin rim itself stays, as in Both eyes.
 
 By turns draws a pair on a snap turn, outside first person, in open menus,
 during stereo captures and on any frame without a reusable image for both eyes.

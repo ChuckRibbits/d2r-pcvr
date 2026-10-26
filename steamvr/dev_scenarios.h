@@ -34,8 +34,10 @@ inline constexpr int ThrowingPotionsChoice=44;
 inline constexpr int TurnsKeepFarChoice=45;
 inline constexpr float TurnsFarSteps[]={3,6,12};
 inline float NextTurnsFar(float metres){for(const float m:TurnsFarSteps)if(metres<m-.01f)return m;return 0;}
+// And [stereo] turns_rims (moved with things, left with the sky); on CHARACTER too.
+inline constexpr int TurnsRimsChoice=46;
 inline constexpr int PageSize=14;
-inline constexpr std::array<Choice,46> Choices{{
+inline constexpr std::array<Choice,47> Choices{{
     {"Level 90", "All class skills rank 20 / test attributes", nullptr},
     {"Primary gear", "Class-specific unique equipment", nullptr},
     {"Alternate gear", "Equipment for the other class abilities", nullptr},
@@ -89,6 +91,7 @@ inline constexpr std::array<Choice,46> Choices{{
     {"Torch kit", "One-hand club torch / test lighting and melee", nullptr},
     {"Throwing potions", "Gas and oil potions / equip a stack to throw", nullptr},
     {"By turns far own", "Eye not drawn keeps its own past 3 / 6 / 12 m / off", nullptr},
+    {"By turns rims", "Dark rim round roofs and trees against the sky: moved with them / left", nullptr},
 }};
 // Stable action IDs are independent of their presentation order.
 inline constexpr int PageCount=5;
@@ -101,7 +104,7 @@ inline constexpr const char* PageHelp[]={
     "Area entrances. Travel does not complete quests, reset bosses or change difficulty."
 };
 inline constexpr std::array<std::array<int,PageSize>,PageCount> Pages{{
-    {{Level10Choice,Level30Choice,Level60Choice,0,HealChoice,UnlockQuestsChoice,ThrowingPotionsChoice,TurnsKeepFarChoice,-1,-1,-1,-1,-1,-1}},
+    {{Level10Choice,Level30Choice,Level60Choice,0,HealChoice,UnlockQuestsChoice,ThrowingPotionsChoice,TurnsKeepFarChoice,TurnsRimsChoice,-1,-1,-1,-1,-1}},
     {{StarterPrimaryChoice,StarterAlternateChoice,1,2,CrossbowChoice,BowChoice,SmallShieldChoice,DebugDrawsChoice,TurnsKeepOwnChoice,ThrowingChoice,PotionsChoice,TurnsSharpChoice,TurnsFillChoice,TorchChoice}},
     {{4,11,14,15,16,5,3,8,9,-1,-1,-1,-1,-1}},
     {{17,UpperKurastChoice,KurastSewersChoice,18,19,26,27,-1,-1,-1,-1,-1,-1,-1}},

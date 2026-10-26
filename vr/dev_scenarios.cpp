@@ -17,6 +17,7 @@ namespace framevr {void SetTurnsKeepOwn(int);int TurnsKeepOwn();}   // transport
 namespace framevr {void SetTurnsSharp(bool);bool TurnsSharp();}     // and turns_sharp
 namespace framevr {void SetTurnsFill(bool);bool TurnsFill();}       // and turns_fill
 namespace framevr {void SetTurnsKeepFar(float);float TurnsKeepFar();}   // and turns_keep_far
+namespace framevr {void SetTurnsRims(bool);bool TurnsRims();}       // and turns_rims
 
 namespace devscenarios {
 namespace {
@@ -127,6 +128,16 @@ void __cdecl Commands(const PluginContext*,void* token) noexcept {
         framevr::SetTurnsFill(fill);
         framevr::logging::Write(fill?"Frame development: by turns removes frame-old ghosts beside near things":"Frame development: by turns keeps the eye's own picture beside near things");
         Finish(r,Result::FillUpdated,claim);return;
+    }
+    if(r.index==framevr::dev::TurnsRimsChoice) {
+        bool rims;
+        {
+            std::lock_guard lock(mutex);if(claim!=ticket)return;
+            rims=!framevr::TurnsRims();
+        }
+        framevr::SetTurnsRims(rims);
+        framevr::logging::Write(rims?"Frame development: by turns moves the rims round things against the sky with them":"Frame development: by turns leaves the rims round things against the sky with the sky");
+        Finish(r,Result::RimsUpdated,claim);return;
     }
     if(r.index==framevr::dev::TurnsKeepFarChoice) {
         float metres;   // off, then farther, and round
@@ -297,7 +308,7 @@ void Init(const D2RL::PluginContext* ctx) {
     framevr::logging::Write("Frame development: isolated pcvr-dev environment enabled; class presets require disposable offline expansion characters");
 }
 bool DebugDraws(){return enabled&&debugDraws.load();}
-void Capture(framevr::interaction::Snapshot& s){s.developer=enabled;s.devDebugDraws=DebugDraws();s.devTurnsKeepOwn=enabled?framevr::TurnsKeepOwn():0;s.devTurnsSharp=enabled&&framevr::TurnsSharp();s.devTurnsFill=enabled&&framevr::TurnsFill();s.devTurnsFar=enabled?framevr::TurnsKeepFar():0;}
+void Capture(framevr::interaction::Snapshot& s){s.developer=enabled;s.devDebugDraws=DebugDraws();s.devTurnsKeepOwn=enabled?framevr::TurnsKeepOwn():0;s.devTurnsSharp=enabled&&framevr::TurnsSharp();s.devTurnsFill=enabled&&framevr::TurnsFill();s.devTurnsFar=enabled?framevr::TurnsKeepFar():0;s.devTurnsRims=enabled&&framevr::TurnsRims();}
 void Request(const framevr::interaction::Request& r) {
     const bool valid=Valid(r);
     const auto run=threads?(framevr::dev::IsKit(r.index)?threads->runOnGameThread:threads->runOnUiThread):nullptr;
