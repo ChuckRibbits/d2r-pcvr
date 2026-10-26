@@ -283,8 +283,11 @@ the two eyes only; the log says so, or why not. If the loader does not list the 
 as administrator ignores `XR_API_LAYER_PATH`) or the instance fails with it,
 the game starts without it; Proton's WineOpenXR has no API layers. The
 generated frames come from color alone, so moving things and head turns can
-show artifacts, and the Perf page's frame rate counts the frames the game
-draws, not the generated ones. The layer needs the Microsoft Visual C++ x64
+show artifacts. While frame generation is active the Perf page shows no frame
+rate: with a menu open the bridge stops generating (Both eyes ran 30 pairs a
+second at 90 Hz with VR Settings up, 45 at 45 Hz doubled in play), so its
+numbers would be the menu's. It points to fpsVR or SteamVR's performance graph
+instead. The layer needs the Microsoft Visual C++ x64
 runtime. Its settings are `[render] frame_generation` (0 Off, 1 FidelityFX,
 2 NVIDIA), `frame_generation_preset` (0 Slow, 1 Medium, 2 Fast) and
 `frame_generation_scale` (0 100%, 1 75%, 2 50%).
