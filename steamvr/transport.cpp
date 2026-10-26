@@ -16,12 +16,14 @@
 #include <algorithm>
 #include <array>
 #include <atomic>
+#include <cstdarg>
 #include <cstdio>
 #include <cstring>
 #include <deque>
 #include <memory>
 #include <mutex>
 #include <string>
+#include <thread>
 #include <vector>
 #include "afr_eye_shared.h"
 #include "d2r_vr_shared.h"
@@ -75,6 +77,7 @@
 #include "menu_controls.h"
 #include "ui_blit.h"
 #include "turn_warp.h"
+#include "turn_capture.h"
 #include "dxgi_views.h"
 #include "scene_depth.h"
 #include "ui_world.h"
@@ -171,6 +174,7 @@ std::atomic<float> turnsKeepGap{48},turnsKeepReach{96};   // ConfigureTurnsKeepN
 std::atomic<float> turnsEffectsLevel{.02f},turnsEffectsReach{32};   // ConfigureTurnsKeepEffects: the layer's level; a 4096-wide eye's pixels
 std::atomic<bool> turnsSharp{true};   // ConfigureTurnsSharp: the pictures read Catmull-Rom (TurnWarp::Sharpen)
 std::atomic<bool> turnsFill{true};    // ConfigureTurnsFill: no frame-old ghosts in the strips beside near things (TurnWarp::Fill)
+std::atomic<bool> turnsRims{true};    // ConfigureTurnsRims: the rims round things against the void go with them (TurnWarp::Rims)
 std::atomic<bool> eyeTracking{false};
 std::atomic<bool> motionControls{false};
 // Stamped each focused XR input while motion controls are on (menus included).
@@ -650,6 +654,19 @@ std::array<bool,2> layerKept{};
 ComPtr<ID3D12Resource> turnTarget;
 bool layersFailed=false;
 TurnCounts turnCounts;
+// By turns capture (turn_capture.h): armed by the stereo capture of a pair
+// while Stereo rendering is By turns, then each of the next frames by turns
+// read back after TurnEye (CaptureTurn) and written on a thread of its own.
+// TurnEye notes how it moved the eye not drawn, for the frame's sidecar.
+struct TurnCapture {
+    int left=0,frame=0;unsigned serial=0;uint64_t passes=0;
+    bool noted=false,fromDrawn=false,moved=false,reported=true;
+    TurnDepth other{},own{};std::array<float,9> turn{};
+    ComPtr<ID3D12CommandAllocator> allocator;ComPtr<ID3D12GraphicsCommandList> list;
+    ComPtr<ID3D12Resource> buffer;UINT64 size=0;
+    std::wstring folder;
+} turnCapture;
+std::atomic<int> turnCaptureWriting{0},turnCaptureWritten{0},turnCaptureFailed{0};
 std::atomic<bool> uiSupported{false};
 bool journalMode=false,spatialMode=false,workspacePlaced=false,opaqueMenuMode=false,upperBandMenuMode=false;
 bool npcChoicesMode=false;
@@ -3484,8 +3501,9 @@ bool TurnEye(int i) {
     // blends it (UNORM), and then it goes to its swapchain image.
     ID3D12Resource* image=e.images[e.index].texture;
     const bool layered=layerKept[i]&&TurnTarget(image);
-    turnWarp.Sharpen(turnsSharp.load());turnWarp.Fill(turnsFill.load());
+    turnWarp.Sharpen(turnsSharp.load());turnWarp.Fill(turnsFill.load());turnWarp.Rims(turnsRims.load());
     const bool turned=turnWarp.Render(device.Get(),e.commands.Get(),turnImages[i].Get(),layered?turnTarget.Get():image,h,i,moving,fromDrawn);
+    if(turnCapture.left>0){auto& c=turnCapture;c.noted=true;c.fromDrawn=fromDrawn;c.moved=moving;c.other=other;c.own=depth;c.turn=h;}
     for(UINT k=0;k<kept;++k)std::swap(b[k].Transition.StateBefore,b[k].Transition.StateAfter);
     e.commands->ResourceBarrier(kept,b);
     if(turned&&layered) {
@@ -3519,6 +3537,165 @@ bool TurnEye(int i) {
     if(moving)++turnCounts.moved;else ++turnCounts.turned;
     if(fromDrawn)++turnCounts.drawn;
     return true;
+}
+// By turns capture: its files go next to the frame log, in
+// d2rloader\logs\turn-captures\<the time of this game's first capture> (this
+// plugin is in d2rloader\plugins): the serial starts again each game, and a
+// new game's first capture wrote over the last one's.
+std::wstring TurnCaptureFolder() {
+    HMODULE self=nullptr;wchar_t path[MAX_PATH]{};
+    if(!GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS|GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,reinterpret_cast<LPCWSTR>(&TurnCaptureFolder),&self))return {};
+    const DWORD n=GetModuleFileNameW(self,path,MAX_PATH);
+    if(!n||n>=MAX_PATH)return {};
+    std::wstring folder(path,n);
+    for(int up=0;up<2;++up){const auto cut=folder.find_last_of(L"\\/");if(cut==std::wstring::npos)return {};folder.resize(cut);}
+    folder+=L"\\logs";CreateDirectoryW(folder.c_str(),nullptr);
+    folder+=L"\\turn-captures";CreateDirectoryW(folder.c_str(),nullptr);
+    static const std::wstring game=[]{SYSTEMTIME t{};GetLocalTime(&t);wchar_t b[32];
+        std::swprintf(b,32,L"\\%04u%02u%02u-%02u%02u%02u",t.wYear,t.wMonth,t.wDay,t.wHour,t.wMinute,t.wSecond);return std::wstring(b);}();
+    folder+=game;CreateDirectoryW(folder.c_str(),nullptr);
+    const DWORD a=GetFileAttributesW(folder.c_str());
+    return a!=INVALID_FILE_ATTRIBUTES&&(a&FILE_ATTRIBUTE_DIRECTORY)?folder+L"\\":std::wstring{};
+}
+std::string Utf8(const std::wstring& s) {
+    std::string out(size_t(std::max(0,WideCharToMultiByte(CP_UTF8,0,s.c_str(),int(s.size()),nullptr,0,nullptr,nullptr))),'\0');
+    if(!out.empty())WideCharToMultiByte(CP_UTF8,0,s.c_str(),int(s.size()),out.data(),int(out.size()),nullptr,nullptr);
+    return out;
+}
+void Append(std::string& s,const char* format,...) {
+    char line[512];va_list a;va_start(a,format);const int n=std::vsnprintf(line,sizeof line,format,a);va_end(a);
+    if(n>0)s.append(line,size_t(std::min(n,int(sizeof line)-1)));
+}
+// A frame's read-back texels, converted and written by WriteTurnCapture on a
+// thread of its own: the render thread only copies them out of the readback.
+struct TurnCaptureSource {std::wstring path;std::vector<uint8_t> texels;uint32_t pitch=0,width=0,height=0;DXGI_FORMAT format=DXGI_FORMAT_UNKNOWN;bool depth=false;};
+struct TurnCaptureJob {std::vector<TurnCaptureSource> sources;std::wstring textPath;std::string text;};
+bool SaveBytes(const std::wstring& path,const void* data,size_t bytes) {
+    FILE* f=_wfopen(path.c_str(),L"wb");
+    if(!f)return false;
+    const bool ok=std::fwrite(data,1,bytes,f)==bytes;
+    return std::fclose(f)==0&&ok;
+}
+void WriteTurnCapture(TurnCaptureJob job) {
+    int written=0,lost=0;
+    for(auto& s:job.sources) {
+        bool ok=false;
+        if(s.depth) {
+            const auto depth=turncapture::Depths(s.texels.data(),s.pitch,s.width,s.height,turncapture::DepthOf(s.format));
+            ok=SaveBytes(s.path,depth.data(),depth.size()*sizeof(float));
+        } else {
+            auto bgr=turncapture::Bgr(s.texels.data(),s.pitch,s.width,s.height,s.format);
+            ok=turncapture::SavePng(s.path.c_str(),bgr,s.width,s.height);
+        }
+        s.texels={};
+        ++(ok?written:lost);
+    }
+    ++(SaveBytes(job.textPath,job.text.data(),job.text.size())?written:lost);
+    turnCaptureWritten+=written;turnCaptureFailed+=lost;--turnCaptureWriting;
+}
+// By turns capture, after TurnEye turned `turned`: both eyes as they go to
+// the headset, the drawn eye's picture as the warp read it (kept by Copy) and
+// its depth. Read back now: the frame waits for the GPU, so exclude these
+// frames from performance comparison.
+void CaptureTurn(int turned) {
+    auto& c=turnCapture;
+    const int frame=c.frame++,drawn=turned^1;--c.left;
+    char line[1024];
+    const auto skip=[&](const char* why){std::snprintf(line,sizeof line,"Frame capture: by turns frame %d of %d not recorded - %s",frame,turncapture::Frames,why);Say(line);};
+    if(c.folder.empty())c.folder=TurnCaptureFolder();
+    if(c.folder.empty()){skip("no folder beside the frame log");return;}
+    if(!eyes[0].acquired||!eyes[1].acquired){skip("an eye was not in its swapchain image");return;}
+    constexpr auto readable=D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE|D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE;
+    struct Source {ID3D12Resource* resource;D3D12_RESOURCE_STATES state;std::string name;bool depth;};
+    std::vector<Source> sources;
+    for(int i=0;i<2;++i)sources.push_back({eyes[i].images[eyes[i].index].texture,D3D12_RESOURCE_STATE_RENDER_TARGET,turncapture::Name(c.serial,frame,i,i==drawn?"drawn":"turned","png"),false});
+    if(turnKept[drawn]&&turnImages[drawn])sources.push_back({turnImages[drawn].Get(),D3D12_RESOURCE_STATE_COMMON,turncapture::Name(c.serial,frame,drawn,"kept","png"),false});
+    if(turnDepths[drawn].ok&&turnDepths[drawn].texture)sources.push_back({turnDepths[drawn].texture.Get(),readable,turncapture::Name(c.serial,frame,drawn,"depth","bin"),true});
+    const size_t n=sources.size();
+    std::vector<D3D12_PLACED_SUBRESOURCE_FOOTPRINT> at(n);std::vector<D3D12_RESOURCE_DESC> descs(n);
+    UINT64 total=0;
+    for(size_t k=0;k<n;++k) {
+        descs[k]=sources[k].resource->GetDesc();
+        if(sources[k].depth?turncapture::DepthOf(descs[k].Format)==turncapture::Depth::None:!turncapture::Readable(descs[k].Format)) {
+            char why[96];std::snprintf(why,sizeof why,"format %d of %s is not read back",int(descs[k].Format),sources[k].name.c_str());skip(why);return;
+        }
+        UINT rows=0;UINT64 rowBytes=0,bytes=0;
+        device->GetCopyableFootprints(&descs[k],0,1,0,&at[k],&rows,&rowBytes,&bytes);
+        at[k].Offset=total;
+        total=(total+bytes+D3D12_TEXTURE_DATA_PLACEMENT_ALIGNMENT-1)/D3D12_TEXTURE_DATA_PLACEMENT_ALIGNMENT*D3D12_TEXTURE_DATA_PLACEMENT_ALIGNMENT;
+    }
+    if(!c.buffer||c.size<total) {
+        c.buffer.Reset();c.size=0;
+        D3D12_HEAP_PROPERTIES heap{};heap.Type=D3D12_HEAP_TYPE_READBACK;
+        D3D12_RESOURCE_DESC r{};r.Dimension=D3D12_RESOURCE_DIMENSION_BUFFER;r.Width=total;r.Height=1;r.DepthOrArraySize=1;r.MipLevels=1;
+        r.SampleDesc.Count=1;r.Layout=D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
+        if(!Hr(device->CreateCommittedResource(&heap,D3D12_HEAP_FLAG_NONE,&r,D3D12_RESOURCE_STATE_COPY_DEST,nullptr,IID_PPV_ARGS(&c.buffer)),"create turn capture readback")){skip("no readback buffer");return;}
+        c.size=total;
+    }
+    if(!c.list&&(!Hr(device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT,IID_PPV_ARGS(&c.allocator)),"create turn capture allocator")||
+                 !Hr(device->CreateCommandList(0,D3D12_COMMAND_LIST_TYPE_DIRECT,c.allocator.Get(),nullptr,IID_PPV_ARGS(&c.list)),"create turn capture list")||
+                 !Hr(c.list->Close(),"close new turn capture list"))){c.list.Reset();skip("no command list");return;}
+    if(!Hr(c.allocator->Reset(),"reset turn capture allocator")||!Hr(c.list->Reset(c.allocator.Get(),nullptr),"reset turn capture list")){skip("no command list");return;}
+    std::vector<D3D12_RESOURCE_BARRIER> b(n);
+    for(size_t k=0;k<n;++k){b[k].Type=D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;b[k].Transition={sources[k].resource,D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES,sources[k].state,D3D12_RESOURCE_STATE_COPY_SOURCE};}
+    c.list->ResourceBarrier(UINT(n),b.data());
+    for(size_t k=0;k<n;++k) {
+        D3D12_TEXTURE_COPY_LOCATION to{},from{};
+        to.pResource=c.buffer.Get();to.Type=D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT;to.PlacedFootprint=at[k];
+        from.pResource=sources[k].resource;from.Type=D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX;from.SubresourceIndex=0;   // a depth's plane 0
+        c.list->CopyTextureRegion(&to,0,0,0,&from,nullptr);
+    }
+    for(auto& x:b)std::swap(x.Transition.StateBefore,x.Transition.StateAfter);
+    c.list->ResourceBarrier(UINT(n),b.data());
+    if(!Hr(c.list->Close(),"close turn capture list")){skip("no command list");return;}
+    const double start=Milliseconds();
+    ID3D12CommandList* lists[]={c.list.Get()};queue->ExecuteCommandLists(1,lists);
+    if(!Hr(queue->Signal(fence.Get(),++fenceValue),"signal turn capture")||!WaitGpu()){failed=true;skip("the GPU did not finish");return;}
+    const double waited=Milliseconds()-start;
+    void* mapped=nullptr;const D3D12_RANGE range{0,SIZE_T(total)};
+    if(!Hr(c.buffer->Map(0,&range,&mapped),"map turn capture readback")){skip("the readback did not map");return;}
+    TurnCaptureJob job;
+    for(size_t k=0;k<n;++k) {
+        const auto& f=at[k].Footprint;const auto* rows=static_cast<const uint8_t*>(mapped)+at[k].Offset;
+        TurnCaptureSource s{c.folder+std::wstring(sources[k].name.begin(),sources[k].name.end()),{},f.RowPitch,f.Width,f.Height,descs[k].Format,sources[k].depth};
+        s.texels.assign(rows,rows+size_t(f.RowPitch)*f.Height);
+        job.sources.push_back(std::move(s));
+    }
+    const D3D12_RANGE none{0,0};c.buffer->Unmap(0,&none);
+    if(c.left<=0){c.buffer.Reset();c.size=0;}
+    // The frame's warp, to replay it (turn_warp.h's TurnDepth): `drawn` moved
+    // the drawn eye's picture across, `own` this eye's older one.
+    auto& t=job.text;
+    const auto pose=[&](const char* what,const XrPosef& p,const XrFovf& v){
+        Append(t,"%s position %.6f %.6f %.6f orientation %.7f %.7f %.7f %.7f fov %.6f %.6f %.6f %.6f\n",what,
+            p.position.x,p.position.y,p.position.z,p.orientation.x,p.orientation.y,p.orientation.z,p.orientation.w,v.angleLeft,v.angleRight,v.angleDown,v.angleUp);};
+    const auto floats=[&](const char* what,const float* v,int count){Append(t,"%s",what);for(int k=0;k<count;++k)Append(t," %.7g",v[k]);t+='\n';};
+    const auto fov=[&](const char* what,const math::Fov& v){Append(t,"%s %.6f %.6f %.6f %.6f\n",what,v.left,v.right,v.down,v.up);};
+    Append(t,"serial %u frame %d pass %llu drawn %s turned %s\n",c.serial,frame,(unsigned long long)c.passes,drawn?"right":"left",drawn?"left":"right");
+    Append(t,"size %llu %u colour format %d depth format %d (read as %d) depth scale %.4f %.4f upm %.4f\n",(unsigned long long)descs[0].Width,descs[0].Height,int(descs[0].Format),
+        int(turnDepths[drawn].format),sources.back().depth?int(descs.back().Format):0,turnDepths[drawn].scale[0],turnDepths[drawn].scale[1],stageWorld.upm);
+    pose("view left",views[0].pose,views[0].fov);pose("view right",views[1].pose,views[1].fov);
+    pose("turned eye's own picture drawn at",lastEyes[turned].pose,lastEyes[turned].fov);
+    floats("turn homography",c.turn.data(),9);
+    Append(t,"noted %d from drawn %d moved %d\n",int(c.noted),int(c.fromDrawn),int(c.moved));
+    Append(t,"drawn near %.6g apart %.6g keep %.3g keepNear %.3g keepReach %.3g keepEffects %.3g scale %.4f %.4f\n",c.other.nearPlane,c.other.apart,c.other.keep,
+        c.other.keepNear,c.other.keepReach,c.other.keepEffects,c.other.scale[0],c.other.scale[1]);
+    floats("drawn move",c.other.move.data(),12);fov("drawn drawnFov",c.other.drawnFov);fov("drawn nowFov",c.other.nowFov);
+    Append(t,"own near %.6g reach %.6g %.6g\n",c.own.nearPlane,c.own.reach[0],c.own.reach[1]);
+    floats("own move",c.own.move.data(),12);floats("own carry",c.own.carry.data(),12);fov("own drawnFov",c.own.drawnFov);fov("own nowFov",c.own.nowFov);
+    Append(t,"settings keep_own %d sharp %d fill %d rims %d\n",turnsKeepOwn.load(),int(turnsSharp.load()),int(turnsFill.load()),int(turnsRims.load()));
+    Append(t,"files: PNGs 24-bit as shown (sRGB bytes); depth .bin float32 little-endian, width x height rows from the top, reverse-Z (distance = near / depth, world units), 0 sky\n");
+    job.textPath=c.folder+[&]{const auto s=turncapture::Sidecar(c.serial,frame);return std::wstring(s.begin(),s.end());}();
+    const auto& l=views[0];const auto& r=views[1];
+    std::snprintf(line,sizeof line,"Frame capture: by turns frame %d of %d (pass %llu) drew %s, turned %s (from the drawn eye %d, moved %d); left %.4f %.4f %.4f fov %.4f %.4f %.4f %.4f; right %.4f %.4f %.4f fov %.4f %.4f %.4f %.4f; "
+        "apart %.2f cm (upm %.2f); keep_own %d, sharp %d, fill %d, rims %d; waited %.1f ms for the GPU (diagnostic pause, exclude from performance comparison) -> %s",
+        frame,turncapture::Frames,(unsigned long long)c.passes,drawn?"right":"left",drawn?"left":"right",int(c.fromDrawn),int(c.moved),
+        l.pose.position.x,l.pose.position.y,l.pose.position.z,l.fov.angleLeft,l.fov.angleRight,l.fov.angleDown,l.fov.angleUp,
+        r.pose.position.x,r.pose.position.y,r.pose.position.z,r.fov.angleLeft,r.fov.angleRight,r.fov.angleDown,r.fov.angleUp,
+        stageWorld.upm>0?c.other.apart/stageWorld.upm*100:0.f,stageWorld.upm,turnsKeepOwn.load(),int(turnsSharp.load()),int(turnsFill.load()),int(turnsRims.load()),waited,Utf8(c.folder).c_str());
+    Say(line);
+    ++turnCaptureWriting;
+    try{std::thread(WriteTurnCapture,std::move(job)).detach();}catch(...){--turnCaptureWriting;skip("no thread to write it");}
 }
 bool Copy(ID3D12Resource* src,Eye& e,reshade::api::command_queue* rq) {
     // The runtime orders images on our bound D3D12 queue. Our allocator has a
@@ -3845,6 +4022,14 @@ void ConfigureTurnsFill(bool on) {
     static std::atomic<int> read{-1};   // as ConfigureTurnsKeepOwn: only a change of the ini's own value overrides the DEV switch
     if(read.exchange(on?1:0)!=(on?1:0))SetTurnsFill(on);
 }
+void SetTurnsRims(bool on) {
+    if(turnsRims.exchange(on)!=on)Say(on?"Frame OpenXR: by turns - the rims round things against the sky go with them":"Frame OpenXR: by turns - the rims round things against the sky stay with the sky");
+}
+bool TurnsRims() {return turnsRims.load();}
+void ConfigureTurnsRims(bool on) {
+    static std::atomic<int> read{-1};   // as ConfigureTurnsKeepOwn: only a change of the ini's own value overrides the DEV switch
+    if(read.exchange(on?1:0)!=(on?1:0))SetTurnsRims(on);
+}
 void ConfigureTurnsSharp(bool on) {
     static std::atomic<int> read{-1};   // as ConfigureTurnsKeepOwn: only a change of the ini's own value overrides the DEV switch
     if(read.exchange(on?1:0)!=(on?1:0))SetTurnsSharp(on);
@@ -3936,6 +4121,14 @@ void BeginPair(bool byTurns,bool replay) {
         if(Active()&&!byTurns&&!replayPair&&(captureRequested.exchange(false)||d2rcam::TakeLabelCapture())) {
             capturePair=true;captureEyes=0;++captureSerial;
             Say("Frame capture: recording one stereo pair (readback pause is diagnostic, exclude from performance comparison)");
+            // By turns: the frames by turns after this pair as well (CaptureTurn)
+            if(mode==1&&turnCaptureWriting.load()>0)Say("Frame capture: by turns - the last capture is still being written; this one is the pair only");
+            else if(mode==1) {
+                auto& c=turnCapture;c.left=turncapture::Frames;c.frame=0;c.passes=0;c.serial=captureSerial;c.noted=false;c.reported=false;
+                turnCaptureWritten=0;turnCaptureFailed=0;
+                char line[200];std::snprintf(line,sizeof line,"Frame capture: by turns - then the next %d frames by turns, both eyes as they go to the headset (each waits for the GPU: exclude them from performance comparison)",turncapture::Frames);
+                Say(line);
+            }
         }
     } else profile::SkipPair();
 }
@@ -3952,6 +4145,19 @@ void EndPair() {
     int turned=-1;
     if(turn&&render&&valid&&!panelMode&&!failed)
         for(int i=0;i<2;++i)if(!eyes[i].copied&&eyes[i^1].copied&&TurnEye(i))turned=i;
+    // [debug] capture_pair by turns: the frames by turns after the pair; a
+    // pair drawn between (moving, a menu) only counts as a pass.
+    if(turnCapture.left>0) {
+        auto& c=turnCapture;++c.passes;
+        if(turn&&turned>=0&&!failed)CaptureTurn(turned);
+        c.noted=false;
+        if(c.left>0&&c.passes>900){c.left=0;c.buffer.Reset();c.size=0;Say("Frame capture: by turns - stopped, no more frames by turns came (a menu, or moving)");}
+    }
+    if(!turnCapture.reported&&turnCapture.left<=0&&turnCaptureWriting.load()==0) {
+        turnCapture.reported=true;
+        char line[640];std::snprintf(line,sizeof line,"Frame capture: by turns - %d files written, %d failed, in %s",turnCaptureWritten.load(),turnCaptureFailed.load(),Utf8(turnCapture.folder).c_str());
+        Say(line);
+    }
     // All image writes and state restoration have been submitted on the queue
     // bound to xrCreateSession. OpenXR orders its work after those commands;
     // it does not require a CPU completion wait before xrReleaseSwapchainImage.
@@ -4862,6 +5068,7 @@ void Shutdown(bool preserveResolution) {
     mirrorSupported=mirrorMono=false;
     turnFrame=keepTurns=keepDepth=false;lastEyes={};viewBase={{{0,0,0,1},{0,0,0,1}}};viewWorld={};turnDepths={};turnCounts={};turnImages={};turnKept={};turnImagesFailed=turnWarpTried=false;turnWarp={};
     turnLayers={};layerKept={};turnTarget.Reset();layersFailed=false;
+    turnCapture.left=0;turnCapture.buffer.Reset();turnCapture.size=0;turnCapture.list.Reset();turnCapture.allocator.Reset();
     for(auto& s:handSpaces){if(s&&pDestroySpace)pDestroySpace(s);s=XR_NULL_HANDLE;}
     if(headSpace&&pDestroySpace)pDestroySpace(headSpace);if(space&&pDestroySpace)pDestroySpace(space);
     if(session&&pDestroySession)pDestroySession(session);if(actionSet&&pDestroyActionSet)pDestroyActionSet(actionSet);

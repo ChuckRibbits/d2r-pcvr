@@ -200,6 +200,23 @@ headset frame are drawn:
   developer mode also DEV > Equipment > By turns ghosts; 0 as before). The
   ends are looked for up to 128 px of a 4096-wide eye either side. On an RTX
   5090 it adds 0.1 ms at 3072 square and 0.23 ms at 4096.
+  The game's picture of anything against the sky (the void, depth 0) is
+  larger than its depth: the pixel beside a roof, a treetop or a far
+  building is dark like it and the next one half so, its colour blended into
+  the void's black, which the sky is not painted over. With the sky's depth
+  that rim stayed where the drawn eye saw it while the thing moved across by
+  the eyes' parallax, about 7 px for a roof 10 m off: a dark, ragged outline
+  beside every silhouette against the sky in every other frame of each eye.
+  Captures in Kurast Docks showed it on all sides; against anything with
+  depth the picture keeps to its depth. Within 2 px of something, a pixel of
+  the sky now takes the nearest depth there in both eyes' depth before they
+  move, so the rim goes with what it belongs to (`[stereo] turns_rims=1`,
+  live; in developer mode also DEV > Character > By turns rims; 0 as
+  before). The sky shader also paints the sky over that rim itself, in both
+  stereo modes: a pixel with no depth beside at most two drawn ones (an
+  edge, not a hole in far ground) that is dim gets the sky; a light one (a
+  glow's edge) is laid over it (`[sky] cover_rims=1`, live; DEV > Character
+  > Sky over rims; 0 keeps the rim).
 
 By turns draws a pair on a snap turn, outside first person, in open menus,
 during stereo captures and on any frame without a reusable image for both eyes.
@@ -458,6 +475,20 @@ F8 saves one complete gameplay pair through ReShade, with matching
 performance measurements. For remote debugging, increment `[debug] capture_pair`
 in the installed INI, or set/increment `capture_labels` to wait for a visible
 unit label before capturing. Normal play performs no readback or screenshot IO.
+
+With Stereo rendering By turns, the same request also records the next 4 frames
+by turns after that pair, into `d2rloader\logs\turn-captures\<time>` beside the
+frame log (a folder a game, named by its first capture, as N starts again at 1
+each game): for each frame `Frame-turns-N-F-<eye>-drawn.png` and `-turned.png` (both
+eyes as they go to the headset), `-kept.png` (the drawn eye's picture as the
+warp read it, before the interface), `-depth.bin` (its depth: float32,
+width x height, reverse-Z) and `Frame-turns-N-F.txt` (poses, FOVs and the
+warp's parameters, to replay the frame). Each frame waits for the GPU; at
+3072x3072 a capture's files take a few hundred MB. A `Frame capture: by turns`
+line logs each frame and then the files written. `turn-replay` (a development
+build's tool) runs one captured frame through the warp again offline, with
+`turns_rims`, `turns_fill` and `turns_sharp` either way: its comment says how
+to feed it.
 
 The current Proton installer supplies the Microsoft SDK shader compiler privately
 under `d2rloader/runtime`. ReShade had remained compiling throughout tests using
