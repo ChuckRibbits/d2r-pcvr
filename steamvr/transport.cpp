@@ -100,6 +100,7 @@ namespace gamecmd {void RequestPotion(int slot);void CancelPotion();}
 namespace gamestate {void MenuMap(bool wanted);uint32_t QuestNotices();bool NoticePanelOpen();bool NoticeText(int kind,char* out,uint32_t size);}
 namespace gamestate {bool LeftShield();bool RightThrowingPotion();uint32_t RightThrowingPotionCode();framevr::dualwield::Equipment MeleeEquipment();}
 namespace combat {float GameVolume();}
+namespace projectiles {int ObservedGait(uint64_t& at,bool* tired);}
 
 namespace framevr {
 using Microsoft::WRL::ComPtr;
@@ -230,6 +231,11 @@ uint64_t noticePaintRequest=0,noticeRequestedSequence=0,noticePaintedSequence=0;
 // The skill wheel's Left claw strikes box saves [gameplay] left_hand_strikes
 // itself; until the save lands (Poll, about 0.5 s) the box shows the choice made.
 uint64_t leftStrikesSequence=0,leftStrikesAt=0;float leftStrikesWanted=0;
+// VR Settings > VR > Movement speed ([gameplay] run_speed_pct): its WALK stop walks and every
+// other stop runs. The game's run / walk toggle is kept in line with it from the gait the
+// plugin sees and the stick (runspeed::GaitSync).
+runspeed::GaitSync gaitSync;
+bool movementWalks=false;   // Movement speed is on WALK (this step)
 bool noticeAtlasPending=false,noticeImageReady=false;
 // Guard strain light: soft white at the rim, directly beneath the blood. Fed by
 // the game thread's blocks and the guard tick; painted small in the background.
@@ -553,7 +559,7 @@ XrPosef head{};
 math::Vec origin{};
 bool haveOrigin=false;
 GripStickButton leftMenuButton;
-stickgestures::Gestures rightStickGestures;   // right stick up: run / walk; down: loot labels
+stickgestures::Gestures rightStickGestures;   // right stick down: loot labels (up: owned, does nothing since the movement slider)
 MenuTriggerGate menuTriggerGate;
 PressEdge inventoryButton,menuButton;
 float lastRecenter=0;
@@ -2298,8 +2304,8 @@ void Input() {
     interactionInput.spell=motion.Selection()>=0;interactionInput.wheel=motionInput.palette;interactionInput.cancel=motionInput.cancel;
     interactionInput.quickCast=handOutput.slot>=0||handOutput.spells[0]>=0||handOutput.spells[1]>=0;
     interactionInput.wheelHand=handOutput.wheel;
-    interactionInput.runWalk=rightStick.toggleRun;
-    if(rightStick.toggleRun)Say("Frame right stick: up - run / walk toggle requested");
+    // Right stick up no longer toggles running / walking: the wheel's movement slider has WALK
+    // (Cal 2026-10-25). The push is still owned, so it never snap-turns.
     interactionInput.reservedLeft=(controls.buttons&menus::LeftStick)!=0;interactionInput.trigger=handOutput.wheel==0?controls.lt/255.f:controls.rt/255.f;interactionInput.hover=motionInput.hover;
     const auto hudSettings=vrsettings::Read();
     interactionInput.navigationLocation=vitals::Location(int(hudSettings.values[settings::NavigationLocation]));
@@ -2310,6 +2316,12 @@ void Input() {
         leftStrikesSequence=0;   // saved, refused, or overtaken by another save: the profile's value again
     interactionInput.leftStrikes=hudSettings.ready&&bindingSnapshot.skillClass==settings::heroclass::Druid?
         int(leftStrikesSequence?leftStrikesWanted:hudSettings.values[settings::LeftHandStrikes]):-1;
+    {
+        uint64_t seenAt=0;bool tired=false;const int gait=projectiles::ObservedGait(seenAt,&tired);   // 1 walking, 2 running, 0 not seen
+        const float stick=std::min(1.f,std::hypot(float(controls.lx),float(controls.ly))/32767.f);
+        movementWalks=hudSettings.ready&&runspeed::Walks(runspeed::NormalizePercent(hudSettings.values[settings::RunSpeed]));
+        interactionInput.gaitToggle=gaitSync.Step(interactionInput.session,gait,seenAt,stick,movementWalks,hudSettings.ready,GetTickCount64(),tired);
+    }
     interactionInput.leftCasting=handOutput.spells[1]>=0||(handOutput.slot>=0&&handOutput.hand==1);
     interactionInput.leftTrigger=controls.lt/255.f;
     // A thrown bottle lands on the world floor in room space. Without a recent
@@ -2351,6 +2363,10 @@ void Input() {
             leftStrikesSequence=request.sequence;leftStrikesAt=interactionInput.at;leftStrikesWanted=request.values[settings::LeftHandStrikes];
             Say(leftStrikesWanted>.5f?"Frame wheel: left claw strikes = right trigger skill":"Frame wheel: left claw strikes = own trigger skill");
         } else interactionOutput.feedback=3;   // a save is still running: refuse, never queue a second flip
+    }
+    if(interactionInput.gaitToggle&&interactionOutput.request.action==interaction::Action::RunWalk) {
+        gaitSync.Sent(movementWalks,GetTickCount64());
+        Say(movementWalks?"Frame movement: game toggle on run, Movement speed WALK - run / walk toggled":"Frame movement: game toggle on walk, Movement speed on a run - run / walk toggled");
     }
     StepDroppedBottles();
     // Quest / level-up notices: queue a card per message, paint the current one.
