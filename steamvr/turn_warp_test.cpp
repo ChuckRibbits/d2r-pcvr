@@ -587,6 +587,22 @@ static void Rims(Gpu& gpu,bool typeless) {
     from(32,34,8,true,"its right rim with it, beside it still");
     from(34,42,0,false,"what the post and its rim hid from the drawn eye: this eye's own");
     from(42,60,0,true,"the void right of it stays");
+    {   // a beam 2 units away along the bottom (rows 40-63) under the void, the drawn eye
+        // also a hair lower: its rows go a thirtieth of a pixel up, the void's not at all.
+        // Sorted by the four texels round each point, the row above the beam's rim fell
+        // out of both layers - the eye's own older picture through a hole along the ridge.
+        std::vector<uint32_t> beam(side*side);
+        for(UINT y=0;y<side;++y)for(UINT x=0;x<side;++x){const float v=y>=40?nearPlane/2:0.f;std::memcpy(&beam[y*side+x],&v,4);}
+        auto beamDepth=gpu.Texture(side,side,DXGI_FORMAT_R32_FLOAT,D3D12_RESOURCE_FLAG_NONE,D3D12_RESOURCE_STATE_COPY_DEST);
+        gpu.Upload(beamDepth.Get(),beam,D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE|D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+        framevr::TurnDepth low=drawn;low.depth=beamDepth.Get();low.move=framevr::TurnMove({0,0,0},{0,0,0,1},{.5f,.002f,0},{0,0,0,1});
+        out=gpu.Warp(warp,source.Get(),target.Get(),Identity,1,nullptr,&low);
+        bool covered=true;
+        for(UINT y=30;y<50;++y)for(UINT x=10;x<50;++x)if(Same(out[y*side+x],texel(x,y))) {
+            if(covered)std::printf("a hole along the beam: pixel %u,%u is this eye's own (%08x)\n",x,y,out[y*side+x]);covered=false;
+        }
+        Check(covered,"no hole along a level edge against the void a hair apart");
+    }
     warp.Rims(false);   // as before: the rim with the void
     out=gpu.Warp(warp,source.Get(),target.Get(),Identity,1,nullptr,&drawn);
     from(16,32,8,true,"rims off: the post moves 8 px");

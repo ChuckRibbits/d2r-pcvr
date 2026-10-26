@@ -483,14 +483,18 @@ in the installed INI, or set/increment `capture_labels` to wait for a visible
 unit label before capturing. Normal play performs no readback or screenshot IO.
 
 With Stereo rendering By turns, the same request also records the next 4 frames
-by turns after that pair, into `d2rloader\logs\turn-captures` beside the frame
-log: for each frame `Frame-turns-N-F-<eye>-drawn.png` and `-turned.png` (both
+by turns after that pair, into `d2rloader\logs\turn-captures\<time>` beside the
+frame log (a folder a game, named by its first capture, as N starts again at 1
+each game): for each frame `Frame-turns-N-F-<eye>-drawn.png` and `-turned.png` (both
 eyes as they go to the headset), `-kept.png` (the drawn eye's picture as the
 warp read it, before the interface), `-depth.bin` (its depth: float32,
 width x height, reverse-Z) and `Frame-turns-N-F.txt` (poses, FOVs and the
 warp's parameters, to replay the frame). Each frame waits for the GPU; at
 3072x3072 a capture's files take a few hundred MB. A `Frame capture: by turns`
-line logs each frame and then the files written.
+line logs each frame and then the files written. `turn-replay` (a development
+build's tool) runs one captured frame through the warp again offline, with
+`turns_rims`, `turns_fill` and `turns_sharp` either way: its comment says how
+to feed it.
 
 The current Proton installer supplies the Microsoft SDK shader compiler privately
 under `d2rloader/runtime`. ReShade had remained compiling throughout tests using

@@ -252,6 +252,8 @@ target_link_libraries(ui-blit-marker-test PRIVATE d3d12 dxgi framevr-runtime)
 add_executable(turn-warp-test turn_warp_test.cpp turn_warp.cpp)
 add_executable(replay-test replay_test.cpp)
 target_link_libraries(turn-warp-test PRIVATE d3d12 dxgi framevr-runtime)
+add_executable(turn-replay turn_replay.cpp turn_warp.cpp)   # development: a By turns capture's frame through the warp again
+target_link_libraries(turn-replay PRIVATE d3d12 dxgi framevr-runtime)
 add_executable(turn-capture-test turn_capture_test.cpp)
 add_executable(swapchain-color-test swapchain_color_test.cpp)
 target_link_libraries(swapchain-color-test PRIVATE d3d12 dxgi d3dcompiler framevr-runtime)

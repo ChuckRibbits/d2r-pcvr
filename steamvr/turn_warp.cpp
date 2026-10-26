@@ -101,6 +101,15 @@ float Nearest(float2 uv) {
     const float4 d4=drawnDepth.GatherRed(edge,uv*depthInfo.yz);
     return max(max(max(d4.x,d4.y),max(d4.z,d4.w)),1e-6);
 }
+// The texel a point of the picture lies in. A cell across an edge sorts each
+// pixel into its two layers by this one texel: by the four round it (Nearest)
+// each layer, a fraction of a texel apart, could sort a texel out of both, and
+// it was left a hole - the eye's own older picture through it, a stripe off
+// a roof's ridge (turn captures, 2026-10-25).
+float Texel(float2 uv) {
+    float w,h;drawnDepth.GetDimensions(w,h);
+    return drawnDepth.Load(int3(min(int2(uv*depthInfo.yz*float2(w,h)),int2(w,h)-1),0));
+}
 // The farthest and the nearest of them.
 float2 Range(float2 uv) {
     const float4 d4=drawnDepth.GatherRed(edge,uv*depthInfo.yz);
@@ -151,7 +160,7 @@ bool Effect(Pixel p) {
     return max(source,target)>=effects.z;
 }
 float4 PS(Pixel p):SV_Target {
-    if(p.split!=0&&(Nearest(p.uv)>abs(p.split))!=(p.split>0))discard;   // the other layer's pixel
+    if(p.split!=0&&(Texel(p.uv)>abs(p.split))!=(p.split>0))discard;   // the other layer's pixel
     if(keep.x>0) {   // where this eye's own picture shows the same surface, it stays (round near things: keep.z; effects: effects.z; far off: keep.w)
         const int3 at=int3(p.position.xy,0);
         const float there=ownDepth.Load(at);

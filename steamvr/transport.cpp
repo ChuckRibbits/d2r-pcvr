@@ -3542,7 +3542,9 @@ bool TurnEye(int i) {
     return true;
 }
 // By turns capture: its files go next to the frame log, in
-// d2rloader\logs\turn-captures (this plugin is in d2rloader\plugins).
+// d2rloader\logs\turn-captures\<the time of this game's first capture> (this
+// plugin is in d2rloader\plugins): the serial starts again each game, and a
+// new game's first capture wrote over the last one's.
 std::wstring TurnCaptureFolder() {
     HMODULE self=nullptr;wchar_t path[MAX_PATH]{};
     if(!GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS|GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,reinterpret_cast<LPCWSTR>(&TurnCaptureFolder),&self))return {};
@@ -3552,6 +3554,9 @@ std::wstring TurnCaptureFolder() {
     for(int up=0;up<2;++up){const auto cut=folder.find_last_of(L"\\/");if(cut==std::wstring::npos)return {};folder.resize(cut);}
     folder+=L"\\logs";CreateDirectoryW(folder.c_str(),nullptr);
     folder+=L"\\turn-captures";CreateDirectoryW(folder.c_str(),nullptr);
+    static const std::wstring game=[]{SYSTEMTIME t{};GetLocalTime(&t);wchar_t b[32];
+        std::swprintf(b,32,L"\\%04u%02u%02u-%02u%02u%02u",t.wYear,t.wMonth,t.wDay,t.wHour,t.wMinute,t.wSecond);return std::wstring(b);}();
+    folder+=game;CreateDirectoryW(folder.c_str(),nullptr);
     const DWORD a=GetFileAttributesW(folder.c_str());
     return a!=INVALID_FILE_ATTRIBUTES&&(a&FILE_ATTRIBUTE_DIRECTORY)?folder+L"\\":std::wstring{};
 }
