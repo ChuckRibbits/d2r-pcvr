@@ -222,7 +222,11 @@ headset frame are drawn:
   the sky now takes the nearest depth there in both eyes' depth before they
   move, so the rim goes with what it belongs to (`[stereo] turns_rims=1`,
   live; in developer mode also DEV > Character > By turns rims; 0 as
-  before). The thin rim itself stays, as in Both eyes.
+  before). The sky shader also paints the sky over that rim itself, in both
+  stereo modes: a pixel with no depth beside at most two drawn ones (an
+  edge, not a hole in far ground) that is dim gets the sky; a light one (a
+  glow's edge) is laid over it (`[sky] cover_rims=1`, live; DEV > Character
+  > Sky over rims; 0 keeps the rim).
 
 By turns draws a pair on a snap turn, outside first person, in open menus,
 during stereo captures and on any frame without a reusable image for both eyes.

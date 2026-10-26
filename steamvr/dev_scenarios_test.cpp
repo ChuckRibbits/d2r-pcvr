@@ -28,6 +28,8 @@ namespace framevr {void SetTurnsSharp(bool on){sharp=on;}bool TurnsSharp(){retur
 namespace framevr {void SetTurnsFill(bool on){fill=on;}bool TurnsFill(){return fill;}}
 namespace framevr {void SetTurnsKeepFar(float metres){keepFar=metres;}float TurnsKeepFar(){return keepFar;}}
 namespace framevr {void SetTurnsRims(bool on){rims=on;}bool TurnsRims(){return rims;}}
+static bool skyRims=true;
+namespace d2rcam {void SetSkyOverRims(bool on){skyRims=on;}bool SkyOverRims(){return skyRims;}}
 
 static Threads::Result Queue(Threads::Callback callback,void* data,bool game) {
     assert(devscenarios::Status().result==Result::Pending);
@@ -354,6 +356,14 @@ int main(){
     }
     devscenarios::Request(Make(TurnsRimsChoice));++local;Run(tasks.size()-1);--local;
     assert(rims&&devscenarios::Status().result==Result::Refused);
+    // And the sky over rims switch [sky] cover_rims (off, on).
+    for(bool expected:{false,true}) {
+        devscenarios::Request(Make(SkyRimsChoice));assert(!tasks.back().game);Run(tasks.size()-1);
+        assert(devscenarios::Status().result==Result::SkyRimsUpdated&&skyRims==expected);
+        Snapshot snapshot;devscenarios::Capture(snapshot);assert(snapshot.devSkyRims==expected&&snapshot.devTurnsRims);
+    }
+    devscenarios::Request(Make(SkyRimsChoice));++local;Run(tasks.size()-1);--local;
+    assert(skyRims&&devscenarios::Status().result==Result::Refused);
     assert(commands.size()==debugCommands&&itemCalls==debugItems);
     devscenarios::execute=Execute;
     inlineQueue=true;devscenarios::Request(Make(3,100));

@@ -81,8 +81,8 @@ Open either hand's wheel and choose **DEV**. Its tabs are grouped by purpose:
 - **Character:** level 10, 30, 60 and 90 presets; heal life/mana; unlock quests and
   waypoints; a **Throwing potions** kit (one stack each of Rancid, Choking and
   Strangling Gas and Oil, Exploding and Fulminating Potion, to equip in the right
-  hand and throw), **By turns far own** and **By turns rims** (all on this
-  page as Equipment is full).
+  hand and throw), **By turns far own**, **By turns rims** and **Sky over
+  rims** (all on this page as Equipment is full).
 - **Equipment:** starter primary/alternate gear, class unique primary/alternate
   gear, crossbow + bolts, bow + arrows, a small shield, **Render debug draws**,
   **By turns own picture**, **By turns filter**, **By turns ghosts**, a **Throwing kit** and a **Potion kit** (four Super
@@ -235,6 +235,16 @@ for example in Kurast Docks: with OLD a dark, ragged outline stands a few
 pixels off each of them and flickers; with MOVED only the thin rim of Both
 eyes stays. The button shows the current state, and the frame log records
 each switch. It changes no saved setting.
+
+## Sky over rims
+
+Select **DEV > Character > Sky over rims** to switch, for the session,
+whether the sky is painted over that rim itself (`[sky] cover_rims`, **ON**
+by default) or the rim stays (**OFF**). It works in both stereo modes: with
+ON roofs, treetops and far buildings meet the sky without the thin dark
+outline (a pixel thinner), and By turns has no rim left to move. The button
+shows the current state, and the frame log records each switch. It changes
+no saved setting.
 
 ## Locations
 

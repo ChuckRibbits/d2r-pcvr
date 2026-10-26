@@ -292,6 +292,7 @@ struct Settings {
     std::atomic<float> nightBright{0.25f};  // [sky] night_brightness: the sky and the fog at full night, times their day brightness
     std::atomic<bool>  skyAlways{false};    // whatever the biome (testing): caves get a sky too
     std::atomic<bool>  skyHidePanels{true}; // no sky while a side panel shifts the picture
+    std::atomic<bool>  skyRims{true};       // [sky] cover_rims: the sky over the dark rim round things against it (SkyOverRims)
     std::atomic<bool>  fogCaves{false};     // [fog] caves: opt-in added indoor fog; native lighting/effects remain
     std::atomic<bool>  ceilOn{false};       // [ceiling] enabled: a vault over the void in caves (first person only)
     std::atomic<float> ceilHeight{30.0f};   // [ceiling] height: over the hero's floor, world units
@@ -1285,6 +1286,11 @@ void LoadSettings() {
     g_set.nightBright.store(std::clamp(IniF(L"sky", L"night_brightness", 0.25f), 0.0f, 1.0f));
     g_set.skyAlways.store(IniB(L"sky", L"always", false));
     g_set.skyHidePanels.store(IniB(L"sky", L"hide_with_panels", true));
+    {   // as the By turns switches: only a change of the ini's own value overrides DEV's
+        static int read = -1;
+        const int rims = IniB(L"sky", L"cover_rims", true) ? 1 : 0;
+        if (read != rims) { read = rims; g_set.skyRims.store(rims != 0); }
+    }
     LoadOutdoorBiomes();
     g_set.ceilOn.store(IniB(L"ceiling", L"enabled", false));
     g_set.ceilHeight.store(std::clamp(IniF(L"ceiling", L"height", 30.0f), 1.0f, 500.0f));
@@ -9051,6 +9057,7 @@ void OnBeginEffects(reshade::api::effect_runtime* rt, reshade::api::command_list
     for (const SkyView& v : sv) sky = sky && v.proj_ok && v.axes_ok && v.proj[0] != 0.0f && v.proj[1] != 0.0f;
     SetBool(rt, "SkyOn", sky);
     SetBool(rt, "ArcaneSkyOn", sky && arcane);
+    SetBool(rt, "SkyOverRims", g_set.skyRims.load());
     {   // camera and eye projection setup for depth fog and dynamic lighting
 
 
@@ -9929,6 +9936,14 @@ DWORD WINAPI UpdateThread(void*) {
 }
 
 }  // namespace
+
+namespace d2rcam {
+// DEV > Character > Sky over rims switches [sky] cover_rims for the session.
+void SetSkyOverRims(bool on) {
+    if (g_set.skyRims.exchange(on) != on) Log(on ? "vrcam: the sky goes over the dark rim round things against it" : "vrcam: the dark rim round things against the sky stays");
+}
+bool SkyOverRims() { return g_set.skyRims.load(); }
+}
 
 #ifdef D2RVR_NATIVE_OPENXR
 // [render] reshade_depth (d2r_pcvr.ini only): ReShade's
