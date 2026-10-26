@@ -594,6 +594,13 @@ constexpr uint32_t mapSide=512;
 // seconds later; only the third in a session suspends the map.
 ULONGLONG mapRetryAt=0;int mapFailures=0;
 constexpr int MapAttempts=3;constexpr ULONGLONG MapRetryMs=5000;
+// SteamVR gives a session 16 swapchains. OFXR Bridge takes three more for each
+// eye's, which leaves the panels about eight: with the map's surface made, VR
+// Settings' atlas was refused (XR_ERROR_LIMIT_REACHED) and the panel never
+// showed (owner, 2026-10-25: 16 created, then -10). Once refused in a session:
+// VR Settings takes the map's surface when it needs the room, the map waits
+// while it is open, and closing it gives its atlas back for the map.
+bool swapchainsShort=false,releaseSettingsChain=false;
 // Right-stick zoom of that map while it is looked at (map_zoom.h). wristMapShown:
 // the wrist / palm map quad went into the last frame's layers, centered at
 // wristMapCenter (interaction space, like interactionInput.head).
@@ -1254,12 +1261,28 @@ bool SetupActions() {
 }
 bool WaitGpu();
 bool WaitGpuValue(uint64_t value);
+// The hand map's surface given up for VR Settings (swapchainsShort); false
+// while this frame still holds one of its images. It is made again later.
+bool YieldMapSurface() {
+    if(!mapEye.chain||mapEye.acquired||!WaitGpuValue(mapEye.copyFence))return false;
+    pDestroySwapchain(mapEye.chain);mapEye={};mapRetryAt=GetTickCount64()+MapRetryMs;
+    Say("Frame menu map: its surface given up for VR Settings (no swapchain left); made again once there is room");
+    return true;
+}
 bool UploadAtlas(XrSwapchain& chain,DXGI_FORMAT eyeFormat,int atlasWidth,int atlasHeight,const std::vector<uint8_t>& pixels,bool dynamic=false,bool* pending=nullptr) {
     // A tiny static atlas is independent of ReShade's effect compiler.
     XrSwapchainCreateInfo ci{XR_TYPE_SWAPCHAIN_CREATE_INFO};ci.createFlags=dynamic?0:XR_SWAPCHAIN_CREATE_STATIC_IMAGE_BIT;
     ci.usageFlags=XR_SWAPCHAIN_USAGE_COLOR_ATTACHMENT_BIT|XR_SWAPCHAIN_USAGE_TRANSFER_DST_BIT;
     ci.format=eyeFormat;ci.width=atlasWidth;ci.height=atlasHeight;ci.sampleCount=ci.faceCount=ci.arraySize=ci.mipCount=1;
-    if(!chain&&!Check(pCreateSwapchain(session,&ci,&chain),"create atlas"))return false;
+    if(!chain) {
+        XrResult r=pCreateSwapchain(session,&ci,&chain);
+        if(r==XR_ERROR_LIMIT_REACHED) {
+            if(!swapchainsShort)Say("Frame OpenXR: no swapchain left for a panel (the runtime's limit; frame generation's bridge takes some)");
+            swapchainsShort=true;
+            if(&chain==&settingsChain&&YieldMapSurface())r=pCreateSwapchain(session,&ci,&chain);   // VR Settings first
+        }
+        if(!Check(r,"create atlas")){chain=XR_NULL_HANDLE;return false;}
+    }
     uint32_t count=0;
     if(!Check(EnumeratePanelImages(chain,0,&count,nullptr),"count static atlas images"))return false;
     std::vector<XrSwapchainImageD3D12KHR> images(count,{XR_TYPE_SWAPCHAIN_IMAGE_D3D12_KHR});
@@ -1463,7 +1486,7 @@ bool Initialize(reshade::api::command_queue* rq,reshade::api::swapchain* swap) {
     {char message[128];std::snprintf(message,sizeof message,"Frame OpenXR: game format %d, eye format %d",int(format),int(eyeFormat));Say(message);}
     uiSupported=std::find(formats.begin(),formats.end(),int64_t(DXGI_FORMAT_R16G16B16A16_FLOAT))!=formats.end()&&uiBlit.Initialize(device.Get(),&Say);
     mapSupported=std::find(formats.begin(),formats.end(),int64_t(DXGI_FORMAT_R16G16B16A16_FLOAT))!=formats.end()&&mapBlit.Initialize(device.Get(),&Say);
-    mapRetryAt=0;mapFailures=0;
+    mapRetryAt=0;mapFailures=0;swapchainsShort=releaseSettingsChain=false;
     mirrorSupported=true;
     for(auto& e:eyes) {
         XrSwapchainCreateInfo c{XR_TYPE_SWAPCHAIN_CREATE_INFO};c.usageFlags=XR_SWAPCHAIN_USAGE_COLOR_ATTACHMENT_BIT|XR_SWAPCHAIN_USAGE_TRANSFER_DST_BIT;
@@ -1793,7 +1816,7 @@ void ResetSettingsInput() {
     ReleasePanelInput();
 }
 void OpenSettings() {
-    settingsImageReady=false;settingsPainted={};settingsPaintAt=0;settingsPaintRequest=0;settingsRequested={};
+    settingsImageReady=false;settingsPainted={};settingsPaintAt=0;settingsPaintRequest=0;settingsRequested={};releaseSettingsChain=false;
     settingsModel.Open(vrsettings::Read());settingsModel.SetNotesPages(settings::ReleaseNotesPages());settingsOpen=true;settingsSession=gamestate::LocalPlayer();
     const auto q=math::Yaw(math::Heading(Q(head.orientation)));
     settingsBase={V(head.position)+math::Rotate(q,{0,-.06f,-1.05f}),q};
@@ -1802,6 +1825,7 @@ void OpenSettings() {
 }
 void CloseSettings() {
     settingsModel.Close();settingsOpen=false;settingsImageReady=false;ResetSettingsInput();
+    releaseSettingsChain=swapchainsShort;   // its atlas back for the map (at the frame's end)
     Say("Frame VR settings: panel closed; held input consumed");
 }
 void OpenBodyCalibration() {
@@ -1831,7 +1855,7 @@ bool TakeSettingsPicture() {
 void CalibrationInput() {
     if(!bodyCalibration.Active())return;
     if(!inWorld||!inWorld()||calibrationSession!=gamestate::LocalPlayer()){
-        bodyCalibration.Cancel();settingsOpen=false;settingsImageReady=false;ResetSettingsInput();return;
+        bodyCalibration.Cancel();settingsOpen=false;settingsImageReady=false;releaseSettingsChain=swapchainsShort;ResetSettingsInput();return;
     }
     const auto phaseBefore=bodyCalibration.phase;
     bodyCalibration.Observe(vrsettings::Read(),motionInput.time);
@@ -1856,7 +1880,7 @@ void CalibrationInput() {
         }else bodyCalibration.Failed();
     }
     if(!bodyCalibration.Active()){
-        settingsOpen=false;settingsImageReady=false;settingsPainted={};ResetSettingsInput();
+        settingsOpen=false;settingsImageReady=false;settingsPainted={};releaseSettingsChain=swapchainsShort;ResetSettingsInput();
         Say("Frame body calibration: closed; held input consumed");return;
     }
     const int key=int(bodyCalibration.hint)*100+int(bodyCalibration.progress*20);
@@ -3786,6 +3810,7 @@ bool Copy(ID3D12Resource* src,Eye& e,reshade::api::command_queue* rq) {
 }
 bool CopyMap(reshade::api::command_queue* rq) {
     if(!mapSupported||mapEye.copied||!interaction::MapWanted(interactionInput,interactionOutput,GetTickCount64()))return true;
+    if(swapchainsShort&&settingsOpen)return true;   // VR Settings may need the map's surface: no map while it is open
     uint32_t w=0,h=0;
     bool fullMap=false;float drawnZoom=0;   // Map view = Full map: the share is the full map's box, drawn at that game zoom
     auto* src=reinterpret_cast<ID3D12Resource*>(hud::MapTexture(w,h,&fullMap,&drawnZoom));
@@ -3807,7 +3832,16 @@ bool CopyMap(reshade::api::command_queue* rq) {
         // The UI panel's usage, which OFXR Bridge has always let through.
         XrSwapchainCreateInfo c{XR_TYPE_SWAPCHAIN_CREATE_INFO};c.usageFlags=XR_SWAPCHAIN_USAGE_COLOR_ATTACHMENT_BIT|XR_SWAPCHAIN_USAGE_TRANSFER_DST_BIT;
         c.format=DXGI_FORMAT_R16G16B16A16_FLOAT;c.width=c.height=mapSide;c.sampleCount=c.faceCount=c.arraySize=c.mipCount=1;
-        if(const XrResult r=pCreateSwapchain(session,&c,&e.chain);XR_FAILED(r)){e.chain=XR_NULL_HANDLE;return failed("creating its swapchain",long(r));}
+        if(const XrResult r=pCreateSwapchain(session,&c,&e.chain);XR_FAILED(r)) {
+            e.chain=XR_NULL_HANDLE;
+            if(r!=XR_ERROR_LIMIT_REACHED)return failed("creating its swapchain",long(r));
+            // No swapchain left (swapchainsShort): no fault of the map's; again later, however often.
+            if(!swapchainsShort)Say("Frame OpenXR: no swapchain left for a panel (the runtime's limit; frame generation's bridge takes some)");
+            swapchainsShort=true;mapRetryAt=GetTickCount64()+MapRetryMs;
+            static ULONGLONG toldAt=0;
+            if(GetTickCount64()>=toldAt){toldAt=GetTickCount64()+60000;Say("Frame menu map: no swapchain left for its surface; trying again every 5 s");}
+            return true;
+        }
         // Its images below the bridge as the other panels' (EnumeratePanelImages); should that
         // list refuse it, through the bridge as before the panels went below it.
         auto list=EnumeratePanelImages;
@@ -4235,6 +4269,11 @@ void EndPair() {
     if(settingsAtlasPending){
         XrSwapchainImageReleaseInfo release{XR_TYPE_SWAPCHAIN_IMAGE_RELEASE_INFO};
         settingsImageReady=Check(pReleaseSwapchainImage(settingsChain,&release),"release settings atlas");settingsAtlasPending=false;
+    }
+    // VR Settings closed short of swapchains: its atlas goes back for the map; opening it paints anew.
+    if(releaseSettingsChain&&!settingsOpen&&settingsChain&&WaitGpu()) {
+        pDestroySwapchain(settingsChain);settingsChain=XR_NULL_HANDLE;settingsImageReady=false;releaseSettingsChain=false;
+        Say("Frame VR settings: its atlas given back while closed (no swapchain to spare)");
     }
     if(interactionAtlasPending) {
         XrSwapchainImageReleaseInfo release{XR_TYPE_SWAPCHAIN_IMAGE_RELEASE_INFO};
