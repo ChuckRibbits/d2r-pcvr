@@ -587,6 +587,13 @@ bool MapFullOn(){return settings::MapViewFull(vrsettings::Read().values[settings
 bool MapTurnOn(){return vrsettings::Read().values[settings::MapRotate]>.5f;}
 bool mapSupported=false;
 constexpr uint32_t mapSide=512;
+// The map's surface is made the first time a map shows. With OFXR Bridge
+// loaded that failed in every session it was tried (frame log, 2026-10-23 to
+// 25): one failure suspended the map for the session, the minimap gone from
+// the hand. A failure now says which step and why, and is tried again a few
+// seconds later; only the third in a session suspends the map.
+ULONGLONG mapRetryAt=0;int mapFailures=0;
+constexpr int MapAttempts=3;constexpr ULONGLONG MapRetryMs=5000;
 // Right-stick zoom of that map while it is looked at (map_zoom.h). wristMapShown:
 // the wrist / palm map quad went into the last frame's layers, centered at
 // wristMapCenter (interaction space, like interactionInput.head).
@@ -1456,6 +1463,7 @@ bool Initialize(reshade::api::command_queue* rq,reshade::api::swapchain* swap) {
     {char message[128];std::snprintf(message,sizeof message,"Frame OpenXR: game format %d, eye format %d",int(format),int(eyeFormat));Say(message);}
     uiSupported=std::find(formats.begin(),formats.end(),int64_t(DXGI_FORMAT_R16G16B16A16_FLOAT))!=formats.end()&&uiBlit.Initialize(device.Get(),&Say);
     mapSupported=std::find(formats.begin(),formats.end(),int64_t(DXGI_FORMAT_R16G16B16A16_FLOAT))!=formats.end()&&mapBlit.Initialize(device.Get(),&Say);
+    mapRetryAt=0;mapFailures=0;
     mirrorSupported=true;
     for(auto& e:eyes) {
         XrSwapchainCreateInfo c{XR_TYPE_SWAPCHAIN_CREATE_INFO};c.usageFlags=XR_SWAPCHAIN_USAGE_COLOR_ATTACHMENT_BIT|XR_SWAPCHAIN_USAGE_TRANSFER_DST_BIT;
@@ -3784,16 +3792,38 @@ bool CopyMap(reshade::api::command_queue* rq) {
     if(!src||!w||!h)return true; // No current map; never display the last area's texture.
     auto& e=mapEye;
     if(!e.chain) {
-        XrSwapchainCreateInfo c{XR_TYPE_SWAPCHAIN_CREATE_INFO};c.usageFlags=XR_SWAPCHAIN_USAGE_COLOR_ATTACHMENT_BIT;
+        if(GetTickCount64()<mapRetryAt)return true;   // after a failure: again a little later
+        // A step that failed: what and why, the half-made surface gone; true, as the eyes' copies go on.
+        const auto failed=[&](const char* step,long code) {
+            if(e.chain)pDestroySwapchain(e.chain);
+            e={};
+            char line[200];
+            std::snprintf(line,sizeof line,"Frame menu map: %s failed (%ld)%s",step,code,
+                          ++mapFailures<MapAttempts?"; trying again in 5 s":"; optional map suspended");
+            Say(line);
+            if(mapFailures>=MapAttempts)mapSupported=false;else mapRetryAt=GetTickCount64()+MapRetryMs;
+            return true;
+        };
+        // The UI panel's usage, which OFXR Bridge has always let through.
+        XrSwapchainCreateInfo c{XR_TYPE_SWAPCHAIN_CREATE_INFO};c.usageFlags=XR_SWAPCHAIN_USAGE_COLOR_ATTACHMENT_BIT|XR_SWAPCHAIN_USAGE_TRANSFER_DST_BIT;
         c.format=DXGI_FORMAT_R16G16B16A16_FLOAT;c.width=c.height=mapSide;c.sampleCount=c.faceCount=c.arraySize=c.mipCount=1;
-        if(XR_FAILED(pCreateSwapchain(session,&c,&e.chain)))return false;
-        uint32_t n=0;
-        if(XR_FAILED(EnumeratePanelImages(e.chain,0,&n,nullptr))||!n)return false;
+        if(const XrResult r=pCreateSwapchain(session,&c,&e.chain);XR_FAILED(r)){e.chain=XR_NULL_HANDLE;return failed("creating its swapchain",long(r));}
+        // Its images below the bridge as the other panels' (EnumeratePanelImages); should that
+        // list refuse it, through the bridge as before the panels went below it.
+        auto list=EnumeratePanelImages;
+        uint32_t n=0;XrResult r=list(e.chain,0,&n,nullptr);
+        if((XR_FAILED(r)||!n)&&runtimeEnumerateImages) {
+            char line[160];std::snprintf(line,sizeof line,"Frame menu map: its images below OFXR Bridge refused (%ld); listed through it instead",long(r));Say(line);
+            list=pEnumerateSwapchainImages;n=0;r=list(e.chain,0,&n,nullptr);
+        }
+        if(XR_FAILED(r)||!n)return failed("counting its images",long(r));
         e.images.resize(n,{XR_TYPE_SWAPCHAIN_IMAGE_D3D12_KHR});
-        if(XR_FAILED(EnumeratePanelImages(e.chain,n,&n,reinterpret_cast<XrSwapchainImageBaseHeader*>(e.images.data()))))return false;
-        if(FAILED(device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT,IID_PPV_ARGS(&e.allocator)))||
-           FAILED(device->CreateCommandList(0,D3D12_COMMAND_LIST_TYPE_DIRECT,e.allocator.Get(),nullptr,IID_PPV_ARGS(&e.commands)))||FAILED(e.commands->Close()))return false;
-        Say("Frame menu map: 512x512 GPU surface ready; native explored map shared by both eyes");
+        if(const XrResult got=list(e.chain,n,&n,reinterpret_cast<XrSwapchainImageBaseHeader*>(e.images.data()));XR_FAILED(got))return failed("listing its images",long(got));
+        if(const HRESULT hr=device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT,IID_PPV_ARGS(&e.allocator));FAILED(hr))return failed("its command allocator",long(hr));
+        if(const HRESULT hr=device->CreateCommandList(0,D3D12_COMMAND_LIST_TYPE_DIRECT,e.allocator.Get(),nullptr,IID_PPV_ARGS(&e.commands));FAILED(hr))return failed("its command list",long(hr));
+        if(const HRESULT hr=e.commands->Close();FAILED(hr))return failed("closing its command list",long(hr));
+        Say(mapFailures?"Frame menu map: 512x512 GPU surface ready after a failed try; native explored map shared by both eyes":
+                        "Frame menu map: 512x512 GPU surface ready; native explored map shared by both eyes");
     }
     if(!Acquire(e)||!WaitGpuValue(e.copyFence))return false;
     rq->flush_immediate_command_list();
