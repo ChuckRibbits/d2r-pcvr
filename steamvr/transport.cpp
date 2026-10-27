@@ -2414,6 +2414,12 @@ void Input() {
     const auto settingsEdges=settingsInputGate.Step(motionHeadTracked,settingsChord,Bool(secondary,0));
     bool settingsOwned=settingsModel.open||calibrationRelease.Step(bodyCalibration.Active(),Float(trigger,0),Float(trigger,1),physical.buttons&(menus::A|menus::B|menus::X|menus::Y|menus::Start));
     if(settingsModel.open&&settingsSession!=gamestate::LocalPlayer()){CloseSettings();settingsOwned=true;}
+    {   // Every new game (a new non-zero session, the first one too) starts VR Settings over on the Guide, page 1
+        // (menus-remember, #352); a join closes an open panel first (the session check above), so this runs in the
+        // same frame. A 0 (leaving, the title, character select) or a blip back to the same value keeps the page.
+        static uint64_t settingsJoined=0;
+        if(mapzoom::NewGame(settingsJoined,gamestate::LocalPlayer())){settingsModel.StartOver();Say("Frame VR settings: a new game; the next open starts on the Guide");}
+    }
     if(settingsEdges.chord&&!settingsModel.open&&!bodyCalibration.Active()&&!calibrationRelease.blocked){OpenSettings();settingsOwned=true;}
     else if(settingsModel.open&&(settingsEdges.chord||settingsEdges.cancel||menuPressed||gripMenuPressed)){
         // Right B, Start, the inventory grip click and the settings chord are
