@@ -392,10 +392,10 @@ inline constexpr Override Overrides[]={
     // Movement speed and its Stick toggle (main's #339, #346): one row, as main pairs them
     // (PairOf); the toggle is its right half (.beside), so Body keeps 8 rows.
     {.id="gameplay.run_speed_pct",.page=View::Body,.section="Hands and moving",.kind=RowKind::Slider,.label="Movement speed",
-     .help="Walk, or run from your class's base speed up to Full run, the speed your gear and skills give (default). Never faster than the game. Stick toggle is beside it.",
+     .help="Walk, or run from Base run (your class's run, no speed bonus) up to Full run (default: your gear's and skills' speed). Movement skills keep their own speed.",
      FRAMEVR_NAMES(RunSpeedNames)},
     {.id="gameplay.run_walk_toggle",.page=View::Body,.section="Hands and moving",.kind=RowKind::Toggle,.label="Stick toggle",
-     .help="On: right stick up switches between walking and Movement speed's run (from Walk, the full run). Not while a wheel or the wrist map is open. Off by default.",
+     .help="On: right stick up switches between walking and Movement speed's run (from Walk, the full run). Not with a wheel open or while you look at the wrist map.",
      .beside=true},
     // Body: Potion belt
     {.id="interactions.seated",.page=View::Body,.section="Potion belt",.kind=RowKind::Toggle,.label="Seated play",
