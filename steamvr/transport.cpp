@@ -39,6 +39,7 @@
 #include "dropped_item_labels.h"
 #include "stick_gestures.h"
 #include "window_focus.h"
+#include "panel_input_mode.h"
 #include "gameplay.h"
 #include "strike_skills.h"
 #include "bow_laser.h"
@@ -878,7 +879,7 @@ void ReadGpuProfile() {
 void ReleaseUiKey() {
     if(!heldKeyScan)return;
     INPUT key{};key.type=INPUT_KEYBOARD;key.ki.wScan=heldKeyScan;
-    key.ki.dwFlags=KEYEVENTF_SCANCODE|KEYEVENTF_KEYUP;
+    key.ki.dwFlags=KEYEVENTF_SCANCODE|KEYEVENTF_KEYUP;key.ki.dwExtraInfo=panels::InjectedKeyTag;
     SendInput(1,&key,sizeof key);
     heldKeyScan=0;keyReleaseAt=0;
 }
@@ -886,7 +887,7 @@ void PulseUiKey(WORD virtualKey) {
     ReleaseUiKey();
     const WORD scan=WORD(MapVirtualKeyW(virtualKey,MAPVK_VK_TO_VSC));
     if(!scan)return;
-    INPUT key{};key.type=INPUT_KEYBOARD;key.ki.wScan=scan;key.ki.dwFlags=KEYEVENTF_SCANCODE;
+    INPUT key{};key.type=INPUT_KEYBOARD;key.ki.wScan=scan;key.ki.dwFlags=KEYEVENTF_SCANCODE;key.ki.dwExtraInfo=panels::InjectedKeyTag;
     if(SendInput(1,&key,sizeof key)!=1){Say("Frame OpenXR: UI key injection failed");return;}
     heldKeyScan=scan;keyReleaseAt=GetTickCount64()+125;
     Say(virtualKey==VK_ESCAPE?"Frame OpenXR: menu Escape scan code down":"Frame OpenXR: inventory I scan code down");
@@ -895,7 +896,7 @@ void PanelModifier(WORD key,bool wanted,bool& held) {
     if(wanted==held)return;
     INPUT input{};input.type=INPUT_KEYBOARD;
     input.ki.wScan=WORD(MapVirtualKeyW(key,MAPVK_VK_TO_VSC));
-    input.ki.dwFlags=KEYEVENTF_SCANCODE|(wanted?0:KEYEVENTF_KEYUP);
+    input.ki.dwFlags=KEYEVENTF_SCANCODE|(wanted?0:KEYEVENTF_KEYUP);input.ki.dwExtraInfo=panels::InjectedKeyTag;
     if(SendInput(1,&input,sizeof input)==1)held=wanted;
 }
 void ReleasePanelInput() {
