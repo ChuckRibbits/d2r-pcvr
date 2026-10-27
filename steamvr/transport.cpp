@@ -2524,7 +2524,8 @@ void Input() {
     {   // Each wheel hand reopens on its own last page: one line per open (hand, page, skill tree filter),
         // and per direct switch to the other hand (its stick click while a wheel is open never closes it)
         static bool wheelWas=false;static int handWas=-2;
-        if(interactionOutput.wheel&&(!wheelWas||interactionOutput.wheelHand!=handWas)){
+        if(interactionOutput.wheel&&(!wheelWas||interactionOutput.wheelHand!=handWas)&&   // only a kept page or tree, not every open
+           (interactions.Page()!=interaction::MenuPage::Spells||interactions.TreeFilter()!=skillcategories::All)){
             const auto page=interactions.Page();
             const char* name=page==interaction::MenuPage::Map?"Map":page==interaction::MenuPage::Developer?"Developer":
                 page==interaction::MenuPage::Equipment?"Equipment":page==interaction::MenuPage::Spells?"Spells":"editor";
