@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 // VR Settings hooks: the only place the menu's layout names a setting by its
 // Key (docs/VR_SETTINGS_MENU.md). Everything else the layout does comes
 // from the data: Definitions and the overrides (vr_settings_content.h). When
@@ -18,7 +18,8 @@ inline bool ShowsDetectedControllers(Key k){return k==ControllerLabels;}
 inline bool ShowsFrameGenStatus(Key k){return k==FrameGeneration;}
 // Why a row RowEnabled locks is locked: frame generation turns on only with
 // Both eyes (main's #316; once on it can still be changed or turned off).
-inline const char* LockedReason(Key k){return k==FrameGeneration?"Needs Both eyes drawn":"Not available now";}
+// Frame generation no longer has a lock (#343: By turns leaves its rows out); a row locked for another reason says this.
+inline const char* LockedReason(Key){return "Not available now";}
 // The guide's button names: Button names' choice.
 inline controllers::Choice ButtonNames(const Values& v){return controllers::Choice(int(v[ControllerLabels]));}
 // Skills go to the aimed monster: a class without bow skills sees Off / On,

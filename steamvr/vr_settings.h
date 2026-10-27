@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 #include <array>
 #include <algorithm>
 #include <cmath>
@@ -13,6 +13,7 @@
 #include "vr_resolution.h"
 #include "haptic_strength.h"
 #include "frame_generation.h"
+#include "run_speed.h"
 
 namespace framevr::settings {
 // The menu's views, in rail order (names, icons, sections and rows:
@@ -22,7 +23,7 @@ namespace framevr::settings {
 enum class View : uint8_t { Presets, Body, Combat, Aim, Targets, Shield, Wrist, Interface, Survival, World, Vibration, Performance, Guide, WhatsNew, More, Count };
 enum Key { Motion, Seated, Dominant, Snap, TurnSpeed, Waist, BeltForward,
            Foveation, Sky, Fog, Ceiling, DrawDistance, ObjectDistance,
-           EyeHeight, ArmSpan, BodyCalibration, SkillGestures, WristMap, WristCompass, ControllerLabels, WeaponSkillIndicators, PlanarSpellAim, VitalsLocation, CriticalAlerts, RenderResolution, NavigationLocation, SmoothTurn, OrdinaryMobBars, MenuDistance, TooltipTiming, ProjectileAimAssist, MeleeHitSpeed, VitalsTilt, HapticStrength, HapticMelee, HapticBowDraw, HapticBowRelease, HapticSpell, HapticInteraction, HapticAlert, HapticShortMelee, BloodVisor, BloodWipe, MeleeThrustSpeed, LootLabelSize, CompanionCounts, StrainVignette, OfflinePlayers, ShieldBashSpeed, DesktopOneEye, MapTopDown, MapRotate, FoveationStrength, StereoRendering, DeferGpuWait, TargetHighlight, HeartbeatStart, SpellLock, StaffPoint, LandingCircles, GroundAim, AimHighlights, HighlightRight, HighlightLeft, ElementalHands, EnemySight, BowLaser, ThrowLift, BottlePhysics, PropPhysics, CompanionAi, ShieldGrip, ShieldOut, ShieldUp, ShieldFollow, ShieldRoll, AimFollowsView, LeftHandStrikes, TorchFlame, FrameGeneration, FrameGenPreset, FrameGenScale, Count };
+           EyeHeight, ArmSpan, BodyCalibration, SkillGestures, WristMap, WristCompass, ControllerLabels, WeaponSkillIndicators, PlanarSpellAim, VitalsLocation, CriticalAlerts, RenderResolution, NavigationLocation, SmoothTurn, OrdinaryMobBars, MenuDistance, TooltipTiming, ProjectileAimAssist, MeleeHitSpeed, VitalsTilt, HapticStrength, HapticMelee, HapticBowDraw, HapticBowRelease, HapticSpell, HapticInteraction, HapticAlert, HapticShortMelee, BloodVisor, BloodWipe, MeleeThrustSpeed, LootLabelSize, CompanionCounts, StrainVignette, OfflinePlayers, ShieldBashSpeed, DesktopOneEye, MapTopDown, MapRotate, FoveationStrength, StereoRendering, DeferGpuWait, TargetHighlight, HeartbeatStart, SpellLock, StaffPoint, LandingCircles, GroundAim, AimHighlights, HighlightRight, HighlightLeft, ElementalHands, EnemySight, BowLaser, ThrowLift, BottlePhysics, PropPhysics, CompanionAi, ShieldGrip, ShieldOut, ShieldUp, ShieldFollow, ShieldRoll, AimFollowsView, LeftHandStrikes, TorchFlame, FrameGeneration, FrameGenPreset, FrameGenScale, RunSpeed, RunWalkToggle, Count };
 // One bit per setting, 128 wide: two words, since MSVC has no 128-bit integer.
 struct ChangeMask {
     static constexpr int Bits=128;
@@ -139,6 +140,12 @@ inline constexpr std::array<Definition,Count> Definitions{{
     // NVIDIA's optical flow, live: 0 Slow, 1 Medium, 2 Fast; its scale 0 100%, 1 75%, 2 50%.
     {"NVIDIA flow quality", "Slow, Medium or Fast optical flow", L"render",L"frame_generation_preset",1,0,2,1},
     {"NVIDIA flow scale", "The size the optical flow works at", L"render",L"frame_generation_scale",2,0,2,1},
+    // Movement speed (run_speed.h): -10 Walk, 0 Base run (the no-gear run), 100 Full run (the gear's).
+    // VR Settings > VR, last row (Cal 2026-10-25; it was a skill-wheel slider, which replaced RUN / WALK).
+    {"Movement speed", "Walk, or run from your class's no-gear speed up to your gear's full speed", L"gameplay",L"run_speed_pct",runspeed::DefaultPercent,runspeed::MinPercent,runspeed::MaxPercent,runspeed::StepPercent},
+    // Right stick up switches walk / run (runspeed::StickToggle), beside Movement speed on its row;
+    // off by default (owner 2026-10-25).
+    {"Stick toggle", "Right stick up switches between walking and running", L"gameplay",L"run_walk_toggle",0,0,1,1},
 }};
 using Values=std::array<float,Count>;
 inline bool HapticKey(Key key){return key>=HapticStrength&&key<=HapticAlert;}
@@ -176,6 +183,7 @@ inline float Normalize(Key key,float value){
     if(key==ShieldFollow||key==ShieldRoll)return std::clamp(std::round(value/d.step)*d.step,d.min,d.max)+0.f;   // whole steps, as skel::shield::FollowSetting / RollSetting
     if(HighlightKey(key))return std::clamp(std::round(value/15)*15,d.min,d.max);   // 0 = By range, else a hue in 15-degree steps
     if(key==EnemySight)return float(enemysight::NormalizePercent(value));
+    if(key==RunSpeed)return float(runspeed::NormalizePercent(value));
     if(key==VitalsTilt)return vitals::NormalizeTilt(value);
     if(HapticKey(key))return haptics::NormalizeStrength(value);
     if((key==ControllerLabels||key==VitalsLocation||key==NavigationLocation||key==RenderResolution||key==MenuDistance||key==TooltipTiming||key==ProjectileAimAssist||key==GroundAim||key==SpellLock||key==FoveationStrength||key==StereoRendering||key==FrameGeneration||key==FrameGenPreset||key==FrameGenScale)&&(value<d.min||value>d.max||value!=std::round(value)))return d.defaultValue;
@@ -301,6 +309,13 @@ inline std::string PerformanceLine(const PerformanceReadout& r) {
     return line;
 }
 inline constexpr const char* GameVideoUnsaved="Game: options not saved yet; the game writes them when its options menu closes";
+// With frame generation active, a menu open stops OFXR Bridge's generated
+// frames: Both eyes ran 30 pairs a second at 90 Hz with VR Settings up, 45
+// at 45 Hz (doubled) in play (owner, 2026-10-25). The page's own numbers were
+// the menu's, not play's, so while it is active they give way to this.
+inline constexpr const char* FrameGenPerformanceNote[2]={
+    "Frame generation is on: with a menu open the game runs slower, so no numbers here",
+    "To check the frame rate while playing, use fpsVR or SteamVR's performance graph"};
 // Whether the CPU's part fits the headset's frame: past it, the runtime
 // holds every late frame back to its next refresh.
 inline std::string PerformanceVerdict(const PerformanceReadout& r) {
@@ -333,9 +348,6 @@ inline bool RowEnabled(const Values& values,Key key){
     if(key==DeferGpuWait)return DeferOffered(values);   // the button only turns it on
     if(key==AimHighlights||HighlightKey(key))return values[TargetHighlight]>0;   // only while the monster outline shows
     if(key==LandingCircles)return values[GroundAim]>.5f;   // only while the mod places ground skills
-    // Frame generation runs with Both eyes only (frame_generation.h): turned on
-    // only then; once on it can still be changed or turned off.
-    if(key==FrameGeneration)return values[StereoRendering]<.5f||values[FrameGeneration]>.5f;
     return key!=FoveationStrength||values[Foveation]>.5f;
 }
 // The character the panel is open for: rows for another class, or for a
@@ -382,7 +394,10 @@ inline bool RowShown(Key key,const Values& v,const Context& c){
         case TurnSpeed:return SmoothTurning(v[Snap],v[SmoothTurn]);
         case Waist:return v[Seated]<.5f;   // standing mode only
         case BloodWipe:return v[BloodVisor]>.5f;
-        case FrameGenPreset:case FrameGenScale:return framegen::Read(v[FrameGeneration],0,0).mode==framegen::Mode::Nvidia;   // with its scale
+        // Frame generation runs with Both eyes only (frame_generation.h): By turns leaves its rows out,
+        // with its status line (owner, 2026-10-25), and NVIDIA's rows on More with them.
+        case FrameGeneration:return v[StereoRendering]<.5f;
+        case FrameGenPreset:case FrameGenScale:return v[StereoRendering]<.5f&&framegen::Read(v[FrameGeneration],0,0).mode==framegen::Mode::Nvidia;   // with its scale
         default:return true;
     }
 }
@@ -472,11 +487,15 @@ public:
     bool Busy()const{return pending!=0;}
     // Feel it: on the Vibration view.
     bool CanTestHaptics(int category)const{return open&&ready&&!Busy()&&view==View::Vibration&&category>=0&&category<haptics::CategoryCount;}
+    // The panel reopens on the view, What's new page and More page it was closed on, however it was closed (Right B too),
+    // in memory only (menus-remember, #352). StartOver (a new game) goes back to the Guide, page 1. A kept view with
+    // nothing to show any more (More once NVIDIA is no longer chosen) falls back: layout::SettleView.
     void Open(const Snapshot& s){
         open=true;base=draft=s.values;ready=s.ready;offlineDifficultyAvailable=s.offlineDifficultyAvailable;result=s.result;serial=std::max(serial,s.sequence);pending=s.result==Result::Saving?s.sequence:0;
-        view=View::Guide;lastPage=View::Body;notesPage=0;morePage=0;confirmClose=false;confirmAt=0;undoResetUntil=undoResetAt=0;beforeReset={};resetKeys=0;focusKey=-1;pickedPreset=-1;closeWhenSaved=false;popoverKey=-1;popoverAt=0;
+        confirmClose=false;confirmAt=0;undoResetUntil=undoResetAt=0;beforeReset={};resetKeys=0;focusKey=-1;pickedPreset=-1;closeWhenSaved=false;popoverKey=-1;popoverAt=0;
         ++revision;
     }
+    void StartOver(){view=View::Guide;lastPage=View::Body;notesPage=0;morePage=0;++revision;}
     void Close(){open=false;confirmClose=false;undoResetUntil=0;closeWhenSaved=false;popoverKey=-1;++revision;}
     void Observe(const Snapshot& s){
         if(!open)return;

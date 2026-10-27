@@ -136,7 +136,7 @@ Quest left X/Y correspond to Index left A/B; right A/B labels are the same.
 | Minimap | Either wheel → MAP; movement remains available |
 | Reset height | VR Settings > Body > Height and arm span > **Set eye height** |
 | Adjust controller vibration | **VR Settings > Vibration**; **Feel it** on a row's help card previews it, **Apply** saves |
-| Hold to show nearby loot labels (Alt) | Hold the **right stick down**; let go to restore normal drop/hover labels. Push it **up** to toggle running / walking |
+| Hold to show nearby loot labels (Alt) | Hold the **right stick down**; let go to restore normal drop/hover labels. With **VR Settings > Body > Stick toggle** on (Off by default), push it **up** to switch between walking and running |
 | Interact / pick up / talk | Right A by default; requires an aimed interactable |
 | Free melee swing / thrust | Move the equipped weapon through an enemy |
 | Bow draw | Right trigger near the left-hand bow string; draw and release |

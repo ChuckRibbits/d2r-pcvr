@@ -1,4 +1,4 @@
-// Synthetic VR Settings previews and checks; never loads the game or its configuration.
+﻿// Synthetic VR Settings previews and checks; never loads the game or its configuration.
 //   --pages <folder>     every View and its key states as PNGs (PreviewShots), with timings
 //   --pages-check        every View for the title screen and four classes, plain and with
 //                        warnings: painted without error, and every text fits its element

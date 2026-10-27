@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 // VR Settings layout: one element list per frame that the painter draws, the
 // pointer hits and the help card explains, so paint, hit test and help can
 // never disagree (the old menu kept three copies of every rectangle).
@@ -342,6 +342,15 @@ inline int MorePages(const Values& values,const Context& context,const Tables& t
 }
 inline int MoreSkip(const Model& m,const Tables& t=ContentTables()){
     return m.view==View::More?std::clamp(m.morePage,0,MorePages(m.Get(),m.context,t)-1)*MaxViewRows:0;
+}
+// After Model::Open (the panel reopens where it was closed, #352): a kept view with nothing to show falls
+// back to the first page, the Guide. More once its rows are gone (NVIDIA no longer chosen), Presets while
+// they are unavailable; a kept More page past the last one is the last. Also call it after a change that
+// can empty More while it is open.
+inline void SettleView(Model& m,const Tables& t=ContentTables()){
+    if(m.view==View::More&&CountRows(View::More,m.Get(),m.context,t)==0){m.view=View::Guide;m.morePage=0;++m.revision;}
+    else if(m.view==View::Presets&&!content::PresetsReady){m.view=View::Guide;++m.revision;}
+    else if(m.view==View::More){const int last=MorePages(m.Get(),m.context,t)-1;if(m.morePage>last){m.morePage=last;++m.revision;}}
 }
 // Whether a key's row shows now in its own view.
 inline bool KeyVisible(Key key,const Values& values,const Context& context,const Tables& t=ContentTables()){
