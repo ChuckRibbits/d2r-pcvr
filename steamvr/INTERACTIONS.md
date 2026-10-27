@@ -119,11 +119,13 @@ separate comfort option. Use a dead zone and hover hysteresis at wedge borders.
 
 The wheel and VR Settings reopen on the page they were closed on: the wheel's
 Spells, Equipment, Map or Developer page (and Developer's own page), and VR
-Settings' tab and Notes page. Right B closes VR Settings and starts it over on
-Controls. The wheel's SPELLS button leaves the Map or Developer page. Skill,
-slot and item editors are never reopened. The pages are kept in memory only: a
-game restart starts over, a new game resets the wheel's Map and Developer page,
-and switching the wheel to the other hand resets it.
+Settings' tab and Notes page, however they were closed (Right B too). Each
+wheel hand keeps its own page and its own skill tree filter: the skill editor
+reopens on the tree last picked on that hand (on its first page; All when that
+tree has no skills now). The wheel's SPELLS button leaves the Map or Developer
+page. Skill, slot and item editors are never reopened. All of it is kept in
+memory only, for the game: leaving to character select keeps it, a new game
+(a new player session) starts every menu over, and a game restart starts over.
 
 Casting uses one rule: **point and press right trigger**. A ready spell commits
 on trigger press; projectile casts do not wait for trigger release, a hand
