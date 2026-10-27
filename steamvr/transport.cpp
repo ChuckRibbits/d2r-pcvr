@@ -238,7 +238,7 @@ void TellPlayer(const std::string& text) {
 // The skill wheel's Left claw strikes box saves [gameplay] left_hand_strikes
 // itself; until the save lands (Poll, about 0.5 s) the box shows the choice made.
 uint64_t leftStrikesSequence=0,leftStrikesAt=0;float leftStrikesWanted=0;
-// VR Settings > VR > Movement speed ([gameplay] run_speed_pct): its WALK stop walks and every
+// VR Settings > Body > Movement speed ([gameplay] run_speed_pct): its WALK stop walks and every
 // other stop runs. The game's run / walk toggle is kept in line with it from the gait the
 // plugin sees and the stick (runspeed::GaitSync). With its Stick toggle on, right stick up
 // switches between walking and that run (runspeed::StickToggle).
@@ -1983,12 +1983,14 @@ void OpenBodyCalibration() {
 // The painter could not draw VR Settings or body calibration (no pixels, or
 // no worker to ask): a laser at nothing is no use, so the panel closes (the
 // calibration is cancelled) and the notice card says why. Nothing more goes
-// to the painter until the next open (settings::PaintGuard).
-void SettingsPaintFailed(const std::string& error) {
+// to the painter until the next open (settings::PaintGuard). `logged`: the
+// caller has said why already (no shared atlas: the page painted, and the
+// notice card, in that same atlas, cannot show either).
+void SettingsPaintFailed(const std::string& error,bool logged=false) {
     const bool calibrating=bodyCalibration.Active();
     const auto notice=settings::PaintFailureNotice(calibrating?"Body calibration":"VR Settings",error);
     static ULONGLONG reportAt=0;const auto now=GetTickCount64();
-    if(now>=reportAt){Say(("Frame VR settings: page paint failed, panel closed, notice shown: "+(error.empty()?std::string("unknown error"):error)).c_str());reportAt=now+5000;}
+    if(!logged&&now>=reportAt){Say(("Frame VR settings: page paint failed, panel closed, notice shown: "+(error.empty()?std::string("unknown error"):error)).c_str());reportAt=now+5000;}
     if(calibrating){bodyCalibration.Cancel();settingsOpen=false;settingsImageReady=false;settingsPainted={};ResetSettingsInput();}
     else if(settingsModel.open)CloseSettings();
     TellPlayer(notice);
@@ -2010,7 +2012,7 @@ int TakeSettingsPicture() {
     if(!uploaded&&!sharedChain&&settingsPaintGuard.Failed(true)) {
         static ULONGLONG atlasReportAt=0;const auto now=GetTickCount64();
         if(now>=atlasReportAt){Say("Frame VR settings: shared atlas unavailable, panel closed");atlasReportAt=now+5000;}
-        SettingsPaintFailed("shared panel atlas unavailable");
+        SettingsPaintFailed("shared panel atlas unavailable",true);
         return -1;
     }
     static ULONGLONG reportAt=0;const auto now=GetTickCount64();
