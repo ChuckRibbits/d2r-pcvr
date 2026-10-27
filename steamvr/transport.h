@@ -125,6 +125,11 @@ void ConfigureGuardStrainRecover(float seconds);
 // at the first 10 % step and below 10 % life, wind-down time from full, and an optional
 // one-beat 16-bit PCM WAV (empty: the built-in beat). Reloads the WAV only when the path changes.
 void ConfigureHeartbeat(float volume,float bpmMin,float bpmMax,float fadeSeconds,const wchar_t* file);
+// Bone Armor grafted onto both forearms (bone_graft.h): on/off; piece length (x
+// the forearm, wrist to elbow), metres out from the arm, degrees between pieces,
+// where a piece's middle sits (0 the wrist .. 1 the elbow) and its thickness
+// (x its length). Bad values: the defaults.
+void ConfigureBoneGraft(bool on,float size,float out,float spread,float along,float width);
 // [gameplay] guard_break_volume (x the game's Master x Combat volume, 0 = off) and an
 // optional 16-bit PCM WAV (empty: the built-in bone snap) played once as the guard breaks.
 void ConfigureGuardBreakSound(float volume,const wchar_t* file);

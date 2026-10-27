@@ -267,6 +267,9 @@ struct Snapshot {
     bool bindingsEditable=false;
     float health=0,maxHealth=0,mana=0,maxMana=0;
     bool vitalsKnown=false;
+    // Bone Armor's absorb pool and its maximum (ItemStatCost 132 / 133, 8.8 fixed
+    // point; developer capture 2026-10-26): the forearm grafts (bone_graft.h).
+    int boneArmor=0,boneArmorMax=0;
     wrist::Experience experience;
     navigation::Location location;
     bool actionKnown=false;

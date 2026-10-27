@@ -92,6 +92,7 @@
 #include "d2rcam.h"
 #include "profile.h"
 #include "../vr/skeletons.h"
+#include "bone_graft.h"
 #include "spell_aim.h"
 #include "aim_rules.h"
 #include "toss.h"
@@ -701,6 +702,13 @@ UiBlit uiBlit;
 UiBlit mapBlit; // Own descriptors: native menu and map copies may share a frame.
 potions::Models potionModels;
 potions::Scene potionScene;
+// Bone Armor grafted onto both forearms (bone_graft.h): [render] bone_armor_graft.
+std::atomic<bool> boneGraftOn{true};
+std::mutex boneGraftMutex;bonegraft::Settings boneGraftSettings;
+bonegraft::Arms boneGraftLayers;
+std::array<bonegraft::Falling,6> boneFalling{};
+bonegraft::Piece boneLastPiece[2][bonegraft::Pieces]{};bool boneLastShown[2][bonegraft::Pieces]{};
+double boneGraftTime=0;std::atomic<bool> boneGraftReported{false};
 // Emptied bottles let go of: Box3D bodies, made on the first one ([interactions] bottle_physics).
 std::unique_ptr<bottles::World> droppedBottles;
 std::atomic<bool> bottlePhysics{true};
@@ -2254,6 +2262,47 @@ void StepDroppedBottles() {
     bottles::WallRequest want;
     if(droppedBottles->WallsWanted(want))wallcells::Want(want,in.at);
 }
+// Bone Armor's pieces on both forearms, placed from each controller's current
+// pose with the drawn arm's shape (skel::ForearmOnController); one off each arm
+// per third of the absorb pool, thrown out and falling. Also tells the effect
+// hook (billboards) to hide the hero's own floor orbit while the grafts carry it.
+void BoneGraftTick(bool show) {
+    const auto& snap=interactionInput.snapshot;
+    const bool fresh=interaction::Fresh(snap,interactionInput.session,interactionInput.at);
+    const bool ready=boneGraftOn.load()&&potionModels.Bones()>0&&fresh;
+    const int layers=ready?bonegraft::Layers(snap.boneArmor,snap.boneArmorMax):0;
+    bonegraft::Settings settings;{std::lock_guard lock(boneGraftMutex);settings=boneGraftSettings;}
+    const double now=motionInput.time;const float dt=float(now-boneGraftTime);boneGraftTime=now;
+    if(!ready){boneGraftLayers.Reset();for(auto& f:boneFalling)f.live=false;return;}
+    bool placed[2][bonegraft::Pieces]{};bonegraft::Piece piece[2][bonegraft::Pieces]{};
+    for(int side=0;side<2&&show;++side) {
+        float wrist[3],elbow[3],palm[3];
+        if(!motionInput.tracked[side]||!skel::ForearmOnController(side,wrist,elbow,palm))continue;
+        const bonegraft::Forearm arm{{wrist[0],wrist[1],wrist[2]},{elbow[0],elbow[1],elbow[2]},{palm[0],palm[1],palm[2]}};
+        for(int i=0;i<bonegraft::Pieces;++i)   // the left arm mirrored: the same bones in the same places
+            placed[side][i]=bonegraft::Place(arm,{motionInput.hand[side].p,motionInput.hand[side].q},settings,i,piece[side][i],side==1);
+    }
+    const uint32_t broken=boneGraftLayers.Update(layers);
+    for(int side=0;side<2;++side)for(int i=0;i<bonegraft::Pieces;++i) {
+        // A piece knocked off flies from where it was last drawn, out from the arm.
+        if((broken>>i)&1u) {
+            const auto& from=placed[side][i]?piece[side][i]:boneLastPiece[side][i];
+            if(placed[side][i]||boneLastShown[side][i])
+                for(auto& f:boneFalling)if(!f.live){f=bonegraft::Knock(from,i,math::Rotate(from.pose.q,{0,0,1}));break;}
+        }
+        if(placed[side][i]){boneLastPiece[side][i]=piece[side][i];boneLastShown[side][i]=bonegraft::Shown(i,layers);}
+        if(placed[side][i]&&bonegraft::Shown(i,layers)) {
+            const auto& p=piece[side][i];
+            potions::AddBone(potionScene,p.pose,i,p.length,p.width,p.armA,p.armB,p.armR);   // hidden behind its own forearm
+        }
+    }
+    for(auto& f:boneFalling)if(bonegraft::Step(f,dt)&&show)potions::AddBone(potionScene,f.pose,f.code,bonegraft::FallLength(f),bonegraft::FallWidth(f));
+    if(layers>0&&!boneGraftReported.exchange(true)) {
+        char line[240];std::snprintf(line,sizeof line,"Frame bone armor: grafted on both forearms (%u pieces cached), wrist to elbow x%.2f, %.2f thick, %.3f m out, %.0f deg apart, left mirrored; the hero's floor orbit hidden",
+            potionModels.Bones(),settings.size,settings.width,settings.out,settings.spread);
+        Say(line);
+    }
+}
 void Input() {
     gazeValid=false;
     if(!tracking.data) return;
@@ -3053,6 +3102,7 @@ void Input() {
         for(unsigned i=0,n=droppedBottles->Show(shown);i<n;++i)
             potions::AddDropped(potionScene,{stage.Room(shown[i].p),math::Multiply(math::Conjugate(stage.base),shown[i].q)},shown[i].code);
     }
+    BoneGraftTick(motionInput.active&&!panelMode);
     // The trap or bomb in the throwing hand while a toss is armed (#224).
     if(motionOutput.tossHeld&&motionInput.active&&!panelMode)
         potions::AddHeld(potionScene,{motionInput.hand[0].p,motionInput.hand[0].q},toss::Model(interactionInput.snapshot.skills[skills::TriggerSlot(0)].id));
@@ -5018,6 +5068,10 @@ void ConfigureGuardStrain(float perBlock,float resetSeconds,float clear,float br
 }
 void ConfigureGuardStrainRecover(float seconds) {
     strainRecoverSeconds=std::isfinite(seconds)?std::clamp(seconds,0.f,30.f):1.5f;
+}
+void ConfigureBoneGraft(bool on,float size,float out,float spread,float along,float width) {
+    boneGraftOn=on;
+    std::lock_guard lock(boneGraftMutex);boneGraftSettings=bonegraft::Clamp({size,out,spread,along,width});
 }
 void ConfigureHeartbeat(float volume,float bpmMin,float bpmMax,float fadeSeconds,const wchar_t* file) {
     heartbeat::Tuning t;

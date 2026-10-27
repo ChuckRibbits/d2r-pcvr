@@ -144,6 +144,11 @@ void ResetGrip();
 // hand frame - metres from the head, x right, y up, z back, head yaw only.
 // False when the arms have not been posed for a quarter of a second.
 bool HeroForearm(int side, float elbow[3], float wrist[3], float across[3]);
+// The same forearm, as drawn (hands' offset included), in the frame of the
+// controller it was posed from: metres, so a caller with that controller's
+// current pose can place things on the drawn arm without the pose's lag.
+// palm: the way the palm faces, square to the forearm. False when stale.
+bool ForearmOnController(int side, float wrist[3], float elbow[3], float palm[3]);
 #endif
 // Called by the hook on every pose, before it is used: the camera's yaw and eye
 // point in model space from the hero's model matrix as it is NOW. The 10 ms
