@@ -1965,11 +1965,19 @@ void OpenSettings() {
     const auto q=math::Yaw(math::Heading(Q(head.orientation)));
     settingsBase={V(head.position)+math::Rotate(q,{0,-.06f,-1.05f}),q};
     settingsPose=Placed(settingsBase,settingsOffset);settingsHover={};ResetSettingsInput();
-    Say("Frame VR settings: panel opened");
+    char line[96];
+    if(settingsModel.view==settings::View::WhatsNew)std::snprintf(line,sizeof line,"Frame VR settings: panel opened on What's new, page %d",settingsModel.notesPage+1);
+    else std::snprintf(line,sizeof line,"Frame VR settings: panel opened on %s",settings::content::PageOf(settingsModel.view).name);
+    Say(line);
 }
-void CloseSettings() {
+// Every close (B too) keeps the tab for the next open; only a new game starts it over (Input).
+// how: names the close in the log only ("B"); it changes nothing.
+void CloseSettings(const char* how=nullptr) {
     settingsModel.Close();settingsOpen=false;settingsImageReady=false;ResetSettingsInput();
-    Say("Frame VR settings: panel closed; held input consumed");
+    char line[128];const auto tab=settings::content::PageOf(settingsModel.view).name;
+    if(how)std::snprintf(line,sizeof line,"Frame VR settings: panel closed (%s) on %s; held input consumed",how,tab);
+    else std::snprintf(line,sizeof line,"Frame VR settings: panel closed on %s; held input consumed",tab);
+    Say(line);
 }
 void OpenBodyCalibration() {
     if(settingsModel.open)CloseSettings();
@@ -2625,6 +2633,30 @@ void Input() {
             interaction::Input::Tossed{thrown.id,thrown.landed,thrown.p,thrown.q}:interaction::Input::Tossed{};
     }
     interactionOutput=interactions.Step(interactionInput);
+    {   // Each wheel hand reopens on its own last page: one line per open that reopens a kept page or tree (hand, page, skill tree filter),
+        // and per direct switch to the other hand (its stick click while a wheel is open never closes it)
+        static bool wheelWas=false;static int handWas=-2;
+        if(interactionOutput.wheel&&(!wheelWas||interactionOutput.wheelHand!=handWas)&&   // only a kept page or tree, not every open
+           (interactions.Page()!=interaction::MenuPage::Spells||interactions.TreeFilter()!=skillcategories::All)){
+            const auto page=interactions.Page();
+            const char* name=page==interaction::MenuPage::Map?"Map":page==interaction::MenuPage::Developer?"Developer":
+                page==interaction::MenuPage::Equipment?"Equipment":page==interaction::MenuPage::Spells?"Spells":"editor";
+            const char* hand=interactionOutput.wheelHand==0?"R":interactionOutput.wheelHand==1?"L":"both";
+            char line[160];
+            if(page==interaction::MenuPage::Developer)std::snprintf(line,sizeof line,"Frame wheel: opened on hand=%s page=Developer %d skill tree=%s",hand,interactions.DeveloperPage()+1,
+                skillcategories::Name(interactions.TreeFilterClass(),interactions.TreeFilter()));
+            else std::snprintf(line,sizeof line,"Frame wheel: opened on hand=%s page=%s skill tree=%s",hand,name,
+                skillcategories::Name(interactions.TreeFilterClass(),interactions.TreeFilter()));
+            Say(line);
+        }
+        wheelWas=interactionOutput.wheel;handWas=interactionOutput.wheelHand;
+        if(interactionOutput.treePicked){   // a real pick only (one click)
+            char line[128];std::snprintf(line,sizeof line,"Frame wheel: skill tree picked hand=%s tree=%s",
+                interactionOutput.wheelHand==0?"R":interactionOutput.wheelHand==1?"L":"both",
+                skillcategories::Name(interactionOutput.editClass,interactionOutput.editCategory));
+            Say(line);
+        }
+    }
     if(interactionOutput.toggleLeftStrikes) {
         const auto current=vrsettings::Read();
         settings::Request request{current.values,current.values,0,current.sequence+1};
