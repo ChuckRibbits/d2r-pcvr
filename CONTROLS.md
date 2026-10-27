@@ -456,6 +456,21 @@ monster is left in reach, the remaining hits are lost. Swings while it runs,
 and quicker swings, stay basic attacks; the next full-cycle swing once it ends
 casts again. Only the casting swing gives the impact pulse.
 
+**Zeal's light.** Every Zeal hit flashes one ray of the Den of Evil's light
+over the monster it lands on, then it fades before the next hit, whether a
+swing casts Zeal or you hold it on the trigger. While Zeal is on a hand's
+trigger, a few rays are kept lit out of sight so each one shows at the moment
+of the hit. Purely visual. `[gameplay] zeal_light=0` turns it off;
+`zeal_light_frames` (2-25, default 6, at 25 a second) sets how long each ray
+holds; `zeal_light_pool` (0-10, default 6) how many are kept lit;
+`zeal_light_exit` how each ray leaves (1 rises into the sky, the default; 2
+sinks into the ground; 3 shrinks; 0 just goes) over `zeal_light_exit_ms`
+(default 250). The ray stands behind the monster as you see it, at a
+different angle each time, its light slanting in from that side, never from
+behind you: `zeal_light_behind` (cells behind it, default 1.5),
+`zeal_light_spread` (degrees either side of straight behind, default 60),
+`zeal_light_turn` (degrees, default 0) trims the slant.
+
 Turning gestures off or changing equipment/assignments cancels an in-progress
 skill draw. Shield contact and its trigger fallback cannot duplicate a cast.
 Projectile targets follow the casting hand rather than locomotion direction.
