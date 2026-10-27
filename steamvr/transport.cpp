@@ -1970,7 +1970,7 @@ void OpenSettings() {
     else std::snprintf(line,sizeof line,"Frame VR settings: panel opened on %s",settings::content::PageOf(settingsModel.view).name);
     Say(line);
 }
-// Every close (B too) keeps the tab for the next open; only a new game starts it over (Input).
+// Every close (B too) keeps the page for the next open; only a new game starts it over (Input).
 // how: names the close in the log only ("B"); it changes nothing.
 void CloseSettings(const char* how=nullptr) {
     settingsModel.Close();settingsOpen=false;settingsImageReady=false;ResetSettingsInput();
@@ -2089,7 +2089,8 @@ bool MonoAudioOn(ULONGLONG now) {
 }
 // A press the pointer filter let through: the panel's own actions run here
 // (Feel it, Calibrate body, Set eye height), the rest go to layout::Press.
-void SettingsPress(const settings::Hit& hit,uint64_t ms) {
+// how: forwarded to CloseSettings for its log line only ("B").
+void SettingsPress(const settings::Hit& hit,uint64_t ms,const char* how=nullptr) {
     if(hit.kind==settings::Kind::Recenter){ResetHeight();MotionPulse(1,haptics::Category::Interaction,.4f,35000000);return;}
     if(hit.kind==settings::Kind::Calibrate){if(settingsModel.CanCalibrate())OpenBodyCalibration();return;}
     if(hit.kind==settings::Kind::TestHaptics){
@@ -2111,7 +2112,7 @@ void SettingsPress(const settings::Hit& hit,uint64_t ms) {
     if(request.sequence&&!vrsettings::Submit(request)){
         auto result=vrsettings::Read();result.sequence=request.sequence;result.result=settings::Result::Failed;settingsModel.Observe(result);
     }
-    if(!settingsModel.open)CloseSettings();   // Close with no draft, Discard, or Apply and close with nothing to save
+    if(!settingsModel.open)CloseSettings(how);   // Close with no draft, Discard, or Apply and close with nothing to save
 }
 void SettingsPointer(bool grip) {
     if(!settingsModel.open)return;
@@ -2435,7 +2436,7 @@ void Input() {
         // Right B, Start, the inventory grip click and the settings chord are
         // Close: with a draft it asks first, and again on the confirm row it
         // is Keep editing (layout::Press).
-        SettingsPress({settings::Kind::Close},MenuMs());settingsOwned=true;
+        SettingsPress({settings::Kind::Close},MenuMs(),settingsEdges.cancel?"B":nullptr);settingsOwned=true;
     }
     settingsOwned=settingsOwned||settingsModel.open;
     bool focused=gameWindow&&GetForegroundWindow()==gameWindow;

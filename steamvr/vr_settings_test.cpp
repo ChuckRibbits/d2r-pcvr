@@ -248,7 +248,8 @@ int main(int argc,char** argv){
         }
         const auto request=h.Click({Kind::Apply});
         Check(request.changed==(ChangeMask{1}<<key)&&request.values[key]==90&&!h.CanTestHaptics(0),"Apply saves only selected haptic strength and blocks preview while saving");
-        h.Close();h.Open(s);Check(h.Get()[key]==100&&!h.Dirty(),"close discards edits");
+        h.Close();h.Open(s);Check(h.Get()[key]==100&&!h.Dirty()&&h.view==View::Vibration&&h.CanTestHaptics(0)==!h.Busy(),
+            "close discards edits and reopens on Vibration with its preview");
         h.Close();h.StartOver();h.Open(s);Check(!h.CanTestHaptics(0),"a new game opens on the Guide, which has no preview");
     }
     Check(!Model{}.CanTestHaptics(0),"closed menu cannot preview haptics");
