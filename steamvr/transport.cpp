@@ -616,13 +616,15 @@ constexpr int MapAttempts=3;constexpr ULONGLONG MapRetryMs=5000;
 bool swapchainsShort=false,releaseUiChain=false;
 // Right-stick zoom of that map while it is looked at (map_zoom.h). wristMapShown:
 // the wrist / palm map quad went into the last frame's layers, centered at
-// wristMapCenter (interaction space, like interactionInput.head).
+// wristMapCenter (interaction space, like interactionInput.head); menuMapShown,
+// menuMapCenter: the same for the wheel's MAP tab. wristMapLooked: either is looked at.
 mapzoom::Gesture mapZoom;
-bool wristMapShown=false,wristMapLooked=false;
-math::Vec wristMapCenter{};
+bool wristMapShown=false,wristMapLooked=false,menuMapShown=false;
+math::Vec wristMapCenter{},menuMapCenter{};
+mapzoom::View mapZoomView=mapzoom::View::None;   // the map the stick zoomed last frame, for the log
 uint64_t mapZoomLogAt=0;
 bool mapZoomLogged=false;
-// True while the player looks at the shown wrist / palm map: the right stick's
+// True while the player looks at the shown wrist / palm map or MAP tab: the right stick's
 // up / down then zooms the map and is cleared for everything else that frame.
 bool MinimapLooked(){return wristMapLooked;}
 // Desktop mirror: in stereo the game window presents alternating eye frames,
@@ -2704,15 +2706,20 @@ void Input() {
     if(interactionOutput.settings){OpenSettings();settingsOwned=true;interactionInput.active=motionInput.active=false;}
     {
         // Minimap zoom: while the wrist / palm map is shown (the wrist turned
-        // toward you, or the palm raised) and you look at it, the right stick's
-        // up / down zooms it and does nothing else; left / right still turns,
-        // except during a zoom push. Each new game starts at 1x.
+        // toward you, or the palm raised) or the wheel's MAP tab is open, and you
+        // look at it, the right stick's up / down zooms it and does nothing else;
+        // left / right still turns, except during a zoom push. Each new game starts at 1x.
         static uint64_t mapZoomSession=0;
         if(mapzoom::NewGame(mapZoomSession,interactionInput.session)&&mapZoom.Zoom()!=mapzoom::Min) {
             mapZoom.NewGame();Say("Frame map zoom: new game, back to 1.00x");
         }
-        const bool shown=wristMapShown&&mapSupported&&interaction::NavigationWanted(interactionInput,interactionOutput,interactionInput.at);
-        wristMapLooked=shown&&mapzoom::Looking(interactionInput.head.p,interactionInput.head.q,wristMapCenter,wristMapLooked);
+        const auto view=mapzoom::Target(
+            wristMapShown&&mapSupported&&interaction::NavigationWanted(interactionInput,interactionOutput,interactionInput.at),
+            menuMapShown&&mapSupported&&interaction::MenuMapWanted(interactionInput,interactionOutput,interactionInput.at));
+        // a switch between the two maps starts the look afresh (the in / out cone is per map)
+        wristMapLooked=view!=mapzoom::View::None&&mapzoom::Looking(interactionInput.head.p,interactionInput.head.q,
+            view==mapzoom::View::Tab?menuMapCenter:wristMapCenter,wristMapLooked&&view==mapZoomView);
+        mapZoomView=view;
         mapzoom::Input in;in.time=interactionInput.time;in.looking=MinimapLooked();
         in.stick=controls.ry/32767.f;in.x=controls.rx/32767.f;
         // Map view = Full map: zoomed in from the game's widest view, to 16x; the game is asked
@@ -2728,7 +2735,7 @@ void Input() {
         // One line a gesture: a start at most every half second, and its stop.
         const uint64_t tick=GetTickCount64();
         if(zoom.started&&tick>=mapZoomLogAt){
-            char line[80];std::snprintf(line,sizeof line,"Frame map zoom: start at %.2fx (%s)",zoom.zoom,in.stick>0?"in":"out");Say(line);
+            char line[96];std::snprintf(line,sizeof line,"Frame map zoom: start at %.2fx (%s) on the %s",zoom.zoom,in.stick>0?"in":"out",mapzoom::Name(view));Say(line);
             mapZoomLogAt=tick+500;mapZoomLogged=true;
         }
         if(zoom.stopped&&mapZoomLogged){
@@ -4461,12 +4468,13 @@ void EndPair() {
         interactionInput.snapshot,interactionOutput,interaction::Fresh(interactionInput.snapshot,interactionInput.session,interactionInput.at),controllerLabels))
         motionQuad(palette,palettePose,paletteWidth,paletteHeight,{{0,0},{768,768}},interactionChain);
     XrCompositionLayerQuad menuMap{XR_TYPE_COMPOSITION_LAYER_QUAD};
-    wristMapShown=false;
+    wristMapShown=menuMapShown=false;
     if(palette.subImage.swapchain&&mapEye.copied&&interaction::MenuMapWanted(interactionInput,interactionOutput,GetTickCount64())) {
         const auto bounds=interaction::MapContent;
         auto pose=MotionPose(palettePose);
         pose.p=pose.p+math::Rotate(pose.q,{((bounds.left+bounds.right)*.5f-.5f)*paletteWidth,
             (.5f-(bounds.top+bounds.bottom)*.5f)*paletteHeight,.002f});
+        menuMapShown=true;menuMapCenter=pose.p;
         motionQuad(menuMap,XrPose(pose),(bounds.right-bounds.left)*paletteWidth,(bounds.bottom-bounds.top)*paletteHeight,
             {{0,0},{int32_t(mapSide),int32_t(mapSide)}},mapEye.chain);
     }

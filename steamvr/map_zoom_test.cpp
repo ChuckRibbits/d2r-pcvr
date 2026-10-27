@@ -5,6 +5,7 @@
 #include "stick_gestures.h"
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 using namespace framevr;
 static void Check(bool b,const char* label){if(!b){std::fprintf(stderr,"FAIL: %s\n",label);std::exit(1);}}
 struct Sim {
@@ -103,6 +104,19 @@ int main(){
         for(int i=0;i<5;++i)Frame(false,-1);
         Check(loot,"held down away from the map shows the loot labels");
         Frame(true,-1);Check(!loot,"looking at the map drops the loot labels");
+    }
+    {
+        // Which shown map the stick zooms: the wheel's MAP tab while it is up, else the wrist / palm map.
+        using mapzoom::View;
+        Check(mapzoom::Target(false,false)==View::None,"no map shown: the stick stays the game's");
+        Check(mapzoom::Target(true,false)==View::Wrist,"the wrist / palm map alone");
+        Check(mapzoom::Target(false,true)==View::Tab,"the wheel's MAP tab zooms too");
+        Check(mapzoom::Target(true,true)==View::Tab,"the MAP tab wins if both report shown in one frame");
+        Check(std::strcmp(mapzoom::Name(View::Tab),"MAP tab")==0&&std::strcmp(mapzoom::Name(View::Wrist),"wrist map")==0&&
+              std::strcmp(mapzoom::Name(View::None),"none")==0,"the log names the map");
+        // the tab, like the wrist, needs a look: the same gesture zooms the one shared zoom
+        Sim s;s.in.looking=mapzoom::Target(false,true)!=View::None;s.in.stick=1;s.Step(30);
+        Check(s.out.owned&&s.g.Zoom()>1,"looking at the MAP tab, up zooms the shared zoom in");
     }
     {
         mapzoom::Gesture g;Check(g.Zoom()==1,"the first game starts at the whole map");
