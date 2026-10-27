@@ -1,6 +1,8 @@
 // Physical basic arrows, D2R 3.3.93787. Native calls are confined to their
 // owning game/UI threads. Rendering consumes immutable release/flight data.
 #include <windows.h>
+#include <algorithm>
+#include <cstdlib>
 #include <D2RLPlugin/api.h>
 #include <array>
 #include <atomic>
@@ -696,6 +698,7 @@ struct Staged {
     float dx=0,dz=0;uint32_t root=0;std::array<uint32_t,8> entities{};uint64_t boundAt=0;
     uint64_t exitFrom=0,exitMs=0;int exitStyle=0;   // rev5: the way out (StagedExit), from exitFrom over exitMs
     uint64_t dyingUntil=0;   // rev6: its unit is gone; its visual is kept hidden until then
+    uint64_t retireDue=0;    // rev11: when its retirement was due (0: not asked)
     // rev7: turned about its root so its light comes from beyond the creature, never from
     // behind the hero: awayX/Z the hero->creature direction (render x,z), turnDeg a trim.
     float awayX=0,awayZ=0,turnDeg=0,turnCos=1,turnSin=0;bool turnKnown=false;
@@ -714,6 +717,17 @@ std::atomic<unsigned> stagedLost{0},stagedRecycled{0},stagedDyingWrites{0},stage
 inline constexpr uint64_t StagedDyingMs=1500;
 std::atomic<uint64_t> stagedBindMs{0},stagedBindN{0};
 bool Dying(const Staged& t,uint64_t now){return !t.unit&&t.dyingUntil&&now<t.dyingUntil;}
+// rev11 (Cal 2026-10-27, act1_caves: lights late and several in sequence for one
+// hit): pool beams lit in the previous level (or rooms the hero left) never reach
+// the client tick that retires them, nor ClientKill, so their slots stayed taken.
+// With 6 such slots after entering the Cave, the pool could stage at most one or
+// two beams; every other pool beam was created, refused a slot and retired, and
+// its visual outlived its unit as a stray beam at the hero's cell (about a second
+// later, as the effect lights). A slot whose retirement is this overdue is free.
+inline constexpr uint64_t StagedStrandedMs=2000;
+std::atomic<unsigned> stagedStranded{0},stagedFar{0};
+bool Stranded(const Staged& t,uint64_t now){return t.unit&&t.retireDue&&now>t.retireDue+StagedStrandedMs;}
+bool Reclaimable(const Staged& t,uint64_t now){return (!t.unit&&!Dying(t,now))||Stranded(t,now);}
 void RecountStaged() {   // stagedMutex held
     const uint64_t now=GetTickCount64();unsigned n=0;
     for(auto& t:staged){if(!t.unit&&t.dyingUntil&&now>=t.dyingUntil)t={};n+=t.unit!=0||Dying(t,now);}
@@ -815,7 +829,7 @@ void ForgetStaged(uintptr_t unit,bool native) {
 // client-created missile is not removed when its range runs out (Cal, Zeal light
 // rev2: the beams stayed after the strike), so ClientTick retires it at its time,
 // in the same native phase that retires the bow's own visuals. UI thread.
-struct Timed {uintptr_t unit=0;uint32_t id=0,missile=0;uint64_t until=0;};
+struct Timed {uintptr_t unit=0;uint32_t id=0,missile=0;uint64_t until=0,asked=0;};
 std::mutex timedMutex;std::array<Timed,16> timed{};std::atomic<unsigned> timedCount{0};
 std::atomic<unsigned> timedKilled{0},timedLost{0},timedFull{0};
 void RecountTimed(){unsigned n=0;for(auto& t:timed)n+=t.unit!=0;timedCount=n;}   // timedMutex held
@@ -1038,8 +1052,12 @@ bool RetireVisualAt(uintptr_t unit,uint64_t at) {
     std::lock_guard lock(timedMutex);
     Timed* slot=nullptr;
     for(auto& e:timed)if(!e.unit||e.unit==unit){slot=&e;break;}
+    // rev11: a wait 2 s past its time is stranded (a room or level whose client tick
+    // no longer runs): its place is taken rather than refusing this one.
+    const uint64_t now=GetTickCount64();
+    if(!slot)for(auto& e:timed)if(now>std::max(e.until,e.asked)+2000){slot=&e;++timedLost;break;}
     if(!slot){++timedFull;return false;}
-    *slot={unit,header[2],header[1],at};RecountTimed();return true;
+    *slot={unit,header[2],header[1],at,now};RecountTimed();return true;
 }
 void BeginStaging(uint32_t missile){stagingMissile=missile;}
 void EndStaging(){stagingMissile=0;}
@@ -1073,8 +1091,9 @@ bool StageVisual(uintptr_t unit,int x,int y) {
     const uint64_t now=GetTickCount64();
     std::lock_guard lock(stagedMutex);
     Staged* slot=nullptr;
-    for(auto& t:staged)if(!t.unit&&!Dying(t,now)){slot=&t;break;}
+    for(auto& t:staged)if(Reclaimable(t,now)){slot=&t;break;}
     if(!slot)return false;
+    if(Stranded(*slot,now))++stagedStranded;
     *slot={};slot->unit=unit;slot->id=header[2];slot->missile=header[1];slot->x=x;slot->y=y;slot->made=now;
     for(auto& b:pendingBinds)if(b.unit==unit){AddEntity(*slot,b.entity,b.root,b.at);b={};}
     RecountStaged();++stagedMade;return true;
@@ -1096,6 +1115,7 @@ bool ShowStaged(uint32_t missile,int x,int y,uint64_t until,int exitStyle,uint64
         if(!best)return false;
         best->shown=true;best->shownAt=now;best->dx=2.f*float(x-best->x)+offX;best->dz=2.f*float(y-best->y)+offZ;
         best->exitStyle=exitStyle;best->exitMs=exitStyle?exitMs:0;best->exitFrom=best->exitMs?until:0;
+        best->retireDue=until+(exitStyle?exitMs:0);
         best->awayX=awayX;best->awayZ=awayZ;best->turnDeg=turnDeg;best->turnKnown=false;best->rootSeen=false;best->inherits=-1;
         age=now-best->made;bound=best->entities[0]!=0;unit=best->unit;
         if(!bound)++stagedNoEntity;else if(!best->root)++stagedNoRoot;
@@ -1111,7 +1131,7 @@ unsigned RecycleStaged(uint32_t missile,uint64_t maxAge) {
     {
         std::lock_guard lock(stagedMutex);
         for(auto& t:staged)if(t.unit&&t.missile==missile&&!t.shown&&now-t.made>maxAge&&!t.exitFrom) {
-            units[n++]=t.unit;t.exitFrom=1;   // marked: not shown, not recycled twice
+            units[n++]=t.unit;t.exitFrom=1;t.retireDue=now;   // marked: not shown, not recycled twice
         }
     }
     for(size_t i=0;i<n;++i)RetireVisualAt(units[i],0);
@@ -1120,10 +1140,59 @@ unsigned RecycleStaged(uint32_t missile,uint64_t maxAge) {
 void DropStaged(uint32_t missile) {
     std::array<uintptr_t,12> units{};size_t n=0;
     {
-        std::lock_guard lock(stagedMutex);
-        for(auto& t:staged)if(t.unit&&t.missile==missile&&!t.shown&&!t.exitFrom)units[n++]=t.unit;
+        std::lock_guard lock(stagedMutex);const uint64_t now=GetTickCount64();
+        for(auto& t:staged)if(t.unit&&t.missile==missile&&!t.shown&&!t.exitFrom){units[n++]=t.unit;t.exitFrom=1;t.retireDue=now;}
     }
     for(size_t i=0;i<n;++i)RetireVisualAt(units[i],0);
+}
+// rev11: hidden ones lit more than `cells` from x,y (the hero moved on) are retired
+// while their room still ticks, so the client tick can still end them.
+unsigned RecycleStagedFar(uint32_t missile,int x,int y,int cells) {
+    const uint64_t now=GetTickCount64();
+    std::array<uintptr_t,12> units{};size_t n=0;
+    {
+        std::lock_guard lock(stagedMutex);
+        for(auto& t:staged)if(t.unit&&t.missile==missile&&!t.shown&&!t.exitFrom&&std::max(std::abs(t.x-x),std::abs(t.y-y))>cells) {
+            units[n++]=t.unit;t.exitFrom=1;t.retireDue=now;
+        }
+    }
+    for(size_t i=0;i<n;++i)RetireVisualAt(units[i],0);
+    stagedFar+=unsigned(n);return unsigned(n);
+}
+// rev11: the hero changed level. Hidden ones lit in the old one are retired and their
+// slots count as stranded at once (the old level's client tick may never end them).
+unsigned AbandonStaged(uint32_t missile) {
+    const uint64_t now=GetTickCount64();
+    std::array<uintptr_t,12> units{};size_t n=0;
+    {
+        std::lock_guard lock(stagedMutex);
+        for(auto& t:staged)if(t.unit&&t.missile==missile&&!t.shown) {
+            if(!t.exitFrom)units[n++]=t.unit;
+            t.exitFrom=1;t.retireDue=now>StagedStrandedMs?now-StagedStrandedMs-1:1;
+        }
+    }
+    for(size_t i=0;i<n;++i)RetireVisualAt(units[i],0);
+    return unsigned(n);
+}
+unsigned StagedFree() {
+    std::lock_guard lock(stagedMutex);const uint64_t now=GetTickCount64();
+    unsigned n=0;for(auto& t:staged)n+=Reclaimable(t,now);
+    return n;
+}
+// Developer census for the log when the pool finds no free slot.
+void StagedCensus(char* out,size_t size,int x,int y) {
+    std::lock_guard lock(stagedMutex);const uint64_t now=GetTickCount64();
+    unsigned hidden=0,shown=0,retiring=0,stranded=0,dying=0,freeSlots=0;int farthest=0;uint64_t overdue=0;
+    for(auto& t:staged) {
+        if(Reclaimable(t,now))++freeSlots;
+        if(!t.unit){dying+=Dying(t,now);continue;}
+        farthest=std::max(farthest,std::max(std::abs(t.x-x),std::abs(t.y-y)));
+        if(Stranded(t,now))++stranded;
+        if(t.retireDue){++retiring;if(now>t.retireDue)overdue=std::max(overdue,now-t.retireDue);}
+        else if(t.shown)++shown;else ++hidden;
+    }
+    snprintf(out,size,"hidden=%u shown=%u retiring=%u (most overdue %llu ms, stranded=%u) dying=%u free=%u; farthest lit %d cells from the hero",
+        hidden,shown,retiring,(unsigned long long)overdue,stranded,dying,freeSlots,farthest);
 }
 bool PlayHeroSound(int sound) {
     uintptr_t hero=0;uint32_t h[3]{},id=0;
@@ -1508,11 +1577,11 @@ void Report() {
     if(const auto made=stagedMade.exchange(0),shown=stagedShown.exchange(0),none=stagedNoEntity.exchange(0),noRoot=stagedNoRoot.exchange(0),
                   writes=stagedWrites.exchange(0),shownWrites=stagedShownWrites.exchange(0);made||shown||none) {
         const auto n=stagedBindN.exchange(0),ms=stagedBindMs.exchange(0);
-        char line[460];snprintf(line,sizeof line,"Frame staged visuals: lit hidden=%u shown=%u (no entity bound=%u, no root=%u); root matrix writes=%u (while shown=%u, "
+        char line[560];snprintf(line,sizeof line,"Frame staged visuals: lit hidden=%u shown=%u (no entity bound=%u, no root=%u); root matrix writes=%u (while shown=%u, "
             "kept hidden after their unit=%u); visual bound %.0f ms after creation (%llu); hidden ones ended natively=%u recycled=%u; turned: children follow the root=%u "
-            "turned themselves=%u",made,shown,none,noRoot,writes,shownWrites,
+            "turned themselves=%u; slots freed overdue (stranded)=%u, recycled as the hero moved on=%u",made,shown,none,noRoot,writes,shownWrites,
             stagedDyingWrites.exchange(0),n?double(ms)/double(n):-1.0,(unsigned long long)n,stagedLost.exchange(0),stagedRecycled.exchange(0),
-            stagedTurnInherited.exchange(0),stagedTurnApplied.exchange(0));
+            stagedTurnInherited.exchange(0),stagedTurnApplied.exchange(0),stagedStranded.exchange(0),stagedFar.exchange(0));
         framevr::logging::Write(line);
     }
 #endif

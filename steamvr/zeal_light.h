@@ -41,6 +41,11 @@ inline constexpr uint64_t ArmedMs=3000;         // armed: a hand's trigger skill
 inline constexpr uint64_t DisarmMs=15000;       // the pool is let go this long after Zeal was last armed
 inline constexpr uint64_t PoolTickMs=200;
 inline constexpr uint64_t RecycleMs=8000;        // rev6: lit ones are retired (hidden) before the native ~12 s ends them
+// rev11 (Cal 2026-10-27, Cave: lights late and several in sequence for one hit): a
+// lit one stays at the cell it was lit at; once the hero is this many cells away it
+// is retired while its room still ticks (a room left behind, or the previous level,
+// never ends it), and a beam is only made when a slot is free for it.
+inline constexpr int FarCells=20;
 inline int Pool(float configured) {
     return configured<0?DefaultPool:std::min(int(configured+.5f),MaxPool);
 }

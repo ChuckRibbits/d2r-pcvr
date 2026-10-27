@@ -1094,7 +1094,16 @@ and trigger/button melee were:
     shows the longest-lit one by moving its root onto the creature's cell (2
     render units a cell; the effect and spotlight inherit it), then retires
     it. None lit: a new beam, late, as rev3. The pool is let go 15 s after
-    Zeal was last armed. Logs `Frame staged visuals:`. rev5 (Cal: "fade out
+    Zeal was last armed. Logs `Frame staged visuals:`. rev11 (Cal, Cave: the
+    lights were late and several showed in sequence for one hit): beams lit in
+    the previous level or rooms left behind never reach the client tick that
+    retires them, so their 12 slots filled; every other pool beam was then
+    refused a slot, retired at once, and its visual outlived it as a stray
+    light at the hero's cell. Now the pool's lit beams are let go on a level
+    change and once the hero is 20 cells from where they were lit, a slot whose
+    retirement is 2 s overdue is free (as is a retirement wait in the 16-slot
+    timed list), and the pool makes no beam without a free slot (`no free
+    slot=` on `Frame zeal light:`). rev5 (Cal: "fade out
     when they go away and not just suddenly turn off"): removing a missile
     ends its visual at once (natively too), and the effect's fade input
     (`__a_Fade`, its material's MonsterFade) is never driven for missiles, so

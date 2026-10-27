@@ -44,6 +44,10 @@ unsigned StagedHidden(uint32_t missile);
 bool ShowStaged(uint32_t missile,int x,int y,uint64_t until,int exitStyle,uint64_t exitMs,float awayX,float awayZ,float turnDeg,
                 float offX,float offZ,uint64_t& age,bool& bound);
 unsigned RecycleStaged(uint32_t missile,uint64_t maxAge);   // hidden ones lit longer than maxAge: retired
+unsigned RecycleStagedFar(uint32_t missile,int x,int y,int cells);   // hidden ones lit more than cells from x,y: retired
+unsigned AbandonStaged(uint32_t missile);   // the hero changed level: hidden ones retired, their slots free at once
+unsigned StagedFree();   // slots a StageVisual could take now (free, or a retirement overdue: stranded)
+void StagedCensus(char* out,size_t size,int x,int y);   // developer log: what holds the slots
 void DropStaged(uint32_t missile);
 bool SpellTarget(uintptr_t game,uintptr_t player,int* x,int* y);
 // 0: unrelated request; 1: copied/adjusted; -1: reject before native creation.

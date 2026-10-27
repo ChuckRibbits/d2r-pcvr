@@ -470,7 +470,7 @@ std::atomic<float> zealTurn{0};   // rev7: [gameplay] zeal_light_turn, degrees a
 std::atomic<float> zealBehind{framevr::zeallight::DefaultBehindCells},zealSpread{framevr::zeallight::DefaultSpreadDeg};   // rev8
 uint32_t zealSeed=0x2545f491u;   // UI thread
 float ZealRandom(){zealSeed=zealSeed*1664525u+1013904223u+uint32_t(GetTickCount64());return float(zealSeed>>8)/16777216.f;}
-std::atomic<unsigned> zealWarm{0},zealCold{0},zealStaged{0},zealStageFailed{0};std::atomic<uint64_t> zealWarmAge{0};
+std::atomic<unsigned> zealWarm{0},zealCold{0},zealStaged{0},zealStageFailed{0},zealNoSlot{0},zealLevelDrops{0};std::atomic<uint64_t> zealWarmAge{0};
 bool zealPoolDropped=true;   // UI thread
 void __cdecl ZealPoolTick(const D2RL::PluginContext*,void*) noexcept {
     const uint64_t now=GetTickCount64(),armedAt=zealArmedAt.load();
@@ -484,11 +484,31 @@ void __cdecl ZealPoolTick(const D2RL::PluginContext*,void*) noexcept {
     }
     uintptr_t hero=0;int x=0,y=0;
     if(!combat::LocalPlayerUnit(hero)||!HeroCell(hero,x,y))return;
+    // rev11: a new level: the lit ones belong to the old one (its tick may never end them).
+    static int zealLevel=0;
+    if(const int level=interactionstate::CurrentLevel(gamestate::LocalPlayer(),now);level&&level!=zealLevel) {
+        if(zealLevel)zealLevelDrops+=bowvr::AbandonStaged(framevr::zeallight::DenOfEvilLight);
+        zealLevel=level;
+    }
     // rev6: none reaches its native end (~12 s), which un-hid it for a frame at the
     // hero's old cell; the oldest are retired, still hidden, and lit anew.
     bowvr::RecycleStaged(framevr::zeallight::DenOfEvilLight,framevr::zeallight::RecycleMs);
+    bowvr::RecycleStagedFar(framevr::zeallight::DenOfEvilLight,x,y,framevr::zeallight::FarCells);   // rev11
     const int hidden=int(bowvr::StagedHidden(framevr::zeallight::DenOfEvilLight));
     for(int i=0;i<std::min(pool-hidden,2);++i) {   // at most two a tick: their lighting starts spread out
+        // rev11: no slot, no beam. A beam made without one was retired at once and
+        // its visual outlived it: a stray light at the hero's cell a second later.
+        if(!bowvr::StagedFree()) {
+            ++zealNoSlot;
+#ifdef D2RVR_DEVELOPER
+            static uint64_t censusAt=0;
+            if(trace.load()&&now>=censusAt) {
+                censusAt=now+3000;char census[200];bowvr::StagedCensus(census,sizeof census,x,y);
+                char line[300];snprintf(line,sizeof line,"Frame zeal light: pool has no free slot: %s",census);framevr::logging::Write(line);
+            }
+#endif
+            break;
+        }
         bowvr::BeginStaging(framevr::zeallight::DenOfEvilLight);
         const auto client=CreateBeam(hero,x,y,framevr::zeallight::NativeFrames);
         bowvr::EndStaging();
@@ -1568,9 +1588,9 @@ void Report() {
                   full=zealFull.exchange(0),dropped=zealDropped.exchange(0),untimed=zealUntimed.exchange(0);lit||made||failed||dropped||full||untimed) {
         const auto warm=zealWarm.exchange(0),cold=zealCold.exchange(0);const uint64_t warmAge=zealWarmAge.exchange(0);
         char line[400];snprintf(line,sizeof line,"Frame zeal light: beams asked=%u created=%u (lit in advance=%u, on average %llu ms; new=%u) refused=%u dropped=%u not timed=%u "
-            "(%d frames each); no beam: same hit twice=%u %zu showing (cap)=%u; pool %d: lit hidden=%u failed=%u",lit,made,warm,
+            "(%d frames each); no beam: same hit twice=%u %zu showing (cap)=%u; pool %d: lit hidden=%u failed=%u no free slot=%u left in the old level=%u",lit,made,warm,
             (unsigned long long)(warm?warmAge/warm:0),cold,failed,dropped,untimed,zealFrames.load(),same,framevr::zeallight::MaxBeams,full,
-            zealPool.load(),zealStaged.exchange(0),zealStageFailed.exchange(0));
+            zealPool.load(),zealStaged.exchange(0),zealStageFailed.exchange(0),zealNoSlot.exchange(0),zealLevelDrops.exchange(0));
         framevr::logging::Write(line);
     }
     if(const auto sw=skillWhole.exchange(0);sw) {
