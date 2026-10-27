@@ -1769,6 +1769,70 @@ when the cast is issued. Thresholds live in `shapeshift::Tuning`
 (`steamvr/shapeshift_gesture.h`); `shapeshift-gesture-test` walks both
 performances, lazy and partial versions, loot stooping and overhead swings.
 
+### Paladin Blessed Hammer fist pump
+
+A Paladin casts Blessed Hammer by punching a fist up to the sky, while
+**VR Settings > VR > Weapon skill gestures** is on:
+
+- Make a fist (hold the grip, trigger free) with either hand somewhere below
+  your head, then punch it straight up so it ends above your head.
+- One pump casts one hammer. Bring the fist back down below your head to load
+  the next pump; a fist held up high never repeats.
+- The punch counts from where it began (the bottom of the wind-up), so an
+  ordinary accelerating punch from the shoulder or hip qualifies: at least
+  25 cm of rise, ending above your head.
+- The skill picker and the hand wheel tag Blessed Hammer GESTURE on any slot
+  ("Punch up to cast").
+
+The pump presses the controller button Blessed Hammer is assigned to, so the
+skill must be on one of the ten slots (the trigger still casts it as before);
+mana, cast rate and the hammer's spiral stay native, and a pump faster than the
+game's cast rate is a press the game ignores, as with the button. The hammer's
+heading comes from the usual aim rules (the outlined monster, else where you
+point or look). A pump is ignored while that hand is busy (trigger squeezed,
+bottle or other held item, bow drawn, face wipe) and while menus or the wheel
+are open. The punching hand gets a short pulse when the cast is issued. The log
+(`Frame hammer:`) has the first cast and a running count every 25, a line for
+each abandoned punch (why), and a line when the skill is unavailable.
+Thresholds live in `hammerpump::Tuning` (`steamvr/hammer_gesture.h`);
+`hammer-gesture-test` covers both hands, holding high, re-loading, open hands,
+slow raises, stalled and forward punches.
+
+### Paladin Charge punch
+
+A Paladin casts Charge by punching straight out with the weapon hand, while
+**VR Settings > VR > Weapon skill gestures** is on:
+
+- Make a fist with the weapon hand (hold the grip, trigger free), drawn back
+  near your body, then punch it straight out ahead, extending the arm.
+- One punch casts once. Draw the fist back in to load the next; an arm held
+  out never repeats.
+- The punch counts from the most drawn-back point, so an ordinary accelerating
+  punch qualifies: at least 20 cm of travel, ending with the arm extended.
+- The skill picker and the hand wheel tag Charge GESTURE on any slot ("Punch
+  out to charge").
+- Physical melee contacts pause while a Charge is in flight (however it was
+  cast), from the press until the hero leaves the rush (mode 18, at most 4 s).
+  A swing or the punch itself touching a monster mid-rush used to land a basic
+  attack inside the Charge sequence and leave the hero unable to move. The log
+  has one `Frame charge: melee contacts held N ms during the charge` line per
+  Charge.
+
+The punch presses the controller button Charge is assigned to (the skill must be
+on one of the ten slots; the trigger still casts it as before). The aim rules
+hand Charge the monster the weapon hand points at, else the spot it points to;
+the rush, mana and hit stay native. "Extended" scales with the calibrated arm
+span (28 % of it, 0.38-0.60 m ahead of the head; 0.45 m without calibration).
+The weapon hand is the right hand. A punch is ignored while that hand is busy
+(trigger squeezed, bottle or other held item, bow drawn, face wipe) and while
+menus or the wheel are open. The weapon hand gets a short pulse when the cast
+is issued. The log (`Frame charge:`) has the first cast and a running count
+every 25, a line for each abandoned punch (why), and a line when the skill is
+unavailable. Thresholds live in `chargepunch::Tuning`
+(`steamvr/charge_gesture.h`); `charge-gesture-test` covers headings, holding
+out, re-loading, open and busy hands, slow reaches, half punches, the hammer's
+upward punch, chops, slashes, jabs from an extended arm, and arm-span scaling.
+
 ### Ice Bolt visual height correction
 
 New or missing combat preferences default to **Planar spell aiming: Off** and
