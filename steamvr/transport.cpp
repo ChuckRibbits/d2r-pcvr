@@ -1,4 +1,4 @@
-﻿#define XR_USE_PLATFORM_WIN32
+#define XR_USE_PLATFORM_WIN32
 #define XR_USE_GRAPHICS_API_D3D12
 #define XR_NO_PROTOTYPES
 #include <windows.h>

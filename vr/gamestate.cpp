@@ -203,7 +203,7 @@ void MaintainNotice(const PluginContext* ctx) {
 }
 // The aura icon at the top left (native_hud.h AuraIconHider): active auras
 // show on the wrist, so it is hidden in every VR session, menus included,
-// while VR Settings > HUD > Companions & effects is On.
+// while VR Settings > Wrist > Buffs and companions is On.
 framevr::nativehud::AuraIconHider g_auraIcon;
 framevr::nativehud::AuraIconLog g_auraLog;
 void AuraLine(const char* line){if(g_auraLog.Allow())framevr::logging::Write(line);}   // detail lines, capped

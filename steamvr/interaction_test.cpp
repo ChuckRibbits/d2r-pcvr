@@ -90,7 +90,7 @@ int main(){
         Check(c!=Context(s.in.snapshot,s.out,true),"count changes invalidate paint and old click eligibility");
         for(auto page:{MenuPage::Spells,MenuPage::Equipment}) {
             Check(WheelCell(.1f,.1f,-1,page,1)==QuickUseCell,"quick slot shares hit and paint bounds");
-            Check(WheelCell(.85f,.14f,-1,page,1)==-1,"no RUN / WALK box or movement slider on the wheel (VR Settings > VR > Movement speed)");
+            Check(WheelCell(.85f,.14f,-1,page,1)==-1,"no RUN / WALK box or movement slider on the wheel (VR Settings > Body > Movement speed)");
         }
         for(auto page:{MenuPage::Map,MenuPage::Developer,MenuPage::EditSlots,MenuPage::EditSkills,MenuPage::EditItems})
             Check(WheelCell(.1f,.1f,-1,page,1)!=QuickUseCell,"hidden quick control never intercepts another page");

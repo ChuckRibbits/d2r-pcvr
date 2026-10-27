@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 #include <array>
 #include <algorithm>
 #include <cmath>
@@ -141,7 +141,7 @@ inline constexpr std::array<Definition,Count> Definitions{{
     {"NVIDIA flow quality", "Slow, Medium or Fast optical flow", L"render",L"frame_generation_preset",1,0,2,1},
     {"NVIDIA flow scale", "The size the optical flow works at", L"render",L"frame_generation_scale",2,0,2,1},
     // Movement speed (run_speed.h): -10 Walk, 0 Base run (the no-gear run), 100 Full run (the gear's).
-    // VR Settings > VR, last row (Cal 2026-10-25; it was a skill-wheel slider, which replaced RUN / WALK).
+    // VR Settings > Body > Movement speed (Cal 2026-10-25; it was a skill-wheel slider, which replaced RUN / WALK).
     {"Movement speed", "Walk, or run from your class's no-gear speed up to your gear's full speed", L"gameplay",L"run_speed_pct",runspeed::DefaultPercent,runspeed::MinPercent,runspeed::MaxPercent,runspeed::StepPercent},
     // Right stick up switches walk / run (runspeed::StickToggle), beside Movement speed on its row;
     // off by default (owner 2026-10-25).

@@ -1,4 +1,4 @@
-﻿#include "vr_settings_help.h"
+#include "vr_settings_help.h"
 #include "vr_settings_pointer.h"
 #include "../vr/shield_pose.h"
 #include "reshade_addons.h"

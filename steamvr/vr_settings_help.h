@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 #include "vr_settings.h"
 #include <iterator>
 
