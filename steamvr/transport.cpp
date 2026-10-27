@@ -2716,9 +2716,8 @@ void Input() {
         const auto view=mapzoom::Target(
             wristMapShown&&mapSupported&&interaction::NavigationWanted(interactionInput,interactionOutput,interactionInput.at),
             menuMapShown&&mapSupported&&interaction::MenuMapWanted(interactionInput,interactionOutput,interactionInput.at));
-        // a switch between the two maps starts the look afresh (the in / out cone is per map)
-        wristMapLooked=view!=mapzoom::View::None&&mapzoom::Looking(interactionInput.head.p,interactionInput.head.q,
-            view==mapzoom::View::Tab?menuMapCenter:wristMapCenter,wristMapLooked&&view==mapZoomView);
+        wristMapLooked=mapzoom::LookedAt(view,mapZoomView,wristMapLooked,interactionInput.head.p,interactionInput.head.q,
+            wristMapCenter,menuMapCenter);
         mapZoomView=view;
         mapzoom::Input in;in.time=interactionInput.time;in.looking=MinimapLooked();
         in.stick=controls.ry/32767.f;in.x=controls.rx/32767.f;

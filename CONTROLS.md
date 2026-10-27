@@ -570,11 +570,10 @@ Only a mostly vertical push zooms, and during it left / right does not turn
 until the stick is back near the center. A light tick marks each quarter step
 (faster as it zooms in) and a firmer one either end. The wheel's MAP tab shows
 the same zoom, and the stick zooms it the same way while you look at it. The
-zoom is not saved: every new game
-starts at 1x. Looking away gives the right stick back from the next frame; a
-push still held then must return to the center before it toggles running or
-shows loot labels. A push already held when you look at the map zooms it
-straight away.
+zoom is not saved: every new game starts at 1x. Looking away gives the right
+stick back from the next frame; a push still held then must return to the
+center before it toggles running or shows loot labels. A push already held
+when you look at the map zooms it straight away.
 
 With **Full map** or **Full top-down**, 1x is the game's full map at its widest
 (the game's own zoom 0.125, about four times wider than its Tab map), and the

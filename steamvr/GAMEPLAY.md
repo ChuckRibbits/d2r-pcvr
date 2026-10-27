@@ -236,9 +236,8 @@ each quarter step (faster as it zooms in), a firmer one either end. While you
 look at the map, right stick up / down does nothing else (it does not toggle
 running or show loot labels); left / right still turns. Wrist, palm and the
 wheel's **MAP** tab share one zoom, and the stick zooms the MAP tab the same way
-while you look at it. It is not
-saved: every new game starts at 1x, so a player who has forgotten the control
-still sees the whole map.
+while you look at it. It is not saved: every new game starts at 1x, so a player
+who has forgotten the control still sees the whole map.
 
 **Full map:** **VR Settings > HUD > Map view** = **Full map** or **Full top-down**
 shows the game's full (Tab) map on the wrist instead of its corner map, in the same
