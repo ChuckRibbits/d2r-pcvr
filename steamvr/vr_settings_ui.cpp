@@ -198,7 +198,7 @@ void Draw(Painter& p,const Layout& l,bool monoAudio){
                 }
                 break;
             case Role::ReadoutBox:p.ReadoutBox(r);break;
-            case Role::Readout:p.TextFit(e.text,TextStyle::Readout,r,e.Has(Warn)?Color::Warn:e.Has(Selected)?Color::Magic:Color::Quiet);break;
+            case Role::Readout:p.TextFit(e.text,e.option==1?TextStyle::Small:TextStyle::Readout,r,e.Has(Warn)?Color::Warn:e.Has(Selected)?Color::Magic:Color::Quiet);break;
             case Role::Intro:p.TextFit(e.text,TextStyle::Value,r,Color::Quiet);break;
             // The popover: the panel dimmed 40% (a fixed overlay), a card with the row's label, its options as chips, the hint.
             case Role::PopoverDim:p.Fill(r,Color::Ink,.4f);break;
@@ -283,7 +283,10 @@ std::vector<std::string> FitProblems(const layout::Layout& l){
             case Role::PresetCard:line(e,e.text,TextStyle::CardTitle,r.w-130,"preset name");break;
             case Role::GuideLine:shrinks(e,e.text,TextStyle::Value,{r.x+12,r.y,r.w-24,32},false,"guide control");shrinks(e,e.sub,TextStyle::Value,{r.x+12,r.y+31,r.w-24,r.h-31},false,"guide action");break;
             case Role::NotesText:shrinks(e,e.text,TextStyle::Value,e.help==HelpGuide?r:RectF{r.x+12,r.y,r.w-24,r.h},e.help==HelpGuide,"notes line");break;
-            case Role::Readout:shrinks(e,e.text,TextStyle::Readout,r,false,"readout");break;
+            case Role::Readout:
+                if(e.option==1)line(e,e.text,TextStyle::Small,r.w,"readout note at 26 px");   // the frame generation note: never shrunk
+                else shrinks(e,e.text,TextStyle::Readout,r,false,"readout");
+                break;
             case Role::Intro:shrinks(e,e.text,TextStyle::Value,r,false,"intro");break;
             case Role::PopoverTitle:shrinks(e,e.text,TextStyle::CardTitle,r,false,"popover title");break;
             case Role::PopoverOption:line(e,e.text,e.Has(Selected)?TextStyle::Strong:TextStyle::Value,r.w-16,"popover option");break;
@@ -384,10 +387,19 @@ std::vector<PreviewShot> PreviewShots(){
         Setup b=base(View::Targets,-1,s);b.m.popoverKey=HighlightLeft;b.m.popoverAt=now-1000;b.in.hover={Kind::Set,HighlightLeft,0,0};b.in.card=HighlightLeft;add("color-grid-by-range",b);
     }
     {   // Frame generation (main's #313): its row on Performance; NVIDIA's quality and scale on More while NVIDIA is chosen.
-        Snapshot s;s.values[FrameGeneration]=2;
+        // Active needs Both eyes (By turns hides the row, #343); the readout shows main's note, not the numbers (#342).
+        Snapshot s;s.values[FrameGeneration]=2;s.values[StereoRendering]=0;
         Setup p=base(View::Performance,-1,s);p.in.performance={true,true,90,11.1f,3.4f,2.6f,4.1f,.9f};
         p.in.frameGen={framegen::State::Active,1,1,2,1,1,0,0,0};p.in.card=FrameGeneration;add("performance-frame-generation",p);
+        // ... under the Defer GPU wait offer and a game video warning (the taller box).
+        Snapshot d=s;d.values[DeferGpuWait]=0;
+        Setup q=base(View::Performance,-1,d);q.in.game={true,true};q.in.performance=p.in.performance;q.in.frameGen=p.in.frameGen;
+        add("performance-frame-generation-defer",q);
         add("more-frame-generation-nvidia",base(View::More,-1,s));
+    }
+    {   // Movement speed | Stick toggle on one row (main's PairOf): Walk, toggle On and pointed.
+        Snapshot s;s.values[RunSpeed]=-10;s.values[RunWalkToggle]=1;
+        Setup x=base(View::Body,-1,s);x.in.hover={Kind::Set,RunWalkToggle,0,0};x.in.card=RunWalkToggle;add("body-movement-pair",x);
     }
     {   // The fallback (content::FallbackDemo): settings with no override, on their owner page's New section or on More.
         static const layout::Tables demo=layout::TablesOf(content::FallbackDemo());

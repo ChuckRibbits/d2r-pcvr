@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 // VR Settings layout: one element list per frame that the painter draws, the
 // pointer hits and the help card explains, so paint, hit test and help can
 // never disagree (the old menu kept three copies of every rectangle).
@@ -89,11 +89,13 @@ constexpr int BandY=Inner,BandH=64,BandInkH=50,ViewTop=BandY+BandH;   // the vie
 constexpr int FooterY=932,FooterH=64,RegionBottom=FooterY-8;     // rows, readout and card live in 86-924; the footer ends at 996
 constexpr int DrainH=5;                                          // Undo reset's bar under the footer, inside the frame (997-1002)
 constexpr int StatusH=34,StatusY=FooterY-6-StatusH;              // save state strip 890-924
-constexpr int SectionH=30,SectionCompactH=24,IntroH=44,ReadoutH=112;
+constexpr int SectionH=30,SectionCompactH=24,IntroH=44,ReadoutH=112,ReadoutHNoted=144;
 constexpr int CardMin=144;                                       // the card space rows give way to
 constexpr int PitchRoomy=84,PitchMin=76;
 constexpr int ToggleW=150,StepW=64,StepGap=18,ChipGap=MinGap,ChipMin=96,ChipPad=34;   // ChipPad: both sides of a chip's words
 constexpr int ValueMin=160,ValueMax=300;
+constexpr int PairGap=24;   // a row's control to the toggle beside it (Movement speed | Stick toggle): >= 16 px
+static_assert(PairGap>=16&&PairGap>=MinGap,"the toggle beside a row keeps its own aim");
 constexpr int LabelEmberW=46;                                    // Painter::Label's changed ember after the label (10 + 36)
 constexpr int CardPad=8,CardTitleH=36,CardLineH=33,CardStateH=32,CardColumnW=330,CardColumnPad=14,CardButtonH=64;
 constexpr int GuideHeadH=36,GuideLineMax=68,NotesLineMax=66,NotesAuthorGap=16;
@@ -312,8 +314,10 @@ inline const Tables& ContentTables(){
 constexpr int MaxViewRows=8;
 // The rows a view shows now, top to bottom (content order, RowShown and the
 // character applied). Replaces settings::Rows for the new views.
+// A view's rows in order: at most MaxViewRows slabs, each followed by the toggle
+// drawn beside it (ContentRow::beside, Movement speed's Stick toggle) when it has one.
 struct ViewRows {
-    std::array<Key,MaxViewRows> keys{};
+    std::array<Key,MaxViewRows*2> keys{};
     int count=0;
 };
 // Whether a row shows now: its rule, its class, and an offer (Defer GPU wait)
@@ -322,17 +326,23 @@ inline bool RowVisible(const content::ContentRow& r,const Values& values,const C
     if(r.kind==content::RowKind::Offer&&values[r.key]>=.5f)return false;
     return RowShown(r.key,values,context)&&content::ForCharacter(r,context);
 }
-// Every row the view would show, uncapped (the tests check it stays <= 8).
+// Every row (slab) the view would show, uncapped (the tests check it stays <= 8);
+// a toggle drawn beside the row before it adds none.
 inline int CountRows(View view,const Values& values,const Context& context,const Tables& t=ContentTables()){
-    int n=0;for(size_t i=0;i<t.rowCount;++i)if(t.rows[i].page==view&&RowVisible(t.rows[i],values,context))++n;
+    int n=0;for(size_t i=0;i<t.rowCount;++i)if(t.rows[i].page==view&&!t.rows[i].beside&&RowVisible(t.rows[i],values,context))++n;
     return n;
 }
-// skip: the visible rows before this page of a paged view (More: Model::morePage x MaxViewRows).
+// skip: the visible slabs before this page of a paged view (More: Model::morePage x MaxViewRows).
+// A beside toggle comes along with the slab before it (and is left out when that slab is).
 inline ViewRows RowsOf(View view,const Values& values,const Context& context,const Tables& t=ContentTables(),int skip=0){
-    ViewRows list;
+    ViewRows list;int slabs=0;bool took=false;
     for(size_t i=0;i<t.rowCount;++i){
         const auto& r=t.rows[i];
-        if(r.page==view&&list.count<MaxViewRows&&RowVisible(r,values,context)&&skip--<=0)list.keys[size_t(list.count++)]=r.key;
+        if(r.page!=view)continue;
+        if(r.beside){if(took&&RowVisible(r,values,context))list.keys[size_t(list.count++)]=r.key;continue;}
+        took=false;
+        if(!RowVisible(r,values,context)||skip-->0||slabs>=MaxViewRows)continue;
+        list.keys[size_t(list.count++)]=r.key;++slabs;took=true;
     }
     return list;
 }
@@ -623,7 +633,7 @@ struct Builder {
     }
 
     // ---- a settings page ----
-    struct Planned {const content::ContentRow* row;int section;};
+    struct Planned {const content::ContentRow* row;int section;const content::ContentRow* beside=nullptr;};
     int ValueWidth(const std::vector<Planned>& rows)const{
         float w=ValueMin;
         for(const auto& p:rows){
@@ -661,11 +671,20 @@ struct Builder {
         if(r.classes!=content::AllClasses&&c.heroClass<0)return ClassTag(r.classes);
         return {};
     }
-    void Row(const content::ContentRow& r,int y,int pitch,int vw){
+    // The toggle beside a row (main's PairOf: Movement speed | Stick toggle): a value box
+    // reading "<label> On" / "<label> Off" that flips on a press, PairGap right of the row's
+    // own control, as wide as its longer word.
+    int BesideWidth(const content::ContentRow& b)const{
+        const std::string label(LabelOf(b,c));
+        const float w=std::max(W(label+" Off",draw::TextStyle::Strong),W(label+" On",draw::TextStyle::Strong));
+        return std::max(MinTarget,int(std::ceil(w))+40);
+    }
+    void Row(const content::ContentRow& r,int y,int pitch,int vw,const content::ContentRow* beside=nullptr){
         const Key k=r.key;const auto& d=Definitions[k];const float v=m.Get()[k];
-        const int ctlH=pitch>=PitchRoomy?66:64,cy=y+(pitch-ctlH)/2,right=ContentRight-RowPad;
+        const int bw=beside?BesideWidth(*beside):0;
+        const int ctlH=pitch>=PitchRoomy?66:64,cy=y+(pitch-ctlH)/2,right=ContentRight-RowPad-(beside?bw+PairGap:0);
         const char* locked=LockReason(m,k);
-        const bool live=!blocked&&!locked,dirty=Dirty(k);
+        const bool live=!blocked&&!locked,dirty=Dirty(k),rowDirty=dirty||(beside&&Dirty(beside->key));
         std::vector<Element> controls;
         auto control=[&](Role role,Rect rect,Hit hit,uint16_t flags,std::string text={},std::string sub={})->Element&{
             Element e;e.rect=rect;e.role=role;e.hit=hit;e.help=k;e.key=k;e.flags=flags;e.text=std::move(text);e.sub=std::move(sub);
@@ -732,9 +751,18 @@ struct Builder {
             }
             control(Role::StepPlus,{vx+vw+StepGap,cy,StepW,ctlH},{Kind::Change,k,1},uint16_t((live&&canUp?Enabled:0)|Repeat|(locked?Locked:0)));
         }
-        uint16_t labelFlags=dirty&&r.kind!=RowKind::Button?Changed:0;
+        if(beside){   // its own setting, help card and lock; a press flips it
+            const Key b=beside->key;const float bv=m.Get()[b];
+            const char* bLocked=LockReason(m,b);
+            const bool on=bv>.5f&&!bLocked,bDirty=Dirty(b);
+            auto& e=control(Role::Value,{right+PairGap,cy,bw,ctlH},{Kind::Set,b,0,on?0.f:1.f},
+                uint16_t((!blocked&&!bLocked?Enabled:0)|(on?Selected:0)|(Same(bv,Definitions[b].defaultValue)?IsDefault:0)|(bDirty?Changed:0)|(bLocked?Locked:0)),
+                std::string(LabelOf(*beside,c))+(on?" On":" Off"));
+            e.help=b;e.key=b;
+        }
+        uint16_t labelFlags=rowDirty&&r.kind!=RowKind::Button?Changed:0;
         std::string sub=SubLine(r,locked,labelFlags);
-        auto& slab=Add(Role::Row,{ContentX,y,ContentW,pitch},{},k,dirty?Changed:0);slab.key=k;
+        auto& slab=Add(Role::Row,{ContentX,y,ContentW,pitch},{},k,rowDirty?Changed:0);slab.key=k;
         if(std::isfinite(r.recommended)&&!Same(v,r.recommended)&&!locked){slab.flags|=Recommended;labelFlags|=Recommended;slab.sub="Recommended: "+ValueOf(r,r.recommended,c);}
         const int lx=ContentX+RowPad;
         const int labelW=std::max(0,left-16-lx);
@@ -750,8 +778,14 @@ struct Builder {
         if(k==m.popoverKey)out.popoverRow={ContentX,y,ContentW,pitch};
         for(auto& e:controls)out.elements.push_back(std::move(e));
     }
+    bool FrameGenNote()const{return in.frameGen.state==framegen::State::Active;}
+    // The readout's height: ReadoutH, or taller while the frame generation note sits under
+    // a warning line or the Defer button (two lines above it).
+    int ReadoutHeight(const content::ContentRow* offer)const{
+        return FrameGenNote()&&(offer||GameVideoWarning(in.game))?ReadoutHNoted:ReadoutH;
+    }
     void Readout(int y,const content::ContentRow* offer){
-        Add(Role::ReadoutBox,{ContentX,y,ContentW,ReadoutH},{},HelpPerformance);
+        Add(Role::ReadoutBox,{ContentX,y,ContentW,ReadoutHeight(offer)},{},HelpPerformance);
         int textRight=ContentRight-16;
         if(offer){
             const std::string label=offer->label?offer->label:"Defer GPU wait";
@@ -770,6 +804,21 @@ struct Builder {
         const std::string now=PerformanceLine(in.performance),verdict=PerformanceVerdict(in.performance);
         const int x=ContentX+16;
         if(!first.text.empty())Add(Role::Readout,{x,y+4,textRight-x,30},{},HelpPerformance,first.flags,first.text);
+        if(FrameGenNote()){
+            // Main's #342: with a menu open the game runs slower, so the frame times would be
+            // the menu's, not play's. The note takes the numbers' place in the same box, at
+            // Small (26 px, option 1), full width under the Defer button; a warning on the
+            // second line stays above it (the box grows, ReadoutHeight). It follows the state,
+            // never a timer, so it cannot flicker.
+            int top=y+38;
+            if(second.flags&Warn){Add(Role::Readout,{x,y+36,textRight-x,30},{},HelpPerformance,second.flags,second.text);top=y+72;}
+            else if(defer)top=y+72;   // clear of the 64 px button
+            for(int i=0;i<2;++i){
+                auto& e=Add(Role::Readout,{x,top+34*i,ContentRight-16-x,34},{},HelpPerformance,0,FrameGenPerformanceNote[i]);
+                e.option=1;
+            }
+            return;
+        }
         if(!second.text.empty())Add(Role::Readout,{x,y+36,textRight-x,30},{},HelpPerformance,second.flags,second.text);
         Add(Role::Readout,{x,y+68,ContentRight-16-x,22},{},HelpPerformance,in.performance.valid?Selected:0,now);
         if(!verdict.empty())Add(Role::Readout,{x,y+90,ContentRight-16-x,22},{},HelpPerformance,in.performance.CpuMs()>in.performance.budgetMs?Warn:0,verdict);
@@ -781,6 +830,7 @@ struct Builder {
         for(int i=0;i<shown.count;++i){
             const auto* r=t.Row(shown.keys[size_t(i)]);
             if(r->kind==content::RowKind::Offer){offer=r;continue;}
+            if(r->beside){if(!rows.empty())rows.back().beside=r;continue;}
             rows.push_back({r,r->section});
         }
         int sections=0;for(size_t i=0;i<rows.size();++i)if(i==0||rows[i].section!=rows[i-1].section)if(t.Section(m.view,rows[i].section))++sections;
@@ -788,10 +838,10 @@ struct Builder {
         const int morePages=m.view==View::More?MorePages(m.Get(),c,t):1,pagerH=morePages>1?MinTarget+MinGap:0;
         const int n=int(rows.size()),region=RegionEnd()-ViewTop-pagerH;
         int cardRoom=CardMin;   // the card space rows give way to: enough for the page's longest help
-        for(const auto& p:rows)cardRoom=std::max(cardRoom,RowCardNeed(*p.row));
+        for(const auto& p:rows){cardRoom=std::max(cardRoom,RowCardNeed(*p.row));if(p.beside)cardRoom=std::max(cardRoom,RowCardNeed(*p.beside));}
         // Rows close up to PitchMin first; a page still short of card room draws its section headings compact.
-        const int sectionH=region-sections*SectionH-(readout?ReadoutH+2:0)-n*PitchMin>=cardRoom?SectionH:SectionCompactH;
-        const int fixed=sections*sectionH+(readout?ReadoutH:0);
+        const int sectionH=region-sections*SectionH-(readout?ReadoutHeight(offer)+2:0)-n*PitchMin>=cardRoom?SectionH:SectionCompactH;
+        const int fixed=sections*sectionH+(readout?ReadoutHeight(offer):0);
         const int pitch=std::clamp(n?(region-cardRoom-fixed)/n:PitchRoomy,PitchMin,PitchRoomy);
         int y=ViewTop;
         if(n<=6&&region-fixed-n*pitch-IntroH>=200+CardMin/2){Add(Role::Intro,{ContentX,y,ContentW,IntroH},{},NoHelp,0,page.intro);y+=IntroH;}
@@ -799,9 +849,9 @@ struct Builder {
         for(size_t i=0;i<rows.size();++i){
             if(i==0||rows[i].section!=rows[i-1].section)
                 if(const char* title=t.Section(m.view,rows[i].section)){Add(Role::Section,{ContentX,y,ContentW,sectionH},{},NoHelp,0,title);y+=sectionH;}
-            Row(*rows[i].row,y,pitch,vw);y+=pitch;
+            Row(*rows[i].row,y,pitch,vw,rows[i].beside);y+=pitch;
         }
-        if(readout){y+=2;Readout(y,offer);y+=ReadoutH;}
+        if(readout){y+=2;Readout(y,offer);y+=ReadoutHeight(offer);}
         if(morePages>1)y=Pager(y,std::clamp(m.morePage,0,morePages-1),morePages,HelpTabFirst+int(View::More));
         return y;
     }

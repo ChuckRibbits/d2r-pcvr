@@ -122,6 +122,8 @@ struct Override {
     float recommended=std::numeric_limits<float>::quiet_NaN();
     bool wraps=false;
     WarnWhen warnWhen{};
+    bool beside=false;               // a toggle drawn as the right half of the previous override's row (main's PairOf)
+    bool instead=false;              // shows only when the previous override's row does not (RowShown: snap / smooth turn speed)
 };
 
 // One row of the menu as the layout reads it: a Definitions entry merged with
@@ -145,6 +147,7 @@ struct ContentRow {
     const char* id=nullptr;     // its ini id ("section.key")
     WarnWhen warnWhen{};        // a warn line while the value is above a threshold (the override's)
     bool fallback=false;        // no override placed it: upstream's words on its owner page or More
+    bool beside=false;          // a toggle on the previous row's right half (Override::beside), no row of its own
 };
 
 // A section: 2-5 rows that share an object, titled in sentence case.
@@ -237,7 +240,7 @@ static_assert(std::size(PageTable)==size_t(View::Count),"one page per view, in V
 // Every settings page's sections, in page order; a row's `section` counts
 // within its page.
 inline constexpr ContentSection SectionTable[]={
-    {View::Body,"Hands and turning"},{View::Body,"Potion belt"},{View::Body,"Measurements"},
+    {View::Body,"Hands and moving"},{View::Body,"Potion belt"},{View::Body,"Measurements"},
     {View::Combat,"Melee"},{View::Combat,"Skills and throws"},
     {View::Aim,"Spells and skills"},{View::Aim,"Ground skills"},
     {View::Targets,"Monster outline"},{View::Targets,"Bow"},
@@ -359,6 +362,9 @@ inline constexpr ValueName ByRangeAtZero[]={{0,"By range"}};
 inline constexpr ValueName LaserOffName[]={{LaserOff,"Off"}};
 inline constexpr ValueName ShieldFollowNames[]={{0,"Forearm"},{100,"Wrist"}};
 inline constexpr ValueName OfflinePlayersNames[]={{0,"Game's setting"},{1,"1 player"}};
+// Main's Movement speed words (ValueLabel): Walk, Base run, Run N%, Full run (run_speed.h stops).
+inline constexpr ValueName RunSpeedNames[]={{-10,"Walk"},{0,"Base run"},{10,"Run 10%"},{20,"Run 20%"},{30,"Run 30%"},{40,"Run 40%"},
+    {50,"Run 50%"},{60,"Run 60%"},{70,"Run 70%"},{80,"Run 80%"},{90,"Run 90%"},{100,"Full run"}};
 
 // The unit strings (° is \xc2\xb0: the build has no /utf-8).
 inline constexpr const char* Degrees="\xc2\xb0";
@@ -371,18 +377,26 @@ inline constexpr const char* DegreesPerSecond="\xc2\xb0/s";
 
 inline constexpr Override Overrides[]={
     // Body: Hands and turning
-    {.id="interactions.dominant_hand",.page=View::Body,.section="Hands and turning",.kind=RowKind::Choice,.label="Dominant hand",
+    {.id="interactions.dominant_hand",.page=View::Body,.section="Hands and moving",.kind=RowKind::Choice,.label="Dominant hand",
      .help="The hand that swaps weapon sets when you reach over a shoulder and grip. Your weapon and shield hands in the game stay the same.",
      FRAMEVR_OPTIONS(DominantOptions)},
-    {.id="turn.smooth",.page=View::Body,.section="Hands and turning",.kind=RowKind::Toggle,.label="Smooth turning",
+    {.id="turn.smooth",.page=View::Body,.section="Hands and moving",.kind=RowKind::Toggle,.label="Smooth turning",
      .help="On turns you smoothly with the right stick. Off turns you in steps, which many players find easier on the stomach.",
      .warnWhen={.5f,"Can cause motion sickness"}},
-    {.id="turn.snap",.page=View::Body,.section="Hands and turning",.kind=RowKind::Stepper,.label="Snap turn angle",
+    {.id="turn.snap",.page=View::Body,.section="Hands and moving",.kind=RowKind::Stepper,.label="Snap turn angle",
      .help="How far each flick of the right stick turns you. Smaller angles give finer steps.",
      .format={.unit=Degrees}},
-    {.id="turn.speed",.page=View::Body,.section="Hands and turning",.kind=RowKind::Slider,.label="Smooth turn speed",
+    {.id="turn.speed",.page=View::Body,.section="Hands and moving",.kind=RowKind::Slider,.label="Smooth turn speed",
      .help="How fast the right stick turns you, in degrees per second. Lower is gentler.",
-     .format={.unit=DegreesPerSecond},.warnWhen={150,"Fast turns are harder on the stomach"}},
+     .format={.unit=DegreesPerSecond},.warnWhen={150,"Fast turns are harder on the stomach"},.instead=true},
+    // Movement speed and its Stick toggle (main's #339, #346): one row, as main pairs them
+    // (PairOf); the toggle is its right half (.beside), so Body keeps 8 rows.
+    {.id="gameplay.run_speed_pct",.page=View::Body,.section="Hands and moving",.kind=RowKind::Slider,.label="Movement speed",
+     .help="Walk, or run from your class's base speed up to Full run, the speed your gear and skills give (default). Never faster than the game. Stick toggle is beside it.",
+     FRAMEVR_NAMES(RunSpeedNames)},
+    {.id="gameplay.run_walk_toggle",.page=View::Body,.section="Hands and moving",.kind=RowKind::Toggle,.label="Stick toggle",
+     .help="On: right stick up switches between walking and Movement speed's run (from Walk, the full run). Not while a wheel or the wrist map is open. Off by default.",
+     .beside=true},
     // Body: Potion belt
     {.id="interactions.seated",.page=View::Body,.section="Potion belt",.kind=RowKind::Toggle,.label="Seated play",
      .help="Raises the potion belt so you can reach it sitting down. Your body measurements still come from standing."},
@@ -592,10 +606,11 @@ inline constexpr Override Overrides[]={
      FRAMEVR_OPTIONS(FoveationStrengthOptions)},
     // Frame generation (main's #313, OFXR Bridge): how the image is made, so in Image. Its
     // NVIDIA quality and scale have words but no page: Performance shows 8 rows at most,
-    // so they show on More while NVIDIA is chosen (main pairs them on one row; this
-    // menu has no paired rows yet). Its status: the row's sub line and card (hooks).
+    // so they show on More while NVIDIA is chosen (main pairs them on one row; here
+    // .beside pairs only a toggle). Its status: the row's sub line and card (hooks).
+    // By turns hides it, its status and the NVIDIA rows (main's RowShown, #343).
     {.id="render.frame_generation",.page=View::Performance,.section="Image",.label="Frame generation",
-     .help="Experimental (OFXR Bridge by tig3rmast3r): the game draws every other frame, the rest come from motion. Needs Both eyes. On: a moment of black; off: at once.",
+     .help="Experimental (OFXR Bridge by tig3rmast3r): makes every other frame. Needs Both eyes; on: a moment of black. With Virtual Desktop, set its SSW to Disabled.",
      .warn="Experimental: on reloads VR",FRAMEVR_OPTIONS(FrameGenOptions)},
     // Performance: Draw distance (and the Defer GPU wait offer, shown in the readout)
     {.id="render.rings",.page=View::Performance,.section="Draw distance",.kind=RowKind::Stepper,.label="Terrain distance",
@@ -873,7 +888,7 @@ inline MenuData BuildMenu(const Override* overrides,size_t overrideCount,const P
         if(!KindFits(r.kind,d,shown)){note(id+": its row kind no longer fits the setting; the data's own control");r.kind=DerivedKind(d,shown);}
         r.label=o.label?o.label:d.label;r.warn=o.warn;
         r.help=o.help?o.help:HelpText(k)[0]?HelpText(k):d.detail;   // no words of ours: upstream's long help, else its detail
-        r.classes=o.classes;r.wraps=o.wraps;r.warnWhen=o.warnWhen;
+        r.classes=o.classes;r.wraps=o.wraps;r.warnWhen=o.warnWhen;r.beside=o.beside&&r.kind==RowKind::Toggle;
         r.recommended=o.recommended==o.recommended&&o.recommended>=d.min&&o.recommended<=d.max?o.recommended:std::numeric_limits<float>::quiet_NaN();
         // Value words in range only.
         if(o.nameCount){
@@ -1123,8 +1138,15 @@ constexpr bool OrderOk(){
         if(r.page<page||(r.page==page&&s<section))return false;
         page=r.page;section=s;
     }
+    // An instead row follows a row of its page and section (vr-settings-test checks RowShown never shows both).
+    for(size_t i=0;i<std::size(Overrides);++i)if(Overrides[i].instead&&(!i||Overrides[i-1].page!=Overrides[i].page||!SameText(Overrides[i-1].section,Overrides[i].section)))return false;
+    // A beside toggle follows a placed row of its page and section, and shares that row.
+    for(size_t i=0;i<std::size(Overrides);++i)if(Overrides[i].beside){
+        const auto& r=Overrides[i];
+        if(!i||r.kind!=RowKind::Toggle||Overrides[i-1].beside||Overrides[i-1].page!=r.page||!SameText(Overrides[i-1].section,r.section))return false;
+    }
     for(const auto& p:PageTable){
-        int rows=0;for(const auto& r:Overrides)if(r.page==p.id)++rows;
+        int rows=0;for(const auto& r:Overrides)if(r.page==p.id&&!r.beside&&!r.instead)++rows;   // the slabs that can show at once
         if(rows>8||SectionCount(p.id)>3)return false;
     }
     for(size_t i=1;i<std::size(SectionTable);++i)if(SectionTable[i-1].page>SectionTable[i].page)return false;
