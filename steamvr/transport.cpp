@@ -4893,11 +4893,13 @@ void EndPair() {
             Say(message);reportAt=now+5000;
         }
     }
-    static uint64_t reportedSettingsRevision=~0ull;
-    if(settingsModel.open&&settingsImageReady&&reportedSettingsRevision!=settingsModel.revision) {
+    // Once per open: the first frame its picture is ready (every repaint was 122 lines a session).
+    static bool settingsSubmitReported=false;
+    if(!settingsModel.open)settingsSubmitReported=false;
+    else if(settingsImageReady&&!settingsSubmitReported) {
         char message[160];std::snprintf(message,sizeof message,"Frame VR settings: submit result=%d layers=%u panel=%d pointer=%d",
             int(submitted),count,settingsPanel.subImage.swapchain!=XR_NULL_HANDLE,laser.subImage.swapchain!=XR_NULL_HANDLE);Say(message);
-        reportedSettingsRevision=settingsModel.revision;
+        settingsSubmitReported=true;
     }
     if(submitted==XR_ERROR_POSE_INVALID) {
         static ULONGLONG reportAt=0;const auto now=GetTickCount64();
