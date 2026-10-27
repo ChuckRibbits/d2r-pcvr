@@ -2522,7 +2522,7 @@ void Input() {
             interaction::Input::Tossed{thrown.id,thrown.landed,thrown.p,thrown.q}:interaction::Input::Tossed{};
     }
     interactionOutput=interactions.Step(interactionInput);
-    {   // Each wheel hand reopens on its own last page: one line per open (hand, page, skill tree filter),
+    {   // Each wheel hand reopens on its own last page: one line per open that reopens a kept page or tree (hand, page, skill tree filter),
         // and per direct switch to the other hand (its stick click while a wheel is open never closes it)
         static bool wheelWas=false;static int handWas=-2;
         if(interactionOutput.wheel&&(!wheelWas||interactionOutput.wheelHand!=handWas)&&   // only a kept page or tree, not every open
