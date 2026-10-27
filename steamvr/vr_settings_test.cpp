@@ -68,7 +68,14 @@ int main(int argc,char** argv){
         notes.notesPage=2;const auto last=layout::Build(notes,notes.context,in);
         Check(shownLines(last)==30-2*NotesPerPage&&layout::Find(last,next)&&!layout::Find(last,next)->Has(layout::Enabled),"the last page: the rest, Next grayed");
         Check(nextButton&&layout::Find(last,next)&&layout::Find(last,next)->rect==nextButton->rect,"Next stays put from page to page");
-        notes.Open(none);Check(notes.notesPage==0,"reopening starts on page 1");
+        // #352: closing and reopening keeps the view and the page; only StartOver (a new game) goes back to the Guide, page 1
+        notes.Close();notes.Open(none);
+        Check(notes.view==View::WhatsNew&&notes.notesPage==2,"reopening keeps the What's new page");
+        notes.morePage=1;notes.lastPage=View::Combat;notes.Close();notes.Open(none);
+        Check(notes.morePage==1&&notes.lastPage==View::Combat&&notes.view==View::WhatsNew,"reopening keeps the More page and the page Guide returns to");
+        notes.Close();notes.StartOver();notes.Open(none);
+        Check(notes.view==View::Guide&&notes.notesPage==0&&notes.morePage==0&&notes.lastPage==View::Body,"a new game starts over on the Guide, page 1");
+        // (pressing What's new while on it goes back to the page, so the view must be elsewhere first: the StartOver Guide)
         notes.SetNotesPages(1);layout::Press(notes,{Kind::Open,int(View::WhatsNew),-1},0);layout::Press(notes,next,0);Check(notes.notesPage==0,"one page: nothing to turn");
         in.notes.lineCount=NotesPerPage;const auto one=layout::Build(notes,notes.context,in);
         Check(!layout::Find(one,next)&&shownLines(one)==NotesPerPage,"one page: every line, no Previous / Next");
@@ -241,7 +248,8 @@ int main(int argc,char** argv){
         }
         const auto request=h.Click({Kind::Apply});
         Check(request.changed==(ChangeMask{1}<<key)&&request.values[key]==90&&!h.CanTestHaptics(0),"Apply saves only selected haptic strength and blocks preview while saving");
-        h.Close();h.Open(s);Check(h.Get()[key]==100&&!h.CanTestHaptics(0),"close discards edits and the opening page has no preview");
+        h.Close();h.Open(s);Check(h.Get()[key]==100&&!h.Dirty(),"close discards edits");
+        h.Close();h.StartOver();h.Open(s);Check(!h.CanTestHaptics(0),"a new game opens on the Guide, which has no preview");
     }
     Check(!Model{}.CanTestHaptics(0),"closed menu cannot preview haptics");
     {Model h;h.Open(s);h.view=View::Vibration;
@@ -711,7 +719,9 @@ int main(int argc,char** argv){
         Check(std::wstring(Definitions[FrameGeneration].key)==L"frame_generation"&&std::wstring(Definitions[FrameGeneration].section)==L"render"&&
               std::wstring(Definitions[FrameGenPreset].key)==L"frame_generation_preset"&&std::wstring(Definitions[FrameGenScale].key)==L"frame_generation_scale",
               "frame generation's INI keys");
-        auto nvidia=Defaults();nvidia[FrameGeneration]=2;auto fidelity=Defaults();fidelity[FrameGeneration]=1;
+        auto nvidia=Defaults();nvidia[FrameGeneration]=2;nvidia[StereoRendering]=0;auto fidelity=Defaults();fidelity[FrameGeneration]=1;fidelity[StereoRendering]=0;   // Both eyes: By turns hides them all
+        auto turnsNvidia=nvidia;turnsNvidia[StereoRendering]=1;
+        Check(!RowShown(FrameGeneration,turnsNvidia,{})&&!RowShown(FrameGenPreset,turnsNvidia,{})&&!RowShown(FrameGenScale,turnsNvidia,{}),"By turns hides Frame generation and NVIDIA's rows");
         Check(RowShown(FrameGenPreset,nvidia,{})&&RowShown(FrameGenScale,nvidia,{})&&!RowShown(FrameGenPreset,fidelity,{})&&!RowShown(FrameGenScale,fidelity,{}),
               "NVIDIA's quality and scale only with NVIDIA");
         Check(HelpText(FrameGeneration)[0]&&content::RowOf(FrameGeneration)&&content::RowOf(FrameGeneration)->help[0],"frame generation's help reads");
@@ -719,6 +729,36 @@ int main(int argc,char** argv){
         layout::Press(frames,{Kind::Set,FrameGeneration,0,2},0);Check(frames.Get()[FrameGeneration]==2&&frames.Dirty(),"NVIDIA is one press, a draft");
         layout::Press(frames,{Kind::Set,FrameGenScale,0,1},0);Check(frames.Get()[FrameGenScale]==1,"75%");
         Check(frames.Click({Kind::Apply}).changed==((ChangeMask{1}<<StereoRendering)|(ChangeMask{1}<<FrameGeneration)|(ChangeMask{1}<<FrameGenScale)),"Apply saves only those three (Both eyes, NVIDIA, 75%)");
+    }
+    {   // Movement speed and the stick toggle (main's #308 asserts, verbatim where the menu shape allows)
+        Check(Defaults()[RunSpeed]==100&&std::wstring(Definitions[RunSpeed].section)==L"gameplay"&&std::wstring(Definitions[RunSpeed].key)==L"run_speed_pct"&&
+              HelpText(RunSpeed)[0]!=0,"movement: FULL RUN by default, explained");
+        Check(Normalize(RunSpeed,37)==40&&Normalize(RunSpeed,-10)==-10&&Normalize(RunSpeed,-40)==-10&&Normalize(RunSpeed,2)==0&&Normalize(RunSpeed,140)==100&&
+              Normalize(RunSpeed,std::numeric_limits<float>::infinity())==100,"movement saves -10 (WALK) and 0..100 in 10% steps");
+        Values a=Defaults(),b=a;b[RunSpeed]=70;
+        Check(Changed(a,b)==(ChangeMask{1}<<RunSpeed)&&RunSpeed<ChangeMask::Bits,"run speed has its own change bit");
+        Check(Defaults()[RunWalkToggle]==0&&std::wstring(Definitions[RunWalkToggle].section)==L"gameplay"&&std::wstring(Definitions[RunWalkToggle].key)==L"run_walk_toggle"&&
+              HelpText(RunWalkToggle)[0]!=0&&RunWalkToggle<ChangeMask::Bits,"the stick toggle: off by default, explained, its own change bit");
+        Check(PageOf(RunSpeed)==View::Body&&PageOf(RunWalkToggle)==View::Body,"both live on Body");
+        Model m;m.Open(s);
+        for(int i=0;i<20;++i)m.Click(Step(RunSpeed,-1));
+        Check(m.Get()[RunSpeed]==-10,"the bottom is Walk");
+        m.Click(Step(RunSpeed));Check(m.Get()[RunSpeed]==0,"+ from Walk is Base run");
+        Check(m.Get()[RunWalkToggle]==0,"stepping speed leaves the stick toggle alone");
+        Check(m.Click({Kind::Apply}).changed==(ChangeMask{1}<<RunSpeed),"Apply saves only Movement speed");
+        Model t;t.Open(s);layout::Press(t,{Kind::Set,RunWalkToggle,0,1},0);
+        Check(t.Get()[RunWalkToggle]==1&&t.Get()[RunSpeed]==100,"the toggle turns on without touching speed");
+        Check(t.Click({Kind::Apply}).changed==(ChangeMask{1}<<RunWalkToggle),"Apply saves only the stick toggle");
+    }
+    {   // Help length: each row's card text is at most 160 characters; frame generation's ends with the Virtual Desktop sentence
+        for(const auto& row:content::Menu().rows){
+            Check(std::string(row.help).size()<=160,(std::string("row help at most 160 characters: ")+row.label).c_str());
+            Check(std::string(HelpText(row.key)).size()<450,"and the long help is short enough for the card");
+        }
+        const std::string vd="With Virtual Desktop, set its SSW to Disabled.";
+        const std::string fg=content::RowOf(FrameGeneration)->help,fgLong=HelpText(FrameGeneration);
+        Check(fg.ends_with(vd)||fgLong.ends_with(vd),"frame generation's help ends with the Virtual Desktop sentence");
+        Check(std::string(FrameGenPerformanceNote[0]).size()>0&&std::string(FrameGenPerformanceNote[1]).size()>0,"the readout note has two lines");
     }
     {   // The merge (docs/VR_SETTINGS_MENU.md): made-up overrides against the real Definitions.
         static constexpr content::Option twoNames[]={{0,"Isometric","a"},{1,"Top-down","b"},{7,"Past the end","c"}};

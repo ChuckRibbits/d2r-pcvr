@@ -36,6 +36,8 @@ static const GoldenRow Golden[]={
     {"turn.smooth",View(1),0,content::RowKind::Toggle,"Smooth turning",0,0},
     {"turn.snap",View(1),0,content::RowKind::Stepper,"Snap turn angle",0,0},
     {"turn.speed",View(1),0,content::RowKind::Slider,"Smooth turn speed",0,0},
+    {"gameplay.run_speed_pct",View(1),0,content::RowKind::Slider,"Movement speed",0,12},   // main's #308: Walk, Base run, Run 10..90%, Full run
+    {"gameplay.run_walk_toggle",View(1),0,content::RowKind::Toggle,"Stick toggle",0,0},   // drawn inside Movement speed's row
     {"interactions.seated",View(1),1,content::RowKind::Toggle,"Seated play",0,0},
     {"interactions.waist_below_eyes",View(1),1,content::RowKind::Slider,"Belt below eyes",0,0},
     {"interactions.belt_forward",View(1),1,content::RowKind::Slider,"Belt forward reach",0,0},
@@ -222,6 +224,7 @@ int main(int argc,char** argv){
         for(int view=0;view<int(View::Count);++view){
             const int n=L::CountRows(View(view),v,c);
             Check(n<=L::MaxViewRows,std::string("at most 8 rows: ")+ViewName(View(view)));
+            Check(!(RowShown(Snap,v,c)&&RowShown(TurnSpeed,v,c)),"Snap turn angle and Smooth turn speed are never shown together (the compile-time count relies on it)");
             if(content::PageOf(View(view)).settings&&View(view)!=View::More)Check(n>=1,std::string("a settings page shows rows: ")+ViewName(View(view)));
         }
     }
@@ -414,10 +417,10 @@ int main(int argc,char** argv){
         L::Press(m,{Kind::Close},30400);Check(!m.confirmClose&&m.open&&m.Dirty(),"Close again (Right B) keeps editing");
         L::Press(m,{Kind::Close},31000);L::Press(m,{Kind::ConfirmClose},31100);Check(m.open,"Discard waits 300 ms");
         L::Press(m,{Kind::ConfirmClose},31400);Check(!m.open&&!m.Dirty(),"Discard drops the draft and closes");
-        // Open resets the redesign's state.
+        // Open resets the redesign's transient state but keeps the view (#352); StartOver goes to the Guide.
         m.Open(Ready());m.view=View::World;m.confirmClose=true;m.undoResetUntil=9;m.focusKey=3;m.pickedPreset=1;m.closeWhenSaved=true;m.resetKeys=ChangeMask{1};
         m.Open(Ready());
-        Check(m.view==View::Guide&&!m.confirmClose&&m.undoResetUntil==0&&m.focusKey==-1&&m.pickedPreset==-1&&!m.closeWhenSaved&&!m.resetKeys,"Open resets every new field");
+        Check(m.view==View::World&&!m.confirmClose&&m.undoResetUntil==0&&m.focusKey==-1&&m.pickedPreset==-1&&!m.closeWhenSaved&&!m.resetKeys,"Open resets every new field");
         L::Press(m,{Kind::Close},0);Check(!m.open,"Close without a draft closes at once");
     }
     {   // Calibrate is off while a draft waits; offline difficulty locks without its adapter.
@@ -541,7 +544,22 @@ int main(int argc,char** argv){
         Check(tables.Row(FrameGenPreset)->page==View::More&&tables.Row(FrameGenScale)->page==View::More&&tables.Row(FrameGenPreset)->fallback&&std::string(tables.Row(FrameGenPreset)->label)=="NVIDIA flow quality",
               "NVIDIA's quality and scale: our words, on More (Performance is full)");
         Values off=Defaults();Check(L::CountRows(View::More,off,{})==0,"More stays hidden while frame generation is Off or FidelityFX");
-        Values nvidia=Defaults();nvidia[FrameGeneration]=2;Check(L::CountRows(View::More,nvidia,{})==2,"NVIDIA brings its two rows to More");
+        Values nvidia=Defaults();nvidia[FrameGeneration]=2;nvidia[StereoRendering]=0;   // frame generation runs with Both eyes only
+        Check(L::CountRows(View::More,nvidia,{})==2,"NVIDIA brings its two rows to More");
+        {   // By turns (#343, owner 2026-10-25): the Frame generation row, its status line and NVIDIA's two rows are left out, not locked
+            Values turns=nvidia;turns[StereoRendering]=1;
+            Check(!RowShown(FrameGeneration,turns,{})&&!RowShown(FrameGenPreset,turns,{})&&!RowShown(FrameGenScale,turns,{}),"By turns hides Frame generation and NVIDIA's rows");
+            Check(L::CountRows(View::More,turns,{})==0&&!L::KeyVisible(FrameGeneration,turns,{})&&!L::KeyVisible(FrameGenPreset,turns,{}),"and More has nothing to show");
+            Check(L::CountRows(View::Performance,turns,{})+1==L::CountRows(View::Performance,nvidia,{}),"Performance has exactly one row fewer");
+            Values fidelity=Defaults();fidelity[StereoRendering]=0;fidelity[FrameGeneration]=1;
+            Check(RowShown(FrameGeneration,fidelity,{})&&!RowShown(FrameGenPreset,fidelity,{}),"Both eyes shows Frame generation; NVIDIA's rows only with NVIDIA");
+            Model hid;hid.Open(Ready(turns));L::Press(hid,{Kind::Open,int(View::Performance),-1},0);
+            L::LayoutInput inTurns;inTurns.frameGen={framevr::framegen::State::NeedsBothEyes,1,1,2,1,1,0,0,0};   // no card: the pointer cannot point at a row that is not drawn
+            const auto hidden=L::Build(hid,{},inTurns);CheckLayout(hidden,"performance, by turns, frame generation hidden");
+            std::string anyFg;for(const auto& e:hidden.elements)if(e.key==FrameGeneration||e.key==FrameGenPreset||e.key==FrameGenScale)anyFg+=" role"+std::to_string(int(e.role))+" '"+e.text+"'";
+            Check(anyFg.empty()&&!FindRole(hidden,L::Role::Label,FrameGeneration),"offending:"+anyFg+" "+"no Frame generation row, chip, status line or orphan header is drawn");
+            Check(std::string(HelpText(FrameGeneration)).find("Both eyes")!=std::string::npos,"its help still tells how to get it: Both eyes");
+        }
         Check(L::CountRows(View::Performance,nvidia,{})<=L::MaxViewRows,"Performance stays within 8 rows");
         Model m;m.Open(Ready(nvidia));L::Press(m,{Kind::Open,int(View::Performance),-1},0);
         L::LayoutInput in;in.frameGen={framevr::framegen::State::Active,1,1,2,1,1,0,0,0};in.card=FrameGeneration;
@@ -550,19 +568,80 @@ int main(int argc,char** argv){
               "its row says what OFXR Bridge is doing");
         {L::LayoutInput paused=in;paused.frameGen.state=framevr::framegen::State::NeedsBothEyes;const auto p=L::Build(m,{},paused);CheckLayout(p,"frame generation paused");
          Check(FindRole(p,L::Role::Label,FrameGeneration)->sub=="Now: needs both eyes"&&FindRole(p,L::Role::Label,FrameGeneration)->Has(L::Warn),"by turns it is paused, in amber (#316)");}
-        // #316: turned on only with Both eyes; once on, it can still be changed or turned off.
+        // By turns the row is gone, so it shows only with Both eyes; switching the eyes brings it back.
         Model t;t.Open(Ready());L::Press(t,{Kind::Open,int(View::Performance),-1},0);
-        const auto turns=L::Build(t,{},{});
-        Check(t.Get()[StereoRendering]==1&&FindRole(turns,L::Role::Label,FrameGeneration)->Has(L::Locked)&&FindRole(turns,L::Role::Label,FrameGeneration)->sub=="Needs Both eyes drawn",
-              "by turns its chips are locked, with the reason");
-        L::Press(t,{Kind::Set,FrameGeneration,0,1},0);Check(t.Get()[FrameGeneration]==0&&!t.Dirty(),"and a press turns nothing on");
-        L::Press(t,{Kind::Set,StereoRendering,0,0},0);L::Press(t,{Kind::Set,FrameGeneration,0,1},0);
+        Check(t.Get()[StereoRendering]==1&&!FindRole(L::Build(t,{},{}),L::Role::Label,FrameGeneration),"by turns there is no Frame generation row to press");
+        L::Press(t,{Kind::Set,StereoRendering,0,0},0);
+        Check(FindRole(L::Build(t,{},{}),L::Role::Label,FrameGeneration)&&!FindRole(L::Build(t,{},{}),L::Role::Label,FrameGeneration)->Has(L::Locked),"with Both eyes the row returns, not locked");
+        L::Press(t,{Kind::Set,FrameGeneration,0,1},0);
         Check(t.Get()[FrameGeneration]==1,"with Both eyes it turns on");
-        L::Press(t,{Kind::Set,StereoRendering,0,1},0);L::Press(t,{Kind::Set,FrameGeneration,0,0},0);
-        Check(t.Get()[FrameGeneration]==0,"once on, by turns it can still be turned off");
+        L::Press(t,{Kind::Set,StereoRendering,0,1},0);
+        Check(!FindRole(L::Build(t,{},{}),L::Role::Label,FrameGeneration),"back to By turns the row goes again, with no orphan");
         Check(FindRole(perf,L::Role::CardState)&&FindRole(perf,L::Role::CardState)->text=="Active, OFXR Bridge NVIDIA Medium, 50% scale","its card has main's status line");
         const auto band=L::Build(m,{},{});bool link=false;for(const auto& e:band.elements)if(e.hit.kind==Kind::Open&&e.hit.index==int(View::More)&&e.text=="2 more")link=true;
         Check(link,"the band links More with NVIDIA's two rows");
+    }
+    {   // Main's frame generation text and readout note (#313, #343), with the Virtual Desktop sentence
+        const char* fgHelp=HelpText(FrameGeneration);const std::string vd="With Virtual Desktop, set its SSW to Disabled.";
+        const std::string rowHelp=tables.Row(FrameGeneration)->help;
+        Check(rowHelp.size()<=160,"the card text (what the pointed row shows) is at most 160 characters");
+        Check(rowHelp.size()>=vd.size()&&rowHelp.compare(rowHelp.size()-vd.size(),vd.size(),vd)==0,"and it ends with the Virtual Desktop SSW sentence");
+        (void)fgHelp;
+        // while frame generation is active the readout gives way to the note (main's FrameGenPerformanceNote); otherwise the numbers
+        Values both=Defaults();both[StereoRendering]=0;both[FrameGeneration]=1;
+        Model m;m.Open(Ready(both));L::Press(m,{Kind::Open,int(View::Performance),-1},0);
+        const auto readoutText=[&](const L::Layout& l){std::string all;for(const auto& e:l.elements)if(e.role==L::Role::Readout)all+=e.text+"\n";return all;};
+        L::LayoutInput active;active.frameGen={framevr::framegen::State::Active,1,1,2,1,1,0,0,0};
+        active.performance=PerformanceReadout{true,true,52,11.1f,1.0f,7.0f,9.4f,1.5f};
+        const auto with=L::Build(m,{},active);CheckLayout(with,"performance, frame generation active, readout note");
+        const std::string noteText=readoutText(with);
+        Check(noteText.find(FrameGenPerformanceNote[0])!=std::string::npos&&noteText.find(FrameGenPerformanceNote[1])!=std::string::npos,"active: the readout shows the two note lines");
+        Check(noteText.find("52 fps")==std::string::npos&&noteText.find("headset wait")==std::string::npos,"active: and none of the menu's own numbers");
+        L::LayoutInput idle=active;idle.frameGen.state=framevr::framegen::State::Off;
+        const std::string numbers=readoutText(L::Build(m,{},idle));
+        Check(numbers.find("52 fps")!=std::string::npos&&numbers.find(FrameGenPerformanceNote[0])==std::string::npos,"not active: the numbers, no note");
+        Check(CountRole(L::Build(m,{},active),L::Role::ReadoutBox)==1&&CountRole(L::Build(m,{},idle),L::Role::ReadoutBox)==1,"one readout box either way (the layout does not jump)");
+        for(const char* line:FrameGenPerformanceNote)Check(std::string(line).size()<=90,"each note line fits the readout's width");
+    }
+    {   // #352: the panel reopens where it was closed; a kept view with nothing to show falls back (SettleView)
+        Values nvidia=Defaults();nvidia[FrameGeneration]=2;nvidia[StereoRendering]=0;
+        Model m;m.Open(Ready(nvidia));L::Press(m,{Kind::Open,int(View::More),-1},0);
+        Check(m.view==View::More,"More opens while NVIDIA has rows there");
+        m.Close();m.Open(Ready(nvidia));L::SettleView(m);
+        Check(m.view==View::More&&m.morePage==0,"reopened with rows: still More");
+        m.morePage=5;L::SettleView(m);Check(m.view==View::More&&m.morePage==0,"a kept More page past the last clamps to the last");
+        m.Close();m.Open(Ready());L::SettleView(m);   // NVIDIA no longer chosen: More has no rows
+        Check(m.view==View::Guide&&m.morePage==0,"a kept More with no rows falls to the Guide");
+        Model by;by.Open(Ready(nvidia));L::Press(by,{Kind::Open,int(View::More),-1},0);by.Close();
+        Values turns=nvidia;turns[StereoRendering]=1;by.Open(Ready(turns));L::SettleView(by);
+        Check(by.view==View::Guide,"By turns empties More too: back to the Guide");
+        Model keep;keep.Open(Ready());L::Press(keep,{Kind::Open,int(View::Combat),-1},0);keep.Close();keep.Open(Ready());L::SettleView(keep);
+        Check(keep.view==View::Combat,"a page with rows is kept");
+        keep.Close();keep.StartOver();keep.Open(Ready());L::SettleView(keep);
+        Check(keep.view==View::Guide&&keep.lastPage==View::Body&&keep.morePage==0&&keep.notesPage==0,"StartOver (a new game): the Guide, page 1");
+        Model pre;pre.Open(Ready());pre.view=View::Presets;L::SettleView(pre);
+        Check(pre.view==View::Guide,"Presets, unavailable, fall to the Guide");
+    }
+    {   // Movement speed and Stick toggle (main's #308, our rows): two adjacent full rows on one page, Body, with room to spare
+        const auto* speed=tables.Row(RunSpeed);const auto* toggle=tables.Row(RunWalkToggle);
+        Check(speed&&toggle&&speed->page==View::Body&&toggle->page==View::Body&&!speed->fallback&&!toggle->fallback,"both rows are on the Body page, not the More fallback");
+        Check(speed&&toggle&&speed->section==toggle->section,"in one section");
+        for(const auto& c:contexts)for(bool seated:{false,true}){
+            Values v=Defaults();v[Seated]=seated;
+            Check(L::CountRows(View::Body,v,c)<=L::MaxViewRows&&L::KeyVisible(RunSpeed,v,c)&&L::KeyVisible(RunWalkToggle,v,c),"Body keeps both settings within 8 rows for every class");
+        }
+        Model b;b.Open(Ready());L::Press(b,{Kind::Open,int(View::Body),-1},0);
+        const auto page=L::Build(b,{},{});CheckLayout(page,"body with movement rows");
+        const auto* label=FindRole(page,L::Role::Label,RunSpeed);Check(label!=nullptr,"Movement speed is drawn");
+        // the designer's shape: the toggle is a Value in Movement speed's row, 16 px or more after the + button, never a slab of its own
+        const auto* tog=FindRole(page,L::Role::Value,RunWalkToggle);const auto* plus=FindRole(page,L::Role::StepPlus,RunSpeed);
+        Check(tog&&plus&&tog->hit==Hit{Kind::Set,RunWalkToggle,0,1.f}&&tog->rect.x-(plus->rect.x+plus->rect.w)>=16,"Stick toggle: a press sets it, 16 px or more from the + button");
+        b.Set(RunWalkToggle,1);
+        const auto* on=FindRole(L::Build(b,{},{}),L::Role::Value,RunWalkToggle);Check(on&&on->hit==Hit{Kind::Set,RunWalkToggle,0,0.f},"and a press when On sets it Off");
+        // the value labels: Walk, Base run, Run N%, Full run (main's ValueLabel)
+        const auto value=[&](float v)->std::string{Model x;x.Open(Ready());x.Set(RunSpeed,v);L::Press(x,{Kind::Open,int(View::Body),-1},0);
+            const auto l=L::Build(x,{},{});for(const auto& e:l.elements)if(e.key==RunSpeed&&e.role==L::Role::Value)return e.text;return "?";};
+        Check(value(-10)=="Walk"&&value(0)=="Base run"&&value(40)=="Run 40%"&&value(100)=="Full run","value labels read Walk, Base run, Run N%, Full run");
     }
     {   // Every override's warn line reaches its row, and draws: Motion combat, Spell glow on hands, Frame generation.
         int warned=0;
