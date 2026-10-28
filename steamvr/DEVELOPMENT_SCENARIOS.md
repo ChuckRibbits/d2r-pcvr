@@ -242,20 +242,21 @@ press steps it to the next and saves it as `[bodies] <key>` in the dev
 INI, so it stays across restarts. Bodies being pushed let go when a value
 changes; push one again to feel it. **Bodies: defaults** puts every value
 back. The INI takes any value in range, read live (the steps are only the
-buttons' stops), and the frame log records each press.
+buttons' stops), and the frame log records each press. The defaults are the
+owner's, tuned in the headset.
 
 | Button | Key | Default | Steps | What it changes |
 | --- | --- | --- | --- | --- |
-| Limb spring back | `limb_hertz` | 2.5 Hz | 1, 1.5, 2.5, 4, 6 | How fast a bent limb swings back to the animation |
-| Body spring back | `body_hertz` | 2 Hz | 1, 1.5, 2, 3, 4 | How fast a shoved body returns to its place and lean |
+| Limb spring back | `limb_hertz` | 6 Hz | 1, 1.5, 2.5, 4, 6 | How fast a bent limb swings back to the animation |
+| Body spring back | `body_hertz` | 4 Hz | 1, 1.5, 2, 3, 4 | How fast a shoved body returns to its place and lean |
 | Bounce | `damping` | 0.4 | 0.15, 0.25, 0.4, 0.7, 1 | Damping of both springs: low wobbles past the pose, 1 settles without overshoot (the body's is 0.3 more) |
-| Push strength | `push_newtons` | 600 N | 300, 600, 1200, 2400 | The most a weapon or fist pushes with; a fifth of it in N m turns |
-| Joint strength | `joint_torque` | 20 N m/kg | 5, 10, 20, 40, 80 | How hard each joint holds the animated pose, per kg it holds up |
+| Push strength | `push_newtons` | 300 N | 300, 600, 1200, 2400 | The most a weapon or fist pushes with; a fifth of it in N m turns |
+| Joint strength | `joint_torque` | 40 N m/kg | 5, 10, 20, 40, 80 | How hard each joint holds the animated pose, per kg it holds up |
 | Body steadiness | `body_force` | 40 N/kg | 10, 20, 40, 80, 160 | How hard the hips hold their place, per kg of the body |
-| Hit kick | `hit_kick` | 3 N s | 0, 1.5, 3, 6, 10 | A landed hit's push on the struck limb, per square root of its kg (0 = none) |
-| Most bend | `max_bend` | 69 deg | 30, 45, 69, 90, 120 | How far a limb may swing off the animation |
-| Most shove | `max_shove` | 30 cm | 10, 20, 30, 50 | How far the whole body may be pushed |
-| Ease back | `ease_ms` | 300 ms | 100, 300, 600, 1000 | When the physics lets a body go (a menu, a reset, off), how long its pose eases back |
+| Hit kick | `hit_kick` | 1.5 N s | 0, 1.5, 3, 6, 10 | A landed hit's push on the struck limb, per square root of its kg (0 = none) |
+| Most bend | `max_bend` | 30 deg | 30, 45, 69, 90, 120 | How far a limb may swing off the animation |
+| Most shove | `max_shove` | 10 cm | 10, 20, 30, 50 | How far the whole body may be pushed |
+| Ease back | `ease_ms` | 100 ms | 100, 300, 600, 1000 | When the physics lets a body go (a menu, a reset, off), how long its pose eases back |
 
 ## Locations
 

@@ -153,10 +153,13 @@ inline void SegmentBoxes(const int16_t* parents,int bones,const float* matrices,
     }
 }
 // Bones that are not limbs, by their names: fingers, toes, end points, twist
-// and helper bones, weapon and effect attach points.
+// and helper bones, weapon and effect attach points, and "anim", the bone the
+// game's monsters move by, on the floor under the hips (its segment up to the
+// hips is no limb: a zombie's left out its torso and arms beside it).
 inline bool NotLimb(std::string_view name) {
     std::string lower(name);
     for(auto& ch:lower)ch=char(std::tolower(static_cast<unsigned char>(ch)));
+    if(lower=="anim")return true;
     for(const char* word:{"finger","toe","nub","twist","weapon","attach","helper","dummy","footstep","effect","fx_","_fx","eye","jaw","shield"})
         if(lower.find(word)!=std::string::npos)return true;
     return false;

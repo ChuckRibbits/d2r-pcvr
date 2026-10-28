@@ -9,7 +9,6 @@ using namespace framevr::limbs;
 using math::Vec;using math::Quat;
 namespace {
 constexpr float Pi=3.14159265f;
-constexpr float MaxTurnDefault=1.2f;   // limb_physics.h MaxTurn
 bool Near(float a,float b,float e=1e-3f) {return std::fabs(a-b)<=e;}
 bool Near(Vec a,Vec b,float e=1e-3f) {return Near(a.x,b.x,e)&&Near(a.y,b.y,e)&&Near(a.z,b.z,e);}
 bool SameTurn(Quat a,Quat b,float e=1e-3f) {return std::fabs(std::fabs(a.x*b.x+a.y*b.y+a.z*b.z+a.w*b.w)-1)<=e;}
@@ -74,6 +73,7 @@ int main() {
     // children; the root, the end points and named helpers get none.
     {
         assert(NotLimb("Bip01 L Finger0")&&NotLimb("Bip01 HeadNub")&&NotLimb("weapon_attach_R")&&!NotLimb("Bip01 L Forearm")&&!NotLimb("L_Elbow"));
+        assert(NotLimb("anim")&&NotLimb("Anim")&&!NotLimb("spine_05_bind_jnt")&&!NotLimb("L_lwr_arm_bind_jnt")&&!NotLimb("root_main_00_M_JNT"));
         enum {R,Pel,Sp,Hd,Nub,Th,Ca,Ft,Fi,N};
         const int16_t parents[N]{-1,R,Pel,Sp,Hd,Pel,Th,Ca,Ft};
         const Vec at[N]{{0,0,0},{0,5,0},{0,6,0},{0,10,0},{0,11.5f,0},{1,5,0},{1,1,0},{1,0,0},{1,0,1}};
@@ -164,9 +164,9 @@ int main() {
     // are kept within range; the ease back is the board's fade.
     {
         const Tuning t=Tuning::Standard();
-        assert(t[LimbSpring]==2.5f&&t[BodySpring]==2&&t[Bounce]==.4f&&t[PushStrength]==600&&t[JointStrength]==20&&
-               t[Steadiness]==40&&t[HitKick]==3&&t[MaxShove]==30&&t[EaseBack]==300);
-        assert(Near(t[MaxBend]*Pi/180,MaxTurnDefault,.01f));
+        // The owner's tuning (2026-10-27).
+        assert(t[LimbSpring]==6&&t[BodySpring]==4&&t[Bounce]==.4f&&t[PushStrength]==300&&t[JointStrength]==40&&
+               t[Steadiness]==40&&t[HitKick]==1.5f&&t[MaxBend]==30&&t[MaxShove]==10&&t[EaseBack]==100);
         for(int k=0;k<Knobs;++k) {
             const auto& info=KnobTable[size_t(k)];
             bool listed=false;for(int i=0;i<info.count;++i)listed|=info.steps[size_t(i)]==info.standard;
@@ -174,7 +174,7 @@ int main() {
         }
         assert(NextStep(LimbSpring,2.5f)==4&&NextStep(LimbSpring,6)==1&&NextStep(LimbSpring,3.1f)==4&&NextStep(LimbSpring,3.5f)==6&&NextStep(HitKick,0)==1.5f);
         assert(Clamped(PushStrength,1e9f)==5000&&Clamped(EaseBack,-5)==0&&Clamped(Bounce,NAN)==.4f);
-        Tunings live;live.Set(MaxShove,500);assert(live.Get(MaxShove)==100&&live.Get(LimbSpring)==2.5f);
+        Tunings live;live.Set(MaxShove,500);assert(live.Get(MaxShove)==100&&live.Get(LimbSpring)==6);
         Board board;board.Fade(1000);Reaction r=Still(layout);r.entity=4;r.layout=1;r.at=0;r.turn[0]=About({1,0,0},1);
         board.React(&r,1,0);Reaction out;
         assert(board.Answer(4,1,FreshReaction+500,out)&&Near(2*std::acos(out.turn[0].w),.5f,.03f));

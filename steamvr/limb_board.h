@@ -13,7 +13,7 @@ namespace framevr::limbs {
 inline constexpr unsigned MaxPosed=24;        // bodies within reach, posted at once
 inline constexpr uint64_t FreshPose=200;      // ms: an older pose is not simulated
 inline constexpr uint64_t FreshReaction=100;  // ms: an answer is drawn as it is this long
-inline constexpr uint64_t FadeTime=300;       // ms: then eased out over this long, unless set otherwise
+inline constexpr uint64_t FadeTime=100;       // ms: then eased out over this long, unless set otherwise (Ease back's default)
 inline constexpr unsigned MaxAnswers=MaxBodies*2;
 class Board {
     mutable std::mutex mutex;

@@ -3220,18 +3220,25 @@ SRWLOCK g_lock = SRWLOCK_INIT;
 std::atomic<bool> g_live{false};       // g_on, read without the lock: most poses stop here
 bool g_on = false;
 float g_centre[3] = {}, g_upm = 0;
-// Every skeleton met: what it is (players, items and props are Kind::None).
-struct Known { limbs::Kind kind = limbs::Kind::None; uint32_t entity = 0; ULONGLONG at = 0; bool form = false; };
+// Every skeleton met: what it is (players, items and props are Kind::None),
+// and its model's path as a key (every monster of a kind shares its limbs).
+struct Known { limbs::Kind kind = limbs::Kind::None; uint32_t entity = 0; uint64_t model = 0; ULONGLONG at = 0; bool form = false; };
+uint64_t PathKey(const std::string& path) {
+    uint64_t h = 1469598103934665603ull;
+    for (const unsigned char c : path) { h ^= c; h *= 1099511628211ull; }
+    return h;
+}
 std::unordered_map<uintptr_t, Known> g_known;
 // Each model's limbs, learned once from its bones and meshes; never moved once made.
+// Kept by the model's path: the game makes a model and skeleton for each monster.
 struct Model {
-    uintptr_t model = 0, skeleton = 0;
+    uint64_t key = 0;
     int bones = 0;
     std::array<int16_t, limbs::MaxBones> parents{};
     limbs::Layout layout{};
 };
 std::vector<std::unique_ptr<Model>> g_models;
-std::set<std::pair<uintptr_t, uintptr_t>> g_unusable;
+std::set<uint64_t> g_unusable;
 thread_local std::array<float, limbs::MaxBones * 16> t_pose;
 
 // A model's limbs from its skeleton's bones: every mesh's per-bone boxes when
@@ -3269,22 +3276,23 @@ bool Learn(uintptr_t model, uintptr_t skeleton, int count, const float* pose, Mo
     }
     *why = bound ? "mesh boxes" : "bone segments";
     if (!bound) limbs::SegmentBoxes(out.parents.data(), n, pose, skip.data(), boxes.data());
-    out.model = model; out.skeleton = skeleton; out.bones = n;
+    out.bones = n;
     out.layout = limbs::Choose(out.parents.data(), n, boxes.data());
     for (int i = 0; i < out.layout.count; ++i) { if (i) *names += ", "; *names += boneNames[size_t(out.layout.bone[size_t(i)])]; }
     if (out.layout.count < 2) { *why = bound ? "fewer than two limbs in its meshes" : "fewer than two limbs in its bones"; return false; }
     return true;
 }
-const Model* ModelOf(uintptr_t self, uintptr_t model, uintptr_t skeleton, int count, const float* pose) {
+const Model* ModelOf(uintptr_t self, uint64_t key, uintptr_t model, uintptr_t skeleton, int count, const float* pose) {
     AcquireSRWLockShared(&g_lock);
     const Model* found = nullptr;
-    for (const auto& m : g_models) if (m->model == model && m->skeleton == skeleton && m->bones == count) { found = m.get(); break; }
-    const bool unusable = g_unusable.count({model, skeleton}) > 0;
+    for (const auto& m : g_models) if (m->key == key && m->bones == count) { found = m.get(); break; }
+    const bool unusable = g_unusable.count(key) > 0;
     ReleaseSRWLockShared(&g_lock);
     if (found || unusable) return found;
     auto learned = std::make_unique<Model>();
     std::string why, names;
     const bool ok = Learn(model, skeleton, count, pose, *learned, &why, &names);
+    learned->key = key;
     uintptr_t nameObject = 0, namePointer = 0; Get(self, &nameObject); Get(nameObject + 8, &namePointer);
     char line[1024];
     if (ok) {
@@ -3294,7 +3302,7 @@ const Model* ModelOf(uintptr_t self, uintptr_t model, uintptr_t skeleton, int co
     AcquireSRWLockExclusive(&g_lock);
     const Model* result = nullptr;
     if (ok && g_models.size() < MaxModels) { g_models.push_back(std::move(learned)); result = g_models.back().get(); }
-    else if (!ok) g_unusable.insert({model, skeleton});
+    else if (!ok) g_unusable.insert(key);
     ReleaseSRWLockExclusive(&g_lock);
     if (ok) ++limbs::Shared().learned;
     framevr::logging::Write(line);
@@ -3320,6 +3328,7 @@ void Limbs(uintptr_t self) {
             const std::string path = Str(namePointer);
             next.kind = limbs::KindOf(path);
             next.form = framevr::shapeshift::FromModel(path) != 0;
+            next.model = PathKey(path);
         }
         if (next.kind != limbs::Kind::None && !ecs::Owner(self, known ? k.entity : 0, &next.entity)) next.kind = limbs::Kind::None;
         k = next;
@@ -3339,11 +3348,11 @@ void Limbs(uintptr_t self) {
         count < 2 || count > limbs::MaxBones || !Get(worldPose + 4, &matrices) || !matrices) return;
     auto& pose = t_pose;
     if (!SafeCopy(pose.data(), reinterpret_cast<const void*>(matrices), size_t(count) * 64)) return;
-    const Model* shape = ModelOf(self, model, skeleton, count, pose.data());
+    const Model* shape = ModelOf(self, k.model, model, skeleton, count, pose.data());
     if (!shape) return;
     limbs::Rig rig;
     rig.entity = k.entity; rig.kind = k.kind; rig.at = now;
-    rig.layout = uint64_t(model) * 31 + uint64_t(skeleton);
+    rig.layout = k.model;
     auto& board = limbs::Shared();
     if (!limbs::Capture(shape->layout, pose.data(), count, placement, upm, rig)) return;
     board.Pose(rig); ++board.posed;

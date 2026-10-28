@@ -1,6 +1,7 @@
 #include "limb_physics.h"
 #include <box3d/box3d.h>
 #include <algorithm>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -103,6 +104,24 @@ struct World::Impl {
     float Turn() const {return tune[MaxBend]*3.14159265f/180;}
     float Shove() const {return tune[MaxShove]/100;}
     std::vector<Rig> posed;
+    // Each posed body's pose when its animation last moved: one held still
+    // for StillLife (a corpse: the game holds its last frame) is lifeless,
+    // never simulated - a body pushed on the floor only contorted.
+    struct Watch {Rig ref{};double moved=0,seen=0;};
+    std::unordered_map<uint32_t,Watch> watched;
+    std::vector<uint32_t> lifeless;
+    bool Lifeless(const Rig& r,double time) {
+        auto [it,fresh]=watched.try_emplace(r.entity);
+        auto& w=it->second;
+        w.seen=time;
+        bool moved=fresh||w.ref.count!=r.count||w.ref.layout!=r.layout;
+        for(int i=0;i<r.count&&!moved;++i) {
+            const auto& now=r.limbs[size_t(i)];const auto& then=w.ref.limbs[size_t(i)];
+            moved=Length(now.joint-then.joint)>StillMove||Angle(math::Multiply(now.q,math::Conjugate(then.q)))>StillAngle;
+        }
+        if(moved){w.ref=r;w.moved=time;}
+        return time-w.moved>=StillLife;
+    }
     std::vector<Touch> touches;
     unsigned slips=0;
     double last=0,accumulator=0;
@@ -353,10 +372,14 @@ bool World::Ready() const {return b3World_IsValid(impl->world);}
 void World::Bodies(const Rig* rigs,unsigned count,double time) {
     auto& m=*impl;
     m.posed.assign(rigs,rigs+count);
+    m.lifeless.clear();
+    for(const auto& r:m.posed)if(m.Lifeless(r,time))m.lifeless.push_back(r.entity);
+    for(auto it=m.watched.begin();it!=m.watched.end();)it=time-it->second.seen>3?m.watched.erase(it):std::next(it);
     for(auto& b:m.bodies) {
         const auto it=std::find_if(m.posed.begin(),m.posed.end(),[&](const Rig& r){return r.entity==b.rig.entity;});
         if(it==m.posed.end())continue;
         if(it->layout!=b.rig.layout||it->count!=b.rig.count){b.seen=-1e9;continue;}   // another model: rebuilt
+        if(std::find(m.lifeless.begin(),m.lifeless.end(),b.rig.entity)!=m.lifeless.end()){b.seen=-1e9;continue;}   // died: let go, eased back
         if(it->at!=b.rig.at)m.Carry(b,*it,time);
         else b.seen=time;
     }
@@ -386,7 +409,8 @@ void World::Advance(double time,Vec player) {
     }
     // A weapon nearing a body brings it to life, the nearest first.
     std::vector<const Rig*> waking;
-    for(const auto& r:m.posed)if(!m.Find(r.entity)&&r.count>0&&m.Reached(r))waking.push_back(&r);
+    for(const auto& r:m.posed)
+        if(!m.Find(r.entity)&&r.count>0&&std::find(m.lifeless.begin(),m.lifeless.end(),r.entity)==m.lifeless.end()&&m.Reached(r))waking.push_back(&r);
     std::sort(waking.begin(),waking.end(),[&](const Rig* a,const Rig* b){
         return Length(a->limbs[0].joint-player)<Length(b->limbs[0].joint-player);});
     for(const auto* r:waking)if(m.bodies.size()<size_t(MaxBodies))m.Create(*r,time);
@@ -460,9 +484,10 @@ unsigned World::Touches(std::array<Touch,MaxTouches>& out) {
 }
 unsigned World::Slips() {return std::exchange(impl->slips,0u);}
 unsigned World::Simulated() const {return unsigned(impl->bodies.size());}
+unsigned World::Lifeless() const {return unsigned(impl->lifeless.size());}
 float World::Mass(uint32_t entity) const {
     for(const auto& b:impl->bodies)if(b.rig.entity==entity)return b.mass;
     return 0;
 }
-void World::Reset() {auto& m=*impl;m.Clear();m.posed.clear();m.touches.clear();m.placed=false;}
+void World::Reset() {auto& m=*impl;m.Clear();m.posed.clear();m.touches.clear();m.watched.clear();m.lifeless.clear();m.placed=false;}
 }

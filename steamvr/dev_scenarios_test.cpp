@@ -360,9 +360,9 @@ int main(){
     {
         using namespace framevr::limbs;
         devscenarios::Request(Make(BodyKnobChoice+LimbSpring));assert(!tasks.back().game);Run(tasks.size()-1);
-        assert(devscenarios::Status().result==Result::BodiesUpdated&&Tuned().Get(LimbSpring)==4&&bodySaves==1);
-        Snapshot snapshot;devscenarios::Capture(snapshot);assert(snapshot.devBodies[LimbSpring]==4);
-        devscenarios::Request(Make(BodyKnobChoice+EaseBack));Run(tasks.size()-1);assert(Tuned().Get(EaseBack)==600);
+        assert(devscenarios::Status().result==Result::BodiesUpdated&&Tuned().Get(LimbSpring)==1&&bodySaves==1);
+        Snapshot snapshot;devscenarios::Capture(snapshot);assert(snapshot.devBodies[LimbSpring]==1);   // 6, the default, wraps round to 1
+        devscenarios::Request(Make(BodyKnobChoice+EaseBack));Run(tasks.size()-1);assert(Tuned().Get(EaseBack)==300);
         devscenarios::Request(Make(BodyResetChoice));Run(tasks.size()-1);
         assert(devscenarios::Status().result==Result::BodiesUpdated&&Tuned().Get()==Tuning::Standard()&&bodySaves==2+Knobs);
     }

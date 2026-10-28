@@ -658,8 +658,10 @@ per model). A weapon coming within 60 cm makes that body a ragdoll in its
 own Box3D world: springs at the joints hold the animated pose between its
 limbs, and a spring holds its hips to where the animation has them. A struck
 limb swings away at its joint, the body leans or is shoved back (at most
-69 degrees a limb and 30 cm for the body), then both spring back into the
-game's animation. The ragdoll follows the animation as it plays, so a
+30 degrees a limb and 10 cm for the body), then both spring back into the
+game's animation. Each weapon or fist pushes with limited strength, so light
+limbs give way and heavy bodies resist; a landed hit adds a kick. A body
+whose animation has held still for a second (a corpse) is never pushed. The ragdoll follows the animation as it plays, so a
 monster that runs or attacks does not lag behind it. Purely visual: where a
 monster stands, its hits and your attacks are unchanged. Up to six bodies
 move at once; one back on its animation with no weapon near for 1.5 s is let

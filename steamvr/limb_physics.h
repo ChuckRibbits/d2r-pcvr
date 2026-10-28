@@ -28,8 +28,8 @@ inline constexpr double Step=1/120.;
 inline constexpr float WakeReach=.6f;   // metres: a weapon this near a body's limbs brings it to life
 inline constexpr double Unseen=.4;      // seconds a body may go without a pose before it goes
 inline constexpr double RestTime=1.5;   // seconds back on its animation, out of reach, before it goes
-inline constexpr float MaxTurn=1.2f;    // radians a limb may bend off its animation (Most bend's default)
-inline constexpr float MaxShift=.3f;    // metres the whole body may be shoved (Most shove's default)
+inline constexpr double StillLife=1;    // seconds a body's animated pose may stay unchanged before it counts as lifeless (a corpse)
+inline constexpr float StillMove=.003f,StillAngle=.02f;   // metres, radians: what counts as a change
 inline constexpr float Recentre=20;     // metres from the physics origin before it moves
 class World {
     struct Impl;
@@ -60,6 +60,7 @@ public:
     unsigned Touches(std::array<Touch,MaxTouches>& out);
     unsigned Slips();          // weapons that slipped through a body since the last call
     unsigned Simulated() const;
+    unsigned Lifeless() const;    // bodies posed now whose animation has held still (corpses)
     float Mass(uint32_t entity) const;   // kg, 0 when not simulated
     void Reset();
 };
