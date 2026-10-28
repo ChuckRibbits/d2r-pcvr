@@ -2298,6 +2298,9 @@ void StepBodies() {
     const auto& in=interactionInput;
     const bool on=BodyPhysics();
     const auto now=GetTickCount64();
+    // [bodies] (limb_tuning.h): live from the INI and DEV > Bodies.
+    const auto tuning=limbs::Tuned().Get();
+    limbs::Shared().Fade(uint64_t(tuning[limbs::EaseBack]));
     if(!on||!in.session||in.session!=bodySession) {
         if(bodyWorld)bodyWorld->Reset();
         limbs::Shared().React(nullptr,0,now);
@@ -2309,6 +2312,7 @@ void StepBodies() {
     if(!n&&(!bodyWorld||!bodyWorld->Simulated())){limbs::Shared().React(nullptr,0,now);ReportBodies(now);return;}
     if(!bodyWorld)bodyWorld=std::make_unique<limbs::World>();
     if(!bodyWorld->Ready())return;
+    bodyWorld->Tune(tuning);
     bodyWorld->Bodies(posed.data(),n,in.time);
     std::array<limbs::Weapon,limbs::Weapons> hands{};
     const auto held=HeldColliders();

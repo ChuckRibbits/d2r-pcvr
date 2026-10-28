@@ -57,14 +57,14 @@ strokes, independent damage bookkeeping, weapon changes and cancellation.
 For headset testing, check left-only/right-only hits, alternating
 and simultaneous strokes, thrusts, different weapon types and reversed equip
 order. Compare both melee rules and verify shield/single-weapon swaps and menus.
-With a Barbarian, **DEV > Character > Level 90** and **DEV > Equipment >
+With a Barbarian, **DEV > Hero > Level 90** and **DEV > Gear >
 Dual-wield gear** supply test attributes and a unique Phase Blade, Berserker
 Axe and combat armor; equip the items manually.
 Use **Blood Moor** with an isolated offline `pcvr-dev` character.
 
 For Assassin verification, load an Assassin in `pcvr-dev`, select
-**DEV > Character > Level 90**, then
-**DEV > Equipment > Claw gear** (Bartuc's and Jade Talon), and equip both claws.
+**DEV > Hero > Level 90**, then
+**DEV > Gear > Claw gear** (Bartuc's and Jade Talon), and equip both claws.
 Check each hand separately, alternating/simultaneous swings and forward jabs,
 then reverse equip order and compare Unleashed with Classic. Both triggers
 must be released. Single-claw/shield swaps should retain their existing paths.

@@ -45,12 +45,12 @@ float SegmentDistance(Vec p,Vec q,Vec a,Vec b,float* s=nullptr,float* t=nullptr)
 // touch, nor the props' and bottles' world (another Box3D world).
 constexpr uint64_t PusherBit=0x2,LimbBit=0x4;
 constexpr float Density=985;                          // kg/m3: flesh
-constexpr float LimbHertz=2.5f,LimbDamping=.4f;       // the springs at the joints: the pose between limbs
-// The most a joint's spring gives, per kg of the limbs it holds up: a light
-// touch is held, a hard hit wins and the limb swings until the spring has it.
-constexpr float JointTorque=20;                       // N m per kg
-constexpr float RootHertz=2,RootDamping=.7f;          // the root limb back to its animated place
-constexpr float RootForce=40,RootTorque=15;           // per kg of the body: the most the root's spring gives
+// The springs (limb_tuning.h): at each joint the pose between limbs, at most
+// Joint strength per kg of the limbs it holds up (a light touch is held, a
+// hard hit wins and the limb swings until the spring has it); at the root its
+// animated place, at most Body steadiness per kg of the body (and 3/8 of it in
+// N m), a little more damped than the joints.
+constexpr float RootTorqueShare=.375f,RootExtraDamping=.3f;
 constexpr float LinearDamping=.4f,AngularDamping=1.5f;
 constexpr float MinRadius=.02f,MaxRadius=.45f;
 constexpr float LimbFriction=.4f,WeaponFriction=.3f;
@@ -61,14 +61,13 @@ constexpr float ColliderJump=.75f,ColliderMaxSpeed=30,MinColliderRadius=.02f,Max
 // controller has it by a joint of limited strength: a light limb gives way at
 // once, a heavy body resists and slows it. Caught too far behind its hand, it
 // slips: it jumps back to the hand and passes through bodies for a moment.
-constexpr float HandHertz=30,HandDamping=1;
-constexpr float HandForce=600,HandTorque=120;          // N, N m
+// Its strength is Push strength (N), a fifth of it in N m.
+constexpr float HandHertz=30,HandDamping=1,HandTorqueShare=.2f;
 constexpr float WeaponMassPerMetre=4,MinWeaponMass=.8f,MaxWeaponMass=6;   // kg: a sword 2.6, a polearm 6, a fist .8
 constexpr float SlipDistance=.2f,SlipTurn=.6f;         // metres, radians behind its hand
 constexpr double SlipTime=.25;                         // seconds it passes through bodies after slipping
-// A landed hit: an impulse on the struck limb along the swing, growing with
-// the square root of the limb's mass, so a heavy limb moves less.
-constexpr float StrikeImpulse=3;                       // N s per square root of a kg
+// A landed hit: an impulse on the struck limb along the swing, Hit kick N s
+// per square root of the limb's mass, so a heavy limb moves less.
 constexpr float StrikeReach=.15f;                      // metres between the weapon and the limb it struck
 constexpr float ContactSpeed=3;                        // m/s: a limb found inside a weapon leaves it this fast
 constexpr float StillTurn=.03f,StillShift=.01f;        // radians, metres: back on its animation
@@ -100,6 +99,9 @@ struct World::Impl {
         double seen=0,lively=0;                        // the last pose; the last time it was off its animation or in reach
     };
     std::vector<Body> bodies;
+    Tuning tune=Tuning::Standard();
+    float Turn() const {return tune[MaxBend]*3.14159265f/180;}
+    float Shove() const {return tune[MaxShove]/100;}
     std::vector<Rig> posed;
     std::vector<Touch> touches;
     unsigned slips=0;
@@ -174,8 +176,9 @@ struct World::Impl {
         auto motor=b3DefaultMotorJointDef();
         motor.base.bodyIdA=b.anchor;motor.base.bodyIdB=b.limb[0];
         motor.base.localFrameA=b3Transform_identity;motor.base.localFrameB=b3Transform_identity;
-        motor.linearHertz=RootHertz;motor.linearDampingRatio=RootDamping;motor.maxSpringForce=RootForce*b.mass;
-        motor.angularHertz=RootHertz;motor.angularDampingRatio=RootDamping;motor.maxSpringTorque=RootTorque*b.mass;
+        const float rootDamping=tune[Bounce]+RootExtraDamping;
+        motor.linearHertz=tune[BodySpring];motor.linearDampingRatio=rootDamping;motor.maxSpringForce=tune[Steadiness]*b.mass;
+        motor.angularHertz=tune[BodySpring];motor.angularDampingRatio=rootDamping;motor.maxSpringTorque=tune[Steadiness]*RootTorqueShare*b.mass;
         motor.maxVelocityForce=0;motor.maxVelocityTorque=0;
         b.hold[0]=b3CreateMotorJoint(world,&motor);
         for(int i=1;i<r.count;++i) {
@@ -192,7 +195,7 @@ struct World::Impl {
             hold.base.bodyIdA=b.limb[size_t(up)];hold.base.bodyIdB=b.limb[size_t(i)];
             hold.base.localFrameA={at,B(math::Multiply(math::Conjugate(p.q),l.q))};hold.base.localFrameB=b3Transform_identity;
             hold.linearHertz=0;hold.maxSpringForce=0;
-            hold.angularHertz=LimbHertz;hold.angularDampingRatio=LimbDamping;hold.maxSpringTorque=JointTorque*held[size_t(i)];
+            hold.angularHertz=tune[LimbSpring];hold.angularDampingRatio=tune[Bounce];hold.maxSpringTorque=tune[JointStrength]*held[size_t(i)];
             hold.maxVelocityForce=0;hold.maxVelocityTorque=0;
             b.hold[size_t(i)]=b3CreateMotorJoint(world,&hold);
         }
@@ -252,9 +255,10 @@ struct World::Impl {
         auto motor=b3DefaultMotorJointDef();
         motor.base.bodyIdA=p.hand;motor.base.bodyIdB=p.blade;
         motor.base.localFrameA=b3Transform_identity;motor.base.localFrameB=b3Transform_identity;
-        motor.linearHertz=HandHertz;motor.linearDampingRatio=HandDamping;motor.maxSpringForce=HandForce;
-        motor.angularHertz=HandHertz;motor.angularDampingRatio=HandDamping;motor.maxSpringTorque=HandTorque;
-        motor.maxVelocityForce=HandForce;motor.maxVelocityTorque=HandTorque;
+        const float force=tune[PushStrength],torque=force*HandTorqueShare;
+        motor.linearHertz=HandHertz;motor.linearDampingRatio=HandDamping;motor.maxSpringForce=force;
+        motor.angularHertz=HandHertz;motor.angularDampingRatio=HandDamping;motor.maxSpringTorque=torque;
+        motor.maxVelocityForce=force;motor.maxVelocityTorque=torque;
         b3CreateMotorJoint(world,&motor);
         p.length=length;p.radius=radius;p.passing=false;
     }
@@ -324,10 +328,10 @@ struct World::Impl {
             if(!Finite(p)||!std::isfinite(q.x+q.y+q.z+q.w))return false;
             bool moved=false;
             const float angle=Angle(math::Multiply(q,math::Conjugate(l.q)));
-            if(angle>MaxTurn){q=Toward(l.q,q,MaxTurn/angle);moved=true;b3Body_SetAngularVelocity(body,{0,0,0});}
+            if(angle>Turn()){q=Toward(l.q,q,Turn()/angle);moved=true;b3Body_SetAngularVelocity(body,{0,0,0});}
             if(!i) {
                 const Vec d=p+origin-l.joint;const float shoved=Length(d);
-                if(shoved>MaxShift){p=l.joint+d*(MaxShift/shoved)-origin;moved=true;b3Body_SetLinearVelocity(body,{0,0,0});}
+                if(shoved>Shove()){p=l.joint+d*(Shove()/std::max(shoved,1e-6f))-origin;moved=true;b3Body_SetLinearVelocity(body,{0,0,0});}
             }
             if(moved)b3Body_SetTransform(body,B(p),B(q));
         }
@@ -356,6 +360,12 @@ void World::Bodies(const Rig* rigs,unsigned count,double time) {
         if(it->at!=b.rig.at)m.Carry(b,*it,time);
         else b.seen=time;
     }
+}
+void World::Tune(const Tuning& t) {
+    auto& m=*impl;
+    if(t==m.tune)return;
+    m.tune=t;
+    m.Clear();   // made again, with these values, as weapons near them; the hook eases their poses back meanwhile
 }
 void World::Hands(const std::array<Weapon,Weapons>& weapons) {
     for(int i=0;i<Weapons;++i)impl->pushers[size_t(i)].target=weapons[size_t(i)];
@@ -422,7 +432,8 @@ bool World::Strike(int slot) {
     Vec along=Length(p.velocity)>.5f?math::Normalized(p.velocity):math::Normalized(on-from);
     if(math::Dot(along,along)<.5f)return false;
     const auto body=struck->limb[size_t(limb)];
-    const Vec impulse=along*(StrikeImpulse*std::sqrt(std::max(b3Body_GetMass(body),.1f)));
+    if(!(m.tune[HitKick]>0))return false;
+    const Vec impulse=along*(m.tune[HitKick]*std::sqrt(std::max(b3Body_GetMass(body),.1f)));
     b3Body_ApplyLinearImpulse(body,B(impulse),B(on-m.origin),true);
     return true;
 }

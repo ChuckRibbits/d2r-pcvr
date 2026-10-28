@@ -7,19 +7,22 @@
 // physics (the XR thread) hand each other. The hook posts each body near the
 // player as posed and bends the ones the physics answers for. An answer the
 // physics stops giving (the body let go, the physics reset or off, a menu)
-// is eased out over FadeTime, so a pose never snaps back.
+// is eased out over its fade (Ease back, limb_tuning.h), so a pose never
+// snaps back.
 namespace framevr::limbs {
 inline constexpr unsigned MaxPosed=24;        // bodies within reach, posted at once
 inline constexpr uint64_t FreshPose=200;      // ms: an older pose is not simulated
 inline constexpr uint64_t FreshReaction=100;  // ms: an answer is drawn as it is this long
-inline constexpr uint64_t FadeTime=300;       // ms: then eased out over this long
+inline constexpr uint64_t FadeTime=300;       // ms: then eased out over this long, unless set otherwise
 inline constexpr unsigned MaxAnswers=MaxBodies*2;
 class Board {
     mutable std::mutex mutex;
     std::array<Rig,MaxPosed> rigs{};unsigned count=0;
     std::array<Reaction,MaxAnswers> reactions{};unsigned answered=0;
     std::atomic<unsigned> reacting{0};
+    std::atomic<uint64_t> fade{FadeTime};
 public:
+    void Fade(uint64_t ms) {fade.store(ms,std::memory_order_relaxed);}
     // The hook's counters, for the physics' log line.
     std::atomic<unsigned> posed{0},bent{0},refused{0},learned{0};
     // This body's pose, in place of its last; the stalest goes when full.
@@ -52,7 +55,7 @@ public:
         unsigned kept=0;
         for(unsigned i=0;i<answered;++i) {
             const auto& a=reactions[i];
-            if(a.at>now||now-a.at>FreshReaction+FadeTime)continue;
+            if(a.at>now||now-a.at>FreshReaction+fade.load(std::memory_order_relaxed))continue;
             bool replaced=false;
             for(unsigned k=0;k<n&&!replaced;++k)replaced=r[k].entity==a.entity;
             if(!replaced)reactions[kept++]=a;
@@ -73,9 +76,9 @@ public:
         for(unsigned i=0;i<answered;++i) {
             const auto& r=reactions[i];
             if(r.entity!=entity||r.layout!=layout||r.at>now)continue;
-            const uint64_t age=now-r.at;
-            if(age>FreshReaction+FadeTime)return false;
-            out=age<=FreshReaction?r:Faded(r,1-float(age-FreshReaction)/float(FadeTime));
+            const uint64_t age=now-r.at,ease=fade.load(std::memory_order_relaxed);
+            if(age>FreshReaction+ease)return false;
+            out=age<=FreshReaction?r:Faded(r,1-float(age-FreshReaction)/float(std::max<uint64_t>(ease,1)));
             return true;
         }
         return false;

@@ -1,5 +1,6 @@
 #pragma once
 #include "limb_rig.h"
+#include "limb_tuning.h"
 #include <array>
 #include <memory>
 
@@ -27,8 +28,8 @@ inline constexpr double Step=1/120.;
 inline constexpr float WakeReach=.6f;   // metres: a weapon this near a body's limbs brings it to life
 inline constexpr double Unseen=.4;      // seconds a body may go without a pose before it goes
 inline constexpr double RestTime=1.5;   // seconds back on its animation, out of reach, before it goes
-inline constexpr float MaxTurn=1.2f;    // radians a limb may bend off its animation
-inline constexpr float MaxShift=.3f;    // metres the whole body may be shoved
+inline constexpr float MaxTurn=1.2f;    // radians a limb may bend off its animation (Most bend's default)
+inline constexpr float MaxShift=.3f;    // metres the whole body may be shoved (Most shove's default)
 inline constexpr float Recentre=20;     // metres from the physics origin before it moves
 class World {
     struct Impl;
@@ -39,6 +40,9 @@ public:
     World(const World&)=delete;
     World& operator=(const World&)=delete;
     bool Ready() const;
+    // The values that shape the reactions (limb_tuning.h). A change lets
+    // every body go; each is made again with them as a weapon nears it.
+    void Tune(const Tuning&);
     // The bodies near the player as posed now (Capture). A simulated body is
     // carried to its new pose; one unseen for Unseen seconds goes.
     void Bodies(const Rig* rigs,unsigned count,double time);

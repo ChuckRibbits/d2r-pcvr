@@ -85,8 +85,8 @@ int main() {
     // Weight: the same blade swept through the middle of a slight body and a
     // heavy one shoves the slight one far more; the heavy one stops the blade
     // until it slips through and goes on with the hand.
-    auto shove=[&](float girth,unsigned& slips) {
-        World w;double s=0;const Rig b=Body(300,{0,0,2},{0,0,0,1},girth,0x200000u+unsigned(girth*1000));
+    auto shove=[&](float girth,unsigned& slips,float farthest=30) {
+        World w;double s=0;Tuning tuning=Tuning::Standard();tuning.value[MaxShove]=farthest;w.Tune(tuning);const Rig b=Body(300,{0,0,2},{0,0,0,1},girth,0x200000u+unsigned(girth*1000));
         auto at=[&](float z){return Blade({-.4f,1.3f,2+z},{.4f,1.3f,2+z});};
         for(int i=0;i<20;++i)s=Frame(w,s,b,at(-.7f));
         float most=0;slips=0;
@@ -100,6 +100,7 @@ int main() {
     unsigned slight=0,heavy=0;
     const float light=shove(.08f,slight),stout=shove(.3f,heavy);
     assert(light>2*stout&&heavy>0);
+    unsigned ignored=0;assert(shove(.08f,ignored,10)<=.105f);   // Most shove, tuned down
     // A landed hit kicks the struck limb along the swing; nothing near, no kick.
     {
         World w;double s=0;const Rig b=Body(400);
@@ -110,6 +111,10 @@ int main() {
         float kicked=0;for(int i=0;i<20;++i){s=Frame(w,s,b,beside);kicked=std::max(kicked,Bent(w));}
         std::printf("limb physics: a landed hit bent the arm %.2f rad\n",kicked);
         assert(kicked>.1f);
+        // Hit kick tuned to none: no kick.
+        World calm;Tuning none=Tuning::Standard();none.value[HitKick]=0;calm.Tune(none);s=0;
+        for(int i=0;i<20;++i)s=Frame(calm,s,b,beside);
+        assert(calm.Simulated()==1&&!calm.Strike(0));
     }
     std::puts("limb physics: all checks passed");
     return 0;

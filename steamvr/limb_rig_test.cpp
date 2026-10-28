@@ -1,4 +1,5 @@
 #include "limb_board.h"
+#include "limb_tuning.h"
 #include <cassert>
 #include <cstdio>
 #include <vector>
@@ -8,6 +9,7 @@ using namespace framevr::limbs;
 using math::Vec;using math::Quat;
 namespace {
 constexpr float Pi=3.14159265f;
+constexpr float MaxTurnDefault=1.2f;   // limb_physics.h MaxTurn
 bool Near(float a,float b,float e=1e-3f) {return std::fabs(a-b)<=e;}
 bool Near(Vec a,Vec b,float e=1e-3f) {return Near(a.x,b.x,e)&&Near(a.y,b.y,e)&&Near(a.z,b.z,e);}
 bool SameTurn(Quat a,Quat b,float e=1e-3f) {return std::fabs(std::fabs(a.x*b.x+a.y*b.y+a.z*b.z+a.w*b.w)-1)<=e;}
@@ -156,6 +158,27 @@ int main() {
         assert(Near(2*std::acos(out.turn[3].w),.4f,.02f)&&Near(out.shift.z,.1f));
         assert(!board.Answer(9,5,1000+FreshReaction+FadeTime+1,out)&&!board.Answer(8,5,1000,out)&&!board.Answer(9,6,1000,out));
         board.React(nullptr,0,2000);assert(!board.Answer(9,5,2000,out));
+    }
+    // Tuning: the defaults are the values the physics was built with; a step
+    // press goes to the step after the nearest, wrapping; the INI's values
+    // are kept within range; the ease back is the board's fade.
+    {
+        const Tuning t=Tuning::Standard();
+        assert(t[LimbSpring]==2.5f&&t[BodySpring]==2&&t[Bounce]==.4f&&t[PushStrength]==600&&t[JointStrength]==20&&
+               t[Steadiness]==40&&t[HitKick]==3&&t[MaxShove]==30&&t[EaseBack]==300);
+        assert(Near(t[MaxBend]*Pi/180,MaxTurnDefault,.01f));
+        for(int k=0;k<Knobs;++k) {
+            const auto& info=KnobTable[size_t(k)];
+            bool listed=false;for(int i=0;i<info.count;++i)listed|=info.steps[size_t(i)]==info.standard;
+            assert(listed&&info.standard>=info.low&&info.standard<=info.high&&info.key&&*info.name);
+        }
+        assert(NextStep(LimbSpring,2.5f)==4&&NextStep(LimbSpring,6)==1&&NextStep(LimbSpring,3.1f)==4&&NextStep(LimbSpring,3.5f)==6&&NextStep(HitKick,0)==1.5f);
+        assert(Clamped(PushStrength,1e9f)==5000&&Clamped(EaseBack,-5)==0&&Clamped(Bounce,NAN)==.4f);
+        Tunings live;live.Set(MaxShove,500);assert(live.Get(MaxShove)==100&&live.Get(LimbSpring)==2.5f);
+        Board board;board.Fade(1000);Reaction r=Still(layout);r.entity=4;r.layout=1;r.at=0;r.turn[0]=About({1,0,0},1);
+        board.React(&r,1,0);Reaction out;
+        assert(board.Answer(4,1,FreshReaction+500,out)&&Near(2*std::acos(out.turn[0].w),.5f,.03f));
+        board.Fade(0);assert(!board.Answer(4,1,FreshReaction+1,out));
     }
     // An answer for another layout is not applied.
     {
