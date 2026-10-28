@@ -4,13 +4,17 @@
 #include <memory>
 
 // Bodies that give way (limb_rig.h): each body a powered ragdoll in its own
-// Box3D world. Its limbs are capsules joined at the bones' joints; springs at
-// the joints hold the animated pose between limbs, and a spring holds the
-// root limb to where the animation has it. Weapons and fists are kinematic
-// capsules that push the limbs aside. The bodies are simulated in the
-// animation's frame: every new pose carries each limb with it, keeping only
-// its offset, so a monster that runs or swings does not lag behind its own
-// animation; only pushes move a limb off it.
+// Box3D world. Its limbs are capsules joined at the bones' joints; a spring
+// of limited torque at each joint holds the animated pose between limbs (a
+// light touch is held, a hard hit wins), and a spring holds the root limb to
+// where the animation has it. Each weapon or fist is a body of its own held
+// to its hand by a joint of limited strength, so a light limb gives way at
+// once and a heavy body resists it; one caught behind its hand slips through.
+// A landed hit adds an impulse along the swing that grows with the square
+// root of the struck limb's mass, so a heavy limb moves less. The bodies are
+// simulated in the animation's frame: every new pose carries each limb with
+// it, keeping only its offset, so a monster that runs or swings does not lag
+// behind its own animation; only pushes move a limb off it.
 namespace framevr::limbs {
 // A held weapon, shield or fist: base to tip in world metres. Slots as
 // bottles::Collider: right hand, left hand, shield.
@@ -43,11 +47,16 @@ public:
     // Fixed steps to time. A body comes to life when a weapon nears it and
     // goes once it is back on its animation with no weapon near.
     void Advance(double time,Vec player);
+    // A hit landed by this slot's weapon: an impulse on the limb nearest it,
+    // along its swing. False when no simulated limb is within reach of it.
+    bool Strike(int slot);
     // Every simulated body's offsets from its animation, at the latest step.
     unsigned Reactions(std::array<Reaction,MaxBodies>& out,uint64_t now) const;
     // The pushes since the last call, cleared.
     unsigned Touches(std::array<Touch,MaxTouches>& out);
+    unsigned Slips();          // weapons that slipped through a body since the last call
     unsigned Simulated() const;
+    float Mass(uint32_t entity) const;   // kg, 0 when not simulated
     void Reset();
 };
 }

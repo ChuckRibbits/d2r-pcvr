@@ -12,11 +12,11 @@ float Angle(Quat q) {return 2*std::acos(std::min(1.f,std::fabs(q.w)));}
 // A torso standing at x (its joint at the hips) and an arm hanging from its
 // shoulder; the arm's own frame turned (its x along the arm, pointing down),
 // so the joint's animated turn is not the identity. turn: the whole body faced.
-Rig Body(uint64_t at,Vec where={0,0,2},Quat turn={0,0,0,1}) {
-    Rig r;r.entity=0x100042;r.kind=Kind::Monster;r.layout=7;r.at=at;r.count=2;
+Rig Body(uint64_t at,Vec where={0,0,2},Quat turn={0,0,0,1},float girth=.15f,uint32_t entity=0x100042) {
+    Rig r;r.entity=entity;r.kind=Kind::Monster;r.layout=7;r.at=at;r.count=2;
     auto place=[&](Vec p){return where+math::Rotate(turn,p);};
     auto& torso=r.limbs[0];
-    torso.joint=place({0,1,0});torso.q=turn;torso.a=place({0,1.1f,0});torso.b=place({0,1.5f,0});torso.radius=.15f;
+    torso.joint=place({0,1,0});torso.q=turn;torso.a=place({0,1.1f,0});torso.b=place({0,1.5f,0});torso.radius=girth;
     auto& arm=r.limbs[1];
     arm.joint=place({.25f,1.5f,0});arm.q=math::Multiply(turn,About({0,0,1},-Pi/2));
     arm.a=place({.25f,1.45f,0});arm.b=place({.25f,.95f,0});arm.radius=.05f;
@@ -82,6 +82,35 @@ int main() {
     for(int i=0;i<60;++i){t+=1/90.;world.Bodies(nullptr,0,t);world.Hands(still);world.Advance(t,{0,0,0});}
     assert(world.Simulated()==0);
     world.Reset();assert(world.Simulated()==0);
+    // Weight: the same blade swept through the middle of a slight body and a
+    // heavy one shoves the slight one far more; the heavy one stops the blade
+    // until it slips through and goes on with the hand.
+    auto shove=[&](float girth,unsigned& slips) {
+        World w;double s=0;const Rig b=Body(300,{0,0,2},{0,0,0,1},girth,0x200000u+unsigned(girth*1000));
+        auto at=[&](float z){return Blade({-.4f,1.3f,2+z},{.4f,1.3f,2+z});};
+        for(int i=0;i<20;++i)s=Frame(w,s,b,at(-.7f));
+        float most=0;slips=0;
+        for(int i=0;i<47;++i) {
+            s=Frame(w,s,b,at(-.7f+1.4f*float(i)/46));   // 2.7 m/s through the torso
+            most=std::max(most,Length(Answer(w).shift));slips+=w.Slips();
+        }
+        std::printf("limb physics: a torso %.0f cm thick (%.0f kg) shoved %.1f cm, %u slips\n",girth*200,w.Mass(b.entity),most*100,slips);
+        return most;
+    };
+    unsigned slight=0,heavy=0;
+    const float light=shove(.08f,slight),stout=shove(.3f,heavy);
+    assert(light>2*stout&&heavy>0);
+    // A landed hit kicks the struck limb along the swing; nothing near, no kick.
+    {
+        World w;double s=0;const Rig b=Body(400);
+        const auto beside=Blade({.25f,1.2f,2.17f},{.25f,1.2f,2.9f});   // 10 cm off the arm
+        for(int i=0;i<20;++i)s=Frame(w,s,b,beside);
+        assert(Bent(w)<.02f);
+        assert(w.Strike(0)&&!w.Strike(1));
+        float kicked=0;for(int i=0;i<20;++i){s=Frame(w,s,b,beside);kicked=std::max(kicked,Bent(w));}
+        std::printf("limb physics: a landed hit bent the arm %.2f rad\n",kicked);
+        assert(kicked>.1f);
+    }
     std::puts("limb physics: all checks passed");
     return 0;
 }

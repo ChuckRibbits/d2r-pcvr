@@ -5,15 +5,19 @@
 
 // Bodies that give way: what the skeleton hook's pose threads and the
 // physics (the XR thread) hand each other. The hook posts each body near the
-// player as posed and bends the ones the physics answers for.
+// player as posed and bends the ones the physics answers for. An answer the
+// physics stops giving (the body let go, the physics reset or off, a menu)
+// is eased out over FadeTime, so a pose never snaps back.
 namespace framevr::limbs {
-inline constexpr unsigned MaxPosed=24;     // bodies within reach, posted at once
-inline constexpr uint64_t FreshPose=200;   // ms: an older pose is not simulated
-inline constexpr uint64_t FreshReaction=150; // ms: an older answer is not drawn
+inline constexpr unsigned MaxPosed=24;        // bodies within reach, posted at once
+inline constexpr uint64_t FreshPose=200;      // ms: an older pose is not simulated
+inline constexpr uint64_t FreshReaction=100;  // ms: an answer is drawn as it is this long
+inline constexpr uint64_t FadeTime=300;       // ms: then eased out over this long
+inline constexpr unsigned MaxAnswers=MaxBodies*2;
 class Board {
     mutable std::mutex mutex;
     std::array<Rig,MaxPosed> rigs{};unsigned count=0;
-    std::array<Reaction,MaxBodies> reactions{};unsigned answered=0;
+    std::array<Reaction,MaxAnswers> reactions{};unsigned answered=0;
     std::atomic<unsigned> reacting{0};
 public:
     // The hook's counters, for the physics' log line.
@@ -41,20 +45,38 @@ public:
         count=kept;
         return n;
     }
-    void React(const Reaction* r,unsigned n) {
+    // The physics' answers now. A body it no longer answers for keeps its
+    // last answer, eased out; once faded it is forgotten.
+    void React(const Reaction* r,unsigned n,uint64_t now) {
         std::lock_guard lock(mutex);
-        answered=std::min<unsigned>(n,MaxBodies);
-        std::copy_n(r,answered,reactions.begin());
+        unsigned kept=0;
+        for(unsigned i=0;i<answered;++i) {
+            const auto& a=reactions[i];
+            if(a.at>now||now-a.at>FreshReaction+FadeTime)continue;
+            bool replaced=false;
+            for(unsigned k=0;k<n&&!replaced;++k)replaced=r[k].entity==a.entity;
+            if(!replaced)reactions[kept++]=a;
+        }
+        answered=kept;
+        for(unsigned k=0;k<n;++k) {
+            unsigned at=answered;
+            if(answered<MaxAnswers)++answered;
+            else {at=0;for(unsigned i=1;i<answered;++i)if(reactions[i].at<reactions[at].at)at=i;}
+            reactions[at]=r[k];
+        }
         reacting.store(answered,std::memory_order_release);
     }
-    // The physics' answer for this body's pose of this model, if fresh.
+    // The answer for this body's pose of this model, eased out when stale.
     bool Answer(uint32_t entity,uint64_t layout,uint64_t now,Reaction& out) const {
         if(!reacting.load(std::memory_order_acquire))return false;
         std::lock_guard lock(mutex);
         for(unsigned i=0;i<answered;++i) {
             const auto& r=reactions[i];
-            if(r.entity!=entity||r.layout!=layout||r.at>now||now-r.at>FreshReaction)continue;
-            out=r;return true;
+            if(r.entity!=entity||r.layout!=layout||r.at>now)continue;
+            const uint64_t age=now-r.at;
+            if(age>FreshReaction+FadeTime)return false;
+            out=age<=FreshReaction?r:Faded(r,1-float(age-FreshReaction)/float(FadeTime));
+            return true;
         }
         return false;
     }

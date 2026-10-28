@@ -1,4 +1,4 @@
-#include "limb_rig.h"
+#include "limb_board.h"
 #include <cassert>
 #include <cstdio>
 #include <vector>
@@ -142,6 +142,20 @@ int main() {
         for(int i=0;i<layout.count;++i)r.turn[size_t(i)]=About({0,0,1},.3f);
         assert(Apply(layout,Parents,bent.data(),Bones,place.data(),Upm,r));
         assert(Near(Axis(bent,Thigh,1),{-std::sin(.3f),std::cos(.3f),0})&&Near(At(bent,Root),{0,0,0}));
+    }
+    // The board: a fresh answer as it is; one the physics stopped giving eased
+    // out over FadeTime, then forgotten; another body's or model's never.
+    {
+        Board board;Reaction r=Still(layout);r.entity=9;r.layout=5;r.at=1000;
+        r.turn[3]=About({0,0,1},.8f);r.shift={0,0,.2f};
+        board.React(&r,1,1000);
+        Reaction out;
+        assert(board.Answer(9,5,1000+FreshReaction,out)&&SameTurn(out.turn[3],r.turn[3]));
+        board.React(nullptr,0,1050);   // let go: kept, easing out
+        assert(board.Answer(9,5,1000+FreshReaction+FadeTime/2,out));
+        assert(Near(2*std::acos(out.turn[3].w),.4f,.02f)&&Near(out.shift.z,.1f));
+        assert(!board.Answer(9,5,1000+FreshReaction+FadeTime+1,out)&&!board.Answer(8,5,1000,out)&&!board.Answer(9,6,1000,out));
+        board.React(nullptr,0,2000);assert(!board.Answer(9,5,2000,out));
     }
     // An answer for another layout is not applied.
     {

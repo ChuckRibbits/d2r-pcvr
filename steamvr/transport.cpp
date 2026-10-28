@@ -724,7 +724,8 @@ std::unique_ptr<limbs::World> bodyWorld;
 std::atomic<bool> bodyPhysics{true};
 uint64_t bodySession=0;
 ULONGLONG bodyReportAt=0,bodyToldAt=0;
-unsigned bodyPushes=0,bodyMost=0;
+unsigned bodyPushes=0,bodyMost=0,bodyStrikes=0,bodySlips=0;
+std::atomic<ULONGLONG> bodyStrikeAt[2]{};   // a weapon's contact the game counted as a hit (MeleeImpact)
 elements::Renderer elementalRenderer;
 elements::State elementalState;
 elements::Scene elementalScene;
@@ -949,8 +950,7 @@ void ClearInput() {
     ++meleeEpoch;motion.Cancel();motionOutput={};motionAt=0;gamecmd::CancelPotion();
     interactions.Reset();interactionOutput={};interactionstate::Cancel();skel::SetInteractionHidden(0);
     potionScene={};if(droppedBottles)droppedBottles->Reset();
-    if(bodyWorld)bodyWorld->Reset();
-    limbs::Shared().Clear();
+    if(bodyWorld)bodyWorld->Reset();   // the hook eases the bodies' last answers out
     elementalState.Reset();elementalScene={};
     journalPlacement.LoseTracking();
     meleePoses.Clear();offhandPoses.Clear();CancelShieldCast();
@@ -2288,25 +2288,25 @@ void ReportBodies(ULONGLONG now) {
     bodyReportAt=now;
     auto& board=limbs::Shared();
     const unsigned posed=board.posed.exchange(0),bent=board.bent.exchange(0),refused=board.refused.exchange(0),learned=board.learned.exchange(0);
-    const unsigned pushes=std::exchange(bodyPushes,0u),most=std::exchange(bodyMost,0u);
+    const unsigned pushes=std::exchange(bodyPushes,0u),most=std::exchange(bodyMost,0u),strikes=std::exchange(bodyStrikes,0u),slips=std::exchange(bodySlips,0u);
     if(!posed&&!bent&&!pushes&&!learned)return;
-    char line[260];std::snprintf(line,sizeof line,"Frame bodies: ten seconds: poses posted=%u bent=%u refused=%u models learned=%u; ragdolls most=%u now=%u; pushes=%u",
-        posed,bent,refused,learned,most,bodyWorld?bodyWorld->Simulated():0u,pushes);
+    char line[300];std::snprintf(line,sizeof line,"Frame bodies: ten seconds: poses posted=%u bent=%u refused=%u models learned=%u; ragdolls most=%u now=%u; pushes=%u hits=%u slipped through=%u",
+        posed,bent,refused,learned,most,bodyWorld?bodyWorld->Simulated():0u,pushes,strikes,slips);
     Say(line);
 }
 void StepBodies() {
     const auto& in=interactionInput;
     const bool on=BodyPhysics();
+    const auto now=GetTickCount64();
     if(!on||!in.session||in.session!=bodySession) {
         if(bodyWorld)bodyWorld->Reset();
-        limbs::Shared().React(nullptr,0);
+        limbs::Shared().React(nullptr,0,now);
         bodySession=in.session;
     }
-    const auto now=GetTickCount64();
-    if(!on||!in.stage.known){limbs::Shared().React(nullptr,0);return;}   // menus and loading: the game's poses
+    if(!on||!in.stage.known){limbs::Shared().React(nullptr,0,now);return;}   // menus and loading: back to the game's poses
     std::array<limbs::Rig,limbs::MaxPosed> posed;
     const unsigned n=limbs::Shared().Posed(posed.data(),unsigned(posed.size()),now);
-    if(!n&&(!bodyWorld||!bodyWorld->Simulated())){limbs::Shared().React(nullptr,0);ReportBodies(now);return;}
+    if(!n&&(!bodyWorld||!bodyWorld->Simulated())){limbs::Shared().React(nullptr,0,now);ReportBodies(now);return;}
     if(!bodyWorld)bodyWorld=std::make_unique<limbs::World>();
     if(!bodyWorld->Ready())return;
     bodyWorld->Bodies(posed.data(),n,in.time);
@@ -2315,9 +2315,13 @@ void StepBodies() {
     for(int i=0;i<limbs::Weapons;++i)hands[size_t(i)]={held[size_t(i)].active,held[size_t(i)].base,held[size_t(i)].tip,held[size_t(i)].radius};
     bodyWorld->Hands(hands);
     bodyWorld->Advance(in.time,in.stage.anchor);
+    // A contact the game counted as a hit: an impulse on the struck limb.
+    for(int hand=0;hand<2;++hand)
+        if(const auto at=bodyStrikeAt[hand].exchange(0);at&&now>=at&&now-at<150&&bodyWorld->Strike(hand))++bodyStrikes;
+    bodySlips+=bodyWorld->Slips();
     bodyMost=std::max(bodyMost,bodyWorld->Simulated());
     std::array<limbs::Reaction,limbs::MaxBodies> answers;
-    limbs::Shared().React(answers.data(),bodyWorld->Reactions(answers,now));
+    limbs::Shared().React(answers.data(),bodyWorld->Reactions(answers,now),now);
     // A light tick in the hand that pushed a body; the first push a second is logged.
     std::array<limbs::Touch,limbs::MaxTouches> touches;
     for(unsigned i=0,count=bodyWorld->Touches(touches);i<count;++i) {
@@ -5109,7 +5113,7 @@ void FinishShieldSkill(bool accepted) {
     shieldFeedbackAt=GetTickCount64();shieldRefused=!accepted;
     if(accepted)shieldImpactAt=shieldFeedbackAt;
 }
-void MeleeImpact(int hand) {if(hand>=0&&hand<2)meleeImpactAt[hand]=GetTickCount64();}
+void MeleeImpact(int hand) {if(hand>=0&&hand<2)meleeImpactAt[hand]=bodyStrikeAt[hand]=GetTickCount64();}
 void ShieldGuardImpact(bool parry,float weight) {
     shieldImpactAt=GetTickCount64();
     if(parry){guardParryEvents.fetch_add(1);return;}

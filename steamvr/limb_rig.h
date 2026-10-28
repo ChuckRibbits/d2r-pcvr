@@ -249,6 +249,19 @@ struct Reaction {
     std::array<Quat,MaxLimbs> turn{};
     Vec shift{};
 };
+// The answer eased toward none: weight 1 as it is, 0 the animation.
+inline Reaction Faded(Reaction r,float weight) {
+    weight=std::clamp(weight,0.f,1.f);
+    for(int i=0;i<r.count&&i<MaxLimbs;++i) {
+        Quat q=r.turn[size_t(i)];
+        if(q.w<0)q={-q.x,-q.y,-q.z,-q.w};
+        q={q.x*weight,q.y*weight,q.z*weight,1+(q.w-1)*weight};
+        const float n=std::sqrt(q.x*q.x+q.y*q.y+q.z*q.z+q.w*q.w);
+        r.turn[size_t(i)]=n>1e-6f?Quat{q.x/n,q.y/n,q.z/n,q.w/n}:Quat{0,0,0,1};
+    }
+    r.shift=r.shift*weight;
+    return r;
+}
 // A rotation about a point, in the model's frame (row vectors).
 inline Mat About(Vec joint,const float r[9]) {
     Mat m=Identity();
