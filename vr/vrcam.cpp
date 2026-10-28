@@ -867,6 +867,7 @@ void LoadSettings() {
         IniF(L"interactions",L"belt_forward",.26f),IniF(L"interactions",L"dominant_hand",0)==1?1:0);
     framevr::ConfigureBottlePhysics(IniB(L"interactions",L"bottle_physics",true));
     framevr::ConfigurePropPhysics(IniB(L"interactions",L"prop_physics",true));
+    framevr::ConfigureBodyPhysics(IniB(L"interactions",L"body_physics",true));
     projectiles::Configure(IniB(L"gameplay",L"motion_controls",false),IniF(L"gameplay",L"arrow_speed",2.f),IniB(L"gameplay",L"arrow_direct_release",true));
     // Movement speed (VR Settings > VR): % of the way from the no-gear base run speed to the gear's (-10 walks).
     projectiles::ConfigureRunSpeed(framevr::runspeed::NormalizePercent(IniF(L"gameplay",L"run_speed_pct",100)));
@@ -7284,7 +7285,8 @@ void PushArms() {
         in.grip[1] = sh->gripMagic == D2RVR_GRIP_MAGIC ? sh->leftGrip : -1.0f;
     }
     float hero[3];
-    if (LookAtNow(hero)) {
+    const bool heroPlaced = LookAtNow(hero);
+    if (heroPlaced) {
         skel::SetHeroPos(hero[0], hero[1], hero[2]);
         memcpy(g_heroPosNow, hero, sizeof hero);
     }
@@ -7295,6 +7297,11 @@ void PushArms() {
         && (!gamestate::MenuOpen()||framevr::SpatialMenu())
 #endif
         ;
+#ifdef D2RVR_NATIVE_OPENXR
+    // Bodies that give way: in first person with physical melee, the hook
+    // posts the monsters and townsfolk within reach of the hero.
+    skel::SetLimbs(own && heroPlaced && framevr::BodyPhysics(), hero, std::max(1.f, ScaleHeight()) / UserEyeHeightM());
+#endif
     in.mode = own ? ArmsMode() : 0;
     // From behind the game animates all of him, but he still turns with the
     // camera: else the right stick only swung the camera round a hero who

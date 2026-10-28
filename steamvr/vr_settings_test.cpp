@@ -120,12 +120,14 @@ int main(){
         for(int p=0;p<=int(Page::ReleaseNotes);++p)for(int i=0;i<CatalogCount(Page(p));++i)mirrorRow|=CatalogKey(Page(p),i)==DesktopOneEye;
         Check(!mirrorRow&&Defaults()[DesktopOneEye]==1&&std::wstring(Definitions[DesktopOneEye].key)==L"desktop_one_eye",
               "the desktop mirror is [render] desktop_one_eye in the INI only, on by default");
-        Check(RowCount(Page::Video)==7&&RowKey(Page::Video,0)==Sky&&RowKey(Page::Video,1)==Fog&&RowKey(Page::Video,2)==Ceiling&&
+        Check(RowCount(Page::Video)==8&&RowKey(Page::Video,0)==Sky&&RowKey(Page::Video,1)==Fog&&RowKey(Page::Video,2)==Ceiling&&
               RowKey(Page::Video,3)==ElementalHands&&RowKey(Page::Video,4)==BottlePhysics&&RowKey(Page::Video,5)==PropPhysics&&
-              RowKey(Page::Video,6)==TorchFlame,"the Video page keeps the mod's effects, with bottle and prop physics and the torch flame");
+              RowKey(Page::Video,6)==BodyPhysics&&RowKey(Page::Video,7)==TorchFlame,"the Video page keeps the mod's effects, with bottle, prop and body physics and the torch flame");
         Check(Defaults()[TorchFlame]==1&&std::wstring(Definitions[TorchFlame].section)==L"torch"&&std::wstring(Definitions[TorchFlame].key)==L"flame"&&
               HelpText(TorchFlame)[0]!=0,"the torch flame: on by default, [torch] flame, explained");
-        Check(Defaults()[BottlePhysics]==1&&Defaults()[PropPhysics]==1,"both physics switches start on, as their INI defaults");
+        Check(Defaults()[BottlePhysics]==1&&Defaults()[PropPhysics]==1&&Defaults()[BodyPhysics]==1,"the physics switches start on, as their INI defaults");
+        Check(std::wstring(Definitions[BodyPhysics].section)==L"interactions"&&std::wstring(Definitions[BodyPhysics].key)==L"body_physics"&&HelpText(BodyPhysics)[0]!=0,
+              "pushable bodies: [interactions] body_physics, explained");
         const auto last=Increase(RowCount(Page::Performance)-1);
         Check(last.y+last.h<PerformanceBox.y&&PerformanceBox.y+PerformanceBox.h<=GameVideoBox.y&&
               GameVideoBox.y+GameVideoBox.h<876,"Perf rows, then its numbers, end above the save status");
@@ -561,7 +563,7 @@ int main(){
     {   // Rows follow the character: another class's or weapon's are left out; unknown (the menus) shows them all
         const auto v=Defaults();
         Check(RowShown(ElementalHands,v,{})&&RowShown(ElementalHands,v,{heroclass::Sorceress})&&!RowShown(ElementalHands,v,{heroclass::Amazon}),"elemental hands: the Sorceress's");
-        Check(RowCount(Page::Video,v,{heroclass::Barbarian})==6&&RowCount(Page::Video,v,{heroclass::Sorceress})==7,"the Video page drops them for others");
+        Check(RowCount(Page::Video,v,{heroclass::Barbarian})==7&&RowCount(Page::Video,v,{heroclass::Sorceress})==8,"the Video page drops them for others");
         for(int k:{int(heroclass::Sorceress),int(heroclass::Assassin),int(heroclass::Druid),int(heroclass::Necromancer)})
             Check(RowShown(GroundAim,v,{k}),"ground skills for the classes that have them");
         for(int k:{int(heroclass::Amazon),int(heroclass::Barbarian),int(heroclass::Paladin)})Check(!RowShown(GroundAim,v,{k}),"none for those that do not");

@@ -135,6 +135,10 @@ void Set(const Input& in);
 void SetMotionBow(bool active, bool drawing, float draw, const float* stringHand=nullptr, const float* bowHand=nullptr,uint32_t stamp=0);
 bool MotionBowPosed();
 bool MotionBowAnchored();
+// Bodies that give way (steamvr/limb_rig.h, [interactions] body_physics): while
+// on, each pose of a monster or townsperson within reach of centre (the hero,
+// render units) is posted for the physics and bent by its answer.
+void SetLimbs(bool on, const float centre[3], float unitsPerMetre);
 #endif
 #if D2RVR_FIRST_PERSON
 // Forget the weapon grip: the next calm pose takes it again (F11).
