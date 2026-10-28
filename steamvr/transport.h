@@ -73,6 +73,13 @@ void ConfigureQuiver(bool enabled,bool preview); // [bow] quiver, quiver_preview
 void ConfigureInteractions(bool seated,float waistBelowEyes,float beltForward,int dominantHand);
 void ConfigureBottlePhysics(bool on); // [interactions] bottle_physics: emptied bottles fall into the world
 void ConfigurePropPhysics(bool on);   // [interactions] prop_physics: weapons knock the level's small props about
+// [interactions] leather_menu (VR Settings > HUD), leather_menu_width (m), leather_tilt (degrees),
+// leather_world, leather_backdrop: the tabbed menu on a leather sheet strapped to the left hand
+// (leather_menu.h); backdrop keeps the game's translucent dim under the menu on the hide.
+void ConfigureLeatherMenu(bool on,float menuWidth,float tilt,bool world,bool backdrop=false);
+// Any thread: the tabbed menu is on the leather with the world kept round it, so
+// the world's effects (sky, fog, cave ceiling) stay on as for the spatial menus.
+bool LeatherMenuWorld();   // also: the left stick walks while the leather is out (vrcam DirectWalkNow)
 void PublishSewerPrompt(const sewerprompt::Target&); // Values only; XR follows no game pointers.
 // Current motion-combat aim in the existing head-yaw-relative hand frame.
 bool SettingsOpen();

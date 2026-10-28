@@ -19,11 +19,14 @@ namespace framevr::panelatlas {
 struct Region {int x,y,w,h;};
 constexpr int Gap=8;
 // Static: the gameplay art (palette labels, arrow guide, bow hints, sewer
-// prompt), the pointer beam and dot beside it, the compass strip under it.
+// prompt), the pointer beam and dot beside it, the compass strip under it,
+// and the menu's leather (leather_menu.h: the cached game hide, or the
+// stand-in, at the region's top left) under that.
 constexpr Region Gameplay{0,0,1024,1024};
 constexpr Region Pointer{Gameplay.w+Gap,0,64,96};
 constexpr Region Compass{0,Gameplay.h+Gap,compass::Width,compass::Height};
-constexpr int StaticWidth=1536,StaticHeight=Compass.y+Compass.h;
+constexpr Region Leather{0,Compass.y+Compass.h+Gap,1024,800};
+constexpr int StaticWidth=1536,StaticHeight=Leather.y+Leather.h;
 // Dynamic: VR Settings with its help column across the top, the blood visor
 // under it, then the strain light, the quest card and the bow laser beside it.
 constexpr Region Settings{0,0,settings::AtlasWidth,settings::Height};

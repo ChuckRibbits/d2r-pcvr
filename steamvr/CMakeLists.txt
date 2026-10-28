@@ -154,6 +154,7 @@ add_executable(shield-steady-test shield_steady_test.cpp)
 add_executable(shapeshift-form-test shapeshift_form_test.cpp)
 add_executable(body-calibration-test body_calibration_test.cpp)
 add_executable(shoulder-swap-test shoulder_swap_test.cpp)
+add_executable(leather-menu-test leather_menu_test.cpp)
 add_executable(blood-screen-test blood_screen_test.cpp)
 add_executable(portal-billboard-test portal_billboard_test.cpp)
 target_link_libraries(portal-billboard-test PRIVATE framevr-runtime)
@@ -330,7 +331,7 @@ set_tests_properties(arcane-sky-test PROPERTIES TIMEOUT 30)
 add_test(NAME light-bounds-test COMMAND light-bounds-test)
 set_tests_properties(light-bounds-test PROPERTIES TIMEOUT 30)
 foreach(test_target IN ITEMS memory-test hook-metrics-test active-keys-test resource-descriptions-test latest-worker-test haptic-pulse-test thread-stats-test
-    gameplay-test weapon-skills-test quick-cast-test hand-controls-test elemental-hands-test skill-pad-test interact-press-test sewer-interaction-test notice-card-test mod-layout-test spell-aim-test bow-pose-test crossbow-pose-test body-tracking-test shapeshift-form-test shield-steady-test body-calibration-test shoulder-swap-test blood-screen-test
+    gameplay-test weapon-skills-test quick-cast-test hand-controls-test elemental-hands-test skill-pad-test interact-press-test sewer-interaction-test notice-card-test mod-layout-test spell-aim-test bow-pose-test crossbow-pose-test body-tracking-test shapeshift-form-test shield-steady-test body-calibration-test shoulder-swap-test leather-menu-test blood-screen-test
     portal-billboard-test shrine-trace-test shrine-placement-test overlay-view-test bone-armor-height-test composition-layers-test projectile-rules-test environment-cutaway-test roof-materials-test stereo-prop-physics-test dropped-bottles-test props-test
     combat-rules-test strike-skills-test skill-usage-test shield-guard-test shapeshift-gesture-test guard-strain-test heartbeat-test run-speed-test logging-test melee-contact-test melee-weapon-test breakables-test offline-difficulty-test enemy-sight-test attack-speed-test world-coordinates-test bow-flight-test bow-laser-test spell-cast-test spell-aim-assist-test
     interaction-test dev-scenarios-test native-belt-test wrist-hud-test map-zoom-test navigation-info-test companions-test active-effects-test dropped-item-labels-test stick-gestures-test show-items-command-test native-hud-test render-resolution-test render-pointer-test scene-depth-test game-device-only-test controller-bindings-test journal-test native-panels-test
@@ -357,13 +358,14 @@ add_test(NAME settings-release-notes-test COMMAND vr-settings-preview "${CMAKE_C
 add_test(NAME ui-blit-typed COMMAND ui-blit-test)
 add_test(NAME ui-blit-typeless COMMAND ui-blit-test --typeless)
 add_test(NAME ui-blit-typeless-black COMMAND ui-blit-test black --typeless)
+add_test(NAME ui-blit-undim COMMAND ui-blit-test --undim)
 add_test(NAME ui-blit-square-map COMMAND ui-blit-test --square-map --typeless)
 add_test(NAME ui-blit-portrait-map COMMAND ui-blit-test --square-map --portrait)
 add_test(NAME ui-blit-marker-test COMMAND ui-blit-marker-test)
 add_test(NAME turn-warp-typed COMMAND turn-warp-test)
 add_test(NAME turn-warp-typeless COMMAND turn-warp-test --typeless)
 add_test(NAME replay-test COMMAND replay-test)
-set_tests_properties(ui-blit-typed ui-blit-typeless ui-blit-typeless-black PROPERTIES TIMEOUT 15)
+set_tests_properties(ui-blit-typed ui-blit-typeless ui-blit-typeless-black ui-blit-undim PROPERTIES TIMEOUT 15)
 add_test(NAME swapchain-color-test COMMAND swapchain-color-test)
 set_tests_properties(swapchain-color-test PROPERTIES TIMEOUT 40)
 add_test(NAME interaction-weapon-skills-test COMMAND interaction-preview "${CMAKE_CURRENT_BINARY_DIR}/weapon-skills-preview.png" --weapon-skills-check)

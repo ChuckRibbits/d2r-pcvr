@@ -17,7 +17,8 @@ FILES = (PLUGIN, Path('d2rloader/plugins/d2r_pcvr.ini'),
 TREES = ('d2rloader/plugins/d2r_vr_icons', 'd2rloader/plugins/d2r_vr_potions',
          'reshade/reshade-shaders', 'reshade/D2R_Sky_ours')
 # Copied when present; the installer may be unable to prepare them.
-OPTIONAL_TREES = ('d2rloader/plugins/d2r_vr_spell_sprites', 'd2rloader/plugins/d2r_vr_props')
+OPTIONAL_TREES = ('d2rloader/plugins/d2r_vr_spell_sprites', 'd2rloader/plugins/d2r_vr_props',
+                  'd2rloader/plugins/d2r_vr_leather')
 
 
 def checked(path):

@@ -1,5 +1,6 @@
 #pragma once
 #include "shoulder_swap.h"
+#include "leather_menu.h"
 #include "skill_slots.h"
 #include "skill_categories.h"
 #include "frame_math.h"
@@ -448,6 +449,7 @@ struct Input {
     double time=0;
     uint64_t session=0,epoch=0,at=0; // at shares the native snapshot's monotonic clock
     bool active=false,tracked[2]{},wheel=false,cancel=false,reservedLeft=false,spell=false,quickCast=false;
+    bool leatherReach=false; // [interactions] leather_menu: the left hand over the left shoulder opens the tabbed menu (leather_menu.h)
     bool gaitToggle=false;   // the game's run / walk toggle is the other way than the hero should go (Movement speed's WALK or a run stop, or the stick's switch): send it
     int leftStrikes=-1;   // Druid: [gameplay] left_hand_strikes for the wheel's box (0 own trigger, 1 same as right); -1 hides it
     vitals::Location navigationLocation=vitals::Location::Wrist;
@@ -542,6 +544,7 @@ class Engine {
         itemAssignment=s.quick.assigned;quickPressed=false;rearm=true;
     }
     shoulder::Gesture shoulderSwap;
+    leather::Reach leatherReach;
     vitals::PalmReveal palmReveal;
     std::array<Skill,128> choices{};
     std::array<int,128> choiceIndices{};
@@ -647,7 +650,7 @@ public:
     void Configure(Config c) {config=c;Reset();}
     // Each hand's page (Map, Equipment, Developer and its page) and tree filter are kept through a close,
     // a tracking or frame hiccup and character select; only a new game (Step) starts them over. Editors close.
-    void Reset() {quickPressed=false;primed=false;rearm=true;wheelLatch=true;Drop();flight={};pending={};result=Result::None;criticalUntil=criticalAgain=0;editor=0;editSlot=-1;shoulderSwap.Reset();}
+    void Reset() {quickPressed=false;primed=false;rearm=true;wheelLatch=true;Drop();flight={};pending={};result=Result::None;criticalUntil=criticalAgain=0;editor=0;editSlot=-1;shoulderSwap.Reset();leatherReach.Reset();}
     MenuPage Page() const {return developer?MenuPage::Developer:editor==3?MenuPage::EditItems:editor==2?MenuPage::EditSkills:editor?MenuPage::EditSlots:map?MenuPage::Map:utility?MenuPage::Equipment:MenuPage::Spells;}
     int DeveloperPage() const {return devPage;}
     int TreeFilter() const {return filter;}        // the open hand's kept skill tree (All when none)
@@ -742,6 +745,14 @@ public:
         if(shoulder.swap&&request(Action::Equip,3-int(in.snapshot.activeSet))){
             pendingHand=dominant;out.feedback=1;out.feedbackHand=dominant;
         }
+        // The tabbed menu on leather (leather_menu.h): the left hand reaches over the
+        // left shoulder and grips. With Dominant hand = Left that is the swap's, so off.
+        leather::ReachInput sheet;sheet.time=in.time;sheet.session=in.session;sheet.epoch=in.epoch;
+        sheet.active=in.active&&in.leatherReach&&dominant==0;sheet.tracked=in.tracked[leather::Hand];
+        sheet.head=in.head.p;sheet.hand=in.hand[leather::Hand].p;sheet.heading=body.q;sheet.grip=in.grip[leather::Hand];
+        sheet.allowed=!wheel&&!in.quickCast&&!in.cancel&&!rearm&&bottle<0&&holster<0&&pending.action==Action::None;
+        const auto reached=leatherReach.Step(sheet);out.block=out.block||reached.block;
+        if(reached.open){out.inventory=true;out.feedback=1;out.feedbackHand=leather::Hand;}
         // VR Settings > Movement speed: WALK walks, every other stop runs. When the game's
         // toggle is the other way, its own run / walk command (no tick).
         if(in.gaitToggle&&fresh&&request(Action::RunWalk,0))pendingHand=0;

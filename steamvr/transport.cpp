@@ -71,6 +71,7 @@
 #include "frame_generation.h"
 #include "../vr/settings_menu.h"
 #include "journal.h"
+#include "leather_menu.h"
 #include "native_panels.h"
 #include "npc_dialogue.h"
 #include "native_hud.h"
@@ -728,6 +729,16 @@ panels::ScrollGate panelScroll;
 bool rightMouseDown=false,controlDown=false,shiftDown=false;
 unsigned uiMissingFrames=0;
 journal::Placement journalPlacement;
+// The tabbed menu on a leather sheet strapped to the left hand (leather_menu.h;
+// [interactions] leather_menu, leather_menu_width, leather_tilt, leather_world).
+// leatherShown: the world (sky, fog, cave ceiling) stays round it (vrcam).
+// leatherArt: the game's hide from d2r_vr_leather (prepare_leather.py), else the stand-in.
+std::atomic<bool> leatherOn{true},leatherWorld{true},leatherShown{false},leatherBackdrop{false};
+std::atomic<float> leatherMenuWidth{leather::DefaultMenuWidth},leatherTilt{leather::DefaultTilt};
+bool leatherMode=false;
+leather::Holder leatherHolder;
+leather::Back leatherBack;   // Right B the game leaves unanswered closes the leather's menu
+leather::Art leatherArt=leather::PlaceholderArt();
 uint32_t uiWidth=0,uiHeight=0;
 int32_t uiCrop[4]{};
 XrPosef uiPose{};
@@ -784,6 +795,7 @@ XrSwapchain pointerChain=XR_NULL_HANDLE;
 // The pictures painted once share one static image (panelatlas): pointerChain,
 // compassChain and gameplayChain are it, or none where a picture failed.
 XrSwapchain staticChain=XR_NULL_HANDLE;
+XrSwapchain leatherChain=XR_NULL_HANDLE;   // staticChain once the hide is in it
 XrPosef beamPose{},dotPose{};
 float beamLength=0;
 // 2026-10-19: one remembered push/pull for every game menu, kept as an
@@ -1518,6 +1530,31 @@ std::vector<uint8_t> PaintGameplay() {
     SelectObject(dc,oldFont);DeleteObject(font);SelectObject(dc,old);DeleteObject(bitmap);DeleteDC(dc);
     return rgba;
 }
+// The game's hide cached at install (d2r_vr_leather\leather.pvl beside this
+// plugin, prepare_leather.py), else the painted stand-in. `from` names the
+// file read, empty for the stand-in.
+leather::Art LoadLeather(std::vector<uint8_t>& rgba,std::wstring& from) {
+    HMODULE self=nullptr;wchar_t path[MAX_PATH]{};
+    if(GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS|GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,reinterpret_cast<LPCWSTR>(&LoadLeather),&self)) {
+        const DWORD n=GetModuleFileNameW(self,path,MAX_PATH);
+        std::wstring file(path,n&&n<MAX_PATH?n:0);
+        const auto cut=file.find_last_of(L"\\/");
+        if(cut!=std::wstring::npos) {
+            file.resize(cut+1);file+=L"d2r_vr_leather\\leather.pvl";
+            if(FILE* f=_wfopen(file.c_str(),L"rb")) {
+                std::vector<uint8_t> data;uint8_t chunk[65536];size_t got;
+                while((got=std::fread(chunk,1,sizeof chunk,f))>0&&data.size()<64u*1024*1024)data.insert(data.end(),chunk,chunk+got);
+                std::fclose(f);
+                leather::Art art;
+                if(leather::ParseCache(data.data(),data.size(),art,rgba)){from=file;return art;}
+                Say("Frame leather: d2r_vr_leather\\leather.pvl unreadable; the painted stand-in");
+            }
+        }
+    }
+    const auto art=leather::PlaceholderArt();
+    rgba=leather::PaintPlaceholder(art.width,art.height);from.clear();
+    return art;
+}
 // The painters' threads, and the pictures painted once into one static image
 // (panelatlas): false if it could not be made. The compass or the gameplay art
 // alone may be missing; their chains then stay none.
@@ -1536,10 +1573,25 @@ bool SetupStatic(DXGI_FORMAT eyeFormat) {
     };
     put(PaintPointer(),Pointer);
     const bool compassPainted=put(compass::Paint(),Compass),gameplayPainted=put(PaintGameplay(),Gameplay);
+    // The menu's leather: the game's own hide cached at install, else the stand-in.
+    const bool leatherPainted=[&]{
+        std::vector<uint8_t> art;std::wstring from;
+        leatherArt=LoadLeather(art,from);
+        if(art.size()!=size_t(leatherArt.width)*leatherArt.height*4||leatherArt.width>Leather.w||leatherArt.height>Leather.h)return false;
+        leather::Premultiply(art);   // its quad blends premultiplied: nothing round the hide shows
+        for(int y=0;y<leatherArt.height;++y)
+            std::memcpy(&pixels[(size_t(Leather.y+y)*StaticWidth+Leather.x)*4],&art[size_t(y)*leatherArt.width*4],size_t(leatherArt.width)*4);
+        char line[200];
+        if(from.empty())std::snprintf(line,sizeof line,"Frame leather: no game hide cached (d2r_vr_leather), the painted stand-in");
+        else std::snprintf(line,sizeof line,"Frame leather: the game's hide, %dx%d, menu %.0f px at %.0f,%.0f",
+                           leatherArt.width,leatherArt.height,leatherArt.menuW,leatherArt.menuX,leatherArt.menuY);
+        Say(line);return true;
+    }();
     if(!UploadAtlas(staticChain,eyeFormat,StaticWidth,StaticHeight,pixels))return false;
     pointerChain=staticChain;
     compassAtlasReady=compassPainted;compassChain=compassPainted?staticChain:XR_NULL_HANDLE;
     gameplayChain=gameplayPainted?staticChain:XR_NULL_HANDLE;
+    leatherChain=leatherPainted?staticChain:XR_NULL_HANDLE;
     if(!compassPainted)Say("Frame wrist compass: static atlas unavailable");
     if(!gameplayPainted)Say("Frame gameplay: palette atlas unavailable; motion controls remain disabled");
     return true;
@@ -1690,14 +1742,18 @@ bool FocusGameForUi() {
     windowFocus.Request(gameWindow);
     return false;
 }
+// Where the native menus are: the journal's book, the leather in the left hand, or the room workspace.
+bool SurfacePlaced(){return journalMode?journalPlacement.Placed():leatherMode?leatherHolder.Placed():workspacePlaced;}
 panels::Size UiSurfaceSize() {
     // The handheld journal keeps its book size; native workspaces fit in both axes.
     if(journalMode)return {uiSize,uiSize*(uiCrop[2]>0?float(uiCrop[3])/uiCrop[2]:1.3f)};
+    // On the leather: its 16:9 menu band (the canvas is cropped to that band, CopyUi).
+    if(leatherMode){const auto sheet=leather::Measure(leatherArt,leatherMenuWidth.load());return {sheet.menuWidth,sheet.menuHeight};}
     return panels::Fit(uiCrop[2]>0?unsigned(uiCrop[2]):0,uiCrop[3]>0?unsigned(uiCrop[3]):0);
 }
 XrPosef UiSurfacePose() {
     auto pose=uiPose;
-    if(upperBandMenuMode&&!journalMode) {
+    if(upperBandMenuMode&&!journalMode&&!leatherMode) {
         const auto p=V(pose.position)+math::Rotate(Q(pose.orientation),{0,panels::UpperBandOffset(UiSurfaceSize()),0});
         pose.position={p.x,p.y,p.z};
     }
@@ -1707,7 +1763,7 @@ void MenuPointer(const menus::Pad& controls) {
     nativeMenuPad={};
     pointerVisible=pointerHit=false;
     if(settingsModel.open||bodyCalibration.Active()||calibrationRelease.blocked){panelinput::ItemHover(false);return;}
-    const bool spatialReady=spatialMode&&(journalMode?journalPlacement.Placed():workspacePlaced)&&uiCrop[2]>0;
+    const bool spatialReady=spatialMode&&SurfacePlaced()&&uiCrop[2]>0;
     const bool uiActive=(panelMode&&menuPlaced)||spatialReady;
     const auto surfacePose=spatialMode?UiSurfacePose():menuPose;
     const auto surface=spatialMode?UiSurfaceSize():panels::Fit(width,height,panelWidth);
@@ -1732,13 +1788,15 @@ void MenuPointer(const menus::Pad& controls) {
         }
     }
     const bool wasNative=menuNavigation.Native();
-    nativeMenuPad=menuNavigation.Step(uiActive&&focused,controls,pointerHit,hit.u,hit.v,mouseDown||rightMouseDown);
+    menus::Pad navigation=controls;   // on the leather the left stick walks: no menu cursor, no switch from the laser
+    if(leatherMode&&leatherShown.load())navigation.lx=navigation.ly=0;
+    nativeMenuPad=menuNavigation.Step(uiActive&&focused,navigation,pointerHit,hit.u,hit.v,mouseDown||rightMouseDown);
     if(wasNative!=menuNavigation.Native()&&uiActive&&focused)
         Say(menuNavigation.Native()?"Frame panels: native controller navigation":"Frame panels: laser navigation");
     const bool laser=!menuNavigation.Native();
     if(!laser){panelinput::UseController();pointerVisible=pointerHit=false;}
-    // The handheld journal has its own left-grip placement.
-    const bool grip=aimTracked&&laser&&!journalMode&&(controls.buttons&menus::RightBumper);
+    // The handheld journal has its own left-grip placement; the leather is strapped to the left hand.
+    const bool grip=aimTracked&&laser&&!journalMode&&!leatherMode&&(controls.buttons&menus::RightBumper);
     const bool grabbing=GrabPanel(spatialMode?uiPose:menuPose,spatialMode?uiBase:menuBase,menuOffset,
         grip,pointerHit,pressed||mouseDown||rightMouseDown,aim.pose,
         panels::MenuDistance(int(vrsettings::Read().values[settings::MenuDistance]),!spatialMode));
@@ -2348,8 +2406,21 @@ void Input() {
         journalPlacement.Step({V(left.pose.position),Q(left.pose.orientation)},tracked,Float(squeeze,1)>.6f);
         const auto p=journalPlacement.Get();uiPose=XrPose({p.p,p.q});
     }
+    if(leatherMode) {
+        // Strapped: it follows the left hand with or without grip until the menu closes.
+        XrSpaceLocation hand{XR_TYPE_SPACE_LOCATION};
+        const auto needed=XR_SPACE_LOCATION_POSITION_VALID_BIT|XR_SPACE_LOCATION_ORIENTATION_VALID_BIT|
+                          XR_SPACE_LOCATION_POSITION_TRACKED_BIT|XR_SPACE_LOCATION_ORIENTATION_TRACKED_BIT;
+        const bool tracked=XR_SUCCEEDED(pLocateSpace(handSpaces[leather::Hand],space,frameState.predictedDisplayTime,&hand))&&(hand.locationFlags&needed)==needed;
+        leatherHolder.Step(V(hand.pose.position),Q(hand.pose.orientation),tracked,leatherArt,leatherMenuWidth.load(),leatherTilt.load());
+        const auto menu=leatherHolder.Get().menu;uiPose=XrPose({menu.p,menu.q});
+    }
     if(!settingsOwned&&!settingsChord)MenuPointer(controls);
     else {nativeMenuPad={};menuNavigation.Reset();panelinput::UseController();pointerVisible=pointerHit=false;triggerWasDown=Float(trigger,0)>.2f;cancelWasDown=Bool(secondary,0);}
+    // The native Back went to the game above; one it leaves unanswered closes the menu (leather::Back).
+    if(leatherBack.Step(leatherMode&&!settingsOwned&&!settingsChord,(controls.buttons&menus::B)!=0,mouseDown||rightMouseDown,
+                        gamestate::PanelChanges(),GetTickCount64())&&gamestate::CloseLeatherMenu())
+        Say("Frame leather: Right B left the menu open; asking the game to close it");
     SettingsPointer(settingsEdges,(controls.buttons&menus::RightBumper)!=0);
     settingsOwned=settingsOwned||bodyCalibration.Active();
     auto& s=*tracking.data;s.version=D2RVR_SHARED_VERSION;s.headValid=1;
@@ -2465,6 +2536,7 @@ void Input() {
     interactionInput.spell=motion.Selection()>=0;interactionInput.wheel=motionInput.palette;interactionInput.cancel=motionInput.cancel;
     interactionInput.quickCast=handOutput.slot>=0||handOutput.spells[0]>=0||handOutput.spells[1]>=0;
     interactionInput.wheelHand=handOutput.wheel;
+    interactionInput.leatherReach=leatherOn.load();
     // Right stick up switches running / walking only with Movement speed's Stick toggle on
     // (below, off by default). The push is owned either way, so it never snap-turns.
     interactionInput.reservedLeft=(controls.buttons&menus::LeftStick)!=0;interactionInput.trigger=handOutput.wheel==0?controls.lt/255.f:controls.rt/255.f;interactionInput.hover=motionInput.hover;
@@ -3082,7 +3154,7 @@ void Input() {
     panelinput::WorldInput(motionInput.active&&motionInput.tracked[0]&&motionInput.tracked[1]&&motionInput.aimTracked);
     if(!motionInput.active||motionOutput.block||!motionOutput.rayValid)handOutput.interact=false;
     if(motionInput.quickCast&&(motionOutput.block||!motionOutput.rayValid))handControls.Close();
-    const uint32_t hidden=interactionOutput.stowed?3u:journalMode?2u:interactionOutput.bottleHand>=0?1u<<interactionOutput.bottleHand:0;
+    const uint32_t hidden=interactionOutput.stowed?3u:(journalMode||leatherMode)?2u:interactionOutput.bottleHand>=0?1u<<interactionOutput.bottleHand:0;
     skel::SetInteractionHidden(hidden);
     potionScene=potions::MakeScene(interactionInput,interactionOutput);
     if(potionFlight.id&&potionFlight.shown)potions::AddThrown(potionScene,potionFlight.pose,potionFlight.code);   // #292
@@ -3361,6 +3433,10 @@ void Input() {
         const auto ui=(settingsOwned||settingsChord)?menus::Pad{}:nativeMenuPad;
         p.buttons=ui.buttons;p.left_trigger=ui.lt;p.right_trigger=ui.rt;
         p.thumb_lx=ui.lx;p.thumb_ly=ui.ly;p.thumb_rx=ui.rx;p.thumb_ry=ui.ry;a.held=0;
+        // On the leather the left stick walks (owner 2026-10-28: "No one needs the left
+        // thumbstick to act as the menu cursor"): it goes to BodyWalk's walk, which vrcam
+        // feeds into the game's walk (DirectWalkNow), and never to the menu's cursor.
+        if(leatherMode&&leatherShown.load()&&!settingsOwned&&!settingsChord){p.thumb_lx=controls.lx;p.thumb_ly=controls.ly;}
     }
     p.reserved[0]=uint32_t(settingsOwned||settingsChord?menus::Mode::Blocked:nativeUi?menus::Mode::Native:menus::Mode::World);
     p.reserved[1]=inputEpoch;
@@ -3433,18 +3509,28 @@ bool Begin() {
     const bool spatial=SpatialMenu();
     const bool book=spatial&&gamestate::JournalOnly();
     const bool npc=spatial&&gamestate::NpcChoicesOnly();
-    const bool surfaceChanged=spatial!=spatialMode||book!=journalMode;
+    // The tabbed menu (any page) and a cube opened from it: on the leather in the left hand.
+    const bool sheet=spatial&&!book&&leatherOn.load()&&gamestate::LeatherMenuOpen();
+    const bool surfaceChanged=spatial!=spatialMode||book!=journalMode||sheet!=leatherMode;
     if(surfaceChanged) {
         workspacePlaced=false;uiMissingFrames=0;std::fill_n(uiCrop,4,0);
         if(book)journalPlacement.Open();
-        Say(spatial?(book?"Frame panels: handheld quest log":"Frame panels: native menus in stereo world"):"Frame panels: native surface closed");
+        if(sheet)leatherHolder.Open();
+        if(sheet) {
+            const auto size=leather::Measure(leatherArt,leatherMenuWidth.load());
+            char line[200];std::snprintf(line,sizeof line,"Frame panels: tabbed menu on the leather, left hand (menu %.2f m on %.2f x %.2f m, tilt %.0f, %s)",
+                size.menuWidth,size.width,size.height,leather::NormalizeTilt(leatherTilt.load()),leatherWorld.load()?"world kept":"black behind");
+            Say(line);
+        } else Say(spatial?(book?"Frame panels: handheld quest log":"Frame panels: native menus in stereo world"):"Frame panels: native surface closed");
         releaseUiChain=!spatial&&swapchainsShort;   // short of swapchains: its surface back for the map (at the frame's end)
     }
     // Rearm pointer input when story/choices change, keeping the same anchored
     // canvas. A trigger that dismisses speech must not also choose an option.
     if(surfaceChanged||npc!=npcChoicesMode){ReleasePanelInput();panelMouse.Suspend();}
-    const bool opaque=spatial&&gamestate::OpaqueMenuOpen();
+    const bool opaque=spatial&&gamestate::OpaqueMenuOpen()&&!sheet;
     if(opaque!=opaqueMenuMode)Say(opaque?"Frame panels: shared black menu background":"Frame panels: spatial background restored");
+    leatherMode=sheet;leatherShown=sheet&&leatherWorld.load();
+    uiworld::ShowWorldBehindMenu(leatherShown.load());   // the game's stencil hole behind its menu, filled
     spatialMode=spatial;journalMode=book;npcChoicesMode=npc;opaqueMenuMode=opaque;upperBandMenuMode=spatial&&gamestate::UpperBandMenuOpen();uiEye.copied=false;
     mapEye.copied=false;hud::MapFrame();
     hud::UiFrame(spatialMode,!journalMode,0);
@@ -3490,7 +3576,7 @@ bool Begin() {
         const int distancePreset=int(vrsettings::Read().values[settings::MenuDistance]);
         static int previousDistance=-1;
         if(distancePreset!=previousDistance){workspacePlaced=menuPlaced=false;previousDistance=distancePreset;menuOffset={};}
-        if(spatialMode&&!journalMode&&panels::CanAnchor(workspacePlaced,render,state==XR_SESSION_STATE_FOCUSED,motionHeadTracked)) {
+        if(spatialMode&&!journalMode&&!leatherMode&&panels::CanAnchor(workspacePlaced,render,state==XR_SESSION_STATE_FOCUSED,motionHeadTracked)) {
             uiBase=panels::AtEyeLevel(V(head.position),Q(head.orientation),panels::MenuDistance(distancePreset));
             uiPose=Placed(uiBase,menuOffset);
             uiSize=panels::Width;workspacePlaced=true;
@@ -4086,6 +4172,17 @@ bool CopyUi(reshade::api::command_queue* rq) {
         }
     }
     completeNpcLogged=npcChoicesMode;
+    // On the leather only the menu's 16:9 band: nothing beyond it leaves the sheet.
+    if(leatherMode) {
+        const auto band=leather::Band(int(w),int(h),upperBandMenuMode);
+        crop[0]=band.x;crop[1]=band.y;crop[2]=band.w;crop[3]=band.h;
+        static int told[4]{};   // once per change: which part of the canvas is on the sheet
+        if(told[0]!=band.x||told[1]!=band.y||told[2]!=band.w||told[3]!=band.h) {
+            char line[160];std::snprintf(line,sizeof line,"Frame leather: menu band %d,%d %dx%d of the %ux%u canvas (%s)",
+                band.x,band.y,band.w,band.h,w,h,upperBandMenuMode?"upper":"middle");
+            Say(line);told[0]=band.x;told[1]=band.y;told[2]=band.w;told[3]=band.h;
+        }
+    }
     auto& e=uiEye;
     if(e.chain&&(w!=uiWidth||h!=uiHeight)) {
         if(!WaitGpuValue(e.copyFence))return false;
@@ -4113,7 +4210,10 @@ bool CopyUi(reshade::api::command_queue* rq) {
     rq->flush_immediate_command_list();
     if(FAILED(e.allocator->Reset())||FAILED(e.commands->Reset(e.allocator.Get(),nullptr)))return false;
     ID3D12Resource* dest=e.images[e.index].texture;
-    if(!uiBlit.Render(device.Get(),e.commands.Get(),src,dest,opaqueMenuMode)) {
+    // On the leather the game's translucent backdrop under the menu is taken out, so the hide
+    // shows round the menu's art ([interactions] leather_backdrop=1 keeps it).
+    const bool undim=leatherMode&&!leatherBackdrop.load();
+    if(!uiBlit.Render(device.Get(),e.commands.Get(),src,dest,opaqueMenuMode,false,0,0,1.f,1.f,0.f,0.f,0.f,0.f,undim?crop:nullptr)) {
         e.commands->Close();uiSupported=false;
         Say("Frame panels: conversion rejected; native flat menu fallback next frame");return true;
     }
@@ -4474,7 +4574,9 @@ void EndPair() {
     }
     // Tabbed, trade and waypoint menus use the same black background in both eyes.
     // Submit just their shared opaque quad: no different cached world per eye.
-    const bool blackMenu=opaqueMenuMode&&workspacePlaced&&uiEye.copied&&uiCrop[2]>0&&!settingsModel.open&&!bodyCalibration.Active();
+    // [interactions] leather_world=0: the leather against the same black (a test fallback).
+    const bool blackMenu=((opaqueMenuMode&&workspacePlaced)||(leatherMode&&!leatherShown.load()&&leatherHolder.Placed()))&&
+        uiEye.copied&&uiCrop[2]>0&&!settingsModel.open&&!bodyCalibration.Active();
     if(layer&&!blackMenu)layers[count++]=layer;
     const uint32_t capacity=std::min(uint32_t(layers.size()),layerLimit);
     const bool padQuads=composition::NeedsQuadPadding(wineOpenXR,layer,pointerChain);
@@ -4613,10 +4715,10 @@ void EndPair() {
         }
     }
     // The quest / level-up card stays where it came up, like the native
-    // dialogue surfaces; opaque menus and VR Settings hold it back.
+    // dialogue surfaces; opaque menus, the leather and VR Settings hold it back.
     XrCompositionLayerQuad noticeQuad{XR_TYPE_COMPOSITION_LAYER_QUAD};
     if(noticeImageReady&&sharedChain&&noticeCard.kind>=0&&noticePaintedSequence==noticeCard.sequence&&
-       layer&&!panelMode&&!blackMenu&&!settingsModel.open&&!bodyCalibration.Active()) {
+       layer&&!panelMode&&!blackMenu&&!leatherMode&&!settingsModel.open&&!bodyCalibration.Active()) {
         if(noticeCard.place)noticePlacement=notice::Place(V(head.position),Q(head.orientation));
         const auto before=count;
         motionQuad(noticeQuad,XrPose({noticePlacement.position,noticePlacement.orientation}),notice::PanelWidth,notice::PanelHeight,
@@ -4675,8 +4777,15 @@ void EndPair() {
         Say(message);bowLaserReportAt=GetTickCount64()+2000;
     }
     bowLaserWasShown=bowLaserShown;
+    // The leather under the tabbed menu, the same pose a hair behind it.
+    XrCompositionLayerQuad leatherQuad{XR_TYPE_COMPOSITION_LAYER_QUAD};
+    if(layer&&leatherChain&&leatherMode&&leatherHolder.Placed()&&!settingsModel.open&&!bodyCalibration.Active()&&uiEye.copied&&uiCrop[2]>0) {
+        const auto sheet=leatherHolder.Get().sheet;const auto size=leather::Measure(leatherArt,leatherMenuWidth.load());
+        motionQuad(leatherQuad,XrPose({sheet.p,sheet.q}),size.width,size.height,At(panelatlas::Leather,{{0,0},{leatherArt.width,leatherArt.height}}),leatherChain);
+        leatherQuad.layerFlags=XR_COMPOSITION_LAYER_BLEND_TEXTURE_SOURCE_ALPHA_BIT;   // premultiplied (SetupStatic)
+    }
     XrCompositionLayerQuad book{XR_TYPE_COMPOSITION_LAYER_QUAD};
-    if(layer&&!settingsModel.open&&!bodyCalibration.Active()&&spatialMode&&(journalMode?journalPlacement.Placed():workspacePlaced)&&uiEye.copied&&uiCrop[2]>0) {
+    if(layer&&!settingsModel.open&&!bodyCalibration.Active()&&spatialMode&&SurfacePlaced()&&uiEye.copied&&uiCrop[2]>0) {
         const auto size=UiSurfaceSize();
         motionQuad(book,UiSurfacePose(),size.width,size.height,
             {{uiCrop[0],uiCrop[1]},{uiCrop[2],uiCrop[3]}},uiEye.chain);
@@ -4852,6 +4961,10 @@ void ConfigureInteractions(bool seated,float waist,float forward,int dominant) {
     std::lock_guard lock(mutex);interactions.Configure(c);interactionstate::Cancel();previous=c;configured=true;
 }
 void ConfigureBottlePhysics(bool on){bottlePhysics=on;}
+void ConfigureLeatherMenu(bool on,float menuWidth,float tilt,bool world,bool backdrop) {
+    leatherOn=on;leatherMenuWidth=leather::NormalizeMenuWidth(menuWidth);leatherTilt=leather::NormalizeTilt(tilt);leatherWorld=world;leatherBackdrop=backdrop;
+}
+bool LeatherMenuWorld(){return leatherShown.load();}
 void ConfigurePropPhysics(bool on){propPhysics=on;propscan::Configure(on);}
 void BottleWeapon(int slot,const melee::Blade* blade) {
     if(slot<0||slot>=bottles::Colliders)return;
@@ -5277,7 +5390,7 @@ void Shutdown(bool preserveResolution) {
     // Completion is mandatory before destroying our commands/resources, even
     // when ordinary frame submission uses queue ordering without a CPU wait.
     if(fence&&!WaitGpu())failed=true;
-    if(uiEye.chain&&pDestroySwapchain)pDestroySwapchain(uiEye.chain);uiEye={};journalMode=spatialMode=workspacePlaced=false;hud::UiFrame(false,false,0);uiSupported=false;uiBlit={};potionModels.Reset();potionScene={};
+    if(uiEye.chain&&pDestroySwapchain)pDestroySwapchain(uiEye.chain);uiEye={};journalMode=spatialMode=workspacePlaced=leatherMode=false;leatherShown=false;uiworld::ShowWorldBehindMenu(false);hud::UiFrame(false,false,0);uiSupported=false;uiBlit={};potionModels.Reset();potionScene={};
     elementalRenderer.Reset();elementalState.Reset();elementalScene={};
     if(mapEye.chain&&pDestroySwapchain)pDestroySwapchain(mapEye.chain);mapEye={};mapSupported=false;mapBlit={};gamestate::MenuMap(false);hud::MenuMapCapture(false);
     settingsModel.Close();settingsOpen=false;settingsInputGate.Suspend();settingsPainted={};settingsAtlasPending=settingsImageReady=false;
@@ -5297,7 +5410,7 @@ void Shutdown(bool preserveResolution) {
     noticeWatch={};noticeCards.Clear();noticeCard={};noticePaintRequest=noticeRequestedSequence=noticePaintedSequence=0;noticeAtlasPending=noticeImageReady=false;
     heartStream.Stop();heartPlaying=false;heartLevel.Reset();heartAt=0;heartHush.Reset();heartHealth=-1;
     guardStrain.Reset();strainOutput={};strainPaintKey=~0ull;strainPaintSession=0;strainPaintAt=0;strainAtlasPending=strainImageReady=strainSlotReported=false;
-    if(staticChain&&pDestroySwapchain)pDestroySwapchain(staticChain);staticChain=pointerChain=XR_NULL_HANDLE;
+    if(staticChain&&pDestroySwapchain)pDestroySwapchain(staticChain);staticChain=pointerChain=leatherChain=XR_NULL_HANDLE;
     if(aimSpace&&pDestroySpace)pDestroySpace(aimSpace);aimSpace=XR_NULL_HANDLE;
     if(leftAimSpace&&pDestroySpace)pDestroySpace(leftAimSpace);leftAimSpace=XR_NULL_HANDLE;
     if(gazeSpace&&pDestroySpace)pDestroySpace(gazeSpace);gazeSpace=XR_NULL_HANDLE;

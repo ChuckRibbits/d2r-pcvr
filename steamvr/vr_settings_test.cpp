@@ -664,8 +664,9 @@ int main(){
     for(auto key:{MenuDistance,TooltipTiming}) {
         Check(Normalize(key,1.5f)==Definitions[key].defaultValue&&Normalize(key,9)==Definitions[key].defaultValue,"invalid comfort enums fall back safely");
         const int row=key==MenuDistance?4:5;
-        Check(RowKey(Page::HUD,row)==key&&At(Page::HUD,Increase(row)).index==key,"HUD comfort rows hit their own settings");
-        Model comfort;comfort.Open(s);comfort.Click(At(comfort,Page::HUD,Increase(row)));
+        const Rect plus=key==MenuDistance?PairIncrease(row,0):Increase(row);   // Menu distance shares its row with the leather menu
+        Check(RowKey(Page::HUD,row)==key&&At(Page::HUD,plus).index==key,"HUD comfort rows hit their own settings");
+        Model comfort;comfort.Open(s);comfort.Click(At(comfort,Page::HUD,plus));
         Check(comfort.Click({Kind::Apply}).changed==(1u<<key),"comfort Apply affects only its selected setting");
     }
     Check(s.values[ProjectileAimAssist]==2,"aim assist defaults to Strong");
@@ -896,6 +897,25 @@ int main(){
         Check(Changed(a,b)==(ChangeMask{1}<<RunSpeed)&&RunSpeed<ChangeMask::Bits,"run speed has its own change bit");
         Check(Defaults()[RunWalkToggle]==0&&std::wstring(Definitions[RunWalkToggle].section)==L"gameplay"&&std::wstring(Definitions[RunWalkToggle].key)==L"run_walk_toggle"&&
               HelpText(RunWalkToggle)[0]!=0&&RunWalkToggle<ChangeMask::Bits,"the stick toggle: off by default, explained, its own change bit");
+    }
+    {   // The leather menu: on by default, on the HUD tab beside Menu distance, saved alone
+        Check(Defaults()[LeatherMenu]==1&&std::wstring(Definitions[LeatherMenu].section)==L"interactions"&&
+              std::wstring(Definitions[LeatherMenu].key)==L"leather_menu"&&HelpText(LeatherMenu)[0]!=0&&HelpChoices(LeatherMenu)==0&&
+              LeatherMenu<ChangeMask::Bits,"leather menu: on as its INI default, [interactions] leather_menu, explained, its own change bit");
+        Check(Paired(MenuDistance)&&PairOf(MenuDistance)==LeatherMenu&&std::strcmp(RowLabel(MenuDistance,{}),"Menu distance")==0,
+              "Menu distance shares its row with the leather menu");
+        int found=0;
+        for(int p=0;p<TabCount;++p)for(int row=0;row<RowCount(Page(p));++row)if(RowKey(Page(p),row)==MenuDistance)found+=p==int(Page::HUD)?1:100;
+        Check(found==1&&RowCount(Page::HUD)<=MaxRows,"on the HUD tab only, which keeps within MaxRows");
+        const int row=4;
+        Check(RowKey(Page::HUD,row)==MenuDistance&&HelpAt(Page::HUD,(PairValue(row,1).x+5.f)/Width,(PairValue(row,1).y+5.f)/Height)==LeatherMenu,
+              "the right half explains the leather");
+        Model m;m.Open(s);m.Click({Kind::Tab,int(Page::HUD)});
+        m.Click(At(m,Page::HUD,PairValue(row,1)));Check(m.Get()[LeatherMenu]==0&&m.Get()[MenuDistance]==1,"the value box turns the leather off, distance kept");
+        m.Click(At(m,Page::HUD,PairIncrease(row,1)));Check(m.Get()[LeatherMenu]==1,"either stepper flips it");
+        m.Click(At(m,Page::HUD,PairDecrease(row,1)));
+        Check(m.Click({Kind::Apply}).changed==(ChangeMask{1}<<LeatherMenu),"Apply saves only the leather menu");
+        Check(Normalize(LeatherMenu,.4f)==0&&Normalize(LeatherMenu,7)==1&&Normalize(LeatherMenu,NAN)==1,"an odd INI value reads Off or On; missing reads On");
     }
     std::puts("VR settings draft, persistence requests, conflicts, hit regions and input-gating tests passed");
 }
