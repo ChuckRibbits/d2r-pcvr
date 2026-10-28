@@ -3,7 +3,9 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <cctype>
 #include <cstdint>
+#include <string>
 #include <string_view>
 
 // Bodies that give way ([interactions] body_physics): the monsters and
@@ -111,6 +113,53 @@ inline void Capsule(const Box& box,Vec& a,Vec& b,float& radius) {
     const float reach=std::max(s[k]-radius,0.f);
     const Vec axis{k==0?1.f:0.f,k==1?1.f:0.f,k==2?1.f:0.f};
     a=c-axis*reach;b=c+axis*reach;
+}
+// A skeleton loaded without meshes (the game's characters: the body and its
+// parts are other models skinned to it): each bone's box from the segments to
+// its children as posed, in its own frame, as thick as SegmentThickness of
+// its longest and within MinThickness..MaxThickness of the skeleton's size.
+// The skeleton's root, and bones skip marks (fingers, helpers), get none;
+// they still lengthen their parent's. matrices: the bones as posed, 16 floats each.
+inline constexpr float SegmentThickness=.25f,MinThickness=.015f,MaxThickness=.09f;
+inline void SegmentBoxes(const int16_t* parents,int bones,const float* matrices,const bool* skip,Box* out) {
+    if(bones<1||bones>MaxBones)return;
+    Vec lo{1e30f,1e30f,1e30f},hi{-1e30f,-1e30f,-1e30f};
+    for(int b=0;b<bones;++b) {
+        const float* m=matrices+size_t(b)*16;
+        lo={std::min(lo.x,m[12]),std::min(lo.y,m[13]),std::min(lo.z,m[14])};
+        hi={std::max(hi.x,m[12]),std::max(hi.y,m[13]),std::max(hi.z,m[14])};
+    }
+    const float size=std::max({hi.x-lo.x,hi.y-lo.y,hi.z-lo.z});
+    if(!std::isfinite(size)||!(size>0))return;
+    std::array<float,MaxBones> longest{};
+    std::array<Vec,MaxBones> reach{};   // the child, in the parent's frame
+    for(int b=0;b<bones;++b) {
+        const int p=parents[b];
+        if(p<0||p>=b)continue;
+        const float* pm=matrices+size_t(p)*16;const float* m=matrices+size_t(b)*16;
+        float inverse[9];
+        if(!Invert3(pm,inverse)){reach[size_t(b)]={1e30f,0,0};continue;}
+        const Vec d{m[12]-pm[12],m[13]-pm[13],m[14]-pm[14]};
+        reach[size_t(b)]={d.x*inverse[0]+d.y*inverse[3]+d.z*inverse[6],d.x*inverse[1]+d.y*inverse[4]+d.z*inverse[7],d.x*inverse[2]+d.y*inverse[5]+d.z*inverse[8]};
+        if(Finite(reach[size_t(b)]))longest[size_t(p)]=std::max(longest[size_t(p)],Length(reach[size_t(b)]));
+    }
+    for(int b=0;b<bones;++b) {
+        const int p=parents[b];
+        if(p<0||p>=b||skip[p]||parents[p]<0||!(longest[size_t(p)]>0))continue;
+        const Vec c=reach[size_t(b)];
+        if(!Finite(c)||Length(c)>size)continue;
+        const float r=std::clamp(longest[size_t(p)]*SegmentThickness,size*MinThickness,size*MaxThickness);
+        out[p].Add({std::min(0.f,c.x)-r,std::min(0.f,c.y)-r,std::min(0.f,c.z)-r},{std::max(0.f,c.x)+r,std::max(0.f,c.y)+r,std::max(0.f,c.z)+r});
+    }
+}
+// Bones that are not limbs, by their names: fingers, toes, end points, twist
+// and helper bones, weapon and effect attach points.
+inline bool NotLimb(std::string_view name) {
+    std::string lower(name);
+    for(auto& ch:lower)ch=char(std::tolower(static_cast<unsigned char>(ch)));
+    for(const char* word:{"finger","toe","nub","twist","weapon","attach","helper","dummy","footstep","effect","fx_","_fx","eye","jaw","shield"})
+        if(lower.find(word)!=std::string::npos)return true;
+    return false;
 }
 // The largest bones with boxes, up to MaxLimbs. A limb's parent is its nearest
 // chosen ancestor; chosen bones with none hang from the one nearest the

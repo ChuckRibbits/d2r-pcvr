@@ -3234,21 +3234,27 @@ std::vector<std::unique_ptr<Model>> g_models;
 std::set<std::pair<uintptr_t, uintptr_t>> g_unusable;
 thread_local std::array<float, limbs::MaxBones * 16> t_pose;
 
-// A model's limbs from its skeleton's bones and every mesh's per-bone boxes.
-bool Learn(uintptr_t model, uintptr_t skeleton, int count, Model& out, std::string* why) {
+// A model's limbs from its skeleton's bones: every mesh's per-bone boxes when
+// the model has meshes; else (the game's characters load their skeleton from
+// a file of its own, the body and parts are other models skinned to it) the
+// bones' segments to their children as posed now.
+bool Learn(uintptr_t model, uintptr_t skeleton, int count, const float* pose, Model& out, std::string* why, std::string* names) {
     uintptr_t bones = 0; int n = 0;
     if (!Get(skeleton + 8, &n) || n != count || !Get(skeleton + 0xC, &bones) || !bones) { *why = "the skeleton does not read"; return false; }
     std::map<std::string, int> index;
+    std::vector<std::string> boneNames(static_cast<size_t>(n));
+    std::array<bool, limbs::MaxBones> skip{};
     for (int i = 0; i < n; ++i) {
         uintptr_t name = 0; int32_t parent = -1;
         if (!Get(bones + uintptr_t(i) * 0xA4, &name) || !Get(bones + uintptr_t(i) * 0xA4 + 8, &parent) || parent >= i) { *why = "a bone does not read"; return false; }
         out.parents[size_t(i)] = int16_t(parent < 0 ? -1 : parent);
-        index.emplace(Str(name), i);
+        boneNames[size_t(i)] = Str(name);
+        skip[size_t(i)] = limbs::NotLimb(boneNames[size_t(i)]);
+        index.emplace(boneNames[size_t(i)], i);
     }
-    int meshes = 0; uintptr_t bindings = 0;
-    if (!Get(model + 0x54, &meshes) || meshes < 1 || meshes > 64 || !Get(model + 0x58, &bindings) || !bindings) { *why = "no meshes"; return false; }
     std::vector<limbs::Box> boxes(static_cast<size_t>(n), limbs::Box{});
-    int bound = 0;
+    int bound = 0, meshes = 0; uintptr_t bindings = 0;
+    if (!Get(model + 0x54, &meshes) || meshes < 1 || meshes > 64 || !Get(model + 0x58, &bindings) || !bindings) meshes = 0;
     for (int m = 0; m < meshes; ++m) {
         uintptr_t mesh = 0, list = 0; int count2 = 0;
         if (!Get(bindings + uintptr_t(m) * 8, &mesh) || !Get(mesh + 0x30, &count2) || count2 < 1 || count2 > limbs::MaxBones || !Get(mesh + 0x34, &list) || !list) continue;
@@ -3261,13 +3267,15 @@ bool Learn(uintptr_t model, uintptr_t skeleton, int count, Model& out, std::stri
             ++bound;
         }
     }
-    if (!bound) { *why = "no bone boxes"; return false; }
+    *why = bound ? "mesh boxes" : "bone segments";
+    if (!bound) limbs::SegmentBoxes(out.parents.data(), n, pose, skip.data(), boxes.data());
     out.model = model; out.skeleton = skeleton; out.bones = n;
     out.layout = limbs::Choose(out.parents.data(), n, boxes.data());
-    if (out.layout.count < 2) { *why = "fewer than two limbs"; return false; }
+    for (int i = 0; i < out.layout.count; ++i) { if (i) *names += ", "; *names += boneNames[size_t(out.layout.bone[size_t(i)])]; }
+    if (out.layout.count < 2) { *why = bound ? "fewer than two limbs in its meshes" : "fewer than two limbs in its bones"; return false; }
     return true;
 }
-const Model* ModelOf(uintptr_t self, uintptr_t model, uintptr_t skeleton, int count) {
+const Model* ModelOf(uintptr_t self, uintptr_t model, uintptr_t skeleton, int count, const float* pose) {
     AcquireSRWLockShared(&g_lock);
     const Model* found = nullptr;
     for (const auto& m : g_models) if (m->model == model && m->skeleton == skeleton && m->bones == count) { found = m.get(); break; }
@@ -3275,13 +3283,13 @@ const Model* ModelOf(uintptr_t self, uintptr_t model, uintptr_t skeleton, int co
     ReleaseSRWLockShared(&g_lock);
     if (found || unusable) return found;
     auto learned = std::make_unique<Model>();
-    std::string why;
-    const bool ok = Learn(model, skeleton, count, *learned, &why);
+    std::string why, names;
+    const bool ok = Learn(model, skeleton, count, pose, *learned, &why, &names);
     uintptr_t nameObject = 0, namePointer = 0; Get(self, &nameObject); Get(nameObject + 8, &namePointer);
-    char line[360];
+    char line[1024];
     if (ok) {
         const auto& l = learned->layout;
-        std::snprintf(line, sizeof line, "Frame bodies: %s - %d limbs of %d bones", Str(namePointer).c_str(), l.count, count);
+        std::snprintf(line, sizeof line, "Frame bodies: %s - %d limbs of %d bones, from its %s: %s", Str(namePointer).c_str(), l.count, count, why.c_str(), names.c_str());
     } else std::snprintf(line, sizeof line, "Frame bodies: %s - left as the game draws it (%s)", Str(namePointer).c_str(), why.c_str());
     AcquireSRWLockExclusive(&g_lock);
     const Model* result = nullptr;
@@ -3329,10 +3337,10 @@ void Limbs(uintptr_t self) {
     uintptr_t model = 0, skeleton = 0, worldPose = 0, matrices = 0; int count = 0;
     if (!Get(self + 0x08, &model) || !Get(model + 0x08, &skeleton) || !Get(self + 0x20, &worldPose) || !Get(worldPose, &count) ||
         count < 2 || count > limbs::MaxBones || !Get(worldPose + 4, &matrices) || !matrices) return;
-    const Model* shape = ModelOf(self, model, skeleton, count);
-    if (!shape) return;
     auto& pose = t_pose;
     if (!SafeCopy(pose.data(), reinterpret_cast<const void*>(matrices), size_t(count) * 64)) return;
+    const Model* shape = ModelOf(self, model, skeleton, count, pose.data());
+    if (!shape) return;
     limbs::Rig rig;
     rig.entity = k.entity; rig.kind = k.kind; rig.at = now;
     rig.layout = uint64_t(model) * 31 + uint64_t(skeleton);

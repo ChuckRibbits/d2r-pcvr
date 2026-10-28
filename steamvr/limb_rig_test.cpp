@@ -68,6 +68,28 @@ int main() {
         Box cube;cube.Add({-1,-1,-1},{1,1,1});Vec a,b;float r;Capsule(cube,a,b,r);
         assert(Near(r,1)&&Near(a,b));
     }
+    // A skeleton without meshes: boxes from each bone's segments to its
+    // children; the root, the end points and named helpers get none.
+    {
+        assert(NotLimb("Bip01 L Finger0")&&NotLimb("Bip01 HeadNub")&&NotLimb("weapon_attach_R")&&!NotLimb("Bip01 L Forearm")&&!NotLimb("L_Elbow"));
+        enum {R,Pel,Sp,Hd,Nub,Th,Ca,Ft,Fi,N};
+        const int16_t parents[N]{-1,R,Pel,Sp,Hd,Pel,Th,Ca,Ft};
+        const Vec at[N]{{0,0,0},{0,5,0},{0,6,0},{0,10,0},{0,11.5f,0},{1,5,0},{1,1,0},{1,0,0},{1,0,1}};
+        std::vector<float> m;
+        for(int i=0;i<N;++i){const Mat b=Bone(at[i]);m.insert(m.end(),b.begin(),b.end());}
+        bool skip[N]{};skip[Nub]=skip[Fi]=true;
+        std::array<Box,N> boxes{};
+        SegmentBoxes(parents,N,m.data(),skip,boxes.data());
+        assert(!boxes[R].any&&!boxes[Nub].any&&!boxes[Fi].any);
+        assert(boxes[Pel].any&&boxes[Sp].any&&boxes[Hd].any&&boxes[Th].any&&boxes[Ca].any&&boxes[Ft].any);
+        // The thigh's box runs down to the calf, a quarter of its length thick (within the limits).
+        const float r=std::clamp(4*SegmentThickness,11.5f*MinThickness,11.5f*MaxThickness);
+        assert(Near(boxes[Th].lo,{-r,-4-r,-r})&&Near(boxes[Th].hi,{r,r,r}));
+        // The head's box reaches its end point though the end point has none.
+        assert(Near(boxes[Hd].hi.y,1.5f+std::clamp(1.5f*SegmentThickness,11.5f*MinThickness,11.5f*MaxThickness)));
+        const Layout l=Choose(parents,N,boxes.data());
+        assert(l.count==6&&l.bone[0]==Pel&&l.LimbOf(Th)>0&&l.LimbOf(Ca)>0);
+    }
     // A bone listed before its parent is refused; no boxes, no limbs.
     {
         const int16_t bad[]{-1,2,0};std::array<Box,3> b{};b[1].Add({0,0,0},{1,1,1});b[2].Add({0,0,0},{1,1,1});
