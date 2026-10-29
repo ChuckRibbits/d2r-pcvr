@@ -27,6 +27,7 @@
 #include "../steamvr/profile.h"
 #include "../steamvr/resource_descriptions.h"
 #include "../steamvr/vr_settings.h"
+#include "../steamvr/biome_list.h"
 #include "../steamvr/limb_tuning.h"
 #include "../steamvr/far_objects.h"
 #include "../steamvr/interact_press.h"
@@ -478,6 +479,9 @@ bool IniB(const wchar_t* sec, const wchar_t* key, bool def) { return IniF(sec, k
 // 121) come from level data too, and are open air.
 SRWLOCK g_biomeLock = SRWLOCK_INIT;
 std::vector<std::string> g_outdoor;
+// [fog] no_fog_areas: open-air areas with no added fog, as caves with [fog] caves=0. The River of
+// Flame (act4_lava) by default: its lava's own glow and haze stay the game's (the owner, 2026-10-28).
+std::vector<std::string> g_noFogBiomes;
 char g_biome[96] = "";                  // last name the game set, bare (no folder, no extension), lower case
 std::atomic<uint32_t> g_biomeGen{0};    // bumped by every SetCurrentBiome
 
@@ -485,17 +489,11 @@ void LoadOutdoorBiomes() {
     wchar_t buf[1024];
     GetPrivateProfileStringW(L"sky", L"outdoor", L"act1_outdoors,act1_tristram,act1_court,act2_outdoors,act2_town,act3_jungle,act3_docktown,act3_kurast,act3_travincal_outdoors,act4_mesa,act4_lava,act4_diab,expansion_town,expansion_siege,expansion_mountaintop,expansion_ruins,expansion_ruins_snow,expansion_wildtemple_tempenter",
                              buf, (DWORD)std::size(buf), g_iniPath);
-    std::vector<std::string> list;
-    std::string cur;
-    for (const wchar_t* p = buf;; ++p) {
-        if (*p == L',' || *p == 0) {
-            if (!cur.empty()) list.push_back(cur);
-            cur.clear();
-            if (!*p) break;
-        } else if (*p != L' ' && *p != L'\t' && *p < 128) cur += (char)towlower(*p);
-    }
-    AcquireSRWLockExclusive(&g_biomeLock); g_outdoor = list; ReleaseSRWLockExclusive(&g_biomeLock);
-    g_biomeGen.fetch_add(1);   // re-judged with the new list
+    std::vector<std::string> list = framevr::biomes::Parse(buf);
+    GetPrivateProfileStringW(L"fog", L"no_fog_areas", L"act4_lava", buf, (DWORD)std::size(buf), g_iniPath);
+    std::vector<std::string> noFog = framevr::biomes::Parse(buf);
+    AcquireSRWLockExclusive(&g_biomeLock); g_outdoor = list; g_noFogBiomes = noFog; ReleaseSRWLockExclusive(&g_biomeLock);
+    g_biomeGen.fetch_add(1);   // re-judged with the new lists
 }
 
 // Cave ceiling (docs/plan_cave_ceiling.md): the biomes that get a vault over the
@@ -811,11 +809,17 @@ int ActOfBiome(const std::string& biome) {
 // On the [sky] outdoor list: open air. Everything else in the world is a cave,
 // a dungeon or a building.
 bool IsOutdoorBiome(const std::string& biome) {
-    bool outdoor = false;
     AcquireSRWLockShared(&g_biomeLock);
-    for (const std::string& o : g_outdoor) if (o == biome) { outdoor = true; break; }
+    const bool outdoor = framevr::biomes::Has(g_outdoor, biome);
     ReleaseSRWLockShared(&g_biomeLock);
     return outdoor;
+}
+// On [fog] no_fog_areas: no added fog there.
+bool IsNoFogBiome(const std::string& biome) {
+    AcquireSRWLockShared(&g_biomeLock);
+    const bool none = framevr::biomes::Has(g_noFogBiomes, biome);
+    ReleaseSRWLockShared(&g_biomeLock);
+    return none;
 }
 
 // -1 = no sky here. Called on the timer thread.
@@ -7650,6 +7654,7 @@ std::atomic<int> g_fogAct{0};        // the area's act for the fog colour, caves
 std::atomic<bool> g_underground{false};   // in the world, off the outdoor list: the fog takes [fog] color_caves
 std::atomic<bool> g_inWorld{false};  // a game area is loaded: not the main menu (its own "frontend" biome), not before any
 std::atomic<bool> g_ceilBiome{false};   // the area's biome is on [ceiling] biomes
+std::atomic<bool> g_noFogArea{false};   // the area's biome is on [fog] no_fog_areas
 
 // The game's own day and night (2026-10-05). The game draws a debug line with
 // the time of day ("End of dusk, start of night" ... and "Env Cycle = %i") from
@@ -8548,12 +8553,14 @@ void SkyTick() {
         g_fogAct.store(world ? ActOfBiome(biome) : 0);
         g_underground.store(world && !IsOutdoorBiome(biome));
         g_ceilBiome.store(world && IsCeilingBiome(biome));
+        g_noFogArea.store(world && IsNoFogBiome(biome));
         static std::string told = "?";   // no biome name has a question mark
         if (biome != told) {
             told = biome;
-            LogF("vrcam: biome '%s' - %s%s", biome.empty() ? "(none yet)" : biome.c_str(),
+            LogF("vrcam: biome '%s' - %s%s%s", biome.empty() ? "(none yet)" : biome.c_str(),
                  palette >= 0 ? kPalettes[palette].part : "no sky here (not in [sky] outdoor)",
-                 g_ceilBiome.load() ? ", a cave ceiling ([ceiling] biomes)" : "");
+                 g_ceilBiome.load() ? ", a cave ceiling ([ceiling] biomes)" : "",
+                 g_noFogArea.load() ? ", no added fog ([fog] no_fog_areas)" : "");
         }
     }
     {   // the cave ceiling: each change of mind to the log, like the sky's
@@ -8788,7 +8795,8 @@ bool StampWanted() { return g_enabled.load() && g_afrBlock && g_set.stamps.load(
 
 bool FogWanted() {
     return !g_arcaneSky.load() && g_set.fogOn.load() && g_enabled.load() && !Overhead() && g_inWorld.load() && !WorldMenuBlocksEffects() &&
-           (g_set.fogCaves.load() || !g_underground.load());   // [fog] caves=0: none underground
+           (g_set.fogCaves.load() || !g_underground.load()) &&   // [fog] caves=0: none underground
+           !g_noFogArea.load();                                    // [fog] no_fog_areas: none there (the River of Flame)
 }
 // The table (F5): the void black, the game lifted off black - D2R_DepthFog.fx TableKey.
 bool TableKeyWanted() { return TableView() && g_inWorld.load() && !gamestate::MenuOpen(); }
