@@ -47,6 +47,7 @@ static void ValueLabel(Key key,float value,const Context& c,char* label,size_t s
     else if(key==RunWalkToggle)std::snprintf(label,size,"Stick toggle %s",value>.5f?"On":"Off");
     else if(key==BigObjectDistance){if(value==0)std::snprintf(label,size,"Big: Off");else std::snprintf(label,size,"Big: %.0f",value);}
     else if(key==FogDistance)std::snprintf(label,size,"Ends at %.0f",value);
+    else if(key==LeatherMenu)std::snprintf(label,size,"Leather %s",value>.5f?"On":"Off");
     else if(Definitions[key].max==1)std::snprintf(label,size,"%s",value>.5f?"On":"Off");
     else if(key==Snap)std::snprintf(label,size,"%.0f deg",value);
     else if(key==VitalsTilt)std::snprintf(label,size,"%+.6g deg",value);

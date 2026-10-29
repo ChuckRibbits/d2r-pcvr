@@ -313,8 +313,11 @@ health, mana, level and XP progress with the wrist minimap turned off.
 
 ### Inventory, conversations and trading in VR
 
-Native in-game menus share a room-anchored surface in front of you. The full
-tabbed character menu, stash, inventory, cube, trade and waypoint surfaces use one opaque
+The tabbed character menu (inventory, character, skill tree, quests, options
+and every other tab, with its dialogs and a cube opened from the inventory) is
+held in your hand instead: see "The menu on leather" below. The other native
+in-game menus share a room-anchored surface in front of you. The stash, trade,
+merchant and waypoint surfaces (and a cube beside the stash) use one opaque
 black background in both eyes. Dialogue and journal panels retain the world
 backdrop, including any enabled sky, fog and cave ceiling effects. Opening an
 NPC conversation or continuing its speech keeps those effects visible; entering
@@ -351,6 +354,70 @@ a trigger squeezed while moving does nothing until released. The laser and
 clicks follow the moved panel. Every in-game and main/title menu reopens at
 that distance until the game is restarted or **VR Settings > HUD > Menu
 distance** is changed. The handheld quest log keeps its left-grip placement.
+
+### The menu on leather
+
+Reach your **left hand over your left shoulder** and grip (as if pulling a
+rolled hide from a pack) to open the tabbed menu; Left Grip + left stick click
+and the wheel's INVENTORY open it too. It comes up pinned to a stretched animal
+hide (the one drying on the Rogue Encampment's farm racks, read from your own
+game at install) strapped to your left hand, and the world stays in view all
+round it: no black backdrop. You hold the hide at the menu's left edge; its
+neck and legs reach past your fist. The hide follows the hand whether or not
+you hold the grip, until the menu closes (Right B, its close button, or anything
+that closes the native menu); then it is gone. Right B goes to the game first,
+so a cube, a dialog or the options pages still step back one at a time; a press
+the game leaves unanswered for a quarter of a second, with only the menu and
+its pages open and nothing on the cursor, closes the menu (the log:
+`gamestate: B on the leather went unanswered by the game ...`). The right laser and every native
+control work on it as on the room panel, Left Grip + Right Trigger included
+(the left grip is free while the sheet is strapped on). The **left stick walks** while the
+leather is out, as in play (it never moves the menu's controller cursor); the
+right laser, face buttons and right stick work the menu. Nothing else is drawn
+over it: quest and level-up cards wait until it closes, and the wrist and palm
+displays are hidden while a menu is open, as before.
+
+Only the menu's 16:9 band is on the hide, on the middle of its body, and the
+game's translucent dim under the menu is taken out of it, so the hide shows
+round the menu's own art, as is the panel's faint black drop shadow. The hide
+itself goes to the headset premultiplied: nothing of its rectangle shows round
+it. The game also leaves the world unpainted behind its opaque menu panel (one
+draw stamps the panel's rectangle into the scene's stencil); while the leather
+is out the mod binds a copy of that draw that writes no stencil, so the world
+behind the hide is whole (log: `Frame leather: the game's menu stencil stamp
+found ...`). Opening the cube from the inventory
+keeps it on the leather; the stash, merchants, trade, gambling, imbue, hiring,
+waypoints and NPC talk keep the room panel. While the sheet is held, the left
+hand's own weapon or shield is hidden, as with the quest log. With **Dominant
+hand = Left** a left grip over either shoulder swaps weapons, so the shoulder
+reach is off; Left Grip + left stick click and the wheel still open the leather
+(the menu laser stays on the right hand).
+
+**VR Settings > HUD > Menu distance** carries the switch on its right half:
+**Leather On** (the default) or **Off**: the tabbed menu in front of you against
+black as before, with no shoulder reach. It applies at Apply.
+
+The installer cuts the hide out of the game's own colour map
+(`act1_town_farming_pelt_hanging_b`) into `d2rloader\plugins\d2r_vr_leather`
+(`prepare_leather.py`); it is never shipped with the mod. Without that cache the
+menu sits on a painted stand-in hide. Settings, live in `[interactions]`:
+
+```ini
+[interactions]
+leather_menu=1      ; 0: the tabbed menu back on the room panel, no shoulder reach
+leather_menu_width=0.57  ; the menu across, metres (0.30 to 0.90); the hide is sized round it (about 0.83 m)
+leather_tilt=0      ; degrees leaned back toward you from the quest log's angle (-45 to 60)
+leather_world=1     ; 0: the old black backdrop behind the leather (if the eyes disagree)
+leather_backdrop=0  ; 1: keep the game's translucent dim under the menu on the hide
+```
+
+The log notes `Frame leather: the game's hide, ...` (or `... the painted
+stand-in`) once at start, `Frame panels: tabbed menu on the leather, left hand
+(...)` when it opens and `Frame leather: menu band ...` when the part of the
+canvas on the hide changes. Still needs a headset check: whether the world behind matches
+in both eyes (on 2026-10-09 the transparent tabbed-menu background differed
+between eyes, which is why the room panel went black), readability at arm's
+length, tooltips near the band's lower edge, and the cube from the inventory.
 
 The VR Settings panel is grabbed like a real window with the same right grip:
 the point you grabbed stays on the end of the laser. Moving the hand without
@@ -726,6 +793,11 @@ holsters=1
 bottle_physics=1
 prop_physics=1
 body_physics=1
+leather_menu=1
+leather_menu_width=0.57
+leather_tilt=0
+leather_world=1
+leather_backdrop=0
 ```
 
 `vitals_location` and `navigation_location`: `0` Wrist, `1` Palm, `2` Either,
