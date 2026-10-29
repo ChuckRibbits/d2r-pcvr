@@ -57,7 +57,9 @@ inline constexpr std::array<Definition,Count> Definitions{{
     {"Added sky", "The mod's outdoor sky effect", L"sky",L"enabled",0,0,1,1},
     {"Added fog", "The mod's distance fog effect", L"fog",L"enabled",0,0,1,1},
     {"Dungeon ceiling", "The mod's overhead dungeon surfaces", L"ceiling",L"enabled",0,0,1,1},
-    {"Terrain draw distance", "Higher values show more map tiles and cost more to render", L"render",L"rings",2,1,8,1},
+    // 6 (2026-10-28): standing in the Blood Moor rings 8 held the frame rate of 2 (44 pairs/s); 6 builds about
+    // the 600 units Big objects and the fog reach, with fewer rooms built at a time than 8 while walking.
+    {"Terrain draw distance", "Higher values show more map tiles and cost more to render", L"render",L"rings",6,1,8,1},
     // 210: just past the fog's end of the time (200). In Rogue Encampment 360 held 45 fps, 260 55-80, 210 88-90 (steamvr/PERFORMANCE.md).
     {"Object draw distance", "Higher values retain more distant scenery", L"render",L"model_radius",210,10,10000,50},
     {"Standing eye height", "Measured from the SteamVR floor", L"calibration",L"eye_height_m",1.64f,.8f,2.3f,.01f},
@@ -143,11 +145,12 @@ inline constexpr std::array<Definition,Count> Definitions{{
     // Right stick up switches walk / run (runspeed::StickToggle), beside Movement speed on its row;
     // off by default (owner 2026-10-25).
     {"Stick toggle", "Right stick up switches between walking and running", L"gameplay",L"run_walk_toggle",0,0,1,1},
-    // The owner's 1000 (2026-10-28): rings 8, objects 210 and Big 1000 held 35-40 frame pairs/s where every model
-    // out to 1110 held 22-35 (steamvr/far_objects.h).
-    {"Big objects", "Trees, houses and walls drawn farther than other objects", L"render",L"big_radius",1000,0,1000,100},
-    // [fog] end: where the outdoor fog is complete (the owner's 300, 2026-10-28; 200 before); start and curve stay INI-only.
-    {"Fog distance", "Where the fog is complete; farther shows more of the distance", L"fog",L"end",300,100,1200,50},
+    // 600 (2026-10-28), as far as the fog lets them show: in the Blood Moor Big 1000 cost 6 of 44 frame pairs/s,
+    // where every model out to 1110 held 22-35 (steamvr/far_objects.h).
+    {"Big objects", "Trees, houses and walls drawn farther than other objects", L"render",L"big_radius",600,0,1000,100},
+    // [fog] end: where the outdoor fog is complete. 600 with the INI's curve 0.4 (2026-10-28; 200 and 0.6 before): the
+    // same haze close by, see-through to Big objects' 600. Start and curve stay INI-only.
+    {"Fog distance", "Where the fog is complete; farther shows more of the distance", L"fog",L"end",600,100,1200,50},
 }};
 using Values=std::array<float,Count>;
 inline bool HapticKey(Key key){return key>=HapticStrength&&key<=HapticAlert;}
