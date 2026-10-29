@@ -123,8 +123,7 @@ int main(){
         auto b=leather::Band(3072,3264);Check(b.x==0&&b.y==0&&b.w==3072&&b.h==1728,"tall canvas: its upper 16:9 band");
         b=leather::Band(1920,1080);Check(b.x==0&&b.y==0&&b.w==1920&&b.h==1080,"16:9 canvas: all of it");
         b=leather::Band(2560,1080);Check(b.w==1920&&b.h==1080&&b.x==320&&b.y==0,"wide canvas: centred 16:9");
-        b=leather::Band(3072,3264,false);Check(b.x==0&&b.y==768&&b.w==3072&&b.h==1728,"other layouts: the middle band, as the room panel centres them");
-        b=leather::Band(2560,1080,false);Check(b.w==1920&&b.x==320&&b.y==0,"wide canvas: the same either way");
+        b=leather::Band(3072,3072);Check(b.x==0&&b.y==0&&b.w==3072&&b.h==1728,"the cube from the inventory: the same upper band (2026-10-29 capture)");
         b=leather::Band(0,100);Check(b.w==0&&b.h==0,"no canvas, no band");
     }
 

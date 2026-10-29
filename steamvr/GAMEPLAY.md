@@ -417,7 +417,8 @@ stand-in`) once at start, `Frame panels: tabbed menu on the leather, left hand
 canvas on the hide changes. Still needs a headset check: whether the world behind matches
 in both eyes (on 2026-10-09 the transparent tabbed-menu background differed
 between eyes, which is why the room panel went black), readability at arm's
-length, tooltips near the band's lower edge, and the cube from the inventory.
+length and tooltips near the band's lower edge. The cube from the inventory
+shares the tabbed menu's band (fixed after v0.3.29, where it showed cut off).
 
 The VR Settings panel is grabbed like a real window with the same right grip:
 the point you grabbed stays on the end of the laser. Moving the hand without

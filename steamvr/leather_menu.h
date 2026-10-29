@@ -146,17 +146,20 @@ inline Size Measure(const Art& art,float menuWidth) {
 }
 
 // The menu's 16:9 band of the UI canvas: the canvas's full width at the top of
-// a taller canvas for the tabbed menu (the native "upper widescreen band",
-// native_panels.h UpperBand), in its middle for the other layouts (a cube shown
-// without the tabbed menu), as the room panel centres them; the full height in
-// the middle of a wider canvas. The sheet shows only this band, so nothing the
-// game draws outside it (a dimmed backdrop, the lower canvas) leaves the leather.
+// a taller canvas (the native "upper widescreen band", native_panels.h
+// UpperBand); the full height in the middle of a wider canvas. The sheet shows
+// only this band, so nothing the game draws outside it (a dimmed backdrop, the
+// lower canvas) leaves the leather. The Horadric Cube opened from the inventory
+// is laid out in the same band as the tabbed menu (owner's capture 2026-10-29:
+// cube and inventory at x 384-2687, y 80-1489 of 3072x3072, as the tabbed menu),
+// though the game closes UISwitcher for it, so the band never follows
+// native_panels' UpperBand list (v0.3.29 showed the middle band: the cube cut).
 struct Rect {int x=0,y=0,w=0,h=0;};
-inline Rect Band(int width,int height,bool upper=true) {
+inline Rect Band(int width,int height) {
     if(width<=0||height<=0)return {};
     if(int64_t(width)*9<=int64_t(height)*16) {
         const int h=int(int64_t(width)*9/16);
-        return {0,upper?0:(height-h)/2,width,h};
+        return {0,0,width,h};
     }
     const int w=int(int64_t(height)*16/9);
     return {(width-w)/2,0,w,height};

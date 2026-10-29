@@ -4556,12 +4556,12 @@ bool CopyUi(reshade::api::command_queue* rq) {
     completeNpcLogged=npcChoicesMode;
     // On the leather only the menu's 16:9 band: nothing beyond it leaves the sheet.
     if(leatherMode) {
-        const auto band=leather::Band(int(w),int(h),upperBandMenuMode);
+        const auto band=leather::Band(int(w),int(h));   // the tabbed menu's and the cube's band alike
         crop[0]=band.x;crop[1]=band.y;crop[2]=band.w;crop[3]=band.h;
         static int told[4]{};   // once per change: which part of the canvas is on the sheet
         if(told[0]!=band.x||told[1]!=band.y||told[2]!=band.w||told[3]!=band.h) {
-            char line[160];std::snprintf(line,sizeof line,"Frame leather: menu band %d,%d %dx%d of the %ux%u canvas (%s)",
-                band.x,band.y,band.w,band.h,w,h,upperBandMenuMode?"upper":"middle");
+            char line[160];std::snprintf(line,sizeof line,"Frame leather: menu band %d,%d %dx%d of the %ux%u canvas",
+                band.x,band.y,band.w,band.h,w,h);
             Say(line);told[0]=band.x;told[1]=band.y;told[2]=band.w;told[3]=band.h;
         }
     }
