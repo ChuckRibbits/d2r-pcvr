@@ -45,6 +45,7 @@ static void ValueLabel(Key key,float value,const Context& c,char* label,size_t s
         else if(p==100)std::snprintf(label,size,"Full run");else std::snprintf(label,size,"Run %d%%",p);}
     else if(key==CompanionAi)std::snprintf(label,size,"%s",value>.5f?"Enabled":"Legacy");
     else if(key==RunWalkToggle)std::snprintf(label,size,"Stick toggle %s",value>.5f?"On":"Off");
+    else if(key==BigObjectDistance){if(value==0)std::snprintf(label,size,"Big: Off");else std::snprintf(label,size,"Big: %.0f",value);}
     else if(Definitions[key].max==1)std::snprintf(label,size,"%s",value>.5f?"On":"Off");
     else if(key==Snap)std::snprintf(label,size,"%.0f deg",value);
     else if(key==VitalsTilt)std::snprintf(label,size,"%+.6g deg",value);

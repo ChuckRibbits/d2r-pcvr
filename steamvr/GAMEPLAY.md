@@ -417,7 +417,7 @@ tabs and a **Reset eye height** button:
 | Aim | Whether spells and bow skills go to the aimed monster, the staff aiming where your arm points, and the aimed monster's outline: strength, which hands show it, and each hand's color (by range or one hue), where ground skills land (the game's aim, where you point or the aimed monster), landing circles, and whether the aim follows your view (the eyes' 17-degree tunnel, the hands within 30 degrees of your head, a raised hand aiming alone). Every option that changes how a cast aims is Off (Game) by default |
 | Shield | Where a held shield sits on the forearm: grip offset, out and up (all 0 by default), how far it follows the wrist, and its roll about the forearm |
 | Haptics | Overall strength and separate melee, bow draw, bow/throw release, spell, interaction and resource-alert strengths; tests follow each action's hands |
-| Perf | Everything that changes the frame rate: stereo rendering (Both eyes / By turns, By turns by default), VR render resolution (Headset by default), terrain and object draw distances, foveation Off / Fixed / Eye tracked and its strength, frame generation (experimental, Both eyes only: Off / FidelityFX / NVIDIA, with NVIDIA's quality and scale on a row under it); the actual VR source size, a Defer GPU wait button while frames wait for the GPU, and warnings while the game's Vertical Sync is on or its anti-aliasing is not FXAA. Under them, each second's frame rate and where the frame's time goes, whether the CPU's part fits the headset's frame, the game's own graphics options and what frame generation is doing |
+| Perf | Everything that changes the frame rate: stereo rendering (Both eyes / By turns, By turns by default), VR render resolution (Headset by default), terrain and object draw distances (with Big objects beside the object distance, Off by default), foveation Off / Fixed / Eye tracked and its strength, frame generation (experimental, Both eyes only: Off / FidelityFX / NVIDIA, with NVIDIA's quality and scale on a row under it); the actual VR source size, a Defer GPU wait button while frames wait for the GPU, and warnings while the game's Vertical Sync is on or its anti-aliasing is not FXAA. Under them, each second's frame rate and where the frame's time goes, whether the CPU's part fits the headset's frame, the game's own graphics options and what frame generation is doing |
 | Notes | The last published release's notes, read-only |
 
 Pages show only the rows that can apply to the character the panel is open
@@ -441,8 +441,20 @@ row's choice also stay hidden until they do:
 - the face wipe without blood on the visor.
 
 Settings that belong together share a row, with a stepper each: **Hand colors**
-(left hand, right hand) and **Guard strain** (color, buildup). The title and
+(left hand, right hand), **Guard strain** (color, buildup) and **Object draw
+distance** (objects, Big objects). The title and
 character screens show every class's rows.
+
+**Big objects** (Perf, beside Object draw distance; Off by default; experimental)
+keeps the game's own trees, houses and walls drawn past the object draw
+distance. The game stops drawing every model - houses, props, monsters - once it
+is farther from you across the ground than the object draw distance. With Big
+objects a model's distance grows with its size, its height or half its width,
+thirty times over, up to the setting (300-1000 units, `[render] big_radius`): a
+20-unit tree stays drawn to 600 units, while a stone or a tuft of grass keeps the
+object draw distance. The game builds models only in the rooms it keeps, so
+Terrain draw distance 3 or more is needed for anything to show farther. It costs
+frames where there are many big models, in forests and towns.
 
 Added indoor fog defaults to **Off** for new profiles, preserving the game's
 own lighting and effects, including Tyrael's wings. Outdoor fog keeps its

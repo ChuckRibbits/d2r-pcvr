@@ -116,6 +116,20 @@ int main(){
               "frame generation's INI keys");
         Check(RowKey(Page::Performance,0)==StereoRendering&&RowKey(Page::Performance,2)==DrawDistance&&RowKey(Page::Performance,3)==ObjectDistance,
               "everything that changes the frame rate is on the Perf page");
+        Check(PairOf(ObjectDistance)==BigObjectDistance&&Defaults()[BigObjectDistance]==0&&std::wstring(Definitions[BigObjectDistance].section)==L"render"&&
+              std::wstring(Definitions[BigObjectDistance].key)==L"big_radius"&&HelpText(BigObjectDistance)[0]!=0,
+              "big objects beside the object draw distance: [render] big_radius, off by default, explained");
+        Check(Normalize(BigObjectDistance,250)==300&&Normalize(BigObjectDistance,-1)==0&&Normalize(BigObjectDistance,4000)==1000,"big objects: Off or 300 - 1000");
+        {
+            Model big;big.Open(s);big.Click({Kind::Tab,int(Page::Performance)});
+            big.Click(At(big,Page::Performance,PairIncrease(3,1)));
+            Check(big.Get()[BigObjectDistance]==300&&big.Get()[ObjectDistance]==Defaults()[ObjectDistance],"Off, then 300 - the object draw distance untouched");
+            big.Click(At(big,Page::Performance,PairIncrease(3,1)));Check(big.Get()[BigObjectDistance]==400,"then 400");
+            big.Click(At(big,Page::Performance,PairDecrease(3,1)));big.Click(At(big,Page::Performance,PairDecrease(3,1)));
+            Check(big.Get()[BigObjectDistance]==0,"down through 300 to Off");
+            big.Click(At(big,Page::Performance,PairIncrease(3,0)));
+            Check(big.Get()[ObjectDistance]==Defaults()[ObjectDistance]+50&&big.Get()[BigObjectDistance]==0,"the left half still steps the object draw distance");
+        }
         bool mirrorRow=false;
         for(int p=0;p<=int(Page::ReleaseNotes);++p)for(int i=0;i<CatalogCount(Page(p));++i)mirrorRow|=CatalogKey(Page(p),i)==DesktopOneEye;
         Check(!mirrorRow&&Defaults()[DesktopOneEye]==1&&std::wstring(Definitions[DesktopOneEye].key)==L"desktop_one_eye",
