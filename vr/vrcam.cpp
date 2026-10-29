@@ -35,6 +35,7 @@
 #include "../steamvr/arm_pointing.h"
 #include "../steamvr/aim_reach.h"
 #include "../steamvr/torch_light.h"
+#include "../steamvr/leather_menu.h"
 #include <tlhelp32.h>
 #include <intrin.h>
 #include <xinput.h>
@@ -96,6 +97,7 @@ namespace gamestate { uint32_t MenuEpoch(); }
 namespace gamestate { void Init(const D2RL::PluginContext* ctx); void Tick(); uint32_t WeaponClass(); uint32_t WeaponSet(); uint32_t WeaponType(); uint32_t HandsHeld(); uint32_t TwoHanded(); uint32_t WeaponHand(); uint32_t HandsKey(); bool MenuOpen(); int ObjectLight(uint32_t txt, uint32_t mode, float rgb[3]); uint64_t LocalPlayer(); void SetViewMode(uint32_t mode); bool AutoMapOpen(); bool SetAutoMap(bool open); void PollPlate(); bool PlateRect(int32_t out[4]); }
 namespace gamestate {bool LeftShield();}
 namespace gamestate {bool OpaqueMenuOpen();}
+namespace gamestate {bool RunOnUi(D2RL::Threads::Callback callback);}
 #include "d2r_vr_state.h"
 
 #include "MinHook.h"
@@ -879,6 +881,9 @@ void LoadSettings() {
         }
         framevr::limbs::Tuned().Set(tuning);
     }
+    framevr::ConfigureLeatherMenu(IniB(L"interactions",L"leather_menu",true),IniF(L"interactions",L"leather_menu_width",framevr::leather::DefaultMenuWidth),
+        IniF(L"interactions",L"leather_tilt",framevr::leather::DefaultTilt),IniB(L"interactions",L"leather_world",true),
+        IniB(L"interactions",L"leather_backdrop",false));
     projectiles::Configure(IniB(L"gameplay",L"motion_controls",false),IniF(L"gameplay",L"arrow_speed",2.f),IniB(L"gameplay",L"arrow_direct_release",true));
     // Movement speed (VR Settings > VR): % of the way from the no-gear base run speed to the gear's (-10 walks).
     projectiles::ConfigureRunSpeed(framevr::runspeed::NormalizePercent(IniF(L"gameplay",L"run_speed_pct",100)));
@@ -907,6 +912,9 @@ void LoadSettings() {
     // recovery or block animation to stun-lock a VR body. 1 = native flinching.
     // Classic always flinches natively.
     melee::ConfigurePlayerFlinch(classicMelee||IniB(L"gameplay",L"player_flinch",false));
+    melee::ConfigureZealLight(IniB(L"gameplay",L"zeal_light",true),IniF(L"gameplay",L"zeal_light_frames",0),
+        IniF(L"gameplay",L"zeal_light_pool",-1),IniF(L"gameplay",L"zeal_light_exit",-1),IniF(L"gameplay",L"zeal_light_exit_ms",-1),
+        IniF(L"gameplay",L"zeal_light_turn",0),IniF(L"gameplay",L"zeal_light_behind",-1),IniF(L"gameplay",L"zeal_light_spread",-1));
     // Unleashed (on by default): a broken guard leaks a chip of each blocked hit.
     combat::ConfigureGuardChip(!classicMelee&&IniB(L"gameplay",L"guard_break_chip",true),
                                IniF(L"gameplay",L"guard_break_chip_scale",1));
@@ -975,6 +983,12 @@ void LoadSettings() {
     // guard_strain_recover_ms (1500), at the guard_strain_reset_ms rate (1500): clear 3 s after the
     // last hit from full. 0 = only lowering clears it.
     framevr::ConfigureGuardStrainRecover(IniF(L"gameplay",L"guard_strain_recover_ms",1500)/1000.f);
+    // Bone Armor grafted onto both forearms (steamvr/bone_graft.h); missing keys: the defaults.
+    // On, the hero's own spinning orbit is never shown (any view, menus too).
+    billboards::ConfigureBoneArmorHidden(IniB(L"render",L"bone_armor_graft",true));
+    framevr::ConfigureBoneGraft(IniB(L"render",L"bone_armor_graft",true),IniF(L"render",L"bone_armor_graft_size",1.f),
+        IniF(L"render",L"bone_armor_graft_out",.05f),IniF(L"render",L"bone_armor_graft_spread",40.f),IniF(L"render",L"bone_armor_graft_along",.5f),
+        IniF(L"render",L"bone_armor_graft_width",.5f));
     {   // Low-life heartbeat (start: VR Settings > Combat, [gameplay] low_life_heart_start): % on top of
         // the game's Master x Combat volume (0 = off), tempo range, wind-down time from full, and
         // an optional one-beat 16-bit PCM WAV (next to this ini unless a full path). The old
@@ -2590,6 +2604,7 @@ bool VrViewInner(const d2rcam::WorldView& in, float out[16]) {
     memcpy(g_lookAt, in.lookAt, sizeof g_lookAt);
     g_lookOk = in.lookAtValid;
     ReleaseSRWLockExclusive(&g_lookLock);
+    if (in.lookAtValid) billboards::SetHero(in.lookAt);   // whose Bone Armor is the hero's, menus included
     // The menus (the character screen's 3D scene too: it has a hero point) keep the game's camera.
     if (!g_inWorld.load()) return false;
 #ifdef D2RVR_NATIVE_OPENXR
@@ -4663,8 +4678,10 @@ bool DirectWalkNow() {
     // instead of clearing it and relying on those callbacks to restore it.
     // Aim is resolved separately; neither the aim stick nor stand-still Shift
     // may replace player movement. Native animation/state gates remain native.
+    // The tabbed menu on the leather keeps the world round it, and the left stick walks
+    // there (transport leaves it out of the menu's cursor; the XInput detour below too).
     return g_set.platform.load() == 1 && g_set.directWalk.load() && g_enabled.load() && g_inWorld.load() &&
-           !gamestate::MenuOpen() && !ChatOpen() && !NativeCastOwnsAim();
+           (!gamestate::MenuOpen() || framevr::LeatherMenuWorld()) && !ChatOpen() && !NativeCastOwnsAim();
 }
 // BodyWalk's stick as the game takes a walking vector (x right, y up on its screen,
 // length <= 1, its dead zone 10349 of 32767 with no rescale), turned by our camera.
@@ -4797,6 +4814,8 @@ float* HookStickGet(void* handler, float* out, uint32_t player) {
         const bool on = BodyWalkWalk(&x, &y);
         r[0] = on ? x : 0.0f;
         r[1] = on ? y : 0.0f;
+        static bool toldMenu = false;   // once: the game runs its walk with the tabbed menu up
+        if (on && gamestate::MenuOpen() && !toldMenu) { toldMenu = true; Log("vrcam: walking with the tabbed menu on the leather: the game's walk runs"); }
         static ULONGLONG lastLog = 0;
         if (on && GetTickCount64() - lastLog >= 2000) {
             lastLog = GetTickCount64();
@@ -4914,6 +4933,75 @@ void InstallMapClickHook() {
 #endif
 }
 
+#ifdef D2RVR_NATIVE_OPENXR
+// Walking with the tabbed menu on the leather (owner 2026-10-28: "I also want to be
+// able to walk while this menu is open"). Under its menu the game runs no controller
+// walk (rev5: HookStickGet's walk call never came), so the left stick is turned into
+// what a held left click on bare ground does: a walk toward a point (MapClick, type 0
+// then 1 held, no Stand Still; inside it 0x101EF0), a few cells ahead along the stick
+// on the game's screen (isometric: screen right = grid +x -y, screen up = grid -x -y).
+// On the UI thread, ten times a second; never with a unit under the game's pointer (that
+// click would attack or talk); a release clicks the hero's own cell, so he stops.
+namespace leatherwalk {
+std::atomic<int> g_state{0};   // 0 idle, 1 walking (the next click is a hold), 2 stop due
+std::atomic<uint64_t> g_target{0};   // grid x << 32 | grid y
+std::atomic<bool> g_queued{false};
+std::atomic<uint32_t> g_sent{0},g_refused{0};
+void __cdecl Click(const D2RL::PluginContext*, void*) noexcept {
+    g_queued.store(false);
+    if (g_mapClick.load() != 1 || !OrigMapClick || !gamestate::MenuOpen() || !framevr::LeatherMenuWorld()) return;
+    uintptr_t hero = 0;
+    if (!combat::LocalPlayerUnit(hero) || !hero) return;
+    const int idx = ((ClientIndexFn)d2rsig::Addr(RVA_CLIENT_INDEX))(reinterpret_cast<void*>(hero));
+    if (idx < 0 || idx >= 8) return;
+    const int state = g_state.load();
+    float px = 0, py = 0;
+    if (!SpellPlayerPosition(reinterpret_cast<void*>(hero), px, py)) return;
+    int x = int(px), y = int(py), type = 0;
+    if (state == 2) { g_state.store(0); }   // stop: a click on his own cell
+    else {
+        if (((HoverUnitFn)d2rsig::Addr(RVA_HOVER_UNIT))(idx)) {   // a unit there: no attack, no talk
+            if (g_refused.fetch_add(1) == 0) Log("vrcam: walking with the tabbed menu on the leather: a unit is under the game's pointer - no walk click");
+            return;
+        }
+        const uint64_t t = g_target.load(); x = int(t >> 32); y = int(uint32_t(t));
+        type = state == 1 ? 1 : 0;
+        g_state.store(1);
+    }
+    OrigMapClick(reinterpret_cast<void*>(hero), type, x, y, 0x100);   // high byte: run
+    if (g_sent.fetch_add(1) == 0) LogF("vrcam: walking with the tabbed menu on the leather: walk click %d,%d (hero %.1f,%.1f)", x, y, px, py);
+}
+// The 1 ms timer: the stick from BodyWalk's report, as the game's screen sees it.
+void Tick(ULONGLONG now) {
+    static ULONGLONG next = 0;
+    if (now < next) return;
+    next = now + 100;
+    const bool active = g_enabled.load() && g_inWorld.load() && gamestate::MenuOpen() && framevr::LeatherMenuWorld() && g_mapClick.load() == 1;
+    BWPadMirror m{};
+    const bool read = active && PadMirrorRead(&m);
+    const float lx = read ? float(m.thumb_lx) : 0.f, ly = read ? float(m.thumb_ly) : 0.f;
+    const bool pushed = lx * lx + ly * ly > 10349.0f * 10349.0f;
+    if (!pushed) {
+        if (g_state.load() == 1) { g_state.store(2); if (!g_queued.exchange(true) && !gamestate::RunOnUi(&Click)) g_queued.store(false); }
+        return;
+    }
+    uintptr_t hero = 0; float px = 0, py = 0;
+    if (!combat::LocalPlayerUnit(hero) || !SpellPlayerPosition(reinterpret_cast<void*>(hero), px, py)) return;
+    float sx = std::clamp(lx / 32767.0f, -1.0f, 1.0f), sy = std::clamp(ly / 32767.0f, -1.0f, 1.0f);
+    ViewStickToGame(&sx, &sy);
+    const float l = sqrtf(sx * sx + sy * sy);
+    if (l < 1e-4f) return;
+    const float reach = 5.0f * std::min(l, 1.0f) + 1.0f;   // cells ahead: more with a fuller push
+    const float gx = (sx - sy) / l * 0.70710678f, gy = (-sx - sy) / l * 0.70710678f;
+    const int tx = int(px + gx * reach), ty = int(py + gy * reach);
+    if (tx < 1 || ty < 1 || tx > 65534 || ty > 65534) return;
+    g_target.store((uint64_t(uint32_t(tx)) << 32) | uint32_t(ty));
+    if (g_state.load() == 2) g_state.store(0);
+    if (!g_queued.exchange(true) && !gamestate::RunOnUi(&Click)) g_queued.store(false);
+}
+}
+#endif
+
 // Twice a second: says when the game loses or gets back its pads, and when W A
 // S D are held but the game never asks for a keyboard move (its UI is on a pad:
 // the "controller" option, or a pad's press - a mouse click asks for the mouse).
@@ -5012,6 +5100,7 @@ template <int I> DWORD WINAPI XDetour(DWORD idx, XINPUT_STATE* s) {
         if(!allowed||nativeUi||framevr::SettingsOpen()) {
             if(idx==0){SequenceSkillPad(s,false);InteractButton(false,ActionsHeld());}
             if(!allowed||framevr::SettingsOpen())s->Gamepad={};
+            else if(gamestate::MenuOpen()&&framevr::LeatherMenuWorld())s->Gamepad.sThumbLX=s->Gamepad.sThumbLY=0;   // it walks (DirectWalkNow), not the cursor
             if(idx==0){g_aHeld.store(false);g_skillHeld.store(false);g_rightX.store(0.f);}
             // Native menu buttons/sticks bypass gameplay action translation
             // and camera-relative movement. Laser reports are already empty.
@@ -8431,7 +8520,8 @@ int Lights(Light* out) {
 
 bool WorldMenuBlocksEffects() {
 #ifdef D2RVR_NATIVE_OPENXR
-    return framevr::panels::BlockWorldEffects(gamestate::MenuOpen(),framevr::SpatialMenu(),gamestate::OpaqueMenuOpen());
+    // The leather keeps the world round it (leather_world), so its effects too.
+    return framevr::panels::BlockWorldEffects(gamestate::MenuOpen(),framevr::SpatialMenu(),gamestate::OpaqueMenuOpen()&&!framevr::LeatherMenuWorld());
 #else
     return gamestate::MenuOpen();
 #endif
@@ -9837,6 +9927,9 @@ DWORD WINAPI UpdateThread(void*) {
         SkyTick();
         flog::Tick(g_set.frameLog.load());
         gamecmd::Tick();   // skills, potions, Alt... held in BodyWalk: pressed on the UI thread
+#ifdef D2RVR_NATIVE_OPENXR
+        leatherwalk::Tick(nowMs);   // the left stick walks with the tabbed menu on the leather
+#endif
 #ifdef D2RVR_NATIVE_OPENXR
         mobaim::Tick();    // the aim rules' targets: each hand's held out, and the one looked at
 #endif

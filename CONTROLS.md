@@ -62,7 +62,7 @@ Quest left X/Y correspond to Index left A/B; right A/B labels are the same.
 | Assign / change quick-use item | Hold the trigger over **QUICK USE** for 0.65 seconds, then select a carried scroll, tome or other usable item. An empty slot also opens the picker on a short click. **CLEAR SLOT** removes the assignment |
 | Walk / run speed | VR Settings > **VR** > **Movement speed** (last row), then Apply: **Walk**; **Base run** (your class's run with no speed bonus); **Run 10%…90%** of the way up; **Full run** (the default, the full speed your gear and skills give). Saved to `[gameplay] run_speed_pct`; the game's own run / walk toggle is kept in line with it. Movement skills keep their own speed, and it never runs faster than the game. With **Stick toggle** beside it on (Off by default; `[gameplay] run_walk_toggle`), push the **right stick up** to switch between walking and that run (from Walk, the full run) |
 | Finish editing | Click the wheel hand's stick again, or select CLOSE in its center |
-| Inventory / character / skills / journal | Left Grip + left stick click; or either wheel > INVENTORY; native tabs retain their controls |
+| Inventory / character / skills / journal | Reach the **left hand over the left shoulder** and grip; or Left Grip + left stick click; or either wheel > INVENTORY. However it opens, the tabbed menu comes up on a leather sheet strapped to your left hand, with the world still around you; the right laser works on it as before, the left stick still walks, and closing the menu (Right B or its close button) puts the leather away. Native tabs retain their controls. **VR Settings > HUD > Menu distance > Leather Off** keeps the menu in front of you instead, without the shoulder reach. With Dominant hand = Left the left shoulder stays the weapon swap; use the other two |
 | VR settings / body calibration | Either wheel → VR SETTINGS |
 | Explain a VR setting | Point the right-hand laser at its label or controls for about half a second. Help appears beside the panel and disappears when you point away; no click needed |
 | Minimap | Either wheel → MAP; movement remains available |
@@ -424,7 +424,7 @@ animation. So far:
   stacks build per landed cast), **Rabies**, **Fire Claws** and **Hunger**;
 - the Barbarian's **Bash**, **Stun**, **Concentrate** and **Berserk**;
 - the Paladin's **Sacrifice**, **Vengeance** and **Conversion**, and **Zeal**
-  as a swing flurry (below);
+  as its native sequence (below);
 - the Amazon's **Power Strike**, **Impale**, **Charged Strike** and
   **Lightning Strike**;
 - the Necromancer's **Poison Dagger**.
@@ -446,27 +446,30 @@ paced strike in Classic) plays the form's growl as the native attack would
 (85% / 80% of the time), and Rabies and Hunger their bite. Holding the trigger still casts the
 skill natively. **Weapon skill gestures** Off keeps strikes basic.
 
-**Fury: a swipe flurry.** Werewolf **Fury** is one cast of up to five hits
-(two at skill level 1), and you deliver them. The swipe that casts it
-(the rule above) pays its mana and lands hit 1; in Unleashed each of the
-next swipes that lands, from a claw carrying Fury, lands the next hit on
-whatever it struck, with Fury's own damage and on-hit effects and no further
-mana, however fast you swing. No swipe is lost; only one swipe's
-follow-through can't take a second hit. Once the hits are spent, the next
-full-cycle swipe casts Fury again. In Classic each follow-up waits 70% of an
-attack cycle after the previous Fury hit (Fury's own pace); a swipe before
-that is a basic attack and doesn't delay it. As natively, the hits spread
-across a pack: a later swipe through several creatures lands Fury on the
-first two it touches (the casting swipe on one); the rest of a cleave stays
-basic. The unused hits lapse after two attack cycles
-without one, or when the form changes or another skill is cast. Only the
-casting swipe growls.
+**Fury and Zeal: one swing, all the hits.** The full-cycle swing that lands
+with werewolf **Fury** or the Paladin's **Zeal** (the rule above) casts it on
+the monster you hit: its mana once and hit 1. The rest of its hits (two to five
+in all) then land by themselves at the skill's native speed (Fury about 4/9
+of your attack cycle apart, Zeal half a cycle), each on the nearest other monster within
+reach, as natively; you don't act them out, and you keep moving freely. If no
+monster is left in reach, the remaining hits are lost. Swings while it runs,
+and quicker swings, stay basic attacks; the next full-cycle swing once it ends
+casts again. Only the casting swing gives the impact pulse.
 
-**Zeal: a swing flurry.** The Paladin's **Zeal** works the same way with a
-weapon: the full-cycle swing that casts it pays its mana and lands hit 1 of
-up to five, and each later swing that lands delivers the next hit, with no
-further mana. In Classic each follow-up waits a whole attack cycle (Zeal's
-own pace).
+**Zeal's light.** Every Zeal hit flashes one ray of the Den of Evil's light
+over the monster it lands on, then it fades before the next hit, whether a
+swing casts Zeal or you hold it on the trigger. While Zeal is on a hand's
+trigger, a few rays are kept lit out of sight so each one shows at the moment
+of the hit. Purely visual. `[gameplay] zeal_light=0` turns it off;
+`zeal_light_frames` (2-25, default 6, at 25 a second) sets how long each ray
+holds; `zeal_light_pool` (0-10, default 6) how many are kept lit;
+`zeal_light_exit` how each ray leaves (1 rises into the sky, the default; 2
+sinks into the ground; 3 shrinks; 0 just goes) over `zeal_light_exit_ms`
+(default 250). The ray stands behind the monster as you see it, at a
+different angle each time, its light slanting in from that side, never from
+behind you: `zeal_light_behind` (cells behind it, default 1.5),
+`zeal_light_spread` (degrees either side of straight behind, default 60),
+`zeal_light_turn` (degrees, default 0) trims the slant.
 
 Turning gestures off or changing equipment/assignments cancels an in-progress
 skill draw. Shield contact and its trigger fallback cannot duplicate a cast.

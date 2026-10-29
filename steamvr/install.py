@@ -17,8 +17,10 @@ import urllib.request
 import zipfile
 from prepare_icons import prepare as prepare_icons
 from prepare_potions import prepare as prepare_potions, CODES as POTION_CODES, FILES as POTION_FILES
+from bone_pieces import CODES as BONE_CODES
 from prepare_spell_sprites import prepare as prepare_spell_sprites, FILE as SPELL_SPRITES
 from prepare_props import prepare as prepare_props, FILES as PROP_FILES
+from prepare_leather import prepare as prepare_leather, FILES as LEATHER_FILES
 import prepare_arcane_sky
 import prepare_sewer_backdrop
 import prepare_kurast_dock
@@ -494,9 +496,20 @@ def main():
         except (OSError, ValueError, KeyError, IndexError) as error:
             print(f'Native potion models unavailable; retaining icon fallback: {error}')
         else:
-            for name in list(POTION_FILES) + ['cache.json']:
+            # Bone Armor's pieces are optional (bone_pieces.py): copied when the cache made them.
+            bone_files = [code + '.pvr' for code in BONE_CODES if (Path(temporary) / (code + '.pvr')).is_file()]
+            for name in list(POTION_FILES) + bone_files + ['cache.json']:
                 payload[mod_identity.PLUGIN.parent / 'd2r_vr_potions' / safe_relative(name)] = (Path(temporary) / name).read_bytes()
             print(f"Prepared {result['models']} original 3D potion models from your installed game.")
+    with tempfile.TemporaryDirectory(prefix='d2r-vr-leather-') as temporary:
+        try:
+            result = prepare_leather(game, temporary, casclib=args.casclib)
+        except (OSError, ValueError, KeyError, IndexError) as error:
+            print(f'Menu leather unavailable; the tabbed menu keeps a painted stand-in hide: {error}')
+        else:
+            for name in list(LEATHER_FILES) + ['cache.json']:
+                payload[mod_identity.PLUGIN.parent / 'd2r_vr_leather' / safe_relative(name)] = (Path(temporary) / name).read_bytes()
+            print("Prepared the menu's leather (the Rogue Encampment hide) from your installed game.")
     with tempfile.TemporaryDirectory(prefix='d2r-vr-props-') as temporary:
         try:
             result = prepare_props(game, temporary, casclib=args.casclib)

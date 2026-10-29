@@ -75,6 +75,13 @@ void ConfigureBottlePhysics(bool on); // [interactions] bottle_physics: emptied 
 void ConfigurePropPhysics(bool on);   // [interactions] prop_physics: weapons knock the level's small props about
 void ConfigureBodyPhysics(bool on);   // [interactions] body_physics: weapons push monsters' and townsfolk's limbs aside
 bool BodyPhysics();                   // on, with physical melee
+// [interactions] leather_menu (VR Settings > HUD), leather_menu_width (m), leather_tilt (degrees),
+// leather_world, leather_backdrop: the tabbed menu on a leather sheet strapped to the left hand
+// (leather_menu.h); backdrop keeps the game's translucent dim under the menu on the hide.
+void ConfigureLeatherMenu(bool on,float menuWidth,float tilt,bool world,bool backdrop=false);
+// Any thread: the tabbed menu is on the leather with the world kept round it, so
+// the world's effects (sky, fog, cave ceiling) stay on as for the spatial menus.
+bool LeatherMenuWorld();   // also: the left stick walks while the leather is out (vrcam DirectWalkNow)
 void PublishSewerPrompt(const sewerprompt::Target&); // Values only; XR follows no game pointers.
 // Current motion-combat aim in the existing head-yaw-relative hand frame.
 bool SettingsOpen();
@@ -127,6 +134,11 @@ void ConfigureGuardStrainRecover(float seconds);
 // at the first 10 % step and below 10 % life, wind-down time from full, and an optional
 // one-beat 16-bit PCM WAV (empty: the built-in beat). Reloads the WAV only when the path changes.
 void ConfigureHeartbeat(float volume,float bpmMin,float bpmMax,float fadeSeconds,const wchar_t* file);
+// Bone Armor grafted onto both forearms (bone_graft.h): on/off; piece length (x
+// the forearm, wrist to elbow), metres out from the arm, degrees between pieces,
+// where a piece's middle sits (0 the wrist .. 1 the elbow) and its thickness
+// (x its length). Bad values: the defaults.
+void ConfigureBoneGraft(bool on,float size,float out,float spread,float along,float width);
 // [gameplay] guard_break_volume (x the game's Master x Combat volume, 0 = off) and an
 // optional 16-bit PCM WAV (empty: the built-in bone snap) played once as the guard breaks.
 void ConfigureGuardBreakSound(float volume,const wchar_t* file);

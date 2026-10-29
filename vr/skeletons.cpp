@@ -1192,7 +1192,10 @@ StaffHold g_staff;
 // frame: metres from the head, x right, y up, z back, head yaw only (the
 // frame the controllers came in by), so FlatVR lays them back where they were
 // drawn. [0] right, [1] left.
-struct ForearmOut { float elbow[3], wrist[3], across[3]; ULONGLONG at; };
+struct ForearmOut { float elbow[3], wrist[3], across[3]; ULONGLONG at;
+    // The controller that pose was drawn from (same frame) and the hands' offset, for
+    // ForearmOnController (Bone Armor grafts follow the controller, the arm gives the shape).
+    float hand[3], rot[4], offset[3]; bool handOk; };
 
 SRWLOCK g_forearmLock = SRWLOCK_INIT;
 ForearmOut g_forearm[2] = {};
@@ -2275,6 +2278,9 @@ void PoseBody(uintptr_t self, const Hero& h, const Input& given, float legHold) 
             FromModel(V3{(W.x - head.x) / upm, (W.y - head.y) / upm, (W.z - head.z) / upm}, c, s, f.wrist);
             FromModel(across, c, s, f.across);
             for (int i = 0; i < 3; ++i) { f.elbow[i] -= in.handOffset[i]; f.wrist[i] -= in.handOffset[i]; }
+            f.handOk = (in.handsValid & (1u << side)) != 0;
+            for (int i = 0; i < 3; ++i) { f.hand[i] = in.hand[side][i]; f.offset[i] = in.handOffset[i]; }
+            for (int i = 0; i < 4; ++i) f.rot[i] = in.rot[side][i];
             f.at = GetTickCount64();
             AcquireSRWLockExclusive(&g_forearmLock); g_forearm[side] = f; ReleaseSRWLockExclusive(&g_forearmLock);
         }
@@ -3632,6 +3638,27 @@ void ResetGrip() { AcquireSRWLockExclusive(&g_gripLock); g_grip.ok = false; Rele
 #endif
 
 #if D2RVR_FIRST_PERSON
+bool ForearmOnController(int side, float wrist[3], float elbow[3], float palm[3]) {
+    AcquireSRWLockShared(&g_forearmLock);
+    const auto f = g_forearm[side & 1];
+    ReleaseSRWLockShared(&g_forearmLock);
+    if (!f.at || GetTickCount64() - f.at > 250 || !f.handOk) return false;
+    const float n = f.rot[0] * f.rot[0] + f.rot[1] * f.rot[1] + f.rot[2] * f.rot[2] + f.rot[3] * f.rot[3];
+    if (!(n > 0.9f && n < 1.1f)) return false;
+    // v in the head's frame -> the controller's: conjugate(rot) * v
+    auto local = [&](const float v[3], bool point, float out[3]) {
+        float d[3];
+        for (int i = 0; i < 3; ++i) d[i] = point ? v[i] + f.offset[i] - f.hand[i] : v[i];   // as drawn
+        const float x = -f.rot[0], y = -f.rot[1], z = -f.rot[2], w = f.rot[3];
+        const float tx = 2 * (y * d[2] - z * d[1]), ty = 2 * (z * d[0] - x * d[2]), tz = 2 * (x * d[1] - y * d[0]);
+        out[0] = d[0] + w * tx + (y * tz - z * ty);
+        out[1] = d[1] + w * ty + (z * tx - x * tz);
+        out[2] = d[2] + w * tz + (x * ty - y * tx);
+    };
+    local(f.wrist, true, wrist); local(f.elbow, true, elbow); local(f.across, false, palm);
+    for (int i = 0; i < 3; ++i) if (!std::isfinite(wrist[i] + elbow[i] + palm[i])) return false;
+    return true;
+}
 bool HeroForearm(int side, float elbow[3], float wrist[3], float across[3]) {
     AcquireSRWLockShared(&g_forearmLock);
     const auto f = g_forearm[side & 1];

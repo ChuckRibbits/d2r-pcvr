@@ -313,8 +313,11 @@ health, mana, level and XP progress with the wrist minimap turned off.
 
 ### Inventory, conversations and trading in VR
 
-Native in-game menus share a room-anchored surface in front of you. The full
-tabbed character menu, stash, inventory, cube, trade and waypoint surfaces use one opaque
+The tabbed character menu (inventory, character, skill tree, quests, options
+and every other tab, with its dialogs and a cube opened from the inventory) is
+held in your hand instead: see "The menu on leather" below. The other native
+in-game menus share a room-anchored surface in front of you. The stash, trade,
+merchant and waypoint surfaces (and a cube beside the stash) use one opaque
 black background in both eyes. Dialogue and journal panels retain the world
 backdrop, including any enabled sky, fog and cave ceiling effects. Opening an
 NPC conversation or continuing its speech keeps those effects visible; entering
@@ -351,6 +354,70 @@ a trigger squeezed while moving does nothing until released. The laser and
 clicks follow the moved panel. Every in-game and main/title menu reopens at
 that distance until the game is restarted or **VR Settings > HUD > Menu
 distance** is changed. The handheld quest log keeps its left-grip placement.
+
+### The menu on leather
+
+Reach your **left hand over your left shoulder** and grip (as if pulling a
+rolled hide from a pack) to open the tabbed menu; Left Grip + left stick click
+and the wheel's INVENTORY open it too. It comes up pinned to a stretched animal
+hide (the one drying on the Rogue Encampment's farm racks, read from your own
+game at install) strapped to your left hand, and the world stays in view all
+round it: no black backdrop. You hold the hide at the menu's left edge; its
+neck and legs reach past your fist. The hide follows the hand whether or not
+you hold the grip, until the menu closes (Right B, its close button, or anything
+that closes the native menu); then it is gone. Right B goes to the game first,
+so a cube, a dialog or the options pages still step back one at a time; a press
+the game leaves unanswered for a quarter of a second, with only the menu and
+its pages open and nothing on the cursor, closes the menu (the log:
+`gamestate: B on the leather went unanswered by the game ...`). The right laser and every native
+control work on it as on the room panel, Left Grip + Right Trigger included
+(the left grip is free while the sheet is strapped on). The **left stick walks** while the
+leather is out, as in play (it never moves the menu's controller cursor); the
+right laser, face buttons and right stick work the menu. Nothing else is drawn
+over it: quest and level-up cards wait until it closes, and the wrist and palm
+displays are hidden while a menu is open, as before.
+
+Only the menu's 16:9 band is on the hide, on the middle of its body, and the
+game's translucent dim under the menu is taken out of it, so the hide shows
+round the menu's own art, as is the panel's faint black drop shadow. The hide
+itself goes to the headset premultiplied: nothing of its rectangle shows round
+it. The game also leaves the world unpainted behind its opaque menu panel (one
+draw stamps the panel's rectangle into the scene's stencil); while the leather
+is out the mod binds a copy of that draw that writes no stencil, so the world
+behind the hide is whole (log: `Frame leather: the game's menu stencil stamp
+found ...`). Opening the cube from the inventory
+keeps it on the leather; the stash, merchants, trade, gambling, imbue, hiring,
+waypoints and NPC talk keep the room panel. While the sheet is held, the left
+hand's own weapon or shield is hidden, as with the quest log. With **Dominant
+hand = Left** a left grip over either shoulder swaps weapons, so the shoulder
+reach is off; Left Grip + left stick click and the wheel still open the leather
+(the menu laser stays on the right hand).
+
+**VR Settings > HUD > Menu distance** carries the switch on its right half:
+**Leather On** (the default) or **Off**: the tabbed menu in front of you against
+black as before, with no shoulder reach. It applies at Apply.
+
+The installer cuts the hide out of the game's own colour map
+(`act1_town_farming_pelt_hanging_b`) into `d2rloader\plugins\d2r_vr_leather`
+(`prepare_leather.py`); it is never shipped with the mod. Without that cache the
+menu sits on a painted stand-in hide. Settings, live in `[interactions]`:
+
+```ini
+[interactions]
+leather_menu=1      ; 0: the tabbed menu back on the room panel, no shoulder reach
+leather_menu_width=0.57  ; the menu across, metres (0.30 to 0.90); the hide is sized round it (about 0.83 m)
+leather_tilt=0      ; degrees leaned back toward you from the quest log's angle (-45 to 60)
+leather_world=1     ; 0: the old black backdrop behind the leather (if the eyes disagree)
+leather_backdrop=0  ; 1: keep the game's translucent dim under the menu on the hide
+```
+
+The log notes `Frame leather: the game's hide, ...` (or `... the painted
+stand-in`) once at start, `Frame panels: tabbed menu on the leather, left hand
+(...)` when it opens and `Frame leather: menu band ...` when the part of the
+canvas on the hide changes. Still needs a headset check: whether the world behind matches
+in both eyes (on 2026-10-09 the transparent tabbed-menu background differed
+between eyes, which is why the room panel went black), readability at arm's
+length, tooltips near the band's lower edge, and the cube from the inventory.
 
 The VR Settings panel is grabbed like a real window with the same right grip:
 the point you grabbed stays on the end of the laser. Moving the hand without
@@ -726,6 +793,11 @@ holsters=1
 bottle_physics=1
 prop_physics=1
 body_physics=1
+leather_menu=1
+leather_menu_width=0.57
+leather_tilt=0
+leather_world=1
+leather_backdrop=0
 ```
 
 `vitals_location` and `navigation_location`: `0` Wrist, `1` Palm, `2` Either,
@@ -1070,8 +1142,10 @@ and trigger/button melee were:
     defense lowered per hit and chance to cast on striking or attack (curses
     included). Every other contact still lands its scaled damage, with no
     on-hit effects. `swing_recovery_grace` does not shorten the wait. A riposte
-    always carries them; an unknown cycle counts as full. Elemental damage and
-    its effects (chill, poison) and on-kill effects are unchanged. The game's
+    always carries them; an unknown cycle counts as full. Elemental damage is
+    damage (scaled like the hit; poison and burn by the contact's factor), its
+    effects (chill, freeze) follow the would-have-hit gate below, and on-kill
+    effects are unchanged. The game's
     own roll sites are checked at start (`Frame on-hit gate:`); a part not
     found stays native. `[debug] melee_trace=1` adds `onhit=1/0` to each
     traced contact.
@@ -1087,21 +1161,85 @@ and trigger/button melee were:
     stays a basic attack. Classic casts on every paced contact. Developer
     builds log `Frame melee skills:` (armed contacts, casts, refusals by
     reason) and add `strike=<skill> cast|basic_strike` to `melee_trace` lines.
-  - **Fury's flurry** (Zeal's the same with a weapon; Classic paces Zeal at its Param2, a whole cycle):
-    the cast lands hit 1 of its 2-5. In Unleashed each
-    later landed stroke of a claw carrying Fury lands the next one, at any
-    speed (only a stroke within 100 ms of the previous Fury hit, one swipe's
-    follow-through, can't): unscaled, with on-hit effects, no mana, on the
-    creature it struck. A later stroke that reaches several creatures lands
-    Fury on its first two (native Fury spreads its hits across nearby
-    monsters); the casting stroke on one. A new cast still needs a full-cycle
-    stroke, so the burst limits itself. In Classic each follow-up waits Fury's Param2 (70%) of
-    the attack cycle after the previous Fury hit, sooner than the shared
-    cadence; earlier strokes stay basic and never delay it. Unused hits lapse
-    after two cycles, a form change or another skill's cast. Developer builds
-    log `Frame melee flurries:` and tag trace lines `cast 1/5`,
-    `flurry 2/5 after N ms`, `flurry 3/5 spread`, `basic_strike flurry_early after N ms`;
-    the on-hit report counts `flurry=`.
+  - **Fury and Zeal** (Cal, 2026-10-25; replaces the swing flurry; rev2
+    without the native mode, which rooted the hero): the casting stroke runs
+    the skill's start and one do 13 hit (count 1) on the struck creature.
+    The mod then lands the cast's other hits itself (`strike_skills.h`
+    `Sequence`, `melee.cpp` `SequenceHit`), one do 13 call each, at the native
+    sequence's rhythm measured from native casts (rev4): Fury 4/9 and Zeal 1/2
+    of the attack cycle (160 ms at 360, 280 ms at 560; 500 ms cycle if
+    unknown), up to 20 ms early to meet the game update, the next timed from
+    when the last was due, each on the nearest other live hostile within 3.5
+    cells and in sight (else the previous one; none ends the cast). do 13
+    still checks native melee range and picks its own creature in reach if
+    needed. The hero never enters the skill's mode, so movement stays free.
+    Those hits are the cast's own (rev3): the trigger rules' recovery factor
+    and on-hit gate don't apply to them (attack rating still scales them, and
+    the would-have-hit gate still holds back effects a miss would not have).
+    Each is still the latest attack later swings are measured from (rev5), so
+    strokes while it runs stay recovery-scaled basic attacks; a game/form change or death ends it. Developer builds log `Frame melee sequences (Fury, Zeal):`
+    and trace `cast 1/N` on the casting stroke and
+    `sequence skill=... hit k/N target=... after N ms` for the rest.
+  - **Zeal's light** (Cal, 2026-10-26; `steamvr/zeal_light.h`): every Zeal
+    hit flashes the Den of Evil's light (Missiles.txt `DenOfEvilLight`, row
+    287; HD `missiles/light_beams.json`) at the struck creature's cell,
+    created as a client-only visual through the bow preview's path
+    (`projectiles::CreateVisual`): no server missile, packet, attack or
+    damage. The hits: the casting stroke, the cast's later hits (the creature
+    do 13 really struck) and Zeal held on the trigger. rev2 (Cal: "they didnt
+    come and go with the hits. Quick fade in/fade out"): a beam per hit, its
+    range (params flag 0x8000, +0x5c) `[gameplay] zeal_light_frames` (2-25,
+    default 6 = 240 ms, before the next hit at a 560 ms cycle) instead of the
+    native 300, then the particle's own fade. A client-made missile is not
+    removed when its range runs out (rev2 test: the beams stayed), so rev3
+    hands each to `bowvr::RetireVisualAt`: the bow's client tick kills it at
+    its time, as it retires its own preview (`Frame timed visuals:`). rev4
+    (Cal: the light appeared about a second late; the effect's spawner has a
+    first spawn delay): while a hand's trigger skill is Zeal (seen within 3 s)
+    `[gameplay] zeal_light_pool` beams (default 6, 0-10) are kept lit at the
+    hero's cell, their visual root dropped 100000 units below the world in the
+    bow's transform hook (`bowvr::StageVisual`, as the hidden potions); a hit
+    shows the longest-lit one by moving its root onto the creature's cell (2
+    render units a cell; the effect and spotlight inherit it), then retires
+    it. None lit: a new beam, late, as rev3. The pool is let go 15 s after
+    Zeal was last armed. Logs `Frame staged visuals:`. rev11 (Cal, Cave: the
+    lights were late and several showed in sequence for one hit): beams lit in
+    the previous level or rooms left behind never reach the client tick that
+    retires them, so their 12 slots filled; every other pool beam was then
+    refused a slot, retired at once, and its visual outlived it as a stray
+    light at the hero's cell. Now the pool's lit beams are let go on a level
+    change and once the hero is 20 cells from where they were lit, a slot whose
+    retirement is 2 s overdue is free (as is a retirement wait in the 16-slot
+    timed list), and the pool makes no beam without a free slot (`no free
+    slot=` on `Frame zeal light:`). rev5 (Cal: "fade out
+    when they go away and not just suddenly turn off"): removing a missile
+    ends its visual at once (natively too), and the effect's fade input
+    (`__a_Fade`, its material's MonsterFade) is never driven for missiles, so
+    a shown beam leaves by its root transform before it is retired:
+    `[gameplay] zeal_light_exit` 1 rises 30 render units into the sky
+    (default), 2 sinks as far into the ground (its soft edge fades at the
+    floor), 3 shrinks every entity's basis, 0 none; over `zeal_light_exit_ms`
+    (default 250, 0-1000), eased. rev6: a beam whose unit is gone (retired,
+    or a hidden one ended natively after ~12 s) kept rendering for a few
+    frames un-hidden at the hero cell it was lit at, a stray lit beam after
+    each hit; its entities now stay hidden 1.5 s after the unit, and hidden
+    ones are retired (still hidden) after 8 s and lit anew. rev7 (Cal: "I
+    just dont want it ever generating from behind my player. It just ends up
+    looking like a flash of light in my visor"): the Den light slants (its
+    spotlight sits at local 12, 20, -9.96 above its foot), so each shown beam
+    is yawed about its root until that side points from the hero toward the
+    creature: the light comes from beyond it. Children are turned too unless
+    they already take the root's turn (told from the spotlight's offset).
+    `[gameplay] zeal_light_turn` trims it (degrees). rev7's log: the children
+    follow the root's turn. rev8 (Cal: "Its still not always behind the
+    enemy. I want it behind the enemy at different angles"): the beam's foot
+    stands `zeal_light_behind` cells (default 1.5) beyond the creature from
+    the hero, at a random angle up to `zeal_light_spread` (default 60, max
+    90) degrees either side of straight behind, and its light is turned to
+    come from that same side (`zeal_light.h` `Behind`). One hit seen twice within
+    120 ms makes one beam; at most 8 show at once. `[gameplay] zeal_light`
+    (default 1). Developer builds log `Frame zeal light:`, `Frame staged
+    visuals:` and `Frame timed visuals:`; with `melee_trace` each beam's cell.
   `Frame swing damage:` in the log reports scaled hits and the last factors.
 - **Classic** (`1`): native attack rating, monster defense, block and the
   level penalty decide each attack, and attack speed paces them (below). A rolled
@@ -1123,10 +1261,21 @@ clock, so mixing trigger attacks with swings is never faster than swinging. Trig
 hits never count against each other: the native animation already paces them, and
 a multi-hit cast (Zeal, Fury, Whirlwind) keeps its later hits. Smite always hits
 natively, so it skips attack rating and the would-have-hit gate and only shares the
-recovery. `button_cycles` in `Frame melee:` counts trigger hits; developer builds
-log `Frame trigger melee:` (hits inside a swing's cycle) and `Frame trigger melee
+recovery. **Melee skills deliver natively (Cal, 2026-10-26):** a hit of a melee
+skill outside a physical swing - a trigger-held cast, Smite, a Fury or Zeal cast's
+later hit - is whole: no recovery factor and its on-hit effects, however recently
+you swung (the hero's used skill is past Skills.txt's basic rows 0-5). Attack
+rating still scales it (as every Unleashed hit, Cal's choice A: the same average
+as native's hit-or-miss roll, without whiffs) and the would-have-hit gate holds back
+the effects a miss would not have. It still stamps the trigger clock, so swings
+right after it stay recovery-scaled: Unleashed only keeps swings from slipping in
+between a skill's own casting windows. A swing that casts a strike skill is a
+full-cycle stroke's first contact, so it is whole too; a riposte adds its bonus to
+it. The trigger's plain Attack keeps the trigger rules above. `button_cycles` in
+`Frame melee:` counts trigger hits; developer builds log `Frame trigger melee:`
+(hits inside a swing's cycle; `skill hits left whole=`) and `Frame trigger melee
 damage:` (verdicts, scaled hits), and `melee_trace` adds a `trigger target=` line
-per hit. Classic: unchanged.
+per hit (`skill hit: whole` for skills). Classic: unchanged.
 In Classic, button melee keeps native monster block only where the game checks
 block inside its hit check; `native block/dodge in melee` in `Frame combat:`
 confirms it. Every weapon contact with a hostile creature taps the controller once
@@ -1249,7 +1398,8 @@ instead of a random one. Classic keeps the native roll.
   each block sends one smooth pulse in from the edge. At full strain the guard
   breaks: the shadow swells until only `guard_strain_clear` % (10) of the view is
   clear and breathes slowly (`guard_strain_breathe_ms`, 1600), with one alert tap on
-  the left controller. The shield keeps blocking throughout; the cost is sight.
+  the left controller. The shield still stops every hit, but through a broken
+  guard each block leaks a chip (below); the other cost is sight.
   Strain holds while hits keep reaching the shield. Once no hit (block or parry)
   has reached it for `guard_strain_recover_ms` (1500; 0 = only lowering drains), it
   drains with the shield still up; the next hit stops the drain and restarts the
@@ -1309,8 +1459,10 @@ instead of a random one. Classic keeps the native roll.
 
 Damage is scaled at the native damage application's final life write (44CE80,
 whose `Set(defender, life, ...)` returns to 44D098), so resistances, criticals and
-leech have already run; only the local player's physical swings are scaled - not
-spells, missiles or thorns.
+leech have already run. Scaled: the local player's physical swings, trigger/button
+melee, arrows and throws, and every forced incoming hit. Not scaled: spells (yours
+or theirs; they never roll to hit), thorns, and anything that never passes a hit
+check.
 
 **No flinching (Unleashed, 2026-10-22):** the hero never enters the game's hit
 recovery (GetHit) or block animation when struck; Classic keeps native flinching,
@@ -1340,7 +1492,9 @@ after damage reduction, resistances and absorb, so expected damage equals native
 without the hit-or-miss variance. Spells never roll to hit and are unchanged.
 `[gameplay] enemies_always_hit` (default 1) turns the rule off with 0, restoring
 native monster misses at full damage. Classic always uses the native monster
-chance to hit. The log's `Frame incoming defense:` line counts scaled hits.
+chance to hit. The log's `Frame incoming defense:` line counts scaled hits. It
+needs the combat hooks, which `contact_hits=1` (the default) installs: with
+`contact_hits=0` monsters roll to hit natively whatever this key says.
 
 **Would-have-hit gate (Unleashed):** contact always lands, both ways - a monster's
 melee hit or missile on you (`enemies_always_hit`) and your physical swing - and
@@ -1802,6 +1956,70 @@ button (the log says which skill was not assigned). Both controllers pulse once
 when the cast is issued. Thresholds live in `shapeshift::Tuning`
 (`steamvr/shapeshift_gesture.h`); `shapeshift-gesture-test` walks both
 performances, lazy and partial versions, loot stooping and overhead swings.
+
+### Paladin Blessed Hammer fist pump
+
+A Paladin casts Blessed Hammer by punching a fist up to the sky, while
+**VR Settings > VR > Weapon skill gestures** is on:
+
+- Make a fist (hold the grip, trigger free) with either hand somewhere below
+  your head, then punch it straight up so it ends above your head.
+- One pump casts one hammer. Bring the fist back down below your head to load
+  the next pump; a fist held up high never repeats.
+- The punch counts from where it began (the bottom of the wind-up), so an
+  ordinary accelerating punch from the shoulder or hip qualifies: at least
+  25 cm of rise, ending above your head.
+- The skill picker and the hand wheel tag Blessed Hammer GESTURE on any slot
+  ("Punch up to cast").
+
+The pump presses the controller button Blessed Hammer is assigned to, so the
+skill must be on one of the ten slots (the trigger still casts it as before);
+mana, cast rate and the hammer's spiral stay native, and a pump faster than the
+game's cast rate is a press the game ignores, as with the button. The hammer's
+heading comes from the usual aim rules (the outlined monster, else where you
+point or look). A pump is ignored while that hand is busy (trigger squeezed,
+bottle or other held item, bow drawn, face wipe) and while menus or the wheel
+are open. The punching hand gets a short pulse when the cast is issued. The log
+(`Frame hammer:`) has the first cast and a running count every 25, a line for
+each abandoned punch (why), and a line when the skill is unavailable.
+Thresholds live in `hammerpump::Tuning` (`steamvr/hammer_gesture.h`);
+`hammer-gesture-test` covers both hands, holding high, re-loading, open hands,
+slow raises, stalled and forward punches.
+
+### Paladin Charge punch
+
+A Paladin casts Charge by punching straight out with the weapon hand, while
+**VR Settings > VR > Weapon skill gestures** is on:
+
+- Make a fist with the weapon hand (hold the grip, trigger free), drawn back
+  near your body, then punch it straight out ahead, extending the arm.
+- One punch casts once. Draw the fist back in to load the next; an arm held
+  out never repeats.
+- The punch counts from the most drawn-back point, so an ordinary accelerating
+  punch qualifies: at least 20 cm of travel, ending with the arm extended.
+- The skill picker and the hand wheel tag Charge GESTURE on any slot ("Punch
+  out to charge").
+- Physical melee contacts pause while a Charge is in flight (however it was
+  cast), from the press until the hero leaves the rush (mode 18, at most 4 s).
+  A swing or the punch itself touching a monster mid-rush used to land a basic
+  attack inside the Charge sequence and leave the hero unable to move. The log
+  has one `Frame charge: melee contacts held N ms during the charge` line per
+  Charge.
+
+The punch presses the controller button Charge is assigned to (the skill must be
+on one of the ten slots; the trigger still casts it as before). The aim rules
+hand Charge the monster the weapon hand points at, else the spot it points to;
+the rush, mana and hit stay native. "Extended" scales with the calibrated arm
+span (28 % of it, 0.38-0.60 m ahead of the head; 0.45 m without calibration).
+The weapon hand is the right hand. A punch is ignored while that hand is busy
+(trigger squeezed, bottle or other held item, bow drawn, face wipe) and while
+menus or the wheel are open. The weapon hand gets a short pulse when the cast
+is issued. The log (`Frame charge:`) has the first cast and a running count
+every 25, a line for each abandoned punch (why), and a line when the skill is
+unavailable. Thresholds live in `chargepunch::Tuning`
+(`steamvr/charge_gesture.h`); `charge-gesture-test` covers headings, holding
+out, re-loading, open and busy hands, slow reaches, half punches, the hammer's
+upward punch, chops, slashes, jabs from an extended arm, and arm-span scaling.
 
 ### Ice Bolt visual height correction
 
