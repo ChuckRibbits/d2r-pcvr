@@ -3,6 +3,7 @@
 #include "bow_laser.h"
 #include "guard_strain.h"
 #include "notice_card.h"
+#include "vr_settings_draw.h"
 #include "vr_settings_help.h"
 #include "wrist_compass.h"
 
@@ -27,9 +28,14 @@ constexpr Region Pointer{Gameplay.w+Gap,0,64,96};
 constexpr Region Compass{0,Gameplay.h+Gap,compass::Width,compass::Height};
 constexpr Region Leather{0,Compass.y+Compass.h+Gap,1024,800};
 constexpr int StaticWidth=1536,StaticHeight=Leather.y+Leather.h;
-// Dynamic: VR Settings with its help column across the top, the blood visor
-// under it, then the strain light, the quest card and the bow laser beside it.
-constexpr Region Settings{0,0,settings::AtlasWidth,settings::Height};
+// Dynamic: VR Settings (its help card inside the panel) across the top, the
+// blood visor under it, then the strain light, the quest card and the bow
+// laser beside it.
+constexpr Region Settings{0,0,settings::Width,settings::Height};
+// UploadShared refuses a picture of any other size without a word, and the
+// menu would never show: the painted canvas must be exactly this region.
+static_assert(Settings.w==settings::draw::CanvasWidth&&Settings.h==settings::draw::CanvasHeight,
+    "VR Settings' painted canvas must equal its shared-atlas region");
 constexpr Region Blood{0,Settings.h+Gap,blood::Size,blood::Size};
 constexpr Region Strain{Blood.x+Blood.w+Gap,Blood.y,strain::Size,strain::Size};
 constexpr Region Notice{Strain.x+Strain.w+Gap,Blood.y,notice::Width,notice::Height};
