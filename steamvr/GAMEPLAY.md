@@ -527,7 +527,10 @@ frames where there are many big models, in forests and towns.
 Added indoor fog defaults to **Off** for new profiles, preserving the game's
 own lighting and effects, including Tyrael's wings. Outdoor fog keeps its
 existing setting. There is currently no indoor-fog toggle in VR Settings.
-Existing saved `[fog] caves` choices are preserved when updating.
+Existing saved `[fog] caves` choices are preserved when updating. The River
+of Flame gets no added fog either, though it is open air: its lava's own glow
+and haze stay the game's. `[fog] no_fog_areas` lists such areas by biome name
+(`act4_lava` by default; empty puts the fog back there).
 
 **VR Settings > Haptics** tunes vibration for different controllers. Each strength
 ranges from **0% (Off) to 200%**, in **10% steps**, with **100%** as the default.

@@ -146,6 +146,7 @@ target_link_libraries(elemental-hands-render-test PRIVATE d3d12 dxgi framevr-run
 add_executable(skill-pad-test skill_pad_test.cpp)
 add_executable(interact-press-test interact_press_test.cpp)
 add_executable(mod-layout-test mod_layout_test.cpp)
+add_executable(biome-list-test biome_list_test.cpp)   # the INI's biome lists: [sky] outdoor, [fog] no_fog_areas
 add_executable(spell-aim-test spell_aim_test.cpp)
 add_executable(bow-pose-test bow_pose_test.cpp)
 add_executable(crossbow-pose-test crossbow_pose_test.cpp ${ROOT}/vr/crossbow.cpp)
@@ -339,7 +340,7 @@ add_test(NAME arcane-sky-test COMMAND arcane-sky-test "${ROOT}/reshade/D2R_Depth
 set_tests_properties(arcane-sky-test PROPERTIES TIMEOUT 30)
 add_test(NAME light-bounds-test COMMAND light-bounds-test)
 set_tests_properties(light-bounds-test PROPERTIES TIMEOUT 30)
-foreach(test_target IN ITEMS memory-test hook-metrics-test active-keys-test resource-descriptions-test latest-worker-test haptic-pulse-test thread-stats-test
+foreach(test_target IN ITEMS memory-test biome-list-test hook-metrics-test active-keys-test resource-descriptions-test latest-worker-test haptic-pulse-test thread-stats-test
     gameplay-test weapon-skills-test quick-cast-test hand-controls-test elemental-hands-test skill-pad-test interact-press-test sewer-interaction-test notice-card-test mod-layout-test spell-aim-test bow-pose-test crossbow-pose-test body-tracking-test shapeshift-form-test shield-steady-test body-calibration-test shoulder-swap-test blood-screen-test
     portal-billboard-test shrine-trace-test shrine-placement-test overlay-view-test bone-armor-height-test composition-layers-test projectile-rules-test environment-cutaway-test roof-materials-test stereo-prop-physics-test dropped-bottles-test props-test limb-rig-test limb-physics-test leather-menu-test
     combat-rules-test strike-skills-test zeal-light-test skill-usage-test shield-guard-test shapeshift-gesture-test guard-strain-test heartbeat-test run-speed-test logging-test melee-contact-test melee-weapon-test breakables-test offline-difficulty-test enemy-sight-test attack-speed-test world-coordinates-test bow-flight-test bow-laser-test spell-cast-test spell-aim-assist-test hammer-gesture-test charge-gesture-test bone-graft-test
