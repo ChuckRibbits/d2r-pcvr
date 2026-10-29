@@ -334,7 +334,7 @@ D2R PCVR is built on **[D2R VR](https://github.com/natpoh/diablo2-vr-port) by
 [BodyWalkVR](https://bodywalkvr.com/mods/d2r-vr)**, the original VR mod for
 Diablo II: Resurrected. Its D2RLoader plugin, first-person view, painted skies
 and depth fog are the foundation this project started from, used under its
-[MIT license](LICENSE). Thank you to BodyWalkVR for releasing it as open source.
+[MIT license](NOTICE). Thank you to BodyWalkVR for releasing it as open source.
 Their original documentation is kept in [UPSTREAM.md](https://github.com/bearstonem/d2r-pcvr/blob/main/UPSTREAM.md). For their
 own release, which runs through BodyWalk and FlatVR, visit the
 [D2R VR page on BodyWalkVR](https://bodywalkvr.com/mods/d2r-vr).
@@ -351,5 +351,17 @@ names; Update / repair carries their settings and calibration over. The two
 mods cannot run in the same game folder at the same time: setup stops and says
 so when D2R VR is installed there. Licenses for all third-party components are in
 [THIRD_PARTY.md](THIRD_PARTY.md).
+
+## License
+
+D2R PCVR is licensed under the [Mozilla Public License 2.0](LICENSE). You can
+use it, change it and share it, also as part of a larger project. Anyone who
+distributes a build with changed D2R PCVR files must make the source of those
+files available under the same license; files of their own can use any license.
+
+Releases up to 0.3.28, and the source published before the change, were
+released under the MIT License and stay available under it. That notice, with
+D2R VR's copyright, is kept in [NOTICE](NOTICE). Third-party components keep
+their own licenses, listed in [THIRD_PARTY.md](THIRD_PARTY.md).
 
 This project is not affiliated with or endorsed by Blizzard Entertainment.

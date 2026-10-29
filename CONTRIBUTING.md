@@ -103,9 +103,9 @@ Test only with offline characters; do not test this injected mod in online play.
 - Do not commit downloaded dependencies, build output, release ZIPs, credentials
   or private player/account data. Review logs before sharing them.
 - Submit code and assets you have the right to contribute under the project's
-  [MIT license](LICENSE). Preserve copyright notices and credit upstream work.
-  Document third-party licenses in [THIRD_PARTY.md](THIRD_PARTY.md); do not add
-  dependencies whose terms prevent distribution with the mod.
+  [Mozilla Public License 2.0](LICENSE). Preserve copyright notices and credit
+  upstream work. Document third-party licenses in [THIRD_PARTY.md](THIRD_PARTY.md);
+  do not add dependencies whose terms prevent distribution with the mod.
 - Installer and uninstaller changes must preserve player saves, support repeat
   runs and restore tracked backups without deleting unrelated files. Keep
   normal unmodded desktop play available.

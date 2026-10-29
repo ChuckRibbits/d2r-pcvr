@@ -13,7 +13,7 @@ caches, which must not be redistributed. The mod includes licensed
 open-source components and retains their notices below.
 
 This adaptation starts from [natpoh/diablo2-vr-port](https://github.com/natpoh/diablo2-vr-port)
-at `10cfb0a2a9080184101794d3ac8c238c35717967`, under the retained [MIT license](LICENSE),
+at `10cfb0a2a9080184101794d3ac8c238c35717967`, under the retained [MIT license](NOTICE),
 copyright 2026 BodyWalkVR. Existing source, original generated sky art, and
 attribution remain. BodyWalk and FlatVR are separate upstream products; this
 native OpenXR preview does not distribute them or use them as runtime dependencies.
@@ -116,6 +116,12 @@ The low-life heartbeat in `steamvr/assets/guard-heartbeat.wav` is one beat cut
 from "Heartbeat" by SoundReality, from Pixabay (item 549797), used under the
 [Pixabay Content License](https://pixabay.com/service/license-summary/); it was
 decoded from MP3, trimmed to a single beat with short fades, peak-normalised and
+embedded in the plugin.
+
+The guard break bone snap in `steamvr/assets/guard-break-bone.wav` is "Bone Snap"
+by saboteurcomics, from Pixabay (item 408148), used under the
+[Pixabay Content License](https://pixabay.com/service/license-summary/); it was
+resampled from MP3, given a low shelf, made louder and peak-limited, and is
 embedded in the plugin.
 
 Diablo II: Resurrected, its executable, archives and save data belong to Blizzard
