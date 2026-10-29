@@ -35,6 +35,9 @@ int main() {
     Check(Has(Line(Interact,rightFace),"pick up")&&Has(Line(weaponskills::Attack,rightTrigger),"attack"),"Interact and the basic attack say what they do, not \"cast\"");
     Check(Gesture(weaponskills::Throw,rightTrigger)&&!Gesture(weaponskills::Throw,leftTrigger)&&Has(Details(weaponskills::Throw,rightTrigger),"gas or oil potion")&&
           Has(Details(weaponskills::Attack,rightTrigger),"thrown by hand"),"Throw and Attack on the right trigger throw a held javelin or potion by hand");
+    for(int slot=0;slot<skills::Count;++slot)
+        Check(Gesture(weaponskills::BlessedHammer,slot)&&Gesture(weaponskills::Charge,slot),"Blessed Hammer and Charge are gestures from every slot");
+    Check(Has(Line(weaponskills::BlessedHammer,rightFace),"punch")&&Has(Details(weaponskills::Charge,leftTrigger),"weapon hand"),"the Paladin punches are described");
     if(failures)return 1;
     std::puts("skill usage: every skill and slot fits; gestures and flurries described");
     return 0;

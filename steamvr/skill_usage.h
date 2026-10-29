@@ -17,7 +17,7 @@
 namespace framevr::skillusage {
 inline constexpr size_t LineLength=180,DetailsLength=900;
 inline constexpr int Interact=357;   // the catalog's Interact / pick up entry (native_ui)
-enum class Kind {None,Interact,Attack,Throw,Strike,Flurry,Smite,Bow,Quiver,Javelin,DoubleThrow,Toss,Native};
+enum class Kind {None,Interact,Attack,Throw,Strike,Flurry,Smite,Bow,Quiver,Javelin,DoubleThrow,Toss,Pump,Punch,Native};
 inline Kind Classify(int skill) {
     namespace ws=weaponskills;namespace st=strikeskills;
     if(skill<0)return Kind::None;
@@ -30,6 +30,9 @@ inline Kind Classify(int skill) {
     if(ws::JavelinSkill(skill))return Kind::Javelin;
     if(skill==ws::DoubleThrow)return Kind::DoubleThrow;
     if(toss::Skill(skill))return Kind::Toss;
+    // Paladin body gestures (hammer_gesture.h, charge_gesture.h): from any slot.
+    if(skill==ws::BlessedHammer)return Kind::Pump;
+    if(skill==ws::Charge)return Kind::Punch;
     return Kind::Native;
 }
 struct Place {bool trigger=false,right=false,left=false;};
@@ -73,6 +76,10 @@ inline const char* Line(int skill,int slot) {
         case Kind::Toss:
             return at.right?"Gesture: press to hold the trap or bomb, throw it and let go; it lands where the arc meets the floor. A quick press casts where you point.":
                             "Press to cast it, aimed by this hand. On the right trigger you can throw it to place it.";
+        case Kind::Pump:
+            return "Gesture: hold the grip and punch either fist up past your head to cast it, one hammer a punch. Pressing still casts it.";
+        case Kind::Punch:
+            return "Gesture: hold the grip on your weapon hand and punch it straight out at a monster to charge it. Pressing still casts it.";
         case Kind::Native:break;
     }
     return at.trigger?"Press the trigger to cast it, aimed by this hand.":"Press the button to cast it, aimed by this hand.";
@@ -144,6 +151,14 @@ inline std::string Details(int skill,int slot) {
             return at.right?"Gesture: press the trigger and the trap or bomb appears in your hand; throw it and let go, and it is cast where the arc meets the floor, "
                             "within the skill's reach. A quick press casts where you point; holding the trigger still casts natively.":
                             "Press to cast it natively, aimed by this hand. On the right trigger you can throw it by hand to place it where it lands.";
+        case Kind::Pump:
+            return "Gesture with either hand, from any slot: make a fist (hold the grip, trigger free) below your head and punch it straight up past "
+                   "your head. Each punch casts one hammer, with the skill's own mana and spiral; punching faster than your cast rate does nothing more. "
+                   "Bring the fist back down to punch again: a fist held up high never repeats. Pressing this slot still casts it natively.";
+        case Kind::Punch:
+            return "Gesture with the weapon hand, from any slot: make a fist (hold the grip, trigger free) drawn back near your body and punch it "
+                   "straight out, extending the arm. You charge the monster the hand points at, or the spot, with the skill's own mana and hit. "
+                   "Draw the fist back in to punch again. A monster already within weapon reach also takes the thrust. Pressing this slot still casts it natively.";
         case Kind::Native:break;
     }
     return std::string(at.trigger?"Press the trigger":"Press the button")+" to cast it natively, aimed by this hand: at the monster you point at, or where you point.";

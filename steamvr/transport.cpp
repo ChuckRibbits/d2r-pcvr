@@ -49,6 +49,8 @@
 #include "notice_card_art.h"
 #include "blood_screen.h"
 #include "shapeshift_gesture.h"
+#include "hammer_gesture.h"
+#include "charge_gesture.h"
 #include "guard_strain.h"
 #include "guard_strain_paint.h"
 #include "heartbeat.h"
@@ -497,6 +499,18 @@ weaponskills::Pulse shieldPulse;
 shapeshift::Engine shapeshiftGesture;
 weaponskills::Pulse shapePulse;
 int shapeSlot=-1,shapeId=-1,shapeOwner=-1;
+// [hammer] Paladin Blessed Hammer fist pump pulses whichever slot holds it.
+hammerpump::Engine hammerGesture;
+weaponskills::Pulse hammerPulse;
+int hammerSlot=-1,hammerOwner=-1;
+uint32_t hammerCasts=0;
+// [charge] Paladin Charge punch pulses whichever slot holds Charge.
+chargepunch::Engine chargeGesture;
+weaponskills::Pulse chargePulse;
+int chargeSlot=-1,chargeOwner=-1;
+uint32_t chargeCasts=0;
+// A Charge in flight (any cast path): no physical melee contacts until it ends.
+ULONGLONG chargeIssuedAt=0,chargeContactsHeldAt=0;
 // [bow] quiver: face-button arrow skills load the following physical arrows.
 std::atomic<bool> quiverEnabled{true},quiverPreview{true};
 weaponskills::Quiver quiver;
@@ -3167,6 +3181,113 @@ void Input() {
             else if(motionOutput.skill<0&&quickFresh&&quickSnapshot.skills[pulse].available)motionOutput.skill=pulse;
         }
     }
+    // Paladin Blessed Hammer fist pump: a fist (grip held, trigger free) punched
+    // up past the head casts one hammer through the slot Blessed Hammer is
+    // bound to; mana, cast rate and the hammer stay native. Only runs while
+    // the skill sits on a slot, so other classes never see it.
+    {
+        int slot=-1;
+        if(quickFresh)for(int i=0;i<skills::Count;++i)if(quickSnapshot.skills[i].known&&quickSnapshot.skills[i].id==weaponskills::BlessedHammer){slot=i;break;}
+        hammerpump::Input in;
+        in.time=interactionInput.time;in.session=interactionInput.session;in.epoch=interactionInput.epoch;
+        in.active=slot>=0&&motionInput.active&&!motionOutput.block&&!motionInput.quickCast&&
+            gestureSettings[settings::SkillGestures]>.5f&&!interactionOutput.wheel&&!interactionOutput.settings;
+        in.head=interactionInput.head.p;in.headRotation=interactionInput.head.q;
+        for(int h=0;h<2;++h) {
+            in.hand[h]=interactionInput.hand[h].p;in.tracked[h]=interactionInput.tracked[h];in.grip[h]=motionInput.grip[h];
+            in.handVelocity[h]=interactionInput.handVelocity[h];in.velocityKnown[h]=interactionInput.velocityKnown[h];
+            in.busy[h]=interactionOutput.bottleHand==h||interactionOutput.owner[h]!=interaction::Owner::Combat||
+                handInput.trigger[h]>.3f||(h==0&&motionOutput.bowDrawing)||bloodOutput.block[h];
+        }
+        const auto pump=hammerGesture.Step(in);
+        if(pump.dropped) {
+            char line[192];std::snprintf(line,sizeof line,"Frame hammer: %s fist pump dropped: %s (rose %.0f cm)",pump.droppedHand?"left":"right",pump.dropped,pump.travel*100);Say(line);
+        }
+        if(pump.cast>=0&&slot>=0) {
+            const char* hand=pump.cast?"left":"right";
+            char line[160];line[0]=0;
+            if(!quickSnapshot.skills[slot].available)std::snprintf(line,sizeof line,"Frame hammer: %s fist pump, skill unavailable on slot %d",hand,slot);
+            // Alternate-bank slots need the modifier prepared first: hold like Smite.
+            else if(hammerPulse.Start(slot,weaponskills::BlessedHammer,quickSnapshot.skills[slot].owner,motionInput.skillContext,motionInput.time,skills::Alternate(slot)?.180:.065)) {
+                hammerSlot=slot;hammerOwner=quickSnapshot.skills[slot].owner;
+                MotionPulse(pump.cast,haptics::Category::Spell,.5f,40000000);
+                // One line for the first cast, then a running count: pumps are
+                // spammed in combat, so no line per hammer.
+                if(++hammerCasts==1||hammerCasts%25==0)std::snprintf(line,sizeof line,"Frame hammer: %s fist pump cast via slot %d (%u since launch)",hand,slot,hammerCasts);
+            }
+            else std::snprintf(line,sizeof line,"Frame hammer: %s fist pump dropped: the previous press is still held",hand);
+            if(line[0])Say(line);
+        }
+        if(hammerSlot>=0) {
+            const int pulse=hammerPulse.Get(hammerSlot,weaponskills::BlessedHammer,hammerOwner,motionInput.skillContext,motionInput.time);
+            if(pulse<0)hammerSlot=hammerOwner=-1;
+            else if(motionOutput.skill<0&&quickFresh&&quickSnapshot.skills[pulse].available)motionOutput.skill=pulse;
+        }
+    }
+    // Paladin Charge punch: a weapon-hand fist (grip held, trigger free) drawn
+    // in and punched straight out, arm extended, casts Charge through the slot
+    // it is bound to; the aim rules hand it the monster that hand points at,
+    // and the rush, mana and hit stay native. Only runs while Charge sits on
+    // a slot. The weapon hand is the right (0) until left-handed play exists.
+    {
+        constexpr int weaponHand=0;
+        int slot=-1;
+        if(quickFresh)for(int i=0;i<skills::Count;++i)if(quickSnapshot.skills[i].known&&quickSnapshot.skills[i].id==weaponskills::Charge){slot=i;break;}
+        chargepunch::Input in;
+        in.time=interactionInput.time;in.session=interactionInput.session;in.epoch=interactionInput.epoch;
+        in.active=slot>=0&&motionInput.active&&!motionOutput.block&&!motionInput.quickCast&&
+            gestureSettings[settings::SkillGestures]>.5f&&!interactionOutput.wheel&&!interactionOutput.settings;
+        in.head=interactionInput.head.p;in.headRotation=interactionInput.head.q;
+        in.hand=interactionInput.hand[weaponHand].p;in.tracked=interactionInput.tracked[weaponHand];in.grip=motionInput.grip[weaponHand];
+        in.handVelocity=interactionInput.handVelocity[weaponHand];in.velocityKnown=interactionInput.velocityKnown[weaponHand];
+        in.armSpan=calibration::Stored(gestureSettings)?gestureSettings[settings::ArmSpan]:0;
+        in.busy=interactionOutput.bottleHand==weaponHand||interactionOutput.owner[weaponHand]!=interaction::Owner::Combat||
+            handInput.trigger[weaponHand]>.3f||motionOutput.bowDrawing||bloodOutput.block[weaponHand];
+        const auto punch=chargeGesture.Step(in);
+        if(punch.dropped) {
+            char line[192];std::snprintf(line,sizeof line,"Frame charge: punch dropped: %s (moved %.0f cm, out to %.0f cm, extended at %.0f cm)",
+                punch.dropped,punch.travel*100,punch.reach*100,chargeGesture.tuning.Extended(in.armSpan)*100);Say(line);
+        }
+        if(punch.cast&&slot>=0) {
+            char line[160];line[0]=0;
+            if(!quickSnapshot.skills[slot].available)std::snprintf(line,sizeof line,"Frame charge: punch, skill unavailable on slot %d",slot);
+            // Alternate-bank slots need the modifier prepared first: hold like Smite.
+            else if(chargePulse.Start(slot,weaponskills::Charge,quickSnapshot.skills[slot].owner,motionInput.skillContext,motionInput.time,skills::Alternate(slot)?.180:.065)) {
+                chargeSlot=slot;chargeOwner=quickSnapshot.skills[slot].owner;
+                MotionPulse(weaponHand,haptics::Category::Spell,.6f,50000000);
+                // The first cast, then a running count.
+                if(++chargeCasts==1||chargeCasts%25==0)std::snprintf(line,sizeof line,"Frame charge: punch cast via slot %d (%u since launch)",slot,chargeCasts);
+            }
+            else std::snprintf(line,sizeof line,"Frame charge: punch dropped: the previous press is still held");
+            if(line[0])Say(line);
+        }
+        if(chargeSlot>=0) {
+            const int pulse=chargePulse.Get(chargeSlot,weaponskills::Charge,chargeOwner,motionInput.skillContext,motionInput.time);
+            if(pulse<0)chargeSlot=chargeOwner=-1;
+            else if(motionOutput.skill<0&&quickFresh&&quickSnapshot.skills[pulse].available)motionOutput.skill=pulse;
+        }
+    }
+    // No physical melee contacts while a Charge is in flight (Cal's
+    // 2026-10-27 test: the punch that cast Charge landed a basic attack on a
+    // monster the rush passed 100 ms later, in the hero's sequence mode 18;
+    // the hero then stood in place unable to move until a waypoint). Charge's
+    // own hit lands natively at the end of the rush. Held from the press
+    // until the hero leaves mode 18, at most 4 s; 400 ms to enter it.
+    {
+        const auto isCharge=[&](int slot){return quickFresh&&slot>=0&&slot<skills::Count&&quickSnapshot.skills[slot].known&&quickSnapshot.skills[slot].id==weaponskills::Charge;};
+        if(isCharge(motionOutput.skill)||isCharge(handOutput.slot))chargeIssuedAt=motionAt;
+        const ULONGLONG since=chargeIssuedAt&&motionAt>=chargeIssuedAt?motionAt-chargeIssuedAt:~0ull;
+        const bool rushing=quickFresh&&quickSnapshot.actionKnown&&quickSnapshot.actionMode==18;
+        if(since<400||(rushing&&since<4000)) {
+            if(!chargeContactsHeldAt)chargeContactsHeldAt=motionAt;
+            motionOutput.meleeContact=false;
+        }
+        else if(chargeContactsHeldAt) {
+            char line[128];std::snprintf(line,sizeof line,"Frame charge: melee contacts held %llu ms during the charge%s",
+                (unsigned long long)(motionAt-chargeContactsHeldAt),since>=4000&&rushing?" (4 s cap reached)":"");Say(line);
+            chargeContactsHeldAt=0;chargeIssuedAt=0;
+        }
+    }
     if(motionOutput.nativeBowRelease&&motionInput.bowSkill==weaponskills::Strafe)volleyRequestedAt=motionAt;
     // Gesture skills on a trigger are labelled GESTURE on the hand wheel and
     // say how in the hand's cue, as Smite on a shield and arrow skills on a bow
@@ -3198,6 +3319,11 @@ void Input() {
     } else {
         std::snprintf(cue.name,sizeof cue.name,"Skill unavailable");std::snprintf(cue.hint,sizeof cue.hint,"Refresh assignments");
     }
+    // Paladin body gestures (fist pump, Charge punch) work from any slot.
+    const auto paladinGesture=[&](int id){
+        return gestureSettings[settings::SkillGestures]>.5f?id==weaponskills::BlessedHammer?"Punch up to cast":id==weaponskills::Charge?"Punch out to charge":nullptr:nullptr;
+    };
+    if(cue.available&&!cue.temporary)if(const char* how=paladinGesture(cue.id)){cue.gesture=true;std::snprintf(cue.hint,sizeof cue.hint,"%s",how);}
     if(quiverArrow.Active()&&!cue.temporary&&(motionInput.weapon==gameplay::Weapon::Bow||motionInput.weapon==gameplay::Weapon::Javelin)) {
         const bool javelin=motionInput.weapon==gameplay::Weapon::Javelin;
         const char* name=nullptr;
@@ -3226,6 +3352,7 @@ void Input() {
         ((weaponskills::Bow(leftSkill.id)&&motionInput.weapon==gameplay::Weapon::Bow)||(leftSkill.id==weaponskills::Smite&&motionInput.shieldEquipped)))||leftStrikes);
     std::snprintf(leftCue.hint,sizeof leftCue.hint,"%s",leftCue.gesture?(leftStrikes?"Swing to strike":weaponskills::Hint(leftSkill.id,
         motionInput.weapon==gameplay::Weapon::Bow,motionInput.shieldEquipped)):leftCue.temporary?"Left hand shortcut":"Left hand: point & trigger");
+    if(leftCue.available&&!leftCue.temporary)if(const char* how=paladinGesture(leftCue.id)){leftCue.gesture=true;std::snprintf(leftCue.hint,sizeof leftCue.hint,"%s",how);}
     leftCue.expanded=leftCue.temporary;
     leftCue.busy=shieldCast.issued&&!shieldCast.cancelled;
     if(leftThrowArmed&&!leftCue.temporary) {
