@@ -424,7 +424,7 @@ animation. So far:
   stacks build per landed cast), **Rabies**, **Fire Claws** and **Hunger**;
 - the Barbarian's **Bash**, **Stun**, **Concentrate** and **Berserk**;
 - the Paladin's **Sacrifice**, **Vengeance** and **Conversion**, and **Zeal**
-  as a swing flurry (below);
+  as its native sequence (below);
 - the Amazon's **Power Strike**, **Impale**, **Charged Strike** and
   **Lightning Strike**;
 - the Necromancer's **Poison Dagger**.
@@ -446,27 +446,15 @@ paced strike in Classic) plays the form's growl as the native attack would
 (85% / 80% of the time), and Rabies and Hunger their bite. Holding the trigger still casts the
 skill natively. **Weapon skill gestures** Off keeps strikes basic.
 
-**Fury: a swipe flurry.** Werewolf **Fury** is one cast of up to five hits
-(two at skill level 1), and you deliver them. The swipe that casts it
-(the rule above) pays its mana and lands hit 1; in Unleashed each of the
-next swipes that lands, from a claw carrying Fury, lands the next hit on
-whatever it struck, with Fury's own damage and on-hit effects and no further
-mana, however fast you swing. No swipe is lost; only one swipe's
-follow-through can't take a second hit. Once the hits are spent, the next
-full-cycle swipe casts Fury again. In Classic each follow-up waits 70% of an
-attack cycle after the previous Fury hit (Fury's own pace); a swipe before
-that is a basic attack and doesn't delay it. As natively, the hits spread
-across a pack: a later swipe through several creatures lands Fury on the
-first two it touches (the casting swipe on one); the rest of a cleave stays
-basic. The unused hits lapse after two attack cycles
-without one, or when the form changes or another skill is cast. Only the
-casting swipe growls.
-
-**Zeal: a swing flurry.** The Paladin's **Zeal** works the same way with a
-weapon: the full-cycle swing that casts it pays its mana and lands hit 1 of
-up to five, and each later swing that lands delivers the next hit, with no
-further mana. In Classic each follow-up waits a whole attack cycle (Zeal's
-own pace).
+**Fury and Zeal: one swing, all the hits.** The full-cycle swing that lands
+with werewolf **Fury** or the Paladin's **Zeal** (the rule above) casts it on
+the monster you hit: its mana once and hit 1. The rest of its hits (two to five
+in all) then land by themselves at the skill's native speed (Fury about 4/9
+of your attack cycle apart, Zeal half a cycle), each on the nearest other monster within
+reach, as natively; you don't act them out, and you keep moving freely. If no
+monster is left in reach, the remaining hits are lost. Swings while it runs,
+and quicker swings, stay basic attacks; the next full-cycle swing once it ends
+casts again. Only the casting swing gives the impact pulse.
 
 Turning gestures off or changing equipment/assignments cancels an in-progress
 skill draw. Shield contact and its trigger fallback cannot duplicate a cast.
