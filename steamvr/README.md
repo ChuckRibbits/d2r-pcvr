@@ -709,6 +709,26 @@ unit. The native effect places it 3 units up (waist height in VR) by one local
 point; 0 is the floor and 3 keeps it native. Other overlays and every other
 particle position stay native.
 
+`[render] bone_armor_graft=1` (default) grafts your own Bone Armor onto both
+forearms: three of the game's own bones (cached by the installer from
+`bonearmor_lod0.model`) lie along the back of each forearm, placed from the
+controller's current pose with the drawn arm's shape, and your floor orbit is
+hidden. One piece comes off each arm, thrown out and falling, each time the
+absorb pool falls below a third, as the native orbit loses a layer; a recast
+puts them back. Each piece runs from wrist to elbow; the left arm mirrors the
+right, so both carry the same bones in the same places. Tune by eye:
+`bone_armor_graft_size` (x the forearm's length, default 1),
+`bone_armor_graft_width` (thickness x the length, 0.5), `bone_armor_graft_out`
+(metres from the arm's axis, 0.05), `bone_armor_graft_spread` (degrees between
+pieces, 40) and `bone_armor_graft_along` (where a piece's middle sits, 0 the
+wrist .. 1 the elbow, 0.5). 0 keeps the floor
+orbit. Other units' Bone Armor is unchanged. The pieces sit on the back of the
+forearm; drawn over the game, they hide behind their own forearm (a capsule from
+wrist to elbow, 0.8 x `bone_armor_graft_out` thick) as the arm turns. With the
+grafts on, your own spinning orbit is never shown, in any view or menu: it goes
+under the floor by its centre. Third person and overhead views therefore show no
+Bone Armor on you at all.
+
 `[render] symmetric_projection=1` is the default lighting compatibility
 setting. D2R's native light-bin shader assumes a centered projection;
 the headset can recommend offset frusta. This mode renders a centered FOV that

@@ -983,6 +983,12 @@ void LoadSettings() {
     // guard_strain_recover_ms (1500), at the guard_strain_reset_ms rate (1500): clear 3 s after the
     // last hit from full. 0 = only lowering clears it.
     framevr::ConfigureGuardStrainRecover(IniF(L"gameplay",L"guard_strain_recover_ms",1500)/1000.f);
+    // Bone Armor grafted onto both forearms (steamvr/bone_graft.h); missing keys: the defaults.
+    // On, the hero's own spinning orbit is never shown (any view, menus too).
+    billboards::ConfigureBoneArmorHidden(IniB(L"render",L"bone_armor_graft",true));
+    framevr::ConfigureBoneGraft(IniB(L"render",L"bone_armor_graft",true),IniF(L"render",L"bone_armor_graft_size",1.f),
+        IniF(L"render",L"bone_armor_graft_out",.05f),IniF(L"render",L"bone_armor_graft_spread",40.f),IniF(L"render",L"bone_armor_graft_along",.5f),
+        IniF(L"render",L"bone_armor_graft_width",.5f));
     {   // Low-life heartbeat (start: VR Settings > Combat, [gameplay] low_life_heart_start): % on top of
         // the game's Master x Combat volume (0 = off), tempo range, wind-down time from full, and
         // an optional one-beat 16-bit PCM WAV (next to this ini unless a full path). The old
@@ -2598,6 +2604,7 @@ bool VrViewInner(const d2rcam::WorldView& in, float out[16]) {
     memcpy(g_lookAt, in.lookAt, sizeof g_lookAt);
     g_lookOk = in.lookAtValid;
     ReleaseSRWLockExclusive(&g_lookLock);
+    if (in.lookAtValid) billboards::SetHero(in.lookAt);   // whose Bone Armor is the hero's, menus included
     // The menus (the character screen's 3D scene too: it has a hero point) keep the game's camera.
     if (!g_inWorld.load()) return false;
 #ifdef D2RVR_NATIVE_OPENXR
