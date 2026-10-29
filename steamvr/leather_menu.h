@@ -20,7 +20,9 @@ constexpr int Hand=1;   // the left hand (index 1 in every hand array)
 // (stash, merchants, trade, gambling, imbue, hiring, waypoints, NPC talk)
 // keep the room panel, even with a cube or inventory beside them.
 inline bool SheetPanel(std::string_view name) {
-    return name=="UISwitcher"||name.starts_with("HoradricCube");
+    // Advanced Stats (opened by Start, stats_button.h): kept on the leather should the
+    // game close UISwitcher for it, as it does for the cube.
+    return name=="UISwitcher"||name.starts_with("HoradricCube")||name.starts_with("AdvancedStats");
 }
 inline bool RoomPanel(std::string_view name) {
     for(auto key:{"Vendor","Trade","Gamble","Bank","Stash","Waypoint","Imbue","HireMenu","ScrollSpeech","ScrollOfInifuss"})
@@ -126,6 +128,22 @@ inline void Premultiply(std::vector<uint8_t>& rgba) {
     }
 }
 
+// [interactions] leather_menu (VR Settings > Interface, beside Menu distance):
+// 0 Off, the tabbed menu in front of you against black; 1 On, on the hide in the
+// left hand; 2 Menu only, the same menu held in the left hand with no hide
+// (owner 2026-10-29: "in case players dont like the hide"). A value that is
+// not one of these reads On.
+enum class Style:int {Off=0,Hide=1,MenuOnly=2};
+inline Style NormalizeStyle(float value) {
+    if(!std::isfinite(value)||value!=std::round(value)||value<0||value>2)return Style::Hide;
+    return Style(int(value));
+}
+// The menu's art inside its 16:9 band, across: x 384-2688 of 3072 (Cal's captures,
+// 2026-10-28/29, the tabbed menu and the cube alike), so 12.5% of the band's
+// width is see-through on each side. With Menu only the fist holds the art's left
+// edge, not the band's (owner: "Make sure the menu left edge is held in the hand").
+constexpr float MenuArtInset=384.f/3072;
+
 // [interactions] leather_menu_width: the menu across, in metres; the leather
 // is sized round it (the hide comes out about 0.83 m for the default).
 constexpr float DefaultMenuWidth=.57f,MinMenuWidth=.30f,MaxMenuWidth=.90f;
@@ -169,17 +187,20 @@ inline Rect Band(int width,int height) {
 // fist's top, its up along the fist), turned back by `tilt` degrees. The fist
 // holds the leather at the middle of the menu's left edge, Gap short of it, so
 // whatever leather is beyond (the hide's neck and legs) reaches past the hand.
-// The menu sits Lift in front of the leather.
+// The menu sits Lift in front of the leather. `inset` (metres): how far inside
+// the band's left edge the edge held is (Menu only: the art's, MenuArtInset of
+// the width; 0 with the hide).
 struct Placement {math::Vec p{};math::Quat q{0,0,0,1};};
 struct Strapped {Placement sheet{},menu{};};
 constexpr float Gap=.01f,Raise=.025f,Lift=.003f;
 inline math::Quat AboutX(float radians){return {std::sin(radians*.5f),0,0,std::cos(radians*.5f)};}
-inline Strapped Strap(math::Vec hand,math::Quat grip,const Art& art,float menuWidth,float tilt) {
+inline Strapped Strap(math::Vec hand,math::Quat grip,const Art& art,float menuWidth,float tilt,float inset=0) {
     const auto size=Measure(art,menuWidth);
     const float back=NormalizeTilt(tilt)*3.14159265f/180;
     Strapped out;
     out.sheet.q=out.menu.q=math::Multiply(grip,AboutX(-1.57079633f+back));
-    const auto centre=hand+math::Rotate(out.sheet.q,{size.menuWidth*.5f+Gap,0,Raise});
+    inset=std::isfinite(inset)?std::clamp(inset,0.f,size.menuWidth*.5f):0;
+    const auto centre=hand+math::Rotate(out.sheet.q,{size.menuWidth*.5f-inset+Gap,0,Raise});
     out.sheet.p=centre-math::Rotate(out.sheet.q,size.menuCentre);
     out.menu.p=centre+math::Rotate(out.menu.q,{0,0,Lift});
     return out;
@@ -193,12 +214,12 @@ public:
     void Open(){placed=false;pose={};}
     bool Placed() const{return placed;}
     Strapped Get() const{return pose;}
-    void Step(math::Vec hand,math::Quat grip,bool tracked,const Art& art,float menuWidth,float tilt) {
+    void Step(math::Vec hand,math::Quat grip,bool tracked,const Art& art,float menuWidth,float tilt,float inset=0) {
         const bool finite=std::isfinite(hand.x)&&std::isfinite(hand.y)&&std::isfinite(hand.z)&&
             std::isfinite(grip.x)&&std::isfinite(grip.y)&&std::isfinite(grip.z)&&std::isfinite(grip.w);
         const float length=finite?std::sqrt(grip.x*grip.x+grip.y*grip.y+grip.z*grip.z+grip.w*grip.w):0;
         if(!tracked||length<.5f)return;
-        pose=Strap(hand,{grip.x/length,grip.y/length,grip.z/length,grip.w/length},art,menuWidth,tilt);placed=true;
+        pose=Strap(hand,{grip.x/length,grip.y/length,grip.z/length,grip.w/length},art,menuWidth,tilt,inset);placed=true;
     }
 };
 
