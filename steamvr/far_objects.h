@@ -1,5 +1,5 @@
 #pragma once
-// Big objects drawn farther ([render] big_radius; VR Settings > Perf, beside Object draw distance).
+// Big objects drawn farther ([render] big_radius; VR Settings > Performance > Big objects, under Scenery distance).
 // The game puts every model - houses, props, units - on standby, undrawn, once its box is farther
 // from the hero across the ground than the object draw distance (the AssetStandbySystem's test,
 // cleanroom/drawdist). On the horizon a tree or a house still stands out where a stone or a tuft of
@@ -20,11 +20,12 @@ inline float Normalize(float value) {
     if (!std::isfinite(value) || value <= 0) return Off;
     return std::clamp(std::round(value / Step) * Step, Min, Max);
 }
-// A stepper's click from value: Off and 300 are neighbours
+// A stepper's click from value, delta steps (a drag moves several): Off and 300 are neighbours
 inline float StepFrom(float value, int delta) {
     value = Normalize(value);
-    if (delta > 0) return value < Min ? Min : Normalize(value + Step);
-    return value <= Min ? Off : Normalize(value - Step);
+    const float next = value + float(delta) * Step;
+    if (delta > 0) return Normalize(std::max(next, Min));
+    return next < Min ? Off : Normalize(next);
 }
 
 // A model's box as the game keeps it: min x y z w, then max x y z w; y is up.

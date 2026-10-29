@@ -13,7 +13,7 @@ int main() {
     for(int i=0;i<4;++i)for(int j=i+1;j<4;++j)assert(Apart(statics[i],statics[j]));
     for(int i=0;i<5;++i)for(int j=i+1;j<5;++j)assert(Apart(shared[i],shared[j]));
     // The sizes the panels paint at, and the regions the transport's quads read.
-    assert(Settings.w==1744&&Settings.h==1024&&Blood.w==1024&&Strain.w==256&&Notice.w==512&&Notice.h==112&&BowLaser.w==64&&BowLaser.h==160);
+    assert(Settings.w==1280&&Settings.h==1024&&Blood.w==1024&&Strain.w==256&&Notice.w==512&&Notice.h==112&&BowLaser.w==64&&BowLaser.h==160);
     assert(Pointer.w==64&&Pointer.h==96&&Compass.w==1536&&Compass.h==112);
     // The leather region holds the largest art the cache may carry, and the stand-in.
     assert(Leather.w==framevr::leather::MaxArtWidth&&Leather.h==framevr::leather::MaxArtHeight);

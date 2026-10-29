@@ -78,6 +78,7 @@ int main(){
     // The setting: Off, 300 ... 1000 in steps of 100; Off and 300 are neighbours
     Check(Normalize(0)==0&&Normalize(-5)==0&&Normalize(NAN)==0&&Normalize(250)==300&&Normalize(550)==600&&Normalize(1234)==1000,"the setting normalized");
     Check(StepFrom(0,1)==300&&StepFrom(300,-1)==0&&StepFrom(300,1)==400&&StepFrom(400,-1)==300&&StepFrom(1000,1)==1000&&StepFrom(0,-1)==0,"the stepper: Off, 300 ... 1000");
+    Check(StepFrom(0,3)==300&&StepFrom(0,4)==400&&StepFrom(600,-3)==300&&StepFrom(600,-4)==0&&StepFrom(300,9)==1000&&StepFrom(1000,-10)==0,"a drag: n steps at once, below 300 Off");
 
     // The hooked test at its site, unhooked (3.3.93787, also 3.3.94995)
     static const uint8_t window[32]={0x0f,0x10,0x49,0x10,0x0f,0x57,0xc0,0x0f,0x10,0x21,0x0f,0x28,0xea,0x0f,0x10,0x12,
