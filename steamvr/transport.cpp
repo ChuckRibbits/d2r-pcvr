@@ -64,6 +64,8 @@
 #include "interaction_icons.h"
 #include "potion_models.h"
 #include "dropped_bottles.h"
+#include "limb_board.h"
+#include "limb_physics.h"
 #include "../vr/wall_cells.h"
 #include "../vr/prop_scan.h"
 #include "elemental_hands_renderer.h"
@@ -716,6 +718,14 @@ struct BottleWeaponPose {melee::Blade blade{};ULONGLONG at=0;bool valid=false;};
 std::mutex bottleWeaponMutex;
 std::array<BottleWeaponPose,bottles::Colliders> bottleWeapons{};
 ULONGLONG bottleStruckAt[2]{};
+// Monsters and townsfolk near the player: powered ragdolls in their own
+// physics world, made when a weapon nears them ([interactions] body_physics).
+std::unique_ptr<limbs::World> bodyWorld;
+std::atomic<bool> bodyPhysics{true};
+uint64_t bodySession=0;
+ULONGLONG bodyReportAt=0,bodyToldAt=0;
+unsigned bodyPushes=0,bodyMost=0,bodyStrikes=0,bodySlips=0;
+std::atomic<ULONGLONG> bodyStrikeAt[2]{};   // a weapon's contact the game counted as a hit (MeleeImpact)
 elements::Renderer elementalRenderer;
 elements::State elementalState;
 elements::Scene elementalScene;
@@ -940,6 +950,7 @@ void ClearInput() {
     ++meleeEpoch;motion.Cancel();motionOutput={};motionAt=0;gamecmd::CancelPotion();
     interactions.Reset();interactionOutput={};interactionstate::Cancel();skel::SetInteractionHidden(0);
     potionScene={};if(droppedBottles)droppedBottles->Reset();
+    if(bodyWorld)bodyWorld->Reset();   // the hook eases the bodies' last answers out
     elementalState.Reset();elementalScene={};
     journalPlacement.LoseTracking();
     meleePoses.Clear();offhandPoses.Clear();CancelShieldCast();
@@ -2128,6 +2139,27 @@ bottles::Prop Metres(const props::Seen& s,float upm) {
     p.unitsPerMetre=upm;
     return p;
 }
+// The weapons, shield and fists that push things, posed this frame (world metres).
+std::array<bottles::Collider,bottles::Colliders> HeldColliders() {
+    const auto& in=interactionInput;const auto& out=interactionOutput;
+    std::array<bottles::Collider,bottles::Colliders> weapons{};
+    {
+        std::lock_guard lock(bottleWeaponMutex);const auto now=GetTickCount64();
+        for(int i=0;i<bottles::Colliders;++i) {
+            const auto& w=bottleWeapons[i];
+            if(w.valid&&now>=w.at&&now-w.at<=100)weapons[i]={true,w.blade.base,w.blade.tip,w.blade.radius};
+        }
+    }
+    // A hand without a weapon capsule (empty, or the off hand without dual
+    // wielding or a shield) still pushes, as a fist at the controller.
+    for(int h=0;h<2&&motionControls.load();++h) {
+        if(weapons[size_t(h)].active||!in.tracked[h]||out.bottleHand==h)continue;
+        const auto p=in.stage.World(in.hand[h].p);
+        const auto forward=math::Rotate(in.stage.base,math::Rotate(in.hand[h].q,{0,0,-1}));
+        weapons[size_t(h)]={true,p-forward*.03f,p+forward*.08f,.045f};
+    }
+    return weapons;
+}
 void StepDroppedBottles() {
     const auto& in=interactionInput;const auto& out=interactionOutput;
     const bool bottlesOn=bottlePhysics.load(),propsOn=propPhysics.load();
@@ -2193,23 +2225,7 @@ void StepDroppedBottles() {
     bottles::Patch patch;
     if(droppedBottles&&wallcells::Latest(patch))droppedBottles->Walls(patch);
     if(!droppedBottles||droppedBottles->Idle()||!in.stage.known)return; // menus and loading hold them still
-    std::array<bottles::Collider,bottles::Colliders> weapons{};
-    {
-        std::lock_guard lock(bottleWeaponMutex);const auto now=GetTickCount64();
-        for(int i=0;i<bottles::Colliders;++i) {
-            const auto& w=bottleWeapons[i];
-            if(w.valid&&now>=w.at&&now-w.at<=100)weapons[i]={true,w.blade.base,w.blade.tip,w.blade.radius};
-        }
-    }
-    // A hand without a weapon capsule (empty, or the off hand without dual
-    // wielding or a shield) still pushes, as a fist at the controller.
-    for(int h=0;h<2&&motionControls.load();++h) {
-        if(weapons[size_t(h)].active||!in.tracked[h]||out.bottleHand==h)continue;
-        const auto p=in.stage.World(in.hand[h].p);
-        const auto forward=math::Rotate(in.stage.base,math::Rotate(in.hand[h].q,{0,0,-1}));
-        weapons[size_t(h)]={true,p-forward*.03f,p+forward*.08f,.045f};
-    }
-    droppedBottles->Weapons(weapons);
+    droppedBottles->Weapons(HeldColliders());
     droppedBottles->Advance(in.time,in.stage.anchor);
     // Draw a thrown potion where this frame's steps left it.
     if(interactionOutput.flying&&interactionOutput.flightId&&droppedBottles->Tossed(thrown)&&thrown.id==interactionOutput.flightId&&!thrown.landed)
@@ -2262,6 +2278,72 @@ void StepDroppedBottles() {
     if(struck||chained)propscan::CountKnocks(struck,chained);
     bottles::WallRequest want;
     if(droppedBottles->WallsWanted(want))wallcells::Want(want,in.at);
+}
+// Bodies that give way (limb_physics.h): the skeleton hook posts the
+// monsters and townsfolk within reach as posed; a weapon nearing one makes
+// it a ragdoll held to its animation by springs, and the hook bends its pose
+// by the answer posted back here. Drawn only.
+void ReportBodies(ULONGLONG now) {
+    if(bodyReportAt&&now>=bodyReportAt&&now-bodyReportAt<10000)return;
+    bodyReportAt=now;
+    auto& board=limbs::Shared();
+    const unsigned posed=board.posed.exchange(0),bent=board.bent.exchange(0),refused=board.refused.exchange(0),learned=board.learned.exchange(0);
+    const unsigned kept=board.kept.exchange(0),restored=board.restored.exchange(0);
+    const unsigned pushes=std::exchange(bodyPushes,0u),most=std::exchange(bodyMost,0u),strikes=std::exchange(bodyStrikes,0u),slips=std::exchange(bodySlips,0u);
+    if(!posed&&!bent&&!pushes&&!learned)return;
+    char line[400];std::snprintf(line,sizeof line,"Frame bodies: ten seconds: poses posted=%u bent=%u refused=%u models learned=%u, not posed again by the game=%u, put back=%u; ragdolls most=%u now=%u, lifeless now=%u; pushes=%u hits=%u slipped through=%u",
+        posed,bent,refused,learned,kept,restored,most,bodyWorld?bodyWorld->Simulated():0u,bodyWorld?bodyWorld->Lifeless():0u,pushes,strikes,slips);
+    Say(line);
+}
+void StepBodies() {
+    const auto& in=interactionInput;
+    const bool on=BodyPhysics();
+    const auto now=GetTickCount64();
+    // [bodies] (limb_tuning.h): live from the INI and DEV > Bodies.
+    const auto tuning=limbs::Tuned().Get();
+    limbs::Shared().Fade(uint64_t(tuning[limbs::EaseBack]));
+    if(!on||!in.session||in.session!=bodySession) {
+        if(bodyWorld)bodyWorld->Reset();
+        limbs::Shared().React(nullptr,0,now);
+        bodySession=in.session;
+    }
+    if(!on||!in.stage.known){limbs::Shared().React(nullptr,0,now);return;}   // menus and loading: back to the game's poses
+    std::array<limbs::Rig,limbs::MaxPosed> posed;
+    const unsigned n=limbs::Shared().Posed(posed.data(),unsigned(posed.size()),now);
+    if(!n&&(!bodyWorld||!bodyWorld->Simulated())){limbs::Shared().React(nullptr,0,now);ReportBodies(now);return;}
+    if(!bodyWorld)bodyWorld=std::make_unique<limbs::World>();
+    if(!bodyWorld->Ready())return;
+    bodyWorld->Tune(tuning);
+    bodyWorld->Bodies(posed.data(),n,in.time);
+    std::array<limbs::Weapon,limbs::Weapons> hands{};
+    const auto held=HeldColliders();
+    for(int i=0;i<limbs::Weapons;++i)hands[size_t(i)]={held[size_t(i)].active,held[size_t(i)].base,held[size_t(i)].tip,held[size_t(i)].radius};
+    bodyWorld->Hands(hands);
+    bodyWorld->Advance(in.time,in.stage.anchor);
+    // A contact the game counted as a hit: an impulse on the struck limb.
+    for(int hand=0;hand<2;++hand)
+        if(const auto at=bodyStrikeAt[hand].exchange(0);at&&now>=at&&now-at<150&&bodyWorld->Strike(hand))++bodyStrikes;
+    bodySlips+=bodyWorld->Slips();
+    bodyMost=std::max(bodyMost,bodyWorld->Simulated());
+    std::array<limbs::Reaction,limbs::MaxBodies> answers;
+    limbs::Shared().React(answers.data(),bodyWorld->Reactions(answers,now),now);
+    // A light tick in the hand that pushed a body; the first push a second is logged.
+    std::array<limbs::Touch,limbs::MaxTouches> touches;
+    for(unsigned i=0,count=bodyWorld->Touches(touches);i<count;++i) {
+        const auto& t=touches[i];const int hand=t.slot?1:0;
+        ++bodyPushes;
+        if(t.speed>1&&now-bottleStruckAt[hand]>=80) {
+            bottleStruckAt[hand]=now;
+            MotionPulse(hand,haptics::Category::Melee,std::clamp(.12f+t.speed*.02f,.12f,.35f),15000000);
+        }
+        if(now-bodyToldAt>=1000) {
+            bodyToldAt=now;
+            static const char* const by[]{"right hand","left hand","shield"};
+            char line[160];std::snprintf(line,sizeof line,"Frame bodies: pushed a %s (%s, %.1f m/s)",limbs::Name(t.kind),by[t.slot%3],t.speed);
+            Say(line);
+        }
+    }
+    ReportBodies(now);
 }
 void Input() {
     gazeValid=false;
@@ -2561,6 +2643,7 @@ void Input() {
         Say(movementWalks?"Frame movement: game toggle on run, walking wanted - run / walk toggled":"Frame movement: game toggle on walk, running wanted - run / walk toggled");
     }
     StepDroppedBottles();
+    StepBodies();
     // Quest / level-up notices: queue a card per message, paint the current one.
     {
         const auto now=GetTickCount64();
@@ -4853,6 +4936,8 @@ void ConfigureInteractions(bool seated,float waist,float forward,int dominant) {
 }
 void ConfigureBottlePhysics(bool on){bottlePhysics=on;}
 void ConfigurePropPhysics(bool on){propPhysics=on;propscan::Configure(on);}
+void ConfigureBodyPhysics(bool on){bodyPhysics=on;}
+bool BodyPhysics(){return bodyPhysics.load()&&motionControls.load();}
 void BottleWeapon(int slot,const melee::Blade* blade) {
     if(slot<0||slot>=bottles::Colliders)return;
     std::lock_guard lock(bottleWeaponMutex);
@@ -5033,7 +5118,7 @@ void FinishShieldSkill(bool accepted) {
     shieldFeedbackAt=GetTickCount64();shieldRefused=!accepted;
     if(accepted)shieldImpactAt=shieldFeedbackAt;
 }
-void MeleeImpact(int hand) {if(hand>=0&&hand<2)meleeImpactAt[hand]=GetTickCount64();}
+void MeleeImpact(int hand) {if(hand>=0&&hand<2)meleeImpactAt[hand]=bodyStrikeAt[hand]=GetTickCount64();}
 void ShieldGuardImpact(bool parry,float weight) {
     shieldImpactAt=GetTickCount64();
     if(parry){guardParryEvents.fetch_add(1);return;}

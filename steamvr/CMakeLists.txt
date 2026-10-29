@@ -68,7 +68,7 @@ target_sources(d2rl-pcvr PRIVATE ${ROOT}/vr/roof_materials.cpp)
 target_sources(d2rl-pcvr PRIVATE ${ROOT}/vr/panel_input.cpp)
 target_sources(d2rl-pcvr PRIVATE interaction_assets.rc interaction_icons.cpp ui_blit.cpp turn_warp.cpp ui_world.cpp)
 target_sources(d2rl-pcvr PRIVATE potion_models.cpp)
-target_sources(d2rl-pcvr PRIVATE dropped_bottles.cpp ${ROOT}/vr/wall_cells.cpp ${ROOT}/vr/prop_scan.cpp)
+target_sources(d2rl-pcvr PRIVATE dropped_bottles.cpp limb_physics.cpp ${ROOT}/vr/wall_cells.cpp ${ROOT}/vr/prop_scan.cpp)
 target_link_libraries(d2rl-pcvr PRIVATE box3d)
 target_sources(d2rl-pcvr PRIVATE elemental_hands_renderer.cpp)
 target_sources(d2rl-pcvr PRIVATE ${ROOT}/vr/settings_menu.cpp ${CMAKE_CURRENT_SOURCE_DIR}/vr_settings_ui.cpp ${ROOT}/vr/native_ui.cpp ${CMAKE_CURRENT_SOURCE_DIR}/interaction_ui.cpp ${ROOT}/vr/interactionstate.cpp ${ROOT}/vr/bow.cpp ${ROOT}/vr/projectiles.cpp ${ROOT}/vr/combat.cpp ${ROOT}/vr/melee.cpp ${CMAKE_CURRENT_SOURCE_DIR}/transport.cpp ${CMAKE_CURRENT_SOURCE_DIR}/foveation.cpp ${CMAKE_CURRENT_SOURCE_DIR}/effects_layer.cpp ${CMAKE_CURRENT_SOURCE_DIR}/logging.cpp ${CMAKE_CURRENT_SOURCE_DIR}/profile.cpp)
@@ -247,6 +247,9 @@ add_executable(dropped-bottles-test dropped_bottles_test.cpp dropped_bottles.cpp
 target_link_libraries(dropped-bottles-test PRIVATE box3d framevr-runtime)
 add_executable(props-test props_test.cpp)
 target_link_libraries(props-test PRIVATE framevr-runtime)
+add_executable(limb-rig-test limb_rig_test.cpp)
+add_executable(limb-physics-test limb_physics_test.cpp limb_physics.cpp)
+target_link_libraries(limb-physics-test PRIVATE box3d)
 add_executable(potion-models-test potion_models_test.cpp potion_models.cpp)
 target_link_libraries(potion-models-test PRIVATE d3d12 dxgi framevr-runtime)
 add_executable(ui-blit-test ui_blit_test.cpp ui_blit.cpp)
@@ -331,7 +334,7 @@ add_test(NAME light-bounds-test COMMAND light-bounds-test)
 set_tests_properties(light-bounds-test PROPERTIES TIMEOUT 30)
 foreach(test_target IN ITEMS memory-test hook-metrics-test active-keys-test resource-descriptions-test latest-worker-test haptic-pulse-test thread-stats-test
     gameplay-test weapon-skills-test quick-cast-test hand-controls-test elemental-hands-test skill-pad-test interact-press-test sewer-interaction-test notice-card-test mod-layout-test spell-aim-test bow-pose-test crossbow-pose-test body-tracking-test shapeshift-form-test shield-steady-test body-calibration-test shoulder-swap-test blood-screen-test
-    portal-billboard-test shrine-trace-test shrine-placement-test overlay-view-test bone-armor-height-test composition-layers-test projectile-rules-test environment-cutaway-test roof-materials-test stereo-prop-physics-test dropped-bottles-test props-test
+    portal-billboard-test shrine-trace-test shrine-placement-test overlay-view-test bone-armor-height-test composition-layers-test projectile-rules-test environment-cutaway-test roof-materials-test stereo-prop-physics-test dropped-bottles-test props-test limb-rig-test limb-physics-test
     combat-rules-test strike-skills-test skill-usage-test shield-guard-test shapeshift-gesture-test guard-strain-test heartbeat-test run-speed-test logging-test melee-contact-test melee-weapon-test breakables-test offline-difficulty-test enemy-sight-test attack-speed-test world-coordinates-test bow-flight-test bow-laser-test spell-cast-test spell-aim-assist-test
     interaction-test dev-scenarios-test native-belt-test wrist-hud-test map-zoom-test navigation-info-test companions-test active-effects-test dropped-item-labels-test stick-gestures-test show-items-command-test native-hud-test render-resolution-test render-pointer-test scene-depth-test game-device-only-test controller-bindings-test journal-test native-panels-test
     vr-settings-test vr-settings-store-test controller-labels-test math-test deferred-draw-test monster-bars-test telegraph-test aim-reach-test aim-rules-test target-cone-test gaze-test window-focus-test callback-ticket-test local-player-test shield-block-test trigger-melee-test companion-ai-test torch-light-test frame-generation-test turn-capture-test panel-atlas-test)
