@@ -1,5 +1,6 @@
 #pragma once
 #include <array>
+#include "far_objects.h"
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
@@ -19,7 +20,7 @@ namespace framevr::settings {
 enum class Page { Controls, VR, Video, HUD, Combat, Aim, Shield, Haptics, Performance, ReleaseNotes };
 enum Key { Motion, Seated, Dominant, Snap, TurnSpeed, Waist, BeltForward,
            Foveation, Sky, Fog, Ceiling, DrawDistance, ObjectDistance,
-           EyeHeight, ArmSpan, BodyCalibration, SkillGestures, WristMap, WristCompass, ControllerLabels, WeaponSkillIndicators, PlanarSpellAim, VitalsLocation, CriticalAlerts, RenderResolution, NavigationLocation, SmoothTurn, OrdinaryMobBars, MenuDistance, TooltipTiming, ProjectileAimAssist, MeleeHitSpeed, VitalsTilt, HapticStrength, HapticMelee, HapticBowDraw, HapticBowRelease, HapticSpell, HapticInteraction, HapticAlert, HapticShortMelee, BloodVisor, BloodWipe, MeleeThrustSpeed, LootLabelSize, CompanionCounts, StrainVignette, OfflinePlayers, ShieldBashSpeed, DesktopOneEye, MapTopDown, MapRotate, FoveationStrength, StereoRendering, DeferGpuWait, TargetHighlight, HeartbeatStart, SpellLock, StaffPoint, LandingCircles, GroundAim, AimHighlights, HighlightRight, HighlightLeft, ElementalHands, EnemySight, BowLaser, ThrowLift, BottlePhysics, PropPhysics, CompanionAi, ShieldGrip, ShieldOut, ShieldUp, ShieldFollow, ShieldRoll, AimFollowsView, LeftHandStrikes, TorchFlame, FrameGeneration, FrameGenPreset, FrameGenScale, RunSpeed, RunWalkToggle, BodyPhysics, Count };
+           EyeHeight, ArmSpan, BodyCalibration, SkillGestures, WristMap, WristCompass, ControllerLabels, WeaponSkillIndicators, PlanarSpellAim, VitalsLocation, CriticalAlerts, RenderResolution, NavigationLocation, SmoothTurn, OrdinaryMobBars, MenuDistance, TooltipTiming, ProjectileAimAssist, MeleeHitSpeed, VitalsTilt, HapticStrength, HapticMelee, HapticBowDraw, HapticBowRelease, HapticSpell, HapticInteraction, HapticAlert, HapticShortMelee, BloodVisor, BloodWipe, MeleeThrustSpeed, LootLabelSize, CompanionCounts, StrainVignette, OfflinePlayers, ShieldBashSpeed, DesktopOneEye, MapTopDown, MapRotate, FoveationStrength, StereoRendering, DeferGpuWait, TargetHighlight, HeartbeatStart, SpellLock, StaffPoint, LandingCircles, GroundAim, AimHighlights, HighlightRight, HighlightLeft, ElementalHands, EnemySight, BowLaser, ThrowLift, BottlePhysics, PropPhysics, CompanionAi, ShieldGrip, ShieldOut, ShieldUp, ShieldFollow, ShieldRoll, AimFollowsView, LeftHandStrikes, TorchFlame, FrameGeneration, FrameGenPreset, FrameGenScale, RunSpeed, RunWalkToggle, BodyPhysics, BigObjectDistance, FogDistance, Count };
 // One bit per setting, 128 wide: two words, since MSVC has no 128-bit integer.
 struct ChangeMask {
     static constexpr int Bits=128;
@@ -56,8 +57,10 @@ inline constexpr std::array<Definition,Count> Definitions{{
     {"Added sky", "The mod's outdoor sky effect", L"sky",L"enabled",0,0,1,1},
     {"Added fog", "The mod's distance fog effect", L"fog",L"enabled",0,0,1,1},
     {"Dungeon ceiling", "The mod's overhead dungeon surfaces", L"ceiling",L"enabled",0,0,1,1},
-    {"Terrain draw distance", "Higher values show more map tiles and cost more to render", L"render",L"rings",2,1,8,1},
-    // 210: just past the fog's end (200). In Rogue Encampment 360 held 45 fps, 260 55-80, 210 88-90 (steamvr/PERFORMANCE.md).
+    // 6 (2026-10-28): standing in the Blood Moor rings 8 held the frame rate of 2 (44 pairs/s); 6 builds about
+    // the 600 units Big objects and the fog reach, with fewer rooms built at a time than 8 while walking.
+    {"Terrain draw distance", "Higher values show more map tiles and cost more to render", L"render",L"rings",6,1,8,1},
+    // 210: just past the fog's end of the time (200). In Rogue Encampment 360 held 45 fps, 260 55-80, 210 88-90 (steamvr/PERFORMANCE.md).
     {"Object draw distance", "Higher values retain more distant scenery", L"render",L"model_radius",210,10,10000,50},
     {"Standing eye height", "Measured from the SteamVR floor", L"calibration",L"eye_height_m",1.64f,.8f,2.3f,.01f},
     {"Controller span", "Measured between grips in a T-pose", L"calibration",L"arm_span_m",1.6f,.85f,2.6f,.01f},
@@ -144,6 +147,12 @@ inline constexpr std::array<Definition,Count> Definitions{{
     {"Stick toggle", "Right stick up switches between walking and running", L"gameplay",L"run_walk_toggle",0,0,1,1},
     // Monsters' and townsfolk's limbs pushed aside by weapons (limb_rig.h); drawn only.
     {"Pushable bodies", "Weapons and hands push monsters' and townsfolk's limbs aside", L"interactions",L"body_physics",1,0,1,1},
+    // 600 (2026-10-28), as far as the fog lets them show: in the Blood Moor Big 1000 cost 6 of 44 frame pairs/s,
+    // where every model out to 1110 held 22-35 (steamvr/far_objects.h).
+    {"Big objects", "Trees, houses and walls drawn farther than other objects", L"render",L"big_radius",600,0,1000,100},
+    // [fog] end: where the outdoor fog is complete. 600 with the INI's curve 0.4 (2026-10-28; 200 and 0.6 before): the
+    // same haze close by, see-through to Big objects' 600. Start and curve stay INI-only.
+    {"Fog distance", "Where the fog is complete; farther shows more of the distance", L"fog",L"end",600,100,1200,50},
 }};
 using Values=std::array<float,Count>;
 inline bool HapticKey(Key key){return key>=HapticStrength&&key<=HapticAlert;}
@@ -178,6 +187,7 @@ inline float Normalize(Key key,float value){
     if(key==BowLaser&&value<0)return LaserOff;
     if(key==LeftHandStrikes)return std::round(value)==1?1.f:0.f;   // the retired 2 (Basic attack) reads Own trigger skill
     if(key==HeartbeatStart)return std::clamp(std::round(value/10)*10,d.min,d.max);   // 0 = Off, else a 10% step
+    if(key==BigObjectDistance)return farobjects::Normalize(value);   // 0 = Off, else 300 - 1000
     if(key==ShieldFollow||key==ShieldRoll)return std::clamp(std::round(value/d.step)*d.step,d.min,d.max)+0.f;   // whole steps, as skel::shield::FollowSetting / RollSetting
     if(HighlightKey(key))return std::clamp(std::round(value/15)*15,d.min,d.max);   // 0 = By range, else a hue in 15-degree steps
     if(key==EnemySight)return float(enemysight::NormalizePercent(value));
@@ -370,6 +380,7 @@ inline bool RowEnabled(const Values& values,Key key){
     if(key==DeferGpuWait)return DeferOffered(values);   // the button only turns it on
     if(key==AimHighlights||HighlightKey(key))return values[TargetHighlight]>0;   // only while the monster outline shows
     if(key==LandingCircles)return values[GroundAim]>.5f;   // only while the mod places ground skills
+    if(key==FogDistance)return values[Fog]>.5f;   // only while the added fog is on
     return key!=FoveationStrength||values[Foveation]>.5f;
 }
 // The character the panel is open for: rows for another class, or for a
@@ -418,7 +429,7 @@ inline bool RowShown(Key key,const Values& v,const Context& c){
 // hand's outline color and the right's; NVIDIA's flow quality and its scale;
 // Movement speed and the right stick's run / walk toggle (the VR tab has no room
 // for an eleventh row above the buttons).
-inline Key PairOf(Key key){return key==HighlightLeft?HighlightRight:key==FrameGenPreset?FrameGenScale:key==RunSpeed?RunWalkToggle:Count;}
+inline Key PairOf(Key key){return key==HighlightLeft?HighlightRight:key==FrameGenPreset?FrameGenScale:key==RunSpeed?RunWalkToggle:key==ObjectDistance?BigObjectDistance:key==Fog?FogDistance:Count;}
 inline bool Paired(Key key){return PairOf(key)!=Count;}
 inline const char* RowLabel(Key key,const Context& c){
     if(key==HighlightLeft)return "Hand colors";
@@ -608,6 +619,7 @@ public:
             else if(key==OfflinePlayers)draft[key]=std::clamp(draft[key]+float(hit.delta),0.f,8.f);
             else if(key==FoveationStrength||key==StereoRendering||key==FrameGeneration||key==FrameGenPreset||key==FrameGenScale)draft[key]=std::clamp(draft[key]+float(hit.delta),d.min,d.max);
             else if(key==SpellLock)draft[key]=LockStep(draft[key],hit.delta,context);
+            else if(key==BigObjectDistance)draft[key]=farobjects::StepFrom(draft[key],hit.delta);   // Off, 300, ... 1000
             else if(key==ProjectileAimAssist||key==GroundAim)draft[key]=float((int(draft[key])+(hit.delta<0?2:1))%3);   // cycles
             else if(key==MapTopDown)draft[key]=float((int(draft[key])+(hit.delta<0?3:1))%4);   // Isometric, Top-down, Full map, Full top-down, round
             else if(key==BowLaser){   // round the wheel through Off: ... 345, Off, 0, 15 ... both ways

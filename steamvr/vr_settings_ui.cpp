@@ -45,6 +45,8 @@ static void ValueLabel(Key key,float value,const Context& c,char* label,size_t s
         else if(p==100)std::snprintf(label,size,"Full run");else std::snprintf(label,size,"Run %d%%",p);}
     else if(key==CompanionAi)std::snprintf(label,size,"%s",value>.5f?"Enabled":"Legacy");
     else if(key==RunWalkToggle)std::snprintf(label,size,"Stick toggle %s",value>.5f?"On":"Off");
+    else if(key==BigObjectDistance){if(value==0)std::snprintf(label,size,"Big: Off");else std::snprintf(label,size,"Big: %.0f",value);}
+    else if(key==FogDistance)std::snprintf(label,size,"Ends at %.0f",value);
     else if(Definitions[key].max==1)std::snprintf(label,size,"%s",value>.5f?"On":"Off");
     else if(key==Snap)std::snprintf(label,size,"%.0f deg",value);
     else if(key==VitalsTilt)std::snprintf(label,size,"%+.6g deg",value);
@@ -204,10 +206,10 @@ std::vector<uint8_t> Paint(const Model& m,Hit hover,const char* runtimeStatus,co
                 for(int choice=0;choice<haptics::PreviewCount(category);++choice)
                     button(TestHapticsBox(row,choice,category),haptics::PreviewLabel(category,choice),{Kind::TestHaptics,HapticCategory(key),choice+1},false,m.CanTestHaptics(HapticCategory(key)));
             }
-            const bool enabled=m.ready&&!m.Busy()&&applies;
             char label[96];
             for(int side=0;side<(paired?2:1);++side){   // a paired row: a stepper each, left and right
                 const Key k=side?PairOf(key):key;
+                const bool enabled=m.ready&&!m.Busy()&&applies&&RowEnabled(m.Get(),k);   // a half may wait on the other (Fog distance on Added fog)
                 ValueLabel(k,m.Get()[k],m.context,label,sizeof label);
                 button(paired?PairDecrease(row,side):Decrease(row),"-",{Kind::Change,k,-1},false,enabled);
                 button(paired?PairIncrease(row,side):Increase(row),"+",{Kind::Change,k,1},false,enabled);

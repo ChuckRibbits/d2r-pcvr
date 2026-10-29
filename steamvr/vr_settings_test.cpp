@@ -116,10 +116,41 @@ int main(){
               "frame generation's INI keys");
         Check(RowKey(Page::Performance,0)==StereoRendering&&RowKey(Page::Performance,2)==DrawDistance&&RowKey(Page::Performance,3)==ObjectDistance,
               "everything that changes the frame rate is on the Perf page");
+        Check(PairOf(ObjectDistance)==BigObjectDistance&&Defaults()[BigObjectDistance]==600&&std::wstring(Definitions[BigObjectDistance].section)==L"render"&&
+              std::wstring(Definitions[BigObjectDistance].key)==L"big_radius"&&HelpText(BigObjectDistance)[0]!=0,
+              "big objects beside the object draw distance: [render] big_radius, 600 by default, explained");
+        Check(Normalize(BigObjectDistance,250)==300&&Normalize(BigObjectDistance,-1)==0&&Normalize(BigObjectDistance,4000)==1000,"big objects: Off or 300 - 1000");
+        {
+            Model big;big.Open(s);big.Click({Kind::Tab,int(Page::Performance)});
+            big.Click(At(big,Page::Performance,PairIncrease(3,1)));
+            Check(big.Get()[BigObjectDistance]==700&&big.Get()[ObjectDistance]==Defaults()[ObjectDistance],"600, then 700 - the object draw distance untouched");
+            for(int i=0;i<5;++i)big.Click(At(big,Page::Performance,PairIncrease(3,1)));Check(big.Get()[BigObjectDistance]==1000,"1000 is the top");
+            for(int i=0;i<7;++i)big.Click(At(big,Page::Performance,PairDecrease(3,1)));
+            Check(big.Get()[BigObjectDistance]==300,"down to 300");
+            big.Click(At(big,Page::Performance,PairDecrease(3,1)));Check(big.Get()[BigObjectDistance]==0,"then Off");
+            big.Click(At(big,Page::Performance,PairIncrease(3,1)));Check(big.Get()[BigObjectDistance]==300,"and from Off back to 300");
+            big.Click(At(big,Page::Performance,PairIncrease(3,0)));
+            Check(big.Get()[ObjectDistance]==Defaults()[ObjectDistance]+50&&big.Get()[BigObjectDistance]==300,"the left half still steps the object draw distance");
+        }
         bool mirrorRow=false;
         for(int p=0;p<=int(Page::ReleaseNotes);++p)for(int i=0;i<CatalogCount(Page(p));++i)mirrorRow|=CatalogKey(Page(p),i)==DesktopOneEye;
         Check(!mirrorRow&&Defaults()[DesktopOneEye]==1&&std::wstring(Definitions[DesktopOneEye].key)==L"desktop_one_eye",
               "the desktop mirror is [render] desktop_one_eye in the INI only, on by default");
+        Check(PairOf(Fog)==FogDistance&&Defaults()[FogDistance]==600&&std::wstring(Definitions[FogDistance].section)==L"fog"&&
+              std::wstring(Definitions[FogDistance].key)==L"end"&&HelpText(FogDistance)[0]!=0,"the fog's distance beside it: [fog] end, 600 as shipped, explained");
+        Check(Normalize(FogDistance,50)==100&&Normalize(FogDistance,5000)==1200,"the fog's distance: 100 - 1200");
+        {
+            Values on=Defaults();on[Fog]=1;Values off=on;off[Fog]=0;
+            Check(RowEnabled(on,FogDistance)&&!RowEnabled(off,FogDistance),"the distance only while the fog is on");
+            Snapshot fogged=s;fogged.values[Fog]=1;
+            Model fog;fog.Open(fogged);fog.Click({Kind::Tab,int(Page::Video)});
+            fog.Click(At(fog,Page::Video,PairIncrease(1,1)));fog.Click(At(fog,Page::Video,PairIncrease(1,1)));
+            Check(fog.Get()[FogDistance]==700&&fog.Get()[Fog]==1,"600, 650, 700 - the fog stays on");
+            fog.Click(At(fog,Page::Video,PairDecrease(1,0)));
+            Check(fog.Get()[Fog]==0&&fog.Get()[FogDistance]==700,"the left half turns the fog off, the distance kept");
+            fog.Click(At(fog,Page::Video,PairIncrease(1,1)));
+            Check(fog.Get()[FogDistance]==700,"no change to the distance while the fog is off");
+        }
         Check(RowCount(Page::Video)==8&&RowKey(Page::Video,0)==Sky&&RowKey(Page::Video,1)==Fog&&RowKey(Page::Video,2)==Ceiling&&
               RowKey(Page::Video,3)==ElementalHands&&RowKey(Page::Video,4)==BottlePhysics&&RowKey(Page::Video,5)==PropPhysics&&
               RowKey(Page::Video,6)==BodyPhysics&&RowKey(Page::Video,7)==TorchFlame,"the Video page keeps the mod's effects, with bottle, prop and body physics and the torch flame");
@@ -792,7 +823,7 @@ int main(){
         chooser.Click(hit(ControllerBox));Check(!chooser.controllerMenu,"cannot edit while saving");
         chooser.Close();chooser.Open(s);Check(chooser.Get()[ControllerLabels]==0&&!chooser.controllerMenu,"reopen discards unsaved choice");
     }
-    Check(s.values[DrawDistance]==2&&s.values[ObjectDistance]==210,"distance fallbacks match release configuration: objects just past the fog's end");
+    Check(s.values[DrawDistance]==6&&s.values[ObjectDistance]==210,"distance fallbacks match release configuration: 6 rings, objects 210");
     {Model distance;distance.Open(s);
         distance.Click({Kind::Change,ObjectDistance,-1});
         Check(distance.Get()[ObjectDistance]==160,"object distance steps by 50, never jumping to the minimum");

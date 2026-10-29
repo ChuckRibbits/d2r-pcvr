@@ -28,6 +28,7 @@
 #include "../steamvr/resource_descriptions.h"
 #include "../steamvr/vr_settings.h"
 #include "../steamvr/limb_tuning.h"
+#include "../steamvr/far_objects.h"
 #include "../steamvr/interact_press.h"
 #include "../steamvr/sewer_interaction.h"
 #include "../steamvr/dropped_item_labels.h"
@@ -209,6 +210,7 @@ struct Settings {
     std::atomic<int>   entityPoolMb{280};
     std::atomic<int>   rings{int(framevr::settings::Definitions[framevr::settings::DrawDistance].defaultValue)};
     std::atomic<float> modelRadius{framevr::settings::Definitions[framevr::settings::ObjectDistance].defaultValue};
+    std::atomic<float> bigRadius{framevr::settings::Definitions[framevr::settings::BigObjectDistance].defaultValue};
     std::atomic<int>   hudMap{0};           // [hud] map: 0 in the picture, 1 out of it, into its own texture
     // Per view since the Home page (2026-10-05): [hud_top], [hud_third], [hud_floor], [hud_inside]
     // - the Interface tab of each view - falling back to [hud] where unset.
@@ -1084,6 +1086,7 @@ void LoadSettings() {
     g_set.entityPoolMb.store(std::clamp((int)IniF(L"render", L"entity_pool_mb", 280.0f), 0, 4096));
     g_set.rings.store(std::clamp((int)IniF(L"render", L"rings", framevr::settings::Definitions[framevr::settings::DrawDistance].defaultValue), 1, 8));
     g_set.modelRadius.store(std::clamp(IniF(L"render", L"model_radius", framevr::settings::Definitions[framevr::settings::ObjectDistance].defaultValue), 10.0f, 10000.0f));
+    g_set.bigRadius.store(farobjects::Normalize(IniF(L"render", L"big_radius", framevr::settings::Definitions[framevr::settings::BigObjectDistance].defaultValue)));
     g_set.mouseLook.store(IniB(L"input", L"mouse_look", false));
     g_set.hudHide.store(std::clamp((int)IniF(L"hud", L"hide", 0.0f), 0, 2));
     hud::SetHide(g_set.hudHide.load());
@@ -1251,7 +1254,7 @@ void LoadSettings() {
     g_set.hudTop.store(std::clamp(IniF(L"stereo", L"ui_top", 0.70f), 0.0f, 1.0f));
     g_set.fogOn.store(IniB(L"fog", L"enabled", false));
     g_set.fogStart.store(std::clamp(IniF(L"fog", L"start", 150.0f), 0.0f, 100000.0f));
-    g_set.fogEnd.store(std::clamp(IniF(L"fog", L"end", 600.0f), g_set.fogStart.load() + 1.0f, 200000.0f));
+    g_set.fogEnd.store(std::clamp(IniF(L"fog", L"end", framevr::settings::Definitions[framevr::settings::FogDistance].defaultValue), g_set.fogStart.load() + 1.0f, 200000.0f));
     // caves: their own range, the open air's when not set (caves are smaller, their fog nearer)
     g_set.fogCaveStart.store(std::clamp(IniF(L"fog", L"caves_start", g_set.fogStart.load()), 0.0f, 100000.0f));
     g_set.fogCaveEnd.store(std::clamp(IniF(L"fog", L"caves_end", g_set.fogEnd.load()), g_set.fogCaveStart.load() + 1.0f, 200000.0f));
@@ -5418,13 +5421,31 @@ void MouseTick() {
 
 // [render] rings and model_radius into cleanroom/drawdist (the old
 // renderdistance plugin's job); the radius retries until its hook is in.
+// big_radius (steamvr/far_objects.h) apart: its hook goes in only once it is
+// on, and waits for the game to have run that code.
 std::atomic<bool> g_renderDirty{true};
+std::atomic<bool> g_bigDirty{true};
 void ApplyRender() {
-    if (!g_renderDirty.load()) return;
-    d2rcam::SetRenderRadius(g_set.rings.load());
-    if (d2rcam::SetModelRadius(g_set.modelRadius.load())) {
-        g_renderDirty.store(false);
-        LogF("vrcam: render distance - %d room rings, models out to %.0f", d2rcam::GetRenderRadius(), g_set.modelRadius.load());
+    if (g_renderDirty.load()) {
+        d2rcam::SetRenderRadius(g_set.rings.load());
+        if (d2rcam::SetModelRadius(g_set.modelRadius.load())) {
+            g_renderDirty.store(false);
+            LogF("vrcam: render distance - %d room rings, models out to %.0f", d2rcam::GetRenderRadius(), g_set.modelRadius.load());
+        }
+    }
+    if (g_bigDirty.load() && d2rcam::SetBigModelRadius(g_set.bigRadius.load())) {
+        g_bigDirty.store(false);
+        static bool wasOn = false;
+        const float big = g_set.bigRadius.load();
+        if (big > 0) LogF("vrcam: big objects - trees, houses and walls drawn out to %.0f by their size (models out to %.0f, %d room rings)", big, g_set.modelRadius.load(), g_set.rings.load());
+        else if (wasOn) Log("vrcam: big objects - off, every model out to the object draw distance");
+        wasOn = big > 0;
+    }
+    // what they cost: how many models their size kept, every 10 s
+    static int ticks = 0;
+    if (g_set.bigRadius.load() > 0 && ++ticks >= 20) {
+        ticks = 0;
+        LogF("vrcam: big objects - %u model decisions kept past %.0f by size in 10 s", d2rcam::TakeBigModelsKept(), g_set.modelRadius.load());
     }
 }
 
@@ -9889,6 +9910,7 @@ DWORD WINAPI UpdateThread(void*) {
 #endif
             const int previousRings=g_set.rings.load();
             const float previousModelRadius=g_set.modelRadius.load();
+            const float previousBigRadius=g_set.bigRadius.load();
             bool iniChanged = ReloadIfChanged();
 #ifdef D2RVR_NATIVE_OPENXR
             if(menuSaved&&!iniChanged){LoadSettings();iniChanged=true;}
@@ -9900,6 +9922,7 @@ DWORD WINAPI UpdateThread(void*) {
                 // not restart that work. Keep a pending initial/retry apply.
                 if(previousRings!=g_set.rings.load()||previousModelRadius!=g_set.modelRadius.load())
                     g_renderDirty.store(true);
+                if(previousBigRadius!=g_set.bigRadius.load())g_bigDirty.store(true);
                 g_mouseLookOn.store(MouseLookForView());
             }
             FollowMode();
