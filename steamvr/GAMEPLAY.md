@@ -1180,6 +1180,66 @@ and trigger/button melee were:
     strokes while it runs stay recovery-scaled basic attacks; a game/form change or death ends it. Developer builds log `Frame melee sequences (Fury, Zeal):`
     and trace `cast 1/N` on the casting stroke and
     `sequence skill=... hit k/N target=... after N ms` for the rest.
+  - **Zeal's light** (Cal, 2026-10-26; `steamvr/zeal_light.h`): every Zeal
+    hit flashes the Den of Evil's light (Missiles.txt `DenOfEvilLight`, row
+    287; HD `missiles/light_beams.json`) at the struck creature's cell,
+    created as a client-only visual through the bow preview's path
+    (`projectiles::CreateVisual`): no server missile, packet, attack or
+    damage. The hits: the casting stroke, the cast's later hits (the creature
+    do 13 really struck) and Zeal held on the trigger. rev2 (Cal: "they didnt
+    come and go with the hits. Quick fade in/fade out"): a beam per hit, its
+    range (params flag 0x8000, +0x5c) `[gameplay] zeal_light_frames` (2-25,
+    default 6 = 240 ms, before the next hit at a 560 ms cycle) instead of the
+    native 300, then the particle's own fade. A client-made missile is not
+    removed when its range runs out (rev2 test: the beams stayed), so rev3
+    hands each to `bowvr::RetireVisualAt`: the bow's client tick kills it at
+    its time, as it retires its own preview (`Frame timed visuals:`). rev4
+    (Cal: the light appeared about a second late; the effect's spawner has a
+    first spawn delay): while a hand's trigger skill is Zeal (seen within 3 s)
+    `[gameplay] zeal_light_pool` beams (default 6, 0-10) are kept lit at the
+    hero's cell, their visual root dropped 100000 units below the world in the
+    bow's transform hook (`bowvr::StageVisual`, as the hidden potions); a hit
+    shows the longest-lit one by moving its root onto the creature's cell (2
+    render units a cell; the effect and spotlight inherit it), then retires
+    it. None lit: a new beam, late, as rev3. The pool is let go 15 s after
+    Zeal was last armed. Logs `Frame staged visuals:`. rev11 (Cal, Cave: the
+    lights were late and several showed in sequence for one hit): beams lit in
+    the previous level or rooms left behind never reach the client tick that
+    retires them, so their 12 slots filled; every other pool beam was then
+    refused a slot, retired at once, and its visual outlived it as a stray
+    light at the hero's cell. Now the pool's lit beams are let go on a level
+    change and once the hero is 20 cells from where they were lit, a slot whose
+    retirement is 2 s overdue is free (as is a retirement wait in the 16-slot
+    timed list), and the pool makes no beam without a free slot (`no free
+    slot=` on `Frame zeal light:`). rev5 (Cal: "fade out
+    when they go away and not just suddenly turn off"): removing a missile
+    ends its visual at once (natively too), and the effect's fade input
+    (`__a_Fade`, its material's MonsterFade) is never driven for missiles, so
+    a shown beam leaves by its root transform before it is retired:
+    `[gameplay] zeal_light_exit` 1 rises 30 render units into the sky
+    (default), 2 sinks as far into the ground (its soft edge fades at the
+    floor), 3 shrinks every entity's basis, 0 none; over `zeal_light_exit_ms`
+    (default 250, 0-1000), eased. rev6: a beam whose unit is gone (retired,
+    or a hidden one ended natively after ~12 s) kept rendering for a few
+    frames un-hidden at the hero cell it was lit at, a stray lit beam after
+    each hit; its entities now stay hidden 1.5 s after the unit, and hidden
+    ones are retired (still hidden) after 8 s and lit anew. rev7 (Cal: "I
+    just dont want it ever generating from behind my player. It just ends up
+    looking like a flash of light in my visor"): the Den light slants (its
+    spotlight sits at local 12, 20, -9.96 above its foot), so each shown beam
+    is yawed about its root until that side points from the hero toward the
+    creature: the light comes from beyond it. Children are turned too unless
+    they already take the root's turn (told from the spotlight's offset).
+    `[gameplay] zeal_light_turn` trims it (degrees). rev7's log: the children
+    follow the root's turn. rev8 (Cal: "Its still not always behind the
+    enemy. I want it behind the enemy at different angles"): the beam's foot
+    stands `zeal_light_behind` cells (default 1.5) beyond the creature from
+    the hero, at a random angle up to `zeal_light_spread` (default 60, max
+    90) degrees either side of straight behind, and its light is turned to
+    come from that same side (`zeal_light.h` `Behind`). One hit seen twice within
+    120 ms makes one beam; at most 8 show at once. `[gameplay] zeal_light`
+    (default 1). Developer builds log `Frame zeal light:`, `Frame staged
+    visuals:` and `Frame timed visuals:`; with `melee_trace` each beam's cell.
   `Frame swing damage:` in the log reports scaled hits and the last factors.
 - **Classic** (`1`): native attack rating, monster defense, block and the
   level penalty decide each attack, and attack speed paces them (below). A rolled

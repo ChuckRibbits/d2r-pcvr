@@ -912,6 +912,9 @@ void LoadSettings() {
     // recovery or block animation to stun-lock a VR body. 1 = native flinching.
     // Classic always flinches natively.
     melee::ConfigurePlayerFlinch(classicMelee||IniB(L"gameplay",L"player_flinch",false));
+    melee::ConfigureZealLight(IniB(L"gameplay",L"zeal_light",true),IniF(L"gameplay",L"zeal_light_frames",0),
+        IniF(L"gameplay",L"zeal_light_pool",-1),IniF(L"gameplay",L"zeal_light_exit",-1),IniF(L"gameplay",L"zeal_light_exit_ms",-1),
+        IniF(L"gameplay",L"zeal_light_turn",0),IniF(L"gameplay",L"zeal_light_behind",-1),IniF(L"gameplay",L"zeal_light_spread",-1));
     // Unleashed (on by default): a broken guard leaks a chip of each blocked hit.
     combat::ConfigureGuardChip(!classicMelee&&IniB(L"gameplay",L"guard_break_chip",true),
                                IniF(L"gameplay",L"guard_break_chip_scale",1));

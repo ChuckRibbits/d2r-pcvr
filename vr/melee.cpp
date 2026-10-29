@@ -7,6 +7,7 @@
 #include <mutex>
 #include <array>
 #include <cstdio>
+#include <cstring>
 #include <vector>
 #include <algorithm>
 #include "native_skill_dispatch.h"
@@ -23,6 +24,8 @@
 #include "../steamvr/melee_hand_state.h"
 #include "../steamvr/target_cone.h"
 #include "bow.h"
+#include "projectiles.h"
+#include "../steamvr/zeal_light.h"
 #include "combat.h"
 #include "combat_rules.h"
 #include "sigscan.h"
@@ -431,6 +434,152 @@ std::atomic<unsigned> sequenceCasts{0},sequenceHits{0},sequenceRefused{0},sequen
 // leaves it whole - no recovery factor, its on-hit effects. rev5: it is still the
 // latest attack swings are measured from, so swings during the cast stay scaled.
 bool sequenceScope=false;std::atomic<unsigned> sequenceWhole{0},skillWhole{0};
+// Zeal's light (zeal_light.h, Cal 2026-10-26, route A): the Den of Evil's light
+// missile where each enemy a Zeal hit lands on stands, as a client-only visual,
+// a short beam on every hit (rev2). The game thread decides (capped) and hands
+// only the cell over; the UI thread creates it (projectiles::CreateVisual, the
+// bow preview's path).
+std::atomic<bool> zealLight{true};std::atomic<int> zealFrames{framevr::zeallight::DefaultFrames};
+framevr::zeallight::Board zealBoard;   // game thread
+struct ZealCell {int x=0,y=0,frames=0;uint32_t monster=0;};
+std::mutex zealMutex;std::array<ZealCell,8> zealQueue{};size_t zealQueued=0;bool zealPosted=false;
+std::atomic<unsigned> zealLit{0},zealSame{0},zealFull{0},zealCreated{0},zealFailed{0},zealDropped{0},zealUntimed{0};
+// A client visual only (as bowvr::VisualParams): owner and origin the local hero,
+// the missile at a cell (flag 0x01), facing +y (0x20), range set (0x8000: +0x5c,
+// read at 1B7F6F). No server missile, attack, damage or packet.
+uintptr_t CreateBeam(uintptr_t hero,int x,int y,int frames) {
+    std::array<uint8_t,0x98> params{};
+    const auto put=[&](size_t at,auto value){std::memcpy(params.data()+at,&value,sizeof value);};
+    put(0,uint32_t(0x8021));put(8,hero);put(0x10,hero);put(0x20,framevr::zeallight::DenOfEvilLight);
+    put(0x24,x);put(0x28,y);put(0x2c,x);put(0x30,y+1);
+    put(0x3c,0);put(0x40,1);put(0x5c,frames);
+    return projectiles::CreateVisual(reinterpret_cast<uintptr_t>(params.data()));
+}
+bool HeroCell(uintptr_t hero,int& x,int& y) {
+    uintptr_t path=0;uint16_t p[4]{};
+    if(!Read(hero+0x38,path)||!Read(path,p))return false;
+    x=p[1];y=p[3];return true;
+}
+// rev4 (Cal: "the light appears too late. Needs to be immediately at the moment of
+// cast"): the effect takes about a second to appear, so while Zeal is armed a few
+// beams are kept lit, hidden below the world (bowvr::StageVisual); a hit shows the
+// longest-lit one on the struck creature. UI thread, posted from Submit.
+std::atomic<uint64_t> zealArmedAt{0},zealPoolPostedAt{0};std::atomic<int> zealPool{framevr::zeallight::DefaultPool};
+std::atomic<int> zealExit{framevr::zeallight::DefaultExit},zealExitMs{framevr::zeallight::DefaultExitMs};   // rev5
+std::atomic<float> zealTurn{0};   // rev7: [gameplay] zeal_light_turn, degrees added to the away-from-hero turn
+std::atomic<float> zealBehind{framevr::zeallight::DefaultBehindCells},zealSpread{framevr::zeallight::DefaultSpreadDeg};   // rev8
+uint32_t zealSeed=0x2545f491u;   // UI thread
+float ZealRandom(){zealSeed=zealSeed*1664525u+1013904223u+uint32_t(GetTickCount64());return float(zealSeed>>8)/16777216.f;}
+std::atomic<unsigned> zealWarm{0},zealCold{0},zealStaged{0},zealStageFailed{0},zealNoSlot{0},zealLevelDrops{0};std::atomic<uint64_t> zealWarmAge{0};
+bool zealPoolDropped=true;   // UI thread
+void __cdecl ZealPoolTick(const D2RL::PluginContext*,void*) noexcept {
+    const uint64_t now=GetTickCount64(),armedAt=zealArmedAt.load();
+    const int pool=zealPool.load();
+    const bool armed=zealLight.load()&&pool>0&&armedAt&&now-armedAt<framevr::zeallight::ArmedMs;
+    if(!armed) {
+        if(!zealPoolDropped&&(!zealLight.load()||pool<=0||now-armedAt>=framevr::zeallight::DisarmMs)) {
+            bowvr::DropStaged(framevr::zeallight::DenOfEvilLight);zealPoolDropped=true;
+        }
+        return;
+    }
+    uintptr_t hero=0;int x=0,y=0;
+    if(!combat::LocalPlayerUnit(hero)||!HeroCell(hero,x,y))return;
+    // rev11: a new level: the lit ones belong to the old one (its tick may never end them).
+    static int zealLevel=0;
+    if(const int level=interactionstate::CurrentLevel(gamestate::LocalPlayer(),now);level&&level!=zealLevel) {
+        if(zealLevel)zealLevelDrops+=bowvr::AbandonStaged(framevr::zeallight::DenOfEvilLight);
+        zealLevel=level;
+    }
+    // rev6: none reaches its native end (~12 s), which un-hid it for a frame at the
+    // hero's old cell; the oldest are retired, still hidden, and lit anew.
+    bowvr::RecycleStaged(framevr::zeallight::DenOfEvilLight,framevr::zeallight::RecycleMs);
+    bowvr::RecycleStagedFar(framevr::zeallight::DenOfEvilLight,x,y,framevr::zeallight::FarCells);   // rev11
+    const int hidden=int(bowvr::StagedHidden(framevr::zeallight::DenOfEvilLight));
+    for(int i=0;i<std::min(pool-hidden,2);++i) {   // at most two a tick: their lighting starts spread out
+        // rev11: no slot, no beam. A beam made without one was retired at once and
+        // its visual outlived it: a stray light at the hero's cell a second later.
+        if(!bowvr::StagedFree()) {
+            ++zealNoSlot;
+#ifdef D2RVR_DEVELOPER
+            static uint64_t censusAt=0;
+            if(trace.load()&&now>=censusAt) {
+                censusAt=now+3000;char census[200];bowvr::StagedCensus(census,sizeof census,x,y);
+                char line[300];snprintf(line,sizeof line,"Frame zeal light: pool has no free slot: %s",census);framevr::logging::Write(line);
+            }
+#endif
+            break;
+        }
+        bowvr::BeginStaging(framevr::zeallight::DenOfEvilLight);
+        const auto client=CreateBeam(hero,x,y,framevr::zeallight::NativeFrames);
+        bowvr::EndStaging();
+        if(client&&bowvr::StageVisual(client,x,y)){++zealStaged;zealPoolDropped=false;}
+        else {++zealStageFailed;if(client)bowvr::RetireVisualAt(client,0);break;}
+    }
+}
+void __cdecl ZealLightCreate(const D2RL::PluginContext*,void*) noexcept {
+    std::array<ZealCell,8> cells{};size_t queued=0;
+    {std::lock_guard lock(zealMutex);cells=zealQueue;queued=zealQueued;zealQueued=0;zealPosted=false;}
+    uintptr_t hero=0;
+    if(!combat::LocalPlayerUnit(hero)){zealDropped+=unsigned(queued);return;}
+    for(size_t i=0;i<queued;++i) {
+        const uint64_t until=GetTickCount64()+uint64_t(cells[i].frames)*framevr::zeallight::FrameMs;
+        // A lit beam from the pool, moved onto the creature; none left: a new one (late).
+        uint64_t age=0;bool bound=false;
+        // rev7 (Cal: "I just dont want it ever generating from behind my player. It just ends
+        // up looking like a flash of light in my visor"): the beam is turned so its light
+        // comes from beyond the creature, the hero -> creature direction (render x,z).
+        // rev8 (Cal: "I want it behind the enemy at different angles"): the beam stands
+        // behind the creature, seen from the hero, at a random angle within the back arc,
+        // its light coming from that same side (zeal_light.h Behind).
+        int hx=0,hy=0;const bool heroAt=HeroCell(hero,hx,hy);
+        const auto place=framevr::zeallight::Behind(heroAt?float(cells[i].x-hx):0.f,heroAt?float(cells[i].y-hy):0.f,
+            zealBehind.load(),zealSpread.load(),ZealRandom());
+        if(bowvr::ShowStaged(framevr::zeallight::DenOfEvilLight,cells[i].x,cells[i].y,until,zealExit.load(),uint64_t(zealExitMs.load()),
+                             place.awayX,place.awayZ,zealTurn.load(),place.offX,place.offZ,age,bound)) {
+            ++zealCreated;++zealWarm;zealWarmAge+=age;
+            if(trace.load()) {
+                char line[200];snprintf(line,sizeof line,"Frame zeal light: beam at %d,%d over monster %u for %d frames: a lit one (%llu ms lit%s)",
+                    cells[i].x,cells[i].y,cells[i].monster,cells[i].frames,(unsigned long long)age,bound?"":", visual not bound yet");
+                framevr::logging::Write(line);
+            }
+            continue;
+        }
+        const auto client=CreateBeam(hero,cells[i].x,cells[i].y,cells[i].frames);
+        // A client-made missile is not removed when its range runs out (rev2 test: the
+        // beams stayed): the bow's client tick retires it at its time (rev3).
+        const bool timed=client&&bowvr::RetireVisualAt(client,until);
+        if(client){++zealCreated;++zealCold;}else ++zealFailed;
+        if(client&&!timed)++zealUntimed;
+        if(trace.load()) {
+            char line[200];snprintf(line,sizeof line,"Frame zeal light: beam at %d,%d over monster %u for %d frames %s",
+                cells[i].x,cells[i].y,cells[i].monster,cells[i].frames,!client?"not created (client missile refused)":
+                timed?"created new (none lit), retired on time":"created new, NOT timed (stays)");
+            framevr::logging::Write(line);
+        }
+    }
+}
+// Game thread: a Zeal hit landed on this creature.
+void ZealStruck(uintptr_t monster,uint32_t id) {
+    if(!zealLight.load()||!monster||!id||!context||!threads||!threads->runOnUiThread)return;
+    using V=framevr::zeallight::Board::Verdict;
+    const int frames=zealFrames.load();
+    switch(zealBoard.Struck(id,GetTickCount64(),frames)) {
+        case V::SameHit:++zealSame;return;
+        case V::Full:++zealFull;return;
+        case V::Lit:break;
+    }
+    uintptr_t path=0;uint16_t p[4]{};
+    if(!Read(monster+0x38,path)||!Read(path,p)){++zealDropped;return;}
+    bool post=false;
+    {
+        std::lock_guard lock(zealMutex);
+        if(zealQueued<zealQueue.size()){zealQueue[zealQueued++]={int(p[1]),int(p[3]),frames,id};post=!zealPosted;zealPosted=true;++zealLit;}
+        else ++zealDropped;
+    }
+    if(post&&threads->runOnUiThread(context,&ZealLightCreate,nullptr)!=D2RL::Threads::Result::Success) {
+        std::lock_guard lock(zealMutex);zealDropped+=unsigned(zealQueued);zealQueued=0;zealPosted=false;
+    }
+}
 bool StrikeSkillVerified(int skill) {
     for(size_t i=0;i<std::size(StrikeNatives);++i)if(StrikeNatives[i].skill==skill)return strikeVerified[i];
     return false;
@@ -752,6 +901,7 @@ void __cdecl Apply(const D2RL::PluginContext*,void* token) noexcept {
                                     if(strike==StrikeOutcome::Cast&&framevr::strikeskills::MultiHit(strikeSkill)) {
                                         sequence.Begin(r.session,strikeSkill,r.sample.skillOwner,shape,castHits,handCycle,GetTickCount64(),header[2]);
                                         sequenceDueAt=sequence.DueAt();++sequenceCasts;
+                                        if(strikeSkill==framevr::strikeskills::Zeal)ZealStruck(unit,header[2]);
                                     }
                                 } else ++strikeBasic;
                             }
@@ -1267,6 +1417,11 @@ void ConfigureSwingRecovery(bool on,float curve,float grace){swingRecovery=on;re
 void ConfigureCleave(float step,float floor){cleaveStep=step;cleaveFloor=floor;}
 void ConfigureAttackRating(bool native){attackRating=native;combat::ConfigureMeleeRolls(native);}
 void ConfigurePlayerFlinch(bool native){noFlinch=!native;}
+void ConfigureZealLight(bool on,float frames,float pool,float exit,float exitMs,float turn,float behind,float spread) {
+    zealLight=on;zealFrames=framevr::zeallight::Frames(frames);zealPool=framevr::zeallight::Pool(pool);
+    zealExit=framevr::zeallight::Exit(exit);zealExitMs=framevr::zeallight::ExitMs(exitMs);zealTurn=framevr::zeallight::Turn(turn);
+    zealBehind=framevr::zeallight::BehindCells(behind);zealSpread=framevr::zeallight::SpreadDeg(spread);
+}
 void ConfigureBlockSound(int sound) {
     static bool loaded=false; // settings thread only
     const int previous=blockSound.exchange(sound);
@@ -1283,9 +1438,18 @@ void SetAttackCycle(uint64_t session,uint32_t milliseconds,int hand){if(hand==1)
 // The hero is using a melee skill, not a basic attack: the used skill (skill list
 // +0x18, as the do functions read it) is past the basic ones (Skills.txt 0 Attack,
 // 1 Kick, 2 Throw, 3 Unsummon, 4 Left Hand Throw, 5 Left Hand Swing). Game thread.
-bool UsingSkill() {
+int UsedSkillId() {
     uintptr_t game=0,self=0,list=0,node=0,row=0;int16_t id=-1;
-    return LocalServer(game,self)&&Read(self+0x100,list)&&Read(list+0x18,node)&&node&&Read(node,row)&&Read(row,id)&&id>5;
+    return LocalServer(game,self)&&Read(self+0x100,list)&&Read(list+0x18,node)&&node&&Read(node,row)&&Read(row,id)?id:-1;
+}
+bool UsingSkill(){return UsedSkillId()>5;}
+// Zeal's light for a hit outside a physical swing: a swing cast's later hit
+// (sequenceScope: the creature do 13 really struck) or Zeal held on the trigger.
+void ZealButtonHit(uint32_t monster) {
+    const bool cast=sequenceScope&&sequence.Skill()==framevr::strikeskills::Zeal;
+    if(!zealLight.load()||(!cast&&UsedSkillId()!=framevr::strikeskills::Zeal))return;
+    uintptr_t game=0,self=0;
+    if(LocalServer(game,self)&&originalLookup)ZealStruck(originalLookup(game,1,monster),monster);
 }
 ButtonStroke ButtonHit(uint32_t monster) {
     ButtonStroke out;out.smite=smiteDepth>0;
@@ -1301,6 +1465,7 @@ ButtonStroke ButtonHit(uint32_t monster) {
     // (between the skill's own casting windows) stay recovery-scaled.
     if(sequenceScope||UsingSkill()) {
         ++(sequenceScope?sequenceWhole:skillWhole);
+        ZealButtonHit(monster);
         triggerLanded={session,now};++buttonAttacks;
         if(trace.load()&&!sequenceScope) {
             char line[160];snprintf(line,sizeof line,"Frame melee trace: trigger target=%u%s skill hit: whole (recovery 1, on-hit effects)",monster,out.smite?" smite":"");
@@ -1324,6 +1489,14 @@ ButtonStroke ButtonHit(uint32_t monster) {
 }
 void Submit(const Sample& sample) {
     if(sample.handIndex<0||sample.handIndex>1)return;
+    // Zeal's light (rev4): while a hand's trigger skill is Zeal, keep beams lit in advance.
+    if(const uint64_t now=GetTickCount64();zealLight.load()&&context&&threads&&threads->runOnUiThread) {
+        if(sample.strikeSkill==framevr::strikeskills::Zeal)zealArmedAt=now;
+        const uint64_t armedAt=zealArmedAt.load();
+        if(armedAt&&now-armedAt<framevr::zeallight::DisarmMs+1000&&now-zealPoolPostedAt.load()>=framevr::zeallight::PoolTickMs) {
+            zealPoolPostedAt=now;threads->runOnUiThread(context,&ZealPoolTick,nullptr);
+        }
+    }
     // A Fury or Zeal cast's next hit, when due, every frame either hand reports (strike_skills.h Sequence): one post at a time.
     if(const auto due=sequenceDueAt.load();due&&context&&threads&&threads->runOnGameThread&&
        GetTickCount64()+framevr::strikeskills::SequenceEarlyMs>=due&&!sequencePosted.exchange(true)&&
@@ -1410,6 +1583,15 @@ void Report() {
                 w[OnHitAllowed]+w[OnHitUnknownCycle]+w[OnHitRiposte],w[OnHitUnknownCycle],w[OnHitRiposte],w[OnHitNotFull],w[OnHitCleave]);
             framevr::logging::Write(why);
         }
+    }
+    if(const auto lit=zealLit.exchange(0),made=zealCreated.exchange(0),failed=zealFailed.exchange(0),same=zealSame.exchange(0),
+                  full=zealFull.exchange(0),dropped=zealDropped.exchange(0),untimed=zealUntimed.exchange(0);lit||made||failed||dropped||full||untimed) {
+        const auto warm=zealWarm.exchange(0),cold=zealCold.exchange(0);const uint64_t warmAge=zealWarmAge.exchange(0);
+        char line[400];snprintf(line,sizeof line,"Frame zeal light: beams asked=%u created=%u (lit in advance=%u, on average %llu ms; new=%u) refused=%u dropped=%u not timed=%u "
+            "(%d frames each); no beam: same hit twice=%u %zu showing (cap)=%u; pool %d: lit hidden=%u failed=%u no free slot=%u left in the old level=%u",lit,made,warm,
+            (unsigned long long)(warm?warmAge/warm:0),cold,failed,dropped,untimed,zealFrames.load(),same,framevr::zeallight::MaxBeams,full,
+            zealPool.load(),zealStaged.exchange(0),zealStageFailed.exchange(0),zealNoSlot.exchange(0),zealLevelDrops.exchange(0));
+        framevr::logging::Write(line);
     }
     if(const auto sw=skillWhole.exchange(0);sw) {
         char line[120];snprintf(line,sizeof line,"Frame trigger melee: skill hits left whole=%u",sw);
