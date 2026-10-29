@@ -27,6 +27,7 @@
 #include "../steamvr/profile.h"
 #include "../steamvr/resource_descriptions.h"
 #include "../steamvr/vr_settings.h"
+#include "../steamvr/limb_tuning.h"
 #include "../steamvr/far_objects.h"
 #include "../steamvr/interact_press.h"
 #include "../steamvr/sewer_interaction.h"
@@ -869,6 +870,15 @@ void LoadSettings() {
         IniF(L"interactions",L"belt_forward",.26f),IniF(L"interactions",L"dominant_hand",0)==1?1:0);
     framevr::ConfigureBottlePhysics(IniB(L"interactions",L"bottle_physics",true));
     framevr::ConfigurePropPhysics(IniB(L"interactions",L"prop_physics",true));
+    framevr::ConfigureBodyPhysics(IniB(L"interactions",L"body_physics",true));
+    {   // [bodies]: how bodies react (limb_tuning.h), live; DEV > Bodies steps and saves them
+        framevr::limbs::Tuning tuning;
+        for (int k = 0; k < framevr::limbs::Knobs; ++k) {
+            const auto& knob = framevr::limbs::KnobTable[size_t(k)];
+            tuning.value[size_t(k)] = IniF(L"bodies", knob.key, knob.standard);
+        }
+        framevr::limbs::Tuned().Set(tuning);
+    }
     projectiles::Configure(IniB(L"gameplay",L"motion_controls",false),IniF(L"gameplay",L"arrow_speed",2.f),IniB(L"gameplay",L"arrow_direct_release",true));
     // Movement speed (VR Settings > VR): % of the way from the no-gear base run speed to the gear's (-10 walks).
     projectiles::ConfigureRunSpeed(framevr::runspeed::NormalizePercent(IniF(L"gameplay",L"run_speed_pct",100)));
@@ -7305,7 +7315,8 @@ void PushArms() {
         in.grip[1] = sh->gripMagic == D2RVR_GRIP_MAGIC ? sh->leftGrip : -1.0f;
     }
     float hero[3];
-    if (LookAtNow(hero)) {
+    const bool heroPlaced = LookAtNow(hero);
+    if (heroPlaced) {
         skel::SetHeroPos(hero[0], hero[1], hero[2]);
         memcpy(g_heroPosNow, hero, sizeof hero);
     }
@@ -7316,6 +7327,11 @@ void PushArms() {
         && (!gamestate::MenuOpen()||framevr::SpatialMenu())
 #endif
         ;
+#ifdef D2RVR_NATIVE_OPENXR
+    // Bodies that give way: in first person with physical melee, the hook
+    // posts the monsters and townsfolk within reach of the hero.
+    skel::SetLimbs(own && heroPlaced && framevr::BodyPhysics(), hero, std::max(1.f, ScaleHeight()) / UserEyeHeightM());
+#endif
     in.mode = own ? ArmsMode() : 0;
     // From behind the game animates all of him, but he still turns with the
     // camera: else the right stick only swung the camera round a hero who
@@ -9981,6 +9997,16 @@ void SetSkyOverRims(bool on) {
     if (g_set.skyRims.exchange(on) != on) Log(on ? "vrcam: the sky goes over the dark rim round things against it" : "vrcam: the dark rim round things against the sky stays");
 }
 bool SkyOverRims() { return g_set.skyRims.load(); }
+// DEV > Bodies: a stepped value saved as [bodies] <key>, at once in use (the
+// reload that follows reads the same value).
+bool SaveBodyTuning(int knob, float value) {
+    if (knob < 0 || knob >= framevr::limbs::Knobs) return false;
+    const auto k = framevr::limbs::Knob(knob);
+    value = framevr::limbs::Clamped(k, value);
+    framevr::limbs::Tuned().Set(k, value);
+    wchar_t text[32]; swprintf_s(text, L"%g", double(value));
+    return WritePrivateProfileStringW(L"bodies", framevr::limbs::KnobTable[size_t(knob)].key, text, g_iniPath) != FALSE;
+}
 }
 
 #ifdef D2RVR_NATIVE_OPENXR

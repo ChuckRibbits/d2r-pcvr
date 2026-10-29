@@ -663,6 +663,26 @@ visual. VR Settings > Video > Knockable props (`[interactions] prop_physics`) tu
 props](../docs/KNOCKABLE_PROPS.md). The log notes each weapon knock (`Frame
 props: knocked a cup ...`) and a summary every ten seconds.
 
+**Pushable bodies.** In first person with Motion combat, your weapon, shield
+or fist pushes the monsters, mercenaries and townsfolk it meets. Each
+monster or townsperson within 4 m is given a body of capsules, one on each
+of its larger bones (sized from its model's own per-bone boxes, learned once
+per model). A weapon coming within 60 cm makes that body a ragdoll in its
+own Box3D world: springs at the joints hold the animated pose between its
+limbs, and a spring holds its hips to where the animation has them. A struck
+limb swings away at its joint, the body leans or is shoved back (at most
+30 degrees a limb and 10 cm for the body), then both spring back into the
+game's animation. Each weapon or fist pushes with limited strength, so light
+limbs give way and heavy bodies resist; a landed hit adds a kick. A body
+whose animation has held still for a second (a corpse) is never pushed. The ragdoll follows the animation as it plays, so a
+monster that runs or attacks does not lag behind it. Purely visual: where a
+monster stands, its hits and your attacks are unchanged. Up to six bodies
+move at once; one back on its animation with no weapon near for 1.5 s is let
+go. VR Settings > Video > Pushable bodies (`[interactions] body_physics`)
+turns it off. The log names each model's limbs once (`Frame bodies: <model>
+- N limbs of M bones`), the first push each second, and a summary every ten
+seconds.
+
 **Hurt merc.** During VR gameplay the local hireling's life is sampled on the
 game thread every 200 ms with the same native stat call as the wrist vitals.
 Below 50% life it is tinted with the game's own `red` state (states.txt row 91,
@@ -705,6 +725,7 @@ hip_width=0.28
 holsters=1
 bottle_physics=1
 prop_physics=1
+body_physics=1
 ```
 
 `vitals_location` and `navigation_location`: `0` Wrist, `1` Palm, `2` Either,

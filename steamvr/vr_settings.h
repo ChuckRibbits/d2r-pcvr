@@ -20,7 +20,7 @@ namespace framevr::settings {
 enum class Page { Controls, VR, Video, HUD, Combat, Aim, Shield, Haptics, Performance, ReleaseNotes };
 enum Key { Motion, Seated, Dominant, Snap, TurnSpeed, Waist, BeltForward,
            Foveation, Sky, Fog, Ceiling, DrawDistance, ObjectDistance,
-           EyeHeight, ArmSpan, BodyCalibration, SkillGestures, WristMap, WristCompass, ControllerLabels, WeaponSkillIndicators, PlanarSpellAim, VitalsLocation, CriticalAlerts, RenderResolution, NavigationLocation, SmoothTurn, OrdinaryMobBars, MenuDistance, TooltipTiming, ProjectileAimAssist, MeleeHitSpeed, VitalsTilt, HapticStrength, HapticMelee, HapticBowDraw, HapticBowRelease, HapticSpell, HapticInteraction, HapticAlert, HapticShortMelee, BloodVisor, BloodWipe, MeleeThrustSpeed, LootLabelSize, CompanionCounts, StrainVignette, OfflinePlayers, ShieldBashSpeed, DesktopOneEye, MapTopDown, MapRotate, FoveationStrength, StereoRendering, DeferGpuWait, TargetHighlight, HeartbeatStart, SpellLock, StaffPoint, LandingCircles, GroundAim, AimHighlights, HighlightRight, HighlightLeft, ElementalHands, EnemySight, BowLaser, ThrowLift, BottlePhysics, PropPhysics, CompanionAi, ShieldGrip, ShieldOut, ShieldUp, ShieldFollow, ShieldRoll, AimFollowsView, LeftHandStrikes, TorchFlame, FrameGeneration, FrameGenPreset, FrameGenScale, RunSpeed, RunWalkToggle, BigObjectDistance, FogDistance, Count };
+           EyeHeight, ArmSpan, BodyCalibration, SkillGestures, WristMap, WristCompass, ControllerLabels, WeaponSkillIndicators, PlanarSpellAim, VitalsLocation, CriticalAlerts, RenderResolution, NavigationLocation, SmoothTurn, OrdinaryMobBars, MenuDistance, TooltipTiming, ProjectileAimAssist, MeleeHitSpeed, VitalsTilt, HapticStrength, HapticMelee, HapticBowDraw, HapticBowRelease, HapticSpell, HapticInteraction, HapticAlert, HapticShortMelee, BloodVisor, BloodWipe, MeleeThrustSpeed, LootLabelSize, CompanionCounts, StrainVignette, OfflinePlayers, ShieldBashSpeed, DesktopOneEye, MapTopDown, MapRotate, FoveationStrength, StereoRendering, DeferGpuWait, TargetHighlight, HeartbeatStart, SpellLock, StaffPoint, LandingCircles, GroundAim, AimHighlights, HighlightRight, HighlightLeft, ElementalHands, EnemySight, BowLaser, ThrowLift, BottlePhysics, PropPhysics, CompanionAi, ShieldGrip, ShieldOut, ShieldUp, ShieldFollow, ShieldRoll, AimFollowsView, LeftHandStrikes, TorchFlame, FrameGeneration, FrameGenPreset, FrameGenScale, RunSpeed, RunWalkToggle, BodyPhysics, BigObjectDistance, FogDistance, Count };
 // One bit per setting, 128 wide: two words, since MSVC has no 128-bit integer.
 struct ChangeMask {
     static constexpr int Bits=128;
@@ -145,6 +145,8 @@ inline constexpr std::array<Definition,Count> Definitions{{
     // Right stick up switches walk / run (runspeed::StickToggle), beside Movement speed on its row;
     // off by default (owner 2026-10-25).
     {"Stick toggle", "Right stick up switches between walking and running", L"gameplay",L"run_walk_toggle",0,0,1,1},
+    // Monsters' and townsfolk's limbs pushed aside by weapons (limb_rig.h); drawn only.
+    {"Pushable bodies", "Weapons and hands push monsters' and townsfolk's limbs aside", L"interactions",L"body_physics",1,0,1,1},
     // 600 (2026-10-28), as far as the fog lets them show: in the Blood Moor Big 1000 cost 6 of 44 frame pairs/s,
     // where every model out to 1110 held 22-35 (steamvr/far_objects.h).
     {"Big objects", "Trees, houses and walls drawn farther than other objects", L"render",L"big_radius",600,0,1000,100},
@@ -462,7 +464,7 @@ inline Rect PairDecrease(int row,int side){return {PairX(side),RowY+row*RowStep,
 inline Rect PairValue(int row,int side){return {PairX(side)+56,RowY+row*RowStep,238,52};}
 inline Rect PairIncrease(int row,int side){return {PairX(side)+298,RowY+row*RowStep,52,52};}
 // Every row a page can show, in order (Rows leaves out those that cannot apply).
-inline int CatalogCount(Page page){return page==Page::Haptics?2+haptics::CategoryCount:page==Page::Combat?8:page==Page::Aim?10:page==Page::Shield?5:page==Page::VR?11:page==Page::Video?7:page==Page::Performance?8:page==Page::HUD?10:0;}
+inline int CatalogCount(Page page){return page==Page::Haptics?2+haptics::CategoryCount:page==Page::Combat?8:page==Page::Aim?10:page==Page::Shield?5:page==Page::VR?11:page==Page::Video?8:page==Page::Performance?8:page==Page::HUD?10:0;}
 inline Key CatalogKey(Page page,int row){
     constexpr Key hapticRows[]={HapticStrength,HapticMelee,HapticShortMelee,HapticBowDraw,HapticBowRelease,HapticSpell,HapticInteraction,HapticAlert};
     if(page==Page::Haptics)return hapticRows[row];
@@ -477,7 +479,7 @@ inline Key CatalogKey(Page page,int row){
     if(page==Page::Shield)return Key(ShieldGrip+row);   // Grip, Out, Up, Follows, Roll: every class can carry a shield
     constexpr Key hud[]={VitalsLocation,VitalsTilt,CriticalAlerts,NavigationLocation,MenuDistance,TooltipTiming,BloodVisor,BloodWipe,LootLabelSize,CompanionCounts};
     if(page==Page::HUD)return hud[row];
-    constexpr Key video[]={Sky,Fog,Ceiling,ElementalHands,BottlePhysics,PropPhysics,TorchFlame};
+    constexpr Key video[]={Sky,Fog,Ceiling,ElementalHands,BottlePhysics,PropPhysics,BodyPhysics,TorchFlame};
     if(page==Page::Video)return video[row];
     // Everything that changes the frame rate, with its numbers below. The
     // desktop mirror is [render] desktop_one_eye in the INI only. Frame
