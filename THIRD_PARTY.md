@@ -13,7 +13,7 @@ caches, which must not be redistributed. The mod includes licensed
 open-source components and retains their notices below.
 
 This adaptation starts from [natpoh/diablo2-vr-port](https://github.com/natpoh/diablo2-vr-port)
-at `10cfb0a2a9080184101794d3ac8c238c35717967`, under the retained [MIT license](LICENSE),
+at `10cfb0a2a9080184101794d3ac8c238c35717967`, under the retained [MIT license](NOTICE),
 copyright 2026 BodyWalkVR. Existing source, original generated sky art, and
 attribution remain. BodyWalk and FlatVR are separate upstream products; this
 native OpenXR preview does not distribute them or use them as runtime dependencies.
