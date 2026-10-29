@@ -20,7 +20,7 @@ namespace framevr::settings {
 enum class Page { Controls, VR, Video, HUD, Combat, Aim, Shield, Haptics, Performance, ReleaseNotes };
 enum Key { Motion, Seated, Dominant, Snap, TurnSpeed, Waist, BeltForward,
            Foveation, Sky, Fog, Ceiling, DrawDistance, ObjectDistance,
-           EyeHeight, ArmSpan, BodyCalibration, SkillGestures, WristMap, WristCompass, ControllerLabels, WeaponSkillIndicators, PlanarSpellAim, VitalsLocation, CriticalAlerts, RenderResolution, NavigationLocation, SmoothTurn, OrdinaryMobBars, MenuDistance, TooltipTiming, ProjectileAimAssist, MeleeHitSpeed, VitalsTilt, HapticStrength, HapticMelee, HapticBowDraw, HapticBowRelease, HapticSpell, HapticInteraction, HapticAlert, HapticShortMelee, BloodVisor, BloodWipe, MeleeThrustSpeed, LootLabelSize, CompanionCounts, StrainVignette, OfflinePlayers, ShieldBashSpeed, DesktopOneEye, MapTopDown, MapRotate, FoveationStrength, StereoRendering, DeferGpuWait, TargetHighlight, HeartbeatStart, SpellLock, StaffPoint, LandingCircles, GroundAim, AimHighlights, HighlightRight, HighlightLeft, ElementalHands, EnemySight, BowLaser, ThrowLift, BottlePhysics, PropPhysics, CompanionAi, ShieldGrip, ShieldOut, ShieldUp, ShieldFollow, ShieldRoll, AimFollowsView, LeftHandStrikes, TorchFlame, FrameGeneration, FrameGenPreset, FrameGenScale, RunSpeed, RunWalkToggle, BigObjectDistance, Count };
+           EyeHeight, ArmSpan, BodyCalibration, SkillGestures, WristMap, WristCompass, ControllerLabels, WeaponSkillIndicators, PlanarSpellAim, VitalsLocation, CriticalAlerts, RenderResolution, NavigationLocation, SmoothTurn, OrdinaryMobBars, MenuDistance, TooltipTiming, ProjectileAimAssist, MeleeHitSpeed, VitalsTilt, HapticStrength, HapticMelee, HapticBowDraw, HapticBowRelease, HapticSpell, HapticInteraction, HapticAlert, HapticShortMelee, BloodVisor, BloodWipe, MeleeThrustSpeed, LootLabelSize, CompanionCounts, StrainVignette, OfflinePlayers, ShieldBashSpeed, DesktopOneEye, MapTopDown, MapRotate, FoveationStrength, StereoRendering, DeferGpuWait, TargetHighlight, HeartbeatStart, SpellLock, StaffPoint, LandingCircles, GroundAim, AimHighlights, HighlightRight, HighlightLeft, ElementalHands, EnemySight, BowLaser, ThrowLift, BottlePhysics, PropPhysics, CompanionAi, ShieldGrip, ShieldOut, ShieldUp, ShieldFollow, ShieldRoll, AimFollowsView, LeftHandStrikes, TorchFlame, FrameGeneration, FrameGenPreset, FrameGenScale, RunSpeed, RunWalkToggle, BigObjectDistance, FogDistance, Count };
 // One bit per setting, 128 wide: two words, since MSVC has no 128-bit integer.
 struct ChangeMask {
     static constexpr int Bits=128;
@@ -145,6 +145,8 @@ inline constexpr std::array<Definition,Count> Definitions{{
     {"Stick toggle", "Right stick up switches between walking and running", L"gameplay",L"run_walk_toggle",0,0,1,1},
     // Off by default: the game's own models out past the object draw distance cost frames (steamvr/far_objects.h).
     {"Big objects", "Trees, houses and walls drawn farther than other objects", L"render",L"big_radius",0,0,1000,100},
+    // [fog] end: where the outdoor fog is complete (the shipped INI's 200); start and curve stay INI-only.
+    {"Fog distance", "Where the fog is complete; farther shows more of the distance", L"fog",L"end",200,100,1200,50},
 }};
 using Values=std::array<float,Count>;
 inline bool HapticKey(Key key){return key>=HapticStrength&&key<=HapticAlert;}
@@ -372,6 +374,7 @@ inline bool RowEnabled(const Values& values,Key key){
     if(key==DeferGpuWait)return DeferOffered(values);   // the button only turns it on
     if(key==AimHighlights||HighlightKey(key))return values[TargetHighlight]>0;   // only while the monster outline shows
     if(key==LandingCircles)return values[GroundAim]>.5f;   // only while the mod places ground skills
+    if(key==FogDistance)return values[Fog]>.5f;   // only while the added fog is on
     return key!=FoveationStrength||values[Foveation]>.5f;
 }
 // The character the panel is open for: rows for another class, or for a
@@ -420,7 +423,7 @@ inline bool RowShown(Key key,const Values& v,const Context& c){
 // hand's outline color and the right's; NVIDIA's flow quality and its scale;
 // Movement speed and the right stick's run / walk toggle (the VR tab has no room
 // for an eleventh row above the buttons).
-inline Key PairOf(Key key){return key==HighlightLeft?HighlightRight:key==FrameGenPreset?FrameGenScale:key==RunSpeed?RunWalkToggle:key==ObjectDistance?BigObjectDistance:Count;}
+inline Key PairOf(Key key){return key==HighlightLeft?HighlightRight:key==FrameGenPreset?FrameGenScale:key==RunSpeed?RunWalkToggle:key==ObjectDistance?BigObjectDistance:key==Fog?FogDistance:Count;}
 inline bool Paired(Key key){return PairOf(key)!=Count;}
 inline const char* RowLabel(Key key,const Context& c){
     if(key==HighlightLeft)return "Hand colors";

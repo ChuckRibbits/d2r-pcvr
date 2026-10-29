@@ -1244,7 +1244,7 @@ void LoadSettings() {
     g_set.hudTop.store(std::clamp(IniF(L"stereo", L"ui_top", 0.70f), 0.0f, 1.0f));
     g_set.fogOn.store(IniB(L"fog", L"enabled", false));
     g_set.fogStart.store(std::clamp(IniF(L"fog", L"start", 150.0f), 0.0f, 100000.0f));
-    g_set.fogEnd.store(std::clamp(IniF(L"fog", L"end", 600.0f), g_set.fogStart.load() + 1.0f, 200000.0f));
+    g_set.fogEnd.store(std::clamp(IniF(L"fog", L"end", framevr::settings::Definitions[framevr::settings::FogDistance].defaultValue), g_set.fogStart.load() + 1.0f, 200000.0f));
     // caves: their own range, the open air's when not set (caves are smaller, their fog nearer)
     g_set.fogCaveStart.store(std::clamp(IniF(L"fog", L"caves_start", g_set.fogStart.load()), 0.0f, 100000.0f));
     g_set.fogCaveEnd.store(std::clamp(IniF(L"fog", L"caves_end", g_set.fogEnd.load()), g_set.fogCaveStart.load() + 1.0f, 200000.0f));

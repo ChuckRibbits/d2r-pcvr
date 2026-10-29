@@ -441,8 +441,9 @@ row's choice also stay hidden until they do:
 - the face wipe without blood on the visor.
 
 Settings that belong together share a row, with a stepper each: **Hand colors**
-(left hand, right hand), **Guard strain** (color, buildup) and **Object draw
-distance** (objects, Big objects). The title and
+(left hand, right hand), **Guard strain** (color, buildup), **Added fog** (on or
+off, and where it is complete, 100-1200 units) and **Object draw distance**
+(objects, Big objects). The title and
 character screens show every class's rows.
 
 **Big objects** (Perf, beside Object draw distance; Off by default; experimental)

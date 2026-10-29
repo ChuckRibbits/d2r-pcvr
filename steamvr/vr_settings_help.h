@@ -31,6 +31,7 @@ inline const char* HelpText(int id) {
         case FoveationStrength:return "How much detail foveated rendering removes at the edges. Stronger levels save more GPU time. Available when Foveated rendering is Fixed or Eye tracked.";
         case Sky:return "Shows the mod's added sky outside. This changes the background above the level; it does not increase terrain or object draw distance.";
         case Fog:return "Adds distance fog to outdoor scenery. Turning it Off can make distant scenery clearer. Indoor added fog is disabled by default to avoid artifacts through transparent effects.";
+        case FogDistance:return "Where the added outdoor fog is complete, in world units (you are about 7 tall): 200 by default. Farther keeps distant scenery in view - with Big objects on, set it past their distance to see them. The fog still begins near you and thickens gradually. Caves keep their own fog.";
         case Ceiling:return "Shows the mod's added overhead surfaces in supported dungeon areas. These are separate from the game's building roofs.";
         case DrawDistance:return "Controls how many surrounding map tiles remain drawn. Higher values reveal more terrain but use more rendering resources. Lower this first if large outdoor areas run poorly.";
         case ObjectDistance:return "How far away scenery objects remain visible. Higher values retain more distant buildings and props, with a performance and memory cost. Lower values can help crowded areas such as Act III.";

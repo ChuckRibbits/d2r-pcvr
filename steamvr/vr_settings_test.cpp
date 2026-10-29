@@ -134,6 +134,21 @@ int main(){
         for(int p=0;p<=int(Page::ReleaseNotes);++p)for(int i=0;i<CatalogCount(Page(p));++i)mirrorRow|=CatalogKey(Page(p),i)==DesktopOneEye;
         Check(!mirrorRow&&Defaults()[DesktopOneEye]==1&&std::wstring(Definitions[DesktopOneEye].key)==L"desktop_one_eye",
               "the desktop mirror is [render] desktop_one_eye in the INI only, on by default");
+        Check(PairOf(Fog)==FogDistance&&Defaults()[FogDistance]==200&&std::wstring(Definitions[FogDistance].section)==L"fog"&&
+              std::wstring(Definitions[FogDistance].key)==L"end"&&HelpText(FogDistance)[0]!=0,"the fog's distance beside it: [fog] end, 200 as shipped, explained");
+        Check(Normalize(FogDistance,50)==100&&Normalize(FogDistance,5000)==1200,"the fog's distance: 100 - 1200");
+        {
+            Values on=Defaults();on[Fog]=1;Values off=on;off[Fog]=0;
+            Check(RowEnabled(on,FogDistance)&&!RowEnabled(off,FogDistance),"the distance only while the fog is on");
+            Snapshot fogged=s;fogged.values[Fog]=1;
+            Model fog;fog.Open(fogged);fog.Click({Kind::Tab,int(Page::Video)});
+            fog.Click(At(fog,Page::Video,PairIncrease(1,1)));fog.Click(At(fog,Page::Video,PairIncrease(1,1)));
+            Check(fog.Get()[FogDistance]==300&&fog.Get()[Fog]==1,"200, 250, 300 - the fog stays on");
+            fog.Click(At(fog,Page::Video,PairDecrease(1,0)));
+            Check(fog.Get()[Fog]==0&&fog.Get()[FogDistance]==300,"the left half turns the fog off, the distance kept");
+            fog.Click(At(fog,Page::Video,PairIncrease(1,1)));
+            Check(fog.Get()[FogDistance]==300,"no change to the distance while the fog is off");
+        }
         Check(RowCount(Page::Video)==7&&RowKey(Page::Video,0)==Sky&&RowKey(Page::Video,1)==Fog&&RowKey(Page::Video,2)==Ceiling&&
               RowKey(Page::Video,3)==ElementalHands&&RowKey(Page::Video,4)==BottlePhysics&&RowKey(Page::Video,5)==PropPhysics&&
               RowKey(Page::Video,6)==TorchFlame,"the Video page keeps the mod's effects, with bottle and prop physics and the torch flame");
