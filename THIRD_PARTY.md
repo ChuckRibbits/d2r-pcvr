@@ -118,6 +118,12 @@ from "Heartbeat" by SoundReality, from Pixabay (item 549797), used under the
 decoded from MP3, trimmed to a single beat with short fades, peak-normalised and
 embedded in the plugin.
 
+The guard break bone snap in `steamvr/assets/guard-break-bone.wav` is "Bone Snap"
+by saboteurcomics, from Pixabay (item 408148), used under the
+[Pixabay Content License](https://pixabay.com/service/license-summary/); it was
+resampled from MP3, given a low shelf, made louder and peak-limited, and is
+embedded in the plugin.
+
 Diablo II: Resurrected, its executable, archives and save data belong to Blizzard
 Entertainment / their owners and are not distributed in this preview. This
 project is not affiliated with or endorsed by Blizzard Entertainment, Valve,
