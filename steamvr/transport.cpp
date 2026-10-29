@@ -2288,10 +2288,11 @@ void ReportBodies(ULONGLONG now) {
     bodyReportAt=now;
     auto& board=limbs::Shared();
     const unsigned posed=board.posed.exchange(0),bent=board.bent.exchange(0),refused=board.refused.exchange(0),learned=board.learned.exchange(0);
+    const unsigned kept=board.kept.exchange(0),restored=board.restored.exchange(0);
     const unsigned pushes=std::exchange(bodyPushes,0u),most=std::exchange(bodyMost,0u),strikes=std::exchange(bodyStrikes,0u),slips=std::exchange(bodySlips,0u);
     if(!posed&&!bent&&!pushes&&!learned)return;
-    char line[320];std::snprintf(line,sizeof line,"Frame bodies: ten seconds: poses posted=%u bent=%u refused=%u models learned=%u; ragdolls most=%u now=%u, lifeless now=%u; pushes=%u hits=%u slipped through=%u",
-        posed,bent,refused,learned,most,bodyWorld?bodyWorld->Simulated():0u,bodyWorld?bodyWorld->Lifeless():0u,pushes,strikes,slips);
+    char line[400];std::snprintf(line,sizeof line,"Frame bodies: ten seconds: poses posted=%u bent=%u refused=%u models learned=%u, not posed again by the game=%u, put back=%u; ragdolls most=%u now=%u, lifeless now=%u; pushes=%u hits=%u slipped through=%u",
+        posed,bent,refused,learned,kept,restored,most,bodyWorld?bodyWorld->Simulated():0u,bodyWorld?bodyWorld->Lifeless():0u,pushes,strikes,slips);
     Say(line);
 }
 void StepBodies() {

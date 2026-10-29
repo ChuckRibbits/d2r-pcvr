@@ -28,7 +28,7 @@ inline constexpr double Step=1/120.;
 inline constexpr float WakeReach=.6f;   // metres: a weapon this near a body's limbs brings it to life
 inline constexpr double Unseen=.4;      // seconds a body may go without a pose before it goes
 inline constexpr double RestTime=1.5;   // seconds back on its animation, out of reach, before it goes
-inline constexpr double StillLife=1;    // seconds a body's animated pose may stay unchanged before it counts as lifeless (a corpse)
+inline constexpr double StillLife=1;    // seconds a body's animated pose may stay unchanged before it counts as lifeless (a corpse); one first seen is lifeless until it moves
 inline constexpr float StillMove=.003f,StillAngle=.02f;   // metres, radians: what counts as a change
 inline constexpr float Recentre=20;     // metres from the physics origin before it moves
 class World {

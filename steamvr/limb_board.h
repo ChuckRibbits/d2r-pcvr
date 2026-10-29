@@ -25,6 +25,7 @@ public:
     void Fade(uint64_t ms) {fade.store(ms,std::memory_order_relaxed);}
     // The hook's counters, for the physics' log line.
     std::atomic<unsigned> posed{0},bent{0},refused{0},learned{0};
+    std::atomic<unsigned> kept{0},restored{0};   // the game had not posed a body again (its own pose kept); a bent one put back
     // This body's pose, in place of its last; the stalest goes when full.
     void Pose(const Rig& r) {
         std::lock_guard lock(mutex);

@@ -3239,7 +3239,14 @@ struct Model {
 };
 std::vector<std::unique_ptr<Model>> g_models;
 std::set<uint64_t> g_unusable;
-thread_local std::array<float, limbs::MaxBones * 16> t_pose;
+thread_local std::array<float, limbs::MaxBones * 16> t_pose, t_raw;
+// Each instance's own pose from the game, kept across frames (limbs::GamePose): a body the
+// game does not pose again (a corpse) still holds the pose bent for it last frame.
+struct Kept { limbs::GamePose pose; ULONGLONG seen = 0; };
+SRWLOCK g_keptLock = SRWLOCK_INIT;
+std::unordered_map<uintptr_t, Kept> g_kept;
+ULONGLONG g_keptPruned = 0;
+constexpr ULONGLONG KeptFor = 5000;   // ms an instance's kept pose outlives its last sight
 
 // A model's limbs from its skeleton's bones: every mesh's per-bone boxes when
 // the model has meshes; else (the game's characters load their skeleton from
@@ -3338,28 +3345,61 @@ void Limbs(uintptr_t self) {
         ReleaseSRWLockExclusive(&g_lock);
     }
     if (k.kind == limbs::Kind::None) return;
-    float placement[16];
-    if (!ecs::Placement(k.entity, placement)) return;
-    const float dx = placement[12] - centre[0], dz = placement[14] - centre[2], away = std::sqrt(dx * dx + dz * dz);
-    // Out of reach; or a druid's own form, drawn with a wolf's or bear's model where the player stands.
-    if (!(away <= Reach * upm) || (k.form && away < 0.3f * upm)) return;
     uintptr_t model = 0, skeleton = 0, worldPose = 0, matrices = 0; int count = 0;
     if (!Get(self + 0x08, &model) || !Get(model + 0x08, &skeleton) || !Get(self + 0x20, &worldPose) || !Get(worldPose, &count) ||
         count < 2 || count > limbs::MaxBones || !Get(worldPose + 4, &matrices) || !matrices) return;
+    auto& board = limbs::Shared();
+    if (now - g_keptPruned > 2000) {
+        AcquireSRWLockExclusive(&g_keptLock);
+        g_keptPruned = now;
+        for (auto it = g_kept.begin(); it != g_kept.end();) it = now - it->second.seen > KeptFor ? g_kept.erase(it) : std::next(it);
+        ReleaseSRWLockExclusive(&g_keptLock);
+    }
+    auto& raw = t_raw;
+    bool haveRaw = false;
+    // Not bent this frame: a bent pose the game has not posed over goes back to the game's.
+    auto putBack = [&] {
+        bool bent = false;
+        AcquireSRWLockShared(&g_keptLock);
+        if (const auto it = g_kept.find(self); it != g_kept.end()) bent = it->second.pose.written != 0;
+        ReleaseSRWLockShared(&g_keptLock);
+        if (!bent || (!haveRaw && !SafeCopy(raw.data(), reinterpret_cast<const void*>(matrices), size_t(count) * 64))) return;
+        AcquireSRWLockExclusive(&g_keptLock);
+        if (const auto it = g_kept.find(self); it != g_kept.end())
+            if (const float* game = it->second.pose.Restore(raw.data(), count))
+                if (SafeWrite(reinterpret_cast<void*>(matrices), game, size_t(count) * 64)) ++board.restored;
+        ReleaseSRWLockExclusive(&g_keptLock);
+    };
+    float placement[16];
+    if (!ecs::Placement(k.entity, placement)) { putBack(); return; }
+    const float dx = placement[12] - centre[0], dz = placement[14] - centre[2], away = std::sqrt(dx * dx + dz * dz);
+    // Out of reach; or a druid's own form, drawn with a wolf's or bear's model where the player stands.
+    if (!(away <= Reach * upm) || (k.form && away < 0.3f * upm)) { putBack(); return; }
+    if (!SafeCopy(raw.data(), reinterpret_cast<const void*>(matrices), size_t(count) * 64)) return;
+    haveRaw = true;
+    // The game's own pose: what the buffer holds, unless it is the pose bent here last frame.
     auto& pose = t_pose;
-    if (!SafeCopy(pose.data(), reinterpret_cast<const void*>(matrices), size_t(count) * 64)) return;
+    AcquireSRWLockExclusive(&g_keptLock);
+    auto& kept = g_kept[self];
+    kept.seen = now;
+    const bool posedAgain = kept.pose.Take(raw.data(), count, pose.data());
+    ReleaseSRWLockExclusive(&g_keptLock);
+    if (!posedAgain) ++board.kept;
     const Model* shape = ModelOf(self, k.model, model, skeleton, count, pose.data());
-    if (!shape) return;
+    if (!shape) { putBack(); return; }
     limbs::Rig rig;
     rig.entity = k.entity; rig.kind = k.kind; rig.at = now;
     rig.layout = k.model;
-    auto& board = limbs::Shared();
-    if (!limbs::Capture(shape->layout, pose.data(), count, placement, upm, rig)) return;
+    if (!limbs::Capture(shape->layout, pose.data(), count, placement, upm, rig)) { putBack(); return; }
     board.Pose(rig); ++board.posed;
     limbs::Reaction answer;
-    if (!board.Answer(k.entity, rig.layout, now, answer)) return;
-    if (!limbs::Apply(shape->layout, shape->parents.data(), pose.data(), count, placement, upm, answer)) { ++board.refused; return; }
-    if (SafeWrite(reinterpret_cast<void*>(matrices), pose.data(), size_t(count) * 64)) ++board.bent;
+    if (!board.Answer(k.entity, rig.layout, now, answer)) { putBack(); return; }
+    if (!limbs::Apply(shape->layout, shape->parents.data(), pose.data(), count, placement, upm, answer)) { ++board.refused; putBack(); return; }
+    if (!SafeWrite(reinterpret_cast<void*>(matrices), pose.data(), size_t(count) * 64)) return;
+    ++board.bent;
+    AcquireSRWLockExclusive(&g_keptLock);
+    if (const auto it = g_kept.find(self); it != g_kept.end()) it->second.pose.Wrote(pose.data(), count);
+    ReleaseSRWLockExclusive(&g_keptLock);
 }
 }  // namespace bodies
 #endif

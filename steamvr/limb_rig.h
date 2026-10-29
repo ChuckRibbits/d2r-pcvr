@@ -7,6 +7,7 @@
 #include <cstdint>
 #include <string>
 #include <string_view>
+#include <vector>
 
 // Bodies that give way ([interactions] body_physics): the monsters and
 // townsfolk near the player as chains of capsules, one on each large bone,
@@ -328,4 +329,40 @@ inline bool Apply(const Layout& layout,const int16_t* parents,float* bones,int b
     }
     return true;
 }
+
+// ---- The game's own pose, kept ----
+// The hook bends the bones in the game's own buffer. A body the game does not pose again - a
+// corpse, held on its last frame - still holds that bent pose the next frame; read as the game's
+// it was bent again, frame after frame, into a knot, and never held still long enough to count
+// as lifeless (the owner, 2026-10-28: "the fallen enemies are still moving their limbs and they
+// turn into a pretzel"). Each frame the buffer is the game's pose unless it is exactly what was
+// written last: then the game's is the one kept. Once nothing is bent, it goes back.
+inline uint64_t PoseHash(const float* pose,int count) {
+    uint64_t h=1469598103934665603ull;   // FNV-1a over the bytes
+    const auto* b=reinterpret_cast<const unsigned char*>(pose);
+    for(size_t i=0;i<size_t(count)*16*sizeof(float);++i){h^=b[i];h*=1099511628211ull;}
+    return h?h:1;
+}
+struct GamePose {
+    std::vector<float> game;   // the game's pose as it last posed it
+    uint64_t written=0;        // what was written last (PoseHash), 0 none - the buffer is the game's
+    // The game's pose this frame, from what the buffer holds (count bones, 16 floats each), into
+    // pose: false when the game did not pose it again (the buffer is what was written last).
+    bool Take(const float* buffer,int count,float* pose) {
+        const size_t n=size_t(count)*16;
+        if(written&&game.size()==n&&PoseHash(buffer,count)==written){std::copy(game.begin(),game.end(),pose);return false;}
+        game.assign(buffer,buffer+n);written=0;
+        std::copy(buffer,buffer+n,pose);
+        return true;
+    }
+    void Wrote(const float* pose,int count) {written=PoseHash(pose,count);}
+    // The game's pose to put back in place of a bent one still there (buffer as it is now): null
+    // when there is none, or the game has posed it since.
+    const float* Restore(const float* buffer,int count) {
+        if(!written||game.size()!=size_t(count)*16)return nullptr;
+        const bool ours=PoseHash(buffer,count)==written;
+        written=0;
+        return ours?game.data():nullptr;
+    }
+};
 }

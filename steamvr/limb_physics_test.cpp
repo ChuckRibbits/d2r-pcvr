@@ -148,6 +148,15 @@ int main() {
         for(int i=0;i<3;++i)s=Frame(w,s,b,beside);
         assert(w.Lifeless()==0&&w.Simulated()==1);
     }
+    // A body first seen holding still - a corpse come upon, or come back to - is lifeless at once: a
+    // blade beside it from its first frame wakes nothing. Once its animation moves it is alive.
+    {
+        World w;w.Tune(Lively());double s=0;const Rig b=Body(600);
+        const auto beside=Blade({.25f,1.2f,2.17f},{.25f,1.2f,2.9f});
+        for(int i=0;i<20;++i){s=Still(w,s,b,beside);assert(w.Simulated()==0&&w.Lifeless()==1);}
+        for(int i=0;i<3;++i)s=Frame(w,s,b,beside);
+        assert(w.Lifeless()==0&&w.Simulated()==1);
+    }
     std::puts("limb physics: all checks passed");
     return 0;
 }

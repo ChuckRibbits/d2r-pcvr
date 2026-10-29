@@ -185,6 +185,37 @@ int main() {
         auto bent=pose;Reaction r=Still(layout);r.count=3;
         assert(!Apply(layout,Parents,bent.data(),Bones,place.data(),Upm,r));
     }
+    // The game's own pose kept (GamePose): a body the game poses once and then holds (a corpse) still
+    // holds the pose bent for it. Bent again from what the buffer holds it knotted further every
+    // frame; bent from the kept pose it is bent once however many frames pass, and once nothing
+    // bends it the game's own pose goes back - unless the game has posed it since.
+    {
+        Reaction r=Still(layout);r.turn[size_t(layout.count-1)]=About({0,0,1},.4f);
+        auto once=pose;assert(Apply(layout,Parents,once.data(),Bones,place.data(),Upm,r));
+        std::vector<float> buffer=pose,frame(pose.size());GamePose keep;
+        for(int f=0;f<5;++f) {
+            assert(keep.Take(buffer.data(),Bones,frame.data())==(f==0));   // posed by the game the first frame only
+            for(size_t i=0;i<frame.size();++i)assert(frame[i]==pose[i]);   // always the game's own
+            assert(Apply(layout,Parents,frame.data(),Bones,place.data(),Upm,r));
+            buffer=frame;keep.Wrote(frame.data(),Bones);
+        }
+        for(size_t i=0;i<buffer.size();++i)assert(Near(buffer[i],once[i],1e-5f));   // bent once, not five times
+        auto knot=pose;for(int f=0;f<5;++f)assert(Apply(layout,Parents,knot.data(),Bones,place.data(),Upm,r));
+        float apart=0;for(size_t i=0;i<knot.size();++i)apart=std::max(apart,std::fabs(knot[i]-once[i]));
+        assert(apart>.1f);   // the old way: read back and bent again, it knots
+        // The game posing it again: that pose is the game's.
+        auto moved=pose;moved[size_t(Hand)*16+13]+=1;buffer=moved;
+        assert(keep.Take(buffer.data(),Bones,frame.data())&&frame[size_t(Hand)*16+13]==moved[size_t(Hand)*16+13]);
+        // Nothing bends it any more: the game's own pose goes back, once.
+        assert(Apply(layout,Parents,frame.data(),Bones,place.data(),Upm,r));buffer=frame;keep.Wrote(frame.data(),Bones);
+        const float* game=keep.Restore(buffer.data(),Bones);
+        assert(game&&game[size_t(Hand)*16+13]==moved[size_t(Hand)*16+13]&&!keep.Restore(buffer.data(),Bones));
+        // Bent again, then posed over by the game: the buffer is the game's own, nothing to put back.
+        buffer=moved;assert(keep.Take(buffer.data(),Bones,frame.data()));
+        assert(Apply(layout,Parents,frame.data(),Bones,place.data(),Upm,r));keep.Wrote(frame.data(),Bones);
+        assert(!keep.Restore(moved.data(),Bones));
+        assert(PoseHash(pose.data(),Bones)!=PoseHash(once.data(),Bones)&&PoseHash(pose.data(),Bones)!=0);
+    }
     std::puts("limb rig: all checks passed");
     return 0;
 }

@@ -106,7 +106,9 @@ struct World::Impl {
     std::vector<Rig> posed;
     // Each posed body's pose when its animation last moved: one held still
     // for StillLife (a corpse: the game holds its last frame) is lifeless,
-    // never simulated - a body pushed on the floor only contorted.
+    // never simulated - a body pushed on the floor only contorted. One first
+    // seen is lifeless until its animation moves: a corpse come back to was
+    // new again, and a weapon there in its first second woke it.
     struct Watch {Rig ref{};double moved=0,seen=0;};
     std::unordered_map<uint32_t,Watch> watched;
     std::vector<uint32_t> lifeless;
@@ -114,7 +116,8 @@ struct World::Impl {
         auto [it,fresh]=watched.try_emplace(r.entity);
         auto& w=it->second;
         w.seen=time;
-        bool moved=fresh||w.ref.count!=r.count||w.ref.layout!=r.layout;
+        if(fresh){w.ref=r;w.moved=-1e9;return true;}
+        bool moved=w.ref.count!=r.count||w.ref.layout!=r.layout;
         for(int i=0;i<r.count&&!moved;++i) {
             const auto& now=r.limbs[size_t(i)];const auto& then=w.ref.limbs[size_t(i)];
             moved=Length(now.joint-then.joint)>StillMove||Angle(math::Multiply(now.q,math::Conjugate(then.q)))>StillAngle;
