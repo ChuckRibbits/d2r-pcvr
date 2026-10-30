@@ -337,6 +337,7 @@ uint64_t noticeTextsAt=0;   // UI thread only
 std::mutex npcChoicesMutex;
 int32_t npcChoicesRect[4]{};
 uint64_t npcChoicesAt=0;
+std::atomic<uint32_t> g_talkOpens{0};   // NPC conversations opened (vrcam stops the hero, talk_stop.h)
 uint64_t g_menuOpenUntil=0; // UI thread only: wait for native layout transition
 std::mutex journalMutex;
 int32_t journalRect[4]{};
@@ -899,6 +900,7 @@ SharedEvents::UiMessageAction __cdecl OnUiMessage(const PluginContext* ctx, cons
         const bool npc=menus==1&&g_panels.count("NpcDialogPanel")!=0;
         if(g_npcChoices.exchange(npc)!=npc){std::lock_guard lock(npcChoicesMutex);npcChoicesAt=0;}
         if(!strcmp(text,"NpcDialogPanel")||!strcmp(text,"ScrollSpeechPanel")) {
+            if(!strcmp(command,"OpenPanel")||!strcmp(command,"OpenExclusivePanel"))g_talkOpens.fetch_add(1);
             char b[200];snprintf(b,sizeof b,"Frame NPC transition: %s %s; choices=%d speech=%d choice_surface=%d modal_roots=%d",
                 command,text,int(g_panels.count("NpcDialogPanel")!=0),int(g_panels.count("ScrollSpeechPanel")!=0),int(npc),menus);Log(b);
         }
@@ -1142,6 +1144,7 @@ bool NpcChoicesRect(int32_t out[4]) {
     if(!g_npcChoices.load()||!npcChoicesAt||GetTickCount64()-npcChoicesAt>650)return false;
     std::copy_n(npcChoicesRect,4,out);return true;
 }
+uint32_t TalkOpens(){return g_talkOpens.load();}
 // Once a session per panel: where the game puts the tabbed menu's widgets (their own
 // units), to compare with what shows on the leather (2026-10-28, a ghost square beside the
 // menu). Widget calls on this UI thread, as OnUiMessage runs.

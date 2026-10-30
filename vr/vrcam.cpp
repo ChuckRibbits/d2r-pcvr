@@ -150,6 +150,8 @@ namespace gamestate {bool RunOnUi(D2RL::Threads::Callback callback);}
 #endif
 #include "../steamvr/panel_input_mode.h"
 #include "pad_mirror_shared.h"
+#include "../steamvr/talk_stop.h"
+namespace gamestate {uint32_t TalkOpens();}   // NPC conversations opened (talk_stop.h)
 
 #pragma intrinsic(_ReturnAddress)
 
@@ -4264,6 +4266,11 @@ bool ViewStickToGame(float* px, float* py) {
 
 bool DirectWalkNow();
 bool StickHookIn();
+// A on an NPC while walking (talk_stop.h; TalkHoldA beside ApplyActions): the walk is let go
+// until this time, so the game stops the hero before the conversation opens.
+std::atomic<uint64_t> g_talkWalkUntil{0};
+std::atomic<uint32_t> g_talkWalkTalks{0};   // conversations opened at the press: one more, and the walk is back
+bool TalkWalkHeld() { return GetTickCount64() < g_talkWalkUntil.load() && gamestate::TalkOpens() == g_talkWalkTalks.load(); }
 void TurnStick(XINPUT_STATE* s, bool fromBodyWalk) {
     if (!s || !g_enabled.load()) return;
     const XINPUT_GAMEPAD in = s->Gamepad;
@@ -4301,6 +4308,7 @@ void TurnStick(XINPUT_STATE* s, bool fromBodyWalk) {
     // stick is kept from the game in the world - it would walk twice, and a stick
     // pushed flips the game's interface to the controller.
     if (DirectWalkNow() && StickHookIn()) { s->Gamepad.sThumbLX = 0; s->Gamepad.sThumbLY = 0; return; }
+    if (TalkWalkHeld()) { s->Gamepad.sThumbLX = 0; s->Gamepad.sThumbLY = 0; return; }   // the pad's walk, let go the same
     float x = s->Gamepad.sThumbLX / 32767.0f, y = s->Gamepad.sThumbLY / 32767.0f;
     if (!ViewStickToGame(&x, &y)) return;
     s->Gamepad.sThumbLX = (SHORT)std::clamp(x * 32767.0f, -32768.0f, 32767.0f);
@@ -4409,6 +4417,42 @@ bool InteractButton(bool active,uint32_t held) {
     return out.down;
 }
 
+// A on an NPC while walking (owner 2026-10-30: "instantly stop player movement when the NPC
+// dialogue starts"; talk_stop.h). The conversation opens in the frame A lands, and from then
+// on the game takes no walk command, so the stop goes first: at the press the walk is let go
+// (TalkWalkHeld: BodyWalkWalk and the pad's stick read as released, the game's own stop) and
+// A reaches the game HoldMs later. The target's unit type 1: a monster, which as an interact
+// target is an NPC. Items, chests, doors and standing presses get A at once, as ever.
+SRWLOCK g_talkHoldLock = SRWLOCK_INIT;
+framevr::talkstop::Hold g_talkHold;
+std::atomic<uint32_t> g_talkHolds{0};
+bool TalkHoldA(bool interact, const XINPUT_STATE* s) {
+    if (g_set.platform.load() != 1 || !g_enabled.load() || !g_inWorld.load()) { g_talkWalkUntil.store(0); return interact; }
+    const uintptr_t target = interact && g_interactHooked.load() && GetTickCount64() - g_interactTargetAt.load() < 200 ? g_interactTarget.load() : 0;
+    uint32_t type = ~0u;
+    const bool npc = target > 0x10000 && SafeRead(&type, reinterpret_cast<const void*>(target), sizeof type) && type == 1;
+    const float lx = s->Gamepad.sThumbLX, ly = s->Gamepad.sThumbLY;
+    const bool walking = lx * lx + ly * ly > 10349.0f * 10349.0f;   // the game's own dead zone
+    const ULONGLONG now = GetTickCount64();
+    const uint32_t talks = gamestate::TalkOpens();
+    bool began = false;
+    AcquireSRWLockExclusive(&g_talkHoldLock);
+    const bool a = g_talkHold.Poll(interact, npc, walking, talks, now, &began);
+    const uint64_t until = g_talkHold.WalkHeld(now) ? g_talkHold.pressAt + framevr::talkstop::WalkMaxMs : 0;
+    ReleaseSRWLockExclusive(&g_talkHoldLock);
+    if (began) g_talkWalkTalks.store(talks);
+    g_talkWalkUntil.store(until);
+#ifdef D2RVR_DEVELOPER
+    constexpr bool everyHold = true;
+#else
+    constexpr bool everyHold = false;   // the first of a session only
+#endif
+    if (began && (g_talkHolds.fetch_add(1) == 0 || everyHold))
+        LogF("vrcam: NPC talk: A on an NPC while walking - the walk let go, A to the game %llu ms later",
+             (unsigned long long)framevr::talkstop::HoldMs);
+    return a;
+}
+
 void ApplyActions(XINPUT_STATE* s) {
     const uint32_t held = ActionsHeld();
     // Pick up only onto a target: nothing there, nothing pressed - never an attack.
@@ -4419,7 +4463,9 @@ void ApplyActions(XINPUT_STATE* s) {
     // floor. Native menus observe releases separately without changing menu A.
     // Without the hook (another build) it cannot tell, and stays a plain A.
     const bool interact = InteractButton(true,held);
-    if ((held & D2RVR_ACT_ATTACK) || interact) s->Gamepad.wButtons |= XINPUT_GAMEPAD_A;
+    const bool interactA = TalkHoldA(interact, s);   // A on an NPC while walking: the walk stops first
+    if (interact && !interactA && !(held & D2RVR_ACT_ATTACK)) s->Gamepad.wButtons &= ~XINPUT_GAMEPAD_A;   // held back, the pad's own A too
+    if ((held & D2RVR_ACT_ATTACK) || interactA) s->Gamepad.wButtons |= XINPUT_GAMEPAD_A;
     // A pad button, not the keyboard's I: a key press flips the game's UI to
     // mouse and keyboard, the way Shift + click did in bow mode 2. Menu (Start)
     // by default: View (Back) opens the map in D2R's pad layout - "the inventory
@@ -4693,6 +4739,7 @@ bool DirectWalkNow() {
 // BodyWalk's stick as the game takes a walking vector (x right, y up on its screen,
 // length <= 1, its dead zone 10349 of 32767 with no rescale), turned by our camera.
 bool BodyWalkWalk(float* px, float* py) {
+    if (TalkWalkHeld()) return false;   // A on an NPC: the stick as released, the game stops him
     BWPadMirror m;
     if (!PadMirrorRead(&m)) return false;
     const float lx = (float)m.thumb_lx, ly = (float)m.thumb_ly;
@@ -5007,6 +5054,30 @@ void Tick(ULONGLONG now) {
     if (!g_queued.exchange(true) && !gamestate::RunOnUi(&Click)) g_queued.store(false);
 }
 }
+
+// Developer builds: how far the hero goes after a conversation opens (talk_stop.h Watch),
+// the evidence for the stop at the press (talkhold, beside ApplyActions).
+#ifdef D2RVR_DEVELOPER
+namespace talkstop {
+framevr::talkstop::Watch g_watch;   // the 1 ms timer only
+void Tick(ULONGLONG now) {
+    const bool active = g_enabled.load() && g_inWorld.load() && g_set.platform.load() == 1;
+    const uint32_t opened = gamestate::TalkOpens();
+    uintptr_t hero = 0; float x = 0, y = 0;
+    const bool known = active && g_watch.Wants(opened, now) && combat::LocalPlayerUnit(hero) &&
+                       SpellPlayerPosition(reinterpret_cast<void*>(hero), x, y);
+    using Action = framevr::talkstop::Watch::Action;
+    switch (g_watch.Step(active, opened, now, known, x, y)) {
+    case Action::Report:
+        LogF("vrcam: NPC talk: %.2f cells moved in the %llu ms after the conversation opened", g_watch.drift,
+             (unsigned long long)framevr::talkstop::WatchMs);
+        break;
+    case Action::Lost: Log("vrcam: NPC talk: no hero position as the conversation opened - not measured"); break;
+    default: break;
+    }
+}
+}
+#endif
 #endif
 
 // Twice a second: says when the game loses or gets back its pads, and when W A
@@ -9940,6 +10011,9 @@ DWORD WINAPI UpdateThread(void*) {
         gamecmd::Tick();   // skills, potions, Alt... held in BodyWalk: pressed on the UI thread
 #ifdef D2RVR_NATIVE_OPENXR
         leatherwalk::Tick(nowMs);   // the left stick walks with the tabbed menu on the leather
+#ifdef D2RVR_DEVELOPER
+        talkstop::Tick(nowMs);      // how far the hero goes after a conversation opens (log)
+#endif
 #endif
 #ifdef D2RVR_NATIVE_OPENXR
         mobaim::Tick();    // the aim rules' targets: each hand's held out, and the one looked at

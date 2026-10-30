@@ -334,6 +334,15 @@ shop panes keep their native relative positions; hovering a comparison tooltip
 does not resize or move the surface. The quest log retains its handheld/pinned
 placement. Title and character-selection screens keep the existing flat panel.
 
+Talking to an NPC stops you. Press A on an NPC while walking and you stop at
+the press: the left stick is let go for that moment (the game's own stop, as
+when you release it) and A reaches the game 50 ms later, so the conversation
+opens with you standing. Once a conversation is up the game takes no walk at
+all, so the hero used to carry on to the point the stick had set, round the
+NPC where it did not block the way. A on items, chests and doors, and A while
+standing, are as before. Log: `vrcam: NPC talk: A on an NPC while walking ...`
+(developer builds also log how far you moved after the conversation opened).
+
 | Native panel action | Control |
 |---|---|
 | Open the tabbed character menu | Left primary face button during gameplay; native X in menus |
