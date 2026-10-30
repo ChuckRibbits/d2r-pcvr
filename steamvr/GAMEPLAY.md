@@ -1189,8 +1189,9 @@ and trigger/button melee were:
     within a single frame. A riposte is still a clean hit (no falloff) and
     counts as one of the stroke's creatures.
   - **On-hit effects** come only from a full-cycle stroke (the breakpoint, a
-    full cycle after the latest full-cycle attack on the same clock: per hand
-    when dual wielding, one shared clock for a shapeshift form's two claws),
+    full cycle after the latest full-cycle attack on the one shared clock: both
+    blades when dual wielding (2026-10-30; each stroke's cycle is its own
+    weapon's) and a shapeshift form's two claws),
     and only on the first creature that stroke lands on.
     That covers life and mana leech, critical and deadly strike, crushing blow,
     open wounds, freeze, slow, knockback, flee, blind, prevent monster heal,

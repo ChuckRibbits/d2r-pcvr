@@ -112,10 +112,12 @@ int main() {
         assert(OnHitGate(true,clock.Since(s,1030),cycle)==OnHit::NotFullCycle);clock.Landed(s,1030,cycle); // left claw, its own stroke
         assert(OnHitGate(true,clock.Since(s,1400),cycle)==OnHit::NotFullCycle);                         // flailing
         assert(OnHitGate(true,clock.Since(s,1630),cycle)==OnHit::Allowed);                              // a full cycle after the last
-        // Dual wield: one clock per hand, so each blade's full-cycle stroke carries effects.
-        framevr::attackspeed::Cadence right,left;
-        right.Landed(s,1000,cycle);left.Landed(s,1030,cycle);
-        assert(OnHitGate(true,right.Since(s,1600),cycle)==OnHit::Allowed&&OnHitGate(true,left.Since(s,1600),cycle)==OnHit::NotFullCycle);
+        // Dual wield shares the claws' one clock (2026-10-30): the left blade 30 ms after a full
+        // right-blade stroke is in between, and the next full one is a cycle after the right's.
+        framevr::attackspeed::Cadence blades,bladesFull;
+        auto blade=[&](uint64_t at,uint32_t own){const auto c=FixedCycle(bladesFull.Since(s,at),blades.Since(s,at),own,true,2,1);blades.Landed(s,at,own);if(c.full)bladesFull.Landed(s,at,own);return c.full;};
+        assert(blade(1000,cycle)&&!blade(1030,cycle)&&!blade(1400,720)&&blade(1600,cycle)&&!blade(1610,720));
+        assert(blade(2320,720));   // the left blade's own (slower) cycle after the right's full hit
     }
     {   // Fixed attack cycle (Cal, 2026-10-30): in-between strokes never move the next breakpoint.
         // Cycle 720 ms, curve 2. Flailing every 300 ms: full at 0, in between at 300 and 600

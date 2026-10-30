@@ -821,10 +821,16 @@ void __cdecl Apply(const D2RL::PluginContext*,void* token) noexcept {
                         // shared recovery (Cal, 2026-10-21) and the native form attack with the
                         // druid's one weapon (no weapon selection); the cycle is the form's.
                         const bool claws=r.sample.claws;
-                        auto& recoveryState=claws?hands[0].recovery:state.recovery;
-                        auto& fullState=claws?hands[0].full:state.full;   // the fixed cycle's last full-cycle stroke
-                        auto& recoveryClock=attackSpeed.load()?cadence:recoveryState;
                         const bool dual=!claws&&r.sample.weapons.id[0]&&r.sample.weapons.id[1];
+                        // Dual wield shares the claws' one recovery clock too (Cal, 2026-10-30: "put
+                        // all dual wielders on a shared cycle, like we have with werewolf"): natively a
+                        // basic attack swings one weapon at a time on one attack rhythm, so two blades
+                        // must not earn two full-cycle hits per cycle. Each stroke's cycle is still its
+                        // own weapon's (handCycle); hits, strokes and cleave stay per blade.
+                        const bool sharedClock=claws||dual;
+                        auto& recoveryState=sharedClock?hands[0].recovery:state.recovery;
+                        auto& fullState=sharedClock?hands[0].full:state.full;   // the fixed cycle's last full-cycle stroke
+                        auto& recoveryClock=attackSpeed.load()?cadence:recoveryState;
                         const uintptr_t weapon=dual?meleeweapon::Select(player,hand,r.sample.weapons):0;
                         const int speedHand=dual?r.sample.weapons.BodyHand(hand):0;
                         if((dual&&(!weapon||speedHand<0))||(hand==1&&!dual&&!claws)){++dualRefused;continue;}
