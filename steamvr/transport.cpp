@@ -78,6 +78,7 @@
 #include "journal.h"
 #include "leather_menu.h"
 #include "stats_button.h"
+#include "menu_drop.h"
 #include "native_panels.h"
 #include "npc_dialogue.h"
 #include "native_hud.h"
@@ -799,6 +800,18 @@ bool leatherMode=false;
 // image; shown and lit this frame (MenuPointer); its press sends the game one View.
 bool statsIconReady=false,statsShown=false,statsLit=false;
 statsbutton::Press statsPress;
+// An item let go outside the tabbed menu drops (menu_drop.h): the pad's X, the controller
+// menu's Drop for the item held, while menuDrop is down.
+menudrop::Drop menuDrop;
+// The held menu put away over the left shoulder (owner 2026-10-29: "put the inventory away behind my
+// back by reaching over left shoulder and pressing grab"): the same reach that takes it out
+// (leather::Reach), watched while it is held; off with Dominant hand = Left, as the reach out is.
+leather::Reach leatherStow;
+std::atomic<bool> leftDominant{false};
+// The HUD held with the menu (leather::HudPlaces): its vitals and map while the tabbed menu is
+// in the hand with the world kept (Leather or Menu only), each unless its VR Settings location
+// is Off. The interaction engine stays off there; only its painter and the map run for it.
+bool leatherHudVitals=false,leatherHudMap=false;
 leather::Holder leatherHolder;
 leather::Back leatherBack;   // Right B the game leaves unanswered closes the leather's menu
 leather::Art leatherArt=leather::PlaceholderArt();
@@ -1009,7 +1022,7 @@ void ClearInput() {
     panelinput::WorldInput(false);
     gamestate::MenuMap(false);
     menuControls.Suspend();menuNavigation.Reset();nativeMenuPad={};laserClick={};panelinput::UseController();
-    statsPress.Reset();statsShown=statsLit=false;
+    statsPress.Reset();statsShown=statsLit=false;menuDrop.Reset();
     handControls.Suspend();
     bodyCalibration.Suspend();
     settingsInputGate.Suspend();
@@ -1831,7 +1844,7 @@ XrPosef UiSurfacePose() {
 void MenuPointer(const menus::Pad& controls) {
     nativeMenuPad={};
     pointerVisible=pointerHit=false;
-    if(settingsModel.open||bodyCalibration.Active()||calibrationRelease.blocked){panelinput::ItemHover(false);return;}
+    if(settingsModel.open||bodyCalibration.Active()||calibrationRelease.blocked){panelinput::ItemHover(false);menuDrop.Reset();return;}
     const bool spatialReady=spatialMode&&SurfacePlaced()&&uiCrop[2]>0;
     const bool uiActive=(panelMode&&menuPlaced)||spatialReady;
     const auto surfacePose=spatialMode?UiSurfacePose():menuPose;
@@ -1866,12 +1879,40 @@ void MenuPointer(const menus::Pad& controls) {
     statsLit=onStats;
     if(statsPress.Step(onStats&&uiActive,pressed,GetTickCount64()))
         Say(focused?"Frame panels: Advanced Stats button - View sent to the game":"Frame panels: Advanced Stats button - View sent (game window not focused)");
+    // An item on the game's cursor and a trigger pull begun off the menu's art (past or on the
+    // hide, or the band's see-through margins): the pad's X, the controller menu's own Drop for
+    // the item held (menu_drop.h). The tabbed menu (and its cube) only; never without an item on
+    // the cursor, where X would drop the controller's selected item instead.
+    const bool dropMenu=spatialReady&&!journalMode&&gamestate::LeatherMenuOpen();
+    const bool cursorItem=dropMenu&&gamestate::CursorItemHeld();
+    const bool offArt=dropMenu&&aimTracked&&!menuNavigation.Native()&&!(mouseDown||rightMouseDown)&&!onStats&&
+        (!pointerHit||!menudrop::InArt(hit.u,hit.v,surface.width,surface.height));
+    const auto drop=menuDrop.Step(offArt&&uiActive&&focused,cursorItem,pressed,GetTickCount64());
+    if(dropMenu&&pressed&&!triggerWasDown&&!drop.press&&aimTracked&&!onStats&&!(mouseDown||rightMouseDown)&&
+       (!pointerHit||!menudrop::InArt(hit.u,hit.v,surface.width,surface.height))) {   // a pull off the menu that did not drop: why
+        static ULONGLONG toldAt=0;
+        if(GetTickCount64()-toldAt>500) {
+            toldAt=GetTickCount64();
+            const uint64_t read=gamestate::CursorItemReadAt();
+            char line[220];std::snprintf(line,sizeof line,"Frame panels: a pull off the menu, no drop - item on the cursor %s (read %llu ms ago), %s, game window %s",
+                gamestate::CursorItemHeld()?"yes":"no",read?(unsigned long long)(GetTickCount64()-read):0ull,
+                menuNavigation.Native()?"controller navigation":"laser",focused?"focused":"not focused");
+            Say(line);
+        }
+    }
+    const bool dropOwns=menuDrop.Down();   // X down: the trigger is the drop's
     const bool wasNative=menuNavigation.Native();
-    menus::Pad navigation=controls;   // on the leather the left stick walks: no menu cursor, no switch from the laser
-    if(leatherMode&&leatherShown.load())navigation.lx=navigation.ly=0;
-    if(onStats||statsPress.Held())navigation.rt=0;   // the button's trigger is never the game's RT
+    // Held in the hand (the world kept round it), the left stick walks and the right stick
+    // turns (tester 2026-10-29: "cannot rotate with right stick"): neither moves the menu's
+    // cursor or takes the laser's place. The right stick's up / down too: a turn's slight tilt
+    // flipped the laser to controller navigation (owner's rev1 log: "native controller
+    // navigation" / "laser navigation" every second while walking and turning), hiding it.
+    menus::Pad navigation=controls;
+    if(leatherMode&&leatherShown.load())navigation.lx=navigation.ly=navigation.rx=navigation.ry=0;
+    if(onStats||statsPress.Held()||dropOwns)navigation.rt=0;   // the button's or the drop's trigger is never the game's RT
     nativeMenuPad=menuNavigation.Step(uiActive&&focused,navigation,pointerHit&&!onStats,hit.u,hit.v,mouseDown||rightMouseDown);
     if(statsPress.Held())nativeMenuPad.buttons|=menus::Back;   // View: Advanced Stats (Start closes the menu)
+    if(menuDrop.Down())nativeMenuPad.buttons|=menus::X;   // X: the controller menu's Drop for the item on the cursor
     if(wasNative!=menuNavigation.Native()&&uiActive&&focused)
         Say(menuNavigation.Native()?"Frame panels: native controller navigation":"Frame panels: laser navigation");
     const bool laser=!menuNavigation.Native();
@@ -1883,7 +1924,7 @@ void MenuPointer(const menus::Pad& controls) {
         panels::MenuDistance(int(vrsettings::Read().values[settings::MenuDistance]),!spatialMode));
     const bool active=uiActive&&focused&&aimTracked&&laser;
     if(active)panelinput::OwnPointer();
-    if(active&&pointerHit&&!onStats) {
+    if(active&&pointerHit&&!onStats&&!dropOwns) {
         RECT client{};
         if(GetClientRect(gameWindow,&client)) {
             math::Vec native{hit.u,hit.v,0};
@@ -1893,7 +1934,8 @@ void MenuPointer(const menus::Pad& controls) {
             else pointerHit=false;
         } else pointerHit=false;
     }
-    const bool gamePointer=pointerHit&&!onStats;   // on the button the dot shows, the game's cursor stays put
+    // On the button, or off the art with an item to drop, the dot shows and no game click is made there.
+    const bool gamePointer=pointerHit&&!onStats&&!dropOwns&&!(offArt&&cursorItem);
     const bool modifiers=active&&(gamePointer||mouseDown||rightMouseDown);
     PanelModifier(VK_CONTROL,modifiers&&controls.lt>140,controlDown);
     PanelModifier(VK_SHIFT,modifiers&&!grabbing&&(controls.buttons&menus::RightBumper),shiftDown);
@@ -1909,6 +1951,10 @@ void MenuPointer(const menus::Pad& controls) {
             if(!held)panelMouse.down[i]=false;
         }
     }
+    if(drop.press)Say(focused?"Frame panels: item let go outside the menu - X (the menu's Drop) sent to the game":
+                              "Frame panels: item let go outside the menu - X sent (game window not focused)");
+    if(drop.check)Say(gamestate::CursorItemHeld()?"Frame panels: the item is still on the cursor after X (the game did not drop it)":
+                                                "Frame panels: the item left the cursor - dropped");
     triggerWasDown=pressed;cancelWasDown=(controls.buttons&menus::B)!=0;
 }
 
@@ -2699,9 +2745,22 @@ void Input() {
         const float width=leatherMenuWidth.load(),inset=leatherHide.load()?0.f:leather::MenuArtInset*width;
         leatherHolder.Step(V(hand.pose.position),Q(hand.pose.orientation),tracked,leatherArt,width,leatherTilt.load(),inset);
         const auto menu=leatherHolder.Get().menu;uiPose=XrPose({menu.p,menu.q});
-    }
+        // Put away: the left hand back over the left shoulder and a fresh grip (the grip that took it
+        // out must be let go first: a new menu epoch primes the reach as held). Not mid-drag, nor
+        // with VR Settings over it; with an item on the cursor the game side leaves it open.
+        leather::ReachInput stow;stow.time=Milliseconds()/1000.;stow.session=gamestate::LocalPlayer();stow.epoch=inputEpoch;
+        stow.active=!leftDominant.load()&&!settingsOwned&&!settingsChord;stow.tracked=tracked&&motionHeadTracked;
+        stow.allowed=!mouseDown&&!rightMouseDown;
+        stow.head=V(head.position);stow.hand=V(hand.pose.position);stow.heading=math::Yaw(math::Heading(Q(head.orientation)));
+        stow.grip=Float(squeeze,leather::Hand);
+        if(leatherStow.Step(stow).open) {
+            const bool queued=gamestate::StowLeatherMenu();
+            MotionPulse(leather::Hand,haptics::Category::Interaction,.25f,35000000);
+            Say(queued?"Frame leather: put away over the left shoulder":"Frame leather: put away over the left shoulder - the game's UI thread refused");
+        }
+    } else leatherStow.Reset();
     if(!settingsOwned&&!settingsChord)MenuPointer(controls);
-    else {nativeMenuPad={};menuNavigation.Reset();panelinput::UseController();pointerVisible=pointerHit=false;triggerWasDown=Float(trigger,0)>.2f;cancelWasDown=Bool(secondary,0);}
+    else {menuDrop.Reset();nativeMenuPad={};menuNavigation.Reset();panelinput::UseController();pointerVisible=pointerHit=false;triggerWasDown=Float(trigger,0)>.2f;cancelWasDown=Bool(secondary,0);}
     // The native Back went to the game above; one it leaves unanswered closes the menu (leather::Back).
     if(leatherBack.Step(leatherMode&&!settingsOwned&&!settingsChord,(controls.buttons&menus::B)!=0,mouseDown||rightMouseDown,
                         gamestate::PanelChanges(),GetTickCount64())&&gamestate::CloseLeatherMenu())
@@ -2828,6 +2887,18 @@ void Input() {
     const auto hudSettings=vrsettings::Read();
     interactionInput.navigationLocation=vitals::Location(int(hudSettings.values[settings::NavigationLocation]));
     interactionInput.vitalsLocation=vitals::Location(int(hudSettings.values[settings::VitalsLocation]));
+    {   // the HUD held with the menu: its picture and map (the map lease may open the game's map under the menu)
+        const bool held=leatherMode&&leatherShown.load()&&inWorld&&inWorld()&&!settingsModel.open;
+        const bool vitalsWas=leatherHudVitals,mapWas=leatherHudMap;
+        leatherHudVitals=held&&interactionInput.vitalsLocation!=vitals::Location::Off;
+        leatherHudMap=held&&interactionInput.navigationLocation!=vitals::Location::Off&&mapSupported;
+        gamestate::MenuMapUnderMenu(leatherHudMap);
+        if((leatherHudVitals&&!vitalsWas)||(leatherHudMap&&!mapWas)) {
+            char line[160];std::snprintf(line,sizeof line,"Frame leather: the HUD held with the menu - %s%s%s",leatherHudVitals?"life and mana":"",
+                leatherHudVitals&&leatherHudMap?" and ":"",leatherHudMap?"the map":"");
+            Say(line);
+        }
+    }
     interactionInput.vitalsTilt=hudSettings.values[settings::VitalsTilt];
     interactionInput.criticalAlerts=hudSettings.values[settings::CriticalAlerts]>.5f;
     if(leftStrikesSequence&&((hudSettings.sequence==leftStrikesSequence&&hudSettings.result!=settings::Result::Saving)||interactionInput.at-leftStrikesAt>2000))
@@ -3145,7 +3216,7 @@ void Input() {
             mapZoomLogged=false;
         }
     }
-    gamestate::MenuMap(mapSupported&&interaction::MapWanted(interactionInput,interactionOutput,interactionInput.at));
+    gamestate::MenuMap(mapSupported&&(leatherHudMap||interaction::MapWanted(interactionInput,interactionOutput,interactionInput.at)));
     if(interactionOutput.inventory&&toggleMenus)toggleMenus();
     if(handOutput.wheel>=0&&!interactionOutput.wheel){handControls.Close();handOutput={};}
     if(interactionOutput.cancelPending)interactionstate::Cancel();
@@ -3638,7 +3709,7 @@ void Input() {
             }
         }
     }
-    if(interactionInput.active) {
+    if(interactionInput.active||leatherHudVitals) {   // the HUD held with the menu repaints its vitals too
         const bool snapshotFresh=interaction::Fresh(interactionInput.snapshot,interactionInput.session,interactionInput.at);
         if(snapshotFresh&&(interactionPrefetchSession!=interactionInput.session||interactionPrefetchRevision!=interactionInput.snapshot.revision)) {
             interaction::icons::Prefetch(interactionInput.snapshot);
@@ -3647,7 +3718,7 @@ void Input() {
         const uint64_t key=(interaction::icons::Revision()*0x9e3779b97f4a7c15ull)^(uint64_t(interactionOutput.editor)<<60)^(uint64_t(interactionOutput.editSlot+1)<<56)^(uint64_t(interactionOutput.editPage)<<48)^(uint64_t(interactionInput.snapshot.revision)<<32)^(uint64_t(interactionOutput.utility)<<24)^(
             uint64_t(interactionOutput.hover+1)<<16)^(uint64_t(motion.Selection()+1)<<8)^(uint64_t(interactionOutput.result)<<4)^uint64_t(interactionOutput.stowed)^(uint64_t(interactionOutput.map)<<1)^(uint64_t(interactionOutput.nearHolster+1)<<26)^(uint64_t(interactionOutput.bottle+1)<<28)^(uint64_t(interactionOutput.bottleEmpty)<<2)^(uint64_t(snapshotFresh)<<3);
         const auto now=GetTickCount64();
-        const bool visible=motionInput.active||interactionOutput.wheel||interactionOutput.wrist||interactionOutput.vitals||interactionOutput.critical||interactionOutput.bottle>=0||
+        const bool visible=leatherHudVitals||motionInput.active||interactionOutput.wheel||interactionOutput.wrist||interactionOutput.vitals||interactionOutput.critical||interactionOutput.bottle>=0||
             interactionOutput.nearBelt>=0||interactionOutput.nearHolster>=0||math::Rotate(Q(head.orientation),{0,0,-1}).y<-.60f;
         const auto context=interaction::Context(interactionInput.snapshot,interactionOutput,snapshotFresh,controllerLabels);
         const bool missingCompanions=snapshotFresh&&wriststatus::Rows(context.companions,context.effects)&&!companionPaintValid;
@@ -3844,7 +3915,8 @@ void Input() {
         // On the leather the left stick walks (owner 2026-10-28: "No one needs the left
         // thumbstick to act as the menu cursor"): it goes to BodyWalk's walk, which vrcam
         // feeds into the game's walk (DirectWalkNow), and never to the menu's cursor.
-        if(leatherMode&&leatherShown.load()&&!settingsOwned&&!settingsChord){p.thumb_lx=controls.lx;p.thumb_ly=controls.ly;}
+        // The right stick's left / right turns there too: vrcam takes it for the turn, as in play.
+        if(leatherMode&&leatherShown.load()&&!settingsOwned&&!settingsChord){p.thumb_lx=controls.lx;p.thumb_ly=controls.ly;p.thumb_rx=controls.rx;p.thumb_ry=0;}
     }
     p.reserved[0]=uint32_t(settingsOwned||settingsChord?menus::Mode::Blocked:nativeUi?menus::Mode::Native:menus::Mode::World);
     p.reserved[1]=inputEpoch;
@@ -4483,7 +4555,7 @@ bool Copy(ID3D12Resource* src,Eye& e,reshade::api::command_queue* rq) {
     e.copied=true;return true;
 }
 bool CopyMap(reshade::api::command_queue* rq) {
-    if(!mapSupported||mapEye.copied||!interaction::MapWanted(interactionInput,interactionOutput,GetTickCount64()))return true;
+    if(!mapSupported||mapEye.copied||!(leatherHudMap||interaction::MapWanted(interactionInput,interactionOutput,GetTickCount64())))return true;
     if(swapchainsShort&&spatialMode)return true;   // the native menus' panel may need its surface: no map while they are open
     uint32_t w=0,h=0;
     bool fullMap=false;float drawnZoom=0;   // Map view = Full map: the share is the full map's box, drawn at that game zoom
@@ -5215,6 +5287,16 @@ void EndPair() {
         motionQuad(statsQuad,XrPose({p,q}),spot.size,spot.size,Rect(statsLit?panelatlas::StatsLit:panelatlas::Stats),staticChain);
         statsQuad.layerFlags=XR_COMPOSITION_LAYER_BLEND_TEXTURE_SOURCE_ALPHA_BIT;   // premultiplied (SetupStatic)
     }
+    // The HUD held with the menu (leather::HudPlaces): the map over life / mana / XP, beside the menu.
+    XrCompositionLayerQuad hudMap{XR_TYPE_COMPOSITION_LAYER_QUAD},hudVitals{XR_TYPE_COMPOSITION_LAYER_QUAD};
+    if(book.subImage.swapchain&&leatherMode&&(leatherHudVitals||leatherHudMap)) {
+        const auto hud=leather::HudPlaces(leatherMenuWidth.load());
+        const auto at=UiSurfacePose();const auto q=Q(at.orientation);
+        if(leatherHudMap&&mapEye.copied&&mapEye.chain)
+            motionQuad(hudMap,XrPose({V(at.position)+math::Rotate(q,hud.map),q}),hud.mapSize,hud.mapSize,{{0,0},{int32_t(mapSide),int32_t(mapSide)}},mapEye.chain);
+        if(leatherHudVitals&&interactionPaintValid&&interactionChain)
+            motionQuad(hudVitals,XrPose({V(at.position)+math::Rotate(q,hud.vitals),q}),hud.vitalsWidth,hud.vitalsHeight,{{512,768},{512,256}},interactionChain);
+    }
     XrCompositionLayerQuad settingsPanel{XR_TYPE_COMPOSITION_LAYER_QUAD};
     if(layer&&(settingsModel.open||bodyCalibration.Active())&&settingsImageReady){
         // The help card is inside the panel: its region is the panel, Width wide.
@@ -5370,6 +5452,7 @@ void ConfigureQuiver(bool enabled,bool preview) {
     }
 }
 void ConfigureInteractions(bool seated,float waist,float forward,int dominant) {
+    leftDominant=dominant==1;   // the left shoulder is the weapon swap's then: no reach to open or put away the menu
     static interaction::Config previous;static bool configured=false;
     interaction::Config c;c.seated=seated;c.waistBelowEyes=std::clamp(waist,.30f,.95f);
     c.beltForward=std::clamp(forward,.03f,.5f);c.holsters=false;c.dominant=dominant==1?1:0;

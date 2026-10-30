@@ -5106,9 +5106,13 @@ template <int I> DWORD WINAPI XDetour(DWORD idx, XINPUT_STATE* s) {
         const bool allowed=!tagged||framevr::menus::Allowed(report.reserved[0],report.reserved[1],gamestate::MenuEpoch(),nativeUi,framevr::SettingsOpen());
         if(!allowed||nativeUi||framevr::SettingsOpen()) {
             if(idx==0){SequenceSkillPad(s,false);InteractButton(false,ActionsHeld());}
+            // The menu held in the hand (the world kept): the left stick walks (DirectWalkNow) and the
+            // right stick's left / right turns (TurnTick), as in play; neither reaches the menu.
+            const bool held=allowed&&!framevr::SettingsOpen()&&gamestate::MenuOpen()&&framevr::LeatherMenuWorld();
+            const float turn=held&&mirror&&g_set.rightTurn.load()?s->Gamepad.sThumbRX/32767.0f:0.f;
             if(!allowed||framevr::SettingsOpen())s->Gamepad={};
-            else if(gamestate::MenuOpen()&&framevr::LeatherMenuWorld())s->Gamepad.sThumbLX=s->Gamepad.sThumbLY=0;   // it walks (DirectWalkNow), not the cursor
-            if(idx==0){g_aHeld.store(false);g_skillHeld.store(false);g_rightX.store(0.f);}
+            else if(held){s->Gamepad.sThumbLX=s->Gamepad.sThumbLY=0;s->Gamepad.sThumbRX=s->Gamepad.sThumbRY=0;}
+            if(idx==0){g_aHeld.store(false);g_skillHeld.store(false);g_rightX.store(turn);}
             // Native menu buttons/sticks bypass gameplay action translation
             // and camera-relative movement. Laser reports are already empty.
             return r;

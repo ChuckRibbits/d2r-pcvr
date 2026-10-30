@@ -309,6 +309,11 @@ void RefreshToolbarAfterMessage(const PluginContext* ctx) {
 #endif
 std::atomic<int> g_autoMap{0};
 std::atomic<uint64_t> g_menuMapAt{0};
+// The map on the leather (owner 2026-10-29: the HUD on the hide): the map lease may open the
+// game's map under the tabbed menu while this is set (transport, each frame). Should the game
+// close the tabbed menu as its map opens under it, the map stays off under menus from then on.
+std::atomic<bool> g_mapUnderMenu{false},g_mapUnderMenuBroken{false};
+std::atomic<uint64_t> g_mapUnderMenuOpenedAt{0};
 framevr::wrist::MapLease g_menuMapLease;
 const InventoryService* g_inventory = nullptr;
 const ItemService* g_items = nullptr;
@@ -327,6 +332,10 @@ std::atomic<bool> g_opaqueMenu{false};
 std::atomic<bool> g_upperBandMenu{false};
 std::atomic<bool> g_leatherMenu{false};
 std::atomic<bool> g_statsButton{false};   // the tabbed menu alone: its Advanced Stats button (stats_button.h)
+// An item on the game's cursor (the laser picked it up in a menu), read with the hands
+// every 200 ms; when it was read (CursorItemHeld wants it recent).
+std::atomic<bool> g_cursorItem{false};
+std::atomic<uint64_t> g_cursorItemAt{0};
 std::atomic<uint32_t> g_panelChanges{0};   // every panel opened or closed (leather::Back)
 std::atomic<bool> g_npcChoices{false};
 std::atomic<uint32_t> g_questNotices{0};   // quest updates while the notification panel is hidden
@@ -681,15 +690,28 @@ void __cdecl ReadItems(const PluginContext* ctx, void* token) noexcept {
     PlayerHandle player = InvalidPlayerHandle;
     const bool havePlayer = g_inventory && g_inventory->getLocalPlayer(ctx, &player) == Inventory::Result::Success && player != InvalidPlayerHandle;
     g_player.store(havePlayer ? player : 0);
+    {   // the item on the cursor, for a drop outside the menu (transport MenuPointer)
+        ItemHandle onCursor=InvalidItemHandle;
+        g_cursorItem.store(havePlayer&&g_inventory&&g_inventory->getCursorItem&&
+            g_inventory->getCursorItem(ctx,player,&onCursor)==Inventory::Result::Success&&onCursor!=InvalidItemHandle);
+        g_cursorItemAt.store(GetTickCount64());
+    }
 #ifdef D2RVR_NATIVE_OPENXR
     panelinput::MaintainWorldController(havePlayer,g_menu.load()!=0);
     MaintainToolbar(ctx);
     ReadNoticeTexts();
     const auto now=GetTickCount64(),mapAt=g_menuMapAt.load();
     const bool mapWanted=mapAt&&now>=mapAt&&now-mapAt<400;
-    const int mapAction=g_menuMapLease.Step(havePlayer?player:0,now,mapWanted,g_menu.load()!=0,g_autoMap.load()!=0);
+    // A menu stops the map, but for the map on the leather (g_mapUnderMenu).
+    const bool underMenu=g_menu.load()!=0&&g_mapUnderMenu.load()&&!g_mapUnderMenuBroken.load();
+    const bool menuBlocks=g_menu.load()!=0&&!underMenu;
+    const int mapAction=g_menuMapLease.Step(havePlayer?player:0,now,mapWanted,menuBlocks,g_autoMap.load()!=0);
+    if(mapAction==1&&underMenu) {
+        g_mapUnderMenuOpenedAt.store(now);
+        static int told=0;if(told<5){++told;Log("gamestate: the leather's map - opening the game's map under the tabbed menu");}
+    }
     // Keep native widget calls on this UI callback, never on the XR thread.
-    const bool capture=g_menuMapLease.Active(now,g_menu.load()!=0);
+    const bool capture=g_menuMapLease.Active(now,menuBlocks);
     MaintainMapLayout(capture);
     if(mapAction>=0)DispatchAutoMap(ctx,mapAction?(void*)1:nullptr);
     hud::MenuMapCapture(capture);
@@ -876,7 +898,14 @@ SharedEvents::UiMessageAction __cdecl OnUiMessage(const PluginContext* ctx, cons
     if (strcmp(target, "PanelManager") == 0) {
         const bool before = g_menu.load() != 0;
         if (!strcmp(command, "OpenPanel") || !strcmp(command, "OpenExclusivePanel")) { if (*text) g_panels.insert(text); }
-        else if (!strcmp(command, "ClosePanel") || !strcmp(command, "UnloadPanel")) g_panels.erase(text);
+        else if (!strcmp(command, "ClosePanel") || !strcmp(command, "UnloadPanel")) {
+            g_panels.erase(text);
+            // The tabbed menu closed just as the leather's map opened under it: the game will not
+            // have its map under the menu, so the leather shows no map from now on.
+            const uint64_t opened=g_mapUnderMenuOpenedAt.load();
+            if(opened&&!strcmp(text,framevr::panels::TabbedMenu)&&GetTickCount64()-opened<600&&!g_mapUnderMenuBroken.exchange(true))
+                Log("gamestate: the tabbed menu closed as its map opened under it - no map on the leather from now on");
+        }
         else if (!strcmp(command, "UnloadAll") || !strcmp(command, "CloseAll")) g_panels.clear();
         if (!strcmp(command, "OpenPanel") || !strcmp(command, "OpenExclusivePanel") || !strcmp(command, "ClosePanel") ||
             !strcmp(command, "UnloadPanel") || !strcmp(command, "UnloadAll") || !strcmp(command, "CloseAll")) g_panelChanges.fetch_add(1);
@@ -1093,6 +1122,7 @@ bool RestoreLeftDurability(const PluginContext* ctx, int32_t value) {
 }
 uint32_t DataBank() {return uint32_t(g_bank);} // UI-thread-only table bank
 void MenuMap(bool wanted) {g_menuMapAt.store(wanted?GetTickCount64():0);}
+void MenuMapUnderMenu(bool on) {g_mapUnderMenu.store(on);}
 // An object's light in a mode: its radius (Objects.txt Lit, 0 = none) and colour 0..1.
 int ObjectLight(uint32_t txt, uint32_t mode, float rgb[3]) {
     if (txt >= g_objCount.load() || mode > 7) return 0;
@@ -1114,6 +1144,8 @@ bool OpaqueMenuOpen(){return g_opaqueMenu.load();}
 bool UpperBandMenuOpen(){return g_upperBandMenu.load();}
 bool LeatherMenuOpen(){return g_leatherMenu.load();}
 bool StatsButtonShown(){return g_statsButton.load();}
+bool CursorItemHeld(){return g_cursorItem.load()&&GetTickCount64()-g_cursorItemAt.load()<600;}
+uint64_t CursorItemReadAt(){return g_cursorItemAt.load();}
 uint32_t PanelChanges(){return g_panelChanges.load();}
 bool NpcChoicesOnly(){return g_npcChoices.load();}
 void ReadNpcChoicesRect() {
@@ -1281,6 +1313,32 @@ void __cdecl DispatchLeatherClose(const PluginContext* ctx,void*) noexcept {
     action.target="PanelManager";action.text=framevr::panels::TabbedMenu;action.command="ClosePanel";
     const auto result=g_widgets->dispatchUiAction(ctx,&action);
     char line[180];snprintf(line,sizeof line,"gamestate: B on the leather went unanswered by the game - ClosePanel UISwitcher (result %u)",unsigned(result));Log(line);
+}
+// The menu put away over the left shoulder (owner 2026-10-29: "put the inventory away behind
+// my back by reaching over left shoulder and pressing grab"): the tabbed menu closed as its
+// own menu button does, with whatever page or dialog it has; a cube opened from it, when the
+// game closed the tabbed menu for the cube, closed itself. Not with an item on the cursor.
+void __cdecl DispatchLeatherStow(const PluginContext* ctx,void*) noexcept {
+    if(!g_widgets||!g_widgets->dispatchUiAction)return;
+    PlayerHandle player=InvalidPlayerHandle;ItemHandle held=InvalidItemHandle;
+    if(g_inventory&&g_inventory->getCursorItem&&g_inventory->getLocalPlayer(ctx,&player)==Inventory::Result::Success&&
+       player!=InvalidPlayerHandle&&g_inventory->getCursorItem(ctx,player,&held)==Inventory::Result::Success&&held!=InvalidItemHandle) {
+        Log("gamestate: menu put away over the shoulder - an item is on the cursor; menu left open");return;
+    }
+    std::vector<std::string> close;
+    if(g_panels.count(framevr::panels::TabbedMenu))close.push_back(framevr::panels::TabbedMenu);
+    else for(const auto& name:g_panels)if(name.starts_with("HoradricCube")||name.starts_with("AdvancedStats"))close.push_back(name);
+    if(close.empty()){Log("gamestate: menu put away over the shoulder - no tabbed menu open");return;}
+    for(const auto& name:close) {
+        Widgets::UiAction action{};action.structSize=sizeof action;
+        action.target="PanelManager";action.text=name.c_str();action.command="ClosePanel";
+        const auto result=g_widgets->dispatchUiAction(ctx,&action);
+        char line[180];snprintf(line,sizeof line,"gamestate: menu put away over the shoulder - ClosePanel %s (result %u)",name.c_str(),unsigned(result));Log(line);
+    }
+}
+bool StowLeatherMenu() {
+    return g_ctx&&g_threads&&g_threads->runOnUiThread&&g_widgets&&g_widgets->dispatchUiAction&&
+        g_threads->runOnUiThread(g_ctx,&DispatchLeatherStow,nullptr)==Threads::Result::Success;
 }
 bool CloseLeatherMenu() {
     return g_ctx&&g_threads&&g_threads->runOnUiThread&&g_widgets&&g_widgets->dispatchUiAction&&

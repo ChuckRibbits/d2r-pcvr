@@ -364,8 +364,10 @@ hide (the one drying on the Rogue Encampment's farm racks, read from your own
 game at install) strapped to your left hand, and the world stays in view all
 round it: no black backdrop. You hold the hide at the menu's left edge; its
 neck and legs reach past your fist. The hide follows the hand whether or not
-you hold the grip, until the menu closes (Right B, its close button, or anything
-that closes the native menu); then it is gone. Below the menu's hint row sits a
+you hold the grip, until the menu closes (Right B, its close button, putting it
+**back over your left shoulder** - reach there and grip again, the way it came out - or
+anything that closes the native menu); then it is gone. Putting it away leaves it open
+while an item is on the cursor (log: `Frame leather: put away over the left shoulder`). Below the menu's hint row sits a
 small stone **Advanced Stats** button (three gold bars), the same one the room
 panel shows when the leather is off: laser + trigger sends the game one View
 press, a button VR controllers lack (log:
@@ -375,11 +377,20 @@ the game leaves unanswered for a quarter of a second, with only the menu and
 its pages open and nothing on the cursor, closes the menu (the log:
 `gamestate: B on the leather went unanswered by the game ...`). The right laser and every native
 control work on it as on the room panel, Left Grip + Right Trigger included
-(the left grip is free while the sheet is strapped on). The **left stick walks** while the
-leather is out, as in play (it never moves the menu's controller cursor); the
-right laser, face buttons and right stick work the menu. Nothing else is drawn
-over it: quest and level-up cards wait until it closes, and the wrist and palm
-displays are hidden while a menu is open, as before.
+(the left grip is free while the sheet is strapped on). The **left stick walks** and the
+**right stick turns** while the menu is held (Leather or Menu only), as in
+play (neither moves the menu's controller cursor); the right laser and the face buttons
+work the menu (the right stick is all turning while it is held). An item picked
+up with the laser (a click, as ever) and then **clicked outside the menu** - a trigger pull off
+the menu's art, on or past the hide - drops to the ground, as in flat D2R: the mod presses the
+controller menu's own Drop (X) for the item held (logs: `Frame panels: item let go outside the
+menu - X ...`, then whether it dropped; a pull off the menu that did not drop says why). The **HUD comes with it**: the life / mana / XP panel above the menu,
+and the minimap at the menu's left edge, above your fist (each unless its VR Settings
+location is Off). The map
+opens the game's own map under the menu; should the game close the menu as it does, the
+map stays off there from then on (log: `gamestate: the tabbed menu closed as its map
+opened under it ...`). Nothing else is drawn over it: quest and level-up cards wait until it
+closes, and the wrist and palm displays themselves are hidden while a menu is open, as before.
 
 Only the menu's 16:9 band is on the hide, on the middle of its body, and the
 game's translucent dim under the menu is taken out of it, so the hide shows
